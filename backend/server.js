@@ -978,6 +978,7 @@ app.use('/api/admin/quotes',     require('./src/routes/adminQuotes'));
 // Quote catalogue + templates (#1451). Own prefix so its collection paths
 // never collide with /api/admin/quotes/:id.
 app.use('/api/admin/album-products', require('./src/routes/adminAlbumProducts'));
+app.use('/api/admin/print-sales', require('./src/routes/adminPrintSales'));
 app.use('/api/admin/quote-catalog', require('./src/routes/adminQuoteCatalog'));
 app.use('/api/admin/invoices',   require('./src/routes/adminInvoices'));
 app.use('/api/admin/contracts',  require('./src/routes/adminContracts'));
@@ -1325,6 +1326,7 @@ async function startServerInternal() {
     // Enumeration and replay signals on the public signing routes (#1446):
     // flush the counts, check the thresholds, alert once per kind per hour.
     require('./src/services/contract/signingSignals').startSigningSignals();
+    require('./src/services/printSales/worker').start();
     // Custom-resolution download archives (#858) are disposable renditions —
     // sweep them once their TTL passes so .download-cache doesn't grow forever.
     // Best-effort, as before the scheduler refactor: a transient DB error on

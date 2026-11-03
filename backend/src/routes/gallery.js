@@ -4,6 +4,7 @@ router.use(require('./gallery/metadata'));
 router.use(require('./gallery/slideshow'));
 router.use(require('./gallery/photos'));
 router.use(require('./gallery/albumProducts'));
+router.use(require('./gallery/printSales'));
 router.use(require('./gallery/downloads'));
 router.use(require('./gallery/purchasedDownloads'));
 router.use(require('./gallery/snipcart'));

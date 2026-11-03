@@ -42,6 +42,7 @@ const PICPEAK_FORMAT_VERSION = 1;
 // photographer assigned to people are lost too, since they live in
 // event_people. That is accepted — see ml/README.md and the #1074 thread.
 const EXCLUDED_TABLES = new Set([
+  'print_sales_downloads', // Ephemeral browser delivery status, not retained orders.
   'knex_migrations',
   'knex_migrations_lock',
   'photo_faces',
@@ -67,7 +68,7 @@ const EXCLUDED_TABLES = new Set([
 ]);
 
 // Storage subdirs holding non-recalculable blobs — always included.
-const DOC_DIRS = ['business-docs', 'uploads', 'transfers', 'album-products'];
+const DOC_DIRS = ['business-docs', 'uploads', 'transfers', 'album-products', '.print-sales'];
 // Original gallery photos — only when includePhotos is true (large; otherwise
 // the admin re-uploads originals per gallery and previews are re-rendered).
 const PHOTO_DIRS = ['events/active', 'events/archived', 'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];
@@ -191,6 +192,7 @@ async function collectDir(subdir, storageRoot, acc) {
   }
   for (const entry of entries) {
     const childRel = path.join(subdir, entry.name);
+    if (recoveryFiles.printTemporaryKey(childRel.split(path.sep).join('/'))) continue;
     if (entry.isDirectory()) {
       await collectDir(childRel, storageRoot, acc);
     } else if (entry.isFile()) {
@@ -206,7 +208,7 @@ async function collectFiles(includePhotos, requiredReferences) {
   for (const d of dirs) {
     await collectDir(d, storageRoot, acc);
   }
-  if (getStorage().kind() !== 's3') return acc;
+  if (getStorage().kind() !== 's3') return recoveryFiles.localPrintInventory(db, acc, key => dirs.some(root => key.startsWith(`${root}/`)));
   const remote = await recoveryFiles.adapterInventory(db, dirs, undefined, requiredReferences);
   return [...acc.filter(file => !recoveryFiles.managedKey(file.rel.split(path.sep).join('/'))),
     ...remote.map(file => ({ ...file, rel: file.relativePath }))];
@@ -218,7 +220,9 @@ async function catalogueInPlace(files) {
   const byKey = new Map();
   for (const file of files) {
     const key = recoveryFiles.validKey(file.rel.split(path.sep).join('/'));
-    const handle = await fsp.open(file.abs, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    let handle;
+    try { handle = await fsp.open(file.abs, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0)); }
+    catch (error) { if (await recoveryFiles.discardedPrintFile(db, key, error)) continue; throw error; }
     const hash = crypto.createHash('sha256');
     let size = 0;
     try {
@@ -263,7 +267,7 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
     let tableBytes = 0;
     for (const table of tables) {
       const { largestRowBytes: largest, ...meta } = await writeTableNdjson(table, dataDir, pathMap, (name, rows) => {
-        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files'].includes(name)) referenceRows.set(name, rows);
+        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files', 'print_sales_assets'].includes(name)) referenceRows.set(name, rows);
       });
       tableMeta[table] = meta;
       largestRowBytes = Math.max(largestRowBytes, largest);
@@ -286,9 +290,14 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
       // video fails it.
       const fileStage = path.join(staging, 'captured');
       await fsp.mkdir(fileStage, { mode: 0o700 });
-      files = await recoveryFiles.materialize(files, fileStage, Number.MAX_SAFE_INTEGER);
+      files = await recoveryFiles.materialize(files, fileStage, Number.MAX_SAFE_INTEGER, db);
     } else if (includeFiles) {
-      files = await catalogueInPlace(files);
+      // Print files can be discarded after the catalogue but before ZIP reads.
+      // Capture only this changing private estate; the media library stays in place.
+      const printFiles = files.filter(file => (file.relativePath || file.rel).startsWith('.print-sales/'));
+      const captured = printFiles.length
+        ? await recoveryFiles.materialize(printFiles, path.join(staging, 'captured'), Number.MAX_SAFE_INTEGER, db) : [];
+      files = await catalogueInPlace([...files.filter(file => !printFiles.includes(file)), ...captured]);
     }
 
     // 3. Manifest — everything the importer needs to validate + reconstruct.

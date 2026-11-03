@@ -11,6 +11,7 @@ import {
   type Attribute,
 } from './model';
 import { ProductImage } from './ProductImage';
+import { PrintSizePicker } from './PrintSizePicker';
 type Update = (updater: (current: Catalogue) => Catalogue) => void;
 export function LibraryEditor({
   catalogue,
@@ -121,11 +122,16 @@ export function LibraryEditor({
                     }
                   />
                   {group.kind === 'size' && (
+                    <PrintSizePicker onChange={size => groupChange(group.id, g => ({ ...g,
+                      options: g.options.map(o => o.id === option.id ? { ...o, width: size.width, height: size.height, unit: size.unit } : o) }))} />
+                  )}
+                  {group.kind === 'size' && (
                     <div className="grid grid-cols-3 gap-3">
                       <label htmlFor={`product-width-${option.id}`}>
                         {t('products.width', 'Width')}
                         <DecimalInput
                           id={`product-width-${option.id}`}
+                          className="input w-full"
                           aria-label={t('products.width', 'Width')}
                           value={option.width || 0}
                           onChange={(width) =>
@@ -142,6 +148,7 @@ export function LibraryEditor({
                         {t('products.height', 'Height')}
                         <DecimalInput
                           id={`product-height-${option.id}`}
+                          className="input w-full"
                           aria-label={t('products.height', 'Height')}
                           value={option.height || 0}
                           onChange={(height) =>

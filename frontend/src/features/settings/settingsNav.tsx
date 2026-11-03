@@ -47,6 +47,7 @@ import { usePermissions } from '../../contexts/PermissionsContext';
 // SettingsPage.
 export type SettingsTab =
   | 'albumProducts'
+  | 'printSales'
   | 'usage'
   | 'features'
   | 'general'
@@ -110,7 +111,7 @@ export interface SettingsNavGroup {
 }
 
 export const ALL_SETTINGS_TABS: SettingsTab[] = [
-  'usage', 'albumProducts',
+  'usage', 'albumProducts', 'printSales',
   'features', 'general', 'events', 'eventTypes',
   'users',
   'branding', 'watermark', 'categories', 'thumbnails', 'downloads', 'styling', 'cms',
@@ -143,6 +144,7 @@ export function settingsTabHref(tab: SettingsTab): string {
 // permission it holds. Backend routes enforce the same perms regardless of UI.
 export const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, string[]> = {
   albumProducts: ['products.view'],
+  printSales: ['products.view'],
   usage:            ['settings.edit'],
   features:          ['settings.view', 'settings.features'],
   general:           ['settings.view', 'settings.domains'],
@@ -227,6 +229,7 @@ type Flags = ReturnType<typeof useFeatureFlags>['flags'];
 export function settingsTabGatedOff(flags: Flags): Partial<Record<SettingsTab, boolean>> {
   return {
     albumProducts: !flags.albumProducts,
+    printSales: !flags.printSales,
     crm: !(flags.quotes || flags.bills || flags.contracts || flags.documents),
     contracts: !flags.contracts,
     accounting: !flags.accounting,
@@ -251,6 +254,7 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
     {
       label: t('settings.groups.general', 'General'),
       items: [
+        ...(flags.printSales ? [{key:'printSales' as const,label:t('printSales.adminTitle','Print sales'),icon:ImageIcon}] : []),
         ...(flags.albumProducts ? [{key:'albumProducts' as const,label:t('albumProducts.catalogue','Product catalogue'),icon:ImageIcon}] : []),
         { key: 'features',   label: t('settings.features.title',   'Features'),       icon: ToggleRight },
         { key: 'general',    label: t('settings.general.title'),                       icon: Sliders },

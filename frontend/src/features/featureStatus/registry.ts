@@ -31,6 +31,7 @@ export const FEATURE_STATUS: Record<FeatureKey | PortalFeatureKey, FeatureStatus
   // Core
   galleries: { maturity: 'stable' },
   albumProducts: { maturity: 'experimental' },
+  printSales: { maturity: 'experimental' },
   slideshow: { maturity: 'beta' },
   transfers: { maturity: 'beta' },
   faces: { maturity: 'beta' },

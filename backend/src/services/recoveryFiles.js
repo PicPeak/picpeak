@@ -17,7 +17,7 @@ const logger = require('../utils/logger');
 const MANAGED_ROOTS = [
   'events/active', 'events/archived', 'thumbnails', 'previews', 'heroes',
   'videos', 'watermarks', 'uploads/transfers', 'transfers',
-  'business-docs/customer-documents', 'album-products',
+  'business-docs/customer-documents', 'album-products', '.print-sales',
 ];
 const DEFAULT_MAX_BYTES = 5000 * 1024 * 1024;
 // The list of required keys lives beside the database dump it belongs to; the
@@ -26,6 +26,7 @@ const REFERENCES_SUFFIX = '.storage-references.json';
 // Only the columns a storage reference is read from, fetched in id order.
 const REFERENCE_COLUMNS = {
   album_product_images: ['id', 'storage_key'],
+  print_sales_assets: ['id', 'storage_key', 'kind'],
   events: ['id', 'is_archived', 'archive_path', 'source_mode'],
   photos: ['id', 'event_id', 'path', 'source_origin', 'thumbnail_path', 'preview_path', 'hero_path', 'watermark_path', 'web_path'],
   customer_documents: ['id', 'storage_key', 'purged_at'],
@@ -162,7 +163,46 @@ async function requiredKeys(knex, selected, derived) {
       table === 'transfer_uploads' ? 'uploads/transfers' : 'transfers', `Transfer file ${row.id}`);
   }
   for await (const row of rows(knex, 'album_product_images')) add(row.storage_key, 'album-products', `Product image ${row.id}`);
+  for await (const row of rows(knex, 'print_sales_assets')) {
+    if (row.kind !== 'staging') add(row.storage_key, '.print-sales', `Print order asset ${row.id}`);
+  }
   return keys;
+}
+
+async function retainedPrintKey(knex, key) {
+  return await knex.schema.hasTable('print_sales_assets') && !!await knex('print_sales_assets').where({ storage_key: key }).whereNot({ kind: 'staging' }).first('id');
+}
+
+const printTemporaryKey = key => under(key, '.print-sales') && /\.tmp\.[^/]+$/.test(key);
+async function discardedPrintFile(knex, key, error) {
+  return error.code === 'ENOENT' && under(key, '.print-sales') && !await retainedPrintKey(knex, key);
+}
+
+/** Local inventories obey the same committed-asset contract as S3. */
+async function localPrintInventory(knex, files, selected = () => true) {
+  const required = new Set();
+  for await (const row of rows(knex, 'print_sales_assets')) {
+    if (row.kind === 'staging') continue;
+    const key = validKey(row.storage_key);
+    if (!under(key, '.print-sales')) throw new Error(`Print asset is outside its recovery root: ${key}`);
+    if (selected(key)) required.add(key);
+  }
+  const output = files.filter(file => {
+    const key = (file.relativePath || file.rel).split(path.sep).join('/');
+    return !under(key, '.print-sales') || required.has(key);
+  }).map(file => under((file.relativePath || file.rel).split(path.sep).join('/'), '.print-sales')
+    ? { ...file, recoveryRequired: true } : file);
+  const found = new Set(output.map(file => (file.relativePath || file.rel).split(path.sep).join('/')));
+  for (const key of required) {
+    if (found.has(key) || !await retainedPrintKey(knex, key)) continue;
+    const abs = path.join(require('../config/storage').getStoragePath(), ...key.split('/'));
+    let stat;
+    try { stat = await fsp.lstat(abs); }
+    catch (error) { if (await discardedPrintFile(knex, key, error)) continue; throw error; }
+    if (!stat.isFile()) throw new Error(`Not a regular recovery source: ${key}`);
+    output.push({ path: abs, abs, rel: key, relativePath: key, size: stat.size, modified: stat.mtime, recoveryRequired: true });
+  }
+  return output;
 }
 
 async function adapterInventory(knex, roots, selected = key => roots.some(root => under(key, root)), requiredReferences = []) {
@@ -191,8 +231,21 @@ async function adapterInventory(knex, roots, selected = key => roots.some(root =
   }
   const derived = new Set();
   const required = await requiredKeys(knex, selected, derived);
-  for (const key of requiredReferences) { validKey(key); if (selected(key) && managedKey(key)) required.add(key); }
+  // Private staging/orphan objects are not a completed order's backup estate.
+  for (const key of found.keys()) if (under(key, '.print-sales') && !required.has(key)) found.delete(key);
+  for (const key of requiredReferences) {
+    validKey(key);
+    if (selected(key) && managedKey(key) && (!under(key, '.print-sales') || required.has(key))) required.add(key);
+  }
   for (const key of required) {
+    if (!found.has(key) && under(key, '.print-sales')) {
+      // Publication can finish after ListObjects; discard can remove a key
+      // after the database/reference capture. Check only this lifecycle root.
+      if (!await retainedPrintKey(knex, key)) continue;
+      const stat = await storage.stat(key);
+      if (stat) found.set(key, { relativePath: key, size: stat.size, modified: stat.mtime, storage: 'adapter' });
+      else if (!await retainedPrintKey(knex, key)) continue;
+    }
     if (!found.has(key)) throw new Error(`Required primary-storage object is missing from the backup inventory: ${key}`);
   }
   for (const key of derived) {
@@ -275,7 +328,7 @@ async function verifyAdapter(key, checksum, metadata, maxBytes = DEFAULT_MAX_BYT
 
 // Materialize a catalogue for destinations that need a tree (rsync/export).
 // Only the selected files are present; local decoys of managed keys are absent.
-async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES) {
+async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES, referenceDb) {
   const output = [];
   const byKey = new Map();
   for (const original of files) {
@@ -305,10 +358,14 @@ async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES) {
         checksum: captured.checksum, size: captured.size,
         objectMetadata: captured.objectMetadata || original.objectMetadata, modified: captured.modified || original.modified };
       output.push(entry); byKey.set(key, entry);
+    } catch (error) {
+      if (referenceDb && under(key, '.print-sales') && !await retainedPrintKey(referenceDb, key)) continue;
+      throw error;
     } finally { if (captured) await captured.cleanup(); }
   }
   return output;
 }
 
 module.exports = { MANAGED_ROOTS, DEFAULT_MAX_BYTES, REFERENCES_SUFFIX, validKey, managedKey, remoteDestination, objectOptions,
+  printTemporaryKey, discardedPrintFile, retainedPrintKey, localPrintInventory,
   restoreObjectOptions, selectedManifestFiles, adapterInventory, requiredKeys, captureStream, captureAdapter, checksumAdapter, verifyAdapter, materialize };
