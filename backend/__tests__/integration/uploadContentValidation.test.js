@@ -197,7 +197,14 @@ describe('Upload content validation on guest and chunked uploads', () => {
     it('takes a .HEIC sent as a generic type and stores its real type', async () => {
       const heic = fs.readFileSync(path.join(__dirname, '../fixtures/hevc-display-p3.heic'));
       const event = await makeEvent();
+      // CI's ffmpeg is too old to demux HEIC, as in imageProcessorHeif.test.js.
+      const decoded = await sharp({ create: { width: 40, height: 30, channels: 3, background: '#c33' } }).jpeg().toBuffer();
+      const ffmpeg = jest.spyOn(require('../../src/services/mediaProcessService'), 'run').mockImplementation(async (_command, args) => {
+        fs.writeFileSync(args[args.length - 1], decoded);
+        return { stdout: Buffer.alloc(0) };
+      });
       const res = await v1Upload(event, heic, 'IMG_3974.HEIC', 'application/octet-stream');
+      ffmpeg.mockRestore();
       expect(res.status).toBe(201);
       const [photo] = await photosOf(event);
       expect(photo.mime_type).toBe('image/heic');
