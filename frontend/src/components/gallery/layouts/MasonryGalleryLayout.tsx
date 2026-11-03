@@ -15,9 +15,31 @@ import type { Photo } from '../../../types';
 import { useLazyBands } from './lazyBands';
 import { useWindowedItems, WINDOW_MIN_PHOTOS, type WindowItem } from './rowWindow';
 import { quiltedSpan, useQuiltedWindow } from './quiltedWindow';
+import { boxStyle, ghostBox, gridBoxStyle, useMeasuredWindow } from './measuredWindow';
 import { densityColumnDelta, densitySizeFactor, useGridDensity } from '../gridDensity';
 
 const NO_ITEMS: WindowItem[] = [];
+
+const COLUMN_CLASS = 'flex-1 flex flex-col';
+const COLUMN_TILE_CLASS = 'photo-card relative group cursor-pointer transition-all duration-300 hover:scale-[1.02]';
+
+/**
+ * A columns-mode tile's height, from the photo's aspect ratio. Dynamic
+ * constraints based on the column width preserve the variation: panoramic
+ * images can be short and tall portraits tall.
+ */
+function columnTileHeight(photo: Photo, columnWidth: number): number {
+  const photoWidth = photo.width || 800;
+  const photoHeight = photo.height || 600;
+  const aspectRatio = photoWidth / photoHeight;
+
+  // Calculate height based on column width and aspect ratio
+  const calculatedHeight = columnWidth / aspectRatio;
+  const minHeight = Math.max(80, columnWidth * 0.25); // Allow wide panoramics (4:1)
+  const maxHeight = columnWidth * 2.5; // Allow tall portraits (1:2.5)
+
+  return Math.max(minHeight, Math.min(maxHeight, calculatedHeight));
+}
 
 // Count-style feedback indicators shared by all masonry modes (top-left).
 // `withTitles` matches the columns-mode markup, which carries title attributes.
@@ -119,20 +141,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
   const bands = useLazyBands();
   // Calculate height based on actual photo aspect ratio
   // This preserves the photo's natural proportions in the masonry layout
-  const imageHeight = useMemo(() => {
-    const photoWidth = photo.width || 800;
-    const photoHeight = photo.height || 600;
-    const aspectRatio = photoWidth / photoHeight;
-
-    // Calculate height based on column width and aspect ratio
-    // Use dynamic constraints based on column width to preserve aspect ratio variation
-    // This allows panoramic images to be short and tall portraits to be tall
-    const calculatedHeight = columnWidth / aspectRatio;
-    const minHeight = Math.max(80, columnWidth * 0.25); // Allow wide panoramics (4:1)
-    const maxHeight = columnWidth * 2.5; // Allow tall portraits (1:2.5)
-
-    return Math.max(minHeight, Math.min(maxHeight, calculatedHeight));
-  }, [photo.width, photo.height, columnWidth]);
+  const imageHeight = columnTileHeight(photo, columnWidth);
 
   return (
     <PhotoCard
@@ -144,7 +153,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
       onClick={onClick}
       onDownload={onDownload}
       onToggleSelect={onToggleSelect}
-      className="photo-card relative group cursor-pointer transition-all duration-300 hover:scale-[1.02]"
+      className={COLUMN_TILE_CLASS}
       style={{
         ...style,
         height: `${imageHeight}px`,
@@ -487,6 +496,33 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     return (containerWidth - totalGaps) / scaledColumns;
   }, [containerWidth, scaledColumns, gutter]);
 
+  // Columns mode mounts only the tiles near the viewport too (issue 2193). A
+  // like changes `photos`, not the shapes in it.
+  const photoIds = useMemo(() => photos.map((photo) => photo.id), [photos]);
+  const columnShapes = useMemo(() => photoColumns
+    .map((column) => column.map((photo) => `${photo.id}:${columnTileHeight(photo, columnWidth)}`).join())
+    .join('|'), [photoColumns, columnWidth]);
+  const columnWindow = useMeasuredWindow(
+    containerRef,
+    photoIds,
+    `${columnShapes}|${gutter}`,
+    (root) => {
+      const tiles = new Map<number, HTMLElement>();
+      photoColumns.forEach((column) => {
+        const wrapper = ghostBox(root, COLUMN_CLASS, { gap: `${gutter}px` });
+        column.forEach((photo) => {
+          tiles.set(photo.id, ghostBox(wrapper, COLUMN_TILE_CLASS, {
+            height: `${columnTileHeight(photo, columnWidth)}px`,
+            breakInside: 'avoid',
+          }));
+        });
+      });
+      return tiles;
+    },
+    mode === 'columns' && largeGallery && containerWidth > 0,
+    mode === 'columns' && largeGallery && containerWidth <= 0,
+  );
+
   // ROWS MODE - Google Photos style justified layout
   if (mode === 'rows') {
     // Show loading state while measuring container width
@@ -726,7 +762,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     <div
       ref={containerRef}
       className="photo-grid flex gap-4"
-      style={{ gap: `${gutter}px` }}
+      style={{ gap: `${gutter}px`, ...gridBoxStyle(columnWindow) }}
     >
       {containerWidth === 0 ? (
         // Same gate the rows mode above already applies, for the same reason:
@@ -745,10 +781,11 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
       ) : photoColumns.map((column, columnIndex) => (
         <div
           key={columnIndex}
-          className="flex-1 flex flex-col"
+          className={COLUMN_CLASS}
           style={{ gap: `${gutter}px` }}
         >
           {column.map((photo) => {
+            if (!columnWindow.mounted.has(photo.id)) return null;
             const originalIndex = photoIndexById.get(photo.id) ?? -1;
             return (
               <MasonryPhoto
@@ -766,6 +803,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 onQuickComment={() => onOpenPhotoWithFeedback && onOpenPhotoWithFeedback(originalIndex)}
                 onFeedbackChange={onFeedbackChange}
                 columnWidth={columnWidth}
+                style={boxStyle(columnWindow.boxes?.get(photo.id))}
                 savedIdentity={savedIdentity}
                 onIdentitySaved={setSavedIdentity}
                 liked={likedPhotoIds.has(photo.id)}

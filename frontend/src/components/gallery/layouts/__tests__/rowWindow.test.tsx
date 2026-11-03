@@ -114,11 +114,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const row = (top: number, height = 100): RowBox => ({ top, bottom: top + height, from: 0, to: 1 });
+const row = (top: number, height = 100): RowBox => ({ top, bottom: top + height, reach: top + height, from: 0, to: 1 });
 // Ten 100px rows with a 10px gap: row i spans [110i, 110i + 100].
 const tenRows = Array.from({ length: 10 }, (_, i) => row(i * 110));
 
 describe('visibleRowRange', () => {
+  it('keeps a tall tile for as long as it reaches the window, past shorter ones after it', () => {
+    const tile = (y: number, height: number, rowIndex: number) => ({ photoId: rowIndex + 1, x: 0, y, width: 100, height, rowIndex });
+    const rows = buildRows([tile(0, 8000, 0), ...Array.from({ length: 199 }, (_, i) => tile((i + 1) * 100, 100, i + 1))]);
+    expect(visibleRowRange(rows, 4000, 4800, 0)).toEqual({ start: 0, end: 48 });
+    expect(visibleRowRange(rows, 8100, 8900, 0).start).toBe(81);
+  });
+
   it('is empty for an empty list', () => {
     expect(visibleRowRange([], 0, 800, 100)).toEqual({ start: 0, end: 0 });
   });
