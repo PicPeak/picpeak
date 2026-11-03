@@ -253,4 +253,126 @@ describe('Upload content validation on guest and chunked uploads', () => {
       expect(await photosOf(event)).toHaveLength(1);
     });
   });
+
+  // The HEIF signature is only a container's `ftyp`, so a HEIF name has to read
+  // as an image on every upload route, as on v1 above.
+  describe('HEIF names on admin and guest uploads', () => {
+    const bareFtyp = Buffer.from('\0\0\0\x18ftypisom-not-an-image-at-all');
+    let heic;
+    // CI's ffmpeg is too old to demux HEIC, as in imageProcessorHeif.test.js.
+    const fakeHevcDecode = async () => {
+      const decoded = await sharp({ create: { width: 40, height: 30, channels: 3, background: '#c33' } }).jpeg().toBuffer();
+      return jest.spyOn(require('../../src/services/mediaProcessService'), 'run').mockImplementation(async (_command, args) => {
+        fs.writeFileSync(args[args.length - 1], decoded);
+        return { stdout: Buffer.alloc(0) };
+      });
+    };
+    const adminUpload = (event, bytes, filename, fields = {}) => {
+      let req = request(app).post(`/api/admin/photos/${event.id}/upload`).set('Authorization', `Bearer ${adminToken}`);
+      for (const [name, value] of Object.entries(fields)) req = req.field(name, value);
+      return req.attach('photos', bytes, { filename, contentType: 'application/octet-stream' });
+    };
+    const chunked = async (event, bytes, filename) => {
+      const base = `/api/admin/photos/${event.id}/chunked-upload`;
+      const init = await request(app).post(`${base}/init`).set('Authorization', `Bearer ${adminToken}`)
+        .send({ filename, fileSize: bytes.length });
+      expect(init.status).toBe(200);
+      await request(app).post(`${base}/${init.body.uploadId}/chunk/0`).set('Authorization', `Bearer ${adminToken}`)
+        .set('Content-Type', 'application/octet-stream').send(bytes);
+      return request(app).post(`${base}/${init.body.uploadId}/complete`).set('Authorization', `Bearer ${adminToken}`).send({});
+    };
+    const guestUpload = (event, bytes, filename) => request(app)
+      .post(`/api/gallery/${event.id}/upload`)
+      .set('Authorization', `Bearer ${jwt.sign({ eventId: event.id, eventSlug: event.slug, type: 'gallery' },
+        process.env.JWT_SECRET, { expiresIn: '1h', issuer: 'picpeak-auth' })}`)
+      .attach('photos', bytes, { filename, contentType: 'application/octet-stream' });
+
+    beforeAll(async () => {
+      heic = fs.readFileSync(path.join(__dirname, '../fixtures/hevc-display-p3.heic'));
+      await db('app_settings').insert({
+        setting_key: 'general_allowed_file_types', setting_value: JSON.stringify('jpg,jpeg,png,webp,heic,heif'), setting_type: 'general',
+      }).onConflict('setting_key').merge();
+      require('../../src/services/uploadSettings').clearAllowedTypesCache();
+    });
+
+    afterAll(async () => {
+      await db('app_settings').where({ setting_key: 'general_allowed_file_types' }).del();
+      require('../../src/services/uploadSettings').clearAllowedTypesCache();
+    });
+
+    it('multipart: refuses a bare container header under a .heic name', async () => {
+      const event = await makeEvent();
+      const res = await adminUpload(event, bareFtyp, 'empty.heic');
+      expect(res.status).toBe(400);
+      expect(await photosOf(event)).toHaveLength(0);
+    });
+
+    it('multipart: refuses it under a .HEIF name too', async () => {
+      const event = await makeEvent();
+      const res = await adminUpload(event, bareFtyp, 'EMPTY.HEIF');
+      expect(res.status).toBe(400);
+      expect(await photosOf(event)).toHaveLength(0);
+    });
+
+    it('multipart: accepts a real HEIC', async () => {
+      const event = await makeEvent();
+      const ffmpeg = await fakeHevcDecode();
+      try {
+        const res = await adminUpload(event, heic, 'IMG_3974.HEIC');
+        expect(res.status).toBe(202);
+      } finally { ffmpeg.mockRestore(); }
+      const [photo] = await photosOf(event);
+      expect(photo.mime_type).toBe('image/heic');
+    });
+
+    it('multipart replace_by_name: does not replace a real HEIC with a bare header', async () => {
+      const event = await makeEvent();
+      const ffmpeg = await fakeHevcDecode();
+      try {
+        expect((await adminUpload(event, heic, 'IMG_4000.heic')).status).toBe(202);
+      } finally { ffmpeg.mockRestore(); }
+      const [before] = await photosOf(event);
+      const res = await adminUpload(event, bareFtyp, 'IMG_4000.heic', { replace_by_name: 'true' });
+      expect(res.status).toBe(400);
+      expect(res.body.replaced || []).toHaveLength(0);
+      const rows = await photosOf(event);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ id: before.id, path: before.path, size_bytes: before.size_bytes });
+    });
+
+    it('chunked: refuses a bare container header under a .heic name', async () => {
+      const event = await makeEvent();
+      const res = await chunked(event, bareFtyp, 'large.heic');
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/Invalid image file: large\.heic/);
+      expect(await photosOf(event)).toHaveLength(0);
+    });
+
+    it('chunked: accepts a real HEIC', async () => {
+      const event = await makeEvent();
+      const ffmpeg = await fakeHevcDecode();
+      try {
+        const res = await chunked(event, heic, 'IMG_3975.heic');
+        expect(res.status).toBe(200);
+      } finally { ffmpeg.mockRestore(); }
+      expect(await photosOf(event)).toHaveLength(1);
+    });
+
+    it('guest: refuses a bare container header under a .heic name', async () => {
+      const event = await makeEvent();
+      const res = await guestUpload(event, bareFtyp, 'guest.heic');
+      expect(res.status).toBe(400);
+      expect(await photosOf(event)).toHaveLength(0);
+    });
+
+    it('guest: accepts a real HEIC', async () => {
+      const event = await makeEvent();
+      const ffmpeg = await fakeHevcDecode();
+      try {
+        const res = await guestUpload(event, heic, 'IMG_3976.HEIC');
+        expect(res.status).toBe(202);
+      } finally { ffmpeg.mockRestore(); }
+      expect(await photosOf(event)).toHaveLength(1);
+    });
+  });
 });
