@@ -3265,7 +3265,7 @@
         "publicKey": "Öffentlicher Snipcart-API-Schlüssel",
         "secretKey": "Geheimer Snipcart-API-Schlüssel",
         "webhook": "Snipcart-Webhook-URL",
-        "webhookHelp": "Trage diese URL im Snipcart-Dashboard unter Store configurations → Webhooks ein und erlaube deine öffentliche PicPeak-Domain. Verwende EUR und Preise inklusive Steuern. Speichern prüft nur den Lesezugriff des geheimen Schlüssels. Prüfe Shop, öffentlichen Schlüssel und Webhook gemeinsam mit Testkauf, Download und Rückerstattung."
+        "webhookHelp": "Trage diese URL im Snipcart-Dashboard unter Store configurations → Webhooks ein und erlaube deine öffentliche PicPeak-Domain. Aktiviere EUR unter Store configurations → Regional settings → Supported currencies in derselben Test- oder Live-Umgebung wie deine Schlüssel. Verwende Preise inklusive Steuern. Speichern prüft nur den Lesezugriff des geheimen Schlüssels. Prüfe Shop, öffentlichen Schlüssel und Webhook gemeinsam mit Testkauf, Download und Rückerstattung."
       },
       "attention": {
         "title": "Zu prüfende Bestellungen und gelöschte Galerien",
@@ -7354,6 +7354,9 @@
     "checkoutGalleryClosing": "Diese Galerie schließt zu bald, um eine Bestellung zu starten. Bitte kontaktiere deinen Fotografen.",
     "checkoutEnded": "Dieser Bestellvorgang ist beendet. Wähle „Weiter“, um einen neuen zu starten.",
     "checkoutRetry": "Die Kasse ist vorübergehend nicht verfügbar. Dein Warenkorb ist gespeichert; bitte versuche es erneut.",
+    "checkoutReload": "Snipcart hat nicht geantwortet. Lade die Kasse neu, um es erneut zu versuchen. Deine Fotos sind im Warenkorb gespeichert.",
+    "checkoutReloadPromo": "Snipcart hat nicht geantwortet und dieser Browser konnte deinen Bestellvorgang nicht speichern. Warte nach dem Neuladen, bis die Reservierung des Aktionscodes abläuft, oder entferne den Aktionscode, um fortzufahren.",
+    "reloadCheckout": "Kasse neu laden",
     "checkoutStatusError": "Wir konnten deine Bestellung nicht bestätigen",
     "checkoutComplete": "Deine Fotos sind bereit",
     "checkoutConfirming": "Deine Zahlung wird bestätigt",

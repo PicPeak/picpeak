@@ -1,11 +1,11 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { validCheckoutDestination } from '../PhotoSalesCart';
 import { PhotoSalesProvider, usePhotoSales } from '../PhotoSalesContext';
 import { PhotoPurchaseBadge } from '../PhotoPurchaseBadge';
 import { PhotoSalesCartButton } from '../PhotoSalesCartButton';
-import { buildPhotoSalesConfig } from '../photoSales';
+import { buildPhotoSalesConfig, type PaymentProvider } from '../photoSales';
 
 vi.mock('../../../config/api', () => ({ api: { post: vi.fn() } }));
 vi.mock('../snipcartCheckout', () => ({ openSnipcartCheckout: vi.fn() }));
@@ -18,12 +18,12 @@ function ExtraPhoto() {
   const sales = usePhotoSales();
   return <button onClick={() => sales.addToCart({ ...photo, id: 2, filename: 'Landscape.jpg' })}>Add landscape</button>;
 }
-const Gallery = ({ slug = 'one' }: { slug?: string }) => <PhotoSalesProvider value={config(slug)}>
+const Gallery = ({ slug = 'one', providers }: { slug?: string; providers?: PaymentProvider[] }) => <PhotoSalesProvider value={{ ...config(slug), ...(providers ? { providers } : {}) }}>
   <PhotoPurchaseBadge photo={photo} /><PhotoSalesCartButton /><ExtraPhoto />
 </PhotoSalesProvider>;
 
 describe('PicPeak photo cart', () => {
-  beforeEach(() => { sessionStorage.clear(); vi.mocked(api.post).mockReset(); vi.mocked(openSnipcartCheckout).mockReset(); });
+  beforeEach(() => { vi.restoreAllMocks(); sessionStorage.clear(); vi.mocked(api.post).mockReset(); vi.mocked(openSnipcartCheckout).mockReset(); });
   it('offers reload recovery after Snipcart stalls and preserves the selected photos', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ data: { snipcart: {} } });
     vi.mocked(openSnipcartCheckout).mockRejectedValueOnce(Object.assign(new Error('Timed out'), { code: 'SNIPCART_RELOAD_REQUIRED' }));
@@ -77,6 +77,155 @@ describe('PicPeak photo cart', () => {
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
     expect(vi.mocked(api.post).mock.calls[0]).toEqual(vi.mocked(api.post).mock.calls[1]);
     expect(vi.mocked(api.post).mock.calls[0][1]).toEqual({ provider: 'stripe', photoIds: [1], promoCode: 'FOTO-ONCE', checkoutKey: expect.any(String), browserKey: expect.stringMatching(/^[0-9a-f]{64}$/), language: 'en', promoGrant: 'verified-promo-proof' });
+  });
+
+  it.each(['stripe', 'snipcart'] as const)('reuses the promo reservation after a full cart remount for %s', async (provider) => {
+    sessionStorage.setItem('picpeak_photo_promo_one', JSON.stringify({ grant: 'verified-promo-proof', expiresAt: Date.now() + 60000 }));
+    if (provider === 'snipcart') {
+      vi.mocked(api.post).mockResolvedValue({ data: { snipcart: {} } });
+      vi.mocked(openSnipcartCheckout).mockRejectedValueOnce(Object.assign(new Error('Timed out'), { code: 'SNIPCART_RELOAD_REQUIRED' }));
+    } else vi.mocked(api.post).mockRejectedValue(new Error('Network timeout'));
+    const gallery = <Gallery providers={['stripe', 'snipcart']} />;
+    const first = render(gallery);
+    fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add landscape' }));
+    const retry = () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Cart, 2 photos' }));
+      fireEvent.click(screen.getByRole('radio', { name: provider === 'stripe' ? 'Stripe' : 'Snipcart' }));
+      fireEvent.change(screen.getByLabelText('Promo code'), { target: { value: 'FOTO-ONCE' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    };
+    retry();
+    await screen.findByRole('alert');
+    const initial = vi.mocked(api.post).mock.calls[0][1] as { checkoutKey: string };
+    first.unmount();
+    render(gallery);
+    retry();
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.post).mock.calls[1]).toEqual(vi.mocked(api.post).mock.calls[0]);
+    expect(JSON.parse(sessionStorage.getItem('picpeak_photo_checkout_request_one')!)).toEqual({
+      signature: JSON.stringify(['one', [1, 2], 'FOTO-ONCE', provider]), key: initial.checkoutKey,
+    });
+    if (provider === 'snipcart') await waitFor(() => expect(openSnipcartCheckout).toHaveBeenCalledTimes(2));
+    else await screen.findByRole('alert');
+  });
+
+  it.each(['photos', 'promo', 'provider', 'gallery'])('starts a distinct checkout after remount when the %s changes', async (change) => {
+    sessionStorage.setItem('picpeak_photo_promo_one', JSON.stringify({ grant: 'verified-promo-proof', expiresAt: Date.now() + 60000 }));
+    vi.mocked(api.post).mockRejectedValue(new Error('Network timeout'));
+    const first = render(<Gallery providers={['stripe', 'snipcart']} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 1 photos' }));
+    fireEvent.change(screen.getByLabelText('Promo code'), { target: { value: 'FOTO-ONCE' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    await screen.findByRole('alert');
+    const initial = vi.mocked(api.post).mock.calls[0][1] as { checkoutKey: string };
+    first.unmount();
+    render(<Gallery slug={change === 'gallery' ? 'two' : 'one'} providers={['stripe', 'snipcart']} />);
+    if (change === 'gallery') fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
+    if (change === 'photos') fireEvent.click(screen.getByRole('button', { name: 'Add landscape' }));
+    fireEvent.click(screen.getByRole('button', { name: change === 'photos' ? 'Cart, 2 photos' : 'Cart, 1 photos' }));
+    if (change !== 'promo' && change !== 'gallery') fireEvent.change(screen.getByLabelText('Promo code'), { target: { value: 'FOTO-ONCE' } });
+    if (change === 'provider') fireEvent.click(screen.getByRole('radio', { name: 'Snipcart' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    await screen.findByRole('alert');
+    const next = vi.mocked(api.post).mock.calls[1][1] as { checkoutKey: string };
+    expect(next.checkoutKey).not.toBe(initial.checkoutKey);
+  });
+
+  it('forgets an ended checkout across remounts instead of retrying its key forever', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce({ response: { data: { code: 'CHECKOUT_ENDED' } } })
+      .mockRejectedValue(new Error('Network timeout'));
+    const first = render(<Gallery />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 1 photos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('checkout has ended');
+    expect(sessionStorage.getItem('picpeak_photo_checkout_request_one')).toBeNull();
+    const initial = vi.mocked(api.post).mock.calls[0][1] as { checkoutKey: string };
+    first.unmount(); render(<Gallery />);
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 1 photos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    await screen.findByRole('alert');
+    expect((vi.mocked(api.post).mock.calls[1][1] as { checkoutKey: string }).checkoutKey).not.toBe(initial.checkoutKey);
+  });
+
+  it('forgets the persisted checkout when the buyer changes their verified email', async () => {
+    sessionStorage.setItem('picpeak_photo_promo_one', JSON.stringify({ grant: 'verified-promo-proof', expiresAt: Date.now() + 60000 }));
+    vi.mocked(api.post).mockRejectedValue(new Error('Network timeout'));
+    const first = render(<Gallery />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 1 photos' }));
+    fireEvent.change(screen.getByLabelText('Promo code'), { target: { value: 'FOTO-ONCE' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    await screen.findByRole('alert');
+    first.unmount(); render(<Gallery />);
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 1 photos' }));
+    fireEvent.change(screen.getByLabelText('Promo code'), { target: { value: 'FOTO-ONCE' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use another email' }));
+    expect(sessionStorage.getItem('picpeak_photo_checkout_request_one')).toBeNull();
+    expect(screen.getByLabelText('Email for verification')).toBeInTheDocument();
+  });
+
+  it('does not let an ended response from an unmounted cart clear a newer checkout', async () => {
+    let reject!: (error: unknown) => void;
+    vi.mocked(api.post).mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }))
+      .mockRejectedValue(new Error('Network timeout'));
+    const first = render(<Gallery />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 1 photos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    first.unmount(); render(<Gallery />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add landscape' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 2 photos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    await screen.findByRole('alert');
+    const saved = sessionStorage.getItem('picpeak_photo_checkout_request_one');
+    expect(saved).not.toBeNull();
+    await act(async () => { reject({ response: { data: { code: 'CHECKOUT_ENDED' } } }); });
+    expect(sessionStorage.getItem('picpeak_photo_checkout_request_one')).toBe(saved);
+  });
+
+  it.each(['{', JSON.stringify({ signature: '["one",[1],"","stripe"]', key: ['a'.repeat(8) + '-aaaa-aaaa-aaaa-' + 'a'.repeat(12)] })])('ignores malformed saved request data: %s', async (saved) => {
+    sessionStorage.setItem('picpeak_photo_checkout_request_one', saved);
+    vi.mocked(api.post).mockRejectedValue(new Error('Network timeout'));
+    render(<Gallery />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 1 photos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    await screen.findByRole('alert');
+    expect(api.post).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ checkoutKey: expect.stringMatching(/^[0-9a-f-]{36}$/i) }));
+  });
+
+  it('keeps same-page retries working when browser storage is blocked', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('Blocked', 'SecurityError'); });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Blocked', 'SecurityError'); });
+    vi.mocked(api.post).mockRejectedValue(new Error('Network timeout'));
+    render(<Gallery />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 1 photos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.post).mock.calls[1]).toEqual(vi.mocked(api.post).mock.calls[0]);
+  });
+
+  it('explains the promo reservation if a stalled checkout cannot be saved before reload', async () => {
+    sessionStorage.setItem('picpeak_photo_promo_one', JSON.stringify({ grant: 'verified-promo-proof', expiresAt: Date.now() + 60000 }));
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError'); });
+    vi.mocked(api.post).mockResolvedValue({ data: { snipcart: {} } });
+    vi.mocked(openSnipcartCheckout).mockRejectedValueOnce(Object.assign(new Error('Timed out'), { code: 'SNIPCART_RELOAD_REQUIRED' }));
+    render(<Gallery providers={['stripe', 'snipcart']} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add landscape' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 2 photos' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Snipcart' }));
+    fireEvent.change(screen.getByLabelText('Promo code'), { target: { value: 'FOTO-ONCE' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('wait for the promo reservation to expire or remove the promo');
+    expect(screen.getByRole('button', { name: 'Reload checkout' })).toBeEnabled();
   });
 
   it('purchase buttons do not open the photo tile behind them', () => {

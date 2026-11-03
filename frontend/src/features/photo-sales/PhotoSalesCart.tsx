@@ -11,6 +11,18 @@ import { AuthenticatedImage } from '../../components/common/AuthenticatedImage';
 import { Button } from '../../components/common/Button';
 import { PromoVerification, clearPromoAccess, readPromoAccess, savePromoAccess, type PromoAccess } from './PromoVerification';
 
+interface CheckoutRequest { signature: string; key: string }
+const requestStorageKey = (slug: string) => `picpeak_photo_checkout_request_${slug}`;
+function readCheckoutRequest(slug: string): CheckoutRequest | undefined {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(requestStorageKey(slug)) || 'null');
+    if (typeof value?.signature === 'string' && typeof value?.key === 'string'
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.key)) {
+      return { signature: value.signature, key: value.key };
+    }
+  } catch { /* Keep same-page retries working when storage is unavailable. */ }
+}
+
 export function validCheckoutDestination(destination: string): boolean {
   if (/^\/photo-checkout\/[0-9a-f]{48}(?:\?cancelled=1)?$/.test(destination)) return true;
   try { const url = new URL(destination); return url.origin === 'https://checkout.stripe.com' && !url.username && !url.password; }
@@ -30,7 +42,17 @@ export const PhotoSalesCart: React.FC<{
   const [error, setError] = useState('');
   const [reloadRequired, setReloadRequired] = useState(false);
   const promoHintId = useId();
-  const request = useRef<{ signature: string; key: string }>();
+  const request = useRef<CheckoutRequest>();
+  const rememberRequest = (value?: CheckoutRequest): boolean => {
+    const previous = request.current;
+    request.current = value;
+    try {
+      if (value) sessionStorage.setItem(requestStorageKey(config.slug), JSON.stringify(value));
+      // A response from an unmounted cart must not clear a newer request.
+      else if (!previous || readCheckoutRequest(config.slug)?.key === previous.key) sessionStorage.removeItem(requestStorageKey(config.slug));
+      return true;
+    } catch { return false; }
+  };
   const gross = items.reduce((sum, item) => sum + Math.round(item.price * 100), 0);
   const promoApplied = !!config.promoCode && promoCode.trim().toUpperCase() === config.promoCode;
   const discount = promoApplied ? Math.min(gross, Math.round(config.freeCount * config.price * 100)) : 0;
@@ -52,10 +74,12 @@ export const PhotoSalesCart: React.FC<{
     const photoIds = items.map((item) => item.id);
     const code = promoCode.trim().toUpperCase();
     const signature = JSON.stringify([config.slug, photoIds, code, provider]);
-    if (request.current?.signature !== signature) request.current = { signature, key: crypto.randomUUID() };
+    const previous = request.current || readCheckoutRequest(config.slug);
+    const current = previous?.signature === signature ? previous : { signature, key: crypto.randomUUID() };
+    const saved = rememberRequest(current);
     try {
       const response = await api.post<{ checkout_url?: string; return_url?: string; snipcart?: SnipcartHandoff }>(`/gallery/${encodeURIComponent(config.slug)}/checkout`, {
-        provider, photoIds, promoCode: code, checkoutKey: request.current.key, browserKey: checkoutBrowserKey(), language: i18n?.language || 'en',
+        provider, photoIds, promoCode: code, checkoutKey: current.key, browserKey: checkoutBrowserKey(), language: i18n?.language || 'en',
         ...(promoApplied && promoAccess ? { promoGrant: promoAccess.grant } : {}),
       });
       if (provider === 'snipcart' && response.data.snipcart) {
@@ -69,10 +93,12 @@ export const PhotoSalesCart: React.FC<{
       const failure = caught as { code?: string; response?: { data?: { code?: string } } };
       const code = failure?.code === 'SNIPCART_RELOAD_REQUIRED' ? failure.code : failure?.response?.data?.code;
       setReloadRequired(code === 'SNIPCART_RELOAD_REQUIRED');
-      if (code === 'CHECKOUT_ENDED') request.current = undefined;
+      if (code === 'CHECKOUT_ENDED') rememberRequest();
       if (code === 'CHECKOUT_PROMO_IDENTITY_REQUIRED') { clearPromoAccess(config.slug); setPromoAccess(null); }
       const messages: Record<string, string> = {
-        SNIPCART_RELOAD_REQUIRED: t('photoSales.checkoutReload', 'Snipcart did not respond. Reload checkout to try again. Your photos are saved in your cart.'),
+        SNIPCART_RELOAD_REQUIRED: promoApplied && !saved
+          ? t('photoSales.checkoutReloadPromo', 'Snipcart did not respond, and this browser could not save your checkout. After reloading, wait for the promo reservation to expire or remove the promo to continue.')
+          : t('photoSales.checkoutReload', 'Snipcart did not respond. Reload checkout to try again. Your photos are saved in your cart.'),
         CHECKOUT_MINIMUM: t('photoSales.checkoutMinimum', 'Stripe requires a minimum of €0.50. Add another photo or choose another payment provider.'),
         PHOTOS_UNAVAILABLE: t('photoSales.checkoutPhotosUnavailable', 'Some selected photos are no longer available. Remove them and try again.'),
         PROMO_UNAVAILABLE: t('photoSales.checkoutPromoUnavailable', 'This promo code is used or reserved by another checkout. Try again later or remove the code.'),
@@ -124,7 +150,7 @@ export const PhotoSalesCart: React.FC<{
       </div>}
       {promoApplied && (promoAccess ? <p role="status" className="mt-3 text-sm text-body">
         {t('photoSales.promoEmailVerified', 'Email verified for this promo.')}{' '}
-        <button type="button" className="underline" disabled={busy} onClick={() => { clearPromoAccess(config.slug); setPromoAccess(null); request.current = undefined; }}>
+        <button type="button" className="underline" disabled={busy} onClick={() => { clearPromoAccess(config.slug); setPromoAccess(null); rememberRequest(); }}>
           {t('photoSales.promoChangeEmail', 'Use another email')}
         </button>
       </p> : <PromoVerification slug={config.slug} promoCode={promoCode.trim().toUpperCase()} onVerified={(access) => {

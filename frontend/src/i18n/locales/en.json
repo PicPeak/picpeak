@@ -7377,6 +7377,7 @@
     "sectionDescription": "Sell individual photo downloads: the first free photos are granted through a one-time promo code shown on the gallery.",
     "keepBrowsing": "Keep browsing",
     "checkoutReload": "Snipcart did not respond. Reload checkout to try again. Your photos are saved in your cart.",
+    "checkoutReloadPromo": "Snipcart did not respond, and this browser could not save your checkout. After reloading, wait for the promo reservation to expire or remove the promo to continue.",
     "reloadCheckout": "Reload checkout",
     "openingCheckout": "Opening checkout…",
     "continueCheckout": "Continue to payment",
