@@ -409,11 +409,19 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     containerRef, photos, containerWidth, quiltedCell, gutter, mode === 'quilted', mode === 'quilted' && largeGallery,
   );
 
+  // Quilted without a layout has every tile mounted, and a wider grid can give
+  // it one: the window then starts from those tiles, not from nothing.
+  const quiltedMounted = useMemo((): WindowItem[] => (
+    mode === 'quilted' && !quilted.layout && !quilted.pending
+      ? photos.map((photo, rowIndex) => ({ photoId: photo.id, x: 0, y: 0, width: 0, height: 0, rowIndex }))
+      : NO_ITEMS
+  ), [mode, quilted.layout, quilted.pending, photos]);
+
   // Rows, flickr and quilted mount only the rows near the viewport in a large
   // gallery (issues 1733 and 2193); columns mode never has items here.
   const windowItems = mode === 'rows' ? rowsLayout.items
     : mode === 'flickr' ? flickrItems
-      : quilted.layout?.items ?? NO_ITEMS;
+      : quilted.layout?.items ?? quiltedMounted;
   const { visible: visibleItems } = useWindowedItems(
     containerRef,
     windowItems,
