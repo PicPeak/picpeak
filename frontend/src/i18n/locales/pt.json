@@ -149,6 +149,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Ignorar duplicados exatos",
+      "skipHelp": "Ignorar ficheiros com conteúdo idêntico já presente nesta galeria, mesmo com outro nome. A substituição por nome de ficheiro tem prioridade.",
       "title_one": "{{count}} arquivo já está nesta galeria",
       "title_other": "{{count}} arquivos já estão nesta galeria",
       "toast_one": "{{count}} arquivo já está nesta galeria e foi ignorado — detalhes na barra de envio no topo.",

@@ -853,6 +853,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Skip exact duplicates",
+      "skipHelp": "Skip files with identical contents already in this gallery, even if renamed. Name-based replacement takes priority.",
       "title_one": "{{count}} file is already in this gallery",
       "title_other": "{{count}} files are already in this gallery",
       "toast_one": "{{count}} file is already in this gallery and was skipped — details in the upload bar at the top.",

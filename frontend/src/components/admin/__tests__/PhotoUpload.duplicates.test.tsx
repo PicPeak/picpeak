@@ -92,6 +92,81 @@ describe('PhotoUpload duplicates', () => {
     uploadLargeFile.mockReset();
   });
 
+  it('offers duplicate skipping by default and explains replacement precedence', () => {
+    renderWithClient(<PhotoUpload eventId={1} />);
+
+    const toggle = screen.getByRole('checkbox', { name: 'Skip exact duplicates' });
+    expect(toggle).toBeChecked();
+    expect(toggle).toHaveAccessibleDescription(
+      'Skip files with identical contents already in this gallery, even if renamed. Name-based replacement takes priority.'
+    );
+  });
+
+  it('allows deliberate multipart copies when duplicate skipping is unchecked', async () => {
+    postMock.mockResolvedValue({ data: { count: 1, upload_id: 'u1', duplicates: [] } });
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+    await userEvent.setup().click(screen.getByRole('checkbox', { name: 'Skip exact duplicates' }));
+
+    await selectAndUpload(container, [small('copy.jpg')]);
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
+    expect(sentFiles(postMock.mock.calls[0])).toEqual(['copy.jpg']);
+    expect((postMock.mock.calls[0][1] as FormData).get('detect_duplicates')).toBeNull();
+    expect((postMock.mock.calls[0][1] as FormData).get('replace_by_name')).toBeNull();
+    expect(screen.queryByTestId('upload-duplicate-report')).not.toBeInTheDocument();
+  });
+
+  it('allows deliberate large-file copies through the same choice', async () => {
+    uploadLargeFile.mockResolvedValue([]);
+    const { container } = renderWithClient(<PhotoUpload eventId={7} />);
+    await userEvent.setup().click(screen.getByRole('checkbox', { name: 'Skip exact duplicates' }));
+    const big = new File([new Uint8Array(3 * 1024 * 1024)], 'ceremony.mp4', { type: 'video/mp4' });
+
+    await selectAndUpload(container, [big]);
+
+    await waitFor(() => expect(uploadLargeFile).toHaveBeenCalledTimes(1));
+    expect(uploadLargeFile.mock.calls[0][1]).toBe(big);
+    expect(uploadLargeFile.mock.calls[0][5]).toBe(false);
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('can re-enable skipping independently of name-based replacement', async () => {
+    postMock.mockResolvedValue({ data: { count: 0, replacedCount: 1, duplicates: [] } });
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+    const user = userEvent.setup();
+    const toggle = screen.getByRole('checkbox', { name: 'Skip exact duplicates' });
+    await user.click(toggle);
+    await user.click(toggle);
+    await user.click(screen.getByRole('checkbox', { name: 'Replace existing photos with same name' }));
+
+    await selectAndUpload(container, [small('retouched.jpg')]);
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
+    const form = postMock.mock.calls[0][1] as FormData;
+    expect(form.get('detect_duplicates')).toBe('true');
+    expect(form.get('replace_by_name')).toBe('true');
+  });
+
+  it('keeps the choice captured at start for every batch in the session', async () => {
+    let finishFirst!: (response: unknown) => void;
+    postMock
+      .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }))
+      .mockResolvedValueOnce({ data: { count: 1, upload_id: 'u2', duplicates: [] } });
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+    const files = ['first.jpg', 'second.jpg'].map((name) =>
+      new File([new Uint8Array(1.5 * 1024 * 1024)], name, { type: 'image/jpeg' }));
+    const user = await selectAndUpload(container, files);
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole('checkbox', { name: 'Skip exact duplicates' }));
+    finishFirst({ data: { count: 1, upload_id: 'u1', duplicates: [] } });
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(2));
+    for (const call of postMock.mock.calls) {
+      expect((call[1] as FormData).get('detect_duplicates')).toBe('true');
+    }
+  });
+
   it('lists a duplicate apart from the failures and keeps the bar up', async () => {
     postMock.mockResolvedValue({
       data: {
