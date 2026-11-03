@@ -48,7 +48,7 @@ const uploadQuota = require('../../services/publicUploadQuota');
 const { getStorage } = require('../../services/storage');
 const { validateFileContent, validateFileType, normalizeUploadMimeType, ALLOWED_MEDIA_TYPES } = require('../../utils/fileSecurityUtils');
 const { isHeifFilename } = require('../../services/imageProcessor');
-const { validateUploadedFiles } = require('../../middleware/uploadValidation');
+const { validateUploadedFiles, readsAsImage } = require('../../middleware/uploadValidation');
 const downloadZipService = require('../../services/downloadZipService');
 const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
 const { PhotoExportService } = require('../../services/photoExportService');
@@ -449,21 +449,6 @@ router.post(
     async (_session, reply) => handleV1PhotoUpload(req, reply));
   }
 );
-
-// Whether Sharp reads the file as an image with dimensions. A busy image
-// worker says nothing about the file, so it passes; a resource limit is
-// thrown like the metadata read further down throws it.
-async function readsAsImage(filePath) {
-  try {
-    const meta = await sharp(filePath).metadata();
-    return Boolean(meta && meta.width && meta.height);
-  } catch (error) {
-    const policy = require('../../services/imageResourcePolicy');
-    if (policy.isTransient(error)) return true;
-    if (policy.isResourceError(error)) throw error;
-    return false;
-  }
-}
 
 async function handleV1PhotoUpload(req, res) {
   let tempPath = null;
