@@ -89,20 +89,33 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
   const storageKey = resolvePhotoStorageKey(event, photo);
 
   const sourceName = photo.original_filename || photo.filename;
+  // failClosed: a mark that cannot be applied refuses the download. The
+  // caller skips the photo or answers 500; the clean original never goes out
+  // in its place.
+  const mark = (input) => watermarkService.applyWatermark(input, watermarkSettings, { keepMetadata: true, failClosed: true });
 
   const transform = async (localPath) => {
-    // No resize → hand applyWatermark the PATH. Buffer inputs intentionally
-    // bypass its cache, so buffering here would re-run sharp over the
-    // full-size original for every download of an unresized gallery.
     if (!wantsResize) {
+      // A RAW cannot be marked as stored: the mark goes on its embedded
+      // preview, which ships as a JPEG. As a Buffer, so the temp file's
+      // random path does not become a watermark cache key.
+      if (isRawFilename(sourceName)) {
+        const proc = await withProcessableImage(localPath, sourceName);
+        try {
+          return await mark(await fs.promises.readFile(proc.path));
+        } finally {
+          await proc.cleanup();
+        }
+      }
+      // No resize → hand applyWatermark the PATH. Buffer inputs intentionally
+      // bypass its cache, so buffering here would re-run sharp over the
+      // full-size original for every download of an unresized gallery.
       // keepMetadata: a download carries the photo's EXIF/XMP/IPTC (issue
       // 1649); the gallery-view rendition the same function makes does not.
-      return watermarkService.applyWatermark(localPath, watermarkSettings, { keepMetadata: true });
+      return mark(localPath);
     }
     const buffer = await capToBox(localPath, box, sourceName);
-    return wantsWatermark
-      ? watermarkService.applyWatermark(buffer, watermarkSettings, { keepMetadata: true })
-      : buffer;
+    return wantsWatermark ? mark(buffer) : buffer;
   };
 
   // Managed photos live behind the storage abstraction (possibly S3); external
