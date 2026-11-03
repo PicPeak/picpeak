@@ -9,12 +9,12 @@
  */
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, act, fireEvent } from '@testing-library/react';
+import { render, renderHook, screen, act, fireEvent } from '@testing-library/react';
 
 import { MosaicGalleryLayout } from '../MosaicGalleryLayout';
 import { MasonryGalleryLayout } from '../MasonryGalleryLayout';
 import { WINDOW_MIN_PHOTOS } from '../rowWindow';
-import { boxStyle, measuredItems, type TileBox } from '../measuredWindow';
+import { boxStyle, measuredItems, useMeasuredWindow, type TileBox } from '../measuredWindow';
 import { feedbackService } from '../../../../services/feedback.service';
 import type { Photo } from '../../../../types';
 
@@ -209,6 +209,27 @@ describe('measuredItems', () => {
   it('gives every tile a row of its own', () => {
     const items = measuredItems(new Map([[1, box(0)], [2, box(0)], [3, box(0)]]), [1, 2, 3]);
     expect(items.map((item) => item.rowIndex)).toEqual([0, 1, 2]);
+  });
+});
+
+describe('useMeasuredWindow before the width is known', () => {
+  it('mounts nothing on the way to a window: the skeleton held no tiles', () => {
+    const ref = { current: document.createElement('div') };
+    const ids = Array.from({ length: 2000 }, (_, index) => index + 1);
+    const sizes: number[] = [];
+    const { rerender } = renderHook(({ requested, pending }) => {
+      const result = useMeasuredWindow(ref, ids, 'shape', () => new Map(), requested, pending);
+      sizes.push(result.mounted.size);
+      return result;
+    }, { initialProps: { requested: false, pending: true } });
+    rerender({ requested: true, pending: false });
+    expect(Math.max(...sizes)).toBe(0);
+  });
+
+  it('mounts everything when windowing is off', () => {
+    const ref = { current: document.createElement('div') };
+    const { result } = renderHook(() => useMeasuredWindow(ref, [1, 2, 3], 'shape', () => new Map(), false));
+    expect(result.current.mounted.size).toBe(3);
   });
 });
 

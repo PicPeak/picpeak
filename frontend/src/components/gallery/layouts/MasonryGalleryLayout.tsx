@@ -520,6 +520,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
       return tiles;
     },
     mode === 'columns' && largeGallery && containerWidth > 0,
+    mode === 'columns' && largeGallery && containerWidth <= 0,
   );
 
   // ROWS MODE - Google Photos style justified layout

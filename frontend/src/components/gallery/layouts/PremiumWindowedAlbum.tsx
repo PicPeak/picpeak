@@ -76,6 +76,7 @@ export function PremiumWindowedAlbum<P extends AlbumPhoto & { key: string }>({
       return tiles;
     },
     model !== undefined,
+    model === undefined,
   );
 
   const windowedModel = useMemo((): LayoutModel<P> | undefined => model && {

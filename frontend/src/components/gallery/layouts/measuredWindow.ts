@@ -156,6 +156,8 @@ export function useMeasuredWindow(
   signature: string,
   build: GhostTiles,
   requested: boolean,
+  // Too early to say, with no tile rendered yet: those aren't all to window from.
+  pending = false,
 ): MeasuredWindow {
   const [measured, setMeasured] = useState<Measured | null>(null);
   // Bumped when the grid may lay out differently under the same signature.
@@ -206,9 +208,9 @@ export function useMeasuredWindow(
   const items = useMemo(() => {
     if (windowed) return measured.items;
     const known = new Set(photoIds);
-    const ids = requested ? renderedRef.current.filter((id) => known.has(id)) : photoIds;
+    const ids = requested || pending ? renderedRef.current.filter((id) => known.has(id)) : photoIds;
     return ids.map((photoId, rowIndex): WindowItem => ({ photoId, x: 0, y: 0, width: 0, height: 0, rowIndex }));
-  }, [windowed, measured, requested, photoIds]);
+  }, [windowed, measured, requested, pending, photoIds]);
 
   // The column count as `rowHeight`: it re-packs the tiles at the same width.
   const { visible } = useWindowedItems(containerRef, items, measured?.width ?? 0, windowed, measured?.columns ?? 0);

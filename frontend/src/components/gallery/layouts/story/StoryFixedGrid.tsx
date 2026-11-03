@@ -36,11 +36,13 @@ function readGrid(container: HTMLElement): StoryGrid | null {
   const display = style.display;
   const tracks = (style.gridTemplateColumns || '').split(/\s+/).filter(Boolean).map(parseFloat);
   const cell = parseFloat(style.gridAutoRows);
+  const forcedRow = parseFloat(style.gridTemplateRows);
   const gap = parseFloat(style.rowGap) || 0;
   const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
   copy.remove();
   if (display !== 'grid' || (tracks.length !== 1 && tracks.length !== 3)) return null;
   if (tracks.some((track) => !(Math.abs(track - tracks[0]) < 0.5)) || !(cell > 0)) return null;
+  if (forcedRow && Math.abs(forcedRow - cell) >= 0.5) return null;
   return { columns: tracks.length, cell, gap, width: container.clientWidth - padding };
 }
 
