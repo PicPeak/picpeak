@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.192.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.191.0-beta.0...v3.192.0-beta.0) (2026-11-03)
+
+
+### Features
+
+* **upload:** expose the exact-duplicate skip option ([#2379](https://github.com/PicPeak/picpeak/issues/2379)) ([f137bb1](https://github.com/PicPeak/picpeak/commit/f137bb104e4a88d0829720dc4caa438233f5150a))
+
 ## [3.191.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.190.0-beta.0...v3.191.0-beta.0) (2026-11-03)
 
 
