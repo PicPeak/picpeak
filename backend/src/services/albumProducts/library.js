@@ -285,8 +285,9 @@ function assertGuided(product, types) {
     fail('A guided album needs colours by material and sizes by format');
   // The flow asks in this order, and a choice can't wait for one that follows it.
   GUIDED_ROLES.forEach((name, index) => {
-    const parent = role(name).availableWhen?.attributeId;
-    if (parent && !GUIDED_ROLES.slice(0, index).some((earlier) => role(earlier).id === parent))
+    const a = role(name);
+    const parents = [...(a.availableWhen ? [a.availableWhen] : []), ...(a.dependsOn || [])];
+    if (parents.some((p) => !GUIDED_ROLES.slice(0, index).some((earlier) => role(earlier).id === p.attributeId)))
       fail(`A guided album's ${name} can only depend on an earlier step`);
   });
 }

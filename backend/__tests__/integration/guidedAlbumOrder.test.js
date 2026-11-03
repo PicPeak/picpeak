@@ -238,6 +238,7 @@ describe('guided album order', () => {
 
     test.each([
       ['an album type without a colour role', (t) => { delete t.attributes[1].role; }, /required colour attribute/],
+      ['a material that needs a later step', (t) => { t.attributes[0].dependsOn = [{ attributeId: t.attributes.find((x) => x.role === 'format').id, optionIds: t.attributes.find((x) => x.role === 'format').optionIds.slice(0, 1) }]; }, /earlier step/],
       ['a material that waits for a later step', (t) => { t.attributes[0].availableWhen = { attributeId: t.attributes.find((x) => x.role === 'format').id, options: {} }; }, /earlier step/],
       ['colours not tied to a material', (t) => { delete t.attributes[1].availableWhen; }, /colours by material/],
       ['two attributes with one role', (t) => { t.attributes[3].role = 'format'; }, /Duplicate/],
