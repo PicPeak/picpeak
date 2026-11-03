@@ -12,6 +12,8 @@ async function readsAsImage(filePath, options = {}) {
     const meta = await sharp(filePath, options).metadata();
     return Boolean(meta && meta.width && meta.height);
   } catch (error) {
+    // A server that cannot load the image library says nothing about the file.
+    if (error.code === LIBRARY_UNAVAILABLE) throw error;
     const policy = require('../services/imageResourcePolicy');
     if (policy.isTransient(error)) return true;
     if (policy.isResourceError(error)) throw error;
