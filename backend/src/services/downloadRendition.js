@@ -152,6 +152,9 @@ function renderedDownloadType(buffer, photo, name) {
  */
 async function resolveWatermarkSettings(event) {
   const settings = await watermarkService.getWatermarkSettings();
+  // null is a failed lookup, not "no watermark": whether one applies, and
+  // what it draws, is unknown, so the download is refused.
+  if (settings === null) throw new Error('The watermark settings could not be read');
   const eventEnabled = event.watermark_downloads === true || event.watermark_downloads === 1;
   const shouldApply = (settings && settings.enabled) || eventEnabled;
   if (!shouldApply) return null;
