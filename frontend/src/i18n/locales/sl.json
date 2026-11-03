@@ -822,6 +822,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Preskoči natančne dvojnike",
+      "skipHelp": "Preskoči datoteke z enako vsebino, ki so že v tej galeriji, tudi če imajo drugo ime.",
       "title_one": "{{count}} datoteka je že v tej galeriji",
       "title_two": "{{count}} datoteki sta že v tej galeriji",
       "title_few": "{{count}} datoteke so že v tej galeriji",

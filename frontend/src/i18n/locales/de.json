@@ -854,6 +854,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Exakte Duplikate überspringen",
+      "skipHelp": "Dateien überspringen, deren Inhalt in dieser Galerie bereits vorhanden ist, auch bei anderem Dateinamen.",
       "title_one": "{{count}} Datei ist bereits in dieser Galerie",
       "title_other": "{{count}} Dateien sind bereits in dieser Galerie",
       "toast_one": "{{count}} Datei ist bereits in dieser Galerie und wurde übersprungen – Details in der Upload-Leiste oben.",

@@ -130,6 +130,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Ignorer les doublons exacts",
+      "skipHelp": "Ignorer les fichiers au contenu déjà présent dans cette galerie, même sous un autre nom.",
       "title_one": "{{count}} fichier est déjà dans cette galerie",
       "title_other": "{{count}} fichiers sont déjà dans cette galerie",
       "toast_one": "{{count}} fichier est déjà dans cette galerie et a été ignoré — détails dans la barre de téléversement en haut.",

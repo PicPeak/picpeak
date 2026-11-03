@@ -130,6 +130,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Exacte duplicaten overslaan",
+      "skipHelp": "Bestanden met identieke inhoud die al in deze galerij staan overslaan, ook als ze anders heten.",
       "title_one": "{{count}} bestand staat al in deze galerij",
       "title_other": "{{count}} bestanden staan al in deze galerij",
       "toast_one": "{{count}} bestand staat al in deze galerij en is overgeslagen — details in de uploadbalk bovenaan.",
