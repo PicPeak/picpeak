@@ -27,7 +27,7 @@ const {
   pickRawDownloadName,
   getZipEntryNames,
 } = require('../../services/downloadFilenameService');
-const { buildContentDisposition } = require('../../utils/filenameSanitizer');
+const { buildContentDisposition, uniquifyZipNames } = require('../../utils/filenameSanitizer');
 const { getStorage } = require('../../services/storage');
 const { createArchiveStreamGuard, streamingArchiveAdmission } = require('../../utils/archiveStreamGuard');
 const fs = require('fs');
@@ -662,6 +662,10 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // get a deterministic `_1` suffix before the entries hit the archive.
     const useOriginalBulk = await getUseOriginalFilenames();
     const bulkEntryNames = getZipEntryNames(photos, useOriginalBulk);
+    // A converted entry takes the new format's extension, which can give it
+    // the name of another entry: uniquify the final names as they ship.
+    const bulkFinalNames = new Map();
+    const bulkName = (name) => uniquifyZipNames([name], bulkFinalNames)[0];
     // Only photos whose append succeeded count as downloaded (#895) — the
     // catch below deliberately skips missing/corrupt sources, and those
     // never make it into the archive.
@@ -703,18 +707,18 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         const rendered = await renderPhotoForDownload(req.event, photo, bulkBox, effectiveSettings);
         if (rendered) {
           // A capped HEIC/AVIF/RAW comes back as JPEG: name it so.
-          archive.append(rendered, { name: renderedDownloadType(rendered, photo, archiveName).name });
+          archive.append(rendered, { name: bulkName(renderedDownloadType(rendered, photo, archiveName).name) });
         } else if (storageKey) {
           if (!await guard.acquire()) break;
           const stream = await storage.get(storageKey);
-          archive.append(guard.track(stream), { name: archiveName });
+          archive.append(guard.track(stream), { name: bulkName(archiveName) });
         } else {
           // A tracked stream rather than archive.file(): archiver opens a
           // file() source itself, out of the guard's reach, so a guest who
           // closed the tab mid-copy left that file open for good (issue
           // 1587). Same shape as main.
           if (!await guard.acquire()) break;
-          archive.append(guard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: archiveName });
+          archive.append(guard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: bulkName(archiveName) });
         }
         appendedIds.push(photo.id);
       } catch (err) {
@@ -878,6 +882,9 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // #493: same display-name resolution as bulk download, with dedup.
     const useOriginalSelected = await getUseOriginalFilenames();
     const selectedEntryNames = getZipEntryNames(photos, useOriginalSelected);
+    // Final names uniquified as they ship, as in download-all.
+    const selectedFinalNames = new Map();
+    const selectedName = (name) => uniquifyZipNames([name], selectedFinalNames)[0];
     // Only photos whose append succeeded count as downloaded (#895).
     const appendedIds = [];
     for (let i = 0; i < photos.length; i += 1) {
@@ -903,15 +910,15 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         // storage rather than buffering the whole photo.
         const rendered = await renderPhotoForDownload(req.event, photo, selectedBox, effectiveSettings);
         if (rendered) {
-          archive.append(rendered, { name: renderedDownloadType(rendered, photo, name).name });
+          archive.append(rendered, { name: selectedName(renderedDownloadType(rendered, photo, name).name) });
         } else if (storageKey) {
           if (!await selectedGuard.acquire()) break;
           const stream = await selectedStorage.get(storageKey);
-          archive.append(selectedGuard.track(stream), { name });
+          archive.append(selectedGuard.track(stream), { name: selectedName(name) });
         } else {
           // Tracked, not archive.file(): see download-all (issue 1587).
           if (!await selectedGuard.acquire()) break;
-          archive.append(selectedGuard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name });
+          archive.append(selectedGuard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: selectedName(name) });
         }
         appendedIds.push(photo.id);
       } catch (err) {
