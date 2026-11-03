@@ -190,9 +190,9 @@ Unlike expensive SaaS solutions, PicPeak gives you:
 
 ## 📖 Documentation
 
-### Photo sales (Snipcart, optional)
+### Photo sales (Stripe and Snipcart, optional)
 
-A gallery can be switched to **priced**: guests see every photo with a tiled watermark, buy the ones they want through a [Snipcart](https://snipcart.com) checkout, and get a personal download link for the clean originals by email. The first order can take a configurable number of photos free with a one-time promo code. Without the Snipcart keys nothing changes. Setup, pricing rules and the security model are in **[docs/PHOTO_SALES.md](docs/PHOTO_SALES.md)**.
+A gallery can be switched to **priced**: guests see watermarked previews, choose photos in PicPeak and pay through Stripe-hosted Checkout, Snipcart, or whichever of the two the buyer picks when both are enabled. After verified payment, PicPeak emails a personal download link for the clean originals. A one-time gallery promo can provide a configurable credit. Provider fees apply; there is no additional PicPeak cart fee. Super admins configure either provider or both in **Settings → Payments**. Setup, pricing rules and security are in **[docs/PHOTO_SALES.md](docs/PHOTO_SALES.md)**.
 
 ### Standard backup authenticity and recovery
 

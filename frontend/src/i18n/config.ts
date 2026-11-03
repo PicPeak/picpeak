@@ -43,9 +43,7 @@ i18n
     },
   });
 
-// Keep the <html lang> attribute in sync with the active language. Snipcart
-// (photo-sales checkout) localizes its cart UI from this attribute, and
-// screen readers / crawlers use it too.
+// Keep the document language in sync for screen readers and crawlers.
 const syncHtmlLang = (lng: string | undefined) => {
   if (lng) {
     document.documentElement.lang = lng.split('-')[0];

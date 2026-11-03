@@ -1,3 +1,4 @@
+import { PhotoSalesCartButton } from '../../../features/photo-sales/PhotoSalesCartButton';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
@@ -542,6 +543,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         </span>
 
         <div className="story-nav-actions">
+          <PhotoSalesCartButton />
           <div className="story-nav-search">
             <Search size={14} className="text-muted-theme" />
             <input

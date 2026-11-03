@@ -54,6 +54,10 @@ import { isPhotoDownloadPending } from '../../../hooks/usePhotoDownloadPending';
 import { usePublicSettings } from '../../../hooks/usePublicSettings';
 import { DEFAULT_MAX_ZOOM_PERCENT } from '../hooks/useFullResolutionZoom';
 
+import { PhotoPurchaseBadge } from '../../../features/photo-sales/PhotoPurchaseBadge';
+import { PhotoSalesCartButton } from '../../../features/photo-sales/PhotoSalesCartButton';
+import { PhotoPurchaseButton } from '../../../features/photo-sales/PhotoPurchaseButton';
+
 const isVideoPhoto = (photo: Photo) => photo.media_type === 'video' || photo.type === 'video';
 
 interface PhotoCardProps {
@@ -161,6 +165,8 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         decision={photo.my_decision}
         part={onToggleVisibility ? 'ring' : undefined}
       />
+
+      <PhotoPurchaseBadge photo={photo} className={feedbackEnabled ? "bottom-12" : undefined} />
 
       {/* Overlay Gradient */}
       <div className="gallery-premium-photo-overlay" />
@@ -845,6 +851,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           </div>
 
           <div className="gallery-premium-nav-actions">
+            <PhotoSalesCartButton />
             <AnimatePresence>
               {isSelectionMode && selectedPhotos.size > 0 && (
                 <motion.div
@@ -1052,6 +1059,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
             }
           },
         }}
+        toolbar={{ buttons: [currentLightboxPhoto ? <PhotoPurchaseButton key="purchase" photo={currentLightboxPhoto} onOpenCart={() => { lightboxPhotoIdRef.current = null; setLightboxIndex(-1); onLightboxPhotoChange?.(null, 'close'); }} /> : null, 'close'] }}
         plugins={[
           Thumbnails,
           Zoom,
