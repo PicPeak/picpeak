@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.191.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.190.0-beta.0...v3.191.0-beta.0) (2026-11-03)
+
+
+### Features
+
+* **album-products:** guided album order with photo roles and customer release ([#2374](https://github.com/PicPeak/picpeak/issues/2374)) ([fb0e87f](https://github.com/PicPeak/picpeak/commit/fb0e87fa448c71aee56d9be48d4b1a02355d79e7))
+
 ## [3.190.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.189.0-beta.0...v3.190.0-beta.0) (2026-11-03)
 
 
