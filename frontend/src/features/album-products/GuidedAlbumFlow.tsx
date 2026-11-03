@@ -7,6 +7,7 @@ import { pushDialogLayer } from '../../components/common/Modal';
 import { resolveMediaType } from '../../components/gallery/hooks/useGalleryFiltering';
 import { api } from '../../config/api';
 import { galleryService } from '../../services/gallery.service';
+import { formatMoneyMinor } from '../../utils/money';
 import { lockBodyScroll } from '../../utils/scrollLock';
 import type { Photo } from '../../types';
 import { AlbumChoiceDetails } from './AlbumChoiceDetails';
@@ -244,8 +245,11 @@ export function GuidedAlbumFlow({
   };
 
   const next = async () => {
-    // A submitted, not yet final choice is only ever resubmitted whole.
-    if (step !== 'album' && offer?.status === 'draft' && !(await persist(false))) return;
+    // A submitted, not yet final choice is only ever resubmitted whole. A draft
+    // waits while it still names a hidden photo: the server refuses it, and the
+    // step that replaces that photo may be further on.
+    const saveable = !Object.values(chosen).flat().some((id) => unavailable.includes(id));
+    if (step !== 'album' && offer?.status === 'draft' && saveable && !(await persist(false))) return;
     setStep(steps[position + 1]);
   };
   const back = () => {
@@ -256,6 +260,21 @@ export function GuidedAlbumFlow({
   const confirm = async () => {
     if (await persist(true)) setConfirming(false);
   };
+
+  const pricing = offer?.pricing;
+  const priceOf = (a: Attribute) => (optionId: string) => {
+    const cost = pricing?.surcharges.find((s) => s.attributeId === a.id && s.optionId === optionId)?.amountMinor || 0;
+    return cost > 0 && pricing ? `+${formatMoneyMinor(cost, pricing.currency)}` : null;
+  };
+  const basePrice = pricing && (
+    <p className="text-sm">
+      {t(
+        'products.informationalPrice',
+        'Indicative base price; the studio confirms the final price when locking your choice.',
+      )}{' '}
+      {formatMoneyMinor(pricing.baseUnitPriceMinor, pricing.currency)}
+    </p>
+  );
 
   const stepTitle: Record<Step, string> = {
     album: t('albumProducts.stepAlbum', 'Choose your album'),
@@ -345,6 +364,7 @@ export function GuidedAlbumFlow({
                 <div className="space-y-3">
                   <p className="text-xl font-semibold">{product.name}</p>
                   {product.description && <p>{product.description}</p>}
+                  {basePrice}
                   <ul className="space-y-2 text-sm">
                     {ROLES.map((role) => {
                       const a = attributeOf(offer, role);
@@ -388,6 +408,7 @@ export function GuidedAlbumFlow({
                     />
                     {o.name}
                   </span>
+                  {priceOf(material)(o.id) && <span className="text-sm">{priceOf(material)(o.id)}</span>}
                 </label>
               ))}
             </div>
@@ -403,6 +424,7 @@ export function GuidedAlbumFlow({
             onChange={(id) => choose(colour, id)}
             slug={slug}
             disabled={busy}
+            priceOf={priceOf(colour)}
           />
         ) : null;
       case 'format':
@@ -414,6 +436,7 @@ export function GuidedAlbumFlow({
             value={one(format)}
             onChange={(id) => choose(format, id)}
             disabled={busy}
+            priceOf={priceOf(format)}
           />
         ) : null;
       case 'size': {
@@ -442,6 +465,7 @@ export function GuidedAlbumFlow({
                     />
                     {o.name}
                   </span>
+                  {priceOf(size)(o.id) && <span className="text-sm">{priceOf(size)(o.id)}</span>}
                 </label>
               ))}
             </div>
@@ -457,6 +481,8 @@ export function GuidedAlbumFlow({
             disabled={busy}
             slug={slug}
             only={(a) => !a.role}
+            surcharges={pricing?.surcharges}
+            currency={pricing?.currency}
           />
         ) : null;
       case 'cover':
@@ -482,6 +508,7 @@ export function GuidedAlbumFlow({
       case 'review':
         return preview ? (
           <div className="space-y-5">
+            {basePrice}
             <AlbumChoiceDetails
               choice={preview}
               renderPhoto={(photo) => photoFor(photo.id, t('albumProducts.selectedPhoto', 'Selected photo'))}

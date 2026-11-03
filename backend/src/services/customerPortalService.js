@@ -78,7 +78,8 @@ async function productOffersFor(customerId, eventId) {
     id: o.id,
     name: o.selection?.product?.name || o.product?.name || null,
     status: o.status,
-    confirmed: !!o.selection?.clientFinal,
+    // A reopened offer keeps its selection, `clientFinal` included.
+    confirmed: o.status === 'locked' || (o.status === 'submitted' && !!o.selection?.clientFinal),
     guided: !!o.product?.guided,
   }));
 }

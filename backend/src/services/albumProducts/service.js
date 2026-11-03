@@ -338,14 +338,14 @@ function createService({ db, storage, sharp }) {
   }
   /** One binding album per client: another tab must not confirm a second. */
   async function assertNoOtherConfirmation(tx, current) {
-    const others = await forAudience(
-      tx('event_album_products')
-        .where({ event_id: current.event_id })
-        .whereNot({ id: current.id })
-        .whereIn('status', ['submitted', 'locked']),
-      current.released_customer_id ?? null,
-    );
-    if (others.some((row) => V.parse(row.selection)?.clientFinal))
+    const others = tx('event_album_products')
+      .where({ event_id: current.event_id })
+      .whereNot({ id: current.id })
+      .whereIn('status', ['submitted', 'locked']);
+    // The gallery's only customer is the client of its unscoped offers too.
+    if ((await assignedCustomers(tx, current.event_id)) > 1)
+      forAudience(others, current.released_customer_id ?? null);
+    if ((await others).some((row) => V.parse(row.selection)?.clientFinal))
       throw new ConflictError('Another album is already confirmed for this gallery');
   }
   async function mutate(event, input, actor, { admin = false, viewer = {} } = {}) {

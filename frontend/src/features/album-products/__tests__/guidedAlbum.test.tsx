@@ -272,6 +272,65 @@ describe('guided album flow', () => {
     expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
   });
 
+  it('reaches a later hidden photo: the draft saves once both are replaced', async () => {
+    const draft = offer({
+      selection: {
+        schemaVersion: 2, productVersion: '', product: { id: 'album-a', name: 'Fine art album' },
+        attributes: [
+          { id: 'material', name: 'Material', addOn: false, options: [{ id: 'silk', name: 'Silk', imageId: null }] },
+          { id: 'colour', name: 'Colour', addOn: false, options: [{ id: 'ivory', name: 'Ivory', imageId: null }] },
+          { id: 'format', name: 'Format', addOn: false, options: [{ id: 'square', name: 'Square', imageId: null }] },
+          { id: 'size', name: 'Size', addOn: false, options: [{ id: 's2550', name: '25 × 50 cm', imageId: null }] },
+        ],
+        photoRoles: [{ key: 'cover', photos: [{ id: 4, available: false }] }, { key: 'poster', photos: [{ id: 4, available: false }] }],
+      },
+    });
+    mount([draft]);
+    await heading('Choose your cover photo');
+    fireEvent.click(await screen.findByRole('button', { name: 'Photo 1' }));
+    next();
+    await heading('Choose your poster photos');
+    expect(api.put).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Photo 2' }));
+    next();
+    await heading('Review your album');
+    expect(api.put).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(api.put).mock.calls[0][1]).toMatchObject({ photoRoles: { cover: [1], poster: [2] } });
+  });
+
+  it('shows the base price and every surcharge where the studio shows prices', async () => {
+    const surcharges = [
+      { attributeId: 'material', optionId: 'silk', amountMinor: 1500 },
+      { attributeId: 'colour', optionId: 'ivory', amountMinor: 200 },
+      { attributeId: 'format', optionId: 'square', amountMinor: 300 },
+      { attributeId: 'size', optionId: 's2550', amountMinor: 400 },
+    ];
+    mount([offer({ pricing: { currency: 'EUR', baseUnitPriceMinor: 12000, surcharges } })]);
+    expect(await screen.findByText(/Indicative base price/)).toHaveTextContent(/120/);
+    next();
+    await heading('Choose a material');
+    expect(screen.getByRole('radio', { name: /Silk/ }).closest('label')).toHaveTextContent(/\+.*15/);
+    fireEvent.click(screen.getByRole('radio', { name: /Silk/ }));
+    next();
+    await heading('Choose a colour');
+    expect(screen.getByRole('radio', { name: /Ivory/ }).closest('label')).toHaveTextContent(/\+.*2/);
+    fireEvent.click(screen.getByRole('radio', { name: /Ivory/ }));
+    next();
+    await heading('Compare the formats');
+    expect(screen.getByRole('radio', { name: /Square/ }).closest('label')).toHaveTextContent(/\+.*3/);
+    fireEvent.click(screen.getByRole('radio', { name: /Square/ }));
+    next();
+    await heading('Choose a size');
+    expect(screen.getByRole('radio', { name: /25 × 50 cm/ }).closest('label')).toHaveTextContent(/\+.*4/);
+  });
+
+  it('shows no price without the studio\'s pricing', async () => {
+    mount();
+    await heading('Choose your album');
+    expect(screen.queryByText(/Indicative base price/)).toBeNull();
+  });
+
   it('shows the server\'s refusal and stays on the step', async () => {
     mount();
     next();
@@ -330,6 +389,19 @@ describe('gallery entry', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Configure your album' }));
     await heading('Choose your album');
+  });
+  it('an editable draft follows the product once the studio turns guiding off', async () => {
+    const selection = { attributes: [], product: { name: 'Plain album' }, photoRoles: [{ key: 'cover', photos: [{ id: 1 }] }] };
+    vi.mocked(albumProducts.client).mockResolvedValue([offer({ selection: selection as never, product: product('album-a', 'Plain album', { guided: undefined }) })] as never);
+    render(<GalleryProductPanel slug="wedding" />);
+    expect(await screen.findByText('Your product choices')).toBeInTheDocument();
+    expect(screen.queryByText('Your album')).toBeNull();
+  });
+  it('a confirmed album stays guided after the studio turns guiding off', async () => {
+    const selection = { attributes: [], clientFinal: true, product: { name: 'Plain album' }, photoRoles: [{ key: 'cover', photos: [{ id: 1 }] }] };
+    vi.mocked(albumProducts.client).mockResolvedValue([offer({ status: 'submitted', selection: selection as never, product: product('album-a', 'Plain album', { guided: undefined }) })] as never);
+    render(<GalleryProductPanel slug="wedding" />);
+    expect(await screen.findByText('Your selection is confirmed.')).toBeInTheDocument();
   });
   it('a deep link opens the released album directly', async () => {
     window.history.replaceState(null, '', '/gallery/wedding?album=offer-a');

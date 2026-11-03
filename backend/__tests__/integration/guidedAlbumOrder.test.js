@@ -477,6 +477,30 @@ describe('guided album order', () => {
       expect(res.body.error).toMatch(/already confirmed/);
     });
 
+    test('the only customer cannot confirm one album from each audience', async () => {
+      const gallery = await makeGallery();
+      const anna = await addCustomer(gallery);
+      const shared = await released(gallery, albumA);
+      const own = await released(gallery, albumB, anna);
+      const client = asClient(portalToken(gallery, anna));
+      expect((await client.put(gallery, await clientOffer(client, gallery, shared.id), { ...complete(gallery), submit: true })).status).toBe(200);
+      const res = await client.put(gallery, await clientOffer(client, gallery, own.id), { ...complete(gallery), submit: true });
+      expect(res.status).toBe(409);
+      expect(res.body.error).toMatch(/already confirmed/);
+    });
+
+    test('one customer\'s confirmation leaves another customer\'s offer open', async () => {
+      const gallery = await makeGallery();
+      const anna = await addCustomer(gallery);
+      const ben = await addCustomer(gallery);
+      const first = await released(gallery, albumA, anna);
+      const second = await released(gallery, albumB, ben);
+      const a = asClient(portalToken(gallery, anna));
+      const b = asClient(portalToken(gallery, ben));
+      expect((await a.put(gallery, await clientOffer(a, gallery, first.id), { ...complete(gallery), submit: true })).status).toBe(200);
+      expect((await b.put(gallery, await clientOffer(b, gallery, second.id), { ...complete(gallery), submit: true })).status).toBe(200);
+    });
+
     test('a confirmed selection is read-only for the client, frozen and complete', async () => {
       const gallery = await makeGallery();
       const offer = await released(gallery);
@@ -761,6 +785,10 @@ describe('guided album order', () => {
       await a.put(gallery, await clientOffer(a, gallery, offer.id), { ...complete(gallery), submit: true });
       expect((await overview(anna)).productOffers[0]).toMatchObject({ status: 'submitted', confirmed: true });
       expect((await dashboard(anna)).needsAction.albums).toEqual([]);
+      const [submitted] = await adminOffers(gallery);
+      await adminPut(gallery, submitted, { action: 'reopen' });
+      expect((await overview(anna)).productOffers[0]).toMatchObject({ status: 'draft', confirmed: false });
+      expect((await dashboard(anna)).needsAction.albums).toHaveLength(1);
     });
   });
 

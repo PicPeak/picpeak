@@ -21,6 +21,7 @@ export function ColourSwatches({
   onChange,
   slug,
   disabled = false,
+  priceOf,
 }: {
   name: string;
   legend: string;
@@ -29,6 +30,7 @@ export function ColourSwatches({
   onChange: (id: string) => void;
   slug?: string;
   disabled?: boolean;
+  priceOf?: (optionId: string) => string | null;
 }) {
   return (
     <fieldset disabled={disabled}>
@@ -66,6 +68,7 @@ export function ColourSwatches({
                 )}
               </span>
               <span className={selected ? 'font-semibold' : undefined}>{option.name}</span>
+              {priceOf?.(option.id) && <span>{priceOf(option.id)}</span>}
             </label>
           );
         })}

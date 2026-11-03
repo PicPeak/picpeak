@@ -12,8 +12,12 @@ import { api } from '../../config/api';
 import { albumProducts, CHOOSE_ALBUM, errorMessage, isConfirmed, type Offer } from './model';
 import { ProductImage } from './ProductImage';
 import { GuidedAlbumFlow } from './GuidedAlbumFlow';
+// What can still change follows the product: a guided draft stays in the plain
+// form once the studio turns guiding off. What can't is shown as it was made.
 const isGuided = (offer: Offer) =>
-  !!offer.product?.guided || !!offer.selection?.photoRoles;
+  offer.product && !isConfirmed(offer)
+    ? !!offer.product.guided
+    : !!offer.product?.guided || !!offer.selection?.photoRoles;
 /** The entry to a released album. The portal's deep link opens it directly. */
 function GuidedAlbumEntry({
   offers,

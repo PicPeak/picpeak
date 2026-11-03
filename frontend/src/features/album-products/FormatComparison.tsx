@@ -51,6 +51,7 @@ export function FormatComparison({
   onChange,
   name,
   disabled = false,
+  priceOf,
 }: {
   format: Attribute;
   size: Attribute;
@@ -58,6 +59,7 @@ export function FormatComparison({
   onChange: (id: string) => void;
   name: string;
   disabled?: boolean;
+  priceOf?: (optionId: string) => string | null;
 }) {
   const largest = widestOf(size.options);
   return (
@@ -88,6 +90,7 @@ export function FormatComparison({
                 />
                 <span className="min-w-0">
                   <span className="block font-semibold">{option.name}</span>
+                  {priceOf?.(option.id) && <span className="block text-sm">{priceOf(option.id)}</span>}
                   {sizes.map((s) => (
                     <span key={s.id} className="block text-sm">
                       {s.name}
