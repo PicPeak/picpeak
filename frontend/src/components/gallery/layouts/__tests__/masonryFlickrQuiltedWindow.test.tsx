@@ -416,6 +416,21 @@ describe('Masonry quilted grid', () => {
     expect(seen.size).toBe(2000);
   });
 
+  it('keeps the tiles in view when a wider grid ends the all-mounted fallback', () => {
+    gridWidth = 400;
+    render(<MasonryGalleryLayout {...layoutProps(makePhotos(2000))} />);
+    expect(tiles()).toHaveLength(2000);
+    const control = find(1)!.querySelector('button')!;
+    act(() => { control.focus(); });
+    mounts.length = 0;
+
+    resizeTo(1200);
+    expect(tiles().length).toBeLessThan(2000);
+    expect(control.isConnected).toBe(true);
+    expect(document.activeElement).toBe(control);
+    expect(mounts).toEqual([]);
+  });
+
   it('renders the tiles in list order, as with all of them mounted', () => {
     // Wide photos leave holes the single ones then backfill, far up the grid.
     const photos = makePhotos(2000).map((p, i) => (i % 4 === 0 ? p : { ...p, width: 1920, height: 1080 }));
