@@ -290,7 +290,7 @@ module.exports = (router) => {
       });
 
       // Photo sales: priced galleries get their one-time
-      // promo code and the backing Snipcart discount right at creation.
+      // promo code at creation.
       try {
         const promoService = require('../../modules/photoSales/promoDiscount');
         if (created && created.id) {
@@ -1593,6 +1593,9 @@ module.exports = (router) => {
         // the due-date source is derived below from how the date was set.
         'delivery_completed_at', 'delivery_reminder_sent_at', 'delivery_overdue_notified_at',
         'delivery_due_source',
+        // Print ordering and its billing owner: PUT /admin/print-sales/events/:eventId
+        // only, which needs billing permissions an events.edit holder may not have.
+        'print_sales_enabled', 'print_sales_admin_id',
       ];
       // Only canonical keys reach the UPDATE. SQLite resolves quoted
       // identifiers case-insensitively, so `{ "Event_Name": ... }` lands on
@@ -2320,7 +2323,7 @@ module.exports = (router) => {
             .queueForEvent(parseInt(id, 10))
             .catch(() => {});
         }
-        // One-time promo code + Snipcart discount follow the pricing fields.
+        // The one-time promo code follows the pricing fields.
         try {
           const fresh = await db('events').where({ id }).first(
             'id', 'event_name', 'is_priced', 'free_photo_count', 'photo_price', 'promo_code', 'snipcart_discount_id'

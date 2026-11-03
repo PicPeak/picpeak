@@ -14,6 +14,7 @@ process.env.TEST_DATABASE_PATH = path.join(
   fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-sales-promo-')), 'db.sqlite',
 );
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'sales-promo-test-secret';
+process.env.SNIPCART_API_KEY = 'pk_test_promo';
 process.env.SNIPCART_SECRET_API_KEY = 'sk_test_promo';
 
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
@@ -64,7 +65,7 @@ describe('promo discount creation', () => {
 
     const event = await db('events').where({ id: eventId }).first('promo_code', 'snipcart_discount_id');
     expect(created).toHaveLength(1);
-    expect(created[0]).toMatchObject({ code: event.promo_code, amount: 10, maxNumberOfUsages: 1 });
+    expect(created[0]).toMatchObject({ code: event.promo_code, amount: 10, maxNumberOfUsages: null });
     expect(event.snipcart_discount_id).toBe('disc-1');
     expect(promo.isDiscountId(event.snipcart_discount_id)).toBe(true);
   });
@@ -73,4 +74,15 @@ describe('promo discount creation', () => {
     expect(promo.isDiscountId('pending:123')).toBe(false);
     expect(promo.isDiscountId(null)).toBe(false);
   });
+  it.each([null, {}, { id: '' }, { id: 7 }, { id: 'pending:invalid' }, { id: '   ' }, { id: 'invalid\nid' }])('does not report a usable discount without a valid provider id: %j', async response => {
+    const previous = global.fetch;
+    global.fetch = jest.fn(async () => ({ ok: true, status: 201, json: async () => response }));
+    try {
+      await db('events').where({ id: eventId }).update({ snipcart_discount_id: null });
+      const event = await db('events').where({ id: eventId }).first();
+      expect(await promo.syncPromoDiscount(event)).toMatchObject({ ok: false });
+      expect((await db('events').where({ id: eventId }).first()).snipcart_discount_id).toBeNull();
+    } finally { global.fetch = previous; }
+  });
+
 });

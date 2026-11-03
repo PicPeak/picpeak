@@ -84,6 +84,7 @@ const RESERVED_SETTING_KEYS = [
 // file type. A backend flag gate that another endpoint can write around is not
 // a gate.
 const isReservedSettingKey = (key) => RESERVED_SETTING_KEYS.includes(key)
+  || key.startsWith('payments_')
   || key.startsWith('oidc_')
   || key.startsWith('download_')
   || key.startsWith('transfer_upload_')
@@ -120,7 +121,7 @@ const stripReservedSettingKeys = (settings) => {
 //                                 restore_allow_force and
 //                                 restore_require_pre_backup gate restore-start)
 const DEDICATED_ROUTE_KEY_PREFIXES = [
-  'backup_', 'database_backup_', 'rate_limit_', 'max_image_requests_', 'ledger_', 'restore_',
+  'backup_', 'database_backup_', 'rate_limit_', 'max_image_requests_', 'ledger_', 'restore_', 'payments_',
 ];
 const isDedicatedRouteOwnedKey = (key) => DEDICATED_ROUTE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
 // 400 (naming the keys) when a generic write carries route-owned keys, rather
@@ -1154,6 +1155,8 @@ router.post('/sso/test', adminAuth, requirePermission('settings.security'), asyn
     res.status(400).json({ ok: false, error: `Discovery failed: ${error.message}` });
   }
 });
+
+router.use('/payments', require('./adminPayments'));
 
 router.get('/:type', adminAuth, requirePermission('settings.view'), async (req, res) => {
   try {

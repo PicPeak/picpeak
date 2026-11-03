@@ -222,6 +222,7 @@ class S3StorageAdapter extends stream.EventEmitter {
    * @returns {Promise<Object>} - Upload result with Location, ETag, etc.
    */
   async upload(localPath, s3Key, options = {}) {
+    let fileStream;
     try {
       const stats = await fsPromises.stat(localPath);
       const fileSize = stats.size;
@@ -230,7 +231,7 @@ class S3StorageAdapter extends stream.EventEmitter {
       this.emit('uploadStart', { key: s3Key, size: fileSize });
       
       // Create file stream
-      const fileStream = fs.createReadStream(localPath);
+      fileStream = fs.createReadStream(localPath);
       
       // Prepare upload parameters
       const uploadParams = {
@@ -263,8 +264,8 @@ class S3StorageAdapter extends stream.EventEmitter {
         this.emit('uploadProgress', { key: s3Key, loaded: progress.loaded, total: progress.total });
       });
       
-      // Perform upload with retry
-      const result = await this._retryOperation(() => parallelUploads3.done());
+      // Upload is single-use; the SDK retries its individual requests.
+      const result = await parallelUploads3.done();
       
       this.emit('uploadComplete', { key: s3Key, location: result.Location });
       return result;
@@ -272,7 +273,7 @@ class S3StorageAdapter extends stream.EventEmitter {
       logger.error(`Failed to upload file ${localPath} to S3:`, error);
       this.emit('uploadError', { key: s3Key, error });
       throw error;
-    }
+    } finally { fileStream?.destroy(); }
   }
   
   /**
@@ -284,6 +285,17 @@ class S3StorageAdapter extends stream.EventEmitter {
    * @returns {Promise<Object>} - Upload result
    */
   async uploadStream(readStream, s3Key, options = {}) {
+    options.signal?.throwIfAborted();
+    let client = this.s3Client;
+    if (options.signal) {
+      // Abort the real requests, not Upload.done()'s early-rejecting abort
+      // race. done() must await the producers and multipart cleanup first.
+      client = Object.create(this.s3Client);
+      client.send = (command, sendOptions = {}) => this.s3Client.send(command, {
+        ...sendOptions, ...(command instanceof AbortMultipartUploadCommand || command instanceof CompleteMultipartUploadCommand
+          ? {} : { abortSignal: options.signal }),
+      });
+    }
     const uploadParams = {
       Bucket: this.bucket,
       Key: s3Key,
@@ -298,7 +310,7 @@ class S3StorageAdapter extends stream.EventEmitter {
     Object.keys(uploadParams).forEach(key => uploadParams[key] === undefined && delete uploadParams[key]);
     
     const parallelUploads3 = new Upload({
-      client: this.s3Client,
+      client,
       params: uploadParams,
       queueSize: 4,
       partSize: this.config.partSize,
@@ -313,7 +325,14 @@ class S3StorageAdapter extends stream.EventEmitter {
       });
     }
     
-    return await this._retryOperation(() => parallelUploads3.done());
+    const abort = () => readStream.destroy(options.signal.reason);
+    options.signal?.addEventListener('abort', abort, { once: true });
+    try {
+      options.signal?.throwIfAborted();
+      const result = await parallelUploads3.done();
+      options.signal?.throwIfAborted();
+      return result;
+    } finally { options.signal?.removeEventListener('abort', abort); }
   }
   
   /**
@@ -401,7 +420,7 @@ class S3StorageAdapter extends stream.EventEmitter {
     // Remove undefined values
     Object.keys(params).forEach(key => params[key] === undefined && delete params[key]);
     
-    const result = await this.s3Client.send(new GetObjectCommand(params));
+    const result = await this.s3Client.send(new GetObjectCommand(params), ...(options.signal ? [{ abortSignal: options.signal }] : []));
     return result.Body;
   }
   

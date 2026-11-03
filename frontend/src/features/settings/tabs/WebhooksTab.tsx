@@ -19,6 +19,7 @@ const WEBHOOK_EVENT_TYPES = [
   'photo.uploaded',
   'photo.deleted',
   'selection.submitted',
+  'external_scan.completed',
 ] as const;
 type WebhookEventType = typeof WEBHOOK_EVENT_TYPES[number];
 
@@ -200,7 +201,7 @@ export const WebhooksTab: React.FC = () => {
             <label className="block text-sm font-medium text-body mb-2">
               {t('settings.webhooks.events', 'Subscribe to events')}
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {WEBHOOK_EVENT_TYPES.map((e) => (
                 <label key={e} className="flex items-center gap-2 text-sm text-body">
                   <input

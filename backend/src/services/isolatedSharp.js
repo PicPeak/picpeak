@@ -9,7 +9,7 @@ const { spawn } = require('child_process');
 const logger = require('../utils/logger');
 const { configuration, refusal, MiB } = require('./imageResourcePolicy');
 
-const methods = ['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw'];
+const methods = ['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'tiff', 'flatten', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw'];
 const WORKER = path.join(__dirname, 'sharpWorker.js');
 // --jitless also turns WebAssembly off, on every supported Node. Node 24 removed
 // --no-expose-wasm and refuses to start with it.

@@ -8,20 +8,11 @@ import i18n from 'i18next';
  * Photo-sales gallery helpers (frontend side of the pricing rules).
  *
  * The free quota of a priced gallery is a ONE-TIME giveaway: the single-use
- * promo code deducts the first `free_photo_count` photos on the first order
- * that applies it. Prices stay correct in the cart and are re-verified
- * server-side against the database at order.completed — mirroring
+ * promo code deducts a fixed credit of free_photo_count × gallery price
+ * on the first order that applies it. Prices are confirmed on the server before checkout and stored
+ * in an immutable order snapshot — mirroring
  * backend/src/modules/photoSales/priceRules.js.
  */
-
-export interface PhotoSalesPhoto {
-  id: number;
-  uploaded_at?: string | null;
-  photo_price?: number | null;
-  /** The server's proof that this viewer may buy the photo; null for a photo
-   *  that is not for sale (a video, a client-only photo). */
-  sale_token?: string | null;
-}
 
 /**
  * Currency formatting for photo prices. German UI convention puts the euro
@@ -43,16 +34,21 @@ export interface PhotoSalesEventInfo {
   /** True until the gallery's one-time promo code has been redeemed once —
    *  a buyer who forgets the code does not burn the quota. */
   free_quota_available?: boolean;
+  promo_code?: string | null;
 }
 
+export type PaymentProvider = 'stripe' | 'snipcart';
+
 export interface PhotoSalesConfig {
+  providers: PaymentProvider[];
+  snipcartPublicKey: string | null;
   enabled: boolean;
   slug: string;
-  apiKey: string | null;
+  checkoutReady: boolean;
+  promoCode: string | null;
   freeCount: number;
   price: number;
   currency: string;
-  priceCheckUrl: string;
   accessDays: number;
   /** The cart line's description: what the buyer gets, and until when. */
   itemDescription: string;
@@ -72,36 +68,34 @@ export function purchaseAccessUntil(accessDays: number, galleryExpiresAt?: strin
 export function buildPhotoSalesConfig(args: {
   slug: string;
   event?: PhotoSalesEventInfo | null;
-  apiKey?: string | null;
+  checkoutConfigured?: boolean;
+  providers?: PaymentProvider[];
+  snipcartPublicKey?: string | null;
 }): PhotoSalesConfig {
-  const { slug, event, apiKey } = args;
+  const { slug, event, checkoutConfigured } = args;
   const isPriced = event?.is_priced === true;
   const price = Number(event?.photo_price ?? 0);
   // The free quota is a one-time giveaway per gallery: the promo code is
   // single-use and the server flips free_quota_available to false after it
   // has been redeemed once (an order without the code leaves the quota).
   const accessDays = Math.max(1, Math.floor(Number(event?.purchase_access_days ?? 30)));
-  const accessUntil = purchaseAccessUntil(accessDays, event?.expires_at).toLocaleDateString(
-    typeof i18n?.language === 'string' && i18n.language.toLowerCase().startsWith('de') ? 'de-DE' : undefined
-  );
+  const accessUntil = purchaseAccessUntil(accessDays, event?.expires_at).toLocaleString(
+    typeof i18n?.language === 'string' && i18n.language.toLowerCase().startsWith('de') ? 'de-DE' : undefined,
+    { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }
+  ) + ' UTC';
   const freeCount = event?.free_quota_available !== false
     ? Math.max(0, Math.floor(Number(event?.free_photo_count ?? 0)))
     : 0;
   return {
+    providers: args.providers || (checkoutConfigured ? ['stripe'] : []),
+    snipcartPublicKey: args.snipcartPublicKey || null,
     enabled: isPriced && Number.isFinite(price) && price > 0,
     slug,
-    apiKey: apiKey || null,
+    checkoutReady: isPriced && !!checkoutConfigured && Number.isFinite(price) && price > 0,
+    promoCode: freeCount > 0 ? event?.promo_code || null : null,
     freeCount,
     price: Number.isFinite(price) ? price : 0,
     currency: 'EUR',
-    // Absolute price-check URL: Snipcart's order validation resolves
-    // root-relative data-item-url values against the dashboard's default
-    // domain, and fails the order while that field is empty. An absolute URL
-    // removes that failure mode (the host still has to be the dashboard's
-    // default domain or an allowed domain).
-    priceCheckUrl: typeof window !== 'undefined'
-      ? `${window.location.origin}/api/gallery/${encodeURIComponent(slug)}/price-check`
-      : `/api/gallery/${encodeURIComponent(slug)}/price-check`,
     accessDays,
     itemDescription: i18n.t('photoSales.itemDescription', {
       date: accessUntil,
@@ -113,8 +107,7 @@ export function buildPhotoSalesConfig(args: {
 /**
  * The price one PAID photo shows in the cart: the per-photo override when
  * set, otherwise the gallery default. Mirrors effectivePhotoPrice in the
- * backend so the client-side data-item-price always matches the server's
- * price-check answer.
+ * backend for display; the server always calculates the checkout price itself.
  */
 export function effectivePhotoPrice(
   galleryPrice: number,
@@ -125,58 +118,4 @@ export function effectivePhotoPrice(
     if (Number.isFinite(value)) return value;
   }
   return Number(galleryPrice) || 0;
-}
-
-/**
- * The data-item-* attributes Snipcart needs on an add-to-cart control, or
- * null when the photo is not for sale (no sale_token). Every buy button (tile
- * chip, hover icon, lightbox) must carry the SAME item id per photo so
- * Snipcart increments one line instead of stacking duplicates.
- *
- * The item URL carries the photo's sale token: Snipcart's price check and
- * the order webhook accept only signed lines, so a cart cannot be filled with
- * photos of a gallery its buyer never logged into.
- *
- * Cart presentation: the photo thumbnail replaces the bare name, the photoId
- * custom field travels hidden (it is still sent with the order for the
- * webhook), and max-quantity 1 caps every photo at a single copy.
- */
-export function snipcartItemProps(args: {
-  slug: string;
-  priceCheckUrl: string;
-  price: number;
-  /** PhotoSalesConfig.itemDescription; shown on the cart line. */
-  description?: string;
-  photo: {
-    id: number;
-    filename?: string;
-    original_filename?: string | null;
-    thumbnail_url?: string | null;
-    sale_token?: string | null;
-  };
-}): Record<string, string | number> | null {
-  const { slug, priceCheckUrl, price, description, photo } = args;
-  if (!photo.sale_token) return null;
-  const props: Record<string, string | number> = {
-    'data-item-id': `${slug}-photo-${photo.id}`,
-    'data-item-price': price,
-    'data-item-url': `${priceCheckUrl}${priceCheckUrl.includes('?') ? '&' : '?'}photoId=${photo.id}&sig=${encodeURIComponent(photo.sale_token)}`,
-    'data-item-name': photo.original_filename || photo.filename || `Photo ${photo.id}`,
-    'data-item-description': description || `${slug} — photo ${photo.id}`,
-    // Digital goods: photos are delivered through our purchased-downloads
-    // page, never shipped. Snipcart removes all shipping options from a cart
-    // whose items are all non-shippable — no shipping config in the dashboard
-    // needed and no "No shipping method available" error at checkout.
-    'data-item-shippable': 'false',
-    'data-item-max-quantity': 1,
-    'data-item-custom1-name': 'photoId',
-    'data-item-custom1-value': String(photo.id),
-    'data-item-custom1-type': 'hidden',
-  };
-  if (photo.thumbnail_url && typeof window !== 'undefined') {
-    props['data-item-image'] = photo.thumbnail_url.startsWith('http')
-      ? photo.thumbnail_url
-      : `${window.location.origin}${photo.thumbnail_url}`;
-  }
-  return props;
 }

@@ -37,6 +37,11 @@ function resolvePhotoStorageKey(event, photo) {
   return path.posix.join('events/active', rel);
 }
 
+/** A key built from a photo row is only a managed original once it stays under events/active/. */
+function isManagedOriginalKey(key) {
+  return path.posix.normalize(key).startsWith('events/active/');
+}
+
 /**
  * Resolve absolute photo file path based on event + photo origin
  * Managed: storage/events/active + photo.path (legacy variants supported)
@@ -88,6 +93,7 @@ function resolvePhotoFilePath(event, photo) {
 }
 
 module.exports = {
+  isManagedOriginalKey,
   resolvePhotoFilePath,
   resolvePhotoStorageKey,
 };

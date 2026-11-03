@@ -49,19 +49,21 @@ class LocalFsStorage {
     return path.join(this.root, normalized);
   }
 
-  async put(relPath, body, _options = {}) {
+  async put(relPath, body, options = {}) {
+    options.signal?.throwIfAborted();
     const abs = this._resolve(relPath);
     await fsp.mkdir(path.dirname(abs), { recursive: true });
     // Write to a sibling tmp file first then rename for crash safety.
     const tmp = `${abs}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
     try {
       if (Buffer.isBuffer(body)) {
-        await fsp.writeFile(tmp, body);
+        await fsp.writeFile(tmp, body, { signal: options.signal });
       } else if (body && typeof body.pipe === 'function') {
-        await pipeline(body, fs.createWriteStream(tmp));
+        await pipeline(body, fs.createWriteStream(tmp), { signal: options.signal });
       } else {
         throw new Error('LocalFsStorage.put: body must be a Buffer or Readable stream');
       }
+      options.signal?.throwIfAborted();
       await fsp.rename(tmp, abs);
     } catch (err) {
       await fsp.unlink(tmp).catch(() => {});

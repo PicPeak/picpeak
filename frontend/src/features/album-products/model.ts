@@ -108,6 +108,8 @@ export const isConfirmed = (offer: Pick<Offer, 'status' | 'selection'>) =>
   offer.status === 'locked' ||
   (offer.status === 'submitted' && !!offer.selection?.clientFinal);
 export interface Offer {
+  // A contact whose login may look at the gallery but not decide for the customer.
+  readOnly?: boolean;
   customerId?: number | null;
   releasedCustomerId?: number | null;
   cataloguePresetId?: number | null;

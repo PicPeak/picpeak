@@ -68,6 +68,7 @@
     "sanitize-html": "2.18.1",
     "sharp": "0.35.5",
     "sqlite3": "^5.1.6",
+    "stripe": "23.0.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "swissqrbill": "^4.3.0",

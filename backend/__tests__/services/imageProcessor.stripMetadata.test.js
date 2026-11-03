@@ -168,7 +168,8 @@ describe('derived images carry no EXIF or GPS', () => {
     await expect(isolated(src).withExif({ IFD0: { Orientation: '6' }, IFD3: {} }).jpeg().toBuffer()).rejects.toThrow('Unsupported image operation');
     await expect(isolated(src).withExif({ IFD0: { Orientation: ['6'] } }).jpeg().toBuffer()).rejects.toThrow('Unsupported image operation');
     await expect(isolated(src).withIccProfile('srgb').jpeg().toBuffer()).rejects.toThrow('Unsupported image operation');
-    await expect(isolated(src).withIccProfile('srgb', { attach: true }).jpeg().toBuffer()).rejects.toThrow('Unsupported image operation');
+    const print = await isolated(src).withIccProfile('srgb', { attach: true }).jpeg().toBuffer();
+    expect((await sharp(print).metadata()).icc).toBeTruthy();
     await expect(isolated(src).withExif({ IFD0: { Orientation: '6' } }).withIccProfile('srgb', { attach: false }).jpeg().toBuffer()).resolves.toBeTruthy();
   });
 });

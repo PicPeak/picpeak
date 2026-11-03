@@ -13,7 +13,7 @@
 import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Briefcase, UserCog, FileText, Receipt, Wrench, Clock, ScrollText, Calendar, FolderKanban, Megaphone } from 'lucide-react';
+import { Briefcase, Gift, UserCog, FileText, Receipt, Wrench, Clock, ScrollText, Calendar, FolderKanban, Megaphone } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
@@ -106,6 +106,14 @@ export function useClientsNavItems(): ClientsNavItem[] {
       icon: Megaphone,
       featureFlag: 'newsletters',
       permission: 'newsletters.view',
+    },
+    {
+      key: 'gifts',
+      to: '/admin/clients/gifts',
+      label: t('clients.subnav.gifts', 'Gifts'),
+      icon: Gift,
+      featureFlag: 'customerGifts',
+      permission: 'customers.gifts.view',
     },
     {
       key: 'development',

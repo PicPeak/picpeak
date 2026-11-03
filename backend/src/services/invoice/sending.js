@@ -9,6 +9,7 @@ const { AppError } = require('../../utils/errors');
 const { formatShortDate } = require('../../utils/dateFormatter');
 const { toDateOnly } = require('../../utils/dateOnly');
 const { resolveBillingRecipients } = require('../_billingRecipients');
+const customerContactsService = require('../customerContactsService');
 const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
@@ -19,6 +20,11 @@ const { createInvoice } = require('./create');
 const { buildInvoiceRenderContext } = require('./render');
 const { collectRebillProofAttachments } = require('./rebillProofs');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
+
+async function billingContactEmails(customer) {
+  const contacts = await customerContactsService.mailRecipients(customer?.id, 'bills');
+  return contacts.map((contact) => contact.email);
+}
 
 
 /**
@@ -171,6 +177,8 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     issuer: ctx.issuer,
   });
 
+  // Before the claim: a failed lookup must not leave it sent with no mail.
+  const contactEmails = await billingContactEmails(customer);
   const newStatus = invoice.status === 'overdue' ? 'overdue' : 'sent';
   // Conditional on the status read above: when another process sent this
   // scheduled invoice in the meantime, the row is no longer 'scheduled',
@@ -187,7 +195,9 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     return { sent: false, alreadySent: true };
   }
 
-  const { to: invoiceTo, cc: invoiceCc } = resolveBillingRecipients(customer, invoice.cc_pdf_email);
+  const { to: invoiceTo, cc: invoiceCc } = resolveBillingRecipients(
+    customer, invoice.cc_pdf_email, contactEmails,
+  );
 
   // Re-bill/passthrough proof attachments (#866). Separate attachments — the
   // invoice PDF above is never touched. Selection comes from the Send dialog on
@@ -498,6 +508,7 @@ async function sendStornoOnce(stornoId, adminId) {
     issuer: ctx.issuer,
   });
 
+  const contactEmails = await billingContactEmails(customer);
   // Same claim as sendInvoice: only the caller that flips the row mails it
   // (cancelInvoice's inline send and the scheduler retry can overlap).
   const claimed = await auditedUpdate(db, 'invoices', { id: stornoId, status: storno.status }, {
@@ -515,11 +526,13 @@ async function sendStornoOnce(stornoId, adminId) {
       .select('invoice_number', 'issue_date').first()
     : null;
 
-  const { to: stornoTo, cc: stornoCc } = resolveBillingRecipients(customer, storno.cc_pdf_email);
+  const { to: stornoTo, cc: stornoCc } = resolveBillingRecipients(
+    customer, storno.cc_pdf_email, contactEmails,
+  );
   await emailProcessor.queueEmail(storno.event_id || null, stornoTo, 'storno_issued', {
     storno_number: storno.invoice_number,
     original_invoice_number: originalRow?.invoice_number || '',
-    original_issue_date: originalRow?.issue_date ? formatShortDate(originalRow.issue_date) : '',
+    original_issue_date: originalRow?.issue_date ? formatShortDate(originalRow.issue_date, ctx.issuer?.countryCode) : '',
     customer_name: customer.display_name || customer.first_name || customer.email.split('@')[0],
     total_amount: formatMajor(Math.abs(storno.total_amount_minor), storno.currency, ctx.locale),
     // Match the customer's language (as with the ctx.locale-formatted amount).

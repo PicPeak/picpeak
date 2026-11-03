@@ -264,6 +264,8 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
     }
 
     // Choices contain client names and session digests; SQLite FK cascades are off.
+    if (await trx.schema.hasTable('print_sales_orders'))
+      await trx('print_sales_orders').where({ event_id: eventId }).update({ event_id: null });
     if (await trx.schema.hasTable('event_album_products')) {
       if (await trx.schema.hasTable('album_product_choice_history')) {
         await trx('album_product_choice_history').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();

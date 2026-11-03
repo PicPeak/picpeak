@@ -609,6 +609,12 @@ async function deleteAdminUser(id, deletedById) {
   // super_admin, so their specific message survives.
   await assertMayManageSuperAdminTarget(user, deletedById);
 
+  // Only their creator or a super admin can fulfil a print order (migration 341).
+  if (await db.schema.hasTable('print_sales_orders')
+    && await db('print_sales_orders').where({ created_by_admin_id: id, status: 'accepted' }).first('id')) {
+    throw new ConflictError('Close this admin\'s open print orders before deleting the account');
+  }
+
   // A delegated users.delete holder only reaches accounts within its own
   // permissions, and never one that still owns events or projects: the FK
   // rules below SET NULL the owner column, and ownerless rows are readable
@@ -664,6 +670,11 @@ async function deleteAdminUser(id, deletedById) {
     // The submissions this admin reopened (migration 291): SET NULL.
     if (await trx.schema.hasTable('selection_submissions')) {
       await trx('selection_submissions').where('reopened_by', id).update({ reopened_by: null });
+    }
+    // The print shops they billed (migration 341): SET NULL, which closes the shop.
+    if (await trx.schema.hasTable('print_sales_orders')) {
+      await trx('events').where('print_sales_admin_id', id).update({ print_sales_admin_id: null });
+      await trx('print_sales_orders').where('created_by_admin_id', id).update({ created_by_admin_id: null });
     }
     if (await trx.schema.hasColumn('photos', 'uploaded_by_admin_id')) {
       await trx('photos').where('uploaded_by_admin_id', id).update({ uploaded_by_admin_id: null });
