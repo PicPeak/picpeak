@@ -18,6 +18,7 @@ const WEBHOOK_EVENT_TYPES = [
   'photo.uploaded',
   'photo.deleted',
   'selection.submitted',
+  'external_scan.completed',
 ] as const;
 
 interface DeliveryRow {
