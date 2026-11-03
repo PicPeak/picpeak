@@ -449,6 +449,14 @@ describe('gallery entry', () => {
     render(<GalleryProductPanel slug="wedding" />);
     expect(await screen.findByText('Your selection is confirmed.')).toBeInTheDocument();
   });
+  it('a view-only login sees the album but cannot start it, not even from a deep link', async () => {
+    window.history.replaceState(null, '', '/gallery/wedding?album=offer-a');
+    vi.mocked(albumProducts.client).mockResolvedValue([offer({ readOnly: true } as never)]);
+    render(<GalleryProductPanel slug="wedding" />);
+    expect(await screen.findByText('Your login can view this choice but not make it.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Configure your album' })).toBeNull();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
   it('a deep link opens the released album directly', async () => {
     window.history.replaceState(null, '', '/gallery/wedding?album=offer-a');
     vi.mocked(albumProducts.client).mockResolvedValue([offer()]);

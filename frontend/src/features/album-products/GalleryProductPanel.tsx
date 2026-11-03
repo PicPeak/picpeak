@@ -44,6 +44,8 @@ function GuidedAlbumEntry({
     onClosed();
   };
   const confirmed = offers.find(isConfirmed);
+  // A view-only portal login sees a confirmed album, but can't make one.
+  const viewOnly = !confirmed && offers.every((o) => o.readOnly);
   return (
     <section
       aria-label={t('albumProducts.yourAlbum', 'Your album')}
@@ -57,21 +59,23 @@ function GuidedAlbumEntry({
           <p className="text-sm">
             {confirmed
               ? t('albumProducts.entryConfirmed', 'Your selection is confirmed.')
-              : t(
-                  'albumProducts.entryOpen',
-                  'Choose your album, its look and your cover and poster photos.',
-                )}
+              : viewOnly
+                ? t('albumProducts.readOnlyHelp', 'Your login can view this choice but not make it.')
+                : t(
+                    'albumProducts.entryOpen',
+                    'Choose your album, its look and your cover and poster photos.',
+                  )}
           </p>
         </div>
-        <Button onClick={() => setOpen(true)}>
+        {!viewOnly && <Button onClick={() => setOpen(true)}>
           {confirmed
             ? t('albumProducts.viewSelection', 'View your selection')
             : offers.some((o) => o.selection)
               ? t('albumProducts.continueSelection', 'Continue your selection')
               : t('albumProducts.startSelection', 'Configure your album')}
-        </Button>
+        </Button>}
       </div>
-      {open && (
+      {open && !viewOnly && (
         <GuidedAlbumFlow
           offers={offers}
           slug={slug}
