@@ -212,6 +212,13 @@ describe('Upload content validation on guest and chunked uploads', () => {
       expect(await photosOf(event)).toHaveLength(0);
     });
 
+    it('refuses a bare container header under a .heic name', async () => {
+      const event = await makeEvent();
+      const res = await v1Upload(event, Buffer.from('\0\0\0\x18ftypisom-not-an-image-at-all'), 'empty.heic', 'image/jpeg');
+      expect(res.status).toBe(400);
+      expect(await photosOf(event)).toHaveLength(0);
+    });
+
     it('refuses JPEG bytes under a .heic name', async () => {
       const event = await makeEvent();
       const res = await v1Upload(event, jpeg, 'renamed.heic', 'image/jpeg');

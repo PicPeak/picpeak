@@ -486,8 +486,11 @@ async function handleV1PhotoUpload(req, res) {
       : req.file.mimetype;
     req.file.mimetype = declaredType;
     const videoUpload = isVideoMimeType(declaredType);
+    // The HEIF signature is only a container's `ftyp`, which says nothing about
+    // an image in it, so that name has to read as one as well.
     const contentMatches = ALLOWED_MEDIA_TYPES[declaredType]
       ? await validateFileContent(tempPath, declaredType)
+        && (!isHeifFilename(req.file.originalname) || await readsAsImage(tempPath))
       : await readsAsImage(tempPath);
     if (!contentMatches) {
       await fs.unlink(tempPath).catch(() => {});
