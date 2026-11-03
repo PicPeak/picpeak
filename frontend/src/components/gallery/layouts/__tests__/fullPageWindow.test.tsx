@@ -234,6 +234,24 @@ describe('Story fixed grid windowing', () => {
     expect(document.querySelector<HTMLElement>(STORY_GRID)!.style.gridTemplateRows).toBe('repeat(2000, 300px)');
   });
 
+  it('reads the grid again when a CSS template arrives without changing its size', async () => {
+    render(<GalleryStoryLayout {...layoutProps(makePhotos(2000))} />);
+    expect(storyCards().length).toBeLessThan(2000);
+    storyGrid = { ...storyGrid, gridTemplateColumns: '600px 600px' };
+    const template = document.createElement('style');
+    await act(async () => { document.head.appendChild(template); });
+    expect(document.querySelector<HTMLElement>(STORY_GRID)!.style.gridTemplateRows).toBe('');
+    expect(storyCard(2000)).toBeTruthy();
+
+    // And back: the window starts from the cards that are mounted.
+    const card = storyCard(1)!;
+    storyGrid = { ...storyGrid, gridTemplateColumns: '400px 400px 400px' };
+    await act(async () => { template.textContent = '.x {}'; });
+    expect(card.isConnected).toBe(true);
+    expect(storyCard(2000)).toBeFalsy();
+    template.remove();
+  });
+
   it('keeps the top card when a breakpoint takes the grid to one column', () => {
     render(<GalleryStoryLayout {...layoutProps(makePhotos(2000))} />);
     scrollTo(-100 * PITCH);

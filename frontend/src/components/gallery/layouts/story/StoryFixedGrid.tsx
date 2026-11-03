@@ -2,6 +2,7 @@ import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { StoryPhotoCard, type StoryCaptionMode } from './StoryPhotoCard';
 import { useWindowedItems, type WindowItem } from '../rowWindow';
 import { layoutQuilted } from '../quiltedWindow';
+import { watchStylesheets } from '../measuredWindow';
 import type { Photo } from '../../../../types';
 
 const NO_ITEMS: WindowItem[] = [];
@@ -103,10 +104,14 @@ export const StoryFixedGrid: React.FC<StoryFixedGridProps> = ({
       setGrid((previous) => (sameGrid(previous, next) ? previous : next));
     };
     read();
-    if (typeof ResizeObserver === 'undefined') return undefined;
+    const stopWatching = watchStylesheets(read);
+    if (typeof ResizeObserver === 'undefined') return stopWatching;
     const observer = new ResizeObserver(read);
     observer.observe(container);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      stopWatching();
+    };
   }, []);
 
   const layout = useMemo(() => (grid
@@ -116,7 +121,12 @@ export const StoryFixedGrid: React.FC<StoryFixedGridProps> = ({
     })
     : null), [grid, photos, featured]);
   const windowed = requested && layout !== null;
-  const { visible } = useWindowedItems(gridRef, layout?.items ?? NO_ITEMS, grid?.width ?? 0, windowed, grid?.cell);
+  // Not this grid, every card is mounted: a later template that makes it one
+  // starts its window from them, not from nothing.
+  const mountedItems = useMemo((): WindowItem[] => (grid === null
+    ? photos.map((photo, rowIndex) => ({ photoId: photo.id, x: 0, y: 0, width: 0, height: 0, rowIndex }))
+    : NO_ITEMS), [grid, photos]);
+  const { visible } = useWindowedItems(gridRef, layout?.items ?? mountedItems, grid?.width ?? 0, windowed, grid?.cell);
 
   // In list order, as with every card mounted: their lines place them, and
   // this is the order Tab walks them in.

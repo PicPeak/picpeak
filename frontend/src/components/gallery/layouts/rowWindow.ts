@@ -27,6 +27,12 @@ export const WINDOW_OVERSCAN_VIEWPORTS = KEEP_BAND_VIEWPORTS;
 export interface RowBox {
   top: number;
   bottom: number;
+  /**
+   * How far down this row and all before it go. Rows can overlap (a tall tile
+   * of a column layout runs past many that start after it), so `bottom` alone
+   * isn't sorted, and this is what the window searches.
+   */
+  reach: number;
   /** Index range into the layout's items, `to` exclusive. */
   from: number;
   to: number;
@@ -57,13 +63,17 @@ export function buildRows(items: JustifiedLayoutItem[]): RowBox[] {
   items.forEach((item, i) => {
     if (item.rowIndex !== rowIndex) {
       rowIndex = item.rowIndex;
-      rows.push({ top: item.y, bottom: item.y + item.height, from: i, to: i + 1 });
+      rows.push({ top: item.y, bottom: item.y + item.height, reach: 0, from: i, to: i + 1 });
     } else {
       const row = rows[rows.length - 1];
       row.to = i + 1;
       row.bottom = Math.max(row.bottom, item.y + item.height);
     }
   });
+  rows.reduce((reach, row) => {
+    row.reach = Math.max(reach, row.bottom);
+    return row.reach;
+  }, 0);
   return rows;
 }
 
@@ -89,7 +99,7 @@ export function visibleRowRange(
   viewBottom: number,
   overscan: number,
 ): RowRange {
-  const start = firstRow(rows, (row) => row.bottom > viewTop - overscan);
+  const start = firstRow(rows, (row) => row.reach > viewTop - overscan);
   const end = firstRow(rows, (row) => row.top >= viewBottom + overscan);
   return { start, end: Math.max(start, end) };
 }
@@ -181,7 +191,7 @@ export function useWindowedItems(
     const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
     if (!rearranged && Math.abs(container.clientWidth - padding - widthRef.current) >= 1) return;
     const viewTop = -container.getBoundingClientRect().top;
-    const top = firstRow(rows, (row) => row.bottom > viewTop);
+    const top = firstRow(rows, (row) => row.reach > viewTop);
     if (viewTop <= 0 || top >= rows.length) {
       anchorRef.current = null;
       return;

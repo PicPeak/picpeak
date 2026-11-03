@@ -137,6 +137,18 @@ export const gridBoxStyle = ({ windowed, height }: Pick<MeasuredWindow, 'windowe
 
 const isStylesheet = (node: Node) => node.nodeName === 'STYLE' || node.nodeName === 'LINK';
 
+/** Calls back when a stylesheet arrives or changes: a CSS template comes after the first layout. */
+export function watchStylesheets(onChange: () => void): () => void {
+  const styles = new MutationObserver((records) => {
+    if (records.some((record) => isStylesheet(record.target.nodeType === Node.TEXT_NODE ? record.target.parentNode! : record.target)
+      || Array.from(record.addedNodes).some(isStylesheet))) {
+      onChange();
+    }
+  });
+  styles.observe(document.head, { childList: true, subtree: true, characterData: true });
+  return () => styles.disconnect();
+}
+
 export interface MeasuredWindow {
   /** Tiles are placed from `boxes` and only `mounted` ones are in the DOM. */
   windowed: boolean;
@@ -192,18 +204,11 @@ export function useMeasuredWindow(
       if (contentWidth(container) === width && getComputedStyle(container).columnCount !== columnCount) remeasure();
     };
     window.addEventListener('resize', onResize);
-    // A CSS template arrives after the first layout.
-    const styles = new MutationObserver((records) => {
-      if (records.some((record) => isStylesheet(record.target.nodeType === Node.TEXT_NODE ? record.target.parentNode! : record.target)
-        || Array.from(record.addedNodes).some(isStylesheet))) {
-        remeasure();
-      }
-    });
-    styles.observe(document.head, { childList: true, subtree: true, characterData: true });
+    const stopWatching = watchStylesheets(remeasure);
     return () => {
       resize.disconnect();
       window.removeEventListener('resize', onResize);
-      styles.disconnect();
+      stopWatching();
     };
   }, [containerRef, requested]);
 
