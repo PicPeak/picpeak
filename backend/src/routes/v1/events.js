@@ -32,7 +32,7 @@ const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ow
 const { requirePermission } = require('../../middleware/permissions');
 
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
-const { generateThumbnail } = require('../../services/imageProcessor');
+const { generateThumbnail, withProcessableImage } = require('../../services/imageProcessor');
 const logger = require('../../utils/logger');
 
 const { formatBoolean } = require('../../utils/dbCompat');
@@ -661,7 +661,12 @@ async function handleV1PhotoUpload(req, res) {
       }
 
       try {
-        thumbRel = await generateThumbnail(tempPath);
+        const processable = await withProcessableImage(tempPath, req.file.originalname);
+        try {
+          thumbRel = await generateThumbnail(processable.path, { outputBasename: path.basename(tempPath) });
+        } finally {
+          await processable.cleanup();
+        }
       } catch (err) {
         logger.warn('v1 thumbnail generation failed', { err: err.message });
         if (require('../../services/imageResourcePolicy').isResourceError(err)) throw err;
