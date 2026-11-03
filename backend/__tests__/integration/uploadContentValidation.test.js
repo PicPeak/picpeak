@@ -201,6 +201,8 @@ describe('Upload content validation on guest and chunked uploads', () => {
       expect(res.status).toBe(201);
       const [photo] = await photosOf(event);
       expect(photo.mime_type).toBe('image/heic');
+      // A HEVC HEIC only decodes through ffmpeg: this route writes a finished row.
+      expect(photo.thumbnail_path).toBeTruthy();
     });
 
     it('still refuses a generic type on anything else', async () => {

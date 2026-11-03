@@ -43,6 +43,7 @@ const { requirePermission } = require('../../middleware/permissions');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const {
   generateThumbnail,
+  withProcessableImage,
   extractCapture,
   captureWallColumn,
   ensurePreviewImage,
@@ -732,7 +733,12 @@ async function handleV1PhotoUpload(req, res) {
       captureWall = captureWallColumn(capture);
 
       try {
-        thumbRel = await generateThumbnail(tempPath, { meta: thumbMeta });
+        const processable = await withProcessableImage(tempPath, req.file.originalname);
+        try {
+          thumbRel = await generateThumbnail(processable.path, { meta: thumbMeta, outputBasename: path.basename(tempPath) });
+        } finally {
+          await processable.cleanup();
+        }
       } catch (err) {
         if (require('../../services/imageResourcePolicy').isResourceError(err)) throw err;
         logger.warn('v1 thumbnail generation failed', { err: err.message });
