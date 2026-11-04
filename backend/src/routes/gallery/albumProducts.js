@@ -1,7 +1,7 @@
 'use strict';
 const express = require('express'),
   crypto = require('crypto');
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const {
   verifyGalleryAccess,
   denySlideshowToken,
@@ -10,7 +10,7 @@ const { blockHiddenGallery } = require('../../utils/revealMode');
 const { requireFeatureFlag } = require('../../middleware/requireFeatureFlag');
 const { handleAsync, validateRequest } = require('../../utils/routeHelpers');
 const { ForbiddenError } = require('../../utils/errors');
-const { pipeStreamToResponse } = require('../../utils/streamResponse');
+const images = require('../../services/albumProducts/images');
 const service = () =>
   require('../../services/albumProducts/service').application();
 const customerContactsService = require('../../services/customerContactsService');
@@ -47,17 +47,11 @@ router.get(
 router.get(
   '/:slug/album-products/images/:imageId',
   param('imageId').isUUID(),
+  query('size').optional().isIn(images.SIZES),
   handleAsync(async (req, res) => {
     validateRequest(req);
     const image = await service().clientImage(req.event.id, req.params.imageId, viewerOf(req));
-    res.type('png');
-    pipeStreamToResponse(
-      await require('../../services/storage')
-        .getStorage()
-        .get(image.storage_key),
-      res,
-      { context: 'gallery album option image' },
-    );
+    await images.sendImage(req, res, image, 'gallery album option image');
   }),
 );
 router.put(

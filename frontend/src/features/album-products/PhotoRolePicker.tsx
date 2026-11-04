@@ -80,7 +80,7 @@ export function PhotoRolePicker({
       {chosen.length > 0 && (
         <ul className="flex flex-wrap gap-3">
           {chosen.map((id) => (
-            <li key={id} className="w-24">
+            <li key={id} className="w-28">
               <span className="relative block aspect-square overflow-hidden rounded-lg border border-border-token bg-surface">
                 <GalleryPhoto id={id} slug={slug} photo={byId.get(id)} alt={label(id)} />
               </span>
@@ -108,7 +108,7 @@ export function PhotoRolePicker({
         <p>{t('albumProducts.noPhotos', 'There are no photos to choose from yet.')}</p>
       ) : (
         <>
-          <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+          <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
             {photos.slice(0, shown).map((photo) => {
               const selected = chosen.includes(photo.id);
               const full = !selected && max > 1 && chosen.length >= max;

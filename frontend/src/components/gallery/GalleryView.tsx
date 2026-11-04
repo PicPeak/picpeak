@@ -1925,6 +1925,16 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             />
           </div>
         )}
+        {/* The album entry (issue 2397) sits with the selection actions above,
+            not after the whole grid, so it is the first thing a client sees.
+            Story's fixed nav covers the top of the page; with the selection
+            bar the band above makes room for it, otherwise the panel does. */}
+        {(isClient || viaCustomer) && (
+          <GalleryProductPanel
+            slug={slug}
+            className={theme.galleryLayout === 'gallery-story' && !selectionBarShown ? 'pt-20' : undefined}
+          />
+        )}
         <PhotoGridWithLayouts
           // Remount on a scope change (#1160): layout state such as the
           // carousel's currentIndex is only meaningful for the photo set it was
@@ -2060,7 +2070,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
         </PhotoSalesProvider>
 
-        {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
         <PrintShopEntry />
 
         {/* Filename list for a RAW editor search (issue 1733, A3d). */}

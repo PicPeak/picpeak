@@ -1,6 +1,6 @@
 'use strict';
 const express = require('express');
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
@@ -11,7 +11,7 @@ const {
 const { handleAsync, validateRequest } = require('../utils/routeHelpers');
 const { db, logActivity } = require('../database/db');
 const { NotFoundError } = require('../utils/errors');
-const { pipeStreamToResponse } = require('../utils/streamResponse');
+const images = require('../services/albumProducts/images');
 const service = () =>
   require('../services/albumProducts/service').application();
 const router = express.Router();
@@ -89,15 +89,11 @@ router.get(
   '/images/:imageId',
   requirePermission('products.view'),
   param('imageId').isUUID(),
+  query('size').optional().isIn(images.SIZES),
   handleAsync(async (req, res) => {
     validateRequest(req);
     const image = await service().image(req.params.imageId);
-    res.type('png');
-    pipeStreamToResponse(
-      await require('../services/storage').getStorage().get(image.storage_key),
-      res,
-      { context: 'album option image' },
-    );
+    await images.sendImage(req, res, image, 'album option image');
   }),
 );
 const events = express.Router({ mergeParams: true });

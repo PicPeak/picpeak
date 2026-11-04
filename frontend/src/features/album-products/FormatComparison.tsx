@@ -13,35 +13,65 @@ export function sizesOf(format: Option, formatAttribute: Attribute, size: Attrib
   );
 }
 
+export type Bounds = { width: number; height: number };
+/** The widest and the tallest side in view: the box every outline shares. */
+export const boundsOf = (sizes: Option[]): Bounds => ({
+  width: Math.max(1, ...sizes.map((s) => inMillimetres(s, 'width'))),
+  height: Math.max(1, ...sizes.map((s) => inMillimetres(s, 'height'))),
+});
+
 /**
  * One size drawn to its true ratio, at a scale shared by everything drawn next
- * to it: `largest` is the widest side in view, so the outlines compare.
+ * to it (issue 2397): every outline is drawn in millimetres inside the same
+ * `bounds`, and the SVG fits that box into its container, so the largest
+ * format fills the space, a square stays square and the others compare.
  */
 export function SizeOutline({
   size,
-  largest,
+  bounds,
   spread = false,
 }: {
   size: Option;
-  largest: number;
+  bounds: Bounds;
   spread?: boolean;
 }) {
   const width = inMillimetres(size, 'width');
   const height = inMillimetres(size, 'height');
+  const x = (bounds.width - width) / 2;
+  const y = (bounds.height - height) / 2;
   return (
-    <span
+    <svg
       aria-hidden="true"
       data-ratio={`${width}:${height}`}
-      className="relative mx-auto block rounded-sm border-2 border-current"
-      style={{ width: `${(width / largest) * 100}%`, aspectRatio: `${width} / ${height}` }}
+      viewBox={`0 0 ${bounds.width} ${bounds.height}`}
+      preserveAspectRatio="xMidYMid meet"
+      className="block h-full w-full overflow-visible"
     >
-      {spread && <span className="absolute inset-y-0 left-1/2 border-l border-dashed border-current" />}
-    </span>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        vectorEffect="non-scaling-stroke"
+      />
+      {spread && (
+        <line
+          x1={bounds.width / 2}
+          x2={bounds.width / 2}
+          y1={y}
+          y2={y + height}
+          stroke="currentColor"
+          strokeWidth={1}
+          strokeDasharray="4 3"
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
+    </svg>
   );
 }
-
-export const widestOf = (sizes: Option[]) =>
-  Math.max(1, ...sizes.map((s) => inMillimetres(s, 'width')));
 
 /** The format step: every format side by side, largest size to true ratio. */
 export function FormatComparison({
@@ -61,24 +91,23 @@ export function FormatComparison({
   disabled?: boolean;
   priceOf?: (optionId: string) => string | null;
 }) {
-  const largest = widestOf(size.options);
+  const widest = format.options.map((option) => sizesOf(option, format, size).at(-1));
+  const bounds = boundsOf(widest.filter((s): s is Option => !!s));
   return (
     <fieldset disabled={disabled}>
       <legend className="sr-only">{format.name}</legend>
       <div className="grid grid-cols-2 gap-3">
-        {format.options.map((option) => {
+        {format.options.map((option, index) => {
           const sizes = sizesOf(option, format, size);
-          const widest = sizes[sizes.length - 1];
+          const shape = widest[index];
           const selected = value === option.id;
           return (
             <label
               key={option.id}
               className={`flex min-w-0 cursor-pointer flex-col gap-3 rounded-xl border border-border-token p-3 focus-within:ring-2 focus-within:ring-accent ${selected ? 'tile-selected' : ''}`}
             >
-              <span className="flex h-28 items-center">
-                <span className="w-full">
-                  {widest && <SizeOutline size={widest} largest={largest} spread={size.spread} />}
-                </span>
+              <span className="block h-32 p-1 sm:h-40">
+                {shape && <SizeOutline size={shape} bounds={bounds} spread={size.spread} />}
               </span>
               <span className="flex items-start gap-2">
                 <input
