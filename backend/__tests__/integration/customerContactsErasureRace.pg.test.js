@@ -117,4 +117,28 @@ const restores = [];
     const [login] = await db('customer_logins').where('email', address);
     expect(login.password_hash).toBe('holder-hash');
   });
+
+  it('does not deadlock with a password reset that holds one of the erased contacts', async () => {
+    const { erasedId } = await setup();
+    const own = await contacts.createContact(erasedId, { email: `own${counter}@example.test` }, null);
+    // As createPasswordReset does: the contact row first, then a row that
+    // references the account.
+    const reset = await db.transaction();
+    try {
+      await reset('customer_contacts').where('id', own.id).forUpdate().first('id');
+      const erasing = accounts.eraseCustomer(erasedId, null);
+      await blockedOnLock(owner, erasing);
+      await reset('customer_password_resets').insert({
+        ...require('../../src/utils/capabilityToken').capabilityTokenColumns(require('crypto').randomBytes(32).toString('hex')),
+        customer_account_id: erasedId,
+        contact_id: own.id,
+        expires_at: new Date(Date.now() + 3600e3).toISOString(),
+      });
+      await reset.commit();
+      await erasing;
+    } finally {
+      if (!reset.isCompleted()) await reset.rollback();
+    }
+    expect(await db('customer_password_resets').where('customer_account_id', erasedId)).toEqual([]);
+  });
 });

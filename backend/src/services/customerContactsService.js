@@ -838,9 +838,12 @@ async function lockForErasure(trx, customerId) {
   // The account row first, and locked: its address cannot change before the
   // erasure commits, so keepHolderLogin needs no address lock beyond these.
   // An email change takes the row after the contacts it moves, which are
-  // never this customer's, so the two cannot wait on each other.
+  // never this customer's, so the two cannot wait on each other. FOR NO KEY
+  // UPDATE, not FOR UPDATE: a contact's password reset holds the contact and
+  // then inserts a row referencing the account, whose KEY SHARE lock this
+  // must not block.
   const holder = trx('customer_accounts').where('id', customerId);
-  if (trx.client.config.client === 'pg') holder.forUpdate();
+  if (trx.client.config.client === 'pg') holder.forNoKeyUpdate();
   const account = await holder.first('email');
   const rows = await trx('customer_contacts').where('customer_account_id', customerId)
     .orderBy('id').forUpdate().select('email');
