@@ -236,7 +236,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         )}
 
         <ClientAccessCard event={event} refetchEvent={refetchEvent} />
-        <EventProductsCard eventId={event.id} ownsEvent={event.can_manage_assignments !== false} />
+        <EventProductsCard eventId={event.id} ownsEvent={event.can_manage_assignments !== false} slug={event.slug} />
 
         {!archived && feedbackSettings?.feedback_enabled && (
           <div className="space-y-2">

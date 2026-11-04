@@ -140,4 +140,13 @@ function describe(error) {
     ...(error.imageLimit ? { imageLimit: error.imageLimit, imageMax: error.imageMax } : {}),
   };
 }
-module.exports = { LIBRARY_UNAVAILABLE, configuration, estimate, refusal, isResourceError, isTransient, retryTransient, describe, effectiveMemory, MiB };
+/**
+ * How a single-file upload answers a file refused for one of these limits:
+ * 422 with the refusal's message and the limit, not a 400 or a 500. Takes
+ * the refusal or its `req.invalidFiles` entry; null for anything else.
+ */
+function uploadRefusal(refused) {
+  if (!isResourceError(refused) || isTransient(refused)) return null;
+  return { status: 422, body: { error: typeof refused.error === 'string' ? refused.error : refused.message, ...describe(refused) } };
+}
+module.exports = { LIBRARY_UNAVAILABLE, configuration, estimate, refusal, isResourceError, isTransient, retryTransient, describe, uploadRefusal, effectiveMemory, MiB };

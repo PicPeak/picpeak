@@ -1,6 +1,10 @@
 import { api } from '../config/api';
 
 export interface PublicSettings {
+  photo_sales_checkout_configured?: boolean;
+  photo_sales_providers?: Array<'stripe' | 'snipcart'>;
+  photo_sales_preferred_provider?: 'stripe' | 'snipcart' | null;
+  snipcart_api_key?: string | null;
   branding_company_name: string;
   branding_company_tagline: string;
   branding_support_email: string;

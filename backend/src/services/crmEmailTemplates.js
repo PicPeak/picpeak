@@ -135,7 +135,7 @@ const CRM_EMAIL_TEMPLATES = {
       body_html: `<h2>Invoice {{invoice_number}}</h2><p>Dear {{customer_name}},</p>
 <p>Please find the attached invoice {{invoice_number}}{{#if event_name}} for "{{event_name}}"{{/if}}.</p>
 <p><strong>Amount:</strong> {{total_amount}}<br><strong>Due:</strong> {{due_date}}{{#if installment_label}}<br><strong>Installment:</strong> {{installment_label}} ({{installment_index}}/{{installment_total}}){{/if}}</p>
-<p>The payment details and IBAN are on the attached PDF.</p>`,
+<p>The payment details are on the attached PDF.</p>`,
       body_text: 'Invoice {{invoice_number}}: {{total_amount}}, due {{due_date}}.',
     },
     de: {
@@ -670,6 +670,18 @@ let _seeded = false;
 // its previous default is brought up to date; one an admin has edited is left
 // as it is (the new variables are available to add).
 const PREVIOUS_DEFAULTS = {
+  // The English invoice mail promised an IBAN on the PDF; a US invoice has
+  // none. German keeps its sentence.
+  'invoice_sent': {
+    'en': {
+      'subject': 'Invoice {{invoice_number}} — {{total_amount}}',
+      'body_html': `<h2>Invoice {{invoice_number}}</h2><p>Dear {{customer_name}},</p>
+<p>Please find the attached invoice {{invoice_number}}{{#if event_name}} for "{{event_name}}"{{/if}}.</p>
+<p><strong>Amount:</strong> {{total_amount}}<br><strong>Due:</strong> {{due_date}}{{#if installment_label}}<br><strong>Installment:</strong> {{installment_label}} ({{installment_index}}/{{installment_total}}){{/if}}</p>
+<p>The payment details and IBAN are on the attached PDF.</p>`,
+      'body_text': 'Invoice {{invoice_number}}: {{total_amount}}, due {{due_date}}.'
+    }
+  },
   // The attachment sentence was unconditional; an install that stored the
   // first version gets the conditional one as long as nobody edited it.
   'quote_addons_updated': {

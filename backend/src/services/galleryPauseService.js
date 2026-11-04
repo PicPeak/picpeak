@@ -24,7 +24,10 @@ async function writeExpiries(trx, table, rows, gallery, now) {
 }
 
 async function compensatePurchases(trx, gallery, now) {
-  const query = trx('photo_purchase_orders').where({ gallery_id: gallery.id, status: 'completed' });
+  // Open reservations carry the quoted purchase deadline too. A deferred
+  // payment settling after resume must retain the time earned during pause.
+  const query = trx('photo_purchase_orders').where({ gallery_id: gallery.id })
+    .whereIn('status', ['completed', 'pending', 'creation_unknown', 'processing']);
   if (trx.client.config.client === 'pg') query.forUpdate();
   const orders = await query.select('id', 'expires_at', 'purchased_at');
   // The completed order is the revocation boundary for both payment providers.

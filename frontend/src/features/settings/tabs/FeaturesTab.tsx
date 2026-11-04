@@ -26,6 +26,7 @@ import {
   Workflow,
   Megaphone,
   Tags,
+  Gift,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -176,6 +177,7 @@ export const FeaturesTab: React.FC = () => {
             onToggle={(next) => setFlag('transfers', next)}
           />
 
+          <FeatureCard icon={Images} title={t('printSales.adminTitle','Print sales')} description={t('printSales.featureDescription','Catalogue-backed photographic prints, invoice payments and manual lab fulfilment. Requires product configuration and billing.')} feature="printSales" sidebarHidden sidebarHiddenLabel={settingsOnlyLabel} enabled={staged.printSales} onToggle={next=>setFlag('printSales',next)} configureHref={settingsTabLink('printSales','printSales')} configureLabel={configureLabel}/>
           <FeatureCard icon={Images} title={t('albumProducts.featureTitle','Product configurator')} description={t('albumProducts.featureDescription','Shared product options for galleries and CRM quotes.')} feature="albumProducts" sidebarHidden sidebarHiddenLabel={settingsOnlyLabel} enabled={staged.albumProducts} onToggle={next=>setFlag('albumProducts',next)} configureHref={settingsTabLink('albumProducts','albumProducts')} configureLabel={configureLabel}/>
 
           {/* Face recognition (#1074). Requires the optional picpeak-ml
@@ -280,6 +282,18 @@ export const FeaturesTab: React.FC = () => {
             onToggle={(next) => setFlag('documents', next)}
             configureHref={settingsTabLink('documents', 'crm')}
             configureLabel={configureLabel}
+          />
+          <FeatureCard
+            icon={Gift}
+            title={t('settings.features.customerGifts.title', 'Customer gifts')}
+            description={t(
+              'settings.features.customerGifts.description',
+              'Suggest gifts at customer milestones, track gift stock and record who received what. Every gift is confirmed by an admin.',
+            )}
+            feature="customerGifts"
+            sidebarLabel={t('settings.features.customerGifts.sidebar', 'Gifts')}
+            enabled={staged.customerGifts}
+            onToggle={(next) => setFlag('customerGifts', next)}
           />
           {/* Future sub-features (Calendar / Quotes / Bills / Messaging)
               slot in here as FeatureCard entries when they ship. No

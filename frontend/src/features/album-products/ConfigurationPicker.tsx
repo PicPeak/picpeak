@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useId } from 'react';
 import { formatMoneyMinor } from '../../utils/money';
 import { ProductImage } from './ProductImage';
-import type { Attribute, Choice, Product } from './model';
+import type { Attribute, Choice, Option, Product } from './model';
 export type ConfigurationValues = Record<string, string[]>;
 export const choiceValues = (choice?: Choice | null): ConfigurationValues =>
   Object.fromEntries(
@@ -22,17 +22,36 @@ export function attributeEnabled(
     );
   });
 }
+/** The options of an attribute its parent's current choice leaves open. */
+export function availableOptions(
+  a: Attribute,
+  values: ConfigurationValues,
+): Option[] {
+  const rule = a.availableWhen;
+  if (!rule) return a.options;
+  const parent = values[rule.attributeId] || [];
+  return a.options.filter((o) => {
+    const allowed = rule.options[o.id];
+    return !allowed || allowed.some((id) => parent.includes(id));
+  });
+}
 export function pruneValues(
   attributes: Attribute[],
   values: ConfigurationValues,
 ): ConfigurationValues {
+  const out: ConfigurationValues = { ...values };
+  // Parents first would need a sort; a repeat settles a chain of dependencies.
+  for (let round = 0; round < attributes.length; round += 1)
+    for (const a of attributes)
+      out[a.id] = attributeEnabled(a, attributes, out)
+        ? (out[a.id] || []).filter((id) =>
+            availableOptions(a, out).some((o) => o.id === id),
+          )
+        : [];
   return Object.fromEntries(
     attributes
-      .filter((a) => attributeEnabled(a, attributes, values))
-      .map((a) => [
-        a.id,
-        (values[a.id] || []).filter((id) => a.options.some((o) => o.id === id)),
-      ]),
+      .filter((a) => attributeEnabled(a, attributes, out))
+      .map((a) => [a.id, out[a.id]]),
   );
 }
 export function ConfigurationPicker({
@@ -44,6 +63,7 @@ export function ConfigurationPicker({
   imageLoader,
   surcharges = [],
   currency,
+  only,
 }: {
   product: Product;
   values: ConfigurationValues;
@@ -53,6 +73,8 @@ export function ConfigurationPicker({
   imageLoader?: (id: string) => Promise<Blob>;
   surcharges?: { attributeId: string; optionId: string; amountMinor: number }[];
   currency?: string;
+  /** Limits the attributes shown. The others still decide dependencies. */
+  only?: (attribute: Attribute) => boolean;
 }) {
   const { t } = useTranslation();
   const pickerId = useId();
@@ -60,7 +82,7 @@ export function ConfigurationPicker({
   return (
     <div className="space-y-5">
       {attributes
-        .filter((a) => attributeEnabled(a, attributes, values))
+        .filter((a) => attributeEnabled(a, attributes, values) && (!only || only(a)))
         .map((a) => (
           <fieldset key={a.id} disabled={disabled} className="space-y-2">
             <legend className="font-semibold">
@@ -73,7 +95,7 @@ export function ConfigurationPicker({
               </span>
             </legend>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {a.options.map((option) => {
+              {availableOptions(a, values).map((option) => {
                 const selected = values[a.id]?.includes(option.id) || false;
                 const cost =
                   surcharges.find(

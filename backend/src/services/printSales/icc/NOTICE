@@ -1,0 +1,23 @@
+Compact ICC Profiles — CC0-1.0
+Author: Clinton Ingram (saucecontrol)
+Source: https://github.com/saucecontrol/Compact-ICC-Profiles
+Pinned revision: bdd84663061bc4ae95ca70decff54f581e27f702
+License: LICENSE in this directory (upstream file: license).
+Files are included verbatim from the upstream profiles/ directory.
+
+AdobeCompat-v2.icc (374 bytes), description A98C
+SHA-256: 60fb2adecacf82132db0b1c09b303316f3bbd9e2823e7ba096d01627d12d57c9
+Adobe RGB (1998) compatible; this is not Adobe's proprietary profile file.
+
+DisplayP3-v2-magic.icc (736 bytes), description sP3
+SHA-256: fa7905dea9d49e775f4e367966e6fc3411e843b44ea91fd7908104b7943a1446
+Display P3, ICC version 2.
+
+ProPhoto-v2-magic.icc (756 bytes), description ROMM
+SHA-256: 59d1ef4f6b882d0d923bdaed86268f55dd30a8d102f4882aad9c2bbe9fb340c9
+ProPhoto/ROMM RGB, ICC version 2.
+
+Keep these files and identifiers stable for accepted-order re-rendering.
+Do not substitute a paper/printer soft-proof profile for a delivery RGB profile.
+Some suppliers match ICC description strings; confirm acceptance of these assets.
+No supplier approval, affiliation or endorsement is implied.

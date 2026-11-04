@@ -18,6 +18,7 @@ const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
 const { normaliseSchedule } = require('../utils/businessHours');
+const { cityLine, printsCountryLine, isUnitedStates } = require('../utils/postalAddress');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('./accountingHistory');
 
 const ALLOWED_PROFILE_FIELDS = [
@@ -466,12 +467,13 @@ async function getEmailSignature() {
       // Same "PC City / Country" shape the PDF issuer block uses
       // (pdfService.js:361). The locale-aware country lookup lives in the
       // PDF renderer; an email footer takes the free-text `country_name`
-      // when the admin set one and the ISO code otherwise.
-      const cc = profile.country_code ? String(profile.country_code).toUpperCase() : '';
-      const pc = profile.postal_code || '';
-      const left = [cc && pc ? `${cc}-${pc}` : (pc || cc), profile.city || ''].filter(Boolean).join(' ');
-      const country = profile.country_name || '';
-      const cityCountry = [left, country].filter(Boolean).join(' / ');
+      // when the admin set one and the ISO code otherwise. A US business
+      // writes "Denver, CO 80202" with no country (utils/postalAddress).
+      const address = {
+        postalCode: profile.postal_code, city: profile.city, state: profile.state, countryCode: profile.country_code,
+      };
+      const country = printsCountryLine(profile.country_code, profile.country_code) ? (profile.country_name || '') : '';
+      const cityCountry = [cityLine(address), country].filter(Boolean).join(' / ');
 
       signature = {
         companyName: profile.company_name || '',
@@ -483,6 +485,8 @@ async function getEmailSignature() {
         email: profile.email || '',
         website: profile.website || '',
         vatId: profile.vat_id || '',
+        // A US business's tax number is its EIN, whatever the mail's language.
+        vatIdLabel: isUnitedStates(profile.country_code) ? 'EIN' : null,
         extra: profile.email_signature_extra || '',
       };
     }

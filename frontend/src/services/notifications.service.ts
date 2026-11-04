@@ -75,8 +75,22 @@ export const notificationsService = {
           count: notification.metadata.count || 0,
           eventName: notification.eventName
         });
+      case 'print_order_accepted':
+        return t('printSales.notificationAccepted', 'Print order {{orderId}} confirmed in {{eventName}} · invoice #{{invoiceId}}', {
+          orderId: String(notification.metadata.orderId || '').slice(0, 8),
+          eventName: notification.eventName || notification.metadata.eventName || t('printSales.deletedGallery', 'Deleted gallery'),
+          invoiceId: notification.metadata.invoiceId,
+        });
       case 'album_product_submitted':
         return t('admin.notificationMessages.productChoiceSubmitted', { eventName: notification.eventName || notification.metadata.eventName, productName: notification.metadata.productName, choice: notification.metadata.choice });
+      case 'album_product_reopened':
+        return t('admin.notificationMessages.productChoiceReopened', { eventName: notification.eventName || notification.metadata.eventName, productName: notification.metadata.productName });
+      case 'album_product_unlocked':
+        return t('admin.notificationMessages.productChoiceUnlocked', { eventName: notification.eventName || notification.metadata.eventName, productName: notification.metadata.productName });
+      case 'album_product_released':
+        return t('admin.notificationMessages.productReleased', { eventName: notification.eventName || notification.metadata.eventName, productName: notification.metadata.productName });
+      case 'album_product_withdrawn':
+        return t('admin.notificationMessages.productWithdrawn', { eventName: notification.eventName || notification.metadata.eventName, productName: notification.metadata.productName });
       case 'photo_deleted':
         return t('admin.notificationMessages.photoDeleted', { eventName: notification.eventName });
       case 'photos_bulk_deleted':

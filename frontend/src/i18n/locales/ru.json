@@ -133,6 +133,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Пропускать точные дубликаты",
+      "skipHelp": "Пропускать файлы с идентичным содержимым, уже имеющиеся в этой галерее, даже под другим именем.",
       "title_one": "{{count}} файл уже есть в этой галерее",
       "title_few": "{{count}} файла уже есть в этой галерее",
       "title_many": "{{count}} файлов уже есть в этой галерее",
@@ -2371,7 +2373,11 @@
       "photosTrashPurged_one": "{{count}} фото удалено навсегда из корзины «{{eventName}}»",
       "photosTrashPurged_few": "{{count}} фото удалено навсегда из корзины «{{eventName}}»",
       "photosTrashPurged_many": "{{count}} фото удалено навсегда из корзины «{{eventName}}»",
-      "photosTrashPurged_other": "{{count}} фото удалено навсегда из корзины «{{eventName}}»"
+      "photosTrashPurged_other": "{{count}} фото удалено навсегда из корзины «{{eventName}}»",
+      "productChoiceReopened": "{{eventName}}: {{productName}} снова открыт для клиента",
+      "productChoiceUnlocked": "{{eventName}}: {{productName}} разблокирован",
+      "productReleased": "{{eventName}}: {{productName}} открыт клиенту",
+      "productWithdrawn": "{{eventName}}: доступ к {{productName}} отозван"
     },
     "notificationToasts": {
       "markedAllRead": "Все уведомления отмечены как прочитанные",
@@ -2779,7 +2785,11 @@
       "approval_submitted": "{{guestName}} одобрил(а) обработанные фото в {{eventName}}",
       "selection_reopened": "Отправка гостя {{guestName}} снова открыта в {{eventName}}",
       "photos_restored": "{{count}} фото восстановлено из корзины {{eventName}}",
-      "photos_trash_purged": "{{count}} фото удалено навсегда из корзины {{eventName}}"
+      "photos_trash_purged": "{{count}} фото удалено навсегда из корзины {{eventName}}",
+      "album_product_reopened": "{{productName}} снова открыт для клиента в {{eventName}}",
+      "album_product_unlocked": "{{productName}} разблокирован в {{eventName}}",
+      "album_product_released": "{{productName}} открыт клиенту в {{eventName}}",
+      "album_product_withdrawn": "Доступ к {{productName}} отозван в {{eventName}}"
     },
     "customerActivity": {
       "customer_invitation_created": "Приглашение отправлено",
@@ -4011,7 +4021,9 @@
       "sortNewest": "Сначала новые",
       "sortOldest": "Сначала старые",
       "sortName": "По имени",
-      "open": "Открыть"
+      "open": "Открыть",
+      "albumAwaiting": "Ваш альбом для «{{name}}» готов к настройке",
+      "configureAlbum": "Настроить альбом"
     },
     "layout": {
       "greeting": "Здравствуйте, {{name}}"
@@ -4103,6 +4115,13 @@
       "successToast": "Пароль обновлён. Пожалуйста, войдите.",
       "invalidSubmission": "Не удалось обновить пароль.",
       "generalError": "Не удалось обновить пароль. Попробуйте снова."
+    },
+    "event": {
+      "album": "Ваш альбом",
+      "albumConfirmed": "Ваш выбор подтверждён.",
+      "albumOpen": "Настроить альбом",
+      "albumReady": "Студия открыла ваш альбом. Выберите оформление и фотографии.",
+      "albumView": "Посмотреть выбор"
     }
   },
   "customers": {
@@ -4314,6 +4333,108 @@
     },
     "subnav": {
       "approvals": "Согласования"
+    }
+  },
+  "albumProducts": {
+    "actorClient": "Клиент",
+    "actorStudio": "Студия",
+    "album": "Альбом",
+    "audience": "Для кого это предложение",
+    "audienceClient": "Клиент галереи (PIN)",
+    "audienceFixed": "В этом предложении уже есть выбор, поэтому оно остаётся за этим клиентом. Для другого клиента добавьте новое предложение.",
+    "audienceShared": "Эту галерею используют несколько клиентов, поэтому никто из них не видит предложение в портале. Выберите клиента или используйте PIN.",
+    "confirmBack": "Продолжить редактирование",
+    "confirmFinal": "Подтвердить",
+    "confirmSelection": "Подтвердить выбор",
+    "confirmWarning": "Внимание: после подтверждения этот выбор нельзя будет изменить.",
+    "confirmedByClient": "Подтверждено клиентом",
+    "confirmedLocked": "Ваш выбор подтверждён и закреплён студией.",
+    "confirmedWaiting": "Ваш выбор подтверждён. Студия его получила.",
+    "continueSelection": "Продолжить выбор",
+    "copyLink": "Скопировать ссылку для клиента",
+    "coverPhoto": "Фото на обложку",
+    "entryConfirmed": "Ваш выбор подтверждён.",
+    "entryOpen": "Выберите альбом, его оформление и фото для обложки и постеров.",
+    "history": "История выбора",
+    "linkCopied": "Ссылка для клиента скопирована",
+    "linkCopyFailed": "Не удалось скопировать ссылку",
+    "noPhotos": "Пока нет фотографий для выбора.",
+    "notReleased": "Не открыто",
+    "photoCountExact": "Выбрано: {{count}} из {{max}}",
+    "photoCountOne": "Выбрано: {{count}} из 1",
+    "photoCountRange": "Выбрано: {{count}}, выберите от {{min}} до {{max}}",
+    "photoGone": "Больше недоступно",
+    "photoNumber": "Фото {{number}}",
+    "photoUnavailable": "Больше недоступно, замените фото",
+    "photosFailed": "Не удалось загрузить фотографии галереи. Закройте это окно и повторите попытку.",
+    "posterPhotos": "Фото для постеров",
+    "release": "Открыть клиенту",
+    "released": "Открыто",
+    "releasedTo": "Только для {{name}}",
+    "removePhoto": "Убрать",
+    "reopen": "Снова открыть для клиента",
+    "reopenMessage": "Клиент снова сможет изменить подтверждённый выбор и должен будет подтвердить его ещё раз. Повторное открытие записывается в журнал действий.",
+    "reopenTitle": "Снова открыть этот выбор?",
+    "reviewIncomplete": "Некоторые шаги ещё не пройдены. Вернитесь назад, чтобы завершить их.",
+    "selectedPhoto": "Выбранное фото",
+    "showMorePhotos": "Показать ещё фото",
+    "startSelection": "Настроить альбом",
+    "stepAlbum": "Выберите альбом",
+    "stepColour": "Выберите цвет",
+    "stepCover": "Выберите фото на обложку",
+    "coverHint": "Фото на обложке находится снаружи альбома — это первое, что видно, прежде чем его открыть.",
+    "stepExtras": "Ещё несколько деталей",
+    "stepFormat": "Сравните форматы",
+    "stepMaterial": "Выберите материал",
+    "stepOf": "Шаг {{current}} из {{total}}",
+    "stepPoster": "Выберите фото для постеров",
+    "stepReview": "Проверьте альбом",
+    "stepSize": "Выберите размер",
+    "viewSelection": "Посмотреть выбор",
+    "withdraw": "Отозвать доступ",
+    "yourAlbum": "Ваш альбом"
+  },
+  "products": {
+    "addAlbumStarter": "Добавить стартовый набор альбома",
+    "attributeRole": "Роль в пошаговом альбоме",
+    "availabilityHelp": "Отметьте, с чем сочетается каждый вариант. Без отметок он доступен со всеми.",
+    "clearColourValue": "Удалить значение цвета",
+    "clientFinal": "Подтверждение клиента окончательно",
+    "colourValue": "Значение цвета",
+    "dependsOnNothing": "Ни от чего: всегда все",
+    "guidedAlbum": "Пошаговый заказ альбома",
+    "guidedHelp": "Клиент проходит шаги: альбом, материал, цвет, формат и размер, затем выбирает фото. Типу продукта нужны все четыре роли, цвета, привязанные к материалу, и размеры, привязанные к формату. Альбом скрыт, пока вы не откроете его в галерее.",
+    "heroImage": "Изображение продукта (PNG, до 6 МБ)",
+    "optionsDependOn": "Доступные варианты зависят от",
+    "posterMax": "Фото для постеров, максимум",
+    "posterMin": "Фото для постеров, минимум",
+    "removeHeroImage": "Удалить изображение",
+    "requireCover": "Требовать фото на обложку",
+    "roleNone": "Нет: дополнительный выбор",
+    "sizesAreSpreads": "Размеры указаны для раскрытого альбома (две страницы)",
+    "role": {
+      "material": "Материал",
+      "colour": "Цвет",
+      "format": "Формат",
+      "size": "Размер"
+    },
+    "starter": {
+      "black": "Чёрный",
+      "champagne": "Шампань",
+      "cognac": "Коньячный",
+      "colours": "Цвет альбома",
+      "cotton": "Хлопок",
+      "formats": "Формат альбома",
+      "ivory": "Слоновая кость",
+      "landscape": "Альбомный",
+      "leather": "Кожа",
+      "materials": "Материал альбома",
+      "natural": "Натуральный",
+      "silk": "Шёлк",
+      "sizes": "Размер альбома",
+      "slate": "Сланцевый",
+      "square": "Квадратный",
+      "type": "Альбом"
     }
   }
 }

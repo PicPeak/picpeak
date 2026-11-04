@@ -133,6 +133,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Exacte duplicaten overslaan",
+      "skipHelp": "Bestanden met identieke inhoud die al in deze galerij staan overslaan, ook als ze anders heten.",
       "title_one": "{{count}} bestand staat al in deze galerij",
       "title_other": "{{count}} bestanden staan al in deze galerij",
       "toast_one": "{{count}} bestand staat al in deze galerij en is overgeslagen — details in de uploadbalk bovenaan.",
@@ -2279,7 +2281,11 @@
       "photosRestored_one": "{{count}} foto hersteld uit de prullenbak van \"{{eventName}}\"",
       "photosRestored_other": "{{count}} foto's hersteld uit de prullenbak van \"{{eventName}}\"",
       "photosTrashPurged_one": "{{count}} foto definitief verwijderd uit de prullenbak van \"{{eventName}}\"",
-      "photosTrashPurged_other": "{{count}} foto's definitief verwijderd uit de prullenbak van \"{{eventName}}\""
+      "photosTrashPurged_other": "{{count}} foto's definitief verwijderd uit de prullenbak van \"{{eventName}}\"",
+      "productChoiceReopened": "{{eventName}}: {{productName}} heropend voor de klant",
+      "productChoiceUnlocked": "{{eventName}}: {{productName}} ontgrendeld",
+      "productReleased": "{{eventName}}: {{productName}} vrijgegeven voor de klant",
+      "productWithdrawn": "{{eventName}}: vrijgave van {{productName}} ingetrokken"
     },
     "notificationToasts": {
       "markedAllRead": "Alle meldingen als gelezen gemarkeerd",
@@ -2637,7 +2643,11 @@
       "approval_submitted": "{{guestName}} heeft de bewerkte foto’s in {{eventName}} goedgekeurd",
       "selection_reopened": "Inzending van {{guestName}} heropend in {{eventName}}",
       "photos_restored": "{{count}} foto's hersteld uit de prullenbak van {{eventName}}",
-      "photos_trash_purged": "{{count}} foto's definitief verwijderd uit de prullenbak van {{eventName}}"
+      "photos_trash_purged": "{{count}} foto's definitief verwijderd uit de prullenbak van {{eventName}}",
+      "album_product_reopened": "{{productName}} heropend voor de klant in {{eventName}}",
+      "album_product_unlocked": "{{productName}} ontgrendeld in {{eventName}}",
+      "album_product_released": "{{productName}} vrijgegeven voor de klant in {{eventName}}",
+      "album_product_withdrawn": "Vrijgave van {{productName}} ingetrokken in {{eventName}}"
     },
     "customerActivity": {
       "customer_invitation_created": "Uitnodiging verzonden",
@@ -3833,7 +3843,9 @@
       "sortNewest": "Nieuwste eerst",
       "sortOldest": "Oudste eerst",
       "sortName": "Op naam",
-      "open": "Openen"
+      "open": "Openen",
+      "albumAwaiting": "Je album voor {{name}} staat klaar om samen te stellen",
+      "configureAlbum": "Album samenstellen"
     },
     "layout": {
       "greeting": "Hallo, {{name}}"
@@ -3925,6 +3937,13 @@
       "successToast": "Wachtwoord bijgewerkt. Log nu in.",
       "invalidSubmission": "Je wachtwoord kon niet worden bijgewerkt.",
       "generalError": "Je wachtwoord kon niet worden bijgewerkt. Probeer het opnieuw."
+    },
+    "event": {
+      "album": "Je album",
+      "albumConfirmed": "Je selectie is bevestigd.",
+      "albumOpen": "Stel je album samen",
+      "albumReady": "De studio heeft je album vrijgegeven. Kies de uitvoering en je foto’s.",
+      "albumView": "Bekijk je selectie"
     }
   },
   "customers": {
@@ -4136,6 +4155,108 @@
     },
     "subnav": {
       "approvals": "Goedkeuringen"
+    }
+  },
+  "albumProducts": {
+    "actorClient": "Klant",
+    "actorStudio": "Studio",
+    "album": "Album",
+    "audience": "Voor wie is dit aanbod",
+    "audienceClient": "De klant van de galerij (pincode)",
+    "audienceFixed": "Dit aanbod bevat al een keuze en blijft daarom bij deze klant. Voeg een nieuw aanbod toe voor een andere klant.",
+    "audienceShared": "Meerdere klanten delen deze galerij, dus geen van hen ziet dit aanbod in het portaal. Kies een klant of gebruik de pincode.",
+    "confirmBack": "Verder bewerken",
+    "confirmFinal": "Nu bevestigen",
+    "confirmSelection": "Selectie bevestigen",
+    "confirmWarning": "Let op: na bevestiging kan deze selectie niet meer worden gewijzigd.",
+    "confirmedByClient": "Bevestigd door de klant",
+    "confirmedLocked": "Je selectie is bevestigd en door de studio vergrendeld.",
+    "confirmedWaiting": "Je selectie is bevestigd. De studio heeft die ontvangen.",
+    "continueSelection": "Selectie voortzetten",
+    "copyLink": "Klantlink kopiëren",
+    "coverPhoto": "Omslagfoto",
+    "entryConfirmed": "Je selectie is bevestigd.",
+    "entryOpen": "Kies je album, de uitvoering en je omslag- en posterfoto’s.",
+    "history": "Keuzegeschiedenis",
+    "linkCopied": "Klantlink gekopieerd",
+    "linkCopyFailed": "De link kon niet worden gekopieerd",
+    "noPhotos": "Er zijn nog geen foto’s om uit te kiezen.",
+    "notReleased": "Niet vrijgegeven",
+    "photoCountExact": "{{count}} van {{max}} geselecteerd",
+    "photoCountOne": "{{count}} van 1 geselecteerd",
+    "photoCountRange": "{{count}} geselecteerd, kies er {{min}} tot {{max}}",
+    "photoGone": "Niet meer beschikbaar",
+    "photoNumber": "Foto {{number}}",
+    "photoUnavailable": "Niet meer beschikbaar, vervang deze foto",
+    "photosFailed": "De foto’s van de galerij konden niet worden geladen. Sluit dit venster en probeer het opnieuw.",
+    "posterPhotos": "Posterfoto’s",
+    "release": "Vrijgeven voor de klant",
+    "released": "Vrijgegeven",
+    "releasedTo": "Alleen voor {{name}}",
+    "removePhoto": "Verwijderen",
+    "reopen": "Heropenen voor de klant",
+    "reopenMessage": "De klant kan de bevestigde selectie weer wijzigen en moet die opnieuw bevestigen. Het heropenen wordt vastgelegd in het activiteitenlogboek.",
+    "reopenTitle": "Deze selectie heropenen?",
+    "reviewIncomplete": "Er ontbreken nog stappen. Ga terug om ze af te ronden.",
+    "selectedPhoto": "Geselecteerde foto",
+    "showMorePhotos": "Meer foto’s tonen",
+    "startSelection": "Stel je album samen",
+    "stepAlbum": "Kies je album",
+    "stepColour": "Kies een kleur",
+    "stepCover": "Kies je omslagfoto",
+    "coverHint": "De omslagfoto staat op de buitenkant van het album, het eerste wat je ziet voordat je het openslaat.",
+    "stepExtras": "Nog een paar details",
+    "stepFormat": "Vergelijk de formaten",
+    "stepMaterial": "Kies een materiaal",
+    "stepOf": "Stap {{current}} van {{total}}",
+    "stepPoster": "Kies je posterfoto’s",
+    "stepReview": "Controleer je album",
+    "stepSize": "Kies een formaat",
+    "viewSelection": "Bekijk je selectie",
+    "withdraw": "Vrijgave intrekken",
+    "yourAlbum": "Je album"
+  },
+  "products": {
+    "addAlbumStarter": "Startset voor album toevoegen",
+    "attributeRole": "Rol in een begeleid album",
+    "availabilityHelp": "Vink aan waar elke optie bij hoort. Niets aangevinkt betekent: bij alles.",
+    "clearColourValue": "Kleurwaarde verwijderen",
+    "clientFinal": "De bevestiging van de klant is definitief",
+    "colourValue": "Kleurwaarde",
+    "dependsOnNothing": "Niets: altijd allemaal",
+    "guidedAlbum": "Begeleide albumbestelling",
+    "guidedHelp": "De klant doorloopt album, materiaal, kleur, formaat en maat en kiest daarna foto’s. Het producttype heeft de vier rollen nodig, kleuren gekoppeld aan het materiaal en maten gekoppeld aan het formaat. Het blijft verborgen tot je het in de galerij vrijgeeft.",
+    "heroImage": "Productafbeelding (PNG, tot 6 MB)",
+    "optionsDependOn": "Welke opties worden aangeboden, hangt af van",
+    "posterMax": "Posterfoto’s, maximaal",
+    "posterMin": "Posterfoto’s, minimaal",
+    "removeHeroImage": "Afbeelding verwijderen",
+    "requireCover": "Omslagfoto verplicht",
+    "roleNone": "Geen: een extra keuze",
+    "sizesAreSpreads": "Maten gelden voor het open album (twee pagina’s)",
+    "role": {
+      "material": "Materiaal",
+      "colour": "Kleur",
+      "format": "Formaat",
+      "size": "Maat"
+    },
+    "starter": {
+      "black": "Zwart",
+      "champagne": "Champagne",
+      "cognac": "Cognac",
+      "colours": "Albumkleur",
+      "cotton": "Katoen",
+      "formats": "Albumformaat",
+      "ivory": "Ivoor",
+      "landscape": "Liggend",
+      "leather": "Leer",
+      "materials": "Albummateriaal",
+      "natural": "Naturel",
+      "silk": "Zijde",
+      "sizes": "Albummaat",
+      "slate": "Leisteen",
+      "square": "Vierkant",
+      "type": "Album"
     }
   }
 }

@@ -298,6 +298,17 @@ async function handleAdminPhotoUpload(req, res) {
       }
     }
 
+    // Every file was refused by the validation: say why (issue 2395). 422
+    // when each one is over an image limit, as the single-file uploads answer.
+    const refused = req.invalidFiles || [];
+    if ((!req.files || req.files.length === 0) && refused.length > 0) {
+      const policy = require('../services/imageResourcePolicy');
+      return res.status(refused.every(policy.isResourceError) ? 422 : 400).json({
+        error: refused.length === 1 ? refused[0].error
+          : `None of the ${refused.length} files could be uploaded. ${refused[0].filename}: ${refused[0].error}`,
+        errors: refused,
+      });
+    }
     if (!req.files || req.files.length === 0) {
       logger.error('No files in request. req.files:', req.files);
       logger.error('Request body keys:', Object.keys(req.body));
@@ -2614,6 +2625,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     const resolvedMimeType = normalizeUploadMimeType(mergedFile.filename, mergedFile.mimeType);
     const contentFiles = [{ originalname: mergedFile.filename, path: mergedFile.path, mimetype: resolvedMimeType }];
     let contentError = null;
+    let limitRefusal = null;
     if (!(await validateFileContent(mergedFile.path, resolvedMimeType))) {
       contentError = `File content does not match declared type: ${mergedFile.filename}`;
     } else {
@@ -2621,11 +2633,14 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       await validateUploadedFiles(checked, res, () => {});
       if (checked.files.length === 0) {
         const [rejected] = checked.invalidFiles || [];
-        contentError = rejected?.code === require('../services/imageResourcePolicy').LIBRARY_UNAVAILABLE ? rejected.error : `Invalid image file: ${mergedFile.filename}`;
+        const policy = require('../services/imageResourcePolicy');
+        limitRefusal = policy.uploadRefusal(rejected);
+        contentError = rejected?.code === policy.LIBRARY_UNAVAILABLE ? rejected.error : `Invalid image file: ${mergedFile.filename}`;
       }
     }
     if (contentError) {
       await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
+      if (limitRefusal) return res.status(limitRefusal.status).json(limitRefusal.body);
       return res.status(400).json({ error: contentError });
     }
 

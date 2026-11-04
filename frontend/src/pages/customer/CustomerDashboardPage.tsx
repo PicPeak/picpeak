@@ -62,8 +62,9 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
   const documents = items.documents ?? [];
   const requests = items.documentRequests ?? [];
   const contractDetails = items.contractDetails ?? [];
+  const albums = items.albums ?? [];
   const total = items.quotes.length + items.contracts.length + items.invoices.length
-    + documents.length + requests.length + contractDetails.length;
+    + documents.length + requests.length + contractDetails.length + albums.length;
   if (total === 0) return null;
 
   return (
@@ -73,6 +74,16 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
         {t('customer.dashboard.needsAction', 'Needs your attention')}
       </h2>
       <ul className="divide-y divide-border-token">
+        {albums.map((album) => (
+          <li key={album.link} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-sm text-theme">
+              {t('customer.dashboard.albumAwaiting', 'Your album for {{name}} is ready to configure', { name: album.eventName })}
+            </span>
+            <Link to={album.link} className="text-sm underline text-theme">
+              {t('customer.dashboard.configureAlbum', 'Configure album')}
+            </Link>
+          </li>
+        ))}
         {items.quotes.map((q) => (
           <li key={`q-${q.id}`} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
             <span className="text-sm text-theme">

@@ -8,7 +8,7 @@
  *
  *   trigger: Code      — the buyer enters the code in the checkout
  *   type: FixedAmount  — deducts free_photo_count × photo_price
- *   maxNumberOfUsages: 1
+ *   maxNumberOfUsages: null — PicPeak's shared claim enforces one redemption
  *
  * The code is generated when a gallery is created/edited as priced; the
  * discount is created/updated through the Snipcart REST API using the
@@ -47,14 +47,14 @@ async function ensurePromoCode(eventRow) {
 // While one process creates a gallery's Snipcart discount, the column holds
 // a claim instead of an id, so no other process (another replica's startup
 // sweep, a second save) creates a second discount for the same code — each
-// is single-use, so two would honour the free photos twice. A claim older
+// must stay associated with the one shared PicPeak promo claim. A claim older
 // than CLAIM_STALE_MS belongs to a process that died and may be taken over.
 const CLAIM_PREFIX = 'pending:';
 const CLAIM_STALE_MS = 10 * 60 * 1000;
 
 /** A real Snipcart discount id (not empty, not a creation claim). */
 function isDiscountId(value) {
-  return !!value && !String(value).startsWith(CLAIM_PREFIX);
+  return typeof value === 'string' && value.length > 0 && value.length <= 255 && !/[\s\p{Cc}]/u.test(value) && !value.startsWith(CLAIM_PREFIX);
 }
 
 function isStaleClaim(value) {
@@ -77,10 +77,12 @@ async function claimDiscountCreation(eventId, current) {
   return (await query.update({ snipcart_discount_id: claim })) ? claim : null;
 }
 
-function snipcartAuth() {
-  const secret = (process.env.SNIPCART_SECRET_API_KEY || '').trim();
-  if (!secret) return null;
-  return Buffer.from(`${secret}:`).toString('base64');
+async function snipcartAuth() {
+  if (!(await require('./providers').preferences()).snipcart) return null;
+  const settings = require('./snipcartSettings');
+  const value = await settings.credentials();
+  return settings.configurationOf(value).checkout_configured
+    ? Buffer.from(`${value.secretKey}:`).toString('base64') : null;
 }
 
 /**
@@ -89,8 +91,8 @@ function snipcartAuth() {
  */
 async function syncPromoDiscount(eventRow) {
   try {
-    const auth = snipcartAuth();
-    if (!auth) return { ok: false, skipped: true, error: 'SNIPCART_SECRET_API_KEY is not set' };
+    const auth = await snipcartAuth();
+    if (!auth) return { ok: false, skipped: true, error: 'Snipcart checkout is not configured' };
 
     const freeCount = Math.max(0, Math.floor(Number(eventRow.free_photo_count || 0)));
     const price = Number(eventRow.photo_price || 0);
@@ -104,7 +106,10 @@ async function syncPromoDiscount(eventRow) {
       code,
       type: 'FixedAmount',
       amount,
-      maxNumberOfUsages: 1,
+      // A refunded/refused attempt must not burn the provider's usage counter.
+      // Only PicPeak's immutable reservation can pass price-check, and its
+      // gallery claim permits one fulfilled promo across both providers.
+      maxNumberOfUsages: null,
     };
 
     const headers = {
@@ -117,29 +122,30 @@ async function syncPromoDiscount(eventRow) {
     if (isDiscountId(existingId)) {
       const response = await fetch(`${SNIPCART_API}/discounts/${encodeURIComponent(existingId)}`, {
         method: 'PUT',
-        headers,
+        headers, signal: AbortSignal.timeout(15000),
         body: JSON.stringify(body),
       });
       if (response.ok) return { ok: true };
       if (response.status !== 404) {
-        const text = await response.text().catch(() => '');
-        return { ok: false, error: `Snipcart discount API HTTP ${response.status}: ${text.slice(0, 200)}` };
+        return { ok: false, error: `Snipcart discount API HTTP ${response.status}` };
       }
       // 404: the stored id is gone — create a fresh discount below.
     }
 
     const claim = await claimDiscountCreation(eventRow.id, existingId || null);
     if (!claim) return { ok: false, skipped: true, error: 'Another process is creating this discount' };
-    const created = await fetch(`${SNIPCART_API}/discounts`, { method: 'POST', headers, body: JSON.stringify(body) });
+    const created = await fetch(`${SNIPCART_API}/discounts`, { method: 'POST', headers, signal: AbortSignal.timeout(15000), body: JSON.stringify(body) });
     const createdBody = created.ok ? await created.json().catch(() => ({})) : {};
+    const id = isDiscountId(createdBody?.id) ? createdBody.id : null;
     await db('events')
       .where({ id: eventRow.id, snipcart_discount_id: claim })
-      .update({ snipcart_discount_id: createdBody.id || null });
+      .update({ snipcart_discount_id: id });
     if (!created.ok) return { ok: false, error: `Snipcart discount create HTTP ${created.status}` };
+    if (!id) return { ok: false, error: 'Snipcart discount create returned no valid identifier' };
     return { ok: true };
   } catch (error) {
-    logger.warn(`Promo discount sync failed for event ${eventRow?.id}: ${error.message}`);
-    return { ok: false, error: error.message };
+    logger.warn('Promo discount sync failed', { eventId: eventRow?.id, type: error.name });
+    return { ok: false, error: 'Snipcart discount synchronisation failed' };
   }
 }
 
@@ -179,7 +185,7 @@ async function startupSync() {
       await ensurePromoForEvent(event);
     }
   } catch (error) {
-    logger.warn(`Promo discount startup sync failed: ${error.message}`);
+    logger.warn('Promo discount startup sync failed', { type: error.type || error.name });
   }
 }
 

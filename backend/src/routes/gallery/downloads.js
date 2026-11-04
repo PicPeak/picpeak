@@ -56,7 +56,7 @@ const {
   pickRawDownloadName,
   getZipEntryNames,
 } = require('../../services/downloadFilenameService');
-const { buildContentDisposition } = require('../../utils/filenameSanitizer');
+const { buildContentDisposition, uniquifyZipNames } = require('../../utils/filenameSanitizer');
 const { getStorage } = require('../../services/storage');
 const { createArchiveStreamGuard, streamingArchiveAdmission } = require('../../utils/archiveStreamGuard');
 const {
@@ -911,6 +911,10 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // get a deterministic `_1` suffix before the entries hit the archive.
     const useOriginalBulk = await getUseOriginalFilenames();
     const bulkEntryNames = getZipEntryNames(photos, useOriginalBulk);
+    // A converted entry takes the new format's extension, which can give it
+    // the name of another entry: uniquify the final names as they ship.
+    const bulkFinalNames = new Map();
+    const bulkName = (name) => uniquifyZipNames([name], bulkFinalNames)[0];
     // Only photos whose append succeeded count as downloaded (#895) — the
     // catch below deliberately skips missing/corrupt sources, and those
     // never make it into the archive.
@@ -949,7 +953,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         if (previewOnly) {
           const preview = await renderPreviewForDownload(photo, effectiveSettings);
           if (!preview) throw new Error('No preview-size copy of this photo');
-          archive.append(preview.buffer, { name: previewDownloadName(archiveName, preview.extension), photoId: photo.id });
+          archive.append(preview.buffer, { name: bulkName(previewDownloadName(archiveName, preview.extension)), photoId: photo.id });
           appendedIds.push(photo.id);
           continue;
         }
@@ -965,7 +969,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           // No preview means no photo: the original must never stand in.
           if (!paidPreview) throw new Error('No sales preview of this photo');
           archive.append(paidPreview.buffer, {
-            name: previewDownloadName(archiveName, paidPreview.extension),
+            name: bulkName(previewDownloadName(archiveName, paidPreview.extension)),
             photoId: photo.id,
           });
           appendedIds.push(photo.id);
@@ -981,16 +985,17 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         const rendered = await renderPhotoForDownload(req.event, photo, bulkBox, photoSettings);
         // photoId rides along to archiver's 'entry' event (releaseUnshipped).
         if (rendered) {
-          archive.append(rendered, { name: archiveName, photoId: photo.id });
+          // A capped HEIC/AVIF/RAW comes back as JPEG: name it so.
+          archive.append(rendered, { name: bulkName(renderedDownloadType(rendered, photo, archiveName).name), photoId: photo.id });
         } else if (storageKey) {
           if (!await guard.acquire()) break;
           const stream = await storage.get(storageKey);
-          archive.append(guard.track(stream), { name: archiveName, photoId: photo.id });
+          archive.append(guard.track(stream), { name: bulkName(archiveName), photoId: photo.id });
         } else {
           // append, not file(): file() stats in parallel and can reorder
           // entries, and the limit's settlement relies on append order.
           if (!await guard.acquire()) break;
-          archive.append(guard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: archiveName, photoId: photo.id });
+          archive.append(guard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: bulkName(archiveName), photoId: photo.id });
         }
         appendedIds.push(photo.id);
         releaseAll.appended(photo.id);
@@ -1162,6 +1167,9 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // #493: same display-name resolution as bulk download, with dedup.
     const useOriginalSelected = await getUseOriginalFilenames();
     const selectedEntryNames = getZipEntryNames(photos, useOriginalSelected);
+    // Final names uniquified as they ship, as in download-all.
+    const selectedFinalNames = new Map();
+    const selectedName = (name) => uniquifyZipNames([name], selectedFinalNames)[0];
     // Only photos whose append succeeded count as downloaded (#895).
     const appendedIds = [];
     for (let i = 0; i < photos.length; i += 1) {
@@ -1187,7 +1195,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         if (selectedPreviewOnly) {
           const preview = await renderPreviewForDownload(photo, effectiveSettings);
           if (!preview) throw new Error('No preview-size copy of this photo');
-          archive.append(preview.buffer, { name: previewDownloadName(name, preview.extension), photoId: photo.id });
+          archive.append(preview.buffer, { name: selectedName(previewDownloadName(name, preview.extension)), photoId: photo.id });
           appendedIds.push(photo.id);
           continue;
         }
@@ -1202,7 +1210,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           // No preview means no photo: the original must never stand in.
           if (!paidPreview) throw new Error('No sales preview of this photo');
           archive.append(paidPreview.buffer, {
-            name: previewDownloadName(name, paidPreview.extension),
+            name: selectedName(previewDownloadName(name, paidPreview.extension)),
             photoId: photo.id,
           });
           appendedIds.push(photo.id);
@@ -1215,15 +1223,15 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         // storage rather than buffering the whole photo.
         const rendered = await renderPhotoForDownload(req.event, photo, selectedBox, selectedPhotoSettings);
         if (rendered) {
-          archive.append(rendered, { name, photoId: photo.id });
+          archive.append(rendered, { name: selectedName(renderedDownloadType(rendered, photo, name).name), photoId: photo.id });
         } else if (storageKey) {
           if (!await selectedGuard.acquire()) break;
           const stream = await selectedStorage.get(storageKey);
-          archive.append(selectedGuard.track(stream), { name, photoId: photo.id });
+          archive.append(selectedGuard.track(stream), { name: selectedName(name), photoId: photo.id });
         } else {
           // append, not file(): see download-all.
           if (!await selectedGuard.acquire()) break;
-          archive.append(selectedGuard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name, photoId: photo.id });
+          archive.append(selectedGuard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: selectedName(name), photoId: photo.id });
         }
         appendedIds.push(photo.id);
         releaseSelected.appended(photo.id);

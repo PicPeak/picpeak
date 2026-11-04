@@ -19,7 +19,7 @@ jest.mock('../../src/services/isolatedSharp', () => {
   return fn;
 });
 
-const { validateUploadedFiles } = require('../../src/middleware/uploadValidation');
+const { validateUploadedFiles, validateUploadedFile } = require('../../src/middleware/uploadValidation');
 
 describe('validateUploadedFiles queueing', () => {
   let dir;
@@ -62,10 +62,47 @@ describe('validateUploadedFiles queueing', () => {
     })]);
   });
 
+  it('reports it as that for a HEIF name too, not as an unreadable HEIF', async () => {
+    const sharp = require('../../src/services/isolatedSharp');
+    const failure = Object.assign(new Error('Image processing is unavailable on this server'), { code: 'SHARP_UNAVAILABLE' });
+    sharp.mockImplementationOnce(() => ({ metadata: jest.fn().mockRejectedValue(failure) }));
+    const file = path.join(dir, 'fine.heic');
+    fs.writeFileSync(file, 'x');
+    const req = { files: [{ originalname: 'fine.heic', path: file }] };
+    await validateUploadedFiles(req, {}, () => {});
+    expect(req.files).toHaveLength(0);
+    expect(req.invalidFiles).toEqual([expect.objectContaining({
+      filename: 'fine.heic', code: 'SHARP_UNAVAILABLE', error: 'Image processing is unavailable on this server',
+    })]);
+  });
+
   it('leaves a non-decodable type alone', async () => {
     const file = path.join(dir, 'clip.mov');
     fs.writeFileSync(file, 'x');
     await validateUploadedFiles({ files: [{ originalname: 'clip.mov', path: file, mimetype: 'video/quicktime' }] }, {}, () => {});
     expect(calls).toHaveLength(0);
+  });
+
+  it('passes a HEIF a busy worker could not read, unless the caller can check again later', async () => {
+    const sharp = require('../../src/services/isolatedSharp');
+    const busy = () => Object.assign(new Error('Image worker is unavailable'), { code: 'IMAGE_WORKER_UNAVAILABLE' });
+    const file = path.join(dir, 'busy.heic');
+    fs.writeFileSync(file, 'x');
+    sharp.mockImplementationOnce(() => ({ metadata: jest.fn().mockRejectedValue(busy()) }));
+    await expect(validateUploadedFile(file, '.heic')).resolves.toBe(true);
+    sharp.mockImplementationOnce(() => ({ metadata: jest.fn().mockRejectedValue(busy()) }));
+    await expect(validateUploadedFile(file, '.heic', {}, { passBusy: false })).rejects.toMatchObject({ code: 'IMAGE_WORKER_UNAVAILABLE' });
+  });
+
+  it('tells a caller that can check again later about a host error in the HEIF check', async () => {
+    const sharp = require('../../src/services/isolatedSharp');
+    const full = () => Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+    const file = path.join(dir, 'full.heic');
+    fs.writeFileSync(file, 'x');
+    sharp.mockImplementationOnce(() => ({ metadata: jest.fn().mockRejectedValue(full()) }));
+    await expect(validateUploadedFile(file, '.heic', {}, { passBusy: false })).rejects.toMatchObject({ code: 'ENOSPC' });
+    // An upload keeps refusing it as unreadable, as before.
+    sharp.mockImplementationOnce(() => ({ metadata: jest.fn().mockRejectedValue(full()) }));
+    await expect(validateUploadedFile(file, '.heic')).rejects.toThrow('no readable HEIF image');
   });
 });

@@ -5,6 +5,7 @@ const applicationWork = require('./activeApplicationWork');
 // the function server.js starts the service with: a portable restore that was
 // rolled back restarts those in the same process (resumeServices).
 const resources = [
+  ['./printSales/worker', 'stop', 'start'],
   ['../middleware/sessionTimeout', 'dispose', 'startSessionCleanup'], ['./chunkedUploadService', 'stop', 'start'],
   ['../utils/cleanupTempUploads', 'stopTempUploadCleanup', 'startTempUploadCleanup'],
   ['../middleware/feedbackRateLimit', 'dispose'],
@@ -19,6 +20,7 @@ const resources = [
   ['./downloadJobCleanupService', 'stopDownloadJobCleanup', 'startDownloadJobCleanup'], ['./revealScheduler', 'stopRevealScheduler', 'startRevealScheduler'],
   ['./feedbackRateLimitCleanupService', 'stopFeedbackRateLimitCleanup', 'startFeedbackRateLimitCleanup'],
   ['./invoiceSchedulerService', 'stopInvoiceScheduler', 'startInvoiceScheduler'], ['./emailProcessor', 'stopEmailQueueProcessor', 'startEmailQueueProcessor'],
+  ['./photoCheckoutReconciler', 'stop', 'start'],
   ['./whatsappProcessor', 'stopWhatsAppQueueProcessor', 'startWhatsAppQueueProcessor'], ['./emailIntakeService', 'stopIncomingMailPoller', 'startIncomingMailPoller'],
   ['./webhookDeliveryWorker', 'stopWebhookDeliveryWorker', 'startWebhookDeliveryWorker'], ['./s3AutoImporter', 'stopS3AutoImporter', 'startS3AutoImporter'],
   ['./backupService', 'stopBackupService', 'startBackupService'], ['./databaseBackup', 'stopScheduledBackups', 'startScheduledBackups'],

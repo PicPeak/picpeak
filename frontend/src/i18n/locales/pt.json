@@ -152,6 +152,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Ignorar duplicados exatos",
+      "skipHelp": "Ignorar ficheiros com conteúdo idêntico já presente nesta galeria, mesmo com outro nome.",
       "title_one": "{{count}} arquivo já está nesta galeria",
       "title_other": "{{count}} arquivos já estão nesta galeria",
       "toast_one": "{{count}} arquivo já está nesta galeria e foi ignorado — detalhes na barra de envio no topo.",
@@ -2413,7 +2415,11 @@
       "photosRestored_other": "{{count}} fotos restauradas da lixeira de \"{{eventName}}\"",
       "photosTrashPurged_one": "{{count}} foto excluída definitivamente da lixeira de \"{{eventName}}\"",
       "photosTrashPurged_many": "{{count}} fotos excluídas definitivamente da lixeira de \"{{eventName}}\"",
-      "photosTrashPurged_other": "{{count}} fotos excluídas definitivamente da lixeira de \"{{eventName}}\""
+      "photosTrashPurged_other": "{{count}} fotos excluídas definitivamente da lixeira de \"{{eventName}}\"",
+      "productChoiceReopened": "{{eventName}}: {{productName}} reaberto para o cliente",
+      "productChoiceUnlocked": "{{eventName}}: {{productName}} desbloqueado",
+      "productReleased": "{{eventName}}: {{productName}} disponibilizado ao cliente",
+      "productWithdrawn": "{{eventName}}: disponibilização de {{productName}} retirada"
     },
     "notificationToasts": {
       "markedAllRead": "Todas as notificações marcadas como lidas",
@@ -2787,7 +2793,11 @@
       "approval_submitted": "{{guestName}} aprovou as fotos editadas em {{eventName}}",
       "selection_reopened": "Envio de {{guestName}} reaberto em {{eventName}}",
       "photos_restored": "{{count}} fotos restauradas da lixeira de {{eventName}}",
-      "photos_trash_purged": "{{count}} fotos excluídas definitivamente da lixeira de {{eventName}}"
+      "photos_trash_purged": "{{count}} fotos excluídas definitivamente da lixeira de {{eventName}}",
+      "album_product_reopened": "{{productName}} reaberto para o cliente em {{eventName}}",
+      "album_product_unlocked": "{{productName}} desbloqueado em {{eventName}}",
+      "album_product_released": "{{productName}} disponibilizado ao cliente em {{eventName}}",
+      "album_product_withdrawn": "Disponibilização de {{productName}} retirada em {{eventName}}"
     },
     "customerActivity": {
       "customer_invitation_created": "Convite enviado",
@@ -4111,7 +4121,9 @@
       "sortNewest": "Mais recentes",
       "sortOldest": "Mais antigos",
       "sortName": "Por nome",
-      "open": "Abrir"
+      "open": "Abrir",
+      "albumAwaiting": "O seu álbum de {{name}} está pronto a configurar",
+      "configureAlbum": "Configurar álbum"
     },
     "layout": {
       "greeting": "Olá, {{name}}"
@@ -4203,6 +4215,13 @@
       "successToast": "Senha atualizada. Faça login.",
       "invalidSubmission": "Não foi possível atualizar sua senha.",
       "generalError": "Não foi possível atualizar sua senha. Tente novamente."
+    },
+    "event": {
+      "album": "O seu álbum",
+      "albumConfirmed": "A sua seleção está confirmada.",
+      "albumOpen": "Configurar o seu álbum",
+      "albumReady": "O estúdio disponibilizou o seu álbum. Escolha o acabamento e as suas fotos.",
+      "albumView": "Ver a sua seleção"
     }
   },
   "customers": {
@@ -4414,6 +4433,108 @@
     },
     "subnav": {
       "approvals": "Aprovações"
+    }
+  },
+  "albumProducts": {
+    "actorClient": "Cliente",
+    "actorStudio": "Estúdio",
+    "album": "Álbum",
+    "audience": "Quem recebe esta oferta",
+    "audienceClient": "O cliente da galeria (PIN)",
+    "audienceFixed": "Esta oferta já contém uma escolha, por isso fica com este cliente. Adicione uma nova oferta para outro cliente.",
+    "audienceShared": "Vários clientes partilham esta galeria, por isso nenhum vê esta oferta no portal. Escolha um cliente ou use o PIN.",
+    "confirmBack": "Continuar a editar",
+    "confirmFinal": "Confirmar agora",
+    "confirmSelection": "Confirmar seleção",
+    "confirmWarning": "Atenção: após a confirmação, esta seleção já não pode ser alterada.",
+    "confirmedByClient": "Confirmado pelo cliente",
+    "confirmedLocked": "A sua seleção está confirmada e bloqueada pelo estúdio.",
+    "confirmedWaiting": "A sua seleção está confirmada. O estúdio já a recebeu.",
+    "continueSelection": "Continuar a seleção",
+    "copyLink": "Copiar ligação do cliente",
+    "coverPhoto": "Foto de capa",
+    "entryConfirmed": "A sua seleção está confirmada.",
+    "entryOpen": "Escolha o seu álbum, o acabamento e as fotos de capa e de póster.",
+    "history": "Histórico da escolha",
+    "linkCopied": "Ligação do cliente copiada",
+    "linkCopyFailed": "Não foi possível copiar a ligação",
+    "noPhotos": "Ainda não há fotos para escolher.",
+    "notReleased": "Não disponibilizado",
+    "photoCountExact": "{{count}} de {{max}} selecionadas",
+    "photoCountOne": "{{count}} de 1 selecionadas",
+    "photoCountRange": "{{count}} selecionadas, escolha de {{min}} a {{max}}",
+    "photoGone": "Já não disponível",
+    "photoNumber": "Foto {{number}}",
+    "photoUnavailable": "Já não disponível, substitua-a",
+    "photosFailed": "Não foi possível carregar as fotos da galeria. Feche esta janela e tente novamente.",
+    "posterPhotos": "Fotos de póster",
+    "release": "Disponibilizar ao cliente",
+    "released": "Disponibilizado",
+    "releasedTo": "Apenas para {{name}}",
+    "removePhoto": "Remover",
+    "reopen": "Reabrir para o cliente",
+    "reopenMessage": "O cliente pode voltar a alterar a seleção confirmada e tem de a confirmar novamente. A reabertura fica registada no registo de atividade.",
+    "reopenTitle": "Reabrir esta seleção?",
+    "reviewIncomplete": "Ainda faltam alguns passos. Volte atrás para os concluir.",
+    "selectedPhoto": "Foto selecionada",
+    "showMorePhotos": "Mostrar mais fotos",
+    "startSelection": "Configurar o seu álbum",
+    "stepAlbum": "Escolha o seu álbum",
+    "stepColour": "Escolha uma cor",
+    "stepCover": "Escolha a foto de capa",
+    "coverHint": "A foto de capa fica na parte de fora do álbum, é a primeira coisa que se vê antes de abri-lo.",
+    "stepExtras": "Mais alguns detalhes",
+    "stepFormat": "Compare os formatos",
+    "stepMaterial": "Escolha um material",
+    "stepOf": "Passo {{current}} de {{total}}",
+    "stepPoster": "Escolha as fotos de póster",
+    "stepReview": "Reveja o seu álbum",
+    "stepSize": "Escolha um tamanho",
+    "viewSelection": "Ver a sua seleção",
+    "withdraw": "Retirar disponibilização",
+    "yourAlbum": "O seu álbum"
+  },
+  "products": {
+    "addAlbumStarter": "Adicionar conjunto inicial de álbum",
+    "attributeRole": "Função num álbum guiado",
+    "availabilityHelp": "Marque com o que cada opção combina. Sem nada marcado, é oferecida com todas.",
+    "clearColourValue": "Remover valor da cor",
+    "clientFinal": "A confirmação do cliente é definitiva",
+    "colourValue": "Valor da cor",
+    "dependsOnNothing": "Nada: sempre todas",
+    "guidedAlbum": "Encomenda guiada de álbum",
+    "guidedHelp": "O cliente passa por álbum, material, cor, formato e tamanho e depois escolhe as fotos. O tipo de produto precisa das quatro funções, cores ligadas ao material e tamanhos ligados ao formato. Fica oculto até o disponibilizar na galeria.",
+    "heroImage": "Imagem do produto (PNG, até 6 MB)",
+    "optionsDependOn": "As opções oferecidas dependem de",
+    "posterMax": "Fotos de póster, no máximo",
+    "posterMin": "Fotos de póster, no mínimo",
+    "removeHeroImage": "Remover imagem",
+    "requireCover": "Exigir uma foto de capa",
+    "roleNone": "Nenhuma: uma escolha adicional",
+    "sizesAreSpreads": "Os tamanhos medem o álbum aberto (duas páginas)",
+    "role": {
+      "material": "Material",
+      "colour": "Cor",
+      "format": "Formato",
+      "size": "Tamanho"
+    },
+    "starter": {
+      "black": "Preto",
+      "champagne": "Champanhe",
+      "cognac": "Conhaque",
+      "colours": "Cor do álbum",
+      "cotton": "Algodão",
+      "formats": "Formato do álbum",
+      "ivory": "Marfim",
+      "landscape": "Horizontal",
+      "leather": "Pele",
+      "materials": "Material do álbum",
+      "natural": "Natural",
+      "silk": "Seda",
+      "sizes": "Tamanho do álbum",
+      "slate": "Ardósia",
+      "square": "Quadrado",
+      "type": "Álbum"
     }
   }
 }

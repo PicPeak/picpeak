@@ -24,6 +24,8 @@ import { SUPPORTED_LANGUAGES } from '../../components/common/LanguageSelector';
 import { DecimalInput } from '../../components/common/DecimalInput';
 import { AssignedEventsDialog } from '../../components/admin/AssignedEventsDialog';
 import { CustomerGroupsCard } from '../../components/admin/CustomerGroupsCard';
+import { CustomerGiftsCard } from '../../components/admin/CustomerGiftsCard';
+import { CustomerContactsCard } from '../../components/admin/CustomerContactsCard';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import {
   customerAdminService,
@@ -460,6 +462,16 @@ export const CustomerDetailPage: React.FC = () => {
         canManage={hasPermission('customers.groups.manage')}
       />
 
+      {/* Further logins of this customer (migration 346) */}
+      <CustomerContactsCard
+        customerId={customerId}
+        isPassive={!!customer.isPassive}
+        portalEnabled={!!flags.customerPortal}
+        canCreate={hasPermission('customers.create')}
+        canEdit={hasPermission('customers.edit')}
+        canDelete={hasPermission('customers.delete')}
+      />
+
       {/* Assigned events */}
       <Card padding="lg">
         <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
@@ -582,6 +594,13 @@ export const CustomerDetailPage: React.FC = () => {
             customerId={customer.id}
             events={(customer.events || []).map((e) => ({ id: e.id, eventName: e.eventName }))}
           />
+        </PermissionGate>
+      )}
+
+      {/* Gifts (migration 343). Admin-only, gated on its own view permission. */}
+      {flags.customerGifts && (
+        <PermissionGate permission="customers.gifts.view">
+          <CustomerGiftsCard customerId={customer.id} canManage={hasPermission('customers.gifts.manage')} />
         </PermissionGate>
       )}
 

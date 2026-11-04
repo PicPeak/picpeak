@@ -5,9 +5,8 @@ import { usePhotoSales } from './PhotoSalesContext';
 
 /**
  * Photo sales — the one-time promo code above the grid. The free quota of
- * the FIRST order is redeemed by entering the code at checkout (Snipcart
- * discount, single use, synced by the backend). Shown only while the
- * discount exists in the store and has not been used.
+ * the FIRST order is redeemed by entering the code in the PicPeak cart (single use, reserved by the backend). Shown only while the
+ * gallery promo has not been used.
  */
 export const PhotoSalesPromoBanner: React.FC<{
   promoCode: string | null | undefined;
@@ -36,7 +35,7 @@ export const PhotoSalesPromoBanner: React.FC<{
           {t('photoSales.promoTitle', '{{count}} photos free with your first order', { count: freeCount })}
         </p>
         <p className="text-xs text-muted-theme">
-          {t('photoSales.promoHint', 'Enter the code at checkout. It works once per gallery.')}
+          {t('photoSales.promoHint', 'Enter the code in your cart. It works once per gallery.')}
         </p>
       </div>
       <button

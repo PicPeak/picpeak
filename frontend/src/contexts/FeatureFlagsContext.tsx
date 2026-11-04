@@ -11,6 +11,7 @@ export type { FeatureKey, FeatureFlags };
 // hasn't run its migration yet on this instance).
 export const DEFAULT_FLAGS: FeatureFlags = {
   albumProducts: false,
+  printSales: false,
   galleries: true,
   // F.3 — these three are placeholders. The UI cards are locked
   // (lockedReason: NOT_YET_AVAILABLE) because the underlying flows
@@ -81,6 +82,8 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   newsletters: false,
   // Customer documents (migration 225, #1444). Off by default.
   documents: false,
+  // Customer gifts (migration 343). Off by default.
+  customerGifts: false,
 };
 
 export const FEATURE_FLAGS_QUERY_KEY = ['feature-flags'] as const;
@@ -143,6 +146,7 @@ function applyDependencyRules(flags: FeatureFlags): FeatureFlags {
     // #1264 — newsletters is a Clients child; without it here the staged
     // sidebar preview disagrees with the server until Save.
     || out.newsletters
+    || out.customerGifts
   );
   return out;
 }

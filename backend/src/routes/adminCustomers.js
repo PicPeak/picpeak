@@ -26,6 +26,7 @@ const requireIncoming = requireFeatureFlag('incomingInvoices', 'INCOMING_INVOICE
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { answerVanished } = require('../utils/streamResponse');
 const customerAccountsService = require('../services/customerAccountsService');
+const customerContactsService = require('../services/customerContactsService');
 const accountingHistory = require('../services/accountingHistory');
 const customerHoursService = require('../services/customerHoursService');
 const combinedBillingService = require('../services/combinedBillingService');
@@ -742,6 +743,95 @@ router.post('/:id/password-reset', [
 }));
 
 /**
+ * Contacts of a customer (migration 346): further people with an own login and
+ * own rights. Same permission split as the customer's own account:
+ * customers.create invites and resets, customers.edit changes the record,
+ * customers.delete removes. Adding a contact and handing out a login need the
+ * customerPortal flag. Login itself is not gated by it, so a contact must stay
+ * editable and removable while the flag is off.
+ */
+const requirePortal = requireFeatureFlag('customerPortal', 'CUSTOMER_PORTAL_DISABLED');
+const contactGuards = (permission, ...gates) => [
+  adminAuth,
+  ...gates,
+  requirePermission(permission),
+  param('id').isInt({ min: 1 }),
+];
+const contactItemGuards = (permission, ...gates) => [
+  ...contactGuards(permission, ...gates),
+  param('contactId').isInt({ min: 1 }),
+];
+const contactFields = [
+  body('email').optional().isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
+  body('salutation').optional({ nullable: true }).isString().isLength({ max: 32 }),
+  body('first_name').optional({ nullable: true }).isString().isLength({ max: 80 }),
+  body('last_name').optional({ nullable: true }).isString().isLength({ max: 80 }),
+  body('display_name').optional({ nullable: true }).isString().isLength({ max: 120 }),
+  body('phone').optional({ nullable: true }).isString().isLength({ max: 40 }),
+  body('preferred_language').optional({ nullable: true }).isString().isLength({ max: 8 }),
+  body('receivesMail').optional().isBoolean().toBoolean(),
+  body('isActive').optional().isBoolean().toBoolean(),
+  body('invite').optional().isBoolean().toBoolean(),
+  body('rights').optional().isObject(),
+];
+
+router.get('/:id/contacts', contactGuards('customers.view'), handleAsync(async (req, res) => {
+  validateRequest(req);
+  successResponse(res, {
+    contacts: await customerContactsService.listContacts(parseInt(req.params.id, 10)),
+  });
+}));
+
+router.post('/:id/contacts', [
+  ...contactGuards('customers.create', requirePortal),
+  body('email').isEmail(),
+  ...contactFields,
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const contact = await customerContactsService.createContact(parseInt(req.params.id, 10), req.body, req.admin.id);
+  successResponse(res, { contact }, 201);
+}));
+
+router.put('/:id/contacts/:contactId', [
+  ...contactItemGuards('customers.edit'),
+  ...contactFields,
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  // Same gate as adding a contact, for an address that already has a login.
+  const mayGrantLogin = req.body.email !== undefined
+    && await userHasAnyPermission(req.admin.id, ['customers.create'])
+    && await isFeatureEnabled('customerPortal');
+  const contact = await customerContactsService.updateContact(
+    parseInt(req.params.id, 10), parseInt(req.params.contactId, 10), req.body, req.admin.id, { mayGrantLogin },
+  );
+  successResponse(res, { contact });
+}));
+
+router.delete('/:id/contacts/:contactId', contactItemGuards('customers.delete'), handleAsync(async (req, res) => {
+  validateRequest(req);
+  await customerContactsService.deleteContact(
+    parseInt(req.params.id, 10), parseInt(req.params.contactId, 10), req.admin.id,
+  );
+  successResponse(res, { message: 'Contact deleted' });
+}));
+
+router.post('/:id/contacts/:contactId/send-invite', contactItemGuards('customers.create', requirePortal), handleAsync(async (req, res) => {
+  validateRequest(req);
+  const result = await customerContactsService.sendInvitation(
+    parseInt(req.params.id, 10), parseInt(req.params.contactId, 10), req.admin.id,
+  );
+  successResponse(res, result);
+}));
+
+router.post('/:id/contacts/:contactId/password-reset', contactItemGuards('customers.create', requirePortal), handleAsync(async (req, res) => {
+  validateRequest(req);
+  const result = await customerContactsService.createPasswordReset(
+    parseInt(req.params.id, 10), parseInt(req.params.contactId, 10), req.admin.id,
+  );
+  successResponse(res, result);
+}));
+
+/**
  * PUT /api/admin/customers/:id/events — replace the customer's full
  * event assignment list. Backs the "Manage galleries" dialog on the
  * customer detail page. Body is `{ event_ids: number[] }`. Empty
@@ -1037,10 +1127,13 @@ router.get('/:id/activity', [
   if (!customer) throw new NotFoundError('Customer', customerId);
   const includeDocuments = await isFeatureEnabled('documents')
     && await userHasAnyPermission(req.admin.id, ['customers.documents.manage']);
+  const includeGifts = await isFeatureEnabled('customerGifts')
+    && await userHasAnyPermission(req.admin.id, ['customers.gifts.view']);
   const result = await customerActivityService.listForCustomer(customerId, {
     limit: req.query.limit ? parseInt(req.query.limit, 10) : 50,
     beforeId: req.query.beforeId ? parseInt(req.query.beforeId, 10) : null,
     includeDocuments,
+    includeGifts,
   });
   successResponse(res, result);
 }));

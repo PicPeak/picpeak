@@ -25,6 +25,7 @@ const logger = require('../utils/logger');
 // `FeatureKey` union in frontend/src/contexts/FeatureFlagsContext.tsx.
 const KNOWN_FLAGS = [
   'albumProducts',
+  'printSales',
   'galleries',
   'reminderEmails',
   // Incoming mail (migration 128) — IMAP polling of a dedicated mailbox into
@@ -126,12 +127,17 @@ const KNOWN_FLAGS = [
   // portal plus the Documents card on the customer record. Strictly opt-in:
   // while off, every documents route (portal and admin) answers 403.
   'documents',
+  // Customer gifts (migration 343). Child of `clients` - milestone gift
+  // suggestions, gift stock and the gift history on the customer record.
+  // Strictly opt-in: while off, every /admin/gifts route answers 403.
+  'customerGifts',
 ];
 
 // Spec defaults for any flag missing from the DB (e.g. a row added by a
 // new release that hasn't run its migration yet on this instance).
 const DEFAULT_FLAGS = {
   albumProducts: false,
+  printSales: false,
   galleries: true,
   incomingMail: false,
   // F.3 — reminderEmails is a placeholder card in the Features tab
@@ -163,6 +169,7 @@ const DEFAULT_FLAGS = {
   autoTagging: false,
   newsletters: false,
   documents: false,
+  customerGifts: false,
 };
 
 async function readAllFlags() {
@@ -231,6 +238,7 @@ function applyDependencyRules(flags) {
     || out.calendar
     // Migration 199 (#1264) — newsletter campaigns live under Clients.
     || out.newsletters
+    || out.customerGifts
     // future siblings (out.messaging) go here
   );
   return out;

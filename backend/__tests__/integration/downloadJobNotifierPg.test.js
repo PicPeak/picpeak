@@ -53,6 +53,11 @@ maybe('download job notifier on Postgres', () => {
     await pgDb.schema.createTable('customer_accounts', (t) => {
       t.increments('id'); t.string('email'); t.boolean('is_active').defaultTo(true);
     });
+    await pgDb.schema.createTable('customer_contacts', (t) => {
+      t.increments('id'); t.integer('customer_account_id').notNullable();
+      t.string('email'); t.boolean('is_active').defaultTo(true);
+      t.string('right_galleries').notNullable().defaultTo('view');
+    });
     // As db.js creates it: a foreign key to the event, without a cascade.
     await pgDb.schema.createTable('email_queue', (t) => {
       t.increments('id');

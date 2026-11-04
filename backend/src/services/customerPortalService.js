@@ -19,8 +19,10 @@ const { toIso } = require('../utils/dateNormalize');
 const { toMillis } = require('../utils/queueTimestamps');
 const customerAccountsService = require('./customerAccountsService');
 const customerDocumentsService = require('./customerDocumentsService');
+const { hasRight } = require('./customerContactsService');
 const { followSlugRedirect } = require('./slugRedirects');
 const { orPaidAwaitingDelivery } = require('./invoice/helpers');
+const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 
 const isTrue = (v) => v === true || v === 1 || v === '1';
 const pad = (n) => String(n).padStart(2, '0');
@@ -64,13 +66,52 @@ function shapeEvent(e) {
 
 const money = (v) => Number(v) || 0;
 
-async function needsActionFor(customerId, features) {
+/**
+ * The product offers released to this customer in one gallery (issue 2320),
+ * through the same rule the gallery applies, so the portal never links to an
+ * offer the gallery would refuse.
+ */
+async function productOffersFor(customerId, eventId) {
+  if (!(await isFeatureEnabled('albumProducts'))) return [];
+  const offers = await require('./albumProducts/service').application()
+    .clientOffers(eventId, { customerId });
+  return offers.map((o) => {
+    // A reopened offer keeps its selection, `clientFinal` included.
+    const confirmed = o.status === 'locked' || (o.status === 'submitted' && !!o.selection?.clientFinal);
+    return {
+      id: o.id,
+      name: o.selection?.product?.name || o.product?.name || null,
+      status: o.status,
+      confirmed,
+      // As in the gallery: a confirmed album stays one whatever the catalogue does.
+      guided: o.product && !confirmed ? !!o.product.guided : !!o.product?.guided || !!o.selection?.photoRoles,
+    };
+  });
+}
+
+/** Galleries with a released guided album the customer has not confirmed yet. */
+async function albumsAwaitingCustomer(customerId, galleries) {
+  const out = [];
+  for (const gallery of galleries) {
+    const offers = (await productOffersFor(customerId, gallery.id)).filter((o) => o.guided);
+    if (!offers.length || offers.some((o) => o.confirmed || o.status !== 'draft')) continue;
+    out.push({
+      eventName: gallery.eventName,
+      link: `/customer/events/${encodeURIComponent(gallery.slug)}`,
+    });
+  }
+  return out;
+}
+
+async function needsActionFor(customerId, features, session = null) {
   const today = todayDateOnly();
+  // Same rules as the lists these link to: only what this login can act on.
+  const mayAct = (area) => !session || hasRight(session.rights, area, 'act');
   const out = {
     quotes: [], contracts: [], contractDetails: [], invoices: [], documents: [], documentRequests: [],
   };
 
-  if (features.quotes) {
+  if (features.quotes && mayAct('quotes')) {
     const rows = await db('quotes')
       .where({ customer_account_id: customerId, status: 'sent' })
       .whereNull('response_locked_at')
@@ -89,13 +130,19 @@ async function needsActionFor(customerId, features) {
       }));
   }
 
-  if (features.contracts) {
-    const rows = await db('contracts')
+  if (features.contracts && mayAct('contracts')) {
+    const signingV2 = require('./contract/signingV2');
+    let rows = await db('contracts')
       .where({ customer_account_id: customerId })
       .whereIn('status', ['sent', 'signed_by_admin'])
       .whereNull('signed_by_customer_at')
       .orderBy('id', 'desc')
-      .select('id', 'contract_number', 'title', 'event_name', 'valid_until', 'sent_at');
+      .select('id', 'contract_number', 'title', 'event_name', 'valid_until', 'sent_at', 'status', 'signing_version');
+    // A contact signs only as a named signer of a signatures-v2 contract.
+    if (session?.contactId) {
+      const mine = await signingV2.portalSignerStates({ email: session.email }, rows);
+      rows = rows.filter((c) => mine.get(c.id)?.canSign);
+    }
     out.contracts = rows.map((c) => ({
       id: c.id,
       contractNumber: c.contract_number,
@@ -109,10 +156,14 @@ async function needsActionFor(customerId, features) {
     // can be rendered and sent for signature (#1446 collect-then-freeze,
     // issue 1590). Same guard as canCompleteDetails in customer.js:785 — only
     // a signing-v2 contract has a details-collection step.
-    const detailRows = await db('contracts')
+    let detailRows = await db('contracts')
       .where({ customer_account_id: customerId, status: 'awaiting_data', signing_version: 2 })
       .orderBy('id', 'desc')
-      .select('id', 'contract_number', 'title', 'event_name', 'valid_until', 'sent_at');
+      .select('id', 'contract_number', 'title', 'event_name', 'valid_until', 'sent_at', 'status', 'signing_version');
+    if (session?.contactId) {
+      const mine = await signingV2.portalDetailsContracts(session, detailRows);
+      detailRows = detailRows.filter((c) => mine.has(Number(c.id)));
+    }
     out.contractDetails = detailRows.map((c) => ({
       id: c.id,
       contractNumber: c.contract_number,
@@ -150,7 +201,7 @@ async function needsActionFor(customerId, features) {
     });
   }
 
-  if (features.documents) {
+  if (features.documents && mayAct('documents')) {
     // Only what the customer can act on: a rejected upload of theirs (upload
     // a corrected one, or delete it). A pending upload waits on the studio.
     //
@@ -204,7 +255,7 @@ async function needsActionFor(customerId, features) {
  *
  * Each item: { kind, id, title, at, link }.
  */
-async function recentFor(customerId, features, limit = 10) {
+async function recentFor(customerId, features, limit = 10, { galleries = true } = {}) {
   const items = [];
   const push = (kind, id, title, at, link) => {
     const ms = toMillis(at);
@@ -246,8 +297,9 @@ async function recentFor(customerId, features, limit = 10) {
       .select('id', 'invoice_number', 'sent_at');
     for (const i of rows) push('invoice_sent', i.id, i.invoice_number, i.sent_at, '/customer/bills');
   }
-  const events = (await customerAccountsService.listEventsForCustomer(customerId))
-    .filter((e) => !isTrue(e.is_draft));
+  const events = galleries
+    ? (await customerAccountsService.listEventsForCustomer(customerId)).filter((e) => !isTrue(e.is_draft))
+    : [];
   for (const e of events) {
     push('gallery_assigned', e.id, e.event_name, e.assigned_at, `/customer/events/${encodeURIComponent(e.slug)}`);
   }
@@ -256,12 +308,28 @@ async function recentFor(customerId, features, limit = 10) {
   return items.slice(0, limit);
 }
 
-async function getDashboard(customerId) {
-  const features = await customerAccountsService.getEffectiveFeaturesForCustomer(customerId);
-  const events = (await customerAccountsService.listEventsForCustomer(customerId)).map(shapeEvent);
+// `session` is req.customer. Without one, the view of the whole customer.
+async function featuresFor(customerId, session) {
+  return session
+    ? customerAccountsService.getEffectiveFeaturesForSession(session)
+    : customerAccountsService.getEffectiveFeaturesForCustomer(customerId);
+}
+
+async function getDashboard(customerId, session = null) {
+  const features = await featuresFor(customerId, session);
+  const galleries = !session || hasRight(session.rights, 'galleries');
+  const events = galleries
+    ? (await customerAccountsService.listEventsForCustomer(customerId)).map(shapeEvent)
+    : [];
   return {
-    needsAction: await needsActionFor(customerId, features),
-    recent: await recentFor(customerId, features),
+    needsAction: {
+      ...await needsActionFor(customerId, features, session),
+      // A login without the right to act on galleries has no album to confirm.
+      albums: !session || hasRight(session.rights, 'galleries', 'act')
+        ? await albumsAwaitingCustomer(customerId, events.filter((e) => e.availability === 'active'))
+        : [],
+    },
+    recent: await recentFor(customerId, features, 10, { galleries }),
     galleries: {
       active: events.filter((e) => e.availability !== 'expired'),
       expired: events.filter((e) => e.availability === 'expired'),
@@ -316,7 +384,7 @@ async function dealLineageForEvent(customerId, event) {
  * for all three so the endpoint can't be used to probe for other customers'
  * events.
  */
-async function getEventOverview(customerId, slug) {
+async function getEventOverview(customerId, slug, session = null) {
   let event = await db('events').where({ slug }).first();
   // Links mailed before a rename carry the old slug. The access check below
   // still decides, so this finds nothing a slug lookup would not.
@@ -324,7 +392,7 @@ async function getEventOverview(customerId, slug) {
   if (!event || isTrue(event.is_archived)) return null;
   if (!(await customerAccountsService.customerHasAccessToEvent(customerId, event.id))) return null;
 
-  const features = await customerAccountsService.getEffectiveFeaturesForCustomer(customerId);
+  const features = await featuresFor(customerId, session);
 
   const lineage = await dealLineageForEvent(customerId, event);
   const dealList = lineage.dealUuids;
@@ -403,6 +471,7 @@ async function getEventOverview(customerId, slug) {
       projectIds: lineage.projectIds,
     })
     : [];
+  const mayActOnDocuments = !session || hasRight(session.rights, 'documents', 'act');
 
   return {
     event: shapeEvent(event),
@@ -415,7 +484,8 @@ async function getEventOverview(customerId, slug) {
     quotes,
     contracts,
     invoices,
-    documents,
+    documents: mayActOnDocuments ? documents : documents.map((doc) => ({ ...doc, canDelete: false })),
+    productOffers: await productOffersFor(customerId, event.id),
   };
 }
 

@@ -1,3 +1,4 @@
+import { PrintSalesProvider, PrintShopEntry } from '../../features/print-sales/GalleryPrintShop';
 import { GalleryProductPanel } from '../../features/album-products/GalleryProductPanel';
 import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
 import { GalleryUnavailableNotice } from './GalleryUnavailableNotice';
@@ -435,12 +436,14 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   const { data: settingsData } = usePublicSettings();
 
-  // Photo sales: priced galleries get the Snipcart bootstrap
+  // Photo sales: priced galleries get the PicPeak cart
   // and buy buttons; non-priced galleries never load any of it.
   const photoSalesValue = useMemo(() => buildPhotoSalesConfig({
     slug,
-    event: (data?.event as unknown) as Parameters<typeof buildPhotoSalesConfig>[0]['event'],
-    apiKey: (settingsData as { snipcart_api_key?: string | null } | undefined)?.snipcart_api_key ?? null,
+    event: data?.event,
+    checkoutConfigured: settingsData?.photo_sales_checkout_configured === true,
+    providers: settingsData?.photo_sales_providers,
+    snipcartPublicKey: settingsData?.snipcart_api_key,
   }), [slug, data?.event, settingsData]);
 
   // Fetch feedback settings
@@ -1133,6 +1136,13 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     setSelectedPhotos(new Set());
     setIsSelectionMode(false);
   }, [setSelectedPhotos, setIsSelectionMode]);
+  // "Select photos" / "Cancel selection" in the sidebar and the grid: leaving
+  // selection mode drops the selection like the toolbar's X does, or Select
+  // all → Cancel left every photo ticked. Entering keeps what is selected.
+  const toggleSelectionMode = useCallback(() => {
+    if (isSelectionMode) cancelSelection();
+    else setIsSelectionMode(true);
+  }, [isSelectionMode, cancelSelection, setIsSelectionMode]);
   // The filters that live in the toolbar's filter panel; categories, search
   // and people have their own controls on the page.
   const activePanelFilterCount = activeFilters.length + activeColorFilters.length
@@ -1160,9 +1170,9 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   // Photo sales: a priced gallery delivers everything
   // through the checkout: every download affordance (header, sidebar,
-  // tiles, lightbox, layout nav) is switched off and a Snipcart cart
+  // tiles, lightbox, layout nav) is switched off and a purchase cart
   // button takes the header slot instead.
-  const salesCheckoutReady = photoSalesValue.enabled && !!photoSalesValue.apiKey;
+  const salesCheckoutReady = photoSalesValue.checkoutReady;
   if (salesCheckoutReady && allowDownloads) allowDownloads = false;
 
   // Guest uploads: the refetched /photos payload decides once it is here. The
@@ -1831,16 +1841,17 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       // Premium and Story already ask for it (ensureIdentity) before a like,
       // and finishing a selection needs it too. Without the provider a guest
       // in guest identity mode was never asked for a name and got a 401.
+      <PrintSalesProvider slug={slug} enabled={viaCustomer} photos={data?.photos || []} selectedPhotoIds={selectedPhotos}>
       <GuestIdentityProvider slug={slug} identityMode={identityMode}>
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
         <GuestRecoveryModal />
         <PhotoSalesProvider
+          photos={data?.photos}
           value={{
             ...photoSalesValue,
-            photos: (data?.photos || []) as Array<{ id: number; uploaded_at?: string | null }>,
-            checkoutReady: photoSalesValue.enabled && !!photoSalesValue.apiKey,
+            checkoutReady: photoSalesValue.checkoutReady,
           }}
         >
 
@@ -1921,6 +1932,16 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             />
           </div>
         )}
+        {/* The album entry (issue 2397) sits with the selection actions above,
+            not after the whole grid, so it is the first thing a client sees.
+            Story's fixed nav covers the top of the page; with the selection
+            bar the band above makes room for it, otherwise the panel does. */}
+        {(isClient || viaCustomer) && (
+          <GalleryProductPanel
+            slug={slug}
+            className={theme.galleryLayout === 'gallery-story' && !selectionBarShown ? 'pt-20' : undefined}
+          />
+        )}
         <PhotoGridWithLayouts
           // Remount on a scope change (#1160): layout state such as the
           // carousel's currentIndex is only meaningful for the photo set it was
@@ -1978,7 +1999,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           selectedPhotos={selectedPhotos}
           onSelectionChange={setSelectedPhotos}
           photosForIds={photosForIds}
-          onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
+          onToggleSelectionMode={toggleSelectionMode}
           eventName={event.event_name}
           eventLogo={data?.event?.hero_logo_url || brandingSettings?.logo_url}
           eventDate={event.event_date}
@@ -2056,7 +2077,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
         </PhotoSalesProvider>
 
-        {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
+        <PrintShopEntry />
 
         {/* Filename list for a RAW editor search (issue 1733, A3d). */}
         {showCopyFilenames && (
@@ -2069,19 +2090,21 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
       </GuestIdentityProvider>
+      </PrintSalesProvider>
     );
   }
 
   return withDownloadProviders(
+    <PrintSalesProvider slug={slug} enabled={viaCustomer} photos={data?.photos || []} selectedPhotoIds={selectedPhotos}>
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GridDensityOffered.Provider value={densityOffered}>
       <PhotoSalesProvider
+        photos={data?.photos}
         value={{
           ...photoSalesValue,
-          photos: (data?.photos || []) as Array<{ id: number; uploaded_at?: string | null }>,
-          checkoutReady: photoSalesValue.enabled && !!photoSalesValue.apiKey,
+          checkoutReady: photoSalesValue.checkoutReady,
         }}
       >
 
@@ -2104,7 +2127,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           sortDesc={sortDesc}
           onSortDescChange={setSortDesc}
           isSelectionMode={isSelectionMode}
-          onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
+          onToggleSelectionMode={toggleSelectionMode}
           hasVideos={hasVideoItems(scopedPhotos)}
           selectedCount={selectedPhotos.size}
           onSelectAll={selectAllVisible}
@@ -2259,6 +2282,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       >
         {clientAccessDialog}
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
+        <PrintShopEntry />
         {/* Expiration Banner */}
         {showUrgentWarning && event.expires_at && (
           <ExpirationBanner daysRemaining={daysUntilExpiration} expiresAt={event.expires_at} />
@@ -2555,7 +2579,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             selectedPhotos={selectedPhotos}
             onSelectionChange={setSelectedPhotos}
             photosForIds={photosForIds}
-            onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
+            onToggleSelectionMode={toggleSelectionMode}
             eventName={event.event_name}
             eventLogo={data?.event?.hero_logo_url || brandingSettings?.logo_url}
             eventDate={event.event_date}
@@ -2644,5 +2668,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
     </GuestIdentityProvider>
+    </PrintSalesProvider>
   );
 };

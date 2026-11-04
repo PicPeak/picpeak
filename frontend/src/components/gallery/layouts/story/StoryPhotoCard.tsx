@@ -1,3 +1,4 @@
+import { PhotoPurchaseBadge } from '../../../../features/photo-sales/PhotoPurchaseBadge';
 import React, { useRef, useState } from 'react';
 import { motion, useInView } from 'framer-motion';
 import { Heart, Check, Video } from 'lucide-react';
@@ -41,6 +42,13 @@ interface StoryPhotoCardProps {
    * original filenames (#508), as the lightbox does.
    */
   caption?: StoryCaptionMode;
+  /** The card's place in the grid, in a windowed gallery. */
+  style?: React.CSSProperties;
+  /**
+   * The cards that have made their entrance, in a windowed gallery: one that
+   * scrolled away and comes back is remounted and must not make it twice.
+   */
+  revealed?: Set<number>;
 }
 
 export type StoryCaptionMode = 'none' | 'filename' | 'original';
@@ -60,11 +68,14 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   likesAllowed = true,
   onToggleVisibility,
   caption = 'none',
+  style,
+  revealed,
   galleryId: _galleryId
 }) => {
   // galleryId is kept for potential PhotoSwipe integration but not currently used
   void _galleryId;
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [revealedBefore] = useState(() => revealed?.has(photo.id) ?? false);
+  const [isLoaded, setIsLoaded] = useState(revealedBefore);
 
   // Don't fetch until the card is near the viewport (#1166).
   //
@@ -104,9 +115,11 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   return (
     <motion.div
       ref={cardRef}
-      initial={{ opacity: 0, y: 20 }}
+      style={style}
+      initial={revealedBefore ? false : { opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-50px' }}
+      onViewportEnter={() => revealed?.add(photo.id)}
       transition={{ delay: Math.min(index * 0.05, 0.3) }}
       // The fit rides on the card, not the img: `.story-photo-card img` in the
       // stylesheet outranks a Tailwind utility on the image itself.
@@ -259,6 +272,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           <p>{captionText}</p>
         </div>
       )}
+      <PhotoPurchaseBadge photo={photo} className="left-auto right-3 bottom-3" />
     </motion.div>
   );
 };

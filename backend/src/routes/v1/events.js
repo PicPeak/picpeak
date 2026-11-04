@@ -43,6 +43,7 @@ const { requirePermission } = require('../../middleware/permissions');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const {
   generateThumbnail,
+  withProcessableImage,
   extractCapture,
   captureWallColumn,
   ensurePreviewImage,
@@ -63,7 +64,8 @@ const { withPublicUpload } = require('../../middleware/publicUploadStream');
 const { createUploadFileGuard } = require('../../utils/uploadAdmissionType');
 const uploadQuota = require('../../services/publicUploadQuota');
 const { validateFileContent, validateFileType, normalizeUploadMimeType, ALLOWED_MEDIA_TYPES } = require('../../utils/fileSecurityUtils');
-const { validateUploadedFiles } = require('../../middleware/uploadValidation');
+const { isHeifFilename } = require('../../utils/rawFormats');
+const { validateUploadedFiles, readsAsImage } = require('../../middleware/uploadValidation');
 const downloadZipService = require('../../services/downloadZipService');
 const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
 const { PhotoExportService } = require('../../services/photoExportService');
@@ -74,7 +76,7 @@ const { Readable } = require('stream');
 const { getStorage } = require('../../services/storage');
 const { isStorageNotFoundError } = require('../../services/storage/storageErrors');
 const { requireCapability } = require('../../middleware/requireCapability');
-const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../../services/photoResolver');
+const { resolvePhotoStorageKey, resolvePhotoFilePath, isManagedOriginalKey } = require('../../services/photoResolver');
 const { pickRawDownloadName } = require('../../services/downloadFilenameService');
 const { buildContentDisposition, sanitizeForZipEntry } = require('../../utils/filenameSanitizer');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
@@ -105,6 +107,8 @@ const buildPhotoUpload = (maxFileSizeBytes, { storage, streamHandler, rejectBody
     // understood by its processing path without the UI's extension allow-list.
     // A video takes the UI's gate instead (Lightroom plugin issue 8): only a
     // type the admin enabled in general_allowed_file_types, extension matching.
+    // A .HEIC or RAW file often arrives with a generic type (issue 2368).
+    file.mimetype = normalizeUploadMimeType(file.originalname, file.mimetype);
     if (/^image\//.test(file.mimetype)) cb(null, true);
     else if (isVideoMimeType(file.mimetype) && validateFileType(file.originalname, file.mimetype, req.allowedMimeTypes)) cb(null, true);
     else {
@@ -450,6 +454,20 @@ router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requirePermissi
  *                 media_type: { type: string, enum: [image, video] }
  *       400: { description: "No file, an invalid or disabled type, a file over its cap, or a replacement by another media type" }
  *       404: { description: Event not found, or replaces_photo_id not in this event }
+ *       422:
+ *         description: |
+ *           An image over one of the server's image limits (IMAGE_MAX_PIXELS,
+ *           IMAGE_MAX_DIMENSION, IMAGE_MAX_FRAMES, IMAGE_MAX_DECODED_MIB, ...).
+ *           Nothing is stored; the message names the limit.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string }
+ *                 code: { type: string, example: IMAGE_RESOURCE_LIMIT }
+ *                 imageLimit: { type: string, enum: [pixels, dimension, frames, decoded, input, memory] }
+ *                 imageMax: { type: number, description: "The limit's value: megapixels, px, frames or MiB." }
  */
 router.post(
   '/events/:id/photos',
@@ -491,21 +509,6 @@ router.post(
   }
 );
 
-// Whether Sharp reads the file as an image with dimensions. A busy image
-// worker says nothing about the file, so it passes; a resource limit is
-// thrown like the metadata read further down throws it.
-async function readsAsImage(filePath) {
-  try {
-    const meta = await sharp(filePath).metadata();
-    return Boolean(meta && meta.width && meta.height);
-  } catch (error) {
-    const policy = require('../../services/imageResourcePolicy');
-    if (policy.isTransient(error)) return true;
-    if (policy.isResourceError(error)) throw error;
-    return false;
-  }
-}
-
 async function handleV1PhotoUpload(req, res) {
   let tempPath = null;
   let object;
@@ -522,10 +525,17 @@ async function handleV1PhotoUpload(req, res) {
     // (TIFF, AVIF, ...); one the signature table does not know has to be an
     // image Sharp can read instead. A video passed the file filter only as a
     // type the table knows, so it gets the signature check and no decode.
-    const declaredType = normalizeUploadMimeType(req.file.originalname, req.file.mimetype);
+    // A photo is served by its name's type, so a HEIF name has to hold HEIF bytes.
+    const declaredType = isHeifFilename(req.file.originalname)
+      ? normalizeUploadMimeType(req.file.originalname, '')
+      : req.file.mimetype;
+    req.file.mimetype = declaredType;
     const videoUpload = isVideoMimeType(declaredType);
+    // The HEIF signature is only a container's `ftyp`, which says nothing about
+    // an image in it, so that name has to read as one as well.
     const contentMatches = ALLOWED_MEDIA_TYPES[declaredType]
       ? await validateFileContent(tempPath, declaredType)
+        && (!isHeifFilename(req.file.originalname) || await readsAsImage(tempPath))
       : await readsAsImage(tempPath);
     if (!contentMatches) {
       await fs.unlink(tempPath).catch(() => {});
@@ -539,6 +549,8 @@ async function handleV1PhotoUpload(req, res) {
     if (checked.files.length === 0) {
       await fs.unlink(tempPath).catch(() => {});
       const [rejected] = checked.invalidFiles || [];
+      const limitRefusal = require('../../services/imageResourcePolicy').uploadRefusal(rejected);
+      if (limitRefusal) return res.status(limitRefusal.status).json(limitRefusal.body);
       return res.status(400).json({ error: rejected?.code === require('../../services/imageResourcePolicy').LIBRARY_UNAVAILABLE ? rejected.error : `Invalid image file: ${req.file.originalname}` });
     }
 
@@ -727,7 +739,12 @@ async function handleV1PhotoUpload(req, res) {
       captureWall = captureWallColumn(capture);
 
       try {
-        thumbRel = await generateThumbnail(tempPath, { meta: thumbMeta });
+        const processable = await withProcessableImage(tempPath, req.file.originalname);
+        try {
+          thumbRel = await generateThumbnail(processable.path, { meta: thumbMeta, outputBasename: path.basename(tempPath) });
+        } finally {
+          await processable.cleanup();
+        }
       } catch (err) {
         if (require('../../services/imageResourcePolicy').isResourceError(err)) throw err;
         logger.warn('v1 thumbnail generation failed', { err: err.message });
@@ -835,6 +852,11 @@ async function handleV1PhotoUpload(req, res) {
     }
     logger.error('v1 POST /events/:id/photos failed', { error: error.message });
     if (tempPath) await fs.unlink(tempPath).catch(() => {});
+    // An image over the server's limits, met past the decode check (an
+    // image/* type the signature table does not know, the metadata or the
+    // thumbnail), is a refusal of the file, not a server fault (issue 2395).
+    const limitRefusal = require('../../services/imageResourcePolicy').uploadRefusal(error);
+    if (limitRefusal) return res.status(limitRefusal.status).json(limitRefusal.body);
     res.status(500).json({ error: 'Failed to upload photo' });
   } finally {
     releaseClaim?.();
@@ -1260,7 +1282,7 @@ function locateOriginal(event, photo) {
   try {
     const key = resolvePhotoStorageKey(event, photo);
     if (key) {
-      return path.posix.normalize(key).startsWith('events/active/') ? { key } : null;
+      return isManagedOriginalKey(key) ? { key } : null;
     }
     return { filePath: resolvePhotoFilePath(event, photo) };
   } catch {

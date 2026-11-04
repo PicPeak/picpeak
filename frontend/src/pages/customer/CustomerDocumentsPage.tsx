@@ -15,6 +15,7 @@ import type { TFunction } from 'i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Download, FolderOpen, Inbox, Trash2, Upload, X } from 'lucide-react';
+import { useCustomerAuth } from '../../contexts/CustomerAuthContext';
 import { toast } from 'react-toastify';
 
 import { Button, Card, EmptyState, ErrorState, Loading, useConfirm } from '../../components/common';
@@ -242,9 +243,12 @@ export const CustomerDocumentsPage: React.FC = () => {
     queryKey: ['customer-documents'],
     queryFn: () => customerService.listDocuments(),
   });
+  const { customer } = useCustomerAuth();
+  const canAct = (customer?.rights?.documents ?? 'act') === 'act';
   const { data: events } = useQuery({
     queryKey: ['customer-events'],
     queryFn: () => customerService.listEvents(),
+    enabled: customer?.rights?.galleries !== 'none',
   });
   // What the studio asked for (slice 10). `?request=<id>` — the link in the
   // request mail and on the dashboard — preselects one for the upload.
@@ -392,7 +396,7 @@ export const CustomerDocumentsPage: React.FC = () => {
                     </p>
                   )}
                 </div>
-                <Button
+                {canAct && <Button
                   type="button"
                   variant={r.id === requestId ? 'primary' : 'outline'}
                   size="sm"
@@ -402,14 +406,14 @@ export const CustomerDocumentsPage: React.FC = () => {
                   aria-label={t('customer.documents.requests.uploadAria', 'Upload a file for {{title}}', { title: r.title })}
                 >
                   {t('customer.documents.requests.upload', 'Upload for this request')}
-                </Button>
+                </Button>}
               </li>
             ))}
           </ul>
         </Card>
       )}
 
-      <Card padding="lg" className="mb-4">
+      {canAct && <Card padding="lg" className="mb-4">
         <h2 className="text-base font-semibold text-theme mb-1">{t('customer.documents.uploadTitle', 'Send a document')}</h2>
         {selectedRequest && (
           <p className="text-sm text-theme mb-2 flex items-center gap-2 flex-wrap">
@@ -495,7 +499,7 @@ export const CustomerDocumentsPage: React.FC = () => {
             <p className={result.kind === 'success' ? 'text-status hue-success' : 'text-status hue-danger'}>{result.message}</p>
           )}
         </div>
-      </Card>
+      </Card>}
 
       {documents.length === 0 ? (
         <Card padding="lg">

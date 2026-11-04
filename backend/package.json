@@ -1,6 +1,6 @@
 {
   "name": "picpeak-backend",
-  "version": "3.188.0-beta.0",
+  "version": "3.193.0-beta.0",
   "description": "Backend for PicPeak event photo sharing platform",
   "main": "server.js",
   "engines": {
@@ -68,6 +68,7 @@
     "sanitize-html": "2.18.1",
     "sharp": "0.35.5",
     "sqlite3": "^5.1.6",
+    "stripe": "23.0.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "swissqrbill": "^4.3.0",

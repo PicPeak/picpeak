@@ -18,7 +18,7 @@
 const path = require('path');
 const mime = require('mime-types');
 const sharp = require('./isolatedSharp');
-const { retryTransient } = require('./imageResourcePolicy');
+const { retryTransient, isResourceError, LIBRARY_UNAVAILABLE } = require('./imageResourcePolicy');
 const { resolveCredit } = require('./photoCredit');
 const { exifColumn } = require('./photoExif');
 const { sha256File } = require('./photoDuplicates');
@@ -32,6 +32,7 @@ const { getAllowedExtensions } = require('./uploadSettings');
 const logger = require('../utils/logger');
 const { promotionSettled } = require('./watchFolderClaims');
 const { unfinishedKeys } = require('./publicUploadQuota');
+const { validateUploadedFile } = require('../middleware/uploadValidation');
 const dependencyHealth = require('./dependencyHealth');
 
 const POLL_INTERVAL_MS = parseInt(process.env.STORAGE_AUTO_IMPORT_INTERVAL_MS || `${5 * 60 * 1000}`, 10);
@@ -41,6 +42,13 @@ const ENABLED = process.env.STORAGE_AUTO_IMPORT === 'true';
 // On the next poll, any key in BOTH the previous and current snapshots is
 // eligible for import. This is the eventual-consistency gate.
 const previousSnapshot = new Map();
+
+// Map<storageKey, signature> — objects the upload validator refused (issue
+// 2394). Each poll would download and refuse them again, with a warning every
+// time; they are passed over until the object changes (size or mtime) or the
+// process restarts.
+const refusedObjects = new Map();
+const signatureOf = (entry) => `${entry.size}:${entry.mtime ? new Date(entry.mtime).getTime() : ''}`;
 
 let stopped = false;
 
@@ -128,6 +136,7 @@ async function processEvent(event, storage) {
       const isImage = isRaw || mimeType.startsWith('image/');
       const isVideo = !isRaw && mimeType.startsWith('video/');
       if (!isImage && !isVideo) continue;
+      if (refusedObjects.get(entry.key) === signatureOf(entry)) continue;
 
       // Capture image dimensions so aspect-aware layouts (masonry /
       // mosaic / justified) can size each card to the photo's real
@@ -148,9 +157,23 @@ async function processEvent(event, storage) {
       // left to the content-hash backfill, as is an object that cannot be
       // read now.
       let contentSha256 = null;
+      // The upload validator runs on the local copy first (issue 2394), as
+      // the upload routes run it: without it any bytes under an image name,
+      // a bare HEIF `ftyp` header included, became a gallery photo. Nothing
+      // is waiting on the import, so a file the validator could not check
+      // now is not passed unchecked but left for the next poll.
+      let checked = false;
+      let refusal = null;
       if (isImage) {
         try {
           dimensions = await withLocalCopy(entry.key, async (localPath) => {
+            try {
+              await validateUploadedFile(localPath, path.extname(filename), {}, { passBusy: false });
+            } catch (err) {
+              refusal = err;
+              return null;
+            }
+            checked = true;
             contentSha256 = await sha256File(localPath).catch(() => null);
             credit = await resolveCredit({ localPath });
             exif = await exifColumn(localPath);
@@ -174,7 +197,28 @@ async function processEvent(event, storage) {
             }
           });
         } catch (err) {
+          // Not fetched, so not validated: left for the next poll.
+          if (!checked && !refusal) {
+            logger.warn(`[s3AutoImporter] could not fetch ${entry.key}, retrying on the next poll: ${err.message}`);
+            continue;
+          }
           logger.debug(`[s3AutoImporter] could not read dimensions for ${entry.key}: ${err.message}`);
+        }
+        // A busy or short-of-resources worker, a missing image library or a
+        // system error on the host (ENOSPC, EIO, ...) says nothing about the
+        // file: it is not refused, only left for the
+        // next poll, as the external import leaves a video ffprobe could not
+        // take. A configured limit the file is over (it names the limit) is
+        // the file's own, and would only be fetched again on every poll.
+        if (refusal && !refusal.imageLimit && (isResourceError(refusal) || refusal.code === LIBRARY_UNAVAILABLE
+          || /^E[A-Z0-9]+$/.test(refusal.code || ''))) {
+          logger.warn(`[s3AutoImporter] could not check ${entry.key} now, retrying on the next poll: ${refusal.message}`);
+          continue;
+        }
+        if (refusal) {
+          logger.warn(`[s3AutoImporter] skipping ${entry.key}: ${refusal.message}`);
+          refusedObjects.set(entry.key, signatureOf(entry));
+          continue;
         }
       }
 
@@ -242,10 +286,11 @@ async function stopS3AutoImporter() {
   stopped = true;
   await pollingTask.stop();
   previousSnapshot.clear();
+  refusedObjects.clear();
 }
 
 module.exports = {
   startS3AutoImporter,
   stopS3AutoImporter,
-  __test: { tick, processEvent, previousSnapshot, ENABLED, POLL_INTERVAL_MS },
+  __test: { tick, processEvent, previousSnapshot, refusedObjects, ENABLED, POLL_INTERVAL_MS },
 };

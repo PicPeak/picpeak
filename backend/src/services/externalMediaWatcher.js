@@ -173,6 +173,9 @@ async function runImportInternal(eventId, reason) {
       // (see externalImportService).
       automatic: true,
       settleMs: STABILITY_MS,
+      // A pass that a file change asked for, or a full look on the clock
+      // (the sweep, and the catch-up pass of a watcher that just started).
+      trigger: reason === 'change' ? 'watch' : 'sweep',
     });
     if (result.imported > 0 || result.deferred > 0) {
       logger.info(`[externalMediaWatcher] event ${eventId} (${event.slug}): imported ${result.imported}, skipped ${result.skipped}, deferred ${result.deferred}, excluded ${result.excluded} (${reason})`);

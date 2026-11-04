@@ -125,6 +125,7 @@ class S3StorageBackend {
         contentDisposition: options.contentDisposition,
         cacheControl: options.cacheControl,
         metadata: options.metadata,
+        ...(options.signal ? { signal: options.signal } : {}),
       });
       return;
     }
@@ -134,6 +135,7 @@ class S3StorageBackend {
         contentDisposition: options.contentDisposition,
         cacheControl: options.cacheControl,
         metadata: options.metadata,
+        ...(options.signal ? { signal: options.signal } : {}),
       });
       return;
     }
@@ -151,7 +153,8 @@ class S3StorageBackend {
   }
 
   async get(relPath, options = {}) {
-    return this.adapter.downloadStream(this._key(relPath), { ifMatch: options.ifMatch, versionId: options.versionId });
+    return this.adapter.downloadStream(this._key(relPath), { ifMatch: options.ifMatch, versionId: options.versionId,
+      ...(options.signal ? { signal: options.signal } : {}) });
   }
 
   async getRange(relPath, start, end) {
