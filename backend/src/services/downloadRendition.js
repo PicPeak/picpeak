@@ -17,6 +17,7 @@
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const {
   withLocalCopy, resizeToBox, ensurePreviewImage, withProcessableImage, orientedDimensions,
+  withRawContainerTags,
 } = require('./imageProcessor');
 const sharp = require('./isolatedSharp');
 const { isRawFilename } = require('../utils/rawFormats');
@@ -100,7 +101,7 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
   // in its place.
   const mark = (input) => watermarkService.applyWatermark(input, watermarkSettings, { keepMetadata: true, failClosed: true });
 
-  const transform = async (localPath) => {
+  const render = async (localPath) => {
     if (!wantsResize) {
       // A RAW cannot be marked as stored: the mark goes on its embedded
       // preview, which ships as a JPEG. As a Buffer, so the temp file's
@@ -122,6 +123,12 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
     }
     const buffer = await capToBox(localPath, box, sourceName);
     return wantsWatermark ? mark(buffer) : buffer;
+  };
+  // A RAW ships as a JPEG of its embedded preview, which carries no metadata
+  // of its own: the container's goes onto the finished bytes, after the mark.
+  const transform = async (localPath) => {
+    const rendition = await render(localPath);
+    return isRawFilename(sourceName) ? withRawContainerTags(localPath, rendition) : rendition;
   };
 
   // Managed photos live behind the storage abstraction (possibly S3); external

@@ -297,6 +297,51 @@ async function applyContainerOrientation(previewPath, orientation, previewOrient
 }
 
 /**
+ * A JPEG made from a RAW's embedded preview, with the RAW container's
+ * EXIF/XMP/IPTC copied onto it (issue 2393): the preview carries none of its
+ * own, so a capped or watermarked RAW download would lose the Artist,
+ * Copyright, capture data and GPS the download contract keeps (issue 1649).
+ *
+ * One exiftool run. The container's Orientation is not copied: it describes
+ * the RAW's stored frame, and the rendition already states its own (1 after
+ * sharp's .rotate(), the preview's tag when it went out unmarked). The
+ * embedded previews stay behind too: they are megabytes, and the download is
+ * the photo. A copy that fails ships the rendition without the tags, like
+ * applyContainerOrientation.
+ *
+ * @param {string} rawPath  the RAW the rendition was made from
+ * @param {Buffer} jpeg     the finished rendition
+ * @returns {Promise<Buffer>}
+ */
+async function withRawContainerTags(rawPath, jpeg) {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-rawtags-'));
+  const target = path.join(dir, 'download.jpg');
+  try {
+    await fsp.writeFile(target, jpeg);
+    // exiftool reads %d, %f and %e in a -TagsFromFile name as a format, so a
+    // photo named "100%f.CR2" would copy from a file that doesn't exist. A
+    // link under a fixed name sidesteps the escaping.
+    const source = path.join(dir, `source${path.extname(rawPath)}`);
+    await fsp.symlink(path.resolve(rawPath), source);
+    await runExiftool([
+      '-m', '-TagsFromFile', source, '-all:all',
+      '--Orientation', '--ThumbnailImage', '--PreviewImage', '--JpgFromRaw',
+      '-overwrite_original', target,
+    ]);
+    return await fsp.readFile(target);
+  } catch (err) {
+    if (isResourceError(err)) throw err;
+    logger.warn(
+      `Could not copy the metadata of ${path.basename(rawPath)} onto its download: `
+      + `${err.message}. It ships without its EXIF, XMP and IPTC.`
+    );
+    return jpeg;
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
  * Extract the embedded full-resolution JPEG preview from a RAW/DNG file to a
  * temp .jpg and return its path. Throws if none can be extracted or the result
  * isn't a valid image — the caller treats that as a processing failure
@@ -2714,6 +2759,7 @@ module.exports = {
   originalNeedsPreview,
   extractRawPreview,
   withProcessableImage,
+  withRawContainerTags,
   heifStandIn,
   prefixedBasename,
   RAW_EXTENSIONS,
