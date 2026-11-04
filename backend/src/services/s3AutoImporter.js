@@ -166,7 +166,7 @@ async function processEvent(event, storage) {
         try {
           dimensions = await withLocalCopy(entry.key, async (localPath) => {
             try {
-              await validateUploadedFile(localPath, path.extname(filename));
+              await validateUploadedFile(localPath, path.extname(filename), {}, { passBusy: false });
             } catch (err) {
               refusal = err;
               return null;

@@ -9,10 +9,11 @@ const sharp = require('sharp');
 const { bootCrmDb } = require('../integration/helpers/crmDb');
 
 // The real validator, unless a test stands in for a worker that cannot check.
-const mockValidator = { failWith: null };
+const mockValidator = { failWith: null, calls: [] };
 jest.mock('../../src/middleware/uploadValidation', () => {
   const actual = jest.requireActual('../../src/middleware/uploadValidation');
   return { ...actual, validateUploadedFile: async (...args) => {
+    mockValidator.calls.push(args);
     if (mockValidator.failWith) throw mockValidator.failWith;
     return actual.validateUploadedFile(...args);
   } };
@@ -81,6 +82,9 @@ describe('s3AutoImporter: upload validation', () => {
     const heic = fs.readFileSync(path.join(__dirname, '../fixtures/hevc-display-p3.heic'));
     const { row } = await importFile('IMG_3974.heic', heic);
     expect(row).toMatchObject({ filename: 'IMG_3974.heic', media_type: 'image', mime_type: 'image/heic' });
+    // A busy worker fails the check rather than passing the file (a HEIF
+    // check would pass it on upload): the import can look again.
+    expect(mockValidator.calls.at(-1)[3]).toEqual({ passBusy: false });
   }, 30000);
 
   it.each([

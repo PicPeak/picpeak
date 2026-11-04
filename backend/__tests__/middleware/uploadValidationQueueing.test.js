@@ -19,7 +19,7 @@ jest.mock('../../src/services/isolatedSharp', () => {
   return fn;
 });
 
-const { validateUploadedFiles } = require('../../src/middleware/uploadValidation');
+const { validateUploadedFiles, validateUploadedFile } = require('../../src/middleware/uploadValidation');
 
 describe('validateUploadedFiles queueing', () => {
   let dir;
@@ -81,5 +81,16 @@ describe('validateUploadedFiles queueing', () => {
     fs.writeFileSync(file, 'x');
     await validateUploadedFiles({ files: [{ originalname: 'clip.mov', path: file, mimetype: 'video/quicktime' }] }, {}, () => {});
     expect(calls).toHaveLength(0);
+  });
+
+  it('passes a HEIF a busy worker could not read, unless the caller can check again later', async () => {
+    const sharp = require('../../src/services/isolatedSharp');
+    const busy = () => Object.assign(new Error('Image worker is unavailable'), { code: 'IMAGE_WORKER_UNAVAILABLE' });
+    const file = path.join(dir, 'busy.heic');
+    fs.writeFileSync(file, 'x');
+    sharp.mockImplementationOnce(() => ({ metadata: jest.fn().mockRejectedValue(busy()) }));
+    await expect(validateUploadedFile(file, '.heic')).resolves.toBe(true);
+    sharp.mockImplementationOnce(() => ({ metadata: jest.fn().mockRejectedValue(busy()) }));
+    await expect(validateUploadedFile(file, '.heic', {}, { passBusy: false })).rejects.toMatchObject({ code: 'IMAGE_WORKER_UNAVAILABLE' });
   });
 });
