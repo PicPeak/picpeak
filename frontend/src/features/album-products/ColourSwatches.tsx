@@ -41,7 +41,7 @@ export function ColourSwatches({
           return (
             <label
               key={option.id}
-              className="flex w-20 cursor-pointer flex-col items-center gap-2 text-center text-sm"
+              className="flex w-24 cursor-pointer flex-col items-center gap-2 text-center text-sm"
             >
               <input
                 type="radio"
@@ -54,7 +54,7 @@ export function ColourSwatches({
               <span
                 aria-hidden="true"
                 data-swatch={option.hex || ''}
-                className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-border-token peer-checked:outline peer-checked:outline-2 peer-checked:outline-offset-2 peer-checked:outline-accent peer-focus-visible:ring-2 peer-focus-visible:ring-text-primary peer-focus-visible:ring-offset-4"
+                className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-border-token peer-checked:outline peer-checked:outline-2 peer-checked:outline-offset-2 peer-checked:outline-accent peer-focus-visible:ring-2 peer-focus-visible:ring-text-primary peer-focus-visible:ring-offset-4"
                 style={option.hex ? { backgroundColor: option.hex } : undefined}
               >
                 {!option.hex && option.imageId && (
@@ -62,7 +62,7 @@ export function ColourSwatches({
                 )}
                 {selected && (
                   <Check
-                    className="absolute h-5 w-5"
+                    className="absolute h-6 w-6"
                     style={{ color: option.hex ? checkColour(option.hex) : undefined }}
                   />
                 )}
@@ -77,13 +77,13 @@ export function ColourSwatches({
   );
 }
 
-/** A small non-interactive swatch, for the portal and the admin alike. */
-export function SwatchDot({ hex }: { hex?: string }) {
+/** A non-interactive swatch, for the portal and the admin alike; `large` in an album's overview. */
+export function SwatchDot({ hex, large = false }: { hex?: string; large?: boolean }) {
   if (!hex) return null;
   return (
     <span
       aria-hidden="true"
-      className="inline-block h-4 w-4 rounded-full align-text-bottom"
+      className={`inline-block rounded-full ${large ? 'h-8 w-8 align-middle' : 'h-4 w-4 align-text-bottom'}`}
       style={{ backgroundColor: hex, boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0.15)' }}
     />
   );

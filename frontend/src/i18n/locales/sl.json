@@ -10370,6 +10370,7 @@
     "stepAlbum": "Izberite album",
     "stepColour": "Izberite barvo",
     "stepCover": "Izberite naslovno fotografijo",
+    "coverHint": "Naslovna fotografija je na zunanji strani albuma, to je prvo, kar se vidi, preden ga odprete.",
     "stepExtras": "Še nekaj podrobnosti",
     "stepFormat": "Primerjajte formate",
     "stepMaterial": "Izberite material",

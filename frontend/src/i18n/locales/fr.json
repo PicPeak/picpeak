@@ -4267,6 +4267,7 @@
     "stepAlbum": "Choisissez votre album",
     "stepColour": "Choisissez une couleur",
     "stepCover": "Choisissez votre photo de couverture",
+    "coverHint": "La photo de couverture se trouve à l'extérieur de l'album, c'est la première chose que l'on voit avant de l'ouvrir.",
     "stepExtras": "Encore quelques détails",
     "stepFormat": "Comparez les formats",
     "stepMaterial": "Choisissez une matière",

@@ -4476,6 +4476,7 @@
     "stepAlbum": "Escolha o seu álbum",
     "stepColour": "Escolha uma cor",
     "stepCover": "Escolha a foto de capa",
+    "coverHint": "A foto de capa fica na parte de fora do álbum, é a primeira coisa que se vê antes de abri-lo.",
     "stepExtras": "Mais alguns detalhes",
     "stepFormat": "Compare os formatos",
     "stepMaterial": "Escolha um material",

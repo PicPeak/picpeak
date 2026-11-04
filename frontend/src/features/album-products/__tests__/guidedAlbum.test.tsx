@@ -146,10 +146,12 @@ describe('guided album flow', () => {
     const outline = (card: HTMLElement) => card.querySelector('[data-ratio]') as HTMLElement;
     expect(outline(landscape).dataset.ratio).toBe('800:300');
     expect(outline(square).dataset.ratio).toBe('600:300');
-    expect(outline(landscape).style.aspectRatio).toBe('800 / 300');
-    expect(outline(landscape).style.width).toBe('100%');
-    expect(outline(square).style.width).toBe('75%');
-    expect(outline(square).querySelector('.border-dashed')).not.toBeNull();
+    // One box for both, in millimetres: the square format draws at 600 of 800.
+    expect(outline(landscape).getAttribute('viewBox')).toBe('0 0 800 300');
+    expect(outline(square).getAttribute('viewBox')).toBe('0 0 800 300');
+    expect(outline(landscape).querySelector('rect')?.getAttribute('width')).toBe('800');
+    expect(outline(square).querySelector('rect')?.getAttribute('width')).toBe('600');
+    expect(outline(square).querySelector('line[stroke-dasharray]')).not.toBeNull();
   });
 
   it('offers the sizes of the chosen format only, and a format change clears a size that no longer fits', async () => {
@@ -479,5 +481,55 @@ describe('gallery entry', () => {
     render(<GalleryProductPanel slug="wedding" />);
     await screen.findByRole('button', { name: 'Configure your album' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('catalogue feedback (issue 2397)', () => {
+  const two = () => [offer(), offer({ id: 'offer-b', productId: 'album-b', product: product('album-b', 'Linen album', { heroImageId: 'hero-b' }) })];
+  let scroll: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll as never;
+  });
+  afterEach(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    vi.unstubAllGlobals();
+  });
+
+  it('scrolls smoothly to the album picked, without throwing the list back to its top', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query }));
+    mount(two());
+    const list = screen.getByRole('dialog').querySelector('.overflow-y-auto') as HTMLElement;
+    list.scrollTop = 600;
+    fireEvent.click(screen.getByRole('button', { name: /Linen album/ }));
+    await waitFor(() => expect(scroll).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' }));
+    expect(list.scrollTop).toBe(600);
+    expect(scroll.mock.contexts[0]).toHaveTextContent('Linen album');
+    // Picking the same album again shows it again.
+    fireEvent.click(screen.getByRole('button', { name: /Linen album/ }));
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(2));
+  });
+
+  it('jumps without animation for a client who asked for reduced motion', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduce'), media: query }));
+    mount(two());
+    fireEvent.click(screen.getByRole('button', { name: /Fine art album/ }));
+    await waitFor(() => expect(scroll).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' }));
+  });
+
+  it('does not scroll before anything is picked', () => {
+    mount(two());
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it('explains the cover on the cover step, and only there', async () => {
+    mount();
+    await throughSize();
+    await heading('Choose your cover photo');
+    expect(screen.getByText('The cover photo is on the outside of the album, the first thing anyone sees before opening it.')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Photo 1' }));
+    next();
+    await heading('Choose your poster photos');
+    expect(screen.queryByText(/on the outside of the album/)).not.toBeInTheDocument();
   });
 });

@@ -3640,6 +3640,7 @@
     "stepAlbum": "Elige tu álbum",
     "stepColour": "Elige un color",
     "stepCover": "Elige tu foto de portada",
+    "coverHint": "La foto de portada va en el exterior del álbum: es lo primero que se ve antes de abrirlo.",
     "stepExtras": "Unos detalles más",
     "stepFormat": "Compara los formatos",
     "stepMaterial": "Elige un material",

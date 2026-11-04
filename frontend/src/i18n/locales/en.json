@@ -11868,6 +11868,7 @@
     "stepAlbum": "Choose your album",
     "stepColour": "Choose a colour",
     "stepCover": "Choose your cover photo",
+    "coverHint": "The cover photo is on the outside of the album, the first thing anyone sees before opening it.",
     "stepExtras": "A few more details",
     "stepFormat": "Compare the formats",
     "stepMaterial": "Choose a material",
