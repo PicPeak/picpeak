@@ -424,12 +424,17 @@ async function withdrawNotices(trx, contact, updates) {
 // Whether a login row may exist depends on contact rows of any customer, and
 // the row being decided on may not exist yet, so lockLogins cannot cover it
 // (issue 2375). Every path that adds or removes a login row, or the contact row
-// that justifies one, takes this before it looks. Sorted, so paths with more
-// than one address cannot deadlock. SQLite serialises writers already.
+// that justifies one, takes this before it looks. Taken in the order of the
+// lock keys, not of the addresses, so paths with more than one address cannot
+// deadlock even when two addresses share a hash. SQLite serialises writers
+// already.
 async function lockAddresses(trx, emails) {
   if (trx.client.config.client !== 'pg') return;
-  for (const address of [...new Set(emails.map(normaliseEmail))].filter(Boolean).sort()) {
-    await trx.raw('SELECT pg_advisory_xact_lock(?, hashtext(?))', [ADDRESS_LOCK_CLASS, address]);
+  const addresses = [...new Set(emails.map(normaliseEmail))].filter(Boolean);
+  if (addresses.length === 0) return;
+  const { rows } = await trx.raw('SELECT DISTINCT hashtext(a) AS key FROM unnest(?::text[]) AS a ORDER BY key', [addresses]);
+  for (const { key } of rows) {
+    await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [ADDRESS_LOCK_CLASS, key]);
   }
 }
 
