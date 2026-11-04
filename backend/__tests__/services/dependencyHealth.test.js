@@ -255,6 +255,30 @@ describe('disk probe', () => {
   });
 });
 
+describe('temporary space probe', () => {
+  const os = require('os');
+  const env = { ...process.env };
+  afterEach(() => { process.env = { ...env }; });
+
+  it('is left out when the temporary directory is on the storage disk', async () => {
+    process.env.STORAGE_PATH = os.tmpdir();
+    await expect(dependencyHealth.probes.tempDisk()).resolves.toBeNull();
+  });
+
+  it('reads the temporary directory when it is a disk of its own', async () => {
+    // /dev is its own filesystem on Linux and macOS alike.
+    process.env.STORAGE_PATH = '/dev';
+    const reading = await dependencyHealth.probes.tempDisk();
+    expect(reading.state).toMatch(/healthy|degraded|down/);
+    expect(reading.metrics.totalBytes).toBeGreaterThan(0);
+  });
+
+  it('reads it when there is no local storage directory to compare with', async () => {
+    process.env.STORAGE_PATH = '/nonexistent/picpeak-storage-for-test';
+    await expect(dependencyHealth.probes.tempDisk()).resolves.toMatchObject({ metrics: expect.any(Object) });
+  });
+});
+
 describe('diskState', () => {
   it('is relative on a small disk', () => {
     expect(diskState(3 * GIB, 20 * GIB)).toBe('healthy');

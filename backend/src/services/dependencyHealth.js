@@ -1,6 +1,7 @@
 'use strict';
 
 const fsp = require('fs/promises');
+const os = require('os');
 const { constants: fsConstants } = require('fs');
 const { db } = require('../database/db');
 const { getStoragePath } = require('../config/storage');
@@ -62,6 +63,13 @@ function timed(state, startedAt, detail) {
  * Free space judged against the size of the disk, with a ceiling: 10% of a 2 TB
  * disk is 200 GB, which is no reason to stop uploads.
  */
+async function freeSpace(dir) {
+  const stats = await fsp.statfs(dir);
+  const freeBytes = stats.bavail * stats.bsize;
+  const totalBytes = stats.blocks * stats.bsize;
+  return { state: diskState(freeBytes, totalBytes), metrics: { freeBytes, totalBytes } };
+}
+
 function diskState(freeBytes, totalBytes) {
   if (freeBytes < Math.min(totalBytes * 0.03, 5 * GIB)) return 'down';
   if (freeBytes < Math.min(totalBytes * 0.1, 20 * GIB)) return 'degraded';
@@ -95,18 +103,27 @@ const defaultProbes = {
   },
 
   async disk() {
-    let stats;
     try {
-      stats = await fsp.statfs(getStoragePath());
+      return await freeSpace(getStoragePath());
     } catch (error) {
       // S3 outside Docker can run without a local storage directory, leaving no
       // disk here to judge.
       if (error.code === 'ENOENT' && storageBackend() !== 'local') return null;
       throw error;
     }
-    const freeBytes = stats.bavail * stats.bsize;
-    const totalBytes = stats.blocks * stats.bsize;
-    return { state: diskState(freeBytes, totalBytes), metrics: { freeBytes, totalBytes } };
+  },
+
+  // ZIP builds stage under os.tmpdir(). In Docker that is /tmp on the
+  // container's own layer, apart from the storage mount, and nothing sets
+  // TMPDIR. Left out when it is the storage disk, which `disk` already reads.
+  async tempDisk() {
+    const tmp = os.tmpdir();
+    const [tmpStat, storageStat] = await Promise.all([
+      fsp.stat(tmp),
+      fsp.stat(getStoragePath()).catch(() => null),
+    ]);
+    if (storageStat && storageStat.dev === tmpStat.dev) return null;
+    return freeSpace(tmp);
   },
 
   async mail() {

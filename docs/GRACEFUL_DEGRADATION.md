@@ -13,6 +13,7 @@ Every 15 seconds PicPeak checks:
 | Database | A simple query answers in time |
 | Storage | The storage location or S3 bucket answers, and a local location can be written to |
 | Disk space | Free space under `STORAGE_PATH`, relative to its size. On S3 this is the local disk used for staging, and it is left out when that directory does not exist |
+| Temporary space for ZIP builds | Free space in the temporary directory (`/tmp`, or `TMPDIR`), where ZIP downloads are built. Only shown when it is a different disk from `STORAGE_PATH`, as in Docker, where `/tmp` is on the container's own layer |
 | Email sending | The mail queue's last pass, and whether the mail server or webhook is currently unreachable |
 | Face recognition service | Only while the feature is on |
 | Photo processing queue | The oldest photo has not waited more than 30 minutes |
@@ -33,11 +34,12 @@ The status page shows a short reason, such as "check failed". The full error, wh
 | Storage slow or failing at times | Paused | Finish | On | On | On |
 | Disk nearly full | Paused | Finish if space allows | On | Paused | On |
 | Storage down | Paused | Fail, and the file can be uploaded again | Unavailable until it returns | Paused | Unavailable until it returns |
+| Temporary space nearly full | On | Finish | On | Paused | On |
 | Critical memory | On | Finish | On | Paused | On |
 
 "Disk nearly full" means less than 10% free, or less than 20 GB on large disks. Below 3% or 5 GB it counts as down.
 
-"New uploads" covers gallery, admin, API and transfer uploads, the manual external import, watched folders and the S3 auto-importer. A watched folder catches up after the pause. A transfer without files, and the first import when a gallery is created, are not paused. "New ZIP builds" covers gallery and transfer downloads, the API, and background rebuilds of a gallery's cached ZIP. A ZIP that is finished or already building stays available. Admin exports and scheduled archiving are not paused.
+"New uploads" covers gallery, admin, API and transfer uploads, the manual external import, watched folders and the S3 auto-importer. A watched folder catches up after the pause. A transfer without files, and the first import when a gallery is created, are not paused. A transfer with files is refused when its first file arrives, before anything is written, and one that started while uploads were open finishes. "New ZIP builds" covers gallery and transfer downloads, the API, and background rebuilds of a gallery's cached ZIP. A ZIP that is finished or already building stays available. A background rebuild waiting for its turn checks again when its turn comes. Admin exports and scheduled archiving are not paused.
 
 Visitors see a short message that the feature is paused for a moment, and the admin uploader waits about four minutes for the pause to end, then stops the rest of the batch. A plain download link shows a short paused page. The refused request answers `503` with `code: CAPABILITY_UNAVAILABLE` and `Retry-After`, and does not name the dependency. A direct **Download all** link that needs a new build fails as a browser download.
 

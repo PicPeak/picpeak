@@ -693,6 +693,7 @@
         "database": "Database",
         "storage": "Storage",
         "disk": "Disk space",
+        "tempDisk": "Temporary space for ZIP builds",
         "mail": "Email sending",
         "faceSidecar": "Face recognition service",
         "queues": "Photo processing queue",

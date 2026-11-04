@@ -693,6 +693,7 @@
         "database": "Datenbank",
         "storage": "Speicher",
         "disk": "Speicherplatz",
+        "tempDisk": "Temporärer Speicher für ZIP-Erstellung",
         "mail": "E-Mail-Versand",
         "faceSidecar": "Gesichtserkennungsdienst",
         "queues": "Warteschlange der Fotoverarbeitung",

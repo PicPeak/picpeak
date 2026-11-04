@@ -20,10 +20,10 @@ const CAPABILITIES = Object.freeze({
   // New uploads only. A chunked upload that already started may finish.
   'uploads.new': Object.freeze({ needs: Object.freeze({ storage: 'healthy', disk: 'healthy' }) }),
   // New archives read every file of a gallery, and gallery builds spool to
-  // local disk. Single-photo downloads are not listed: they keep working while
+  // local disk: the temporary directory, where it is a disk of its own. Single-photo downloads are not listed: they keep working while
   // they can. Admin exports and scheduled archiving are separate jobs an admin
   // starts or a schedule owns, and stay out of this.
-  'downloads.archive': Object.freeze({ needs: Object.freeze({ storage: 'degraded', disk: 'healthy', load: 'degraded' }) }),
+  'downloads.archive': Object.freeze({ needs: Object.freeze({ storage: 'degraded', disk: 'healthy', tempDisk: 'healthy', load: 'degraded' }) }),
 });
 
 function isCapability(name) {

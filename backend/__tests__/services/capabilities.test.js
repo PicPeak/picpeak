@@ -22,6 +22,11 @@ describe('capabilities', () => {
     expect(evaluate('downloads.archive', { storage: 'down' }).available).toBe(false);
   });
 
+  it('stops new archives when the temporary space they build in runs low, and leaves uploads alone', () => {
+    expect(evaluate('downloads.archive', { tempDisk: 'degraded' })).toMatchObject({ available: false, blockedBy: ['tempDisk'] });
+    expect(evaluate('uploads.new', { tempDisk: 'down' }).available).toBe(true);
+  });
+
   it('throws on an unknown name instead of leaving a route unguarded', () => {
     expect(() => evaluate('uploads.nwe')).toThrow('Unknown capability');
   });
