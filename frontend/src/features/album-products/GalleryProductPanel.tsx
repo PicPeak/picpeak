@@ -389,7 +389,8 @@ function ProductChoice({
     </article>
   );
 }
-export function GalleryProductPanel({ slug }: { slug: string }) {
+/** `className` wraps the panel when it has anything to show, never an empty box. */
+export function GalleryProductPanel({ slug, className }: { slug: string; className?: string }) {
   const { t } = useTranslation();
   const [offers, setOffers] = useState<Offer[]>([]),
     [error, setError] = useState(''),
@@ -421,7 +422,7 @@ export function GalleryProductPanel({ slug }: { slug: string }) {
   const guided = offers.filter(isGuided),
     classic = offers.filter((offer) => !isGuided(offer));
   return (
-    <>
+    <div className={className}>
       {guided.length > 0 && (
         <GuidedAlbumEntry
           key={reload}
@@ -456,6 +457,6 @@ export function GalleryProductPanel({ slug }: { slug: string }) {
           )}
         </details>
       )}
-    </>
+    </div>
   );
 }
