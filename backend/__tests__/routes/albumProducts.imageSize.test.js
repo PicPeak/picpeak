@@ -95,4 +95,39 @@ describe('album product image sizes', () => {
     expect(small.status).toBe(200);
     expect(small.body.length).toBeLessThan(original.body.length);
   });
+
+  describe('a failure', () => {
+    const { Readable } = require('stream');
+    const storage = () => require('../../src/services/storage').getStorage();
+    const adminUrl = (id, size) => `/api/admin/album-products/images/${id}${size ? `?size=${size}` : ''}`;
+    const fresh = async () => require('../../src/services/albumProducts/service').application()
+      .uploadImage(await sharp({ create: { width: 60, height: 40, channels: 3, background: '#345' } }).png().toBuffer(), owner);
+    afterEach(() => jest.restoreAllMocks());
+
+    test('is not kept by the browser', async () => {
+      const img = await fresh();
+      jest.spyOn(storage(), 'get').mockRejectedValue(new Error('storage is down'));
+      for (const size of [null, '480']) {
+        const res = await get(adminUrl(img.id, size), mintAdminToken(owner));
+        expect(res.status).toBe(500);
+        expect(res.headers['cache-control'] || '').not.toMatch(/immutable/);
+        expect(res.headers.etag || '').not.toMatch(/-(original|480)"$/);
+      }
+    });
+
+    test('of the rendition serves the original instead of an error, uncached', async () => {
+      const img = await fresh();
+      // The rendition reads bytes the image pool cannot decode; the original
+      // is read again and served as stored.
+      const real = storage().get.bind(storage());
+      jest.spyOn(storage(), 'get').mockImplementationOnce(async () => Readable.from([Buffer.from('not an image')]))
+        .mockImplementation(real);
+      const res = await get(adminUrl(img.id, '480'), mintAdminToken(owner));
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/image\/png/);
+      expect(res.headers['cache-control']).toBe('private, no-store');
+      expect(res.headers.etag).toBeUndefined();
+      expect((await sharp(res.body).metadata()).width).toBe(60);
+    });
+  });
 });
