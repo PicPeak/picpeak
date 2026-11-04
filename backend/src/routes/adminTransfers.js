@@ -14,7 +14,7 @@
  */
 
 const express = require('express');
-const { requireCapability, refuseCapability } = require('../middleware/requireCapability');
+const { requireCapability, capabilityPaused, sendCapabilityRefusal } = require('../middleware/requireCapability');
 const { body, param } = require('express-validator');
 const multer = require('multer');
 const path = require('path');
@@ -72,7 +72,10 @@ const tempStorage = multer.diskStorage({
 const CREATE_FIELD_LIMITS = { fields: 10, fieldSize: 64 * 1024 };
 const FILES_ONLY_FIELD_LIMITS = { fields: 0, fieldSize: 1 };
 
-function buildAdminUploader(maxSizeBytes, policy, fieldLimits) {
+// Thrown from the file filter so the parser stops before it stages a byte.
+const CAPABILITY_PAUSED = 'CAPABILITY_PAUSED';
+
+function buildAdminUploader(maxSizeBytes, policy, fieldLimits, { capability } = {}) {
   return multer({
     storage: tempStorage,
     defParamCharset: 'utf8', // multer's latin1 default turns UTF-8 names into mojibake
@@ -88,6 +91,14 @@ function buildAdminUploader(maxSizeBytes, policy, fieldLimits) {
       parts: ADMIN_MAX_FILES + fieldLimits.fields,
     },
     fileFilter: (req, file, cb) => {
+      // Decided once, at the first file part: before anything is written to the
+      // storage the pause may be protecting, and kept for the rest of the
+      // request, so an upload admitted while healthy can finish. A request
+      // without files never asks.
+      if (capability) {
+        if (req.capabilityPaused === undefined) req.capabilityPaused = capabilityPaused(capability);
+        if (req.capabilityPaused) return cb(Object.assign(new Error('Capability paused'), { code: CAPABILITY_PAUSED }));
+      }
       // The transfer policy, not the media registry: these bytes are stored and
       // handed back untouched, never decoded, so `validateFileType`'s "can the
       // pipeline read this" rule is the wrong question. See transferUploadPolicy.
@@ -105,13 +116,17 @@ function buildAdminUploader(maxSizeBytes, policy, fieldLimits) {
  * Run multer for a transfer request, reading the size/type limits from settings.
  * Resolves { ok:true } or sends a 4xx and resolves { ok:false }.
  */
-async function runAdminUpload(req, res, fieldLimits) {
+async function runAdminUpload(req, res, fieldLimits, options) {
   const policy = await getTransferUploadPolicy();
-  const uploader = buildAdminUploader(policy.maxSizeMb * 1024 * 1024, policy, fieldLimits);
+  const uploader = buildAdminUploader(policy.maxSizeMb * 1024 * 1024, policy, fieldLimits, options);
   try {
     await new Promise((resolve, reject) => uploader(req, res, (err) => (err ? reject(err) : resolve())));
     return { ok: true };
   } catch (err) {
+    if (err?.code === CAPABILITY_PAUSED) {
+      if (!res.headersSent) sendCapabilityRefusal(req, res, options.capability);
+      return { ok: false };
+    }
     // Multer's own message is not echoed: a filesystem failure inside the
     // temp-file destination carries the server path (EACCES /app/storage/...),
     // and this route is unauthenticated. The size case is the only one worth
@@ -238,15 +253,9 @@ router.get('/', requirePermission('events.view'), handleAsync(async (req, res) =
 router.post('/',
   requirePermission('events.edit'),
   handleAsync(withUploadAdmission(async (req, res) => {
-    const up = await runAdminUpload(req, res, CREATE_FIELD_LIMITS);
-    if (!up.ok) return; // 4xx already sent
     // Only with files: sending gallery photos or a file request stores nothing.
-    if (req.files?.length && refuseCapability(req, res, 'uploads.new')) {
-      for (const file of req.files) {
-        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
-      }
-      return;
-    }
+    const up = await runAdminUpload(req, res, CREATE_FIELD_LIMITS, { capability: 'uploads.new' });
+    if (!up.ok) return; // 4xx or 503 already sent
 
     const b = req.body || {};
     const kind = transferService.normalizeKind(b.kind);

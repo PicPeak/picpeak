@@ -39,18 +39,29 @@ function requireCapability(name) {
  * needs the capability. Answers the request and returns true when it refuses.
  */
 function refuseCapability(req, res, name) {
+  if (!capabilityPaused(name)) return false;
+  sendCapabilityRefusal(req, res, name);
+  return true;
+}
+
+/**
+ * Whether `name` is refused right now. Logs an observe-mode pause, which it
+ * does not apply. For a decision taken before the answer can be sent, such
+ * as inside a multipart parser; answer with sendCapabilityRefusal.
+ */
+function capabilityPaused(name) {
   const decision = dependencyHealth.evaluate(name);
   if (decision.available) return false;
-
-  if (!decision.paused) {
-    const now = Date.now();
-    if (now - (lastObserved.get(name) || 0) >= OBSERVE_LOG_INTERVAL_MS) {
-      lastObserved.set(name, now);
-      logger.warn(`Would pause ${name} (observe mode)`, { blockedBy: decision.blockedBy });
-    }
-    return false;
+  if (decision.paused) return true;
+  const now = Date.now();
+  if (now - (lastObserved.get(name) || 0) >= OBSERVE_LOG_INTERVAL_MS) {
+    lastObserved.set(name, now);
+    logger.warn(`Would pause ${name} (observe mode)`, { blockedBy: decision.blockedBy });
   }
+  return false;
+}
 
+function sendCapabilityRefusal(req, res, name) {
   // A refused upload's body is still arriving: without this the client sends
   // all of it before seeing the answer, as the sibling refusals note.
   if (req.method !== 'GET' && !req.readableEnded) res.set('Connection', 'close');
@@ -59,14 +70,13 @@ function refuseCapability(req, res, name) {
   // so JSON would be the whole page. Fixed text only, nothing from the request.
   if (req.method === 'GET' && req.accepts(['json', 'html']) === 'html') {
     res.status(503).type('html').send(PAUSED_PAGE);
-    return true;
+    return;
   }
   res.status(503).json({
     error: 'This feature is temporarily unavailable',
     code: 'CAPABILITY_UNAVAILABLE',
     capability: name,
   });
-  return true;
 }
 
-module.exports = { requireCapability, refuseCapability };
+module.exports = { requireCapability, refuseCapability, capabilityPaused, sendCapabilityRefusal };

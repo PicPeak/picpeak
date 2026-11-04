@@ -50,7 +50,6 @@ describe('capability guard placement', () => {
     ['gallery/uploads.js', "router.post('/:eventId/chunked-upload/init'", 'guestUploadGate(req)'],
     ['gallery/downloads.js', "router.post('/:slug/download-selected'", 'originalAssetDenial(req)'],
     ['publicTransfer.js', "router.get('/:token/download'", 'assertDownloadable(transfer)'],
-    ['adminTransfers.js', "router.post('/',", 'runAdminUpload(req, res, CREATE_FIELD_LIMITS)'],
   ])('%s %s refuses only after %s', (file, route, accessCheck) => {
     const source = fs.readFileSync(path.join(__dirname, '../..', ROUTES, file), 'utf8');
     const text = source.slice(source.indexOf(route));
@@ -58,6 +57,15 @@ describe('capability guard placement', () => {
     expect(text.indexOf(accessCheck)).toBeGreaterThan(-1);
     expect(text.indexOf(accessCheck)).toBeLessThan(check);
     expect(text.slice(0, check)).not.toContain('claimDownload(');
+  });
+
+  it('decides a transfer create in its file filter, before any file is staged', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../..', ROUTES, 'adminTransfers.js'), 'utf8');
+    const filter = source.slice(source.indexOf('fileFilter:'));
+    expect(filter.indexOf('capabilityPaused(capability)')).toBeGreaterThan(-1);
+    expect(filter.indexOf('capabilityPaused(capability)')).toBeLessThan(filter.indexOf('return cb(null, true)'));
+    const create = source.slice(source.indexOf("router.post('/',"));
+    expect(create.indexOf("requirePermission('events.edit')")).toBeLessThan(create.indexOf("{ capability: 'uploads.new' }"));
   });
 
   it('serves a finished archive and pauses only the on-the-fly stream', () => {
@@ -72,7 +80,7 @@ describe('capability guard placement', () => {
   it.each([
     ['externalMediaWatcher.js', 'uploads.new', 'await importExternalFolder('],
     ['s3AutoImporter.js', 'uploads.new', "db('events')"],
-    ['downloadZipService.js', 'downloads.archive', 'this._withRegenSlot(() => this.generateZip(eventId))'],
+    ['downloadZipService.js', 'downloads.archive', 'return this.generateZip(eventId);'],
   ])('%s checks %s before background work starts', (file, name, work) => {
     const source = fs.readFileSync(path.join(__dirname, '../../src/services', file), 'utf8');
     const check = source.indexOf(`evaluate('${name}').paused`);
