@@ -300,9 +300,12 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
               continue;
             }
             console.error(`Error uploading large file ${file.name}:`, error);
-            const capacityKey = adminUploadErrorKey(code);
-            const reason = capacityKey ? t(capacityKey) : error?.response?.data?.error || error?.message || t('upload.failures.transferReason', 'Transfer failed');
-            collected.push({ filename: file.name, reason, kind: 'transfer' });
+            // A file over one of the server's image limits: that file is
+            // refused with the limit named, the rest still go.
+            const limitReason = imageLimitMessage(t, error?.response?.data);
+            const capacityKey = limitReason ? null : adminUploadErrorKey(code);
+            const reason = limitReason ?? (capacityKey ? t(capacityKey) : error?.response?.data?.error || error?.message || t('upload.failures.transferReason', 'Transfer failed'));
+            collected.push({ filename: file.name, reason, kind: limitReason ? 'rejected' : 'transfer' });
             if (capacityKey && !isTransientUploadRefusal(code)) {
               capacityRefused = true;
               const unsent = [...largeFilesToUpload.slice(index + 1).map(item => item.file), ...chunks.flatMap(item => item.files)];
@@ -388,6 +391,20 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
           } catch (error: any) {
             if (controller.signal.aborted) return;
             console.error(`Error uploading chunk ${chunkIndex + 1}:`, error);
+            // Every file of the batch was refused (400/422): each one by its
+            // own reason, as for the rejected files of an accepted batch.
+            const refused = error?.response?.data?.errors;
+            if (Array.isArray(refused) && refused.length > 0) {
+              for (const r of refused) {
+                collected.push({
+                  filename: r?.filename || t('upload.failures.unknownFile', 'Unknown file'),
+                  reason: imageLimitMessage(t, r) ?? (r?.error || t('upload.failures.unknownReason', 'Unknown error')),
+                  kind: 'rejected',
+                });
+              }
+              unitIndex += 1;
+              continue;
+            }
             const code = error?.response?.data?.code;
             const capacityKey = adminUploadErrorKey(code);
             const reason = capacityKey ? t(capacityKey) : error?.response?.data?.error || error?.message || t('upload.failures.transferReason', 'Transfer failed');

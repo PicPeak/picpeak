@@ -185,6 +185,36 @@ describe('PhotoUpload large single files', () => {
     expect(within(report).queryByText('Raw capacity refusal')).not.toBeInTheDocument();
   });
 
+  // Issue 2395: a photo over an image limit is refused on its own, with the limit named.
+  const pixelRefusal = { error: 'Image has 2 megapixels; this server processes images up to 1 megapixels (IMAGE_MAX_PIXELS)',
+    code: 'IMAGE_RESOURCE_LIMIT', imageLimit: 'pixels', imageMax: 1 };
+
+  it('names the image limit for a large file it refuses and still uploads the rest', async () => {
+    uploadLargeFile.mockRejectedValueOnce({ response: { status: 422, data: pixelRefusal } });
+    const { container } = renderWithClient(<PhotoUpload eventId={7} />);
+    await selectAndUpload(container, [file('huge.jpg', 'image/jpeg', 3), file('later.jpg', 'image/jpeg', 3), file('small.jpg', 'image/jpeg', 0.5)]);
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
+    expect(uploadLargeFile).toHaveBeenCalledTimes(2);
+    const report = await screen.findByTestId('upload-failure-report');
+    expect(within(report).getByText('huge.jpg')).toBeInTheDocument();
+    expect(within(report).getByText(/upload\.capacity\.imagePixels/)).toBeInTheDocument();
+    expect(within(report).queryByText('later.jpg')).not.toBeInTheDocument();
+  });
+
+  it('names each refused file of a batch the server refused whole, and sends the next batch', async () => {
+    postMock.mockReset();
+    postMock.mockRejectedValueOnce({ response: { status: 422, data: { error: pixelRefusal.error,
+      errors: [{ filename: 'a.jpg', ...pixelRefusal }] } } });
+    postMock.mockResolvedValue({ data: { successCount: 1, count: 1, upload_id: 'u1', errors: [] } });
+    const { container } = renderWithClient(<PhotoUpload eventId={7} />);
+    await selectAndUpload(container, ['a.jpg', 'b.jpg'].map(name => file(name, 'image/jpeg', 1)));
+    const report = await screen.findByTestId('upload-failure-report');
+    expect(postMock).toHaveBeenCalledTimes(2);
+    expect(within(report).getByText('a.jpg')).toBeInTheDocument();
+    expect(within(report).getByText(/upload\.capacity\.imagePixels/)).toBeInTheDocument();
+    expect(within(report).queryByText('b.jpg')).not.toBeInTheDocument();
+  });
+
   it('stops unsent large files and multipart batches after a refusal waiting cannot cure, reporting each filename', async () => {
     uploadLargeFile.mockRejectedValueOnce({ response: { data: { code: 'UPLOAD_STORAGE_LOW' } } });
     const { container } = renderWithClient(<PhotoUpload eventId={7} />);
