@@ -5,6 +5,22 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.193.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.192.1-beta.0...v3.193.0-beta.0) (2026-11-04)
+
+
+### Features
+
+* **album-products:** act on the photographer's catalogue feedback ([#2402](https://github.com/PicPeak/picpeak/issues/2402)) ([6283a91](https://github.com/PicPeak/picpeak/commit/6283a919e84ea983fe81baf619896a47a6b1ec8a))
+
+
+### Bug Fixes
+
+* **customers:** serialise login changes per address on PostgreSQL ([#2401](https://github.com/PicPeak/picpeak/issues/2401)) ([a2cc9af](https://github.com/PicPeak/picpeak/commit/a2cc9af4ca3d3fd8a8cec4eb7d0c701c122fe2d5))
+* **downloads:** keep the RAW container's metadata on a converted download ([#2399](https://github.com/PicPeak/picpeak/issues/2399)) ([36d8c26](https://github.com/PicPeak/picpeak/commit/36d8c260fe142629e2c65580b7eae55fbcebf02b))
+* **gallery:** clear the selection when Cancel selection leaves selection mode ([#2311](https://github.com/PicPeak/picpeak/issues/2311)) ([6d32b25](https://github.com/PicPeak/picpeak/commit/6d32b25223776fbd361254f730bf1f7394c1dad1))
+* **storage:** run the upload validator in the S3 auto-import ([#2398](https://github.com/PicPeak/picpeak/issues/2398)) ([61291e4](https://github.com/PicPeak/picpeak/commit/61291e4fe0155449d06f3cf6cbe97d4eaea48493))
+* **uploads:** answer image limit refusals with the limit instead of 400 or 500 ([#2400](https://github.com/PicPeak/picpeak/issues/2400)) ([934b215](https://github.com/PicPeak/picpeak/commit/934b2154840a51e3333fb179039305fc91325073))
+
 ## [3.192.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.192.0-beta.0...v3.192.1-beta.0) (2026-11-03)
 
 
