@@ -8,6 +8,16 @@ const path = require('path');
 const sharp = require('sharp');
 const { bootCrmDb } = require('../integration/helpers/crmDb');
 
+// The real validator, unless a test stands in for a worker that cannot check.
+const mockValidator = { failWith: null };
+jest.mock('../../src/middleware/uploadValidation', () => {
+  const actual = jest.requireActual('../../src/middleware/uploadValidation');
+  return { ...actual, validateUploadedFile: async (...args) => {
+    if (mockValidator.failWith) throw mockValidator.failWith;
+    return actual.validateUploadedFile(...args);
+  } };
+});
+
 describe('s3AutoImporter: upload validation', () => {
   let db; let cleanup; let processEvent; let refusedObjects; let counter = 0;
 
@@ -71,5 +81,31 @@ describe('s3AutoImporter: upload validation', () => {
     const heic = fs.readFileSync(path.join(__dirname, '../fixtures/hevc-display-p3.heic'));
     const { row } = await importFile('IMG_3974.heic', heic);
     expect(row).toMatchObject({ filename: 'IMG_3974.heic', media_type: 'image', mime_type: 'image/heic' });
+  }, 30000);
+
+  it('leaves a file it could not check now for the next poll, never importing it unchecked', async () => {
+    const jpeg = await sharp({ create: { width: 40, height: 30, channels: 3, background: '#3c3' } }).jpeg().toBuffer();
+    mockValidator.failWith = Object.assign(new Error('Image worker is unavailable'), { code: 'IMAGE_WORKER_UNAVAILABLE' });
+    let imported;
+    try {
+      imported = await importFile('busy.jpg', jpeg);
+    } finally { mockValidator.failWith = null; }
+    expect(imported.row).toBeUndefined();
+    expect(refusedObjects.has(`events/active/${imported.event.slug}/busy.jpg`)).toBe(false);
+    await processEvent(imported.event, imported.bucket);
+    expect(await db('photos').where({ event_id: imported.event.id }).first()).toMatchObject({ filename: 'busy.jpg' });
+  }, 30000);
+
+  it('remembers a file over a configured image limit instead of fetching it every poll', async () => {
+    const big = await sharp({ create: { width: 2000, height: 1000, channels: 3, background: '#33c' } }).jpeg().toBuffer();
+    const before = process.env.IMAGE_MAX_PIXELS;
+    process.env.IMAGE_MAX_PIXELS = '1000000';
+    try {
+      const { event, row } = await importFile('huge.jpg', big);
+      expect(row).toBeUndefined();
+      expect(refusedObjects.has(`events/active/${event.slug}/huge.jpg`)).toBe(true);
+    } finally {
+      if (before === undefined) delete process.env.IMAGE_MAX_PIXELS; else process.env.IMAGE_MAX_PIXELS = before;
+    }
   }, 30000);
 });

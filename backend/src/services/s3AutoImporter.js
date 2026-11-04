@@ -18,7 +18,7 @@
 const path = require('path');
 const mime = require('mime-types');
 const sharp = require('./isolatedSharp');
-const { retryTransient, isTransient, isResourceError, LIBRARY_UNAVAILABLE } = require('./imageResourcePolicy');
+const { retryTransient, isResourceError, LIBRARY_UNAVAILABLE } = require('./imageResourcePolicy');
 const { resolveCredit } = require('./photoCredit');
 const { exifColumn } = require('./photoExif');
 const { sha256File } = require('./photoDuplicates');
@@ -157,8 +157,9 @@ async function processEvent(event, storage) {
       let contentSha256 = null;
       // The upload validator runs on the local copy first (issue 2394), as
       // the upload routes run it: without it any bytes under an image name,
-      // a bare HEIF `ftyp` header included, became a gallery photo. A busy
-      // image worker says nothing about the file, so it passes, as on upload.
+      // a bare HEIF `ftyp` header included, became a gallery photo. Nothing
+      // is waiting on the import, so a file the validator could not check
+      // now is not passed unchecked but left for the next poll.
       let checked = false;
       let refusal = null;
       if (isImage) {
@@ -167,7 +168,8 @@ async function processEvent(event, storage) {
             try {
               await validateUploadedFile(localPath, path.extname(filename));
             } catch (err) {
-              if (!isTransient(err)) { refusal = err; return null; }
+              refusal = err;
+              return null;
             }
             checked = true;
             contentSha256 = await sha256File(localPath).catch(() => null);
@@ -200,10 +202,12 @@ async function processEvent(event, storage) {
           }
           logger.debug(`[s3AutoImporter] could not read dimensions for ${entry.key}: ${err.message}`);
         }
-        // A resource limit or a missing image library says nothing about the
-        // file: it is not refused, only left for the next poll, as the
-        // external import leaves a video ffprobe could not take.
-        if (refusal && (isResourceError(refusal) || refusal.code === LIBRARY_UNAVAILABLE)) {
+        // A busy or short-of-resources worker or a missing image library
+        // says nothing about the file: it is not refused, only left for the
+        // next poll, as the external import leaves a video ffprobe could not
+        // take. A configured limit the file is over (it names the limit) is
+        // the file's own, and would only be fetched again on every poll.
+        if (refusal && !refusal.imageLimit && (isResourceError(refusal) || refusal.code === LIBRARY_UNAVAILABLE)) {
           logger.warn(`[s3AutoImporter] could not check ${entry.key} now, retrying on the next poll: ${refusal.message}`);
           continue;
         }
