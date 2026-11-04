@@ -19,6 +19,9 @@ async function readsAsImage(filePath, options = {}, { passBusy = true } = {}) {
       if (!passBusy) throw error;
       return true;
     }
+    // A host error (ENOSPC, EIO, ...) says nothing about the file either; a
+    // caller that can check again later hears it rather than "unreadable".
+    if (!passBusy && /^E[A-Z0-9]+$/.test(error.code || '')) throw error;
     if (policy.isResourceError(error)) throw error;
     return false;
   }
@@ -27,8 +30,8 @@ async function readsAsImage(filePath, options = {}, { passBusy = true } = {}) {
 /**
  * Validate uploaded file is complete and not corrupted. A busy image worker
  * passes a HEIF file, as an upload waiting on it would otherwise fail;
- * `passBusy: false` throws the worker's error instead, for a caller that can
- * check again later.
+ * `passBusy: false` throws the worker's error instead, and a host error the
+ * HEIF check met, for a caller that can check again later.
  */
 async function validateUploadedFile(filePath, extension, queueing = {}, { passBusy = true } = {}) {
   try {
