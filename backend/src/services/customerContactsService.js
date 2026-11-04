@@ -556,7 +556,7 @@ async function mailToKeep(trx, customerId, email) {
 async function keepHolderLogin(trx, customer) {
   if (!customer.password_hash) return;
   const email = normaliseEmail(customer.email);
-  // Taken in lockForErasure already, unless the address changed in between.
+  // Taken in lockForErasure already; a no-op on PostgreSQL then.
   await lockAddresses(trx, [email]);
   const elsewhere = await trx('customer_contacts').whereRaw('LOWER(email) = ?', [email]).first('id');
   if (!elsewhere) return;
@@ -835,10 +835,16 @@ async function noticeRecipients(customerId, area) {
  * The holder's address too, which keepHolderLogin may give a login row.
  */
 async function lockForErasure(trx, customerId) {
+  // The account row first, and locked: its address cannot change before the
+  // erasure commits, so keepHolderLogin needs no address lock beyond these.
+  // An email change takes the row after the contacts it moves, which are
+  // never this customer's, so the two cannot wait on each other.
+  const holder = trx('customer_accounts').where('id', customerId);
+  if (trx.client.config.client === 'pg') holder.forUpdate();
+  const account = await holder.first('email');
   const rows = await trx('customer_contacts').where('customer_account_id', customerId)
     .orderBy('id').forUpdate().select('email');
-  const holder = await trx('customer_accounts').where('id', customerId).first('email');
-  await lockAddresses(trx, [...rows.map((row) => row.email), ...(holder ? [holder.email] : [])]);
+  await lockAddresses(trx, [...rows.map((row) => row.email), ...(account ? [account.email] : [])]);
   await lockLogins(trx, rows.map((row) => row.email.toLowerCase()));
 }
 
