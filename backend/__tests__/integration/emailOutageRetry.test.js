@@ -276,6 +276,23 @@ describe('mail server outage', () => {
     expect(await row(id)).toMatchObject({ status: 'pending', retry_count: 0, deferred_since: null });
   });
 
+  it('gives the full allowance again once the server has answered the mail', async () => {
+    await endOutage();
+    const id = await queueMail();
+    await db('email_queue').where({ id }).update({ deferred_since: daysAgo(1) });
+    send.mockRejectedValue(Object.assign(new Error('greylisted'), { code: 'EENVELOPE', responseCode: 450, command: 'RCPT TO' }));
+    await run();
+    expect(await row(id)).toMatchObject({ retry_count: 1, deferred_since: null });
+  });
+
+  it('counts only the mail a pass actually tried', async () => {
+    await endOutage();
+    await queueMail();
+    await queueMail();
+    send.mockRejectedValue(refused());
+    expect(await run()).toMatchObject({ processed: 1, deferred: 1 });
+  });
+
   it('shows the queue card why mail is waiting, also on the passes that find nothing due', async () => {
     await endOutage();
     await queueMail();

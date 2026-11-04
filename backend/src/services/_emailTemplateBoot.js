@@ -85,7 +85,13 @@ async function seedEmailTemplatesAndRecoverQueue(db, logger) {
         .whereIn('status', ['pending', PROTECTED_PENDING_STATUS])
         .where('retry_count', '>=', 3)
         .whereIn('email_type', seeded)
-        .update({ retry_count: 0, error_message: null });
+        // Like a manual retry, this starts the outage allowance again too.
+        .update({
+          retry_count: 0,
+          error_message: null,
+          // The db passed in, like hasTable above: schemaCache reads the app's global one.
+          ...(await db.schema.hasColumn('email_queue', 'deferred_since') ? { deferred_since: null } : {}),
+        });
       if (recovered > 0) {
         log.info(`Recovered ${recovered} email_queue row(s) after self-healing templates: ${seeded.join(', ')}`);
       }

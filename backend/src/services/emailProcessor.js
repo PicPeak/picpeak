@@ -1591,9 +1591,10 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
     }
 
     logger.info(`Processing ${pendingEmails.length} emails from queue`);
-    result.processed = pendingEmails.length;
-
     for (const email of pendingEmails) {
+      // Counted as each row is tried: a pass that stops on an outage leaves
+      // the rest of the batch untouched.
+      result.processed += 1;
       // Declared outside the try: the failure branch redacts the variables
       // once the row is out of retries, so it needs them too.
       let emailData = {};
@@ -1798,6 +1799,9 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
               retry_count: email.retry_count + 1,
               error_message: error.message,
               ...(waitsBeforeRetry(error) ? { scheduled_at: queueTimestamp(Date.now() + MAIL_OUTAGE_RETRY_MS) } : {}),
+              // The server answered, so any outage this mail waited out is over,
+              // and a later one gets the full allowance again.
+              ...(email.deferred_since != null && error?.[TRANSPORT_FAILURE] ? { deferred_since: null } : {}),
             });
         } catch (updateError) {
           logger.error(`Failed to update email retry count for ${email.id}:`, updateError);
