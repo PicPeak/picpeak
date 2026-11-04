@@ -202,12 +202,14 @@ async function processEvent(event, storage) {
           }
           logger.debug(`[s3AutoImporter] could not read dimensions for ${entry.key}: ${err.message}`);
         }
-        // A busy or short-of-resources worker or a missing image library
-        // says nothing about the file: it is not refused, only left for the
+        // A busy or short-of-resources worker, a missing image library or a
+        // system error on the host (ENOSPC, EIO, ...) says nothing about the
+        // file: it is not refused, only left for the
         // next poll, as the external import leaves a video ffprobe could not
         // take. A configured limit the file is over (it names the limit) is
         // the file's own, and would only be fetched again on every poll.
-        if (refusal && !refusal.imageLimit && (isResourceError(refusal) || refusal.code === LIBRARY_UNAVAILABLE)) {
+        if (refusal && !refusal.imageLimit && (isResourceError(refusal) || refusal.code === LIBRARY_UNAVAILABLE
+          || /^E[A-Z0-9]+$/.test(refusal.code || ''))) {
           logger.warn(`[s3AutoImporter] could not check ${entry.key} now, retrying on the next poll: ${refusal.message}`);
           continue;
         }

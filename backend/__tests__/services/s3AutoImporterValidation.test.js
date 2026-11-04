@@ -83,9 +83,12 @@ describe('s3AutoImporter: upload validation', () => {
     expect(row).toMatchObject({ filename: 'IMG_3974.heic', media_type: 'image', mime_type: 'image/heic' });
   }, 30000);
 
-  it('leaves a file it could not check now for the next poll, never importing it unchecked', async () => {
+  it.each([
+    ['a busy image worker', 'IMAGE_WORKER_UNAVAILABLE'],
+    ['a full disk', 'ENOSPC'],
+  ])('leaves a file it could not check for %s for the next poll, never importing it unchecked', async (_name, code) => {
     const jpeg = await sharp({ create: { width: 40, height: 30, channels: 3, background: '#3c3' } }).jpeg().toBuffer();
-    mockValidator.failWith = Object.assign(new Error('Image worker is unavailable'), { code: 'IMAGE_WORKER_UNAVAILABLE' });
+    mockValidator.failWith = Object.assign(new Error(`could not check: ${code}`), { code });
     let imported;
     try {
       imported = await importFile('busy.jpg', jpeg);
