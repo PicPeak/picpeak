@@ -7,7 +7,7 @@ const { LIBRARY_UNAVAILABLE } = require('../services/imageResourcePolicy');
 // Whether Sharp reads the file as an image with dimensions. A busy image
 // worker says nothing about the file, so it passes; a resource limit is
 // thrown, as the decode check below throws one.
-async function readsAsImage(filePath, options = {}) {
+async function readsAsImage(filePath, options = {}, { passBusy = true } = {}) {
   try {
     const meta = await sharp(filePath, options).metadata();
     return Boolean(meta && meta.width && meta.height);
@@ -15,16 +15,25 @@ async function readsAsImage(filePath, options = {}) {
     // A server that cannot load the image library says nothing about the file.
     if (error.code === LIBRARY_UNAVAILABLE) throw error;
     const policy = require('../services/imageResourcePolicy');
-    if (policy.isTransient(error)) return true;
+    if (policy.isTransient(error)) {
+      if (!passBusy) throw error;
+      return true;
+    }
+    // A host error (ENOSPC, EIO, ...) says nothing about the file either; a
+    // caller that can check again later hears it rather than "unreadable".
+    if (!passBusy && /^E[A-Z0-9]+$/.test(error.code || '')) throw error;
     if (policy.isResourceError(error)) throw error;
     return false;
   }
 }
 
 /**
- * Validate uploaded file is complete and not corrupted
+ * Validate uploaded file is complete and not corrupted. A busy image worker
+ * passes a HEIF file, as an upload waiting on it would otherwise fail;
+ * `passBusy: false` throws the worker's error instead, and a host error the
+ * HEIF check met, for a caller that can check again later.
  */
-async function validateUploadedFile(filePath, extension, queueing = {}) {
+async function validateUploadedFile(filePath, extension, queueing = {}, { passBusy = true } = {}) {
   try {
     // Check file exists and has size
     const stats = await fs.stat(filePath);
@@ -82,7 +91,7 @@ async function validateUploadedFile(filePath, extension, queueing = {}) {
     // The HEIF signature is only a container's `ftyp`, which says nothing about
     // an image in it, so a HEIF name has to read as one as well. A HEVC HEIC
     // only decodes through ffmpeg later; its header is enough here.
-    if ((ext === '.heic' || ext === '.heif') && !(await readsAsImage(filePath, queueing))) {
+    if ((ext === '.heic' || ext === '.heif') && !(await readsAsImage(filePath, queueing, { passBusy }))) {
       throw new Error('Invalid image file: no readable HEIF image');
     }
     
