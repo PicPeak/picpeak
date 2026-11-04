@@ -594,13 +594,15 @@ export function GuidedAlbumFlow({
   };
 
   const title = readOnly ? t('albumProducts.yourAlbum', 'Your album') : stepTitle[step];
+  // Above the gallery's control band (z-[60]) and Story's nav (z-50), which
+  // stay in view now that the album entry sits at the top of the page.
   return createPortal(
     <div
       ref={dialog}
       role="dialog"
       aria-modal="true"
       aria-labelledby={`${flowId}-title`}
-      className="fixed inset-0 z-50 flex flex-col bg-background text-text-primary"
+      className="fixed inset-0 z-[70] flex flex-col bg-background text-text-primary"
     >
       <header className="flex items-center gap-3 border-b border-border-token px-4 py-3">
         <div className="min-w-0 flex-1">
