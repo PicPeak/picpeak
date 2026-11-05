@@ -207,7 +207,8 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
   }
 
   try {
-    await logActivity('invoice_reminder_sent', { invoiceId: invoice.id, level, lateFeeMinor: lateFeeGross },
+    await logActivity('invoice_reminder_sent',
+      { invoiceId: invoice.id, invoiceNumber: invoice.invoice_number, level, lateFeeMinor: lateFeeGross },
       invoice.event_id || null, normalizeActor(actor));
   } catch (_) { /* non-fatal */ }
 

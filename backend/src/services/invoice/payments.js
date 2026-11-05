@@ -286,7 +286,7 @@ async function queueInvoicePaidAdminNotification({
     });
 
   try {
-    await logActivity('invoice_paid_admin_notified', { invoiceId: invoice.id },
+    await logActivity('invoice_paid_admin_notified', { invoiceId: invoice.id, invoiceNumber: invoice.invoice_number },
       invoice.event_id || null, { type: 'system' });
   } catch (_) { /* non-fatal */ }
 }
@@ -478,7 +478,8 @@ async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
   }
 
   try {
-    await logActivity('invoice_payment_check_sent', { invoiceId, token: token.slice(0, 8) },
+    await logActivity('invoice_payment_check_sent',
+      { invoiceId, invoiceNumber: invoice.invoice_number, token: token.slice(0, 8) },
       invoice.event_id || null, normalizeActor(actor));
   } catch (_) { /* non-fatal */ }
 
@@ -691,7 +692,7 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
 
   try {
     await logActivity('invoice_payment_check_recorded',
-      { invoiceId: invoice.id, action, amountMinor: amountMinor || null },
+      { invoiceId: invoice.id, invoiceNumber: invoice.invoice_number, action, amountMinor: amountMinor || null },
       invoice.event_id || null,
       normalizeActor(adminId || 'public:payment-check'));
   } catch (_) { /* non-fatal */ }

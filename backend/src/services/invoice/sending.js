@@ -231,7 +231,7 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     attachments: invoiceAttachments,
   }, { customerAccountId: customer.id });
 
-  try { await logActivity('invoice_sent', { invoiceId: id }, invoice.event_id || null, adminActivityActor(adminId)); } catch (_) { /* non-fatal */ }
+  try { await logActivity('invoice_sent', { invoiceId: id, invoiceNumber: invoice.invoice_number }, invoice.event_id || null, adminActivityActor(adminId)); } catch (_) { /* non-fatal */ }
 
   // Fire the workflow engine's invoice.sent trigger (after the row is updated +
   // the email queued). Idempotent per invoice id; no-op when the workflows flag
@@ -448,7 +448,7 @@ async function createStorno(originalId, adminId, trx = db) {
     // Pass `trx` so the audit insert rides the transaction's connection;
     // the global db here deadlocks the single-connection SQLite pool.
     await logActivity('invoice_cancelled_via_storno',
-      { invoiceId: originalId, stornoId, stornoNumber },
+      { invoiceId: originalId, invoiceNumber: original.invoice_number, stornoId, stornoNumber },
       original.event_id || null, adminActivityActor(adminId), trx);
   } catch (_) { /* non-fatal */ }
 
@@ -547,7 +547,13 @@ async function sendStornoOnce(stornoId, adminId) {
 
   try {
     await logActivity('storno_sent',
-      { stornoId, stornoNumber: storno.invoice_number, originalInvoiceId: storno.cancels_invoice_id || null },
+      {
+        stornoId,
+        // The line reads "Storno sent: {{invoiceNumber}}": the Storno's own number.
+        invoiceNumber: storno.invoice_number,
+        stornoNumber: storno.invoice_number,
+        originalInvoiceId: storno.cancels_invoice_id || null,
+      },
       storno.event_id || null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
@@ -689,7 +695,7 @@ async function reissueInvoice(id, adminId) {
     try {
       // Pass `trx` so the audit insert rides the transaction's connection.
       await logActivity('invoice_reissued',
-        { originalInvoiceId: id, newInvoiceId: newId, stornoId },
+        { originalInvoiceId: id, invoiceNumber: original.invoice_number, newInvoiceId: newId, stornoId },
         original.event_id || null, adminActivityActor(adminId), trx);
     } catch (_) { /* non-fatal */ }
 
@@ -733,7 +739,7 @@ async function releaseForDelivery(id, adminId) {
     { actor: adminId, source: 'invoice.releaseForDelivery' });
   if (!released) throw new AppError('Invoice is no longer awaiting delivery', 409, 'NOT_PENDING_DELIVERY');
   try {
-    await logActivity('invoice_released_for_delivery', { invoiceId: id }, invoice.event_id || null, adminActivityActor(adminId));
+    await logActivity('invoice_released_for_delivery', { invoiceId: id, invoiceNumber: invoice.invoice_number }, invoice.event_id || null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
   // Fire immediately rather than waiting for the next scheduler
   // tick — admin clicked the button because they want it out now.
@@ -787,7 +793,7 @@ async function cancelInvoice(id, adminId) {
     await releaseRebillsForCancelledInvoice(db, id, adminId);
     try {
       await logActivity('invoice_cancelled',
-        { invoiceId: id, viaStorno: false },
+        { invoiceId: id, invoiceNumber: invoice.invoice_number, viaStorno: false },
         invoice.event_id || null, adminActivityActor(adminId));
     } catch (_) { /* non-fatal */ }
     // Still unsent until now: a booking run's review gate for it is answered.
