@@ -2,13 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { Copy, CheckCircle, Key, Mail, QrCode, Download, Eye, EyeOff } from 'lucide-react';
+import { Copy, CheckCircle, Key, Mail, QrCode, Download, Eye, EyeOff, MessageCircle } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, Card } from '../../../components/common';
 import { eventsService } from '../../../services/events.service';
 import { buildShareLinkUrl } from '../../../utils/url';
 import { isGalleryPublic } from '../../../utils/accessControl';
 import { useAnyPermission } from '../../../hooks/usePermission';
+import { WhatsAppInviteDialog } from './WhatsAppInviteDialog';
 
 // Clipboard with the textarea/execCommand fallback for non-HTTPS installs
 // (the documented http://host:3000/admin setup has no navigator.clipboard).
@@ -53,6 +54,7 @@ interface ShareLinkCardProps {
 export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPasswordReset, passwordVersion = 0 }) => {
   const { t, i18n } = useTranslation();
   const [copiedLink, setCopiedLink] = useState(false);
+  const [whatsAppOpen, setWhatsAppOpen] = useState(false);
   const [qrPreviewUrl, setQrPreviewUrl] = useState<string | null>(null);
   const [stored, setStored] = useState<{ password: string | null; client_password: string | null } | null>(null);
   const [loadingStored, setLoadingStored] = useState(false);
@@ -179,12 +181,12 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
         </p>
       ) : (
       <>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
           value={buildShareLinkUrl(event.share_link)}
           readOnly
-          className="flex-1 px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm"
+          className="flex-1 min-w-[12rem] px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm"
         />
         <Button
           variant="outline"
@@ -194,6 +196,18 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
         >
           {copiedLink ? t('events.copied') : t('events.copy')}
         </Button>
+        {event.share_link && (
+          <Button
+            variant="outline"
+            size="md"
+            leftIcon={<MessageCircle className="w-4 h-4" />}
+            onClick={() => setWhatsAppOpen(true)}
+            aria-label={t('events.whatsappInvite.title', 'Send via WhatsApp')}
+            title={t('events.whatsappInvite.title', 'Send via WhatsApp')}
+          >
+            WhatsApp
+          </Button>
+        )}
       </div>
 
       <p className="text-sm text-soft mt-2">
@@ -201,6 +215,15 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
           ? t('events.shareWithGuestsPublic', 'Anyone with this link can view the gallery. No password is required.')
           : t('events.shareWithGuests')}
       </p>
+      {whatsAppOpen && event.share_link && (
+        <WhatsAppInviteDialog
+          open
+          onClose={() => setWhatsAppOpen(false)}
+          event={event}
+          link={buildShareLinkUrl(event.share_link)}
+          passwordProtected={!isGalleryPublic(event.require_password)}
+        />
+      )}
       </>
       )}
 
