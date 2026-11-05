@@ -21,10 +21,26 @@ describe('evaluate', () => {
   });
 
   it('needs 3 bookings, and 3 is enough', () => {
-    const two = evaluate({ payments: paid('2023-01-10', '2025-06-01'), today: '2026-01-20' });
+    const two = evaluate({ payments: paid('2023-01-10', '2025-06-01'), today: '2025-07-01' });
     expect(two).toMatchObject({ state: 'waiting', reason: 'too_few_bookings', bookingCount: 2 });
-    const three = evaluate({ payments: paid('2023-01-10', '2024-06-01', '2025-06-01'), today: '2026-01-20' });
-    expect(three).toMatchObject({ state: 'due', milestoneYears: 3, milestoneDate: '2026-01-10' });
+    const three = evaluate({ payments: paid('2023-01-10', '2024-06-01', '2025-06-01'), today: '2025-07-01' });
+    expect(three).toMatchObject({ state: 'due', milestoneYears: 3, milestoneDate: '2025-06-01' });
+  });
+
+  it('counts calendar years, with the start year as year 1', () => {
+    const payments = paid('2022-09-10', '2023-05-01', '2023-10-01', '2024-09-01', '2025-06-01', '2025-09-01');
+    expect(evaluate({ payments, today: '2026-01-20' }))
+      .toMatchObject({ state: 'due', milestoneYears: 3, milestoneDate: '2024-09-01' });
+    const fifthYear = [...payments, { key: 'deal-2026', paidOn: '2026-06-01' }];
+    expect(evaluate({ payments: fifthYear, today: '2026-11-05' }))
+      .toMatchObject({ state: 'due', milestoneYears: 5, milestoneDate: '2026-06-01' });
+  });
+
+  it('reaches a year without a payment on its last day', () => {
+    const payments = paid('2022-09-10', '2023-09-10', '2024-09-10', '2025-09-10');
+    expect(evaluate({ payments, today: '2026-12-30' }).milestoneYears).toBe(3);
+    expect(evaluate({ payments, today: '2026-12-31' }))
+      .toMatchObject({ state: 'waiting', reason: 'inactive', milestoneYears: 5, milestoneDate: '2026-12-31' });
   });
 
   it('counts installments of one deal as a single booking', () => {
@@ -65,7 +81,7 @@ describe('evaluate', () => {
     expect(evaluate({ payments: burst, today: '2026-04-01' }).reason).toBe('inactive');
   });
 
-  it('gives the third booking in year 4 its gift at year 5, not late at year 3', () => {
+  it('gives the third booking its gift at the next milestone, not late at the one before', () => {
     const payments = paid('2020-01-10', '2022-01-10', '2024-01-10');
     expect(evaluate({ payments: payments.slice(0, 2), today: '2023-04-01' }))
       .toMatchObject({ milestoneYears: 3, reason: 'too_few_bookings' });
@@ -80,20 +96,20 @@ describe('evaluate', () => {
   it('counts a payment that arrives inside the grace period, not one after it', () => {
     const payments = paid('2021-01-10', '2021-02-10', '2021-03-10', '2023-03-11');
     const rules = { ...DEFAULT_RULES, rhythmMarginMonths: 0 };
-    const late = [...payments, { key: 'late', paidOn: '2026-03-10' }];
-    expect(evaluate({ payments: late, today: '2026-03-11', rules }).state).toBe('due');
-    const tooLate = [...payments, { key: 'late', paidOn: '2026-03-12' }];
-    expect(evaluate({ payments: tooLate, today: '2026-03-12', rules }).state).toBe('not_qualified');
+    const late = [...payments, { key: 'late', paidOn: '2026-03-01' }];
+    expect(evaluate({ payments: late, today: '2026-03-01', rules }).state).toBe('due');
+    const tooLate = [...payments, { key: 'late', paidOn: '2026-03-02' }];
+    expect(evaluate({ payments: tooLate, today: '2026-03-02', rules }).state).toBe('not_qualified');
   });
 
   it('moves from waiting to not qualified the day after the grace period', () => {
     const payments = paid('2023-01-10');
-    expect(evaluate({ payments, today: '2026-03-11' }).state).toBe('waiting');
-    expect(evaluate({ payments, today: '2026-03-12' }).state).toBe('not_qualified');
+    expect(evaluate({ payments, today: '2026-03-01' }).state).toBe('waiting');
+    expect(evaluate({ payments, today: '2026-03-02' }).state).toBe('not_qualified');
   });
 
   it('counts from a start date override', () => {
-    const payments = paid('2025-01-01', '2025-06-01', '2025-09-01');
+    const payments = paid('2024-06-01', '2024-09-01', '2025-01-01');
     expect(evaluate({ payments, startDateOverride: '2023-01-10', today: '2026-01-20' }))
       .toMatchObject({ state: 'due', milestoneYears: 3, startDate: '2023-01-10' });
   });

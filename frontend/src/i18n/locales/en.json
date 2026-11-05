@@ -12579,7 +12579,7 @@
     },
     "rules": {
       "title": "Rules",
-      "hint": "A customer also stays active if their last payment fits their usual gap between bookings.",
+      "hint": "Milestones count calendar years, with the first year as year 1. A customer also stays active if their last payment fits their usual gap between bookings.",
       "milestones": "Milestones (years)",
       "minBookings": "Minimum paid bookings",
       "activityPeriodYears": "Active: within this many years",

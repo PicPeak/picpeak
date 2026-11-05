@@ -169,7 +169,7 @@ const RulesCard: React.FC<{ rules: GiftRules; canManage: boolean }> = ({ rules, 
     <Card padding="lg">
       <h2 className="text-lg font-semibold text-heading mb-1">{t('gifts.rules.title', 'Rules')}</h2>
       <p className="text-sm text-soft mb-4">
-        {t('gifts.rules.hint', 'A customer also stays active if their last payment fits their usual gap between bookings.')}
+        {t('gifts.rules.hint', 'Milestones count calendar years, with the first year as year 1. A customer also stays active if their last payment fits their usual gap between bookings.')}
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>

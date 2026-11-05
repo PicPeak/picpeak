@@ -53,6 +53,9 @@ const yearsAgo = (years, days = 0) => {
   return date.toISOString();
 };
 
+/** Midday in the middle of a calendar year, `years` before this one. */
+const inYear = (years) => `${new Date().getFullYear() - years}-06-15T12:00:00.000Z`;
+
 let invoiceSeq = 0;
 async function paidInvoice(customerId, paidAt, fields = {}) {
   invoiceSeq += 1;
@@ -81,12 +84,12 @@ const stockOf = async (id) => {
   return items.find((item) => item.id === id).stock;
 };
 
-/** Three bookings over three years, the last recent. */
+/** Three bookings in three calendar years, the last today. */
 async function dueCustomer() {
   const id = await createCustomer();
-  await paidInvoice(id, yearsAgo(3, 10));
-  await paidInvoice(id, yearsAgo(2));
-  await paidInvoice(id, yearsAgo(0, 30));
+  await paidInvoice(id, inYear(2));
+  await paidInvoice(id, inYear(1));
+  await paidInvoice(id, yearsAgo(0));
   return id;
 }
 
@@ -304,10 +307,10 @@ describe('suggestions', () => {
 
   it('ignores Storno rows and cancelled originals', async () => {
     const customer = await createCustomer();
-    await paidInvoice(customer, yearsAgo(3, 100));
-    await paidInvoice(customer, yearsAgo(2));
-    await paidInvoice(customer, yearsAgo(0, 30), { status: 'cancelled' });
-    await paidInvoice(customer, yearsAgo(0, 20), { kind: 'storno' });
+    await paidInvoice(customer, inYear(6));
+    await paidInvoice(customer, inYear(5));
+    await paidInvoice(customer, inYear(2), { status: 'cancelled' });
+    await paidInvoice(customer, inYear(2), { kind: 'storno' });
     const { notQualified } = bodyOf(await get('/suggestions'));
     expect(find(notQualified, customer)).toMatchObject({ bookingCount: 2, reason: 'too_few_bookings' });
   });
@@ -324,10 +327,10 @@ describe('suggestions', () => {
 
   it('marks a gift anyway, and hides a no-gifts customer', async () => {
     const customer = await createCustomer();
-    await paidInvoice(customer, yearsAgo(3, 100));
+    await paidInvoice(customer, inYear(6));
     const item = await createItem('Override', 1);
     expect(find(bodyOf(await get('/suggestions')).notQualified, customer)).toBeDefined();
-    const { gifts } = bodyOf(await post(`/customers/${customer}/gifts`, { giftItemId: item.id, milestoneYears: 3, isOverride: true }));
+    const { gifts } = bodyOf(await post(`/customers/${customer}/gifts`, { giftItemId: item.id, milestoneYears: 5, isOverride: true }));
     expect(gifts[0].isOverride).toBe(true);
 
     const other = await dueCustomer();
@@ -402,7 +405,7 @@ describe('edges', () => {
 
   it('reads a payment entered without a time as that day', async () => {
     const customer = await createCustomer();
-    const paidOn = `${new Date().getUTCFullYear() - 4}-06-15`;
+    const paidOn = `${new Date().getFullYear() - 6}-06-15`;
     await paidInvoice(customer, `${paidOn}T00:00:00.000Z`);
     const row = bodyOf(await get('/suggestions')).notQualified.find((r) => r.customerId === customer);
     expect(row.lastPaidOn).toBe(paidOn);
@@ -419,9 +422,9 @@ describe('edges', () => {
 
   it('does not bring back an earlier milestone once a later one is closed', async () => {
     const customer = await createCustomer();
-    await paidInvoice(customer, yearsAgo(5, 10));
-    await paidInvoice(customer, yearsAgo(4));
-    await paidInvoice(customer, yearsAgo(0, 30));
+    await paidInvoice(customer, inYear(4));
+    await paidInvoice(customer, inYear(3));
+    await paidInvoice(customer, yearsAgo(0));
     const find = async () => bodyOf(await get('/suggestions')).due.find((r) => r.customerId === customer);
     expect((await find()).milestoneYears).toBe(5);
     await post(`/customers/${customer}/declines`, { milestoneYears: 5 });

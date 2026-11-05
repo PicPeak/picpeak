@@ -12545,7 +12545,7 @@
     },
     "rules": {
       "title": "Regeln",
-      "hint": "Kunden gelten auch als aktiv, wenn ihre letzte Zahlung zu ihrem üblichen Abstand zwischen Buchungen passt.",
+      "hint": "Jubiläen zählen Kalenderjahre, das erste Jahr ist Jahr 1. Kunden gelten auch als aktiv, wenn ihre letzte Zahlung zu ihrem üblichen Abstand zwischen Buchungen passt.",
       "milestones": "Jubiläen (Jahre)",
       "minBookings": "Mindestanzahl bezahlter Buchungen",
       "activityPeriodYears": "Aktiv: innerhalb so vieler Jahre",
