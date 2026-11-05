@@ -2,7 +2,7 @@
  * Customer detail → Gifts (migration 343).
  *
  * The customer's gift history, a gift by hand, the "no gifts" switch and the
- * date the anniversaries count from. Admin-only, like everything about gifts.
+ * year the milestones count from. Admin-only, like everything about gifts.
  */
 import React, { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';

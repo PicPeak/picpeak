@@ -12605,6 +12605,7 @@
     },
     "milestoneBadge_one": "{{count}} year",
     "milestoneBadge_other": "{{count}} years",
+    "reachedOn": "Reached {{date}}",
     "lowStock_one": "{{count}} gift due, {{stock}} in stock.",
     "lowStock_other": "{{count}} gifts due, {{stock}} in stock."
   }

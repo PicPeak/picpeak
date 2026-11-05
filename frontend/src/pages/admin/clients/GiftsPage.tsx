@@ -64,7 +64,7 @@ const SuggestionList: React.FC<{
               <Badge>{t('gifts.milestoneBadge', { count: row.milestoneYears, defaultValue_one: '{{count}} year', defaultValue_other: '{{count}} years' })}</Badge>
             </p>
             <p className="text-xs text-soft">
-              {format(row.milestoneDate)}
+              {t('gifts.reachedOn', { date: format(row.milestoneDate), defaultValue: 'Reached {{date}}' })}
               {row.reason ? ` · ${reasonText(t, row, rules, row.lastPaidOn ? format(row.lastPaidOn) : '')}` : ''}
             </p>
           </div>
