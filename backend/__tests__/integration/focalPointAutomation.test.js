@@ -13,6 +13,7 @@
  *  - going back to automatic takes the faces over sharp's guess
  *  - the backfill cuts a photo without a point, only marks one with a point
  *    or a video, and leaves a photo it could not cut for the next pass
+ *  - and never deletes an original a legacy row names as its thumbnail
  */
 
 const path = require('path');
@@ -158,5 +159,15 @@ describe('the backfill', () => {
 
     // The next pass finds only the one it could not cut.
     expect(await pass()).toEqual({ done: 0, failed: 1 });
+  });
+
+  it('keeps the original a legacy row names as its thumbnail', async () => {
+    await db('photos').update({ focal_checked: 1 });
+    const id = await insertPhoto({ focal_checked: 0 });
+    const original = `events/active/focal-auto/${(await row(id)).filename}`;
+    await db('photos').where({ id }).update({ thumbnail_path: original });
+    expect(await pass()).toEqual({ done: 1, failed: 0 });
+    expect((await row(id)).thumbnail_path).not.toBe(original);
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, original))).toBe(true);
   });
 });
