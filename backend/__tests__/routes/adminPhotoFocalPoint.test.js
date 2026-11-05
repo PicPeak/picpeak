@@ -318,6 +318,50 @@ describe('responsive tiers and the gallery listing', () => {
   });
 });
 
+describe('Detect again for a gallery', () => {
+  const redetect = (tok) => auth(request(app).post(`/api/admin/photos/${eventId}/photos/focal-points/redetect`), tok);
+
+  it('queues every photo but those with a point set by hand, and the pass cuts them', async () => {
+    const backfill = require('../../src/services/focalPointBackfill');
+    const requested = jest.spyOn(backfill, 'requestPass').mockImplementation(() => {});
+    try {
+      await db('photos').update({ focal_checked: 1 });
+      // A wrong automatic point (the empty left edge), and a manual one.
+      await db('photos').where({ id: photoId }).update({ focal_x: 0, focal_y: 0.5, focal_source: 'auto' });
+      await db('photos').where({ id: processingId }).update({ focal_x: 0.3, focal_y: 0.3, focal_source: 'manual' });
+      const res = await redetect();
+      expect(res.status).toBe(200);
+      expect(requested).toHaveBeenCalledTimes(1);
+      const rows = await db('photos').whereIn('id', [photoId, videoId, processingId]).select('id', 'focal_checked');
+      expect(Object.fromEntries(rows.map((r) => [r.id, r.focal_checked]))).toEqual({ [photoId]: 0, [videoId]: 1, [processingId]: 1 });
+      expect(res.body).toEqual({ queued: 1 });
+
+      // The pass waits while a photo is processing; this suite keeps one so.
+      await db('photos').where({ id: processingId }).update({ processing_status: 'complete' });
+      try {
+        expect(await backfill.runPass({ active: () => true, sleep: async () => {} })).toEqual({ done: 1, failed: 0 });
+      } finally {
+        await db('photos').where({ id: processingId }).update({ processing_status: 'processing' });
+      }
+      expect(await row()).toMatchObject({ focal_source: 'auto', focal_checked: 1 });
+      expect((await row()).focal_x).toBeGreaterThan(0.75);
+      expect(await thumbnailRedness()).toBeGreaterThan(20);
+    } finally {
+      requested.mockRestore();
+    }
+  });
+
+  it('needs photos.edit and a gallery that is not archived', async () => {
+    expect((await redetect(readerToken)).status).toBe(403);
+    await db('events').where({ id: eventId }).update({ is_archived: 1 });
+    try {
+      expect((await redetect()).status).toBe(409);
+    } finally {
+      await db('events').where({ id: eventId }).update({ is_archived: 0 });
+    }
+  });
+});
+
 describe('a saved point is not lost', () => {
   it('a save whose snapshot predates another save still applies', async () => {
     const { ensureThumbnail } = require('../../src/services/imageProcessor');

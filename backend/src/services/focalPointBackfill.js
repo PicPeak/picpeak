@@ -7,8 +7,10 @@
  * background pass per boot cuts each one again through the ordinary rebuild
  * (ensureThumbnail with `redetect`): from the faces the face scan found where
  * there are any, from sharp's guess otherwise. The rebuild records the point
- * with its crop and drops the old tiers; a point set by hand meanwhile is
- * kept. A photo that already has a point is only marked.
+ * with its crop and drops the old tiers; a point set by hand is kept, and
+ * such a photo is only marked. An admin's "Detect again" for a gallery
+ * (adminPhotos) sets its photos back to 0 and asks for a pass now
+ * (requestPass).
  *
  * Resumable: a row is marked once it is done, so a restart picks up the rest.
  * A row whose rebuild fails stays at 0 and is tried again on the next boot.
@@ -20,7 +22,7 @@
  * waits while the upload pipeline has work, like renditionRefresh.
  *
  * Tunables (env, all optional):
- *   FOCAL_BACKFILL_DISABLED   'true' to skip the pass
+ *   FOCAL_BACKFILL_DISABLED   'true' to skip the boot pass (a gallery's Detect again still runs)
  *   FOCAL_BACKFILL_DELAY_MS   default 60000, wait after boot
  *   FOCAL_BACKFILL_PAUSE_MS   default 200, pause between photos
  */
@@ -62,7 +64,8 @@ async function markChecked(photoId) {
 /** Cut one photo around its detected point and mark it; false (logged) leaves it for the next boot. */
 async function backfillPhoto(photo) {
   try {
-    if (!isVideo(photo) && !photo.focal_source) {
+    // A point set by hand stays: only marked (the rebuild would keep it too).
+    if (!isVideo(photo) && photo.focal_source !== 'manual') {
       const key = await require('./imageProcessor').ensureThumbnail(photo, { force: true, focalPoint: { redetect: true } });
       if (!key) {
         logger.warn(`Focal point backfill: photo ${photo.id} could not be cut again; it is retried on the next pass`);
@@ -80,6 +83,7 @@ async function backfillPhoto(photo) {
 let running = false;
 let loop = null;
 let waits = null;
+let rerunRequested = false;
 
 /** Wait while the upload pipeline has work, bounded so the pass still moves. */
 async function yieldToUploads(active, sleep) {
@@ -152,8 +156,8 @@ async function runPass({ active = () => running, sleep = (ms) => waits.sleep(ms)
   }
 }
 
-async function runLoop() {
-  await waits.sleep(intEnv('FOCAL_BACKFILL_DELAY_MS', 60000));
+async function runLoop(delayMs) {
+  await waits.sleep(delayMs);
   while (running) {
     let outcome;
     try {
@@ -162,22 +166,28 @@ async function runLoop() {
       logger.error('Focal point backfill aborted; it runs again on the next start', { error: err.message });
       return;
     }
-    if (outcome !== 'busy') return;
+    if (outcome !== 'busy') {
+      // Rows queued while this pass ran may lie behind its cursor.
+      if (!rerunRequested) return;
+      rerunRequested = false;
+      continue;
+    }
     // Another replica holds the claim: if it finishes, the next try finds
     // nothing left; if it died, its lease goes stale and is taken.
     await waits.sleep(RETRY_CLAIM_MS);
   }
 }
 
-function start() {
+/** The boot pass. `requested`: an admin asked (requestPass), so no delay and no opt-out. */
+function start({ requested = false } = {}) {
   if (loop) return;
-  if (process.env.FOCAL_BACKFILL_DISABLED === 'true') {
+  if (!requested && process.env.FOCAL_BACKFILL_DISABLED === 'true') {
     logger.info('Focal point backfill: disabled via FOCAL_BACKFILL_DISABLED');
     return;
   }
   running = true;
   waits = createInterruptibleSleep();
-  const current = runLoop()
+  const current = runLoop(requested ? 0 : intEnv('FOCAL_BACKFILL_DELAY_MS', 60000))
     .catch((err) => logger.error('Focal point backfill crashed', { error: err.message, stack: err.stack }))
     .finally(() => {
       if (loop === current) {
@@ -196,4 +206,10 @@ function stop() {
   return loop;
 }
 
-module.exports = { JOB_NAME, backfillPhoto, runPass, start, stop };
+/** Run a pass now: start the loop, or have the running one walk again when it is done. */
+function requestPass() {
+  if (!loop) start({ requested: true });
+  else rerunRequested = true;
+}
+
+module.exports = { JOB_NAME, backfillPhoto, runPass, requestPass, start, stop };

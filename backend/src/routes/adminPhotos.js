@@ -1751,6 +1751,30 @@ router.put('/:eventId/photos/:photoId/poster', adminAuth, requirePermission('pho
 // fractions of the image, or `null` to go back to the detected point. The
 // cover-cropped thumbnail and its tiers are cut again around it; the gallery
 // URL names the point, so no browser keeps the old crop.
+// Detect the focal point of every photo in the gallery again (issue 2377):
+// from its faces where the scan found any, from sharp's guess otherwise.
+// Points set by hand stay. The focal point backfill cuts them in the
+// background; this only queues them.
+router.post('/:eventId/photos/focal-points/redetect', adminAuth, requirePermission('photos.edit'), requireEventOwnership, async (req, res) => {
+  try {
+    const event = await db('events').where({ id: req.params.eventId }).first('id', 'is_archived');
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+    if (event.is_archived === true || event.is_archived === 1) {
+      return res.status(409).json({ error: 'An archived gallery has no thumbnails to cut again' });
+    }
+    const queued = await livePhotos(db)
+      .where({ event_id: event.id })
+      .where(function () { this.whereNull('focal_source').orWhereNot('focal_source', 'manual'); })
+      .where(function () { this.whereNull('media_type').orWhereNot('media_type', 'video'); })
+      .update({ focal_checked: 0 });
+    await logActivity('photo_focal_points_redetect', { queued }, event.id, { type: 'admin', id: req.admin.id, name: req.admin.username });
+    require('../services/focalPointBackfill').requestPass();
+    res.json({ queued });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to queue the focal points');
+  }
+});
+
 router.put('/:eventId/photos/:photoId/focal-point', adminAuth, requirePermission('photos.edit'), requireEventOwnership, async (req, res) => {
   try {
     const raw = req.body?.focal_point;

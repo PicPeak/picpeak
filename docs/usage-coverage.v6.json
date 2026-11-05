@@ -1159,6 +1159,7 @@
         "PUT /:eventId/photos/:photoId/credit",
         "GET /:eventId/photos/:photoId/poster-candidates",
         "PUT /:eventId/photos/:photoId/poster",
+        "POST /:eventId/photos/focal-points/redetect",
         "PUT /:eventId/photos/:photoId/focal-point",
         "GET /:eventId/photos/:photoId/download",
         "GET /:eventId/photos",

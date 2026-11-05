@@ -3,19 +3,60 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Trash2, Upload } from 'lucide-react';
+import { Crosshair, Trash2, Upload } from 'lucide-react';
 import type { Event } from '../../../../types';
-import { Loading, MarkdownContent } from '../../../../components/common';
+import { Button, Loading, MarkdownContent } from '../../../../components/common';
 import { FocalPointPicker, HeroPhotoSelector, ThemeCustomizerEnhanced, ThemeDisplay } from '../../../../components/admin';
 import { api } from '../../../../config/api';
 import { buildResourceUrl } from '../../../../utils/url';
 import { usePublicSettings } from '../../../../hooks/usePublicSettings';
 import { cssTemplatesService } from '../../../../services/cssTemplates.service';
-import type { AdminPhoto } from '../../../../services/photos.service';
+import { photosService, type AdminPhoto } from '../../../../services/photos.service';
 import { GALLERY_THEME_PRESETS, type ThemeConfig } from '../../../../types/theme.types';
 import { SectionCard, checkboxClass, inputClass, labelClass, type FieldsProps } from './sections';
 
 const selectClass = 'w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-md shadow-sm focus:ring-accent focus:border-accent-dark text-sm disabled:bg-inset';
+
+/**
+ * Detect the crop focus of every photo again (issue 2377). An action, not a
+ * setting: it runs in the background at once, outside the draft's Save.
+ */
+export const CropFocusRedetect: React.FC<{ event: Event; disabled: boolean }> = ({ event, disabled }) => {
+  const { t } = useTranslation();
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const { queued } = await photosService.redetectFocalPoints(event.id);
+      toast.success(t('events.settingsTab.cropFocusQueued', {
+        count: queued,
+        defaultValue_one: '{{count}} photo queued. Its thumbnail is cut again in the background.',
+        defaultValue_other: '{{count}} photos queued. Their thumbnails are cut again in the background.',
+      }));
+    } catch {
+      toast.error(t('events.settingsTab.cropFocusFailed', 'The photos could not be queued.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <p className="text-sm text-soft flex-1">
+        {t('events.settingsTab.cropFocusHelp', 'Thumbnails are cut around the subject of each photo: the faces where face recognition found any, otherwise a detected point. Detect again for every photo in this gallery. Points set by hand stay.')}
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        leftIcon={<Crosshair className="w-4 h-4" />}
+        isLoading={busy}
+        disabled={disabled || busy}
+        onClick={run}
+      >
+        {t('events.settingsTab.cropFocusRedetect', 'Detect again')}
+      </Button>
+    </div>
+  );
+};
 
 const BannerOverride: React.FC<FieldsProps & { kind: 'promo' | 'info' }> = ({ f, set, kind }) => {
   const { t } = useTranslation();
@@ -300,6 +341,10 @@ export const AppearanceSection: React.FC<FieldsProps & {
 
         <BannerOverride f={f} set={set} kind="info" />
         <BannerOverride f={f} set={set} kind="promo" />
+      </SectionCard>
+
+      <SectionCard title={t('events.settingsTab.cropFocus', 'Crop focus')}>
+        <CropFocusRedetect event={event} disabled={readOnly || Boolean(event.is_archived)} />
       </SectionCard>
 
       <SectionCard title={t('events.settingsTab.customStyling', 'Custom gallery styling')}>
