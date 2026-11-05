@@ -122,8 +122,14 @@ describe('WhatsAppInviteDialog', () => {
   });
 
   it('notes that the password goes separately only for a protected gallery', async () => {
-    renderDialog({ passwordProtected: true });
+    renderDialog({ credential: 'password' });
     expect(await screen.findByText('events.whatsappInvite.passwordNote')).toBeInTheDocument();
+  });
+
+  it('notes that the client PIN goes separately for a client-access link', async () => {
+    renderDialog({ credential: 'pin' });
+    expect(await screen.findByText('events.whatsappInvite.pinNote')).toBeInTheDocument();
+    expect(screen.queryByText('events.whatsappInvite.passwordNote')).toBeNull();
   });
 
   it('has no password note for an open link', async () => {

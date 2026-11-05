@@ -198,6 +198,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                     onClose={() => setWhatsAppOpen(false)}
                     event={event}
                     link={`${window.location.origin}/gallery/${event.slug}/client-access?token=${event.client_share_token}`}
+                    credential="pin"
                   />
                 )}
 

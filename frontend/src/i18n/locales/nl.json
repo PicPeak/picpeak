@@ -724,6 +724,7 @@
       "templateSaved": "Standaard WhatsApp-tekst opgeslagen.",
       "templateSaveFailed": "De standaardtekst kon niet worden opgeslagen.",
       "passwordNote": "Deze galerij is met een wachtwoord beveiligd. Het bericht bevat het wachtwoord niet: stuur het apart.",
+      "pinNote": "De klant heeft ook zijn klant-PIN nodig om in te loggen. Het bericht bevat die niet: stuur hem apart.",
       "defaultTemplate": "Hallo {{name}}, uw galerij \"{{event}}\" staat online: {{link}}"
     },
     "qrCode": "QR-code",

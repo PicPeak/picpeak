@@ -1945,6 +1945,7 @@
       "templateSaved": "Default WhatsApp text saved.",
       "templateSaveFailed": "The default text could not be saved.",
       "passwordNote": "This gallery is password-protected. The message does not contain the password: send it separately.",
+      "pinNote": "The client also needs their client PIN to sign in. The message does not contain it: send it separately.",
       "defaultTemplate": "Hello {{name}}, your gallery \"{{event}}\" is online: {{link}}"
     },
     "shareLinkOwnerOnly": "Only the gallery owner can see and share this link.",

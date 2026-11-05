@@ -1747,6 +1747,7 @@
       "templateSaved": "Privzeto besedilo za WhatsApp shranjeno.",
       "templateSaveFailed": "Privzetega besedila ni bilo mogoče shraniti.",
       "passwordNote": "Ta galerija je zaščitena z geslom. Sporočilo gesla ne vsebuje: pošljite ga ločeno.",
+      "pinNote": "Stranka za prijavo potrebuje tudi PIN stranke. Sporočilo ga ne vsebuje: pošljite ga ločeno.",
       "defaultTemplate": "Pozdravljeni, {{name}}, vaša galerija »{{event}}« je na spletu: {{link}}"
     },
     "shareLinkOwnerOnly": "Samo lastnik galerije lahko vidi in deli to povezavo.",

@@ -840,6 +840,7 @@
       "templateSaved": "Texto padrão do WhatsApp salvo.",
       "templateSaveFailed": "Não foi possível salvar o texto padrão.",
       "passwordNote": "Esta galeria é protegida por senha. A mensagem não contém a senha: envie-a separadamente.",
+      "pinNote": "O cliente também precisa do PIN do cliente para entrar. A mensagem não o contém: envie-o separadamente.",
       "defaultTemplate": "Olá {{name}}, sua galeria \"{{event}}\" está online: {{link}}"
     },
     "qrCode": "Código QR",

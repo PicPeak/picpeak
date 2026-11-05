@@ -221,7 +221,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
           onClose={() => setWhatsAppOpen(false)}
           event={event}
           link={buildShareLinkUrl(event.share_link)}
-          passwordProtected={!isGalleryPublic(event.require_password)}
+          credential={isGalleryPublic(event.require_password) ? undefined : 'password'}
         />
       )}
       </>

@@ -2542,6 +2542,7 @@
       "templateSaved": "WhatsApp-Standardtext gespeichert.",
       "templateSaveFailed": "Der Standardtext konnte nicht gespeichert werden.",
       "passwordNote": "Diese Galerie ist passwortgeschützt. Die Nachricht enthält das Passwort nicht: Senden Sie es separat.",
+      "pinNote": "Der Kunde braucht zur Anmeldung zusätzlich seine Kunden-PIN. Die Nachricht enthält sie nicht: Senden Sie sie separat.",
       "defaultTemplate": "Hallo {{name}}, Ihre Fotogalerie „{{event}}“ ist online: {{link}}"
     },
     "shareLinkOwnerOnly": "Nur der Besitzer der Galerie kann diesen Link sehen und teilen.",

@@ -735,6 +735,7 @@
       "templateSaved": "Texto predeterminado de WhatsApp guardado.",
       "templateSaveFailed": "No se pudo guardar el texto predeterminado.",
       "passwordNote": "Esta galería está protegida con contraseña. El mensaje no incluye la contraseña: envíala por separado.",
+      "pinNote": "El cliente también necesita su PIN para acceder. El mensaje no lo incluye: envíalo por separado.",
       "defaultTemplate": "Hola {{name}}, tu galería «{{event}}» ya está online: {{link}}"
     },
     "qrCode": "Código QR",

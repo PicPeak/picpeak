@@ -33,11 +33,11 @@ interface WhatsAppInviteDialogProps {
   event: Event;
   /** The full link the message carries. */
   link: string;
-  /** The link alone does not open the gallery: say the password goes separately. */
-  passwordProtected?: boolean;
+  /** The link alone does not open the gallery: say this credential goes separately. */
+  credential?: 'password' | 'pin';
 }
 
-export const WhatsAppInviteDialog: React.FC<WhatsAppInviteDialogProps> = ({ open, onClose, event, link, passwordProtected = false }) => {
+export const WhatsAppInviteDialog: React.FC<WhatsAppInviteDialogProps> = ({ open, onClose, event, link, credential }) => {
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
   const queryClient = useQueryClient();
@@ -179,9 +179,11 @@ export const WhatsAppInviteDialog: React.FC<WhatsAppInviteDialogProps> = ({ open
           </div>
         )}
 
-        {passwordProtected && (
+        {credential && (
           <Notice tone="info" size="sm">
-            {t('events.whatsappInvite.passwordNote', 'This gallery is password-protected. The message does not contain the password: send it separately.')}
+            {credential === 'pin'
+              ? t('events.whatsappInvite.pinNote', 'The client also needs their client PIN to sign in. The message does not contain it: send it separately.')
+              : t('events.whatsappInvite.passwordNote', 'This gallery is password-protected. The message does not contain the password: send it separately.')}
           </Notice>
         )}
       </div>

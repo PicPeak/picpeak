@@ -737,6 +737,7 @@
       "templateSaved": "Texte WhatsApp par défaut enregistré.",
       "templateSaveFailed": "Le texte par défaut n'a pas pu être enregistré.",
       "passwordNote": "Cette galerie est protégée par un mot de passe. Le message ne contient pas le mot de passe : envoyez-le séparément.",
+      "pinNote": "Le client a aussi besoin de son code PIN pour se connecter. Le message ne le contient pas : envoyez-le séparément.",
       "defaultTemplate": "Bonjour {{name}}, votre galerie « {{event}} » est en ligne : {{link}}"
     },
     "qrCode": "Code QR",
