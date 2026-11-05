@@ -5,6 +5,21 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.195.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.194.0-beta.0...v3.195.0-beta.0) (2026-11-05)
+
+
+### Features
+
+* **photos:** crop thumbnails around each photo's subject ([#2409](https://github.com/PicPeak/picpeak/issues/2409)) ([ef69758](https://github.com/PicPeak/picpeak/commit/ef6975836527e8f37c8c22a37b0db3c5036c7b73))
+* **photos:** focal points from faces, and for the photos from before ([#2412](https://github.com/PicPeak/picpeak/issues/2412)) ([4f586df](https://github.com/PicPeak/picpeak/commit/4f586dfa44fa001331189441f784dab7ceff8cc7))
+
+
+### Bug Fixes
+
+* **crm:** count gift milestones in calendar years ([#2410](https://github.com/PicPeak/picpeak/issues/2410)) ([eca129e](https://github.com/PicPeak/picpeak/commit/eca129ede30fe685b0dc716d1646805b5cb0e1d1))
+* **email:** restart the outage allowance only when the server answered ([#2408](https://github.com/PicPeak/picpeak/issues/2408)) ([4cbd40f](https://github.com/PicPeak/picpeak/commit/4cbd40faf208a71e06b1fecff1b75e853e09a5cd))
+* **uploads:** name an untyped media file by its extension, keep the notification menu on screen ([#2407](https://github.com/PicPeak/picpeak/issues/2407)) ([02ba1f5](https://github.com/PicPeak/picpeak/commit/02ba1f532b15aa26224a5f22bc16d9507f072593))
+
 ## [3.194.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.193.0-beta.0...v3.194.0-beta.0) (2026-11-05)
 
 
