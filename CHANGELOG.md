@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.194.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.193.0-beta.0...v3.194.0-beta.0) (2026-11-05)
+
+
+### Features
+
+* **resilience:** graceful degradation with dependency status, capability pauses and load throttling ([#2365](https://github.com/PicPeak/picpeak/issues/2365)) ([0d42041](https://github.com/PicPeak/picpeak/commit/0d42041f519a614601e95aad84d9d7fd7fcd92ab))
+
 ## [3.193.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.192.1-beta.0...v3.193.0-beta.0) (2026-11-04)
 
 
