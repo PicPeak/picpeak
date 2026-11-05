@@ -17,7 +17,7 @@ const { isResourceError, describe: describeImageError } = require('./imageResour
 const { sha256File } = require('./photoDuplicates');
 const mediaAttempts = require('./mediaAttemptService');
 const { refusal: mediaRefusal, isInterruption } = require('./mediaProcessPolicy');
-const { detectedFocalColumns } = require('../utils/focalPoint');
+const { detectedFocalColumns, focalPointOf } = require('../utils/focalPoint');
 
 function normalizeFiles(files) {
   // Handle null, undefined, or falsy values
@@ -805,12 +805,19 @@ async function processPhoto(photoId) {
       try {
         try {
           const meta = {};
-          const thumbnailPath = await generateThumbnail(proc.path, { outputBasename: mediaAttempts.outputName(proc.outputBasename || photo.filename), meta });
+          // A point the admin set (a failed photo can get one before its
+          // Retry) is the crop's, and stays; otherwise one is detected while
+          // the thumbnail is cut (issue 2377).
+          const manualFocal = photo.focal_source === 'manual' ? focalPointOf(photo) : null;
+          const thumbnailPath = await generateThumbnail(proc.path, {
+            outputBasename: mediaAttempts.outputName(proc.outputBasename || photo.filename),
+            meta,
+            ...(manualFocal ? { focal: manualFocal } : {}),
+          });
           if (thumbnailPath) {
             updateData.thumbnail_path = thumbnailPath;
             updateData.thumb_hash = meta.thumbHash || null;
-            // Detected while the thumbnail was cut (issue 2377).
-            Object.assign(updateData, detectedFocalColumns(meta));
+            if (!manualFocal) Object.assign(updateData, detectedFocalColumns(meta));
           }
         } catch (e) {
           if (isResourceError(e)) throw e;

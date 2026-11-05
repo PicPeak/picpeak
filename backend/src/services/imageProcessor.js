@@ -1355,6 +1355,12 @@ async function storedFocal(photo) {
   }
 }
 
+/** The photo without its focal columns, so storedFocal reads them from the row. */
+function withoutFocalColumns(photo) {
+  const { focal_x: _x, focal_y: _y, focal_source: _source, ...rest } = photo;
+  return rest;
+}
+
 /** Narrow a photo update to rows whose focal point columns are still `row`'s. */
 function whereFocalColumns(query, row) {
   for (const column of FOCAL_COLUMNS) {
@@ -1428,7 +1434,10 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // The focal point the crop follows (issue 2377). None stored yet (a photo
   // from before 348, or reset to automatic): left undefined, so
   // generateThumbnail detects one, and it is recorded with the thumbnail.
-  const stored = isVideoPhoto(photo) ? null : await storedFocal(photo);
+  // An explicit save reads the row inside its flight: one queued behind
+  // another save would otherwise compare against a snapshot taken before
+  // that save landed, and be dropped as stale.
+  const stored = isVideoPhoto(photo) ? null : await storedFocal(focalPoint ? withoutFocalColumns(photo) : photo);
   let focal = null;
   if (stored) focal = stored.focal_source ? focalPointOf(stored) : undefined;
   // A point the admin asks for (the focal-point route) is not written ahead
@@ -1595,17 +1604,14 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // current settings.
   // Dropped for a focal point saved meanwhile the same way: a shared key this
   // render wrote after the other render's may hold the old crop, so it is
-  // rendered once more around the row's point (read again, and no longer
-  // the one this caller asked for, which the row has moved past).
+  // rendered once more against the row's point, read again. An explicit save
+  // is applied over it (the later save wins); any other render follows it.
   if ((settingsChanged || focalChanged) && !retried) {
-    const current = rewriteShared ? null : await sourceGuard(photo).first('thumbnail_path');
+    const current = rewriteShared || (focalChanged && focalPoint) ? null : await sourceGuard(photo).first('thumbnail_path');
     if (current?.thumbnail_path && current.thumbnail_path !== photo.thumbnail_path
         && await isThumbnailValid(current.thumbnail_path)) return current.thumbnail_path;
-    if (!focalChanged) {
-      return regenerateThumbnail(photo, { boundVideoSource, lazy, retried: true, strictVideoFrame, posterOffsetSeconds, focalPoint });
-    }
-    const { focal_x: _x, focal_y: _y, focal_source: _source, ...withoutFocal } = photo;
-    return regenerateThumbnail(withoutFocal, { boundVideoSource, lazy, retried: true, strictVideoFrame, posterOffsetSeconds });
+    return regenerateThumbnail(focalChanged ? withoutFocalColumns(photo) : photo,
+      { boundVideoSource, lazy, retried: true, strictVideoFrame, posterOffsetSeconds, focalPoint });
   }
 
   return null;

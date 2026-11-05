@@ -257,3 +257,25 @@ describe('a point lands with its crop', () => {
     expect(fs.existsSync(tier)).toBe(false);
   });
 });
+
+describe('a saved point is not lost', () => {
+  it('a save whose snapshot predates another save still applies', async () => {
+    const { ensureThumbnail } = require('../../src/services/imageProcessor');
+    // Read before a save that queued ahead of this one landed (x=0.2).
+    const snapshot = { ...(await row()), focal_x: 0.5, focal_y: 0.5, focal_source: 'auto' };
+    await db('photos').where({ id: photoId }).update({ focal_x: 0.2, focal_y: 0.5, focal_source: 'manual' });
+    expect(await ensureThumbnail(snapshot, { force: true, focalPoint: { point: { x: 1, y: 0.5 } } })).toBeTruthy();
+    expect(await row()).toMatchObject({ focal_x: 1, focal_y: 0.5, focal_source: 'manual' });
+    expect(await thumbnailRedness()).toBeGreaterThan(20);
+  });
+
+  it('a Retry of the processing keeps a point set by hand', async () => {
+    const { processPhoto } = require('../../src/services/photoProcessor');
+    await db('photos').where({ id: photoId }).update({
+      focal_x: 0, focal_y: 0.5, focal_source: 'manual', processing_status: 'pending',
+    });
+    await processPhoto(photoId);
+    expect(await row()).toMatchObject({ focal_x: 0, focal_y: 0.5, focal_source: 'manual', processing_status: 'complete' });
+    expect(await thumbnailRedness()).toBeLessThan(5);
+  });
+});
