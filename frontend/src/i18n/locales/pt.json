@@ -4123,7 +4123,22 @@
       "sortName": "Por nome",
       "open": "Abrir",
       "albumAwaiting": "O seu álbum de {{name}} está pronto a configurar",
-      "configureAlbum": "Configurar álbum"
+      "configureAlbum": "Configurar álbum",
+      "recent": {
+        "photosAdded_one": "{{count}} nova foto em {{title}}",
+        "photosAdded_many": "{{count}} novas fotos em {{title}}",
+        "photosAdded_other": "{{count}} novas fotos em {{title}}",
+        "videosAdded_one": "{{count}} novo vídeo em {{title}}",
+        "videosAdded_many": "{{count}} novos vídeos em {{title}}",
+        "videosAdded_other": "{{count}} novos vídeos em {{title}}",
+        "mediaAdded": "{{photos}} e {{videos}} em {{title}}",
+        "newPhotos_one": "{{count}} nova foto",
+        "newPhotos_many": "{{count}} novas fotos",
+        "newPhotos_other": "{{count}} novas fotos",
+        "videos_one": "{{count}} vídeo",
+        "videos_many": "{{count}} vídeos",
+        "videos_other": "{{count}} vídeos"
+      }
     },
     "layout": {
       "greeting": "Olá, {{name}}"

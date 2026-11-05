@@ -7813,7 +7813,16 @@
         "contractSigned": "You signed contract {{title}}",
         "quoteSent": "Quote {{title}} was sent to you",
         "invoiceSent": "Invoice {{title}} was sent to you",
-        "galleryAssigned": "Gallery {{title}} is now available to you"
+        "galleryAssigned": "Gallery {{title}} is now available to you",
+        "photosAdded_one": "{{count}} new photo in {{title}}",
+        "photosAdded_other": "{{count}} new photos in {{title}}",
+        "videosAdded_one": "{{count}} new video in {{title}}",
+        "videosAdded_other": "{{count}} new videos in {{title}}",
+        "mediaAdded": "{{photos}} and {{videos}} in {{title}}",
+        "newPhotos_one": "{{count}} new photo",
+        "newPhotos_other": "{{count}} new photos",
+        "videos_one": "{{count}} video",
+        "videos_other": "{{count}} videos"
       },
       "documentRequested": "Please upload: {{title}}",
       "uploadDocument": "Upload",

@@ -215,15 +215,19 @@ export interface CustomerDashboard {
 
 export type CustomerRecentKind =
   | 'document_shared' | 'document_uploaded' | 'document_accepted' | 'document_rejected'
-  | 'contract_sent' | 'contract_signed' | 'quote_sent' | 'invoice_sent' | 'gallery_assigned';
+  | 'contract_sent' | 'contract_signed' | 'quote_sent' | 'invoice_sent' | 'gallery_assigned'
+  | 'photos_added';
 
 export interface CustomerRecentItem {
   kind: CustomerRecentKind;
-  id: number;
+  /** A string for photos_added: one item per gallery and upload day. */
+  id: number | string;
   title: string;
   at: string;
   /** A portal path. */
   link: string;
+  /** photos_added only: what came in that day. */
+  counts?: { photos: number; videos: number };
 }
 
 export interface CustomerEventOverview {

@@ -3845,7 +3845,18 @@
       "sortName": "Op naam",
       "open": "Openen",
       "albumAwaiting": "Je album voor {{name}} staat klaar om samen te stellen",
-      "configureAlbum": "Album samenstellen"
+      "configureAlbum": "Album samenstellen",
+      "recent": {
+        "photosAdded_one": "{{count}} nieuwe foto in {{title}}",
+        "photosAdded_other": "{{count}} nieuwe foto's in {{title}}",
+        "videosAdded_one": "{{count}} nieuwe video in {{title}}",
+        "videosAdded_other": "{{count}} nieuwe video's in {{title}}",
+        "mediaAdded": "{{photos}} en {{videos}} in {{title}}",
+        "newPhotos_one": "{{count}} nieuwe foto",
+        "newPhotos_other": "{{count}} nieuwe foto's",
+        "videos_one": "{{count}} video",
+        "videos_other": "{{count}} video's"
+      }
     },
     "layout": {
       "greeting": "Hallo, {{name}}"

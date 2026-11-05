@@ -22,9 +22,10 @@ vi.mock('react-i18next', async () => {
     ...actual,
     useTranslation: () => ({
       t: (k: string, fb?: unknown, opts?: Record<string, unknown>) => {
-        const found = lookup(k);
-        const base = typeof found === 'string' ? found : (typeof fb === 'string' ? `MISSING:${k}` : k);
         const vars = (typeof fb === 'object' && fb ? fb : opts) as Record<string, unknown> | undefined;
+        const count = vars?.count;
+        const found = typeof count === 'number' ? lookup(`${k}_${count === 1 ? 'one' : 'other'}`) : lookup(k);
+        const base = typeof found === 'string' ? found : (typeof fb === 'string' ? `MISSING:${k}` : k);
         return vars ? base.replace(/\{\{(\w+)\}\}/g, (_m, key) => String(vars[key] ?? '')) : base;
       },
       i18n: { language: 'en' },
@@ -48,6 +49,10 @@ const dashboard: CustomerDashboard = {
     { kind: 'document_rejected', id: 7, title: 'passport-scan.pdf', at: '2026-09-19T10:00:00Z', link: '/customer/documents/7' },
     { kind: 'contract_sent', id: 2, title: 'C-2026-0002', at: '2026-09-18T10:00:00Z', link: '/customer/contracts' },
     { kind: 'gallery_assigned', id: 9, title: 'Wedding', at: '2026-09-17T10:00:00Z', link: '/customer/events/wedding' },
+    { kind: 'photos_added', id: '9-2026-09-16', title: 'Wedding', at: '2026-09-16T10:00:00Z', link: '/customer/events/wedding', counts: { photos: 12, videos: 2 } },
+    { kind: 'photos_added', id: '9-2026-09-15', title: 'Wedding', at: '2026-09-15T10:00:00Z', link: '/customer/events/wedding', counts: { photos: 1, videos: 0 } },
+    { kind: 'photos_added', id: '9-2026-09-14', title: 'Wedding', at: '2026-09-14T10:00:00Z', link: '/customer/events/wedding', counts: { photos: 0, videos: 3 } },
+    { kind: 'photos_added', id: '9-2026-09-13', title: 'Wedding', at: '2026-09-13T10:00:00Z', link: '/customer/events/wedding', counts: { photos: 40, videos: 1 } },
   ],
   galleries: { active: [], expired: [] },
 };
@@ -77,6 +82,10 @@ describe('CustomerDashboardPage — Recent', () => {
       ['passport-scan.pdf was not accepted', '/customer/documents/7'],
       ['Contract C-2026-0002 was sent to you', '/customer/contracts'],
       ['Gallery Wedding is now available to you', '/customer/events/wedding'],
+      ['12 new photos and 2 videos in Wedding', '/customer/events/wedding'],
+      ['1 new photo in Wedding', '/customer/events/wedding'],
+      ['3 new videos in Wedding', '/customer/events/wedding'],
+      ['40 new photos and 1 video in Wedding', '/customer/events/wedding'],
     ]);
     expect(screen.queryByText(/MISSING:/)).toBeNull();
   });

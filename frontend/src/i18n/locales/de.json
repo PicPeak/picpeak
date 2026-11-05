@@ -7778,7 +7778,16 @@
         "contractSigned": "Sie haben den Vertrag {{title}} unterschrieben",
         "quoteSent": "Angebot {{title}} wurde Ihnen zugestellt",
         "invoiceSent": "Rechnung {{title}} wurde Ihnen zugestellt",
-        "galleryAssigned": "Die Galerie {{title}} steht Ihnen jetzt zur Verfügung"
+        "galleryAssigned": "Die Galerie {{title}} steht Ihnen jetzt zur Verfügung",
+        "photosAdded_one": "{{count}} neues Foto in {{title}}",
+        "photosAdded_other": "{{count}} neue Fotos in {{title}}",
+        "videosAdded_one": "{{count}} neues Video in {{title}}",
+        "videosAdded_other": "{{count}} neue Videos in {{title}}",
+        "mediaAdded": "{{photos}} und {{videos}} in {{title}}",
+        "newPhotos_one": "{{count}} neues Foto",
+        "newPhotos_other": "{{count}} neue Fotos",
+        "videos_one": "{{count}} Video",
+        "videos_other": "{{count}} Videos"
       },
       "documentRequested": "Bitte hochladen: {{title}}",
       "uploadDocument": "Hochladen",

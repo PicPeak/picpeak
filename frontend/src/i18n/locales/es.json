@@ -3661,7 +3661,22 @@
   "customer": {
     "dashboard": {
       "albumAwaiting": "Tu álbum de {{name}} está listo para configurar",
-      "configureAlbum": "Configurar álbum"
+      "configureAlbum": "Configurar álbum",
+      "recent": {
+        "photosAdded_one": "{{count}} foto nueva en {{title}}",
+        "photosAdded_many": "{{count}} fotos nuevas en {{title}}",
+        "photosAdded_other": "{{count}} fotos nuevas en {{title}}",
+        "videosAdded_one": "{{count}} vídeo nuevo en {{title}}",
+        "videosAdded_many": "{{count}} vídeos nuevos en {{title}}",
+        "videosAdded_other": "{{count}} vídeos nuevos en {{title}}",
+        "mediaAdded": "{{photos}} y {{videos}} en {{title}}",
+        "newPhotos_one": "{{count}} foto nueva",
+        "newPhotos_many": "{{count}} fotos nuevas",
+        "newPhotos_other": "{{count}} fotos nuevas",
+        "videos_one": "{{count}} vídeo",
+        "videos_many": "{{count}} vídeos",
+        "videos_other": "{{count}} vídeos"
+      }
     },
     "event": {
       "album": "Tu álbum",

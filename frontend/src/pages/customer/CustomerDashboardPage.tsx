@@ -181,6 +181,17 @@ function recentLabel(t: TFunction, item: CustomerRecentItem): string {
     case 'quote_sent': return t('customer.dashboard.recent.quoteSent', 'Quote {{title}} was sent to you', vars);
     case 'invoice_sent': return t('customer.dashboard.recent.invoiceSent', 'Invoice {{title}} was sent to you', vars);
     case 'gallery_assigned': return t('customer.dashboard.recent.galleryAssigned', 'Gallery {{title}} is now available to you', vars);
+    case 'photos_added': {
+      const photos = item.counts?.photos ?? 0;
+      const videos = item.counts?.videos ?? 0;
+      if (videos === 0) return t('customer.dashboard.recent.photosAdded', '{{count}} new photos in {{title}}', { ...vars, count: photos });
+      if (photos === 0) return t('customer.dashboard.recent.videosAdded', '{{count}} new videos in {{title}}', { ...vars, count: videos });
+      return t('customer.dashboard.recent.mediaAdded', '{{photos}} and {{videos}} in {{title}}', {
+        ...vars,
+        photos: t('customer.dashboard.recent.newPhotos', '{{count}} new photos', { count: photos }),
+        videos: t('customer.dashboard.recent.videos', '{{count}} videos', { count: videos }),
+      });
+    }
     default: return item.title;
   }
 }
