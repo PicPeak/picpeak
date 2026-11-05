@@ -176,6 +176,31 @@ describe('a focal point from faces', () => {
     expect(right.left + right.width).toBeGreaterThanOrEqual(1200);
   });
 
+  it('places the faces for the configured thumbnail shape, not a square', async () => {
+    const { faceFocalPoint } = require('../../src/services/faceFocalPoint');
+    const { focalCoverWindow } = require('../../src/utils/focalPoint');
+    const keys = ['thumbnail_width', 'thumbnail_height'];
+    const before = await db('app_settings').whereIn('setting_key', keys);
+    const id = await insertPhoto();
+    await db('photo_faces').insert({
+      photo_id: id, event_id: eventId, bbox_x: 200, bbox_y: 200, bbox_w: 120, bbox_h: 120, created_at: new Date().toISOString(),
+    });
+    // Portrait thumbnails: the crop of the 1200x600 photo is 300 wide.
+    await db('app_settings').whereIn('setting_key', keys).del();
+    await db('app_settings').insert([
+      { setting_key: 'thumbnail_width', setting_value: '200', setting_type: 'number' },
+      { setting_key: 'thumbnail_height', setting_value: '400', setting_type: 'number' },
+    ]);
+    try {
+      const crop = focalCoverWindow(1200, 600, 200, 400, await faceFocalPoint(id));
+      expect(crop.left).toBeLessThanOrEqual(200);
+      expect(crop.left + crop.width).toBeGreaterThanOrEqual(320);
+    } finally {
+      await db('app_settings').whereIn('setting_key', keys).del();
+      if (before.length) await db('app_settings').insert(before.map(({ id: _id, ...rest }) => rest));
+    }
+  });
+
   it('leaves faces that do not fit the stored size to sharp', async () => {
     const { faceFocalPoint } = require('../../src/services/faceFocalPoint');
     // An EXIF-rotated photo whose size was stored unrotated: boxes scaled

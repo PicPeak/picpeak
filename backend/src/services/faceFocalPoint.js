@@ -7,7 +7,8 @@
  * busy background or a group can pull it off the people. Where the scan
  * found faces, the crop keeps them: the box around every face at least a
  * quarter the size of the largest one (a guest far behind the couple does
- * not count) is centred in the crop, as far as the crop's slack allows. Face boxes are in the oriented
+ * not count) is centred in the thumbnail's crop, in its configured shape, as
+ * far as the crop's slack allows. Face boxes are in the oriented
  * original's pixels (faceProcessor scales them), as photos.width/height are.
  *
  * A scan that finds faces cuts the thumbnail again around them, unless an
@@ -17,7 +18,7 @@
 
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
-const { normalizeFocalPoint } = require('../utils/focalPoint');
+const { focalCoverWindow, normalizeFocalPoint } = require('../utils/focalPoint');
 
 // A face smaller than this share of the largest one does not pull the point.
 const MIN_AREA_SHARE = 0.25;
@@ -29,10 +30,11 @@ const clamp = (value) => Math.min(1, Math.max(0, value));
  * The point places a crop the way object-position does (utils/focalPoint):
  * a fraction of the slack, not the window's middle. So the faces' middle is
  * not passed as it is: for an off-centre group that window would cut off
- * the outer face. The point is the one that centres the faces in a square
- * window (`side`, the default thumbnail's shape), moved as little as needed
- * to keep every face in it where they fit. Without slack (the square already
- * spans this side) the faces' middle stands for the other window shapes.
+ * the outer face. The point is the one that centres the faces in the
+ * thumbnail's window (`side` long on this axis, from the configured
+ * thumbnail shape), moved as little as needed to keep every face in it
+ * where they fit. Without slack (the window spans this side) the faces'
+ * middle stands for the other window shapes.
  */
 function placeOn(length, side, from, to) {
   const slack = length - side;
@@ -66,8 +68,14 @@ async function faceFocalPoint(photoId) {
     const top = Math.min(...kept.map((face) => face.y));
     const right = Math.max(...kept.map((face) => face.x + face.w));
     const bottom = Math.max(...kept.map((face) => face.y + face.h));
-    const side = Math.min(width, height);
-    return normalizeFocalPoint({ x: placeOn(width, side, left, right), y: placeOn(height, side, top, bottom) });
+    // The window the thumbnail's cover crop keeps, in the configured shape.
+    const { getThumbnailSettings } = require('./imageProcessor');
+    const settings = await getThumbnailSettings();
+    const crop = focalCoverWindow(width, height, settings.width, settings.height, { x: 0, y: 0 });
+    return normalizeFocalPoint({
+      x: placeOn(width, crop.width, left, right),
+      y: placeOn(height, crop.height, top, bottom),
+    });
   } catch (error) {
     logger.warn(`Could not read the faces of photo ${photoId} for its focal point: ${error.message}`);
     return null;
