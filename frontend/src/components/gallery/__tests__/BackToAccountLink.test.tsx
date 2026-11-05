@@ -91,6 +91,12 @@ describe.each(['gallery-premium', 'gallery-story'])('%s nav', (layout) => {
     expect(screen.getByRole('link', { name: 'Back to your account' })).toHaveAttribute('href', '/customer/dashboard');
   });
 
+  it('keeps the link when there are no photos to show', () => {
+    theme.galleryLayout = layout;
+    wrap(<PhotoGridWithLayouts photos={[]} slug="demo" showBackToAccount />);
+    expect(screen.getByRole('link', { name: 'Back to your account' })).toHaveAttribute('href', '/customer/dashboard');
+  });
+
   it('has no such link without the flag', () => {
     theme.galleryLayout = layout;
     wrap(<PhotoGridWithLayouts photos={[photo]} slug="demo" />);

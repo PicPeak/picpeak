@@ -842,6 +842,12 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
+        {/* No nav in this branch, so the way back to the portal sits here. */}
+        {showBackToAccount && (
+          <div className="mb-4 flex justify-center">
+            <BackToAccountLink alwaysLabelled className="inline-flex items-center gap-1.5 text-sm text-muted-theme hover:text-theme" />
+          </div>
+        )}
         {onManageGallery && <Button variant="outline" className="mb-4" onClick={onManageGallery} disabled={clientModeBusy}
           leftIcon={<Shield className="w-4 h-4" />}>
           {isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}

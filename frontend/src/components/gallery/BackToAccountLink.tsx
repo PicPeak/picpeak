@@ -10,7 +10,10 @@ import { useTranslation } from 'react-i18next';
  * dashboard is the portal's home; with the portal session gone it sends the
  * visitor to the customer login rather than to a dead page.
  */
-export const BackToAccountLink: React.FC<{ className?: string }> = ({ className }) => {
+export const BackToAccountLink: React.FC<{ className?: string; alwaysLabelled?: boolean }> = ({
+  className,
+  alwaysLabelled = false,
+}) => {
   const { t } = useTranslation();
   const label = t('gallery.backToAccount', 'Back to your account');
   return (
@@ -23,7 +26,7 @@ export const BackToAccountLink: React.FC<{ className?: string }> = ({ className 
     >
       <ArrowLeft className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
       {/* Icon only on a phone, where the header row is already full. */}
-      <span className="hidden sm:inline">{label}</span>
+      <span className={alwaysLabelled ? undefined : 'hidden sm:inline'}>{label}</span>
     </Link>
   );
 };
