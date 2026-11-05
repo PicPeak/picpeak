@@ -1244,7 +1244,10 @@ async function ownDerivativeName(photo, name) {
 // that must know whether it repaired anything (the orientation backfill)
 // or an admin picking a frame (issue 2263, item 4). `posterOffsetSeconds`:
 // the frame to take instead of the row's pick (null: the default frame),
-// recorded on the row in the same write as the new poster.
+// recorded on the row in the same write as the new poster. `focalPoint`
+// (issue 2377): `{ point }` an admin's point, recorded with the crop cut
+// around it; `{ point: null }` back to the detected one; `{ redetect: true }`
+// detected again unless the row's point was set by hand.
 async function ensureThumbnail(photo, { force = false, boundVideoSource = true, checkSettings = !force, strictVideoFrame = false, posterOffsetSeconds, focalPoint } = {}) {
   // Check if thumbnail exists and is valid (works for any source).
   if (!force && photo.thumbnail_path) {
@@ -1447,8 +1450,22 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // A point the admin asks for (the focal-point route) is not written ahead
   // of its crop: it lands with the thumbnail cut around it, as a picked
   // poster frame does, so no listing names it while the old crop is stored.
-  // `point: null` goes back to automatic, detected here.
-  if (focalPoint && !isVideoPhoto(photo)) focal = focalPoint.point || undefined;
+  // `point: null` goes back to automatic, detected here. `redetect` (a face
+  // scan, the backfill) does the same unless the row's point was set by hand.
+  const keepsManual = Boolean(focalPoint?.redetect) && stored?.focal_source === 'manual';
+  if (focalPoint && !isVideoPhoto(photo)) {
+    if (focalPoint.redetect) focal = keepsManual ? focalPointOf(stored) : undefined;
+    else focal = focalPoint.point || undefined;
+  }
+  // Faces the scan found are where the subject is: their middle is the
+  // point, and sharp's guess only stands in for a photo without any.
+  if (focal === undefined && stored) {
+    const fromFaces = await require('./faceFocalPoint').faceFocalPoint(photo.id);
+    if (fromFaces) {
+      focal = fromFaces;
+      meta.focal = fromFaces;
+    }
+  }
   // The render is kept only while the row still has the point it read: a
   // point saved meanwhile (another replica, or the admin) renders its own
   // crop, and this one must not overwrite that thumbnail or land on the row.
@@ -1551,7 +1568,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     // detected for a row that had none.
     let focalWrite = {};
     if (focalPoint && stored) {
-      focalWrite = focalPoint.point ? focalColumns(focalPoint.point, 'manual') : focalColumns(meta.focal, 'auto');
+      if (!keepsManual) focalWrite = focalPoint.point ? focalColumns(focalPoint.point, 'manual') : focalColumns(meta.focal, 'auto');
     } else if (meta.focal) {
       focalWrite = focalColumns(meta.focal, 'auto');
     }

@@ -1554,6 +1554,11 @@ async function startServerInternal() {
     // covers first. One replica runs it; it resumes after a restart.
     require('./src/services/renditionRefresh').start();
 
+    // Photos from before focal points (issue 2377) are cut again around a
+    // detected one, once, in the background. One replica runs it; it resumes
+    // after a restart.
+    require('./src/services/focalPointBackfill').start();
+
     // Started last, so the first probes see the services above already running.
     require('./src/services/dependencyHealth').start();
 
