@@ -221,10 +221,22 @@ describe('Upload content validation on guest and chunked uploads', () => {
       const [photo] = await photosOf(event);
       expect(photo.mime_type).toBe('image/jpeg');
 
-      const other = await makeEvent();
-      const renamed = await v1Upload(other, jpeg, 'clip.mov', 'application/octet-stream');
-      expect(renamed.status).toBe(400);
-      expect(await photosOf(other)).toHaveLength(0);
+      // MOV allowed, so the refusal comes from the bytes, not the type list.
+      const settings = require('../../src/services/uploadSettings');
+      await db('app_settings').insert({
+        setting_key: 'general_allowed_file_types', setting_value: JSON.stringify('jpg,jpeg,png,webp,mov'), setting_type: 'general',
+      }).onConflict('setting_key').merge();
+      settings.clearAllowedTypesCache();
+      try {
+        const other = await makeEvent();
+        const renamed = await v1Upload(other, jpeg, 'clip.mov', 'application/octet-stream');
+        expect(renamed.status).toBe(400);
+        expect(renamed.body.error).toBe('Invalid video file content.');
+        expect(await photosOf(other)).toHaveLength(0);
+      } finally {
+        await db('app_settings').where({ setting_key: 'general_allowed_file_types' }).del();
+        settings.clearAllowedTypesCache();
+      }
     });
 
     it('still refuses a generic type on an unknown extension', async () => {
