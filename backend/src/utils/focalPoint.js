@@ -73,18 +73,25 @@ function focalQuery(row) {
 
 /**
  * The window of an oriented `width` x `height` source that a cover crop to
- * `boxWidth` x `boxHeight` keeps, placed at `point`; null when the crop would
- * have to enlarge the source. sharp then scales the window to the box, so
- * only its shape and place matter here. Enlarging is left to sharp's own
- * centre handling: generateThumbnail never enlarges (withoutEnlargement), and
- * what sharp does then is no crop of this shape at all.
+ * `boxWidth` x `boxHeight` keeps, placed at `point`; null without a point.
+ * sharp then scales the window to the box, so only its shape and place
+ * matter here. A box larger than the source on either side is not enlarged
+ * to (generateThumbnail passes withoutEnlargement): sharp keeps the source's
+ * scale and cuts the box down to it on each side, so the window is that
+ * piece, placed at the point like any other.
  */
 function focalCoverWindow(width, height, boxWidth, boxHeight, point) {
   if (!point || !(width > 0) || !(height > 0) || !(boxWidth > 0) || !(boxHeight > 0)) return null;
-  if (boxWidth > width || boxHeight > height) return null;
-  const boxRatio = boxWidth / boxHeight;
-  const windowWidth = Math.min(width, Math.max(1, Math.round(height * boxRatio)));
-  const windowHeight = Math.min(height, Math.max(1, Math.round(width / boxRatio)));
+  let windowWidth;
+  let windowHeight;
+  if (boxWidth > width || boxHeight > height) {
+    windowWidth = Math.min(boxWidth, width);
+    windowHeight = Math.min(boxHeight, height);
+  } else {
+    const boxRatio = boxWidth / boxHeight;
+    windowWidth = Math.min(width, Math.max(1, Math.round(height * boxRatio)));
+    windowHeight = Math.min(height, Math.max(1, Math.round(width / boxRatio)));
+  }
   return {
     left: Math.round((width - windowWidth) * point.x),
     top: Math.round((height - windowHeight) * point.y),

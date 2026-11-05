@@ -188,9 +188,15 @@ describe('focalCoverWindow', () => {
     expect(focalCoverWindow(1200, 600, 400, 300, { x: 1, y: 0 })).toEqual({ left: 400, top: 0, width: 800, height: 600 });
   });
 
-  test('nothing to place: no point, or a box larger than the source', () => {
+  test('nothing to place without a point', () => {
     expect(focalCoverWindow(1200, 600, 300, 300, null)).toBeNull();
-    expect(focalCoverWindow(200, 100, 300, 300, { x: 1, y: 1 })).toBeNull();
+  });
+
+  test('a box larger than the source: the piece sharp keeps, placed at the point', () => {
+    // sharp never enlarges here: 1200x600 into 900x900 keeps a 900x600 piece.
+    expect(focalCoverWindow(1200, 600, 900, 900, { x: 0.9, y: 0.5 })).toEqual({ left: 270, top: 0, width: 900, height: 600 });
+    expect(focalCoverWindow(600, 1200, 900, 900, { x: 0.5, y: 1 })).toEqual({ left: 0, top: 300, width: 600, height: 900 });
+    expect(focalCoverWindow(200, 100, 300, 300, { x: 1, y: 1 })).toEqual({ left: 0, top: 0, width: 200, height: 100 });
   });
 });
 

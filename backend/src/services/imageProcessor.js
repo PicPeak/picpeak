@@ -1399,6 +1399,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     ? await getThumbnailSettings({ strict: true }).catch(() => undefined)
     : undefined;
   let settingsChanged = false;
+  let focalChanged = false;
   const settingsCurrent = settings && (async () => {
     try {
       if (await thumbnailSettingsUnchanged(settings)) return true;
@@ -1443,6 +1444,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
       const current = await db('photos').where('id', photo.id).first(FOCAL_COLUMNS);
       if (!current || sameFocalColumns(current, stored)) return true;
       logger.info(`Focal point of photo ${photo.id} changed while its thumbnail was rendered; not keeping it`);
+      focalChanged = true;
       return false;
     } catch (e) {
       logger.warn(`Could not re-read the focal point of photo ${photo.id}; keeping its thumbnail: ${e.message}`);
@@ -1591,11 +1593,19 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // job would fail for good on null). Take the one another replica has
   // recorded since for this same source, or render once more under the
   // current settings.
-  if (settingsChanged && !retried) {
+  // Dropped for a focal point saved meanwhile the same way: a shared key this
+  // render wrote after the other render's may hold the old crop, so it is
+  // rendered once more around the row's point (read again, and no longer
+  // the one this caller asked for, which the row has moved past).
+  if ((settingsChanged || focalChanged) && !retried) {
     const current = rewriteShared ? null : await sourceGuard(photo).first('thumbnail_path');
     if (current?.thumbnail_path && current.thumbnail_path !== photo.thumbnail_path
         && await isThumbnailValid(current.thumbnail_path)) return current.thumbnail_path;
-    return regenerateThumbnail(photo, { boundVideoSource, lazy, retried: true, strictVideoFrame, posterOffsetSeconds, focalPoint });
+    if (!focalChanged) {
+      return regenerateThumbnail(photo, { boundVideoSource, lazy, retried: true, strictVideoFrame, posterOffsetSeconds, focalPoint });
+    }
+    const { focal_x: _x, focal_y: _y, focal_source: _source, ...withoutFocal } = photo;
+    return regenerateThumbnail(withoutFocal, { boundVideoSource, lazy, retried: true, strictVideoFrame, posterOffsetSeconds });
   }
 
   return null;

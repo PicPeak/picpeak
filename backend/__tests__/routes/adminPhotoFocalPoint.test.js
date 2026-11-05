@@ -209,15 +209,39 @@ describe('a point lands with its crop', () => {
     expect((await thumbBytes()).equals(bytes)).toBe(true);
   });
 
-  it('a render that read an older point neither overwrites the crop nor lands on the row', async () => {
+  it('a render that read an older point leaves the row\'s point and its crop', async () => {
     const { ensureThumbnail } = require('../../src/services/imageProcessor');
-    const current = await row();
-    const bytes = await thumbBytes();
-    // Read before an admin moved the point (another replica's sweep).
-    const stale = { ...current, focal_x: 1, focal_y: 0.5, focal_source: 'manual' };
-    expect(await ensureThumbnail(stale, { force: true })).toBeNull();
-    expect(await row()).toMatchObject({ focal_x: current.focal_x, focal_y: current.focal_y, focal_source: 'manual' });
-    expect((await thumbBytes()).equals(bytes)).toBe(true);
+    await db('photos').where({ id: photoId }).update({ focal_x: 0, focal_y: 0.5, focal_source: 'manual' });
+    // Read before an admin moved the point to the left (another replica's
+    // sweep): it would cut around the subject on the right.
+    const stale = { ...(await row()), focal_x: 1, focal_y: 0.5, focal_source: 'manual' };
+    expect(await ensureThumbnail(stale, { force: true })).toBeTruthy();
+    expect(await row()).toMatchObject({ focal_x: 0, focal_y: 0.5, focal_source: 'manual' });
+    expect(await thumbnailRedness()).toBeLessThan(5);
+  });
+
+  it('cuts the crop again when the point moved after this render wrote it', async () => {
+    const { ensureThumbnail } = require('../../src/services/imageProcessor');
+    const storage = require('../../src/services/storage').getStorage();
+    await db('photos').where({ id: photoId }).update({ focal_x: 1, focal_y: 0.5, focal_source: 'manual' });
+    const original = storage.put.bind(storage);
+    let moved = false;
+    // The other replica saves the left edge just after this render's write.
+    const put = jest.spyOn(storage, 'put').mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (!moved) {
+        moved = true;
+        await db('photos').where({ id: photoId }).update({ focal_x: 0, focal_y: 0.5, focal_source: 'manual' });
+      }
+      return result;
+    });
+    try {
+      expect(await ensureThumbnail(await row(), { force: true })).toBeTruthy();
+    } finally {
+      put.mockRestore();
+    }
+    expect(await row()).toMatchObject({ focal_x: 0, focal_y: 0.5, focal_source: 'manual' });
+    expect(await thumbnailRedness()).toBeLessThan(5);
   });
 
   it('drops the tiers cut before a point was detected', async () => {
