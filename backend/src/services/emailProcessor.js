@@ -1473,6 +1473,14 @@ function isTemporaryAnswer(error) {
   return error?.responseCode >= 400 && error?.responseCode < 500;
 }
 
+// The server or the webhook receiver answered this mail. A connection lost at
+// an unknown stage (MAIL_UNCERTAIN_CODES) carries no answer, so it does not
+// count, and neither does any other failure the transport could not reach.
+function serverAnswered(error) {
+  if (!error?.[TRANSPORT_FAILURE]) return false;
+  return Number.isFinite(error.responseCode) || Number.isFinite(error.responseStatus);
+}
+
 // A 4xx at MAIL FROM says the server is not taking mail at all.
 function isMailOutage(error) {
   if (!error?.[TRANSPORT_FAILURE]) return false;
@@ -1801,7 +1809,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
               ...(waitsBeforeRetry(error) ? { scheduled_at: queueTimestamp(Date.now() + MAIL_OUTAGE_RETRY_MS) } : {}),
               // The server answered, so any outage this mail waited out is over,
               // and a later one gets the full allowance again.
-              ...(email.deferred_since != null && error?.[TRANSPORT_FAILURE] ? { deferred_since: null } : {}),
+              ...(email.deferred_since != null && serverAnswered(error) ? { deferred_since: null } : {}),
             });
         } catch (updateError) {
           logger.error(`Failed to update email retry count for ${email.id}:`, updateError);
