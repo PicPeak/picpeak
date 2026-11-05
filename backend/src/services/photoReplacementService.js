@@ -26,6 +26,7 @@ const { exifColumn } = require('./photoExif');
 const logger = require('../utils/logger');
 const uploadQuota = require('./publicUploadQuota');
 const { claimPromotion } = require('./watchFolderClaims');
+const { focalColumns } = require('../utils/focalPoint');
 
 /**
  * The trailing digit run of a filename stem, e.g. `Smith_Wedding_11234.jpg`
@@ -385,6 +386,10 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       preview_path: null,
       hero_path: null,
       hero_anchor: null,
+      // The point found in the new picture while its thumbnail was cut, or
+      // none: a point found or set on the old one says nothing about it
+      // (issue 2377).
+      ...focalColumns(thumbMeta.focal, 'auto'),
       watermark_path: null,
       watermark_generated_at: null,
       size_bytes: stats.size,

@@ -17,6 +17,7 @@ const { isResourceError, describe: describeImageError } = require('./imageResour
 const { sha256File } = require('./photoDuplicates');
 const mediaAttempts = require('./mediaAttemptService');
 const { refusal: mediaRefusal, isInterruption } = require('./mediaProcessPolicy');
+const { detectedFocalColumns } = require('../utils/focalPoint');
 
 function normalizeFiles(files) {
   // Handle null, undefined, or falsy values
@@ -295,6 +296,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         path: relativePath,
         thumbnail_path: relativeThumbPath,
         thumb_hash: thumbMeta.thumbHash || null,
+        // Detected while the thumbnail was cut (issue 2377).
+        ...detectedFocalColumns(thumbMeta),
         type: photoType,
         size_bytes: actualSize,
         content_sha256: contentSha256,
@@ -806,6 +809,8 @@ async function processPhoto(photoId) {
           if (thumbnailPath) {
             updateData.thumbnail_path = thumbnailPath;
             updateData.thumb_hash = meta.thumbHash || null;
+            // Detected while the thumbnail was cut (issue 2377).
+            Object.assign(updateData, detectedFocalColumns(meta));
           }
         } catch (e) {
           if (isResourceError(e)) throw e;

@@ -61,6 +61,7 @@ import { DEFAULT_MAX_ZOOM_PERCENT } from '../hooks/useFullResolutionZoom';
 import { PhotoPurchaseBadge } from '../../../features/photo-sales/PhotoPurchaseBadge';
 import { PhotoSalesCartButton } from '../../../features/photo-sales/PhotoSalesCartButton';
 import { PhotoPurchaseButton } from '../../../features/photo-sales/PhotoPurchaseButton';
+import { withFocalPosition } from '../../../utils/focalPoint';
 
 const isVideoPhoto = (photo: Photo) => photo.media_type === 'video' || photo.type === 'video';
 
@@ -170,6 +171,8 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         // Important: `.gallery-premium-photo-card.selected img` sets its own
         // opacity and would otherwise undim a hidden photo once selected.
         className={`w-full h-full object-cover${onToggleVisibility && isHiddenFromGuests(photo) ? ' !opacity-40' : ''}`}
+        // Cropped around the photo's focal point (issue 2377).
+        style={withFocalPosition(photo)}
         loading="lazy"
         isGallery={true}
         slug={slug}

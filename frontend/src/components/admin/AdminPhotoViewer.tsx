@@ -1,6 +1,6 @@
 import { usePhotoSelection } from '../../hooks/usePhotoSelection';
 import React, { useEffect, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, Euro, ThumbsUp, ThumbsDown, Pencil, Image as ImageIcon } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, Euro, ThumbsUp, ThumbsDown, Pencil, Image as ImageIcon, Crosshair } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -12,6 +12,7 @@ import { pushDialogLayer } from '../common/Modal';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { AdminAuthenticatedVideo } from './AdminAuthenticatedVideo';
 import { VideoPosterPicker, formatPosterOffset } from './VideoPosterPicker';
+import { PhotoFocalPointEditor } from './PhotoFocalPointEditor';
 import { ImageAnnotationOverlay } from '../gallery/annotation/ImageAnnotationOverlay';
 import { parseAnnotation } from '../../utils/photoAnnotation';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -98,6 +99,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   const categoryMenuModal = useModal();
   const commentsModal = useModal();
   const posterModal = useModal();
+  const focalModal = useModal();
   // Picking a frame is photos.edit; a reader still sees which frame it is.
   const canEditPhotos = usePermission('photos.edit');
   const queryClient = useQueryClient();
@@ -214,6 +216,13 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   // grid behind the viewer too. The viewer stays open on the video.
   const handlePosterChanged = () => {
     toast.success(t('admin.photos.poster.saved'));
+    queryClient.invalidateQueries({ queryKey: ['admin-event-photos'] });
+  };
+
+  // A moved focal point (issue 2377): the rows carry a thumbnail URL that
+  // names the point, so refetching them shows the new crop in the grid.
+  const handleFocalPointChanged = () => {
+    toast.success(t('admin.photos.focalPoint.saved'));
     queryClient.invalidateQueries({ queryKey: ['admin-event-photos'] });
   };
 
@@ -651,6 +660,42 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                   eventId={eventId}
                   photoId={currentPhoto.id}
                   onChanged={handlePosterChanged}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Where crops keep the subject (issue 2377) */}
+          {!isVideo && (
+            <div className="mb-6" data-testid="admin-viewer-focal-point">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-neutral-400 text-sm flex items-center gap-1">
+                  <Crosshair className="w-4 h-4" />
+                  {t('admin.photos.focalPoint.label')}
+                </span>
+                {canEditPhotos && (
+                  <button
+                    onClick={focalModal.open}
+                    className="text-xs text-accent hover:text-accent-dark"
+                  >
+                    {t('admin.photos.focalPoint.choose')}
+                  </button>
+                )}
+              </div>
+              <p className="text-white">
+                {currentPhoto.focal_source === 'manual'
+                  ? t('admin.photos.focalPoint.isManual')
+                  : currentPhoto.focal_point
+                    ? t('admin.photos.focalPoint.isAuto')
+                    : t('admin.photos.focalPoint.isCentre')}
+              </p>
+              {canEditPhotos && (
+                <PhotoFocalPointEditor
+                  open={focalModal.isOpen}
+                  onClose={focalModal.close}
+                  eventId={eventId}
+                  photo={currentPhoto}
+                  onChanged={handleFocalPointChanged}
                 />
               )}
             </div>

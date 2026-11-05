@@ -160,9 +160,9 @@ router.get('/events/:eventId/feedback',
         // hand out the parsed structure only.
         // thumbnail_url is versioned like the photo grid's (issue 2276); the
         // columns that version it stay out of the payload.
-        feedback: feedback.map(({ processing_error, poster_offset_seconds, ...row }) => ({
+        feedback: feedback.map(({ processing_error, poster_offset_seconds, focal_x, focal_y, ...row }) => ({
           ...withParsedAnnotation(row),
-          thumbnail_url: adminThumbnailUrl(eventId, { id: row.photo_id, processing_error, poster_offset_seconds }),
+          thumbnail_url: adminThumbnailUrl(eventId, { id: row.photo_id, processing_error, poster_offset_seconds, focal_x, focal_y }),
         })),
         pagination: {
           page: parseInt(page),

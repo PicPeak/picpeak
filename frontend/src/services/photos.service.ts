@@ -14,6 +14,9 @@ export interface AdminPhoto {
   thumbnail_url: string | null;
   // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
   thumb_hash?: string | null;
+  // Oriented dimensions; null when they were never read.
+  width?: number | null;
+  height?: number | null;
   type: string;
   category_id: number | string | null;
   category_name: string | null;
@@ -86,6 +89,10 @@ export interface AdminPhoto {
   // Seconds into a video its preview image is taken (issue 2263); null: the
   // default frame.
   poster_offset_seconds?: number | null;
+  // Where crops keep the subject (issue 2377), 0..1 fractions of the photo;
+  // null: the centre. 'auto' was detected, 'manual' set by an admin.
+  focal_point?: { x: number; y: number } | null;
+  focal_source?: 'auto' | 'manual' | null;
 }
 
 /** Frames offered as a video's preview image, taken on request. */
@@ -384,6 +391,16 @@ class PhotosService {
     offsetSeconds: number | null
   ): Promise<{ poster_offset_seconds: number | null; thumbnail_url: string }> {
     const response = await api.put(`/admin/photos/${eventId}/photos/${photoId}/poster`, { offset_seconds: offsetSeconds });
+    return response.data;
+  }
+
+  /** Sets where a photo's crops keep its subject (issue 2377); null: back to the detected point. */
+  async setFocalPoint(
+    eventId: number,
+    photoId: number,
+    focalPoint: { x: number; y: number } | null
+  ): Promise<{ focal_point: { x: number; y: number } | null; focal_source: 'auto' | 'manual' | null; thumbnail_url: string }> {
+    const response = await api.put(`/admin/photos/${eventId}/photos/${photoId}/focal-point`, { focal_point: focalPoint });
     return response.data;
   }
 

@@ -26,6 +26,16 @@ function posterVersionStale(photo, asked) {
   const current = photo.poster_offset_seconds != null ? String(photo.poster_offset_seconds) : '';
   return (typeof asked === 'string' ? asked : '') !== current;
 }
+
+// Whether a photo thumbnail request names another focal point than the row
+// has (issue 2377): `fp` as galleryQueryService writes it, absent for none.
+// An older listing then gets the current crop uncached, or its URL would
+// show that crop once the point came back to the value the URL names.
+function focalVersionStale(photo, asked) {
+  const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
+  if (isVideo) return false;
+  return `fp=${typeof asked === 'string' ? asked : ''}` !== (focalQuery(photo) || 'fp=');
+}
 const secureImageService = require('../../services/secureImageService');
 const logger = require('../../utils/logger');
 const { pipeStreamToResponse, answerVanished } = require('../../utils/streamResponse');
@@ -36,6 +46,7 @@ const { isPhotoHiddenFromViewer, isPhotoProcessed, livePhotos } = require('../..
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../../services/imageProcessor');
 const { isStorageUnavailableError, isStorageNotFoundError } = require('../../services/storage/storageErrors');
 const { heroQueryRedirect } = require('../../utils/heroAnchor');
+const { focalQuery } = require('../../utils/focalPoint');
 const { getStorage } = require('../../services/storage');
 const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
@@ -941,7 +952,8 @@ router.get('/:slug/thumbnail/:photoId',
         // naming another pick than the row's (an older photo list) gets the
         // current poster uncached, or that URL would show the wrong frame
         // once the pick came back to it.
-        'Cache-Control': posterVersionStale(photo, req.query.poster) ? 'no-store' : 'private, max-age=1800', // Reduced cache time
+        'Cache-Control': posterVersionStale(photo, req.query.poster) || focalVersionStale(photo, req.query.fp)
+          ? 'no-store' : 'private, max-age=1800', // Reduced cache time
         'Cross-Origin-Resource-Policy': 'cross-origin',
         'X-Content-Type-Options': 'nosniff',
         'X-Protected-Thumbnail': 'true',

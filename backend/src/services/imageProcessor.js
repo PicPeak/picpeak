@@ -10,6 +10,7 @@ const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { heroAnchorPoint, normalizeHeroAnchor, heroRenditionName } = require('../utils/heroAnchor');
+const { FOCAL_COLUMNS, focalPointOf, normalizeFocalPoint, focalColumns, sameFocalPoint, focalCoverWindow } = require('../utils/focalPoint');
 const { AsyncLocalStorage } = require('async_hooks');
 const mediaProcesses = require('./mediaProcessService');
 const rawWork = new AsyncLocalStorage();
@@ -763,6 +764,55 @@ const contentTypeFor = (format) => {
   return 'image/jpeg';
 };
 
+// The long side, in pixels, of the copy the attention pass below looks at:
+// enough to place a subject in a thumbnail, and one shrink-on-load decode.
+const FOCAL_DETECTION_SIZE = 256;
+
+/**
+ * Where the subject of a photo is (issue 2377), as `{ x, y }` fractions of
+ * the oriented image, or null when none was found.
+ *
+ * sharp's attention strategy, which looks for skin tones, saturation and
+ * luminance edges, reports the centre of the region it would keep as
+ * `attentionX`/`attentionY`, in the coordinates of the image scaled to cover
+ * the box, before the crop. Run on a decoded copy, not the file: on a JPEG
+ * the coordinates come back in the scale of libvips' shrink-on-load instead,
+ * which is not the one the resize reports. A box of the source's own shape
+ * crops nothing and reports nothing, hence the half-height box for a square
+ * one. Nothing found comes back as 0/0, which is no subject, not the
+ * top-left corner.
+ *
+ * Never throws: a photo without a point is cropped at the centre, as before,
+ * and its upload must not fail over it.
+ */
+async function detectFocalPoint(imagePath, { interactive } = {}) {
+  try {
+    const small = await sharp(imagePath, {
+      interactive, limitInputPixels: 268402689, sequentialRead: true, failOn: 'none',
+    }).rotate()
+      .resize(FOCAL_DETECTION_SIZE, FOCAL_DETECTION_SIZE, { fit: 'inside', withoutEnlargement: true })
+      .png()
+      .toBuffer({ resolveWithObject: true });
+    const { width, height } = small.info || {};
+    if (!width || !height) return null;
+    const boxWidth = Math.min(width, height);
+    const boxHeight = width === height ? Math.floor(boxWidth / 2) : boxWidth;
+    const { info } = await sharp(small.data, { interactive })
+      .resize(boxWidth, boxHeight, { fit: 'cover', position: 'attention' })
+      .toBuffer({ resolveWithObject: true });
+    const { attentionX, attentionY } = info || {};
+    if (!Number.isFinite(attentionX) || !Number.isFinite(attentionY) || (attentionX === 0 && attentionY === 0)) return null;
+    // The box is no larger than the copy, so the cover scale is 1.
+    return normalizeFocalPoint({
+      x: Math.min(1, Math.max(0, attentionX / width)),
+      y: Math.min(1, Math.max(0, attentionY / height)),
+    });
+  } catch (error) {
+    logger.warn(`Could not detect the focal point of ${path.basename(imagePath)}; cropping at the centre: ${error && error.message}`);
+    return null;
+  }
+}
+
 /**
  * Generate a thumbnail from a local source image path. The output is written
  * to the storage backend (local fs or S3) under `thumbnails/thumb_<filename>`
@@ -779,6 +829,12 @@ const contentTypeFor = (format) => {
  *
  * options.meta — an object that receives `thumbHash`, the placeholder hash of
  * the thumbnail just written (or null), for photos.thumb_hash.
+ *
+ * options.focal — the photo's focal point (issue 2377, utils/focalPoint), or
+ * null for none: a cover crop keeps it in view instead of the centre. Left
+ * out by a caller that passes `meta` (it writes the photo row), the point is
+ * detected here first and handed back as `meta.focal`, null when none could
+ * be found.
  */
 async function generateThumbnail(imagePath, options = {}) {
   const sourceBasename = path.basename(imagePath);
@@ -868,7 +924,25 @@ async function generateThumbnail(imagePath, options = {}) {
     // with object-cover, so every tier must be cropped the same way or the
     // browser would swap between differently-framed images as the viewport
     // changes.
-    sharpInstance = sharpInstance.resize(options.width || settings.width, options.height || settings.height, {
+    //
+    // A cover crop is cut around the focal point (issue 2377): sharp's
+    // `position` takes gravities, not a point, so the window is cut out
+    // first and the resize below then only scales it (as generateHeroImage
+    // does). No point — every photo from before 348 — keeps the centre crop,
+    // byte for byte. Oriented dimensions: .rotate() above runs first.
+    let focal = options.focal;
+    if (focal === undefined && options.meta) {
+      focal = await detectFocalPoint(imagePath, { interactive: options.interactive });
+      options.meta.focal = focal;
+    }
+    const boxWidth = options.width || settings.width;
+    const boxHeight = options.height || settings.height;
+    const { width: orientedWidth, height: orientedHeight } = orientedDimensions(metadata);
+    const focalWindow = settings.fit === 'cover'
+      ? focalCoverWindow(orientedWidth, orientedHeight, boxWidth, boxHeight, focal)
+      : null;
+    if (focalWindow) sharpInstance = sharpInstance.extract(focalWindow);
+    sharpInstance = sharpInstance.resize(boxWidth, boxHeight, {
       withoutEnlargement: true,
       fit: settings.fit,
       position: 'center'
@@ -1266,6 +1340,21 @@ function videoPlaceholderImage() {
   return videoPlaceholderBytes;
 }
 
+/**
+ * The focal point columns of a photo (issue 2377): the row itself when its
+ * select carried them, otherwise read. Null when they cannot be read, which
+ * renders at the centre and records nothing.
+ */
+async function storedFocal(photo) {
+  if (FOCAL_COLUMNS.every((column) => column in photo)) return photo;
+  try {
+    return (await db('photos').where('id', photo.id).first(FOCAL_COLUMNS)) || null;
+  } catch (e) {
+    logger.warn(`Could not read the focal point of photo ${photo.id}: ${e.message}`);
+    return null;
+  }
+}
+
 async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false, retried = false, strictVideoFrame = false, posterOffsetSeconds } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
@@ -1327,6 +1416,12 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   let posterOffsetUsed;
   // Receives the placeholder hash of whatever thumbnail gets written.
   const meta = {};
+  // The focal point the crop follows (issue 2377). None stored yet (a photo
+  // from before 348, or reset to automatic): left undefined, so
+  // generateThumbnail detects one, and it is recorded with the thumbnail.
+  const stored = isVideoPhoto(photo) ? null : await storedFocal(photo);
+  let focal = null;
+  if (stored) focal = stored.focal_source ? focalPointOf(stored) : undefined;
   if (isVideoPhoto(photo)) {
     // A video's thumbnail is a poster frame, not a Sharp resize of the stored
     // file (#1414). Without this branch the generic path below hands the mp4
@@ -1364,7 +1459,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     // permanently rather than being repaired on the next view.
     const proc = await withProcessableImage(localPath, sourceBasename);
     try {
-      newThumbnailPath = await generateThumbnail(proc.path, { regenerate: true, outputBasename, meta, settings, stillCurrent });
+      newThumbnailPath = await generateThumbnail(proc.path, { regenerate: true, outputBasename, meta, settings, stillCurrent, focal });
     } finally {
       await proc.cleanup();
     }
@@ -1384,7 +1479,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
         // Named after a random download on remote storage, unless a RAW's
         // own name replaces it.
         if (!proc.outputBasename && getStorage().kind() !== 'local') ownKey = true;
-        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(name), meta, settings, stillCurrent });
+        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(name), meta, settings, stillCurrent, focal });
       } finally {
         await proc.cleanup();
       }
@@ -1421,7 +1516,13 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
       // A picked frame lands with its poster: listings never name a frame
       // (in the thumbnail URL) that the stored poster does not show yet.
       ...(isVideoPhoto(photo) && posterOffsetSeconds !== undefined ? { poster_offset_seconds: posterOffsetSeconds } : {}),
+      // A detected point lands with the crop it shaped, as a picked frame
+      // does: listings name it in the thumbnail URL.
+      ...(meta.focal ? focalColumns(meta.focal, 'auto') : {}),
     }, (query) => {
+      // Never over a point an admin set while this rendered: the manual
+      // route renders its own crop.
+      if (meta.focal) query = query.whereNull('focal_source');
       // A rebuild at the row's pick is recorded only while that is still the
       // pick: singleFlight orders rebuilds within one process, not across
       // replicas, and a pick saved elsewhere meanwhile must not be lost
@@ -2195,7 +2296,7 @@ async function keepTierIfCurrent(photo, key, keysOf, shapeIsCurrent) {
     // its tiers had under an earlier version, and a tier cut while the row
     // still had that version may be of bytes since replaced (issue 2059).
     if (current && keysOf(current).includes(key) && sourceVersion(current) === sourceVersion(photo)
-        && (!shapeIsCurrent || await shapeIsCurrent())) return key;
+        && (!shapeIsCurrent || await shapeIsCurrent(current))) return key;
   } catch (e) {
     logger.warn(`Could not check whether tier ${key} is current; keeping it: ${e.message}`);
     return key;
@@ -2313,6 +2414,12 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
   // canonical next to a 600x600 tier are two different crops, so the photo
   // would visibly reframe as the tile size changes.
   const height = Math.round(width * (settings.height / canonicalWidth));
+  // Cropped around the same focal point as the canonical one (issue 2377),
+  // and kept only while that is still the row's: a tier key carries no
+  // point, so one cut before an admin moved it would be served for good.
+  const stored = await storedFocal(photo);
+  const focal = focalPointOf(stored);
+  const shapeIsCurrent = async (current) => sameFocalPoint(current, stored) && thumbnailSettingsUnchanged(settings);
 
   try {
     // NOT `regenerate: true` (#1128). This path is only reached on a cache
@@ -2334,8 +2441,8 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
       // than being repaired on the next view.
       const proc = await withProcessableImage(localPath, photo.external_relpath || photo.filename);
       try {
-        return await keepTierIfCurrent(photo, await generateThumbnail(proc.path, { outputBasename, width, height, settings, interactive: true }),
-          thumbnailTierKeys, () => thumbnailSettingsUnchanged(settings));
+        return await keepTierIfCurrent(photo, await generateThumbnail(proc.path, { outputBasename, width, height, settings, interactive: true, focal }),
+          thumbnailTierKeys, shapeIsCurrent);
       } finally {
         await proc.cleanup();
       }
@@ -2345,11 +2452,11 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
     return await keepTierIfCurrent(photo, await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
-        return await generateThumbnail(proc.path, { outputBasename, width, height, settings, interactive: true });
+        return await generateThumbnail(proc.path, { outputBasename, width, height, settings, interactive: true, focal });
       } finally {
         await proc.cleanup();
       }
-    }), thumbnailTierKeys, () => thumbnailSettingsUnchanged(settings));
+    }), thumbnailTierKeys, shapeIsCurrent);
   } catch (e) {
     logger.warn(`Thumbnail tier w${width} failed for photo ${photo.id}: ${e.message}`);
     // \"Not now\" goes to the caller (503); an image over the limits falls back
@@ -2734,6 +2841,7 @@ module.exports = {
   resizeToBox,
   RESIZE_PRESERVES_FORMAT,
   generateThumbnail,
+  detectFocalPoint,
   isThumbnailValid,
   ensureThumbnail,
   queueVideoThumbnail,

@@ -85,6 +85,7 @@ const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
 const { recordSingleDownload } = require('../../services/apiDownloadNotifications');
 const { parseResolution } = require('../../utils/downloadResolutions');
 const { renderPhotoForDownload, isVideo } = require('../../services/downloadRendition');
+const { detectedFocalColumns } = require('../../utils/focalPoint');
 
 const router = express.Router();
 
@@ -781,6 +782,8 @@ async function handleV1PhotoUpload(req, res) {
       path: relPath,
       thumbnail_path: thumbRel,
       thumb_hash: thumbMeta.thumbHash || null,
+      // Detected while the thumbnail was cut (issue 2377).
+      ...detectedFocalColumns(thumbMeta),
       type: photoType,
       category_id: folderId ? null : categoryId,
       folder_id: folderId,

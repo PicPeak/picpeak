@@ -11,6 +11,7 @@ import { PhotoLightbox } from './PhotoLightbox';
 import { Button, AuthenticatedImage } from '../common';
 import { analyticsService } from '../../services/analytics.service';
 import { hasVideoItems, selectLabel } from '../../utils/mediaCounts';
+import { withFocalPosition } from '../../utils/focalPoint';
 
 interface PhotoGridProps {
   photos: Photo[];
@@ -267,6 +268,8 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
             src={photo.thumbnail_url || photo.url}
             alt={photo.filename}
             className="w-full h-full object-cover rounded-lg transition-transform duration-200 group-hover:scale-105"
+            // Cropped around the photo's focal point (issue 2377).
+            style={withFocalPosition(photo)}
             loading="lazy"
             isGallery={true}
             slug={slug}

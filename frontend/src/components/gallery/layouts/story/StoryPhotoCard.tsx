@@ -10,6 +10,7 @@ import type { Photo } from '../../../../types';
 import { lightboxImageUrl } from '../../imageTiers';
 import { TileImage } from '../../TileImage';
 import { usePhotoLabels } from '../../PhotoLabels';
+import { withFocalPosition } from '../../../../utils/focalPoint';
 
 interface StoryPhotoCardProps {
   photo: Photo;
@@ -185,6 +186,9 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           className={`w-full h-full object-cover transition-all duration-700 ease-out will-change-transform ${
             !isLoaded ? 'opacity-0 scale-110' : 'opacity-100 scale-100'
           }`}
+          // Cropped around the photo's focal point (issue 2377). Not when
+          // letterboxed: object-position would push the whole photo aside.
+          style={fit === 'cover' ? withFocalPosition(photo) : undefined}
           isGallery={true}
           slug={slug}
         />

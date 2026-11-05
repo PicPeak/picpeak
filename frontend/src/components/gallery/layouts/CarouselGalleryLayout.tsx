@@ -17,6 +17,7 @@ import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { downloadLimitReachedMessage } from '../../../utils/downloadLimit';
 import { usePhotoDownloadPending, preparingDownloadMessage } from '../../../hooks/usePhotoDownloadPending';
+import { withFocalPosition } from '../../../utils/focalPoint';
 
 export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   photos,
@@ -339,6 +340,8 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                   // (issue 1992). On the image, so hover's opacity-100 on the
                   // button does not undo it.
                   className={`w-full h-full object-cover${isClient && onToggleVisibility && isHiddenFromGuests(photo) ? ' opacity-40' : ''}`}
+                  // Cropped around the photo's focal point (issue 2377).
+                  style={withFocalPosition(photo)}
                   loading="lazy"
                   isGallery={true}
                 />

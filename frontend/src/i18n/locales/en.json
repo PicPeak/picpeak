@@ -5168,6 +5168,20 @@
         "saved": "Preview image updated",
         "saveError": "The preview image could not be updated"
       },
+      "focalPoint": {
+        "label": "Crop focus",
+        "choose": "Adjust",
+        "title": "Adjust the crop focus",
+        "description": "Gallery tiles that crop this photo keep this point in view.",
+        "current": "Current",
+        "isAuto": "Detected automatically",
+        "isManual": "Set by hand",
+        "isCentre": "Centre",
+        "hint": "Click the photo where its subject is. Use automatic goes back to the point detected on upload.",
+        "useAuto": "Use automatic",
+        "saved": "Crop focus updated",
+        "saveError": "The crop focus could not be updated"
+      },
       "approvedBy": "Approved: {{value}}",
       "rejectedBy": "Rejected: {{value}}",
       "deleteOneConfirm": "Delete \"{{name}}\"? The photo is removed from the gallery for good. This cannot be undone.",
