@@ -330,6 +330,15 @@ describe('telling an outage from a failure about the mail', () => {
     await expect(transport.send(MAIL)).rejects.toMatchObject({ code: 'EWEBHOOK_UNAVAILABLE' });
   });
 
+  it.each([[400, 400], [500, 500], [502, undefined], [504, undefined]])(
+    'marks a %i as the receiver\'s answer only when the receiver gave it',
+    async (status, responseStatus) => {
+      axios.post.mockResolvedValue({ status, data: streamOf('') });
+      const error = await transport.send(MAIL).catch((e) => e);
+      expect(error.responseStatus).toBe(responseStatus);
+    },
+  );
+
   it.each([[400], [500], [502], [504]])('leaves a %i answer to the attempt cap', async (status) => {
     axios.post.mockResolvedValue({ status, data: streamOf('') });
     const error = await transport.send(MAIL).catch((e) => e);
