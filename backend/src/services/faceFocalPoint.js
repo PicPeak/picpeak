@@ -5,9 +5,9 @@
  *
  * sharp's attention pass guesses from skin tones, saturation and edges, and a
  * busy background or a group can pull it off the people. Where the scan
- * found faces, the crop keeps them: the point is the middle of the box around
- * every face at least a quarter the size of the largest one, so a guest far
- * behind the couple does not move it. Face boxes are in the oriented
+ * found faces, the crop keeps them: the box around every face at least a
+ * quarter the size of the largest one (a guest far behind the couple does
+ * not count) is centred in the crop, as far as the crop's slack allows. Face boxes are in the oriented
  * original's pixels (faceProcessor scales them), as photos.width/height are.
  *
  * A scan that finds faces cuts the thumbnail again around them, unless an
@@ -21,6 +21,27 @@ const { normalizeFocalPoint } = require('../utils/focalPoint');
 
 // A face smaller than this share of the largest one does not pull the point.
 const MIN_AREA_SHARE = 0.25;
+
+const clamp = (value) => Math.min(1, Math.max(0, value));
+
+/**
+ * The point along one side of `length` for faces spanning `from`..`to`.
+ * The point places a crop the way object-position does (utils/focalPoint):
+ * a fraction of the slack, not the window's middle. So the faces' middle is
+ * not passed as it is: for an off-centre group that window would cut off
+ * the outer face. The point is the one that centres the faces in a square
+ * window (`side`, the default thumbnail's shape), moved as little as needed
+ * to keep every face in it where they fit. Without slack (the square already
+ * spans this side) the faces' middle stands for the other window shapes.
+ */
+function placeOn(length, side, from, to) {
+  const slack = length - side;
+  if (slack <= 0) return clamp((from + to) / 2 / length);
+  const centred = ((from + to) / 2 - side / 2) / slack;
+  const lowest = (to - side) / slack;
+  const highest = from / slack;
+  return clamp(lowest <= highest ? Math.min(highest, Math.max(lowest, centred)) : centred);
+}
 
 /** `{ x, y }` fractions from a photo's faces, or null without any. Never throws. */
 async function faceFocalPoint(photoId) {
@@ -45,8 +66,8 @@ async function faceFocalPoint(photoId) {
     const top = Math.min(...kept.map((face) => face.y));
     const right = Math.max(...kept.map((face) => face.x + face.w));
     const bottom = Math.max(...kept.map((face) => face.y + face.h));
-    const clamp = (value) => Math.min(1, Math.max(0, value));
-    return normalizeFocalPoint({ x: clamp((left + right) / 2 / width), y: clamp((top + bottom) / 2 / height) });
+    const side = Math.min(width, height);
+    return normalizeFocalPoint({ x: placeOn(width, side, left, right), y: placeOn(height, side, top, bottom) });
   } catch (error) {
     logger.warn(`Could not read the faces of photo ${photoId} for its focal point: ${error.message}`);
     return null;

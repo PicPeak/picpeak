@@ -67,8 +67,11 @@ async function addFaces(photoId) {
   });
   await db('photo_faces').insert([face(100, 200, 120, 120), face(300, 220, 100, 100), face(1000, 250, 20, 20)]);
 }
-// The middle of the two large faces: x 100..400, y 200..320.
-const FACES_POINT = { x: 0.208, y: 0.433 };
+// The two large faces span x 100..400, y 200..320. A square crop of the
+// 1200x600 photo is 600 wide: centring them would start it left of the
+// edge, so it starts at the edge (x 0). It spans the height, so y is their
+// middle.
+const FACES_POINT = { x: 0, y: 0.433 };
 
 beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
@@ -149,6 +152,28 @@ describe('a focal point from faces', () => {
       put.mockRestore();
     }
     expect(await row(id)).toMatchObject({ focal_x: FACES_POINT.x, focal_y: FACES_POINT.y, focal_source: 'auto' });
+  });
+
+  it('keeps an off-centre group whole in the square crop', async () => {
+    const { faceFocalPoint } = require('../../src/services/faceFocalPoint');
+    const { focalCoverWindow } = require('../../src/utils/focalPoint');
+    const id = await insertPhoto();
+    const face = (x) => ({
+      photo_id: id, event_id: eventId, bbox_x: x, bbox_y: 200, bbox_w: 120, bbox_h: 120, created_at: new Date().toISOString(),
+    });
+    // Their middle (x 0.25) would place the square at 150..750 and cut off
+    // the face at 0..120.
+    await db('photo_faces').insert([face(0), face(480)]);
+    const point = await faceFocalPoint(id);
+    const crop = focalCoverWindow(1200, 600, 300, 300, point);
+    expect(crop.left).toBeLessThanOrEqual(0);
+    expect(crop.left + crop.width).toBeGreaterThanOrEqual(600);
+    // A pair off to the right, the other way.
+    await db('photo_faces').where({ photo_id: id }).del();
+    await db('photo_faces').insert([face(700), face(1080)]);
+    const right = focalCoverWindow(1200, 600, 300, 300, await faceFocalPoint(id));
+    expect(right.left).toBeLessThanOrEqual(700);
+    expect(right.left + right.width).toBeGreaterThanOrEqual(1200);
   });
 
   it('leaves faces that do not fit the stored size to sharp', async () => {
