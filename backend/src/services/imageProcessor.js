@@ -1460,8 +1460,11 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // A redetect that keeps the point, set by hand or already where the faces
   // put it (below), has nothing to cut. Decided on the row read in this
   // flight: a scan whose faces agree with a point an older scan's rebuild is
-  // about to replace runs after that rebuild, and cuts again.
+  // about to replace runs after that rebuild, and cuts again. Never on the
+  // retry below: that one exists because this render may have overwritten a
+  // shared key with a crop around another point.
   const unchanged = async () => {
+    if (retried) return null;
     const current = await db('photos').where('id', photo.id).first('thumbnail_path');
     return current?.thumbnail_path && await isThumbnailValid(current.thumbnail_path) ? current.thumbnail_path : null;
   };

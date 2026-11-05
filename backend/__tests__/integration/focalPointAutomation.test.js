@@ -193,6 +193,34 @@ describe('a focal point from faces', () => {
     expect(await row(id)).toMatchObject({ focal_x: FACES_POINT.x, focal_y: FACES_POINT.y, focal_source: 'auto' });
   });
 
+  it('a point set by hand while a redetect writes gets its own crop back', async () => {
+    const storage = require('../../src/services/storage').getStorage();
+    const { ensureThumbnail } = require('../../src/services/imageProcessor');
+    const id = await insertPhoto({ focal_x: 0.5, focal_y: 0.5, focal_source: 'auto' });
+    // A thumbnail under the key every render of this photo writes.
+    expect(await ensureThumbnail(await row(id), { force: true })).toBeTruthy();
+    await addFaces(id);
+    const original = storage.put.bind(storage);
+    let saved = false;
+    // The admin saves the red block while the redetect's crop around the
+    // faces is being written over the shared key.
+    const put = jest.spyOn(storage, 'put').mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (!saved) {
+        saved = true;
+        await db('photos').where({ id }).update({ focal_x: 0.9, focal_y: 0.5, focal_source: 'manual' });
+      }
+      return result;
+    });
+    try {
+      expect(await ensureThumbnail(await row(id), { force: true, focalPoint: { redetect: true } })).toBeTruthy();
+    } finally {
+      put.mockRestore();
+    }
+    expect(await row(id)).toMatchObject({ focal_x: 0.9, focal_y: 0.5, focal_source: 'manual' });
+    expect(await thumbnailRedness(id)).toBeGreaterThan(20);
+  });
+
   it('back to automatic takes the faces over sharp\'s guess', async () => {
     const { ensureThumbnail } = require('../../src/services/imageProcessor');
     const id = await insertPhoto({ focal_x: 0.9, focal_y: 0.5, focal_source: 'manual' });
