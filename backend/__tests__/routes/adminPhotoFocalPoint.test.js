@@ -256,6 +256,15 @@ describe('a point lands with its crop', () => {
     expect(fs.existsSync(path.join(process.env.STORAGE_PATH, old))).toBe(false);
   });
 
+  it('never deletes the original a legacy row names as its thumbnail', async () => {
+    // Rows from before rendition columns were checked can point at the original.
+    const original = 'events/active/focal-pick/couple.jpg';
+    await db('photos').where({ id: photoId }).update({ thumbnail_path: original });
+    expect((await setFocal(photoId, { focal_point: { x: 0.4, y: 0.5 } })).status).toBe(200);
+    expect((await row()).thumbnail_path).not.toBe(original);
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, original))).toBe(true);
+  });
+
   it('drops the tiers cut before a point was detected', async () => {
     const { ensureThumbnail, thumbnailTierKeys } = require('../../src/services/imageProcessor');
     await db('photos').where({ id: photoId }).update({ focal_x: null, focal_y: null, focal_source: null });

@@ -1588,7 +1588,9 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
         : query.where('poster_offset_seconds', posterOffsetUsed);
     })) return null;
 
-    if (replaced && replaced !== newThumbnailPath
+    // Only a key in the thumbnail namespace: a legacy row can point its
+    // thumbnail column at the original, and that is no authority to delete it.
+    if (replaced && replaced !== newThumbnailPath && require('./galleryAssetPolicy').isPresentationRenditionKey(replaced, 'thumbnail')
       && !(await db('photos').where('thumbnail_path', replaced).first('id'))) {
       await getStorage().delete(replaced).catch(() => {});
     }
