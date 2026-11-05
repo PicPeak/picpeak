@@ -12600,8 +12600,8 @@
       "saved": "Saved",
       "noGifts": "No gifts",
       "noGiftsHint": "Keeps this customer off every gift list.",
-      "startDate": "Anniversaries count from",
-      "startDateHint": "Leave empty to use the first paid invoice."
+      "startDate": "Milestones count from",
+      "startDateHint": "Only the year counts. Leave empty to use the first paid invoice."
     },
     "milestoneBadge_one": "{{count}} year",
     "milestoneBadge_other": "{{count}} years",

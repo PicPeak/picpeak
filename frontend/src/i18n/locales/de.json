@@ -12567,7 +12567,7 @@
       "noGifts": "Keine Geschenke",
       "noGiftsHint": "Nimmt diesen Kunden aus allen Geschenklisten.",
       "startDate": "Jubiläen zählen ab",
-      "startDateHint": "Leer lassen, um die erste bezahlte Rechnung zu verwenden."
+      "startDateHint": "Nur das Jahr zählt. Leer lassen, um die erste bezahlte Rechnung zu verwenden."
     },
     "milestoneBadge_one": "{{count}} Jahr",
     "milestoneBadge_other": "{{count}} Jahre",

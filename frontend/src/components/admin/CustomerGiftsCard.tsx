@@ -116,8 +116,8 @@ export const CustomerGiftsCard: React.FC<CustomerGiftsCardProps> = ({ customerId
           <div className="flex items-end gap-2">
             <div className="flex-1 min-w-0">
               <LocalizedDateInput
-                label={t('gifts.customer.startDate', 'Anniversaries count from')}
-                helperText={t('gifts.customer.startDateHint', 'Leave empty to use the first paid invoice.')}
+                label={t('gifts.customer.startDate', 'Milestones count from')}
+                helperText={t('gifts.customer.startDateHint', 'Only the year counts. Leave empty to use the first paid invoice.')}
                 value={startDate}
                 onChange={setStartDate}
               />
