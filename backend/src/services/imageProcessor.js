@@ -10,7 +10,7 @@ const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { heroAnchorPoint, normalizeHeroAnchor, heroRenditionName } = require('../utils/heroAnchor');
-const { FOCAL_COLUMNS, focalPointOf, normalizeFocalPoint, focalColumns, sameFocalPoint, sameFocalColumns, focalCoverWindow } = require('../utils/focalPoint');
+const { FOCAL_COLUMNS, focalPointOf, normalizeFocalPoint, focalColumns, sameFocalPoint, sameFocalColumns, focalCoverWindow, focalQuery } = require('../utils/focalPoint');
 const { AsyncLocalStorage } = require('async_hooks');
 const mediaProcesses = require('./mediaProcessService');
 const rawWork = new AsyncLocalStorage();
@@ -58,6 +58,10 @@ const sizeVersion = photo => (isExternalSource(photo) && photo.size_bytes != nul
 const sourceVersion = photo => (sizeVersion(photo) && photo.source_mtime_ms != null
   ? `${sizeVersion(photo)}m${photo.source_mtime_ms}` : sizeVersion(photo));
 const versionTag = photo => (sourceVersion(photo) ? `v${sourceVersion(photo)}_` : '');
+// A thumbnail tier is cut around the row's focal point (issue 2377), so the
+// point is in its key: the listing names a moved point in the URL as soon as
+// the row has it, and a tier of the old point must not be found under it.
+const focalTag = photo => (focalQuery(photo) ? `${focalQuery(photo).replace('fp=', 'f')}_` : '');
 // The tags this source's tiers carried under an earlier key scheme: none
 // (before the version), and the size alone (before the mtime). Still found
 // for cleanup; see the lookups for which of them they trust.
@@ -1586,11 +1590,11 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
       && !(await db('photos').where('thumbnail_path', replaced).first('id'))) {
       await getStorage().delete(replaced).catch(() => {});
     }
-    // A tier's key carries no point, so one cut around the point this
-    // replaced would be served for good: a tier landing after the row
-    // changed drops itself (keepTierIfCurrent), these go now.
+    // The tiers of the point this replaced are no longer looked up (their
+    // key names it), so they go now rather than stay in storage for good;
+    // one landing after the row changed drops itself (keepTierIfCurrent).
     if (stored && !sameFocalColumns({ ...stored, ...focalWrite }, stored)) {
-      await deleteThumbnailTiers(photo).catch((e) => {
+      await deleteThumbnailTiers({ ...photo, ...stored }).catch((e) => {
         logger.warn(`Could not drop the thumbnail tiers of photo ${photo.id} after its focal point changed: ${e.message}`);
       });
     }
@@ -2333,8 +2337,9 @@ function thumbnailTierKeys(photo) {
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
-  const outputBasename = `p${photo.id}_${versionTag(photo)}${sourceBasename}`;
-  const basenames = boundedDerivative(photo) ? [cacheBasename(photo, outputBasename), outputBasename] : [outputBasename];
+  // The untagged name too: tiers cut before the row had a point.
+  const names = [...new Set([`p${photo.id}_${versionTag(photo)}${focalTag(photo)}${sourceBasename}`, `p${photo.id}_${versionTag(photo)}${sourceBasename}`])];
+  const basenames = names.flatMap(name => (boundedDerivative(photo) ? [cacheBasename(photo, name), name] : [name]));
   // Tiers written under an earlier version scheme (none, or the size alone).
   for (const legacyTag of legacyVersionTags(photo)) {
     const unversioned = `p${photo.id}_${legacyTag}${sourceBasename}`;
@@ -2386,6 +2391,8 @@ async function thumbnailSettingsUnchanged(settings) {
 
 async function deleteThumbnailTiers(photo, options) {
   photo = await withSourceVersion(photo);
+  // The keys carry the focal point: a caller's row without it is read.
+  if (!FOCAL_COLUMNS.every((column) => column in photo)) photo = { ...photo, ...(await storedFocal(photo)) };
   await deleteTierKeys(photo, thumbnailTierKeys(photo), 'thumbnail', options);
 }
 
@@ -2452,12 +2459,19 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
-  const outputBasename = derivativeBasename(`p${photo.id}_${versionTag(photo)}${sourceBasename}`, { cache: true });
+  // Cropped around the same focal point as the canonical one (issue 2377),
+  // under a key that names it (focalTag), and kept only while that is still
+  // the row's.
+  const stored = await storedFocal(photo);
+  const focal = focalPointOf(stored);
+  const shapeIsCurrent = async (current) => sameFocalPoint(current, stored) && thumbnailSettingsUnchanged(settings);
+  const outputBasename = derivativeBasename(`p${photo.id}_${versionTag(photo)}${focalTag(stored)}${sourceBasename}`, { cache: true });
   const key = path.posix.join('thumbnails', `thumb_w${width}_${outputBasename}`);
   // A tier written under an earlier version scheme (none, or the size
   // alone) is still this source's (an in-place edit deletes it along with
-  // the versioned ones). A scoped (RAW/video) tier never trusts such a key.
-  const legacyKeys = derivativeContext.getStore() ? [] : legacyVersionTags(photo)
+  // the versioned ones). A scoped (RAW/video) tier never trusts such a key,
+  // and none is trusted for a point: those were all cut around the centre.
+  const legacyKeys = derivativeContext.getStore() || focal ? [] : legacyVersionTags(photo)
     .map(tag => path.posix.join('thumbnails', `thumb_w${width}_p${photo.id}_${tag}${sourceBasename}`));
 
   for (const candidate of [key, ...legacyKeys]) {
@@ -2476,12 +2490,6 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
   // canonical next to a 600x600 tier are two different crops, so the photo
   // would visibly reframe as the tile size changes.
   const height = Math.round(width * (settings.height / canonicalWidth));
-  // Cropped around the same focal point as the canonical one (issue 2377),
-  // and kept only while that is still the row's: a tier key carries no
-  // point, so one cut before an admin moved it would be served for good.
-  const stored = await storedFocal(photo);
-  const focal = focalPointOf(stored);
-  const shapeIsCurrent = async (current) => sameFocalPoint(current, stored) && thumbnailSettingsUnchanged(settings);
 
   try {
     // NOT `regenerate: true` (#1128). This path is only reached on a cache
@@ -2888,6 +2896,7 @@ async function resizeToBox(inputBuffer, box, options = {}) {
 }
 
 module.exports = {
+  getThumbnailSettings,
   orientedDimensions,
   hasOrientationTransform,
   ensurePreviewImageAtWidth,

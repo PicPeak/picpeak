@@ -214,7 +214,9 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
         // A RAW photo's tier keys are scoped by its processing attempt
         // (imageProcessor's derivativeCacheId): without it the sweep derives
         // other keys and the old tiers stay served (issue 2113).
-        'processing_attempt_id'
+        'processing_attempt_id',
+        // A tier's key names the photo's focal point (issue 2377).
+        'focal_x', 'focal_y', 'focal_source'
       );
     if (eventId) {
       query = query.where('event_id', eventId);

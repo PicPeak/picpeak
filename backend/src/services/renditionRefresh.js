@@ -75,6 +75,8 @@ const PHOTO_COLUMNS = [
   'thumbnail_path', 'preview_path', 'hero_path', 'hero_anchor',
   'source_origin', 'external_relpath', 'filename', 'size_bytes', 'source_mtime_ms', 'source_filename',
   'rendition_version',
+  // A thumbnail tier's key names the focal point (issue 2377).
+  'focal_x', 'focal_y', 'focal_source',
 ];
 
 const needsRefresh = (photo) => photo != null && photo.rendition_version != null

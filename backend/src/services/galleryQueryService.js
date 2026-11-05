@@ -155,6 +155,13 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // The gallery's own text is drawn there too, so changing it is a new URL.
       ? `wm=ev${watermarkSettings?.text ? watermarkService.versionTag(watermarkSettings) : ''}` : '');
 
+  // A contain thumbnail is the whole photo padded to the box, so a point of
+  // the photo is not the same fraction of it (issue 2377): object-position
+  // would push the photo aside and show the padding. Such installs keep the
+  // centre everywhere, as before focal points.
+  const { getThumbnailSettings } = require('./imageProcessor');
+  const focalApplies = (await getThumbnailSettings()).fit !== 'contain';
+
   // Build the query with sorting
   const sortOrder = order === 'asc' ? 'asc' : 'desc';
   const isClient = accessLevel === 'client';
@@ -902,8 +909,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // Where a crop keeps the photo's subject (issue 2377), as fractions
         // of the image; null: the centre. The layouts apply it as CSS
         // object-position to any rendition (utils/focalPoint says why the
-        // cover-cropped thumbnail needs no other value). Videos have none.
-        focal_point: isVideo ? null : focalPointOf(photo),
+        // cover-cropped thumbnail needs no other value). Videos have none, nor
+        // does any photo under a contain thumbnail (focalApplies).
+        focal_point: isVideo || !focalApplies ? null : focalPointOf(photo),
         // EXIF capture date
         captured_at: toIso(photo.captured_at) || null,
         // Camera details (issue 1733, D1), only when the gallery shows them

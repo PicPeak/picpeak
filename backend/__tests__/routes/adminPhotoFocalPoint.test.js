@@ -258,6 +258,45 @@ describe('a point lands with its crop', () => {
   });
 });
 
+describe('responsive tiers and the gallery listing', () => {
+  const tierRedness = async (key) => {
+    const { channels } = await sharp(fs.readFileSync(path.join(process.env.STORAGE_PATH, key))).stats();
+    return channels[0].mean - channels[1].mean;
+  };
+  const gallery = async () => require('../../src/services/galleryQueryService').getGalleryPhotos({
+    event: await db('events').where({ id: eventId }).first(), slug: 'focal-pick',
+    query: {}, identity: { guestIdentifier: 'x' }, accessLevel: 'guest',
+  });
+  const setFit = async (fit) => {
+    await db('app_settings').where({ setting_key: 'thumbnail_fit' }).del();
+    await db('app_settings').insert({ setting_key: 'thumbnail_fit', setting_value: JSON.stringify(fit), setting_type: 'general' });
+  };
+
+  it('never finds a tier of the old point once the row has the new one', async () => {
+    const { ensureThumbnailAtWidth } = require('../../src/services/imageProcessor');
+    await db('photos').where({ id: photoId }).update({ focal_x: 1, focal_y: 0.5, focal_source: 'manual' });
+    const old = await ensureThumbnailAtWidth(await row(), 600);
+    expect(await tierRedness(old)).toBeGreaterThan(20);
+    // Published, its old tiers not deleted yet: a listing already names the
+    // left edge in the URL, so the tier it gets must be cut there.
+    await db('photos').where({ id: photoId }).update({ focal_x: 0, focal_y: 0.5, focal_source: 'manual' });
+    const current = await ensureThumbnailAtWidth(await row(), 600);
+    expect(current).not.toBe(old);
+    expect(await tierRedness(current)).toBeLessThan(5);
+  });
+
+  it('names the point to the gallery, except under a contain thumbnail', async () => {
+    const photo = async () => (await gallery()).photos.find((p) => p.id === photoId);
+    expect((await photo()).focal_point).toEqual({ x: 0, y: 0.5 });
+    await setFit('contain');
+    try {
+      expect((await photo()).focal_point).toBeNull();
+    } finally {
+      await setFit('cover');
+    }
+  });
+});
+
 describe('a saved point is not lost', () => {
   it('a save whose snapshot predates another save still applies', async () => {
     const { ensureThumbnail } = require('../../src/services/imageProcessor');
