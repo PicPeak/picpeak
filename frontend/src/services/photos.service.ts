@@ -404,6 +404,12 @@ class PhotosService {
     return response.data;
   }
 
+  /** Detects the focal point of every photo in a gallery again, points set by hand excepted (issue 2377). */
+  async redetectFocalPoints(eventId: number): Promise<{ queued: number }> {
+    const response = await api.post(`/admin/photos/${eventId}/photos/focal-points/redetect`);
+    return response.data;
+  }
+
   async deletePhoto(eventId: number, photoId: number): Promise<PhotoDeleteResult> {
     const response = await api.delete(`/admin/events/${eventId}/photos/${photoId}`);
     return response.data;

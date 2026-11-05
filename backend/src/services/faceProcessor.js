@@ -363,6 +363,11 @@ async function processPhotoFaces(claimed) {
     throw err;
   }
 
+  // The crop follows the faces (issue 2377), unless an admin set the point.
+  // After the commit, like the categories below: a rebuild that fails costs
+  // the crop, not the faces.
+  if (faces.length) await require('./faceFocalPoint').refocusFromFaces(photo);
+
   // Auto-categories (#1074 phase 3) run as a distinct step AFTER detection,
   // outside the transaction: they are a convenience, and a rule-engine
   // failure must never roll back the faces we just paid the sidecar for.
