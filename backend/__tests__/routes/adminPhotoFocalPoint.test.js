@@ -244,6 +244,18 @@ describe('a point lands with its crop', () => {
     expect(await thumbnailRedness()).toBeLessThan(5);
   });
 
+  it('deletes the thumbnail a save replaced under another key', async () => {
+    // On S3 every rebuild of a managed photo writes a new key: the row names
+    // one the rebuild does not write to.
+    const { thumbnail_path: current } = await row();
+    const old = 'thumbnails/thumb_superseded-couple.jpg';
+    fs.copyFileSync(path.join(process.env.STORAGE_PATH, current), path.join(process.env.STORAGE_PATH, old));
+    await db('photos').where({ id: photoId }).update({ thumbnail_path: old });
+    expect((await setFocal(photoId, { focal_point: { x: 0.3, y: 0.5 } })).status).toBe(200);
+    expect((await row()).thumbnail_path).not.toBe(old);
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, old))).toBe(false);
+  });
+
   it('drops the tiers cut before a point was detected', async () => {
     const { ensureThumbnail, thumbnailTierKeys } = require('../../src/services/imageProcessor');
     await db('photos').where({ id: photoId }).update({ focal_x: null, focal_y: null, focal_source: null });

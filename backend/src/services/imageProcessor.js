@@ -1547,10 +1547,6 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   }
 
   if (newThumbnailPath) {
-    // A picked frame replaces whatever poster the row names at this point,
-    // read inside the flight: picks of one photo rebuild one after the
-    // other, so a snapshot taken before the rebuild would name a poster an
-    // earlier pick has already replaced, and leave that one behind.
     // The requested point (automatic: the detected one, or none), or a point
     // detected for a row that had none.
     let focalWrite = {};
@@ -1559,7 +1555,13 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     } else if (meta.focal) {
       focalWrite = focalColumns(meta.focal, 'auto');
     }
-    const replaced = posterOffsetSeconds !== undefined && isVideoPhoto(photo)
+    // A picked frame replaces whatever poster the row names at this point,
+    // read inside the flight: picks of one photo rebuild one after the
+    // other, so a snapshot taken before the rebuild would name a poster an
+    // earlier pick has already replaced, and leave that one behind. A saved
+    // focal point the same: on S3 each rebuild of a managed photo writes a
+    // new key, so every save would strand the thumbnail it replaced.
+    const replaced = (posterOffsetSeconds !== undefined && isVideoPhoto(photo)) || focalPoint
       ? (await db('photos').where('id', photo.id).first('thumbnail_path'))?.thumbnail_path
       : null;
     if (!await publishPhotoDerivative(photo, newThumbnailPath, {
