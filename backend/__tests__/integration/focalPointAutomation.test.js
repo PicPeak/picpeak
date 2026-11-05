@@ -166,11 +166,31 @@ describe('a focal point from faces', () => {
     const { ensureThumbnail } = require('../../src/services/imageProcessor');
     const id = await insertPhoto({ focal_x: 0.9, focal_y: 0.5, focal_source: 'manual' });
     await addFaces(id);
-    expect(await refocusFromFaces(await row(id))).toBe(false);
+    const storage = require('../../src/services/storage').getStorage();
+    const { ensureThumbnail: cut } = require('../../src/services/imageProcessor');
+    expect(await cut(await row(id), { force: true })).toBeTruthy();
+    const put = jest.spyOn(storage, 'put');
+    try {
+      // Kept, and nothing is cut for it.
+      expect(await refocusFromFaces(await row(id))).toBe(true);
+      expect(put).not.toHaveBeenCalled();
+    } finally {
+      put.mockRestore();
+    }
     const snapshot = { ...(await row(id)), focal_x: 0.5, focal_y: 0.5, focal_source: 'auto' };
     expect(await ensureThumbnail(snapshot, { force: true, focalPoint: { redetect: true } })).toBeTruthy();
     expect(await row(id)).toMatchObject({ focal_x: 0.9, focal_y: 0.5, focal_source: 'manual' });
     expect(await thumbnailRedness(id)).toBeGreaterThan(20);
+  });
+
+  it('a scan read while the point was manual follows the faces once it is automatic again', async () => {
+    const id = await insertPhoto({ focal_x: 0.9, focal_y: 0.5, focal_source: 'manual' });
+    const readByTheScan = await row(id);
+    // The admin goes back to automatic while the scan runs.
+    await db('photos').where({ id }).update({ focal_x: 0.8, focal_y: 0.5, focal_source: 'auto' });
+    await addFaces(id);
+    expect(await refocusFromFaces(readByTheScan)).toBe(true);
+    expect(await row(id)).toMatchObject({ focal_x: FACES_POINT.x, focal_y: FACES_POINT.y, focal_source: 'auto' });
   });
 
   it('back to automatic takes the faces over sharp\'s guess', async () => {

@@ -55,14 +55,14 @@ async function faceFocalPoint(photoId) {
 
 /**
  * After a face scan: cut the thumbnail again around the faces, unless the
- * row's point is already on them. A point set by hand stays; the rebuild
- * checks that again on the row it reads. Never throws: the faces are stored
- * either way.
+ * row's point is already on them or was set by hand. Never throws: the
+ * faces are stored either way.
  */
 async function refocusFromFaces(photo) {
-  if (!photo || photo.focal_source === 'manual') return false;
-  // Whether the point already sits on the faces is decided in the rebuild's
-  // flight, after any rebuild of an older scan still running.
+  if (!photo) return false;
+  // Whether the point is manual, or already sits on the faces, is decided in
+  // the rebuild's flight on the row read there: the caller's row predates the
+  // scan, and an admin may have gone back to automatic meanwhile.
   if (!(await faceFocalPoint(photo.id))) return false;
   try {
     const { ensureThumbnail } = require('./imageProcessor');

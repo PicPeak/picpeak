@@ -1457,6 +1457,18 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     if (focalPoint.redetect) focal = keepsManual ? focalPointOf(stored) : undefined;
     else focal = focalPoint.point || undefined;
   }
+  // A redetect that keeps the point, set by hand or already where the faces
+  // put it (below), has nothing to cut. Decided on the row read in this
+  // flight: a scan whose faces agree with a point an older scan's rebuild is
+  // about to replace runs after that rebuild, and cuts again.
+  const unchanged = async () => {
+    const current = await db('photos').where('id', photo.id).first('thumbnail_path');
+    return current?.thumbnail_path && await isThumbnailValid(current.thumbnail_path) ? current.thumbnail_path : null;
+  };
+  if (keepsManual) {
+    const kept = await unchanged();
+    if (kept) return kept;
+  }
   // Faces the scan found are where the subject is: their middle is the
   // point, and sharp's guess only stands in for a photo without any.
   if (focal === undefined && stored) {
@@ -1464,13 +1476,9 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     if (fromFaces) {
       focal = fromFaces;
       meta.focal = fromFaces;
-      // A redetect that lands on the row's own automatic point has nothing to
-      // cut. Compared here, inside the flight, on the row read in it: a scan
-      // whose faces agree with a point an older scan's rebuild is about to
-      // replace runs after that rebuild, and cuts again.
       if (focalPoint?.redetect && stored.focal_source === 'auto' && sameFocalPoint(stored, focalColumns(fromFaces, 'auto'))) {
-        const current = await db('photos').where('id', photo.id).first('thumbnail_path');
-        if (current?.thumbnail_path && await isThumbnailValid(current.thumbnail_path)) return current.thumbnail_path;
+        const kept = await unchanged();
+        if (kept) return kept;
       }
     }
   }
