@@ -5,6 +5,10 @@
  * database so every boundary can be tested on its own. All dates are
  * 'YYYY-MM-DD' strings. A booking is one deal: installments of a job count
  * once, and an invoice without a deal counts as its own booking.
+ *
+ * Milestones count calendar years, with the start year as year 1: a customer
+ * who started in 2022 reaches 5 years in 2026, on their first payment that
+ * year, or on 31 December when that year has none.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -63,11 +67,20 @@ function toBookings(payments) {
   return [...byKey.values()].sort((a, b) => a.firstPaidOn.localeCompare(b.firstPaidOn));
 }
 
+/** The first payment in the milestone's calendar year, or that year's last day without one. */
+function milestoneDate(startDate, years, payments) {
+  const year = String(Number(startDate.slice(0, 4)) + years - 1);
+  return payments.reduce(
+    (first, { paidOn }) => (paidOn.startsWith(`${year}-`) && paidOn < first ? paidOn : first),
+    `${year}-12-31`,
+  );
+}
+
 /** The latest milestone reached by `today`; earlier ones don't carry over. */
-function latestMilestone(startDate, today, milestoneYears) {
+function latestMilestone(startDate, today, milestoneYears, payments = []) {
   let latest = null;
   for (const years of [...milestoneYears].sort((a, b) => a - b)) {
-    const date = addYears(startDate, years);
+    const date = milestoneDate(startDate, years, payments);
     if (date <= today) latest = { years, date };
   }
   return latest;
@@ -104,7 +117,7 @@ function evaluate({ payments, startDateOverride = null, today, rules = DEFAULT_R
   const startDate = startDateOverride || firstPaidOn;
   if (!startDate) return { state: 'none' };
 
-  const milestone = latestMilestone(startDate, today, rules.milestoneYears);
+  const milestone = latestMilestone(startDate, today, rules.milestoneYears, payments);
   if (!milestone) return { state: 'none', startDate };
 
   const graceEnd = addDays(milestone.date, rules.graceDays);
@@ -141,5 +154,5 @@ function evaluate({ payments, startDateOverride = null, today, rules = DEFAULT_R
 }
 
 module.exports = {
-  DAY_MS, DEFAULT_RULES, addDays, addMonths, addYears, toBookings, latestMilestone, evaluate,
+  DAY_MS, DEFAULT_RULES, addDays, addMonths, addYears, toBookings, milestoneDate, latestMilestone, evaluate,
 };

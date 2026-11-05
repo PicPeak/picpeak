@@ -12599,7 +12599,7 @@
     },
     "rules": {
       "title": "Rules",
-      "hint": "A customer also stays active if their last payment fits their usual gap between bookings.",
+      "hint": "Milestones count calendar years, with the first year as year 1. A customer also stays active if their last payment fits their usual gap between bookings.",
       "milestones": "Milestones (years)",
       "minBookings": "Minimum paid bookings",
       "activityPeriodYears": "Active: within this many years",
@@ -12620,11 +12620,12 @@
       "saved": "Saved",
       "noGifts": "No gifts",
       "noGiftsHint": "Keeps this customer off every gift list.",
-      "startDate": "Anniversaries count from",
-      "startDateHint": "Leave empty to use the first paid invoice."
+      "startDate": "Milestones count from",
+      "startDateHint": "Only the year counts. Leave empty to use the first paid invoice."
     },
     "milestoneBadge_one": "{{count}} year",
     "milestoneBadge_other": "{{count}} years",
+    "reachedOn": "Reached {{date}}",
     "lowStock_one": "{{count}} gift due, {{stock}} in stock.",
     "lowStock_other": "{{count}} gifts due, {{stock}} in stock."
   }

@@ -285,6 +285,33 @@ describe('mail server outage', () => {
     expect(await row(id)).toMatchObject({ retry_count: 1, deferred_since: null });
   });
 
+  it('reads a webhook receiver\'s refusal as an answer', async () => {
+    await endOutage();
+    const id = await queueMail();
+    await db('email_queue').where({ id }).update({ deferred_since: daysAgo(1) });
+    send.mockRejectedValue(Object.assign(new Error('email webhook returned 500'), { responseStatus: 500 }));
+    await run();
+    expect(await row(id)).toMatchObject({ retry_count: 1, deferred_since: null });
+  });
+
+  // A connection lost at an unknown stage spends an attempt, but nothing
+  // answered: the outage the mail waited out may still be going on.
+  it.each(['ETIMEDOUT', 'ESOCKET', 'ECONNECTION', 'ECONNRESET'])(
+    'keeps the deferral start after a lost connection (%s)',
+    async (code) => {
+      await endOutage();
+      const id = await queueMail();
+      const since = daysAgo(1);
+      await db('email_queue').where({ id }).update({ deferred_since: since });
+      send.mockRejectedValue(Object.assign(new Error('connection lost'), { code }));
+      await run();
+      const after = await row(id);
+      expect(after.retry_count).toBe(1);
+      const { toMillis } = require('../../src/utils/queueTimestamps');
+      expect(toMillis(after.deferred_since)).toBe(toMillis(since));
+    },
+  );
+
   it('counts only the mail a pass actually tried', async () => {
     await endOutage();
     await queueMail();

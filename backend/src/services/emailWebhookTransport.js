@@ -277,6 +277,9 @@ async function send(mail) {
 
   if (response.status < 200 || response.status >= 300) {
     const failure = new Error(`email webhook returned ${response.status}`);
+    // The receiver's own answer, which the queue reads like an SMTP reply. A
+    // 502 or 504 is a proxy that lost the receiver, as uncertain as a reset.
+    if (response.status !== 502 && response.status !== 504) failure.responseStatus = response.status;
     // Only the receiver saying it did not take it. A 502 or 504 from a proxy can
     // follow a delivery, so those spend attempts.
     if (response.status === 503 || response.status === 429) failure.code = 'EWEBHOOK_UNAVAILABLE';

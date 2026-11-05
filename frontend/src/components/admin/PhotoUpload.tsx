@@ -8,7 +8,7 @@ import { categoriesService } from '../../services/categories.service';
 import { folderQueryKey, foldersService, MAX_RESOLVE_PATHS } from '../../services/folders.service';
 import { settingsService } from '../../services/settings.service';
 import { useTranslation } from 'react-i18next';
-import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, isAllowedUploadFile } from '../../utils/fileTypes';
+import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, isAllowedUploadFile, isVideoUploadFile } from '../../utils/fileTypes';
 import { useUploadSession, type UploadBatch } from '../../contexts/UploadSessionContext';
 import { collectDroppedEntries, pickedFromInput, type PickedFile } from '../../utils/droppedFiles';
 import { buildUploadPreview, groupFilesByPlacement, hasDirectories, uniqueDirectories } from '../../utils/uploadStructure';
@@ -157,7 +157,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
   const videoUploadsAllowed = allowedMimeTypes.some((type) => type.startsWith('video/'));
 
   const sizeLimitMbFor = (file: File) =>
-    (file.type.startsWith('video/') ? maxVideoSizeMb : maxFileSizeMb);
+    (isVideoUploadFile(file) ? maxVideoSizeMb : maxFileSizeMb);
 
   const remainingSlots = Math.max(maxFilesPerUpload - selectedFiles.length, 0);
   const [isDragOver, setIsDragOver] = useState(false);
