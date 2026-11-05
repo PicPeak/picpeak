@@ -1464,6 +1464,14 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     if (fromFaces) {
       focal = fromFaces;
       meta.focal = fromFaces;
+      // A redetect that lands on the row's own automatic point has nothing to
+      // cut. Compared here, inside the flight, on the row read in it: a scan
+      // whose faces agree with a point an older scan's rebuild is about to
+      // replace runs after that rebuild, and cuts again.
+      if (focalPoint?.redetect && stored.focal_source === 'auto' && sameFocalPoint(stored, focalColumns(fromFaces, 'auto'))) {
+        const current = await db('photos').where('id', photo.id).first('thumbnail_path');
+        if (current?.thumbnail_path && await isThumbnailValid(current.thumbnail_path)) return current.thumbnail_path;
+      }
     }
   }
   // The render is kept only while the row still has the point it read: a

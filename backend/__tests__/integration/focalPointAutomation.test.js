@@ -110,8 +110,56 @@ describe('a focal point from faces', () => {
     expect(await refocusFromFaces(await row(id))).toBe(true);
     expect(await row(id)).toMatchObject({ focal_x: FACES_POINT.x, focal_y: FACES_POINT.y, focal_source: 'auto' });
     expect(await thumbnailRedness(id)).toBeLessThan(5);
-    // Already there: nothing to cut.
-    expect(await refocusFromFaces(await row(id))).toBe(false);
+    // Already there: nothing is cut again.
+    const storage = require('../../src/services/storage').getStorage();
+    const put = jest.spyOn(storage, 'put');
+    try {
+      expect(await refocusFromFaces(await row(id))).toBe(true);
+      expect(put).not.toHaveBeenCalled();
+    } finally {
+      put.mockRestore();
+    }
+  });
+
+  it('a later scan is cut after an older scan\'s rebuild, not skipped against it', async () => {
+    const storage = require('../../src/services/storage').getStorage();
+    const id = await insertPhoto({ focal_x: FACES_POINT.x, focal_y: FACES_POINT.y, focal_source: 'auto' });
+    // Scan A found faces further right; its rebuild stops at the write.
+    await db('photo_faces').insert({
+      photo_id: id, event_id: eventId, bbox_x: 700, bbox_y: 200, bbox_w: 120, bbox_h: 120, created_at: new Date().toISOString(),
+    });
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const original = storage.put.bind(storage);
+    let first = true;
+    const put = jest.spyOn(storage, 'put').mockImplementation(async (...args) => {
+      if (first) { first = false; await gate; }
+      return original(...args);
+    });
+    try {
+      const a = refocusFromFaces(await row(id));
+      await new Promise((resolve) => { setTimeout(resolve, 200); });
+      // Scan B replaced them with faces on the point the row still has.
+      await db('photo_faces').where({ photo_id: id }).del();
+      await addFaces(id);
+      const b = refocusFromFaces(await row(id));
+      release();
+      await Promise.all([a, b]);
+    } finally {
+      put.mockRestore();
+    }
+    expect(await row(id)).toMatchObject({ focal_x: FACES_POINT.x, focal_y: FACES_POINT.y, focal_source: 'auto' });
+  });
+
+  it('leaves faces that do not fit the stored size to sharp', async () => {
+    const { faceFocalPoint } = require('../../src/services/faceFocalPoint');
+    // An EXIF-rotated photo whose size was stored unrotated: boxes scaled
+    // against the wrong width run past the bottom.
+    const id = await insertPhoto();
+    await db('photo_faces').insert({
+      photo_id: id, event_id: eventId, bbox_x: 480, bbox_y: 480, bbox_w: 240, bbox_h: 240, created_at: new Date().toISOString(),
+    });
+    expect(await faceFocalPoint(id)).toBeNull();
   });
 
   it('never moves a point set by hand, even from a snapshot read before it', async () => {

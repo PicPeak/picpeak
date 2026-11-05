@@ -17,7 +17,7 @@
 
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
-const { normalizeFocalPoint, sameFocalPoint } = require('../utils/focalPoint');
+const { normalizeFocalPoint } = require('../utils/focalPoint');
 
 // A face smaller than this share of the largest one does not pull the point.
 const MIN_AREA_SHARE = 0.25;
@@ -34,6 +34,11 @@ async function faceFocalPoint(photoId) {
       .map((face) => ({ x: Number(face.bbox_x), y: Number(face.bbox_y), w: Number(face.bbox_w), h: Number(face.bbox_h) }))
       .filter((face) => [face.x, face.y].every(Number.isFinite) && face.w > 0 && face.h > 0);
     if (!faces.length) return null;
+    // faceProcessor scales the boxes by photos.width over the preview's
+    // width. A row whose dimensions were stored unrotated (before #1185, until
+    // the orientation repair fixes them and scans its faces again) has boxes
+    // that do not fit it; sharp's guess stands in for those.
+    if (faces.some((face) => face.x + face.w > width + 1 || face.y + face.h > height + 1)) return null;
     const largest = Math.max(...faces.map((face) => face.w * face.h));
     const kept = faces.filter((face) => face.w * face.h >= largest * MIN_AREA_SHARE);
     const left = Math.min(...kept.map((face) => face.x));
@@ -49,15 +54,16 @@ async function faceFocalPoint(photoId) {
 }
 
 /**
- * After a face scan: cut the thumbnail again around the faces when they put
- * the point elsewhere than the row has it. A point set by hand stays; the
- * rebuild checks that again on the row it reads. Never throws: the faces are
- * stored either way.
+ * After a face scan: cut the thumbnail again around the faces, unless the
+ * row's point is already on them. A point set by hand stays; the rebuild
+ * checks that again on the row it reads. Never throws: the faces are stored
+ * either way.
  */
 async function refocusFromFaces(photo) {
   if (!photo || photo.focal_source === 'manual') return false;
-  const point = await faceFocalPoint(photo.id);
-  if (!point || sameFocalPoint(photo, { focal_x: point.x, focal_y: point.y })) return false;
+  // Whether the point already sits on the faces is decided in the rebuild's
+  // flight, after any rebuild of an older scan still running.
+  if (!(await faceFocalPoint(photo.id))) return false;
   try {
     const { ensureThumbnail } = require('./imageProcessor');
     return Boolean(await ensureThumbnail(photo, { force: true, focalPoint: { redetect: true } }));

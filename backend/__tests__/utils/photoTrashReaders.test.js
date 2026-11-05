@@ -49,7 +49,7 @@ const ALL_ROWS = {
   'services/focalPointBackfill.js': [2, 'marks a row it walked from a live-photo query by id; waits while the upload pipeline has rows in flight'],
   'services/folderRequestService.js': [4, 'settling a folder request moves trashed photos with the rest'],
   'services/folderTreeService.js': [1, 'deleting a folder moves every photo in it to the parent'],
-  'services/imageProcessor.js': [11,'derivative of a photo in flight; whether another row shares a hero file; the size of a row handed in without it; whether a fresh tier still matches the row; whether a photo is stored under its camera name; the picked poster frame of a video in flight; the poster a frame pick replaces, and whether another row (trashed included) still names it; the focal point of a row handed in without it; whether a row in flight still has the focal point its render read'],
+  'services/imageProcessor.js': [12,'derivative of a photo in flight; whether another row shares a hero file; the size of a row handed in without it; whether a fresh tier still matches the row; whether a photo is stored under its camera name; the picked poster frame of a video in flight; the poster a frame pick replaces, and whether another row (trashed included) still names it; the focal point of a row handed in without it; whether a row in flight still has the focal point its render read; the thumbnail a redetect that changes nothing keeps'],
   'services/mediaAttemptService.js': [11, 'attempts in flight and their recovery, restore-time reset of every row; the claim itself is live only'],
   'services/photoCap.js': [3, 'inserts of new photos'],
   'services/photoCredit.js': [7, 'guest erasure and merge treat trashed photos like any other'],
