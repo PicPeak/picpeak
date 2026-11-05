@@ -34,7 +34,10 @@ vi.mock('react-i18next', async () => {
   return { ...actual, useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) };
 });
 vi.mock('../AdminAuthenticatedImage', () => ({
-  AdminAuthenticatedImage: ({ alt }: { alt: string }) => <img alt={alt} />,
+  // The picker's image too: the src and the object-position it previews.
+  AdminAuthenticatedImage: ({ src, alt, style, onLoad }: {
+    src: string; alt: string; style?: React.CSSProperties; onLoad?: React.ReactEventHandler<HTMLImageElement>;
+  }) => <img src={src} alt={alt} style={style} onLoad={onLoad} data-admin-image="" />,
 }));
 vi.mock('../AdminAuthenticatedVideo', () => ({ AdminAuthenticatedVideo: () => null }));
 vi.mock('../../../services/photos.service', () => ({
@@ -82,6 +85,9 @@ describe('PhotoFocalPointEditor', () => {
     const image = screen.getByRole('img', { name: 'couple.jpg' });
     // The preview tier, never the cover-cropped thumbnail.
     expect(image).toHaveAttribute('src', '/admin/photos/42/preview/7');
+    // Through the admin session: a gallery token left in session storage
+    // would be sent by AuthenticatedImage and refused by the admin route.
+    expect(image).toHaveAttribute('data-admin-image');
     expect(image.style.objectPosition).toBe('80% 40%');
     expect(screen.getByTestId('focal-point-picker').style.aspectRatio).toBe('2');
     expect(screen.getByText('admin.photos.focalPoint.isAuto')).toBeInTheDocument();
@@ -125,6 +131,21 @@ describe('PhotoFocalPointEditor', () => {
     expect(await screen.findByText('The thumbnail could not be cut again around that point')).toBeInTheDocument();
     expect(onChanged).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('takes the shape from the loaded preview when the dimensions are not stored', () => {
+    renderEditor(photo({ width: null, height: null, focal_point: { x: 0.8, y: 0.4 }, focal_source: 'auto' } as Partial<AdminPhoto>));
+    // Until the preview is in, the box is a crop: no point may be saved from it.
+    clickPicker(0.3, 0.3);
+    expect(screen.getByRole('button', { name: 'common.save' })).toBeDisabled();
+
+    const image = screen.getByRole('img', { name: 'couple.jpg' });
+    Object.defineProperty(image, 'naturalWidth', { value: 900 });
+    Object.defineProperty(image, 'naturalHeight', { value: 600 });
+    fireEvent.load(image);
+
+    expect(screen.getByTestId('focal-point-picker').style.aspectRatio).toBe('1.5');
+    expect(screen.getByRole('button', { name: 'common.save' })).toBeEnabled();
   });
 
   it('converts between the picker value and the stored point', () => {

@@ -55,6 +55,11 @@ function sameFocalPoint(a, b) {
   return p === q || (Boolean(p && q) && p.x === q.x && p.y === q.y);
 }
 
+/** The same point from the same source (the three focal columns). */
+function sameFocalColumns(a, b) {
+  return sameFocalPoint(a, b) && (a?.focal_source || null) === (b?.focal_source || null);
+}
+
 /**
  * Query fragment for thumbnail URLs: empty without a point, so existing URLs
  * do not change. The thumbnail routes cache under the URL and a re-cropped
@@ -90,5 +95,5 @@ function focalCoverWindow(width, height, boxWidth, boxHeight, point) {
 
 module.exports = {
   FOCAL_COLUMNS, FOCAL_SOURCES, focalPointOf, normalizeFocalPoint, focalColumns,
-  detectedFocalColumns, sameFocalPoint, focalQuery, focalCoverWindow,
+  detectedFocalColumns, sameFocalPoint, sameFocalColumns, focalQuery, focalCoverWindow,
 };

@@ -10,7 +10,7 @@ const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { heroAnchorPoint, normalizeHeroAnchor, heroRenditionName } = require('../utils/heroAnchor');
-const { FOCAL_COLUMNS, focalPointOf, normalizeFocalPoint, focalColumns, sameFocalPoint, focalCoverWindow } = require('../utils/focalPoint');
+const { FOCAL_COLUMNS, focalPointOf, normalizeFocalPoint, focalColumns, sameFocalPoint, sameFocalColumns, focalCoverWindow } = require('../utils/focalPoint');
 const { AsyncLocalStorage } = require('async_hooks');
 const mediaProcesses = require('./mediaProcessService');
 const rawWork = new AsyncLocalStorage();
@@ -1241,7 +1241,7 @@ async function ownDerivativeName(photo, name) {
 // or an admin picking a frame (issue 2263, item 4). `posterOffsetSeconds`:
 // the frame to take instead of the row's pick (null: the default frame),
 // recorded on the row in the same write as the new poster.
-async function ensureThumbnail(photo, { force = false, boundVideoSource = true, checkSettings = !force, strictVideoFrame = false, posterOffsetSeconds } = {}) {
+async function ensureThumbnail(photo, { force = false, boundVideoSource = true, checkSettings = !force, strictVideoFrame = false, posterOffsetSeconds, focalPoint } = {}) {
   // Check if thumbnail exists and is valid (works for any source).
   if (!force && photo.thumbnail_path) {
     const isValid = await isThumbnailValid(photo.thumbnail_path);
@@ -1252,7 +1252,7 @@ async function ensureThumbnail(photo, { force = false, boundVideoSource = true, 
   }
 
   photo = await withSourceVersion(photo);
-  return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource, lazy: checkSettings, strictVideoFrame, posterOffsetSeconds })), { force });
+  return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource, lazy: checkSettings, strictVideoFrame, posterOffsetSeconds, focalPoint })), { force });
 }
 
 // Video posters rebuilt off the request path (issue 2263). Building one
@@ -1355,7 +1355,15 @@ async function storedFocal(photo) {
   }
 }
 
-async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false, retried = false, strictVideoFrame = false, posterOffsetSeconds } = {}) {
+/** Narrow a photo update to rows whose focal point columns are still `row`'s. */
+function whereFocalColumns(query, row) {
+  for (const column of FOCAL_COLUMNS) {
+    query = row[column] == null ? query.whereNull(column) : query.where(column, row[column]);
+  }
+  return query;
+}
+
+async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false, retried = false, strictVideoFrame = false, posterOffsetSeconds, focalPoint } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
   const event = await db('events').where('id', photo.event_id).first();
@@ -1391,7 +1399,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     ? await getThumbnailSettings({ strict: true }).catch(() => undefined)
     : undefined;
   let settingsChanged = false;
-  const stillCurrent = settings && (async () => {
+  const settingsCurrent = settings && (async () => {
     try {
       if (await thumbnailSettingsUnchanged(settings)) return true;
       logger.info(`Thumbnail settings changed while photo ${photo.id}'s thumbnail was rendered; not keeping it`);
@@ -1422,6 +1430,28 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   const stored = isVideoPhoto(photo) ? null : await storedFocal(photo);
   let focal = null;
   if (stored) focal = stored.focal_source ? focalPointOf(stored) : undefined;
+  // A point the admin asks for (the focal-point route) is not written ahead
+  // of its crop: it lands with the thumbnail cut around it, as a picked
+  // poster frame does, so no listing names it while the old crop is stored.
+  // `point: null` goes back to automatic, detected here.
+  if (focalPoint && !isVideoPhoto(photo)) focal = focalPoint.point || undefined;
+  // The render is kept only while the row still has the point it read: a
+  // point saved meanwhile (another replica, or the admin) renders its own
+  // crop, and this one must not overwrite that thumbnail or land on the row.
+  const focalCurrent = stored && (async () => {
+    try {
+      const current = await db('photos').where('id', photo.id).first(FOCAL_COLUMNS);
+      if (!current || sameFocalColumns(current, stored)) return true;
+      logger.info(`Focal point of photo ${photo.id} changed while its thumbnail was rendered; not keeping it`);
+      return false;
+    } catch (e) {
+      logger.warn(`Could not re-read the focal point of photo ${photo.id}; keeping its thumbnail: ${e.message}`);
+      return true;
+    }
+  });
+  const stillCurrent = (settingsCurrent || focalCurrent) && (async () => (
+    (!settingsCurrent || await settingsCurrent()) && (!focalCurrent || await focalCurrent())
+  ));
   if (isVideoPhoto(photo)) {
     // A video's thumbnail is a poster frame, not a Sharp resize of the stored
     // file (#1414). Without this branch the generic path below hands the mp4
@@ -1506,6 +1536,14 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     // read inside the flight: picks of one photo rebuild one after the
     // other, so a snapshot taken before the rebuild would name a poster an
     // earlier pick has already replaced, and leave that one behind.
+    // The requested point (automatic: the detected one, or none), or a point
+    // detected for a row that had none.
+    let focalWrite = {};
+    if (focalPoint && stored) {
+      focalWrite = focalPoint.point ? focalColumns(focalPoint.point, 'manual') : focalColumns(meta.focal, 'auto');
+    } else if (meta.focal) {
+      focalWrite = focalColumns(meta.focal, 'auto');
+    }
     const replaced = posterOffsetSeconds !== undefined && isVideoPhoto(photo)
       ? (await db('photos').where('id', photo.id).first('thumbnail_path'))?.thumbnail_path
       : null;
@@ -1516,13 +1554,13 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
       // A picked frame lands with its poster: listings never name a frame
       // (in the thumbnail URL) that the stored poster does not show yet.
       ...(isVideoPhoto(photo) && posterOffsetSeconds !== undefined ? { poster_offset_seconds: posterOffsetSeconds } : {}),
-      // A detected point lands with the crop it shaped, as a picked frame
-      // does: listings name it in the thumbnail URL.
-      ...(meta.focal ? focalColumns(meta.focal, 'auto') : {}),
+      // A requested or detected point lands with the crop it shaped, as a
+      // picked frame does: listings name it in the thumbnail URL.
+      ...focalWrite,
     }, (query) => {
-      // Never over a point an admin set while this rendered: the manual
-      // route renders its own crop.
-      if (meta.focal) query = query.whereNull('focal_source');
+      // Only while the row still has the point this render read (see
+      // focalCurrent): never over one saved while it rendered.
+      if (stored) query = whereFocalColumns(query, stored);
       // A rebuild at the row's pick is recorded only while that is still the
       // pick: singleFlight orders rebuilds within one process, not across
       // replicas, and a pick saved elsewhere meanwhile must not be lost
@@ -1537,6 +1575,14 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
       && !(await db('photos').where('thumbnail_path', replaced).first('id'))) {
       await getStorage().delete(replaced).catch(() => {});
     }
+    // A tier's key carries no point, so one cut around the point this
+    // replaced would be served for good: a tier landing after the row
+    // changed drops itself (keepTierIfCurrent), these go now.
+    if (stored && !sameFocalColumns({ ...stored, ...focalWrite }, stored)) {
+      await deleteThumbnailTiers(photo).catch((e) => {
+        logger.warn(`Could not drop the thumbnail tiers of photo ${photo.id} after its focal point changed: ${e.message}`);
+      });
+    }
     logger.info(`Regenerated thumbnail for photo ${photo.id}`);
     return newThumbnailPath;
   }
@@ -1549,7 +1595,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     const current = rewriteShared ? null : await sourceGuard(photo).first('thumbnail_path');
     if (current?.thumbnail_path && current.thumbnail_path !== photo.thumbnail_path
         && await isThumbnailValid(current.thumbnail_path)) return current.thumbnail_path;
-    return regenerateThumbnail(photo, { boundVideoSource, lazy, retried: true, strictVideoFrame, posterOffsetSeconds });
+    return regenerateThumbnail(photo, { boundVideoSource, lazy, retried: true, strictVideoFrame, posterOffsetSeconds, focalPoint });
   }
 
   return null;

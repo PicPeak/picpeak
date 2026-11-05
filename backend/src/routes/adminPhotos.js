@@ -7,7 +7,7 @@ const { livePhotos } = require('../utils/photoVisibility');
 const { RECOVERABLE_PASSWORD_COLUMNS } = require('./adminEvents/helpers');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { ensureThumbnail, deleteThumbnailTiers } = require('../services/imageProcessor');
+const { ensureThumbnail } = require('../services/imageProcessor');
 const { isVideoMimeType } = require('../services/videoProcessor');
 const { acceptedUpload, capabilityEvidence } = require('../usage/capabilityEvidence');
 const { generatePhotoFilename, buildContentDisposition } = require('../utils/filenameSanitizer');
@@ -34,7 +34,7 @@ const {
 } = require('../services/uploadSettings');
 const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { adminThumbnailUrl, adminThumbnailVersion } = require('../utils/adminThumbnailUrl');
-const { focalPointOf, normalizeFocalPoint, focalColumns } = require('../utils/focalPoint');
+const { focalPointOf, normalizeFocalPoint } = require('../utils/focalPoint');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
 const { toIso, toServerWallClock, cameraWallClock } = require('../utils/dateNormalize');
@@ -1771,20 +1771,13 @@ router.put('/:eventId/photos/:photoId/focal-point', adminAuth, requirePermission
       return res.status(409).json({ error: 'The photo is still being processed' });
     }
 
-    // Written ahead of the crop, unlike a poster pick: the thumbnail is cut
-    // from the row's point (a reset leaves none, so the rebuild detects one
-    // and records it with the new crop). The tiers go first, and any tier
-    // still being cut around the old point is dropped when it lands
-    // (keepTierIfCurrent), so none of them is served at the old crop.
-    const columns = focalColumns(point, 'manual');
-    await livePhotos(db).where({ id: photo.id }).update(columns);
-    const updatedPhoto = { ...photo, ...columns };
-    await deleteThumbnailTiers(updatedPhoto);
-    const key = await ensureThumbnail(updatedPhoto, { force: true });
+    // Handed to the rebuild, never written ahead of it: the point lands on
+    // the row with the thumbnail cut around it (a reset: with the point
+    // detected for it), as a poster pick does. A listing read meanwhile names
+    // the old point with the old crop, and a failed or thrown rebuild leaves
+    // both as they were. The rebuild drops the tiers once the row moved.
+    const key = await ensureThumbnail(photo, { force: true, focalPoint: { point } });
     if (!key) {
-      // The point goes back with the crop that stays: the gallery URL names
-      // it, and must not hand out the old crop under the new point.
-      await livePhotos(db).where({ id: photo.id }).update(focalColumns(focalPointOf(photo), photo.focal_source));
       return res.status(422).json({ error: 'The thumbnail could not be cut again around that point' });
     }
     await logActivity('photo_focal_point_updated', {
@@ -1794,7 +1787,7 @@ router.put('/:eventId/photos/:photoId/focal-point', adminAuth, requirePermission
     res.json({
       focal_point: focalPointOf(updated),
       focal_source: updated?.focal_source || null,
-      thumbnail_url: adminThumbnailUrl(req.params.eventId, updated || updatedPhoto),
+      thumbnail_url: adminThumbnailUrl(req.params.eventId, updated || photo),
       thumb_hash: updated?.thumb_hash || null,
     });
   } catch (error) {

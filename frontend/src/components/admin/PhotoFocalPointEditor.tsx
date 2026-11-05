@@ -49,7 +49,17 @@ export const PhotoFocalPointEditor: React.FC<PhotoFocalPointEditorProps> = ({ op
     },
   });
 
-  const aspectRatio = photo.width && photo.height ? photo.width / photo.height : undefined;
+  // The picker shows the whole photo only once it knows the shape: from the
+  // stored dimensions, or the loaded preview when they are missing (a RAW
+  // Sharp could not read). Before that its box is the hero strip, a crop, so
+  // a point picked there would not be the photo's.
+  const [loadedRatio, setLoadedRatio] = useState<number>();
+  useEffect(() => { setLoadedRatio(undefined); }, [photo.id]);
+  const aspectRatio = photo.width && photo.height ? photo.width / photo.height : loadedRatio;
+  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth, naturalHeight } = e.currentTarget;
+    if (naturalWidth && naturalHeight) setLoadedRatio(naturalWidth / naturalHeight);
+  };
   const isManual = photo.focal_source === 'manual';
   const status = isManual
     ? t('admin.photos.focalPoint.isManual')
@@ -83,7 +93,7 @@ export const PhotoFocalPointEditor: React.FC<PhotoFocalPointEditorProps> = ({ op
             variant="primary"
             size="sm"
             onClick={() => save.mutate(parseFocalPointValue(draft))}
-            disabled={(isManual && draft === stored) || save.isPending}
+            disabled={(isManual && draft === stored) || save.isPending || !aspectRatio}
             isLoading={save.isPending && save.variables !== null}
           >
             {t('common.save')}
@@ -103,6 +113,8 @@ export const PhotoFocalPointEditor: React.FC<PhotoFocalPointEditorProps> = ({ op
           aspectRatio={aspectRatio}
           showPresets={false}
           alt={photo.filename}
+          admin
+          onImageLoad={onImageLoad}
         />
         <p className="text-xs text-muted">{t('admin.photos.focalPoint.hint')}</p>
       </div>

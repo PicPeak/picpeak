@@ -169,3 +169,67 @@ describe('PUT focal-point', () => {
     expect((await row()).focal_source).toBe('auto');
   });
 });
+
+describe('a point lands with its crop', () => {
+  const thumbBytes = async () => fs.readFileSync(path.join(process.env.STORAGE_PATH, (await row()).thumbnail_path));
+
+  it('keeps the old point on the row until the new crop is stored', async () => {
+    const storage = require('../../src/services/storage').getStorage();
+    const before = await row();
+    const seen = [];
+    const original = storage.put.bind(storage);
+    const put = jest.spyOn(storage, 'put').mockImplementation(async (...args) => {
+      seen.push(await row());
+      return original(...args);
+    });
+    try {
+      expect((await setFocal(photoId, { focal_point: { x: 0.2, y: 0.5 } })).status).toBe(200);
+    } finally {
+      put.mockRestore();
+    }
+    expect(seen.length).toBeGreaterThan(0);
+    // While the thumbnail was written, listings still named the old point.
+    for (const during of seen) {
+      expect([during.focal_x, during.focal_y, during.focal_source]).toEqual([before.focal_x, before.focal_y, before.focal_source]);
+    }
+    expect(await row()).toMatchObject({ focal_x: 0.2, focal_y: 0.5, focal_source: 'manual' });
+  });
+
+  it('leaves the point and the crop as they were when the rebuild throws', async () => {
+    const before = await row();
+    const bytes = await thumbBytes();
+    const source = path.join(process.env.STORAGE_PATH, 'events/active/focal-pick/couple.jpg');
+    fs.renameSync(source, `${source}.away`);
+    try {
+      expect((await setFocal(photoId, { focal_point: { x: 0.9, y: 0.1 } })).status).not.toBe(200);
+    } finally {
+      fs.renameSync(`${source}.away`, source);
+    }
+    expect(await row()).toMatchObject({ focal_x: before.focal_x, focal_y: before.focal_y, focal_source: before.focal_source });
+    expect((await thumbBytes()).equals(bytes)).toBe(true);
+  });
+
+  it('a render that read an older point neither overwrites the crop nor lands on the row', async () => {
+    const { ensureThumbnail } = require('../../src/services/imageProcessor');
+    const current = await row();
+    const bytes = await thumbBytes();
+    // Read before an admin moved the point (another replica's sweep).
+    const stale = { ...current, focal_x: 1, focal_y: 0.5, focal_source: 'manual' };
+    expect(await ensureThumbnail(stale, { force: true })).toBeNull();
+    expect(await row()).toMatchObject({ focal_x: current.focal_x, focal_y: current.focal_y, focal_source: 'manual' });
+    expect((await thumbBytes()).equals(bytes)).toBe(true);
+  });
+
+  it('drops the tiers cut before a point was detected', async () => {
+    const { ensureThumbnail, thumbnailTierKeys } = require('../../src/services/imageProcessor');
+    await db('photos').where({ id: photoId }).update({ focal_x: null, focal_y: null, focal_source: null });
+    // A centred tier, cut while the row had no point.
+    const tier = path.join(process.env.STORAGE_PATH, thumbnailTierKeys(await row())[1]);
+    fs.mkdirSync(path.dirname(tier), { recursive: true });
+    fs.writeFileSync(tier, 'centred crop');
+
+    expect(await ensureThumbnail(await row(), { force: true })).toBeTruthy();
+    expect((await row()).focal_source).toBe('auto');
+    expect(fs.existsSync(tier)).toBe(false);
+  });
+});

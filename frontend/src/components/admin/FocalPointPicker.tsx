@@ -1,6 +1,7 @@
 import React, { useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AuthenticatedImage, Button } from '../common';
+import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 
 interface FocalPointPickerProps {
   imageUrl: string;
@@ -17,6 +18,12 @@ interface FocalPointPickerProps {
   /** The Top / Center / Bottom shortcuts (default on). */
   showPresets?: boolean;
   alt?: string;
+  /**
+   * Load the image with the admin session only. AuthenticatedImage sends a
+   * gallery token still held in session storage, which an admin route refuses.
+   */
+  admin?: boolean;
+  onImageLoad?: React.ReactEventHandler<HTMLImageElement>;
 }
 
 /** Convert legacy keyword to percentage pair */
@@ -45,6 +52,8 @@ export const FocalPointPicker: React.FC<FocalPointPickerProps> = ({
   aspectRatio,
   showPresets = true,
   alt,
+  admin = false,
+  onImageLoad,
 }) => {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -78,13 +87,23 @@ export const FocalPointPicker: React.FC<FocalPointPickerProps> = ({
         style={aspectRatio ? { aspectRatio, width: `min(100%, calc(60vh * ${aspectRatio}))` } : undefined}
         data-testid="focal-point-picker"
       >
-        <AuthenticatedImage
-          src={imageUrl}
-          alt={alt ?? t('events.heroPreview', 'Hero preview')}
-          className="w-full h-full object-cover pointer-events-none"
-          style={{ objectPosition: `${x}% ${y}%` }}
-          slug={slug}
-        />
+        {admin ? (
+          <AdminAuthenticatedImage
+            src={imageUrl}
+            alt={alt ?? t('events.heroPreview', 'Hero preview')}
+            className="w-full h-full object-cover pointer-events-none"
+            style={{ objectPosition: `${x}% ${y}%` }}
+            onLoad={onImageLoad}
+          />
+        ) : (
+          <AuthenticatedImage
+            src={imageUrl}
+            alt={alt ?? t('events.heroPreview', 'Hero preview')}
+            className="w-full h-full object-cover pointer-events-none"
+            style={{ objectPosition: `${x}% ${y}%` }}
+            slug={slug}
+          />
+        )}
 
         {/* Crosshair marker */}
         <div
