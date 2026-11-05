@@ -1,12 +1,29 @@
 import React, { useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AuthenticatedImage, Button } from '../common';
+import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 
 interface FocalPointPickerProps {
   imageUrl: string;
   currentValue: string;
   onChange: (value: string) => void;
   slug?: string;
+  /**
+   * The image's width / height. Given, the box takes that shape, so the whole
+   * image is shown and a click lands on the point of the image under it — a
+   * photo's focal point (issue 2377). Without it the box is the hero's fixed
+   * strip, which previews the crop itself.
+   */
+  aspectRatio?: number;
+  /** The Top / Center / Bottom shortcuts (default on). */
+  showPresets?: boolean;
+  alt?: string;
+  /**
+   * Load the image with the admin session only. AuthenticatedImage sends a
+   * gallery token still held in session storage, which an admin route refuses.
+   */
+  admin?: boolean;
+  onImageLoad?: React.ReactEventHandler<HTMLImageElement>;
 }
 
 /** Convert legacy keyword to percentage pair */
@@ -32,6 +49,11 @@ export const FocalPointPicker: React.FC<FocalPointPickerProps> = ({
   currentValue,
   onChange,
   slug,
+  aspectRatio,
+  showPresets = true,
+  alt,
+  admin = false,
+  onImageLoad,
 }) => {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -60,15 +82,28 @@ export const FocalPointPicker: React.FC<FocalPointPickerProps> = ({
       <div
         ref={containerRef}
         onClick={handleClick}
-        className="relative w-full h-48 rounded-lg overflow-hidden cursor-crosshair border border-line-strong"
+        className={`relative rounded-lg overflow-hidden cursor-crosshair border border-line-strong ${aspectRatio ? 'mx-auto' : 'w-full h-48'}`}
+        // At most 60% of the viewport high, the width following the shape.
+        style={aspectRatio ? { aspectRatio, width: `min(100%, calc(60vh * ${aspectRatio}))` } : undefined}
+        data-testid="focal-point-picker"
       >
-        <AuthenticatedImage
-          src={imageUrl}
-          alt={t('events.heroPreview', 'Hero preview')}
-          className="w-full h-full object-cover pointer-events-none"
-          style={{ objectPosition: `${x}% ${y}%` }}
-          slug={slug}
-        />
+        {admin ? (
+          <AdminAuthenticatedImage
+            src={imageUrl}
+            alt={alt ?? t('events.heroPreview', 'Hero preview')}
+            className="w-full h-full object-cover pointer-events-none"
+            style={{ objectPosition: `${x}% ${y}%` }}
+            onLoad={onImageLoad}
+          />
+        ) : (
+          <AuthenticatedImage
+            src={imageUrl}
+            alt={alt ?? t('events.heroPreview', 'Hero preview')}
+            className="w-full h-full object-cover pointer-events-none"
+            style={{ objectPosition: `${x}% ${y}%` }}
+            slug={slug}
+          />
+        )}
 
         {/* Crosshair marker */}
         <div
@@ -92,24 +127,26 @@ export const FocalPointPicker: React.FC<FocalPointPickerProps> = ({
       </div>
 
       {/* Preset buttons */}
-      <div className="flex gap-2 mt-2">
-        {presets.map((p) => (
-          <Button
-            key={p.value}
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onChange(p.value)}
-            className={
-              keywordToPercent(currentValue) === p.value
-                ? 'bg-accent-dark/15 border-accent-dark/30 text-accent-dark'
-                : ''
-            }
-          >
-            {p.label}
-          </Button>
-        ))}
-      </div>
+      {showPresets && (
+        <div className="flex gap-2 mt-2">
+          {presets.map((p) => (
+            <Button
+              key={p.value}
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onChange(p.value)}
+              className={
+                keywordToPercent(currentValue) === p.value
+                  ? 'bg-accent-dark/15 border-accent-dark/30 text-accent-dark'
+                  : ''
+              }
+            >
+              {p.label}
+            </Button>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

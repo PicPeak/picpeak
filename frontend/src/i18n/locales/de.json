@@ -5686,6 +5686,20 @@
         "saved": "Vorschaubild aktualisiert",
         "saveError": "Das Vorschaubild konnte nicht aktualisiert werden"
       },
+      "focalPoint": {
+        "label": "Bildausschnitt",
+        "choose": "Anpassen",
+        "title": "Bildausschnitt anpassen",
+        "description": "Galerie-Kacheln, die dieses Foto beschneiden, behalten diesen Punkt im Bild.",
+        "current": "Aktuell",
+        "isAuto": "Automatisch erkannt",
+        "isManual": "Von Hand gesetzt",
+        "isCentre": "Mitte",
+        "hint": "Klicken Sie auf das Motiv im Foto. „Automatisch verwenden“ kehrt zum beim Hochladen erkannten Punkt zurück.",
+        "useAuto": "Automatisch verwenden",
+        "saved": "Bildausschnitt aktualisiert",
+        "saveError": "Der Bildausschnitt konnte nicht aktualisiert werden"
+      },
       "approvedBy": "Freigegeben: {{value}}",
       "rejectedBy": "Abgelehnt: {{value}}",
       "deleteOneConfirm": "„{{name}}“ löschen? Das Foto wird endgültig aus der Galerie entfernt. Das kann nicht rückgängig gemacht werden.",

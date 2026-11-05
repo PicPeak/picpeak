@@ -20,6 +20,7 @@ const { getAllowedExtensions } = require('./uploadSettings');
 const downloadZipService = require('./downloadZipService');
 const { promotionSettled } = require('./watchFolderClaims');
 const { unfinishedKeys } = require('./publicUploadQuota');
+const { detectedFocalColumns } = require('../utils/focalPoint');
 
 const { getStoragePath } = require('../config/storage');
 const WATCH_PATH = () => path.join(getStoragePath(), 'events/active');
@@ -384,6 +385,8 @@ async function processNewPhoto(filePath) {
     path: relativePath,
     thumbnail_path: relativeThumbPath,
     thumb_hash: thumbMeta.thumbHash || null,
+    // Detected while the thumbnail was cut (issue 2377).
+    ...detectedFocalColumns(thumbMeta),
     type: isVideo ? 'video' : photoType,
     // The column defaults to 'image', so a watched video was filed as a
     // photo. Migration 286 corrects the rows imported before this.

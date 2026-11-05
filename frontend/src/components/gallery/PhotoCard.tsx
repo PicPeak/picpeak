@@ -22,6 +22,7 @@ import { useGridDensity } from './gridDensity';
 import { PhotoPurchaseBadge } from '../../features/photo-sales/PhotoPurchaseBadge';
 import { usePhotoSales } from '../../features/photo-sales/PhotoSalesContext';
 import type { Photo } from '../../types';
+import { withFocalPosition } from '../../utils/focalPoint';
 
 export /** Action buttons (36px) + gap + rating pill (28px); below this the row would overlap the buttons. */
 const MIN_TILE_HEIGHT_FOR_RATING_ROW = 104;
@@ -543,7 +544,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {/* Inside the mounted branch on purpose: the blurred placeholder
               (issue 1733) is decoded only for tiles that are mounted, and
               goes with them when the release band lets a tile go. */}
-          <TileImage {...imageProps} src={tileSrc} alt={tileAlt} thumbHash={photo.thumb_hash} />
+          {/* Cropped around the photo's focal point (issue 2377). */}
+          <TileImage {...imageProps} src={tileSrc} alt={tileAlt} thumbHash={photo.thumb_hash} style={withFocalPosition(photo, imageProps.style)} />
 
           {/* The guest's own colour label (#1044) — visible without hovering
               or opening anything, which is the point: the client watches

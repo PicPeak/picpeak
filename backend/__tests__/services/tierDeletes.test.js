@@ -12,8 +12,8 @@ const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
 
-// Managed rows only: withSourceVersion reads the database for external rows
-// alone, so nothing here may reach it.
+// Managed rows with their focal columns only: withSourceVersion reads the
+// database for external rows alone, so nothing here may reach it.
 jest.mock('../../src/database/db', () => ({
   db: () => { throw new Error('unexpected database access in test'); },
 }));
@@ -25,6 +25,9 @@ const logger = require('../../src/utils/logger');
 const RAW_ROW = {
   id: 7101, event_id: 31, source_origin: 'managed',
   path: 'raw-ev/IMG_0001.NEF', filename: 'IMG_0001.NEF', processing_attempt_id: 'attempt-a1',
+  // A thumbnail tier key names the focal point (issue 2377); a row without
+  // the columns is read for them.
+  focal_x: null, focal_y: null, focal_source: null,
 };
 
 describe('tier deletes (issue 2113)', () => {

@@ -617,6 +617,8 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           'photos.size_bytes', 'photos.source_mtime_ms',
           // A RAW row's tier keys are scoped by its processing attempt.
           'photos.processing_attempt_id',
+          // A thumbnail tier's key names the focal point (issue 2377).
+          'photos.focal_x', 'photos.focal_y', 'photos.focal_source',
           // The video branch: which rows are videos, and the date it fills.
           'photos.media_type', 'photos.type', 'photos.mime_type', 'photos.captured_at',
           'events.source_mode', 'events.external_path', 'events.slug'

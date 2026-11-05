@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import type { Photo } from '../../types';
 import { AuthenticatedImage } from '../common';
 import { usePhotoLabels } from './PhotoLabels';
+import { withFocalPosition } from '../../utils/focalPoint';
 
 /** Thumbnails mounted on each side of the open photo. */
 export const FILM_STRIP_REACH = 10;
@@ -132,7 +133,8 @@ export const LightboxFilmStrip: React.FC<LightboxFilmStripProps> = ({
                   src={photo.thumbnail_url}
                   alt=""
                   className="h-full w-full object-cover select-none pointer-events-none"
-                  style={PLACEHOLDER_STYLE}
+                  // Cropped around the photo's focal point (issue 2377).
+                  style={withFocalPosition(photo, PLACEHOLDER_STYLE)}
                   draggable={false}
                   isGallery={true}
                   slug={slug}

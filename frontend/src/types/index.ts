@@ -263,6 +263,10 @@ export interface Photo {
   // thumbnail, painted behind the tile while it loads. Null for photos
   // processed before the column existed and not backfilled.
   thumb_hash?: string | null;
+  // Where crops keep the subject (issue 2377), as 0..1 fractions of the
+  // photo; null: the centre. Applied as object-position by the object-cover
+  // layouts (utils/focalPoint).
+  focal_point?: { x: number; y: number } | null;
   hero_url?: string; // Hero-optimized image URL (1920x1080) for full-width hero sections
   // Lightbox preview URL (#492). Set only when the admin has flipped
   // lightbox_preview_enabled in Settings → Thumbnails. Aspect-preserved

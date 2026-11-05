@@ -17,6 +17,7 @@ const { getUseOriginalFilenames } = require('./downloadFilenameService');
 const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const { resolveHeroLogoVisible, originalNeedsPreview } = require('./galleryModel');
 const { heroAnchorQuery } = require('../utils/heroAnchor');
+const { focalPointOf, focalQuery } = require('../utils/focalPoint');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
 const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
 const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
@@ -153,6 +154,13 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     : (parseBooleanInput(event.watermark_downloads, false)
       // The gallery's own text is drawn there too, so changing it is a new URL.
       ? `wm=ev${watermarkSettings?.text ? watermarkService.versionTag(watermarkSettings) : ''}` : '');
+
+  // A contain thumbnail is the whole photo padded to the box, so a point of
+  // the photo is not the same fraction of it (issue 2377): object-position
+  // would push the photo aside and show the padding. Such installs keep the
+  // centre everywhere, as before focal points.
+  const { getThumbnailSettings } = require('./imageProcessor');
+  const focalApplies = (await getThumbnailSettings()).fit !== 'contain';
 
   // Build the query with sorting
   const sortOrder = order === 'asc' ? 'asc' : 'desc';
@@ -776,9 +784,12 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // The thumbnail route caches for half an hour and a rebuilt poster
       // lands under the same key, so the frame an admin picked for a video
       // (issue 2263, item 4) rides in the URL: a new pick is a new URL.
+      // A photo's crop follows its focal point (issue 2377) under the same
+      // key, so a moved point rides in the URL the same way.
+      const photoFocalQuery = isVideo ? '' : focalQuery(photo);
       const posterQuery = isVideo && photo.poster_offset_seconds != null
         ? `?${[imgQuery, `poster=${photo.poster_offset_seconds}`].filter(Boolean).join('&')}`
-        : wmQuery;
+        : photoFocalQuery ? `?${[imgQuery, photoFocalQuery].filter(Boolean).join('&')}` : wmQuery;
       // The hero crop follows the event's focal point (issue 1737) and the
       // hero route caches for an hour, so a non-centre anchor rides in the
       // URL: a changed anchor is a new URL, not a stale cached crop.
@@ -895,6 +906,12 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         height: photo.height || null,
         // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
         thumb_hash: photo.thumb_hash || null,
+        // Where a crop keeps the photo's subject (issue 2377), as fractions
+        // of the image; null: the centre. The layouts apply it as CSS
+        // object-position to any rendition (utils/focalPoint says why the
+        // cover-cropped thumbnail needs no other value). Videos have none, nor
+        // does any photo under a contain thumbnail (focalApplies).
+        focal_point: isVideo || !focalApplies ? null : focalPointOf(photo),
         // EXIF capture date
         captured_at: toIso(photo.captured_at) || null,
         // Camera details (issue 1733, D1), only when the gallery shows them

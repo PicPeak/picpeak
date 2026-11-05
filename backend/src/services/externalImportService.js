@@ -46,6 +46,7 @@ const { parseBooleanInput } = require('../utils/parsers');
 const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
 const { livePhotos } = require('../utils/photoVisibility');
 const webhookService = require('./webhookService');
+const { focalColumns, detectedFocalColumns } = require('../utils/focalPoint');
 
 /**
  * Where an external file lands (issues 1786 + 1562), from its path relative
@@ -524,6 +525,9 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
       ...exif,
     }),
     thumb_hash: null,
+    // A focal point found or set on the old file (issue 2377) says nothing
+    // about the new one; the new thumbnail detects its own.
+    ...focalColumns(null),
     content_sha256: contentSha256,
     content_sha256_error: null,
   };
@@ -617,7 +621,7 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
       if (thumbnailPath) {
         await db('photos').where(thisVersion)
           .whereNull('thumbnail_path')
-          .update({ thumbnail_path: thumbnailPath, thumb_hash: meta.thumbHash || null });
+          .update({ thumbnail_path: thumbnailPath, thumb_hash: meta.thumbHash || null, ...detectedFocalColumns(meta) });
       }
     } catch (thumbErr) {
       // ensureThumbnail makes it on first view instead.
@@ -1223,7 +1227,7 @@ async function importExternalFolder({
             const meta = {};
             const thumbnailPath = await generateThumbnail(f.full, { outputBasename, meta });
             if (thumbnailPath) {
-              await db('photos').where({ id: photoId }).update({ thumbnail_path: thumbnailPath, thumb_hash: meta.thumbHash || null });
+              await db('photos').where({ id: photoId }).update({ thumbnail_path: thumbnailPath, thumb_hash: meta.thumbHash || null, ...detectedFocalColumns(meta) });
               thumbnailsGenerated++;
             } else {
               thumbnailsFailed++;

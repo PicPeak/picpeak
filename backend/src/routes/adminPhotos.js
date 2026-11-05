@@ -34,6 +34,7 @@ const {
 } = require('../services/uploadSettings');
 const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { adminThumbnailUrl, adminThumbnailVersion } = require('../utils/adminThumbnailUrl');
+const { focalPointOf, normalizeFocalPoint } = require('../utils/focalPoint');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
 const { toIso, toServerWallClock, cameraWallClock } = require('../utils/dateNormalize');
@@ -1746,6 +1747,55 @@ router.put('/:eventId/photos/:photoId/poster', adminAuth, requirePermission('pho
   }
 });
 
+// Set where a photo's crops keep its subject (issue 2377): `{ x, y }`
+// fractions of the image, or `null` to go back to the detected point. The
+// cover-cropped thumbnail and its tiers are cut again around it; the gallery
+// URL names the point, so no browser keeps the old crop.
+router.put('/:eventId/photos/:photoId/focal-point', adminAuth, requirePermission('photos.edit'), requireEventOwnership, async (req, res) => {
+  try {
+    const raw = req.body?.focal_point;
+    const point = raw === null ? null : normalizeFocalPoint(raw);
+    if (raw === undefined || (raw !== null && !point)) {
+      return res.status(400).json({ error: 'focal_point must be { x, y } with both between 0 and 1, or null for the detected point' });
+    }
+    const photo = await livePhotos(db)
+      .where({ id: req.params.photoId, event_id: req.params.eventId })
+      .first();
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    if (photo.media_type === 'video' || isVideoMimeType(photo.mime_type) || photo.type === 'video') {
+      return res.status(400).json({ error: 'A video has no focal point to set' });
+    }
+    if (photo.processing_status === 'pending' || photo.processing_status === 'processing') {
+      return res.status(409).json({ error: 'The photo is still being processed' });
+    }
+
+    // Handed to the rebuild, never written ahead of it: the point lands on
+    // the row with the thumbnail cut around it (a reset: with the point
+    // detected for it), as a poster pick does. A listing read meanwhile names
+    // the old point with the old crop, and a failed or thrown rebuild leaves
+    // both as they were. The rebuild drops the tiers once the row moved.
+    const key = await ensureThumbnail(photo, { force: true, focalPoint: { point } });
+    if (!key) {
+      return res.status(422).json({ error: 'The thumbnail could not be cut again around that point' });
+    }
+    await logActivity('photo_focal_point_updated', {
+      photo_id: photo.id, reset: point === null,
+    }, photo.event_id, { type: 'admin', id: req.admin.id, name: req.admin.username });
+    const updated = await livePhotos(db).where({ id: photo.id }).first();
+    res.json({
+      focal_point: focalPointOf(updated),
+      focal_source: updated?.focal_source || null,
+      thumbnail_url: adminThumbnailUrl(req.params.eventId, updated || photo),
+      thumb_hash: updated?.thumb_hash || null,
+    });
+  } catch (error) {
+    if (answerVanished(res, error, 'Photo file not found')) return;
+    errorResponse(res, error, 500, 'Failed to update the focal point');
+  }
+});
+
 // Download a photo
 router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('photos.download'), requireEventOwnership, async (req, res) => {
   try {
@@ -2151,6 +2201,10 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         height: photo.height || null,
         // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
         thumb_hash: photo.thumb_hash || null,
+        // Where crops keep the subject (issue 2377), and whether an admin
+        // set it ('manual') or it was detected ('auto'); null: the centre.
+        focal_point: isVideoRow(photo) ? null : focalPointOf(photo),
+        focal_source: isVideoRow(photo) ? null : (photo.focal_source || null),
         duration: photo.duration || null,
         size: photo.size_bytes,
         uploaded_at: photo.uploaded_at,
