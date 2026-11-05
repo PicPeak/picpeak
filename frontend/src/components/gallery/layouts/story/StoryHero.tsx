@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { parseISO } from 'date-fns';
 import { ChevronDown } from 'lucide-react';
 import { AuthenticatedImage } from '../../../common';
 import type { Photo } from '../../../../types';
@@ -21,8 +22,10 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
   photo,
   slug,
 }) => {
+  // parseISO: a bare yyyy-MM-dd read by `new Date` is UTC midnight, the day
+  // before west of UTC.
   const formattedDate = date
-    ? new Date(date).toLocaleDateString('en-US', {
+    ? parseISO(date).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
         day: 'numeric'

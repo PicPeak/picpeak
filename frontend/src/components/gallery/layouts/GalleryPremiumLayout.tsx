@@ -13,6 +13,7 @@ import 'yet-another-react-lightbox/plugins/thumbnails.css';
 import { ColorLabelBadge } from '../ColorLabelBadge';
 import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
+import { parseISO } from 'date-fns';
 import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useInView } from 'react-intersection-observer';
@@ -476,7 +477,9 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }
   }, [allowDownloads, filteredPhotos, slug, downloadPhotoMutation]);
 
-  const formattedDate = eventDate ? new Date(eventDate).toLocaleDateString('en-US', {
+  // parseISO: a bare yyyy-MM-dd read by `new Date` is UTC midnight, the day
+  // before west of UTC.
+  const formattedDate = eventDate ? parseISO(eventDate).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
     day: '2-digit'
