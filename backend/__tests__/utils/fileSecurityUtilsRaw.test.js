@@ -64,9 +64,9 @@ describe('validateFileType with camera RAW', () => {
   });
 
   test('leaves ordinary formats exactly as strict as before', () => {
-    // An untyped .jpg was rejected before this change and still is. Only the
-    // RAW set is resolved from its extension.
-    expect(validateFileType('holiday.jpg', UNTYPED, RAW_ALLOWED)).toBe(false);
+    // A type the browser did name is taken at its word. (An untyped .jpg is
+    // named by its extension since issue 2404, see below.)
+    expect(validateFileType('holiday.jpg', 'image/png', RAW_ALLOWED)).toBe(false);
     expect(validateFileType('holiday.jpg', 'image/jpeg', RAW_ALLOWED)).toBe(true);
     expect(validateFileType('clip.mp4', 'video/mp4', ['video/mp4'])).toBe(true);
   });
@@ -76,7 +76,7 @@ describe('validateFileType with camera RAW', () => {
     expect(validateFileType('holiday.jpg', 'image/x-sony-arw', RAW_ALLOWED)).toBe(false);
   });
 
-  test('normalizeUploadMimeType only ever names a RAW type', () => {
+  test('normalizeUploadMimeType names RAW types from the extension', () => {
     expect(normalizeUploadMimeType('DSC01234.ARW', UNTYPED)).toBe('image/x-sony-arw');
     expect(normalizeUploadMimeType('IMG_0001.CR2', OCTET_STREAM)).toBe('image/x-canon-cr2');
     // A generic type on a RAW extension is no more evidence than none at all.
@@ -84,11 +84,27 @@ describe('validateFileType with camera RAW', () => {
     // vendor formats apart not at all, so the extension still decides.
     expect(normalizeUploadMimeType('DSC01234.ARW', 'image/tiff')).toBe('image/x-sony-arw');
     expect(normalizeUploadMimeType('holiday.jpg', 'image/jpeg')).toBe('image/jpeg');
-    // Nothing outside the RAW set is rescued: what arrived is what gets
+    // Nothing outside the media table is rescued: what arrived is what gets
     // tested, and no allow-list contains it.
-    expect(normalizeUploadMimeType('holiday.jpg', UNTYPED)).toBe(UNTYPED);
     expect(normalizeUploadMimeType('payload.exe', OCTET_STREAM)).toBe(OCTET_STREAM);
     expect(normalizeUploadMimeType(undefined, UNTYPED)).toBe(UNTYPED);
+  });
+
+  // Issue 2404: a dropped .mov arrived untyped and was refused, while the
+  // same file picked by hand carried video/quicktime and went through.
+  test('an untyped media file is named by its extension', () => {
+    expect(normalizeUploadMimeType('clip.MOV', UNTYPED)).toBe('video/quicktime');
+    expect(normalizeUploadMimeType('clip.mov', OCTET_STREAM)).toBe('video/quicktime');
+    expect(normalizeUploadMimeType('clip.m4v', UNTYPED)).toBe('video/mp4');
+    expect(normalizeUploadMimeType('holiday.jpg', UNTYPED)).toBe('image/jpeg');
+    expect(validateFileType('clip.mov', UNTYPED, ['image/jpeg', 'video/quicktime'])).toBe(true);
+    // The type still has to be enabled.
+    expect(validateFileType('clip.mov', UNTYPED, NO_RAW_ALLOWED)).toBe(false);
+  });
+
+  test('a type the browser did name is not overridden', () => {
+    expect(normalizeUploadMimeType('clip.mov', 'text/html')).toBe('text/html');
+    expect(validateFileType('clip.mov', 'text/html', ['video/quicktime', 'text/html'])).toBe(false);
   });
 });
 

@@ -110,6 +110,10 @@ export function extensionsToAcceptString(extString?: string | null): string {
 // machine with no RAW codec reports nothing.
 const GENERIC_RAW_TYPES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
 const GENERIC_HEIF_TYPES = new Set(['', 'application/octet-stream', 'image/heic', 'image/heif']);
+// No type at all. A dropped file can arrive without the type the file chooser
+// gives the same file (issue 2404: a dropped .mov was refused, a picked one
+// was not), so for every extension in the table the extension decides then.
+const UNTYPED_TYPES = new Set(['', 'application/octet-stream']);
 
 /**
  * The MIME type an upload should be judged as.
@@ -126,7 +130,19 @@ export function normalizeFileMimeType(name: string, type: string): string {
   if (HEIF_EXTENSIONS.has(ext) && GENERIC_HEIF_TYPES.has((type || '').trim())) {
     return EXTENSION_TO_MIME[ext];
   }
+  if (EXTENSION_TO_MIME[ext] && UNTYPED_TYPES.has((type || '').trim())) {
+    return EXTENSION_TO_MIME[ext];
+  }
   return type;
+}
+
+/**
+ * Is this file a video, judged by the type it will be uploaded as? Picks
+ * the per-file size limit, so an untyped .mov is held to the video limit
+ * rather than the photo one.
+ */
+export function isVideoUploadFile(file: { name: string; type: string }): boolean {
+  return normalizeFileMimeType(file.name, file.type).startsWith('video/');
 }
 
 /**

@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { Button, Input } from '../common';
 import { api } from '../../config/api';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
-import { extensionsToMimeTypes, buildUploadAcceptString, extensionsToLabel, isAllowedUploadFile } from '../../utils/fileTypes';
+import { extensionsToMimeTypes, buildUploadAcceptString, extensionsToLabel, isAllowedUploadFile, isVideoUploadFile } from '../../utils/fileTypes';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { guestsService, type GuestIdentity } from '../../services/guests.service';
 import { clearGuestIdentity, getGuestIdentity, getGuestToken, storeGuestIdentity } from '../../utils/guestIdentityStorage';
@@ -150,7 +150,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   );
   const videoUploadsAllowed = allowedMimeTypes.some((type) => type.startsWith('video/'));
   const sizeLimitMbFor = (file: File) =>
-    (file.type.startsWith('video/') ? maxVideoSizeMb : maxFileSizeMb);
+    (isVideoUploadFile(file) ? maxVideoSizeMb : maxFileSizeMb);
 
   // #1117 — on Android this appends a type the photo picker can't handle, so
   // the system falls back to the chooser that actually offers the camera.
