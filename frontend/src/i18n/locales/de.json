@@ -12545,7 +12545,7 @@
     },
     "rules": {
       "title": "Regeln",
-      "hint": "Kunden gelten auch als aktiv, wenn ihre letzte Zahlung zu ihrem üblichen Abstand zwischen Buchungen passt.",
+      "hint": "Jubiläen werden in Kalenderjahren gezählt, das erste Jahr ist Jahr 1. Kunden gelten auch als aktiv, wenn ihre letzte Zahlung zu ihrem üblichen Abstand zwischen Buchungen passt.",
       "milestones": "Jubiläen (Jahre)",
       "minBookings": "Mindestanzahl bezahlter Buchungen",
       "activityPeriodYears": "Aktiv: innerhalb so vieler Jahre",
@@ -12567,10 +12567,11 @@
       "noGifts": "Keine Geschenke",
       "noGiftsHint": "Nimmt diesen Kunden aus allen Geschenklisten.",
       "startDate": "Jubiläen zählen ab",
-      "startDateHint": "Leer lassen, um die erste bezahlte Rechnung zu verwenden."
+      "startDateHint": "Nur das Jahr zählt. Leer lassen, um die erste bezahlte Rechnung zu verwenden."
     },
     "milestoneBadge_one": "{{count}} Jahr",
     "milestoneBadge_other": "{{count}} Jahre",
+    "reachedOn": "Erreicht am {{date}}",
     "lowStock_one": "{{count}} Geschenk fällig, {{stock}} auf Lager.",
     "lowStock_other": "{{count}} Geschenke fällig, {{stock}} auf Lager."
   }
