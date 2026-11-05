@@ -36,6 +36,7 @@ const HTTP_TIMEOUT_MS = 15000;
 // the cap exists so a pathological attachment cannot build a payload large
 // enough to take the process down while serialising it.
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const UNDELIVERED_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH']);
 
 // Same env-var shape as WEBHOOK_ALLOW_PRIVATE_URLS. Running n8n on the same
 // Docker network or LAN is the normal case for a self-hosted install, and
@@ -250,7 +251,11 @@ async function send(mail) {
     // Message and code only — deliberately NOT the error object, so nothing
     // downstream can serialise the request back out of it.
     const detail = err && err.code ? `${err.code}: ${err.message}` : (err && err.message) || 'request failed';
-    throw new Error(`email webhook request failed (${detail})`);
+    const failure = new Error(`email webhook request failed (${detail})`);
+    // Only failures that prove nothing was delivered. A timeout or reset may
+    // have delivered it, and the queue must not send that mail again and again.
+    if (UNDELIVERED_CODES.has(err?.code)) failure.code = err.code;
+    throw failure;
   }
 
   // The body is discarded unread. Only the status matters — it is the delivery
@@ -271,7 +276,11 @@ async function send(mail) {
   }
 
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(`email webhook returned ${response.status}`);
+    const failure = new Error(`email webhook returned ${response.status}`);
+    // Only the receiver saying it did not take it. A 502 or 504 from a proxy can
+    // follow a delivery, so those spend attempts.
+    if (response.status === 503 || response.status === 429) failure.code = 'EWEBHOOK_UNAVAILABLE';
+    throw failure;
   }
 
   // Deterministic, traceable, and obviously not from a mail server.

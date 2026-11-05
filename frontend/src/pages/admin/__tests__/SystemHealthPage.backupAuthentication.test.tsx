@@ -19,6 +19,7 @@ vi.mock('../../../components/common', () => ({
 vi.mock('../../../hooks', () => ({ useMutationWithToast: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock('../../../hooks/useLocalizedDate', () => ({ useLocalizedDate: () => ({ formatDateTime: String }) }));
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureFlags: () => ({ flags: {} }) }));
+vi.mock('../../../components/admin/DependencyStatusCard', () => ({ DependencyStatusCard: () => null }));
 vi.mock('../../../services/systemHealth.service', () => ({ systemHealthService: {} }));
 
 import { SystemHealthPage } from '../SystemHealthPage';

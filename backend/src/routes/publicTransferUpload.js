@@ -43,6 +43,7 @@ const { _internal: tokenLock } = require('../utils/publicTokenGuards');
 const logger = require('../utils/logger');
 const { withPublicUpload } = require('../middleware/publicUploadStream');
 const uploadQuota = require('../services/publicUploadQuota');
+const { requireCapability } = require('../middleware/requireCapability');
 
 const router = express.Router();
 
@@ -193,7 +194,7 @@ function buildUploader(maxSizeBytes, policy, { storage, streamHandler, maxFiles 
   }).array('files', maxFiles);
 }
 
-router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUploadGuard, handleAsync(async (req, res) => {
+router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUploadGuard, requireCapability('uploads.new'), handleAsync(async (req, res) => {
   const policy = await getTransferUploadPolicy();
   const maxSizeMb = policy.maxSizeMb;
   await withPublicUpload(req, res, {

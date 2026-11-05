@@ -12,6 +12,7 @@ export function publicUploadErrorKey(code: unknown): string | null {
     case 'UPLOAD_PENDING_LIMIT':
     case 'UPLOAD_CONCURRENCY_LIMIT': return 'upload.capacity.busy';
     case 'UPLOAD_BYTE_RATE_LIMIT': return 'upload.capacity.rate';
+    case 'CAPABILITY_UNAVAILABLE': return 'upload.capacity.paused';
     case 'UPLOAD_STORAGE_LOW':
     case 'UPLOAD_QUOTA_UNAVAILABLE':
     case 'UPLOAD_RESERVATION_LOST': return 'upload.capacity.unavailable';

@@ -31,6 +31,7 @@ const {
 const { isGalleryPriced, resolveForcedWatermarkSettingsForPhoto } = require('../modules/photoSales/priceRules');
 const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const logger = require('../utils/logger');
+const dependencyHealth = require('./dependencyHealth');
 
 const DEBOUNCE_MS = 5000;
 
@@ -557,7 +558,13 @@ class DownloadZipService {
       this.debounceTimers.delete(eventId);
       // Through the cap (#1399): invalidateAll arms every one of these in the
       // same tick, so without it they all start building together.
-      this._withRegenSlot(() => this.generateZip(eventId)).catch(err =>
+      this._withRegenSlot(() => {
+        // Checked once the slot is free, not when the timer fires: a rebuild
+        // can wait behind others for a while. While paused it waits for the
+        // next download, which streams or rebuilds it; a running build ends.
+        if (dependencyHealth.evaluate('downloads.archive').paused) return undefined;
+        return this.generateZip(eventId);
+      }).catch(err =>
         logger.warn('downloadZipService debounced regen error', { eventId, error: err.message })
       );
     }, DEBOUNCE_MS);

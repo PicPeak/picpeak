@@ -364,7 +364,9 @@ export const EmailConfigPage: React.FC = () => {
   const flushQueueMutation = useMutation({
     mutationFn: () => emailService.flushQueue(),
     onSuccess: (summary) => {
-      if (summary.processed === 0) {
+      if (summary.deferred) {
+        toast.warning(t('email.flushQueue.deferred', { count: summary.deferred }));
+      } else if (summary.processed === 0) {
         toast.info(t('email.flushQueue.empty'));
       } else {
         toast.success(t('email.flushQueue.success', { sent: summary.sent, failed: summary.failed }));

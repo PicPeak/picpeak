@@ -10,8 +10,19 @@ const { retryTransient } = require('../services/imageResourcePolicy');
 const { getStorage } = require('../services/storage');
 const logger = require('../utils/logger');
 const applicationWork = require('../services/activeApplicationWork');
+const loadGovernor = require('../services/loadGovernor');
 
 const { canonicalStorageKey, sameStorageKey } = require('../utils/storageKey');
+
+// Library-wide runs yield to guests on a busy server. Capped below the bulk
+// queues' pauses, and dropped once admission closes: a shutdown or restore drains
+// this work with the load probe stopped, so a held level would never clear.
+const MAX_REGENERATION_PAUSE_MS = 2000;
+function paceRegeneration() {
+  if (applicationWork.isClosed()) return undefined;
+  const pause = Math.min(loadGovernor.bulkDelayMs(), MAX_REGENERATION_PAUSE_MS);
+  return pause ? new Promise((resolve) => setTimeout(resolve, pause)) : undefined;
+}
 
 // One regeneration of each kind at a time. Two overlapping library-wide runs
 // double the load and delete each other's freshly written renditions. Held per
@@ -231,6 +242,7 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
       let errorCount = 0;
       
       for (const photo of photos) {
+        await paceRegeneration();
         try {
           // A video is REPAIRED, not rebuilt. Its poster frame is rendered at
           // a fixed size by videoProcessor and does not depend on the settings
@@ -403,6 +415,7 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
       const superseded = [];
       const limit = pLimit(previewRegenConcurrency());
       await Promise.all(photos.map((photo) => limit(async () => {
+        await paceRegeneration();
         try {
           if (onlyMissing) {
             // No preview to replace, so no tiers to drop and nothing

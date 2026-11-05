@@ -147,3 +147,44 @@ describe('a request refuses outbound content after the fact', () => {
     expect(res.body.code).toBe('NOT_A_SEND');
   });
 });
+
+describe('creating a send while new uploads are paused', () => {
+  const fs = require('fs');
+  const path = require('path');
+  // Loaded in the hooks: requiring it here would open the database before
+  // bootCrmDb has pointed it at this suite's file.
+  const health = () => require('../../src/services/dependencyHealth');
+  const staged = () => {
+    const dir = path.join(require('../../src/config/storage').getStoragePath(), 'temp', 'transfer-admin-uploads');
+    return fs.existsSync(dir) ? fs.readdirSync(dir).length : 0;
+  };
+
+  beforeEach(() => { health().forcedOff = ['uploads.new']; });
+  afterEach(() => { health().forcedOff = []; });
+
+  it('refuses a send with files before a byte of them is staged', async () => {
+    const before = await db('transfers').count('* as c').first();
+    const stagedBefore = staged();
+    // The staging directory is prepared for each file the parser accepts, so
+    // a refusal after staging, even one that deletes the file, shows here.
+    const prepare = jest.spyOn(fs, 'mkdirSync');
+    let res;
+    try {
+      res = await create()
+        .field('kind', 'send')
+        .attach('files', Buffer.alloc(256 * 1024, 1), { filename: 'album.pdf', contentType: 'application/pdf' });
+      expect(prepare.mock.calls.filter(([dir]) => String(dir).includes('transfer-admin-uploads'))).toEqual([]);
+    } finally {
+      prepare.mockRestore();
+    }
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('CAPABILITY_UNAVAILABLE');
+    expect(staged()).toBe(stagedBefore);
+    expect(Number((await db('transfers').count('* as c').first()).c)).toBe(Number(before.c));
+  });
+
+  it('still creates a file request, which stores nothing', async () => {
+    const res = await create().field('kind', 'request').field('title', 'Your photos');
+    expect(res.status).not.toBe(503);
+  });
+});

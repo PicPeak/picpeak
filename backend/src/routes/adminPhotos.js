@@ -41,6 +41,7 @@ const { parseStoredExif } = require('../services/photoExif');
 const { originalNeedsPreview } = require('../utils/rawFormats');
 const { processUploadedPhotos } = require('../services/photoProcessor');
 const chunkedUpload = require('../services/chunkedUploadService');
+const { requireCapability } = require('../middleware/requireCapability');
 const downloadZipService = require('../services/downloadZipService');
 const { findReplacementCandidate, replacePhoto } = require('../services/photoReplacementService');
 const { requireEventOwnership, canAccessEvent } = require('../middleware/ownership');
@@ -176,7 +177,7 @@ const validateUploadContent = async (req, res, next) => {
 };
 
 // Both mounted admin aliases share this raw-body and persistent admission.
-router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), requireEventOwnership, resolveAllowedTypes, async (req, res) => {
+router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), requireEventOwnership, resolveAllowedTypes, requireCapability('uploads.new'), async (req, res) => {
   const eventId = Number(req.params.eventId);
   if (!/^\d+$/.test(req.params.eventId) || !Number.isSafeInteger(eventId) || eventId < 1) {
     if (!req.readableEnded) res.set('Connection', 'close');
@@ -2445,7 +2446,7 @@ const canonicalChunkEvent = (req, res, next) => {
   req.params.eventId = String(id);
   next();
 };
-router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photos.upload'), canonicalChunkEvent, requireEventOwnership, async (req, res) => {
+router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photos.upload'), canonicalChunkEvent, requireEventOwnership, requireCapability('uploads.new'), async (req, res) => {
   try {
     const { eventId } = req.params;
     const { filename, fileSize, totalChunks } = req.body;

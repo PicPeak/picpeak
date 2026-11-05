@@ -1554,6 +1554,9 @@ async function startServerInternal() {
     // covers first. One replica runs it; it resumes after a restart.
     require('./src/services/renditionRefresh').start();
 
+    // Started last, so the first probes see the services above already running.
+    require('./src/services/dependencyHealth').start();
+
     // Coordinated portable restore is optional. Where this host cannot run it
     // one startup line says why, the import answers 503 and nothing else
     // changes; where it can, requests are tracked so a restore can drain them.

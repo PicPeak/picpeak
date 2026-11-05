@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, RefreshCw, Trash2, CheckCircle, Clock, FileCheck, KeyRound, Mail, MailX, ShieldAlert } from 'lucide-react';
 import { Button, Card, Loading } from '../../components/common';
+import { DependencyStatusCard } from '../../components/admin/DependencyStatusCard';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { useMutationWithToast } from '../../hooks';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -143,6 +144,7 @@ export const SystemHealthPage: React.FC = () => {
   // at /admin/system-health, which now redirects here.
   return (
     <div>
+      <DependencyStatusCard />
 
       {/* Queue processor. Listed first because when this is stopped, every
           other count on the page is explained by it — and a stopped processor

@@ -74,6 +74,9 @@
     },
     "creditNameHelp": "Indiqué sur les photos importées par ce compte lorsque le fichier ne contient pas de nom de photographe dans ses métadonnées."
   },
+  "capabilityNotice": {
+    "archive": "Les téléchargements ZIP sont suspendus pour un moment. Vous pouvez toujours afficher et télécharger les photos une par une."
+  },
   "common": {
     "loading": "Chargement...",
     "error": "Erreur",
@@ -227,7 +230,10 @@
       "nothingToUpload": "Aucun des fichiers sélectionnés ne peut être téléversé : ils se trouvent tous dans des dossiers masqués ou ignorés.",
       "keptForNext": "Fichiers ajoutés pendant la préparation des dossiers, toujours sélectionnés : {{count}}."
     },
-    "largeFileReplaceSkipped": "Le remplacement par nom n'est pas pris en charge pour les fichiers au-delà de la taille du lot ; téléversez-le sans remplacement."
+    "largeFileReplaceSkipped": "Le remplacement par nom n'est pas pris en charge pour les fichiers au-delà de la taille du lot ; téléversez-le sans remplacement.",
+    "capacity": {
+      "paused": "Le téléversement est suspendu pour un moment. Veuillez réessayer dans quelques instants."
+    }
   },
   "navigation": {
     "dashboard": "Tableau de bord",

@@ -11,6 +11,7 @@ import { useSessionTimeout } from '../../hooks/useSessionTimeout';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminHeader } from './AdminHeader';
 import { MaintenanceBanner } from './MaintenanceBanner';
+import { DegradationBanner } from './DegradationBanner';
 import { MandatoryPasswordChangeModal } from './MandatoryPasswordChangeModal';
 import { CommandPalette } from './CommandPalette';
 import { BottomBarSlotContext } from './bottomBarSlot';
@@ -184,6 +185,7 @@ const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSid
 
         {/* Maintenance mode banner */}
         <MaintenanceBanner />
+        <DegradationBanner />
 
         {/* Live upload progress, sticky under the header */}
         <UploadProgressBar />

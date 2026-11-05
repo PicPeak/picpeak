@@ -5,11 +5,20 @@
  * later, so the admin uploader waits and retries instead of failing them.
  */
 const TRANSIENT_CODES = new Set([
+  'CAPABILITY_UNAVAILABLE',
   'UPLOAD_PENDING_LIMIT', 'UPLOAD_CONCURRENCY_LIMIT', 'UPLOAD_TIMEOUT', 'UPLOAD_REQUEST_TIMEOUT',
 ]);
 
 export const isTransientUploadRefusal = (code: unknown): boolean =>
   typeof code === 'string' && TRANSIENT_CODES.has(code);
+
+/**
+ * Still refused after the whole retry cycle. A pause has no known end (an admin
+ * may have forced it), so the rest of the batch stops rather than each file
+ * waiting out four minutes in turn.
+ */
+export const stopsBatchAfterRetries = (code: unknown): boolean =>
+  !isTransientUploadRefusal(code) || code === 'CAPABILITY_UNAVAILABLE';
 
 /** Ten retries over about four minutes. */
 export const CAPACITY_RETRY_DELAYS_MS = [2000, 4000, 8000, 15000, 30000, 30000, 30000, 40000, 40000, 40000];

@@ -680,7 +680,59 @@
     },
     "creditNameHelp": "Credited on photos this account uploads when the file has no photographer name in its metadata."
   },
+  "capabilityNotice": {
+    "archive": "ZIP downloads are paused for a moment. You can still view and download single photos."
+  },
   "systemHealth": {
+    "dependencies": {
+      "title": "Dependencies",
+      "description": "Live checks of what PicPeak relies on. A dependency has to fail repeatedly before it counts as degraded, and stay good for about two minutes before it counts as healthy again.",
+      "state": { "healthy": "Healthy", "degraded": "Degraded", "down": "Down" },
+      "since": "since {{time}}",
+      "name": {
+        "database": "Database",
+        "storage": "Storage",
+        "disk": "Disk space",
+        "tempDisk": "Temporary space for ZIP builds",
+        "mail": "Email sending",
+        "faceSidecar": "Face recognition service",
+        "queues": "Photo processing queue",
+        "load": "Server load"
+      },
+      "metrics": {
+        "cpu": "CPU {{value}}%",
+        "memory": "Memory {{value}}%",
+        "eventLoop": "Event loop delay {{value}} ms",
+        "free": "{{value}} GB free",
+        "pending_one": "{{count}} photo waiting",
+        "pending_other": "{{count}} photos waiting"
+      },
+      "recheck": "Check again now",
+      "recheckedToast": "Dependencies checked.",
+      "enforce": "Pause features automatically",
+      "enforceHint": "While off, PicPeak only logs what it would have paused. Security checks are never affected by this setting.",
+      "forceOff": "Pause {{capability}}",
+      "cpuThrottle": "Slow background work above (% CPU)",
+      "cpuResume": "Speed up again below (% CPU)",
+      "throttled": "The server is busy, so background work such as preview generation is running slower to keep galleries fast.",
+      "wouldThrottle": "The server is busy. Background work would slow down if features were paused automatically.",
+      "recheckFailed": "The check could not be run.",
+      "thresholdsInvalid": "The resume point must be below the throttle limit.",
+      "wouldPause": "Would pause",
+      "pausedByAdmin": "Paused by an admin",
+      "modeEnforce": "Features pause automatically",
+      "modeObserve": "Observing: nothing pauses automatically",
+      "thresholds": "Background work slows above {{throttle}}% CPU and speeds up below {{resume}}%",
+      "capabilitiesTitle": "Features",
+      "capability": {
+        "uploads.new": "New uploads",
+        "downloads.archive": "ZIP downloads"
+      },
+      "available": "Available",
+      "unavailable": "Paused",
+      "banner": "Some features are paused.",
+      "bannerLink": "View status"
+    },
     "backupAuthentication": {
       "title": "Backup authenticity",
       "keyReady": "The external backup signing key is available.",
@@ -866,6 +918,7 @@
       "uploadAllAnyway": "Upload all anyway"
     },
     "capacity": {
+      "paused": "Uploads are paused for a moment. Please try again shortly.",
       "decoded": "This image exceeds the server's image-processing limits.",
       "imagePixels": "This image is larger than the {{max}} megapixels this server processes.",
       "imageDimension": "This image is longer than the {{max}} px per side this server processes.",
@@ -4799,6 +4852,8 @@
     "close": "Close",
     "noNotificationsMessage": "No notifications",
     "notificationMessages": {
+      "degradationRechecked": "Dependency check run by an admin",
+      "degradationSettingsUpdated": "Degradation settings changed by an admin",
       "backupRunDeleted": "Backup run {{backup_run_id}} was deleted ({{destination}}, files: {{artifact}})",
       "backupRunDeleteFailed": "Deleting backup run {{backup_run_id}} failed ({{code}})",
       "eventCreated": "New event \"{{eventName}}\" was created",
@@ -5780,6 +5835,7 @@
     "testEmailAddressLabel": "Test Email Address",
     "sendTestEmailButton": "Send Test Email",
     "flushQueue": {
+      "deferred": "The mail server is unreachable. Queued mail stays queued and is retried automatically.",
       "title": "Send queued emails now",
       "help": "Immediately send every pending email, ignoring the business-hours schedule. Useful for draining the queue before maintenance or updates.",
       "button": "Send queued emails now",

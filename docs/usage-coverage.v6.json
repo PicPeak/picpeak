@@ -1371,6 +1371,9 @@
       "signals": [],
       "reason": "Bootstrap, passwords/MFA/session/profile, per-person notifications, developer helpers and operational health/update/log polling are outside the prioritization purpose.",
       "route_signatures": [
+        "GET /status",
+        "POST /status/recheck",
+        "PUT /status/settings",
         "GET /backup-integrity",
         "GET /backup-coverage",
         "GET /failures",

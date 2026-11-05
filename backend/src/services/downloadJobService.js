@@ -190,7 +190,7 @@ class DownloadJobService {
    * Create (or join) a job. Returns the job row. Building continues in the
    * background — callers poll getStatus().
    */
-  async createJob({ event, resolution, photoIds, accessLevel, previewOnly = false }) {
+  async createJob({ event, resolution, photoIds, accessLevel, previewOnly = false, mayBuild = () => true }) {
     const watermark = await resolveWatermarkSettings(event);
 
     // Resolve the photo set up front, under THIS requester's visibility, so
@@ -211,6 +211,11 @@ class DownloadJobService {
 
     const existing = await this.findReusable(event.id, dedupKey);
     if (existing) return existing;
+    if (!mayBuild()) {
+      const err = new Error('A new archive cannot be built right now');
+      err.code = 'BUILD_REFUSED';
+      throw err;
+    }
     await this.recoverOrphanedJobs(event.id);
 
     // Refuse rather than queue without bound. The client shows this as a

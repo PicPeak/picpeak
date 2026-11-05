@@ -18,6 +18,7 @@ const { rateLimitKey } = require('../../utils/rateLimitKey');
 const { refundRateLimit } = require('../../services/rateLimitService');
 const chunkedUpload = require('../../services/chunkedUploadService');
 const { createUploadFileGuard } = require('../../utils/uploadAdmissionType');
+const { refuseCapability } = require('../../middleware/requireCapability');
 const logger = require('../../utils/logger');
 
 /**
@@ -110,6 +111,7 @@ router.post('/:eventId/upload', selectEventGalleryCookie, verifyGalleryAccess, d
   try {
     const gate = await guestUploadGate(req);
     if (gate.refusal) return res.status(gate.refusal.status).json(gate.refusal.body);
+    if (refuseCapability(req, res, 'uploads.new')) return;
     const { eventId, uploader, credit, photoCap } = gate;
 
     // Import multer and photo processing
@@ -376,6 +378,7 @@ router.post('/:eventId/chunked-upload/init', ...guestChunkChain, async (req, res
   try {
     const gate = await guestUploadGate(req);
     if (gate.refusal) return res.status(gate.refusal.status).json(gate.refusal.body);
+    if (refuseCapability(req, res, 'uploads.new')) return;
     const { filename, fileSize, totalChunks } = req.body || {};
     if (!filename || !fileSize) {
       return res.status(400).json({ error: 'Missing required fields: filename, fileSize' });

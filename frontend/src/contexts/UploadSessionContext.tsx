@@ -8,7 +8,7 @@ import { folderQueryKey } from '../services/folders.service';
 import { useUploadProgress } from '../hooks/useUploadProgress';
 import { uploadMultipartBudget } from '../utils/uploadMultipartBudget';
 import { adminUploadErrorKey, imageLimitMessage } from '../utils/publicUploadErrors';
-import { CAPACITY_RETRY_DELAYS_MS, isTransientUploadRefusal, retryWhileBusy } from '../utils/uploadCapacityRetry';
+import { CAPACITY_RETRY_DELAYS_MS, stopsBatchAfterRetries, retryWhileBusy } from '../utils/uploadCapacityRetry';
 
 // The admin upload runs here, outside the upload modal, so the modal can close
 // the moment the upload starts and the user keeps the rest of the admin while
@@ -306,7 +306,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
             const capacityKey = limitReason ? null : adminUploadErrorKey(code);
             const reason = limitReason ?? (capacityKey ? t(capacityKey) : error?.response?.data?.error || error?.message || t('upload.failures.transferReason', 'Transfer failed'));
             collected.push({ filename: file.name, reason, kind: limitReason ? 'rejected' : 'transfer' });
-            if (capacityKey && !isTransientUploadRefusal(code)) {
+            if (capacityKey && stopsBatchAfterRetries(code)) {
               capacityRefused = true;
               const unsent = [...largeFilesToUpload.slice(index + 1).map(item => item.file), ...chunks.flatMap(item => item.files)];
               collected.push(...unsent.map(f => ({ filename: f.name, reason, kind: 'transfer' as const })));
@@ -409,7 +409,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
             const capacityKey = adminUploadErrorKey(code);
             const reason = capacityKey ? t(capacityKey) : error?.response?.data?.error || error?.message || t('upload.failures.transferReason', 'Transfer failed');
             collected.push(...chunk.map((f) => ({ filename: f.name, reason, kind: 'transfer' as const })));
-            if (capacityKey && !isTransientUploadRefusal(code)) {
+            if (capacityKey && stopsBatchAfterRetries(code)) {
               collected.push(...chunks.slice(chunkIndex + 1).flatMap(item => item.files)
                 .map(f => ({ filename: f.name, reason, kind: 'transfer' as const })));
               break;

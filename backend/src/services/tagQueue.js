@@ -30,6 +30,7 @@ const { isTransient } = require('./imageResourcePolicy');
 const { formatBoolean } = require('../utils/dbCompat');
 const { livePhotos } = require('../utils/photoVisibility');
 const { isFeatureEnabled } = require('./tagSettings');
+const loadGovernor = require('./loadGovernor');
 
 const POLL_INTERVAL_MS = parseInt(process.env.TAG_PROCESSOR_POLL_MS || '2000', 10);
 const CONCURRENCY = Math.max(1, parseInt(process.env.TAG_PROCESSOR_CONCURRENCY || '1', 10));
@@ -149,6 +150,9 @@ async function workerLoop(workerIdx) {
       await sleep(POLL_INTERVAL_MS * 5);
       continue;
     }
+    const pause = loadGovernor.bulkDelayMs();
+    if (pause) await sleep(pause);
+
     if (!running) break;
 
     let claimed;

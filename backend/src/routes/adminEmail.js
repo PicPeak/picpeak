@@ -694,7 +694,7 @@ router.post('/flush-queue', adminAuth, requirePermission('email.send'), async (r
     const summary = await processEmailQueue({ ignoreSchedule: true, limit: 1000 });
     try {
       await logActivity('email_queue_flushed',
-        { processed: summary.processed, sent: summary.sent, failed: summary.failed },
+        { processed: summary.processed, sent: summary.sent, failed: summary.failed, deferred: summary.deferred },
         null,
         { type: 'admin', id: req.admin.id, name: req.admin.username }
       );

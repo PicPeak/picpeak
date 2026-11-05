@@ -680,7 +680,59 @@
     },
     "creditNameHelp": "Wird bei Uploads dieses Kontos als Fotograf angegeben, wenn die Datei keinen Fotografennamen in den Metadaten enthält."
   },
+  "capabilityNotice": {
+    "archive": "ZIP-Downloads sind kurz pausiert. Einzelne Fotos können Sie weiterhin ansehen und herunterladen."
+  },
   "systemHealth": {
+    "dependencies": {
+      "title": "Abhängigkeiten",
+      "description": "Laufende Prüfungen dessen, worauf PicPeak angewiesen ist. Eine Abhängigkeit muss wiederholt ausfallen, bevor sie als beeinträchtigt gilt, und rund zwei Minuten stabil bleiben, bevor sie wieder als fehlerfrei gilt.",
+      "state": { "healthy": "Fehlerfrei", "degraded": "Beeinträchtigt", "down": "Ausgefallen" },
+      "since": "seit {{time}}",
+      "name": {
+        "database": "Datenbank",
+        "storage": "Speicher",
+        "disk": "Speicherplatz",
+        "tempDisk": "Temporärer Speicher für ZIP-Erstellung",
+        "mail": "E-Mail-Versand",
+        "faceSidecar": "Gesichtserkennungsdienst",
+        "queues": "Warteschlange der Fotoverarbeitung",
+        "load": "Serverlast"
+      },
+      "metrics": {
+        "cpu": "CPU {{value}} %",
+        "memory": "Arbeitsspeicher {{value}} %",
+        "eventLoop": "Event-Loop-Verzögerung {{value}} ms",
+        "free": "{{value}} GB frei",
+        "pending_one": "{{count}} Foto wartet",
+        "pending_other": "{{count}} Fotos warten"
+      },
+      "recheck": "Jetzt erneut prüfen",
+      "recheckedToast": "Abhängigkeiten geprüft.",
+      "enforce": "Funktionen automatisch pausieren",
+      "enforceHint": "Solange dies aus ist, protokolliert PicPeak nur, was pausiert würde. Sicherheitsprüfungen sind von dieser Einstellung nie betroffen.",
+      "forceOff": "{{capability}} pausieren",
+      "cpuThrottle": "Hintergrundarbeit verlangsamen ab (% CPU)",
+      "cpuResume": "Wieder beschleunigen unter (% CPU)",
+      "throttled": "Der Server ist ausgelastet. Hintergrundarbeit wie die Vorschauerstellung läuft langsamer, damit Galerien schnell bleiben.",
+      "wouldThrottle": "Der Server ist ausgelastet. Hintergrundarbeit würde verlangsamt, wenn Funktionen automatisch pausiert würden.",
+      "recheckFailed": "Die Prüfung konnte nicht ausgeführt werden.",
+      "thresholdsInvalid": "Der Wiederaufnahmewert muss unter dem Grenzwert liegen.",
+      "wouldPause": "Würde pausieren",
+      "pausedByAdmin": "Von einem Admin pausiert",
+      "modeEnforce": "Funktionen pausieren automatisch",
+      "modeObserve": "Beobachtung: Nichts pausiert automatisch",
+      "thresholds": "Hintergrundarbeit wird über {{throttle}} % CPU langsamer und unter {{resume}} % wieder schneller",
+      "capabilitiesTitle": "Funktionen",
+      "capability": {
+        "uploads.new": "Neue Uploads",
+        "downloads.archive": "ZIP-Downloads"
+      },
+      "available": "Verfügbar",
+      "unavailable": "Pausiert",
+      "banner": "Einige Funktionen sind pausiert.",
+      "bannerLink": "Status ansehen"
+    },
     "backupAuthentication": {
       "title": "Authentizität der Sicherung",
       "keyReady": "Der externe Signaturschlüssel für Sicherungen ist verfügbar.",
@@ -866,6 +918,7 @@
       "uploadAllAnyway": "Alle trotzdem hochladen"
     },
     "capacity": {
+      "paused": "Uploads sind kurz pausiert. Bitte versuchen Sie es gleich noch einmal.",
       "decoded": "Dieses Bild überschreitet die Bildverarbeitungsgrenzen des Servers.",
       "imagePixels": "Dieses Bild ist größer als die {{max}} Megapixel, die dieser Server verarbeitet.",
       "imageDimension": "Dieses Bild ist länger als die {{max}} px je Seite, die dieser Server verarbeitet.",
@@ -5319,6 +5372,8 @@
     "close": "Schließen",
     "noNotificationsMessage": "Keine Benachrichtigungen",
     "notificationMessages": {
+      "degradationRechecked": "Abhängigkeitsprüfung durch einen Admin ausgeführt",
+      "degradationSettingsUpdated": "Einstellungen zur Funktionspause durch einen Admin geändert",
       "backupRunDeleted": "Backup-Lauf {{backup_run_id}} wurde gelöscht ({{destination}}, Dateien: {{artifact}})",
       "backupRunDeleteFailed": "Löschen von Backup-Lauf {{backup_run_id}} fehlgeschlagen ({{code}})",
       "eventCreated": "Neues Event \"{{eventName}}\" wurde erstellt",
@@ -6321,6 +6376,7 @@
     "testEmailAddressLabel": "Test-E-Mail-Adresse",
     "sendTestEmailButton": "Test-E-Mail senden",
     "flushQueue": {
+      "deferred": "Der Mailserver ist nicht erreichbar. Mails bleiben in der Warteschlange und werden automatisch erneut versucht.",
       "title": "Wartende E-Mails jetzt senden",
       "help": "Sendet sofort alle ausstehenden E-Mails, unabhängig von den Geschäftszeiten. Nützlich, um die Warteschlange vor Wartungsarbeiten oder Updates zu leeren.",
       "button": "Wartende E-Mails jetzt senden",

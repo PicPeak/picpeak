@@ -103,6 +103,7 @@ import { AccountingLayout, AccountingIndex } from './components/admin/Accounting
 import { AccountingInboxPage } from './pages/admin/accounting/AccountingInboxPage';
 import { ExpensesLedgerPage } from './pages/admin/accounting/ExpensesLedgerPage';
 import { RequireFeature } from './components/admin/RequireFeature';
+import { CapabilityNotice } from './components/common/CapabilityNotice';
 import { PageErrorBoundary, OfflineIndicator, SkipLink, DynamicFavicon, RobotsMetaTags, CMSContentBlock, Loading } from './components/common';
 import { MaintenanceWrapper } from './components/MaintenanceWrapper';
 import { GlobalThemeProvider } from './components/GlobalThemeProvider';
@@ -591,6 +592,7 @@ function App() {
 
             {/* Offline indicator */}
             <OfflineIndicator />
+            <CapabilityNotice />
 
             {/* Toast notifications */}
             <ToastContainer

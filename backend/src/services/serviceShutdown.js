@@ -29,6 +29,7 @@ const resources = [
   ['./imageProcessor', 'stopVideoThumbnailQueue', 'startVideoThumbnailQueue'],
   ['../utils/authSecurity', 'stopCleanupJob', 'initializeCleanupJob'], ['../utils/tokenRevocation', 'stopRevocationCleanup'],
   ['./publicUploadQuota', 'stopMaintenance', 'startMaintenance'],
+  ['./dependencyHealth', 'stop', 'start'],
 ];
 async function stopServices() {
   const results = await Promise.allSettled(resources.map(async ([path, method]) => {

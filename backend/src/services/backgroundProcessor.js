@@ -33,6 +33,7 @@ const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { processPhoto } = require('./photoProcessor');
 const { isTransient } = require('./imageResourcePolicy');
 const mediaAttempts = require('./mediaAttemptService');
+const loadGovernor = require('./loadGovernor');
 // A photo is claimed at most this many times before it is recorded as failed:
 // claims that ended in a transient image-worker refusal (busy, unavailable,
 // deadline) and claims the janitor recovered from a process that died.
@@ -72,6 +73,7 @@ function pickDefaultConcurrency() {
 const CONCURRENCY = Math.max(1, pickDefaultConcurrency());
 const STUCK_TIMEOUT_MS = Math.max(600000, parseInt(process.env.UPLOAD_PROCESSOR_STUCK_TIMEOUT_MS || '600000', 10) || 600000);
 const JANITOR_INTERVAL_MS = 60 * 1000;
+const GOVERNED_POLL_MS = 5000;
 
 let running = false;
 let workerHandles = [];
@@ -110,6 +112,12 @@ function claim() {
 
 async function workerLoop(workerIdx) {
   while (running) {
+    // Busy server: this worker sits out, and the ones below the limit carry on.
+    if (workerIdx >= loadGovernor.workerLimit(CONCURRENCY)) {
+      await sleep(GOVERNED_POLL_MS);
+      continue;
+    }
+
     let claimed;
     try {
       claimed = await claimNextPhoto();

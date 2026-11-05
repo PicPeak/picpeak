@@ -43,6 +43,7 @@
  */
 
 const { db } = require('../database/db');
+const loadGovernor = require('./loadGovernor');
 const logger = require('../utils/logger');
 const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
@@ -306,7 +307,8 @@ async function runPass({ active = () => running, sleep = (ms) => waits.sleep(ms)
     if (done % PROGRESS_EVERY === 0) {
       logger.info(`Rendition refresh: ${counts.refreshed} photos cleaned, ${counts.failed} failed so far`);
     }
-    if (pause) await sleep(pause);
+    const wait = Math.max(pause, loadGovernor.bulkDelayMs());
+    if (wait) await sleep(wait);
     return true;
   };
 

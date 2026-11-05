@@ -1,4 +1,5 @@
 const express = require('express');
+const { requireCapability } = require('../middleware/requireCapability');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission, requireSuperAdmin } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
@@ -87,7 +88,7 @@ router.delete('/sources/:sourceId', adminAuth, requireSuperAdmin(), async (req, 
 // watcher (issue 1187) runs the identical pass without an HTTP request. This
 // handler only validates, maps the service's errors to status codes, and
 // records who asked.
-router.post('/events/:id/import-external', adminAuth, requirePermission('photos.upload'), requireEventOwnership, async (req, res) => {
+router.post('/events/:id/import-external', adminAuth, requirePermission('photos.upload'), requireEventOwnership, requireCapability('uploads.new'), async (req, res) => {
   const eventId = parseInt(req.params.id);
   const { recursive = true, map = { individual: 'individual', collages: 'collages' } } = req.body || {};
   let external_path = typeof req.body?.external_path === 'string' ? req.body.external_path.trim() : '';

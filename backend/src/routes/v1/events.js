@@ -75,6 +75,7 @@ const archiver = require('archiver');
 const { Readable } = require('stream');
 const { getStorage } = require('../../services/storage');
 const { isStorageNotFoundError } = require('../../services/storage/storageErrors');
+const { requireCapability } = require('../../middleware/requireCapability');
 const { resolvePhotoStorageKey, resolvePhotoFilePath, isManagedOriginalKey } = require('../../services/photoResolver');
 const { pickRawDownloadName } = require('../../services/downloadFilenameService');
 const { buildContentDisposition, sanitizeForZipEntry } = require('../../utils/filenameSanitizer');
@@ -474,6 +475,7 @@ router.post(
   requireApiScope('write'),
   requirePermission('photos.upload'),
   requireEventOwnership,
+  requireCapability('uploads.new'),
   async (req, res) => {
     const eventId = Number(req.params.id);
     if (!/^\d+$/.test(req.params.id) || !Number.isSafeInteger(eventId) || eventId < 1) {
@@ -1570,6 +1572,7 @@ router.get(
   requirePermission(['photos.view', 'photos.download'], { requireAll: true }),
   requireNumericEventId,
   requireEventOwnership,
+  requireCapability('downloads.archive'),
   [
     query('ids').optional().isString(),
     resolutionValidator,

@@ -88,6 +88,9 @@ const isReservedSettingKey = (key) => RESERVED_SETTING_KEYS.includes(key)
   || key.startsWith('oidc_')
   || key.startsWith('download_')
   || key.startsWith('transfer_upload_')
+  // PUT /admin/system-health/status/settings is the only writer: it needs
+  // system.manage, validates the values and writes the audit entry.
+  || key.startsWith('degradation_')
   || key === 'transfer_max_upload_size_mb'
   // Derived, read-only fields the GET response adds for the General tab
   // (#705). They are computed from the environment, never stored, so a

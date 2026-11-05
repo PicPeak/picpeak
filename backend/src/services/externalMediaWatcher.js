@@ -59,6 +59,7 @@ const { formatBoolean } = require('../utils/dbCompat');
 const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 const externalAccess = require('./externalMediaAccess');
+const dependencyHealth = require('./dependencyHealth');
 const {
   importExternalFolder,
   ImportInProgressError,
@@ -155,6 +156,10 @@ async function runImportInternal(eventId, reason) {
     !event || !event.external_watch || event.source_mode !== 'reference' || !event.external_path
     || !event.is_active || event.is_archived
   ) {
+    return null;
+  }
+  if (dependencyHealth.evaluate('uploads.new').paused) {
+    scheduleImport(eventId);
     return null;
   }
   try {

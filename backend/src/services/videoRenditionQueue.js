@@ -28,6 +28,7 @@ const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { queuesVideos, renderWebCopy, queueForMetadataStrip, requeueStranded } = require('./videoRenditionService');
 const mediaAttempts = require('./mediaAttemptService');
 const { isTransient } = require('./imageResourcePolicy');
+const loadGovernor = require('./loadGovernor');
 
 const RETRY_BACKOFF_MS = 60000;
 
@@ -61,6 +62,9 @@ async function workerLoop(workerIdx) {
       await sleep(POLL_INTERVAL_MS * 5);
       continue;
     }
+    const pause = loadGovernor.bulkDelayMs();
+    if (pause) await sleep(pause);
+
     if (!running) break;
 
     let claimed;

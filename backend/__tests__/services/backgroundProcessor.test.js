@@ -43,3 +43,31 @@ describe('backgroundProcessor.claimNextPhoto', () => {
     expect(publicUploadQuota.releasePending).toHaveBeenCalledWith(7);
   });
 });
+
+describe('backgroundProcessor under load', () => {
+  const loadGovernor = require('../../src/services/loadGovernor');
+  const until = async (check) => { for (let i = 0; i < 200 && !check(); i += 1) await new Promise((r) => setTimeout(r, 5)); };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mediaAttempts.claimNext.mockResolvedValue(null);
+  });
+  afterEach(async () => {
+    await bg.stop();
+    jest.restoreAllMocks();
+  });
+
+  it('claims nothing while the governor allows no workers', async () => {
+    jest.spyOn(loadGovernor, 'workerLimit').mockReturnValue(0);
+    await bg.start();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mediaAttempts.claimNext).not.toHaveBeenCalled();
+  });
+
+  it('keeps a worker running at the lowest step', async () => {
+    jest.spyOn(loadGovernor, 'workerLimit').mockReturnValue(1);
+    await bg.start();
+    await until(() => mediaAttempts.claimNext.mock.calls.length > 0);
+    expect(mediaAttempts.claimNext).toHaveBeenCalled();
+  });
+});
