@@ -1752,6 +1752,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // opening a gallery as a guest and then from the portal would have reused
   // the guest answer, and vice versa.
   const showLogoutControl = requiresPassword || isClient || viaCustomer;
+  // The way back to the portal: only a portal-minted session has one, the
+  // same server-side flag as above, so a share-link visitor never sees it.
+  // Not in an admin preview.
+  const showBackToAccount = viaCustomer && !adminPreview;
 
   // Folder navigation (#1160, nested since issue 1786): the view switch, a
   // breadcrumb, the tiles of the current level's subfolders and, inside a
@@ -2023,6 +2027,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // render the button on the callback being present rather than on a
           // showLogout flag, so withholding it is how the gate reaches them.
           onLogout={showLogoutControl ? logout : undefined}
+          showBackToAccount={showBackToAccount}
           onManageGallery={onManageGallery}
           clientModeBusy={isSwitchingClientMode}
           // Client access (issue 1992): the full-page layouts render the eye
@@ -2216,6 +2221,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         headerStyle={data?.event?.header_style || theme.headerStyle}
         showLogout={showLogoutControl}
         onLogout={logout}
+        showBackToAccount={showBackToAccount}
         // Old Download All header button is replaced by the new
         // showHeaderDownload below — accent-coloured, always visible when
         // downloads are allowed, sits right before Logout (#386).

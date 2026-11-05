@@ -77,6 +77,8 @@ interface PhotoGridWithLayoutsProps {
   welcomeMessage?: string;
   // Logout callback for full-page layouts
   onLogout?: () => void;
+  // Customer-portal galleries: the way back to the account (full-page layouts)
+  showBackToAccount?: boolean;
   onManageGallery?: () => void;
   clientModeBusy?: boolean;
   // Guest upload for full-page layouts (they have no gallery header)
@@ -173,6 +175,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   heroImageAnchor = 'center',
   welcomeMessage,
   onLogout,
+  showBackToAccount,
   onManageGallery,
   clientModeBusy,
   onUploadClick,
@@ -508,6 +511,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     heroLogoPosition,
     welcomeMessage,
     onLogout,
+    showBackToAccount,
     onManageGallery,
     clientModeBusy,
     onUploadClick,

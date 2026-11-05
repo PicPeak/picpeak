@@ -354,6 +354,7 @@
     }
   },
   "gallery": {
+    "backToAccount": "Voltar à sua conta",
     "revealPendingTitle": "As fotos ainda são uma surpresa",
     "revealPendingMessage": "O anfitrião revelará a galeria mais tarde — volte em breve!",
     "revealScheduledFor": "Revelação agendada para {{date}}",

@@ -2,6 +2,7 @@ import { PhotoSalesCartButton } from '../../../features/photo-sales/PhotoSalesCa
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
+import { BackToAccountLink } from '../BackToAccountLink';
 import { useTranslation } from 'react-i18next';
 import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
 import { Button } from '../../common';
@@ -114,6 +115,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   storyFooterTitle,
   storyFooterText,
   onLogout,
+  showBackToAccount = false,
   onManageGallery,
   clientModeBusy,
   onUploadClick,
@@ -550,9 +552,15 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
       {/* Navigation Overlay */}
       <nav className={`story-nav ${scrolled ? 'scrolled' : ''}${isSelectionMode && selectionAvailable ? ' story-nav--selecting' : ''}`}>
-        <span className="story-nav-logo">
-          {eventName ? eventName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() : 'GALLERY'}
-        </span>
+        {/* The way back to the portal, ahead of the monogram. */}
+        <div className="flex items-center gap-2">
+          {showBackToAccount && (
+            <BackToAccountLink className="story-nav-btn story-nav-back inline-flex items-center gap-1.5 text-sm" />
+          )}
+          <span className="story-nav-logo">
+            {eventName ? eventName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() : 'GALLERY'}
+          </span>
+        </div>
 
         <div className="story-nav-actions">
           <PhotoSalesCartButton />

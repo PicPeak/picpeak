@@ -18,6 +18,7 @@ import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityT
 import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut, Upload, ClipboardList, Shield } from 'lucide-react';
+import { BackToAccountLink } from '../BackToAccountLink';
 import { useTranslation } from 'react-i18next';
 import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
 import { parseISO } from 'date-fns';
@@ -313,6 +314,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   feedbackOptions,
   heroPhotoOverride,
   onLogout,
+  showBackToAccount = false,
   onManageGallery,
   clientModeBusy,
   onUploadClick,
@@ -814,6 +816,25 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     day: '2-digit'
   }) : null;
   const uploadLabel = t('upload.uploadPhotos', 'Upload Photos');
+  const premiumCategories = (
+    <div className="gallery-premium-nav-categories">
+      <button
+        className={`gallery-premium-nav-category ${!activeCategory ? 'active' : ''}`}
+        onClick={() => setActiveCategory(null)}
+      >
+        {t('gallery.allPhotos', 'All Photos')}
+      </button>
+      {categories.map(cat => (
+        <button
+          key={cat}
+          className={`gallery-premium-nav-category ${activeCategory === cat ? 'active' : ''}`}
+          onClick={() => setActiveCategory(cat)}
+        >
+          {cat}
+        </button>
+      ))}
+    </div>
+  );
 
   // #1160: a folder-only root has no photos to show here, but the folder tiles
   // above prove the gallery isn't empty — render the shell (hero, logout,
@@ -902,23 +923,15 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       {/* Sticky Navigation */}
       <div className="gallery-premium-nav">
         <div className="gallery-premium-nav-inner">
-          <div className="gallery-premium-nav-categories">
-            <button
-              className={`gallery-premium-nav-category ${!activeCategory ? 'active' : ''}`}
-              onClick={() => setActiveCategory(null)}
-            >
-              {t('gallery.allPhotos', 'All Photos')}
-            </button>
-            {categories.map(cat => (
-              <button
-                key={cat}
-                className={`gallery-premium-nav-category ${activeCategory === cat ? 'active' : ''}`}
-                onClick={() => setActiveCategory(cat)}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+          {/* The way back to the portal leads the row, ahead of the categories
+              (hidden on a phone). Only wrapped when shown: an extra empty box
+              would move the monogram to the middle on a phone. */}
+          {showBackToAccount ? (
+            <div className="flex items-center gap-4 md:gap-8">
+              <BackToAccountLink className="gallery-premium-nav-btn gallery-premium-back gap-1.5 text-sm" />
+              {premiumCategories}
+            </div>
+          ) : premiumCategories}
 
           {/* The monogram gives way to the rating star on a phone, where the
               selection controls already fill the row (issue 1985). */}

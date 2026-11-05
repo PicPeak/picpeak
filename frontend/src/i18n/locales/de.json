@@ -2009,6 +2009,7 @@
     }
   },
   "gallery": {
+    "backToAccount": "Zurück zum Kundenkonto",
     "temporarilyUnavailable": "Diese Galerie ist vorübergehend nicht verfügbar.",
     "temporarilyUnavailableHelp": "Bitte versuchen Sie es später erneut. Ihr Galerie-Link bleibt gleich.",
     "revealPendingTitle": "Die Fotos sind noch eine Überraschung",
