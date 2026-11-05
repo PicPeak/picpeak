@@ -11,6 +11,7 @@ import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { AlbumChoiceDetails } from './AlbumChoiceDetails';
+import { ProductImage } from './ProductImage';
 import { albumProducts, errorMessage, type ChosenPhoto, type Offer } from './model';
 import { api } from '../../config/api';
 import { formatMoneyMinor } from '../../utils/money';
@@ -287,6 +288,8 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
             <AlbumChoiceDetails
               choice={offer.selection}
               renderPhoto={(photo) => <AdminAlbumPhoto eventId={eventId} photo={photo} />}
+              productImageId={catalogue?.products.find((p) => p.id === offer.productId)?.heroImageId}
+              renderImage={(imageId, alt) => <ProductImage imageId={imageId} alt={alt} />}
             />
           ) : (
             <p>

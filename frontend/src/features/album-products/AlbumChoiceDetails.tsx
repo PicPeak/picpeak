@@ -13,35 +13,57 @@ export function usePhotoRoleLabel() {
 
 /**
  * One album choice in one place: the album, every configured attribute and
- * every photo role. The caller draws a photo, because the gallery and the
- * admin reach it through different authenticated routes.
+ * every photo role. The caller draws a photo, and with `renderImage` the
+ * album's and each option's product image, because the gallery and the admin
+ * reach them through different authenticated routes.
  */
 export function AlbumChoiceDetails({
   choice,
   renderPhoto,
+  productImageId,
+  renderImage,
 }: {
   choice: Choice;
   renderPhoto: (photo: ChosenPhoto) => ReactNode;
+  productImageId?: string | null;
+  renderImage?: (imageId: string, alt: string) => ReactNode;
 }) {
   const { t } = useTranslation();
   const label = usePhotoRoleLabel();
   const row = 'grid gap-1 sm:grid-cols-[10rem_minmax(0,1fr)]';
+  // Small pictures to the right of the text; a row without one is unchanged.
+  const images = (list: { id: string; name: string }[]) =>
+    renderImage && list.length > 0 ? (
+      <span className="flex shrink-0 gap-2">
+        {list.map((image) => (
+          <span key={image.id} className="block w-16 sm:w-20">
+            {renderImage(image.id, image.name)}
+          </span>
+        ))}
+      </span>
+    ) : null;
   return (
     <dl className="space-y-3">
       <div className={row}>
         <dt className="font-semibold">{t('albumProducts.album', 'Album')}</dt>
-        <dd>{choice.product.name}</dd>
+        <dd className="flex items-start justify-between gap-3">
+          <span className="min-w-0">{choice.product.name}</span>
+          {images(productImageId ? [{ id: productImageId, name: choice.product.name }] : [])}
+        </dd>
       </div>
       {choice.attributes?.map((a) => (
         <div key={a.id} className={row}>
           <dt className="font-semibold">{a.name}</dt>
-          <dd className="flex flex-wrap items-center gap-2">
-            {a.options.map((o) => (
-              <span key={o.id} className="inline-flex items-center gap-1.5">
-                <SwatchDot hex={o.hex} />
-                {o.name}
-              </span>
-            ))}
+          <dd className="flex items-start justify-between gap-3">
+            <span className="flex min-w-0 flex-wrap items-center gap-2">
+              {a.options.map((o) => (
+                <span key={o.id} className="inline-flex items-center gap-1.5">
+                  <SwatchDot hex={o.hex} />
+                  {o.name}
+                </span>
+              ))}
+            </span>
+            {images(a.options.flatMap((o) => (o.imageId ? [{ id: o.imageId, name: o.name }] : [])))}
           </dd>
         </div>
       ))}

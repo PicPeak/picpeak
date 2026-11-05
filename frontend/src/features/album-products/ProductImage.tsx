@@ -3,8 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../../config/api';
 /**
  * Scoped API images: no remote supplier URLs or browser-visible credentials.
- * Tiles ask for the small rendition, a detail view for the large one; the
- * picture fills its square, and the square is there before the image is.
+ * Tiles ask for the small rendition, a detail view for the large one. A tile
+ * is a 3:2 box, the camera's own ratio, so a landscape product shot fills it
+ * with neither bars nor crop, and the box is there before the image is. The
+ * one big view is `natural` and keeps whatever ratio the studio uploaded; a
+ * colour swatch is `square`, to fill its circle.
  */
 export function ProductImage({
   imageId,
@@ -12,17 +15,20 @@ export function ProductImage({
   slug,
   imageLoader,
   size = 480,
+  shape = 'tile',
 }: {
   imageId: string | null;
   alt: string;
   slug?: string;
   imageLoader?: (id: string) => Promise<Blob>;
   size?: 480 | 1200;
+  shape?: 'tile' | 'natural' | 'square';
 }) {
   const { t } = useTranslation();
   const background = slug
     ? 'bg-surface text-text-secondary'
     : 'bg-inset text-muted';
+  const box = shape === 'square' ? 'aspect-square' : 'aspect-[3/2]';
   const [src, setSrc] = useState(''),
     [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -53,7 +59,7 @@ export function ProductImage({
   }, [imageId, slug, imageLoader, size]);
   return src && !failed ? (
     <img
-      className={`w-full aspect-square object-cover rounded-lg ${background}`}
+      className={`w-full rounded-lg ${shape === 'natural' ? 'h-auto' : `${box} object-cover`} ${background}`}
       src={src}
       alt={alt}
       loading="lazy"
@@ -61,7 +67,7 @@ export function ProductImage({
     />
   ) : (
     <span
-      className={`flex aspect-square items-center justify-center rounded-lg text-sm ${background}`}
+      className={`flex ${box} items-center justify-center rounded-lg text-sm ${background}`}
     >
       {failed
         ? t('albumProducts.imageUnavailable', 'Image unavailable')

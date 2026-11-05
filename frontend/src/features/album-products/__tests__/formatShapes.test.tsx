@@ -58,16 +58,27 @@ describe('product image renditions', () => {
     await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/admin/album-products/images/a', { params: { size: 480 }, responseType: 'blob' }));
   });
 
-  it('fills its square, and keeps the square while it loads', async () => {
+  it('fills a 3:2 tile, and keeps the tile while it loads', async () => {
     let resolve: (v: unknown) => void = () => {};
     vi.mocked(api.get).mockReturnValue(new Promise((r) => { resolve = r; }) as never);
     globalThis.URL.createObjectURL = vi.fn(() => 'blob:x');
     const { container, findByRole } = render(<ProductImage imageId="a" alt="Album" slug="wedding" />);
-    expect(container.firstElementChild).toHaveClass('aspect-square');
+    expect(container.firstElementChild).toHaveClass('aspect-[3/2]');
     expect(container).not.toHaveTextContent('No image');
     resolve({ data: new Blob(['x']) });
     const img = await findByRole('img', { name: 'Album' });
-    expect(img).toHaveClass('aspect-square', 'object-cover');
+    expect(img).toHaveClass('aspect-[3/2]', 'object-cover');
     expect(img).not.toHaveClass('object-contain');
+  });
+
+  it('draws the big view in the image\'s own ratio and a swatch as a square', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: new Blob(['x']) } as never);
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:x');
+    const { findByRole, rerender } = render(<ProductImage imageId="a" alt="Album" slug="wedding" shape="natural" />);
+    const img = await findByRole('img', { name: 'Album' });
+    expect(img).toHaveClass('w-full', 'h-auto');
+    expect(img.className).not.toMatch(/aspect-|object-cover/);
+    rerender(<ProductImage imageId="a" alt="Album" slug="wedding" shape="square" />);
+    expect(await findByRole('img', { name: 'Album' })).toHaveClass('aspect-square', 'object-cover');
   });
 });
