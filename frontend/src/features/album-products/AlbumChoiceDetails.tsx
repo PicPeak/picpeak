@@ -32,9 +32,10 @@ export function AlbumChoiceDetails({
   const label = usePhotoRoleLabel();
   const row = 'grid gap-1 sm:grid-cols-[10rem_minmax(0,1fr)]';
   // Small pictures to the right of the text; a row without one is unchanged.
+  // Several chosen options wrap within half the row instead of overflowing.
   const images = (list: { id: string; name: string }[]) =>
     renderImage && list.length > 0 ? (
-      <span className="flex shrink-0 gap-2">
+      <span className="flex max-w-[50%] flex-wrap justify-end gap-2">
         {list.map((image) => (
           <span key={image.id} className="block w-16 sm:w-20">
             {renderImage(image.id, image.name)}
