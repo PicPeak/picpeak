@@ -209,7 +209,7 @@ const Recent: React.FC<{ items: CustomerRecentItem[] }> = ({ items }) => {
       <ul className="divide-y divide-border-token">
         {items.map((item) => (
           <li key={`${item.kind}-${item.id}`} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-            <Link to={item.link} className="text-sm text-theme hover:underline min-w-0 break-all">
+            <Link to={item.link} className="text-sm text-theme hover:underline min-w-0 break-words">
               {recentLabel(t, item)}
             </Link>
             <time dateTime={item.at} className="text-xs text-muted-theme whitespace-nowrap">{fmtDate(item.at)}</time>
