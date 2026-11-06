@@ -3692,6 +3692,8 @@
       "mailFailed": "Paquete registrado, pero el correo de envío no se pudo poner en cola.",
       "mailed": "Correo enviado",
       "notMailed": "Sin aviso",
+      "mailQueued": "Correo programado",
+      "mailFailed": "Error al enviar el correo",
       "deleteTitle": "¿Eliminar este paquete?",
       "deleteMessage": "El paquete {{number}} desaparece del panel de administración y del portal del cliente. Un correo ya enviado sigue enviado.",
       "delete": "Eliminar paquete",

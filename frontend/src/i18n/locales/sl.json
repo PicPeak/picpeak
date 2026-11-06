@@ -10450,6 +10450,8 @@
       "mailFailed": "Paket zabeležen, vendar e-pošte o pošiljki ni bilo mogoče postaviti v čakalno vrsto.",
       "mailed": "E-pošta poslana",
       "notMailed": "Brez obvestila",
+      "mailQueued": "E-pošta načrtovana",
+      "mailFailed": "Pošiljanje e-pošte ni uspelo",
       "deleteTitle": "Izbrišem ta paket?",
       "deleteMessage": "Paket {{number}} izgine iz skrbništva in iz portala za stranke. Že poslana e-pošta ostane poslana.",
       "delete": "Izbriši paket",

@@ -121,10 +121,14 @@ export function AlbumShipments({ eventId, offer }: { eventId: number; offer: Off
                 <span className="break-all text-heading">{s.trackingNumber}</span>
               )}
               {s.shippedAt && <span className="text-muted">{formatDate(s.shippedAt)}</span>}
-              <Badge tone={s.notifiedAt ? 'success' : 'neutral'}>
-                {s.notifiedAt
+              <Badge tone={s.mail === 'sent' ? 'success' : s.mail === 'failed' ? 'danger' : s.mail === 'queued' ? 'info' : 'neutral'}>
+                {s.mail === 'sent'
                   ? t('albumProducts.shipments.mailed', 'E-mail sent')
-                  : t('albumProducts.shipments.notMailed', 'Not notified')}
+                  : s.mail === 'queued'
+                    ? t('albumProducts.shipments.mailQueued', 'E-mail scheduled')
+                    : s.mail === 'failed'
+                      ? t('albumProducts.shipments.mailFailed', 'E-mail failed')
+                      : t('albumProducts.shipments.notMailed', 'Not notified')}
               </Badge>
               {canEdit && (
                 <Button

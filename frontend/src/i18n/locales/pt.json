@@ -4554,6 +4554,8 @@
       "mailFailed": "Encomenda registada, mas não foi possível pôr o e-mail de envio em fila.",
       "mailed": "E-mail enviado",
       "notMailed": "Não avisado",
+      "mailQueued": "E-mail agendado",
+      "mailFailed": "Falha no e-mail",
       "deleteTitle": "Eliminar esta encomenda?",
       "deleteMessage": "A encomenda {{number}} desaparece da administração e do portal do cliente. Um e-mail já enviado continua enviado.",
       "delete": "Eliminar encomenda",

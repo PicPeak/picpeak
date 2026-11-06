@@ -11976,6 +11976,8 @@
       "mailFailed": "Sendung erfasst, aber die Versand-E-Mail konnte nicht in die Warteschlange gestellt werden.",
       "mailed": "E-Mail gesendet",
       "notMailed": "Nicht benachrichtigt",
+      "mailQueued": "E-Mail geplant",
+      "mailFailed": "E-Mail fehlgeschlagen",
       "deleteTitle": "Diese Sendung löschen?",
       "deleteMessage": "Sendung {{number}} verschwindet aus dem Admin-Bereich und aus dem Kundenportal. Eine bereits gesendete E-Mail bleibt gesendet.",
       "delete": "Sendung löschen",

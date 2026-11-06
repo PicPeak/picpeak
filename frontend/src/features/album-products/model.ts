@@ -156,6 +156,8 @@ export interface Shipment {
   trackingUrl: string | null;
   shippedAt: string | null;
   notifiedAt: string | null;
+  /** Where the customer's mail stands; null when none went or it was held back. */
+  mail?: 'sent' | 'queued' | 'failed' | null;
 }
 export interface ShipmentRecipient {
   id: number;

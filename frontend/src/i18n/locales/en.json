@@ -12010,6 +12010,8 @@
       "mailFailed": "Parcel recorded, but the shipping e-mail could not be queued.",
       "mailed": "E-mail sent",
       "notMailed": "Not notified",
+      "mailQueued": "E-mail scheduled",
+      "mailFailed": "E-mail failed",
       "deleteTitle": "Delete this parcel?",
       "deleteMessage": "Parcel {{number}} disappears from the admin and from the customer portal. An e-mail already sent stays sent.",
       "delete": "Delete parcel",

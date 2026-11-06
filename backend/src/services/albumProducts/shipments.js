@@ -65,6 +65,26 @@ function shape(row) {
   };
 }
 
+/**
+ * Where the customer's mail stands: 'sent', 'failed', 'queued' (waiting for
+ * business hours or the next run) or null (none, withdrawn or held back).
+ * notified_at only says it was queued; the queue row says whether it went.
+ */
+async function mailStates(conn, rows) {
+  const ids = rows.map((r) => r.notification_id).filter((id) => id != null);
+  const status = new Map(ids.length
+    ? (await conn('email_queue').whereIn('id', ids).select('id', 'status')).map((q) => [Number(q.id), q.status])
+    : []);
+  return (row) => {
+    if (!row.notified_at) return null;
+    const state = status.get(Number(row.notification_id));
+    if (state === 'sent' || state === 'failed') return state;
+    if (state === 'cancelled' || state === 'suppressed') return null;
+    // Pending, or a queue row pruned since: assume it went once pruned.
+    return state === undefined && row.notification_id != null ? 'sent' : 'queued';
+  };
+}
+
 /** The customer an offer's order belongs to, or null (see the header). */
 async function orderCustomerId(conn, offer) {
   const assigned = (
@@ -76,9 +96,8 @@ async function orderCustomerId(conn, offer) {
   return candidate != null && assigned.includes(Number(candidate)) ? Number(candidate) : null;
 }
 
-/** Who the mail would go to: an active customer with an address. */
-async function recipient(conn, offer) {
-  const customerId = await orderCustomerId(conn, offer);
+/** Who the mail goes to: that customer, active and with an address. */
+async function recipient(conn, customerId) {
   if (customerId == null) return null;
   const customer = await conn('customer_accounts')
     .where({ id: customerId, is_active: formatBoolean(true) })
@@ -98,10 +117,11 @@ async function offerOf(conn, eventId, offerId) {
 
 async function list(conn, eventId, offerId) {
   const offer = await offerOf(conn, eventId, offerId);
-  const customer = await recipient(conn, offer);
+  const customer = await recipient(conn, await orderCustomerId(conn, offer));
   const rows = await conn('album_shipments').where({ offer_id: offer.id }).orderBy('shipped_at', 'desc').orderBy('id', 'desc');
+  const mail = await mailStates(conn, rows);
   return {
-    shipments: rows.map(shape),
+    shipments: rows.map((row) => ({ ...shape(row), mail: mail(row) })),
     recipient: customer ? { id: customer.id, name: customerName(customer), email: customer.email } : null,
   };
 }
@@ -111,7 +131,7 @@ async function notify(conn, offer, row) {
   const ids = { shipmentId: row.id, offerId: offer.id };
   let queueId = null;
   try {
-    const customer = await recipient(conn, offer);
+    const customer = await recipient(conn, row.customer_account_id);
     if (!customer) return { status: 'skipped' };
     const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
     const base = ((await getFrontendBaseUrl()) || 'http://localhost:3000').replace(/\/+$/, '');
@@ -121,7 +141,7 @@ async function notify(conn, offer, row) {
       const { profile } = await require('../businessProfileService').getProfile();
       business = (profile && (profile.company_name || profile.legal_name)) || '';
     } catch (_) { /* the mail reads fine without a sender line */ }
-    const result = await require('../emailProcessor').queueEmail(null, customer.email, 'album_shipped', {
+    const result = await require('../emailProcessor').queueEmail(offer.event_id, customer.email, 'album_shipped', {
       customer_name: customerName(customer),
       business_name: business,
       product_name: V.parse(offer.selection)?.product?.name || '',
@@ -173,6 +193,9 @@ async function create(conn, eventId, offerId, input, adminId) {
     notified_at: null,
     created_by: adminId ?? null,
     created_at: now,
+    // Whose order it is now; a later change of the gallery's customers
+    // must not hand this parcel to someone else.
+    customer_account_id: await orderCustomerId(conn, offer),
   };
   const inserted = await conn('album_shipments').insert(row).returning('id');
   row.id = inserted[0]?.id ?? inserted[0];
@@ -182,7 +205,10 @@ async function create(conn, eventId, offerId, input, adminId) {
     await conn('album_shipments').where({ id: row.id })
       .update({ notified_at: row.notified_at, notification_id: sent.queueId ?? null });
   }
-  return { shipment: shape(row), notification: sent.status };
+  return {
+    shipment: { ...shape(row), mail: sent.status === 'queued' ? 'queued' : null },
+    notification: sent.status,
+  };
 }
 
 /**
@@ -202,52 +228,38 @@ async function remove(conn, eventId, offerId, shipmentId) {
 }
 
 /**
- * The parcels of this customer's orders, newest first, for the portal. Only
- * galleries the customer is assigned to, and only offers whose order is
- * theirs by the same rule the mail follows.
+ * The parcels of this customer's orders, newest first, for the portal: the
+ * ones recorded for them, in galleries they are still assigned to.
  */
 async function forCustomer(conn, customerId) {
   const rows = await conn('album_shipments as s')
     .join('event_album_products as o', 'o.id', 's.offer_id')
     .join('events as e', 'e.id', 'o.event_id')
-    .join('event_customer_assignments as a', 'a.event_id', 'o.event_id')
-    .where('a.customer_account_id', customerId)
-    .select('s.*', 'o.event_id', 'o.released_customer_id', 'o.billing_customer_id', 'o.selection', 'e.event_name')
+    .join('event_customer_assignments as a', function joinAssignment() {
+      this.on('a.event_id', '=', 'o.event_id').andOn('a.customer_account_id', '=', 's.customer_account_id');
+    })
+    .where('s.customer_account_id', customerId)
+    .select('s.*', 'o.selection', 'e.event_name')
     .orderBy('s.shipped_at', 'desc')
     .orderBy('s.id', 'desc');
-  const owners = new Map();
-  const out = [];
-  for (const row of rows) {
-    if (!owners.has(row.offer_id)) owners.set(row.offer_id, await orderCustomerId(conn, row));
-    if (owners.get(row.offer_id) !== Number(customerId)) continue;
-    out.push({
-      ...shape(row),
-      productName: V.parse(row.selection)?.product?.name || null,
-      eventName: row.event_name,
-    });
-  }
-  return out;
+  return rows.map((row) => ({
+    ...shape(row),
+    productName: V.parse(row.selection)?.product?.name || null,
+    eventName: row.event_name,
+  }));
 }
 
 /**
- * Customer erasure: a tracking number leads to the person's address. Every
- * order that is theirs by the rule the mail and the portal follow, plus any
- * order still released to them; runs before the assignments go.
+ * Customer erasure: a tracking number leads to the person's address. The
+ * parcels recorded for them, and any on an order still released to them.
  */
 async function forgetCustomer(tx, customerId) {
   if (!(await tx.schema.hasTable('album_shipments'))) return;
   const id = Number(customerId);
-  const offers = await tx('event_album_products')
-    .where((q) => q
-      .where({ released_customer_id: id })
-      .orWhere({ billing_customer_id: id })
-      .orWhereIn('event_id', tx('event_customer_assignments').where({ customer_account_id: id }).select('event_id')))
-    .select('id', 'event_id', 'released_customer_id', 'billing_customer_id');
-  const theirs = [];
-  for (const offer of offers) {
-    if (Number(offer.released_customer_id) === id || (await orderCustomerId(tx, offer)) === id) theirs.push(offer.id);
-  }
-  if (theirs.length) await tx('album_shipments').whereIn('offer_id', theirs).del();
+  await tx('album_shipments')
+    .where({ customer_account_id: id })
+    .orWhereIn('offer_id', tx('event_album_products').where({ released_customer_id: id }).select('id'))
+    .del();
 }
 
 module.exports = {

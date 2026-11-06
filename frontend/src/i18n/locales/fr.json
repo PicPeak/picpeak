@@ -4345,6 +4345,8 @@
       "mailFailed": "Colis enregistré, mais l’e-mail d’expédition n’a pas pu être mis en file d’attente.",
       "mailed": "E-mail envoyé",
       "notMailed": "Non prévenu",
+      "mailQueued": "E-mail programmé",
+      "mailFailed": "Échec de l'e-mail",
       "deleteTitle": "Supprimer ce colis ?",
       "deleteMessage": "Le colis {{number}} disparaît de l’administration et du portail client. Un e-mail déjà envoyé reste envoyé.",
       "delete": "Supprimer le colis",

@@ -12,8 +12,12 @@
  * is that mail's email_queue row, withdrawn while still pending when the
  * parcel is deleted (no foreign key: the queue is pruned on its own).
  *
- * No customer column: the customer is the offer's (released_customer_id or
- * the gallery's client), so a reassignment or an erasure is decided there.
+ * customer_account_id is the order's customer when the parcel was recorded
+ * (albumProducts/shipments.js orderCustomerId), kept so a later change of
+ * the gallery's customers never hands the parcel to someone else: the portal
+ * shows it only to that customer, and only while they are still assigned.
+ * Null when nobody could be named (a PIN-only gallery). No foreign key, like
+ * released_customer_id: erasure deletes the rows itself.
  */
 exports.up = async (db) => {
   if (!(await db.schema.hasTable('event_album_products'))) return;
@@ -31,6 +35,7 @@ exports.up = async (db) => {
     t.timestamp('shipped_at').notNullable();
     t.timestamp('notified_at');
     t.integer('notification_id');
+    t.integer('customer_account_id');
     t.integer('created_by')
       .unsigned()
       .references('id')
@@ -38,6 +43,7 @@ exports.up = async (db) => {
       .onDelete('SET NULL');
     t.timestamp('created_at').notNullable();
     t.index(['offer_id']);
+    t.index(['customer_account_id']);
   });
 };
 

@@ -129,6 +129,38 @@ describe('album shipments', () => {
     expect(await db('album_shipments').where({ offer_id: o })).toHaveLength(0);
   });
 
+  test('a parcel stays its customer\'s when the gallery\'s customers change', async () => {
+    const [anna, ben] = [await customer(), await customer()];
+    const g = await gallery([anna, ben]);
+    const o = await offer(g, { billing: anna });
+    await add(g, o, { carrier: 'dhl', trackingNumber: 'A1', notify: false });
+    const dashboard = async (id) => (await request(app).get('/api/customer/dashboard').set('x-customer', String(id))).body.shipments;
+    expect((await dashboard(anna)).map((s) => s.trackingNumber)).toEqual(['A1']);
+    // Anna leaves: Ben is now the sole customer, but the parcel was Anna's.
+    await db('event_customer_assignments').where({ event_id: g, customer_account_id: anna }).del();
+    expect(await dashboard(ben)).toEqual([]);
+    expect(await dashboard(anna)).toEqual([]);
+    await db.transaction((tx) => require('../../src/services/albumProducts/shipments').forgetCustomer(tx, anna));
+    expect(await db('album_shipments').where({ offer_id: o })).toHaveLength(0);
+  });
+
+  test('the mail belongs to the gallery and the list tells queued from sent and failed', async () => {
+    const c = await customer();
+    const g = await gallery([c]);
+    const o = await offer(g);
+    const created = (await add(g, o, { carrier: 'dpd', trackingNumber: 'Q1' })).body.shipment;
+    expect(created.mail).toBe('queued');
+    const { email } = await db('customer_accounts').where({ id: c }).first();
+    const [queued] = await mails(email);
+    expect(Number(queued.event_id)).toBe(g);
+    const state = async () => (await request(app).get(base(g, o)).set('Authorization', auth())).body.shipments[0].mail;
+    expect(await state()).toBe('queued');
+    await db('email_queue').where({ id: queued.id }).update({ status: 'failed' });
+    expect(await state()).toBe('failed');
+    await db('email_queue').where({ id: queued.id }).update({ status: 'sent' });
+    expect(await state()).toBe('sent');
+  });
+
   test('sends nothing when the studio unticks the mail', async () => {
     const c = await customer();
     const g = await gallery([c]);

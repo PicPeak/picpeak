@@ -99,8 +99,10 @@ it('says nobody can be notified when the order has no customer account, and stil
 
 it('lists parcels with a tracking link and the mail state, and deletes after confirming', async () => {
   state.shipments = [
-    { id: 5, offerId: 'offer', carrier: 'ups', carrierName: 'UPS', trackingNumber: '1Z9', trackingUrl: 'https://www.ups.com/track?tracknum=1Z9', shippedAt: '2026-11-05T10:00:00.000Z', notifiedAt: '2026-11-05T10:00:01.000Z' },
-    { id: 4, offerId: 'offer', carrier: 'other', carrierName: null, trackingNumber: 'X1', trackingUrl: null, shippedAt: '2026-11-04T10:00:00.000Z', notifiedAt: null },
+    { id: 5, offerId: 'offer', carrier: 'ups', carrierName: 'UPS', trackingNumber: '1Z9', trackingUrl: 'https://www.ups.com/track?tracknum=1Z9', shippedAt: '2026-11-05T10:00:00.000Z', notifiedAt: '2026-11-05T10:00:01.000Z', mail: 'sent' },
+    { id: 4, offerId: 'offer', carrier: 'other', carrierName: null, trackingNumber: 'X1', trackingUrl: null, shippedAt: '2026-11-04T10:00:00.000Z', notifiedAt: null, mail: null },
+    { id: 3, offerId: 'offer', carrier: 'dhl', carrierName: 'DHL', trackingNumber: 'D3', trackingUrl: 'https://x.test/D3', shippedAt: '2026-11-03T10:00:00.000Z', notifiedAt: '2026-11-03T10:00:01.000Z', mail: 'queued' },
+    { id: 2, offerId: 'offer', carrier: 'dhl', carrierName: 'DHL', trackingNumber: 'D2', trackingUrl: 'https://x.test/D2', shippedAt: '2026-11-02T10:00:00.000Z', notifiedAt: '2026-11-02T10:00:01.000Z', mail: 'failed' },
   ];
   mount();
   const link = await screen.findByRole('link', { name: '1Z9' });
@@ -110,6 +112,9 @@ it('lists parcels with a tracking link and the mail state, and deletes after con
   expect(rows[0]).toHaveTextContent('E-mail sent');
   expect(rows[1]).toHaveTextContent('Other carrier');
   expect(rows[1]).toHaveTextContent('Not notified');
+  // Queued is not sent: business hours can hold it, retries can fail it.
+  expect(rows[2]).toHaveTextContent('E-mail scheduled');
+  expect(rows[3]).toHaveTextContent('E-mail failed');
   fireEvent.click(screen.getByRole('button', { name: 'Delete parcel 1Z9' }));
   await waitFor(() => expect(state.removeShipment).toHaveBeenCalledWith(7, 'offer', 5));
   expect(state.confirm).toHaveBeenCalledWith(expect.objectContaining({ variant: 'danger' }));

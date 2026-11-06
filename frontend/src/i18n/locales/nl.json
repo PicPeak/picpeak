@@ -4272,6 +4272,8 @@
       "mailFailed": "Pakket vastgelegd, maar de verzend-e-mail kon niet in de wachtrij worden gezet.",
       "mailed": "E-mail verzonden",
       "notMailed": "Niet op de hoogte gebracht",
+      "mailQueued": "E-mail gepland",
+      "mailFailed": "E-mail mislukt",
       "deleteTitle": "Dit pakket verwijderen?",
       "deleteMessage": "Pakket {{number}} verdwijnt uit de beheeromgeving en uit het klantenportaal. Een al verzonden e-mail blijft verzonden.",
       "delete": "Pakket verwijderen",
