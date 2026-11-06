@@ -6,6 +6,7 @@ import type { Event } from '../../../types';
 import { Button, Card, Input, Modal } from '../../../components/common';
 import { eventsService } from '../../../services/events.service';
 import { WhatsAppInviteDialog } from './WhatsAppInviteDialog';
+import { useWhatsAppConfigured } from '../../../hooks/useWhatsAppConfigured';
 
 interface ClientAccessCardProps {
   event: Event;
@@ -16,6 +17,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
   const { t } = useTranslation();
   const [copiedClientLink, setCopiedClientLink] = useState(false);
   const [whatsAppOpen, setWhatsAppOpen] = useState(false);
+  const whatsAppConfigured = useWhatsAppConfigured();
   const [clientPin, setClientPin] = useState('');
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [enrollPin, setEnrollPin] = useState('');
@@ -181,16 +183,18 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                   >
                     {copiedClientLink ? t('events.copied') : t('events.copy')}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="md"
-                    leftIcon={<MessageCircle className="w-4 h-4" />}
-                    onClick={() => setWhatsAppOpen(true)}
-                    aria-label={t('events.whatsappInvite.title', 'Send via WhatsApp')}
-                    title={t('events.whatsappInvite.title', 'Send via WhatsApp')}
-                  >
-                    WhatsApp
-                  </Button>
+                  {whatsAppConfigured && (
+                    <Button
+                      variant="outline"
+                      size="md"
+                      leftIcon={<MessageCircle className="w-4 h-4" />}
+                      onClick={() => setWhatsAppOpen(true)}
+                      aria-label={t('events.whatsappInvite.title', 'Send via WhatsApp')}
+                      title={t('events.whatsappInvite.title', 'Send via WhatsApp')}
+                    >
+                      WhatsApp
+                    </Button>
+                  )}
                 </div>
                 {whatsAppOpen && (
                   <WhatsAppInviteDialog

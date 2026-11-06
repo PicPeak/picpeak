@@ -10,6 +10,7 @@ import { buildShareLinkUrl } from '../../../utils/url';
 import { isGalleryPublic } from '../../../utils/accessControl';
 import { useAnyPermission } from '../../../hooks/usePermission';
 import { WhatsAppInviteDialog } from './WhatsAppInviteDialog';
+import { useWhatsAppConfigured } from '../../../hooks/useWhatsAppConfigured';
 
 // Clipboard with the textarea/execCommand fallback for non-HTTPS installs
 // (the documented http://host:3000/admin setup has no navigator.clipboard).
@@ -55,6 +56,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
   const { t, i18n } = useTranslation();
   const [copiedLink, setCopiedLink] = useState(false);
   const [whatsAppOpen, setWhatsAppOpen] = useState(false);
+  const whatsAppConfigured = useWhatsAppConfigured();
   const [qrPreviewUrl, setQrPreviewUrl] = useState<string | null>(null);
   const [stored, setStored] = useState<{ password: string | null; client_password: string | null } | null>(null);
   const [loadingStored, setLoadingStored] = useState(false);
@@ -196,7 +198,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
         >
           {copiedLink ? t('events.copied') : t('events.copy')}
         </Button>
-        {event.share_link && (
+        {event.share_link && whatsAppConfigured && (
           <Button
             variant="outline"
             size="md"

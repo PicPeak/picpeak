@@ -11,6 +11,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ShareLinkCard } from '../ShareLinkCard';
 import type { Event } from '../../../../types';
 
+const whatsApp = vi.hoisted(() => ({ configured: false }));
+vi.mock('../../../../hooks/useWhatsAppConfigured', () => ({ useWhatsAppConfigured: () => whatsApp.configured }));
 vi.mock('../../../../hooks/usePermission', () => ({ usePermission: () => true, useAnyPermission: () => true }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
@@ -60,5 +62,18 @@ describe('ShareLinkCard — links withheld for another owner\'s gallery', () => 
     await waitFor(() => expect((screen.getByRole('textbox') as HTMLInputElement).value).toContain('/gallery/other-owner-wedding/tok'));
     expect(screen.getByText('events.copy')).toBeInTheDocument();
     expect(screen.queryByText('events.shareLinkOwnerOnly')).toBeNull();
+  });
+
+  it('offers WhatsApp only when WhatsApp is configured', async () => {
+    whatsApp.configured = false;
+    const { unmount } = renderCard({ share_link: '/gallery/other-owner-wedding/tok' });
+    await screen.findByText('events.copy');
+    expect(screen.queryByRole('button', { name: 'events.whatsappInvite.title' })).toBeNull();
+    unmount();
+
+    whatsApp.configured = true;
+    renderCard({ share_link: '/gallery/other-owner-wedding/tok' });
+    expect(await screen.findByRole('button', { name: 'events.whatsappInvite.title' })).toBeInTheDocument();
+    whatsApp.configured = false;
   });
 });

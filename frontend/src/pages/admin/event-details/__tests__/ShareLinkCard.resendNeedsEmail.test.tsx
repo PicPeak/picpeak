@@ -12,6 +12,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ShareLinkCard } from '../ShareLinkCard';
 import type { Event } from '../../../../types';
 
+const whatsApp = vi.hoisted(() => ({ configured: false }));
+vi.mock('../../../../hooks/useWhatsAppConfigured', () => ({ useWhatsAppConfigured: () => whatsApp.configured }));
 vi.mock('../../../../hooks/usePermission', () => ({ usePermission: () => true, useAnyPermission: () => true }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
