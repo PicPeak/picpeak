@@ -1990,7 +1990,15 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
     }
     // options.trx: the caller's transaction, when the row must commit or roll
     // back together with its own write (downloadJobNotifier's claim).
-    await (options.trx || db)('email_queue').insert(row);
+    // options.onQueued: gets the row's id, for a caller that may have to
+    // withdraw the mail while it is still pending (album shipments).
+    const insert = (options.trx || db)('email_queue').insert(row);
+    if (options.onQueued) {
+      const inserted = await insert.returning('id');
+      options.onQueued(inserted[0]?.id ?? inserted[0]);
+    } else {
+      await insert;
+    }
 
     logger.info(`Email queued: ${emailType} to ${recipientEmail}${
       row.scheduled_at ? ` (scheduled ${row.scheduled_at.toISOString()}${

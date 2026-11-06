@@ -6,7 +6,7 @@ import { Trash2 } from 'lucide-react';
 import { Badge, Button, Notice, useConfirm } from '../../components/common';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { usePermissions } from '../../contexts/PermissionsContext';
-import { albumProducts, CARRIERS, errorMessage, type Carrier, type Offer } from './model';
+import { albumProducts, CARRIERS, errorMessage, isConfirmed, type Carrier, type Offer } from './model';
 
 // Brand names, the same in every language.
 const CARRIER_NAMES: Record<Exclude<Carrier, 'other'>, string> = {
@@ -20,13 +20,18 @@ const CARRIER_NAMES: Record<Exclude<Carrier, 'other'>, string> = {
   fedex: 'FedEx',
 };
 
-/** The parcels sent for one confirmed album order (issue 2422). */
+/**
+ * The parcels sent for one album order (issue 2422). A parcel can only be
+ * added once the client can no longer change the order; parcels already
+ * recorded stay listed and deletable when the order is reopened.
+ */
 export function AlbumShipments({ eventId, offer }: { eventId: number; offer: Offer }) {
   const { t } = useTranslation(),
     { format: formatDate } = useLocalizedDate(),
     { hasPermission } = usePermissions(),
     confirm = useConfirm();
-  const canEdit = hasPermission('products.configure');
+  const canEdit = hasPermission('products.configure'),
+    canAdd = canEdit && isConfirmed(offer);
   const [carrier, setCarrier] = useState<Carrier>('dhl'),
     [number, setNumber] = useState(''),
     [url, setUrl] = useState(''),
@@ -94,7 +99,7 @@ export function AlbumShipments({ eventId, offer }: { eventId: number; offer: Off
       setBusy(false);
     }
   };
-  if (!canEdit && !shipments.length && !query.isError) return null;
+  if (!canAdd && !shipments.length && !query.isError) return null;
   return (
     <section className="space-y-2 border-t border-line pt-2" aria-label={t('albumProducts.shipments.title', 'Shipments')}>
       <h4 className="text-sm font-semibold text-heading">{t('albumProducts.shipments.title', 'Shipments')}</h4>
@@ -138,7 +143,7 @@ export function AlbumShipments({ eventId, offer }: { eventId: number; offer: Off
           ))}
         </ul>
       )}
-      {canEdit && query.isSuccess && (
+      {canAdd && query.isSuccess && (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
             <label className="min-w-[10rem] flex-1 text-sm text-body">

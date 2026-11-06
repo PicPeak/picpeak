@@ -342,9 +342,7 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
             </Notice>
           )}
           {offer.selection && <OfferHistory eventId={eventId} offer={offer} />}
-          {(offer.status === 'submitted' || offer.status === 'locked') && (
-            <AlbumShipments eventId={eventId} offer={offer} />
-          )}
+          {offer.selection && <AlbumShipments eventId={eventId} offer={offer} />}
           {crmEnabled && billing.data && (
             <div className="space-y-2">
               <label className="block text-sm">

@@ -29,7 +29,6 @@ const CARRIERS = {
   fedex: { name: 'FedEx', url: 'https://www.fedex.com/fedextrack/?trknbr={n}' },
   other: { name: null, url: null },
 };
-const CONFIRMED = ['submitted', 'locked'];
 const NUMBER = /^[A-Za-z0-9][A-Za-z0-9 ._/-]{0,63}$/;
 
 /** An admin-entered link, kept only when it is a plain http(s) URL. */
@@ -107,11 +106,13 @@ async function list(conn, eventId, offerId) {
   };
 }
 
+/** Queues the customer's mail; returns what happened and the queue row. */
 async function notify(conn, offer, row) {
   const ids = { shipmentId: row.id, offerId: offer.id };
+  let queueId = null;
   try {
     const customer = await recipient(conn, offer);
-    if (!customer) return 'skipped';
+    if (!customer) return { status: 'skipped' };
     const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
     const base = ((await getFrontendBaseUrl()) || 'http://localhost:3000').replace(/\/+$/, '');
     const event = await conn('events').where({ id: offer.event_id }).first('event_name');
@@ -131,12 +132,16 @@ async function notify(conn, offer, row) {
       // A passive customer (no password) cannot sign in to the portal.
       portal_link: customer.password_hash ? `${base}/customer/dashboard` : '',
       __language: customer.preferred_language || undefined,
-    }, { customerAccountId: customer.id, respectBusinessHours: true });
-    if (result === 'suppressed') return 'skipped';
-    return result ? 'queued' : 'failed';
+    }, {
+      customerAccountId: customer.id,
+      respectBusinessHours: true,
+      onQueued: (id) => { queueId = id; },
+    });
+    if (result === 'suppressed') return { status: 'skipped' };
+    return result ? { status: 'queued', queueId } : { status: 'failed' };
   } catch (err) {
     logger.warn('Could not queue the album shipment mail', { ...ids, error: err.message });
-    return 'failed';
+    return { status: 'failed' };
   }
 }
 
@@ -146,8 +151,10 @@ async function notify(conn, offer, row) {
  */
 async function create(conn, eventId, offerId, input, adminId) {
   const offer = await offerOf(conn, eventId, offerId);
-  if (!CONFIRMED.includes(offer.status))
-    throw new ConflictError('Only a confirmed order can be shipped');
+  // Confirmed as the portal reads it: locked, or a client-final submission.
+  const confirmed = offer.status === 'locked'
+    || (offer.status === 'submitted' && !!V.parse(offer.selection)?.clientFinal);
+  if (!confirmed) throw new ConflictError('Only a confirmed order can be shipped');
   const carrier = typeof input.carrier === 'string' ? input.carrier : '';
   if (!Object.prototype.hasOwnProperty.call(CARRIERS, carrier))
     throw new AppError('Choose a carrier', 400);
@@ -169,18 +176,29 @@ async function create(conn, eventId, offerId, input, adminId) {
   };
   const inserted = await conn('album_shipments').insert(row).returning('id');
   row.id = inserted[0]?.id ?? inserted[0];
-  const notification = input.notify === false ? 'off' : await notify(conn, offer, row);
-  if (notification === 'queued') {
+  const sent = input.notify === false ? { status: 'off' } : await notify(conn, offer, row);
+  if (sent.status === 'queued') {
     row.notified_at = new Date().toISOString();
-    await conn('album_shipments').where({ id: row.id }).update({ notified_at: row.notified_at });
+    await conn('album_shipments').where({ id: row.id })
+      .update({ notified_at: row.notified_at, notification_id: sent.queueId ?? null });
   }
-  return { shipment: shape(row), notification };
+  return { shipment: shape(row), notification: sent.status };
 }
 
+/**
+ * Deletes a mistaken parcel. Its mail, if it still waits for business hours,
+ * goes with it, so the customer never gets a number the studio withdrew; a
+ * mail already sent stays in the log.
+ */
 async function remove(conn, eventId, offerId, shipmentId) {
   const offer = await offerOf(conn, eventId, offerId);
-  const deleted = await conn('album_shipments').where({ id: shipmentId, offer_id: offer.id }).del();
-  if (!deleted) throw new NotFoundError('Shipment');
+  await conn.transaction(async (trx) => {
+    const row = await trx('album_shipments').where({ id: shipmentId, offer_id: offer.id }).first('id', 'notification_id');
+    if (!row) throw new NotFoundError('Shipment');
+    if (row.notification_id != null)
+      await trx('email_queue').where({ id: row.notification_id, status: 'pending' }).update({ status: 'cancelled' });
+    await trx('album_shipments').where({ id: row.id }).del();
+  });
 }
 
 /**

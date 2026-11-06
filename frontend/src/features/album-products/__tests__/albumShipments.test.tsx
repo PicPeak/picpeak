@@ -8,6 +8,7 @@ import { EventProductsCard } from '../EventProductsCard';
 const state = vi.hoisted(() => ({
   permissions: new Set<string>(),
   status: 'submitted',
+  clientFinal: true,
   recipient: { id: 4, name: 'Anna', email: 'anna@example.com' } as { id: number; name: string; email: string } | null,
   shipments: [] as unknown[],
   addShipment: vi.fn(),
@@ -30,13 +31,15 @@ vi.mock('../../../components/common', async () => ({
   useConfirm: () => state.confirm,
 }));
 vi.mock('../../print-sales/GallerySettings', () => ({ PrintGallerySettings: () => null }));
-vi.mock('../model', async () => ({
+vi.mock('../model', async (importOriginal) => ({
+  isConfirmed: (await importOriginal<typeof import('../model')>()).isConfirmed,
   CARRIERS: ['dhl', 'dhl_express', 'deutsche_post', 'dpd', 'hermes', 'gls', 'ups', 'fedex', 'other'],
   errorMessage: (error: Error) => error.message,
   albumProducts: {
     event: vi.fn(async () => ({
       catalogue: { products: [{ id: 'album', name: 'Album', active: true }] },
-      offers: [{ id: 'offer', productId: 'album', enabled: true, revision: 1, status: state.status, selection: null }],
+      offers: [{ id: 'offer', productId: 'album', enabled: true, revision: 1, status: state.status,
+        selection: { schemaVersion: 2, productVersion: 'v', product: { id: 'album', name: 'Album' }, attributes: [], photoRoles: [], clientFinal: state.clientFinal } }],
     })),
     shipments: vi.fn(async () => ({ shipments: state.shipments, recipient: state.recipient })),
     addShipment: (...args: unknown[]) => state.addShipment(...args),
@@ -52,6 +55,7 @@ function mount() {
 beforeEach(() => {
   state.permissions = new Set(['products.view', 'products.configure']);
   state.status = 'submitted';
+  state.clientFinal = true;
   state.recipient = { id: 4, name: 'Anna', email: 'anna@example.com' };
   state.shipments = [];
   state.addShipment.mockReset().mockResolvedValue({ shipment: {}, notification: 'queued' });
@@ -114,9 +118,25 @@ it('lists parcels with a tracking link and the mail state, and deletes after con
 it('shows nothing for an unconfirmed order, and no form without products.configure', async () => {
   state.status = 'draft';
   const { unmount } = mount();
-  await screen.findByText('Album');
+  await screen.findAllByText('Album');
   expect(screen.queryByRole('heading', { name: 'Shipments' })).toBeNull();
   unmount();
+  // Submitted but not client-final: the client can still change it.
+  state.status = 'submitted';
+  state.clientFinal = false;
+  const second = mount();
+  await screen.findAllByText('Album');
+  expect(screen.queryByRole('heading', { name: 'Shipments' })).toBeNull();
+  second.unmount();
+  // Reopened after a parcel was recorded: still listed and deletable, no new one.
+  state.status = 'draft';
+  state.shipments = [{ id: 6, offerId: 'offer', carrier: 'dpd', carrierName: 'DPD', trackingNumber: '2', trackingUrl: 'https://x.test/2', shippedAt: null, notifiedAt: null }];
+  const third = mount();
+  await screen.findByRole('link', { name: '2' });
+  expect(screen.getByRole('button', { name: /Delete parcel/ })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Add parcel' })).toBeNull();
+  third.unmount();
+  state.clientFinal = true;
   state.status = 'locked';
   state.permissions = new Set(['products.view']);
   state.shipments = [{ id: 5, offerId: 'offer', carrier: 'dhl', carrierName: 'DHL', trackingNumber: '1', trackingUrl: 'https://x.test/1', shippedAt: null, notifiedAt: null }];

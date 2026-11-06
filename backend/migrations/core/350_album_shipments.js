@@ -8,7 +8,9 @@
  * links are built from the number when read (albumProducts/shipments.js), so
  * a carrier that moves its tracking page is one edit, not a data fix.
  * notified_at is set when the customer's mail was queued; null means the
- * studio chose not to send one or nobody could be reached.
+ * studio chose not to send one or nobody could be reached. notification_id
+ * is that mail's email_queue row, withdrawn while still pending when the
+ * parcel is deleted (no foreign key: the queue is pruned on its own).
  *
  * No customer column: the customer is the offer's (released_customer_id or
  * the gallery's client), so a reassignment or an erasure is decided there.
@@ -28,6 +30,7 @@ exports.up = async (db) => {
     t.string('tracking_url', 2048);
     t.timestamp('shipped_at').notNullable();
     t.timestamp('notified_at');
+    t.integer('notification_id');
     t.integer('created_by')
       .unsigned()
       .references('id')

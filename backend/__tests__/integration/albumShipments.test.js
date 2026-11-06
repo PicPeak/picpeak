@@ -47,12 +47,12 @@ describe('album shipments', () => {
     for (const c of customers) await db('event_customer_assignments').insert({ event_id: id, customer_account_id: c });
     return id;
   }
-  async function offer(eventId, { status = 'submitted', released = null, billing = null } = {}) {
+  async function offer(eventId, { status = 'submitted', released = null, billing = null, clientFinal = true } = {}) {
     const id = uuid();
     await db('event_album_products').insert({
       id, event_id: eventId, product_id: uuid(), released_customer_id: released, billing_customer_id: billing,
       enabled: true, revision: 2, status,
-      selection: JSON.stringify({ product: { name: 'Fine Art Album' }, clientFinal: true }),
+      selection: JSON.stringify({ product: { name: 'Fine Art Album' }, clientFinal }),
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     });
     return id;
@@ -113,6 +113,22 @@ describe('album shipments', () => {
     expect(listed.body.shipments).toHaveLength(1);
   });
 
+  test('deleting a parcel withdraws its mail while it is still pending, not once it was sent', async () => {
+    const c = await customer();
+    const g = await gallery([c]);
+    const o = await offer(g);
+    const { email } = await db('customer_accounts').where({ id: c }).first();
+    const first = (await add(g, o, { carrier: 'dpd', trackingNumber: 'WRONG1' })).body.shipment;
+    const second = (await add(g, o, { carrier: 'dpd', trackingNumber: 'RIGHT2' })).body.shipment;
+    const [wrongMail, rightMail] = (await mails(email)).sort((a, b) => a.id - b.id);
+    await db('email_queue').where({ id: rightMail.id }).update({ status: 'sent' });
+    expect((await request(app).delete(`${base(g, o)}/${first.id}`).set('Authorization', auth())).status).toBe(204);
+    expect((await request(app).delete(`${base(g, o)}/${second.id}`).set('Authorization', auth())).status).toBe(204);
+    expect((await db('email_queue').where({ id: wrongMail.id }).first()).status).toBe('cancelled');
+    expect((await db('email_queue').where({ id: rightMail.id }).first()).status).toBe('sent');
+    expect(await db('album_shipments').where({ offer_id: o })).toHaveLength(0);
+  });
+
   test('sends nothing when the studio unticks the mail', async () => {
     const c = await customer();
     const g = await gallery([c]);
@@ -138,6 +154,9 @@ describe('album shipments', () => {
   test('refuses an unconfirmed order, an unknown carrier, a bad number and a non-http link', async () => {
     const g = await gallery([await customer()]);
     expect((await add(g, await offer(g, { status: 'draft' }), { carrier: 'dhl', trackingNumber: '123' })).status).toBe(409);
+    // Submitted but not client-final: the client can still change the order.
+    expect((await add(g, await offer(g, { clientFinal: false }), { carrier: 'dhl', trackingNumber: '123' })).status).toBe(409);
+    expect((await add(g, await offer(g, { status: 'locked', clientFinal: false }), { carrier: 'dhl', trackingNumber: '123' })).status).toBe(201);
     const o = await offer(g);
     expect((await add(g, o, { carrier: 'pigeon', trackingNumber: '123' })).status).toBe(400);
     expect((await add(g, o, { carrier: 'dhl', trackingNumber: '' })).status).toBe(400);
