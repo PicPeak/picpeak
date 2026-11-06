@@ -4024,7 +4024,27 @@
       "sortName": "По имени",
       "open": "Открыть",
       "albumAwaiting": "Ваш альбом для «{{name}}» готов к настройке",
-      "configureAlbum": "Настроить альбом"
+      "configureAlbum": "Настроить альбом",
+      "recent": {
+        "photosAdded_one": "{{count}} новое фото в {{title}}",
+        "photosAdded_few": "{{count}} новых фото в {{title}}",
+        "photosAdded_many": "{{count}} новых фото в {{title}}",
+        "photosAdded_other": "{{count}} новых фото в {{title}}",
+        "videosAdded_one": "{{count}} новое видео в {{title}}",
+        "videosAdded_few": "{{count}} новых видео в {{title}}",
+        "videosAdded_many": "{{count}} новых видео в {{title}}",
+        "videosAdded_other": "{{count}} новых видео в {{title}}",
+        "mediaAdded": "{{photos}} и {{videos}} в {{title}}",
+        "newPhotos_one": "{{count}} новое фото",
+        "newPhotos_few": "{{count}} новых фото",
+        "newPhotos_many": "{{count}} новых фото",
+        "newPhotos_other": "{{count}} новых фото",
+        "videos_one": "{{count}} видео",
+        "videos_few": "{{count}} видео",
+        "videos_many": "{{count}} видео",
+        "videos_other": "{{count}} видео"
+      },
+      "recentShowAll": "Показать всю активность"
     },
     "layout": {
       "greeting": "Здравствуйте, {{name}}"
@@ -4123,6 +4143,11 @@
       "albumOpen": "Настроить альбом",
       "albumReady": "Студия открыла ваш альбом. Выберите оформление и фотографии.",
       "albumView": "Посмотреть выбор"
+    },
+    "activity": {
+      "title": "Активность",
+      "loadError": "Не удалось загрузить активность. Попробуйте ещё раз.",
+      "empty": "Пока ничего не произошло."
     }
   },
   "customers": {

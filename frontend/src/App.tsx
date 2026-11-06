@@ -82,6 +82,7 @@ import { TransferUploadPage } from './pages/public/TransferUploadPage';
 import {
   CustomerLoginPage,
   CustomerDashboardPage,
+  CustomerActivityPage,
   CustomerAcceptInvitePage,
   CustomerLayout,
   CustomerProfilePage,
@@ -530,6 +531,7 @@ const router = createBrowserRouter(
               unauthenticated visitors to /customer/login. */}
           <Route element={<CustomerLayout />}>
             <Route path="dashboard" element={<CustomerDashboardPage />} />
+            <Route path="activity" element={<CustomerActivityPage />} />
             <Route path="calendar" element={<CustomerCalendarPage />} />
             <Route path="quotes" element={<CustomerQuotesPage />} />
             {/* Respond / sign inside the portal session, so the

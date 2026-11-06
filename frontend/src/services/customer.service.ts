@@ -215,15 +215,19 @@ export interface CustomerDashboard {
 
 export type CustomerRecentKind =
   | 'document_shared' | 'document_uploaded' | 'document_accepted' | 'document_rejected'
-  | 'contract_sent' | 'contract_signed' | 'quote_sent' | 'invoice_sent' | 'gallery_assigned';
+  | 'contract_sent' | 'contract_signed' | 'quote_sent' | 'invoice_sent' | 'gallery_assigned'
+  | 'photos_added';
 
 export interface CustomerRecentItem {
   kind: CustomerRecentKind;
-  id: number;
+  /** A string for photos_added: one item per gallery and upload day. */
+  id: number | string;
   title: string;
   at: string;
   /** A portal path. */
   link: string;
+  /** photos_added only: what came in that day. */
+  counts?: { photos: number; videos: number };
 }
 
 export interface CustomerEventOverview {
@@ -422,6 +426,12 @@ export const customerService = {
   async getDashboard(): Promise<CustomerDashboard> {
     const response = await api.get<CustomerDashboard>('/customer/dashboard');
     return response.data;
+  },
+
+  /** The Recent feed at full length, for the activity page. */
+  async getActivity(): Promise<CustomerRecentItem[]> {
+    const response = await api.get<{ items: CustomerRecentItem[] }>('/customer/activity');
+    return response.data.items;
   },
 
   /** Everything the customer has for one event (#1444). */

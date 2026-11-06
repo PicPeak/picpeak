@@ -6633,12 +6633,30 @@
         "contractSigned": "Podpisali ste pogodbo {{title}}",
         "quoteSent": "Ponudba {{title}} vam je bila poslana",
         "invoiceSent": "Račun {{title}} vam je bil poslan",
-        "galleryAssigned": "Galerija {{title}} vam je zdaj na voljo"
+        "galleryAssigned": "Galerija {{title}} vam je zdaj na voljo",
+        "photosAdded_one": "{{count}} nova fotografija v {{title}}",
+        "photosAdded_two": "{{count}} novi fotografiji v {{title}}",
+        "photosAdded_few": "{{count}} nove fotografije v {{title}}",
+        "photosAdded_other": "{{count}} novih fotografij v {{title}}",
+        "videosAdded_one": "{{count}} nov videoposnetek v {{title}}",
+        "videosAdded_two": "{{count}} nova videoposnetka v {{title}}",
+        "videosAdded_few": "{{count}} novi videoposnetki v {{title}}",
+        "videosAdded_other": "{{count}} novih videoposnetkov v {{title}}",
+        "mediaAdded": "{{photos}} in {{videos}} v {{title}}",
+        "newPhotos_one": "{{count}} nova fotografija",
+        "newPhotos_two": "{{count}} novi fotografiji",
+        "newPhotos_few": "{{count}} nove fotografije",
+        "newPhotos_other": "{{count}} novih fotografij",
+        "videos_one": "{{count}} videoposnetek",
+        "videos_two": "{{count}} videoposnetka",
+        "videos_few": "{{count}} videoposnetki",
+        "videos_other": "{{count}} videoposnetkov"
       },
       "documentRequested": "Naložite: {{title}}",
       "uploadDocument": "Naloži",
       "albumAwaiting": "Vaš album za {{name}} je pripravljen za sestavljanje",
-      "configureAlbum": "Sestavi album"
+      "configureAlbum": "Sestavi album",
+      "recentShowAll": "Prikaži vso dejavnost"
     },
     "layout": {
       "greeting": "Pozdravljeni, {{name}}"
@@ -6912,6 +6930,11 @@
       "sharedAt": "V skupni rabi",
       "reviewedAt": "Pregledano",
       "event": "Dogodek"
+    },
+    "activity": {
+      "title": "Dejavnost",
+      "loadError": "Dejavnosti ni bilo mogoče naložiti. Poskusite znova.",
+      "empty": "Zaenkrat se še ni nič zgodilo."
     }
   },
   "customers": {

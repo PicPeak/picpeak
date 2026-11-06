@@ -3846,7 +3846,19 @@
       "sortName": "Op naam",
       "open": "Openen",
       "albumAwaiting": "Je album voor {{name}} staat klaar om samen te stellen",
-      "configureAlbum": "Album samenstellen"
+      "configureAlbum": "Album samenstellen",
+      "recent": {
+        "photosAdded_one": "{{count}} nieuwe foto in {{title}}",
+        "photosAdded_other": "{{count}} nieuwe foto's in {{title}}",
+        "videosAdded_one": "{{count}} nieuwe video in {{title}}",
+        "videosAdded_other": "{{count}} nieuwe video's in {{title}}",
+        "mediaAdded": "{{photos}} en {{videos}} in {{title}}",
+        "newPhotos_one": "{{count}} nieuwe foto",
+        "newPhotos_other": "{{count}} nieuwe foto's",
+        "videos_one": "{{count}} video",
+        "videos_other": "{{count}} video's"
+      },
+      "recentShowAll": "Alle activiteit tonen"
     },
     "layout": {
       "greeting": "Hallo, {{name}}"
@@ -3945,6 +3957,11 @@
       "albumOpen": "Stel je album samen",
       "albumReady": "De studio heeft je album vrijgegeven. Kies de uitvoering en je foto’s.",
       "albumView": "Bekijk je selectie"
+    },
+    "activity": {
+      "title": "Activiteit",
+      "loadError": "De activiteit kon niet worden geladen. Probeer het opnieuw.",
+      "empty": "Er is nog niets gebeurd."
     }
   },
   "customers": {

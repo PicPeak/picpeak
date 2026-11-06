@@ -7762,6 +7762,11 @@
         "password": "Choose a password"
       }
     },
+    "activity": {
+      "title": "Activity",
+      "loadError": "Could not load the activity. Please try again.",
+      "empty": "Nothing has happened yet."
+    },
     "dashboard": {
       "title": "Your galleries",
       "subtitle": "Click a gallery to open it. The Download button bundles every photo as a zip.",
@@ -7805,6 +7810,7 @@
       "documentRejected": "{{name}} was not accepted — upload a corrected version",
       "viewDocument": "View document",
       "recentTitle": "Recent",
+      "recentShowAll": "Show all activity",
       "recent": {
         "documentShared": "New document: {{title}}",
         "documentUploaded": "You uploaded {{title}}",
@@ -7814,7 +7820,16 @@
         "contractSigned": "You signed contract {{title}}",
         "quoteSent": "Quote {{title}} was sent to you",
         "invoiceSent": "Invoice {{title}} was sent to you",
-        "galleryAssigned": "Gallery {{title}} is now available to you"
+        "galleryAssigned": "Gallery {{title}} is now available to you",
+        "photosAdded_one": "{{count}} new photo in {{title}}",
+        "photosAdded_other": "{{count}} new photos in {{title}}",
+        "videosAdded_one": "{{count}} new video in {{title}}",
+        "videosAdded_other": "{{count}} new videos in {{title}}",
+        "mediaAdded": "{{photos}} and {{videos}} in {{title}}",
+        "newPhotos_one": "{{count}} new photo",
+        "newPhotos_other": "{{count}} new photos",
+        "videos_one": "{{count}} video",
+        "videos_other": "{{count}} videos"
       },
       "documentRequested": "Please upload: {{title}}",
       "uploadDocument": "Upload",

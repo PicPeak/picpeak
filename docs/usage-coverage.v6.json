@@ -1597,6 +1597,7 @@
         "POST /quotes/:id/totals",
         "POST /quotes/:id/respond",
         "GET /dashboard",
+        "GET /activity",
         "GET /events/:slug/overview",
         "GET /documents",
         "POST /documents",

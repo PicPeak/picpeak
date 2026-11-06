@@ -23,6 +23,8 @@ const { hasRight } = require('./customerContactsService');
 const { followSlugRedirect } = require('./slugRedirects');
 const { orPaidAwaitingDelivery } = require('./invoice/helpers');
 const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
+const { isPostgreSQL, sqliteTimestampMs } = require('../utils/dbCompat');
+const { livePhotos, applyPhotoVisibilityFilter, wherePhotoProcessed } = require('../utils/photoVisibility');
 
 const isTrue = (v) => v === true || v === 1 || v === '1';
 const pad = (n) => String(n).padStart(2, '0');
@@ -245,6 +247,47 @@ async function needsActionFor(customerId, features, session = null) {
 }
 
 /**
+ * New photos and videos in the customer's galleries, one row per gallery and
+ * upload day (UTC), so a bulk import of 500 files is one entry, not 500. Only
+ * what came in after the gallery was assigned to this customer — the set it
+ * was assigned with is "gallery is ready" — and only what the customer's
+ * gallery view lists: their portal token opens the gallery at guest level, so
+ * the guest visibility filter (no hidden or held uploads), no trash and no
+ * media still processing. Aggregated in SQL and cut to `limit`, newest first:
+ * a group past that could never make the feed.
+ *
+ * Rows: { event_id, day: 'YYYY-MM-DD', total, videos, latest }.
+ */
+async function photoGroupsFor(customerId, eventIds, limit) {
+  if (eventIds.length === 0) return [];
+  const isVideo = 'CASE WHEN photos.media_type = \'video\' OR photos.mime_type LIKE \'video/%\' THEN 1 ELSE 0 END';
+  const query = wherePhotoProcessed(applyPhotoVisibilityFilter(livePhotos(db)
+    .join('event_customer_assignments as eca', 'eca.event_id', 'photos.event_id')
+    .where('eca.customer_account_id', customerId)
+    .whereIn('photos.event_id', eventIds), 'guest'))
+    .select('photos.event_id', db.raw('COUNT(*) as total'), db.raw(`SUM(${isVideo}) as videos`))
+    .orderByRaw('latest DESC')
+    .orderBy('photos.event_id', 'desc')
+    .limit(limit);
+  if (isPostgreSQL()) {
+    const day = 'to_char(photos.uploaded_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD\')';
+    query.whereRaw('?? > ??', ['photos.uploaded_at', 'eca.assigned_at'])
+      .select(db.raw(`${day} as day`), db.raw('MAX(photos.uploaded_at) as latest'))
+      .groupBy('photos.event_id').groupByRaw(day);
+  } else {
+    // uploaded_at / assigned_at may be ISO text, CURRENT_TIMESTAMP text or
+    // epoch ms on SQLite; compare and bucket them as epoch ms.
+    const uploaded = sqliteTimestampMs('photos.uploaded_at');
+    const assigned = sqliteTimestampMs('eca.assigned_at');
+    const day = `date(${uploaded.sql} / 1000.0, 'unixepoch')`;
+    query.whereRaw(`${uploaded.sql} > ${assigned.sql}`, [...uploaded.bindings, ...assigned.bindings])
+      .select(db.raw(`${day} as day`, uploaded.bindings), db.raw(`MAX(${uploaded.sql}) as latest`, uploaded.bindings))
+      .groupBy('photos.event_id').groupByRaw(day, uploaded.bindings);
+  }
+  return query;
+}
+
+/**
  * What happened lately, for the dashboard's "Recent" (#1444 slice 6).
  *
  * Derived from the source tables — not from activity_logs — with the same
@@ -253,13 +296,14 @@ async function needsActionFor(customerId, features, session = null) {
  * note being edited, a document unshared) out of it: an unshared document
  * simply no longer matches customerVisibleQuery.
  *
- * Each item: { kind, id, title, at, link }.
+ * Each item: { kind, id, title, at, link }; a photos_added item also carries
+ * counts: { photos, videos }.
  */
 async function recentFor(customerId, features, limit = 10, { galleries = true } = {}) {
   const items = [];
-  const push = (kind, id, title, at, link) => {
+  const push = (kind, id, title, at, link, extra) => {
     const ms = toMillis(at);
-    if (ms !== null) items.push({ kind, id, title, at: new Date(ms).toISOString(), link });
+    if (ms !== null) items.push({ kind, id, title, at: new Date(ms).toISOString(), link, ...extra });
   };
 
   if (features.documents) {
@@ -300,8 +344,16 @@ async function recentFor(customerId, features, limit = 10, { galleries = true } 
   const events = galleries
     ? (await customerAccountsService.listEventsForCustomer(customerId)).filter((e) => !isTrue(e.is_draft))
     : [];
+  const eventLink = (e) => `/customer/events/${encodeURIComponent(e.slug)}`;
   for (const e of events) {
-    push('gallery_assigned', e.id, e.event_name, e.assigned_at, `/customer/events/${encodeURIComponent(e.slug)}`);
+    push('gallery_assigned', e.id, e.event_name, e.assigned_at, eventLink(e));
+  }
+  const byId = new Map(events.map((e) => [Number(e.id), e]));
+  for (const g of await photoGroupsFor(customerId, [...byId.keys()], limit)) {
+    const e = byId.get(Number(g.event_id));
+    const videos = Number(g.videos) || 0;
+    push('photos_added', `${e.id}-${g.day}`, e.event_name, g.latest, eventLink(e),
+      { counts: { photos: (Number(g.total) || 0) - videos, videos } });
   }
 
   items.sort((a, b) => (b.at < a.at ? -1 : b.at > a.at ? 1 : 0));
@@ -335,6 +387,16 @@ async function getDashboard(customerId, session = null) {
       expired: events.filter((e) => e.availability === 'expired'),
     },
   };
+}
+
+// The activity page lists more than the dashboard's Recent box.
+const ACTIVITY_LIMIT = 100;
+
+/** Everything Recent shows, for the portal's activity page. */
+async function getActivity(customerId, session = null) {
+  const features = await featuresFor(customerId, session);
+  const galleries = !session || hasRight(session.rights, 'galleries');
+  return { items: await recentFor(customerId, features, ACTIVITY_LIMIT, { galleries }) };
 }
 
 /**
@@ -490,5 +552,5 @@ async function getEventOverview(customerId, slug, session = null) {
 }
 
 module.exports = {
-  shapeEvent, getDashboard, getEventOverview, dealLineageForEvent, _internal: { toDateOnly, needsActionFor, recentFor },
+  shapeEvent, getDashboard, getActivity, getEventOverview, dealLineageForEvent, _internal: { toDateOnly, needsActionFor, recentFor },
 };

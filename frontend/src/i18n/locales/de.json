@@ -7727,6 +7727,11 @@
         "password": "Passwort wählen"
       }
     },
+    "activity": {
+      "title": "Neuigkeiten",
+      "loadError": "Die Neuigkeiten konnten nicht geladen werden. Bitte versuchen Sie es erneut.",
+      "empty": "Noch nichts passiert."
+    },
     "dashboard": {
       "title": "Ihre Galerien",
       "subtitle": "Klicken Sie auf eine Galerie, um sie zu öffnen. Der Download-Button bündelt alle Fotos als ZIP.",
@@ -7770,6 +7775,7 @@
       "documentRejected": "{{name}} wurde nicht angenommen — laden Sie eine korrigierte Fassung hoch",
       "viewDocument": "Dokument ansehen",
       "recentTitle": "Neuigkeiten",
+      "recentShowAll": "Alle Neuigkeiten anzeigen",
       "recent": {
         "documentShared": "Neues Dokument: {{title}}",
         "documentUploaded": "Sie haben {{title}} hochgeladen",
@@ -7779,7 +7785,16 @@
         "contractSigned": "Sie haben den Vertrag {{title}} unterschrieben",
         "quoteSent": "Angebot {{title}} wurde Ihnen zugestellt",
         "invoiceSent": "Rechnung {{title}} wurde Ihnen zugestellt",
-        "galleryAssigned": "Die Galerie {{title}} steht Ihnen jetzt zur Verfügung"
+        "galleryAssigned": "Die Galerie {{title}} steht Ihnen jetzt zur Verfügung",
+        "photosAdded_one": "{{count}} neues Foto in {{title}}",
+        "photosAdded_other": "{{count}} neue Fotos in {{title}}",
+        "videosAdded_one": "{{count}} neues Video in {{title}}",
+        "videosAdded_other": "{{count}} neue Videos in {{title}}",
+        "mediaAdded": "{{photos}} und {{videos}} in {{title}}",
+        "newPhotos_one": "{{count}} neues Foto",
+        "newPhotos_other": "{{count}} neue Fotos",
+        "videos_one": "{{count}} Video",
+        "videos_other": "{{count}} Videos"
       },
       "documentRequested": "Bitte hochladen: {{title}}",
       "uploadDocument": "Hochladen",
