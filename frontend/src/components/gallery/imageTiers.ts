@@ -84,6 +84,11 @@ function applyDataSaver(width: number, tiers: readonly number[]): number {
   return i > 0 ? tiers[i - 1] : width;
 }
 
+/** The preview tier this device asks for, after any data saver. */
+function previewTier(photo?: { width?: number | null; height?: number | null }): number {
+  return applyDataSaver(viewportPreviewWidth(photo), PREVIEW_WIDTHS);
+}
+
 /** Append ?w= to a derivative URL, preserving any existing query string. */
 function withWidth(url: string, width: number): string {
   return `${url}${url.includes('?') ? '&' : '?'}w=${width}`;
@@ -99,7 +104,7 @@ export function previewUrlForViewport(
   photo?: { width?: number | null; height?: number | null },
 ): string | null {
   if (!previewUrl) return null;
-  const width = applyDataSaver(viewportPreviewWidth(photo), PREVIEW_WIDTHS);
+  const width = previewTier(photo);
   // The top tier is the default the server already serves; leaving the
   // parameter off keeps those URLs byte-identical to today's, so existing
   // caches and ETags stay valid.
@@ -142,6 +147,26 @@ export function lightboxImageUrl(photo: {
   // correctly (a still and an animated WebP declare the same type) is gone
   // with it.
   return previewUrlForViewport(photo.preview_url || photo.slideshow_url, photo) || photo.url;
+}
+
+/**
+ * Long edge, in pixels, of the image lightboxImageUrl serves, when it can be
+ * known: the preview tier it asks for (the server renders fit 'inside' and
+ * without enlargement, so never past the source), or the original. The
+ * lightbox shows that image at most at its natural size, so this is how large
+ * the photo will be on a stage wider than it. Null without dimensions for an
+ * original.
+ */
+export function lightboxImageLongEdge(photo: {
+  preview_url?: string | null;
+  slideshow_url?: string | null;
+  width?: number | null;
+  height?: number | null;
+}): number | null {
+  const sourceLongEdge = photo.width && photo.height ? Math.max(photo.width, photo.height) : null;
+  if (!(photo.preview_url || photo.slideshow_url)) return sourceLongEdge;
+  const tier = previewTier(photo);
+  return sourceLongEdge ? Math.min(tier, sourceLongEdge) : tier;
 }
 
 /**

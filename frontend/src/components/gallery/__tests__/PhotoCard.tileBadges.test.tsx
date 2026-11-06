@@ -60,6 +60,11 @@ describe('PhotoCard tile badges', () => {
     expect(screen.queryByTestId('first-look-badge')).not.toBeInTheDocument();
   });
 
+  it('marks the tile with the photo as its first image, for the lightbox to grow out of', () => {
+    renderCard(photo());
+    expect(document.querySelector('[data-grid-tile] img')).toHaveAttribute('src', expect.stringContaining('/t/7'));
+  });
+
   it('shows nothing without the gallery context at all', () => {
     renderCard(photo({ first_look: true }));
     expect(screen.queryByTestId('first-look-badge')).not.toBeInTheDocument();

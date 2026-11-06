@@ -15,7 +15,10 @@ import { useWindowedItems } from './rowWindow';
  * height, every mounted tile's position and the scrollbar unchanged.
  */
 
-/** Set on each tile, a direct child of the grid, so the grid can measure one. */
+/**
+ * Set on each photo tile. The grid measures one that is its direct child; the
+ * lightbox finds the tile a click opened it from (useTileClickOrigin).
+ */
 export const GRID_TILE_ATTR = 'data-grid-tile';
 
 /**
