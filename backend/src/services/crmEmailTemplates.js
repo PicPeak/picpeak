@@ -655,6 +655,35 @@ Zur Weiterleitung an das Inkasso / für die Betreibung.`,
       body_text: 'Guten Tag {{customer_name}},\n\nwir warten noch auf {{request_title}}. Bitte laden Sie das Dokument in Ihrem Kundenportal hoch.{{#if request_note}}\n\n{{request_note}}{{/if}}{{#if due_date}}\n\nBitte senden Sie es bis {{due_date}}.{{/if}}\n\nHochladen: {{upload_link}}\n\nFalls Sie es bereits gesendet haben, können Sie diese Erinnerung ignorieren.{{#if business_name}}\n\n{{business_name}}{{/if}}',
     },
   },
+  // Album shipment (issue 2422): the customer of an album order, when the
+  // studio records a parcel. portal_link is empty for a customer without a
+  // portal login.
+  album_shipped: {
+    category: 'customers', feature_flag: 'albumProducts',
+    variables: ['customer_name', 'business_name', 'product_name', 'event_name', 'carrier_name', 'tracking_number', 'tracking_link', 'portal_link'],
+    en: {
+      subject: 'Your album is on its way{{#if event_name}}: {{event_name}}{{/if}}',
+      body_html: `<h2>Your album is on its way</h2>
+<p>Dear {{customer_name}},</p>
+<p>We have sent <strong>{{product_name}}</strong>{{#if event_name}} for "{{event_name}}"{{/if}} by post.</p>
+<p>Tracking number{{#if carrier_name}} ({{carrier_name}}){{/if}}: <strong>{{tracking_number}}</strong></p>
+{{#if tracking_link}}<p style="text-align: center; margin: 30px 0;"><a href="{{tracking_link}}" class="button">Track parcel</a></p>{{/if}}
+{{#if portal_link}}<p style="font-size: 13px; color: #666;">You can also find the shipment in your customer portal: {{portal_link}}</p>{{/if}}
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Dear {{customer_name}},\n\nWe have sent {{product_name}}{{#if event_name}} for "{{event_name}}"{{/if}} by post.\n\nTracking number{{#if carrier_name}} ({{carrier_name}}){{/if}}: {{tracking_number}}{{#if tracking_link}}\nTrack parcel: {{tracking_link}}{{/if}}{{#if portal_link}}\n\nYour customer portal: {{portal_link}}{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+    de: {
+      subject: 'Ihr Album ist unterwegs{{#if event_name}}: {{event_name}}{{/if}}',
+      body_html: `<h2>Ihr Album ist unterwegs</h2>
+<p>Guten Tag {{customer_name}},</p>
+<p>wir haben <strong>{{product_name}}</strong>{{#if event_name}} für "{{event_name}}"{{/if}} per Post an Sie verschickt.</p>
+<p>Sendungsnummer{{#if carrier_name}} ({{carrier_name}}){{/if}}: <strong>{{tracking_number}}</strong></p>
+{{#if tracking_link}}<p style="text-align: center; margin: 30px 0;"><a href="{{tracking_link}}" class="button">Sendung verfolgen</a></p>{{/if}}
+{{#if portal_link}}<p style="font-size: 13px; color: #666;">Die Sendung finden Sie auch in Ihrem Kundenportal: {{portal_link}}</p>{{/if}}
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Guten Tag {{customer_name}},\n\nwir haben {{product_name}}{{#if event_name}} für "{{event_name}}"{{/if}} per Post an Sie verschickt.\n\nSendungsnummer{{#if carrier_name}} ({{carrier_name}}){{/if}}: {{tracking_number}}{{#if tracking_link}}\nSendung verfolgen: {{tracking_link}}{{/if}}{{#if portal_link}}\n\nIhr Kundenportal: {{portal_link}}{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+  },
 };
 
 let _seeded = false;

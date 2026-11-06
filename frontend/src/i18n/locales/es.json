@@ -3676,7 +3676,29 @@
     "stepSize": "Elige un tamaño",
     "viewSelection": "Ver tu selección",
     "withdraw": "Retirar la publicación",
-    "yourAlbum": "Tu álbum"
+    "yourAlbum": "Tu álbum",
+    "shipments": {
+      "title": "Envíos",
+      "other": "Otra empresa de transporte",
+      "carrier": "Empresa de transporte",
+      "number": "Número de seguimiento",
+      "url": "Enlace de seguimiento (opcional)",
+      "notify": "Avisar al cliente por correo electrónico",
+      "notifyTo": "A {{name}} ({{email}}), con el enlace de seguimiento.",
+      "noRecipient": "Ninguna cuenta de cliente pertenece a este pedido, así que no se puede avisar a nadie y el portal no puede mostrar el paquete. Aun así puedes registrarlo.",
+      "add": "Añadir paquete",
+      "added": "Paquete registrado.",
+      "addedMailed": "Paquete registrado. Correo de envío en cola para {{email}}.",
+      "mailFailed": "Paquete registrado, pero el correo de envío no se pudo poner en cola.",
+      "mailed": "Correo enviado",
+      "notMailed": "Sin aviso",
+      "mailQueued": "Correo programado",
+      "mailFailed": "Error al enviar el correo",
+      "deleteTitle": "¿Eliminar este paquete?",
+      "deleteMessage": "El paquete {{number}} desaparece del panel de administración y del portal del cliente. Un correo ya enviado sigue enviado.",
+      "delete": "Eliminar paquete",
+      "deleteNamed": "Eliminar paquete {{number}}"
+    }
   },
   "customer": {
     "dashboard": {
@@ -3697,7 +3719,12 @@
         "videos_many": "{{count}} vídeos",
         "videos_other": "{{count}} vídeos"
       },
-      "recentShowAll": "Ver toda la actividad"
+      "recentShowAll": "Ver toda la actividad",
+      "shipmentsTitle": "Envíos",
+      "shipmentAlbum": "Álbum",
+      "shipmentCarrierOther": "Paquete",
+      "shipmentSent": "enviado el {{date}}",
+      "trackParcel": "Seguir el paquete"
     },
     "event": {
       "album": "Tu álbum",

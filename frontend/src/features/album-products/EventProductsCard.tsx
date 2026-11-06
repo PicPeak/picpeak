@@ -1,5 +1,5 @@
 import { PrintGallerySettings } from '../print-sales/GallerySettings';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChoiceSummary } from './ConfigurationPicker';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -11,6 +11,7 @@ import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { AlbumChoiceDetails } from './AlbumChoiceDetails';
+import { AlbumShipments } from './AlbumShipments';
 import { ProductImage } from './ProductImage';
 import { albumProducts, errorMessage, type ChosenPhoto, type Offer } from './model';
 import { api } from '../../config/api';
@@ -91,6 +92,7 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
     [audience, setAudience] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['gallery-products', eventId],
     queryFn: () => albumProducts.event(eventId),
@@ -162,6 +164,8 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
   const load = async () => {
     await query.refetch();
     if (crmEnabled) await billing.refetch();
+    // Audience and billing decide whom a parcel's mail goes to.
+    await queryClient.invalidateQueries({ queryKey: ['gallery-product-shipments', eventId] });
   };
   const changeAudience = async (offer: Offer, value: string) => {
     setBusy(true);
@@ -338,6 +342,7 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
             </Notice>
           )}
           {offer.selection && <OfferHistory eventId={eventId} offer={offer} />}
+          {offer.selection && <AlbumShipments eventId={eventId} offer={offer} />}
           {crmEnabled && billing.data && (
             <div className="space-y-2">
               <label className="block text-sm">

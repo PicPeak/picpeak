@@ -1497,6 +1497,8 @@ async function eraseCustomer(id, erasedByAdminId) {
 
     // The name a client typed on a product choice (issue 2320).
     await require('./albumProducts/retention').forgetCustomer(trx, id);
+    // Tracking numbers of their parcels lead to their address (issue 2422).
+    await require('./albumProducts/shipments').forgetCustomer(trx, id);
 
     // Gift notes are free text about the person. The rows stay, without a
     // name, so the stock count behind them keeps adding up.

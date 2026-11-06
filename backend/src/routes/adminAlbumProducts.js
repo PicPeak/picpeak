@@ -16,6 +16,7 @@ const service = () =>
   require('../services/albumProducts/service').application();
 const router = express.Router();
 const billing = require('../services/albumProducts/billing');
+const shipments = require('../services/albumProducts/shipments');
 router.use(adminAuth, requireFeatureFlag('albumProducts'));
 router.use((req, res, next) => {
   res.set('Cache-Control', 'private, no-store');
@@ -202,6 +203,38 @@ events.get(
     res.json(
       await service().history(Number(req.params.eventId), req.params.id),
     );
+  }),
+);
+// Parcels sent for a confirmed order (issue 2422).
+events.get(
+  '/offers/:id/shipments',
+  requirePermission('products.view'),
+  param('id').isUUID(),
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    res.json(await shipments.list(db, Number(req.params.eventId), req.params.id));
+  }),
+);
+events.post(
+  '/offers/:id/shipments',
+  requirePermission('products.configure'),
+  param('id').isUUID(),
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    res.status(201).json(await shipments.create(
+      db, Number(req.params.eventId), req.params.id, req.body || {}, req.admin.id,
+    ));
+  }),
+);
+events.delete(
+  '/offers/:id/shipments/:shipmentId',
+  requirePermission('products.configure'),
+  param('id').isUUID(),
+  param('shipmentId').isInt({ min: 1 }),
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    await shipments.remove(db, Number(req.params.eventId), req.params.id, Number(req.params.shipmentId));
+    res.status(204).end();
   }),
 );
 events.put(

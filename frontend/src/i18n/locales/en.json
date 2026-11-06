@@ -7853,7 +7853,12 @@
       "documentRequested": "Please upload: {{title}}",
       "uploadDocument": "Upload",
       "albumAwaiting": "Your album for {{name}} is ready to configure",
-      "configureAlbum": "Configure album"
+      "configureAlbum": "Configure album",
+      "shipmentsTitle": "Shipments",
+      "shipmentAlbum": "Album",
+      "shipmentCarrierOther": "Parcel",
+      "shipmentSent": "sent {{date}}",
+      "trackParcel": "Track parcel"
     },
     "layout": {
       "greeting": "Hi, {{name}}"
@@ -11989,7 +11994,29 @@
     "stepSize": "Choose a size",
     "viewSelection": "View your selection",
     "withdraw": "Withdraw release",
-    "yourAlbum": "Your album"
+    "yourAlbum": "Your album",
+    "shipments": {
+      "title": "Shipments",
+      "other": "Other carrier",
+      "carrier": "Carrier",
+      "number": "Tracking number",
+      "url": "Tracking link (optional)",
+      "notify": "Notify the customer by e-mail",
+      "notifyTo": "To {{name}} ({{email}}), with the tracking link.",
+      "noRecipient": "No customer account belongs to this order, so nobody can be notified and the portal cannot show the parcel. You can still record it.",
+      "add": "Add parcel",
+      "added": "Parcel recorded.",
+      "addedMailed": "Parcel recorded. Shipping e-mail queued to {{email}}.",
+      "mailFailed": "Parcel recorded, but the shipping e-mail could not be queued.",
+      "mailed": "E-mail sent",
+      "notMailed": "Not notified",
+      "mailQueued": "E-mail scheduled",
+      "mailFailed": "E-mail failed",
+      "deleteTitle": "Delete this parcel?",
+      "deleteMessage": "Parcel {{number}} disappears from the admin and from the customer portal. An e-mail already sent stays sent.",
+      "delete": "Delete parcel",
+      "deleteNamed": "Delete parcel {{number}}"
+    }
   },
   "products": {
     "required": "Required",

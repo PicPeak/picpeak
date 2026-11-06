@@ -2009,6 +2009,9 @@
         "POST /billing",
         "POST /offers",
         "GET /offers/:id/history",
+        "GET /offers/:id/shipments",
+        "POST /offers/:id/shipments",
+        "DELETE /offers/:id/shipments/:shipmentId",
         "PUT /offers/:id"
       ]
     },

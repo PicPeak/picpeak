@@ -6675,7 +6675,12 @@
       "uploadDocument": "Naloži",
       "albumAwaiting": "Vaš album za {{name}} je pripravljen za sestavljanje",
       "configureAlbum": "Sestavi album",
-      "recentShowAll": "Prikaži vso dejavnost"
+      "recentShowAll": "Prikaži vso dejavnost",
+      "shipmentsTitle": "Pošiljke",
+      "shipmentAlbum": "Album",
+      "shipmentCarrierOther": "Paket",
+      "shipmentSent": "poslano {{date}}",
+      "trackParcel": "Sledi paketu"
     },
     "layout": {
       "greeting": "Pozdravljeni, {{name}}"
@@ -10429,7 +10434,29 @@
     "stepSize": "Izberite velikost",
     "viewSelection": "Oglejte si izbor",
     "withdraw": "Prekliči sprostitev",
-    "yourAlbum": "Vaš album"
+    "yourAlbum": "Vaš album",
+    "shipments": {
+      "title": "Pošiljke",
+      "other": "Drug prevoznik",
+      "carrier": "Prevoznik",
+      "number": "Številka za sledenje",
+      "url": "Povezava za sledenje (neobvezno)",
+      "notify": "Stranko obvesti po e-pošti",
+      "notifyTo": "Za {{name}} ({{email}}), s povezavo za sledenje.",
+      "noRecipient": "K temu naročilu ne spada noben račun stranke, zato ni mogoče nikogar obvestiti in portal paketa ne more prikazati. Lahko ga vseeno zabeležite.",
+      "add": "Dodaj paket",
+      "added": "Paket zabeležen.",
+      "addedMailed": "Paket zabeležen. E-pošta o pošiljki je v čakalni vrsti za {{email}}.",
+      "mailFailed": "Paket zabeležen, vendar e-pošte o pošiljki ni bilo mogoče postaviti v čakalno vrsto.",
+      "mailed": "E-pošta poslana",
+      "notMailed": "Brez obvestila",
+      "mailQueued": "E-pošta načrtovana",
+      "mailFailed": "Pošiljanje e-pošte ni uspelo",
+      "deleteTitle": "Izbrišem ta paket?",
+      "deleteMessage": "Paket {{number}} izgine iz skrbništva in iz portala za stranke. Že poslana e-pošta ostane poslana.",
+      "delete": "Izbriši paket",
+      "deleteNamed": "Izbriši paket {{number}}"
+    }
   },
   "products": {
     "addAlbumStarter": "Dodaj začetni nabor za album",

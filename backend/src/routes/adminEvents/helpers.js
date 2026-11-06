@@ -270,6 +270,9 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
       if (await trx.schema.hasTable('album_product_choice_history')) {
         await trx('album_product_choice_history').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();
       }
+      if (await trx.schema.hasTable('album_shipments')) {
+        await trx('album_shipments').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();
+      }
       await trx('event_album_products').where({ event_id: eventId }).del();
     }
 
