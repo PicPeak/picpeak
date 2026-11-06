@@ -170,7 +170,7 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
 };
 
 // The dashboard shows the newest few; the rest is on the activity page.
-const RECENT_ON_DASHBOARD = 5;
+const RECENT_ON_DASHBOARD = 3;
 
 const Recent: React.FC<{ items: CustomerRecentItem[] }> = ({ items }) => {
   const { t } = useTranslation();

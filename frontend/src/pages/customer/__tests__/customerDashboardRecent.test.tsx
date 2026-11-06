@@ -2,7 +2,7 @@
  * Customer dashboard → Recent and the document items in Needs action (#1444
  * slice 6), and the activity page with the whole feed. The server decides
  * what is visible; the pages must label every kind in words and link each
- * item to where it lives. The dashboard shows the newest five.
+ * item to where it lives. The dashboard shows the newest three.
  */
 import React from 'react';
 import { render, screen, within } from '@testing-library/react';
@@ -79,7 +79,7 @@ function renderPage(page: React.ReactElement = <CustomerDashboardPage />) {
 }
 
 describe('CustomerDashboardPage — Recent', () => {
-  it('shows the newest five and links to the activity page for the rest', async () => {
+  it('shows the newest three and links to the activity page for the rest', async () => {
     renderPage();
     const recent = await screen.findByRole('region', { name: 'Recent' });
     const links = within(recent).getAllByRole('link');
@@ -87,8 +87,6 @@ describe('CustomerDashboardPage — Recent', () => {
       ['New document: offer.pdf', '/customer/documents/3'],
       ['passport-scan.pdf was not accepted', '/customer/documents/7'],
       ['Contract C-2026-0002 was sent to you', '/customer/contracts'],
-      ['Gallery Wedding is now available to you', '/customer/events/wedding'],
-      ['12 new photos and 2 videos in Wedding', '/customer/events/wedding'],
       ['Show all activity', '/customer/activity'],
     ]);
   });
