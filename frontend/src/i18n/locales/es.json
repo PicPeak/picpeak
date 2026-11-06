@@ -297,6 +297,7 @@
     "passwordHint": "La contraseña la proporcionó el organizador del evento. Contacta con ellos si no la tienes."
   },
   "gallery": {
+    "backToAccount": "Volver a su cuenta",
     "preparingHint": "Preparando los archivos — esto puede tardar un poco en galerías grandes.",
     "revealPendingTitle": "Las fotos siguen siendo una sorpresa",
     "revealPendingMessage": "El anfitrión revelará la galería más tarde — ¡vuelve pronto!",

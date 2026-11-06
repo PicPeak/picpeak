@@ -2,6 +2,7 @@ import { PhotoSalesCartButton } from '../../../features/photo-sales/PhotoSalesCa
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
+import { BackToAccountLink } from '../BackToAccountLink';
 import { useTranslation } from 'react-i18next';
 import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
 import { Button } from '../../common';
@@ -114,6 +115,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   storyFooterTitle,
   storyFooterText,
   onLogout,
+  showBackToAccount = false,
   onManageGallery,
   clientModeBusy,
   onUploadClick,
@@ -502,6 +504,12 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
+        {/* No nav in this branch, so the way back to the portal sits here. */}
+        {showBackToAccount && (
+          <div className="mb-4 flex justify-center">
+            <BackToAccountLink alwaysLabelled className="inline-flex items-center gap-1.5 text-sm text-muted-theme hover:text-theme" />
+          </div>
+        )}
         {onManageGallery && <Button variant="outline" className="mb-4" onClick={onManageGallery} disabled={clientModeBusy}
           leftIcon={<Shield className="w-4 h-4" />}>
           {isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}
@@ -550,9 +558,15 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
       {/* Navigation Overlay */}
       <nav className={`story-nav ${scrolled ? 'scrolled' : ''}${isSelectionMode && selectionAvailable ? ' story-nav--selecting' : ''}`}>
-        <span className="story-nav-logo">
-          {eventName ? eventName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() : 'GALLERY'}
-        </span>
+        {/* The way back to the portal, ahead of the monogram. */}
+        <div className="flex items-center gap-2">
+          {showBackToAccount && (
+            <BackToAccountLink className="story-nav-btn story-nav-back inline-flex items-center gap-1.5 text-sm" />
+          )}
+          <span className="story-nav-logo">
+            {eventName ? eventName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() : 'GALLERY'}
+          </span>
+        </div>
 
         <div className="story-nav-actions">
           <PhotoSalesCartButton />

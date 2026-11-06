@@ -1418,6 +1418,7 @@
     }
   },
   "gallery": {
+    "backToAccount": "Back to your account",
     "temporarilyUnavailable": "This gallery is temporarily unavailable.",
     "temporarilyUnavailableHelp": "Please try again later. Your gallery link will stay the same.",
     "revealPendingTitle": "The photos are still a surprise",

@@ -115,6 +115,8 @@ export interface BaseGalleryLayoutProps {
   };
   // Logout callback for full-page layouts
   onLogout?: () => void;
+  // Customer-portal galleries: the way back to the account, leftmost in the nav
+  showBackToAccount?: boolean;
   onManageGallery?: () => void;
   clientModeBusy?: boolean;
   // Guest upload for full-page layouts, which have no gallery header: opens
