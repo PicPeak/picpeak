@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.196.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.195.0-beta.0...v3.196.0-beta.0) (2026-11-06)
+
+
+### Features
+
+* **admin:** send the gallery link via WhatsApp with your own text ([#2418](https://github.com/PicPeak/picpeak/issues/2418)) ([f1f021d](https://github.com/PicPeak/picpeak/commit/f1f021deceaa895515cc77af1a91d6a5f432c6e2))
+* **gallery:** back to the customer account from a portal-opened gallery ([#2416](https://github.com/PicPeak/picpeak/issues/2416)) ([ac05a81](https://github.com/PicPeak/picpeak/commit/ac05a810b32b365ce92044186e4c9a03b67f3279))
+* **portal:** show new photos and videos in the dashboard's Recent feed ([#2417](https://github.com/PicPeak/picpeak/issues/2417)) ([d22853d](https://github.com/PicPeak/picpeak/commit/d22853d74635d69b5b45fa881b9e88981dddb361))
+
+
+### Bug Fixes
+
+* **album-products:** show product images and gallery photos whole in the album flow ([#2415](https://github.com/PicPeak/picpeak/issues/2415)) ([6875419](https://github.com/PicPeak/picpeak/commit/687541916fd664b031969c5c56be1940f39902c0))
+
 ## [3.195.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.194.0-beta.0...v3.195.0-beta.0) (2026-11-05)
 
 
