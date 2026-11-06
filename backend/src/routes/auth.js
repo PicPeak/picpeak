@@ -1,5 +1,6 @@
 const { isGalleryAvailable } = require('../utils/galleryLifecycle');
 const express = require('express');
+const { toDateOnly } = require('../utils/dateOnly');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -559,7 +560,7 @@ router.post('/gallery/verify', [
         id: event.id,
         event_name: event.event_name,
         event_type: event.event_type,
-        event_date: event.event_date,
+        event_date: toDateOnly(event.event_date),
         welcome_message: event.welcome_message,
         color_theme: event.color_theme,
         expires_at: event.expires_at,
@@ -645,7 +646,7 @@ router.post('/gallery/:slug/client-login', [
         id: event.id,
         event_name: event.event_name,
         event_type: event.event_type,
-        event_date: event.event_date,
+        event_date: toDateOnly(event.event_date),
         welcome_message: event.welcome_message,
         color_theme: event.color_theme,
         expires_at: event.expires_at,
@@ -744,7 +745,7 @@ router.post('/gallery/share-login', [
         id: event.id,
         event_name: event.event_name,
         event_type: event.event_type,
-        event_date: event.event_date,
+        event_date: toDateOnly(event.event_date),
         welcome_message: event.welcome_message,
         color_theme: event.color_theme,
         expires_at: event.expires_at,
