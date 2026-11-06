@@ -9,9 +9,12 @@ function checkColour(hex: string) {
 }
 
 /**
- * Round colour choices. Each is a real radio with a visible label, so the
- * arrow keys, focus and screen readers work as for any radio group. An option
- * without a colour value falls back to its image, then to an empty circle.
+ * Colour choices. Each is a real radio with a visible label, so the arrow
+ * keys, focus and screen readers work as for any radio group. Plain colour
+ * values are round swatches. As soon as one option has a picture, every
+ * option becomes a 3:2 tile like the material and format steps, so a photo of
+ * the cover is shown whole instead of cut to a circle; a colour value without
+ * a picture fills its tile.
  */
 export function ColourSwatches({
   name,
@@ -32,6 +35,46 @@ export function ColourSwatches({
   disabled?: boolean;
   priceOf?: (optionId: string) => string | null;
 }) {
+  if (options.some((option) => option.imageId)) {
+    return (
+      <fieldset disabled={disabled}>
+        <legend className="sr-only">{legend}</legend>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {options.map((option) => {
+            const selected = value === option.id;
+            return (
+              <label
+                key={option.id}
+                className={`flex min-w-0 cursor-pointer flex-col gap-2 rounded-xl border border-border-token p-3 focus-within:ring-2 focus-within:ring-accent ${selected ? 'tile-selected' : ''}`}
+              >
+                {option.imageId ? (
+                  <ProductImage imageId={option.imageId} alt="" slug={slug} />
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    data-swatch={option.hex || ''}
+                    className="block aspect-[3/2] rounded-lg border border-border-token"
+                    style={option.hex ? { backgroundColor: option.hex } : undefined}
+                  />
+                )}
+                <span className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name={name}
+                    value={option.id}
+                    checked={selected}
+                    onChange={() => onChange(option.id)}
+                  />
+                  {option.name}
+                </span>
+                {priceOf?.(option.id) && <span className="text-sm">{priceOf(option.id)}</span>}
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+    );
+  }
   return (
     <fieldset disabled={disabled}>
       <legend className="sr-only">{legend}</legend>
@@ -57,9 +100,6 @@ export function ColourSwatches({
                 className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-border-token peer-checked:outline peer-checked:outline-2 peer-checked:outline-offset-2 peer-checked:outline-accent peer-focus-visible:ring-2 peer-focus-visible:ring-text-primary peer-focus-visible:ring-offset-4"
                 style={option.hex ? { backgroundColor: option.hex } : undefined}
               >
-                {!option.hex && option.imageId && (
-                  <ProductImage imageId={option.imageId} alt="" slug={slug} shape="square" />
-                )}
                 {selected && (
                   <Check
                     className="absolute h-6 w-6"

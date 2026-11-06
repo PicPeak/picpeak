@@ -71,14 +71,12 @@ describe('product image renditions', () => {
     expect(img).not.toHaveClass('object-contain');
   });
 
-  it('draws the big view in the image\'s own ratio and a swatch as a square', async () => {
+  it('draws the big view in the image\'s own ratio', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: new Blob(['x']) } as never);
     globalThis.URL.createObjectURL = vi.fn(() => 'blob:x');
-    const { findByRole, rerender } = render(<ProductImage imageId="a" alt="Album" slug="wedding" shape="natural" />);
+    const { findByRole } = render(<ProductImage imageId="a" alt="Album" slug="wedding" shape="natural" />);
     const img = await findByRole('img', { name: 'Album' });
     expect(img).toHaveClass('w-full', 'h-auto');
     expect(img.className).not.toMatch(/aspect-|object-cover/);
-    rerender(<ProductImage imageId="a" alt="Album" slug="wedding" shape="square" />);
-    expect(await findByRole('img', { name: 'Album' })).toHaveClass('aspect-square', 'object-cover');
   });
 });
