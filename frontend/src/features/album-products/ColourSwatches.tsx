@@ -58,7 +58,7 @@ export function ColourSwatches({
                 style={option.hex ? { backgroundColor: option.hex } : undefined}
               >
                 {!option.hex && option.imageId && (
-                  <ProductImage imageId={option.imageId} alt="" slug={slug} />
+                  <ProductImage imageId={option.imageId} alt="" slug={slug} shape="square" />
                 )}
                 {selected && (
                   <Check

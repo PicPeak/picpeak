@@ -2,11 +2,22 @@ import { useMemo, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AuthenticatedImage, Button, Loading } from '../../components/common';
+import { PREVIEW_WIDTHS } from '../../components/gallery/imageTiers';
 import type { Photo } from '../../types';
 
 const PAGE = 48;
 
-/** A gallery thumbnail through the gallery's own authenticated route. */
+/** Width over height, square when the gallery does not know the size. */
+export const photoRatio = (photo?: Photo) =>
+  photo?.width && photo?.height ? photo.width / photo.height : 1;
+
+/**
+ * A gallery photo through the gallery's own authenticated route, whole. The
+ * thumbnail cannot be trusted for that: with thumbnail_fit 'contain' the
+ * server pads it to a square with black bars. The preview is always the
+ * whole frame (fit 'inside'), so its smallest tier is asked for, with the
+ * preview URL's own watermark query; the thumbnail stays the fallback.
+ */
 export function GalleryPhoto({
   id,
   slug,
@@ -18,9 +29,12 @@ export function GalleryPhoto({
   photo?: Photo;
   alt: string;
 }) {
+  const thumbnail = photo?.thumbnail_url || `/api/gallery/${slug}/thumbnail/${id}`;
+  const preview = photo?.slideshow_url || photo?.preview_url;
   return (
     <AuthenticatedImage
-      src={photo?.thumbnail_url || `/api/gallery/${slug}/thumbnail/${id}`}
+      src={preview ? `${preview}${preview.includes('?') ? '&' : '?'}w=${PREVIEW_WIDTHS[0]}` : thumbnail}
+      fallbackSrc={preview ? thumbnail : undefined}
       alt={alt}
       isGallery
       slug={slug}
@@ -78,10 +92,13 @@ export function PhotoRolePicker({
             : t('albumProducts.photoCountRange', '{{count}} selected, choose {{min}} to {{max}}', { count: chosen.length, min, max })}
       </p>
       {chosen.length > 0 && (
-        <ul className="flex flex-wrap gap-3">
+        <ul className="flex flex-wrap items-start gap-3">
           {chosen.map((id) => (
             <li key={id} className="w-28">
-              <span className="relative block aspect-square overflow-hidden rounded-lg border border-border-token bg-surface">
+              <span
+                className="relative block overflow-hidden rounded-lg border border-border-token bg-surface"
+                style={{ aspectRatio: photoRatio(byId.get(id)) }}
+              >
                 <GalleryPhoto id={id} slug={slug} photo={byId.get(id)} alt={label(id)} />
               </span>
               {unavailable.includes(id) && (
@@ -108,19 +125,24 @@ export function PhotoRolePicker({
         <p>{t('albumProducts.noPhotos', 'There are no photos to choose from yet.')}</p>
       ) : (
         <>
-          <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+          {/* Justified rows: each photo grows by its own ratio, so a row keeps
+              one height and every photo its true shape. The last row stays
+              at the row height instead of stretching across. */}
+          <ul className="flex flex-wrap gap-2 [--row:4.5rem] after:grow-[1000] after:content-[''] sm:[--row:7rem]">
             {photos.slice(0, shown).map((photo) => {
               const selected = chosen.includes(photo.id);
               const full = !selected && max > 1 && chosen.length >= max;
+              const ratio = photoRatio(photo);
               return (
-                <li key={photo.id}>
+                <li key={photo.id} className="min-w-0" style={{ flexGrow: ratio, flexBasis: `calc(var(--row) * ${ratio})` }}>
                   <button
                     type="button"
                     aria-pressed={selected}
                     aria-label={label(photo.id)}
                     disabled={disabled || full}
                     onClick={() => toggle(photo.id)}
-                    className={`relative block aspect-square w-full overflow-hidden rounded-lg bg-surface focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 disabled:opacity-50 ${selected ? 'outline outline-2 outline-offset-2 outline-accent' : ''}`}
+                    style={{ aspectRatio: ratio }}
+                    className={`relative block w-full overflow-hidden rounded-lg bg-surface focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 disabled:opacity-50 ${selected ? 'outline outline-2 outline-offset-2 outline-accent' : ''}`}
                   >
                     <GalleryPhoto id={photo.id} slug={slug} photo={photo} alt="" />
                     {selected && (

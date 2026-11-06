@@ -89,6 +89,9 @@ describe('studio gallery card', () => {
     for (const text of ['Fine art album', 'Silk', 'Ivory', 'Square', '25 × 50 cm', 'Cover photo', 'Poster photos', 'cover.jpg', 'DSC_1.jpg', 'poster.jpg', 'No longer available'])
       expect(screen.getAllByText(text).length).toBeGreaterThan(0);
     expect(screen.getByRole('img', { name: 'cover.jpg' })).toHaveAttribute('src', '/admin/photos/7/thumbnail/11');
+    // The album's image beside its name; options without an image show none.
+    expect(screen.getByText('Image: Fine art album')).toBeInTheDocument();
+    expect(screen.queryByText('Image: Silk')).not.toBeInTheDocument();
   });
   it('reopens only after the question is answered, and only for the owner', async () => {
     load([offer({ status: 'locked', selection })]);

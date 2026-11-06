@@ -170,6 +170,45 @@ describe('guided album flow', () => {
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   });
 
+  it('shows the album image and each chosen option\'s image in the review, nothing for an option without one', async () => {
+    const withImages = attributes.map((a) => a.id === 'format'
+      ? { ...a, options: a.options.map((o) => (o.id === 'square' ? { ...o, imageId: 'square-img' } : o)) }
+      : a);
+    mount([offer({ product: product('album-a', 'Fine art album', { attributes: withImages }) })]);
+    await heading('Choose your album');
+    await toReview();
+    const summary = within(screen.getByRole('dialog'));
+    expect(summary.getAllByTestId('product-image').map((el) => el.textContent)).toEqual(['Image: Fine art album hero', 'Image: Square square-img']);
+  });
+
+  it('shows each photo whole: its own ratio, from the unpadded preview', async () => {
+    vi.mocked(galleryService.getGalleryPhotos).mockResolvedValue({
+      photos: [
+        photo(1, { width: 4000, height: 6000, slideshow_url: '/api/gallery/wedding/preview/1?wm=1' }),
+        photo(2, { width: 6000, height: 4000, slideshow_url: '/api/gallery/wedding/preview/2' }),
+        photo(3),
+      ],
+    } as never);
+    mount();
+    await throughSize();
+    await heading('Choose your cover photo');
+    const portrait = await screen.findByRole('button', { name: 'Photo 1' });
+    expect(portrait.style.aspectRatio).toBe(String(4000 / 6000));
+    expect(portrait.parentElement!.style.flexGrow).toBe(String(4000 / 6000));
+    expect(portrait.querySelector('img')!.getAttribute('src')).toBe('/api/gallery/wedding/preview/1?wm=1&w=640');
+    const landscape = screen.getByRole('button', { name: 'Photo 2' });
+    expect(landscape.style.aspectRatio).toBe('1.5');
+    expect(landscape.querySelector('img')!.getAttribute('src')).toBe('/api/gallery/wedding/preview/2?w=640');
+    // Without a size or a preview: a square, from the thumbnail.
+    const unknown = screen.getByRole('button', { name: 'Photo 3' });
+    expect(unknown.style.aspectRatio).toBe('1');
+    expect(unknown.querySelector('img')!.getAttribute('src')).toBe('/api/gallery/wedding/thumbnail/3?wm=1');
+    fireEvent.click(portrait);
+    const chosen = screen.getAllByRole('img', { name: 'Photo 1' })[0];
+    expect(chosen.getAttribute('src')).toBe('/api/gallery/wedding/preview/1?wm=1&w=640');
+    expect(chosen.parentElement!.style.aspectRatio).toBe(String(4000 / 6000));
+  });
+
   it('offers authorised photos only, swaps a cover, removes and caps posters', async () => {
     mount();
     await throughSize();

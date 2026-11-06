@@ -21,7 +21,7 @@ import {
 } from './ConfigurationPicker';
 import { boundsOf, FormatComparison, SizeOutline } from './FormatComparison';
 import { errorMessage, isConfirmed, type Attribute, type AttributeRole, type Choice, type Offer, type PhotoRoleKey } from './model';
-import { GalleryPhoto, PhotoRolePicker } from './PhotoRolePicker';
+import { GalleryPhoto, PhotoRolePicker, photoRatio } from './PhotoRolePicker';
 import { ProductImage } from './ProductImage';
 
 type Step = 'album' | AttributeRole | 'extras' | PhotoRoleKey | 'review';
@@ -306,11 +306,18 @@ export function GuidedAlbumFlow({
     poster: t('albumProducts.stepPoster', 'Choose your poster photos'),
     review: t('albumProducts.stepReview', 'Review your album'),
   };
-  const photoFor = (id: number, alt: string) => (
-    <span className="block aspect-square overflow-hidden rounded-lg border border-border-token bg-surface">
-      <GalleryPhoto id={id} slug={slug} photo={gallery.find((p) => p.id === id)} alt={alt} />
-    </span>
-  );
+  const photoFor = (id: number, alt: string) => {
+    const photo = gallery.find((p) => p.id === id);
+    return (
+      <span
+        className="block overflow-hidden rounded-lg border border-border-token bg-surface"
+        style={{ aspectRatio: photoRatio(photo) }}
+      >
+        <GalleryPhoto id={id} slug={slug} photo={photo} alt={alt} />
+      </span>
+    );
+  };
+  const productImage = (imageId: string, alt: string) => <ProductImage slug={slug} imageId={imageId} alt={alt} />;
   // The review shows what will be sent, built from this session's choices.
   const preview: Choice | null = offer?.product
     ? {
@@ -346,6 +353,8 @@ export function GuidedAlbumFlow({
           <AlbumChoiceDetails
             choice={offer.selection}
             renderPhoto={(photo) => photoFor(photo.id, t('albumProducts.selectedPhoto', 'Selected photo'))}
+            productImageId={product?.heroImageId}
+            renderImage={productImage}
           />
         </div>
       );
@@ -382,7 +391,7 @@ export function GuidedAlbumFlow({
             )}
             {product && (
               <div ref={detail} className="grid scroll-mt-4 gap-4 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                <ProductImage slug={slug} imageId={product.heroImageId || null} alt={product.name} size={1200} />
+                <ProductImage slug={slug} imageId={product.heroImageId || null} alt={product.name} size={1200} shape="natural" />
                 <div className="space-y-3">
                   <p className="text-xl font-semibold">{product.name}</p>
                   {product.description && <p>{product.description}</p>}
@@ -545,6 +554,8 @@ export function GuidedAlbumFlow({
             <AlbumChoiceDetails
               choice={preview}
               renderPhoto={(photo) => photoFor(photo.id, t('albumProducts.selectedPhoto', 'Selected photo'))}
+              productImageId={product?.heroImageId}
+              renderImage={productImage}
             />
             <Input
               themed

@@ -155,7 +155,7 @@ function ProductChoice({
       {product?.description && <p>{product.description}</p>}
       {product?.heroImageId && (
         <div className="max-w-xs">
-          <ProductImage slug={slug} imageId={product.heroImageId} alt={product.name} />
+          <ProductImage slug={slug} imageId={product.heroImageId} alt={product.name} shape="natural" />
         </div>
       )}
       {offer.selection && (
