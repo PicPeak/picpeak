@@ -157,8 +157,14 @@ describe('album shipments', () => {
     expect(await state()).toBe('queued');
     await db('email_queue').where({ id: queued.id }).update({ status: 'failed' });
     expect(await state()).toBe('failed');
+    // Pending after three tries: the processor never picks it up again.
+    await db('email_queue').where({ id: queued.id }).update({ status: 'pending', retry_count: 3 });
+    expect(await state()).toBe('failed');
     await db('email_queue').where({ id: queued.id }).update({ status: 'sent' });
     expect(await state()).toBe('sent');
+    // Dismissed from the failures list: no claim it reached the customer.
+    await db('email_queue').where({ id: queued.id }).del();
+    expect(await state()).toBeNull();
   });
 
   test('sends nothing when the studio unticks the mail', async () => {

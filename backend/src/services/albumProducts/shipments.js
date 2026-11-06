@@ -67,21 +67,23 @@ function shape(row) {
 
 /**
  * Where the customer's mail stands: 'sent', 'failed', 'queued' (waiting for
- * business hours or the next run) or null (none, withdrawn or held back).
- * notified_at only says it was queued; the queue row says whether it went.
+ * business hours or the next run) or null (none, withdrawn, held back, or
+ * its queue row is gone, e.g. dismissed as undeliverable). notified_at only
+ * says it was queued; the queue row says whether it went. A row still
+ * pending after three tries is never picked up again (emailProcessor), so
+ * it counts as failed.
  */
 async function mailStates(conn, rows) {
   const ids = rows.map((r) => r.notification_id).filter((id) => id != null);
-  const status = new Map(ids.length
-    ? (await conn('email_queue').whereIn('id', ids).select('id', 'status')).map((q) => [Number(q.id), q.status])
+  const queue = new Map(ids.length
+    ? (await conn('email_queue').whereIn('id', ids).select('id', 'status', 'retry_count')).map((q) => [Number(q.id), q])
     : []);
   return (row) => {
-    if (!row.notified_at) return null;
-    const state = status.get(Number(row.notification_id));
-    if (state === 'sent' || state === 'failed') return state;
-    if (state === 'cancelled' || state === 'suppressed') return null;
-    // Pending, or a queue row pruned since: assume it went once pruned.
-    return state === undefined && row.notification_id != null ? 'sent' : 'queued';
+    const entry = row.notified_at ? queue.get(Number(row.notification_id)) : undefined;
+    if (!entry) return null;
+    if (entry.status === 'sent' || entry.status === 'failed') return entry.status;
+    if (entry.status === 'pending') return Number(entry.retry_count) >= 3 ? 'failed' : 'queued';
+    return null;
   };
 }
 
