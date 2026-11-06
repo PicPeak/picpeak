@@ -1,5 +1,5 @@
 import { PrintGallerySettings } from '../print-sales/GallerySettings';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChoiceSummary } from './ConfigurationPicker';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -92,6 +92,7 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
     [audience, setAudience] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['gallery-products', eventId],
     queryFn: () => albumProducts.event(eventId),
@@ -163,6 +164,8 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
   const load = async () => {
     await query.refetch();
     if (crmEnabled) await billing.refetch();
+    // Audience and billing decide whom a parcel's mail goes to.
+    await queryClient.invalidateQueries({ queryKey: ['gallery-product-shipments', eventId] });
   };
   const changeAudience = async (offer: Offer, value: string) => {
     setBusy(true);

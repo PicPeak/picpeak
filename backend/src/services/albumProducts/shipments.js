@@ -211,12 +211,25 @@ async function forCustomer(conn, customerId) {
   return out;
 }
 
-/** Customer erasure: a tracking number leads to the person's address. */
+/**
+ * Customer erasure: a tracking number leads to the person's address. Every
+ * order that is theirs by the rule the mail and the portal follow, plus any
+ * order still released to them; runs before the assignments go.
+ */
 async function forgetCustomer(tx, customerId) {
   if (!(await tx.schema.hasTable('album_shipments'))) return;
-  await tx('album_shipments')
-    .whereIn('offer_id', tx('event_album_products').where({ released_customer_id: customerId }).select('id'))
-    .del();
+  const id = Number(customerId);
+  const offers = await tx('event_album_products')
+    .where((q) => q
+      .where({ released_customer_id: id })
+      .orWhere({ billing_customer_id: id })
+      .orWhereIn('event_id', tx('event_customer_assignments').where({ customer_account_id: id }).select('event_id')))
+    .select('id', 'event_id', 'released_customer_id', 'billing_customer_id');
+  const theirs = [];
+  for (const offer of offers) {
+    if (Number(offer.released_customer_id) === id || (await orderCustomerId(tx, offer)) === id) theirs.push(offer.id);
+  }
+  if (theirs.length) await tx('album_shipments').whereIn('offer_id', theirs).del();
 }
 
 module.exports = {

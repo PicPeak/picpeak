@@ -201,4 +201,20 @@ describe('album shipments', () => {
     await db.transaction((tx) => require('../../src/services/albumProducts/shipments').forgetCustomer(tx, c));
     expect(await db('album_shipments').where({ offer_id: o })).toHaveLength(0);
   });
+
+  test('the erasure also reaches orders that are theirs as the sole or the billed customer, and no one else\'s', async () => {
+    const [sole, billed, other] = [await customer(), await customer(), await customer()];
+    const soleGallery = await gallery([sole]);
+    const soleOffer = await offer(soleGallery);
+    const sharedGallery = await gallery([billed, other]);
+    const billedOffer = await offer(sharedGallery, { billing: billed });
+    const otherOffer = await offer(sharedGallery, { released: other });
+    for (const [g, o, n] of [[soleGallery, soleOffer, 'S1'], [sharedGallery, billedOffer, 'B1'], [sharedGallery, otherOffer, 'O1']])
+      await add(g, o, { carrier: 'dhl', trackingNumber: n, notify: false });
+    const forget = (c) => db.transaction((tx) => require('../../src/services/albumProducts/shipments').forgetCustomer(tx, c));
+    await forget(sole);
+    await forget(billed);
+    expect(await db('album_shipments').pluck('tracking_number')).toEqual(expect.not.arrayContaining(['S1', 'B1']));
+    expect(await db('album_shipments').where({ offer_id: otherOffer }).pluck('tracking_number')).toEqual(['O1']);
+  });
 });
