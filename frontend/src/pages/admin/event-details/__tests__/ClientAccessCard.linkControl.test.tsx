@@ -12,6 +12,8 @@ import type { Event } from '../../../../types';
 
 const mocks = vi.hoisted(() => ({ updateEvent: vi.fn() }));
 
+const whatsApp = vi.hoisted(() => ({ configured: false }));
+vi.mock('../../../../hooks/useWhatsAppConfigured', () => ({ useWhatsAppConfigured: () => whatsApp.configured }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
   initReactI18next: { type: '3rdParty', init: () => {} },
