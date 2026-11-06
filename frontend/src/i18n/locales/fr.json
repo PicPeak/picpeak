@@ -3950,7 +3950,12 @@
         "videos_many": "{{count}} vidéos",
         "videos_other": "{{count}} vidéos"
       },
-      "recentShowAll": "Voir toute l’activité"
+      "recentShowAll": "Voir toute l’activité",
+      "shipmentsTitle": "Envois",
+      "shipmentAlbum": "Album",
+      "shipmentCarrierOther": "Colis",
+      "shipmentSent": "envoyé le {{date}}",
+      "trackParcel": "Suivre le colis"
     },
     "layout": {
       "greeting": "Bonjour, {{name}}"
@@ -4324,7 +4329,27 @@
     "stepSize": "Choisissez une taille",
     "viewSelection": "Voir votre sélection",
     "withdraw": "Retirer la publication",
-    "yourAlbum": "Votre album"
+    "yourAlbum": "Votre album",
+    "shipments": {
+      "title": "Envois",
+      "other": "Autre transporteur",
+      "carrier": "Transporteur",
+      "number": "Numéro de suivi",
+      "url": "Lien de suivi (facultatif)",
+      "notify": "Prévenir le client par e-mail",
+      "notifyTo": "À {{name}} ({{email}}), avec le lien de suivi.",
+      "noRecipient": "Aucun compte client n’est lié à cette commande : personne ne peut être prévenu et le portail ne peut pas afficher le colis. Vous pouvez quand même l’enregistrer.",
+      "add": "Ajouter un colis",
+      "added": "Colis enregistré.",
+      "addedMailed": "Colis enregistré. E-mail d’expédition mis en file d’attente pour {{email}}.",
+      "mailFailed": "Colis enregistré, mais l’e-mail d’expédition n’a pas pu être mis en file d’attente.",
+      "mailed": "E-mail envoyé",
+      "notMailed": "Non prévenu",
+      "deleteTitle": "Supprimer ce colis ?",
+      "deleteMessage": "Le colis {{number}} disparaît de l’administration et du portail client. Un e-mail déjà envoyé reste envoyé.",
+      "delete": "Supprimer le colis",
+      "deleteNamed": "Supprimer le colis {{number}}"
+    }
   },
   "products": {
     "addAlbumStarter": "Ajouter un jeu de départ pour album",

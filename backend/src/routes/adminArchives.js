@@ -1020,6 +1020,10 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
           await trx('album_product_choice_history')
             .whereIn('offer_id', trx('event_album_products').where('event_id', req.params.id).select('id')).del();
         }
+        if (await trx.schema.hasTable('album_shipments')) {
+          await trx('album_shipments')
+            .whereIn('offer_id', trx('event_album_products').where('event_id', req.params.id).select('id')).del();
+        }
         await trx('event_album_products').where('event_id', req.params.id).del();
       }
       await trx('photos').where('event_id', req.params.id).del();

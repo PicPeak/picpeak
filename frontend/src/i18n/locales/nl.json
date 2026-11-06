@@ -3877,7 +3877,12 @@
         "videos_one": "{{count}} video",
         "videos_other": "{{count}} video's"
       },
-      "recentShowAll": "Alle activiteit tonen"
+      "recentShowAll": "Alle activiteit tonen",
+      "shipmentsTitle": "Zendingen",
+      "shipmentAlbum": "Album",
+      "shipmentCarrierOther": "Pakket",
+      "shipmentSent": "verzonden op {{date}}",
+      "trackParcel": "Pakket volgen"
     },
     "layout": {
       "greeting": "Hallo, {{name}}"
@@ -4251,7 +4256,27 @@
     "stepSize": "Kies een formaat",
     "viewSelection": "Bekijk je selectie",
     "withdraw": "Vrijgave intrekken",
-    "yourAlbum": "Je album"
+    "yourAlbum": "Je album",
+    "shipments": {
+      "title": "Zendingen",
+      "other": "Andere vervoerder",
+      "carrier": "Vervoerder",
+      "number": "Trackingnummer",
+      "url": "Trackinglink (optioneel)",
+      "notify": "Klant per e-mail op de hoogte brengen",
+      "notifyTo": "Aan {{name}} ({{email}}), met de trackinglink.",
+      "noRecipient": "Er hoort geen klantaccount bij deze bestelling, dus niemand kan op de hoogte worden gebracht en het portaal kan het pakket niet tonen. Je kunt het toch vastleggen.",
+      "add": "Pakket toevoegen",
+      "added": "Pakket vastgelegd.",
+      "addedMailed": "Pakket vastgelegd. Verzend-e-mail aan {{email}} in de wachtrij gezet.",
+      "mailFailed": "Pakket vastgelegd, maar de verzend-e-mail kon niet in de wachtrij worden gezet.",
+      "mailed": "E-mail verzonden",
+      "notMailed": "Niet op de hoogte gebracht",
+      "deleteTitle": "Dit pakket verwijderen?",
+      "deleteMessage": "Pakket {{number}} verdwijnt uit de beheeromgeving en uit het klantenportaal. Een al verzonden e-mail blijft verzonden.",
+      "delete": "Pakket verwijderen",
+      "deleteNamed": "Pakket {{number}} verwijderen"
+    }
   },
   "products": {
     "addAlbumStarter": "Startset voor album toevoegen",

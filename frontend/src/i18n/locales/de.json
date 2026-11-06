@@ -7818,7 +7818,12 @@
       "documentRequested": "Bitte hochladen: {{title}}",
       "uploadDocument": "Hochladen",
       "albumAwaiting": "Dein Album für {{name}} kann zusammengestellt werden",
-      "configureAlbum": "Album zusammenstellen"
+      "configureAlbum": "Album zusammenstellen",
+      "shipmentsTitle": "Sendungen",
+      "shipmentAlbum": "Album",
+      "shipmentCarrierOther": "Paket",
+      "shipmentSent": "versendet am {{date}}",
+      "trackParcel": "Sendung verfolgen"
     },
     "layout": {
       "greeting": "Hallo, {{name}}"
@@ -11955,7 +11960,27 @@
     "stepSize": "Wähle eine Größe",
     "viewSelection": "Auswahl ansehen",
     "withdraw": "Freigabe zurücknehmen",
-    "yourAlbum": "Dein Album"
+    "yourAlbum": "Dein Album",
+    "shipments": {
+      "title": "Sendungen",
+      "other": "Anderer Versanddienst",
+      "carrier": "Versanddienst",
+      "number": "Sendungsnummer",
+      "url": "Link zur Sendungsverfolgung (optional)",
+      "notify": "Kunden per E-Mail benachrichtigen",
+      "notifyTo": "An {{name}} ({{email}}), mit dem Link zur Sendungsverfolgung.",
+      "noRecipient": "Zu dieser Bestellung gehört kein Kundenkonto. Deshalb kann niemand benachrichtigt werden, und das Portal kann die Sendung nicht anzeigen. Sie können sie trotzdem erfassen.",
+      "add": "Sendung hinzufügen",
+      "added": "Sendung erfasst.",
+      "addedMailed": "Sendung erfasst. Versand-E-Mail an {{email}} in die Warteschlange gestellt.",
+      "mailFailed": "Sendung erfasst, aber die Versand-E-Mail konnte nicht in die Warteschlange gestellt werden.",
+      "mailed": "E-Mail gesendet",
+      "notMailed": "Nicht benachrichtigt",
+      "deleteTitle": "Diese Sendung löschen?",
+      "deleteMessage": "Sendung {{number}} verschwindet aus dem Admin-Bereich und aus dem Kundenportal. Eine bereits gesendete E-Mail bleibt gesendet.",
+      "delete": "Sendung löschen",
+      "deleteNamed": "Sendung {{number}} löschen"
+    }
   },
   "products": {
     "required": "Erforderlich",

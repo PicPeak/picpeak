@@ -23,7 +23,7 @@
  */
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Download, ExternalLink, History, ImageIcon, Info } from 'lucide-react';
+import { Calendar, Clock, Download, ExternalLink, History, ImageIcon, Info, Package } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 import { ArchiveDownloadProvider, useArchiveDownload } from '../../contexts/ArchiveDownloadContext';
@@ -33,7 +33,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Button, EmptyState, ErrorState, Loading } from '../../components/common';
 import { formatMoneyMinor } from '../../utils/money';
 import {
-  customerService, type CustomerDashboard, type CustomerEvent, type CustomerRecentItem,
+  customerService, type CustomerDashboard, type CustomerEvent, type CustomerRecentItem, type CustomerShipment,
 } from '../../services/customer.service';
 import { isDownloadLimitError } from '../../utils/downloadLimit';
 import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
@@ -162,6 +162,46 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
             <Link to={`/customer/documents/${d.id}`} className="text-sm underline text-theme">
               {t('customer.dashboard.viewDocument', 'View document')}
             </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+};
+
+/** Parcels the studio sent for the customer's album orders (issue 2422). */
+const Shipments: React.FC<{ items: CustomerShipment[]; formatDate: (iso: string | null) => string | null }> = ({ items, formatDate }) => {
+  const { t } = useTranslation();
+  if (items.length === 0) return null;
+  return (
+    <section aria-labelledby="shipments-title" className="rounded-xl border mb-6 overflow-hidden bg-surface border-border-token">
+      <h2 id="shipments-title" className="px-4 pt-4 pb-2 text-base font-semibold text-theme flex items-center gap-2">
+        <Package className="w-5 h-5" />
+        {t('customer.dashboard.shipmentsTitle', 'Shipments')}
+      </h2>
+      <ul className="divide-y divide-border-token">
+        {items.map((s) => (
+          <li key={s.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-theme break-words">
+                {s.productName || t('customer.dashboard.shipmentAlbum', 'Album')} · {s.eventName}
+              </p>
+              <p className="text-sm text-muted-theme break-words">
+                {s.carrierName || t('customer.dashboard.shipmentCarrierOther', 'Parcel')} · <span className="break-all">{s.trackingNumber}</span>
+                {s.shippedAt && ` · ${t('customer.dashboard.shipmentSent', 'sent {{date}}', { date: formatDate(s.shippedAt) })}`}
+              </p>
+            </div>
+            {s.trackingUrl && (
+              <a
+                href={s.trackingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline whitespace-nowrap"
+              >
+                {t('customer.dashboard.trackParcel', 'Track parcel')}
+                <ExternalLink className="w-4 h-4" aria-hidden="true" />
+              </a>
+            )}
           </li>
         ))}
       </ul>
@@ -318,6 +358,7 @@ const CustomerDashboardContent: React.FC = () => {
           <NeedsAction items={data.needsAction} />
           <p className="text-sm text-muted-theme mb-4">{t('products.portalPointer', 'Open a gallery to view any product choices your studio has offered.')}</p>
           <Recent items={data.recent ?? []} />
+          <Shipments items={data.shipments ?? []} formatDate={formatDate} />
 
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
             <div>

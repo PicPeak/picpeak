@@ -211,6 +211,20 @@ export interface CustomerDashboard {
   /** Newest first, from the same visibility rules as the lists they link to. */
   recent?: CustomerRecentItem[];
   galleries: { active: CustomerEvent[]; expired: CustomerEvent[] };
+  /** Parcels of the customer's album orders, newest first (issue 2422). */
+  shipments?: CustomerShipment[];
+}
+
+export interface CustomerShipment {
+  id: number;
+  carrier: string;
+  /** Null for a carrier the studio typed in ("other"). */
+  carrierName: string | null;
+  trackingNumber: string;
+  trackingUrl: string | null;
+  shippedAt: string | null;
+  productName: string | null;
+  eventName: string;
 }
 
 export type CustomerRecentKind =
