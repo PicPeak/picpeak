@@ -1,4 +1,5 @@
 const { toIso } = require('../utils/dateNormalize');
+const { toDateOnly } = require('../utils/dateOnly');
 const { db } = require('../database/db');
 const { parseBooleanInput } = require('../utils/parsers');
 const { getAppSetting } = require('../utils/appSettings');
@@ -404,7 +405,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
       id: event.id,
       event_name: event.event_name,
       event_type: event.event_type,
-      event_date: event.event_date,
+      // Calendar date, like /info and the login responses: GalleryAuthContext
+      // refreshes its cached event from this payload, so a pg Date here
+      // would reintroduce the previous-day shift west of UTC.
+      event_date: toDateOnly(event.event_date),
       welcome_message: event.welcome_message,
       color_theme: event.color_theme,
       expires_at: event.expires_at,
