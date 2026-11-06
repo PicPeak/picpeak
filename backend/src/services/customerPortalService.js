@@ -389,6 +389,16 @@ async function getDashboard(customerId, session = null) {
   };
 }
 
+// The activity page lists more than the dashboard's Recent box.
+const ACTIVITY_LIMIT = 100;
+
+/** Everything Recent shows, for the portal's activity page. */
+async function getActivity(customerId, session = null) {
+  const features = await featuresFor(customerId, session);
+  const galleries = !session || hasRight(session.rights, 'galleries');
+  return { items: await recentFor(customerId, features, ACTIVITY_LIMIT, { galleries }) };
+}
+
 /**
  * The deal lineage of one event, for one customer: the deal_uuids of the
  * quotes, contracts and invoices that point at the event, the contracts in
@@ -542,5 +552,5 @@ async function getEventOverview(customerId, slug, session = null) {
 }
 
 module.exports = {
-  shapeEvent, getDashboard, getEventOverview, dealLineageForEvent, _internal: { toDateOnly, needsActionFor, recentFor },
+  shapeEvent, getDashboard, getActivity, getEventOverview, dealLineageForEvent, _internal: { toDateOnly, needsActionFor, recentFor },
 };

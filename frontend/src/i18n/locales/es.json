@@ -3676,7 +3676,8 @@
         "videos_one": "{{count}} vídeo",
         "videos_many": "{{count}} vídeos",
         "videos_other": "{{count}} vídeos"
-      }
+      },
+      "recentShowAll": "Ver toda la actividad"
     },
     "event": {
       "album": "Tu álbum",
@@ -3684,6 +3685,11 @@
       "albumOpen": "Configurar tu álbum",
       "albumReady": "El estudio ha publicado tu álbum. Elige su acabado y tus fotos.",
       "albumView": "Ver tu selección"
+    },
+    "activity": {
+      "title": "Actividad",
+      "loadError": "No se pudo cargar la actividad. Inténtalo de nuevo.",
+      "empty": "Todavía no ha pasado nada."
     }
   },
   "products": {

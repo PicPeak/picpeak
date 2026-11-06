@@ -3856,7 +3856,8 @@
         "newPhotos_other": "{{count}} nieuwe foto's",
         "videos_one": "{{count}} video",
         "videos_other": "{{count}} video's"
-      }
+      },
+      "recentShowAll": "Alle activiteit tonen"
     },
     "layout": {
       "greeting": "Hallo, {{name}}"
@@ -3955,6 +3956,11 @@
       "albumOpen": "Stel je album samen",
       "albumReady": "De studio heeft je album vrijgegeven. Kies de uitvoering en je foto’s.",
       "albumView": "Bekijk je selectie"
+    },
+    "activity": {
+      "title": "Activiteit",
+      "loadError": "De activiteit kon niet worden geladen. Probeer het opnieuw.",
+      "empty": "Er is nog niets gebeurd."
     }
   },
   "customers": {

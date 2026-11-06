@@ -7761,6 +7761,11 @@
         "password": "Choose a password"
       }
     },
+    "activity": {
+      "title": "Activity",
+      "loadError": "Could not load the activity. Please try again.",
+      "empty": "Nothing has happened yet."
+    },
     "dashboard": {
       "title": "Your galleries",
       "subtitle": "Click a gallery to open it. The Download button bundles every photo as a zip.",
@@ -7804,6 +7809,7 @@
       "documentRejected": "{{name}} was not accepted — upload a corrected version",
       "viewDocument": "View document",
       "recentTitle": "Recent",
+      "recentShowAll": "Show all activity",
       "recent": {
         "documentShared": "New document: {{title}}",
         "documentUploaded": "You uploaded {{title}}",

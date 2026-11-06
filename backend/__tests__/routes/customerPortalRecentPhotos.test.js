@@ -138,4 +138,15 @@ describe('customer portal Recent: photos_added', () => {
     expect(items[0]).toMatchObject({ kind: 'photos_added', id: `${id}-2026-10-12` });
     expect(items.every((i) => i.kind === 'photos_added')).toBe(true);
   });
+
+  it('lists the whole feed on the activity page, past the dashboard\'s ten', async () => {
+    const { getActivity, getDashboard } = require('../../src/services/customerPortalService');
+    const id = await event('long', '2026-09-01T08:00:00.000Z');
+    for (let d = 1; d <= 12; d += 1) await photos(id, 1, `2026-10-${String(d).padStart(2, '0')}T08:00:00.000Z`);
+    expect((await getDashboard(customerId)).recent).toHaveLength(10);
+    const { items } = await getActivity(customerId);
+    // 12 upload days plus "gallery is now available".
+    expect(items).toHaveLength(13);
+    expect(items[12]).toMatchObject({ kind: 'gallery_assigned', title: 'Event long' });
+  });
 });

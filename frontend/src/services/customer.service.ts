@@ -428,6 +428,12 @@ export const customerService = {
     return response.data;
   },
 
+  /** The Recent feed at full length, for the activity page. */
+  async getActivity(): Promise<CustomerRecentItem[]> {
+    const response = await api.get<{ items: CustomerRecentItem[] }>('/customer/activity');
+    return response.data.items;
+  },
+
   /** Everything the customer has for one event (#1444). */
   async getEventOverview(slug: string): Promise<CustomerEventOverview> {
     const response = await api.get<CustomerEventOverview>(

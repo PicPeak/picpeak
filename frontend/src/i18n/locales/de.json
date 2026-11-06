@@ -7726,6 +7726,11 @@
         "password": "Passwort wählen"
       }
     },
+    "activity": {
+      "title": "Neuigkeiten",
+      "loadError": "Die Neuigkeiten konnten nicht geladen werden. Bitte versuchen Sie es erneut.",
+      "empty": "Noch nichts passiert."
+    },
     "dashboard": {
       "title": "Ihre Galerien",
       "subtitle": "Klicken Sie auf eine Galerie, um sie zu öffnen. Der Download-Button bündelt alle Fotos als ZIP.",
@@ -7769,6 +7774,7 @@
       "documentRejected": "{{name}} wurde nicht angenommen — laden Sie eine korrigierte Fassung hoch",
       "viewDocument": "Dokument ansehen",
       "recentTitle": "Neuigkeiten",
+      "recentShowAll": "Alle Neuigkeiten anzeigen",
       "recent": {
         "documentShared": "Neues Dokument: {{title}}",
         "documentUploaded": "Sie haben {{title}} hochgeladen",

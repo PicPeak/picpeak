@@ -6654,7 +6654,8 @@
       "documentRequested": "Naložite: {{title}}",
       "uploadDocument": "Naloži",
       "albumAwaiting": "Vaš album za {{name}} je pripravljen za sestavljanje",
-      "configureAlbum": "Sestavi album"
+      "configureAlbum": "Sestavi album",
+      "recentShowAll": "Prikaži vso dejavnost"
     },
     "layout": {
       "greeting": "Pozdravljeni, {{name}}"
@@ -6928,6 +6929,11 @@
       "sharedAt": "V skupni rabi",
       "reviewedAt": "Pregledano",
       "event": "Dogodek"
+    },
+    "activity": {
+      "title": "Dejavnost",
+      "loadError": "Dejavnosti ni bilo mogoče naložiti. Poskusite znova.",
+      "empty": "Zaenkrat se še ni nič zgodilo."
     }
   },
   "customers": {

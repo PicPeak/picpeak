@@ -1275,6 +1275,19 @@ router.get('/dashboard', customerAuth, async (req, res) => {
 });
 
 /**
+ * GET /activity
+ *
+ * The dashboard's Recent feed at full length, for the portal's activity page.
+ */
+router.get('/activity', customerAuth, async (req, res) => {
+  try {
+    res.json(await customerPortalService.getActivity(req.customer.id, req.customer));
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to load activity');
+  }
+});
+
+/**
  * GET /events/:slug/overview
  *
  * One event: gallery state, quotes, contracts, invoices and documents.

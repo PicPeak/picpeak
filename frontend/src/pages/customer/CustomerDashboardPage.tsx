@@ -27,7 +27,6 @@ import { Calendar, Clock, Download, ExternalLink, History, ImageIcon, Info } fro
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 import { ArchiveDownloadProvider, useArchiveDownload } from '../../contexts/ArchiveDownloadContext';
-import type { TFunction } from 'i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useQuery } from '@tanstack/react-query';
 
@@ -40,6 +39,7 @@ import { isDownloadLimitError } from '../../utils/downloadLimit';
 import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
 import { calendarDay } from '../../utils/calendarDay';
+import { RecentList } from './recentFeed';
 
 type SortKey = 'newest' | 'oldest' | 'name';
 
@@ -169,36 +169,11 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
   );
 };
 
-function recentLabel(t: TFunction, item: CustomerRecentItem): string {
-  const vars = { title: item.title };
-  switch (item.kind) {
-    case 'document_shared': return t('customer.dashboard.recent.documentShared', 'New document: {{title}}', vars);
-    case 'document_uploaded': return t('customer.dashboard.recent.documentUploaded', 'You uploaded {{title}}', vars);
-    case 'document_accepted': return t('customer.dashboard.recent.documentAccepted', '{{title}} was accepted', vars);
-    case 'document_rejected': return t('customer.dashboard.recent.documentRejected', '{{title}} was not accepted', vars);
-    case 'contract_sent': return t('customer.dashboard.recent.contractSent', 'Contract {{title}} was sent to you', vars);
-    case 'contract_signed': return t('customer.dashboard.recent.contractSigned', 'You signed contract {{title}}', vars);
-    case 'quote_sent': return t('customer.dashboard.recent.quoteSent', 'Quote {{title}} was sent to you', vars);
-    case 'invoice_sent': return t('customer.dashboard.recent.invoiceSent', 'Invoice {{title}} was sent to you', vars);
-    case 'gallery_assigned': return t('customer.dashboard.recent.galleryAssigned', 'Gallery {{title}} is now available to you', vars);
-    case 'photos_added': {
-      const photos = item.counts?.photos ?? 0;
-      const videos = item.counts?.videos ?? 0;
-      if (videos === 0) return t('customer.dashboard.recent.photosAdded', '{{count}} new photos in {{title}}', { ...vars, count: photos });
-      if (photos === 0) return t('customer.dashboard.recent.videosAdded', '{{count}} new videos in {{title}}', { ...vars, count: videos });
-      return t('customer.dashboard.recent.mediaAdded', '{{photos}} and {{videos}} in {{title}}', {
-        ...vars,
-        photos: t('customer.dashboard.recent.newPhotos', '{{count}} new photos', { count: photos }),
-        videos: t('customer.dashboard.recent.videos', '{{count}} videos', { count: videos }),
-      });
-    }
-    default: return item.title;
-  }
-}
+// The dashboard shows the newest few; the rest is on the activity page.
+const RECENT_ON_DASHBOARD = 5;
 
 const Recent: React.FC<{ items: CustomerRecentItem[] }> = ({ items }) => {
   const { t } = useTranslation();
-  const { format: fmtDate } = useLocalizedDate();
   if (items.length === 0) return null;
   return (
     <section aria-labelledby="recent-title" className="rounded-xl border mb-6 overflow-hidden bg-surface border-border-token">
@@ -206,16 +181,14 @@ const Recent: React.FC<{ items: CustomerRecentItem[] }> = ({ items }) => {
         <History className="w-5 h-5" />
         {t('customer.dashboard.recentTitle', 'Recent')}
       </h2>
-      <ul className="divide-y divide-border-token">
-        {items.map((item) => (
-          <li key={`${item.kind}-${item.id}`} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-            <Link to={item.link} className="text-sm text-theme hover:underline min-w-0 break-words">
-              {recentLabel(t, item)}
-            </Link>
-            <time dateTime={item.at} className="text-xs text-muted-theme whitespace-nowrap">{fmtDate(item.at)}</time>
-          </li>
-        ))}
-      </ul>
+      <RecentList items={items.slice(0, RECENT_ON_DASHBOARD)} />
+      {items.length > RECENT_ON_DASHBOARD && (
+        <div className="px-4 py-3 border-t border-border-token">
+          <Link to="/customer/activity" className="text-sm font-medium text-accent hover:underline">
+            {t('customer.dashboard.recentShowAll', 'Show all activity')}
+          </Link>
+        </div>
+      )}
     </section>
   );
 };

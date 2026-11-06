@@ -4138,7 +4138,8 @@
         "videos_one": "{{count}} vídeo",
         "videos_many": "{{count}} vídeos",
         "videos_other": "{{count}} vídeos"
-      }
+      },
+      "recentShowAll": "Ver toda a atividade"
     },
     "layout": {
       "greeting": "Olá, {{name}}"
@@ -4237,6 +4238,11 @@
       "albumOpen": "Configurar o seu álbum",
       "albumReady": "O estúdio disponibilizou o seu álbum. Escolha o acabamento e as suas fotos.",
       "albumView": "Ver a sua seleção"
+    },
+    "activity": {
+      "title": "Atividade",
+      "loadError": "Não foi possível carregar a atividade. Tente novamente.",
+      "empty": "Ainda não aconteceu nada."
     }
   },
   "customers": {

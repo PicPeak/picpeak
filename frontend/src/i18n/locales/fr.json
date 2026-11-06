@@ -3929,7 +3929,8 @@
         "videos_one": "{{count}} vidéo",
         "videos_many": "{{count}} vidéos",
         "videos_other": "{{count}} vidéos"
-      }
+      },
+      "recentShowAll": "Voir toute l’activité"
     },
     "layout": {
       "greeting": "Bonjour, {{name}}"
@@ -4028,6 +4029,11 @@
       "albumOpen": "Configurer votre album",
       "albumReady": "Le studio a publié votre album. Choisissez sa finition et vos photos.",
       "albumView": "Voir votre sélection"
+    },
+    "activity": {
+      "title": "Activité",
+      "loadError": "Impossible de charger l’activité. Veuillez réessayer.",
+      "empty": "Rien ne s’est encore passé."
     }
   },
   "customers": {
