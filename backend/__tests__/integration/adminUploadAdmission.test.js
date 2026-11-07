@@ -498,7 +498,7 @@ test('abort during an actual original PUT holds capacity until synchronous proce
     expect(await db('public_upload_requests').where({ id: hold.id }).first()).toMatchObject({ active: 1 });
     await expect(quota.begin({ mode: 'admin', eventId, maxFiles: 1 })).rejects.toMatchObject({ code: 'UPLOAD_CONCURRENCY_LIMIT' });
   } finally { release(); }
-  const res = await completing; expect(res.status).toBe(200); expect(res.body.uploaded).toBe(0);
+  const res = await completing; expect(res.status).toBe(400); expect(res.body.code).toBe('UPLOAD_CANCELLED');
   await aborting;
   expect(await db('photos')).toHaveLength(0); expect(await db('public_upload_objects')).toHaveLength(0);
   expect(await storage.stat(object.object_key)).toBeNull();
@@ -578,7 +578,7 @@ test('a rejected PUT with lost acknowledgement leaves no charge and no orphan on
     await actual(...args); throw new Error('Owned lost acknowledgement after PUT');
   });
   const res = await completeChunk(init.body.uploadId);
-  expect(res.status).toBe(200); expect(res.body.uploaded).toBe(0);
+  expect(res.status).toBe(500); expect(res.body.code).toBe('UPLOAD_PROCESSING_FAILED');
   await waitSettled();
   expect(await db('photos')).toHaveLength(0);
   expect(await db('public_upload_objects')).toHaveLength(0);

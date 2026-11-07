@@ -2760,6 +2760,9 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     // processUploadedPhotos logs a failed file and goes on to the next; with
     // the one file of a chunked upload, an empty result means it was dropped.
     if (!uploadedPhotos.length) {
+      if (mergedFile.uploadReservation?.isCancelled?.()) {
+        return res.status(400).json({ error: 'Upload cancelled', code: 'UPLOAD_CANCELLED' });
+      }
       return res.status(500).json({ error: `Failed to process ${mergedFile.filename}`, code: 'UPLOAD_PROCESSING_FAILED' });
     }
 
