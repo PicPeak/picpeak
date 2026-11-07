@@ -1362,7 +1362,7 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         width: photo.width || null,
         height: photo.height || null,
         duration: photo.duration || null,
-        size: photo.size_bytes,
+        size: photo.size_bytes == null ? null : Number(photo.size_bytes),
         uploaded_at: photo.uploaded_at,
         // Feedback data
         has_feedback: (commentMap[photo.id] > 0 || photo.average_rating > 0 || photo.like_count > 0),
@@ -1803,6 +1803,15 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       await fs.rm(mergedFile.tempDir, { recursive: true, force: true });
     } catch (cleanupErr) {
       logger.warn('Failed to clean up temp directory:', cleanupErr.message);
+    }
+
+    // processUploadedPhotos logs a failed file and goes on to the next; with
+    // the one file of a chunked upload, an empty result means it was dropped.
+    if (!uploadedPhotos.length) {
+      if (mergedFile.uploadReservation?.isCancelled?.()) {
+        return res.status(400).json({ error: 'Upload cancelled', code: 'UPLOAD_CANCELLED' });
+      }
+      return res.status(500).json({ error: `Failed to process ${mergedFile.filename}`, code: 'UPLOAD_PROCESSING_FAILED' });
     }
 
     res.json({

@@ -552,7 +552,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
           ? parseBooleanInput(categoryMap[photo.category_id].allow_downloads, true)
           : true,
         category_slug: photo.category_id && categoryMap[photo.category_id] ? categoryMap[photo.category_id].slug : null,
-        size: photo.size_bytes,
+        size: photo.size_bytes == null ? null : Number(photo.size_bytes),
         // toIso: on SQLite installs rows written with a raw Date (e.g.
         // the pre-fix archive-restore path) hold epoch numbers — the
         // Timeline layout's parseISO() crashes on those (#485 class).
