@@ -6,8 +6,7 @@ import { api } from '../../config/api';
  * Tiles ask for the small rendition, a detail view for the large one. A tile
  * is a 3:2 box, the camera's own ratio, so a landscape product shot fills it
  * with neither bars nor crop, and the box is there before the image is. The
- * one big view is `natural` and keeps whatever ratio the studio uploaded; a
- * colour swatch is `square`, to fill its circle.
+ * one big view is `natural` and keeps whatever ratio the studio uploaded.
  */
 export function ProductImage({
   imageId,
@@ -22,13 +21,13 @@ export function ProductImage({
   slug?: string;
   imageLoader?: (id: string) => Promise<Blob>;
   size?: 480 | 1200;
-  shape?: 'tile' | 'natural' | 'square';
+  shape?: 'tile' | 'natural';
 }) {
   const { t } = useTranslation();
   const background = slug
     ? 'bg-surface text-text-secondary'
     : 'bg-inset text-muted';
-  const box = shape === 'square' ? 'aspect-square' : 'aspect-[3/2]';
+  const box = 'aspect-[3/2]';
   const [src, setSrc] = useState(''),
     [failed, setFailed] = useState(false);
   useEffect(() => {

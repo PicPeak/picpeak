@@ -37,7 +37,7 @@ export function AlbumChoiceDetails({
     renderImage && list.length > 0 ? (
       <span className="flex max-w-[50%] flex-wrap justify-end gap-2">
         {list.map((image) => (
-          <span key={image.id} className="block w-16 sm:w-20">
+          <span key={image.id} className="block w-24 sm:w-32">
             {renderImage(image.id, image.name)}
           </span>
         ))}
@@ -75,7 +75,7 @@ export function AlbumChoiceDetails({
             <dt className="font-semibold">{label(role.key)}</dt>
             <dd className="flex flex-wrap gap-3">
               {role.photos.map((photo) => (
-                <div key={photo.id} className="w-28 min-w-0">
+                <div key={photo.id} className="w-32 min-w-0 sm:w-40">
                   {renderPhoto(photo)}
                 </div>
               ))}
