@@ -134,4 +134,19 @@ describe('admin chunked upload /complete limits', () => {
     expect(mockCompleteUpload).toHaveBeenCalledWith('upload-abc', { owner: { eventId, adminId: expect.any(Number) } });
     expect(mockProcessUploadedPhotos).toHaveBeenCalled();
   });
+
+  // Issue 2426: processUploadedPhotos logs a failed file and returns without
+  // it. The one file of a chunked upload must not then answer 200.
+  it('answers an error when the merged file could not be processed', async () => {
+    const eventId = await createEvent();
+    // The upload before this one removed the merged file with its temp dir.
+    fs.mkdirSync(mergedDir, { recursive: true });
+    fs.writeFileSync(mergedPath, JPEG);
+    mockProcessUploadedPhotos.mockResolvedValueOnce([]);
+
+    const res = await complete(eventId);
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Failed to process big.jpg', code: 'UPLOAD_PROCESSING_FAILED' });
+  });
 });

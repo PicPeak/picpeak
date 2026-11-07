@@ -690,7 +690,7 @@ async function handleV1PhotoUpload(req, res) {
           original_filename: result.photo.original_filename,
           source_filename: result.photo.source_filename,
           previous_filename: result.previousFilename,
-          size_bytes: result.photo.size_bytes,
+          size_bytes: result.photo.size_bytes == null ? null : Number(result.photo.size_bytes),
           width: result.photo.width,
           height: result.photo.height,
         },

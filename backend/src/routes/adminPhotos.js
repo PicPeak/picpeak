@@ -1409,7 +1409,7 @@ router.get('/:eventId/photos/duplicates', adminAuth, requirePermission('photos.v
           // One shape for every row: SQLite's zone-less default would be
           // read in the browser's zone and pick the wrong oldest copy.
           uploaded_at: Number.isFinite(uploadedMs(photo)) ? new Date(uploadedMs(photo)).toISOString() : null,
-          size: photo.size_bytes ?? null,
+          size: photo.size_bytes == null ? null : Number(photo.size_bytes),
           media_type: photo.media_type || 'image',
           source: photoSource(photo),
           moderation_status: photo.moderation_status || null,
@@ -2230,7 +2230,7 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         focal_point: isVideoRow(photo) ? null : focalPointOf(photo),
         focal_source: isVideoRow(photo) ? null : (photo.focal_source || null),
         duration: photo.duration || null,
-        size: photo.size_bytes,
+        size: photo.size_bytes == null ? null : Number(photo.size_bytes),
         uploaded_at: photo.uploaded_at,
         // The camera clock, zone-less, for the list's Captured column
         // (issue 1739). Formatted here, in the zone exifr read the EXIF time
@@ -2755,6 +2755,12 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       await fs.rm(mergedFile.tempDir, { recursive: true, force: true });
     } catch (cleanupErr) {
       logger.warn('Failed to clean up temp directory:', cleanupErr.message);
+    }
+
+    // processUploadedPhotos logs a failed file and goes on to the next; with
+    // the one file of a chunked upload, an empty result means it was dropped.
+    if (!uploadedPhotos.length) {
+      return res.status(500).json({ error: `Failed to process ${mergedFile.filename}`, code: 'UPLOAD_PROCESSING_FAILED' });
     }
 
     res.json({
