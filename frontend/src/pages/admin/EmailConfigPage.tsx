@@ -161,6 +161,7 @@ const TEMPLATE_DISPLAY_NAMES: Record<string, string> = {
   customer_document_access_alert_admin: 'Unusual Document Access (Admin)',
   customer_document_requested: 'Document Requested from Customer',
   customer_document_request_reminder: 'Document Request Reminder',
+  album_shipped: 'Album Shipped',
   // quotes
   quote_sent: 'Quote Sent',
   quote_accepted_customer: 'Quote Accepted (Customer)',

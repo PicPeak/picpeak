@@ -5,13 +5,14 @@ import { MemoryRouter } from 'react-router-dom';
 import { EventProductsCard } from '../EventProductsCard';
 const state = vi.hoisted(() => ({ bills: true, permissions: new Set<string>(), get: vi.fn() }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }), initReactI18next: { type: '3rdParty', init: () => {} } }));
+vi.mock('../../../hooks/useLocalizedDate', () => ({ useLocalizedDate: () => ({ format: (d: string) => d, formatDateTime: (d: string) => d }) }));
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: (key: string) => key === 'albumProducts' || (key === 'bills' && state.bills) }));
 vi.mock('../../../contexts/PermissionsContext', () => ({ usePermissions: () => ({ hasPermission: (key: string) => state.permissions.has(key) }) }));
 vi.mock('../../../config/api', () => ({ api: { get: (...args: unknown[]) => state.get(...args) } }));
 vi.mock('../model', () => ({ errorMessage: (error: Error) => error.message, albumProducts: { event: vi.fn(async () => ({
   catalogue: { products: [{ id: 'print', name: 'Print', active: true }] },
   offers: [{ id: 'offer', productId: 'print', enabled: true, revision: 1, status: 'submitted', selection: null }],
-})) } }));
+})), shipments: vi.fn(async () => ({ shipments: [], recipient: null })) }, CARRIERS: [] }));
 function mount(ownsEvent: boolean) {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MemoryRouter><EventProductsCard eventId={7} ownsEvent={ownsEvent} /></MemoryRouter>

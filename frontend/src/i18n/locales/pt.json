@@ -4159,7 +4159,12 @@
         "videos_many": "{{count}} vídeos",
         "videos_other": "{{count}} vídeos"
       },
-      "recentShowAll": "Ver toda a atividade"
+      "recentShowAll": "Ver toda a atividade",
+      "shipmentsTitle": "Envios",
+      "shipmentAlbum": "Álbum",
+      "shipmentCarrierOther": "Encomenda",
+      "shipmentSent": "enviada a {{date}}",
+      "trackParcel": "Seguir encomenda"
     },
     "layout": {
       "greeting": "Olá, {{name}}"
@@ -4533,7 +4538,29 @@
     "stepSize": "Escolha um tamanho",
     "viewSelection": "Ver a sua seleção",
     "withdraw": "Retirar disponibilização",
-    "yourAlbum": "O seu álbum"
+    "yourAlbum": "O seu álbum",
+    "shipments": {
+      "title": "Envios",
+      "other": "Outra transportadora",
+      "carrier": "Transportadora",
+      "number": "Número de rastreio",
+      "url": "Link de rastreio (opcional)",
+      "notify": "Avisar o cliente por e-mail",
+      "notifyTo": "Para {{name}} ({{email}}), com o link de rastreio.",
+      "noRecipient": "Nenhuma conta de cliente pertence a esta encomenda, por isso ninguém pode ser avisado e o portal não pode mostrar a encomenda. Ainda pode registá-la.",
+      "add": "Adicionar encomenda",
+      "added": "Encomenda registada.",
+      "addedMailed": "Encomenda registada. E-mail de envio em fila para {{email}}.",
+      "mailFailed": "Encomenda registada, mas não foi possível pôr o e-mail de envio em fila.",
+      "mailed": "E-mail enviado",
+      "notMailed": "Não avisado",
+      "mailQueued": "E-mail agendado",
+      "mailFailed": "Falha no e-mail",
+      "deleteTitle": "Eliminar esta encomenda?",
+      "deleteMessage": "A encomenda {{number}} desaparece da administração e do portal do cliente. Um e-mail já enviado continua enviado.",
+      "delete": "Eliminar encomenda",
+      "deleteNamed": "Eliminar encomenda {{number}}"
+    }
   },
   "products": {
     "addAlbumStarter": "Adicionar conjunto inicial de álbum",

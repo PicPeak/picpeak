@@ -142,6 +142,28 @@ export function errorMessage(error: unknown) {
     e.response?.data?.error || e.message || i18n.t('common.retry', 'Retry')
   );
 }
+/** Parcel carriers the backend builds tracking links for (issue 2422). */
+export const CARRIERS = [
+  'dhl', 'dhl_express', 'deutsche_post', 'dpd', 'hermes', 'gls', 'ups', 'fedex', 'other',
+] as const;
+export type Carrier = (typeof CARRIERS)[number];
+export interface Shipment {
+  id: number;
+  offerId: string;
+  carrier: Carrier;
+  carrierName: string | null;
+  trackingNumber: string;
+  trackingUrl: string | null;
+  shippedAt: string | null;
+  notifiedAt: string | null;
+  /** Where the customer's mail stands; null when none went or it was held back. */
+  mail?: 'sent' | 'queued' | 'failed' | null;
+}
+export interface ShipmentRecipient {
+  id: number;
+  name: string;
+  email: string;
+}
 export const albumProducts = {
   catalogue: () =>
     api.get<Catalogue>('/admin/album-products/catalogue').then((r) => r.data),
@@ -198,6 +220,27 @@ export const albumProducts = {
         },
       )
       .then((r) => r.data),
+  shipments: (eventId: number, offerId: string) =>
+    api
+      .get<{ shipments: Shipment[]; recipient: ShipmentRecipient | null }>(
+        `/admin/album-products/events/${eventId}/offers/${offerId}/shipments`,
+      )
+      .then((r) => r.data),
+  addShipment: (
+    eventId: number,
+    offerId: string,
+    input: { carrier: Carrier; trackingNumber: string; trackingUrl?: string; notify: boolean },
+  ) =>
+    api
+      .post<{ shipment: Shipment; notification: 'queued' | 'skipped' | 'failed' | 'off' }>(
+        `/admin/album-products/events/${eventId}/offers/${offerId}/shipments`,
+        input,
+      )
+      .then((r) => r.data),
+  removeShipment: (eventId: number, offerId: string, shipmentId: number) =>
+    api.delete(
+      `/admin/album-products/events/${eventId}/offers/${offerId}/shipments/${shipmentId}`,
+    ),
   client: (slug: string) =>
     api
       .get<{ offers: Offer[] }>(`/gallery/${slug}/album-products`)

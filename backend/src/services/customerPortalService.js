@@ -386,6 +386,10 @@ async function getDashboard(customerId, session = null) {
       active: events.filter((e) => e.availability !== 'expired'),
       expired: events.filter((e) => e.availability === 'expired'),
     },
+    // Parcels of their album orders (issue 2422), gated like the albums.
+    shipments: galleries && await isFeatureEnabled('albumProducts')
+      ? await require('./albumProducts/shipments').forCustomer(db, customerId)
+      : [],
   };
 }
 
