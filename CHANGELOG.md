@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.8](https://github.com/PicPeak/picpeak/compare/v3.135.7...v3.135.8) (2026-11-06)
+
+
+### Bug Fixes
+
+* **gallery:** show the event day, not the day before, west of UTC ([#2419](https://github.com/PicPeak/picpeak/issues/2419)) ([f2073f5](https://github.com/PicPeak/picpeak/commit/f2073f549e858c51aab1392a6393f041802b2252))
+
 ## [3.135.7](https://github.com/PicPeak/picpeak/compare/v3.135.6...v3.135.7) (2026-11-03)
 
 
