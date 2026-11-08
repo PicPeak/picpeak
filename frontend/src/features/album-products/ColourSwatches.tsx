@@ -61,12 +61,19 @@ export function ColourSwatches({
                 {option.imageId && (
                   <ProductImage imageId={option.imageId} alt="" slug={slug} shape="square" />
                 )}
-                {selected && (
-                  <Check
-                    className="absolute h-6 w-6"
-                    style={{ color: option.hex ? checkColour(option.hex) : undefined }}
-                  />
-                )}
+                {/* On a picture the colour value says nothing about what is
+                    behind the check, so it gets a dark disc of its own. */}
+                {selected &&
+                  (option.imageId ? (
+                    <span className="absolute flex h-8 w-8 items-center justify-center rounded-full bg-black/60">
+                      <Check className="h-5 w-5" style={{ color: '#ffffff' }} />
+                    </span>
+                  ) : (
+                    <Check
+                      className="absolute h-6 w-6"
+                      style={{ color: option.hex ? checkColour(option.hex) : undefined }}
+                    />
+                  ))}
               </span>
               <span className={selected ? 'font-semibold' : undefined}>{option.name}</span>
               {priceOf?.(option.id) && <span>{priceOf(option.id)}</span>}

@@ -31,6 +31,10 @@ describe('ColourSwatches', () => {
     const image = screen.getByTestId('product-image');
     expect(image).toHaveAttribute('data-image', 'img-linen');
     expect(image.closest('[data-swatch]')!.className).toContain('rounded-full');
+    // The check on a picture sits on its own dark disc, whatever the picture.
+    const check = image.parentElement!.querySelector('svg')!;
+    expect(check.parentElement!.className).toContain('bg-black/60');
+    expect((check as unknown as HTMLElement).style.color).toBe('rgb(255, 255, 255)');
     const black = document.querySelector('[data-swatch="#000000"]') as HTMLElement;
     expect(black.className).toContain('rounded-full');
     expect(black.style.backgroundColor).toBe('rgb(0, 0, 0)');
