@@ -575,7 +575,7 @@ module.exports = (router) => {
         total_views: parseInt(totalViews) || 0,
         total_downloads: parseInt(totalDownloads) || 0,
         unique_visitors: parseInt(uniqueVisitors) || 0,
-        recent_photos: recentPhotos,
+        recent_photos: recentPhotos.map((p) => ({ ...p, size_bytes: p.size_bytes == null ? null : Number(p.size_bytes) })),
         customer_accounts: customerAccounts.map((c) => ({
           id: c.id,
           email: c.email,

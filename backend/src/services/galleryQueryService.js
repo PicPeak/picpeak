@@ -896,7 +896,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // gallery's access check (modules/photoSales/sellable.js). Only
         // sellable photos get one: no client-only photo, no video.
         sale_token: parseBooleanInput(event.is_priced, false) && isPhotoSellable(photo) ? signPhotoSale(photo.id) : null,
-        size: photo.size_bytes,
+        size: photo.size_bytes == null ? null : Number(photo.size_bytes),
         // toIso: on SQLite installs rows written with a raw Date (e.g.
         // the pre-fix archive-restore path) hold epoch numbers — the
         // Timeline layout's parseISO() crashes on those (#485 class).
