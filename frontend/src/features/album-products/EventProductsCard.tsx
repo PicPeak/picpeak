@@ -293,7 +293,7 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
               choice={offer.selection}
               renderPhoto={(photo) => <AdminAlbumPhoto eventId={eventId} photo={photo} />}
               productImageId={catalogue?.products.find((p) => p.id === offer.productId)?.heroImageId}
-              renderImage={(imageId, alt) => <ProductImage imageId={imageId} alt={alt} />}
+              renderImage={(imageId, alt, shape) => <ProductImage imageId={imageId} alt={alt} shape={shape} />}
             />
           ) : (
             <p>

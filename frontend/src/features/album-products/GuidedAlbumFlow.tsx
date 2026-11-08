@@ -317,7 +317,9 @@ export function GuidedAlbumFlow({
       </span>
     );
   };
-  const productImage = (imageId: string, alt: string) => <ProductImage slug={slug} imageId={imageId} alt={alt} />;
+  const productImage = (imageId: string, alt: string, shape?: 'square') => (
+    <ProductImage slug={slug} imageId={imageId} alt={alt} shape={shape} />
+  );
   // The review shows what will be sent, built from this session's choices.
   const preview: Choice | null = offer?.product
     ? {

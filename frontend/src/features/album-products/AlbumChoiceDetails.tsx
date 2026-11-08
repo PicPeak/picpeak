@@ -15,7 +15,8 @@ export function usePhotoRoleLabel() {
  * One album choice in one place: the album, every configured attribute and
  * every photo role. The caller draws a photo, and with `renderImage` the
  * album's and each option's product image, because the gallery and the admin
- * reach them through different authenticated routes.
+ * reach them through different authenticated routes. A colour's picture is
+ * `square` and shown in a circle, as in the colour step.
  */
 export function AlbumChoiceDetails({
   choice,
@@ -26,21 +27,27 @@ export function AlbumChoiceDetails({
   choice: Choice;
   renderPhoto: (photo: ChosenPhoto) => ReactNode;
   productImageId?: string | null;
-  renderImage?: (imageId: string, alt: string) => ReactNode;
+  renderImage?: (imageId: string, alt: string, shape?: 'square') => ReactNode;
 }) {
   const { t } = useTranslation();
   const label = usePhotoRoleLabel();
   const row = 'grid gap-1 sm:grid-cols-[10rem_minmax(0,1fr)]';
   // Small pictures to the right of the text; a row without one is unchanged.
   // Several chosen options wrap within half the row instead of overflowing.
-  const images = (list: { id: string; name: string }[]) =>
+  const images = (list: { id: string; name: string }[], round = false) =>
     renderImage && list.length > 0 ? (
       <span className="flex max-w-[50%] flex-wrap justify-end gap-2">
-        {list.map((image) => (
-          <span key={image.id} className="block w-24 sm:w-32">
-            {renderImage(image.id, image.name)}
-          </span>
-        ))}
+        {list.map((image) =>
+          round ? (
+            <span key={image.id} className="block w-20 overflow-hidden rounded-full border border-border-token sm:w-24">
+              {renderImage(image.id, image.name, 'square')}
+            </span>
+          ) : (
+            <span key={image.id} className="block w-24 sm:w-32">
+              {renderImage(image.id, image.name)}
+            </span>
+          ),
+        )}
       </span>
     ) : null;
   return (
@@ -64,7 +71,10 @@ export function AlbumChoiceDetails({
                 </span>
               ))}
             </span>
-            {images(a.options.flatMap((o) => (o.imageId ? [{ id: o.imageId, name: o.name }] : [])))}
+            {images(
+              a.options.flatMap((o) => (o.imageId ? [{ id: o.imageId, name: o.name }] : [])),
+              a.role === 'colour',
+            )}
           </dd>
         </div>
       ))}

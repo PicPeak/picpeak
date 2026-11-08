@@ -63,12 +63,14 @@ describe('product image renditions', () => {
     vi.mocked(api.get).mockReturnValue(new Promise((r) => { resolve = r; }) as never);
     globalThis.URL.createObjectURL = vi.fn(() => 'blob:x');
     const { container, findByRole } = render(<ProductImage imageId="a" alt="Album" slug="wedding" />);
-    expect(container.firstElementChild).toHaveClass('aspect-[3/2]');
+    expect(container.firstElementChild).toHaveClass('aspect-[3/2]', 'bg-surface');
     expect(container).not.toHaveTextContent('No image');
     resolve({ data: new Blob(['x']) });
     const img = await findByRole('img', { name: 'Album' });
     expect(img).toHaveClass('aspect-[3/2]', 'object-cover');
     expect(img).not.toHaveClass('object-contain');
+    // A transparent PNG shows the page behind it, not a grey box.
+    expect(img.className).not.toMatch(/\bbg-/);
   });
 
   it('draws the big view in the image\'s own ratio', async () => {
