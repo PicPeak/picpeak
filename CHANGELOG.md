@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.196.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.196.1-beta.0...v3.196.2-beta.0) (2026-11-08)
+
+
+### Bug Fixes
+
+* **album-products:** round colour swatches again, no shade behind transparent images ([#2433](https://github.com/PicPeak/picpeak/issues/2433)) ([0fe9787](https://github.com/PicPeak/picpeak/commit/0fe9787791b32c5852ef9e455e8dddc311a609be))
+
 ## [3.196.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.196.0-beta.0...v3.196.1-beta.0) (2026-11-08)
 
 
