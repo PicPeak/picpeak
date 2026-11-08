@@ -1019,6 +1019,16 @@ router.get('/session', async (req, res) => {
         const event = await db('events').where({ id: decoded.eventId }).first();
         if (!event) return res.json({ valid: false, error: 'Gallery no longer available' });
         await access.authorize(event, access.grant(event, 'gallery', decoded));
+        // A Live Slideshow session lives in the same per-slug cookie as a
+        // guest session but is display-only (denySlideshowToken refuses every
+        // write and download). Reporting it as a valid gallery session made
+        // the gallery page keep it as the guest login, so a browser that had
+        // opened the show link could not rate, comment, favourite or download
+        // until the token expired. Not valid here: the page logs in through
+        // the share link (or asks for the password) and replaces it.
+        if (decoded.accessLevel === 'slideshow') {
+          return res.json({ valid: false, error: 'Slideshow sessions are display-only' });
+        }
       } else {
         return res.status(403).json({ valid: false, error: 'Invalid token type' });
       }
