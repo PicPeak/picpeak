@@ -4804,6 +4804,14 @@
     "galleryLayout": "Galerie-Layout",
     "layoutSettings": "Layout-Einstellungen",
     "photoSpacing": "Foto-Abstand",
+    "photoGap": "Abstand zwischen Fotos (px)",
+    "photoGapHint": "0 bis 32 Pixel. Die Fotos behalten ihr eigenes Format.",
+    "heroFit": "Titelbild",
+    "heroFitDescription": "Füllen schneidet das Foto auf ein breites Banner zu. Ganzes Foto zeigt es ohne Zuschnitt, bei einem Hochformat mit Rand daneben.",
+    "heroFitOptions": {
+      "cover": "Header füllen",
+      "contain": "Ganzes Foto"
+    },
     "spacing": {
       "tight": "Eng",
       "normal": "Normal",

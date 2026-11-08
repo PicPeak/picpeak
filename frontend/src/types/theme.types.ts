@@ -38,6 +38,15 @@ export interface GalleryLayoutSettings {
   // Hero specific
   heroImageId?: number;
   heroOverlayOpacity?: number;
+
+  // Gallery Premium specific (issue 2425). Unset keeps the original 1, 2 and
+  // 3 columns and the 16 px gap.
+  premiumColumns?: {
+    mobile: number;
+    tablet: number;
+    desktop: number;
+  };
+  premiumGap?: number;
   
   // Mosaic specific
   mosaicPattern?: 'random' | 'structured' | 'alternating';
@@ -106,6 +115,9 @@ export interface ThemeConfig {
   // Header Style (decoupled from layout)
   headerStyle?: HeaderStyleType;
   heroDividerStyle?: HeroDividerStyle;
+  // 'contain' shows the whole hero photo, uncropped, instead of the 16:9
+  // crop (issue 2429). Hero header and Gallery Premium.
+  heroFit?: 'cover' | 'contain';
 
   // Controls Style - sidebar (menu button) vs classic (inline filter bar)
   controlsStyle?: 'sidebar' | 'classic';
