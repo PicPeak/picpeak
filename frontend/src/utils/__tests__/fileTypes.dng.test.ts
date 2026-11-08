@@ -35,7 +35,7 @@ describe('normalizeFileMimeType', () => {
   );
 
   it('leaves other files and other claims alone', () => {
-    expect(normalizeFileMimeType('photo.jpg', '')).toBe('');
+    expect(normalizeFileMimeType('photo.jpg', 'image/png')).toBe('image/png');
     expect(normalizeFileMimeType('shot.dng', 'image/jpeg')).toBe('image/jpeg');
     expect(normalizeFileMimeType('photo.jpg', 'image/jpeg')).toBe('image/jpeg');
   });

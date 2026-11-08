@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, buildUploadAcceptString, normalizeFileMimeType } from '../fileTypes';
+import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, buildUploadAcceptString, normalizeFileMimeType, isVideoUploadFile } from '../fileTypes';
 
 describe('fileTypes', () => {
   describe('extensionsToMimeTypes', () => {
@@ -53,6 +53,29 @@ describe('fileTypes', () => {
     it('adds the token only when an admin enabled the type', () => {
       expect(extensionsToAcceptString('jpg,heic,heif')).toBe('image/jpeg,image/heic,image/heif,.heic,.heif');
       expect(extensionsToAcceptString('jpg,png')).toBe('image/jpeg,image/png');
+    });
+  });
+
+  // Issue 2404: a dropped .mov arrived untyped and was refused, while the
+  // same file picked by hand carried video/quicktime and went through.
+  describe('untyped media files', () => {
+    it('names an untyped file in the table by its extension', () => {
+      expect(normalizeFileMimeType('clip.MOV', '')).toBe('video/quicktime');
+      expect(normalizeFileMimeType('clip.mov', 'application/octet-stream')).toBe('video/quicktime');
+      expect(normalizeFileMimeType('clip.m4v', '')).toBe('video/mp4');
+      expect(normalizeFileMimeType('holiday.jpg', '')).toBe('image/jpeg');
+    });
+
+    it('leaves a named type and anything outside the table alone', () => {
+      expect(normalizeFileMimeType('clip.mov', 'text/html')).toBe('text/html');
+      expect(normalizeFileMimeType('payload.exe', 'application/octet-stream')).toBe('application/octet-stream');
+      expect(normalizeFileMimeType('noextension', '')).toBe('');
+    });
+
+    it('holds an untyped video to the video limit', () => {
+      expect(isVideoUploadFile({ name: 'clip.mov', type: '' })).toBe(true);
+      expect(isVideoUploadFile({ name: 'clip.mov', type: 'video/quicktime' })).toBe(true);
+      expect(isVideoUploadFile({ name: 'holiday.jpg', type: '' })).toBe(false);
     });
   });
 

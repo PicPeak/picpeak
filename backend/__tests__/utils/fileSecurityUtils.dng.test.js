@@ -90,8 +90,10 @@ describe('normalizeUploadMimeType', () => {
     expect(validateFileType('shot.dng', 'image/jpeg', allowed)).toBe(false);
   });
 
-  it('only applies to .dng files', () => {
-    expect(normalizeUploadMimeType('photo.jpg', 'application/octet-stream')).toBe('application/octet-stream');
+  it('only renames a .dng that came with a TIFF-ish type', () => {
+    // An untyped .jpg is named by its extension since issue 2404, see
+    // fileSecurityUtils.untyped.test.js; a named type is left alone.
+    expect(normalizeUploadMimeType('photo.jpg', 'image/png')).toBe('image/png');
     expect(normalizeUploadMimeType('scan.tiff', 'image/tiff')).toBe('image/tiff');
     expect(normalizeUploadMimeType(undefined, '')).toBe('');
   });

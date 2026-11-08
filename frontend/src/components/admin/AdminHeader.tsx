@@ -320,7 +320,10 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick }) => {
 
               {/* Notifications dropdown */}
               {notificationsModal.isOpen && (
-                <div className="absolute right-0 mt-2 w-96 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700">
+                // Below sm the panel is placed against the viewport, not the
+                // bell: the user menu sits to the bell's right, so a panel
+                // anchored at the bell ran off the left edge (issue 2404).
+                <div className="fixed inset-x-4 top-[4.5rem] sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:w-96 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700">
                   <div className="px-4 py-3 border-b border-neutral-100 dark:border-neutral-700 flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{t('admin.notifications')}</h3>
                     <div className="flex items-center gap-2">
@@ -344,7 +347,8 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick }) => {
                       </button>
                     </div>
                   </div>
-                  <div className="max-h-96 overflow-y-auto">
+                  {/* Capped by the viewport too, so a phone held sideways can still reach the list's end. */}
+                  <div className="max-h-[min(24rem,calc(100dvh-12rem))] overflow-y-auto">
                     {notifications.length === 0 ? (
                       <div className="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
                         {t('admin.noNotificationsMessage')}

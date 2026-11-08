@@ -438,11 +438,29 @@ const DNG_MIME_ALIASES = new Set(['', 'application/octet-stream', 'image/dng', '
 const HEIF_EXTENSION_TO_MIME = { '.heic': 'image/heic', '.heif': 'image/heif' };
 const GENERIC_HEIF_MIMES = new Set(['', 'application/octet-stream', 'image/heic', 'image/heif']);
 
+// A file that arrives with no type at all. A drag and drop can hand the
+// browser a file without the type the file chooser would have given it (a
+// .mov dropped on the admin uploader was refused while the same file picked
+// by hand went through, issue 2404), and multer then sees an empty string or
+// application/octet-stream. Neither claims anything, so for the media table's
+// own extensions the extension names the type. A type the browser did name is
+// still taken at its word.
+const UNTYPED_MIMES = new Set(['', 'application/octet-stream']);
+const MEDIA_EXTENSION_TO_MIME = Object.entries(ALLOWED_MEDIA_TYPES)
+  .reduce((map, [mimeType, config]) => {
+    config.extensions.forEach((extension) => { map[extension] = mimeType; });
+    return map;
+  }, {});
+
 /**
  * The MIME type to validate an upload against. A browser-reported MIME is a
  * name, not evidence, so mapping these variants onto the canonical DNG entry
  * admits nothing new: the extension still has to be allowed, and routes that
- * inspect content still check the TIFF signature.
+ * inspect content still check the TIFF signature. HEIC/HEIF is handled the
+ * same way, and any other media extension when the browser reported no type
+ * at all (empty or application/octet-stream). An untyped file outside the
+ * media table, such as an .exe, is left exactly as it arrived, and the type
+ * returned is still tested against the caller's own allow-list.
  * @param {string} filename - The original filename
  * @param {string} mimetype - The MIME type the client reported
  * @returns {string} - The canonical MIME type, or `mimetype` unchanged
@@ -455,6 +473,10 @@ function normalizeUploadMimeType(filename, mimetype) {
   const heifMime = HEIF_EXTENSION_TO_MIME[ext];
   if (heifMime && GENERIC_HEIF_MIMES.has(mimetype || '')) {
     return heifMime;
+  }
+  const mediaMime = MEDIA_EXTENSION_TO_MIME[ext];
+  if (mediaMime && UNTYPED_MIMES.has(mimetype || '')) {
+    return mediaMime;
   }
   return mimetype;
 }
