@@ -133,6 +133,7 @@
     "eventSpecific": "(Evenement-specifiek)",
     "clickToUpload": "Klik om te uploaden of sleep bestanden hierheen",
     "fileRequirements": "{{formats}} (max. {{sizeLimit}} MB per bestand, {{limit}} bestanden per upload)",
+    "videoSizeLimit": "Video's: max. {{sizeLimit}} MB per bestand",
     "selectedFiles": "Geselecteerde bestanden",
     "uploading": "Uploaden...",
     "uploadComplete": "Upload voltooid!",

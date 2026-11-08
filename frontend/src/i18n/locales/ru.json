@@ -133,6 +133,7 @@
     "eventSpecific": "(Для конкретного события)",
     "clickToUpload": "Нажмите для загрузки или перетащите файлы",
     "fileRequirements": "{{formats}} (макс. {{sizeLimit}} МБ на файл, {{limit}} файлов за загрузку)",
+    "videoSizeLimit": "Видео: макс. {{sizeLimit}} МБ на файл",
     "selectedFiles": "Выбранные файлы",
     "uploading": "Загрузка...",
     "uploadComplete": "Загрузка завершена!",
