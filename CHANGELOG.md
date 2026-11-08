@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.196.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.196.0-beta.0...v3.196.1-beta.0) (2026-11-08)
+
+
+### Bug Fixes
+
+* **uploads:** store file sizes over 2 GiB on PostgreSQL ([#2427](https://github.com/PicPeak/picpeak/issues/2427)) ([acf79a8](https://github.com/PicPeak/picpeak/commit/acf79a8c6bc3b05425ad6d6f032f1d54ddeae018))
+
 ## [3.196.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.195.0-beta.0...v3.196.0-beta.0) (2026-11-07)
 
 
