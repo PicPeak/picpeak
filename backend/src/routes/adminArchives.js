@@ -204,7 +204,7 @@ router.get('/:id', adminAuth, requirePermission('archives.view'), requireEventOw
       createdAt: archive.created_at,
       expiresAt: archive.expires_at,
       archivedAt: archive.archived_at,
-      photos: photos,
+      photos: photos.map((p) => ({ ...p, size_bytes: p.size_bytes == null ? null : Number(p.size_bytes) })),
       archiveFile: archiveFileInfo
     });
   } catch (error) {

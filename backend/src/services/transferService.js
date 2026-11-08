@@ -310,7 +310,7 @@ async function getTransfer(id) {
     extra_files: extraFiles.map((f) => ({
       id: f.id,
       filename: f.original_filename,
-      size_bytes: f.size_bytes,
+      size_bytes: f.size_bytes == null ? null : Number(f.size_bytes),
       mime_type: f.mime_type,
     })),
     recipients: recipients.map((r) => ({ id: r.id, email: r.email, last_sent_at: r.last_sent_at || null })),
@@ -319,14 +319,14 @@ async function getTransfer(id) {
       photo_id: f.photo_id,
       filename: f.original_filename || f.filename,
       type: f.type,
-      size_bytes: f.size_bytes,
+      size_bytes: f.size_bytes == null ? null : Number(f.size_bytes),
       event_id: f.event_id,
       event_name: f.event_name,
       event_slug: f.event_slug,
       // Admin picker previews thumbnails via the existing admin photo endpoint.
       thumbnail_url: `/admin/photos/${f.event_id}/thumbnail/${f.photo_id}`,
     })),
-    uploads,
+    uploads: uploads.map((u) => ({ ...u, size_bytes: u.size_bytes == null ? null : Number(u.size_bytes) })),
   };
 }
 
@@ -505,12 +505,12 @@ async function getPublicView(transfer) {
   const photoEntries = files.map((f) => ({
     file_id: `p${f.file_id}`,
     filename: (useOriginal && f.original_filename) ? f.original_filename : f.filename,
-    size_bytes: f.size_bytes || null,
+    size_bytes: Number(f.size_bytes) || null,
   }));
   const extraEntries = extraFiles.map((f) => ({
     file_id: `x${f.id}`,
     filename: f.original_filename,
-    size_bytes: f.size_bytes || null,
+    size_bytes: Number(f.size_bytes) || null,
   }));
 
   return {
