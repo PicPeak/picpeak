@@ -53,6 +53,9 @@ import { exifLine } from '../../../utils/photoExif';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
 import { PremiumLightboxDownloadButton } from './PremiumLightboxDownloadButton';
 import { PremiumWindowedAlbum } from './PremiumWindowedAlbum';
+import { columnsForWidth, premiumColumns, premiumGap } from './premiumGeometry';
+import { heroImageUrl } from '../heroImage';
+import { useOptionalTheme } from '../../../contexts/ThemeContext';
 import { boxStyle, type TileBox } from './measuredWindow';
 import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { isPhotoDownloadPending } from '../../../hooks/usePhotoDownloadPending';
@@ -271,12 +274,6 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   );
 };
 
-const albumColumns = (containerWidth: number) => {
-  if (containerWidth < 640) return 1;
-  if (containerWidth < 1024) return 2;
-  return 3;
-};
-
 interface GalleryPremiumLayoutProps extends BaseGalleryLayoutProps {
   heroPhotoOverride?: Photo | null;
   suppressEmptyState?: boolean;
@@ -477,6 +474,14 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
 
   // Get hero photo
   const heroPhoto = heroPhotoOverride || photos[0];
+
+  // The admin's columns, gap and hero fit (issues 2425, 2429).
+  const theme = useOptionalTheme()?.theme;
+  const gallerySettings = theme?.gallerySettings;
+  const { mobile, tablet, desktop } = premiumColumns(gallerySettings);
+  const albumColumns = useMemo(() => columnsForWidth({ mobile, tablet, desktop }), [mobile, tablet, desktop]);
+  const albumSpacing = premiumGap(gallerySettings);
+  const wholeHero = theme?.heroFit === 'contain';
 
   // Convert photos to react-photo-album format
   const albumPhotos = useMemo(() => {
@@ -901,10 +906,18 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     <div className="gallery-premium-layout" data-input-mode={inputMode}>
       {/* Hero Section */}
       <div className="gallery-premium-hero">
+        {/* Behind a whole photo, the same image blurred to fill the
+            hero; one URL, so the browser fetches it once. */}
+        {wholeHero && heroPhoto && (
+          <div
+            className="gallery-premium-hero-backdrop"
+            style={{ backgroundImage: `url(${heroImageUrl(heroPhoto, true)})` }}
+          />
+        )}
         <div
-          className="gallery-premium-hero-bg"
+          className={`gallery-premium-hero-bg${wholeHero ? ' gallery-premium-hero-bg--whole' : ''}`}
           style={{
-            backgroundImage: heroPhoto ? `url(${heroPhoto.hero_url || heroPhoto.url})` : undefined
+            backgroundImage: heroPhoto ? `url(${heroImageUrl(heroPhoto, wholeHero)})` : undefined
           }}
         />
         <div className="gallery-premium-hero-overlay" />
@@ -1072,13 +1085,13 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           </div>
         )}
         {largeGallery ? (
-          <PremiumWindowedAlbum photos={albumPhotos} renderTile={renderAlbumTile} columns={albumColumns} spacing={16} />
+          <PremiumWindowedAlbum photos={albumPhotos} renderTile={renderAlbumTile} columns={albumColumns} spacing={albumSpacing} />
         ) : (
           <MasonryPhotoAlbum
             photos={albumPhotos}
             render={{ photo: (_props, context) => renderAlbumTile(context) }}
             columns={albumColumns}
-            spacing={16}
+            spacing={albumSpacing}
           />
         )}
       </main>

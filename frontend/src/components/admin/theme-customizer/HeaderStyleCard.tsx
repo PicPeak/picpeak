@@ -103,6 +103,27 @@ export const HeaderStyleCard: React.FC<HeaderStyleCardProps> = ({ localTheme, ha
           </div>
         </div>
       )}
+
+      {/* Hero photo fit (issue 2429): Gallery Premium always has a hero. */}
+      {(localTheme.headerStyle === 'hero' || localTheme.galleryLayout === 'gallery-premium') && (
+        <div className="mt-6 pt-6 border-t border-line">
+          <label htmlFor="hero-fit" className="block font-medium text-sm text-body mb-3">
+            {t('branding.heroFit', 'Hero photo')}
+          </label>
+          <select
+            id="hero-fit"
+            value={localTheme.heroFit || 'cover'}
+            onChange={(e) => handleChange('heroFit', e.target.value)}
+            className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
+          >
+            <option value="cover">{t('branding.heroFitOptions.cover', 'Fill the header')}</option>
+            <option value="contain">{t('branding.heroFitOptions.contain', 'Whole photo')}</option>
+          </select>
+          <p className="text-xs text-soft mt-2">
+            {t('branding.heroFitDescription', 'Fill crops the photo to a wide banner. Whole photo shows it uncropped, with space beside a portrait photo.')}
+          </p>
+        </div>
+      )}
     </Card>
   );
 };

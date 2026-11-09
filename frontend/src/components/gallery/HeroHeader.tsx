@@ -9,6 +9,7 @@ import { HeroDivider } from './HeroDivider';
 import { buildResourceUrl } from '../../utils/url';
 import type { Photo } from '../../types';
 import { usePhotoLabels } from './PhotoLabels';
+import { heroImageUrl } from './heroImage';
 import type { HeroDividerStyle } from '../../types/theme.types';
 
 interface HeroHeaderProps {
@@ -64,6 +65,9 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   });
   const [hasInitialized, setHasInitialized] = useState(heroPhoto !== null);
   const overlayOpacity = gallerySettings.heroOverlayOpacity || 0.3;
+  // The whole photo instead of the 16:9 crop (issue 2429); the crop position
+  // only places a crop, so it does not apply.
+  const wholeHero = theme.heroFit === 'contain';
 
   // Helper function to get logo size classes
   const getLogoSizeClasses = (size: string): string => {
@@ -141,13 +145,14 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   return (
     <div className="relative -mt-6">
       {/* Hero Section */}
-      <div className="relative h-[60vh] sm:h-[70vh] lg:h-[80vh] max-h-[700px] -mx-4 sm:-mx-6 lg:-mx-8 mb-8">
+      {/* A whole photo leaves room beside it; dark, like the overlay. */}
+      <div className={`relative h-[60vh] sm:h-[70vh] lg:h-[80vh] max-h-[700px] -mx-4 sm:-mx-6 lg:-mx-8 mb-8${wholeHero ? ' bg-neutral-900' : ''}`}>
         <AuthenticatedImage
-          src={heroPhoto.hero_url || heroPhoto.url}
+          src={heroImageUrl(heroPhoto, wholeHero)}
           fallbackSrc={heroPhoto.url}
           alt={photoLabels.of(heroPhoto, heroPhoto.filename)}
-          className="w-full h-full object-cover"
-          style={{ objectPosition: heroImageAnchor }}
+          className={`w-full h-full ${wholeHero ? 'object-contain' : 'object-cover'}`}
+          style={wholeHero ? undefined : { objectPosition: heroImageAnchor }}
           isGallery={true}
           slug={slug}
           // Ahead of the tiles in the shared fetch queue: this is the
