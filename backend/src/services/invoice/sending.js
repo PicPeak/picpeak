@@ -8,6 +8,7 @@ const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/errors');
 const { formatShortDate } = require('../../utils/dateFormatter');
 const { toDateOnly } = require('../../utils/dateOnly');
+const { toStoredTimestamp } = require('../../utils/dateNormalize');
 const { resolveBillingRecipients } = require('../_billingRecipients');
 const customerContactsService = require('../customerContactsService');
 const pdfService = require('../pdfService');
@@ -375,7 +376,7 @@ async function createStorno(originalId, adminId, trx = db) {
     late_fee_amount_minor: 0,
     paid_amount_minor: 0,
     status: 'scheduled',
-    scheduled_send_at: now,
+    scheduled_send_at: toStoredTimestamp(now),
     issue_date: issueDate,
     // Storni have no payment due — mirror issue_date to satisfy the
     // schema's NOT NULL constraint on due_date. The field is dead data
@@ -718,8 +719,7 @@ async function releaseForDelivery(id, adminId) {
     );
   }
   const now = new Date();
-  // ISO text: on SQLite a Date comes back as a number sendInvoice cannot parse.
-  const updates = { status: 'scheduled', scheduled_send_at: now.toISOString(), updated_at: now };
+  const updates = { status: 'scheduled', scheduled_send_at: toStoredTimestamp(now), updated_at: now };
   // Until now the dates assume delivery on event day + 14. Payment runs from
   // the real delivery, unless an admin set the due date by hand. This has to
   // happen here: sendInvoice compares against scheduled_send_at, which from
@@ -828,7 +828,7 @@ async function triggerMonthlyBillNow(customerId, adminId) {
   await auditedUpdate(db, 'invoices', { id: draft.id }, {
     is_monthly_draft: false,
     issue_date: issueDate,
-    scheduled_send_at: new Date(),
+    scheduled_send_at: toStoredTimestamp(new Date()),
     updated_at: new Date(),
   }, { actor: adminId, source: 'invoice.monthly.triggerNow' });
   try {

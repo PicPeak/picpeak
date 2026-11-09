@@ -11,6 +11,7 @@ const businessProfileService = require('../businessProfileService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
 const { hasColumnCached } = require('../../utils/schemaCache');
+const { toStoredTimestamp, toTimestamp } = require('../../utils/dateNormalize');
 const { computeDueDate, computeScheduledSendAt, ensureCustomerCanBill, ensureEventMatchesCustomer, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
 const { appendToMonthlyDraft } = require('./drafts');
 const { auditedInsert } = require('../accountingHistory');
@@ -55,7 +56,9 @@ async function createInvoice(payload, adminId, trx = db) {
   // sibling and we never reach the single-row insert that would have
   // used `invoiceNumber` here.
   const issueDate = payload.issueDate || new Date().toISOString().slice(0, 10);
-  const scheduledSendAt = payload.scheduledSendAt ? new Date(payload.scheduledSendAt) : null;
+  // A zone-less editor value reads as UTC, as the update route reads it and
+  // as the editor shows the stored value.
+  const scheduledSendAt = payload.scheduledSendAt ? new Date(toTimestamp(payload.scheduledSendAt)) : null;
   // Resolve net_days BEFORE computing the due date so Net 60 / 90
   // selections actually push the due date out. resolveNetDays honors
   // the split picker FK the editor sends, the legacy single FK, and
@@ -259,7 +262,7 @@ async function createInvoice(payload, adminId, trx = db) {
     installment_label: payload.installmentLabel || null,
     installment_trigger: payload.installmentTrigger || null,
     status: scheduledSendAt && scheduledSendAt.getTime() > Date.now() ? 'scheduled' : (payload.sendNow ? 'scheduled' : 'scheduled'),
-    scheduled_send_at: scheduledSendAt,
+    scheduled_send_at: toStoredTimestamp(scheduledSendAt),
     net_amount_minor: netMinor,
     vat_rate: vatRate,
     vat_amount_minor: vatMinor,
@@ -452,7 +455,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       installment_label: inst.label || `Installment ${i + 1}/${total}`,
       installment_trigger: inst.trigger,
       status: rowStatus,
-      scheduled_send_at: rowScheduledSendAt,
+      scheduled_send_at: toStoredTimestamp(rowScheduledSendAt),
       net_amount_minor: netSlice,
       vat_rate: ensureNumber(totals.vatRate, 0),
       vat_amount_minor: vatSlice,

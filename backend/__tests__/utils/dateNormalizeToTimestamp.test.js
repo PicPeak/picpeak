@@ -39,3 +39,18 @@ describe('toTimestamp', () => {
     expect(toTimestamp(null)).toBeNaN();
   });
 });
+
+describe('toStoredTimestamp', () => {
+  const { toStoredTimestamp } = require('../../src/utils/dateNormalize');
+
+  it('writes every shape as ISO UTC text, and nothing usable as null', () => {
+    const ms = Date.parse('2026-11-12T09:00:00.250Z');
+    expect(toStoredTimestamp(new Date(ms))).toBe('2026-11-12T09:00:00.250Z');
+    expect(toStoredTimestamp(ms)).toBe('2026-11-12T09:00:00.250Z');
+    expect(toStoredTimestamp(String(ms))).toBe('2026-11-12T09:00:00.250Z');
+    expect(toStoredTimestamp('2026-11-12T09:00:00.250Z')).toBe('2026-11-12T09:00:00.250Z');
+    expect(toStoredTimestamp(null)).toBeNull();
+    expect(toStoredTimestamp('')).toBeNull();
+    expect(toStoredTimestamp('not a date')).toBeNull();
+  });
+});

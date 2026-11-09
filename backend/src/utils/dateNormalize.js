@@ -54,6 +54,15 @@ function toTimestamp(value) {
   }
 }
 
+// A timestamp as it is stored: ISO 8601 UTC text, or null. One shape on both
+// engines. Through knex, SQLite stores a Date as epoch milliseconds, which
+// sorts below every text value, so a mix of the two never compares right.
+// A zone-less input reads as UTC, as toTimestamp does.
+function toStoredTimestamp(value) {
+  const ms = toTimestamp(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
 // A timestamp as the wall-clock time it shows in the server's own zone,
 // 'YYYY-MM-DDTHH:MM:SS' with no zone, or null. For photos.captured_at:
 // exifr reads the camera's zone-less EXIF time in the server's zone
@@ -91,4 +100,4 @@ function parseCalendarDate(value) {
   return new Date(value);
 }
 
-module.exports = { toIso, toTimestamp, toServerWallClock, cameraWallClock, parseCalendarDate };
+module.exports = { toIso, toTimestamp, toStoredTimestamp, toServerWallClock, cameraWallClock, parseCalendarDate };
