@@ -195,8 +195,8 @@ describe('availability', () => {
 
   test('gallery events, full-day and timed, take their time', async () => {
     await db('events').insert([
-      { slug: 'booking-full-day', event_name: 'Wedding', event_type: 'wedding', event_date: day(monday, 1), is_full_day: true, share_link: 'x1', password_hash: 'x', expires_at: new Date(Date.now() + 86400000 * 365), is_archived: false, is_active: true, created_at: new Date() },
-      { slug: 'booking-timed', event_name: 'Portrait', event_type: 'portrait', event_date: day(monday, 2), is_full_day: false, event_time_start: '11:00', event_time_end: '13:00', share_link: 'x2', password_hash: 'x', expires_at: new Date(Date.now() + 86400000 * 365), is_archived: false, is_active: true, created_at: new Date() },
+      { slug: 'booking-full-day', event_name: 'Wedding', event_type: 'wedding', event_date: day(monday, 1), is_full_day: true, share_link: 'x1', password_hash: 'x', expires_at: new Date(Date.now() + 86400000 * 365).toISOString(), is_archived: false, is_active: true, created_at: new Date().toISOString() },
+      { slug: 'booking-timed', event_name: 'Portrait', event_type: 'portrait', event_date: day(monday, 2), is_full_day: false, event_time_start: '11:00', event_time_end: '13:00', share_link: 'x2', password_hash: 'x', expires_at: new Date(Date.now() + 86400000 * 365).toISOString(), is_archived: false, is_active: true, created_at: new Date().toISOString() },
     ]);
     expect(await slotsOn(day(monday, 1))).toEqual([]);
     expect(await slotsOn(day(monday, 2))).toEqual(['09:00', '13:00', '14:00', '15:00']);
@@ -301,6 +301,25 @@ describe('admin decisions', () => {
     expect(res.status).toBe(409);
     expect((await db('booking_requests').where({ id: row.id }).first()).status).toBe('pending');
     expect(Number((await db('projects').count('* as n').first()).n)).toBe(projectsBefore);
+  });
+
+  test('an email two customers share is not guessed', async () => {
+    const ids = [];
+    for (const name of ['Band A', 'Band B']) {
+      const inserted = await db('customer_accounts').insert({
+        email: `${name.replace(' ', '').toLowerCase()}@example.test`, display_name: name, preferred_language: 'en',
+        is_active: true, created_at: new Date().toISOString(),
+      }).returning('id');
+      ids.push(typeof inserted[0] === 'object' ? inserted[0].id : inserted[0]);
+    }
+    await db('customer_contacts').insert(ids.map((id) => ({
+      customer_account_id: id, email: 'Manager@Shared.example', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    })));
+    const sent = await sendRequest(zurich(day(monday, 7), '15:00'), { email: 'manager@shared.example' });
+    const row = await db('booking_requests').where({ reference: sent.body.reference }).first();
+    const res = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/accept`).set(auth);
+    expect(res.status).toBe(409);
+    expect((await db('booking_requests').where({ id: row.id }).first()).status).toBe('pending');
   });
 
   test('decline frees the slot', async () => {

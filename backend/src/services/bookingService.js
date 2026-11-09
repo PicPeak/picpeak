@@ -385,15 +385,24 @@ function splitName(name) {
   return { first_name: parts.slice(0, -1).join(' '), last_name: parts[parts.length - 1] };
 }
 
-/** The customer for a request's email: the account or contact that has it, else a new passive account. */
+/**
+ * The customer for a request's email: the account or contact that has it,
+ * else a new passive account. Matched without case (older rows may keep
+ * capitals). An email that belongs to more than one customer is not guessed:
+ * the admin links the request by hand.
+ */
 async function customerFor(request, adminId) {
   const email = request.email.toLowerCase();
-  const account = await db('customer_accounts').where({ email }).first('id');
-  if (account) return { id: account.id, created: false };
-  if (await db.schema.hasTable('customer_contacts')) {
-    const contact = await db('customer_contacts').whereRaw('LOWER(email) = ?', [email]).first('customer_account_id');
-    if (contact) return { id: contact.customer_account_id, created: false };
+  const ids = new Set((await db('customer_accounts').whereRaw('LOWER(email) = ?', [email]).pluck('id')).map(Number));
+  if (!ids.size && await db.schema.hasTable('customer_contacts')) {
+    for (const id of await db('customer_contacts').whereRaw('LOWER(email) = ?', [email]).pluck('customer_account_id')) {
+      ids.add(Number(id));
+    }
   }
+  if (ids.size > 1) {
+    throw new AppError('This email belongs to more than one customer. Create the quote for the right one by hand.', 409, 'BOOKING_CUSTOMER_AMBIGUOUS');
+  }
+  if (ids.size === 1) return { id: [...ids][0], created: false };
   const created = await require('./customerAccountsService').createDirect({
     email,
     prefill: {
