@@ -220,6 +220,13 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
     if (invoice.status === 'scheduled') {
       await require('../workflows').answerGatesForInvoice(id);
     }
+    // A gallery from a booking that waits for full payment opens now (#2440).
+    // Best effort: the gallery re-checks when a client opens it.
+    try {
+      await require('../bookingDeposits').onInvoicePaid(id);
+    } catch (err) {
+      logger.warn('Could not re-check booking gallery locks', { invoiceId: id, error: err.message });
+    }
   }
   return markResult;
 }

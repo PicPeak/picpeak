@@ -30,6 +30,7 @@ const labelCls = 'block text-sm font-medium text-body mb-1';
 const errorText = (err: any): string => err?.response?.data?.error || err?.message || 'Failed';
 
 const STATUS_CLS: Record<BookingStatus, string> = {
+  awaiting_payment: 'bg-fill text-muted',
   pending: 'bg-warning-soft text-warning-text',
   accepted: 'bg-success-soft text-success-text',
   declined: 'bg-fill text-body',
@@ -58,6 +59,44 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
   const projectsOn = useFeatureEnabled('projects');
   const [declining, setDeclining] = useState<{ id: number; reason: string } | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
+  const [depositInvoice, setDepositInvoice] = useState<Record<number, number>>({});
+
+  // Part 3: book a paid deposit on an invoice of the deal, open a gallery.
+  const applyDeposit = async (r: BookingRequest) => {
+    const invoiceId = depositInvoice[r.id] ?? r.invoices[0]?.id;
+    if (!invoiceId) return;
+    setBusy(r.id);
+    try {
+      await bookingService.applyDeposit(r.id, invoiceId);
+      toast.success(t('booking.admin.depositApplied', 'Deposit booked on the invoice.'));
+      refresh();
+    } catch (err) {
+      toast.error(errorText(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const unlock = async (eventId: number) => {
+    try {
+      await bookingService.unlockGallery(eventId);
+      toast.success(t('booking.admin.galleryUnlocked', 'Gallery opened.'));
+      refresh();
+    } catch (err) {
+      toast.error(errorText(err));
+    }
+  };
+  const depositLabel = (r: BookingRequest): string | null => {
+    const amount = formatMoneyMinor(r.depositMinor, r.currency);
+    switch (r.depositStatus) {
+      case 'open': return t('booking.admin.deposit.open', 'Deposit {{amount}} not paid yet', { amount });
+      case 'paid': return t('booking.admin.deposit.paid', 'Deposit {{amount}} paid by card', { amount });
+      case 'refunded': return t('booking.admin.deposit.refunded', 'Deposit {{amount}} refunded', { amount });
+      case 'refund_failed': return t('booking.admin.deposit.refundFailed', 'Deposit {{amount}}: the refund failed. Refund it in Stripe.', { amount });
+      case 'expired': return t('booking.admin.deposit.expired', 'Deposit not paid; the checkout expired');
+      case 'review': return t('booking.admin.deposit.review', 'A payment came in, but not the deposit amount. Check it in Stripe.');
+      default: return null;
+    }
+  };
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['booking-requests'] });
 
@@ -89,6 +128,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
   };
 
   const statusLabel = (s: BookingStatus) => ({
+    awaiting_payment: t('booking.admin.status.awaitingPayment', 'Waiting for deposit'),
     pending: t('booking.admin.status.pending', 'Waiting'),
     accepted: t('booking.admin.status.accepted', 'Accepted'),
     declined: t('booking.admin.status.declined', 'Declined'),
@@ -117,8 +157,37 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
                 {r.phone ? ` · ${r.phone}` : ''}
               </div>
               {r.status === 'pending' && (
-                <div className="text-xs text-muted">{t('booking.admin.heldUntil', 'Held until {{time}}', { time: at(r.holdExpiresAt) })}</div>
+                <div className="text-xs text-muted">
+                  {r.depositStatus === 'paid' || r.depositStatus === 'review'
+                    // A paid deposit holds the time until you decide (no expiry).
+                    ? t('booking.admin.heldPaid', 'Held until you decide (deposit paid)')
+                    : t('booking.admin.heldUntil', 'Held until {{time}}', { time: at(r.holdExpiresAt) })}
+                </div>
               )}
+              {depositLabel(r) && (
+                <div className={`text-xs ${r.depositStatus === 'refund_failed' || r.depositStatus === 'review' ? 'text-danger-text' : 'text-body'}`}>
+                  {depositLabel(r)}
+                  {r.depositInvoiceId && ` · ${t('booking.admin.deposit.booked', 'booked on invoice {{number}}', {
+                    number: r.invoices.find((i) => i.id === r.depositInvoiceId)?.number || `#${r.depositInvoiceId}`,
+                  })}`}
+                </div>
+              )}
+              {r.galleries.map((g) => (
+                <div key={g.id} className="text-xs text-body flex items-center gap-2">
+                  <span>
+                    {g.locked
+                      ? t('booking.admin.galleryLocked', 'Gallery "{{name}}" opens when every invoice is paid', { name: g.name })
+                      : t('booking.admin.galleryOpen', 'Gallery "{{name}}" is open', { name: g.name })}
+                  </span>
+                  {g.locked && (
+                    <PermissionGate permission="events.edit">
+                      <button type="button" className="text-accent hover:underline" onClick={() => unlock(g.id)}>
+                        {t('booking.admin.unlockNow', 'Open now')}
+                      </button>
+                    </PermissionGate>
+                  )}
+                </div>
+              ))}
               {r.message && <p className="mt-2 text-sm text-body whitespace-pre-line">{r.message}</p>}
               {r.declineReason && <p className="mt-2 text-xs text-muted">{r.declineReason}</p>}
             </div>
@@ -132,6 +201,26 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
               </ul>
             </div>
           </div>
+          {r.depositStatus === 'paid' && !r.depositInvoiceId && r.invoices.length > 0 && (
+            <PermissionGate permission="bills.manage">
+              <div className="mt-3 flex flex-wrap items-end justify-end gap-2">
+                <div>
+                  <label htmlFor={`deposit-invoice-${r.id}`} className={labelCls}>{t('booking.admin.depositInvoice', 'Book the deposit on')}</label>
+                  <select id={`deposit-invoice-${r.id}`} className={`${inputCls} h-9`} value={depositInvoice[r.id] ?? r.invoices[0].id}
+                    onChange={(e) => setDepositInvoice({ ...depositInvoice, [r.id]: Number(e.target.value) })}>
+                    {r.invoices.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {(i.number || `#${i.id}`)} · {formatMoneyMinor(i.totalMinor, i.currency)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Button variant="outline" size="sm" disabled={busy === r.id} onClick={() => applyDeposit(r)}>
+                  {t('booking.admin.applyDeposit', 'Book deposit')}
+                </Button>
+              </div>
+            </PermissionGate>
+          )}
           <div className="mt-3 flex flex-wrap justify-end gap-2">
             {r.quoteId && (
               <Link to={`/admin/clients/quotes/${r.quoteId}`}>
@@ -166,7 +255,11 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
                 onChange={(e) => setDeclining({ ...declining, reason: e.target.value })} />
               <div className="flex justify-end gap-2">
                 <Button variant="outline" size="sm" onClick={() => setDeclining(null)}>{t('common.cancel', 'Cancel')}</Button>
-                <Button size="sm" disabled={busy === r.id} onClick={decline}>{t('booking.admin.declineConfirm', 'Decline and tell the client')}</Button>
+                <Button size="sm" disabled={busy === r.id} onClick={decline}>
+                  {r.depositStatus === 'paid'
+                    ? t('booking.admin.declineRefund', 'Decline, refund and tell the client')
+                    : t('booking.admin.declineConfirm', 'Decline and tell the client')}
+                </Button>
               </div>
             </div>
           )}

@@ -1555,7 +1555,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       </PhotoDownloadChoiceProvider>
     </DownloadQuotaProvider>
   );
-  if (isGalleryTemporarilyDisabled(error)) return withDownloadProviders(<GalleryUnavailableNotice />);
+  if (isGalleryTemporarilyDisabled(error)) return withDownloadProviders(<GalleryUnavailableNotice error={error} />);
   if (isLoading || (isSwitchingClientMode && !showClientAccess)) {
     return withDownloadProviders(<GallerySkeleton />);
   }

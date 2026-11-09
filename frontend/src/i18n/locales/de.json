@@ -2009,6 +2009,8 @@
     }
   },
   "gallery": {
+    "awaitingPayment": "Ihre Galerie ist fast bereit.",
+    "awaitingPaymentHelp": "Sie öffnet sich, sobald die Rechnung bezahlt ist. Ihr Galerie-Link bleibt gleich.",
     "backToAccount": "Zurück zum Kundenkonto",
     "temporarilyUnavailable": "Diese Galerie ist vorübergehend nicht verfügbar.",
     "temporarilyUnavailableHelp": "Bitte versuchen Sie es später erneut. Ihr Galerie-Link bleibt gleich.",
@@ -9492,7 +9494,40 @@
     "costsErrorTitle": "Kosten konnten nicht geladen werden"
   },
   "booking": {
+    "status": {
+      "notFound": "Diese Buchungsanfrage wurde nicht gefunden.",
+      "payCancelled": "Zahlung nicht abgeschlossen",
+      "payPending": "Wir warten auf Ihre Zahlung",
+      "payCancelledText": "Die Anzahlung wurde nicht bezahlt, der Termin ist daher nicht reserviert. Bitte buchen Sie erneut.",
+      "payPendingText": "Wir warten auf die Zahlungsbestätigung. Diese Seite aktualisiert sich von selbst.",
+      "accepted": "Anfrage angenommen",
+      "acceptedText": "Sie erhalten die Offerte per E-Mail.",
+      "declined": "Anfrage abgelehnt",
+      "declinedRefunded": "Das Studio kann diesen Termin nicht übernehmen. Ihre Anzahlung wurde rückerstattet.",
+      "declinedText": "Das Studio kann diesen Termin nicht übernehmen.",
+      "expired": "Reservierung abgelaufen",
+      "expiredText": "Der Termin ist wieder frei. Sie können gerne erneut buchen.",
+      "depositPaid": "Anzahlung bezahlt: {{amount}}",
+      "bookAgain": "Erneut buchen"
+    },
     "admin": {
+      "deposit": {
+        "open": "Anzahlung {{amount}} noch nicht bezahlt",
+        "paid": "Anzahlung {{amount}} per Karte bezahlt",
+        "refunded": "Anzahlung {{amount}} rückerstattet",
+        "refundFailed": "Anzahlung {{amount}}: Rückerstattung fehlgeschlagen. Bitte in Stripe zurückerstatten.",
+        "expired": "Anzahlung nicht bezahlt; der Bezahlvorgang ist abgelaufen",
+        "review": "Eine Zahlung ist eingegangen, aber nicht der Anzahlungsbetrag. Bitte in Stripe prüfen.",
+        "booked": "auf Rechnung {{number}} verbucht"
+      },
+      "declineRefund": "Ablehnen, rückerstatten und Kunde informieren",
+      "unlockNow": "Jetzt öffnen",
+      "galleryOpen": "Galerie «{{name}}» ist offen",
+      "galleryLocked": "Galerie «{{name}}» öffnet sich, wenn alle Rechnungen bezahlt sind",
+      "applyDeposit": "Anzahlung verbuchen",
+      "depositInvoice": "Anzahlung verbuchen auf",
+      "galleryUnlocked": "Galerie geöffnet.",
+      "depositApplied": "Anzahlung auf der Rechnung verbucht.",
       "accept": "Annehmen und Offerte entwerfen",
       "acceptedToast": "Angenommen. Der Offerten-Entwurf ist bereit zum Prüfen und Senden.",
       "blockAdd": "Sperren",
@@ -9508,6 +9543,7 @@
       "editHours": "Geschäftszeiten",
       "empty": "Noch keine Buchungsanfragen.",
       "estimate": "Schätzung",
+      "heldPaid": "Reserviert bis zu Ihrem Entscheid (Anzahlung bezahlt)",
       "heldUntil": "Reserviert bis {{time}}",
       "hoursInfo": "Kunden können innerhalb Ihrer Geschäftszeiten buchen ({{zone}}).",
       "noBlocks": "Keine gesperrten Zeiten.",
@@ -9532,6 +9568,7 @@
         "holdHint": "Eine unbeantwortete Anfrage gibt den Termin danach wieder frei."
       },
       "status": {
+        "awaitingPayment": "Wartet auf Anzahlung",
         "accepted": "Angenommen",
         "declined": "Abgelehnt",
         "expired": "Reservierung abgelaufen",
@@ -9544,6 +9581,8 @@
       }
     },
     "public": {
+      "sendAndPay": "Senden und Anzahlung bezahlen",
+      "depositNote": "Anzahlung zur Reservierung: {{amount}}, per Karte beim Senden der Anfrage.",
       "estimate": "Schätzung",
       "estimateFailed": "Der Preis konnte nicht berechnet werden.",
       "estimateNote": "Das ist eine Schätzung. Sie erhalten eine Offerte mit dem definitiven Preis.",
@@ -9577,6 +9616,15 @@
       }
     },
     "service": {
+      "depositHint": "Bezahlt per Karte über das Stripe-Konto unter Einstellungen → Zahlungen. Ohne eingerichtetes Stripe kommen Anfragen ohne Anzahlung.",
+      "unlockOff": "Sofort",
+      "unlockDeposit": "Sobald die Anzahlung bezahlt ist",
+      "unlockFull": "Wenn alle Rechnungen bezahlt sind",
+      "galleryUnlock": "Galerie öffnet sich",
+      "depositFixed": "Fester Betrag",
+      "depositPercent": "Prozent der Schätzung",
+      "depositNone": "Keine",
+      "deposit": "Anzahlung bei Buchung",
       "bookable": "Kunden können das online buchen",
       "durationFixed": "Feste Dauer",
       "durationFrom": "Termindauer",

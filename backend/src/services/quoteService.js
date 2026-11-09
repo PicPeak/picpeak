@@ -2441,6 +2441,10 @@ async function convertToEvent(quoteId, adminId, options = {}) {
   const carriedProject = await require('./projectService')
     .carriedProjectId(options.projectId || quote.project_id, adminId, { target: 'events' });
 
+  // Booking requests (#2440): resolved before the transaction (a cold column
+  // lookup inside it would wait on SQLite's single connection).
+  const canLockForPayment = await hasColumnCached('events', 'payment_lock');
+
   const result = await db.transaction(async (trx) => {
     // Claim the quote before creating anything. Two concurrent conversions
     // both pass the reads above; on PostgreSQL the second waits here on the
@@ -2525,6 +2529,10 @@ async function convertToEvent(quoteId, adminId, options = {}) {
     }
     const inserted = await trx('events').insert(eventRow).returning('id');
     const eventId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+
+    // A gallery from a booking request waits for full payment when its
+    // service says so (#2440). In the same transaction: it never exists open.
+    if (canLockForPayment) await require('./bookingDeposits').applyGalleryLock(trx, quote.id, eventId);
 
     // Junction row so the customer can already see the event in their
     // dashboard once the admin activates it.
@@ -2743,6 +2751,23 @@ function presetCatalogueColumns(payload) {
   }
   if (payload.booking_duration_factor_id !== undefined) {
     out.booking_duration_factor_id = payload.booking_duration_factor_id ? ensureInt(payload.booking_duration_factor_id) : null;
+  }
+  // Migration 355 (#2440) — deposit at booking, and when a gallery from the
+  // booking opens.
+  const { DEPOSIT_TYPES, GALLERY_UNLOCK } = require('./bookingDeposits');
+  if (payload.booking_deposit_type !== undefined) {
+    out.booking_deposit_type = DEPOSIT_TYPES.includes(payload.booking_deposit_type) ? payload.booking_deposit_type : 'none';
+  }
+  if (payload.booking_deposit_percent !== undefined) {
+    out.booking_deposit_percent = payload.booking_deposit_percent == null || payload.booking_deposit_percent === ''
+      ? null : Math.min(100, Math.max(0, ensureNumber(payload.booking_deposit_percent)));
+  }
+  if (payload.booking_deposit_minor !== undefined) {
+    out.booking_deposit_minor = payload.booking_deposit_minor == null || payload.booking_deposit_minor === ''
+      ? null : Math.max(0, ensureInt(payload.booking_deposit_minor));
+  }
+  if (payload.gallery_unlock !== undefined) {
+    out.gallery_unlock = GALLERY_UNLOCK.includes(payload.gallery_unlock) ? payload.gallery_unlock : 'full_payment';
   }
   return out;
 }

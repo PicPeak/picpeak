@@ -5,7 +5,8 @@
 import { api } from '../config/api';
 import type { FactorValue, PricingFactorsSnapshot } from './quoteCatalog.service';
 
-export type BookingStatus = 'pending' | 'accepted' | 'declined' | 'expired';
+export type BookingStatus = 'awaiting_payment' | 'pending' | 'accepted' | 'declined' | 'expired';
+export type DepositStatus = 'none' | 'open' | 'paid' | 'refunded' | 'refund_failed' | 'expired' | 'review';
 
 export interface BookingRequest {
   id: number;
@@ -32,6 +33,15 @@ export interface BookingRequest {
   projectId: number | null;
   quoteId: number | null;
   createdAt: string | null;
+  // Part 3 — deposit and gallery unlock.
+  depositMinor: number;
+  depositStatus: DepositStatus;
+  depositPaidAt: string | null;
+  depositInvoiceId: number | null;
+  paymentIntentId: string | null;
+  galleryUnlock: 'full_payment' | 'deposit' | 'off' | null;
+  galleries: Array<{ id: number; slug: string; name: string; locked: boolean }>;
+  invoices: Array<{ id: number; number: string | null; status: string; currency: string; totalMinor: number; paidMinor: number }>;
 }
 
 export interface BookingSettings {
@@ -71,6 +81,8 @@ export interface PublicService {
   durationMinutes: number;
   durationFactorId: number | null;
   factors: PublicFactor[];
+  /** Asked when sending the request (part 3); null = no deposit. */
+  deposit: { type: 'percent' | 'fixed'; percent: number | null; amountMinor: number | null } | null;
 }
 
 export interface PublicBookingInfo {
@@ -89,9 +101,36 @@ export interface PublicEstimate {
   lines: Array<{ description: string; totalMinor: number }>;
   unmatched: number[];
   durationMinutes: number;
+  depositMinor: number;
+}
+
+export interface PublicRequestStatus {
+  reference: string;
+  status: BookingStatus;
+  serviceName: string;
+  startsAt: string;
+  endsAt: string;
+  holdExpiresAt: string;
+  estimateMinor: number;
+  depositMinor: number;
+  depositStatus: DepositStatus;
+  currency: string;
+  timezone: string;
 }
 
 export interface Slot { start: string; end: string }
+
+export interface PublicRequestResult {
+  reference: string | null;
+  status?: BookingStatus;
+  holdExpiresAt?: string;
+  estimateMinor?: number;
+  depositMinor?: number;
+  currency?: string;
+  /** Pay the deposit there (part 3). */
+  checkoutUrl?: string | null;
+  statusToken?: string | null;
+}
 
 const unwrap = <T,>(data: { data?: T } & T): T => (data.data || data) as T;
 
@@ -108,6 +147,13 @@ export const bookingService = {
   async decline(id: number, reason: string): Promise<BookingRequest> {
     const { data } = await api.post(`/admin/booking/requests/${id}/decline`, { reason: reason || undefined });
     return unwrap<{ request: BookingRequest }>(data).request;
+  },
+  async applyDeposit(id: number, invoiceId: number): Promise<BookingRequest> {
+    const { data } = await api.post(`/admin/booking/requests/${id}/apply-deposit`, { invoiceId });
+    return unwrap<{ request: BookingRequest }>(data).request;
+  },
+  async unlockGallery(eventId: number): Promise<void> {
+    await api.post(`/admin/booking/galleries/${eventId}/unlock`);
   },
   async listBlocks(): Promise<BookingBlock[]> {
     const { data } = await api.get('/admin/booking/blocks');
@@ -147,8 +193,15 @@ export const bookingService = {
   async sendRequest(payload: {
     serviceId: number; values: Record<string, FactorValue>; start: string; name: string; email: string;
     phone?: string; company?: string; message?: string; language?: string; website?: string; startedAt?: number;
-  }): Promise<{ reference: string | null; holdExpiresAt?: string; estimateMinor?: number; currency?: string }> {
+  }): Promise<PublicRequestResult> {
     const { data } = await api.post('/public/booking/requests', payload);
-    return unwrap<{ reference: string | null; holdExpiresAt?: string; estimateMinor?: number; currency?: string }>(data);
+    return unwrap<PublicRequestResult>(data);
+  },
+  /** `cancelled`: back from a cancelled checkout; the server closes it and frees the slot. */
+  async requestStatus(token: string, opts: { cancelled?: boolean } = {}): Promise<PublicRequestStatus> {
+    const { data } = await api.get(`/public/booking/requests/status/${token}`, {
+      params: opts.cancelled ? { cancelled: '1' } : undefined,
+    });
+    return unwrap<PublicRequestStatus>(data);
   },
 };

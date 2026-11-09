@@ -11,6 +11,10 @@
  *   POST   /requests/:id/decline                          quotes.manage
  *   GET    /blocks  POST /blocks  DELETE /blocks/:id     quotes.view / quotes.manage
  *   GET    /settings  PUT /settings                        quotes.view / quotes.manage
+ *   POST   /requests/:id/apply-deposit  book the paid deposit on an
+ *                                 invoice of the deal   quotes.manage + bills.manage
+ *   POST   /galleries/:eventId/unlock   open a gallery that waits for
+ *                                 payment               events.edit + event ownership
  *
  * Accept takes the same three permissions the manual path takes (new
  * customer, new project, new quote), so a booking request is no way around
@@ -22,6 +26,8 @@ const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
+const { requireEventOwnership } = require('../middleware/ownership');
+const deposits = require('../services/bookingDeposits');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const booking = require('../services/bookingService');
 const pricingFactors = require('../services/pricingFactorService');
@@ -31,7 +37,7 @@ router.use(adminAuth);
 router.use(requireFeatureFlag('calendarBooking', 'BOOKING_DISABLED'));
 router.use(requireFeatureFlag('quotes', 'QUOTES_DISABLED'));
 
-function transformRequest(r) {
+function transformRequest(r, extras = {}) {
   let lines = [];
   try { lines = JSON.parse(r.estimate_lines || '[]'); } catch { lines = []; }
   return {
@@ -59,7 +65,31 @@ function transformRequest(r) {
     projectId: r.project_id || null,
     quoteId: r.quote_id || null,
     createdAt: booking.iso(r.created_at),
+    // Part 3 — deposit and gallery unlock.
+    depositMinor: Number(r.deposit_minor || 0),
+    depositStatus: r.deposit_status || 'none',
+    depositPaidAt: booking.iso(r.deposit_paid_at),
+    depositInvoiceId: r.deposit_invoice_id || null,
+    paymentIntentId: r.payment_intent_id || null,
+    galleryUnlock: r.gallery_unlock || null,
+    galleries: (extras.galleries || []).map((g) => ({
+      id: g.id, slug: g.slug, name: g.event_name, locked: Boolean(g.payment_lock) && !g.payment_unlocked_at,
+    })),
+    invoices: (extras.invoices || []).map((i) => ({
+      id: i.id, number: i.invoice_number, status: i.status, currency: i.currency,
+      totalMinor: Number(i.total_amount_minor), paidMinor: Number(i.paid_amount_minor || 0),
+    })),
   };
+}
+
+/** Requests with their galleries and the invoices of their deal. */
+async function transformRequests(rows, admin) {
+  const accepted = rows.filter((r) => r.quote_id);
+  const [galleries, invoices] = await Promise.all([
+    deposits.galleryLocksForRequests(accepted.map((r) => r.id), admin),
+    deposits.dealInvoicesForRequests(accepted),
+  ]);
+  return rows.map((r) => transformRequest(r, { galleries: galleries.get(r.id), invoices: invoices.get(r.id) }));
 }
 
 function transformSettings(s) {
@@ -86,7 +116,7 @@ router.get(
   handleAsync(async (req, res) => {
     validateRequest(req);
     const rows = await booking.listRequests({ status: req.query.status || null });
-    return successResponse(res, { requests: rows.map(transformRequest) });
+    return successResponse(res, { requests: await transformRequests(rows, req.admin) });
   })
 );
 
@@ -96,7 +126,8 @@ router.get(
   [idParam],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, { request: transformRequest(await booking.getRequest(Number(req.params.id))) });
+    const [row] = await transformRequests([await booking.getRequest(Number(req.params.id))], req.admin);
+    return successResponse(res, { request: row });
   })
 );
 
@@ -107,7 +138,8 @@ router.post(
   handleAsync(async (req, res) => {
     validateRequest(req);
     const row = await booking.acceptRequest(Number(req.params.id), req.admin.id);
-    return successResponse(res, { request: transformRequest(row) });
+    const [out] = await transformRequests([row], req.admin);
+    return successResponse(res, { request: out });
   })
 );
 
@@ -118,7 +150,32 @@ router.post(
   handleAsync(async (req, res) => {
     validateRequest(req);
     const row = await booking.declineRequest(Number(req.params.id), req.admin.id, req.body.reason);
-    return successResponse(res, { request: transformRequest(row) });
+    const [out] = await transformRequests([row], req.admin);
+    return successResponse(res, { request: out });
+  })
+);
+
+router.post(
+  '/requests/:id/apply-deposit',
+  requirePermission(['quotes.manage', 'bills.manage'], { requireAll: true }),
+  [idParam, body('invoiceId').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const row = await deposits.applyDepositToInvoice(Number(req.params.id), Number(req.body.invoiceId), req.admin.id);
+    const [out] = await transformRequests([row], req.admin);
+    return successResponse(res, { request: out });
+  })
+);
+
+router.post(
+  '/galleries/:eventId/unlock',
+  requirePermission('events.edit'),
+  [param('eventId').isInt({ min: 1 })],
+  requireEventOwnership,
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    await deposits.unlockGallery(Number(req.params.eventId));
+    return successResponse(res, { unlocked: true });
   })
 );
 

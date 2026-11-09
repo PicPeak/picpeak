@@ -13,6 +13,7 @@ import { PreviewPage } from './pages/gallery/PreviewPage';
 import { PurchasedDownloadsPage } from './pages/public/PurchasedDownloadsPage';
 import { PhotoCheckoutPage } from './pages/public/PhotoCheckoutPage';
 import { BookingPage } from './pages/public/BookingPage';
+import { BookingStatusPage } from './pages/public/BookingStatusPage';
 import { BookingsPage } from './pages/admin/clients/BookingsPage';
 const SlideshowPage = lazy(() => import('./pages/gallery/SlideshowPage').then((m) => ({ default: m.SlideshowPage })));
 import { LegalPage } from './pages/public/LegalPage';
@@ -514,6 +515,7 @@ const router = createBrowserRouter(
     {/* Public booking page (#2440). The page asks the public API whether
         booking is on (calendarBooking flag); no admin flag context here. */}
     <Route path="/book" element={<BookingPage />} />
+    <Route path="/book/status/:token" element={<BookingStatusPage />} />
     <Route path="/transfer-upload/:token" element={<TransferUploadPage />} />
 
     {/* Customer surface (#354). Strictly separate provider /

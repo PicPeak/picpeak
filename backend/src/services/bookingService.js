@@ -26,8 +26,13 @@ const { isTruthyFlag } = require('../utils/lineItemTotals');
 const { normaliseSchedule, _internal: tz } = require('../utils/businessHours');
 const { toTimestamp } = require('../utils/dateNormalize');
 const pricingFactors = require('./pricingFactorService');
+const { hasColumnCached } = require('../utils/schemaCache');
 
-const STATUSES = ['pending', 'accepted', 'declined', 'expired'];
+const STATUSES = ['awaiting_payment', 'pending', 'accepted', 'declined', 'expired'];
+// Deposit states that keep a pending request (and its slot) until decided.
+const PAID_DEPOSIT = ['paid', 'review'];
+// Open requests one email address may hold at once (part 3 abuse guard).
+const MAX_OPEN_PER_EMAIL = 3;
 const MAX_RANGE_DAYS = 42;
 const DEFAULT_DURATION_MINUTES = 60;
 const MIN_DURATION_MINUTES = 15;
@@ -203,14 +208,20 @@ function wallTime(day, hhmm, zone) {
  */
 async function busyIntervals(from, to, zone, { excludeRequestId = null, now = new Date(), conn = db } = {}) {
   const busy = [];
+  const hasDeposits = await hasColumnCached('booking_requests', 'deposit_status');
 
   const blocks = await conn('booking_blocks').where('starts_at', '<', ts(to)).andWhere('ends_at', '>', ts(from));
   for (const b of blocks) busy.push({ start: toDate(b.starts_at).getTime(), end: toDate(b.ends_at).getTime() });
 
   const requests = conn('booking_requests')
     .where('starts_at', '<', ts(to)).andWhere('ends_at', '>', ts(from))
-    .andWhere((q) => q.where('status', 'accepted')
-      .orWhere((p) => p.where('status', 'pending').andWhere('hold_expires_at', '>', ts(now))));
+    .andWhere((q) => {
+      q.where('status', 'accepted')
+        .orWhere((p) => p.whereIn('status', ['pending', 'awaiting_payment']).andWhere('hold_expires_at', '>', ts(now)));
+      // Paid deposits hold past the hold time (see expireStaleHolds). The
+      // column lookup is cached before createRequest's transaction opens.
+      if (hasDeposits) q.orWhere((p) => p.where('status', 'pending').whereIn('deposit_status', PAID_DEPOSIT));
+    });
   if (excludeRequestId) requests.whereNot('id', excludeRequestId);
   for (const r of await requests) busy.push({ start: toDate(r.starts_at).getTime(), end: toDate(r.ends_at).getTime() });
 
@@ -306,10 +317,22 @@ function newReference() {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
 
-/** Pending requests whose hold ran out become `expired`. */
+/**
+ * Pending requests whose hold ran out become `expired`; so do requests whose
+ * deposit checkout was never paid (part 3).
+ */
 async function expireStaleHolds(now = new Date()) {
-  await db('booking_requests').where({ status: 'pending' }).andWhere('hold_expires_at', '<=', ts(now))
-    .update({ status: 'expired', updated_at: ts(now) });
+  const hasDeposits = await hasColumnCached('booking_requests', 'deposit_status');
+  const pending = db('booking_requests').where({ status: 'pending' }).andWhere('hold_expires_at', '<=', ts(now));
+  // A request whose deposit came in (or is under review) holds its slot
+  // until the admin decides: expiring it would free the time and keep the
+  // client's money.
+  if (hasDeposits) pending.whereNotIn('deposit_status', PAID_DEPOSIT);
+  await pending.update({ status: 'expired', updated_at: ts(now) });
+  if (hasDeposits) {
+    await db('booking_requests').where({ status: 'awaiting_payment' }).andWhere('hold_expires_at', '<=', ts(now))
+      .update({ status: 'expired', deposit_status: 'expired', updated_at: ts(now) });
+  }
 }
 
 /**
@@ -327,6 +350,24 @@ async function createRequest(input, { now = new Date() } = {}) {
   const start = new Date(input.start);
   if (Number.isNaN(start.getTime())) throw new AppError('Pick a time', 400, 'BOOKING_SLOT_INVALID');
 
+  // Part 3: a deposit, when the service asks for one and Stripe is set up.
+  // The slot is then held only for the checkout until the payment is in.
+  const deposits = require('./bookingDeposits');
+  const hasDeposits = await hasColumnCached('booking_requests', 'deposit_status');
+  const depositMinor = hasDeposits ? deposits.depositFor(preset, estimate.totalMinor) : 0;
+  const takesDeposit = depositMinor > 0 && await deposits.stripeReady();
+  // One address cannot hold the calendar: a few open requests at a time.
+  const email = String(input.email).trim().toLowerCase();
+  const open = await db('booking_requests').whereRaw('LOWER(email) = ?', [email])
+    .whereIn('status', ['awaiting_payment', 'pending']).count('* as n').first();
+  if (Number(open.n) >= MAX_OPEN_PER_EMAIL) {
+    throw new AppError('You already have open booking requests. Please wait for the studio to answer them.', 429, 'BOOKING_TOO_MANY_OPEN');
+  }
+  const statusToken = hasDeposits ? deposits.newStatusToken() : null;
+  const holdUntil = takesDeposit
+    ? now.getTime() + deposits.CHECKOUT_HOLD_MINUTES * 60000
+    : now.getTime() + settings.hold_hours * 3600000;
+
   const insertId = await db.transaction(async (trx) => {
     // SQLite serialises writers; on PostgreSQL the lock on the settings row
     // makes concurrent requests take turns for the check-then-insert.
@@ -337,12 +378,12 @@ async function createRequest(input, { now = new Date() } = {}) {
     if (!free) throw new ConflictError('This time is no longer available. Please pick another one.', 'start');
     const inserted = await trx('booking_requests').insert({
       reference: newReference(),
-      status: 'pending',
+      status: takesDeposit ? 'awaiting_payment' : 'pending',
       preset_id: preset.id,
       service_name: preset.name,
       starts_at: ts(start),
       ends_at: ts(start.getTime() + duration * 60000),
-      hold_expires_at: ts(now.getTime() + settings.hold_hours * 3600000),
+      hold_expires_at: ts(holdUntil),
       name: String(input.name).trim().slice(0, 160),
       email: String(input.email).trim().toLowerCase().slice(0, 255),
       phone: input.phone ? String(input.phone).trim().slice(0, 40) : null,
@@ -353,16 +394,27 @@ async function createRequest(input, { now = new Date() } = {}) {
       estimate_lines: JSON.stringify(estimate.lines),
       estimate_minor: estimate.totalMinor,
       currency: estimate.currency,
+      ...(hasDeposits ? {
+        deposit_minor: takesDeposit ? depositMinor : 0,
+        deposit_status: takesDeposit ? 'open' : 'none',
+        gallery_unlock: deposits.GALLERY_UNLOCK.includes(preset.gallery_unlock) ? preset.gallery_unlock : 'full_payment',
+        status_token_hash: deposits.hashToken(statusToken),
+      } : {}),
       created_at: ts(now),
       updated_at: ts(now),
     }).returning('id');
     return typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
   });
   const request = await db('booking_requests').where({ id: insertId }).first();
+  if (takesDeposit) {
+    // Mails wait for the payment (bookingDeposits.reconcileSession).
+    const checkoutUrl = await deposits.startCheckout(request, statusToken);
+    return { request: await db('booking_requests').where({ id: insertId }).first(), checkoutUrl, statusToken };
+  }
   await require('./bookingNotifications').notifyReceived(request).catch((err) => {
     logger.warn('Could not queue the booking request mails', { requestId: insertId, error: err.message });
   });
-  return request;
+  return { request, checkoutUrl: null, statusToken };
 }
 
 async function listRequests({ status = null } = {}) {
@@ -504,6 +556,11 @@ async function acceptRequest(id, adminId) {
       eventTimeEnd: end.date === start.date ? end.time : undefined,
       expectedDurationHours: hours,
       lineItems: quoteLines(request),
+      // Part 3: the deposit is no invoice; the note reminds whoever bills
+      // this deal to book it on the invoice (Clients → Bookings).
+      internalNotes: request.deposit_status === 'paid'
+        ? `Booking ${request.reference}: deposit ${(Number(request.deposit_minor) / 100).toFixed(2)} ${request.currency} paid by card (Stripe ${request.payment_intent_id || ''}). Book it on the invoice under Clients → Bookings.`
+        : undefined,
     }, adminId);
     await projectService.assignQuote(project.id, quoteId, { id: adminId });
     await db('booking_requests').where({ id }).update({
@@ -551,7 +608,11 @@ async function declineRequest(id, adminId, reason) {
     if (!row) throw new AppError('Booking request not found', 404);
     throw new AppError(`This request is ${row.status}`, 409, 'BOOKING_NOT_PENDING');
   }
-  const request = await db('booking_requests').where({ id }).first();
+  let request = await db('booking_requests').where({ id }).first();
+  if (request.deposit_status === 'paid') {
+    await require('./bookingDeposits').refundDeposit(request);
+    request = await db('booking_requests').where({ id }).first();
+  }
   await require('./bookingNotifications').notifyDeclined(request).catch((err) => {
     logger.warn('Could not queue the booking decline mail', { requestId: id, error: err.message });
   });

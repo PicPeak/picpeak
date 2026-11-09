@@ -1418,6 +1418,8 @@
     }
   },
   "gallery": {
+    "awaitingPayment": "Your gallery is almost ready.",
+    "awaitingPaymentHelp": "It opens as soon as the invoice is paid. Your gallery link will stay the same.",
     "backToAccount": "Back to your account",
     "temporarilyUnavailable": "This gallery is temporarily unavailable.",
     "temporarilyUnavailableHelp": "Please try again later. Your gallery link will stay the same.",
@@ -9527,7 +9529,40 @@
     "costsErrorTitle": "Costs could not be loaded"
   },
   "booking": {
+    "status": {
+      "notFound": "This booking request could not be found.",
+      "payCancelled": "Payment not completed",
+      "payPending": "Waiting for your payment",
+      "payCancelledText": "The deposit was not paid, so the time is not reserved. Please book again.",
+      "payPendingText": "We are waiting for the payment confirmation. This page updates by itself.",
+      "accepted": "Request accepted",
+      "acceptedText": "You will receive the quote by email.",
+      "declined": "Request declined",
+      "declinedRefunded": "The studio cannot take on this date. Your deposit has been refunded.",
+      "declinedText": "The studio cannot take on this date.",
+      "expired": "Reservation expired",
+      "expiredText": "The time is free again. You are welcome to book again.",
+      "depositPaid": "Deposit paid: {{amount}}",
+      "bookAgain": "Book again"
+    },
     "admin": {
+      "deposit": {
+        "open": "Deposit {{amount}} not paid yet",
+        "paid": "Deposit {{amount}} paid by card",
+        "refunded": "Deposit {{amount}} refunded",
+        "refundFailed": "Deposit {{amount}}: the refund failed. Refund it in Stripe.",
+        "expired": "Deposit not paid; the checkout expired",
+        "review": "A payment came in, but not the deposit amount. Check it in Stripe.",
+        "booked": "booked on invoice {{number}}"
+      },
+      "declineRefund": "Decline, refund and tell the client",
+      "unlockNow": "Open now",
+      "galleryOpen": "Gallery \"{{name}}\" is open",
+      "galleryLocked": "Gallery \"{{name}}\" opens when every invoice is paid",
+      "applyDeposit": "Book deposit",
+      "depositInvoice": "Book the deposit on",
+      "galleryUnlocked": "Gallery opened.",
+      "depositApplied": "Deposit booked on the invoice.",
       "accept": "Accept and draft quote",
       "acceptedToast": "Accepted. The draft quote is ready to review and send.",
       "blockAdd": "Block",
@@ -9543,6 +9578,7 @@
       "editHours": "Business hours",
       "empty": "No booking requests yet.",
       "estimate": "Estimate",
+      "heldPaid": "Held until you decide (deposit paid)",
       "heldUntil": "Held until {{time}}",
       "hoursInfo": "Clients can book within your business hours ({{zone}}).",
       "noBlocks": "No blocked times.",
@@ -9567,6 +9603,7 @@
         "holdHint": "An unanswered request frees its time after this."
       },
       "status": {
+        "awaitingPayment": "Waiting for deposit",
         "accepted": "Accepted",
         "declined": "Declined",
         "expired": "Hold expired",
@@ -9579,6 +9616,8 @@
       }
     },
     "public": {
+      "sendAndPay": "Send and pay the deposit",
+      "depositNote": "Deposit to secure the date: {{amount}}, paid by card when you send the request.",
       "estimate": "Estimate",
       "estimateFailed": "The price could not be worked out.",
       "estimateNote": "This is an estimate. You will receive a quote with the final price.",
@@ -9612,6 +9651,15 @@
       }
     },
     "service": {
+      "depositHint": "Paid by card through the Stripe account under Settings → Payments. Without Stripe set up, requests come in without a deposit.",
+      "unlockOff": "Right away",
+      "unlockDeposit": "Once the deposit is paid",
+      "unlockFull": "When every invoice is paid",
+      "galleryUnlock": "Gallery opens",
+      "depositFixed": "Fixed amount",
+      "depositPercent": "Percent of the estimate",
+      "depositNone": "None",
+      "deposit": "Deposit at booking",
       "bookable": "Clients can book this online",
       "durationFixed": "Fixed length",
       "durationFrom": "Slot length",

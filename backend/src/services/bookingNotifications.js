@@ -76,8 +76,15 @@ async function notifyReceived(request) {
 /** The admin declined: tell the client the time is free again. */
 async function notifyDeclined(request) {
   const { language, vars } = await context(request);
+  const deposit = new Intl.NumberFormat(language === 'de' ? 'de-CH' : 'en-GB', { style: 'currency', currency: request.currency || 'CHF' })
+    .format(Number(request.deposit_minor || 0) / 100);
   await queue('booking_request_declined', request.email, {
-    ...vars, decline_reason: request.decline_reason || '', __language: language,
+    ...vars,
+    decline_reason: request.decline_reason || '',
+    // Part 3: what happened to a deposit the client paid.
+    deposit_refunded: request.deposit_status === 'refunded' ? deposit : '',
+    deposit_refund_pending: request.deposit_status === 'refund_failed' || request.deposit_status === 'review' ? deposit : '',
+    __language: language,
   });
 }
 

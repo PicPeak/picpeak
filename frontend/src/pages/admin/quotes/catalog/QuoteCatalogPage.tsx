@@ -107,12 +107,18 @@ interface ServiceForm {
   bookable: boolean;
   bookingDurationMinutes: number;
   bookingDurationFactorId: number | null;
+  /** Part 3: deposit at booking, and when a gallery from the booking opens. */
+  bookingDepositType: 'none' | 'percent' | 'fixed';
+  bookingDepositPercent: number;
+  bookingDepositAmount: number;
+  galleryUnlock: 'full_payment' | 'deposit' | 'off';
 }
 
 const emptyService: ServiceForm = {
   name: '', description: '', unitPrice: NaN, currency: 'CHF', quantityDefault: 1, unit: '', priceMode: 'fixed',
   pinnedRate: NaN, category: '', detailsText: '', factorIds: [],
   bookable: false, bookingDurationMinutes: 60, bookingDurationFactorId: null,
+  bookingDepositType: 'none', bookingDepositPercent: NaN, bookingDepositAmount: NaN, galleryUnlock: 'full_payment',
 };
 
 /** Which pricing factors a service uses, in the order they were ticked (#2440). */
@@ -180,6 +186,10 @@ const ServicesTab: React.FC = () => {
     bookable: Boolean(p.bookable),
     bookingDurationMinutes: p.bookingDurationMinutes ?? 60,
     bookingDurationFactorId: p.bookingDurationFactorId ?? null,
+    bookingDepositType: p.bookingDepositType || 'none',
+    bookingDepositPercent: p.bookingDepositPercent ?? NaN,
+    bookingDepositAmount: p.bookingDepositMinor != null ? p.bookingDepositMinor / 100 : NaN,
+    galleryUnlock: p.galleryUnlock || 'full_payment',
   });
 
   const save = async () => {
@@ -204,6 +214,10 @@ const ServicesTab: React.FC = () => {
         // Only a factor the service still has can set the slot length.
         bookingDurationFactorId: form.bookingDurationFactorId && form.factorIds.includes(form.bookingDurationFactorId)
           ? form.bookingDurationFactorId : null,
+        bookingDepositType: form.bookingDepositType,
+        bookingDepositPercent: form.bookingDepositType === 'percent' && Number.isFinite(form.bookingDepositPercent) ? form.bookingDepositPercent : null,
+        bookingDepositMinor: form.bookingDepositType === 'fixed' && Number.isFinite(form.bookingDepositAmount) ? toMinor(form.bookingDepositAmount) : null,
+        galleryUnlock: form.galleryUnlock,
       } : {}),
     };
     try {
@@ -344,6 +358,43 @@ const ServicesTab: React.FC = () => {
                         <DecimalInput id="service-duration" className={inputCls} value={form.bookingDurationMinutes} fractionDigits={0}
                           onChange={(n) => setForm({ ...form, bookingDurationMinutes: Number.isFinite(n) ? Math.round(n) : 60 })} />
                       </div>
+                    )}
+                    <div>
+                      <label htmlFor="service-deposit-type" className={labelCls}>{t('booking.service.deposit', 'Deposit at booking')}</label>
+                      <select id="service-deposit-type" className={selectCls} value={form.bookingDepositType}
+                        onChange={(e) => setForm({ ...form, bookingDepositType: e.target.value as ServiceForm['bookingDepositType'] })}>
+                        <option value="none">{t('booking.service.depositNone', 'None')}</option>
+                        <option value="percent">{t('booking.service.depositPercent', 'Percent of the estimate')}</option>
+                        <option value="fixed">{t('booking.service.depositFixed', 'Fixed amount')}</option>
+                      </select>
+                    </div>
+                    {form.bookingDepositType === 'percent' && (
+                      <div>
+                        <label htmlFor="service-deposit-percent" className={labelCls}>{t('quotes.factors.field.percent', 'Percent')}</label>
+                        <DecimalInput id="service-deposit-percent" className={inputCls} value={form.bookingDepositPercent} fractionDigits={2}
+                          onChange={(n) => setForm({ ...form, bookingDepositPercent: n })} />
+                      </div>
+                    )}
+                    {form.bookingDepositType === 'fixed' && (
+                      <div>
+                        <label htmlFor="service-deposit-amount" className={labelCls}>{t('quotes.factors.field.amount', 'Amount')}</label>
+                        <DecimalInput id="service-deposit-amount" className={inputCls} value={form.bookingDepositAmount} fractionDigits={2}
+                          onChange={(n) => setForm({ ...form, bookingDepositAmount: n })} />
+                      </div>
+                    )}
+                    <div>
+                      <label htmlFor="service-gallery-unlock" className={labelCls}>{t('booking.service.galleryUnlock', 'Gallery opens')}</label>
+                      <select id="service-gallery-unlock" className={selectCls} value={form.galleryUnlock}
+                        onChange={(e) => setForm({ ...form, galleryUnlock: e.target.value as ServiceForm['galleryUnlock'] })}>
+                        <option value="full_payment">{t('booking.service.unlockFull', 'When every invoice is paid')}</option>
+                        <option value="deposit">{t('booking.service.unlockDeposit', 'Once the deposit is paid')}</option>
+                        <option value="off">{t('booking.service.unlockOff', 'Right away')}</option>
+                      </select>
+                    </div>
+                    {form.bookingDepositType !== 'none' && (
+                      <p className="md:col-span-3 text-xs text-muted">
+                        {t('booking.service.depositHint', 'Paid by card through the Stripe account under Settings → Payments. Without Stripe set up, requests come in without a deposit.')}
+                      </p>
                     )}
                   </>
                 )}
