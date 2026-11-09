@@ -187,6 +187,7 @@ export const BillsListPage: React.FC = () => {
                           {formatMoney(Number(inv.totalAmountMinor) / 100, inv.currency)}
                         </td>
                         <td className="px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-1">
                           {isDraftInvoice(inv) ? (
                             // Held invoice: 'scheduled' with no send date (incl. the
                             // monthly/manual accumulator) never auto-ships, so badge it
@@ -205,10 +206,11 @@ export const BillsListPage: React.FC = () => {
                             }`}>{t(`bills.status.${inv.status}`, inv.status)}</span>
                           )}
                           {ukBusiness && lacksGbpRate(inv) && (
-                            <span className="ml-1 px-2 py-0.5 rounded text-xs font-medium bg-danger-soft text-danger-text whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-danger-soft text-danger-text whitespace-nowrap">
                               {t('bills.needsGbpRate', 'Needs GBP rate')}
                             </span>
                           )}
+                          </div>
                         </td>
                       </tr>
                     ))}
