@@ -1638,10 +1638,12 @@ function drawPaymentBlock(doc, ctx, x, y, width) {
  * off — plus a UK business's disclosure lines, which always print. The placement decisions read this rather than a constant of their own,
  * so a two-line footer can't be laid over (#1546).
  */
-function footerHeightFor(theme, issuer) {
+function footerHeightFor(theme, issuer, locale = 'en') {
   const footer = (theme && theme.footer) || { mode: 'address', text: '' };
   const own = footer.mode === 'none' ? 0 : (issuer?.footerLine ? 2 : 1);
-  const lines = own + legalDisclosureLines(issuer).length;
+  // Same language and theme as drawFooter, so a wrapped disclosure counts
+  // the rows it is drawn on.
+  const lines = own + legalDisclosureLines(issuer, locale, theme).length;
   if (!lines) return 0;
   const line = footerLineHeight(theme);
   return lines > 1 ? line * lines + 4 : line;
@@ -1659,8 +1661,34 @@ function footerHeightFor(theme, issuer) {
  * Legally required, so they print even when the theme hides the footer.
  * Any other business, or one that hasn't filled the fields in, gets none.
  */
-function legalDisclosureLines(issuer, locale = 'en') {
+/**
+ * Footer lines are drawn one per row without wrapping, and the footer's
+ * height is counted in rows before anything is drawn. A long disclosure is
+ * therefore split here, at a separator where it can be, so both agree. The
+ * length fits the theme's content width at the footer's text size, taking
+ * 0.6 em per character, wider than Helvetica's average.
+ */
+function footerLineChars(theme) {
+  return Math.floor(pageMetricsFor(theme).contentWidth / (smallTextSize(theme) * 0.6));
+}
+function wrapFooterLine(text, maxChars) {
+  const out = [];
+  let rest = String(text);
+  while (rest.length > maxChars) {
+    const head = rest.slice(0, maxChars + 1);
+    let cut = Math.max(head.lastIndexOf(', '), head.lastIndexOf(' · '));
+    if (cut <= 0) cut = head.lastIndexOf(' ');
+    if (cut <= 0) cut = maxChars;
+    out.push(rest.slice(0, cut).replace(/[,\s·]+$/, ''));
+    rest = rest.slice(cut).replace(/^[,\s·]+/, '');
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
+function legalDisclosureLines(issuer, locale = 'en', theme = null) {
   if (!issuer || !isUnitedKingdom(issuer.countryCode)) return [];
+  const maxChars = footerLineChars(theme);
   const clean = (v) => (typeof v === 'string' ? v.trim() : '');
   const companyNumber = clean(issuer.companyNumber);
   const form = issuer.legalForm || (companyNumber ? 'ltd' : null);
@@ -1671,22 +1699,26 @@ function legalDisclosureLines(issuer, locale = 'en') {
       issuer.jurisdiction ? t(locale, 'disclosure_registered_in', { place: t(locale, `jurisdiction_${issuer.jurisdiction}`) }) : null,
       companyNumber ? t(locale, 'disclosure_company_number', { number: companyNumber }) : null,
     ].filter(Boolean);
-    const office = clean(issuer.registeredOffice).replace(/\s*\n\s*/g, ', ');
+    // The registered office is required (SI 2015/17 reg 25). The field says
+    // "if different from the address above", so left blank it is the
+    // letterhead address.
+    const office = clean(issuer.registeredOffice).replace(/\s*\n\s*/g, ', ')
+      || [clean(issuer.addressLine1), clean(issuer.addressLine2), cityLine(issuer)].filter(Boolean).join(', ');
     const lines = [];
-    if (first.length) lines.push(first.join(' · '));
-    if (office) lines.push(t(locale, 'disclosure_registered_office', { address: office }));
+    if (first.length) lines.push(...wrapFooterLine(first.join(' · '), maxChars));
+    if (office) lines.push(...wrapFooterLine(t(locale, 'disclosure_registered_office', { address: office }), maxChars));
     return lines;
   }
   const proprietor = clean(issuer.proprietorName);
   if ((form === 'sole_trader' || form === 'partnership') && proprietor) {
-    return [t(locale, form === 'partnership' ? 'disclosure_partners' : 'disclosure_proprietor', { name: proprietor })];
+    return wrapFooterLine(t(locale, form === 'partnership' ? 'disclosure_partners' : 'disclosure_proprietor', { name: proprietor }), maxChars);
   }
   return [];
 }
 
 /** footerHeightFor for a document that already carries its theme. */
-function footerHeight(doc, issuer = {}) {
-  return footerHeightFor(doc && doc._theme, issuer);
+function footerHeight(doc, issuer = {}, locale = 'en') {
+  return footerHeightFor(doc && doc._theme, issuer, locale);
 }
 
 /**
@@ -1771,12 +1803,12 @@ function drawFooter(doc, issuer, locale, { bottomLimit = null } = {}) {
   // trailing pages).
   // Theme (#1445): the address line, a custom line, or no footer at all.
   const footer = (doc._theme && doc._theme.footer) || { mode: 'address', text: '' };
-  const reserved = footerHeight(doc, issuer);
+  const reserved = footerHeight(doc, issuer, locale);
   if (!reserved) return;
   const lineH = footerLineHeight(doc._theme);
   const hasFooterLine = !!issuer.footerLine;
   // UK trading disclosures (legalDisclosureLines) go under everything else.
-  const disclosures = legalDisclosureLines(issuer, locale);
+  const disclosures = legalDisclosureLines(issuer, locale, doc._theme);
   const P = pageOf(doc);
   // Normally the footer sits in the bottom margin band. `bottomLimit` pulls it
   // up when something else owns the bottom of the page — the QR-bill's
@@ -2559,7 +2591,7 @@ function renderDocument(type, context) {
         // reserved band when the slip shares the page. Both anchors are fixed —
         // the blocks are pinned to the foot of the page, wherever the table
         // happened to end.
-        const footerReserve = footerHeight(doc, ctx.issuer);
+        const footerReserve = footerHeight(doc, ctx.issuer, ctx.locale);
         const bandTop = PAGE.height - QR_BILL_BAND_HEIGHT;
         const closingTop = (withSlip) => (withSlip
           ? bandTop - SLIP_BAND_FOOTER_GAP
@@ -2836,7 +2868,7 @@ function renderContractInProcess(context) {
         const dateFormat = ctx.dateFormat || defaultDocumentDateFormat(ctx.issuer && ctx.issuer.countryCode);
         // A footer (theme) sits in the bottom margin, so the margin grows
         // by its height and body text never runs into it.
-        const footerReserve = footerHeightFor(theme, ctx.issuer);
+        const footerReserve = footerHeightFor(theme, ctx.issuer, locale);
         // The theme's margins (#1445) for the letter pages. The signature
         // page keeps SIGNATURE_PAGE — stamped signatures land at its fixed
         // coordinates, whatever the margins are.
@@ -3210,5 +3242,6 @@ module.exports = {
   // Exposed for unit tests + advanced callers.
   _internal: {
     formatMinor, formatDate, t, registerCustomFonts, registerThemeFonts, drawLineItems, drawContractTotals, stampPageNumbers, themeColor,
+    legalDisclosureLines, smallTextSize, pageMetricsFor,
   },
 };

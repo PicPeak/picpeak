@@ -201,6 +201,12 @@ async function createInvoice(payload, adminId, trx = db) {
     }
   }
   if (installmentsForSpawn) {
+    // Each instalment states its VAT in GBP at the rate the admin entered
+    // (issue 2439). Same schema read as the single-row insert below.
+    const spawnGbpRate = payload.vatGbpRate !== undefined
+      && await hasColumnCached('invoices', 'vat_gbp_rate')
+      ? normaliseVatGbpRate(payload.vatGbpRate, { countryCode: profile?.country_code, currency })
+      : null;
     return await spawnInstallmentInvoices({
       trx,
       eventId: payload.eventId || null,
@@ -229,6 +235,7 @@ async function createInvoice(payload, adminId, trx = db) {
       paymentTermSnapshot,
       dealUuid: await resolveDealUuid(trx, payload),
       projectId: payload.projectId || null,
+      vatGbpRate: spawnGbpRate,
     });
   }
 
@@ -346,7 +353,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
   ccPdfEmail, netDays,
   eventName, eventTimeStart, eventTimeEnd,
   paymentNetDaysTemplateId, paymentTimingTemplateId,
-  paymentTermSnapshot, dealUuid, projectId = null, hold = false }) {
+  paymentTermSnapshot, dealUuid, projectId = null, hold = false, vatGbpRate = null }) {
   // Monthly-billing intercept (migration 128). Quote → invoice
   // conversion for a monthly-mode customer doesn't fan out N
   // installment invoices — the customer pays one consolidated bill
@@ -500,6 +507,8 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       updated_at: new Date(),
     };
     if (projectIdColumn) row.project_id = projectId;
+    // Normalised and column-checked by the caller (createInvoice).
+    if (vatGbpRate != null) row.vat_gbp_rate = vatGbpRate;
 
     const inserted = await auditedInsert(trx, 'invoices', row, { actor: adminId, source: 'invoice.spawnInstallments' });
     const invoiceId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];

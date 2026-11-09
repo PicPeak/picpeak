@@ -30,7 +30,8 @@ function isValidUkVatNumber(value) {
   const v = compact(value);
   if (/^GD[0-4]\d{2}$/.test(v)) return true;
   if (/^HA[5-9]\d{2}$/.test(v)) return true;
-  if (/^\d{9}$/.test(v) || /^\d{12}$/.test(v)) return checkDigitsValid(v.slice(0, 9));
+  // All zeros passes the check (0 is divisible by 97) but is no number.
+  if (/^\d{9}$/.test(v) || /^\d{12}$/.test(v)) return !/^0{9}/.test(v) && checkDigitsValid(v.slice(0, 9));
   return false;
 }
 

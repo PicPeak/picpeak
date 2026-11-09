@@ -265,6 +265,21 @@ router.get(
   })
 );
 
+// ---- GET /region ------------------------------------------------------
+// Only the business's country, for the editors that apply its rules (a UK
+// business rounds VAT down, states VAT in GBP on an invoice in another
+// currency, and tells business from consumer customers; issue 2439). The
+// admins who write invoices, quotes or customers need it without being
+// allowed to read the rest of the profile (bank details, registration).
+router.get(
+  '/region',
+  requirePermission(['settings.view', 'settings.banking', 'bills.view', 'quotes.view', 'customers.view']),
+  handleAsync(async (_req, res) => {
+    const { profile } = await businessProfileService.getProfile();
+    return successResponse(res, { countryCode: profile?.country_code || null });
+  })
+);
+
 // ---- GET /history -----------------------------------------------------
 // Change history (migration 219) of the profile and its bank accounts,
 // oldest first. Same gate as the profile itself.

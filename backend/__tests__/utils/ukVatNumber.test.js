@@ -30,6 +30,11 @@ describe('isValidUkVatNumber', () => {
     expect(isValidUkVatNumber('DE123456789')).toBe(false);
     expect(isValidUkVatNumber('')).toBe(false);
   });
+
+  it('rejects all zeros, which passes the check sum but is no number', () => {
+    expect(isValidUkVatNumber('GB000000000')).toBe(false);
+    expect(isValidUkVatNumber('GB000000000001')).toBe(false);
+  });
 });
 
 describe('isBusinessCustomer', () => {

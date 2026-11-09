@@ -996,7 +996,9 @@ function t(locale, key, vars = {}) {
   const dict = LABELS[locale] || LABELS.en;
   let str = dict[key] || LABELS.en[key] || key;
   for (const [k, v] of Object.entries(vars)) {
-    str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+    // A function, so a "$&" or "$'" in a free-text value (a registered
+    // name) is printed as typed rather than expanded as a replacement pattern.
+    str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), () => String(v));
   }
   return str;
 }

@@ -12,7 +12,8 @@ const { extendedLineColumns, lineItemFieldsToApi } = require('../../utils/lineIt
 const { computeMonthlyCadenceDate, getHierarchyHelpers, nextInvoiceNumber } = require('./helpers');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 const { toDateOnly } = require('../../utils/dateOnly');
-const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
+const { vatMinorFor, roundsVatDown, normaliseVatGbpRate } = require('../../utils/vatAmount');
+const { hasColumnCached } = require('../../utils/schemaCache');
 
 
 /**
@@ -224,11 +225,24 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
   const shippingMinor = ensureInt(draft.row.shipping_amount_minor);
   const totalMinor = netMinor + vatMinor + shippingMinor;
 
+  // A GBP rate entered with the appended items (issue 2439) becomes the
+  // draft's: the draft is the invoice that will be sent. Only POST /invoices
+  // passes one, without a transaction, so the schema read never waits on a
+  // connection a trx holds (SQLite).
+  const gbpRateUpdate = {};
+  if (payload.vatGbpRate !== undefined && payload.vatGbpRate !== null && payload.vatGbpRate !== ''
+      && await hasColumnCached('invoices', 'vat_gbp_rate')) {
+    const { profile } = await businessProfileService.getProfile(trx);
+    const rate = normaliseVatGbpRate(payload.vatGbpRate, { countryCode: profile?.country_code, currency: draft.row.currency });
+    if (rate != null) gbpRateUpdate.vat_gbp_rate = rate;
+  }
+
   await auditedUpdate(trx, 'invoices', { id: draft.id }, {
     net_amount_minor: netMinor,
     vat_rate: vatRate,
     vat_amount_minor: vatMinor,
     total_amount_minor: totalMinor,
+    ...gbpRateUpdate,
     updated_at: new Date(),
   }, { actor: adminId, source: 'invoice.monthly.appendItems' });
 

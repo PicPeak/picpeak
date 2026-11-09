@@ -58,6 +58,11 @@ const setCustomer = (fields) => db('customer_accounts').where({ id: customerId }
 describe('a business outside the UK', () => {
   beforeAll(() => setCountry('CH'));
 
+  test('leaves {{governing_law}} empty', async () => {
+    const { buildPlaceholderContext } = require('../../src/services/contract/renderContext');
+    expect((await buildPlaceholderContext({ language: 'en' }, null)).governing_law).toBe('');
+  });
+
   test('never gets a UK clause', async () => {
     const slugs = await slugsOf((await createContract()).id);
     expect(slugs).toEqual(expect.arrayContaining([...EUROPEAN_ONLY, 'cancellation_tiered']));
@@ -116,6 +121,24 @@ describe('a UK business', () => {
     const body = ctx.sections.flatMap((section) => section.blocks).map((block) => block.body).join('\n');
     expect(body).toContain('governed by the law of Scotland');
     await db('business_profile').where({ id: 1 }).update({ jurisdiction: null });
+  });
+
+  test('names the jurisdiction in German in a German contract', async () => {
+    const { buildPlaceholderContext } = require('../../src/services/contract/renderContext');
+    await db('business_profile').where({ id: 1 }).update({ jurisdiction: null });
+    expect((await buildPlaceholderContext({ language: 'de' }, null)).governing_law).toBe('England und Wales');
+    expect((await buildPlaceholderContext({ language: 'en' }, null)).governing_law).toBe('England and Wales');
+  });
+
+  test('the clause list for a new contract follows the customer', async () => {
+    const library = require('../../src/services/contractBlocksService');
+    await setCustomer({ company_name: 'Band Ltd', customer_kind: null });
+    const forBusiness = (await library.listBlocks({ forNewContract: true, customerAccountId: customerId })).map((b) => b.slug);
+    expect(forBusiness).toEqual(expect.arrayContaining(UK_ALWAYS));
+    expect(forBusiness).not.toContain(UK_CONSUMER);
+    await setCustomer({ company_name: null, vat_id: null, customer_kind: null });
+    const forConsumer = (await library.listBlocks({ forNewContract: true, customerAccountId: customerId })).map((b) => b.slug);
+    expect(forConsumer).toContain(UK_CONSUMER);
   });
 });
 

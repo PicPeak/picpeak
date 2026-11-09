@@ -304,7 +304,7 @@ function slugify(name) {
   return `${base || 'block'}_${suffix}`;
 }
 
-async function listBlocks({ section, includeInactive = false, forNewContract = false } = {}) {
+async function listBlocks({ section, includeInactive = false, forNewContract = false, customerAccountId = null } = {}) {
   // Self-heal before reading so the new system block (added to the
   // already-deployed migration 131 in feat/crm) appears in the
   // library UI immediately on first GET, without needing a fresh
@@ -319,9 +319,14 @@ async function listBlocks({ section, includeInactive = false, forNewContract = f
   });
   if (!forNewContract) return blocks;
   // What a new contract starts from: the clauses for the business's legal
-  // system. The library and the template editor still list them all.
+  // system, and — once the editor names the customer — without the UK
+  // consumer clause for a business customer, which createContract would drop
+  // anyway. The library and the template editor still list them all.
   const { profile } = await require('./businessProfileService').getProfile();
-  return require('./contract/regionalClauses').systemBlocksFor(blocks, profile?.country_code);
+  const customer = customerAccountId
+    ? await db('customer_accounts').where({ id: customerAccountId }).first()
+    : null;
+  return require('./contract/regionalClauses').systemBlocksFor(blocks, profile?.country_code, customer || null);
 }
 
 async function getBlockById(id) {

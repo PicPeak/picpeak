@@ -220,3 +220,39 @@ describe('UK address and date format', () => {
     expect(texts).toEqual(expect.arrayContaining(['LI-9494 Schaan / Liechtenstein']));
   });
 });
+
+// Luap round 1 on PR 2447.
+describe('the registered office and long disclosures', () => {
+  const { legalDisclosureLines, smallTextSize, pageMetricsFor, t } = pdfService._internal;
+
+  test('a company that leaves the field blank shows its letterhead address as the registered office', () => {
+    const lines = legalDisclosureLines(ukIssuer({ registeredOffice: '', addressLine2: 'Unit 4' }), 'en');
+    expect(lines).toContain('Registered office: 1 High Street, Unit 4, Manchester M1 1AA');
+  });
+
+  test('a long disclosure wraps inside the content width, at the narrowest margins and largest text', () => {
+    const theme = { ...builtInTheme('invoice'), bodySize: 12, layout: { margins: { left: 30, right: 25, bottom: 20 }, addressWindow: true } };
+    const office = 'Suite 1200, The Very Long Business Centre Building, 100 Extraordinarily Long Road Name, Little Snoring, Fakenham, Norfolk NR21 0AA';
+    const issuer = ukIssuer({ registeredOffice: office, registeredName: 'An Unusually Long Registered Company Name For Testing Purposes Limited' });
+    const lines = legalDisclosureLines(issuer, 'en', theme);
+    expect(lines.length).toBeGreaterThan(2);
+    const doc = new PDFDocument({ size: 'A4' });
+    doc.font('Helvetica').fontSize(smallTextSize(theme));
+    const width = pageMetricsFor(theme).contentWidth;
+    for (const text of lines) expect(doc.widthOfString(text)).toBeLessThanOrEqual(width);
+    expect(lines.join(' ')).toContain('Norfolk NR21 0AA');
+  });
+
+  test('the footer reserves a row for every wrapped line', async () => {
+    const issuer = ukIssuer({ registeredOffice: 'x '.repeat(150).trim() });
+    const drawn = drawnText();
+    await pdfService.renderInvoiceToBuffer(invoiceContext({ issuer }));
+    const lines = legalDisclosureLines(issuer, 'en', builtInTheme('invoice'));
+    expect(lines.length).toBeGreaterThan(2);
+    for (const line of lines) expect(drawn()).toContain(line);
+  });
+
+  test('a "$&" in a registered name is printed as typed', () => {
+    expect(t('en', 'disclosure_proprietor', { name: 'A $& B $\' C' })).toBe('Proprietor: A $& B $\' C');
+  });
+});
