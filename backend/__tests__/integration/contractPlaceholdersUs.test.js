@@ -51,6 +51,34 @@ describe('a US business', () => {
   });
 });
 
+// Issue 2445: a UK business writes "12 Bath Street, Glasgow G1 1AA", and a
+// customer with no country is a UK address.
+describe('a UK business', () => {
+  beforeAll(async () => {
+    await db('business_profile').where({ id: 1 }).update({
+      company_name: 'Northern Lights Media', address_line1: '12 Bath Street',
+      postal_code: 'G1 1AA', city: 'Glasgow', state: null, country_code: 'GB',
+    });
+  });
+  afterAll(() => db('customer_accounts').where({ id: customerId }).update({
+    address_line1: '1200 Lincoln St', postal_code: '80203', city: 'Denver', state: 'CO', country_code: 'US',
+  }));
+
+  test('writes both addresses town then postcode, without a country prefix', async () => {
+    await db('customer_accounts').where({ id: customerId }).update({
+      address_line1: '5 Stage Rd', postal_code: 'ls1 1aa', city: 'Leeds', state: null, country_code: null,
+    });
+    const values = await buildPlaceholderContext(contract, await customer());
+    expect(values.issuer_address).toBe('12 Bath Street, Glasgow G1 1AA');
+    expect(values.customer_address).toBe('5 Stage Rd, Leeds LS1 1AA');
+  });
+
+  test('writes dates day/month/year', async () => {
+    const values = await buildPlaceholderContext(contract, await customer());
+    expect(values.event_date).toBe('27/11/2026');
+  });
+});
+
 describe('a business elsewhere', () => {
   beforeAll(async () => {
     await db('business_profile').where({ id: 1 }).update({

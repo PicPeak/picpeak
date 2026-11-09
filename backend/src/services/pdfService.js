@@ -28,9 +28,12 @@
 const PDFDocument = require('pdfkit');
 const { SwissQRBill, Table } = require('swissqrbill/pdf');
 const { t, documentLocale } = require('./pdf-i18n');
-const { cityLine, printsCountryLine, isUnitedStates, isUnitedKingdom } = require('../utils/postalAddress');
+const {
+  cityLine, cityLines, printsCountryLine, domesticCountryFor, isUnitedKingdom,
+} = require('../utils/postalAddress');
 const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
 const { parseCalendarDate } = require('../utils/dateNormalize');
+const { defaultDocumentDateFormat } = require('../utils/documentDateFormat');
 const { parsePromotionSnapshot } = require('../utils/lineItemTotals');
 const { parseInlineMarkdown } = require('../utils/placeholders');
 const pdfFonts = require('./pdf/fonts');
@@ -578,10 +581,12 @@ function drawIssuerBlock(doc, issuer, x, y, width, locale, { grid = null } = {})
     // country name comes from the explicit `countryName` override
     // when set (migration 107); otherwise we resolve it from the
     // ISO country code via the locale-aware COUNTRY_NAMES map.
-    // A US business writes "Denver, CO 80202" with no country.
+    // A US business writes "Denver, CO 80202" with no country; a UK
+    // business puts its town and postcode on lines of their own.
+    if (isUnitedKingdom(issuer.countryCode)) return cityLines(issuer);
     const country = printsCountryLine(issuer.countryCode, issuer.countryCode)
       ? (issuer.countryName || countryName(issuer.countryCode, locale)) : '';
-    return [cityLine(issuer), country].filter(Boolean).join(' / ');
+    return [[cityLine(issuer), country].filter(Boolean).join(' / ')];
   })();
   // When the admin opted into the inline-name variant (migration 108)
   // the company name renders as the first address line, in the same
@@ -593,7 +598,7 @@ function drawIssuerBlock(doc, issuer, x, y, width, locale, { grid = null } = {})
     inlineCompanyLine,
     issuer.addressLine1,
     issuer.addressLine2,
-    cityCountry,
+    ...cityCountry,
   ].filter(Boolean);
   // The logo, the name and these lines all start at the column's left edge,
   // which is also where the contact and meta labels below them start (#1546).
@@ -693,16 +698,18 @@ function drawRecipientBlock(doc, recipient, locale, { flowY = null, issuerCountr
   // `country` override (customer_accounts.country_name, migration
   // 107) or falls back to the locale-aware lookup; a US business
   // leaves it off a letter to a US address.
-  const postalSegment = cityLine({
+  // A UK address takes the post town (in capitals, as Royal Mail asks) and
+  // the postcode on lines of their own.
+  const postalLines = cityLines({
     postalCode: recipient.postalCode, city: recipient.city, state: recipient.state,
-    // A US business's customer with no country is a domestic address.
-    countryCode: recipient.countryCodeIso || (isUnitedStates(issuerCountryCode) ? 'US' : null),
-  });
+    // A US or UK business's customer with no country is a domestic address.
+    countryCode: recipient.countryCodeIso || domesticCountryFor(issuerCountryCode),
+  }, { postTownCaps: true });
   const lines = [
     recipient.hasCompany ? recipient.attentionLine : null,
     recipient.addressLine1,
     recipient.addressLine2,
-    postalSegment,
+    ...postalLines,
     printsCountryLine(recipient.countryCodeIso, issuerCountryCode)
       ? (recipient.country || countryName(recipient.countryCodeIso, locale)) : null,
   ].filter(Boolean);
@@ -2741,8 +2748,9 @@ function normaliseContext(type, ctx) {
     // Date-format config from the `general_date_format` app setting.
     // Shape: `{ format: 'DD.MM.YYYY' | 'DD/MM/YYYY' | 'MM/DD/YYYY' |
     // 'YYYY-MM-DD', locale?: string }`. The service layer hydrates
-    // this; defaults to DD.MM.YYYY when unset.
-    dateFormat: ctx.dateFormat || { format: 'DD.MM.YYYY' },
+    // this; when unset it follows the business's country (DD/MM/YYYY in
+    // the UK, DD.MM.YYYY elsewhere).
+    dateFormat: ctx.dateFormat || defaultDocumentDateFormat(ctx.issuer && ctx.issuer.countryCode),
     // PDF theme (#1445); callers without one get the built-in look.
     theme: ctx.theme || builtInTheme(type),
     generatedAt: ctx.generatedAt || null,
@@ -2825,7 +2833,7 @@ function renderContractInProcess(context) {
         const theme = ctx.theme || builtInTheme('contract');
         // Settings → General date format, like quotes and invoices (#1445;
         // contracts used to pass the locale here, which always fell back).
-        const dateFormat = ctx.dateFormat || { format: 'DD.MM.YYYY' };
+        const dateFormat = ctx.dateFormat || defaultDocumentDateFormat(ctx.issuer && ctx.issuer.countryCode);
         // A footer (theme) sits in the bottom margin, so the margin grows
         // by its height and body text never runs into it.
         const footerReserve = footerHeightFor(theme, ctx.issuer);

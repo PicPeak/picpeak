@@ -544,9 +544,10 @@ const EmailSignaturePreview: React.FC<{ profile: BusinessProfile }> = ({ profile
 
   // "LI-9494 Schaan / Liechtenstein" — the same shape the PDF issuer
   // block uses, assembled identically on the backend. A US business
-  // writes "Denver, CO 80202" with no country.
+  // writes "Denver, CO 80202" and a UK one "Glasgow G1 1AA", with no country.
   const usBusiness = isUnitedStates(profile.countryCode);
-  const cityCountry = [cityLine(profile), usBusiness ? '' : (profile.countryName || '')]
+  const noCountry = usBusiness || isUnitedKingdom(profile.countryCode);
+  const cityCountry = [cityLine(profile), noCountry ? '' : (profile.countryName || '')]
     .filter(Boolean).join(' / ');
 
   const addressLines = [profile.addressLine1, profile.addressLine2, cityCountry]

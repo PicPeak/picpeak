@@ -63,3 +63,42 @@ describe('isUnitedStates', () => {
     expect(isUnitedStates(null)).toBe(false);
   });
 });
+
+// A UK address (issue 2445): the post town and the postcode on lines of their
+// own when the address is set out line by line, "Glasgow G1 1AA" on one line,
+// and no country line on a UK business's letter to a UK address.
+describe('a UK address', () => {
+  const { cityLines, domesticCountryFor } = require('../../src/utils/postalAddress');
+  const glasgow = { city: 'Glasgow', postalCode: 'g1 1aa', countryCode: 'GB' };
+
+  test('reads town then postcode on one line, with no country-code prefix', () => {
+    expect(cityLine(glasgow)).toBe('Glasgow G1 1AA');
+    expect(cityLine({ ...glasgow, countryCode: 'uk' })).toBe('Glasgow G1 1AA');
+  });
+
+  test('puts town and postcode on lines of their own, the town in capitals on an envelope', () => {
+    expect(cityLines(glasgow)).toEqual(['Glasgow', 'G1 1AA']);
+    expect(cityLines(glasgow, { postTownCaps: true })).toEqual(['GLASGOW', 'G1 1AA']);
+    expect(cityLines({ city: 'Glasgow', countryCode: 'GB' })).toEqual(['Glasgow']);
+  });
+
+  test('every other country keeps its one line', () => {
+    expect(cityLines({ city: 'Schaan', postalCode: '9494', countryCode: 'LI' })).toEqual(['LI-9494 Schaan']);
+    expect(cityLines({ city: 'Denver', state: 'CO', postalCode: '80202', countryCode: 'US' }, { postTownCaps: true }))
+      .toEqual(['Denver, CO 80202']);
+    expect(cityLines({})).toEqual([]);
+  });
+
+  test('a UK business leaves the country off a UK address, and names it abroad', () => {
+    expect(printsCountryLine('GB', 'GB')).toBe(false);
+    expect(printsCountryLine(null, 'GB')).toBe(false);
+    expect(printsCountryLine('IE', 'GB')).toBe(true);
+    expect(printsCountryLine('GB', 'CH')).toBe(true);
+  });
+
+  test('a customer with no country is domestic for a US or UK business only', () => {
+    expect(domesticCountryFor('GB')).toBe('GB');
+    expect(domesticCountryFor('US')).toBe('US');
+    expect(domesticCountryFor('CH')).toBeNull();
+  });
+});
