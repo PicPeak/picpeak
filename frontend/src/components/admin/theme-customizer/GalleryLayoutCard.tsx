@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, Input } from '../../common';
 import { ThemeConfig, GalleryLayoutType } from '../../../types/theme.types';
 import { layoutIcons } from './icons';
+import { masonryModeOf } from '../../gallery/layouts/masonryMode';
 
 interface GalleryLayoutCardProps {
   localTheme: ThemeConfig;
@@ -27,6 +28,10 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
   minRecommendedThumbnailSize
 }) => {
   const { t } = useTranslation();
+  // The mode Masonry renders (masonryModeOf): a stored 'justified' shows as
+  // Rows and an unknown value as Columns; the stored value stays until the
+  // admin picks.
+  const masonryMode = masonryModeOf(localTheme.gallerySettings?.masonryMode);
 
   return (
     <Card className="p-6">
@@ -261,28 +266,25 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
                   {t('branding.masonryMode', 'Layout Mode')}
                 </label>
                 <select
-                  value={localTheme.gallerySettings?.masonryMode || 'columns'}
+                  value={masonryMode}
                   onChange={(e) => updateGallerySettings('masonryMode', e.target.value)}
                   className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
                 >
                   <option value="columns">{t('branding.masonryModeOptions.columns', 'Columns (Pinterest-style)')}</option>
                   <option value="rows">{t('branding.masonryModeOptions.rows', 'Rows (Custom justified)')}</option>
                   <option value="flickr">{t('branding.masonryModeOptions.flickr', 'Flickr (Battle-tested justified)')}</option>
-                  <option value="justified">{t('branding.masonryModeOptions.justified', 'Google Photos (Knuth-Plass algorithm)')}</option>
                 </select>
                 <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                  {localTheme.gallerySettings?.masonryMode === 'columns'
+                  {masonryMode === 'columns'
                     ? t('branding.masonryModeHint.columns', 'Pinterest-style vertical columns with varied heights')
-                    : localTheme.gallerySettings?.masonryMode === 'flickr'
+                    : masonryMode === 'flickr'
                     ? t('branding.masonryModeHint.flickr', 'Flickr\'s open-source justified layout algorithm')
-                    : localTheme.gallerySettings?.masonryMode === 'justified'
-                    ? t('branding.masonryModeHint.justified', 'Google Photos-style rows using Knuth-Plass algorithm for optimal breaks')
                     : t('branding.masonryModeHint.rows', 'Custom row-based justified layout')}
                 </p>
               </div>
 
               {/* Thumbnail scale - only for columns mode */}
-              {(!localTheme.gallerySettings?.masonryMode || localTheme.gallerySettings?.masonryMode === 'columns') && (
+              {masonryMode === 'columns' && (
                 <div>
                   <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
                     {t('branding.thumbnailScale', 'Thumbnail Scale')}
@@ -305,7 +307,7 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
               )}
 
               {/* Row-specific settings - show for all row-based modes */}
-              {['rows', 'flickr', 'justified'].includes(localTheme.gallerySettings?.masonryMode || '') && (
+              {(masonryMode === 'rows' || masonryMode === 'flickr') && (
                 <>
                   <div>
                     <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
@@ -323,7 +325,7 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
                     </p>
                   </div>
                   {/* Last row behavior - only for rows and flickr modes */}
-                  {['rows', 'flickr'].includes(localTheme.gallerySettings?.masonryMode || '') && (
+                  {(masonryMode === 'rows' || masonryMode === 'flickr') && (
                     <div>
                       <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
                         {t('branding.lastRowBehavior', 'Last Row Alignment')}
