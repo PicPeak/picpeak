@@ -102,7 +102,7 @@ export const PricingFactorsDialog: React.FC<Props> = ({
           )}
           {keptLines > 0 && (
             <p className="mt-3 text-xs text-warning-text" role="note">
-              {t('quotes.factors.keptLines', '{{count}} lines under this service were added or changed by hand. They stay as they are; check them after applying.', { count: keptLines })}
+              {t('quotes.factors.keptLines', '{{count}} lines under this service were added or changed by hand. They stay as they are; check them after applying. If one was a generated line, a fresh one is added, so the charge may appear twice.', { count: keptLines })}
             </p>
           )}
           <p className="mt-3 text-xs text-muted">
