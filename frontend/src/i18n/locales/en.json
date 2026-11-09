@@ -9564,6 +9564,8 @@
         "buffer": "Buffer (minutes)",
         "bufferHint": "Kept free before and after every booking.",
         "hold": "Hold a request for (hours)",
+        "maxOpen": "Open requests at most",
+        "maxOpenHint": "Beyond this, the page asks clients to write to you instead.",
         "holdHint": "An unanswered request frees its time after this."
       },
       "status": {

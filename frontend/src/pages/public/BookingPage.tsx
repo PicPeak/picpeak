@@ -5,11 +5,12 @@
  * confirms the price with a quote. Times show in the studio's time zone.
  *
  * Off (feature flag) or with no bookable service, the page says booking is
- * not available. The hidden `website` field is a honeypot; `startedAt` lets
- * the server drop a form posted faster than a person can fill it in.
+ * not available. The hidden `website` field is a honeypot; `formToken`
+ * (signed by the server when the page loads) lets it drop a form posted
+ * faster than a person can fill it in.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { CalendarCheck, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { Button, Loading } from '../../components/common';
@@ -40,7 +41,7 @@ export const BookingPage: React.FC = () => {
   const { isDark } = usePublicDarkMode();
   const { data: publicSettings } = usePublicSettings();
   const { format, formatTime } = useLocalizedDate();
-  const startedAt = useRef(Date.now());
+  const queryClient = useQueryClient();
 
   const { data: info, isLoading, isError } = useQuery({
     queryKey: ['public-booking'],
@@ -125,12 +126,16 @@ export const BookingPage: React.FC = () => {
         serviceId: service.id, values, start: slot.start,
         name: contact.name, email: contact.email, phone: contact.phone || undefined,
         company: contact.company || undefined, message: contact.message || undefined,
-        language: i18n.language, website: contact.website || undefined, startedAt: startedAt.current,
+        language: i18n.language, website: contact.website || undefined, formToken: info?.formToken,
       });
       setSent(res);
     } catch (err: any) {
       setSendError(errorText(err, t('booking.public.sendFailed', 'The request could not be sent. Please try again.')));
-      if (err?.response?.status === 409) setSlot(null);
+      if (err?.response?.status === 409) {
+        // Taken meanwhile: drop the choice and show what is free now.
+        setSlot(null);
+        queryClient.invalidateQueries({ queryKey: ['public-booking-slots'] });
+      }
     } finally {
       setSending(false);
     }

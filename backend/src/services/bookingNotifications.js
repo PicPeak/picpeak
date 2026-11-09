@@ -57,10 +57,10 @@ async function queue(type, recipient, data) {
 }
 
 /** A new request: confirm to the client, tell the business. */
-async function notifyReceived(request) {
+async function notifyReceived(request, { mailClient = true } = {}) {
   const { profile, language, vars } = await context(request);
   const base = ((await getFrontendBaseUrl()) || '').replace(/\/+$/, '');
-  await queue('booking_request_received', request.email, { ...vars, __language: language });
+  if (mailClient) await queue('booking_request_received', request.email, { ...vars, __language: language });
   if (profile && profile.email) {
     await queue('booking_request_admin', profile.email, {
       ...vars,

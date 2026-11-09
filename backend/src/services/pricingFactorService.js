@@ -494,6 +494,10 @@ async function priceWithFactors(presetId, opts = {}) {
       rateSource = 'item';
     } else {
       const rate = rateResolver.pickRate(await rateResolver.loadRates(customerId), priceMode);
+      if (!rate && clientOnly) {
+        // The public page: no pointer into the admin's settings.
+        throw new AppError('This service cannot be priced online right now.', 400, 'BOOKING_PRICE_UNAVAILABLE');
+      }
       if (!rate) {
         throw new AppError(
           priceMode === 'hour'
@@ -578,7 +582,8 @@ async function priceWithFactors(presetId, opts = {}) {
       lines.push({
         kind: 'factor',
         factorId: factor.id,
-        description: line.description,
+        // A factor the client does not see is not named to them either.
+        description: useDefault ? pdfI18n.t(language, 'factor_hidden') : line.description,
         quantity: line.quantity,
         unit: null,
         unitPriceMinor: line.unitPriceMinor,

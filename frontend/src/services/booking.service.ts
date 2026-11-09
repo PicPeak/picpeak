@@ -40,6 +40,7 @@ export interface BookingSettings {
   slotStepMinutes: number;
   bufferMinutes: number;
   holdHours: number;
+  maxOpenRequests: number;
   introText: string | null;
 }
 
@@ -78,6 +79,8 @@ export interface PublicBookingInfo {
   defaultLanguage: string | null;
   intro: string | null;
   timezone: string;
+  /** Signed by the server; sent back with the request (spam guard). */
+  formToken: string;
   leadTimeHours: number;
   horizonDays: number;
   services: PublicService[];
@@ -146,7 +149,7 @@ export const bookingService = {
   },
   async sendRequest(payload: {
     serviceId: number; values: Record<string, FactorValue>; start: string; name: string; email: string;
-    phone?: string; company?: string; message?: string; language?: string; website?: string; startedAt?: number;
+    phone?: string; company?: string; message?: string; language?: string; website?: string; formToken?: string;
   }): Promise<{ reference: string | null; holdExpiresAt?: string; estimateMinor?: number; currency?: string }> {
     const { data } = await api.post('/public/booking/requests', payload);
     return unwrap<{ reference: string | null; holdExpiresAt?: string; estimateMinor?: number; currency?: string }>(data);

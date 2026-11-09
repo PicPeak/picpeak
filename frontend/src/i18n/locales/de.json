@@ -9529,6 +9529,8 @@
         "buffer": "Puffer (Minuten)",
         "bufferHint": "Wird vor und nach jeder Buchung frei gehalten.",
         "hold": "Anfrage reservieren für (Stunden)",
+        "maxOpen": "Höchstens offene Anfragen",
+        "maxOpenHint": "Darüber bittet die Seite Kunden, Ihnen direkt zu schreiben.",
         "holdHint": "Eine unbeantwortete Anfrage gibt den Termin danach wieder frei."
       },
       "status": {

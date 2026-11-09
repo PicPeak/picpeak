@@ -25,7 +25,7 @@ import { useFeatureEnabled } from '../../../contexts/FeatureFlagsContext';
 type Tab = 'requests' | 'blocks' | 'settings';
 const TABS: Tab[] = ['requests', 'blocks', 'settings'];
 
-const inputCls = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900';
+const inputCls = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-panel';
 const labelCls = 'block text-sm font-medium text-body mb-1';
 const errorText = (err: any): string => err?.response?.data?.error || err?.message || 'Failed';
 
@@ -151,8 +151,9 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
                 </Button>
               </PermissionGate>
             )}
-            {r.status === 'pending' && (
-              <PermissionGate permission="quotes.manage">
+            {(r.status === 'pending' || r.status === 'expired') && (
+              // The route needs all three: new customer, project and quote.
+              <PermissionGate permissions={['quotes.manage', 'customers.create', 'events.edit']} requireAll>
                 <Button size="sm" disabled={busy === r.id} onClick={() => accept(r)}>
                   {t('booking.admin.accept', 'Accept and draft quote')}
                 </Button>
@@ -261,6 +262,7 @@ const NUMBER_FIELDS: Array<{ key: keyof BookingSettings; label: string; fallback
   { key: 'slotStepMinutes', label: 'booking.admin.field.step', fallback: 'Start times every (minutes)', hint: 'booking.admin.field.stepHint', hintFallback: 'Offered start times, e.g. every 30 minutes.' },
   { key: 'bufferMinutes', label: 'booking.admin.field.buffer', fallback: 'Buffer (minutes)', hint: 'booking.admin.field.bufferHint', hintFallback: 'Kept free before and after every booking.' },
   { key: 'holdHours', label: 'booking.admin.field.hold', fallback: 'Hold a request for (hours)', hint: 'booking.admin.field.holdHint', hintFallback: 'An unanswered request frees its time after this.' },
+  { key: 'maxOpenRequests', label: 'booking.admin.field.maxOpen', fallback: 'Open requests at most', hint: 'booking.admin.field.maxOpenHint', hintFallback: 'Beyond this, the page asks clients to write to you instead.' },
 ];
 
 const SettingsTab: React.FC<{ settings: BookingSettings; timezone: string; hasBusinessHours: boolean }> = ({ settings, timezone, hasBusinessHours }) => {

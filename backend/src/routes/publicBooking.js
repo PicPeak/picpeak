@@ -9,10 +9,12 @@
  *
  * A request writes only a booking_requests row; nothing reaches the CRM until
  * an admin accepts it. Abuse guards: per-IP rate limits, a honeypot field
- * (`website`) and a minimum fill time (`startedAt`). A bot that trips either
- * gets a 201 with no reference and nothing stored.
+ * (`website`) and a minimum fill time carried in a signed `formToken` from
+ * `GET /`. A bot that trips the honeypot or posts too fast gets a 201 with no
+ * reference and nothing stored; a missing or forged token is a 400.
  */
 
+const crypto = require('crypto');
 const express = require('express');
 const { body, query } = require('express-validator');
 const rateLimit = require('express-rate-limit');
@@ -27,15 +29,41 @@ const pricingFactors = require('../services/pricingFactorService');
 const router = express.Router();
 router.use(requireFeatureFlag('calendarBooking', 'BOOKING_DISABLED'));
 
-const limiter = (max, windowMs = 60 * 1000) => rateLimit({
-  windowMs, max, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,
+const limiter = (max, windowMs = 60 * 1000, extra = {}) => rateLimit({
+  windowMs, max, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey, ...extra,
 });
 const readLimiter = limiter(60);
 const estimateLimiter = limiter(60);
-const requestLimiter = limiter(5, 60 * 60 * 1000);
+// Only sent requests count: a 409 for a time taken meanwhile, or a refused
+// cap, must not lock a real client out. Open requests are capped per
+// client in the service (bookingService.assertMayRequest).
+const requestLimiter = limiter(5, 60 * 60 * 1000, { skipFailedRequests: true });
 
-// A person needs a few seconds for the form; a script posting at once doesn't.
+// A person needs a few seconds for the form; a script posting at once
+// doesn't. The start time travels in a token the server signed when the
+// page loaded, so it can neither be left out nor made up.
 const MIN_FILL_MS = 3000;
+const MAX_FORM_AGE_MS = 6 * 60 * 60 * 1000;
+
+function formSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET is required');
+  return `booking-form:${secret}`;
+}
+function signForm(issuedAt = Date.now()) {
+  const mac = crypto.createHmac('sha256', formSecret()).update(String(issuedAt)).digest('hex');
+  return `${issuedAt}.${mac}`;
+}
+/** 'ok', or why the token fails: 'invalid' (forged / old) or 'fast'. */
+function checkForm(token, now = Date.now()) {
+  const [issued, mac] = String(token || '').split('.');
+  const issuedAt = Number(issued);
+  if (!Number.isFinite(issuedAt) || !mac) return 'invalid';
+  const expected = crypto.createHmac('sha256', formSecret()).update(String(issuedAt)).digest('hex');
+  if (mac.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) return 'invalid';
+  if (now - issuedAt > MAX_FORM_AGE_MS) return 'invalid';
+  return now - issuedAt < MIN_FILL_MS ? 'fast' : 'ok';
+}
 
 function publicFactor(f) {
   return {
@@ -71,6 +99,7 @@ router.get(
       defaultLanguage: profile?.default_locale || null,
       intro: settings.intro_text || null,
       timezone,
+      formToken: signForm(),
       leadTimeHours: settings.lead_time_hours,
       horizonDays: settings.horizon_days,
       services: await Promise.all(catalogue.map(async ({ preset, factors }) => ({
@@ -92,7 +121,7 @@ const serviceIdValidator = body('serviceId').isInt({ min: 1 });
 router.post(
   '/estimate',
   estimateLimiter,
-  [serviceIdValidator, valuesValidator, body('language').optional({ values: 'falsy' }).isString().isLength({ max: 8 })],
+  [serviceIdValidator, valuesValidator, body('language').optional({ values: 'falsy' }).isIn(booking.LANGUAGES)],
   handleAsync(async (req, res) => {
     validateRequest(req);
     const preset = await booking.bookableService(req.body.serviceId);
@@ -122,7 +151,13 @@ router.get(
   handleAsync(async (req, res) => {
     validateRequest(req);
     const preset = await booking.bookableService(req.query.serviceId);
-    const values = preset.booking_duration_factor_id && req.query.duration
+    // Only a duration factor the client fills in takes a value from the
+    // page; a hidden one keeps its default, as in the estimate.
+    const durationFactor = preset.booking_duration_factor_id
+      ? await db('pricing_factors').where({ id: preset.booking_duration_factor_id }).first('client_visible')
+      : null;
+    const visible = durationFactor && (durationFactor.client_visible === true || durationFactor.client_visible === 1);
+    const values = visible && req.query.duration
       ? { [preset.booking_duration_factor_id]: Number(req.query.duration) }
       : {};
     const result = await booking.availableSlots(preset, { from: req.query.from, to: req.query.to, values });
@@ -142,14 +177,18 @@ router.post(
     body('phone').optional({ values: 'falsy' }).isString().isLength({ max: 40 }),
     body('company').optional({ values: 'falsy' }).isString().isLength({ max: 160 }),
     body('message').optional({ values: 'falsy' }).isString().isLength({ max: 5000 }),
-    body('language').optional({ values: 'falsy' }).isString().isLength({ max: 8 }),
+    body('language').optional({ values: 'falsy' }).isIn(booking.LANGUAGES),
     body('website').optional({ values: 'falsy' }).isString().isLength({ max: 500 }),
-    body('startedAt').optional({ values: 'falsy' }).isInt({ min: 0 }),
+    body('formToken').isString().isLength({ min: 10, max: 200 }),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const filledTooFast = req.body.startedAt && Date.now() - Number(req.body.startedAt) < MIN_FILL_MS;
-    if (req.body.website || filledTooFast) {
+    const form = checkForm(req.body.formToken);
+    if (form === 'invalid') {
+      // Forged, or a page left open for hours: reload to get a fresh one.
+      return res.status(400).json({ error: 'The form has expired. Please reload the page.', code: 'BOOKING_FORM_EXPIRED' });
+    }
+    if (req.body.website || form === 'fast') {
       logger.info('Booking request dropped by the spam guard', { honeypot: Boolean(req.body.website) });
       return successResponse(res, { reference: null, status: 'pending' }, 201);
     }
@@ -163,6 +202,7 @@ router.post(
       company: req.body.company,
       message: req.body.message,
       language: req.body.language,
+      clientKey: rateLimitKey(req),
     });
     return successResponse(res, {
       reference: request.reference,

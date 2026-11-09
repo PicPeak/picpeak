@@ -2140,12 +2140,7 @@
       "decision": "excluded",
       "signals": [],
       "reason": "Installation payment credentials and provider probes are excluded from product usage.",
-      "route_signatures": [
-        "GET /",
-        "PUT /",
-        "GET /orders",
-        "POST /test"
-      ]
+      "route_signatures": ["GET /", "PUT /", "GET /orders", "POST /test"]
     },
     "stripeWebhook.js": {
       "decision": "excluded",

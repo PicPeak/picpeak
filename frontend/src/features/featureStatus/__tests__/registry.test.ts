@@ -22,7 +22,7 @@ describe('featureState', () => {
     expect(featureState('customerPortal', day(400))).toBe('beta');
     expect(featureState('quotes', day(400))).toBe('beta');
     expect(featureState('crmDevelopment', day(400))).toBe('experimental');
-    expect(featureState('calendarBooking', day(400))).toBe('roadmap');
+    expect(featureState('calendarBooking', day(400))).toBe('beta');
     expect(featureState('portalCalendar', day(400))).toBe('roadmap');
   });
 
