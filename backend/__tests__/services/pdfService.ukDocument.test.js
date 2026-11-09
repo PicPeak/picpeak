@@ -149,13 +149,85 @@ describe('a UK VAT invoice', () => {
   });
 });
 
+// Issue 2445: UK addresses and dates the way a UK reader expects them.
+describe('UK address and date format', () => {
+  test('the recipient reads post town and postcode on lines of their own, with no country line', async () => {
+    const drawn = drawnText();
+    await pdfService.renderInvoiceToBuffer(invoiceContext());
+    const texts = drawn();
+    expect(texts).toEqual(expect.arrayContaining(['LEEDS', 'LS1 1AA']));
+    expect(mentions(texts, 'GB-')).toBe(false);
+    expect(mentions(texts, 'United Kingdom')).toBe(false);
+  });
+
+  test('a UK customer with no country is still a UK address', async () => {
+    const drawn = drawnText();
+    await pdfService.renderInvoiceToBuffer(invoiceContext({ recipient: { ...recipient, countryCodeIso: null } }));
+    expect(drawn()).toEqual(expect.arrayContaining(['LEEDS', 'LS1 1AA']));
+  });
+
+  test('the letterhead puts the business town and postcode on lines of their own', async () => {
+    const drawn = drawnText();
+    await pdfService.renderInvoiceToBuffer(invoiceContext());
+    expect(drawn()).toEqual(expect.arrayContaining(['Manchester', 'M1 1AA']));
+  });
+
+  test('a customer abroad keeps the country line', async () => {
+    const drawn = drawnText();
+    await pdfService.renderInvoiceToBuffer(invoiceContext({
+      recipient: { ...recipient, city: 'Dublin', postalCode: 'D02 X285', countryCodeIso: 'IE', country: 'Ireland' },
+    }));
+    expect(drawn()).toEqual(expect.arrayContaining(['IE-D02 X285 Dublin', 'Ireland']));
+  });
+
+  test('dates read day/month/year when no date format is set', async () => {
+    const drawn = drawnText();
+    await pdfService.renderInvoiceToBuffer(invoiceContext());
+    const texts = drawn();
+    expect(mentions(texts, '09/11/2026')).toBe(true);
+    expect(mentions(texts, '09.11.2026')).toBe(false);
+  });
+
+  test('a date format chosen in Settings still wins', async () => {
+    const drawn = drawnText();
+    await pdfService.renderInvoiceToBuffer(invoiceContext({ dateFormat: { format: 'YYYY-MM-DD' } }));
+    expect(mentions(drawn(), '2026-11-09')).toBe(true);
+  });
+
+  test('a contract of a UK business dates its pages day/month/year too', async () => {
+    const drawn = drawnText();
+    await pdfService.renderContractToBuffer({
+      locale: 'en', issuer: ukIssuer(), recipient,
+      doc: { contractNumber: 'C-2026-0001', issueDate: '2026-11-09' }, sections: [],
+    });
+    expect(mentions(drawn(), '09/11/2026')).toBe(true);
+  });
+
+  test('a business outside the UK keeps a UK customer\'s address as before', async () => {
+    const drawn = drawnText();
+    await pdfService.renderInvoiceToBuffer(invoiceContext({ issuer: ukIssuer({ countryCode: 'CH', postalCode: '8001', city: 'Zürich' }) }));
+    const texts = drawn();
+    expect(texts).toContain('GB-LS1 1AA Leeds');
+    expect(texts).not.toContain('LEEDS');
+  });
+
+  test('a business elsewhere keeps its dates and its letterhead as before', async () => {
+    const drawn = drawnText();
+    await pdfService.renderInvoiceToBuffer(invoiceContext({ issuer: ukIssuer({ countryCode: 'LI', postalCode: '9494', city: 'Schaan' }) }));
+    const texts = drawn();
+    expect(mentions(texts, '09.11.2026')).toBe(true);
+    expect(mentions(texts, '09/11/2026')).toBe(false);
+    expect(texts).toEqual(expect.arrayContaining(['LI-9494 Schaan / Liechtenstein']));
+  });
+});
+
 // Luap round 1 on PR 2447.
 describe('the registered office and long disclosures', () => {
   const { legalDisclosureLines, smallTextSize, pageMetricsFor, t } = pdfService._internal;
 
   test('a company that leaves the field blank shows its letterhead address as the registered office', () => {
     const lines = legalDisclosureLines(ukIssuer({ registeredOffice: '', addressLine2: 'Unit 4' }), 'en');
-    expect(lines).toContain('Registered office: 1 High Street, Unit 4, GB-M1 1AA Manchester');
+    expect(lines).toContain('Registered office: 1 High Street, Unit 4, Manchester M1 1AA');
   });
 
   test('a long disclosure wraps inside the content width, at the narrowest margins and largest text', () => {

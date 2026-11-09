@@ -16,6 +16,11 @@ test('a US business prints month, day and year', () => {
   expect(formatShortDate(dueDate, 'us')).toBe('11/27/2026');
 });
 
+test('a UK business prints day/month/year (issue 2445)', () => {
+  expect(formatShortDate(dueDate, 'GB')).toBe('27/11/2026');
+  expect(formatShortDate(dueDate, 'uk')).toBe('27/11/2026');
+});
+
 test('a business elsewhere keeps day.month.year', () => {
   expect(formatShortDate(dueDate, 'LI')).toBe('27.11.2026');
   expect(formatShortDate(dueDate)).toBe('27.11.2026');

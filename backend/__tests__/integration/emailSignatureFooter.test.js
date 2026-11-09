@@ -119,6 +119,19 @@ describe('wrapEmailHtml — business-profile signature footer', () => {
     expect(html).not.toContain('United States');
   });
 
+  it("writes a UK business's address as town then postcode, with no country (issue 2445)", async () => {
+    await enable({
+      address_line1: '12 Bath Street', postal_code: 'g1 1aa', city: 'Glasgow', state: null,
+      country_code: 'GB', country_name: 'United Kingdom',
+    });
+
+    const html = await wrapEmailHtml('<p>Body</p>', 'Subject');
+
+    expect(html).toContain('Glasgow G1 1AA');
+    expect(html).not.toContain('GB-');
+    expect(html).not.toContain('United Kingdom');
+  });
+
   it("labels a US business's tax number as an EIN", async () => {
     await enable({ country_code: 'US', vat_id: '12-3456789' });
 

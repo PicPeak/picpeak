@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const { db, logActivity } = require('../../database/db');
+const { readDocumentDateFormat } = require('../../utils/documentDateFormat');
 const logger = require('../../utils/logger');
 const { getAppSetting } = require('../../utils/appSettings');
 const { AppError } = require('../../utils/errors');
@@ -201,6 +202,7 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
         signedAt: now,
         nameLabel: refreshed.contract.language === 'de' ? 'Name' : 'Name',
         dateLabel: refreshed.contract.language === 'de' ? 'Datum' : 'Date',
+        dateFormat: await readDocumentDateFormat(),
       },
     });
     const { storedPath: signedPath, sha256: signedSha256 } = await persistContractPdf(
@@ -389,7 +391,7 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
     // that fails: a counter-signed PDF missing a signature must fail the
     // render and leave the recovery marker, not be recorded as done.
     let stampedBuffer = fs.readFileSync(unsignedPdf);
-    for (const stamp of buildSignatureStamps(refreshed.contract)) {
+    for (const stamp of buildSignatureStamps(refreshed.contract, { dateFormat: await readDocumentDateFormat() })) {
       stampedBuffer = await pdfStampService.stampSignature({ pdfBuffer: stampedBuffer, ...stamp });
     }
     const suffix = newStatus === 'fully_signed' ? 'fully-signed' : 'signed-by-admin';
@@ -843,7 +845,7 @@ async function rerenderAndResend(contractId, adminId) {
       );
     }
     const originalBuffer = fs.readFileSync(unsignedPdf);
-    const stamps = buildSignatureStamps(refreshed.contract);
+    const stamps = buildSignatureStamps(refreshed.contract, { dateFormat: await readDocumentDateFormat() });
     const { buffer: stampedBuffer, sha256: signedSha256, failed: failedStamps } =
       await pdfStampService.stampSignatures(originalBuffer, stamps);
     // A PDF missing a signature must not be recorded, or mailed to both
@@ -1044,7 +1046,7 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
     );
   }
   const originalBuffer = fs.readFileSync(unsignedPdf);
-  const stamps = buildSignatureStamps(refreshed.contract);
+  const stamps = buildSignatureStamps(refreshed.contract, { dateFormat: await readDocumentDateFormat() });
   const { buffer: stampedBuffer, sha256: signedSha256, failed: failedStamps } =
     await pdfStampService.stampSignatures(originalBuffer, stamps);
   // A PDF missing a signature is not recorded. A countersignature takes a

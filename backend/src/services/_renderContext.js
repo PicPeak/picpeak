@@ -41,7 +41,7 @@
  * verbatim duplicates across all three services.
  */
 
-const { cityLine, isUnitedStates } = require('../utils/postalAddress');
+const { cityLine, isUnitedStates, isUnitedKingdom } = require('../utils/postalAddress');
 
 /**
  * Build the `issuer` field for a render context. The shape mirrors the
@@ -154,15 +154,17 @@ function buildRecipientBlock(profile, customer) {
   // PDF, but having the string available means audit views can show
   // it. This unifies the previously-drifted contractService and
   // quote/invoice behavior under the renderer-aware contract.
-  // "Attn:" from a US business, "z. Hd." everywhere else.
+  // "Attn:" from a US or UK business, "z. Hd." everywhere else.
   const attentionParts = [customer?.salutation, personFull].filter(Boolean);
-  const attentionPrefix = isUnitedStates(profile?.country_code) ? 'Attn:' : 'z. Hd.';
+  const attentionPrefix = isUnitedStates(profile?.country_code) || isUnitedKingdom(profile?.country_code)
+    ? 'Attn:' : 'z. Hd.';
   const attentionLine = attentionParts.length > 0
     ? `${attentionPrefix} ${attentionParts.join(' ')}`
     : '';
   // The return address shown in the envelope window, on one line. A US
-  // business's ends in "Denver, CO 80202" (utils/postalAddress).
-  const returnCity = isUnitedStates(profile?.country_code)
+  // business's ends in "Denver, CO 80202", a UK one's in "Glasgow G1 1AA"
+  // (utils/postalAddress).
+  const returnCity = isUnitedStates(profile?.country_code) || isUnitedKingdom(profile?.country_code)
     ? cityLine({ postalCode: profile.postal_code, city: profile.city, state: profile.state, countryCode: profile.country_code })
     : `${profile?.postal_code || ''} ${profile?.city || ''}`;
   return {
