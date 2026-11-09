@@ -9635,6 +9635,8 @@
       "editFactors": "Pricing factors",
       "empty": "No pricing factors yet.",
       "fromPostcode": "From postcode {{postcode}}",
+      "keptLines_one": "{{count}} line under this service was added or changed by hand. It stays as it is; check it after applying.",
+      "keptLines_other": "{{count}} lines under this service were added or changed by hand. They stay as they are; check them after applying.",
       "intro": "Inputs that change a service's price, such as session length, kind of work, travel zone or editing effort. Attach them to services on the Services tab.",
       "new": "New factor",
       "noDefault": "None",

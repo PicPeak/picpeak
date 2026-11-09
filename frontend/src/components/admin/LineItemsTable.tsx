@@ -160,6 +160,28 @@ function isSub(li: EditableLineItem) {
   return li.parentPosition != null;
 }
 
+/**
+ * Positions of the sub-lines under `parentPosition` that the last factor
+ * pricing made and nobody changed since: each matches a line recorded in the
+ * parent's snapshot (description, quantity, unit price), used once.
+ */
+function generatedSubLines(items: EditableLineItem[], parentPosition: number): Set<number> {
+  const parent = items.find((it) => it.position === parentPosition);
+  const recorded = [...(parent?.pricingFactors?.lines || [])];
+  const out = new Set<number>();
+  for (const it of items) {
+    if (it.parentPosition !== parentPosition) continue;
+    const i = recorded.findIndex((l) => l.description === it.description
+      && Number(l.quantity) === Number(it.quantity)
+      && l.unitPriceMinor === Math.round((Number(it.unitPrice) || 0) * 100));
+    if (i >= 0) {
+      out.add(it.position);
+      recorded.splice(i, 1);
+    }
+  }
+  return out;
+}
+
 const isDiscount = (li: EditableLineItem) => li.lineKind === 'discount';
 const isRatePriced = (li: EditableLineItem) => li.priceMode === 'hour' || li.priceMode === 'day';
 const usesRateChain = (li: EditableLineItem) => ['auto', 'customer', 'default'].includes(li.rateSource || '');
@@ -223,6 +245,8 @@ export const LineItemsTable: React.FC<Props> = ({
   const [factorDialog, setFactorDialog] = useState<{
     presetId: number; factorIds: number[]; name: string; description: string; detailsText: string;
     initialValues: Record<string, FactorValue> | null; replacePosition: number | null;
+    /** Sub-lines that stay on re-pricing (added or changed by hand). */
+    keptLines: number;
   } | null>(null);
   const factorsFor = (ids: number[] | undefined) => (ids || [])
     .map((id) => factors.find((f) => f.id === id))
@@ -237,9 +261,10 @@ export const LineItemsTable: React.FC<Props> = ({
   const applyFactors = (result: FactorPriceResult) => {
     if (!factorDialog) return;
     const { replacePosition } = factorDialog;
-    const kept = replacePosition == null
-      ? items
-      : items.filter((it) => it.parentPosition !== replacePosition);
+    // Re-pricing removes only the sub-lines the last pricing made and the
+    // admin left as they were; lines added or changed by hand stay.
+    const generated = replacePosition == null ? new Set<number>() : generatedSubLines(items, replacePosition);
+    const kept = items.filter((it) => !generated.has(it.position));
     let pos = nextFreshPosition(items);
     const parentPos = replacePosition ?? pos++;
     const subLines: EditableLineItem[] = result.lines.map((l) => ({
@@ -298,6 +323,7 @@ export const LineItemsTable: React.FC<Props> = ({
         detailsText: preset.detailsText || '',
         initialValues: null,
         replacePosition: null,
+        keptLines: 0,
       });
       return;
     }
@@ -763,19 +789,21 @@ export const LineItemsTable: React.FC<Props> = ({
                         {isQuote && isRatePriced(li) && rateBadge(li) && (
                           <span className={`rounded bg-inset px-1.5 py-0.5 text-[11px] ${dim}`}>{rateBadge(li)}</span>
                         )}
-                        {canPriceFactors && !sub && li.pricingFactors && (
+                        {canPriceFactors && !sub && li.pricingFactors && presets.some((p) => p.id === li.pricingFactors!.presetId) && (
                           <button
                             type="button"
                             className={`inline-flex items-center gap-1 text-accent hover:underline ${dim}`}
                             onClick={() => {
+                              // Hidden for an archived service (not in the active
+                              // list): the server refuses to price it again.
                               const snap = li.pricingFactors!;
-                              const preset = presets.find((p) => p.id === snap.presetId);
+                              const preset = presets.find((p) => p.id === snap.presetId)!;
+                              const children = items.filter((it) => it.parentPosition === li.position).length;
                               setFactorDialog({
                                 presetId: snap.presetId,
-                                // An archived item is no longer in the picker's list;
-                                // the snapshot still names its factors.
-                                factorIds: preset?.factorIds || snap.factors.map((f) => f.id),
-                                name: preset?.name || snap.presetName,
+                                factorIds: preset.factorIds || [],
+                                name: preset.name,
+                                keptLines: children - generatedSubLines(items, li.position).size,
                                 description: li.description,
                                 detailsText: li.detailsText || '',
                                 initialValues: snap.values,
@@ -933,6 +961,7 @@ export const LineItemsTable: React.FC<Props> = ({
           currency={currency}
           factors={factorsFor(factorDialog.factorIds)}
           initialValues={factorDialog.initialValues}
+          keptLines={factorDialog.keptLines}
           price={(values) => priceWithFactors(factorDialog.presetId, values)}
           onApply={applyFactors}
           onClose={() => setFactorDialog(null)}
