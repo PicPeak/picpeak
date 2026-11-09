@@ -33,6 +33,7 @@ const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 
 const DEPOSIT_TYPES = ['none', 'percent', 'fixed'];
 const LATE_PAYMENT_REASON = 'Your payment arrived after the reservation had run out, and the time has been booked since.';
+const LATE_PAYMENT_PAST_REASON = 'Your payment arrived after the reservation had run out, and the time has already passed.';
 const GALLERY_UNLOCK = ['full_payment', 'deposit', 'off'];
 // Stripe's shortest Checkout lifetime; the hold covers it with a margin.
 const CHECKOUT_MINUTES = 30;
@@ -128,6 +129,10 @@ async function notifyPaid(requestId, opts = {}) {
   });
 }
 
+// A payment that arrives after the hold: the request is expired, or still
+// waiting because the sweep has not run yet.
+const LATE_STATUSES = ['expired', 'awaiting_payment'];
+
 /**
  * Apply an authoritative Checkout Session to its request. Idempotent: every
  * write is conditional on the state it moves from.
@@ -156,7 +161,11 @@ async function reconcileSession(request, session) {
       hold_expires_at: ts(now.getTime() + settings.hold_hours * 3600000),
       updated_at: ts(now),
     };
+    // Only while the hold still runs: once it has run out, the slot may have
+    // gone to another request before the sweep marked this one expired, so
+    // the payment takes the locked path below.
     const updated = await db('booking_requests').where({ id: request.id, status: 'awaiting_payment' })
+      .andWhere('hold_expires_at', '>', ts(now))
       .whereIn('deposit_status', ['open', 'expired'])
       .update({ status: 'pending', ...paidFields });
     if (updated) {
@@ -169,21 +178,25 @@ async function reconcileSession(request, session) {
     const booking = require('./bookingService');
     await hasColumnCached('booking_requests', 'deposit_status'); // warm before the transaction
     const outcome = await booking.withRequestLock(async (trx) => {
-      const late = await trx('booking_requests').where({ id: request.id, status: 'expired' })
+      // Expired, or still waiting with its hold run out (not swept yet).
+      const late = await trx('booking_requests').where({ id: request.id }).whereIn('status', LATE_STATUSES)
         .whereIn('deposit_status', ['open', 'expired']).first();
       if (!late) return 'none';
       // An admin decision does not take this lock: a write that matched
       // nothing means the request was decided meanwhile, handled below.
-      if (!(await booking.slotTaken(late, trx))) {
-        const restored = await trx('booking_requests').where({ id: late.id, status: 'expired' })
+      // A time that has already begun is not given back either.
+      const begun = new Date(ts(late.starts_at)).getTime() <= now.getTime();
+      if (!begun && !(await booking.slotTaken(late, trx))) {
+        const restored = await trx('booking_requests').where({ id: late.id }).whereIn('status', LATE_STATUSES)
           .whereIn('deposit_status', ['open', 'expired'])
           .update({ status: 'pending', ...paidFields });
         return restored ? 'restored' : 'none';
       }
-      const taken = await trx('booking_requests').where({ id: late.id, status: 'expired' })
+      const taken = await trx('booking_requests').where({ id: late.id }).whereIn('status', LATE_STATUSES)
         .whereIn('deposit_status', ['open', 'expired'])
-        .update({ ...paidFields, hold_expires_at: late.hold_expires_at });
-      return taken ? 'taken' : 'none';
+        .update({ ...paidFields, status: 'expired', hold_expires_at: late.hold_expires_at });
+      if (!taken) return 'none';
+      return begun ? 'begun' : 'taken';
     });
     if (outcome === 'restored') {
       await notifyPaid(request.id);
@@ -208,12 +221,13 @@ async function reconcileSession(request, session) {
       }
       return 'paid';
     }
-    if (outcome === 'taken') {
-      // The time went to someone else: refund, and tell the client why.
+    if (outcome === 'taken' || outcome === 'begun') {
+      // The time went to someone else, or has already begun: refund, and
+      // tell the client why.
       const row = await db('booking_requests').where({ id: request.id }).first();
       await refundDeposit(row);
       await require('./bookingNotifications').notifyDeclined(
-        { ...(await db('booking_requests').where({ id: request.id }).first()), decline_reason: LATE_PAYMENT_REASON },
+        { ...(await db('booking_requests').where({ id: request.id }).first()), decline_reason: outcome === 'begun' ? LATE_PAYMENT_PAST_REASON : LATE_PAYMENT_REASON },
       ).catch((err) => logger.warn('Could not queue the late-payment refund mail', { requestId: request.id, error: err.message }));
       return 'refunded';
     }

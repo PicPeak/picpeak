@@ -573,6 +573,11 @@ describe('review round 2', () => {
     expect(res.status).toBe(201);
     return { res, row: await db('booking_requests').where({ reference: res.body.reference }).first() };
   };
+  const payAndHook = async (row) => {
+    const session = pay(row.checkout_session_id);
+    await webhook('checkout.session.completed', { id: session.id, metadata: session.metadata }).expect(200);
+    return session;
+  };
   const hook = async (session) => webhook('checkout.session.completed', { id: session.id, metadata: session.metadata }).expect(200);
   const status = async (id) => (await db('booking_requests').where({ id }).first()).deposit_status;
 
@@ -636,5 +641,35 @@ describe('review round 2', () => {
     expect([accepted.status, accepted.body.code || accepted.body.error?.code]).toEqual([409, 'BOOKING_CLIENT_ERASED']);
     const declined = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/decline`).set(auth).send({});
     expect(declined.body.request.depositStatus).toBe('refunded');
+    // No mail to the placeholder address.
+    expect(await db('email_queue').where({ email_type: 'booking_request_declined', recipient_email: 'erased@deleted.invalid' }).first()).toBeUndefined();
+  });
+
+  test('a payment after the hold ran out, not yet swept, cannot take a time held since', async () => {
+    const { row } = await open(day(56), '09:00', 'unswept@example.test');
+    const past = new Date(Date.now() - 60000).toISOString();
+    // Still awaiting payment: the hourly sweep has not run. Another client
+    // holds the time meanwhile (written directly, as no request route ran).
+    await db('booking_requests').where({ id: row.id }).update({ hold_expires_at: past });
+    const { id: _id, reference: _r, checkout_session_id: _c, status_token_hash: _t, ...copy } = row;
+    await db('booking_requests').insert({
+      ...copy, reference: 'HOLDER0001', status: 'pending', deposit_status: 'none', email: 'holder@example.test',
+      hold_expires_at: new Date(Date.now() + 3600000).toISOString(),
+    });
+    await payAndHook(row);
+    expect(await db('booking_requests').where({ id: row.id }).first()).toMatchObject({ status: 'expired', deposit_status: 'refunded' });
+  });
+
+  test('a late payment for a time that has already begun is refunded', async () => {
+    const { row } = await open(day(56), '13:00', 'begun@example.test');
+    await db('booking_requests').where({ id: row.id }).update({
+      status: 'expired', deposit_status: 'expired',
+      starts_at: new Date(Date.now() - 3600000).toISOString(), ends_at: new Date(Date.now() - 60000).toISOString(),
+    });
+    await payAndHook(row);
+    expect(await db('booking_requests').where({ id: row.id }).first()).toMatchObject({ status: 'expired', deposit_status: 'refunded' });
+    const mail = await db('email_queue').where({ email_type: 'booking_request_declined', recipient_email: 'begun@example.test' }).first();
+    const data = typeof mail.email_data === 'string' ? JSON.parse(mail.email_data) : mail.email_data;
+    expect(data.decline_reason).toMatch(/already passed/);
   });
 });

@@ -75,6 +75,8 @@ async function notifyReceived(request, { mailClient = true } = {}) {
 
 /** The admin declined: tell the client. */
 async function notifyDeclined(request) {
+  // An erased client has no address left to write to.
+  if (request.email === require('./bookingService').ERASED_EMAIL) return;
   const { language, vars } = await context(request);
   const deposit = new Intl.NumberFormat(language === 'de' ? 'de-CH' : 'en-GB', { style: 'currency', currency: request.currency || 'CHF' })
     .format(Number(request.deposit_minor || 0) / 100);

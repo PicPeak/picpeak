@@ -833,6 +833,7 @@ module.exports = {
   LANGUAGES,
   iso,
   forgetCustomer,
+  ERASED_EMAIL,
   withRequestLock,
   slotTaken,
   startBookingHousekeeping,
