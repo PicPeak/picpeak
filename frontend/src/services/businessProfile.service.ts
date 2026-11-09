@@ -154,6 +154,12 @@ export const businessProfileService = {
     return data.data || data;
   },
 
+  /** Only the business's country — readable by anyone who writes invoices, quotes or customers. */
+  async getRegion(): Promise<{ countryCode: string | null }> {
+    const { data } = await api.get('/admin/business-profile/region');
+    return data.data || data;
+  },
+
   async update(payload: BusinessProfilePatch): Promise<BusinessProfileSnapshot> {
     const { data } = await api.put('/admin/business-profile', payload);
     return data.data || data;

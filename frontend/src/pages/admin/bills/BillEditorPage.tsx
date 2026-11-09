@@ -21,9 +21,8 @@ import { billsService, type InvoiceCreatePayload, type InvoiceQrFormat } from '.
 import { quotesService } from '../../../services/quotes.service';
 import { contractsService } from '../../../services/contracts.service';
 import { businessProfileService } from '../../../services/businessProfile.service';
-import { usePermissions } from '../../../contexts/PermissionsContext';
 import { DecimalInput } from '../../../components/common/DecimalInput';
-import { isUnitedKingdom } from '../../../utils/postalAddress';
+import { useUkBusiness } from '../../../hooks/useUkBusiness';
 import { CustomerPicker } from '../../../components/admin/CustomerPicker';
 import { VatRateSelect } from '../../../components/admin/VatRateSelect';
 import { accountingService } from '../../../services/accounting.service';
@@ -149,19 +148,9 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     queryKey: ['business-bank-accounts'],
     queryFn: () => businessProfileService.listBankAccounts(),
   });
-  // The business's country: a UK business rounds its VAT total down and
-  // states the VAT in GBP on an invoice in another currency. The profile
-  // route needs settings.view / settings.banking; without it the preview
-  // keeps the default rounding and the backend still applies the rule.
-  const { hasAnyPermission, isSuperAdmin } = usePermissions();
-  const canReadProfile = isSuperAdmin || hasAnyPermission(['settings.view', 'settings.banking']);
-  const { data: profileSnapshot } = useQuery({
-    queryKey: ['business-profile-snapshot'],
-    queryFn: () => businessProfileService.get(),
-    staleTime: 5 * 60 * 1000,
-    enabled: canReadProfile,
-  });
-  const ukBusiness = isUnitedKingdom(profileSnapshot?.profile?.countryCode);
+  // A UK business rounds its VAT total down and states the VAT in GBP on an
+  // invoice in another currency. Read from a route every bill editor may call.
+  const ukBusiness = useUkBusiness();
   const bankAccounts = bankAccountsData?.bankAccounts || [];
 
   // Migration 124 split the legacy payment-term template into Net days
@@ -471,8 +460,8 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     vatCode,
     // The GBP rate as loaded or typed, null when there is none or the invoice
     // is in GBP; the server keeps it only for a UK business. Not tied to the
-    // profile query, so a loaded invoice doesn't turn dirty when that query
-    // lands, and an admin who can't read the profile saves the stored rate back.
+    // country query, so a loaded invoice doesn't turn dirty when that query
+    // lands, and a failed query still saves the stored rate back.
     vatGbpRate: currency !== 'GBP' && Number.isFinite(vatGbpRate) && vatGbpRate > 0 ? vatGbpRate : null,
     shippingAmountMinor: toMinor(shipping),
     // A cleared field is sent as null so the save clears it (see the event

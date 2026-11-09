@@ -32,7 +32,7 @@ import {
   type CustomerAccountDetail,
 } from '../../services/customerAdmin.service';
 import { businessProfileService } from '../../services/businessProfile.service';
-import { isUnitedKingdom } from '../../utils/postalAddress';
+import { useUkBusiness } from '../../hooks/useUkBusiness';
 import { CustomerCrmPanels } from '../../components/admin/CustomerCrmPanels';
 import { HoursSection } from '../../components/admin/HoursSection';
 import { CustomerDocumentsCard } from '../../components/admin/CustomerDocumentsCard';
@@ -109,7 +109,7 @@ export const CustomerDetailPage: React.FC = () => {
   const profileDefaultCurrency = profileSnapshot?.profile?.defaultCurrency || 'CHF';
   // UK consumer law and the B2B late-payment notice turn on whether the
   // customer is a business (issue 2439); other businesses never use it.
-  const ukBusiness = isUnitedKingdom(profileSnapshot?.profile?.countryCode);
+  const ukBusiness = useUkBusiness();
   const LOCALE_LABELS: Record<string, string> = {
     en: 'English', de: 'Deutsch', fr: 'Français',
     nl: 'Nederlands', pt: 'Português', ru: 'Русский',
@@ -552,7 +552,7 @@ export const CustomerDetailPage: React.FC = () => {
               <label className="block text-sm font-medium text-heading mb-1">{t('customers.detail.customerKind', 'Business or consumer')}</label>
               <select
                 value={form.customerKind || ''}
-                onChange={(e) => setForm((prev) => ({ ...prev, customerKind: e.target.value || null }))}
+                onChange={(e) => setForm((prev) => ({ ...prev, customerKind: (e.target.value || null) as CustomerAccountDetail['customerKind'] }))}
                 className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus:ring-2 focus:ring-accent"
               >
                 <option value="">

@@ -207,6 +207,18 @@ describe('instalments', () => {
       .toEqual([[503, 100, 603], [502, 100, 602]]);
   });
 
+  test('every instalment keeps the GBP rate entered on the invoice', async () => {
+    await setCountry('GB');
+    const { invoiceIds } = await invoiceService().createInvoice({
+      customerAccountId: customerId, currency: 'EUR', vatRate: 20, vatGbpRate: '0,87',
+      lineItems: [{ position: 1, quantity: 1, description: 'Shoot', unit_price_minor: 1005, discount_percent: 0 }],
+      installments: [{ percent: 50, trigger: 'quote_accepted', offset_days: 0 }, { percent: 50, trigger: 'quote_accepted', offset_days: 0 }],
+    }, adminId);
+    expect(invoiceIds).toHaveLength(2);
+    const rows = await db('invoices').whereIn('id', invoiceIds);
+    expect(rows.map((r) => Number(r.vat_gbp_rate))).toEqual([0.87, 0.87]);
+  });
+
   test('a business elsewhere keeps the proportional split', async () => {
     await setCountry('CH');
     const rows = await spawn();
@@ -236,5 +248,44 @@ describe('sending a UK invoice in another currency', () => {
     expect(Number(invoice.vat_amount_minor)).toBe(0);
     const result = await invoiceService().sendInvoice(invoice.id, adminId).catch((err) => err);
     expect(result && result.code).not.toBe('VAT_GBP_RATE_REQUIRED');
+  });
+});
+
+// Luap round 1 on PR 2447: the monthly draft keeps the rate, and invoices
+// waiting for one stay out of the scheduler's batch so they can't hold back
+// the rest.
+describe('the GBP rate on the way to the send', () => {
+  beforeAll(() => setCountry('GB'));
+  afterEach(() => setCustomer({ billing_cadence: 'per_event' }));
+
+  test('a monthly customer\'s draft keeps the rate entered with the items', async () => {
+    await setCustomer({ billing_cadence: 'manual' });
+    const { invoiceIds } = await invoiceService().createInvoice({
+      customerAccountId: customerId, currency: 'EUR', vatRate: 20, vatGbpRate: 0.86,
+      lineItems: [{ position: 1, quantity: 1, description: 'Edit', unit_price_minor: 1000, discount_percent: 0 }],
+    }, adminId);
+    const draft = await db('invoices').where({ id: invoiceIds[0] }).first();
+    expect(Number(draft.vat_gbp_rate)).toBe(0.86);
+  });
+
+  test('twenty invoices waiting for a rate don\'t hold back the next one', async () => {
+    // Stored the way knex stores a Date on each engine (a Date from the test's
+    // realm isn't recognised as one by the sqlite3 binding).
+    const due = (minutes) => {
+      const at = Date.now() - minutes * 60000;
+      return db.client.config.client === 'pg' ? new Date(at).toISOString() : at;
+    };
+    const waiting = [];
+    for (let i = 0; i < 20; i += 1) waiting.push((await createInvoice({ currency: 'EUR' })).id);
+    await db('invoices').whereIn('id', waiting).update({ status: 'scheduled', scheduled_send_at: due(120) });
+    const ready = await createInvoice({ currency: 'GBP' });
+    await db('invoices').where({ id: ready.id }).update({ status: 'scheduled', scheduled_send_at: due(5) });
+
+    await invoiceService().runScheduledTasks();
+
+    expect((await db('invoices').where({ id: ready.id }).first()).status).not.toBe('scheduled');
+    const still = await db('invoices').whereIn('id', waiting).pluck('status');
+    expect(still.every((st) => st === 'scheduled')).toBe(true);
+    await db('invoices').whereIn('id', waiting).update({ status: 'draft' });
   });
 });
