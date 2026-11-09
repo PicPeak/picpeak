@@ -11,6 +11,7 @@ import {
 import justifiedLayout from 'justified-layout';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
+import { masonryModeOf } from './masonryMode';
 
 // Count-style feedback indicators shared by all masonry modes (top-left).
 // `withTitles` matches the columns-mode markup, which carries title attributes.
@@ -176,7 +177,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   }, [photos]);
   const gallerySettings = theme.gallerySettings || {};
   const gutter = gallerySettings.masonryGutter || 16;
-  const mode = gallerySettings.masonryMode || 'columns';
+  // 'justified' renders as rows, an unknown value as columns (masonryMode.ts).
+  const mode = masonryModeOf(gallerySettings.masonryMode);
   const targetRowHeight = gallerySettings.masonryRowHeight || 250;
   const lastRowBehavior = gallerySettings.masonryLastRowBehavior || 'left';
   const scale = gallerySettings.thumbnailScale || 'md';
