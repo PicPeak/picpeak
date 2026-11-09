@@ -215,13 +215,19 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         setIsLoading(true);
         const sessionResponse = await api.get<{
           valid: boolean; type: string; eventSlug?: string;
-          accessLevel?: GalleryAccessLevel; viaCustomer?: boolean;
+          accessLevel?: GalleryAccessLevel | 'slideshow'; viaCustomer?: boolean;
         }>(
           '/auth/session',
           { params: { slug: currentSlug } }
         );
 
-        if (sessionResponse.data?.valid && sessionResponse.data.type === 'gallery' && sessionResponse.data.eventSlug === currentSlug) {
+        // A Live Slideshow session is display-only: kept as the guest login,
+        // every rating, comment, favourite and download is refused until it
+        // expires. Current servers report it as invalid; this covers an older
+        // backend, so the page logs in through the share link instead.
+        const isSlideshowSession = sessionResponse.data?.accessLevel === 'slideshow';
+
+        if (sessionResponse.data?.valid && !isSlideshowSession && sessionResponse.data.type === 'gallery' && sessionResponse.data.eventSlug === currentSlug) {
           setIsAuthenticated(true);
           // The SERVER's view of this session, not the per-tab sessionStorage
           // guess above (#1149). A second tab has no sessionStorage but the

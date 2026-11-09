@@ -135,10 +135,12 @@ export interface SlideshowState extends SlideshowSettings {
 }
 
 export const slideshowService = {
-  // Open a slideshow session: validates the share token, sets the gallery
-  // auth cookie (so <img> requests are authorized) and returns the minted
-  // session token + current settings/count. Throws 404 if the link is
-  // disabled, rotated, or the gallery isn't live.
+  // Open a slideshow session: validates the share token, sets the slideshow's
+  // own auth cookie (so <img> requests are authorized; the photo URLs it is
+  // handed carry ?slideshow=1, which selects that cookie, and a guest login in
+  // the same browser keeps its own) and returns the minted session token +
+  // current settings/count. Throws 404 if the link is disabled, rotated, or
+  // the gallery isn't live.
   async getSession(slug: string, token: string): Promise<SlideshowSession> {
     // origin: the kiosk's own reachable URL — the backend prefers it for the
     // QR overlay when the configured base is missing/loopback (#848 review;

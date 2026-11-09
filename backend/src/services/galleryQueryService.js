@@ -13,6 +13,7 @@ const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const { resolveHeroLogoVisible, originalNeedsPreview } = require('./galleryModel');
 const { heroAnchorQuery } = require('../utils/heroAnchor');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
+const { SLIDESHOW_QUERY_PARAM } = require('../utils/tokenUtils');
 const { whereNotVideo } = require('../utils/photoVisibility');
 async function getGalleryPhotos({ event, query = {}, identity, accessLevel, adminPreview, hiddenForGuest, slug }) {
   // Get filter and sort parameters from query
@@ -484,8 +485,14 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
       // preview mode no gallery cookie is minted, so each <img> request must
       // re-assert the admin session — thread the flag onto every /api/gallery
       // image URL so the browser sends it (the admin_token cookie rides along
-      // same-origin).
-      const imgQuery = [wmVersion, adminPreview ? 'admin_preview=1' : ''].filter(Boolean).join('&');
+      // same-origin). A slideshow session's images name its own cookie the
+      // same way (issue 2438): it lives apart from the guest cookie, and an
+      // <img> has no other way to say which one it means.
+      const imgQuery = [
+        wmVersion,
+        adminPreview ? 'admin_preview=1' : '',
+        accessLevel === 'slideshow' ? `${SLIDESHOW_QUERY_PARAM}=1` : '',
+      ].filter(Boolean).join('&');
       const wmQuery = imgQuery ? `?${imgQuery}` : '';
       // The hero crop follows the event's focal point (issue 1737) and the
       // hero route caches for an hour, so a non-centre anchor rides in the
