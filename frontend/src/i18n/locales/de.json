@@ -9512,14 +9512,14 @@
     },
     "admin": {
       "deposit": {
+        "bookedAmount": "davon {{applied}} verbucht, zuletzt auf Rechnung {{number}}",
         "disputed": "Anzahlung {{amount}}: Der Kunde hat eine Rückbuchung eröffnet. Bitte in Stripe beantworten.",
         "open": "Anzahlung {{amount}} noch nicht bezahlt",
         "paid": "Anzahlung {{amount}} per Karte bezahlt",
         "refunded": "Anzahlung {{amount}} rückerstattet",
         "refundFailed": "Anzahlung {{amount}}: Rückerstattung fehlgeschlagen. Bitte in Stripe zurückerstatten.",
         "expired": "Anzahlung nicht bezahlt; der Bezahlvorgang ist abgelaufen",
-        "review": "Eine Zahlung ist eingegangen, aber nicht der Anzahlungsbetrag. Bitte in Stripe prüfen.",
-        "booked": "auf Rechnung {{number}} verbucht"
+        "review": "Eine Zahlung ist eingegangen, aber nicht der Anzahlungsbetrag. Bitte in Stripe prüfen."
       },
       "declineRefund": "Ablehnen, rückerstatten und Kunde informieren",
       "unlockNow": "Jetzt öffnen",

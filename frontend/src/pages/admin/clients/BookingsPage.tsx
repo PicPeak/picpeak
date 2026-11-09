@@ -171,7 +171,8 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
               {depositLabel(r) && (
                 <div className={`text-xs ${['refund_failed', 'review', 'disputed'].includes(r.depositStatus) ? 'text-danger-text' : 'text-body'}`}>
                   {depositLabel(r)}
-                  {r.depositInvoiceId && ` · ${t('booking.admin.deposit.booked', 'booked on invoice {{number}}', {
+                  {r.depositAppliedMinor > 0 && ` · ${t('booking.admin.deposit.bookedAmount', '{{applied}} of it booked, last on invoice {{number}}', {
+                    applied: formatMoneyMinor(r.depositAppliedMinor, r.currency),
                     number: r.invoices.find((i) => i.id === r.depositInvoiceId)?.number || `#${r.depositInvoiceId}`,
                   })}`}
                 </div>
@@ -183,7 +184,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
                       ? t('booking.admin.galleryLocked', 'Gallery "{{name}}" opens when every invoice is paid in PicPeak', { name: g.name })
                       : t('booking.admin.galleryOpen', 'Gallery "{{name}}" is open', { name: g.name })}
                   </span>
-                  {g.locked && (
+                  {g.locked && g.canUnlock && (
                     <PermissionGate permission="events.edit">
                       <button type="button" className="text-accent hover:underline" onClick={() => unlock(g.id)}>
                         {t('booking.admin.unlockNow', 'Open now')}
@@ -205,8 +206,9 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
               </ul>
             </div>
           </div>
-          {r.depositStatus === 'paid' && !r.depositInvoiceId && openInvoices(r).length > 0 && (
-            <PermissionGate permission="bills.manage">
+          {r.depositStatus === 'paid' && r.depositAppliedMinor < r.depositMinor && openInvoices(r).length > 0 && (
+            // The route needs both: the booking (quotes) and the payment (bills).
+            <PermissionGate permissions={['quotes.manage', 'bills.manage']} requireAll>
               <div className="mt-3 flex flex-wrap items-end justify-end gap-2">
                 <div>
                   <label htmlFor={`deposit-invoice-${r.id}`} className={labelCls}>{t('booking.admin.depositInvoice', 'Book the deposit on')}</label>

@@ -186,6 +186,25 @@ async function reconcileSession(request, session) {
       await notifyPaid(request.id);
       return 'paid';
     }
+    if (outcome === 'none') {
+      // Already decided (the admin accepted or declined the expired request
+      // before the payment arrived): the money is recorded either way, and
+      // refunded when the request was declined.
+      const { hold_expires_at: _hold, ...depositFields } = paidFields;
+      const decided = await db('booking_requests').where({ id: request.id })
+        .whereIn('status', ['accepted', 'declined']).whereIn('deposit_status', ['open', 'expired'])
+        .update(depositFields);
+      if (decided) {
+        const row = await db('booking_requests').where({ id: request.id }).first();
+        if (row.status === 'declined') {
+          await refundDeposit(row);
+          await require('./bookingNotifications').notifyDeclined(await db('booking_requests').where({ id: request.id }).first())
+            .catch((err) => logger.warn('Could not queue the refund mail', { requestId: request.id, error: err.message }));
+          return 'refunded';
+        }
+      }
+      return 'paid';
+    }
     if (outcome === 'taken') {
       // The time went to someone else: refund, and tell the client why.
       const row = await db('booking_requests').where({ id: request.id }).first();
@@ -205,7 +224,8 @@ async function reconcileSession(request, session) {
     const held = await db('booking_requests').where({ id: request.id, status: 'awaiting_payment' })
       .whereIn('deposit_status', ['open', 'expired'])
       .update({ status: 'pending', deposit_status: 'review', payment_intent_id: intentOf(session), updated_at: ts(now) });
-    const marked = held ? 0 : await db('booking_requests').where({ id: request.id, status: 'expired' })
+    const marked = held ? 0 : await db('booking_requests').where({ id: request.id })
+      .whereIn('status', ['expired', 'accepted', 'declined'])
       .whereIn('deposit_status', ['open', 'expired'])
       .update({ deposit_status: 'review', payment_intent_id: intentOf(session), updated_at: ts(now) });
     if (held || marked) await notifyPaid(request.id, { mailClient: Boolean(held) });
@@ -235,7 +255,14 @@ async function reconcilePaymentEvent(event) {
   const request = await db('booking_requests').where({ payment_intent_id: intent }).first();
   if (!request) return false;
   const failedRefund = (event.type === 'refund.failed' || event.type === 'refund.updated') && object.status === 'failed';
-  if (failedRefund) {
+  // A refund made here or by hand in Stripe: recorded, so a review or a
+  // failed refund can be closed.
+  const refunded = (event.type === 'refund.updated' && object.status === 'succeeded')
+    || (event.type === 'charge.refunded' && object.refunded === true);
+  if (refunded) {
+    await db('booking_requests').where({ id: request.id }).whereNot('deposit_status', 'refunded')
+      .update({ deposit_status: 'refunded', updated_at: ts(new Date()) });
+  } else if (failedRefund) {
     await db('booking_requests').where({ id: request.id }).update({ deposit_status: 'refund_failed', updated_at: ts(new Date()) });
     logger.error('A booking deposit refund failed at Stripe', { requestId: request.id });
   } else if (event.type.startsWith('charge.dispute.')) {
@@ -246,7 +273,7 @@ async function reconcilePaymentEvent(event) {
 }
 
 async function reconcileWebhook(event, client) {
-  if (event.type.startsWith('refund.') || event.type.startsWith('charge.dispute.')) {
+  if (event.type.startsWith('refund.') || event.type.startsWith('charge.dispute.') || event.type === 'charge.refunded') {
     return reconcilePaymentEvent(event);
   }
   if (!event.type.startsWith('checkout.session.')) return false;
@@ -256,7 +283,12 @@ async function reconcileWebhook(event, client) {
   const { getFrontendBaseUrl } = require('../utils/frontendUrl');
   const origin = object.metadata?.picpeak_origin;
   const base = ((await getFrontendBaseUrl()) || '').replace(/\/+$/, '');
-  if (origin && origin !== base) return true; // another install's session
+  // Another install sharing the Stripe account: its sessions are not ours.
+  // A session we created is ours even if the frontend URL changed since.
+  if (origin && origin !== base) {
+    const ours = await db('booking_requests').where({ reference, checkout_session_id: object.id }).first('id');
+    if (!ours) return true;
+  }
   let request = await db('booking_requests').where({ reference }).first();
   if (request && !request.checkout_session_id) {
     // The session was made but storing its id failed: adopt it.
@@ -316,7 +348,8 @@ async function cancelCheckout(request) {
 
 /** Refund a paid deposit (the admin declined the request). */
 async function refundDeposit(request) {
-  if (request.deposit_status !== 'paid' || !request.payment_intent_id) return request.deposit_status;
+  // `review` too: whatever amount came in goes back in full.
+  if (!['paid', 'review'].includes(request.deposit_status) || !request.payment_intent_id) return request.deposit_status;
   try {
     const { stripeClient } = require('../modules/photoSales/stripeClient');
     const client = await stripeClient();
@@ -348,7 +381,9 @@ async function applyDepositToInvoice(requestId, invoiceId, adminId) {
   const request = await db('booking_requests').where({ id: requestId }).first();
   if (!request) throw new AppError('Booking request not found', 404);
   if (request.deposit_status !== 'paid') throw new AppError('This request has no paid deposit', 409, 'BOOKING_NO_DEPOSIT');
-  if (request.deposit_invoice_id) throw new AppError('The deposit is already booked on an invoice', 409, 'BOOKING_DEPOSIT_APPLIED');
+  const applied = Number(request.deposit_applied_minor || 0);
+  const remaining = Number(request.deposit_minor) - applied;
+  if (remaining <= 0) throw new AppError('The deposit is already booked on invoices', 409, 'BOOKING_DEPOSIT_APPLIED');
   // Read in the admin's own CRM scope (the route's context): an invoice the
   // admin may not see is not one they can book a payment on.
   const quote = request.quote_id ? await db('quotes').where({ id: request.quote_id }).first('deal_uuid') : null;
@@ -365,14 +400,16 @@ async function applyDepositToInvoice(requestId, invoiceId, adminId) {
   const openMinor = Number(invoice.total_amount_minor) - Number(invoice.paid_amount_minor || 0);
   if (openMinor <= 0) throw new AppError('This invoice is already paid', 409, 'BOOKING_INVOICE_NOT_OPEN');
   // Capped at what is still open: no overpayment. The rest stays on the
-  // request for the next invoice.
-  const amountMinor = Math.min(Number(request.deposit_minor), openMinor);
+  // request (deposit_applied_minor) for the next invoice.
+  const amountMinor = Math.min(remaining, openMinor);
   if (String(invoice.currency || '').toUpperCase() !== String(request.currency || '').toUpperCase()) {
     throw new AppError('The invoice is in another currency', 400, 'BOOKING_INVOICE_MISMATCH');
   }
-  const claimed = await db('booking_requests').where({ id: requestId }).whereNull('deposit_invoice_id')
-    .update({ deposit_invoice_id: invoice.id, updated_at: ts(new Date()) });
-  if (!claimed) throw new AppError('The deposit is already booked on an invoice', 409, 'BOOKING_DEPOSIT_APPLIED');
+  // Claimed against the amount read above: two bookings at once cannot both
+  // take the same remainder.
+  const claimed = await db('booking_requests').where({ id: requestId, deposit_applied_minor: applied })
+    .update({ deposit_applied_minor: applied + amountMinor, deposit_invoice_id: invoice.id, updated_at: ts(new Date()) });
+  if (!claimed) throw new AppError('The deposit was just booked; reload and try again', 409, 'BOOKING_DEPOSIT_APPLIED');
   try {
     await require('./invoice/payments').markPaid(invoice.id, {
       amountMinor,
@@ -382,7 +419,8 @@ async function applyDepositToInvoice(requestId, invoiceId, adminId) {
       notes: `Booking deposit ${request.reference}`,
     }, adminId);
   } catch (err) {
-    await db('booking_requests').where({ id: requestId }).update({ deposit_invoice_id: null, updated_at: ts(new Date()) });
+    await db('booking_requests').where({ id: requestId, deposit_applied_minor: applied + amountMinor })
+      .update({ deposit_applied_minor: applied, deposit_invoice_id: request.deposit_invoice_id || null, updated_at: ts(new Date()) });
     throw err;
   }
   return db('booking_requests').where({ id: requestId }).first();
@@ -517,11 +555,13 @@ async function dealInvoicesForRequests(requests) {
  */
 async function galleryLocksForRequests(requestIds, admin) {
   if (!requestIds.length) return new Map();
-  const { scopeEventsListQuery } = require('../middleware/ownership');
+  const { scopeEventsListQuery, ownsEvent, managesAllEvents } = require('../middleware/ownership');
   const rows = await scopeEventsListQuery(db('events').whereIn('payment_lock_request_id', requestIds), admin)
-    .select('id', 'slug', 'event_name', 'payment_lock', 'payment_lock_request_id', 'payment_unlocked_at');
+    .select('id', 'slug', 'event_name', 'payment_lock', 'payment_lock_request_id', 'payment_unlocked_at', 'created_by');
   const map = new Map();
   for (const r of rows) {
+    // The same rule as the unlock route (requireEventOwner).
+    r.can_unlock = Boolean(admin) && (managesAllEvents(admin) || ownsEvent(admin, r));
     if (!map.has(r.payment_lock_request_id)) map.set(r.payment_lock_request_id, []);
     map.get(r.payment_lock_request_id).push(r);
   }

@@ -38,9 +38,11 @@ export interface BookingRequest {
   depositStatus: DepositStatus;
   depositPaidAt: string | null;
   depositInvoiceId: number | null;
+  /** How much of the deposit is booked on invoices so far. */
+  depositAppliedMinor: number;
   paymentIntentId: string | null;
   galleryUnlock: 'full_payment' | 'deposit' | 'off' | null;
-  galleries: Array<{ id: number; slug: string; name: string; locked: boolean }>;
+  galleries: Array<{ id: number; slug: string; name: string; locked: boolean; canUnlock: boolean }>;
   invoices: Array<{ id: number; number: string | null; status: string; currency: string; totalMinor: number; paidMinor: number }>;
 }
 

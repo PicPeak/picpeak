@@ -467,3 +467,73 @@ describe('review round 1', () => {
     expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('disputed');
   });
 });
+
+describe('blind review', () => {
+  const open = async (date, hhmm, email) => {
+    const res = await sendRequest(zurich(date, hhmm), { email });
+    expect(res.status).toBe(201);
+    return { res, row: await db('booking_requests').where({ reference: res.body.reference }).first() };
+  };
+  const hook = async (session) => webhook('checkout.session.completed', { id: session.id, metadata: session.metadata }).expect(200);
+
+  test('a payment after the admin declined the expired request is recorded and refunded', async () => {
+    const { row } = await open(day(28), '09:00', 'late-declined@example.test');
+    await db('booking_requests').where({ id: row.id }).update({ status: 'expired', deposit_status: 'expired' });
+    await request(adminApp).post(`/api/admin/booking/requests/${row.id}/decline`).set(auth).send({}).expect(200);
+    await hook(pay(row.checkout_session_id));
+    const after = await db('booking_requests').where({ id: row.id }).first();
+    expect(after).toMatchObject({ status: 'declined', deposit_status: 'refunded' });
+    expect(after.payment_intent_id).toBeTruthy();
+  });
+
+  test('a payment after the admin accepted the expired request is recorded as paid', async () => {
+    const { row } = await open(day(28), '13:00', 'late-accepted@example.test');
+    await db('booking_requests').where({ id: row.id }).update({ status: 'expired', deposit_status: 'expired' });
+    await request(adminApp).post(`/api/admin/booking/requests/${row.id}/accept`).set(auth).expect(200);
+    await hook(pay(row.checkout_session_id));
+    expect(await db('booking_requests').where({ id: row.id }).first()).toMatchObject({ status: 'accepted', deposit_status: 'paid' });
+  });
+
+  test('a deposit larger than what is open is booked over several invoices', async () => {
+    const { row } = await open(day(29), '09:00', 'split@example.test');
+    await hook(pay(row.checkout_session_id));
+    const quoteId = (await request(adminApp).post(`/api/admin/booking/requests/${row.id}/accept`).set(auth)).body.request.quoteId;
+    await withTrusted(() => db('quotes').where({ id: quoteId }).update({ status: 'accepted' }));
+    await withTrusted(() => require('../../src/services/quoteService').convertToEvent(quoteId, adminId));
+    const quote = await withTrusted(() => db('quotes').where({ id: quoteId }).first());
+    const [first] = await withTrusted(() => db('invoices').where({ deal_uuid: quote.deal_uuid }));
+    // Two invoices in the deal, 50.00 open on each; the deposit is 200.00.
+    await withTrusted(() => db('invoices').where({ id: first.id }).update({ status: 'sent', paid_amount_minor: Number(first.total_amount_minor) - 5000 }));
+    const { id: _id, invoice_number: _n, ...copy } = await withTrusted(() => db('invoices').where({ id: first.id }).first());
+    const inserted = await withTrusted(() => db('invoices').insert({ ...copy, invoice_number: `X-${Date.now()}` }).returning('id'));
+    const second = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+    const apply = (invoiceId) => request(adminApp).post(`/api/admin/booking/requests/${row.id}/apply-deposit`).set(auth).send({ invoiceId });
+    expect((await apply(first.id)).body.request.depositAppliedMinor).toBe(5000);
+    expect((await apply(second)).body.request.depositAppliedMinor).toBe(10000);
+  });
+
+  test('a refund made in Stripe closes a review, and declining a review refunds it', async () => {
+    const { row } = await open(day(36), '13:00', 'review-refund@example.test');
+    const session = pay(row.checkout_session_id);
+    session.amount_total = 1;
+    await hook(session);
+    expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('review');
+    await webhook('charge.refunded', { id: 'ch_x', refunded: true, payment_intent: session.payment_intent }).expect(200);
+    expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('refunded');
+
+    const { row: other } = await open(day(35), '09:00', 'review-decline@example.test');
+    const s2 = pay(other.checkout_session_id);
+    s2.amount_total = 1;
+    await hook(s2);
+    const declined = await request(adminApp).post(`/api/admin/booking/requests/${other.id}/decline`).set(auth).send({});
+    expect(declined.body.request.depositStatus).toBe('refunded');
+  });
+
+  test('our own session is still reconciled after the frontend URL changed', async () => {
+    const { row } = await open(day(35), '13:00', 'moved@example.test');
+    const session = pay(row.checkout_session_id);
+    session.metadata = { ...session.metadata, picpeak_origin: 'https://old-address.example.test' };
+    await hook(session);
+    expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('paid');
+  });
+});

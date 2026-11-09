@@ -70,10 +70,12 @@ function transformRequest(r, extras = {}) {
     depositStatus: r.deposit_status || 'none',
     depositPaidAt: booking.iso(r.deposit_paid_at),
     depositInvoiceId: r.deposit_invoice_id || null,
+    depositAppliedMinor: Number(r.deposit_applied_minor || 0),
     paymentIntentId: r.payment_intent_id || null,
     galleryUnlock: r.gallery_unlock || null,
     galleries: (extras.galleries || []).map((g) => ({
       id: g.id, slug: g.slug, name: g.event_name, locked: Boolean(g.payment_lock) && !g.payment_unlocked_at,
+      canUnlock: Boolean(g.can_unlock),
     })),
     invoices: (extras.invoices || []).map((i) => ({
       id: i.id, number: i.invoice_number, status: i.status, currency: i.currency,

@@ -9547,14 +9547,14 @@
     },
     "admin": {
       "deposit": {
+        "bookedAmount": "{{applied}} of it booked, last on invoice {{number}}",
         "disputed": "Deposit {{amount}}: the client opened a dispute. Answer it in Stripe.",
         "open": "Deposit {{amount}} not paid yet",
         "paid": "Deposit {{amount}} paid by card",
         "refunded": "Deposit {{amount}} refunded",
         "refundFailed": "Deposit {{amount}}: the refund failed. Refund it in Stripe.",
         "expired": "Deposit not paid; the checkout expired",
-        "review": "A payment came in, but not the deposit amount. Check it in Stripe.",
-        "booked": "booked on invoice {{number}}"
+        "review": "A payment came in, but not the deposit amount. Check it in Stripe."
       },
       "declineRefund": "Decline, refund and tell the client",
       "unlockNow": "Open now",

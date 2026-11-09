@@ -17,8 +17,10 @@
  *   deposit_minor, deposit_status (none | open | paid | refunded |
  *   refund_failed | expired | review — paid, but not the expected amount |
  *   disputed — a chargeback was opened),
- *   checkout_session_id, payment_intent_id, deposit_paid_at, deposit_invoice_id (the invoice the admin booked the
- *   deposit on), gallery_unlock (the service's setting when it came in),
+ *   checkout_session_id, payment_intent_id, deposit_paid_at,
+ *   deposit_invoice_id (the last invoice the admin booked the deposit on),
+ *   deposit_applied_minor (how much of it is booked so far; a deposit larger
+ *   than one invoice's open amount is booked over several), gallery_unlock (the service's setting when it came in),
  *   status_token_hash (sha256 of the token on the client's status page).
  *
  * Per gallery (events):
@@ -50,6 +52,7 @@ const REQUEST_COLUMNS = [
   ['payment_intent_id', (t) => t.string('payment_intent_id', 255)],
   ['deposit_paid_at', (t) => t.timestamp('deposit_paid_at')],
   ['deposit_invoice_id', (t) => t.integer('deposit_invoice_id')],
+  ['deposit_applied_minor', (t) => t.bigInteger('deposit_applied_minor').notNullable().defaultTo(0)],
   ['gallery_unlock', (t) => t.string('gallery_unlock', 16)],
   ['status_token_hash', (t) => t.string('status_token_hash', 64)],
 ];

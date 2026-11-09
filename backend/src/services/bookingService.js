@@ -727,7 +727,7 @@ async function declineRequest(id, adminId, reason) {
     throw new AppError(`This request is ${row.status}`, 409, 'BOOKING_NOT_PENDING');
   }
   let request = await db('booking_requests').where({ id }).first();
-  if (request.deposit_status === 'paid') {
+  if (request.deposit_status === 'paid' || request.deposit_status === 'review') {
     await require('./bookingDeposits').refundDeposit(request);
     request = await db('booking_requests').where({ id }).first();
   }
