@@ -21,7 +21,7 @@ import { customerService } from '../../services/customer.service';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
 import { CustomerDocumentList } from './CustomerDocumentsPage';
 import { DOWNLOAD_JOB_QUERY_PARAM, readDownloadJobParam } from '../../components/gallery/downloadJobLink';
-import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
+import { galleryClosedReason, isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
 import { CHOOSE_ALBUM } from '../../features/album-products/model';
 
 /** Open a blob URL produced by `load` in a new tab, keeping the click gesture. */
@@ -95,7 +95,9 @@ export const CustomerEventPage: React.FC = () => {
       navigate(`/gallery/${encodeURIComponent(event.slug)}${query}`);
     } catch (error) {
       toast.error(isGalleryTemporarilyDisabled(error)
-        ? t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.')
+        ? (galleryClosedReason(error) === 'payment'
+          ? t('gallery.awaitingPaymentHelp', 'It opens as soon as the invoice is paid. Your gallery link will stay the same.')
+          : t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'))
         : t('customer.dashboard.openError', 'Could not open this gallery. Please try again.'));
     } finally {
       setOpening(false);

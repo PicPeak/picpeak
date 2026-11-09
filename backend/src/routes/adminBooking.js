@@ -14,7 +14,7 @@
  *   POST   /requests/:id/apply-deposit  book the paid deposit on an
  *                                 invoice of the deal   quotes.manage + bills.manage
  *   POST   /galleries/:eventId/unlock   open a gallery that waits for
- *                                 payment               events.edit + event ownership
+ *                                 payment               events.edit + event owner
  *
  * Accept takes the same three permissions the manual path takes (new
  * customer, new project, new quote), so a booking request is no way around
@@ -26,7 +26,7 @@ const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
-const { requireEventOwnership } = require('../middleware/ownership');
+const { requireEventOwner } = require('../middleware/ownership');
 const deposits = require('../services/bookingDeposits');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const booking = require('../services/bookingService');
@@ -172,7 +172,9 @@ router.post(
   '/galleries/:eventId/unlock',
   requirePermission('events.edit'),
   [param('eventId').isInt({ min: 1 })],
-  requireEventOwnership,
+  // Owner only, not an assigned admin: opening before payment is a money
+  // decision (the issue 743 rule for such actions).
+  requireEventOwner,
   handleAsync(async (req, res) => {
     validateRequest(req);
     await deposits.unlockGallery(Number(req.params.eventId));

@@ -384,6 +384,23 @@ async function forgetCustomer(trx, customerId, emails = []) {
  * cannot both hold it.
  */
 /**
+ * The lock every write that claims a slot takes (new requests, a late
+ * deposit putting an expired request back): a transaction-scoped advisory
+ * lock on PostgreSQL, which needs no row to exist; SQLite has one writer.
+ */
+async function takeRequestLock(trx) {
+  if (db.client.config.client === 'pg') await trx.raw('SELECT pg_advisory_xact_lock(?)', [ADVISORY_LOCK_KEY]);
+}
+
+/** Run `fn(trx)` in a transaction holding the request lock. */
+function withRequestLock(fn) {
+  return db.transaction(async (trx) => {
+    await takeRequestLock(trx);
+    return fn(trx);
+  });
+}
+
+/**
  * Requests that hold a slot right now: pending or waiting for the deposit
  * with the hold not run out, and (part 3) pending with a paid deposit or one
  * under review, which hold until the admin decides.
@@ -448,7 +465,7 @@ async function createRequest(input, { now = new Date() } = {}) {
     // makes concurrent requests take turns for the check-then-insert.
     // A transaction-scoped advisory lock: it needs no row to exist (a restore
     // can empty booking_settings), and concurrent requests take turns.
-    if (db.client.config.client === 'pg') await trx.raw('SELECT pg_advisory_xact_lock(?)', [ADVISORY_LOCK_KEY]);
+    await takeRequestLock(trx);
     // Every read goes through `trx`: SQLite has one connection, and a read
     // on the global handle inside this transaction would wait for itself.
     const { free, durationMinutes: duration } = await isSlotFree(preset, start.toISOString(), pricedValues, { now, conn: trx });
@@ -599,13 +616,13 @@ function quoteLines(request) {
  * another held or accepted request)? Notice period and opening hours are not
  * re-checked: the studio may accept what it likes.
  */
-async function slotTaken(request) {
-  const settings = await getSettings();
-  const { timezone } = await workingHours();
+async function slotTaken(request, conn = db) {
+  const settings = await getSettings(conn);
+  const { timezone } = await workingHours(conn);
   const start = toDate(request.starts_at).getTime();
   const end = toDate(request.ends_at).getTime();
   const bufferMs = settings.buffer_minutes * 60000;
-  const busy = await busyIntervals(new Date(start - bufferMs), new Date(end + bufferMs), timezone, { excludeRequestId: request.id });
+  const busy = await busyIntervals(new Date(start - bufferMs), new Date(end + bufferMs), timezone, { excludeRequestId: request.id, conn });
   return busy.some((b) => start < b.end + bufferMs && end > b.start - bufferMs);
 }
 
@@ -660,7 +677,7 @@ async function acceptRequest(id, adminId) {
       // Part 3: the deposit is no invoice; the note reminds whoever bills
       // this deal to book it on the invoice (Clients → Bookings).
       internalNotes: request.deposit_status === 'paid'
-        ? `Booking ${request.reference}: deposit ${(Number(request.deposit_minor) / 100).toFixed(2)} ${request.currency} paid by card (Stripe ${request.payment_intent_id || ''}). Book it on the invoice under Clients → Bookings.`
+        ? `Booking ${request.reference}: deposit ${new Intl.NumberFormat('en-GB', { style: 'currency', currency: request.currency || 'CHF' }).format(Number(request.deposit_minor) / 100)} paid by card (Stripe ${request.payment_intent_id || ''}). Book it on the invoice under Clients → Bookings.`
         : undefined,
     }, adminId);
     await projectService.assignQuote(project.id, quoteId, { id: adminId });
@@ -754,6 +771,8 @@ module.exports = {
   LANGUAGES,
   iso,
   forgetCustomer,
+  withRequestLock,
+  slotTaken,
   numberFactorStart,
   withDurationValue,
   getSettings,

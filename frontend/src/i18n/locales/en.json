@@ -9547,6 +9547,7 @@
     },
     "admin": {
       "deposit": {
+        "disputed": "Deposit {{amount}}: the client opened a dispute. Answer it in Stripe.",
         "open": "Deposit {{amount}} not paid yet",
         "paid": "Deposit {{amount}} paid by card",
         "refunded": "Deposit {{amount}} refunded",
@@ -9558,7 +9559,7 @@
       "declineRefund": "Decline, refund and tell the client",
       "unlockNow": "Open now",
       "galleryOpen": "Gallery \"{{name}}\" is open",
-      "galleryLocked": "Gallery \"{{name}}\" opens when every invoice is paid",
+      "galleryLocked": "Gallery \"{{name}}\" opens when every invoice is paid in PicPeak",
       "applyDeposit": "Book deposit",
       "depositInvoice": "Book the deposit on",
       "galleryUnlocked": "Gallery opened.",
@@ -9653,6 +9654,7 @@
       }
     },
     "service": {
+      "unlockFullHint": "Counts the invoices of the deal in PicPeak. If you invoice elsewhere, choose \"Right away\" or open the gallery by hand under Clients → Bookings.",
       "depositHint": "Paid by card through the Stripe account under Settings → Payments. Without Stripe set up, requests come in without a deposit.",
       "unlockOff": "Right away",
       "unlockDeposit": "Once the deposit is paid",

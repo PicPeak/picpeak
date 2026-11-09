@@ -9512,6 +9512,7 @@
     },
     "admin": {
       "deposit": {
+        "disputed": "Anzahlung {{amount}}: Der Kunde hat eine Rückbuchung eröffnet. Bitte in Stripe beantworten.",
         "open": "Anzahlung {{amount}} noch nicht bezahlt",
         "paid": "Anzahlung {{amount}} per Karte bezahlt",
         "refunded": "Anzahlung {{amount}} rückerstattet",
@@ -9523,7 +9524,7 @@
       "declineRefund": "Ablehnen, rückerstatten und Kunde informieren",
       "unlockNow": "Jetzt öffnen",
       "galleryOpen": "Galerie «{{name}}» ist offen",
-      "galleryLocked": "Galerie «{{name}}» öffnet sich, wenn alle Rechnungen bezahlt sind",
+      "galleryLocked": "Galerie «{{name}}» öffnet sich, wenn alle Rechnungen in PicPeak bezahlt sind",
       "applyDeposit": "Anzahlung verbuchen",
       "depositInvoice": "Anzahlung verbuchen auf",
       "galleryUnlocked": "Galerie geöffnet.",
@@ -9618,6 +9619,7 @@
       }
     },
     "service": {
+      "unlockFullHint": "Zählt die Rechnungen des Deals in PicPeak. Wenn Sie anderswo verrechnen, wählen Sie «Sofort» oder öffnen Sie die Galerie von Hand unter Kunden → Buchungen.",
       "depositHint": "Bezahlt per Karte über das Stripe-Konto unter Einstellungen → Zahlungen. Ohne eingerichtetes Stripe kommen Anfragen ohne Anzahlung.",
       "unlockOff": "Sofort",
       "unlockDeposit": "Sobald die Anzahlung bezahlt ist",

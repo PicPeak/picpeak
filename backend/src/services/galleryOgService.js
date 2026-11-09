@@ -231,7 +231,10 @@ async function buildOgMetadata(slug, requestPath) {
   // Reveal mode (#838): while the gallery is hidden from guests, social
   // crawlers must not get the hero photo either — fall back to the brand
   // logo like the opt-out case.
-  if (event.og_image_share_enabled && event.hero_photo_id && !isGalleryHidden(event)) {
+  // A gallery from a booking that waits for payment (issue 2440) shows no
+  // photo either, like a hidden one.
+  const awaitingPayment = Boolean(event.payment_lock) && !event.payment_unlocked_at;
+  if (event.og_image_share_enabled && event.hero_photo_id && !isGalleryHidden(event) && !awaitingPayment) {
     const heroPhoto = await wherePhotoProcessed(livePhotos(db))
       .where({ id: event.hero_photo_id, event_id: event.id })
       // Never a team upload still under review (issue 743), nor a photo the
@@ -339,7 +342,8 @@ async function handleGalleryOgCover(req, res) {
     const { isGalleryHidden } = require('../utils/revealMode');
     // Lifecycle first: a draft, archived, deactivated or expired gallery has
     // no public cover, however the opt-in is set.
-    if (!isGalleryAvailable(event) || !event.og_image_share_enabled || !event.hero_photo_id || isGalleryHidden(event)) {
+    if (!isGalleryAvailable(event) || !event.og_image_share_enabled || !event.hero_photo_id || isGalleryHidden(event)
+      || (event.payment_lock && !event.payment_unlocked_at)) {
       res.status(404).type('text/plain').send('Cover not available');
       return;
     }

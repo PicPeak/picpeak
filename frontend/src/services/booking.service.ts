@@ -6,7 +6,7 @@ import { api } from '../config/api';
 import type { FactorValue, PricingFactorsSnapshot } from './quoteCatalog.service';
 
 export type BookingStatus = 'awaiting_payment' | 'pending' | 'accepted' | 'declined' | 'expired';
-export type DepositStatus = 'none' | 'open' | 'paid' | 'refunded' | 'refund_failed' | 'expired' | 'review';
+export type DepositStatus = 'none' | 'open' | 'paid' | 'refunded' | 'refund_failed' | 'expired' | 'review' | 'disputed';
 
 export interface BookingRequest {
   id: number;

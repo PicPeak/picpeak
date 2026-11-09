@@ -15,7 +15,8 @@
  * Per request (booking_requests), the status also takes `awaiting_payment`
  * (the slot is held for the checkout only):
  *   deposit_minor, deposit_status (none | open | paid | refunded |
- *   refund_failed | expired | review — paid, but not the expected amount),
+ *   refund_failed | expired | review — paid, but not the expected amount |
+ *   disputed — a chargeback was opened),
  *   checkout_session_id, payment_intent_id, deposit_paid_at, deposit_invoice_id (the invoice the admin booked the
  *   deposit on), gallery_unlock (the service's setting when it came in),
  *   status_token_hash (sha256 of the token on the client's status page).

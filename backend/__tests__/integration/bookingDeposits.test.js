@@ -103,11 +103,17 @@ const zurich = (date, hhmm) => {
   return tz.zonedWallClockToUtc(y, mo, d, hh, mi, ZONE).toISOString();
 };
 
+/** A form token as GET / signs it, issued a minute ago. */
+function formToken() {
+  const issued = Date.now() - 60000;
+  return `${issued}.${crypto.createHmac('sha256', `booking-form:${process.env.JWT_SECRET}`).update(String(issued)).digest('hex')}`;
+}
+
 const sendRequest = (start, extra = {}) => request(publicApp).post('/api/public/booking/requests')
   .set('X-Forwarded-For', `203.0.113.${(ip += 1)}`)
   .send({
     serviceId: shoot.id, values: {}, start, name: 'Mia Keller', email: 'mia@band.example',
-    language: 'en', startedAt: Date.now() - 60000, ...extra,
+    language: 'en', formToken: formToken(), ...extra,
   });
 
 const webhook = (type, object) => {
@@ -241,7 +247,7 @@ describe('gallery unlock on full payment', () => {
     expect(accepted.status).toBe(200);
     const quoteId = accepted.body.request.quoteId;
     const quote = await withTrusted(() => db('quotes').where({ id: quoteId }).first());
-    expect(quote.internal_notes).toContain('deposit 200.00 CHF');
+    expect(quote.internal_notes).toMatch(/deposit CHF\s200\.00/u);
 
     await withTrusted(() => db('quotes').where({ id: quoteId }).update({ status: 'accepted' }));
     const converted = await withTrusted(() => require('../../src/services/quoteService').convertToEvent(quoteId, adminId));
@@ -369,9 +375,95 @@ describe('payments at the edges', () => {
     expect(await bookingMails()).toBe(before + 2);
   });
 
-  test('one address holds at most three open requests', async () => {
-    for (const hhmm of ['13:00', '14:00', '15:00']) await open(day(8), hhmm, 'busy@example.test');
-    const fourth = await sendRequest(zurich(day(8), '16:00'), { email: 'Busy@Example.test' });
-    expect(fourth.status).toBe(429);
+  test('one address holds at most two open requests, deposits awaiting payment included', async () => {
+    for (const hhmm of ['13:00', '14:00']) await open(day(8), hhmm, 'busy@example.test');
+    const third = await sendRequest(zurich(day(8), '15:00'), { email: 'Busy@Example.test' });
+    expect(third.status).toBe(429);
+  });
+});
+
+describe('review round 1', () => {
+  const open = async (date, hhmm, email) => {
+    const res = await sendRequest(zurich(date, hhmm), { email });
+    expect(res.status).toBe(201);
+    return { res, row: await db('booking_requests').where({ reference: res.body.reference }).first() };
+  };
+  const payAndHook = async (row) => {
+    const session = pay(row.checkout_session_id);
+    await webhook('checkout.session.completed', { id: session.id, metadata: session.metadata }).expect(200);
+    return session;
+  };
+  const acceptAndConvert = async (row) => {
+    const accepted = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/accept`).set(auth);
+    expect(accepted.status).toBe(200);
+    return accepted.body.request.quoteId;
+  };
+
+  test('a gallery from a reissued quote is locked like the original', async () => {
+    const { row } = await open(day(14), '09:00', 'reissue@example.test');
+    await payAndHook(row);
+    const quoteId = await acceptAndConvert(row);
+    const quoteService = require('../../src/services/quoteService');
+    await withTrusted(() => db('quotes').where({ id: quoteId }).update({ status: 'accepted' }));
+    const reissued = await withTrusted(() => quoteService.reissueQuote(quoteId, adminId, 'Changed the scope'));
+    const newId = reissued.id ?? reissued.quoteId ?? reissued;
+    await withTrusted(() => db('quotes').where({ id: newId }).update({ status: 'accepted' }));
+    const converted = await withTrusted(() => quoteService.convertToEvent(newId, adminId));
+    expect((await db('events').where({ id: converted.eventId }).first()).payment_lock).toBe('full_payment');
+  });
+
+  test('the deposit goes only on an issued, open invoice, and never above what is open', async () => {
+    const { row } = await open(day(21), '09:00', 'invoice@example.test');
+    await payAndHook(row);
+    const quoteId = await acceptAndConvert(row);
+    await withTrusted(() => db('quotes').where({ id: quoteId }).update({ status: 'accepted' }));
+    await withTrusted(() => require('../../src/services/quoteService').convertToEvent(quoteId, adminId));
+    const quote = await withTrusted(() => db('quotes').where({ id: quoteId }).first());
+    const invoice = await withTrusted(() => db('invoices').where({ deal_uuid: quote.deal_uuid }).first());
+    const apply = () => request(adminApp).post(`/api/admin/booking/requests/${row.id}/apply-deposit`).set(auth).send({ invoiceId: invoice.id });
+
+    await withTrusted(() => db('invoices').where({ id: invoice.id }).update({ status: 'scheduled' }));
+    expect((await apply()).status).toBe(409);
+    await withTrusted(() => db('invoices').where({ id: invoice.id }).update({ status: 'paid', paid_amount_minor: invoice.total_amount_minor }));
+    expect((await apply()).status).toBe(409);
+    // Issued, with only 50.00 still open: 50.00 booked, not the 200.00 deposit.
+    await withTrusted(() => db('invoices').where({ id: invoice.id })
+      .update({ status: 'sent', paid_amount_minor: Number(invoice.total_amount_minor) - 5000 }));
+    const res = await apply();
+    expect(res.status).toBe(200);
+    const log = await withTrusted(() => db('invoice_payment_log').where({ invoice_id: invoice.id }).orderBy('id', 'desc').first());
+    expect(Number(log.amount_minor)).toBe(5000);
+  });
+
+  test('a payment of another amount after the hold ran out is held for review but not put back on the calendar', async () => {
+    const { row } = await open(day(15), '09:00', 'late-review@example.test');
+    await db('booking_requests').where({ id: row.id }).update({ status: 'expired', deposit_status: 'expired' });
+    const session = pay(row.checkout_session_id);
+    session.amount_total = 1;
+    await webhook('checkout.session.completed', { id: session.id, metadata: session.metadata }).expect(200);
+    expect(await db('booking_requests').where({ id: row.id }).first()).toMatchObject({ status: 'expired', deposit_status: 'review' });
+  });
+
+  test('a late payment for a taken time is refunded and the client is told why', async () => {
+    const { row } = await open(day(15), '13:00', 'late-mail@example.test');
+    await db('booking_requests').where({ id: row.id }).update({ status: 'expired', deposit_status: 'expired' });
+    await open(day(15), '13:00', 'other-late@example.test');
+    await payAndHook(row);
+    expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('refunded');
+    const mail = await db('email_queue').where({ email_type: 'booking_request_declined', recipient_email: 'late-mail@example.test' }).first();
+    expect(mail).toBeDefined();
+    // A JSON column: text on SQLite, an object on PostgreSQL.
+    const data = typeof mail.email_data === 'string' ? JSON.parse(mail.email_data) : mail.email_data;
+    expect(data.deposit_refunded).toBeTruthy();
+  });
+
+  test('a refund that fails at Stripe, and a dispute, show on the request', async () => {
+    const { row } = await open(day(22), '09:00', 'dispute@example.test');
+    const session = await payAndHook(row);
+    const intent = session.payment_intent;
+    await webhook('refund.failed', { id: 're_x', status: 'failed', payment_intent: intent }).expect(200);
+    expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('refund_failed');
+    await webhook('charge.dispute.created', { id: 'dp_x', payment_intent: intent }).expect(200);
+    expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('disputed');
   });
 });

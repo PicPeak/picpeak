@@ -29,6 +29,9 @@ const inputCls = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel
 const labelCls = 'block text-sm font-medium text-body mb-1';
 const errorText = (err: any): string => err?.response?.data?.error || err?.message || 'Failed';
 
+/** Invoices the deposit can be booked on: issued and still open (the server checks too). */
+const openInvoices = (r: BookingRequest) => r.invoices.filter((i) => ['sent', 'overdue'].includes(i.status) && i.paidMinor < i.totalMinor);
+
 const STATUS_CLS: Record<BookingStatus, string> = {
   awaiting_payment: 'bg-fill text-muted',
   pending: 'bg-warning-soft text-warning-text',
@@ -63,7 +66,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
 
   // Part 3: book a paid deposit on an invoice of the deal, open a gallery.
   const applyDeposit = async (r: BookingRequest) => {
-    const invoiceId = depositInvoice[r.id] ?? r.invoices[0]?.id;
+    const invoiceId = depositInvoice[r.id] ?? openInvoices(r)[0]?.id;
     if (!invoiceId) return;
     setBusy(r.id);
     try {
@@ -94,6 +97,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
       case 'refund_failed': return t('booking.admin.deposit.refundFailed', 'Deposit {{amount}}: the refund failed. Refund it in Stripe.', { amount });
       case 'expired': return t('booking.admin.deposit.expired', 'Deposit not paid; the checkout expired');
       case 'review': return t('booking.admin.deposit.review', 'A payment came in, but not the deposit amount. Check it in Stripe.');
+      case 'disputed': return t('booking.admin.deposit.disputed', 'Deposit {{amount}}: the client opened a dispute. Answer it in Stripe.', { amount });
       default: return null;
     }
   };
@@ -165,7 +169,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
                 </div>
               )}
               {depositLabel(r) && (
-                <div className={`text-xs ${r.depositStatus === 'refund_failed' || r.depositStatus === 'review' ? 'text-danger-text' : 'text-body'}`}>
+                <div className={`text-xs ${['refund_failed', 'review', 'disputed'].includes(r.depositStatus) ? 'text-danger-text' : 'text-body'}`}>
                   {depositLabel(r)}
                   {r.depositInvoiceId && ` · ${t('booking.admin.deposit.booked', 'booked on invoice {{number}}', {
                     number: r.invoices.find((i) => i.id === r.depositInvoiceId)?.number || `#${r.depositInvoiceId}`,
@@ -176,7 +180,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
                 <div key={g.id} className="text-xs text-body flex items-center gap-2">
                   <span>
                     {g.locked
-                      ? t('booking.admin.galleryLocked', 'Gallery "{{name}}" opens when every invoice is paid', { name: g.name })
+                      ? t('booking.admin.galleryLocked', 'Gallery "{{name}}" opens when every invoice is paid in PicPeak', { name: g.name })
                       : t('booking.admin.galleryOpen', 'Gallery "{{name}}" is open', { name: g.name })}
                   </span>
                   {g.locked && (
@@ -201,14 +205,14 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
               </ul>
             </div>
           </div>
-          {r.depositStatus === 'paid' && !r.depositInvoiceId && r.invoices.length > 0 && (
+          {r.depositStatus === 'paid' && !r.depositInvoiceId && openInvoices(r).length > 0 && (
             <PermissionGate permission="bills.manage">
               <div className="mt-3 flex flex-wrap items-end justify-end gap-2">
                 <div>
                   <label htmlFor={`deposit-invoice-${r.id}`} className={labelCls}>{t('booking.admin.depositInvoice', 'Book the deposit on')}</label>
-                  <select id={`deposit-invoice-${r.id}`} className={`${inputCls} h-9`} value={depositInvoice[r.id] ?? r.invoices[0].id}
+                  <select id={`deposit-invoice-${r.id}`} className={`${inputCls} h-9`} value={depositInvoice[r.id] ?? openInvoices(r)[0].id}
                     onChange={(e) => setDepositInvoice({ ...depositInvoice, [r.id]: Number(e.target.value) })}>
-                    {r.invoices.map((i) => (
+                    {openInvoices(r).map((i) => (
                       <option key={i.id} value={i.id}>
                         {(i.number || `#${i.id}`)} · {formatMoneyMinor(i.totalMinor, i.currency)}
                       </option>

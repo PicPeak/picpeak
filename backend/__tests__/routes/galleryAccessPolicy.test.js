@@ -124,6 +124,32 @@ it('temporarily blocks public access and existing guest/client sessions, preserv
   }
 });
 
+it('keeps a gallery from a booking closed until it is paid, without ending the session (issue 2440)', async () => {
+  const { invalidateFeatureFlagCache } = require('../../src/middleware/requireFeatureFlag');
+  const setFlag = async (value) => {
+    const updated = await db('feature_flags').where({ key: 'calendarBooking' }).update({ value });
+    if (!updated) await db('feature_flags').insert({ key: 'calendarBooking', value });
+    invalidateFeatureFlagCache();
+  };
+  await setFlag(true);
+  await db('events').where({ id: eventId }).update({ payment_lock: 'full_payment', payment_lock_request_id: null, payment_unlocked_at: null });
+  const bearer = token();
+  const clientBearer = token({ accessLevel: 'client', via: 'customer', customerId });
+  await expectDirect(bearer, 403);
+  await expectDirect(clientBearer, 403);
+  await expectDirect(mintAdminToken(adminId), 200, '?admin_preview=1');
+  const direct = await get(`/api/gallery/${slug}/photos`, bearer);
+  expect(direct.body.code).toBe('GALLERY_AWAITING_PAYMENT');
+  // The session check passes the code through, so the page keeps the
+  // session and shows "opens once the invoice is paid", not the login.
+  const session = await get(`/api/auth/session?slug=${slug}`, bearer);
+  expect(session.body).toMatchObject({ valid: false, code: 'GALLERY_AWAITING_PAYMENT' });
+  // With client booking switched off nobody could open it by hand: no lock.
+  await setFlag(false);
+  await expectDirect(bearer, 200);
+  await db('events').where({ id: eventId }).update({ payment_lock: null });
+});
+
 it('blocks share links while disabled and restores them unchanged', async () => {
   const shareToken = 'd'.repeat(32);
   await db('events').where({ id: eventId }).update({ share_token: shareToken, temporarily_disabled: 1 });

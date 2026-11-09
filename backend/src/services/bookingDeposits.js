@@ -28,7 +28,11 @@ const { AppError } = require('../utils/errors');
 const { toTimestamp } = require('../utils/dateNormalize');
 const { withTrustedCrmAccess } = require('../database/crmAccess');
 
+const { hasColumnCached } = require('../utils/schemaCache');
+const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
+
 const DEPOSIT_TYPES = ['none', 'percent', 'fixed'];
+const LATE_PAYMENT_REASON = 'Your payment arrived after the reservation had run out, and the time has been booked since.';
 const GALLERY_UNLOCK = ['full_payment', 'deposit', 'off'];
 // Stripe's shortest Checkout lifetime; the hold covers it with a margin.
 const CHECKOUT_MINUTES = 30;
@@ -80,7 +84,9 @@ async function startCheckout(request, statusToken) {
   const statusUrl = `${base}/book/status/${statusToken}`;
   try {
     const client = await stripeClient();
-    const metadata = { picpeak_booking_ref: request.reference };
+    // picpeak_origin as photo sales stamps it: installs sharing one Stripe
+    // account can tell their sessions apart (reconcileWebhook checks it).
+    const metadata = { picpeak_booking_ref: request.reference, picpeak_origin: base };
     const session = await client.checkout.sessions.create({
       mode: 'payment',
       // Card only: a delayed method could settle after the hold ran out.
@@ -115,9 +121,9 @@ async function startCheckout(request, statusToken) {
 const intentOf = (session) => (typeof session.payment_intent === 'string'
   ? session.payment_intent : session.payment_intent?.id || null);
 
-async function notifyPaid(requestId) {
+async function notifyPaid(requestId, opts = {}) {
   const fresh = await db('booking_requests').where({ id: requestId }).first();
-  await require('./bookingNotifications').notifyReceived(fresh).catch((err) => {
+  await require('./bookingNotifications').notifyReceived(fresh, opts).catch((err) => {
     logger.warn('Could not queue the booking request mails', { requestId, error: err.message });
   });
 }
@@ -140,6 +146,8 @@ async function reconcileSession(request, session) {
   const now = new Date();
   if (paid && amountOk) {
     const settings = await require('./bookingService').getSettings();
+    // Conditional on the deposit not being settled yet: a replay or the
+    // status page cannot overwrite a refund or a review.
     const paidFields = {
       deposit_status: 'paid',
       deposit_paid_at: ts(now),
@@ -148,36 +156,59 @@ async function reconcileSession(request, session) {
       updated_at: ts(now),
     };
     const updated = await db('booking_requests').where({ id: request.id, status: 'awaiting_payment' })
+      .whereIn('deposit_status', ['open', 'expired'])
       .update({ status: 'pending', ...paidFields });
     if (updated) {
       await notifyPaid(request.id);
       return 'paid';
     }
-    // The hold ran out before the payment arrived (a late webhook).
-    const late = await db('booking_requests').where({ id: request.id, status: 'expired' })
-      .whereIn('deposit_status', ['open', 'expired']).first();
-    if (!late) return 'paid';
-    const preset = await db('quote_line_item_presets').where({ id: late.preset_id }).first();
-    const { free } = preset
-      ? await require('./bookingService').isSlotFree(preset, ts(late.starts_at), pricingValues(late), { excludeRequestId: late.id })
-      : { free: false };
-    if (free) {
-      const restored = await db('booking_requests').where({ id: late.id, status: 'expired' })
-        .update({ status: 'pending', ...paidFields });
-      if (restored) await notifyPaid(late.id);
+    // The hold ran out before the payment arrived (a late webhook). The
+    // check and the write share the lock new requests take, so a request
+    // made meanwhile and this restore cannot both win the slot.
+    const booking = require('./bookingService');
+    await hasColumnCached('booking_requests', 'deposit_status'); // warm before the transaction
+    const outcome = await booking.withRequestLock(async (trx) => {
+      const late = await trx('booking_requests').where({ id: request.id, status: 'expired' })
+        .whereIn('deposit_status', ['open', 'expired']).first();
+      if (!late) return 'none';
+      if (!(await booking.slotTaken(late, trx))) {
+        await trx('booking_requests').where({ id: late.id, status: 'expired' })
+          .whereIn('deposit_status', ['open', 'expired'])
+          .update({ status: 'pending', ...paidFields });
+        return 'restored';
+      }
+      await trx('booking_requests').where({ id: late.id, status: 'expired' })
+        .whereIn('deposit_status', ['open', 'expired'])
+        .update({ ...paidFields, hold_expires_at: late.hold_expires_at });
+      return 'taken';
+    });
+    if (outcome === 'restored') {
+      await notifyPaid(request.id);
       return 'paid';
     }
-    await db('booking_requests').where({ id: late.id, status: 'expired' })
-      .update({ ...paidFields, hold_expires_at: late.hold_expires_at });
-    await refundDeposit(await db('booking_requests').where({ id: late.id }).first());
-    return 'refunded';
+    if (outcome === 'taken') {
+      // The time went to someone else: refund, and tell the client why.
+      const row = await db('booking_requests').where({ id: request.id }).first();
+      await refundDeposit(row);
+      await require('./bookingNotifications').notifyDeclined(
+        { ...(await db('booking_requests').where({ id: request.id }).first()), decline_reason: LATE_PAYMENT_REASON },
+      ).catch((err) => logger.warn('Could not queue the late-payment refund mail', { requestId: request.id, error: err.message }));
+      return 'refunded';
+    }
+    return 'paid';
   }
   if (paid && !amountOk) {
     // Never treat a different amount as the deposit.
     logger.error('Deposit checkout paid with an unexpected amount', { requestId: request.id });
-    const updated = await db('booking_requests').where({ id: request.id }).whereIn('status', ['awaiting_payment', 'expired'])
+    // Waiting for the checkout: held for review until the admin decides.
+    // Already expired: marked for review, but not put back on the calendar.
+    const held = await db('booking_requests').where({ id: request.id, status: 'awaiting_payment' })
+      .whereIn('deposit_status', ['open', 'expired'])
       .update({ status: 'pending', deposit_status: 'review', payment_intent_id: intentOf(session), updated_at: ts(now) });
-    if (updated) await notifyPaid(request.id);
+    const marked = held ? 0 : await db('booking_requests').where({ id: request.id, status: 'expired' })
+      .whereIn('deposit_status', ['open', 'expired'])
+      .update({ deposit_status: 'review', payment_intent_id: intentOf(session), updated_at: ts(now) });
+    if (held || marked) await notifyPaid(request.id, { mailClient: Boolean(held) });
     return 'mismatch';
   }
   if (session.status === 'expired') {
@@ -188,28 +219,49 @@ async function reconcileSession(request, session) {
   return 'open';
 }
 
-/** The factor values a request was priced with (its slot length follows them). */
-function pricingValues(request) {
-  try {
-    return JSON.parse(request.pricing_factors || '{}').values || {};
-  } catch {
-    return {};
-  }
-}
 
 /**
  * Stripe webhook entry: returns true when the event belonged to a booking
  * deposit (handled here), false to let photo sales take it.
  */
+/**
+ * Refund and dispute events for a deposit: a refund that fails later, or a
+ * chargeback, shows on the request instead of being dropped.
+ */
+async function reconcilePaymentEvent(event) {
+  const object = event.data?.object || {};
+  const intent = typeof object.payment_intent === 'string' ? object.payment_intent : object.payment_intent?.id;
+  if (!intent) return false;
+  const request = await db('booking_requests').where({ payment_intent_id: intent }).first();
+  if (!request) return false;
+  const failedRefund = (event.type === 'refund.failed' || event.type === 'refund.updated') && object.status === 'failed';
+  if (failedRefund) {
+    await db('booking_requests').where({ id: request.id }).update({ deposit_status: 'refund_failed', updated_at: ts(new Date()) });
+    logger.error('A booking deposit refund failed at Stripe', { requestId: request.id });
+  } else if (event.type.startsWith('charge.dispute.')) {
+    await db('booking_requests').where({ id: request.id }).update({ deposit_status: 'disputed', updated_at: ts(new Date()) });
+    logger.error('A booking deposit is disputed', { requestId: request.id });
+  }
+  return true;
+}
+
 async function reconcileWebhook(event, client) {
+  if (event.type.startsWith('refund.') || event.type.startsWith('charge.dispute.')) {
+    return reconcilePaymentEvent(event);
+  }
   if (!event.type.startsWith('checkout.session.')) return false;
   const object = event.data?.object || {};
   const reference = object.metadata?.picpeak_booking_ref;
   if (!reference) return false;
+  const { getFrontendBaseUrl } = require('../utils/frontendUrl');
+  const origin = object.metadata?.picpeak_origin;
+  const base = ((await getFrontendBaseUrl()) || '').replace(/\/+$/, '');
+  if (origin && origin !== base) return true; // another install's session
   let request = await db('booking_requests').where({ reference }).first();
   if (request && !request.checkout_session_id) {
     // The session was made but storing its id failed: adopt it.
     await db('booking_requests').where({ id: request.id }).whereNull('checkout_session_id')
+      .whereIn('deposit_status', ['open', 'expired'])
       .update({ checkout_session_id: object.id, updated_at: ts(new Date()) });
     request = await db('booking_requests').where({ id: request.id }).first();
   }
@@ -301,9 +353,20 @@ async function applyDepositToInvoice(requestId, invoiceId, adminId) {
   // admin may not see is not one they can book a payment on.
   const quote = request.quote_id ? await db('quotes').where({ id: request.quote_id }).first('deal_uuid') : null;
   const invoice = quote && quote.deal_uuid
-    ? await db('invoices').where({ id: invoiceId, deal_uuid: quote.deal_uuid }).first('id', 'currency')
+    ? await db('invoices').where({ id: invoiceId, deal_uuid: quote.deal_uuid })
+      .first('id', 'currency', 'status', 'kind', 'cancels_invoice_id', 'total_amount_minor', 'paid_amount_minor')
     : null;
   if (!invoice) throw new AppError('Pick an invoice from this booking\'s quote', 400, 'BOOKING_INVOICE_MISMATCH');
+  // Only an issued, open invoice takes the deposit: not a Storno, not a
+  // cancelled or paid one, not one that has not gone out yet.
+  if (invoice.kind === 'storno' || invoice.cancels_invoice_id || ['cancelled', 'paid', 'scheduled', 'pending_delivery', 'draft'].includes(invoice.status)) {
+    throw new AppError('Book the deposit on an issued invoice that is still open', 409, 'BOOKING_INVOICE_NOT_OPEN');
+  }
+  const openMinor = Number(invoice.total_amount_minor) - Number(invoice.paid_amount_minor || 0);
+  if (openMinor <= 0) throw new AppError('This invoice is already paid', 409, 'BOOKING_INVOICE_NOT_OPEN');
+  // Capped at what is still open: no overpayment. The rest stays on the
+  // request for the next invoice.
+  const amountMinor = Math.min(Number(request.deposit_minor), openMinor);
   if (String(invoice.currency || '').toUpperCase() !== String(request.currency || '').toUpperCase()) {
     throw new AppError('The invoice is in another currency', 400, 'BOOKING_INVOICE_MISMATCH');
   }
@@ -312,7 +375,7 @@ async function applyDepositToInvoice(requestId, invoiceId, adminId) {
   if (!claimed) throw new AppError('The deposit is already booked on an invoice', 409, 'BOOKING_DEPOSIT_APPLIED');
   try {
     await require('./invoice/payments').markPaid(invoice.id, {
-      amountMinor: Number(request.deposit_minor),
+      amountMinor,
       paidAt: await businessDay(request.deposit_paid_at),
       paymentMethod: 'stripe',
       reference: request.payment_intent_id,
@@ -334,7 +397,14 @@ async function applyDepositToInvoice(requestId, invoiceId, adminId) {
  * came from a booking request whose service unlocks on full payment.
  */
 async function applyGalleryLock(trx, quoteId, eventId) {
-  const request = await trx('booking_requests').where({ quote_id: quoteId }).first('id', 'gallery_unlock', 'deposit_status');
+  // Through the deal, not the quote id: a reissued quote is a new quote in
+  // the same deal, and its gallery must lock like the original's.
+  const quote = await trx('quotes').where({ id: quoteId }).first('deal_uuid');
+  const quoteIds = quote && quote.deal_uuid
+    ? await trx('quotes').where({ deal_uuid: quote.deal_uuid }).pluck('id')
+    : [quoteId];
+  const request = await trx('booking_requests').whereIn('quote_id', quoteIds)
+    .orderBy('id', 'desc').first('id', 'gallery_unlock', 'deposit_status');
   if (!request) return false;
   const mode = request.gallery_unlock || 'full_payment';
   // "Once the deposit is paid" with no paid deposit (Stripe was off, or the
@@ -368,13 +438,20 @@ async function dealFullyPaid(requestId) {
     const request = await db('booking_requests').where({ id: requestId }).first('quote_id');
     const quote = request && request.quote_id ? await db('quotes').where({ id: request.quote_id }).first('deal_uuid') : null;
     if (!quote || !quote.deal_uuid) return false;
-    const agreed = await db('quotes').where({ deal_uuid: quote.deal_uuid }).whereIn('status', ['accepted', 'converted'])
-      .orderBy('id', 'desc').first('total_amount_minor');
+    // Every quote the client agreed to in this deal (a reissued one is
+    // declined, so only its replacement counts; an add-on quote adds), in
+    // the invoices' currency.
     const rows = await db('invoices').where({ deal_uuid: quote.deal_uuid })
-      .select('id', 'status', 'kind', 'cancels_invoice_id', 'total_amount_minor', 'paid_amount_minor');
+      .select('id', 'status', 'kind', 'cancels_invoice_id', 'currency', 'total_amount_minor', 'paid_amount_minor');
     const invoices = countingInvoices(rows).filter((inv) => Number(inv.total_amount_minor) > 0);
-    const billed = invoices.reduce((sum, inv) => sum + Number(inv.total_amount_minor), 0);
-    return invoices.length > 0 && invoices.every(isPaid) && billed >= Number(agreed?.total_amount_minor || 0);
+    if (!invoices.length) return false;
+    const currency = invoices[0].currency;
+    const agreedRows = await db('quotes').where({ deal_uuid: quote.deal_uuid, currency })
+      .whereIn('status', ['accepted', 'converted']).select('total_amount_minor');
+    const agreed = agreedRows.reduce((sum, q) => sum + Number(q.total_amount_minor || 0), 0);
+    const billed = invoices.filter((inv) => inv.currency === currency)
+      .reduce((sum, inv) => sum + Number(inv.total_amount_minor), 0);
+    return invoices.every(isPaid) && billed >= agreed;
   });
 }
 
@@ -384,6 +461,9 @@ async function dealFullyPaid(requestId) {
  */
 async function refreshGalleryLock(event) {
   if (!event || !event.payment_lock || event.payment_unlocked_at) return false;
+  // With client booking switched off nobody can open it by hand (the
+  // Bookings page is gone), so the lock does not apply.
+  if (!(await isFeatureEnabled('calendarBooking'))) return false;
   if (!event.payment_lock_request_id || !(await dealFullyPaid(event.payment_lock_request_id))) return true;
   await db('events').where({ id: event.id }).whereNull('payment_unlocked_at')
     .update({ payment_unlocked_at: ts(new Date()) });
