@@ -223,7 +223,8 @@ async function importInMaintenanceWorker() {
       if (request.operatorId && !currentAdmin) throw new Error('Restore operator is no longer available');
       const role = currentAdmin ? await helpers().captureOperatorRole(currentAdmin.role_id, trx) : null;
       await helpers().replaceAllTables(tables, path.join(staging, 'data'), currentAdmin, role,
-        { executor: trx, crossEngine, allTables });
+        { executor: trx, crossEngine, allTables,
+          archiveLatestMigration: manifest.database ? manifest.database.latest_migration : null });
       await require('./externalRelpathFold').foldExternalRelpaths(trx, message => logger.info('Portable restore external path conversion', { message }));
       await resetDerivedQueues(trx);
       await require('./archiveRecords').importArchiveRecords(trx, manifest.archive_records);

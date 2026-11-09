@@ -43,7 +43,7 @@ const { AppError } = require('../utils/errors');
 const { computeDueDate, ensureEventMatchesCustomer, isInvoiceEditable, resolveNetDaysForRow, UNISSUED_INVOICE_STATUSES } = require('../services/invoice/helpers');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { toDateOnly } = require('../utils/dateOnly');
-const { toIso, toStoredTimestamp } = require('../utils/dateNormalize');
+const { toIso, toStoredTimestamp, toTimestamp } = require('../utils/dateNormalize');
 
 const router = express.Router();
 // Re-bill proof endpoints (#866) are behind the incoming-invoices flag.
@@ -260,7 +260,10 @@ const INVOICE_BODY_VALIDATORS = [
   body('currency').optional({ values: 'falsy' }).isString().isLength({ min: 3, max: 3 }),
   body('issueDate').optional({ values: 'falsy' }).isISO8601(),
   body('dueDate').optional({ values: 'falsy' }).isISO8601(),
-  body('scheduledSendAt').optional({ values: 'falsy' }).isISO8601(),
+  // isISO8601 also passes forms that name no instant ('2026-W45'), which would
+  // be stored as no send date and turn the invoice into a draft.
+  body('scheduledSendAt').optional({ values: 'falsy' }).isISO8601()
+    .custom((value) => Number.isFinite(toTimestamp(value))).withMessage('scheduledSendAt is not a date and time'),
   body('installmentIndex').optional({ values: 'falsy' }).isInt({ min: 0 }),
   body('installmentTotal').optional({ values: 'falsy' }).isInt({ min: 1 }),
   body('installmentLabel').optional({ values: 'falsy' }).isString().isLength({ max: 128 }),

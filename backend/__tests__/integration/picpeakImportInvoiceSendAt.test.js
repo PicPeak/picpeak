@@ -60,4 +60,18 @@ linuxTest('restored send dates are ISO text, and a future one is not due', async
   expect(due).toHaveLength(0);
   const stuck = await db('invoices').where({ invoice_number: 'R-SENDAT-STUCK' }).first('status', 'scheduled_send_at');
   expect(stuck).toEqual({ status: 'scheduled', scheduled_send_at: null });
+  // The harness records no knex_migrations, so the archive's level is unknown
+  // and counts as older than 356. The hold is the import's, in the history.
+  const { id } = await db('invoices').where({ invoice_number: 'R-SENDAT-STUCK' }).first('id');
+  const history = await db('accounting_change_history')
+    .where({ entity_type: 'invoice', entity_id: id, action: 'updated' }).orderBy('id', 'desc').first('actor_name');
+  expect(history.actor_name).toBe('import');
+});
+
+test('only an archive older than migration 356 is rewritten', () => {
+  const { archivePredates } = require('../../src/services/picpeakImportService');
+  expect(archivePredates('355_booking_deposits.js', 356)).toBe(true);
+  expect(archivePredates(null, 356)).toBe(true);
+  expect(archivePredates('356_invoice_send_at_iso.js', 356)).toBe(false);
+  expect(archivePredates('360_later.js', 356)).toBe(false);
 });

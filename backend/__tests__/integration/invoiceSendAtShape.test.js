@@ -22,6 +22,11 @@ const {
 
 jest.setTimeout(120000);
 
+// Saving the editor's value unchanged must keep the instant in every server
+// zone. TZ does not re-bind inside a running jest process, so this suite runs
+// in the host's zone; utils/dateNormalizeToTimestamp.test.js forces
+// Europe/Berlin in a child for toStoredTimestamp, which the routes use.
+
 // The rewrite only touches SQLite; PostgreSQL stores a typed timestamp.
 const isSqliteEnv = (process.env.DATABASE_CLIENT || 'sqlite3') !== 'pg';
 
@@ -84,6 +89,13 @@ afterAll(async () => {
 });
 
 describe('invoice send date', () => {
+  it('refuses an ISO 8601 value that names no instant', async () => {
+    const id = await scheduledInvoice(new Date(Date.now() + 5 * DAY).toISOString());
+    const res = await request(invoiceApp).put(`/api/admin/invoices/${id}`).set(auth()).send({ scheduledSendAt: '2026-W45' });
+    expect(res.status).toBe(400);
+    expect((await db('invoices').where({ id }).first('scheduled_send_at')).scheduled_send_at).not.toBeNull();
+  });
+
   it('comes back from the API as ISO text after create', async () => {
     const sendAt = new Date(Date.now() + 3 * DAY).toISOString();
     const id = await scheduledInvoice(sendAt);
@@ -123,22 +135,46 @@ describe('invoice send date', () => {
     expect(new Date(stored).toISOString()).toBe(sendAt);
   });
 
-  (isSqliteEnv ? it : it.skip)('an invoice stuck on a passed editor date is held as a draft, with a history entry', async () => {
-    const id = await scheduledInvoice(new Date(Date.now() + 5 * DAY).toISOString());
+  (isSqliteEnv ? it : it.skip)('the upgrade holds stuck invoices and clears text that is no date, with history', async () => {
+    const make = async (stored) => {
+      const id = await scheduledInvoice(new Date(Date.now() + 5 * DAY).toISOString());
+      await db('invoices').where({ id }).update({ scheduled_send_at: stored });
+      return id;
+    };
     // What the old update route stored, and the old scheduler never sent.
-    await db('invoices').where({ id }).update({ scheduled_send_at: '2026-01-05T09:00' });
+    const editor = await make('2026-01-05T09:00');
+    // What a failed "Mark delivered" send left: canonical text, also never sent.
+    const released = await make('2026-01-05T09:00:00.000Z');
+    const blank = await make('');
+    const week = await make('2026-W45');
+    const future = await make('2099-01-05T09:00:00Z');
     const { isoSqliteInvoiceSendAt } = require('../../src/utils/invoiceSendAt');
-    expect(await isoSqliteInvoiceSendAt(db)).toBe(1);
+    expect(await isoSqliteInvoiceSendAt(db)).toEqual({ held: [editor, released], cleared: [blank, week] });
 
-    const row = await db('invoices').where({ id }).first('status', 'scheduled_send_at');
-    expect(row).toEqual({ status: 'scheduled', scheduled_send_at: null });
-    const history = await db('accounting_change_history')
+    const stored = async (id) => (await db('invoices').where({ id }).first('scheduled_send_at')).scheduled_send_at;
+    for (const id of [editor, released, blank, week]) expect(await stored(id)).toBeNull();
+    expect(await stored(future)).toBe('2099-01-05T09:00:00.000Z');
+    const historyOf = (id) => db('accounting_change_history')
       .where({ entity_type: 'invoice', entity_id: id, action: 'updated' })
       .orderBy('id', 'desc').first('actor_type', 'actor_name', 'changes');
-    expect(history).toMatchObject({ actor_type: 'system', actor_name: 'upgrade' });
-    expect(JSON.parse(history.changes)).toHaveProperty('scheduled_send_at');
+    for (const id of [editor, blank]) {
+      const history = await historyOf(id);
+      expect(history).toMatchObject({ actor_type: 'system', actor_name: 'upgrade' });
+      expect(JSON.parse(history.changes)).toHaveProperty('scheduled_send_at');
+    }
+
     await scheduler.runScheduledTasks();
-    expect(await statusOf(id)).toBe('scheduled');
+    for (const id of [editor, released, blank, week, future]) expect(await statusOf(id)).toBe('scheduled');
+  });
+
+  (isSqliteEnv ? it : it.skip)('a hold during an import is recorded as the import', async () => {
+    const id = await scheduledInvoice(new Date(Date.now() + 5 * DAY).toISOString());
+    await db('invoices').where({ id }).update({ scheduled_send_at: '2026-02-05T09:00' });
+    const { isoSqliteInvoiceSendAt } = require('../../src/utils/invoiceSendAt');
+    expect((await isoSqliteInvoiceSendAt(db, { actor: 'import' })).held).toEqual([id]);
+    const history = await db('accounting_change_history')
+      .where({ entity_type: 'invoice', entity_id: id, action: 'updated' }).orderBy('id', 'desc').first('actor_name');
+    expect(history.actor_name).toBe('import');
   });
 
   it('a created invoice that is due is sent by the scheduler', async () => {
