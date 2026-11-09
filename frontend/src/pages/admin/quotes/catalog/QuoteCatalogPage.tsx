@@ -188,8 +188,12 @@ const ServicesTab: React.FC = () => {
       category: form.category || null,
       detailsText: form.detailsText || null,
       // Only factors in the service's currency: after a currency change the
-      // others are no longer listed, so they must not be sent either.
-      factorIds: form.productId ? [] : form.factorIds.filter((id) => factors.find((f) => f.id === id)?.currency === form.currency),
+      // others are no longer listed, so they must not be sent either. A
+      // factor not loaded (yet) is sent as it is; the server checks it.
+      factorIds: form.productId ? [] : form.factorIds.filter((id) => {
+        const factor = factors.find((f) => f.id === id);
+        return !factor || factor.currency === form.currency;
+      }),
     };
     try {
       if (form.id) await quotesService.updateLineItemPreset(form.id, payload);

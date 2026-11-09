@@ -165,15 +165,24 @@ function isSub(li: EditableLineItem) {
  * pricing made and nobody changed since: each matches a line recorded in the
  * parent's snapshot (description, quantity, unit price), used once.
  */
-function generatedSubLines(items: EditableLineItem[], parentPosition: number): Set<number> {
+export function generatedSubLines(items: EditableLineItem[], parentPosition: number): Set<number> {
   const parent = items.find((it) => it.position === parentPosition);
-  const recorded = [...(parent?.pricingFactors?.lines || [])];
   const out = new Set<number>();
+  // A snapshot from before the lines were recorded: every sub-line is the
+  // pricing's, as re-pricing always treated them.
+  if (!Array.isArray(parent?.pricingFactors?.lines)) {
+    for (const it of items) if (it.parentPosition === parentPosition) out.add(it.position);
+    return out;
+  }
+  const recorded = [...parent.pricingFactors.lines];
   for (const it of items) {
     if (it.parentPosition !== parentPosition) continue;
+    // A line priced from a rate follows the rate: "Apply current rates" may
+    // have moved its price since, which is not a change by hand.
+    const followsRate = isRatePriced(it) && usesRateChain(it);
     const i = recorded.findIndex((l) => l.description === it.description
       && Number(l.quantity) === Number(it.quantity)
-      && l.unitPriceMinor === Math.round((Number(it.unitPrice) || 0) * 100));
+      && (followsRate || l.unitPriceMinor === Math.round((Number(it.unitPrice) || 0) * 100)));
     if (i >= 0) {
       out.add(it.position);
       recorded.splice(i, 1);

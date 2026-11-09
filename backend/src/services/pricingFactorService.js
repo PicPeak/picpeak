@@ -193,6 +193,11 @@ async function saveFactor(id, payload) {
   if (attached && columns.input_type !== existing.input_type) {
     throw new AppError('The type of a factor in use cannot change; create a new factor instead', 409, 'FACTOR_IN_USE');
   }
+  // The same for how the amount applies (per unit or per step, fixed or
+  // percent): the services using it would read their amount differently.
+  if (attached && (columns.effect ?? null) !== (existing.effect ?? null)) {
+    throw new AppError('How a factor in use applies its amount cannot change; create a new factor instead', 409, 'FACTOR_IN_USE');
+  }
   const options = optionRows(payload.options, columns.input_type);
 
   const factorId = await db.transaction(async (trx) => {

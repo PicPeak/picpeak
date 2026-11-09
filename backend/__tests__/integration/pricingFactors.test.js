@@ -298,6 +298,12 @@ describe('review round 1', () => {
     expect(res.status).toBe(409);
   });
 
+  test('how a factor in use applies its amount cannot change', async () => {
+    const res = await request(catalogApp).put(`/api/admin/quote-catalog/factors/${rush.id}`).set(auth)
+      .send({ effect: 'fixed', amountMinor: 2000 });
+    expect(res.status).toBe(409);
+  });
+
   test('numeric fields are bounded, and so is a submitted value', async () => {
     for (const bad of [{ stepSize: 0.004, effect: 'step' }, { includedUnits: 1e9 }, { maxValue: 1e12 }]) {
       const res = await request(catalogApp).post('/api/admin/quote-catalog/factors').set(auth)

@@ -338,7 +338,12 @@ export const PricingFactorsTab: React.FC = () => {
                       onChange={(amount) => setOption(index, { amount })} />
                   )}
                   <Button variant="outline" size="sm" aria-label={t('common.remove', 'Remove') as string}
-                    onClick={() => setForm({ ...form, options: form.options.filter((_, i) => i !== index) })}>
+                    onClick={() => setForm({
+                      ...form,
+                      options: form.options.filter((_, i) => i !== index),
+                      // The removed option can no longer be the default.
+                      defaultValue: o.id != null && form.defaultValue === String(o.id) ? '' : form.defaultValue,
+                    })}>
                     <X className="w-3.5 h-3.5" />
                   </Button>
                   {form.inputType === 'zone' && (
