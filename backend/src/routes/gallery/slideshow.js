@@ -13,7 +13,7 @@ const logger = require('../../utils/logger');
 const { getEventShareToken, buildShareLinkVariants } = require('../../services/shareLinkService');
 const { handleAsync } = require('../../utils/routeHelpers');
 const { NotFoundError } = require('../../utils/errors');
-const { setGalleryAuthCookies } = require('../../utils/tokenUtils');
+const { setSlideshowAuthCookie } = require('../../utils/tokenUtils');
 const { getSlideshowGlobals } = require('../../utils/slideshowGlobals');
 const { normalizeSlideshowFit } = require('../../services/eventSettings');
 const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
@@ -223,12 +223,14 @@ async function slideshowQrDataUrl(event, req) {
   }
 }
 
+const SLIDESHOW_SESSION_SECONDS = 12 * 60 * 60;
+
 // Open a slideshow session: validate the token and mint a short-lived gallery
 // JWT scoped to `accessLevel:'slideshow'` (treated as a guest by the photo /
 // image endpoints → visible photos only, no client-only/hidden). The page
 // stores this token and the existing axios interceptor injects it.
 // no-store: this response *is* a credential (it mints a gallery JWT and sets
-// the per-slug auth cookie), so it must never be retained anywhere.
+// the slideshow auth cookie), so it must never be retained anywhere.
 router.get('/:slug/show/:token/session', noStoreCache, handleAsync(async (req, res) => {
   const { slug, token } = req.params;
   const event = await resolveSlideshow(slug, token);
@@ -249,14 +251,17 @@ router.get('/:slug/show/:token/session', noStoreCache, handleAsync(async (req, r
     ...slideshowCredentialClaim(event),
     loginTime: Date.now()
   }, process.env.JWT_SECRET, {
-    expiresIn: '12h',
+    expiresIn: SLIDESHOW_SESSION_SECONDS,
     issuer: 'picpeak-auth'
   });
 
   // <img> tags can't carry an Authorization header, so the photo/thumbnail/
-  // preview endpoints authenticate via the per-slug gallery cookie. Set it
-  // here so the kiosk's image requests are authorized with zero extra wiring.
-  setGalleryAuthCookies(res, sessionToken, event.slug);
+  // preview endpoints authenticate via a cookie. The slideshow keeps its own
+  // (issue 2438): in the guest cookie it shadowed a guest login in the same
+  // browser, or was overwritten by one. The image URLs this session is handed
+  // carry the marker that selects it (galleryQueryService). Same lifetime as
+  // the JWT, so neither outlives the other.
+  setSlideshowAuthCookie(res, sessionToken, event.slug, SLIDESHOW_SESSION_SECONDS * 1000);
 
   const [{ count }] = await slideshowPhotosQuery(event.id, event.show_category_id).count('* as count');
 
