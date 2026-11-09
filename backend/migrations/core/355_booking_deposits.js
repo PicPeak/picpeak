@@ -20,7 +20,10 @@
  *   checkout_session_id, payment_intent_id, deposit_paid_at,
  *   deposit_invoice_id (the last invoice the admin booked the deposit on),
  *   deposit_applied_minor (how much of it is booked so far; a deposit larger
- *   than one invoice's open amount is booked over several), gallery_unlock (the service's setting when it came in),
+ *   than one invoice's open amount is booked over several),
+ *   deposit_received_minor (what Stripe actually charged; a won dispute
+ *   goes back to paid only when it matches), gallery_unlock (the service's
+ *   setting when it came in),
  *   status_token_hash (sha256 of the token on the client's status page).
  *
  * Per gallery (events):
@@ -53,6 +56,7 @@ const REQUEST_COLUMNS = [
   ['deposit_paid_at', (t) => t.timestamp('deposit_paid_at')],
   ['deposit_invoice_id', (t) => t.integer('deposit_invoice_id')],
   ['deposit_applied_minor', (t) => t.bigInteger('deposit_applied_minor').notNullable().defaultTo(0)],
+  ['deposit_received_minor', (t) => t.bigInteger('deposit_received_minor')],
   ['gallery_unlock', (t) => t.string('gallery_unlock', 16)],
   ['status_token_hash', (t) => t.string('status_token_hash', 64)],
 ];
@@ -68,10 +72,13 @@ exports.up = async function (knex) {
   for (const [column, build] of REQUEST_COLUMNS) await addColumn(knex, 'booking_requests', column, build);
   for (const [column, build] of EVENT_COLUMNS) await addColumn(knex, 'events', column, build);
   await knex.raw('CREATE INDEX IF NOT EXISTS booking_requests_status_token ON booking_requests (status_token_hash)');
+  // Every refund and dispute event, photo sales' too, looks a request up by it.
+  await knex.raw('CREATE INDEX IF NOT EXISTS booking_requests_payment_intent ON booking_requests (payment_intent_id)');
 };
 
 exports.down = async function (knex) {
   await knex.raw('DROP INDEX IF EXISTS booking_requests_status_token');
+  await knex.raw('DROP INDEX IF EXISTS booking_requests_payment_intent');
   const drop = async (table, columns) => {
     for (const [column] of columns) {
       if (await knex.schema.hasColumn(table, column)) {

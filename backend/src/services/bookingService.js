@@ -33,6 +33,8 @@ const STATUSES = ['awaiting_payment', 'pending', 'accepted', 'declined', 'expire
 // Deposit states that keep a pending request (and its slot) until decided.
 // Money in that the admin still has to decide on: the request holds its
 // time, does not expire and is not purged.
+// What erasure leaves in place of a client's address.
+const ERASED_EMAIL = 'erased@deleted.invalid';
 const PAID_DEPOSIT = ['paid', 'review', 'disputed'];
 const MAX_RANGE_DAYS = 42;
 const DEFAULT_DURATION_MINUTES = 60;
@@ -410,11 +412,17 @@ async function forgetCustomer(trx, customerId, emails = []) {
     }
     if (changed) await trx('booking_requests').where({ id: row.id }).update({ pricing_factors: JSON.stringify(snapshot) });
   }
-  // An open request of someone erased cannot be accepted any more.
-  await rows().whereIn('status', ['pending', 'expired'])
-    .update({ status: 'declined', decided_at: ts(new Date()) });
+  // An open request of someone erased cannot be accepted any more. One whose
+  // deposit came in stays for the admin to decline, which refunds it.
+  const open = rows().whereIn('status', ['pending', 'expired', 'awaiting_payment']);
+  // Through `trx`: the cached lookup reads on the global handle, which waits
+  // for this transaction on SQLite.
+  if (await trx.schema.hasColumn('booking_requests', 'deposit_status')) {
+    open.where((q) => q.whereNull('deposit_status').orWhereNotIn('deposit_status', PAID_DEPOSIT));
+  }
+  await open.update({ status: 'declined', decided_at: ts(new Date()) });
   await rows().update({
-    name: 'Erased', email: 'erased@deleted.invalid', phone: null, company: null, message: null,
+    name: 'Erased', email: ERASED_EMAIL, phone: null, company: null, message: null,
     decline_reason: null, client_ip_hash: null, updated_at: ts(new Date()),
   });
 }
@@ -678,6 +686,10 @@ async function acceptRequest(id, adminId) {
   // for the same time made meanwhile cannot win it too.
   const claimed = await withRequestLock(async (trx) => {
     const current = await trx('booking_requests').where({ id }).first();
+    // Erased while its deposit waits for a refund: decline only.
+    if (current && current.email === ERASED_EMAIL) {
+      throw new AppError('The client of this request was erased. Decline it to refund the deposit.', 409, 'BOOKING_CLIENT_ERASED');
+    }
     if (current && ['pending', 'expired'].includes(current.status) && await slotTaken(current, trx)) {
       throw new AppError('Something else now takes this time. Decline the request, or move the quote to another date after accepting a new one.', 409, 'BOOKING_SLOT_TAKEN');
     }

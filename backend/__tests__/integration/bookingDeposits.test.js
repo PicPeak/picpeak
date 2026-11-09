@@ -70,7 +70,13 @@ const mockStripe = {
     }),
   } },
   refunds: { create: jest.fn(async () => ({ id: `re_${crypto.randomUUID()}`, status: 'succeeded' })) },
+  // A dispute's current state at Stripe; unknown ids fail like the API does.
+  disputes: { retrieve: jest.fn(async (id) => {
+    if (!disputes.has(id)) throw new Error('No such dispute');
+    return { ...disputes.get(id) };
+  }) },
 };
+const disputes = new Map();
 
 let db;
 let cleanup;
@@ -558,5 +564,77 @@ describe('blind review', () => {
     session.metadata = { ...session.metadata, picpeak_origin: 'https://old-address.example.test' };
     await hook(session);
     expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('paid');
+  });
+});
+
+describe('review round 2', () => {
+  const open = async (date, hhmm, email) => {
+    const res = await sendRequest(zurich(date, hhmm), { email });
+    expect(res.status).toBe(201);
+    return { res, row: await db('booking_requests').where({ reference: res.body.reference }).first() };
+  };
+  const hook = async (session) => webhook('checkout.session.completed', { id: session.id, metadata: session.metadata }).expect(200);
+  const status = async (id) => (await db('booking_requests').where({ id }).first()).deposit_status;
+
+  test('a won dispute on a review deposit goes back to review, not paid', async () => {
+    const { row } = await open(day(42), '09:00', 'review-dispute@example.test');
+    const session = pay(row.checkout_session_id);
+    session.amount_total = 1;
+    await hook(session);
+    expect(await status(row.id)).toBe('review');
+    await webhook('charge.dispute.created', { id: 'dp_r', payment_intent: session.payment_intent, status: 'needs_response' }).expect(200);
+    expect(await status(row.id)).toBe('disputed');
+    await webhook('charge.dispute.closed', { id: 'dp_r', payment_intent: session.payment_intent, status: 'won' }).expect(200);
+    expect(await status(row.id)).toBe('review');
+  });
+
+  test('a dispute event that arrives late is read against the dispute\'s current status', async () => {
+    const { row } = await open(day(42), '13:00', 'late-dispute@example.test');
+    const session = pay(row.checkout_session_id);
+    await hook(session);
+    const intent = session.payment_intent;
+    disputes.set('dp_o', { id: 'dp_o', payment_intent: intent, status: 'needs_response' });
+    await webhook('charge.dispute.created', { id: 'dp_o', payment_intent: intent, status: 'needs_response' }).expect(200);
+    expect(await status(row.id)).toBe('disputed');
+    disputes.set('dp_o', { id: 'dp_o', payment_intent: intent, status: 'won' });
+    await webhook('charge.dispute.closed', { id: 'dp_o', payment_intent: intent, status: 'won' }).expect(200);
+    expect(await status(row.id)).toBe('paid');
+    // An `updated` from before the close, delivered after it.
+    await webhook('charge.dispute.updated', { id: 'dp_o', payment_intent: intent, status: 'under_review' }).expect(200);
+    expect(await status(row.id)).toBe('paid');
+  });
+
+  test('a payment of another amount on a declined request is refunded', async () => {
+    const { row } = await open(day(43), '09:00', 'declined-mismatch@example.test');
+    await db('booking_requests').where({ id: row.id }).update({ status: 'expired', deposit_status: 'expired' });
+    await request(adminApp).post(`/api/admin/booking/requests/${row.id}/decline`).set(auth).send({}).expect(200);
+    const session = pay(row.checkout_session_id);
+    session.amount_total = 1;
+    await hook(session);
+    expect(await db('booking_requests').where({ id: row.id }).first()).toMatchObject({ status: 'declined', deposit_status: 'refunded' });
+  });
+
+  test('a refund does not overwrite a dispute recorded meanwhile', async () => {
+    const { row } = await open(day(43), '13:00', 'refund-race@example.test');
+    await hook(pay(row.checkout_session_id));
+    const stale = await db('booking_requests').where({ id: row.id }).first();
+    await db('booking_requests').where({ id: row.id }).update({ deposit_status: 'disputed' });
+    await require('../../src/services/bookingDeposits').refundDeposit(stale);
+    expect(await status(row.id)).toBe('disputed');
+  });
+
+  test('erasing a client keeps a paid request open for a refunding decline, and accept refuses it', async () => {
+    const { row } = await open(day(49), '09:00', 'erase-paid@example.test');
+    await hook(pay(row.checkout_session_id));
+    const { row: unpaid } = await open(day(50), '09:00', 'erase-paid@example.test');
+    const customer = await withTrusted(() => require('../../src/services/customerAccountsService')
+      .createDirect({ email: 'erase-paid@example.test', createdByAdminId: adminId }));
+    await withTrusted(() => require('../../src/services/customerAccountsService').eraseCustomer(customer.id, adminId));
+    expect(await db('booking_requests').where({ id: unpaid.id }).first()).toMatchObject({ status: 'declined', name: 'Erased' });
+    expect(await db('booking_requests').where({ id: row.id }).first()).toMatchObject({ status: 'pending', deposit_status: 'paid', name: 'Erased' });
+    const accepted = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/accept`).set(auth);
+    expect([accepted.status, accepted.body.code || accepted.body.error?.code]).toEqual([409, 'BOOKING_CLIENT_ERASED']);
+    const declined = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/decline`).set(auth).send({});
+    expect(declined.body.request.depositStatus).toBe('refunded');
   });
 });

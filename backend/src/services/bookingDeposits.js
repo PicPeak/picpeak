@@ -152,6 +152,7 @@ async function reconcileSession(request, session) {
       deposit_status: 'paid',
       deposit_paid_at: ts(now),
       payment_intent_id: intentOf(session),
+      deposit_received_minor: Number(session.amount_total),
       hold_expires_at: ts(now.getTime() + settings.hold_hours * 3600000),
       updated_at: ts(now),
     };
@@ -223,13 +224,27 @@ async function reconcileSession(request, session) {
     logger.error('Deposit checkout paid with an unexpected amount', { requestId: request.id });
     // Waiting for the checkout: held for review until the admin decides.
     // Already expired: marked for review, but not put back on the calendar.
+    const reviewFields = {
+      deposit_status: 'review', payment_intent_id: intentOf(session), deposit_received_minor: Number(session.amount_total), updated_at: ts(now),
+    };
     const held = await db('booking_requests').where({ id: request.id, status: 'awaiting_payment' })
       .whereIn('deposit_status', ['open', 'expired'])
-      .update({ status: 'pending', deposit_status: 'review', payment_intent_id: intentOf(session), updated_at: ts(now) });
+      .update({ status: 'pending', ...reviewFields });
     const marked = held ? 0 : await db('booking_requests').where({ id: request.id })
       .whereIn('status', ['expired', 'accepted', 'declined'])
       .whereIn('deposit_status', ['open', 'expired'])
-      .update({ deposit_status: 'review', payment_intent_id: intentOf(session), updated_at: ts(now) });
+      .update(reviewFields);
+    if (marked) {
+      // Declined before the money arrived: the decline's refund ran on
+      // nothing, so this payment goes back now, as with the right amount.
+      const row = await db('booking_requests').where({ id: request.id }).first();
+      if (row.status === 'declined') {
+        await refundDeposit(row);
+        await require('./bookingNotifications').notifyDeclined(await db('booking_requests').where({ id: request.id }).first())
+          .catch((err) => logger.warn('Could not queue the refund mail', { requestId: request.id, error: err.message }));
+        return 'refunded';
+      }
+    }
     if (held || marked) await notifyPaid(request.id, { mailClient: Boolean(held) });
     return 'mismatch';
   }
@@ -242,11 +257,14 @@ async function reconcileSession(request, session) {
 }
 
 
+// Dispute statuses that leave the money with the studio.
+const DISPUTE_SETTLED_FOR_STUDIO = ['won', 'warning_closed'];
+
 /**
  * Refund and dispute events for a deposit: a refund that fails later, or a
  * chargeback, shows on the request instead of being dropped.
  */
-async function reconcilePaymentEvent(event) {
+async function reconcilePaymentEvent(event, client = null) {
   const object = event.data?.object || {};
   const intent = typeof object.payment_intent === 'string' ? object.payment_intent : object.payment_intent?.id;
   if (!intent) return false;
@@ -266,14 +284,26 @@ async function reconcilePaymentEvent(event) {
     await db('booking_requests').where({ id: request.id }).whereIn('deposit_status', ['paid', 'review', 'refunded'])
       .update({ deposit_status: 'refund_failed', updated_at: now });
     logger.error('A booking deposit refund failed at Stripe', { requestId: request.id });
-  } else if (event.type === 'charge.dispute.closed' && object.status === 'won') {
-    // The studio kept the money: the deposit is paid again.
-    await db('booking_requests').where({ id: request.id, deposit_status: 'disputed' })
-      .update({ deposit_status: 'paid', updated_at: now });
   } else if (event.type.startsWith('charge.dispute.')) {
-    await db('booking_requests').where({ id: request.id }).whereIn('deposit_status', ['paid', 'review', 'disputed', 'refund_failed'])
-      .update({ deposit_status: 'disputed', updated_at: now });
-    logger.error('A booking deposit is disputed', { requestId: request.id });
+    // Decided on the dispute's status, read back from Stripe where it can
+    // be: events can arrive out of order, so an `updated` after a won
+    // `closed` must not open the dispute again.
+    let dispute = object;
+    if (client?.disputes && object.id) {
+      dispute = await client.disputes.retrieve(object.id).catch(() => object);
+    }
+    if (DISPUTE_SETTLED_FOR_STUDIO.includes(dispute.status)) {
+      // The studio kept the money: back to what it was before the dispute,
+      // paid only when the charge was the deposit (otherwise still review).
+      const back = Number(request.deposit_received_minor) === Number(request.deposit_minor) ? 'paid' : 'review';
+      await db('booking_requests').where({ id: request.id, deposit_status: 'disputed' })
+        .update({ deposit_status: back, updated_at: now });
+    } else {
+      // Open, or lost: the money is contested or gone.
+      await db('booking_requests').where({ id: request.id }).whereIn('deposit_status', ['paid', 'review', 'disputed', 'refund_failed'])
+        .update({ deposit_status: 'disputed', updated_at: now });
+      logger.error('A booking deposit is disputed', { requestId: request.id, status: dispute.status || null });
+    }
   }
   return true;
 }
@@ -284,7 +314,7 @@ async function reconcilePaymentEvent(event) {
  */
 async function reconcileWebhook(event, client) {
   if (event.type.startsWith('refund.') || event.type.startsWith('charge.dispute.') || event.type === 'charge.refunded') {
-    return reconcilePaymentEvent(event);
+    return reconcilePaymentEvent(event, client);
   }
   if (!event.type.startsWith('checkout.session.')) return false;
   const object = event.data?.object || {};
@@ -365,11 +395,14 @@ async function refundDeposit(request) {
     const client = await stripeClient();
     await client.refunds.create({ payment_intent: request.payment_intent_id },
       { idempotencyKey: `picpeak-booking-refund:${request.reference}` });
-    await db('booking_requests').where({ id: request.id }).update({ deposit_status: 'refunded', updated_at: ts(new Date()) });
+    // Conditional: a dispute or a failed refund recorded meanwhile stays.
+    await db('booking_requests').where({ id: request.id }).whereIn('deposit_status', ['paid', 'review'])
+      .update({ deposit_status: 'refunded', updated_at: ts(new Date()) });
     return 'refunded';
   } catch (err) {
     // Stays visible on the request: the admin refunds in Stripe by hand.
-    await db('booking_requests').where({ id: request.id }).update({ deposit_status: 'refund_failed', updated_at: ts(new Date()) });
+    await db('booking_requests').where({ id: request.id }).whereIn('deposit_status', ['paid', 'review'])
+      .update({ deposit_status: 'refund_failed', updated_at: ts(new Date()) });
     logger.error('Could not refund a booking deposit', { requestId: request.id, type: err.type || err.name });
     return 'refund_failed';
   }
@@ -417,9 +450,9 @@ async function applyDepositToInvoice(requestId, invoiceId, adminId) {
   }
   // Claimed against the amount read above: two bookings at once cannot both
   // take the same remainder.
-  const claimed = await db('booking_requests').where({ id: requestId, deposit_applied_minor: applied })
+  const claimed = await db('booking_requests').where({ id: requestId, deposit_applied_minor: applied, deposit_status: 'paid' })
     .update({ deposit_applied_minor: applied + amountMinor, deposit_invoice_id: invoice.id, updated_at: ts(new Date()) });
-  if (!claimed) throw new AppError('The deposit was just booked; reload and try again', 409, 'BOOKING_DEPOSIT_APPLIED');
+  if (!claimed) throw new AppError('The deposit changed meanwhile; reload and try again', 409, 'BOOKING_DEPOSIT_APPLIED');
   try {
     await require('./invoice/payments').markPaid(invoice.id, {
       amountMinor,
