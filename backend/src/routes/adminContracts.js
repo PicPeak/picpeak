@@ -314,6 +314,7 @@ router.get(
     query('section').optional().isString(),
     query('includeInactive').optional().isBoolean(),
     query('forNewContract').optional().isBoolean(),
+    query('customerAccountId').optional().isInt({ min: 1 }).toInt(),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -321,6 +322,7 @@ router.get(
       section: req.query.section,
       includeInactive: req.query.includeInactive === 'true' || req.query.includeInactive === true,
       forNewContract: req.query.forNewContract === 'true' || req.query.forNewContract === true,
+      customerAccountId: req.query.customerAccountId || null,
     });
     return successResponse(res, { blocks: blocks.map(transformBlock) });
   }),

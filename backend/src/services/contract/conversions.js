@@ -74,7 +74,7 @@ async function createFromQuote(quoteId, adminId, { contractTemplateId = null } =
   ensureCustomerActive(customer);
 
   const profile = (await businessProfileService.getProfile()).profile;
-  await regionalClauses.fitVersionToBusiness(version, profile?.country_code);
+  await regionalClauses.fitVersionToBusiness(version, profile?.country_code, customer);
   const validDays = ensureInt(await getAppSetting('crm_contracts_default_valid_days')) || 30;
   const issueDate = new Date().toISOString().slice(0, 10);
   const validUntil = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)

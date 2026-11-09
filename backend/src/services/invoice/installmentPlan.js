@@ -6,6 +6,7 @@ const { adminActivityActor } = require('../../utils/activityActor');
 const { AppError } = require('../../utils/errors');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
+const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('../accountingHistory');
 const { computeDueDate, computeScheduledSendAt, isInvoiceEditable, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
 
@@ -16,7 +17,18 @@ const { computeDueDate, computeScheduledSendAt, isInvoiceEditable, getHierarchyH
  * percent share; the last slice absorbs rounding drift so the per-slice
  * sums exactly equal the plan total.
  */
-function computeSliceTotals(installments, totals, i) {
+function computeSliceTotals(installments, totals, i, { roundVatDown = false } = {}) {
+  const slice = proportionalSlice(installments, totals, i);
+  // Each instalment is a VAT invoice of its own: a UK business rounds its VAT
+  // down on its own net (utils/vatAmount), as spawnInstallmentInvoices does.
+  if (roundVatDown) {
+    slice.vat = vatMinorFor(slice.net, ensureNumber(totals.vatRate, 0), { roundDown: true });
+    slice.total = slice.net + slice.vat + slice.shipping;
+  }
+  return slice;
+}
+
+function proportionalSlice(installments, totals, i) {
   const lastIndex = installments.length - 1;
   const pct = ensureNumber(installments[i].percent, 0);
   if (i < lastIndex) {
@@ -214,6 +226,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
   }), { net: 0, vat: 0, shipping: 0, total: 0, vatRate: 0 });
 
   const sample = existing[0]; // canonical event + customer + payment-term shape
+  const roundVatDown = await roundsVatDown(trx);
 
   // netDays inferred from sample's issue → due gap so the new rows
   // honour the same payment-term the customer agreed to. Falls back
@@ -241,7 +254,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
 
   for (let i = 0; i < newCount; i++) {
     const inst = installments[i];
-    const slice = computeSliceTotals(installments, totals, i);
+    const slice = computeSliceTotals(installments, totals, i, { roundVatDown });
 
     let scheduledSendAt = computeScheduledSendAt(
       inst.trigger, inst.offset_days, eventDate, acceptanceTime,
