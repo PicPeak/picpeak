@@ -99,6 +99,7 @@ function transformSettings(s) {
     slotStepMinutes: Number(s.slot_step_minutes),
     bufferMinutes: Number(s.buffer_minutes),
     holdHours: Number(s.hold_hours),
+    maxOpenRequests: Number(s.max_open_requests),
     introText: s.intro_text || null,
   };
 }
@@ -232,6 +233,7 @@ router.put(
     body('slotStepMinutes').optional().isInt(),
     body('bufferMinutes').optional().isInt(),
     body('holdHours').optional().isInt(),
+    body('maxOpenRequests').optional().isInt(),
     body('introText').optional({ nullable: true }).isString().isLength({ max: 5000 }),
   ],
   handleAsync(async (req, res) => {
@@ -242,6 +244,7 @@ router.put(
       slot_step_minutes: req.body.slotStepMinutes,
       buffer_minutes: req.body.bufferMinutes,
       hold_hours: req.body.holdHours,
+      max_open_requests: req.body.maxOpenRequests,
       intro_text: req.body.introText,
     });
     return successResponse(res, { settings: transformSettings(saved) });

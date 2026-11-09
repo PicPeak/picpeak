@@ -32,6 +32,15 @@ const TOGGLE_EFFECTS = ['fixed', 'percent'];
 const OPTION_EFFECTS = ['fixed', 'percent'];
 const MAX_OPTIONS = 100;
 const SNAPSHOT_VERSION = 1;
+// Stored numbers are decimal(10,2): the largest the column holds, and the
+// smallest step that survives rounding to two places.
+const MAX_STORED_NUMBER = 99999999;
+const MIN_STEP = 0.01;
+// A value a client or admin submits for a number factor; above this a price
+// stops being meaningful long before the arithmetic overflows.
+const MAX_SUBMITTED_VALUE = 1e6;
+
+const nowIso = () => new Date().toISOString();
 
 function insertedId(inserted) {
   return typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
@@ -102,13 +111,47 @@ function factorColumns(payload, existing = {}) {
 
   const merged = { ...existing, ...out };
   if (out.name !== undefined && !out.name) throw new AppError('A factor needs a name', 400, 'FACTOR_INVALID');
-  if (inputType === 'number' && effect === 'step' && !(Number(merged.step_size) > 0)) {
-    throw new AppError('A stepped factor needs a step size above zero', 400, 'FACTOR_INVALID');
+  for (const key of ['included_units', 'step_size', 'min_value', 'max_value']) {
+    const v = merged[key];
+    if (v != null && (Number(v) < 0 || Number(v) > MAX_STORED_NUMBER)) {
+      throw new AppError(`${key} must be between 0 and ${MAX_STORED_NUMBER}`, 400, 'FACTOR_INVALID');
+    }
+  }
+  if (inputType === 'number' && effect === 'step' && !(Number(merged.step_size) >= MIN_STEP)) {
+    throw new AppError(`A stepped factor needs a step size of at least ${MIN_STEP}`, 400, 'FACTOR_INVALID');
   }
   if (merged.min_value != null && merged.max_value != null && Number(merged.min_value) > Number(merged.max_value)) {
     throw new AppError('The minimum is above the maximum', 400, 'FACTOR_INVALID');
   }
   return out;
+}
+
+/**
+ * Check a factor's default against its type, bounds and options (the final
+ * option ids, after the write). Returns the default to store: a choice or
+ * zone default whose option was removed by this save is cleared, unless the
+ * save itself named it; then it is refused.
+ */
+function checkedDefault(factor, optionIds, { explicit }) {
+  const d = factor.default_value;
+  if (d == null || d === '') return null;
+  switch (factor.input_type) {
+    case 'number': {
+      const n = Number(d);
+      const ok = Number.isFinite(n) && n >= 0 && n <= MAX_SUBMITTED_VALUE
+        && (factor.min_value == null || n >= Number(factor.min_value))
+        && (factor.max_value == null || n <= Number(factor.max_value));
+      if (!ok) throw new AppError('The default is not a valid value for this factor', 400, 'FACTOR_INVALID');
+      return String(n);
+    }
+    case 'toggle':
+      if (d !== 'true' && d !== 'false') throw new AppError('The default of a yes/no factor is true or false', 400, 'FACTOR_INVALID');
+      return d;
+    default:
+      if (optionIds.includes(ensureInt(d))) return String(ensureInt(d));
+      if (explicit) throw new AppError('The default must be one of the options', 400, 'FACTOR_INVALID');
+      return null;
+  }
 }
 
 function optionRows(options, inputType) {
@@ -141,18 +184,21 @@ async function saveFactor(id, payload) {
   if (id && !existing) throw new AppError('Pricing factor not found', 404);
   if (!id && !payload.name) throw new AppError('A factor needs a name', 400, 'FACTOR_INVALID');
   const columns = factorColumns(payload, existing || {});
-  if (existing && columns.currency && columns.currency !== existing.currency) {
-    const attached = await db('quote_preset_factors').where({ factor_id: id }).first();
-    if (attached) {
-      throw new AppError('The factor is attached to catalogue items in its currency; detach it first', 409, 'FACTOR_IN_USE');
-    }
+  const attached = existing ? await db('quote_preset_factors').where({ factor_id: id }).first() : null;
+  if (attached && columns.currency && columns.currency !== existing.currency) {
+    throw new AppError('The factor is attached to catalogue items in its currency; detach it first', 409, 'FACTOR_IN_USE');
+  }
+  // Another type would drop or reinterpret what services and saved quotes
+  // were priced with (choice options go, a number reads differently).
+  if (attached && columns.input_type !== existing.input_type) {
+    throw new AppError('The type of a factor in use cannot change; create a new factor instead', 409, 'FACTOR_IN_USE');
   }
   const options = optionRows(payload.options, columns.input_type);
 
   const factorId = await db.transaction(async (trx) => {
     let targetId = id;
     if (id) {
-      await trx('pricing_factors').where({ id }).update({ ...columns, updated_at: new Date() });
+      await trx('pricing_factors').where({ id }).update({ ...columns, updated_at: nowIso() });
     } else {
       targetId = insertedId(await trx('pricing_factors').insert({
         currency: 'CHF',
@@ -160,8 +206,8 @@ async function saveFactor(id, payload) {
         is_active: formatBoolean(true),
         display_order: 0,
         ...columns,
-        created_at: new Date(),
-        updated_at: new Date(),
+        created_at: nowIso(),
+        updated_at: nowIso(),
       }).returning('id'));
     }
     if (options) {
@@ -172,14 +218,22 @@ async function saveFactor(id, payload) {
       for (const { id: optionId, ...row } of options) {
         const updated = optionId
           ? await trx('pricing_factor_options').where({ id: optionId, factor_id: targetId })
-            .update({ ...row, updated_at: new Date() })
+            .update({ ...row, updated_at: nowIso() })
           : 0;
         if (!updated) {
           await trx('pricing_factor_options').insert({
-            ...row, factor_id: targetId, created_at: new Date(), updated_at: new Date(),
+            ...row, factor_id: targetId, created_at: nowIso(), updated_at: nowIso(),
           });
         }
       }
+    }
+    // The default after the write: a removed option clears it in the same
+    // transaction, so no price call ever falls back to an option that is gone.
+    const row = await trx('pricing_factors').where({ id: targetId }).first();
+    const optionIds = (await trx('pricing_factor_options').where({ factor_id: targetId }).pluck('id')).map(Number);
+    const fixedDefault = checkedDefault(row, optionIds, { explicit: payload.default_value !== undefined });
+    if ((fixedDefault ?? null) !== (row.default_value ?? null)) {
+      await trx('pricing_factors').where({ id: targetId }).update({ default_value: fixedDefault });
     }
     return targetId;
   });
@@ -188,7 +242,7 @@ async function saveFactor(id, payload) {
 
 async function archiveFactor(id) {
   const updated = await db('pricing_factors').where({ id })
-    .update({ is_active: formatBoolean(false), updated_at: new Date() });
+    .update({ is_active: formatBoolean(false), updated_at: nowIso() });
   if (!updated) throw new AppError('Pricing factor not found', 404);
 }
 
@@ -275,6 +329,13 @@ function normalisePostcodeList(value) {
   if (value == null) return null;
   const list = Array.isArray(value) ? value : String(value).split(/[\n,;]+/);
   const entries = list.map((e) => String(e).trim().toUpperCase()).filter(Boolean).slice(0, 2000);
+  for (const entry of entries) {
+    const range = /^(\d+)\s*-\s*(\d+)$/.exec(entry);
+    // A range compares postcodes of one length; "800-1200" would never match.
+    if (range && (range[1].length !== range[2].length || Number(range[1]) > Number(range[2]))) {
+      throw new AppError(`"${entry}": both ends of a range need the same number of digits, low to high`, 400, 'FACTOR_INVALID');
+    }
+  }
   return entries.length ? entries.join('\n') : null;
 }
 
@@ -336,7 +397,9 @@ function resolveValue(factor, raw, { useDefault }) {
         return num(factor.min_value) ?? num(factor.included_units) ?? 0;
       }
       const n = Number(value);
-      if (!Number.isFinite(n) || n < 0) throw new AppError(`"${factor.name}" needs a number`, 400, 'FACTOR_VALUE_INVALID');
+      if (!Number.isFinite(n) || n < 0 || n > MAX_SUBMITTED_VALUE) {
+        throw new AppError(`"${factor.name}" needs a number between 0 and ${MAX_SUBMITTED_VALUE}`, 400, 'FACTOR_VALUE_INVALID');
+      }
       if (factor.min_value != null && n < Number(factor.min_value)) {
         throw new AppError(`"${factor.name}" is below the minimum`, 400, 'FACTOR_VALUE_INVALID');
       }
@@ -371,7 +434,13 @@ function resolveValue(factor, raw, { useDefault }) {
   }
 }
 
-function factorSnapshot(f) {
+/**
+ * A factor as it was priced. Only the option that was chosen is kept (not
+ * every zone with its postcode list), so the snapshot stays small.
+ */
+function factorSnapshot(f, value) {
+  const chosen = f.input_type === 'choice' ? value
+    : f.input_type === 'zone' && value ? value.optionId : undefined;
   return {
     id: f.id,
     name: f.name,
@@ -382,7 +451,7 @@ function factorSnapshot(f) {
     percent: num(f.percent),
     includedUnits: num(f.included_units),
     stepSize: num(f.step_size),
-    options: (f.options || []).map((o) => ({
+    options: (f.options || []).filter((o) => o.id === chosen).map((o) => ({
       id: o.id, label: o.label, effect: o.effect, amountMinor: minor(o.amount_minor), percent: num(o.percent),
     })),
   };
@@ -425,6 +494,10 @@ async function priceWithFactors(presetId, opts = {}) {
       rateSource = 'item';
     } else {
       const rate = rateResolver.pickRate(await rateResolver.loadRates(customerId), priceMode);
+      if (!rate && clientOnly) {
+        // The public page: no pointer into the admin's settings.
+        throw new AppError('This service cannot be priced online right now.', 400, 'BOOKING_PRICE_UNAVAILABLE');
+      }
       if (!rate) {
         throw new AppError(
           priceMode === 'hour'
@@ -509,7 +582,8 @@ async function priceWithFactors(presetId, opts = {}) {
       lines.push({
         kind: 'factor',
         factorId: factor.id,
-        description: line.description,
+        // A factor the client does not see is not named to them either.
+        description: useDefault ? pdfI18n.t(language, 'factor_hidden') : line.description,
         quantity: line.quantity,
         unit: null,
         unitPriceMinor: line.unitPriceMinor,
@@ -537,8 +611,12 @@ async function priceWithFactors(presetId, opts = {}) {
       currency: preset.currency,
       quantity,
       values: resolved,
-      factors: factors.map(factorSnapshot),
+      factors: factors.map((f) => factorSnapshot(f, resolved[f.id])),
       unmatched,
+      // The lines this pricing made: re-pricing in the editor removes the
+      // sub-lines that still match one of these and keeps the rest (lines
+      // the admin added or changed).
+      lines: lines.map((l) => ({ description: l.description, quantity: l.quantity, unitPriceMinor: l.unitPriceMinor })),
     },
   };
 }

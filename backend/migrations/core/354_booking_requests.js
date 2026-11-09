@@ -10,13 +10,16 @@
  *
  *   booking_settings      singleton (id = 1): lead time, how far ahead,
  *                         slot step, buffer between bookings, hold length,
- *                         intro text. Working hours are the business hours
+ *                         intro text, and how many requests may be open at
+ *                         once (max_open_requests). Working hours are the business hours
  *                         (business_profile.business_hours, migration 114)
  *                         in the business timezone.
  *   booking_blocks        manual blocks and blocked days (UTC instants).
  *   booking_requests      the requests. status: pending | accepted |
  *                         declined | expired. A pending request whose hold
- *                         has passed counts as expired.
+ *                         has passed counts as expired. client_ip_hash is an
+ *                         HMAC of the client's address (IPv6 by /64), kept
+ *                         only to cap open requests per client.
  *   quote_line_item_presets
  *     bookable                    shown on the booking page
  *     booking_duration_minutes    slot length
@@ -47,6 +50,7 @@ exports.up = async function (knex) {
       t.integer('slot_step_minutes').notNullable().defaultTo(30);
       t.integer('buffer_minutes').notNullable().defaultTo(0);
       t.integer('hold_hours').notNullable().defaultTo(72);
+      t.integer('max_open_requests').notNullable().defaultTo(20);
       t.text('intro_text');
       t.timestamp('updated_at').defaultTo(knex.fn.now());
     });
@@ -83,6 +87,7 @@ exports.up = async function (knex) {
       t.string('company', 160);
       t.text('message');
       t.string('language', 8);
+      t.string('client_ip_hash', 64);
       // The pricing-factor snapshot (values + definitions) and the priced
       // lines, as computed when the request came in.
       t.text('pricing_factors');
@@ -101,6 +106,12 @@ exports.up = async function (knex) {
     });
   }
 
+  // Added while the PR was in review; guarded for instances that ran the
+  // earlier shape of this migration.
+  await addColumn(knex, 'booking_settings', 'max_open_requests', (t) => t.integer('max_open_requests').notNullable().defaultTo(20));
+  await addColumn(knex, 'booking_requests', 'client_ip_hash', (t) => t.string('client_ip_hash', 64));
+  await knex.raw('CREATE INDEX IF NOT EXISTS booking_requests_client_ip ON booking_requests (client_ip_hash)');
+
   await addColumn(knex, 'quote_line_item_presets', 'bookable', (t) => t.boolean('bookable').notNullable().defaultTo(false));
   await addColumn(knex, 'quote_line_item_presets', 'booking_duration_minutes', (t) => t.integer('booking_duration_minutes'));
   await addColumn(knex, 'quote_line_item_presets', 'booking_duration_factor_id', (t) => t.integer('booking_duration_factor_id'));
@@ -110,6 +121,7 @@ exports.up = async function (knex) {
 };
 
 exports.down = async function (knex) {
+  await knex.raw('DROP INDEX IF EXISTS booking_requests_client_ip');
   for (const column of ['booking_duration_factor_id', 'booking_duration_minutes', 'bookable']) {
     if (await knex.schema.hasColumn('quote_line_item_presets', column)) {
       await knex.schema.alterTable('quote_line_item_presets', (t) => t.dropColumn(column));

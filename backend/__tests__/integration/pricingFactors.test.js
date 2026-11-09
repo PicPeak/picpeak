@@ -264,3 +264,70 @@ describe('quote lines', () => {
     expect(JSON.parse(row.pricing_factors).values[drone.id]).toBe(true);
   });
 });
+
+describe('review round 1', () => {
+  test('removing the default option clears the default; a default naming no option is refused', async () => {
+    const f = await createFactor({
+      name: 'Format', inputType: 'choice',
+      options: [{ label: 'Square', effect: 'fixed', amountMinor: 0 }, { label: 'Wide', effect: 'fixed', amountMinor: 5000 }],
+    });
+    const [square, wide] = f.options;
+    let res = await request(catalogApp).put(`/api/admin/quote-catalog/factors/${f.id}`).set(auth)
+      .send({ defaultValue: String(wide.id), options: f.options });
+    expect(res.body.factor.defaultValue).toBe(String(wide.id));
+
+    res = await request(catalogApp).put(`/api/admin/quote-catalog/factors/${f.id}`).set(auth)
+      .send({ options: [{ id: square.id, label: 'Square', effect: 'fixed', amountMinor: 0 }] });
+    expect(res.status).toBe(200);
+    expect(res.body.factor.defaultValue).toBeNull();
+
+    res = await request(catalogApp).put(`/api/admin/quote-catalog/factors/${f.id}`).set(auth)
+      .send({ defaultValue: String(wide.id) });
+    expect(res.status).toBe(400);
+  });
+
+  test('a number default outside the bounds is refused', async () => {
+    const res = await request(catalogApp).post('/api/admin/quote-catalog/factors').set(auth)
+      .send({ name: 'Hours', inputType: 'number', amountMinor: 100, maxValue: 8, defaultValue: '9' });
+    expect(res.status).toBe(400);
+  });
+
+  test('the type of a factor in use cannot change', async () => {
+    const res = await request(catalogApp).put(`/api/admin/quote-catalog/factors/${kind.id}`).set(auth)
+      .send({ inputType: 'number' });
+    expect(res.status).toBe(409);
+  });
+
+  test('numeric fields are bounded, and so is a submitted value', async () => {
+    for (const bad of [{ stepSize: 0.004, effect: 'step' }, { includedUnits: 1e9 }, { maxValue: 1e12 }]) {
+      const res = await request(catalogApp).post('/api/admin/quote-catalog/factors').set(auth)
+        .send({ name: 'Bad', inputType: 'number', amountMinor: 100, ...bad });
+      expect(res.status).toBe(400);
+    }
+    const editingNoMax = await createFactor({ name: 'Unbounded', inputType: 'number', amountMinor: 100 });
+    const item = await createPreset({ name: 'Unbounded item', unitPriceMinor: 100, factorIds: [editingNoMax.id] });
+    const res = await price(item.id, { [editingNoMax.id]: 1e300 });
+    expect(res.status).toBe(400);
+  });
+
+  test('a range whose ends differ in length is refused', async () => {
+    const res = await request(catalogApp).post('/api/admin/quote-catalog/factors').set(auth)
+      .send({ name: 'Bad zones', inputType: 'zone', options: [{ label: 'Z', effect: 'fixed', amountMinor: 0, postcodes: '800-1200' }] });
+    expect(res.status).toBe(400);
+  });
+
+  test('the snapshot keeps only the chosen option and the lines it made', async () => {
+    const res = await price(shoot.id, { [travel.id]: { postcode: '8050' }, [drone.id]: true });
+    const travelSnap = res.body.snapshot.factors.find((f) => f.id === travel.id);
+    expect(travelSnap.options.map((o) => o.label)).toEqual(['Region']);
+    expect(res.body.snapshot.lines.map((l) => l.description)).toEqual(res.body.lines.map((l) => l.description));
+  });
+
+  test('an oversized snapshot is refused, not dropped', async () => {
+    const res = await request(quoteApp).post('/api/admin/quotes').set(auth).send({
+      customerAccountId: customerId, currency: 'CHF', vatRate: 0,
+      lineItems: [{ position: 1, quantity: 1, unitPriceMinor: 100, description: 'Big', pricingFactors: { version: 1, padding: 'x'.repeat(25000) } }],
+    });
+    expect(res.status).toBe(400);
+  });
+});

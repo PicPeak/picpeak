@@ -22,12 +22,14 @@ interface Props {
   price: (values: Record<string, FactorValue>) => Promise<FactorPriceResult>;
   onApply: (result: FactorPriceResult) => void;
   onClose: () => void;
+  /** Re-pricing: sub-lines added or changed by hand, which stay as they are. */
+  keptLines?: number;
 }
 
 const errorText = (err: any): string => err?.response?.data?.error || err?.message || 'Failed';
 
 export const PricingFactorsDialog: React.FC<Props> = ({
-  open, title, currency, factors, initialValues, price, onApply, onClose,
+  open, title, currency, factors, initialValues, price, onApply, onClose, keptLines = 0,
 }) => {
   const { t } = useTranslation();
   const startValues = useMemo(() => {
@@ -97,6 +99,11 @@ export const PricingFactorsDialog: React.FC<Props> = ({
                 </tr>
               </tbody>
             </table>
+          )}
+          {keptLines > 0 && (
+            <p className="mt-3 text-xs text-warning-text" role="note">
+              {t('quotes.factors.keptLines', '{{count}} lines under this service were added or changed by hand. They stay as they are; check them after applying.', { count: keptLines })}
+            </p>
           )}
           <p className="mt-3 text-xs text-muted">
             {t('quotes.factors.dialogHint', 'Each factor becomes its own line under the service. You can still edit the lines afterwards.')}

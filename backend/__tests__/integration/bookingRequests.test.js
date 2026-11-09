@@ -16,6 +16,7 @@
  */
 
 const request = require('supertest');
+const crypto = require('crypto');
 const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('./helpers/crmDb');
@@ -81,6 +82,13 @@ async function slotsOn(date, duration = 2) {
 // The request limiter allows 5 per IP and hour; each request here comes
 // from its own address (the test app trusts X-Forwarded-For).
 let clientIp = 0;
+/** A form token as GET / signs it, issued `ageMs` ago. */
+function formToken(ageMs = 60000) {
+  const issued = Date.now() - ageMs;
+  const mac = require('crypto').createHmac('sha256', `booking-form:${process.env.JWT_SECRET}`).update(String(issued)).digest('hex');
+  return `${issued}.${mac}`;
+}
+
 const sendRequest = (start, extra = {}) => request(publicApp).post('/api/public/booking/requests')
   .set('X-Forwarded-For', `198.51.100.${(clientIp += 1)}`).send({
   serviceId: shoot.id,
@@ -91,7 +99,7 @@ const sendRequest = (start, extra = {}) => request(publicApp).post('/api/public/
   company: 'The Echoes',
   message: 'Music video for our single',
   language: 'en',
-  startedAt: Date.now() - 60000,
+  formToken: formToken(),
   ...extra,
 });
 
@@ -340,5 +348,115 @@ describe('admin decisions', () => {
     const res = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/accept`).set(auth);
     await assignAdminRole(db, adminId, 'super_admin');
     expect(res.status).toBe(403);
+  });
+});
+
+describe('review round 1', () => {
+  const ip = '198.51.100.250';
+  const fresh = (start, extra = {}) => request(publicApp).post('/api/public/booking/requests')
+    .set('X-Forwarded-For', extra.ip || `198.51.100.${(clientIp += 1)}`)
+    .send({ serviceId: shoot.id, values: {}, start, name: 'Robo', email: `r${clientIp}@bots.example`, language: 'en', formToken: formToken(), ...extra, ip: undefined });
+
+  test('the form token is required, signed and not too fresh', async () => {
+    const start = zurich(day(monday, 14), '09:00');
+    let res = await fresh(start, { formToken: undefined });
+    expect(res.status).toBe(400);
+    res = await fresh(start, { formToken: `${Date.now() - 60000}.${'0'.repeat(64)}` });
+    expect(res.status).toBe(400);
+    res = await fresh(start, { formToken: formToken(500) });
+    expect([res.status, res.body.reference]).toEqual([201, null]);
+    const info = await request(publicApp).get('/api/public/booking');
+    expect(info.body.formToken).toMatch(/^\d+\.[0-9a-f]{64}$/);
+  });
+
+  test('one client holds at most two open requests', async () => {
+    expect((await fresh(zurich(day(monday, 14), '09:00'), { ip })).status).toBe(201);
+    expect((await fresh(zurich(day(monday, 14), '13:00'), { ip })).status).toBe(201);
+    const third = await fresh(zurich(day(monday, 14), '15:00'), { ip });
+    expect([third.status, third.body.code || third.body.error?.code]).toEqual([429, 'BOOKING_TOO_MANY_OPEN']);
+    const row = await db('booking_requests').whereNotNull('client_ip_hash').first();
+    expect(row.client_ip_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(row.client_ip_hash).not.toContain('198.51');
+  });
+
+  test('a second open request from one address mails the client once', async () => {
+    const mails = async () => Number((await db('email_queue').where({ email_type: 'booking_request_received', recipient_email: 'twice@band.example' }).count('* as n').first()).n);
+    await fresh(zurich(day(monday, 15), '09:00'), { email: 'twice@band.example' });
+    await fresh(zurich(day(monday, 15), '11:00'), { email: 'Twice@Band.example' });
+    expect(await mails()).toBe(1);
+    const third = await fresh(zurich(day(monday, 15), '13:00'), { email: 'twice@band.example' });
+    expect(third.status).toBe(429);
+  });
+
+  test('the total number of open requests is capped', async () => {
+    await request(adminApp).put('/api/admin/booking/settings').set(auth).send({ maxOpenRequests: 1 }).expect(200);
+    const res = await fresh(zurich(day(monday, 16), '09:00'));
+    expect([res.status, res.body.code || res.body.error?.code]).toEqual([429, 'BOOKING_REQUESTS_FULL']);
+    await request(adminApp).put('/api/admin/booking/settings').set(auth).send({ maxOpenRequests: 200 }).expect(200);
+  });
+
+  test('a language outside the supported ones is refused', async () => {
+    const res = await fresh(zurich(day(monday, 16), '09:00'), { language: 'xx' });
+    expect(res.status).toBe(400);
+  });
+
+  test('a hidden duration factor ignores the posted value', async () => {
+    await db('pricing_factors').where({ id: sessionLength.id }).update({ client_visible: false });
+    const res = await fresh(zurich(day(monday, 16), '09:00'), { values: { [sessionLength.id]: 8 } });
+    await db('pricing_factors').where({ id: sessionLength.id }).update({ client_visible: true });
+    expect(res.status).toBe(201);
+    const row = await db('booking_requests').where({ reference: res.body.reference }).first();
+    const minutes = (new Date(row.ends_at) - new Date(row.starts_at)) / 60000;
+    expect(minutes).toBe(120); // the factor's default (2 h), not 8 h
+  });
+
+  test('the hold never outlasts the slot', async () => {
+    await request(adminApp).put('/api/admin/booking/settings').set(auth).send({ holdHours: 24 * 30 }).expect(200);
+    const res = await fresh(zurich(day(monday, 17), '09:00'));
+    await request(adminApp).put('/api/admin/booking/settings').set(auth).send({ holdHours: 48 }).expect(200);
+    const row = await db('booking_requests').where({ reference: res.body.reference }).first();
+    expect(new Date(row.hold_expires_at).getTime()).toBeLessThanOrEqual(new Date(row.starts_at).getTime());
+  });
+
+  test('an expired request is accepted while its time is free; a block added since refuses it', async () => {
+    const a = await fresh(zurich(day(monday, 17), '13:00'));
+    const rowA = await db('booking_requests').where({ reference: a.body.reference }).first();
+    await db('booking_requests').where({ id: rowA.id }).update({ status: 'expired' });
+    const ok = await request(adminApp).post(`/api/admin/booking/requests/${rowA.id}/accept`).set(auth);
+    expect([ok.status, ok.body.request?.status]).toEqual([200, 'accepted']);
+
+    const b = await fresh(zurich(day(monday, 18), '09:00'));
+    const rowB = await db('booking_requests').where({ reference: b.body.reference }).first();
+    await request(adminApp).post('/api/admin/booking/blocks').set(auth)
+      .send({ startsAt: zurich(day(monday, 18), '08:00'), endsAt: zurich(day(monday, 18), '12:00') }).expect(201);
+    const taken = await request(adminApp).post(`/api/admin/booking/requests/${rowB.id}/accept`).set(auth);
+    expect(taken.status).toBe(409);
+    expect((await db('booking_requests').where({ id: rowB.id }).first()).status).toBe('pending');
+  });
+
+  test('the public estimate does not name hidden factors', async () => {
+    const editing = await request(catalogApp).post('/api/admin/quote-catalog/factors').set(auth)
+      .send({ name: 'Secret editing', inputType: 'toggle', effect: 'fixed', amountMinor: 5000, clientVisible: false, defaultValue: 'true' });
+    await request(quoteApp).put(`/api/admin/quotes/presets/line-items/${shoot.id}`).set(auth)
+      .send({ factorIds: [...shoot.factorIds, editing.body.factor.id] }).expect(200);
+    const res = await request(publicApp).post('/api/public/booking/estimate').send({ serviceId: shoot.id });
+    const names = res.body.lines.map((l) => l.description);
+    expect(names).not.toContain('Secret editing');
+    expect(names).toContain('Further work');
+    await request(quoteApp).put(`/api/admin/quotes/presets/line-items/${shoot.id}`).set(auth)
+      .send({ factorIds: shoot.factorIds }).expect(200);
+  });
+
+  test('erasing a customer redacts their booking requests; old declined ones are purged', async () => {
+    const accepted = await db('booking_requests').where({ status: 'accepted' }).whereNotNull('customer_account_id').first();
+    await require('../../src/database/crmAccess').withTrustedCrmAccess('test',
+      () => require('../../src/services/customerAccountsService').eraseCustomer(accepted.customer_account_id, adminId));
+    const after = await db('booking_requests').where({ id: accepted.id }).first();
+    expect(after).toMatchObject({ name: 'Erased', email: 'erased@deleted.invalid', phone: null, message: null });
+
+    const old = await db('booking_requests').where({ status: 'declined' }).first();
+    await db('booking_requests').where({ id: old.id }).update({ updated_at: new Date(Date.now() - 200 * 86400000).toISOString() });
+    await request(adminApp).get('/api/admin/booking/requests').set(auth).expect(200);
+    expect(await db('booking_requests').where({ id: old.id }).first()).toBeUndefined();
   });
 });

@@ -9565,6 +9565,8 @@
         "buffer": "Puffer (Minuten)",
         "bufferHint": "Wird vor und nach jeder Buchung frei gehalten.",
         "hold": "Anfrage reservieren für (Stunden)",
+        "maxOpen": "Höchstens offene Anfragen",
+        "maxOpenHint": "Darüber bittet die Seite Kunden, Ihnen direkt zu schreiben.",
         "holdHint": "Eine unbeantwortete Anfrage gibt den Termin danach wieder frei."
       },
       "status": {
@@ -9648,6 +9650,8 @@
       "editFactors": "Preisfaktoren",
       "empty": "Noch keine Preisfaktoren.",
       "fromPostcode": "Aus PLZ {{postcode}}",
+      "keptLines_one": "{{count}} Zeile unter dieser Leistung wurde von Hand ergänzt oder geändert. Sie bleibt, wie sie ist; prüfen Sie sie nach dem Übernehmen.",
+      "keptLines_other": "{{count}} Zeilen unter dieser Leistung wurden von Hand ergänzt oder geändert. Sie bleiben, wie sie sind; prüfen Sie sie nach dem Übernehmen.",
       "intro": "Angaben, die den Preis einer Leistung ändern, etwa Dauer, Art der Arbeit, Anfahrtszone oder Bearbeitungsaufwand. Im Tab Leistungen ordnest du sie Leistungen zu.",
       "new": "Neuer Faktor",
       "noDefault": "Keine",

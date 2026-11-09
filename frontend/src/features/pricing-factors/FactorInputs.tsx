@@ -13,7 +13,7 @@ import type { FactorValue, PricingFactor } from '../../services/quoteCatalog.ser
 // theme (branding colours, light/dark from the public settings).
 const STYLES = {
   admin: {
-    input: 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900',
+    input: 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-panel',
     label: 'block text-sm font-medium text-body mb-1',
     check: 'flex items-center gap-2 text-sm text-body',
     muted: 'mt-1 text-xs text-muted',
