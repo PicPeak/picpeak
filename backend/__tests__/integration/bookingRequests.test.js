@@ -395,9 +395,31 @@ describe('review round 1', () => {
     await request(adminApp).put('/api/admin/booking/settings').set(auth).send({ maxOpenRequests: 200 }).expect(200);
   });
 
-  test('a language outside the supported ones is refused', async () => {
-    const res = await fresh(zurich(day(monday, 16), '09:00'), { language: 'xx' });
-    expect(res.status).toBe(400);
+  test('the browser language is reduced to a shipped locale; anything else falls back', async () => {
+    const regional = await fresh(zurich(day(monday, 28), '09:00'), { language: 'de-CH' });
+    expect(regional.status).toBe(201);
+    expect((await db('booking_requests').where({ reference: regional.body.reference }).first()).language).toBe('de');
+    const unknown = await fresh(zurich(day(monday, 28), '13:00'), { language: 'xx' });
+    expect(unknown.status).toBe(201);
+    expect((await db('booking_requests').where({ reference: unknown.body.reference }).first()).language).toBeNull();
+    const estimate = await request(publicApp).post('/api/public/booking/estimate')
+      .send({ serviceId: shoot.id, values: {}, language: 'en-US' });
+    expect(estimate.status).toBe(200);
+  });
+
+  test('parallel requests from one client cannot pass the cap together', async () => {
+    const burst = '198.51.100.251';
+    const results = await Promise.all([29, 35, 36]
+      .map((offset) => fresh(zurich(day(monday, offset), '09:00'), { ip: burst, email: `burst${offset}@bots.example` })));
+    expect(results.map((r) => r.status).sort()).toEqual([201, 201, 429]);
+  });
+
+  test('the estimate shows the length a hidden duration factor will book', async () => {
+    await db('pricing_factors').where({ id: sessionLength.id }).update({ client_visible: false });
+    const res = await request(publicApp).post('/api/public/booking/estimate')
+      .send({ serviceId: shoot.id, values: { [sessionLength.id]: 8 } });
+    await db('pricing_factors').where({ id: sessionLength.id }).update({ client_visible: true });
+    expect(res.body.durationMinutes ?? res.body.data?.durationMinutes).toBe(120);
   });
 
   test('a hidden duration factor ignores the posted value', async () => {
