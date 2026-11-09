@@ -41,20 +41,24 @@ const preset = {
   id: 9, name: 'Music video shoot', description: '', unitPriceMinor: 100000, quantityDefault: 1, factorIds: [5],
 };
 
-const result = (droneOn: boolean): FactorPriceResult => ({
-  currency: 'CHF',
-  baseMinor: 100000,
-  totalMinor: droneOn ? 125000 : 100000,
-  unmatched: [],
-  lines: [
+const result = (droneOn: boolean): FactorPriceResult => {
+  const lines: FactorPriceResult['lines'] = [
     { kind: 'base', factorId: null, description: 'Base price', quantity: 1, unit: null, unitPriceMinor: 100000, totalMinor: 100000, priceMode: null, rateSource: null },
     ...(droneOn ? [{ kind: 'factor' as const, factorId: 5, description: 'Drone', quantity: 1, unit: null, unitPriceMinor: 25000, totalMinor: 25000, priceMode: null, rateSource: null }] : []),
-  ],
-  snapshot: {
-    version: 1, presetId: 9, presetName: 'Music video shoot', currency: 'CHF', quantity: 1,
-    values: { 5: droneOn }, factors: [{ id: 5, name: 'Drone', inputType: 'toggle' }], unmatched: [],
-  },
-});
+  ];
+  return {
+    currency: 'CHF',
+    baseMinor: 100000,
+    totalMinor: droneOn ? 125000 : 100000,
+    unmatched: [],
+    lines,
+    snapshot: {
+      version: 1, presetId: 9, presetName: 'Music video shoot', currency: 'CHF', quantity: 1,
+      values: { 5: droneOn }, factors: [{ id: 5, name: 'Drone', inputType: 'toggle' }], unmatched: [],
+      lines: lines.map((l) => ({ description: l.description, quantity: l.quantity, unitPriceMinor: l.unitPriceMinor })),
+    },
+  };
+};
 
 test('adding an item with factors asks for them, then inserts parent + priced sub-lines', async () => {
   const onChange = vi.fn();
@@ -81,13 +85,15 @@ test('adding an item with factors asks for them, then inserts parent + priced su
   expect(price).toHaveBeenLastCalledWith(9, { 5: true });
 });
 
-test('editing the factors again replaces only that item\'s sub-lines', async () => {
+test('editing the factors again replaces only the lines it made, and says which stay', async () => {
   const onChange = vi.fn();
   const price = vi.fn(async (_presetId: number, values: Record<string, unknown>) => result(values[5] === true));
   const items: EditableLineItem[] = [
     { position: 1, parentPosition: null, description: 'Music video shoot', quantity: 1, unitPrice: 0, discountPercent: 0, cataloguePresetId: 9, pricingFactors: result(true).snapshot },
     { position: 2, parentPosition: 1, description: 'Base price', quantity: 1, unitPrice: 1000, discountPercent: 0 },
     { position: 3, parentPosition: 1, description: 'Drone', quantity: 1, unitPrice: 250, discountPercent: 0 },
+    // Added by hand after the first pricing: stays.
+    { position: 5, parentPosition: 1, description: 'Extra edit round', quantity: 1, unitPrice: 120, discountPercent: 0 },
     { position: 4, parentPosition: null, description: 'Prints', quantity: 1, unitPrice: 80, discountPercent: 0 },
   ];
   render(
@@ -97,6 +103,7 @@ test('editing the factors again replaces only that item\'s sub-lines', async () 
 
   await userEvent.click(screen.getByRole('button', { name: 'Pricing factors' }));
   expect(screen.getByRole('checkbox', { name: 'Drone' })).toBeChecked();
+  expect(screen.getByRole('note')).toHaveTextContent(/added or changed by hand/);
   await userEvent.click(screen.getByRole('checkbox', { name: 'Drone' }));
   await waitFor(() => expect(price).toHaveBeenLastCalledWith(9, { 5: false }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Apply to quote' })).toBeEnabled());
@@ -106,6 +113,7 @@ test('editing the factors again replaces only that item\'s sub-lines', async () 
   expect(lines.map((l) => [l.parentPosition ?? null, l.description])).toEqual([
     [null, 'Music video shoot'],
     [1, 'Base price'],
+    [1, 'Extra edit round'],
     [null, 'Prints'],
   ]);
   expect(lines[0].pricingFactors?.values).toEqual({ 5: false });

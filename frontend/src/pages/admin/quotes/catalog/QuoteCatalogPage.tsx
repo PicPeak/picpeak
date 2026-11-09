@@ -187,7 +187,9 @@ const ServicesTab: React.FC = () => {
       pinnedRateMinor: rateBased && Number.isFinite(form.pinnedRate) ? toMinor(form.pinnedRate) : null,
       category: form.category || null,
       detailsText: form.detailsText || null,
-      factorIds: form.productId ? [] : form.factorIds,
+      // Only factors in the service's currency: after a currency change the
+      // others are no longer listed, so they must not be sent either.
+      factorIds: form.productId ? [] : form.factorIds.filter((id) => factors.find((f) => f.id === id)?.currency === form.currency),
     };
     try {
       if (form.id) await quotesService.updateLineItemPreset(form.id, payload);

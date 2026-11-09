@@ -21,7 +21,7 @@ import { formatMoneyMinor } from '../../../../utils/money';
 const INPUT_TYPES: FactorInputType[] = ['number', 'choice', 'zone', 'toggle'];
 const CURRENCIES = ['CHF', 'EUR', 'USD', 'GBP'];
 
-const inputCls = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900';
+const inputCls = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-panel';
 const selectCls = `${inputCls} h-10`;
 const labelCls = 'block text-sm font-medium text-body mb-1';
 const toMinor = (major: number) => Math.round((Number.isFinite(major) ? major : 0) * 100);

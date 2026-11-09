@@ -205,14 +205,19 @@ const MAX_PRICING_FACTORS_JSON = 20000;
 
 /**
  * The pricing-factor snapshot (#2440) as stored: a JSON object, or null when
- * absent, not an object or oversized.
+ * absent or not an object. Oversized is a 400.
  */
 function pricingFactorsColumn(value) {
   if (value == null || value === '') return null;
   const parsed = parsePromotionSnapshot(value);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   const json = JSON.stringify(parsed);
-  return json.length > MAX_PRICING_FACTORS_JSON ? null : json;
+  if (json.length > MAX_PRICING_FACTORS_JSON) {
+    // Refused rather than dropped: a silently missing snapshot loses the
+    // line's "Pricing factors" button with no trace.
+    throw new AppError('The pricing factor details of a line are too large', 400, 'PRICING_FACTORS_TOO_LARGE');
+  }
+  return json;
 }
 
 /**

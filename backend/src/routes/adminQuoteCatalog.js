@@ -248,7 +248,6 @@ function transformFactor(f) {
   };
 }
 
-const nullableFloat = (field) => body(field).optional({ nullable: true }).isFloat();
 const FACTOR_VALIDATORS = [
   body('description').optional({ nullable: true }).isString().isLength({ max: 2000 }),
   body('inputType').optional().isIn(factors.INPUT_TYPES),
@@ -257,10 +256,12 @@ const FACTOR_VALIDATORS = [
   body('currency').optional({ values: 'falsy' }).isString().isLength({ min: 3, max: 3 }),
   body('amountMinor').optional({ nullable: true }).isInt({ min: -1e9, max: 1e9 }),
   body('percent').optional({ nullable: true }).isFloat({ min: -100, max: 1000 }),
-  body('includedUnits').optional({ nullable: true }).isFloat({ min: 0 }),
-  body('stepSize').optional({ nullable: true }).isFloat({ min: 0 }),
-  nullableFloat('minValue'),
-  nullableFloat('maxValue'),
+  // decimal(10,2) columns: bounded so PostgreSQL never overflows, and a
+  // step is at least what two decimals can hold.
+  body('includedUnits').optional({ nullable: true }).isFloat({ min: 0, max: 99999999 }),
+  body('stepSize').optional({ nullable: true }).isFloat({ min: 0.01, max: 99999999 }),
+  body('minValue').optional({ nullable: true }).isFloat({ min: 0, max: 99999999 }),
+  body('maxValue').optional({ nullable: true }).isFloat({ min: 0, max: 99999999 }),
   body('defaultValue').optional({ nullable: true }).isString().isLength({ max: 64 }),
   body('clientVisible').optional().isBoolean(),
   body('displayOrder').optional({ values: 'falsy' }).isInt({ min: 0, max: 9999 }),

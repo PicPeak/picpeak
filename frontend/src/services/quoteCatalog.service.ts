@@ -111,6 +111,8 @@ export interface PricingFactorsSnapshot {
   values: Record<string, FactorValue>;
   factors: Array<{ id: number; name: string; inputType: FactorInputType }>;
   unmatched: number[];
+  /** The lines this pricing made; re-pricing replaces only unchanged ones. */
+  lines?: Array<{ description: string; quantity: number; unitPriceMinor: number }>;
 }
 
 export interface FactorPriceResult {
