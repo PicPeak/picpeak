@@ -22,6 +22,9 @@ const {
 
 jest.setTimeout(120000);
 
+// The rewrite only touches SQLite; PostgreSQL stores a typed timestamp.
+const isSqliteEnv = (process.env.DATABASE_CLIENT || 'sqlite3') !== 'pg';
+
 let db; let cleanup; let tmpDir; let adminId; let customerId; let token;
 let invoiceApp; let scheduler; let isSqlite;
 const prevCwd = process.cwd();
@@ -118,6 +121,24 @@ describe('invoice send date', () => {
     }
     const stored = (await db('invoices').where({ id }).first('scheduled_send_at')).scheduled_send_at;
     expect(new Date(stored).toISOString()).toBe(sendAt);
+  });
+
+  (isSqliteEnv ? it : it.skip)('an invoice stuck on a passed editor date is held as a draft, with a history entry', async () => {
+    const id = await scheduledInvoice(new Date(Date.now() + 5 * DAY).toISOString());
+    // What the old update route stored, and the old scheduler never sent.
+    await db('invoices').where({ id }).update({ scheduled_send_at: '2026-01-05T09:00' });
+    const { isoSqliteInvoiceSendAt } = require('../../src/utils/invoiceSendAt');
+    expect(await isoSqliteInvoiceSendAt(db)).toBe(1);
+
+    const row = await db('invoices').where({ id }).first('status', 'scheduled_send_at');
+    expect(row).toEqual({ status: 'scheduled', scheduled_send_at: null });
+    const history = await db('accounting_change_history')
+      .where({ entity_type: 'invoice', entity_id: id, action: 'updated' })
+      .orderBy('id', 'desc').first('actor_type', 'actor_name', 'changes');
+    expect(history).toMatchObject({ actor_type: 'system', actor_name: 'upgrade' });
+    expect(JSON.parse(history.changes)).toHaveProperty('scheduled_send_at');
+    await scheduler.runScheduledTasks();
+    expect(await statusOf(id)).toBe('scheduled');
   });
 
   it('a created invoice that is due is sent by the scheduler', async () => {

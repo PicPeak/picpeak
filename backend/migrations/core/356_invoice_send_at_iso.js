@@ -22,6 +22,8 @@ exports.up = async function up(knex) {
 // Back to epoch milliseconds for the ISO values: the code before this
 // migration compares the column with a Date, which binds as a number on
 // SQLite. Raw SQL for julianday() and typeof(), as in utils/invoiceSendAt.
+// One way only: a stuck invoice that up() held as a draft, and text that was
+// no date, stay without a send date (the invoice history records the hold).
 exports.down = async function down(knex) {
   if (knex.client.config.client === 'pg') return;
   if (!(await knex.schema.hasTable('invoices'))) return;

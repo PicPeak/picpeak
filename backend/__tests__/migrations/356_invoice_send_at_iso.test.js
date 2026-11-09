@@ -1,7 +1,7 @@
 /**
  * Migration 356: send dates SQLite stored as epoch milliseconds, epoch
  * seconds or the editor's zone-less text become ISO UTC text; ISO text and
- * null stay as they are. A scheduled invoice whose zone-less send date has
+ * null stay as they are, and text that is no date becomes NULL. A scheduled invoice whose zone-less send date has
  * passed was never sent, and is held as a draft (no send date) instead of
  * going out late. A second run changes nothing, and down() turns the ISO
  * values back into milliseconds.
@@ -31,6 +31,8 @@ describe('migration 356 on SQLite', () => {
       { label: 'stuck but sent', status: 'sent', scheduled_send_at: '2020-01-01T09:00' },
       { label: 'iso', scheduled_send_at: '2026-11-12T09:00:00.000Z' },
       { label: 'digits', scheduled_send_at: String(Date.UTC(2026, 10, 12, 9)) },
+      { label: 'blank', scheduled_send_at: '' },
+      { label: 'not a date', scheduled_send_at: 'next week' },
       { label: 'none', scheduled_send_at: null },
     ].map((row) => ({ status: 'scheduled', ...row })));
   });
@@ -52,6 +54,8 @@ describe('migration 356 on SQLite', () => {
       ['iso', 'text', '2026-11-12T09:00:00.000Z'],
       // The column's numeric affinity stores digit-only text as a number.
       ['digits', 'text', '2026-11-12T09:00:00.000Z'],
+      ['blank', 'null', null],
+      ['not a date', 'null', null],
       ['none', 'null', null],
     ]);
   });
