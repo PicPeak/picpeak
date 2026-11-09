@@ -230,4 +230,11 @@ describe('sending a UK invoice in another currency', () => {
     const result = await invoiceService().sendInvoice(invoice.id, adminId).catch((err) => err);
     expect(result && result.code).not.toBe('VAT_GBP_RATE_REQUIRED');
   });
+
+  test('an invoice with no VAT needs no rate (zero-rated, reverse charge, not registered)', async () => {
+    const invoice = await createInvoice({ currency: 'EUR', vatRate: 0 });
+    expect(Number(invoice.vat_amount_minor)).toBe(0);
+    const result = await invoiceService().sendInvoice(invoice.id, adminId).catch((err) => err);
+    expect(result && result.code).not.toBe('VAT_GBP_RATE_REQUIRED');
+  });
 });
