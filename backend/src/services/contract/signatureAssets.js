@@ -180,7 +180,7 @@ async function persistSignatureImage(contract, role, dataUrl) {
  * The customer signature is always the first stamp, so
  * recordCustomerSignature constructs it inline.
  */
-function buildSignatureStamps(contract) {
+function buildSignatureStamps(contract, { dateFormat = null } = {}) {
   const locale = contract.language || 'de';
   const nameLabel = 'Name';
   const dateLabel = locale === 'de' ? 'Datum' : 'Date';
@@ -194,6 +194,7 @@ function buildSignatureStamps(contract) {
         signedAt: contract.signed_by_customer_at,
         nameLabel,
         dateLabel,
+        dateFormat,
       },
     });
   }
@@ -206,6 +207,7 @@ function buildSignatureStamps(contract) {
         signedAt: contract.signed_by_admin_at,
         nameLabel,
         dateLabel,
+        dateFormat,
       },
     });
   }

@@ -504,7 +504,8 @@ async function getEmailSignature() {
       // (pdfService.js:361). The locale-aware country lookup lives in the
       // PDF renderer; an email footer takes the free-text `country_name`
       // when the admin set one and the ISO code otherwise. A US business
-      // writes "Denver, CO 80202" with no country (utils/postalAddress).
+      // writes "Denver, CO 80202" and a UK one "Glasgow G1 1AA", with no
+      // country (utils/postalAddress). The mail sets the address on one line.
       const address = {
         postalCode: profile.postal_code, city: profile.city, state: profile.state, countryCode: profile.country_code,
       };

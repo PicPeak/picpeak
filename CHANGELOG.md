@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.198.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.197.0-beta.0...v3.198.0-beta.0) (2026-11-09)
+
+
+### Features
+
+* **crm:** pricing factors on catalogue services ([#2451](https://github.com/PicPeak/picpeak/issues/2451)) ([fe89493](https://github.com/PicPeak/picpeak/commit/fe8949306523261d8abd19715c881d3ef82644db))
+* **crm:** UK addresses and dates on documents for a business in the United Kingdom ([#2448](https://github.com/PicPeak/picpeak/issues/2448)) ([201bebc](https://github.com/PicPeak/picpeak/commit/201bebc958a7b9905717baa786409eb4ac22d9fc))
+* **crm:** UK contracts and invoices for a business in the United Kingdom ([#2447](https://github.com/PicPeak/picpeak/issues/2447)) ([156e566](https://github.com/PicPeak/picpeak/commit/156e5662304a3793201760e1d1c3fb1984041668))
+
+
+### Bug Fixes
+
+* **gallery:** render an unknown masonry mode as columns instead of an empty gallery ([#2450](https://github.com/PicPeak/picpeak/issues/2450)) ([5889bb4](https://github.com/PicPeak/picpeak/commit/5889bb4fc1b866388f5831afa4aefe227e6ed103))
+
 ## [3.197.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.196.2-beta.0...v3.197.0-beta.0) (2026-11-09)
 
 
