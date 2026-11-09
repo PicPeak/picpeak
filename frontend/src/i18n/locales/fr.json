@@ -133,6 +133,7 @@
     "eventSpecific": "(Spécifique à l'événement)",
     "clickToUpload": "Cliquez pour téléverser ou glissez-déposez",
     "fileRequirements": "{{formats}} (max {{sizeLimit}} Mo par fichier, {{limit}} fichiers par téléversement)",
+    "videoSizeLimit": "Vidéos : max {{sizeLimit}} Mo par fichier",
     "selectedFiles": "Fichiers sélectionnés",
     "uploading": "Téléversement en cours...",
     "transferring": "Transfert en cours",

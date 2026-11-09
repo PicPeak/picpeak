@@ -133,6 +133,7 @@
     "eventSpecific": "(specifično za dogodek)",
     "clickToUpload": "Kliknite za nalaganje ali povlecite in spustite",
     "fileRequirements": "{{formats}} (največ {{sizeLimit}} MB na datoteko, {{limit}} datotek na nalaganje)",
+    "videoSizeLimit": "Videi: največ {{sizeLimit}} MB na datoteko",
     "selectedFiles": "Izbrane datoteke",
     "uploading": "Nalaganje...",
     "transferring": "Prenašanje",

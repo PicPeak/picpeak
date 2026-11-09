@@ -7,6 +7,8 @@ import { api } from '../../config/api';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { extensionsToMimeTypes, buildUploadAcceptString, extensionsToLabel, normalizeFileMimeType } from '../../utils/fileTypes';
 import { imageLimitMessage, publicUploadErrorKey } from '../../utils/publicUploadErrors';
+import { uploadMultipartBudget } from '../../utils/uploadMultipartBudget';
+import { uploadGuestFileInChunks } from '../../services/guestChunkedUpload';
 
 interface UserPhotoUploadProps {
   eventId: number;
@@ -53,12 +55,22 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   const maxFileSizeMb = Number.isFinite(Number(publicSettings?.general_max_file_size_mb))
     ? Number(publicSettings?.general_max_file_size_mb)
     : 50;
-  const maxFileSizeBytes = maxFileSizeMb * 1024 * 1024;
+
+  // Videos have their own limit (issue 2315), as in the admin uploader; the
+  // backend holds each file to its type's limit the same way.
+  const maxVideoSizeMb = Number.isFinite(Number(publicSettings?.general_max_video_size_mb))
+    ? Number(publicSettings?.general_max_video_size_mb)
+    : 500;
 
   const allowedMimeTypes = useMemo(
     () => extensionsToMimeTypes(publicSettings?.allowed_file_types),
     [publicSettings?.allowed_file_types]
   );
+  const videoUploadsAllowed = allowedMimeTypes.some((type) => type.startsWith('video/'));
+  // By the normalised type, as the type check above it: a browser that
+  // reports no type for a video still gets the video limit.
+  const sizeLimitMbFor = (file: File) =>
+    (normalizeFileMimeType(file.name, file.type).startsWith('video/') ? maxVideoSizeMb : maxFileSizeMb);
 
   // #1117 — on Android this appends a type the photo picker can't handle, so
   // the system falls back to the chooser that actually offers the camera.
@@ -81,9 +93,10 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         toast.error(`Invalid file type: ${file.name}`);
         return false;
       }
-      // Check file size against the configured per-file limit.
-      if (file.size > maxFileSizeBytes) {
-        toast.error(t('upload.fileTooLarge', { name: file.name, limit: maxFileSizeMb }));
+      // Check file size against the configured per-file limit for its type.
+      const limitMb = sizeLimitMbFor(file);
+      if (file.size > limitMb * 1024 * 1024) {
+        toast.error(t('upload.fileTooLarge', { name: file.name, limit: limitMb }));
         return false;
       }
       return true;
@@ -163,34 +176,50 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         failedCount += files.length - index;
         toast.error(t('upload.photoCapReached', { limit }));
       };
-      const formData = new FormData();
-      formData.append('photos', file);
+      const fields: Record<string, string> = {};
       if (categoryId) {
-        formData.append('category_id', categoryId.toString());
+        fields.category_id = categoryId.toString();
       }
+      const reportProgress = (progress: number) => {
+        setUploadProgress(prev => ({
+          ...prev,
+          [file.name]: progress,
+        }));
+        if (progress >= 100) {
+          setProcessingFiles(prev => ({ ...prev, [file.name]: true }));
+        }
+      };
+      type UploadAnswer = {
+        upload_id?: string;
+        count?: number;
+        errors?: Array<{ filename?: string; error?: string; code?: string; limit?: number }>;
+      };
 
-      try {
-        const response = await api.post<{
-          upload_id?: string;
-          count?: number;
-          errors?: Array<{ filename?: string; error?: string; code?: string; limit?: number }>;
-        }>(`/gallery/${eventId}/upload`, formData, {
+      const sendWhole = () => {
+        const formData = new FormData();
+        formData.append('photos', file);
+        Object.entries(fields).forEach(([name, value]) => formData.append(name, value));
+        return api.post<UploadAnswer>(`/gallery/${eventId}/upload`, formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
           onUploadProgress: (progressEvent) => {
             if (progressEvent.total) {
-              const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-              setUploadProgress(prev => ({
-                ...prev,
-                [file.name]: progress,
-              }));
-              if (progress >= 100) {
-                setProcessingFiles(prev => ({ ...prev, [file.name]: true }));
-              }
+              reportProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total));
             }
           },
         });
+      };
+
+      try {
+        // A file larger than one request may carry (a phone video, mostly)
+        // goes in chunks, as admin uploads do (issue 2315). The answer is the
+        // same either way.
+        const response = file.size > uploadMultipartBudget()
+          ? await uploadGuestFileInChunks<UploadAnswer>(eventId, file, {
+            headers: {}, fields, onProgress: reportProgress,
+          })
+          : await sendWhole();
         setProcessingFiles(prev => {
           const next = { ...prev };
           delete next[file.name];
@@ -314,6 +343,11 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
                         rendering literally. */}
                     {t('upload.fileRequirements', { formats: formatsLabel, limit: maxFilesPerUpload, sizeLimit: maxFileSizeMb })}
                   </p>
+                  {videoUploadsAllowed && (
+                    <p className="text-xs text-muted-theme">
+                      {t('upload.videoSizeLimit', 'Videos: max {{sizeLimit}}MB per file', { sizeLimit: maxVideoSizeMb })}
+                    </p>
+                  )}
                   <input
                     type="file"
                     className="hidden"

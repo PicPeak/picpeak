@@ -133,6 +133,7 @@
     "eventSpecific": "(Específico do evento)",
     "clickToUpload": "Clique para enviar ou arraste e solte",
     "fileRequirements": "{{formats}} (máx. {{sizeLimit}}MB por arquivo, {{limit}} arquivos por envio)",
+    "videoSizeLimit": "Vídeos: máx. {{sizeLimit}}MB por arquivo",
     "selectedFiles": "Arquivos selecionados",
     "uploading": "Enviando...",
     "uploadComplete": "Envio concluído!",
