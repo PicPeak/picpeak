@@ -20,6 +20,8 @@ const { createInvoice } = require('./create');
 const { buildInvoiceRenderContext } = require('./render');
 const { collectRebillProofAttachments } = require('./rebillProofs');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
+const { hasColumnCached } = require('../../utils/schemaCache');
+const { isUkBusiness } = require('../../utils/vatAmount');
 
 async function billingContactEmails(customer) {
   const contacts = await customerContactsService.mailRecipients(customer?.id, 'bills');
@@ -111,6 +113,19 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
   }
   const customer = await db('customer_accounts').where({ id: invoice.customer_account_id }).first();
   ensureCustomerCanBill(customer);
+  // A UK VAT invoice in another currency states its VAT total in GBP too
+  // (VAT Notice 700/21 s.4.1), and a sent invoice can't be changed. So its
+  // first send waits for the rate: the invoice stays scheduled and editable,
+  // and a scheduled send retries once the admin has entered it.
+  if (invoice.status === 'scheduled' && Number(invoice.vat_amount_minor) !== 0
+      && String(invoice.currency || '').toUpperCase() !== 'GBP'
+      && !(Number(invoice.vat_gbp_rate) > 0)
+      && await isUkBusiness()) {
+    throw new AppError(
+      `Enter the GBP exchange rate before sending: a UK VAT invoice in ${invoice.currency} must also state its VAT in GBP.`,
+      409, 'VAT_GBP_RATE_REQUIRED',
+    );
+  }
 
   // Re-sync the invoice's language from the customer's current
   // preferred_language at send time when the invoice has never been
@@ -612,7 +627,10 @@ async function reissueInvoice(id, adminId) {
   // later validation failure, leaving orphan drafts after the Storno
   // already committed. createInvoice's internal reads (getProfile,
   // getAppSetting, bank resolution, audit) all accept the trx now, so
-  // the round-1 SQLite deadlock is gone the right way.
+  // the round-1 SQLite deadlock is gone the right way. createInvoice's
+  // vat_gbp_rate schema check reads the global db, so it is cached here
+  // first, before the transaction holds the only SQLite connection.
+  if (original.vat_gbp_rate != null) await hasColumnCached('invoices', 'vat_gbp_rate');
   return await db.transaction(async (trx) => {
     // One live replacement per original. Two reissues that both found the
     // original already cancelled (or one that lost the Storno race above and
@@ -650,6 +668,8 @@ async function reissueInvoice(id, adminId) {
       language: original.language,
       currency: original.currency,
       vatRate: original.vat_rate,
+      // Migration 352 — the replacement states its VAT in GBP at the same rate.
+      vatGbpRate: original.vat_gbp_rate ?? undefined,
       shippingAmountMinor: original.shipping_amount_minor,
       ccPdfEmail: original.cc_pdf_email,
       businessBankAccountId: original.business_bank_account_id,

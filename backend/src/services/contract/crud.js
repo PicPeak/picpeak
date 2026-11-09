@@ -274,7 +274,11 @@ async function createContract(payload, adminId, { idempotencyKey = null, importe
       // draft and its inclusions commit together. It used to follow up with a
       // separate update, which could fail after the draft was committed
       // (issue 1447).
-      await writeInclusions(trx, contractId, payload.blocks, history, new Map(), profile?.country_code);
+      // A new contract leaves the consumer-only clause out for a business
+      // customer: the editor ticks every listed clause before a customer is
+      // picked (contract/regionalClauses.fitsCustomer). Later saves keep
+      // whatever the admin adds.
+      await writeInclusions(trx, contractId, payload.blocks, history, new Map(), profile?.country_code, { customer });
       if (Array.isArray(payload.textSections)) await writeTextSections(trx, contractId, payload.textSections, history);
     } else if (version) {
       // The version's clauses, with their frozen texts and overrides.
@@ -380,9 +384,10 @@ async function createContractIdempotent(payload, adminId, idempotencyKey, { impo
  * from the block itself, never from the caller. `history` is the { actor,
  * source } recorded in the accounting change history. A system clause written
  * for another legal system than `countryCode`'s is left out unless the
- * contract already holds it (contract/regionalClauses).
+ * contract already holds it (contract/regionalClauses). With `customer` (a new
+ * contract only), a consumer-only clause is left out for a business customer.
  */
-async function writeInclusions(trx, contractId, blocks, history, previous = new Map(), countryCode = null) {
+async function writeInclusions(trx, contractId, blocks, history, previous = new Map(), countryCode = null, { customer = null } = {}) {
   const content = require('./content');
   // Recompute per-section position so we don't trust caller order
   // for ordering integrity; caller controls only the section
@@ -409,6 +414,7 @@ async function writeInclusions(trx, contractId, blocks, history, previous = new 
     if (!block) continue;
     if (block.is_system && !previous.has(Number(entry.blockId))
       && !regionalClauses.appliesTo(block.slug, countryCode)) continue;
+    if (block.is_system && customer && !regionalClauses.fitsCustomer(block.slug, customer)) continue;
     const { section } = block;
     sectionCounters[section] = (sectionCounters[section] || 0) + 1;
     // A rewrite keeps each block's frozen text and override (#1445); an

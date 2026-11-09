@@ -5,7 +5,8 @@
  * Enquiry Manual EM3058).
  *
  * A standard number is 9 digits, often written with a "GB" prefix and spaces
- * ("GB 123 4567 89"); a branch trader adds a 3-digit branch suffix. The last
+ * ("GB 123 4567 89"), or "XI" for goods trade under the Windsor Framework in
+ * Northern Ireland; a branch trader adds a 3-digit branch suffix. The last
  * two digits are a check: weight the first seven digits 8..2, add the check
  * number, and the sum is divisible by 97 (old series) or is after adding 55
  * (series issued since 2010). Government departments (GD000–GD499) and health
@@ -13,7 +14,7 @@
  */
 
 function compact(value) {
-  return String(value || '').replace(/[\s.-]/g, '').toUpperCase().replace(/^GB/, '');
+  return String(value || '').replace(/[\s.-]/g, '').toUpperCase().replace(/^(GB|XI)/, '');
 }
 
 function checkDigitsValid(nine) {

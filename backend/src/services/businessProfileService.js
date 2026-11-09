@@ -331,12 +331,16 @@ async function updateProfile(payload, adminId) {
   }
   // A UK business's VAT number is checked against HMRC's check digits, so a
   // typo never reaches an invoice. Either field may arrive alone.
+  // The settings page sends the whole profile, so only a number or country
+  // that actually changes is checked: a stored number never blocks an
+  // unrelated save.
   if (updates.vat_id !== undefined || updates.country_code !== undefined) {
     const current = (await getProfile()).profile || {};
     const country = updates.country_code !== undefined ? updates.country_code : current.country_code;
     const vatId = updates.vat_id !== undefined ? updates.vat_id : current.vat_id;
-    if (isUnitedKingdom(country) && vatId && !isValidUkVatNumber(vatId)) {
-      throw new AppError('This is not a valid UK VAT registration number (GB and 9 digits).', 400, 'INVALID_UK_VAT_NUMBER');
+    const changed = (vatId || '') !== (current.vat_id || '') || (country || '') !== (current.country_code || '');
+    if (changed && isUnitedKingdom(country) && vatId && !isValidUkVatNumber(vatId)) {
+      throw new AppError('This is not a valid UK VAT registration number (GB or XI and 9 digits).', 400, 'INVALID_UK_VAT_NUMBER');
     }
   }
   updates.updated_at = new Date();

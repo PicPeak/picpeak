@@ -13,27 +13,28 @@
 
 const { db } = require('../database/db');
 const { isUnitedKingdom } = require('./postalAddress');
-const logger = require('./logger');
-
-// net × rate / 100 is floating point: the epsilon keeps a product that is a
-// whole penny in exact arithmetic from losing it to a representation error.
-const EPSILON = 1e-9;
 
 function vatMinorFor(netMinor, ratePercent, { roundDown = false } = {}) {
   const raw = (Number(netMinor) || 0) * (Number(ratePercent) || 0) / 100;
   if (!roundDown) return Math.round(raw);
+  // net × rate / 100 is floating point: a product that is a whole penny in
+  // exact arithmetic can land a hair below it. Settling it to six decimals
+  // first keeps that penny at any amount, before rounding down.
+  const settled = Math.round(raw * 1e6) / 1e6;
   // Down means towards zero: a negative amount (a credit) shrinks too.
-  return raw < 0 ? -Math.floor(-raw + EPSILON) : Math.floor(raw + EPSILON);
+  return settled < 0 ? -Math.floor(-settled) : Math.floor(settled);
 }
 
 /**
  * The VAT total of a UK invoice in another currency, in pence: the stored VAT
  * (minor units of the invoice currency) at `gbpRate` GBP per unit, rounded
- * down like any UK VAT total. Null without a usable rate.
+ * down like any UK VAT total. Null without a usable rate or without VAT.
  */
 function vatGbpMinorFor(vatMinor, gbpRate) {
   const rate = Number(gbpRate);
   if (!Number.isFinite(rate) || rate <= 0) return null;
+  // No VAT, no sterling VAT row.
+  if (!Number(vatMinor)) return null;
   return vatMinorFor(vatMinor, rate * 100, { roundDown: true });
 }
 
@@ -64,17 +65,18 @@ function latePaymentCompensationPounds(totalMinor, currency) {
   return 100;
 }
 
-/** Does this business round its VAT total down (a business in the UK)? */
-async function roundsVatDown(conn = db) {
-  try {
-    const row = await conn('business_profile').where({ id: 1 }).first('country_code');
-    return isUnitedKingdom(row && row.country_code);
-  } catch (err) {
-    logger.warn('Could not read the business country for VAT rounding; rounding to the nearest cent', { message: err.message });
-    return false;
-  }
+/**
+ * Is the business in the United Kingdom? A failed read throws: a document's
+ * tax is never computed, and its send never checked, under a guess.
+ */
+async function isUkBusiness(conn = db) {
+  const row = await conn('business_profile').where({ id: 1 }).first('country_code');
+  return isUnitedKingdom(row && row.country_code);
 }
 
+/** Does this business round its VAT total down? A UK business does. */
+const roundsVatDown = isUkBusiness;
+
 module.exports = {
-  vatMinorFor, vatGbpMinorFor, normaliseVatGbpRate, latePaymentCompensationPounds, roundsVatDown,
+  vatMinorFor, vatGbpMinorFor, normaliseVatGbpRate, latePaymentCompensationPounds, roundsVatDown, isUkBusiness,
 };

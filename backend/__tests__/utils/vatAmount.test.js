@@ -20,6 +20,12 @@ describe('vatMinorFor', () => {
     expect(vatMinorFor(2850, 20, { roundDown: true })).toBe(570);
   });
 
+  it('keeps a whole penny at large amounts', () => {
+    // 4,999,999.95 x 20 % = 999,999.99 exactly
+    expect(vatMinorFor(499999995, 20, { roundDown: true })).toBe(99999999);
+    expect(vatMinorFor(123456789012, 17.5, { roundDown: true })).toBe(21604938077);
+  });
+
   it('rounds a credit towards zero', () => {
     expect(vatMinorFor(-1234, 20, { roundDown: true })).toBe(-246);
   });

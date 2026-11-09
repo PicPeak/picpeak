@@ -178,5 +178,5 @@ async function fitVersionToBusiness(version, countryCode, customer = null) {
 }
 
 module.exports = {
-  isUsOnlyClause, isRegionalOnlyClause, appliesTo, systemBlocksFor, standardItemsFor, fitVersionToBusiness,
+  isUsOnlyClause, isRegionalOnlyClause, appliesTo, fitsCustomer, systemBlocksFor, standardItemsFor, fitVersionToBusiness,
 };

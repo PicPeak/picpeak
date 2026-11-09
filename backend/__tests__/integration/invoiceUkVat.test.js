@@ -135,3 +135,99 @@ describe('the late-payment notice', () => {
     await setSetting('crm_invoices_late_payment_notice', true);
   });
 });
+
+describe('paths that rebuild an invoice', () => {
+  beforeAll(() => setCountry('GB'));
+  afterAll(() => setCustomer({ billing_cadence: 'per_event' }));
+
+  test('a monthly customer\'s running draft rounds its VAT down too', async () => {
+    await setCustomer({ billing_cadence: 'monthly' });
+    const invoice = await createInvoice();
+    expect(Number(invoice.vat_amount_minor)).toBe(246);
+    await setCustomer({ billing_cadence: 'per_event' });
+  });
+
+  test('cancel and reissue keeps the GBP rate on the replacement', async () => {
+    const invoice = await createInvoice({ currency: 'EUR', vatGbpRate: 0.87 });
+    await db('invoices').where({ id: invoice.id }).update({ status: 'sent', sent_at: new Date().toISOString() });
+    await invoiceService().reissueInvoice(invoice.id, adminId);
+    const replacement = await db('invoices').where({ replaces_invoice_id: invoice.id }).first();
+    expect(Number(replacement.vat_gbp_rate)).toBeCloseTo(0.87, 6);
+    const storno = await db('invoices').where({ cancels_invoice_id: invoice.id }).first();
+    expect(Number(storno.vat_gbp_rate)).toBeCloseTo(0.87, 6);
+  });
+
+  test('an invoice without VAT gets no sterling row', async () => {
+    const invoice = await createInvoice({ currency: 'EUR', vatRate: 0, vatGbpRate: 0.87 });
+    expect((await renderContext(invoice)).vatGbp).toBeNull();
+  });
+});
+
+describe('the profile VAT-number check', () => {
+  const profiles = () => require('../../src/services/businessProfileService');
+  beforeAll(() => setCountry('GB'));
+  afterAll(() => db('business_profile').where({ id: 1 }).update({ vat_id: null }));
+
+  test('refuses a mistyped number', async () => {
+    await expect(profiles().updateProfile({ vat_id: 'GB999999974' }, adminId))
+      .rejects.toMatchObject({ code: 'INVALID_UK_VAT_NUMBER' });
+  });
+
+  test('accepts a Northern Ireland XI number', async () => {
+    await expect(profiles().updateProfile({ vat_id: 'XI999999973' }, adminId)).resolves.toBeTruthy();
+  });
+
+  test('a stored number that fails the check never blocks an unrelated save', async () => {
+    await db('business_profile').where({ id: 1 }).update({ vat_id: 'GB123' });
+    const { profile } = await profiles().updateProfile(
+      { vat_id: 'GB123', country_code: 'GB', footer_line: 'Thanks' }, adminId,
+    );
+    expect(profile.footer_line).toBe('Thanks');
+  });
+});
+
+describe('instalments', () => {
+  // A quote of 10.05 net with 2.01 VAT, split 50/50: the first slice's net is
+  // 5.03, whose VAT rounded down is 1.00. A proportional share would say 1.01.
+  async function spawn() {
+    const customer = await db('customer_accounts').where({ id: customerId }).first();
+    const { invoiceIds } = await db.transaction((trx) => invoiceService().spawnInstallmentInvoices({
+      trx, customer, adminId, currency: 'GBP', language: 'en',
+      lineItems: [{ position: 1, quantity: 1, description: 'Shoot', unit_price_minor: 1005, discount_percent: 0, parent_position: null }],
+      totals: { net: 1005, vat: 201, shipping: 0, total: 1206, vatRate: 20 },
+      installments: [{ percent: 50, trigger: 'quote_accepted', offset_days: 0 }, { percent: 50, trigger: 'quote_accepted', offset_days: 0 }],
+    }));
+    return db('invoices').whereIn('id', invoiceIds).orderBy('installment_index');
+  }
+
+  test('a UK business rounds each instalment\'s VAT down on its own net', async () => {
+    await setCountry('GB');
+    const rows = await spawn();
+    expect(rows.map((r) => [Number(r.net_amount_minor), Number(r.vat_amount_minor), Number(r.total_amount_minor)]))
+      .toEqual([[503, 100, 603], [502, 100, 602]]);
+  });
+
+  test('a business elsewhere keeps the proportional split', async () => {
+    await setCountry('CH');
+    const rows = await spawn();
+    expect(rows.map((r) => Number(r.vat_amount_minor))).toEqual([101, 100]);
+    await setCountry('GB');
+  });
+});
+
+describe('sending a UK invoice in another currency', () => {
+  beforeAll(() => setCountry('GB'));
+
+  test('waits for the GBP rate and leaves the invoice editable', async () => {
+    const invoice = await createInvoice({ currency: 'EUR' });
+    await expect(invoiceService().sendInvoice(invoice.id, adminId))
+      .rejects.toMatchObject({ code: 'VAT_GBP_RATE_REQUIRED' });
+    expect((await db('invoices').where({ id: invoice.id }).first()).status).toBe('scheduled');
+  });
+
+  test('an invoice in GBP needs no rate', async () => {
+    const invoice = await createInvoice({ currency: 'GBP' });
+    const result = await invoiceService().sendInvoice(invoice.id, adminId).catch((err) => err);
+    expect(result && result.code).not.toBe('VAT_GBP_RATE_REQUIRED');
+  });
+});

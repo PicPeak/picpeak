@@ -15,6 +15,7 @@ describe('isValidUkVatNumber', () => {
     expect(isValidUkVatNumber('GB 999 9999 73')).toBe(true);
     expect(isValidUkVatNumber('gb999999973')).toBe(true);
     expect(isValidUkVatNumber('GB999999973001')).toBe(true); // branch trader
+    expect(isValidUkVatNumber('XI999999973')).toBe(true); // Northern Ireland
   });
 
   it('accepts government departments and health authorities', () => {

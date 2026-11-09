@@ -11,7 +11,7 @@ const businessProfileService = require('../businessProfileService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
 const { hasColumnCached } = require('../../utils/schemaCache');
-const { vatMinorFor, normaliseVatGbpRate } = require('../../utils/vatAmount');
+const { vatMinorFor, normaliseVatGbpRate, roundsVatDown } = require('../../utils/vatAmount');
 const { isUnitedKingdom } = require('../../utils/postalAddress');
 const { computeDueDate, computeScheduledSendAt, ensureCustomerCanBill, ensureEventMatchesCustomer, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
 const { appendToMonthlyDraft } = require('./drafts');
@@ -294,7 +294,10 @@ async function createInvoice(payload, adminId, trx = db) {
     row.vat_code = payload.vatCode ? String(payload.vatCode).slice(0, 16) : null;
   }
   // Migration 352 — a UK invoice in another currency keeps the GBP rate its
-  // VAT total is stated at (VAT Notice 700/21 s.4.1).
+  // VAT total is stated at (VAT Notice 700/21 s.4.1). POST /invoices passes
+  // vatGbpRate outside a transaction; reissueInvoice, inside one, caches this
+  // schema read before opening it, so it never waits on a connection a trx
+  // holds (SQLite).
   if (payload.vatGbpRate !== undefined && await hasColumnCached('invoices', 'vat_gbp_rate')) {
     row.vat_gbp_rate = normaliseVatGbpRate(payload.vatGbpRate, { countryCode: profile?.country_code, currency });
   }
@@ -380,6 +383,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
   const total = installments.length;
   const acceptanceTime = new Date();
   const invoiceIds = [];
+  const roundVatDown = await roundsVatDown(trx || db);
 
   // Migration 315. Only a project-page invoice passes projectId, outside a
   // transaction, so the schema read never waits on a held connection.
@@ -408,6 +412,13 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       vatSlice = Math.round(ensureInt(totals.vat) * percent / 100);
       shippingSlice = Math.round(ensureInt(totals.shipping) * percent / 100);
       totalSlice = Math.round(ensureInt(totals.total) * percent / 100);
+    }
+    // Each instalment is a VAT invoice of its own: a UK business rounds its
+    // VAT down on its own net (utils/vatAmount). The slices may then add up to
+    // a penny or two less VAT than the quote, never more.
+    if (roundVatDown) {
+      vatSlice = vatMinorFor(netSlice, ensureNumber(totals.vatRate, 0), { roundDown: true });
+      totalSlice = netSlice + vatSlice + shippingSlice;
     }
 
     let scheduledSendAt = computeScheduledSendAt(inst.trigger, inst.offset_days, eventDate, acceptanceTime);

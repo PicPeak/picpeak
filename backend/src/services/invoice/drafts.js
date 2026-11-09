@@ -12,6 +12,7 @@ const { extendedLineColumns, lineItemFieldsToApi } = require('../../utils/lineIt
 const { computeMonthlyCadenceDate, getHierarchyHelpers, nextInvoiceNumber } = require('./helpers');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 const { toDateOnly } = require('../../utils/dateOnly');
+const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
 
 
 /**
@@ -218,7 +219,8 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
     if (li.parent_line_item_id == null) netMinor += ensureInt(li.line_total_minor);
   }
   const vatRate = ensureNumber(payload.vatRate, draft.row.vat_rate || 0);
-  const vatMinor = Math.round(netMinor * Number(vatRate) / 100);
+  // A UK business rounds its VAT total down (utils/vatAmount).
+  const vatMinor = vatMinorFor(netMinor, Number(vatRate), { roundDown: await roundsVatDown(trx) });
   const shippingMinor = ensureInt(draft.row.shipping_amount_minor);
   const totalMinor = netMinor + vatMinor + shippingMinor;
 

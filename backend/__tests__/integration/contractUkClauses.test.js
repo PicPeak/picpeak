@@ -190,3 +190,30 @@ describe('without any contract template', () => {
     for (const slug of [...EUROPEAN_ONLY, 'cancellation_tiered']) expect(slugs).not.toContain(slug);
   });
 });
+
+describe('a new contract from the editor\'s own clause list', () => {
+  beforeAll(() => setCountry('GB'));
+  afterAll(async () => { await setCountry('CH'); await setCustomer({ company_name: null, customer_kind: null }); });
+  const listed = async () => (await require('../../src/services/contractBlocksService').listBlocks({ forNewContract: true }))
+    .map((b) => ({ blockId: b.id, included: true }));
+
+  test('leaves the consumer clause out for a business customer', async () => {
+    await setCustomer({ company_name: 'Band Ltd', customer_kind: null });
+    const { id } = await createContract({ blocks: await listed() });
+    expect(await slugsOf(id)).not.toContain(UK_CONSUMER);
+  });
+
+  test('keeps it for a consumer', async () => {
+    await setCustomer({ company_name: null, vat_id: null, customer_kind: 'consumer' });
+    const { id } = await createContract({ blocks: await listed() });
+    expect(await slugsOf(id)).toContain(UK_CONSUMER);
+  });
+
+  test('a later save can still add it for a business customer', async () => {
+    await setCustomer({ company_name: 'Band Ltd', customer_kind: null });
+    const blocks = await listed();
+    const { id } = await createContract({ blocks });
+    await crud().updateContract(id, { blocks }, adminId);
+    expect(await slugsOf(id)).toContain(UK_CONSUMER);
+  });
+});

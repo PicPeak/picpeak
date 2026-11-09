@@ -469,12 +469,11 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     qrFormat: qrFormat || undefined,
     vatRate,
     vatCode,
-    // Only a UK business invoicing in another currency keeps a GBP rate;
-    // null clears it (the server drops it anywhere else too). Without the
-    // profile (no settings permission) the field is left out, so an edit
-    // never clears a rate this form couldn't show.
-    vatGbpRate: !ukBusiness ? undefined
-      : (currency !== 'GBP' && Number.isFinite(vatGbpRate) && vatGbpRate > 0 ? vatGbpRate : null),
+    // The GBP rate as loaded or typed, null when there is none or the invoice
+    // is in GBP; the server keeps it only for a UK business. Not tied to the
+    // profile query, so a loaded invoice doesn't turn dirty when that query
+    // lands, and an admin who can't read the profile saves the stored rate back.
+    vatGbpRate: currency !== 'GBP' && Number.isFinite(vatGbpRate) && vatGbpRate > 0 ? vatGbpRate : null,
     shippingAmountMinor: toMinor(shipping),
     // A cleared field is sent as null so the save clears it (see the event
     // snapshot below).
