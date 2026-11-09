@@ -32,8 +32,6 @@ const { hasColumnCached } = require('../utils/schemaCache');
 const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 
 const DEPOSIT_TYPES = ['none', 'percent', 'fixed'];
-const LATE_PAYMENT_REASON = 'Your payment arrived after the reservation had run out, and the time has been booked since.';
-const LATE_PAYMENT_PAST_REASON = 'Your payment arrived after the reservation had run out, and the time has already passed.';
 const GALLERY_UNLOCK = ['full_payment', 'deposit', 'off'];
 // Stripe's shortest Checkout lifetime; the hold covers it with a margin.
 const CHECKOUT_MINUTES = 30;
@@ -227,7 +225,7 @@ async function reconcileSession(request, session) {
       const row = await db('booking_requests').where({ id: request.id }).first();
       await refundDeposit(row);
       await require('./bookingNotifications').notifyDeclined(
-        { ...(await db('booking_requests').where({ id: request.id }).first()), decline_reason: outcome === 'begun' ? LATE_PAYMENT_PAST_REASON : LATE_PAYMENT_REASON },
+        await db('booking_requests').where({ id: request.id }).first(), { lateReason: outcome },
       ).catch((err) => logger.warn('Could not queue the late-payment refund mail', { requestId: request.id, error: err.message }));
       return 'refunded';
     }
@@ -241,13 +239,24 @@ async function reconcileSession(request, session) {
     const reviewFields = {
       deposit_status: 'review', payment_intent_id: intentOf(session), deposit_received_minor: Number(session.amount_total), updated_at: ts(now),
     };
+    // Only while the hold still runs, as for the right amount: a pending
+    // review deposit keeps its time whatever the hold says, so a request
+    // whose hold ran out (not swept yet) must not take back a time another
+    // request may hold by now. It is marked expired for review instead.
     const held = await db('booking_requests').where({ id: request.id, status: 'awaiting_payment' })
+      .andWhere('hold_expires_at', '>', ts(now))
       .whereIn('deposit_status', ['open', 'expired'])
       .update({ status: 'pending', ...reviewFields });
-    const marked = held ? 0 : await db('booking_requests').where({ id: request.id })
-      .whereIn('status', ['expired', 'accepted', 'declined'])
+    const stale = held ? 0 : await db('booking_requests').where({ id: request.id, status: 'awaiting_payment' })
       .whereIn('deposit_status', ['open', 'expired'])
-      .update(reviewFields);
+      .update({ status: 'expired', ...reviewFields });
+    let marked = stale;
+    if (!held && !stale) {
+      marked = await db('booking_requests').where({ id: request.id })
+        .whereIn('status', ['expired', 'accepted', 'declined'])
+        .whereIn('deposit_status', ['open', 'expired'])
+        .update(reviewFields);
+    }
     if (marked) {
       // Declined before the money arrived: the decline's refund ran on
       // nothing, so this payment goes back now, as with the right amount.
@@ -309,7 +318,10 @@ async function reconcilePaymentEvent(event, client = null) {
     if (DISPUTE_SETTLED_FOR_STUDIO.includes(dispute.status)) {
       // The studio kept the money: back to what it was before the dispute,
       // paid only when the charge was the deposit (otherwise still review).
-      const back = Number(request.deposit_received_minor) === Number(request.deposit_minor) ? 'paid' : 'review';
+      // On a declined request the client is still owed it, so it shows as
+      // a refund to make by hand.
+      let back = Number(request.deposit_received_minor) === Number(request.deposit_minor) ? 'paid' : 'review';
+      if (request.status === 'declined') back = 'refund_failed';
       await db('booking_requests').where({ id: request.id, deposit_status: 'disputed' })
         .update({ deposit_status: back, updated_at: now });
     } else {

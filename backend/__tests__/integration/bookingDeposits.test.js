@@ -670,6 +670,56 @@ describe('review round 2', () => {
     expect(await db('booking_requests').where({ id: row.id }).first()).toMatchObject({ status: 'expired', deposit_status: 'refunded' });
     const mail = await db('email_queue').where({ email_type: 'booking_request_declined', recipient_email: 'begun@example.test' }).first();
     const data = typeof mail.email_data === 'string' ? JSON.parse(mail.email_data) : mail.email_data;
-    expect(data.decline_reason).toMatch(/already passed/);
+    expect(data.decline_reason).toMatch(/already begun/);
+  });
+});
+
+describe('review round 3', () => {
+  const open = async (date, hhmm, extra) => {
+    const res = await sendRequest(zurich(date, hhmm), extra);
+    expect(res.status).toBe(201);
+    return db('booking_requests').where({ reference: res.body.reference }).first();
+  };
+  const hook = async (session) => webhook('checkout.session.completed', { id: session.id, metadata: session.metadata }).expect(200);
+  const mailTo = async (email) => {
+    const mail = await db('email_queue').where({ email_type: 'booking_request_declined', recipient_email: email }).orderBy('id', 'desc').first();
+    return typeof mail.email_data === 'string' ? JSON.parse(mail.email_data) : mail.email_data;
+  };
+
+  test('a payment of another amount after the hold ran out, not yet swept, is reviewed off the calendar', async () => {
+    const row = await open(day(57), '09:00', { email: 'unswept-review@example.test' });
+    await db('booking_requests').where({ id: row.id }).update({ hold_expires_at: new Date(Date.now() - 60000).toISOString() });
+    const session = pay(row.checkout_session_id);
+    session.amount_total = 1;
+    await hook(session);
+    expect(await db('booking_requests').where({ id: row.id }).first()).toMatchObject({ status: 'expired', deposit_status: 'review' });
+  });
+
+  test('the refund mail after a payment of another amount names what came in', async () => {
+    const row = await open(day(57), '13:00', { email: 'refund-amount@example.test' });
+    await db('booking_requests').where({ id: row.id }).update({ status: 'expired', deposit_status: 'expired' });
+    await request(adminApp).post(`/api/admin/booking/requests/${row.id}/decline`).set(auth).send({}).expect(200);
+    const session = pay(row.checkout_session_id);
+    session.amount_total = 1;
+    await hook(session);
+    expect((await mailTo('refund-amount@example.test')).deposit_refunded).toMatch(/0\.01/);
+  });
+
+  test('a won dispute on a declined request shows the refund still owed', async () => {
+    const row = await open(day(63), '09:00', { email: 'declined-dispute@example.test' });
+    const session = pay(row.checkout_session_id);
+    await hook(session);
+    await db('booking_requests').where({ id: row.id }).update({ status: 'declined', deposit_status: 'refund_failed' });
+    await webhook('charge.dispute.created', { id: 'dp_d', payment_intent: session.payment_intent, status: 'needs_response' }).expect(200);
+    await webhook('charge.dispute.closed', { id: 'dp_d', payment_intent: session.payment_intent, status: 'won' }).expect(200);
+    expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('refund_failed');
+  });
+
+  test('a late payment is explained in the client\'s language', async () => {
+    const row = await open(day(64), '13:00', { email: 'spaet@example.test', language: 'de' });
+    await db('booking_requests').where({ id: row.id }).update({ status: 'expired', deposit_status: 'expired' });
+    await open(day(64), '13:00', { email: 'other-spaet@example.test' });
+    await hook(pay(row.checkout_session_id));
+    expect((await mailTo('spaet@example.test')).decline_reason).toMatch(/inzwischen vergeben/);
   });
 });

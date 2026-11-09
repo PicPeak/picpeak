@@ -73,16 +73,34 @@ async function notifyReceived(request, { mailClient = true } = {}) {
   }).catch(() => {});
 }
 
-/** The admin declined: tell the client. */
-async function notifyDeclined(request) {
+// Why a late deposit payment was refunded, in the client's language.
+const LATE_PAYMENT_REASONS = {
+  taken: {
+    en: 'Your payment arrived after the reservation had run out, and the time has been booked since.',
+    de: 'Ihre Zahlung ist nach Ablauf der Reservierung eingegangen, und der Termin ist inzwischen vergeben.',
+  },
+  begun: {
+    en: 'Your payment arrived after the reservation had run out, and the time has already begun.',
+    de: 'Ihre Zahlung ist nach Ablauf der Reservierung eingegangen, und der Termin hat bereits begonnen.',
+  },
+};
+
+/**
+ * The admin declined, or a late payment was refunded (`lateReason`: taken
+ * or begun): tell the client.
+ */
+async function notifyDeclined(request, { lateReason = null } = {}) {
   // An erased client has no address left to write to.
   if (request.email === require('./bookingService').ERASED_EMAIL) return;
   const { language, vars } = await context(request);
+  // What actually came in: a payment of another amount is refunded in full.
+  // Amounts are hundredths in every currency, as everywhere in the app.
   const deposit = new Intl.NumberFormat(language === 'de' ? 'de-CH' : 'en-GB', { style: 'currency', currency: request.currency || 'CHF' })
-    .format(Number(request.deposit_minor || 0) / 100);
+    .format(Number(request.deposit_received_minor ?? request.deposit_minor ?? 0) / 100);
+  const late = LATE_PAYMENT_REASONS[lateReason];
   await queue('booking_request_declined', request.email, {
     ...vars,
-    decline_reason: request.decline_reason || '',
+    decline_reason: late ? (late[language] || late.en) : (request.decline_reason || ''),
     // Part 3: what happened to a deposit the client paid.
     deposit_refunded: request.deposit_status === 'refunded' ? deposit : '',
     deposit_refund_pending: request.deposit_status === 'refund_failed' || request.deposit_status === 'review' ? deposit : '',
