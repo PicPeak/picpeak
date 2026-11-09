@@ -5,6 +5,7 @@ import { Card, Input, Switch } from '../../common';
 import { ThemeConfig, STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { LayoutPicker } from './LayoutPicker';
 import { masonryModeWireframes, useGalleryLayoutOptions, type MasonryPickerMode } from './layoutWireframes';
+import { masonryModeOf } from '../../gallery/layouts/masonryMode';
 import { PREMIUM_COLUMN_LIMITS, PREMIUM_GAP_LIMITS, clampPremiumColumns, clampPremiumGap, premiumColumns, premiumGap } from '../../gallery/layouts/premiumGeometry';
 
 interface GalleryLayoutCardProps {
@@ -32,11 +33,10 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
   const layoutOptions = useGalleryLayoutOptions();
   const layoutHeadingId = useId();
   const masonryModeLabelId = useId();
-  // A stored 'justified' renders as rows (MasonryGalleryLayout), so the
-  // picker and the settings below treat it as Rows; the stored value stays
-  // until the admin picks.
-  const storedMasonryMode = localTheme.gallerySettings?.masonryMode || 'columns';
-  const masonryMode: MasonryPickerMode = storedMasonryMode === 'justified' ? 'rows' : storedMasonryMode;
+  // The mode Masonry renders (masonryModeOf): a stored 'justified' shows as
+  // Rows and an unknown value as Columns; the stored value stays until the
+  // admin picks.
+  const masonryMode: MasonryPickerMode = masonryModeOf(localTheme.gallerySettings?.masonryMode);
   const isPremium = localTheme.galleryLayout === 'gallery-premium';
   const premium = premiumColumns(localTheme.gallerySettings);
 
