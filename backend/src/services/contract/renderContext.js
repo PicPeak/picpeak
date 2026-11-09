@@ -100,7 +100,7 @@ async function buildPlaceholderContext(contract, customer) {
       ? [customer.address_line1, customer.address_line2, cityLine({
         postalCode: customer.postal_code, city: customer.city, state: customer.state,
         countryCode: customer.country_code || domestic,
-      })]
+      }, { issuerCountryCode: profile.country_code })]
       : [customer.address_line1, customer.address_line2, customer.postal_code, customer.city])
       .filter(Boolean)
       .join(', ')

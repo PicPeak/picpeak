@@ -154,9 +154,10 @@ function buildRecipientBlock(profile, customer) {
   // PDF, but having the string available means audit views can show
   // it. This unifies the previously-drifted contractService and
   // quote/invoice behavior under the renderer-aware contract.
-  // "Attn:" from a US business, "z. Hd." everywhere else.
+  // "Attn:" from a US or UK business, "z. Hd." everywhere else.
   const attentionParts = [customer?.salutation, personFull].filter(Boolean);
-  const attentionPrefix = isUnitedStates(profile?.country_code) ? 'Attn:' : 'z. Hd.';
+  const attentionPrefix = isUnitedStates(profile?.country_code) || isUnitedKingdom(profile?.country_code)
+    ? 'Attn:' : 'z. Hd.';
   const attentionLine = attentionParts.length > 0
     ? `${attentionPrefix} ${attentionParts.join(' ')}`
     : '';

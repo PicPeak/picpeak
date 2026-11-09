@@ -96,6 +96,13 @@ describe('a UK address', () => {
     expect(printsCountryLine('GB', 'CH')).toBe(true);
   });
 
+  test('a business outside the UK keeps writing a UK customer as before', () => {
+    expect(cityLine(glasgow, { issuerCountryCode: 'CH' })).toBe('GB-g1 1aa Glasgow');
+    expect(cityLines(glasgow, { postTownCaps: true, issuerCountryCode: 'LI' })).toEqual(['GB-g1 1aa Glasgow']);
+    expect(cityLines(glasgow, { postTownCaps: true, issuerCountryCode: null })).toEqual(['GB-g1 1aa Glasgow']);
+    expect(cityLines(glasgow, { postTownCaps: true, issuerCountryCode: 'GB' })).toEqual(['GLASGOW', 'G1 1AA']);
+  });
+
   test('a customer with no country is domestic for a US or UK business only', () => {
     expect(domesticCountryFor('GB')).toBe('GB');
     expect(domesticCountryFor('US')).toBe('US');

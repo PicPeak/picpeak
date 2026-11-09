@@ -203,6 +203,14 @@ describe('UK address and date format', () => {
     expect(mentions(drawn(), '09/11/2026')).toBe(true);
   });
 
+  test('a business outside the UK keeps a UK customer\'s address as before', async () => {
+    const drawn = drawnText();
+    await pdfService.renderInvoiceToBuffer(invoiceContext({ issuer: ukIssuer({ countryCode: 'CH', postalCode: '8001', city: 'Zürich' }) }));
+    const texts = drawn();
+    expect(texts).toContain('GB-LS1 1AA Leeds');
+    expect(texts).not.toContain('LEEDS');
+  });
+
   test('a business elsewhere keeps its dates and its letterhead as before', async () => {
     const drawn = drawnText();
     await pdfService.renderInvoiceToBuffer(invoiceContext({ issuer: ukIssuer({ countryCode: 'LI', postalCode: '9494', city: 'Schaan' }) }));

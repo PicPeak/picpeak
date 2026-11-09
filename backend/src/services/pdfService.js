@@ -698,13 +698,13 @@ function drawRecipientBlock(doc, recipient, locale, { flowY = null, issuerCountr
   // `country` override (customer_accounts.country_name, migration
   // 107) or falls back to the locale-aware lookup; a US business
   // leaves it off a letter to a US address.
-  // A UK address takes the post town (in capitals, as Royal Mail asks) and
-  // the postcode on lines of their own.
+  // A UK business writes a UK address with the post town (in capitals, as
+  // Royal Mail asks) and the postcode on lines of their own.
   const postalLines = cityLines({
     postalCode: recipient.postalCode, city: recipient.city, state: recipient.state,
     // A US or UK business's customer with no country is a domestic address.
     countryCode: recipient.countryCodeIso || domesticCountryFor(issuerCountryCode),
-  }, { postTownCaps: true });
+  }, { postTownCaps: true, issuerCountryCode });
   const lines = [
     recipient.hasCompany ? recipient.attentionLine : null,
     recipient.addressLine1,

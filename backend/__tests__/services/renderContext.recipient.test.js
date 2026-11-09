@@ -40,3 +40,19 @@ test('a US business\'s return-address line ends in city, state and ZIP', () => {
 test('a business elsewhere keeps its return-address line', () => {
   expect(buildRecipientBlock(liProfile, customer).issuerLine).toBe('Studio Test * Weg 1 * 9490 Vaduz');
 });
+
+// Issue 2445: a UK business addresses its letters the UK way.
+describe('a UK business', () => {
+  const ukProfile = {
+    company_name: 'Northern Lights Media', address_line1: '12 Bath Street', postal_code: 'G1 1AA', city: 'Glasgow', country_code: 'GB',
+  };
+
+  test('writes the attention line as Attn:', () => {
+    expect(buildRecipientBlock(ukProfile, customer).attentionLine).toBe('Attn: Ms. Jordan Rivera');
+  });
+
+  test('ends its return-address line in town and postcode', () => {
+    expect(buildRecipientBlock(ukProfile, customer).issuerLine)
+      .toBe('Northern Lights Media * 12 Bath Street * Glasgow G1 1AA');
+  });
+});
