@@ -46,6 +46,9 @@ const MAX_OPEN_PER_CLIENT = 2;
 const MAX_OPEN_PER_EMAIL = 2;
 // ...and a request counts against the client's two for this long after it was sent.
 const CLIENT_WINDOW_MS = 24 * 3600000;
+// An accepted request whose quote is still being made keeps its time this
+// long; the steps take seconds. A quote deleted later frees the time.
+const ACCEPTING_MS = 15 * 60000;
 // Declined and expired requests are purged after this many days.
 const RETENTION_DAYS = 180;
 const LANGUAGES = ['en', 'de', 'fr', 'nl', 'pt', 'ru', 'es', 'sl'];
@@ -255,8 +258,13 @@ async function busyIntervals(from, to, zone, { excludeRequestId = null, now = ne
     .andWhere((q) => {
       // An accepted request is busy while its quote is: once the quote is
       // deleted or declined the time is free again, with no step for the admin.
-      q.where((a) => a.where('status', 'accepted').whereExists((e) => e.select(conn.raw('1')).from('quotes')
-        .whereRaw('quotes.id = booking_requests.quote_id').whereNot('quotes.status', 'declined')))
+      // Accepting claims the request first and writes quote_id only after the
+      // customer, project and quote exist, so a request accepted moments ago
+      // with no quote yet is busy too.
+      q.where((a) => a.where('status', 'accepted').andWhere((link) => link
+        .whereExists((e) => e.select(conn.raw('1')).from('quotes')
+          .whereRaw('quotes.id = booking_requests.quote_id').whereNot('quotes.status', 'declined'))
+        .orWhere((fresh) => fresh.whereNull('quote_id').andWhere('decided_at', '>', ts(now.getTime() - ACCEPTING_MS)))))
         .orWhere((p) => p.whereIn('status', ['pending', 'awaiting_payment']).andWhere('hold_expires_at', '>', ts(now)));
       // Paid deposits hold past the hold time (see expireStaleHolds). The
       // column lookup is cached before createRequest's transaction opens.
@@ -572,7 +580,7 @@ async function listRequests({ status = null } = {}) {
   await expireStaleHolds();
   const q = db('booking_requests');
   if (status && STATUSES.includes(status)) q.where({ status });
-  return q.orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END").orderBy('starts_at', 'asc').limit(500);
+  return q.orderByRaw('CASE WHEN status = \'pending\' THEN 0 ELSE 1 END').orderBy('starts_at', 'asc').limit(500);
 }
 
 async function getRequest(id) {

@@ -1,6 +1,6 @@
 const { db } = require('../database/db');
 const logger = require('./logger');
-const { isUnitedStates } = require('./postalAddress');
+const { isUnitedStates, isUnitedKingdom } = require('./postalAddress');
 const { parseCalendarDate } = require('./dateNormalize');
 
 // Default date format settings
@@ -101,7 +101,7 @@ async function formatDate(date, language = 'en') {
  * - invalid date → the original value coerced to String (defensive
  *   passthrough; matches the prior behaviour of the three local copies)
  * - a US business (`issuerCountryCode` 'US') gets MM/DD/YYYY, the order
- *   its customers read
+ *   its customers read, and a UK business DD/MM/YYYY
  */
 function formatShortDate(value, issuerCountryCode = null) {
   if (!value) return '';
@@ -110,6 +110,7 @@ function formatShortDate(value, issuerCountryCode = null) {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   if (isUnitedStates(issuerCountryCode)) return `${mm}/${dd}/${d.getFullYear()}`;
+  if (isUnitedKingdom(issuerCountryCode)) return `${dd}/${mm}/${d.getFullYear()}`;
   return `${dd}.${mm}.${d.getFullYear()}`;
 }
 
