@@ -59,7 +59,8 @@ async function plan(tx, cart, { country, includeDelivery = true } = {}) {
     lines.push({ position: lines.length + 1, quantity: 1, description: p.name,
       unit_price_minor: Number(p.unit_price_minor), discount_percent: 0, line_kind: 'item' });
   }
-  const totals = require('../quoteService')._internal.computeTotals(lines, vatRate, 0);
+  const totals = require('../quoteService')._internal.computeTotals(lines, vatRate, 0,
+    { roundVatDown: await require('../../utils/vatAmount').roundsVatDown(tx) });
   if (!Number.isSafeInteger(totals.totalAmountMinor) || totals.totalAmountMinor <= 0 || totals.totalAmountMinor > 1e8)
     fail('Order amount is outside the supported range');
   const result = { settingsRevision: config.revision, items, lines: totals.lineItems,

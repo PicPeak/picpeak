@@ -11,6 +11,7 @@
  */
 
 const bcrypt = require('bcrypt');
+const { CUSTOMER_KINDS } = require('../utils/customerKind');
 const crypto = require('crypto');
 const { db, logActivity } = require('../database/db');
 const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
@@ -734,6 +735,9 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     // customer who unsubscribes by phone can be honoured without waiting
     // for them to click a link. Transactional mail ignores it entirely.
     'marketing_opt_out',
+    // Business or consumer (migration 352, issue 2439). Null = decided from
+    // company name / VAT ID (utils/customerKind).
+    'customer_kind',
   ];
   for (const f of fields) {
     if (updates[f] !== undefined) {
@@ -741,6 +745,8 @@ async function updateCustomer(id, updates, updatedByAdminId) {
       // is uppercased to match ISO 3166-1 alpha-2 convention.
       if (f === 'email') {
         allowed[f] = String(updates[f] || '').trim().toLowerCase();
+      } else if (f === 'customer_kind') {
+        allowed[f] = CUSTOMER_KINDS.includes(updates[f]) ? updates[f] : null;
       } else if (f === 'country_code' && updates[f]) {
         allowed[f] = String(updates[f]).trim().toUpperCase().slice(0, 2);
       } else if (

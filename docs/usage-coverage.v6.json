@@ -342,6 +342,7 @@
       "reason": "Business identity/bank/tax-address configuration and VAT-code helper surface are not separate usage signals. Billing/accounting capabilities are covered without profiling the business.",
       "route_signatures": [
         "GET /",
+        "GET /region",
         "GET /history",
         "GET /logo-diagnostic",
         "POST /logo",

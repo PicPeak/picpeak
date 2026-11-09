@@ -133,6 +133,11 @@ interface Props {
    * document. Off ⇒ net is the plain sum of rounded lines (unchanged).
    */
   roundTotal?: boolean;
+  /**
+   * A UK business rounds the VAT total DOWN to the penny (HMRC VAT Notice 700
+   * s.17.5) — mirrors backend utils/vatAmount so the preview matches.
+   */
+  vatRoundDown?: boolean;
   onChange: (items: EditableLineItem[]) => void;
   presets?: LineItemPresetMinimal[];
   onSaveAsPreset?: (item: EditableLineItem) => void;
@@ -243,7 +248,7 @@ function lineFromCatalogue(
 
 export const LineItemsTable: React.FC<Props> = ({
   items, currency, showDiscount = true, vatRate = 0, shippingAmount = 0, roundTotal = false,
-  onChange, presets = [], onSaveAsPreset, mode = 'invoice', hours = null, days = null, packages = [],
+  vatRoundDown = false, onChange, presets = [], onSaveAsPreset, mode = 'invoice', hours = null, days = null, packages = [],
   factors = [], priceWithFactors,
 }) => {
   const { t } = useTranslation();
@@ -563,7 +568,11 @@ export const LineItemsTable: React.FC<Props> = ({
   // (CHF 0.63 instead of 63.18). Backend computeTotals + the PDF were always
   // correct; only this live editor preview was wrong, and it only surfaced
   // once invoices stopped defaulting to 0% VAT.
-  const vatAmount = Math.round(netForTotals * vatRate * 100) / 100;
+  // The epsilon keeps an exact whole penny from losing it to floating point.
+  const vatCents = netForTotals * vatRate * 100;
+  const vatAmount = (vatRoundDown
+    ? Math.sign(vatCents) * Math.floor(Math.abs(vatCents) + 1e-9)
+    : Math.round(vatCents)) / 100;
   const total = netForTotals + vatAmount + (Number(shippingAmount) || 0);
 
   // Display numbering: top-level items get 1, 2, 3...; sub-items

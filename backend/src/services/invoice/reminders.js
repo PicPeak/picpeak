@@ -10,6 +10,7 @@ const customerContactsService = require('../customerContactsService');
 const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt } = require('../../utils/numericHelpers');
+const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
 const { hasColumnCached } = require('../../utils/schemaCache');
 const { formatMajor } = require('./helpers');
 const { getInvoiceById } = require('./queries');
@@ -69,7 +70,7 @@ async function resolvePerReminderFeeMinor(invoice) {
   const net = await resolveLateFeeNetMinor(invoice);
   if (net <= 0) return 0;
   const rate = await resolveLateFeeVatRate();
-  return rate > 0 ? net + Math.round(net * rate / 100) : net;
+  return rate > 0 ? net + vatMinorFor(net, rate, { roundDown: await roundsVatDown() }) : net;
 }
 
 // `actor` names who triggered the reminder in the accounting change history.
@@ -91,7 +92,8 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
   if (level >= 2 && feeCommunicated) {
     const net = await resolveLateFeeNetMinor(invoice);
     const rate = await resolveLateFeeVatRate();
-    const vatPer = rate > 0 ? Math.round(net * rate / 100) : 0;
+    // A UK business rounds VAT down here too (utils/vatAmount).
+    const vatPer = rate > 0 ? vatMinorFor(net, rate, { roundDown: await roundsVatDown() }) : 0;
     lateFeeGross = (level - 1) * (net + vatPer);
     lateFeeVat = (level - 1) * vatPer;
   }

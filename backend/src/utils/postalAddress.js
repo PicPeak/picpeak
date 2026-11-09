@@ -15,6 +15,12 @@ function isUnitedStates(countryCode) {
   return String(countryCode || '').trim().toUpperCase() === 'US';
 }
 
+/** A business in the United Kingdom (ISO code GB; "UK" is accepted too). */
+function isUnitedKingdom(countryCode) {
+  const cc = String(countryCode || '').trim().toUpperCase();
+  return cc === 'GB' || cc === 'UK';
+}
+
 /**
  * The line under the street: "Denver, CO 80202" for a US address,
  * "LI-9494 Schaan" elsewhere.
@@ -40,4 +46,4 @@ function printsCountryLine(addressCountryCode, issuerCountryCode) {
   return !!String(addressCountryCode || '').trim() && !isUnitedStates(addressCountryCode);
 }
 
-module.exports = { cityLine, printsCountryLine, isUnitedStates };
+module.exports = { cityLine, printsCountryLine, isUnitedStates, isUnitedKingdom };
