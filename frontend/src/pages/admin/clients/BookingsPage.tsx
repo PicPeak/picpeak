@@ -361,7 +361,7 @@ const NUMBER_FIELDS: Array<{ key: keyof BookingSettings; label: string; fallback
   { key: 'slotStepMinutes', label: 'booking.admin.field.step', fallback: 'Start times every (minutes)', hint: 'booking.admin.field.stepHint', hintFallback: 'Offered start times, e.g. every 30 minutes.' },
   { key: 'bufferMinutes', label: 'booking.admin.field.buffer', fallback: 'Buffer (minutes)', hint: 'booking.admin.field.bufferHint', hintFallback: 'Kept free before and after every booking.' },
   { key: 'holdHours', label: 'booking.admin.field.hold', fallback: 'Hold a request for (hours)', hint: 'booking.admin.field.holdHint', hintFallback: 'An unanswered request frees its time after this.' },
-  { key: 'maxOpenRequests', label: 'booking.admin.field.maxOpen', fallback: 'Open requests at most', hint: 'booking.admin.field.maxOpenHint', hintFallback: 'Beyond this, the page asks clients to write to you instead.' },
+  { key: 'maxOpenRequests', label: 'booking.admin.field.maxOpen', fallback: 'Open requests at most', hint: 'booking.admin.field.maxOpenHint', hintFallback: 'All clients together. Each client can hold 2 at a time; beyond this total, the page asks everyone to write to you instead until a request is answered or its hold runs out.' },
 ];
 
 const SettingsTab: React.FC<{ settings: BookingSettings; timezone: string; hasBusinessHours: boolean }> = ({ settings, timezone, hasBusinessHours }) => {

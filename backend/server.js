@@ -1303,6 +1303,9 @@ async function startServerInternal() {
     // PicTransfer retention sweep (#997): expire links, notify admins, and
     // hard-delete client uploads once the grace window elapses.
     startTransferCleanup();
+    // Booking requests (issue 2440): expire run-out holds and purge old
+    // declined and expired requests, also while the flag is off.
+    require('./src/services/bookingService').startBookingHousekeeping();
     // Customer documents retention (#1444): delete long-rejected files and
     // remove the bytes of deleted ones once the retention window elapses.
     require('./src/services/customerDocumentRetentionService').startCustomerDocumentRetention();

@@ -9602,7 +9602,7 @@
         "bufferHint": "Kept free before and after every booking.",
         "hold": "Hold a request for (hours)",
         "maxOpen": "Open requests at most",
-        "maxOpenHint": "Beyond this, the page asks clients to write to you instead.",
+        "maxOpenHint": "All clients together. Each client can hold 2 at a time; beyond this total, the page asks everyone to write to you instead until a request is answered or its hold runs out.",
         "holdHint": "An unanswered request frees its time after this."
       },
       "status": {

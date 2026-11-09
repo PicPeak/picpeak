@@ -12,6 +12,7 @@ const resources = [
   ['./downloadZipService', 'stop'],
   ['./fileWatcher', 'stopFileWatcher', 'startFileWatcher'], ['./externalMediaWatcher', 'stopExternalMediaWatcher', 'startExternalMediaWatcher'],
   ['./expirationChecker', 'stopExpirationChecker', 'startExpirationChecker'], ['./transferCleanupService', 'stopTransferCleanup', 'startTransferCleanup'],
+  ['./bookingService', 'stopBookingHousekeeping', 'startBookingHousekeeping'],
   ['./customerDocumentRetentionService', 'stopCustomerDocumentRetention', 'startCustomerDocumentRetention'],
   ['./photoTrash', 'stopPhotoTrashPurge', 'startPhotoTrashPurge'],
   ['./customerDocumentRescanService', 'stopCustomerDocumentRescan', 'startCustomerDocumentRescan'],
