@@ -9,6 +9,12 @@ export function isUnitedStates(countryCode?: string | null): boolean {
   return String(countryCode || '').trim().toUpperCase() === 'US';
 }
 
+/** A business in the United Kingdom (ISO code GB; "UK" is accepted too). */
+export function isUnitedKingdom(countryCode?: string | null): boolean {
+  const cc = String(countryCode || '').trim().toUpperCase();
+  return cc === 'GB' || cc === 'UK';
+}
+
 interface CityLineParts {
   postalCode?: string | null;
   city?: string | null;

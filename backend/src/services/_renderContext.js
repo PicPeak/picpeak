@@ -99,6 +99,14 @@ function buildIssuerBlock(profile, logoPath, options = {}) {
     logoHeight: profile.pdf_logo_height == null ? 56 : Number(profile.pdf_logo_height),
     companyNameInline: profile.pdf_company_name_inline === true || profile.pdf_company_name_inline === 1 || profile.pdf_company_name_inline === '1',
     foldingMarks: profile.pdf_folding_marks || 'none',
+    // UK trading disclosures (migration 352): pdfService prints them in the
+    // footer of a UK business's documents only (legalDisclosureLines).
+    legalForm: profile.legal_form || null,
+    registeredName: profile.registered_name || null,
+    companyNumber: profile.company_number || null,
+    registeredOffice: profile.registered_office || null,
+    jurisdiction: profile.jurisdiction || null,
+    proprietorName: profile.proprietor_name || null,
   };
   if (options.quoteToggles) {
     // Quote payment-block toggles (migration 110). Quote-only — invoices

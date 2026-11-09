@@ -35,6 +35,7 @@ const { adminActivityActor } = require('../utils/activityActor');
 const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
 const { cleanNetMinor } = require('../utils/invoiceRounding');
+const { vatMinorFor, roundsVatDown } = require('../utils/vatAmount');
 const { AppError } = require('../utils/errors');
 const { validateLineItemHierarchy } = require('../utils/lineItemPositions');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -212,7 +213,8 @@ function computeTotals(lineItems, vatRate, shippingAmountMinor = 0, options = {}
   }
 
   const vatPercent = ensureNumber(vatRate, 0);
-  const vatMinor = Math.round(netMinor * vatPercent / 100);
+  // A UK business rounds its VAT total down (utils/vatAmount).
+  const vatMinor = vatMinorFor(netMinor, vatPercent, { roundDown: options.roundVatDown === true });
   const shipping = ensureInt(shippingAmountMinor);
   const totalMinor = netMinor + vatMinor + shipping;
   return {
@@ -533,7 +535,7 @@ async function createQuote(payload, adminId) {
     preparedLineItems,
     payload.vatRate,
     payload.shippingAmountMinor,
-    { roundTotal }
+    { roundTotal, roundVatDown: await roundsVatDown() }
   );
 
   // Negative line items (Rabatt) are allowed, but the resulting
@@ -714,7 +716,7 @@ async function updateQuote(id, payload, adminId) {
     preparedLineItems,
     payload.vatRate ?? existing.vat_rate,
     payload.shippingAmountMinor ?? existing.shipping_amount_minor,
-    { roundTotal }
+    { roundTotal, roundVatDown: await roundsVatDown() }
   );
 
   // Negative line items (Rabatt) are allowed, but the resulting
@@ -1058,7 +1060,7 @@ async function renderQuotePdfFromPayload(payload) {
     preparedLineItems,
     payload.vatRate,
     payload.shippingAmountMinor,
-    { roundTotal }
+    { roundTotal, roundVatDown: await roundsVatDown() }
   );
   const fakeQuote = {
     quote_number: 'PREVIEW',
@@ -1343,7 +1345,7 @@ async function totalsForSelection(quote, lineItems, selectedPositions, configura
   const { chosen, lines: optionalLines } = applyOptionalSelection(lineItems, selectedPositions);
   const lines = require('./albumProducts/crm').configureLines(optionalLines, configurations, { complete });
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
-  const totals = computeTotals(lines, quote.vat_rate, quote.shipping_amount_minor, { roundTotal });
+  const totals = computeTotals(lines, quote.vat_rate, quote.shipping_amount_minor, { roundTotal, roundVatDown: await roundsVatDown() });
   // Same rule as create and update: a quote is an offer, never a credit
   // note. Removing an add-on shrinks the subtotal a manual negative line is
   // taken from, so a choice the customer is free to make could otherwise

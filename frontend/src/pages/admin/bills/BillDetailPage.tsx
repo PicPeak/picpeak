@@ -23,9 +23,13 @@ import { formatMoneyMinor } from '../../../utils/money';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { toast } from 'react-toastify';
 import { todayIsoDate } from '../../../utils/localDate';
+import { useUkBusiness } from '../../../hooks/useUkBusiness';
+import { lacksGbpRate } from '../../../utils/vatGbpRate';
 
 export const BillDetailPage: React.FC = () => {
   const { t } = useTranslation();
+  // A UK business's invoice waits for its GBP rate (issue 2439).
+  const ukBusiness = useUkBusiness();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { format: fmtDate } = useLocalizedDate();
@@ -422,6 +426,11 @@ export const BillDetailPage: React.FC = () => {
             invoice now" on the customer page — never directly (migration 128). */}
         {inv.isMonthlyDraft && (
           <Notice tone="info">{t('bills.monthlyDraftBadge', 'Monthly draft — ships via the customer\'s cadence day or "Trigger invoice now"')}</Notice>
+        )}
+        {ukBusiness && lacksGbpRate(inv) && (
+          <Notice tone="warning" title={t('bills.needsGbpRateTitle', 'This invoice needs its GBP exchange rate.')}>
+            {t('bills.needsGbpRateBody', 'A UK VAT invoice in {{currency}} also states its VAT in GBP. Enter the rate below; until then it can\'t be sent, and a scheduled send waits.', { currency: inv.currency })}
+          </Notice>
         )}
         {inv.kind === 'storno' && inv.cancelsInvoiceId && (
           <Notice tone="neutral">

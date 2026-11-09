@@ -132,6 +132,8 @@ export interface CustomerAccountDetail extends CustomerAccountSummary {
   phone: string | null;
   billingEmail: string | null;
   vatId: string | null;
+  /** Business or consumer (migration 352); null = decided from company name / VAT ID. */
+  customerKind?: 'business' | 'consumer' | null;
   addressLine1: string | null;
   addressLine2: string | null;
   postalCode: string | null;
@@ -365,6 +367,7 @@ export const customerAdminService = {
       companyName: 'company_name',
       billingEmail: 'billing_email',
       vatId: 'vat_id',
+      customerKind: 'customer_kind',
       addressLine1: 'address_line1',
       addressLine2: 'address_line2',
       postalCode: 'postal_code',

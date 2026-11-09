@@ -32,6 +32,7 @@ import {
   type CustomerAccountDetail,
 } from '../../services/customerAdmin.service';
 import { businessProfileService } from '../../services/businessProfile.service';
+import { useUkBusiness } from '../../hooks/useUkBusiness';
 import { CustomerCrmPanels } from '../../components/admin/CustomerCrmPanels';
 import { HoursSection } from '../../components/admin/HoursSection';
 import { CustomerDocumentsCard } from '../../components/admin/CustomerDocumentsCard';
@@ -44,7 +45,7 @@ import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 
 type EditableFields =
   | 'email' | 'salutation' | 'firstName' | 'lastName' | 'displayName'
-  | 'phone' | 'companyName' | 'billingEmail' | 'vatId'
+  | 'phone' | 'companyName' | 'billingEmail' | 'vatId' | 'customerKind'
   | 'addressLine1' | 'addressLine2' | 'postalCode' | 'city' | 'state'
   | 'countryCode' | 'countryName' | 'preferredLanguage' | 'notes'
   | 'featureCalendar' | 'featureQuotes' | 'featureBills' | 'featureHoursLogging' | 'featureContracts'
@@ -106,6 +107,9 @@ export const CustomerDetailPage: React.FC = () => {
   // USD / GBP get a meaningful example instead of one referencing a
   // currency they don't use.
   const profileDefaultCurrency = profileSnapshot?.profile?.defaultCurrency || 'CHF';
+  // UK consumer law and the B2B late-payment notice turn on whether the
+  // customer is a business (issue 2439); other businesses never use it.
+  const ukBusiness = useUkBusiness();
   const LOCALE_LABELS: Record<string, string> = {
     en: 'English', de: 'Deutsch', fr: 'Français',
     nl: 'Nederlands', pt: 'Português', ru: 'Русский',
@@ -134,6 +138,7 @@ export const CustomerDetailPage: React.FC = () => {
         companyName: customer.companyName,
         billingEmail: customer.billingEmail,
         vatId: customer.vatId,
+        customerKind: customer.customerKind ?? null,
         addressLine1: customer.addressLine1,
         addressLine2: customer.addressLine2,
         postalCode: customer.postalCode,
@@ -542,6 +547,27 @@ export const CustomerDetailPage: React.FC = () => {
             <label className="block text-sm font-medium text-heading mb-1">{t('customers.detail.vatId', 'VAT / tax ID')}</label>
             <Input value={form.vatId || ''} onChange={setField('vatId')} />
           </div>
+          {ukBusiness && (
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-heading mb-1">{t('customers.detail.customerKind', 'Business or consumer')}</label>
+              <select
+                value={form.customerKind || ''}
+                onChange={(e) => setForm((prev) => ({ ...prev, customerKind: (e.target.value || null) as CustomerAccountDetail['customerKind'] }))}
+                className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                <option value="">
+                  {(form.companyName || form.vatId)
+                    ? t('customers.detail.customerKindAutoBusiness', 'Automatic (business: has a company name or VAT ID)')
+                    : t('customers.detail.customerKindAutoConsumer', 'Automatic (consumer: no company name or VAT ID)')}
+                </option>
+                <option value="business">{t('customers.detail.customerKindBusiness', 'Business')}</option>
+                <option value="consumer">{t('customers.detail.customerKindConsumer', 'Consumer')}</option>
+              </select>
+              <p className="text-xs text-soft mt-1">
+                {t('customers.detail.customerKindHint', 'A consumer\'s contract gets the 14-day cancellation notice; a business\'s invoices can carry the late-payment notice.')}
+              </p>
+            </div>
+          )}
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-heading mb-1">{t('customers.detail.addressLine1', 'Address line 1')}</label>
             <Input value={form.addressLine1 || ''} onChange={setField('addressLine1')} />

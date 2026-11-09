@@ -8282,6 +8282,12 @@
       "keep": "Einladung behalten"
     },
     "detail": {
+      "customerKind": "Unternehmen oder Verbraucher",
+      "customerKindAutoBusiness": "Automatisch (Unternehmen: Firmenname oder USt-ID vorhanden)",
+      "customerKindAutoConsumer": "Automatisch (Verbraucher: kein Firmenname und keine USt-ID)",
+      "customerKindBusiness": "Unternehmen",
+      "customerKindConsumer": "Verbraucher",
+      "customerKindHint": "Der Vertrag eines Verbrauchers erhält die Widerrufsbelehrung (14 Tage); Rechnungen an Unternehmen können den Hinweis zum Zahlungsverzug tragen.",
       "loadError": "Kunde konnte nicht geladen werden",
       "saved": "Kunde gespeichert",
       "saveError": "Änderungen konnten nicht gespeichert werden.",
@@ -10053,7 +10059,12 @@
       "cancelled": "Storniert",
       "skipped": "Übersprungen (leerer Monat)"
     },
+    "needsGbpRate": "GBP-Kurs fehlt",
+    "needsGbpRateTitle": "Dieser Rechnung fehlt der GBP-Wechselkurs.",
+    "needsGbpRateBody": "Eine britische MwSt.-Rechnung in {{currency}} weist die MwSt. auch in GBP aus. Tragen Sie den Kurs unten ein; bis dahin kann sie nicht versendet werden, und ein geplanter Versand wartet.",
     "field": {
+      "vatGbpRate": "GBP je {{currency}} für die MwSt. in Pfund",
+      "vatGbpRateHint": "Auf einer britischen MwSt.-Rechnung in einer anderen Währung verlangt HMRC den MwSt.-Betrag auch in GBP. Verwenden Sie den britischen Marktkurs zum Leistungszeitpunkt oder den Periodenkurs von HMRC.",
       "number": "Rechnung",
       "status": "Status",
       "dueDate": "Fällig",
@@ -10240,6 +10251,23 @@
     "confirmReissueNoMail": "Für diese Rechnung wird eine Stornorechnung ausgestellt (dieser Kunde erhält keine E-Mail), und ein neuer geplanter Entwurf mit denselben Positionen wird erstellt. Die neue Rechnung verweist auf diese als „Ersetzt R-XXXX“. Fortfahren?"
   },
   "businessProfile": {
+    "jurisdiction": {
+      "unset": "Nicht gesetzt (Verträge verwenden England und Wales)",
+      "englandWales": "England und Wales",
+      "scotland": "Schottland",
+      "northernIreland": "Nordirland"
+    },
+    "legalForm": {
+      "unset": "Nicht gesetzt",
+      "soleTrader": "Einzelunternehmen (Sole trader)",
+      "partnership": "Personengesellschaft (Partnership)",
+      "ltd": "Kapitalgesellschaft (Ltd)",
+      "llp": "Limited Liability Partnership (LLP)"
+    },
+    "uk": {
+      "hint": "Erscheint in der Fusszeile Ihrer Angebote, Rechnungen und Verträge, wie es das britische Recht verlangt. Die Rechtsordnung bestimmt das Recht, dem Ihre Verträge unterliegen.",
+      "proprietorHint": "Nötig, wenn Sie unter einem anderen Namen als Ihrem eigenen Nachnamen auftreten."
+    },
     "savedToast": "Geschäftsprofil gespeichert.",
     "movedToAccounting": "MwSt-Satz, MwSt-Bezeichnung und Standard-Stundensatz befinden sich jetzt unter Einstellungen → Buchhaltung.",
     "title": "Geschäftsprofil",
@@ -10266,12 +10294,21 @@
       }
     },
     "section": {
+      "uk": "Britische Pflichtangaben",
       "company": "Firma",
       "contact": "Kontakt",
       "defaults": "Standardwerte",
       "banks": "Bankverbindungen"
     },
     "field": {
+      "vatIdGb": "VAT-Registrierungsnummer (GB…)",
+      "legalForm": "Rechtsform",
+      "jurisdiction": "Rechtsordnung",
+      "registeredName": "Eingetragener Name (falls abweichend vom Firmennamen)",
+      "companyNumber": "Firmennummer (Company number)",
+      "registeredOffice": "Eingetragener Sitz (falls abweichend von der Adresse oben)",
+      "partnerNames": "Namen der Gesellschafter",
+      "proprietorName": "Name des Inhabers",
       "companyName": "Firmenname",
       "vatId": "USt-IdNr.",
       "taxId": "Steuernummer",
@@ -10353,6 +10390,10 @@
     }
   },
   "crmSettings": {
+    "crm_invoices_late_payment_notice": {
+      "label": "UK: gesetzlichen Hinweis zum Zahlungsverzug auf Rechnungen an Unternehmen drucken",
+      "help": "Nur für ein Unternehmen im Vereinigten Königreich und nur auf Rechnungen an Kunden, die Unternehmen sind (Kunden → Unternehmen oder Verbraucher). Nennt Zinsen und Pauschale nach dem Late Payment of Commercial Debts (Interest) Act 1998."
+    },
     "savedToast": "CRM-Einstellungen gespeichert.",
     "title": "CRM-Einstellungen",
     "subtitle": "Standardwerte für Angebote und Rechnungen.",
@@ -11015,7 +11056,7 @@
         "section": "Abschnitt",
         "description": "Beschreibung (interner Hinweis)",
         "body": "Text",
-        "placeholderHint": "Sie können {{customer_name}}, {{event_name}}, {{event_date}}, {{net_days}}, {{skonto_percent}}, {{skonto_within_days}}, {{cancellation_30d_percent}}, {{currency}}, {{issuer_company_name}}, {{issuer_address}}, {{contract_number}} und {{source_quote_number}} als Platzhalter verwenden — sie werden beim Rendern des Vertrags ersetzt."
+        "placeholderHint": "Sie können {{customer_name}}, {{event_name}}, {{event_date}}, {{net_days}}, {{skonto_percent}}, {{skonto_within_days}}, {{cancellation_30d_percent}}, {{currency}}, {{issuer_company_name}}, {{issuer_address}}, {{governing_law}}, {{contract_number}} und {{source_quote_number}} als Platzhalter verwenden — sie werden beim Rendern des Vertrags ersetzt."
       },
       "quoteLineItems": {
         "calloutTitle": "Automatisch erzeugte Tabelle folgt auf den Text",
