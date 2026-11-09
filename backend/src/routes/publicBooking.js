@@ -117,11 +117,17 @@ router.get(
 
 const valuesValidator = body('values').optional({ nullable: true }).isObject();
 const serviceIdValidator = body('serviceId').isInt({ min: 1 });
+// The browser's language ("de-CH", "en-US") reduced to a shipped locale;
+// anything else falls back to the default rather than refusing the form.
+const languageSanitizer = body('language').customSanitizer((value) => {
+  const base = String(value || '').toLowerCase().split(/[-_]/)[0];
+  return booking.LANGUAGES.includes(base) ? base : undefined;
+});
 
 router.post(
   '/estimate',
   estimateLimiter,
-  [serviceIdValidator, valuesValidator, body('language').optional({ values: 'falsy' }).isIn(booking.LANGUAGES)],
+  [serviceIdValidator, valuesValidator, languageSanitizer],
   handleAsync(async (req, res) => {
     validateRequest(req);
     const preset = await booking.bookableService(req.body.serviceId);
@@ -133,7 +139,9 @@ router.post(
       totalMinor: result.totalMinor,
       lines: result.lines.map((l) => ({ description: l.description, totalMinor: l.totalMinor })),
       unmatched: result.unmatched,
-      durationMinutes: booking.durationMinutes(preset, await booking.withDurationValue(preset, req.body.values || {})),
+      // The length the request will be checked with: the priced values, so a
+      // factor the client cannot see keeps its default here too.
+      durationMinutes: booking.durationMinutes(preset, await booking.withDurationValue(preset, result.snapshot.values || {})),
     });
   })
 );
@@ -177,7 +185,7 @@ router.post(
     body('phone').optional({ values: 'falsy' }).isString().isLength({ max: 40 }),
     body('company').optional({ values: 'falsy' }).isString().isLength({ max: 160 }),
     body('message').optional({ values: 'falsy' }).isString().isLength({ max: 5000 }),
-    body('language').optional({ values: 'falsy' }).isIn(booking.LANGUAGES),
+    languageSanitizer,
     body('website').optional({ values: 'falsy' }).isString().isLength({ max: 500 }),
     body('formToken').isString().isLength({ min: 10, max: 200 }),
   ],

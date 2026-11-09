@@ -355,10 +355,22 @@ async function forgetCustomer(trx, customerId, emails = []) {
 }
 
 /**
- * A client's booking request. The slot is re-checked and the request
- * inserted in one transaction, so two clients racing for the same slot
- * cannot both hold it.
+ * The lock every write that claims a slot takes (new requests, accepting a
+ * request whose hold ran out): a transaction-scoped advisory lock on
+ * PostgreSQL, which needs no row to exist; SQLite has one writer.
  */
+async function takeRequestLock(trx) {
+  if (db.client.config.client === 'pg') await trx.raw('SELECT pg_advisory_xact_lock(?)', [ADVISORY_LOCK_KEY]);
+}
+
+/** Run `fn(trx)` in a transaction holding the request lock. */
+function withRequestLock(fn) {
+  return db.transaction(async (trx) => {
+    await takeRequestLock(trx);
+    return fn(trx);
+  });
+}
+
 /** Requests that hold a slot right now (pending, hold not run out). */
 function openRequests(conn, now) {
   return conn('booking_requests').where({ status: 'pending' }).andWhere('hold_expires_at', '>', ts(now));
@@ -367,21 +379,27 @@ function openRequests(conn, now) {
 /**
  * Caps that keep one client (or a script) from holding the calendar and
  * from using the form to mail third parties: open requests per address
- * hash, per email, and in total.
+ * hash, per email, and in total. Runs inside the request transaction,
+ * after the lock, so concurrent posts cannot all pass the same count.
  */
-async function assertMayRequest({ email, ipHash, settings, now }) {
+async function assertMayRequest(conn, { email, ipHash, settings, now }) {
   const count = async (q) => Number((await q.count('* as n').first()).n);
-  if (ipHash && await count(openRequests(db, now).where({ client_ip_hash: ipHash })) >= MAX_OPEN_PER_CLIENT) {
+  if (ipHash && await count(openRequests(conn, now).where({ client_ip_hash: ipHash })) >= MAX_OPEN_PER_CLIENT) {
     throw new AppError('You already have open booking requests. Please wait for the studio to answer them.', 429, 'BOOKING_TOO_MANY_OPEN');
   }
-  if (await count(openRequests(db, now).whereRaw('LOWER(email) = ?', [email])) >= MAX_OPEN_PER_EMAIL) {
+  if (await count(openRequests(conn, now).whereRaw('LOWER(email) = ?', [email])) >= MAX_OPEN_PER_EMAIL) {
     throw new AppError('You already have open booking requests. Please wait for the studio to answer them.', 429, 'BOOKING_TOO_MANY_OPEN');
   }
-  if (await count(openRequests(db, now)) >= Number(settings.max_open_requests)) {
+  if (await count(openRequests(conn, now)) >= Number(settings.max_open_requests)) {
     throw new AppError('The studio has too many open requests right now. Please write to them directly.', 429, 'BOOKING_REQUESTS_FULL');
   }
 }
 
+/**
+ * A client's booking request. The slot is re-checked and the request
+ * inserted in one transaction, so two clients racing for the same slot
+ * cannot both hold it.
+ */
 async function createRequest(input, { now = new Date() } = {}) {
   const preset = await bookableService(input.serviceId);
   const values = input.values || {};
@@ -395,18 +413,14 @@ async function createRequest(input, { now = new Date() } = {}) {
   const email = String(input.email).trim().toLowerCase().slice(0, 255);
   const ipHash = clientHash(input.clientKey);
   await expireStaleHolds(now);
-  await assertMayRequest({ email, ipHash, settings, now });
   // The slot length follows the values the estimate was priced with: a
   // factor the client cannot see keeps its default, whatever was posted.
   const pricedValues = estimate.snapshot.values;
-  const repeat = await openRequests(db, now).whereRaw('LOWER(email) = ?', [email]).first('id');
-
+  let repeat = null;
   const insertId = await db.transaction(async (trx) => {
-    // SQLite serialises writers; on PostgreSQL the lock on the settings row
-    // makes concurrent requests take turns for the check-then-insert.
-    // A transaction-scoped advisory lock: it needs no row to exist (a restore
-    // can empty booking_settings), and concurrent requests take turns.
-    if (db.client.config.client === 'pg') await trx.raw('SELECT pg_advisory_xact_lock(?)', [ADVISORY_LOCK_KEY]);
+    await takeRequestLock(trx);
+    await assertMayRequest(trx, { email, ipHash, settings, now });
+    repeat = await openRequests(trx, now).whereRaw('LOWER(email) = ?', [email]).first('id');
     // Every read goes through `trx`: SQLite has one connection, and a read
     // on the global handle inside this transaction would wait for itself.
     const { free, durationMinutes: duration } = await isSlotFree(preset, start.toISOString(), pricedValues, { now, conn: trx });
@@ -546,25 +560,29 @@ function quoteLines(request) {
  * another held or accepted request)? Notice period and opening hours are not
  * re-checked: the studio may accept what it likes.
  */
-async function slotTaken(request) {
-  const settings = await getSettings();
-  const { timezone } = await workingHours();
+async function slotTaken(request, conn = db) {
+  const settings = await getSettings(conn);
+  const { timezone } = await workingHours(conn);
   const start = toDate(request.starts_at).getTime();
   const end = toDate(request.ends_at).getTime();
   const bufferMs = settings.buffer_minutes * 60000;
-  const busy = await busyIntervals(new Date(start - bufferMs), new Date(end + bufferMs), timezone, { excludeRequestId: request.id });
+  const busy = await busyIntervals(new Date(start - bufferMs), new Date(end + bufferMs), timezone, { excludeRequestId: request.id, conn });
   return busy.some((b) => start < b.end + bufferMs && end > b.start - bufferMs);
 }
 
 async function acceptRequest(id, adminId) {
   await expireStaleHolds();
   // A request whose hold ran out can still be accepted while its time is free.
-  const current = await db('booking_requests').where({ id }).first();
-  if (current && ['pending', 'expired'].includes(current.status) && await slotTaken(current)) {
-    throw new AppError('Something else now takes this time. Decline the request, or move the quote to another date after accepting a new one.', 409, 'BOOKING_SLOT_TAKEN');
-  }
-  const claimed = await db('booking_requests').where({ id }).whereIn('status', ['pending', 'expired'])
-    .update({ status: 'accepted', decided_at: ts(new Date()), decided_by: adminId || null, updated_at: ts(new Date()) });
+  // The check and the claim share the lock new requests take, so a request
+  // for the same time made meanwhile cannot win it too.
+  const claimed = await withRequestLock(async (trx) => {
+    const current = await trx('booking_requests').where({ id }).first();
+    if (current && ['pending', 'expired'].includes(current.status) && await slotTaken(current, trx)) {
+      throw new AppError('Something else now takes this time. Decline the request, or move the quote to another date after accepting a new one.', 409, 'BOOKING_SLOT_TAKEN');
+    }
+    return trx('booking_requests').where({ id }).whereIn('status', ['pending', 'expired'])
+      .update({ status: 'accepted', decided_at: ts(new Date()), decided_by: adminId || null, updated_at: ts(new Date()) });
+  });
   if (!claimed) {
     const row = await db('booking_requests').where({ id }).first('status');
     if (!row) throw new AppError('Booking request not found', 404);
@@ -612,10 +630,11 @@ async function acceptRequest(id, adminId) {
     return db('booking_requests').where({ id }).first();
   } catch (err) {
     if (quoteId) {
-      // The draft quote exists: keep the request accepted and pointing at it,
-      // so nothing is created twice; the project link is what failed.
+      // The draft quote exists: keep the request accepted and pointing at it
+      // and at the project made for it, so nothing is created twice and the
+      // admin finds both; the link between the two is what failed.
       await db('booking_requests').where({ id }).update({
-        customer_account_id: customer.id, quote_id: quoteId, updated_at: ts(new Date()),
+        customer_account_id: customer.id, project_id: project?.id || null, quote_id: quoteId, updated_at: ts(new Date()),
       });
       logger.warn('Booking request accepted, but the quote could not be linked to its project', {
         requestId: id, quoteId, error: err.message,

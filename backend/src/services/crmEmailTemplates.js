@@ -733,18 +733,18 @@ Zur Weiterleitung an das Inkasso / für die Betreibung.`,
     en: {
       subject: 'Your booking request {{reference}}',
       body_html: `<p>Hello {{client_name}},</p>
-<p>unfortunately we cannot take on <strong>{{service_name}}</strong> on {{booking_date}} at {{booking_time}}. The time is free again.</p>
+<p>unfortunately we cannot take on <strong>{{service_name}}</strong> on {{booking_date}} at {{booking_time}}.</p>
 {{#if decline_reason}}<p>{{decline_reason}}</p>{{/if}}
 {{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
-      body_text: 'Hello {{client_name}},\n\nunfortunately we cannot take on {{service_name}} on {{booking_date}} at {{booking_time}}. The time is free again.{{#if decline_reason}}\n\n{{decline_reason}}{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+      body_text: 'Hello {{client_name}},\n\nunfortunately we cannot take on {{service_name}} on {{booking_date}} at {{booking_time}}.{{#if decline_reason}}\n\n{{decline_reason}}{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
     },
     de: {
       subject: 'Ihre Buchungsanfrage {{reference}}',
       body_html: `<p>Guten Tag {{client_name}},</p>
-<p>leider können wir <strong>{{service_name}}</strong> am {{booking_date}} um {{booking_time}} nicht übernehmen. Der Termin ist wieder frei.</p>
+<p>leider können wir <strong>{{service_name}}</strong> am {{booking_date}} um {{booking_time}} nicht übernehmen.</p>
 {{#if decline_reason}}<p>{{decline_reason}}</p>{{/if}}
 {{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
-      body_text: 'Guten Tag {{client_name}},\n\nleider können wir {{service_name}} am {{booking_date}} um {{booking_time}} nicht übernehmen. Der Termin ist wieder frei.{{#if decline_reason}}\n\n{{decline_reason}}{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+      body_text: 'Guten Tag {{client_name}},\n\nleider können wir {{service_name}} am {{booking_date}} um {{booking_time}} nicht übernehmen.{{#if decline_reason}}\n\n{{decline_reason}}{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
     },
   },
 };

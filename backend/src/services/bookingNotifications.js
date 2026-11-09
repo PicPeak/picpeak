@@ -73,7 +73,7 @@ async function notifyReceived(request, { mailClient = true } = {}) {
   }).catch(() => {});
 }
 
-/** The admin declined: tell the client the time is free again. */
+/** The admin declined: tell the client. */
 async function notifyDeclined(request) {
   const { language, vars } = await context(request);
   await queue('booking_request_declined', request.email, {
