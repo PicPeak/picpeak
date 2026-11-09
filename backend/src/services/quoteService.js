@@ -2752,8 +2752,15 @@ async function createLineItemPreset(payload) {
     created_at: new Date(),
     updated_at: new Date(),
   };
-  const inserted = await db('quote_line_item_presets').insert(row).returning('id');
-  const id = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+  // Pricing factors (#2440): checked before the write, stored with it.
+  const factors = require('./pricingFactorService');
+  const factorIds = payload.factor_ids === undefined ? [] : await factors.validatePresetFactors(row, payload.factor_ids);
+  const id = await db.transaction(async (trx) => {
+    const inserted = await trx('quote_line_item_presets').insert(row).returning('id');
+    const newId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+    await factors.writePresetFactors(trx, newId, factorIds);
+    return newId;
+  });
   return await db('quote_line_item_presets').where({ id }).first();
 }
 
@@ -2771,8 +2778,20 @@ async function updateLineItemPreset(id, payload) {
       updates[col] = col === 'is_active' ? formatBoolean(Boolean(payload[api])) : payload[api];
     }
   }
-  Object.assign(updates, presetCatalogueColumns(payload), await require('./albumProducts/crm').presetColumns(db, payload, await db('quote_line_item_presets').where({ id }).first()));
-  await db('quote_line_item_presets').where({ id }).update(updates);
+  const existing = await db('quote_line_item_presets').where({ id }).first();
+  Object.assign(updates, presetCatalogueColumns(payload), await require('./albumProducts/crm').presetColumns(db, payload, existing));
+  // Pricing factors (#2440): the list as it will be after this write, checked
+  // against the item as it will be (currency, product link).
+  const factors = require('./pricingFactorService');
+  const after = { ...existing, ...updates };
+  const factorIds = payload.factor_ids !== undefined
+    ? payload.factor_ids
+    : existing ? (await factors.presetFactorIds([id])).get(id) || [] : [];
+  const validIds = existing ? await factors.validatePresetFactors(after, factorIds) : [];
+  await db.transaction(async (trx) => {
+    await trx('quote_line_item_presets').where({ id }).update(updates);
+    if (existing && payload.factor_ids !== undefined) await factors.writePresetFactors(trx, id, validIds);
+  });
   return await db('quote_line_item_presets').where({ id }).first();
 }
 

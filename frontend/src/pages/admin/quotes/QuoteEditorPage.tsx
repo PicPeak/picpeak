@@ -11,7 +11,7 @@
  * /quotes/new (QuoteEditorPage below). It holds the fields and saving; the
  * page asks it to save, discard or preview through a ref.
  */
-import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -32,7 +32,7 @@ import {
 import { DiscountsPanel } from '../../../components/admin/quotes/DiscountsPanel';
 import { TextBlockPicker, appendTextBlock } from '../../../components/admin/quotes/TextBlockPicker';
 import { DecimalInput } from '../../../components/common/DecimalInput';
-import { quoteCatalogService } from '../../../services/quoteCatalog.service';
+import { quoteCatalogService, type FactorValue } from '../../../services/quoteCatalog.service';
 import { CustomerPicker } from '../../../components/admin/CustomerPicker';
 import { ProjectSelect } from '../../../components/admin/ProjectSelect';
 import { VatRateSelect } from '../../../components/admin/VatRateSelect';
@@ -271,7 +271,7 @@ interface QuoteFormProps {
 }
 
 export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId, onStateChange }, ref) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const id = quoteId ? String(quoteId) : undefined;
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -426,6 +426,12 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
     queryKey: ['quote-catalog', 'packages', 'active'],
     queryFn: () => quoteCatalogService.listPackages({ activeOnly: true }),
   });
+  // Pricing factors (#2440): archived ones too, since an item keeps the
+  // factors it had when one is archived.
+  const { data: factors = [] } = useQuery({
+    queryKey: ['quote-catalog', 'factors', 'all'],
+    queryFn: () => quoteCatalogService.listFactors(),
+  });
   const { data: promotions = [] } = useQuery({
     queryKey: ['quote-catalog', 'promotions', 'active'],
     queryFn: () => quoteCatalogService.listPromotions({ activeOnly: true }),
@@ -434,6 +440,14 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
     queryKey: ['quote-catalog', 'text-blocks', 'active'],
     queryFn: () => quoteCatalogService.listTextBlocks({ activeOnly: true }),
   });
+  // Prices a catalogue item with its factors on the server: the customer's
+  // rate for hour/day items, line texts in the quote's language.
+  const priceWithFactors = useCallback(
+    (presetId: number, values: Record<string, FactorValue>) => quoteCatalogService.priceWithFactors({
+      presetId, values, customerId: form.customerAccountId || null, language: form.language || i18n.language,
+    }),
+    [form.customerAccountId, form.language, i18n.language],
+  );
 
   // Admin user list — used to pre-fill + offer a dropdown for the
   // "CC PDF to" field, mirroring CreateEventPage's admin_email picker.
@@ -775,6 +789,8 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
           hours={form.hours}
           days={form.days}
           packages={packages}
+          factors={factors}
+          priceWithFactors={priceWithFactors}
           onChange={(items) => setForm((f) => ({ ...f, lineItems: items }))}
         />
         <DiscountsPanel

@@ -327,6 +327,8 @@ const INVOICE_BODY_VALIDATORS = [
   body('lineItems.*.rateSource').optional({ values: 'falsy' }).isIn(RATE_SOURCES),
   body('lineItems.*.boundTo').optional({ values: 'falsy' }).isIn(BOUND_TO),
   body('lineItems.*.promotionSnapshot').optional({ nullable: true }).isObject(),
+  // Pricing-factor snapshot on a factor-priced service line (#2440).
+  body('lineItems.*.pricingFactors').optional({ nullable: true }).isObject(),
 ];
 
 function mapPayloadToService(body) {

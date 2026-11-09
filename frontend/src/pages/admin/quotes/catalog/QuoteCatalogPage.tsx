@@ -1,7 +1,8 @@
 import { CrmProductFields, type Surcharge } from '../../../../features/album-products/CrmProductFields';
 /**
- * Quote catalogue & templates (#1451). Five tabs:
+ * Quote catalogue & templates (#1451). Six tabs:
  *   Services     — the catalogue items (the existing line-item presets)
+ *   Factors      — pricing factors attached to services (#2440)
  *   Packages     — bundles of catalogue items
  *   Promotions   — named discounts ("Vereinsrabatt −300 CHF", "−10 %")
  *   Text blocks  — reusable intro / scope / closing texts with {{placeholders}}
@@ -19,15 +20,16 @@ import { DecimalInput } from '../../../../components/common/DecimalInput';
 import { quotesService, type LineItemPreset } from '../../../../services/quotes.service';
 import {
   quoteCatalogService,
-  type QuotePackage, type QuotePromotion, type QuoteTextBlock, type TextBlockKind,
+  type PricingFactor, type QuotePackage, type QuotePromotion, type QuoteTextBlock, type TextBlockKind,
 } from '../../../../services/quoteCatalog.service';
 import { formatMoneyMinor } from '../../../../utils/money';
 import { PermissionGate } from '../../../../components/admin/PermissionGate';
 import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
+import { PricingFactorsTab } from './PricingFactorsTab';
 import type { BoundTo, LineUnit, PriceMode } from '../../../../utils/lineItemTotals';
 
-type Tab = 'services' | 'packages' | 'promotions' | 'textBlocks' | 'templates';
-const TABS: Tab[] = ['services', 'packages', 'promotions', 'textBlocks', 'templates'];
+type Tab = 'services' | 'factors' | 'packages' | 'promotions' | 'textBlocks' | 'templates';
+const TABS: Tab[] = ['services', 'factors', 'packages', 'promotions', 'textBlocks', 'templates'];
 const UNITS: LineUnit[] = ['hour', 'day', 'piece', 'km', 'flat'];
 const CURRENCIES = ['CHF', 'EUR', 'USD', 'GBP'];
 const TEXT_BLOCK_KINDS: TextBlockKind[] = ['intro', 'scope', 'note', 'closing', 'terms'];
@@ -98,11 +100,45 @@ interface ServiceForm {
   pinnedRate: number;
   category: string;
   detailsText: string;
+  /** Pricing factors attached to the service (#2440). */
+  factorIds: number[];
 }
 
 const emptyService: ServiceForm = {
   name: '', description: '', unitPrice: NaN, currency: 'CHF', quantityDefault: 1, unit: '', priceMode: 'fixed',
-  pinnedRate: NaN, category: '', detailsText: '',
+  pinnedRate: NaN, category: '', detailsText: '', factorIds: [],
+};
+
+/** Which pricing factors a service uses, in the order they were ticked (#2440). */
+const ServiceFactorPicker: React.FC<{
+  factors: PricingFactor[];
+  selected: number[];
+  onChange: (ids: number[]) => void;
+}> = ({ factors, selected, onChange }) => {
+  const { t } = useTranslation();
+  return (
+    <fieldset className="md:col-span-2">
+      <legend className={labelCls}>{t('quotes.factors.onService', 'Pricing factors')}</legend>
+      {factors.length === 0 ? (
+        <p className="text-xs text-muted">
+          {t('quotes.factors.noneForCurrency', 'No pricing factors in this currency yet. Add them on the Pricing factors tab.')}
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {factors.map((f) => (
+            <label key={f.id} className="flex items-center gap-2 text-sm text-body">
+              <input type="checkbox" checked={selected.includes(f.id)}
+                onChange={(e) => onChange(e.target.checked ? [...selected, f.id] : selected.filter((id) => id !== f.id))} />
+              {f.name}
+            </label>
+          ))}
+        </div>
+      )}
+      <p className="mt-1 text-xs text-muted">
+        {t('quotes.factors.onServiceHint', 'Adding this service to a quote then asks for these values and prices it from them.')}
+      </p>
+    </fieldset>
+  );
 };
 
 const ServicesTab: React.FC = () => {
@@ -111,6 +147,10 @@ const ServicesTab: React.FC = () => {
   const { data, isLoading } = useQuery({
     queryKey: ['line-item-presets', 'all'],
     queryFn: () => quotesService.listLineItemPresets({ includeInactive: true }),
+  });
+  const { data: factors = [] } = useQuery({
+    queryKey: ['quote-catalog', 'factors', 'all'],
+    queryFn: () => quoteCatalogService.listFactors(),
   });
   const [form, setForm] = useState<ServiceForm | null>(null);
 
@@ -129,6 +169,7 @@ const ServicesTab: React.FC = () => {
     pinnedRate: p.pinnedRateMinor != null ? p.pinnedRateMinor / 100 : NaN,
     category: p.category || '',
     detailsText: p.detailsText || '',
+    factorIds: p.factorIds || [],
   });
 
   const save = async () => {
@@ -146,6 +187,13 @@ const ServicesTab: React.FC = () => {
       pinnedRateMinor: rateBased && Number.isFinite(form.pinnedRate) ? toMinor(form.pinnedRate) : null,
       category: form.category || null,
       detailsText: form.detailsText || null,
+      // Only factors in the service's currency: after a currency change the
+      // others are no longer listed, so they must not be sent either. A
+      // factor not loaded (yet) is sent as it is; the server checks it.
+      factorIds: form.productId ? [] : form.factorIds.filter((id) => {
+        const factor = factors.find((f) => f.id === id);
+        return !factor || factor.currency === form.currency;
+      }),
     };
     try {
       if (form.id) await quotesService.updateLineItemPreset(form.id, payload);
@@ -260,6 +308,13 @@ const ServicesTab: React.FC = () => {
               <textarea id="service-details" rows={2} className={inputCls} value={form.detailsText}
                 onChange={(e) => setForm({ ...form, detailsText: e.target.value })} />
             </div>
+            {!form.productId && (
+              <ServiceFactorPicker
+                factors={factors.filter((f) => f.currency === form.currency && (f.isActive || form.factorIds.includes(f.id)))}
+                selected={form.factorIds}
+                onChange={(factorIds) => setForm({ ...form, factorIds })}
+              />
+            )}
           </div>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setForm(null)}>{t('common.cancel', 'Cancel')}</Button>
@@ -280,6 +335,11 @@ const ServicesTab: React.FC = () => {
                     <span className="font-medium">{p.name}</span>
                     {!p.isActive && <ArchivedBadge />}
                     {p.category && <div className="text-xs text-muted">{p.category}</div>}
+                    {(p.factorIds?.length ?? 0) > 0 && (
+                      <div className="text-xs text-muted">
+                        {t('quotes.factors.attachedCount', '{{count}} pricing factors', { count: p.factorIds!.length })}
+                      </div>
+                    )}
                   </td>
                   <td className="py-2 text-right tabular-nums">{priceLabel(p)}</td>
                   <td className="py-2">
@@ -887,6 +947,7 @@ export const QuoteCatalogPage: React.FC = () => {
 
   const tabLabel = (key: Tab) => ({
     services: t('quotes.catalog.tab.services', 'Services'),
+    factors: t('quotes.catalog.tab.factors', 'Pricing factors'),
     packages: t('quotes.catalog.tab.packages', 'Packages'),
     promotions: t('quotes.catalog.tab.promotions', 'Promotions'),
     textBlocks: t('quotes.catalog.tab.textBlocks', 'Text blocks'),
@@ -918,6 +979,7 @@ export const QuoteCatalogPage: React.FC = () => {
       </p>
 
       {tab === 'services' && <ServicesTab />}
+      {tab === 'factors' && <PricingFactorsTab />}
       {tab === 'packages' && <PackagesTab />}
       {tab === 'promotions' && <PromotionsTab />}
       {tab === 'textBlocks' && <TextBlocksTab />}

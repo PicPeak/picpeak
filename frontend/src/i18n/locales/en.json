@@ -9532,6 +9532,73 @@
     "costsErrorTitle": "Costs could not be loaded"
   },
   "quotes": {
+    "factors": {
+      "addOption": "Add option",
+      "addZone": "Add zone",
+      "adminOnly": "admin only",
+      "apply": "Apply to quote",
+      "atLeast": "At least {{min}}",
+      "atMost": "At most {{max}}",
+      "attachedCount_one": "{{count}} pricing factor",
+      "attachedCount_other": "{{count}} pricing factors",
+      "breakdown": "Price",
+      "dialogHint": "Each factor becomes its own line under the service. You can still edit the lines afterwards.",
+      "editFactors": "Pricing factors",
+      "empty": "No pricing factors yet.",
+      "fromPostcode": "From postcode {{postcode}}",
+      "keptLines_one": "{{count}} line under this service was added or changed by hand. It stays as it is; check it after applying. If it was a generated line, a fresh one is added, so the charge may appear twice.",
+      "keptLines_other": "{{count}} lines under this service were added or changed by hand. They stay as they are; check them after applying. If one was a generated line, a fresh one is added, so the charge may appear twice.",
+      "intro": "Inputs that change a service's price, such as session length, kind of work, travel zone or editing effort. Attach them to services on the Services tab.",
+      "new": "New factor",
+      "noDefault": "None",
+      "noneForCurrency": "No pricing factors in this currency yet. Add them on the Pricing factors tab.",
+      "notSet": "—",
+      "onService": "Pricing factors",
+      "onServiceHint": "Adding this service to a quote then asks for these values and prices it from them.",
+      "options": "Options",
+      "outsideZones": "Outside the listed zones: travel is quoted on request.",
+      "postcodeFor": "{{name}}: postcode",
+      "range": "{{min}} to {{max}}",
+      "unitFallback": "unit",
+      "zones": "Zones",
+      "zonesHint": "One postcode per line: 8001 exact, 80* starts with, 8000-8099 range. The first zone that matches wins. A postcode in no zone is marked \"travel on request\".",
+      "effect": {
+        "fixed": "Fixed amount",
+        "perUnit": "Amount per unit",
+        "percent": "Percent of the base price",
+        "step": "Amount per started step"
+      },
+      "field": {
+        "amount": "Amount",
+        "amountPerStep": "Amount per step",
+        "amountPerUnit": "Amount per unit",
+        "clientVisible": "Client fills this in when booking",
+        "default": "Default",
+        "effect": "Price change",
+        "included": "Included in the base price",
+        "max": "Maximum",
+        "min": "Minimum",
+        "optionLabel": "Label",
+        "percent": "Percent",
+        "postcodes": "Postcodes",
+        "stepSize": "Step size",
+        "toggleDefault": "On by default",
+        "type": "Input",
+        "unitLabel": "Unit (e.g. h, videos)"
+      },
+      "summary": {
+        "options_one": "{{count}} option",
+        "options_other": "{{count}} options",
+        "perUnit": "{{amount}} per {{unit}}",
+        "step": "{{amount}} per started {{step}} {{unit}}"
+      },
+      "type": {
+        "choice": "Choice",
+        "number": "Number",
+        "toggle": "Yes / no",
+        "zone": "Travel zone"
+      }
+    },
     "errors": {
       "popupBlocked": "Allow pop-ups for this site to preview the PDF.",
       "customerRequired": "Pick a customer first.",
@@ -9725,6 +9792,7 @@
         "promotions": "Promotions",
         "services": "Services",
         "templates": "Templates",
+        "factors": "Pricing factors",
         "textBlocks": "Text blocks"
       },
       "templatesIntro": "A template fills in a new quote. Publishing freezes a version, so later catalogue changes never alter quotes you already created.",
