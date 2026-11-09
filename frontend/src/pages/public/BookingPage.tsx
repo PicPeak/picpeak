@@ -197,7 +197,7 @@ export const BookingPage: React.FC = () => {
         <h2 id="booking-service" className="text-lg font-semibold mb-3">{t('booking.public.step.service', '1. Service')}</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           {info.services.map((s) => (
-            <label key={s.id} className={`cursor-pointer rounded-lg border p-4 ${serviceId === s.id ? 'border-primary ring-2 ring-primary' : 'border-border-token'}`}>
+            <label key={s.id} className={`cursor-pointer rounded-lg border p-4 ${serviceId === s.id ? 'border-accent-strong ring-2 ring-accent-strong' : 'border-border-token'}`}>
               <input type="radio" name="service" className="sr-only" checked={serviceId === s.id} onChange={() => setServiceId(s.id)} />
               <div className="font-medium">{s.name}</div>
               {s.description && <div className="mt-1 text-sm text-muted-theme whitespace-pre-line">{s.description}</div>}
@@ -272,7 +272,7 @@ export const BookingPage: React.FC = () => {
                       <div className="flex flex-col gap-1">
                         {daySlots.map((s) => (
                           <button key={s.start} type="button" onClick={() => setSlot(s)} aria-pressed={slot?.start === s.start}
-                            className={`rounded border px-2 py-1 text-sm tabular-nums ${slot?.start === s.start ? 'border-primary bg-primary text-white' : 'border-border-token'}`}>
+                            className={`rounded border px-2 py-1 text-sm tabular-nums ${slot?.start === s.start ? 'border-accent-strong bg-accent-strong text-accent-fg' : 'border-border-token'}`}>
                             {wallTime(s.start)}
                           </button>
                         ))}
