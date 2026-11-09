@@ -4,7 +4,7 @@
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
 const { formatShortDate } = require('../../utils/dateFormatter');
-const { cityLine, isUnitedStates } = require('../../utils/postalAddress');
+const { cityLine, domesticCountryFor, isUnitedKingdom } = require('../../utils/postalAddress');
 const businessProfileService = require('../businessProfileService');
 const { buildIssuerBlock, buildRecipientBlock } = require('../_renderContext');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
@@ -49,15 +49,29 @@ function renderTemplatedBody(template, variables, { output = 'markdown' } = {}) 
  * dates formatted DD.MM.YYYY in DE-CH style (MM/DD/YYYY from a US
  * business), numbers as-is.
  */
+// The part of the UK whose law governs a UK business's contract, in the
+// contract's language. England and Wales when the profile names none.
+const GOVERNING_LAW = {
+  en: { england_wales: 'England and Wales', scotland: 'Scotland', northern_ireland: 'Northern Ireland' },
+  de: { england_wales: 'England und Wales', scotland: 'Schottland', northern_ireland: 'Nordirland' },
+};
+
+function governingLawFor(profile, language) {
+  if (!isUnitedKingdom(profile.country_code)) return '';
+  const names = String(language || '').toLowerCase().startsWith('de') ? GOVERNING_LAW.de : GOVERNING_LAW.en;
+  return names[profile.jurisdiction] || names.england_wales;
+}
+
 async function buildPlaceholderContext(contract, customer) {
   const profile = (await businessProfileService.getProfile()).profile || {};
   const issuerCompany = profile.company_name || '';
   // A US business writes "123 Main St, Denver, CO 80202" for both
-  // addresses (utils/postalAddress); everyone else keeps the plain join.
-  const usBusiness = isUnitedStates(profile.country_code);
-  const issuerAddress = (usBusiness
+  // addresses, a UK one "12 Bath Street, Glasgow G1 1AA"
+  // (utils/postalAddress); everyone else keeps the plain join.
+  const domestic = domesticCountryFor(profile.country_code);
+  const issuerAddress = (domestic
     ? [profile.address_line1, cityLine({
-      postalCode: profile.postal_code, city: profile.city, state: profile.state, countryCode: 'US',
+      postalCode: profile.postal_code, city: profile.city, state: profile.state, countryCode: domestic,
     })]
     : [profile.address_line1, profile.postal_code, profile.city])
     .filter(Boolean)
@@ -89,11 +103,11 @@ async function buildPlaceholderContext(contract, customer) {
         || '')
     : '';
   const customerAddress = customer
-    ? (usBusiness
+    ? (domestic
       ? [customer.address_line1, customer.address_line2, cityLine({
         postalCode: customer.postal_code, city: customer.city, state: customer.state,
-        countryCode: customer.country_code || 'US',
-      })]
+        countryCode: customer.country_code || domestic,
+      }, { issuerCountryCode: profile.country_code })]
       : [customer.address_line1, customer.address_line2, customer.postal_code, customer.city])
       .filter(Boolean)
       .join(', ')
@@ -114,6 +128,8 @@ async function buildPlaceholderContext(contract, customer) {
     currency: (profile.default_currency || 'CHF').toUpperCase(),
     issuer_company_name: issuerCompany,
     issuer_address: issuerAddress,
+    // UK closing provisions (issue 2439); empty for a business elsewhere.
+    governing_law: governingLawFor(profile, contract && contract.language),
     source_quote_number: sourceQuoteNumber,
   };
 }

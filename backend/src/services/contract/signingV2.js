@@ -22,6 +22,7 @@
 const fs = require('fs');
 const crypto = require('crypto');
 const { db, logActivity } = require('../../database/db');
+const { readDocumentDateFormat } = require('../../utils/documentDateFormat');
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/errors');
 const { getAppSetting } = require('../../utils/appSettings');
@@ -80,14 +81,8 @@ function invitationExpiry(contract) {
     : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
 }
 
-async function readDateFormat() {
-  try {
-    const raw = await getAppSetting('general_date_format');
-    if (raw && typeof raw === 'object' && raw.format) return raw;
-    if (typeof raw === 'string' && raw.trim()) return { format: raw.trim() };
-  } catch (_) { /* default below */ }
-  return { format: 'DD.MM.YYYY' };
-}
+// Settings → General's date format; unset, the business country's default.
+const readDateFormat = readDocumentDateFormat;
 
 /** Theme and font settings for the stamp overlay — read before any transaction opens. */
 async function stampFontOptions() {
@@ -1668,5 +1663,5 @@ module.exports = {
   OPEN_STATUSES,
   invitationExpiry,
   recordFollowUpFailure,
-  _internal: { formatSignedAt, captionLines },
+  _internal: { formatSignedAt, captionLines, readDateFormat },
 };

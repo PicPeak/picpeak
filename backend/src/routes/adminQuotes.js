@@ -273,7 +273,16 @@ function transformLineItemPreset(p) {
     priceMode: p.price_mode || 'fixed',
     pinnedRateMinor: p.pinned_rate_minor == null ? null : Number(p.pinned_rate_minor),
     productId: p.product_id || null, productSurcharges: p.product_surcharges ? JSON.parse(p.product_surcharges) : [],
+    // Pricing factors attached to the item, in order (#2440).
+    factorIds: Array.isArray(p.factor_ids) ? p.factor_ids : [],
   };
+}
+
+/** Attach each preset's pricing factor ids (#2440). */
+async function withFactorIds(rows) {
+  const list = rows.filter(Boolean);
+  const map = await require('../services/pricingFactorService').presetFactorIds(list.map((r) => r.id));
+  return list.map((r) => ({ ...r, factor_ids: map.get(r.id) || [] }));
 }
 
 // ----- payload conversion helpers ------------------------------------
@@ -435,6 +444,8 @@ const QUOTE_LINE_VALIDATORS = [
   body('lineItems.*.boundTo').optional({ values: 'falsy' }).isIn(BOUND_TO),
   body('lineItems.*.promotionId').optional({ values: 'falsy' }).isInt({ min: 1 }),
   body('lineItems.*.promotionSnapshot').optional({ nullable: true }).isObject(),
+  // Pricing-factor snapshot on a factor-priced service line (#2440).
+  body('lineItems.*.pricingFactors').optional({ nullable: true }).isObject(),
   body('hours').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0, max: 9999 }),
   body('days').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0, max: 999 }),
 ];
@@ -789,7 +800,7 @@ router.get(
       await require('../services/quoteCatalogExamples').ensureCatalogExamples();
     }
     const rows = await quoteService.listLineItemPresets({ includeInactive: req.query.includeInactive === 'true' });
-    return successResponse(res, { presets: rows.map(transformLineItemPreset) });
+    return successResponse(res, { presets: (await withFactorIds(rows)).map(transformLineItemPreset) });
   })
 );
 
@@ -801,6 +812,8 @@ const PRESET_CATALOGUE_VALIDATORS = [
   body('vatCode').optional({ values: 'falsy' }).isString().isLength({ max: 16 }),
   body('priceMode').optional({ values: 'falsy' }).isIn(PRICE_MODES),
   body('pinnedRateMinor').optional({ nullable: true }).isInt({ min: 0 }),
+  body('factorIds').optional().isArray({ max: 30 }),
+  body('factorIds.*').isInt({ min: 1 }),
 ];
 
 function presetCatalogueFields(reqBody) {
@@ -811,6 +824,7 @@ function presetCatalogueFields(reqBody) {
     vat_code: reqBody.vatCode,
     price_mode: reqBody.priceMode,
     pinned_rate_minor: reqBody.pinnedRateMinor,
+    factor_ids: reqBody.factorIds,
   };
 }
 
@@ -838,7 +852,8 @@ router.post(
       product_id: req.body.productId, product_surcharges: req.body.productSurcharges,
       ...presetCatalogueFields(req.body),
     });
-    return successResponse(res, { preset: transformLineItemPreset(row) }, 201);
+    const [withIds] = await withFactorIds([row]);
+    return successResponse(res, { preset: transformLineItemPreset(withIds) }, 201);
   })
 );
 
@@ -870,7 +885,8 @@ router.put(
       product_id: req.body.productId, product_surcharges: req.body.productSurcharges,
       ...presetCatalogueFields(req.body),
     });
-    return successResponse(res, { preset: transformLineItemPreset(row) });
+    const [withIds] = await withFactorIds([row]);
+    return successResponse(res, { preset: transformLineItemPreset(withIds) });
   })
 );
 

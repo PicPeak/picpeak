@@ -21,6 +21,8 @@ const { createInvoice } = require('./create');
 const { buildInvoiceRenderContext } = require('./render');
 const { collectRebillProofAttachments } = require('./rebillProofs');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
+const { hasColumnCached } = require('../../utils/schemaCache');
+const { assertGbpRateEntered } = require('../../utils/vatAmount');
 
 async function billingContactEmails(customer) {
   const contacts = await customerContactsService.mailRecipients(customer?.id, 'bills');
@@ -112,6 +114,11 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
   }
   const customer = await db('customer_accounts').where({ id: invoice.customer_account_id }).first();
   ensureCustomerCanBill(customer);
+  // A UK VAT invoice in another currency states its VAT total in GBP too
+  // (VAT Notice 700/21 s.4.1), and a sent invoice can't be changed. So its
+  // first send waits for the rate: the invoice stays scheduled and editable,
+  // and a scheduled send goes out once the admin has entered it.
+  if (invoice.status === 'scheduled') await assertGbpRateEntered(invoice);
 
   // Re-sync the invoice's language from the customer's current
   // preferred_language at send time when the invoice has never been
@@ -369,6 +376,9 @@ async function createStorno(originalId, adminId, trx = db) {
     // both documents export the same code. Conditional spread = safe on pre-130
     // DBs (undefined → omitted).
     ...(original.vat_code ? { vat_code: original.vat_code } : {}),
+    // Migration 352 — the Storno states its (negative) VAT in GBP at the
+    // rate the invoice it cancels used.
+    ...(original.vat_gbp_rate != null ? { vat_gbp_rate: original.vat_gbp_rate } : {}),
     shipping_amount_minor: -ensureInt(original.shipping_amount_minor || 0),
     net_amount_minor: -ensureInt(original.net_amount_minor),
     vat_amount_minor: -ensureInt(original.vat_amount_minor),
@@ -610,7 +620,10 @@ async function reissueInvoice(id, adminId) {
   // later validation failure, leaving orphan drafts after the Storno
   // already committed. createInvoice's internal reads (getProfile,
   // getAppSetting, bank resolution, audit) all accept the trx now, so
-  // the round-1 SQLite deadlock is gone the right way.
+  // the round-1 SQLite deadlock is gone the right way. createInvoice's
+  // vat_gbp_rate schema check reads the global db, so it is cached here
+  // first, before the transaction holds the only SQLite connection.
+  if (original.vat_gbp_rate != null) await hasColumnCached('invoices', 'vat_gbp_rate');
   return await db.transaction(async (trx) => {
     // One live replacement per original. Two reissues that both found the
     // original already cancelled (or one that lost the Storno race above and
@@ -648,6 +661,8 @@ async function reissueInvoice(id, adminId) {
       language: original.language,
       currency: original.currency,
       vatRate: original.vat_rate,
+      // Migration 352 — the replacement states its VAT in GBP at the same rate.
+      vatGbpRate: original.vat_gbp_rate ?? undefined,
       shippingAmountMinor: original.shipping_amount_minor,
       ccPdfEmail: original.cc_pdf_email,
       businessBankAccountId: original.business_bank_account_id,
@@ -718,6 +733,9 @@ async function releaseForDelivery(id, adminId) {
       'NOT_PENDING_DELIVERY',
     );
   }
+  // Released, it is sent at once; without its GBP rate that send is refused,
+  // so the release is refused first and the invoice stays awaiting delivery.
+  await assertGbpRateEntered(invoice);
   const now = new Date();
   const updates = { status: 'scheduled', scheduled_send_at: toStoredTimestamp(now), updated_at: now };
   // Until now the dates assume delivery on event day + 14. Payment runs from
@@ -818,6 +836,11 @@ async function triggerMonthlyBillNow(customerId, adminId) {
   if (items.length === 0) {
     throw new AppError('Monthly draft is empty — nothing to bill', 409, 'EMPTY_DRAFT');
   }
+
+  // The draft is sent at once; without its GBP rate that send is refused and
+  // the scheduler leaves it out, so refuse before arming and the admin sees
+  // why (the draft stays a draft, ready once the rate is entered).
+  await assertGbpRateEntered(draft);
 
   // Arm the draft: clear the discriminator, pin issue_date to today,
   // and set scheduled_send_at to now so the flush pass + sendInvoice

@@ -9,6 +9,8 @@ const { toStoredTimestamp } = require('../../utils/dateNormalize');
 const { queuePaymentCheckEmail } = require('./payments');
 const { sendInvoice } = require('./sending');
 const { auditedUpdate } = require('../accountingHistory');
+const { isUkBusiness } = require('../../utils/vatAmount');
+const { hasColumnCached } = require('../../utils/schemaCache');
 
 
 /**
@@ -18,7 +20,15 @@ const { auditedUpdate } = require('../accountingHistory');
 async function runScheduledTasks() {
   const now = new Date();
 
-  // 1. Flush scheduled invoices.
+  // 1. Flush scheduled invoices, the longest-due first.
+  //
+  // A UK business's invoice in another currency that carries VAT can't be
+  // sent until its GBP rate is entered (sendInvoice answers 409
+  // VAT_GBP_RATE_REQUIRED). Those stay out of the batch: picked up and
+  // failing on every tick, enough of them would fill the 20-row batch and
+  // hold back every other scheduled invoice. Once the rate is entered the
+  // invoice qualifies again. sendInvoice keeps the rule itself.
+  const waitsForGbpRate = await hasColumnCached('invoices', 'vat_gbp_rate') && await isUkBusiness();
   const ready = await db('invoices')
     .where({ status: 'scheduled' })
     .andWhere(function() {
@@ -26,6 +36,16 @@ async function runScheduledTasks() {
       // on SQLite and never match a text value.
       this.whereNotNull('scheduled_send_at').andWhere('scheduled_send_at', '<=', toStoredTimestamp(now));
     })
+    .modify((q) => {
+      if (!waitsForGbpRate) return;
+      q.whereNot(function() {
+        this.whereRaw('UPPER(COALESCE(currency, \'\')) <> ?', ['GBP'])
+          .andWhere('vat_amount_minor', '<>', 0)
+          .andWhere(function() { this.whereNull('vat_gbp_rate').orWhere('vat_gbp_rate', '<=', 0); });
+      });
+    })
+    .orderBy('scheduled_send_at', 'asc')
+    .orderBy('id', 'asc')
     .limit(20);
   for (const inv of ready) {
     try {

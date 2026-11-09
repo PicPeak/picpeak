@@ -44,6 +44,7 @@ const { computeDueDate, ensureEventMatchesCustomer, isInvoiceEditable, resolveNe
 const { hasColumnCached } = require('../utils/schemaCache');
 const { toDateOnly } = require('../utils/dateOnly');
 const { toIso, toStoredTimestamp, toTimestamp } = require('../utils/dateNormalize');
+const { vatMinorFor, roundsVatDown, normaliseVatGbpRate } = require('../utils/vatAmount');
 
 const router = express.Router();
 // Re-bill proof endpoints (#866) are behind the incoming-invoices flag.
@@ -159,6 +160,9 @@ function transformInvoice(i) {
     // VatRateSelect on edit; without it the dropdown falls back to rate-matching
     // and a custom-rate code is silently lost.
     vatCode: i.vat_code || null,
+    // Migration 352 — GBP per unit of the invoice currency (UK invoices in
+    // another currency only); null = no sterling VAT row.
+    vatGbpRate: i.vat_gbp_rate == null ? null : Number(i.vat_gbp_rate),
     vatAmountMinor: i.vat_amount_minor,
     shippingAmountMinor: i.shipping_amount_minor,
     totalAmountMinor: i.total_amount_minor,
@@ -271,6 +275,8 @@ const INVOICE_BODY_VALIDATORS = [
   body('vatRate').optional({ values: 'falsy' }).isFloat({ min: 0, max: 100 }),
   // Migration 130 — the output VAT code the rate came from (null = custom rate).
   body('vatCode').optional({ nullable: true }).isString().isLength({ max: 16 }),
+  // Migration 352 — GBP rate for a UK invoice in another currency.
+  body('vatGbpRate').optional({ nullable: true }).isFloat({ gt: 0, max: 1000000 }),
   body('shippingAmountMinor').optional({ values: 'falsy' }).isInt({ min: 0 }),
   body('ccPdfEmail').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
   body('businessBankAccountId').optional({ values: 'falsy' }).isInt({ min: 1 }),
@@ -325,6 +331,8 @@ const INVOICE_BODY_VALIDATORS = [
   body('lineItems.*.rateSource').optional({ values: 'falsy' }).isIn(RATE_SOURCES),
   body('lineItems.*.boundTo').optional({ values: 'falsy' }).isIn(BOUND_TO),
   body('lineItems.*.promotionSnapshot').optional({ nullable: true }).isObject(),
+  // Pricing-factor snapshot on a factor-priced service line (#2440).
+  body('lineItems.*.pricingFactors').optional({ nullable: true }).isObject(),
 ];
 
 function mapPayloadToService(body) {
@@ -341,7 +349,7 @@ function mapPayloadToService(body) {
     installmentTotal: 'installmentTotal',
     installmentLabel: 'installmentLabel',
     installmentTrigger: 'installmentTrigger',
-    vatRate: 'vatRate', vatCode: 'vatCode', shippingAmountMinor: 'shippingAmountMinor',
+    vatRate: 'vatRate', vatCode: 'vatCode', vatGbpRate: 'vatGbpRate', shippingAmountMinor: 'shippingAmountMinor',
     ccPdfEmail: 'ccPdfEmail', businessBankAccountId: 'businessBankAccountId',
     qrFormat: 'qrFormat',
     eventName: 'eventName',
@@ -815,6 +823,16 @@ router.put(
     if (Object.prototype.hasOwnProperty.call(payload, 'vatCode') && await hasColumnCached('invoices', 'vat_code')) {
       updates.vat_code = payload.vatCode ? String(payload.vatCode).slice(0, 16) : null;
     }
+    // Migration 352 — the GBP rate of a UK invoice in another currency. A
+    // currency change re-checks it, so a switch to GBP drops the rate.
+    if ((Object.prototype.hasOwnProperty.call(payload, 'vatGbpRate') || payload.currency !== undefined)
+        && await hasColumnCached('invoices', 'vat_gbp_rate')) {
+      const { profile } = await require('../services/businessProfileService').getProfile();
+      updates.vat_gbp_rate = normaliseVatGbpRate(
+        Object.prototype.hasOwnProperty.call(payload, 'vatGbpRate') ? payload.vatGbpRate : existing.vat_gbp_rate,
+        { countryCode: profile?.country_code, currency: payload.currency ?? existing.currency },
+      );
+    }
     const map = {
       language: 'language', currency: 'currency',
       issueDate: 'issue_date', dueDate: 'due_date',
@@ -951,7 +969,7 @@ router.put(
         if (it.parent_position == null) net += parseInt(it.line_total_minor, 10) || 0;
       }
       const vatRate = Number(payload.vatRate ?? existing.vat_rate ?? 0);
-      const vatAmount = Math.round(net * vatRate / 100);
+      const vatAmount = vatMinorFor(net, vatRate, { roundDown: await roundsVatDown() });
       const shipping = parseInt(payload.shippingAmountMinor ?? existing.shipping_amount_minor ?? 0, 10);
       updates.net_amount_minor = net;
       updates.vat_amount_minor = vatAmount;

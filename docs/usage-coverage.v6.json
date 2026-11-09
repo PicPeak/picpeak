@@ -342,6 +342,7 @@
       "reason": "Business identity/bank/tax-address configuration and VAT-code helper surface are not separate usage signals. Billing/accounting capabilities are covered without profiling the business.",
       "route_signatures": [
         "GET /",
+        "GET /region",
         "GET /history",
         "GET /logo-diagnostic",
         "POST /logo",
@@ -1914,12 +1915,17 @@
         "crm_quotes",
         "document_templates"
       ],
-      "reason": "Admin quote catalogue and template operations only (packages, promotions, text blocks, templates, quote-from-template). No quote content, prices, customer data or text-block wording.",
+      "reason": "Admin quote catalogue and template operations only (packages, promotions, text blocks, pricing factors, templates, quote-from-template). No quote content, prices, factor values, customer data or text-block wording.",
       "route_signatures": [
         "GET /packages",
         "POST /packages",
         "PUT /packages/:id",
         "DELETE /packages/:id",
+        "GET /factors",
+        "POST /factors",
+        "POST /factors/price",
+        "PUT /factors/:id",
+        "DELETE /factors/:id",
         "GET /promotions",
         "POST /promotions",
         "PUT /promotions/:id",

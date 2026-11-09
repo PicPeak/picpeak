@@ -21,6 +21,8 @@ import { billsService, type InvoiceCreatePayload, type InvoiceQrFormat } from '.
 import { quotesService } from '../../../services/quotes.service';
 import { contractsService } from '../../../services/contracts.service';
 import { businessProfileService } from '../../../services/businessProfile.service';
+import { DecimalInput } from '../../../components/common/DecimalInput';
+import { useUkBusiness } from '../../../hooks/useUkBusiness';
 import { CustomerPicker } from '../../../components/admin/CustomerPicker';
 import { VatRateSelect } from '../../../components/admin/VatRateSelect';
 import { accountingService } from '../../../services/accounting.service';
@@ -102,6 +104,8 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   const [vatRate, setVatRate] = useState(0);
   // Migration 130 — snapshot of the chosen output VAT code (null = custom rate).
   const [vatCode, setVatCode] = useState<string | null>(null);
+  // Migration 352 — GBP rate of a UK invoice in another currency (NaN = none).
+  const [vatGbpRate, setVatGbpRate] = useState<number>(NaN);
   const [shipping, setShipping] = useState(0);
   const [ccPdfEmail, setCcPdfEmail] = useState('');
   const [lineItems, setLineItems] = useState<EditableLineItem[]>([]);
@@ -144,6 +148,9 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     queryKey: ['business-bank-accounts'],
     queryFn: () => businessProfileService.listBankAccounts(),
   });
+  // A UK business rounds its VAT total down and states the VAT in GBP on an
+  // invoice in another currency. Read from a route every bill editor may call.
+  const ukBusiness = useUkBusiness();
   const bankAccounts = bankAccountsData?.bankAccounts || [];
 
   // Migration 124 split the legacy payment-term template into Net days
@@ -190,6 +197,8 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     // it inherits the profile default at render time.
     setQrFormat((inv.qrFormat as InvoiceQrFormat | null) || null);
     setVatRate(Number(inv.vatRate || 0));
+    const storedGbpRate = (inv as { vatGbpRate?: number | null }).vatGbpRate;
+    setVatGbpRate(storedGbpRate == null ? NaN : Number(storedGbpRate));
     setVatCode(((inv as { vatCode?: string | null }).vatCode
       ?? (inv as { totals?: { vatCode?: string | null } }).totals?.vatCode) ?? null);
     setShipping(Number(inv.shippingAmountMinor || 0) / 100);
@@ -449,6 +458,11 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     qrFormat: qrFormat || undefined,
     vatRate,
     vatCode,
+    // The GBP rate as loaded or typed, null when there is none or the invoice
+    // is in GBP; the server keeps it only for a UK business. Not tied to the
+    // country query, so a loaded invoice doesn't turn dirty when that query
+    // lands, and a failed query still saves the stored rate back.
+    vatGbpRate: currency !== 'GBP' && Number.isFinite(vatGbpRate) && vatGbpRate > 0 ? vatGbpRate : null,
     shippingAmountMinor: toMinor(shipping),
     // A cleared field is sent as null so the save clears it (see the event
     // snapshot below).
@@ -727,7 +741,8 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
         <h3 className="font-semibold mb-2">{t('bills.section.lineItems', 'Line items')}</h3>
         <LineItemsTable items={lineItems} currency={currency} showDiscount={false}
           vatRate={vatRate / 100} shippingAmount={shipping}
-          roundTotal={appSettings?.crm_invoice_round_total === true} onChange={setLineItems} />
+          roundTotal={appSettings?.crm_invoice_round_total === true}
+          vatRoundDown={ukBusiness} onChange={setLineItems} />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
           <VatRateSelect
             label={t('bills.field.vatRate', 'VAT rate %') as string}
@@ -743,6 +758,20 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
               <option>CHF</option><option>EUR</option><option>USD</option><option>GBP</option>
             </select>
           </div>
+          {/* A UK invoice in another currency also states its VAT in
+              sterling, with the rate used (VAT Notice 700/21 s.4.1). */}
+          {ukBusiness && currency !== 'GBP' && (
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium mb-1">
+                {t('bills.field.vatGbpRate', 'GBP per {{currency}} for the VAT in sterling', { currency })}
+              </label>
+              <DecimalInput value={vatGbpRate} onChange={setVatGbpRate} placeholder="0.87"
+                className="w-full md:w-48 px-3 py-2 rounded-md border border-line-strong bg-panel text-sm" />
+              <p className="text-xs text-soft mt-1">
+                {t('bills.field.vatGbpRateHint', 'HMRC requires the VAT total in GBP on a UK VAT invoice in another currency. Use the UK market selling rate at the tax point or HMRC\'s period rate.')}
+              </p>
+            </div>
+          )}
         </div>
       </Card>
 

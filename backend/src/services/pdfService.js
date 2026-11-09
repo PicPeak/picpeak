@@ -28,9 +28,12 @@
 const PDFDocument = require('pdfkit');
 const { SwissQRBill, Table } = require('swissqrbill/pdf');
 const { t, documentLocale } = require('./pdf-i18n');
-const { cityLine, printsCountryLine, isUnitedStates } = require('../utils/postalAddress');
+const {
+  cityLine, cityLines, printsCountryLine, domesticCountryFor, isUnitedKingdom,
+} = require('../utils/postalAddress');
 const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
 const { parseCalendarDate } = require('../utils/dateNormalize');
+const { defaultDocumentDateFormat } = require('../utils/documentDateFormat');
 const { parsePromotionSnapshot } = require('../utils/lineItemTotals');
 const { parseInlineMarkdown } = require('../utils/placeholders');
 const pdfFonts = require('./pdf/fonts');
@@ -578,10 +581,12 @@ function drawIssuerBlock(doc, issuer, x, y, width, locale, { grid = null } = {})
     // country name comes from the explicit `countryName` override
     // when set (migration 107); otherwise we resolve it from the
     // ISO country code via the locale-aware COUNTRY_NAMES map.
-    // A US business writes "Denver, CO 80202" with no country.
+    // A US business writes "Denver, CO 80202" with no country; a UK
+    // business puts its town and postcode on lines of their own.
+    if (isUnitedKingdom(issuer.countryCode)) return cityLines(issuer);
     const country = printsCountryLine(issuer.countryCode, issuer.countryCode)
       ? (issuer.countryName || countryName(issuer.countryCode, locale)) : '';
-    return [cityLine(issuer), country].filter(Boolean).join(' / ');
+    return [[cityLine(issuer), country].filter(Boolean).join(' / ')];
   })();
   // When the admin opted into the inline-name variant (migration 108)
   // the company name renders as the first address line, in the same
@@ -593,7 +598,7 @@ function drawIssuerBlock(doc, issuer, x, y, width, locale, { grid = null } = {})
     inlineCompanyLine,
     issuer.addressLine1,
     issuer.addressLine2,
-    cityCountry,
+    ...cityCountry,
   ].filter(Boolean);
   // The logo, the name and these lines all start at the column's left edge,
   // which is also where the contact and meta labels below them start (#1546).
@@ -693,16 +698,18 @@ function drawRecipientBlock(doc, recipient, locale, { flowY = null, issuerCountr
   // `country` override (customer_accounts.country_name, migration
   // 107) or falls back to the locale-aware lookup; a US business
   // leaves it off a letter to a US address.
-  const postalSegment = cityLine({
+  // A UK business writes a UK address with the post town (in capitals, as
+  // Royal Mail asks) and the postcode on lines of their own.
+  const postalLines = cityLines({
     postalCode: recipient.postalCode, city: recipient.city, state: recipient.state,
-    // A US business's customer with no country is a domestic address.
-    countryCode: recipient.countryCodeIso || (isUnitedStates(issuerCountryCode) ? 'US' : null),
-  });
+    // A US or UK business's customer with no country is a domestic address.
+    countryCode: recipient.countryCodeIso || domesticCountryFor(issuerCountryCode),
+  }, { postTownCaps: true, issuerCountryCode });
   const lines = [
     recipient.hasCompany ? recipient.attentionLine : null,
     recipient.addressLine1,
     recipient.addressLine2,
-    postalSegment,
+    ...postalLines,
     printsCountryLine(recipient.countryCodeIso, issuerCountryCode)
       ? (recipient.country || countryName(recipient.countryCodeIso, locale)) : null,
   ].filter(Boolean);
@@ -870,6 +877,19 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
   const contentWidth = pageOf(doc).contentWidth;
   widths[1] += contentWidth - PAGE.contentWidth;
 
+  // A UK VAT invoice states the VAT rate on every line (VAT Notice 700/21
+  // s.4.1). The column goes in front of the line total and takes its width
+  // from the description; the other columns keep theirs.
+  const VAT_RATE_COL = 40;
+  const vatRateText = showsVatRatePerLine(ctx) ? `${stripTrailingZeros(ctx.totals.vatRate)}%` : null;
+  const withVatRateColumn = (columns, text, extra = {}) => {
+    if (vatRateText == null) return columns;
+    const out = columns.slice();
+    out[1] = { ...out[1], width: out[1].width - VAT_RATE_COL };
+    out.splice(out.length - 1, 0, { text, width: VAT_RATE_COL, align: 'right', ...extra });
+    return out;
+  };
+
   // Per-row padding — tight rows. 3pt top + 3pt bottom keeps each
   // line item compact, with just enough vertical breathing room
   // for the divider lines to read clearly. swissqrbill's PDFPadding
@@ -967,7 +987,7 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
       // bottom edge empty. Without this, every row gets its own line
       // and parent + sub-items look like separate items.
       borderWidth: [0, 0, 0, 0],
-      columns: showDiscount
+      columns: withVatRateColumn(showDiscount
         ? [
           { text: posLabel,                                          width: widths[0], align: 'left'  },
           { text: descText,                                          width: widths[1], align: 'left',  textColor: numericColor },
@@ -983,6 +1003,9 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
           { text: unitText,                                          width: widths[3], align: 'right', textColor: numericColor },
           { text: lineTotalText,                                     width: widths[4], align: 'right', textColor: numericColor },
         ],
+      // Sub-items are inside their parent's amount and an unbooked add-on
+      // is outside the total: neither is taxed on its own.
+      isSubItem || li.excluded ? '' : vatRateText, { textColor: numericColor }),
     };
   };
 
@@ -997,7 +1020,7 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
     padding: [0, 4, 3, 4],
     fontSize: Math.max(6, ROW_FONT_SIZE - 1),
     borderWidth: [0, 0, 0, 0],
-    columns: showDiscount
+    columns: withVatRateColumn(showDiscount
       ? [
         { text: '',   width: widths[0], align: 'left' },
         { text,       width: widths[1], align: 'left', textColor: themeColor(doc, 'muted'), fontName: italicFont },
@@ -1012,7 +1035,7 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
         { text: '',   width: widths[2], align: 'right' },
         { text: '',   width: widths[3], align: 'right' },
         { text: '',   width: widths[4], align: 'right' },
-      ],
+      ], ''),
   });
 
   const headerRow = {
@@ -1024,7 +1047,7 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
     borderWidth: HEADER_BORDER_BOTTOM_WIDTH,
     borderColor: HEADER_BORDER_BOTTOM_COLOR,
     header: true,
-    columns: showDiscount
+    columns: withVatRateColumn(showDiscount
       ? [
         { text: labels.pos,   width: widths[0], align: 'left'  },
         { text: labels.desc,  width: widths[1], align: 'left'  },
@@ -1039,7 +1062,7 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
         { text: labels.qty,   width: widths[2], align: 'right' },
         { text: labels.unit,  width: widths[3], align: 'right' },
         { text: labels.total, width: widths[4], align: 'right' },
-      ],
+      ], t(locale, 'table_vat_rate')),
   };
 
   // Group rows so a parent + its sub-items + every involved details_text
@@ -1102,11 +1125,11 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
     fontName: ctx.fonts?.bold || FONT_BOLD,
     borderWidth: ROW_BORDER_BOTTOM_WIDTH,
     borderColor: ROW_BORDER_BOTTOM_COLOR,
-    columns: widths.map((width, i) => ({
+    columns: withVatRateColumn(widths.map((width, i) => ({
       width,
       align: i <= 1 ? 'left' : 'right',
       text: i === 1 ? t(locale, key) : i === lastColumn ? formatMinor(amountMinor, currency, intlLocale) : '',
-    })),
+    })), ''),
   });
 
   // ---- pagination ------------------------------------------------
@@ -1387,6 +1410,17 @@ function drawTotals(doc, ctx, x, y, width) {
     doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).text(`${stripTrailingZeros(totals.vatRate)}%`, rateX, y, { width: rateCol, align: 'right' });
     doc.text(formatMinor(totals.vatAmountMinor, currency, intlLocale), valueX, y, { width: valueCol, align: 'right' });
     y = doc.y + 4;
+    // A UK invoice in another currency states its VAT total in sterling and
+    // the rate used (VAT Notice 700/21 s.4.1, Notice 700 s.7.6).
+    if (ctx.vatGbp) {
+      doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).text(t(locale, 'totals_vat_gbp'), labelX, y, { width: labelCol });
+      doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).text(formatMinor(ctx.vatGbp.amountMinor, 'GBP', intlLocale), valueX, y, { width: valueCol, align: 'right' });
+      y = doc.y + 1;
+      doc.fontSize(smallTextSize(doc._theme)).fillColor('#555');
+      doc.text(t(locale, 'vat_gbp_rate_note', { rate: stripTrailingZeros(ctx.vatGbp.rate), currency }), labelX, y, { width: right - labelX });
+      doc.fillColor(themeColor(doc, 'text')).fontSize(size);
+      y = doc.y + 4;
+    }
   }
 
   // Free-text VAT / legal note (#794), invoices only — printed under the MwSt. line
@@ -1497,10 +1531,20 @@ function drawPaymentBlock(doc, ctx, x, y, width) {
   // Mahngebühr appears as its own row in the totals stack. Keep it
   // suppressed to avoid duplicate "+CHF 25.00 late fee" text.
   const hasLateFeeRow = false;
-  const hasLeftContent = paymentTerm?.description || hasNetDaysRow || hasSkontoRow || hasLateFeeRow;
+  const hasTermsContent = paymentTerm?.description || hasNetDaysRow || hasSkontoRow || hasLateFeeRow;
+  // UK B2B invoices (issue 2439): the statutory late-payment notice, with the
+  // fixed sum for this debt when the invoice is in sterling (s.5A).
+  const latePaymentNotice = !isQuote && ctx.latePayment
+    ? t(locale, 'late_payment_notice', {
+      compensation: ctx.latePayment.compensationPounds
+        ? `£${ctx.latePayment.compensationPounds}`
+        : t(locale, 'late_payment_compensation_scale'),
+    })
+    : null;
+  const hasLeftContent = hasTermsContent || latePaymentNotice;
   if (!hasLeftContent && !showIbanHere) return y;
 
-  if (hasLeftContent) {
+  if (hasTermsContent) {
     doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(size).fillColor(themeColor(doc, 'text'));
     doc.text(t(locale, 'payment_conditions') + ':', leftX, y, { width: colWidth });
     y = doc.y + 2;
@@ -1554,6 +1598,15 @@ function drawPaymentBlock(doc, ctx, x, y, width) {
       y = doc.y + 4;
     }
   }
+  if (latePaymentNotice) {
+    doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(size).fillColor(themeColor(doc, 'text'));
+    doc.text(t(locale, 'late_payment_title') + ':', leftX, y, { width: colWidth });
+    y = doc.y + 2;
+    doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(smallTextSize(doc._theme));
+    doc.text(latePaymentNotice, leftX, y, { width: colWidth });
+    doc.fontSize(size);
+    y = doc.y + 4;
+  }
 
   // Right column: IBAN (invoices only).
   let ry = startY;
@@ -1582,19 +1635,90 @@ function drawPaymentBlock(doc, ctx, x, y, width) {
 /**
  * What drawFooter occupies above the bottom edge it is given: one line, two
  * when the issuer set a footer line, nothing when the theme turned the footer
- * off. The placement decisions read this rather than a constant of their own,
+ * off — plus a UK business's disclosure lines, which always print. The placement decisions read this rather than a constant of their own,
  * so a two-line footer can't be laid over (#1546).
  */
-function footerHeightFor(theme, issuer) {
+function footerHeightFor(theme, issuer, locale = 'en') {
   const footer = (theme && theme.footer) || { mode: 'address', text: '' };
-  if (footer.mode === 'none') return 0;
+  const own = footer.mode === 'none' ? 0 : (issuer?.footerLine ? 2 : 1);
+  // Same language and theme as drawFooter, so a wrapped disclosure counts
+  // the rows it is drawn on.
+  const lines = own + legalDisclosureLines(issuer, locale, theme).length;
+  if (!lines) return 0;
   const line = footerLineHeight(theme);
-  return issuer?.footerLine ? line * 2 + 4 : line;
+  return lines > 1 ? line * lines + 4 : line;
+}
+
+/**
+ * The trading disclosures a business in the United Kingdom prints on its
+ * quotes, invoices and contracts (issue 2439), one footer line each:
+ *   - a company or LLP: its registered name when it differs from the trading
+ *     name, the part of the UK it is registered in and its number (SI 2015/17
+ *     regs 24–25), then its registered office on a line of its own;
+ *   - a sole trader or partnership: the owner's or partners' names
+ *     (Companies Act 2006 s.1202); the letterhead address serves as the
+ *     address for service.
+ * Legally required, so they print even when the theme hides the footer.
+ * Any other business, or one that hasn't filled the fields in, gets none.
+ */
+/**
+ * Footer lines are drawn one per row without wrapping, and the footer's
+ * height is counted in rows before anything is drawn. A long disclosure is
+ * therefore split here, at a separator where it can be, so both agree. The
+ * length fits the theme's content width at the footer's text size, taking
+ * 0.6 em per character, wider than Helvetica's average.
+ */
+function footerLineChars(theme) {
+  return Math.floor(pageMetricsFor(theme).contentWidth / (smallTextSize(theme) * 0.6));
+}
+function wrapFooterLine(text, maxChars) {
+  const out = [];
+  let rest = String(text);
+  while (rest.length > maxChars) {
+    const head = rest.slice(0, maxChars + 1);
+    let cut = Math.max(head.lastIndexOf(', '), head.lastIndexOf(' · '));
+    if (cut <= 0) cut = head.lastIndexOf(' ');
+    if (cut <= 0) cut = maxChars;
+    out.push(rest.slice(0, cut).replace(/[,\s·]+$/, ''));
+    rest = rest.slice(cut).replace(/^[,\s·]+/, '');
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
+function legalDisclosureLines(issuer, locale = 'en', theme = null) {
+  if (!issuer || !isUnitedKingdom(issuer.countryCode)) return [];
+  const maxChars = footerLineChars(theme);
+  const clean = (v) => (typeof v === 'string' ? v.trim() : '');
+  const companyNumber = clean(issuer.companyNumber);
+  const form = issuer.legalForm || (companyNumber ? 'ltd' : null);
+  if (form === 'ltd' || form === 'llp') {
+    const registeredName = clean(issuer.registeredName);
+    const first = [
+      registeredName && registeredName !== clean(issuer.companyName) ? registeredName : null,
+      issuer.jurisdiction ? t(locale, 'disclosure_registered_in', { place: t(locale, `jurisdiction_${issuer.jurisdiction}`) }) : null,
+      companyNumber ? t(locale, 'disclosure_company_number', { number: companyNumber }) : null,
+    ].filter(Boolean);
+    // The registered office is required (SI 2015/17 reg 25). The field says
+    // "if different from the address above", so left blank it is the
+    // letterhead address.
+    const office = clean(issuer.registeredOffice).replace(/\s*\n\s*/g, ', ')
+      || [clean(issuer.addressLine1), clean(issuer.addressLine2), cityLine(issuer)].filter(Boolean).join(', ');
+    const lines = [];
+    if (first.length) lines.push(...wrapFooterLine(first.join(' · '), maxChars));
+    if (office) lines.push(...wrapFooterLine(t(locale, 'disclosure_registered_office', { address: office }), maxChars));
+    return lines;
+  }
+  const proprietor = clean(issuer.proprietorName);
+  if ((form === 'sole_trader' || form === 'partnership') && proprietor) {
+    return wrapFooterLine(t(locale, form === 'partnership' ? 'disclosure_partners' : 'disclosure_proprietor', { name: proprietor }), maxChars);
+  }
+  return [];
 }
 
 /** footerHeightFor for a document that already carries its theme. */
-function footerHeight(doc, issuer = {}) {
-  return footerHeightFor(doc && doc._theme, issuer);
+function footerHeight(doc, issuer = {}, locale = 'en') {
+  return footerHeightFor(doc && doc._theme, issuer, locale);
 }
 
 /**
@@ -1679,10 +1803,12 @@ function drawFooter(doc, issuer, locale, { bottomLimit = null } = {}) {
   // trailing pages).
   // Theme (#1445): the address line, a custom line, or no footer at all.
   const footer = (doc._theme && doc._theme.footer) || { mode: 'address', text: '' };
-  const reserved = footerHeight(doc, issuer);
+  const reserved = footerHeight(doc, issuer, locale);
   if (!reserved) return;
   const lineH = footerLineHeight(doc._theme);
   const hasFooterLine = !!issuer.footerLine;
+  // UK trading disclosures (legalDisclosureLines) go under everything else.
+  const disclosures = legalDisclosureLines(issuer, locale, doc._theme);
   const P = pageOf(doc);
   // Normally the footer sits in the bottom margin band. `bottomLimit` pulls it
   // up when something else owns the bottom of the page — the QR-bill's
@@ -1691,24 +1817,27 @@ function drawFooter(doc, issuer, locale, { bottomLimit = null } = {}) {
   const footerY = bottomLimit == null ? defaultY : Math.min(defaultY, bottomLimit - reserved);
 
   doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(smallTextSize(doc._theme)).fillColor(themeColor(doc, 'subtle'));
-  const parts = (footer.mode === 'custom' ? [footer.text] : [
-    issuer.companyName,
-    issuer.addressLine1,
-    cityLine(issuer),
-    // Prefer the explicit country_name override (migration 107)
-    // before falling back to the COUNTRY_NAMES lookup. A US business
-    // leaves the country out, as on its letterhead.
-    printsCountryLine(issuer.countryCode, issuer.countryCode)
-      ? (issuer.countryName || countryName(issuer.countryCode, locale)) : null,
-  ]).filter(Boolean);
-  doc.text(parts.join(', '), P.marginLeft, footerY, {
-    width: P.contentWidth, align: 'center', lineBreak: false,
-  });
-  if (hasFooterLine) {
-    doc.text(issuer.footerLine, P.marginLeft, footerY + lineH, {
+  const lines = [];
+  if (footer.mode !== 'none') {
+    const parts = (footer.mode === 'custom' ? [footer.text] : [
+      issuer.companyName,
+      issuer.addressLine1,
+      cityLine(issuer),
+      // Prefer the explicit country_name override (migration 107)
+      // before falling back to the COUNTRY_NAMES lookup. A US business
+      // leaves the country out, as on its letterhead.
+      printsCountryLine(issuer.countryCode, issuer.countryCode)
+        ? (issuer.countryName || countryName(issuer.countryCode, locale)) : null,
+    ]).filter(Boolean);
+    lines.push(parts.join(', '));
+    if (hasFooterLine) lines.push(issuer.footerLine);
+  }
+  lines.push(...disclosures);
+  lines.forEach((text, i) => {
+    doc.text(text, P.marginLeft, footerY + i * lineH, {
       width: P.contentWidth, align: 'center', lineBreak: false,
     });
-  }
+  });
   // Reset fill colour so any code that runs after the footer (e.g.
   // the QR-bill page) doesn't inherit the grey.
   doc.fillColor(themeColor(doc, 'text'));
@@ -2462,7 +2591,7 @@ function renderDocument(type, context) {
         // reserved band when the slip shares the page. Both anchors are fixed —
         // the blocks are pinned to the foot of the page, wherever the table
         // happened to end.
-        const footerReserve = footerHeight(doc, ctx.issuer);
+        const footerReserve = footerHeight(doc, ctx.issuer, ctx.locale);
         const bandTop = PAGE.height - QR_BILL_BAND_HEIGHT;
         const closingTop = (withSlip) => (withSlip
           ? bandTop - SLIP_BAND_FOOTER_GAP
@@ -2643,15 +2772,30 @@ function normaliseContext(type, ctx) {
     // Invoices): say so in words, repeat the date, or leave the row out.
     serviceDateMode: ['note', 'repeat', 'omit'].includes(ctx.serviceDateMode)
       ? ctx.serviceDateMode : 'note',
+    // UK invoices (issue 2439): the VAT total in sterling with the rate used,
+    // for an invoice in another currency, and the B2B late-payment notice.
+    // Invoices only; null = not printed.
+    vatGbp: type === 'invoice' && ctx.vatGbp && Number(ctx.vatGbp.rate) > 0 ? ctx.vatGbp : null,
+    latePayment: type === 'invoice' && ctx.latePayment ? ctx.latePayment : null,
     // Date-format config from the `general_date_format` app setting.
     // Shape: `{ format: 'DD.MM.YYYY' | 'DD/MM/YYYY' | 'MM/DD/YYYY' |
     // 'YYYY-MM-DD', locale?: string }`. The service layer hydrates
-    // this; defaults to DD.MM.YYYY when unset.
-    dateFormat: ctx.dateFormat || { format: 'DD.MM.YYYY' },
+    // this; when unset it follows the business's country (DD/MM/YYYY in
+    // the UK, DD.MM.YYYY elsewhere).
+    dateFormat: ctx.dateFormat || defaultDocumentDateFormat(ctx.issuer && ctx.issuer.countryCode),
     // PDF theme (#1445); callers without one get the built-in look.
     theme: ctx.theme || builtInTheme(type),
     generatedAt: ctx.generatedAt || null,
   };
+}
+
+/**
+ * Does this document print the VAT rate on every line? A UK business's
+ * invoice that carries VAT (issue 2439). Invoices hold one rate, so every
+ * line shows it.
+ */
+function showsVatRatePerLine(ctx) {
+  return ctx.type === 'invoice' && isUnitedKingdom(ctx.issuer && ctx.issuer.countryCode) && !vatRowHidden(ctx);
 }
 
 /**
@@ -2721,10 +2865,10 @@ function renderContractInProcess(context) {
         const theme = ctx.theme || builtInTheme('contract');
         // Settings → General date format, like quotes and invoices (#1445;
         // contracts used to pass the locale here, which always fell back).
-        const dateFormat = ctx.dateFormat || { format: 'DD.MM.YYYY' };
+        const dateFormat = ctx.dateFormat || defaultDocumentDateFormat(ctx.issuer && ctx.issuer.countryCode);
         // A footer (theme) sits in the bottom margin, so the margin grows
         // by its height and body text never runs into it.
-        const footerReserve = footerHeightFor(theme, ctx.issuer);
+        const footerReserve = footerHeightFor(theme, ctx.issuer, locale);
         // The theme's margins (#1445) for the letter pages. The signature
         // page keeps SIGNATURE_PAGE — stamped signatures land at its fixed
         // coordinates, whatever the margins are.
@@ -3098,5 +3242,6 @@ module.exports = {
   // Exposed for unit tests + advanced callers.
   _internal: {
     formatMinor, formatDate, t, registerCustomFonts, registerThemeFonts, drawLineItems, drawContractTotals, stampPageNumbers, themeColor,
+    legalDisclosureLines, smallTextSize, pageMetricsFor,
   },
 };
