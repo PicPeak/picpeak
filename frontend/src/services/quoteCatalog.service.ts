@@ -46,6 +46,83 @@ export interface QuotePromotion {
   isActive: boolean;
 }
 
+// ---- pricing factors (#2440) ------------------------------------------
+
+export type FactorInputType = 'number' | 'toggle' | 'choice' | 'zone';
+/** number: per_unit | step; toggle: fixed | percent; choice / zone: per option. */
+export type FactorEffect = 'per_unit' | 'step' | 'fixed' | 'percent';
+
+export interface PricingFactorOption {
+  id?: number;
+  label: string;
+  effect: 'fixed' | 'percent';
+  amountMinor: number | null;
+  percent: number | null;
+  /** Zone only: one entry per line — "8001", "80*" (prefix), "8000-8099" (range). */
+  postcodes?: string | null;
+  position?: number;
+}
+
+export interface PricingFactor {
+  id: number;
+  name: string;
+  description: string | null;
+  inputType: FactorInputType;
+  effect: FactorEffect | null;
+  unitLabel: string | null;
+  currency: string;
+  amountMinor: number | null;
+  percent: number | null;
+  includedUnits: number | null;
+  stepSize: number | null;
+  minValue: number | null;
+  maxValue: number | null;
+  /** number: the value; toggle: "true"; choice / zone: an option id. */
+  defaultValue: string | null;
+  /** Shown on the public booking request; otherwise its default is used there. */
+  clientVisible: boolean;
+  displayOrder: number;
+  isActive: boolean;
+  options: PricingFactorOption[];
+}
+
+/** number | boolean | option id | { optionId } | { postcode } */
+export type FactorValue = number | boolean | null | { optionId?: number; postcode?: string };
+
+export interface FactorPriceLine {
+  kind: 'base' | 'factor';
+  factorId: number | null;
+  description: string;
+  quantity: number;
+  unit: LineUnit | null;
+  unitPriceMinor: number;
+  totalMinor: number;
+  priceMode: PriceMode | null;
+  rateSource: 'item' | 'customer' | 'default' | null;
+}
+
+/** Stored on the parent quote line; explains the price, never sets it. */
+export interface PricingFactorsSnapshot {
+  version: number;
+  presetId: number;
+  presetName: string;
+  currency: string;
+  quantity: number;
+  values: Record<string, FactorValue>;
+  factors: Array<{ id: number; name: string; inputType: FactorInputType }>;
+  unmatched: number[];
+}
+
+export interface FactorPriceResult {
+  currency: string;
+  baseMinor: number;
+  totalMinor: number;
+  lines: FactorPriceLine[];
+  /** Zone factors whose postcode is in no zone. */
+  unmatched: number[];
+  snapshot: PricingFactorsSnapshot;
+}
+
 export type TextBlockKind = 'intro' | 'scope' | 'note' | 'closing' | 'terms';
 
 export interface QuoteTextBlock {
@@ -148,6 +225,29 @@ export const quoteCatalogService = {
   },
   async archivePackage(id: number): Promise<void> {
     await api.delete(`/admin/quote-catalog/packages/${id}`);
+  },
+
+  // ---- pricing factors (#2440) ----------------------------------------
+  async listFactors(opts: { activeOnly?: boolean } = {}): Promise<PricingFactor[]> {
+    const { data } = await api.get('/admin/quote-catalog/factors', { params: opts.activeOnly ? { activeOnly: 'true' } : undefined });
+    return unwrap<{ factors: PricingFactor[] }>(data).factors;
+  },
+  async createFactor(payload: Partial<PricingFactor> & { name: string; inputType: FactorInputType }): Promise<PricingFactor> {
+    const { data } = await api.post('/admin/quote-catalog/factors', payload);
+    return unwrap<{ factor: PricingFactor }>(data).factor;
+  },
+  async updateFactor(id: number, payload: Partial<PricingFactor>): Promise<PricingFactor> {
+    const { data } = await api.put(`/admin/quote-catalog/factors/${id}`, payload);
+    return unwrap<{ factor: PricingFactor }>(data).factor;
+  },
+  async archiveFactor(id: number): Promise<void> {
+    await api.delete(`/admin/quote-catalog/factors/${id}`);
+  },
+  async priceWithFactors(payload: {
+    presetId: number; values: Record<string, FactorValue>; customerId?: number | null; quantity?: number | null; language?: string;
+  }): Promise<FactorPriceResult> {
+    const { data } = await api.post('/admin/quote-catalog/factors/price', payload);
+    return unwrap<FactorPriceResult>(data);
   },
 
   // ---- promotions -----------------------------------------------------

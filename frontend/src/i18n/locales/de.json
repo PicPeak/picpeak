@@ -9491,6 +9491,71 @@
     "costsErrorTitle": "Kosten konnten nicht geladen werden"
   },
   "quotes": {
+    "factors": {
+      "addOption": "Option hinzufügen",
+      "addZone": "Zone hinzufügen",
+      "adminOnly": "nur intern",
+      "apply": "In die Offerte übernehmen",
+      "atLeast": "Mindestens {{min}}",
+      "atMost": "Höchstens {{max}}",
+      "attachedCount_one": "{{count}} Preisfaktor",
+      "attachedCount_other": "{{count}} Preisfaktoren",
+      "breakdown": "Preis",
+      "dialogHint": "Jeder Faktor wird eine eigene Zeile unter der Leistung. Die Zeilen lassen sich danach weiter bearbeiten.",
+      "editFactors": "Preisfaktoren",
+      "empty": "Noch keine Preisfaktoren.",
+      "fromPostcode": "Aus PLZ {{postcode}}",
+      "intro": "Angaben, die den Preis einer Leistung ändern, etwa Dauer, Art der Arbeit, Anfahrtszone oder Bearbeitungsaufwand. Im Tab Leistungen ordnest du sie Leistungen zu.",
+      "new": "Neuer Faktor",
+      "noDefault": "Keine",
+      "noneForCurrency": "Noch keine Preisfaktoren in dieser Währung. Lege sie im Tab Preisfaktoren an.",
+      "notSet": "—",
+      "onService": "Preisfaktoren",
+      "onServiceHint": "Wird die Leistung in eine Offerte eingefügt, werden diese Angaben abgefragt und der Preis daraus berechnet.",
+      "options": "Optionen",
+      "outsideZones": "Ausserhalb der Zonen: Anfahrt auf Anfrage.",
+      "postcodeFor": "{{name}}: PLZ",
+      "range": "{{min}} bis {{max}}",
+      "unitFallback": "Einheit",
+      "zones": "Zonen",
+      "zonesHint": "Eine PLZ pro Zeile: 8001 genau, 80* beginnt mit, 8000-8099 Bereich. Die erste passende Zone gilt. Eine PLZ in keiner Zone wird als «Anfahrt auf Anfrage» markiert.",
+      "effect": {
+        "fixed": "Fester Betrag",
+        "perUnit": "Betrag pro Einheit",
+        "percent": "Prozent vom Grundpreis",
+        "step": "Betrag pro angefangenem Schritt"
+      },
+      "field": {
+        "amount": "Betrag",
+        "amountPerStep": "Betrag pro Schritt",
+        "amountPerUnit": "Betrag pro Einheit",
+        "clientVisible": "Kunde gibt das bei der Buchung an",
+        "default": "Standard",
+        "effect": "Preisänderung",
+        "included": "Im Grundpreis enthalten",
+        "max": "Maximum",
+        "min": "Minimum",
+        "optionLabel": "Bezeichnung",
+        "percent": "Prozent",
+        "postcodes": "PLZ",
+        "stepSize": "Schrittgrösse",
+        "toggleDefault": "Standardmässig an",
+        "type": "Eingabe",
+        "unitLabel": "Einheit (z. B. h, Videos)"
+      },
+      "summary": {
+        "options_one": "{{count}} Option",
+        "options_other": "{{count}} Optionen",
+        "perUnit": "{{amount}} pro {{unit}}",
+        "step": "{{amount}} je angefangene {{step}} {{unit}}"
+      },
+      "type": {
+        "choice": "Auswahl",
+        "number": "Zahl",
+        "toggle": "Ja / nein",
+        "zone": "Anfahrtszone"
+      }
+    },
     "status": {
       "draft": "Entwurf",
       "sent": "Gesendet",
@@ -9684,6 +9749,7 @@
         "promotions": "Aktionen",
         "services": "Leistungen",
         "templates": "Vorlagen",
+        "factors": "Preisfaktoren",
         "textBlocks": "Textbausteine"
       },
       "templatesIntro": "Eine Vorlage füllt ein neues Angebot aus. Beim Veröffentlichen wird eine Version eingefroren – spätere Katalogänderungen verändern bestehende Angebote nie.",

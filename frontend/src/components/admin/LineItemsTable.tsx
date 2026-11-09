@@ -37,9 +37,11 @@ import { QuoteLineConfiguration } from '../../features/album-products/QuoteLineC
 import { ChoiceSummary } from '../../features/album-products/ConfigurationPicker';
 import type { ConfigurationDefinition } from '../../services/quotes.service';
 import type { Choice } from '../../features/album-products/model';
+import { PricingFactorsDialog } from './quotes/PricingFactorsDialog';
+import type { FactorPriceResult, FactorValue, PricingFactor, PricingFactorsSnapshot } from '../../services/quoteCatalog.service';
 import type { ConfigurationValues } from '../../features/album-products/ConfigurationPicker';
 import { useTranslation } from 'react-i18next';
-import { Plus, X, ArrowUp, ArrowDown, Save as SaveIcon, ChevronDown, ChevronRight, CornerDownRight, Tag } from 'lucide-react';
+import { Plus, X, ArrowUp, ArrowDown, Save as SaveIcon, ChevronDown, ChevronRight, CornerDownRight, Tag, SlidersHorizontal } from 'lucide-react';
 import { Button } from '../common';
 import { DecimalInput } from '../common/DecimalInput';
 import { AddOnBookButton, AddOnBookingState } from '../common/AddOnBookButton';
@@ -78,6 +80,8 @@ export interface EditableLineItem {
   promotionSnapshot?: PromotionSnapshot | null;
   /** Wire-only: a promotion ticked in the editor, resolved by the server on save. */
   promotionId?: number | null;
+  /** Factor snapshot on a factor-priced service's parent line (#2440). */
+  pricingFactors?: PricingFactorsSnapshot | null;
 }
 
 export interface LineItemPresetMinimal {
@@ -90,6 +94,8 @@ export interface LineItemPresetMinimal {
   detailsText?: string | null;
   priceMode?: PriceMode;
   pinnedRateMinor?: number | null;
+  /** Pricing factors attached to the item (#2440). */
+  factorIds?: number[];
 }
 
 /** A catalogue package the editor can insert as a parent line + its items. */
@@ -137,6 +143,13 @@ interface Props {
   days?: number | null;
   /** Catalogue packages offered in the "Insert package" picker (quotes only). */
   packages?: PackageForInsert[];
+  /**
+   * Pricing factors (#2440, quotes only): the factor library, and the call
+   * that prices a catalogue item with chosen values. With both, adding an
+   * item that has factors asks for the values first.
+   */
+  factors?: PricingFactor[];
+  priceWithFactors?: (presetId: number, values: Record<string, FactorValue>) => Promise<FactorPriceResult>;
 }
 
 function nextFreshPosition(items: EditableLineItem[]) {
@@ -200,9 +213,62 @@ function lineFromCatalogue(
 export const LineItemsTable: React.FC<Props> = ({
   items, currency, showDiscount = true, vatRate = 0, shippingAmount = 0, roundTotal = false,
   onChange, presets = [], onSaveAsPreset, mode = 'invoice', hours = null, days = null, packages = [],
+  factors = [], priceWithFactors,
 }) => {
   const { t } = useTranslation();
   const isQuote = mode === 'quote';
+
+  // Pricing factors (#2440): the item being priced, and the parent line it
+  // replaces when an existing factor-priced line is edited again.
+  const [factorDialog, setFactorDialog] = useState<{
+    presetId: number; factorIds: number[]; name: string; description: string; detailsText: string;
+    initialValues: Record<string, FactorValue> | null; replacePosition: number | null;
+  } | null>(null);
+  const factorsFor = (ids: number[] | undefined) => (ids || [])
+    .map((id) => factors.find((f) => f.id === id))
+    .filter((f): f is PricingFactor => Boolean(f));
+  const canPriceFactors = isQuote && Boolean(priceWithFactors);
+
+  /**
+   * The factor result as editor lines: the service as the parent (holding
+   * the snapshot) and one priced sub-line for the base and each factor. The
+   * parent's total is the sum of its priced sub-items.
+   */
+  const applyFactors = (result: FactorPriceResult) => {
+    if (!factorDialog) return;
+    const { replacePosition } = factorDialog;
+    const kept = replacePosition == null
+      ? items
+      : items.filter((it) => it.parentPosition !== replacePosition);
+    let pos = nextFreshPosition(items);
+    const parentPos = replacePosition ?? pos++;
+    const subLines: EditableLineItem[] = result.lines.map((l) => ({
+      ...blankLine(pos++, parentPos),
+      description: l.description,
+      quantity: l.quantity,
+      unitPrice: l.unitPriceMinor / 100,
+      unit: l.unit,
+      priceMode: l.priceMode,
+      rateSource: l.rateSource,
+    }));
+    let next: EditableLineItem[];
+    if (replacePosition == null) {
+      next = [...kept, {
+        ...blankLine(parentPos),
+        cataloguePresetId: factorDialog.presetId,
+        description: factorDialog.description,
+        detailsText: factorDialog.detailsText,
+        pricingFactors: result.snapshot,
+      }, ...subLines];
+    } else {
+      const parentIdx = kept.findIndex((it) => it.position === replacePosition);
+      next = [...kept];
+      next[parentIdx] = { ...next[parentIdx], pricingFactors: result.snapshot };
+      next.splice(parentIdx + 1, 0, ...subLines);
+    }
+    onChange(next);
+    setFactorDialog(null);
+  };
 
   // Track which rows have the details textarea expanded. Keyed by
   // `position` since that's stable across renders.
@@ -223,6 +289,18 @@ export const LineItemsTable: React.FC<Props> = ({
   };
 
   const addRow = (preset?: LineItemPresetMinimal) => {
+    if (preset && canPriceFactors && factorsFor(preset.factorIds).length > 0) {
+      setFactorDialog({
+        presetId: preset.id,
+        factorIds: preset.factorIds || [],
+        name: preset.name,
+        description: `${preset.name}${preset.description ? `\n${preset.description}` : ''}`,
+        detailsText: preset.detailsText || '',
+        initialValues: null,
+        replacePosition: null,
+      });
+      return;
+    }
     const pos = nextFreshPosition(items);
     const row = preset
       ? {
@@ -685,6 +763,30 @@ export const LineItemsTable: React.FC<Props> = ({
                         {isQuote && isRatePriced(li) && rateBadge(li) && (
                           <span className={`rounded bg-inset px-1.5 py-0.5 text-[11px] ${dim}`}>{rateBadge(li)}</span>
                         )}
+                        {canPriceFactors && !sub && li.pricingFactors && (
+                          <button
+                            type="button"
+                            className={`inline-flex items-center gap-1 text-accent hover:underline ${dim}`}
+                            onClick={() => {
+                              const snap = li.pricingFactors!;
+                              const preset = presets.find((p) => p.id === snap.presetId);
+                              setFactorDialog({
+                                presetId: snap.presetId,
+                                // An archived item is no longer in the picker's list;
+                                // the snapshot still names its factors.
+                                factorIds: preset?.factorIds || snap.factors.map((f) => f.id),
+                                name: preset?.name || snap.presetName,
+                                description: li.description,
+                                detailsText: li.detailsText || '',
+                                initialValues: snap.values,
+                                replacePosition: li.position,
+                              });
+                            }}
+                          >
+                            <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden />
+                            {t('quotes.factors.editFactors', 'Pricing factors')}
+                          </button>
+                        )}
                         {isQuote && !sub && (
                           <label className={`inline-flex items-center gap-1 ${dim}`}>
                             <input
@@ -824,6 +926,19 @@ export const LineItemsTable: React.FC<Props> = ({
         </table>
       </div>
 
+      {factorDialog && priceWithFactors && (
+        <PricingFactorsDialog
+          open
+          title={factorDialog.name}
+          currency={currency}
+          factors={factorsFor(factorDialog.factorIds)}
+          initialValues={factorDialog.initialValues}
+          price={(values) => priceWithFactors(factorDialog.presetId, values)}
+          onApply={applyFactors}
+          onClose={() => setFactorDialog(null)}
+        />
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" size="sm" onClick={() => addRow()}>
           <Plus className="w-4 h-4 mr-1" />{t('crm.lineItems.addRow', 'Add row')}
@@ -893,6 +1008,7 @@ export function toEditableLineItem(li: {
   lineKind?: LineKind; unit?: LineUnit | null; isOptional?: boolean; selected?: boolean;
   priceMode?: PriceMode | null; rateSource?: RateSource | null; boundTo?: BoundTo | null;
   promotionSnapshot?: PromotionSnapshot | null;
+  pricingFactors?: PricingFactorsSnapshot | null;
 }): EditableLineItem {
   return {
     id: li.id,
@@ -915,6 +1031,7 @@ export function toEditableLineItem(li: {
     rateSource: li.rateSource ?? null,
     boundTo: li.boundTo ?? null,
     promotionSnapshot: li.promotionSnapshot ?? null,
+    pricingFactors: li.pricingFactors ?? null,
   };
 }
 
@@ -944,6 +1061,7 @@ export function toPayloadLineItem(li: EditableLineItem) {
     priceMode: li.priceMode ?? null,
     rateSource: li.rateSource ?? null,
     boundTo: li.boundTo ?? null,
+    pricingFactors: li.pricingFactors ?? null,
     ...(freshPromotion
       ? { promotionId: li.promotionId }
       : { promotionSnapshot: li.promotionSnapshot ?? null }),

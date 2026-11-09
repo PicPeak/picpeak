@@ -7,6 +7,8 @@
  *   GET|POST        /packages          PUT|DELETE /packages/:id
  *   GET|POST        /promotions        PUT|DELETE /promotions/:id
  *   GET|POST        /text-blocks       PUT|DELETE /text-blocks/:id
+ *   GET|POST        /factors           PUT|DELETE /factors/:id   (#2440)
+ *   POST /factors/price                price a catalogue item with its factors
  *   GET|POST        /templates         GET|PUT|DELETE /templates/:id
  *   POST /templates/:id/publish        freeze the working copy as a new version
  *   POST /templates/:id/quotes         create a quote from the latest version
@@ -29,6 +31,7 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const { isTruthyFlag, BOUND_TO } = require('../utils/lineItemTotals');
 const catalog = require('../services/quoteCatalogService');
 const templates = require('../services/quoteTemplateService');
+const factors = require('../services/pricingFactorService');
 
 const router = express.Router();
 
@@ -204,6 +207,173 @@ router.delete(
   handleAsync(async (req, res) => {
     validateRequest(req);
     await catalog.archivePackage(parseInt(req.params.id, 10));
+    return successResponse(res, { archived: true });
+  })
+);
+
+// ---------------------------------------------------------------------
+// Pricing factors (#2440)
+// ---------------------------------------------------------------------
+
+const optionalNumber = (v) => (v == null ? null : Number(v));
+
+function transformFactor(f) {
+  return {
+    id: f.id,
+    name: f.name,
+    description: f.description || null,
+    inputType: f.input_type,
+    effect: f.effect || null,
+    unitLabel: f.unit_label || null,
+    currency: f.currency,
+    amountMinor: f.amount_minor == null ? null : Number(f.amount_minor),
+    percent: optionalNumber(f.percent),
+    includedUnits: optionalNumber(f.included_units),
+    stepSize: optionalNumber(f.step_size),
+    minValue: optionalNumber(f.min_value),
+    maxValue: optionalNumber(f.max_value),
+    defaultValue: f.default_value ?? null,
+    clientVisible: isTruthyFlag(f.client_visible),
+    displayOrder: f.display_order,
+    isActive: isTruthyFlag(f.is_active),
+    options: (f.options || []).map((o) => ({
+      id: o.id,
+      label: o.label,
+      effect: o.effect,
+      amountMinor: o.amount_minor == null ? null : Number(o.amount_minor),
+      percent: optionalNumber(o.percent),
+      postcodes: o.postcodes || null,
+      position: o.position,
+    })),
+  };
+}
+
+const nullableFloat = (field) => body(field).optional({ nullable: true }).isFloat();
+const FACTOR_VALIDATORS = [
+  body('description').optional({ nullable: true }).isString().isLength({ max: 2000 }),
+  body('inputType').optional().isIn(factors.INPUT_TYPES),
+  body('effect').optional({ nullable: true }).isIn([...factors.NUMBER_EFFECTS, ...factors.TOGGLE_EFFECTS]),
+  body('unitLabel').optional({ nullable: true }).isString().isLength({ max: 32 }),
+  body('currency').optional({ values: 'falsy' }).isString().isLength({ min: 3, max: 3 }),
+  body('amountMinor').optional({ nullable: true }).isInt({ min: -1e9, max: 1e9 }),
+  body('percent').optional({ nullable: true }).isFloat({ min: -100, max: 1000 }),
+  body('includedUnits').optional({ nullable: true }).isFloat({ min: 0 }),
+  body('stepSize').optional({ nullable: true }).isFloat({ min: 0 }),
+  nullableFloat('minValue'),
+  nullableFloat('maxValue'),
+  body('defaultValue').optional({ nullable: true }).isString().isLength({ max: 64 }),
+  body('clientVisible').optional().isBoolean(),
+  body('displayOrder').optional({ values: 'falsy' }).isInt({ min: 0, max: 9999 }),
+  body('options').optional().isArray({ max: 100 }),
+  body('options.*.id').optional({ nullable: true }).isInt({ min: 1 }),
+  body('options.*.label').isString().trim().isLength({ min: 1, max: 128 }),
+  body('options.*.effect').optional().isIn(factors.OPTION_EFFECTS),
+  body('options.*.amountMinor').optional({ nullable: true }).isInt({ min: -1e9, max: 1e9 }),
+  body('options.*.percent').optional({ nullable: true }).isFloat({ min: -100, max: 1000 }),
+  body('options.*.postcodes').optional({ nullable: true }).isString().isLength({ max: 20000 }),
+];
+
+function factorPayload(b) {
+  return {
+    name: b.name,
+    description: b.description,
+    input_type: b.inputType,
+    effect: b.effect,
+    unit_label: b.unitLabel,
+    currency: b.currency,
+    amount_minor: b.amountMinor,
+    percent: b.percent,
+    included_units: b.includedUnits,
+    step_size: b.stepSize,
+    min_value: b.minValue,
+    max_value: b.maxValue,
+    default_value: b.defaultValue,
+    client_visible: b.clientVisible,
+    display_order: b.displayOrder,
+    is_active: b.isActive,
+    options: Array.isArray(b.options)
+      ? b.options.map((o) => ({
+        id: o.id, label: o.label, effect: o.effect, amount_minor: o.amountMinor, percent: o.percent, postcodes: o.postcodes,
+      }))
+      : undefined,
+  };
+}
+
+router.get(
+  '/factors',
+  requirePermission('quotes.view'),
+  [activeOnlyQuery],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const rows = await factors.listFactors({ activeOnly: activeOnly(req) });
+    return successResponse(res, { factors: rows.map(transformFactor) });
+  })
+);
+
+router.post(
+  '/factors',
+  requirePermission('quotes.manage'),
+  [body('name').isString().trim().isLength({ min: 1, max: 128 }), body('inputType').isIn(factors.INPUT_TYPES), ...FACTOR_VALIDATORS],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const factor = await factors.saveFactor(null, factorPayload(req.body));
+    return successResponse(res, { factor: transformFactor(factor) }, 201);
+  })
+);
+
+// Before /factors/:id so "price" never reads as an id.
+router.post(
+  '/factors/price',
+  requirePermission('quotes.view'),
+  [
+    body('presetId').isInt({ min: 1 }),
+    body('values').optional({ nullable: true }).isObject(),
+    body('customerId').optional({ nullable: true }).isInt({ min: 1 }),
+    body('quantity').optional({ nullable: true }).isFloat({ min: 0, max: 99999 }),
+    body('language').optional({ values: 'falsy' }).isString().isLength({ max: 8 }),
+  ],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const result = await factors.priceWithFactors(parseInt(req.body.presetId, 10), {
+      values: req.body.values || {},
+      customerId: req.body.customerId ? parseInt(req.body.customerId, 10) : null,
+      quantity: req.body.quantity,
+      language: req.body.language || 'en',
+    });
+    return successResponse(res, {
+      currency: result.currency,
+      baseMinor: result.baseMinor,
+      totalMinor: result.totalMinor,
+      lines: result.lines,
+      unmatched: result.unmatched,
+      snapshot: result.snapshot,
+    });
+  })
+);
+
+router.put(
+  '/factors/:id',
+  requirePermission('quotes.manage'),
+  [
+    idParam,
+    body('name').optional().isString().trim().isLength({ min: 1, max: 128 }),
+    body('isActive').optional().isBoolean(),
+    ...FACTOR_VALIDATORS,
+  ],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const factor = await factors.saveFactor(parseInt(req.params.id, 10), factorPayload(req.body));
+    return successResponse(res, { factor: transformFactor(factor) });
+  })
+);
+
+router.delete(
+  '/factors/:id',
+  requirePermission('quotes.manage'),
+  [idParam],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    await factors.archiveFactor(parseInt(req.params.id, 10));
     return successResponse(res, { archived: true });
   })
 );

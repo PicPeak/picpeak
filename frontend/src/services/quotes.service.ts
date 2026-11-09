@@ -1,4 +1,5 @@
 import type { Product, Choice } from '../features/album-products/model';
+import type { PricingFactorsSnapshot } from './quoteCatalog.service';
 import type { ConfigurationValues } from '../features/album-products/ConfigurationPicker';
 export interface ProductConfiguration { position: number; definitionVersion: string; values: ConfigurationValues }
 export interface ConfigurationDefinition { schemaVersion: number; version: string; product: Product; baseUnitPriceMinor: number; surcharges: { attributeId: string; optionId: string; amountMinor: number }[] }
@@ -57,6 +58,8 @@ export interface QuoteLineItem {
   promotionSnapshot?: PromotionSnapshot | null;
   /** Wire-only: a promotion ticked in the editor; the server resolves it. */
   promotionId?: number | null;
+  /** Pricing-factor snapshot on a factor-priced service's parent line (#2440). */
+  pricingFactors?: PricingFactorsSnapshot | null;
 }
 
 export interface QuoteSummary {
@@ -247,6 +250,8 @@ export interface LineItemPreset {
   priceMode?: PriceMode;
   /** Own rate for per-hour / per-day items; null = customer / default rate. */
   pinnedRateMinor?: number | null;
+  /** Pricing factors attached to the item, in order (#2440). */
+  factorIds?: number[];
 }
 
 export interface QuoteCreatePayload {

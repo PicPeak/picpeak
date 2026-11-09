@@ -200,6 +200,21 @@ function resolveDiscountLines(items, { parentKey = 'parent_position' } = {}) {
   return items;
 }
 
+// A factor snapshot explains a line; it never prices it (the sub-lines do).
+const MAX_PRICING_FACTORS_JSON = 20000;
+
+/**
+ * The pricing-factor snapshot (#2440) as stored: a JSON object, or null when
+ * absent, not an object or oversized.
+ */
+function pricingFactorsColumn(value) {
+  if (value == null || value === '') return null;
+  const parsed = parsePromotionSnapshot(value);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const json = JSON.stringify(parsed);
+  return json.length > MAX_PRICING_FACTORS_JSON ? null : json;
+}
+
 /**
  * Migration-215 columns for a line-item DB row (quotes and invoices).
  * Invoices have no optional add-ons — unselected ones are dropped when a
@@ -217,6 +232,7 @@ function extendedLineColumns(li, { invoice = false } = {}) {
     rate_source: li.rate_source || null,
     bound_to: li.bound_to || null,
     promotion_snapshot: snapshot ? JSON.stringify(snapshot) : null,
+    pricing_factors: pricingFactorsColumn(li.pricing_factors),
     ...(li.catalogue_preset_id == null ? {} : { catalogue_preset_id: li.catalogue_preset_id }),
     ...(li.configuration_definition == null ? {} : { configuration_locked: formatBoolean(isTruthyFlag(li.configuration_locked)) }),
     ...(li.configuration_definition == null ? {} : { configuration_definition: typeof li.configuration_definition === 'string' ? li.configuration_definition : JSON.stringify(li.configuration_definition), configuration_snapshot: li.configuration_snapshot == null ? null : typeof li.configuration_snapshot === 'string' ? li.configuration_snapshot : JSON.stringify(li.configuration_snapshot), configuration_base_details: li.configuration_base_details || null }),
@@ -238,6 +254,7 @@ function lineItemFieldsFromApi(li) {
   if (li.rateSource !== undefined) out.rate_source = li.rateSource || null;
   if (li.boundTo !== undefined) out.bound_to = li.boundTo || null;
   if (li.promotionSnapshot !== undefined) out.promotion_snapshot = li.promotionSnapshot || null;
+  if (li.pricingFactors !== undefined) out.pricing_factors = li.pricingFactors || null;
   // Wire-only: the quote service turns it into promotion_snapshot.
   if (li.promotionId !== undefined && li.promotionId !== null && li.promotionId !== '') {
     out.promotion_id = ensureInt(li.promotionId);
@@ -261,6 +278,7 @@ function lineItemFieldsToApi(li) {
     rateSource: li.rate_source || null,
     boundTo: li.bound_to || null,
     promotionSnapshot: parsePromotionSnapshot(li.promotion_snapshot),
+    pricingFactors: parsePromotionSnapshot(li.pricing_factors),
   };
 }
 
