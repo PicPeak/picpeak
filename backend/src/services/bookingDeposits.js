@@ -171,16 +171,18 @@ async function reconcileSession(request, session) {
       const late = await trx('booking_requests').where({ id: request.id, status: 'expired' })
         .whereIn('deposit_status', ['open', 'expired']).first();
       if (!late) return 'none';
+      // An admin decision does not take this lock: a write that matched
+      // nothing means the request was decided meanwhile, handled below.
       if (!(await booking.slotTaken(late, trx))) {
-        await trx('booking_requests').where({ id: late.id, status: 'expired' })
+        const restored = await trx('booking_requests').where({ id: late.id, status: 'expired' })
           .whereIn('deposit_status', ['open', 'expired'])
           .update({ status: 'pending', ...paidFields });
-        return 'restored';
+        return restored ? 'restored' : 'none';
       }
-      await trx('booking_requests').where({ id: late.id, status: 'expired' })
+      const taken = await trx('booking_requests').where({ id: late.id, status: 'expired' })
         .whereIn('deposit_status', ['open', 'expired'])
         .update({ ...paidFields, hold_expires_at: late.hold_expires_at });
-      return 'taken';
+      return taken ? 'taken' : 'none';
     });
     if (outcome === 'restored') {
       await notifyPaid(request.id);
@@ -241,10 +243,6 @@ async function reconcileSession(request, session) {
 
 
 /**
- * Stripe webhook entry: returns true when the event belonged to a booking
- * deposit (handled here), false to let photo sales take it.
- */
-/**
  * Refund and dispute events for a deposit: a refund that fails later, or a
  * chargeback, shows on the request instead of being dropped.
  */
@@ -255,23 +253,35 @@ async function reconcilePaymentEvent(event) {
   const request = await db('booking_requests').where({ payment_intent_id: intent }).first();
   if (!request) return false;
   const failedRefund = (event.type === 'refund.failed' || event.type === 'refund.updated') && object.status === 'failed';
-  // A refund made here or by hand in Stripe: recorded, so a review or a
+  // A refund made here or by hand in Stripe: recorded once the whole charge
+  // is back (a partial refund leaves the deposit as it is), so a review or a
   // failed refund can be closed.
-  const refunded = (event.type === 'refund.updated' && object.status === 'succeeded')
-    || (event.type === 'charge.refunded' && object.refunded === true);
+  const refunded = event.type === 'charge.refunded' && object.refunded === true;
+  const now = ts(new Date());
   if (refunded) {
     await db('booking_requests').where({ id: request.id }).whereNot('deposit_status', 'refunded')
-      .update({ deposit_status: 'refunded', updated_at: ts(new Date()) });
+      .update({ deposit_status: 'refunded', updated_at: now });
   } else if (failedRefund) {
-    await db('booking_requests').where({ id: request.id }).update({ deposit_status: 'refund_failed', updated_at: ts(new Date()) });
+    // Only money that was in, or a refund we started, can fail to go back.
+    await db('booking_requests').where({ id: request.id }).whereIn('deposit_status', ['paid', 'review', 'refunded'])
+      .update({ deposit_status: 'refund_failed', updated_at: now });
     logger.error('A booking deposit refund failed at Stripe', { requestId: request.id });
+  } else if (event.type === 'charge.dispute.closed' && object.status === 'won') {
+    // The studio kept the money: the deposit is paid again.
+    await db('booking_requests').where({ id: request.id, deposit_status: 'disputed' })
+      .update({ deposit_status: 'paid', updated_at: now });
   } else if (event.type.startsWith('charge.dispute.')) {
-    await db('booking_requests').where({ id: request.id }).update({ deposit_status: 'disputed', updated_at: ts(new Date()) });
+    await db('booking_requests').where({ id: request.id }).whereIn('deposit_status', ['paid', 'review', 'disputed', 'refund_failed'])
+      .update({ deposit_status: 'disputed', updated_at: now });
     logger.error('A booking deposit is disputed', { requestId: request.id });
   }
   return true;
 }
 
+/**
+ * Stripe webhook entry: returns true when the event belonged to a booking
+ * deposit (handled here), false to let photo sales take it.
+ */
 async function reconcileWebhook(event, client) {
   if (event.type.startsWith('refund.') || event.type.startsWith('charge.dispute.') || event.type === 'charge.refunded') {
     return reconcilePaymentEvent(event);

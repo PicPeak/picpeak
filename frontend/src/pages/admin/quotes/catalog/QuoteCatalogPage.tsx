@@ -399,7 +399,7 @@ const ServicesTab: React.FC = () => {
                     </div>
                     {form.galleryUnlock === 'full_payment' && (
                       <p className="md:col-span-3 text-xs text-muted">
-                        {t('booking.service.unlockFullHint', 'Counts the invoices of the deal in PicPeak. If you invoice elsewhere, choose "Right away" or open the gallery by hand under Clients → Bookings.')}
+                        {t('booking.service.unlockFullHint', 'Counts the invoices of the deal in PicPeak. If you invoice elsewhere, choose "Right away" or open the gallery by hand under CRM → Bookings.')}
                       </p>
                     )}
                     {form.bookingDepositType !== 'none' && (

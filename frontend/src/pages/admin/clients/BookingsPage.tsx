@@ -1,5 +1,5 @@
 /**
- * Clients → Bookings (#2440, part 2). Three tabs:
+ * CRM → Bookings (#2440, part 2). Three tabs:
  *   Requests  booking requests from the public page, pending first. Accept
  *             creates the customer, a project and a draft quote holding the
  *             estimate; decline frees the time and tells the client.

@@ -9619,7 +9619,7 @@
       }
     },
     "service": {
-      "unlockFullHint": "Zählt die Rechnungen des Deals in PicPeak. Wenn Sie anderswo verrechnen, wählen Sie «Sofort» oder öffnen Sie die Galerie von Hand unter Kunden → Buchungen.",
+      "unlockFullHint": "Zählt die Rechnungen des Deals in PicPeak. Wenn Sie anderswo verrechnen, wählen Sie «Sofort» oder öffnen Sie die Galerie von Hand unter CRM → Buchungen.",
       "depositHint": "Bezahlt per Karte über das Stripe-Konto unter Einstellungen → Zahlungen. Ohne eingerichtetes Stripe kommen Anfragen ohne Anzahlung.",
       "unlockOff": "Sofort",
       "unlockDeposit": "Sobald die Anzahlung bezahlt ist",

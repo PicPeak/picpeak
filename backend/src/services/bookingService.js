@@ -30,7 +30,9 @@ const { hasColumnCached } = require('../utils/schemaCache');
 
 const STATUSES = ['awaiting_payment', 'pending', 'accepted', 'declined', 'expired'];
 // Deposit states that keep a pending request (and its slot) until decided.
-const PAID_DEPOSIT = ['paid', 'review'];
+// Money in that the admin still has to decide on: the request holds its
+// time, does not expire and is not purged.
+const PAID_DEPOSIT = ['paid', 'review', 'disputed'];
 const MAX_RANGE_DAYS = 42;
 const DEFAULT_DURATION_MINUTES = 60;
 const MIN_DURATION_MINUTES = 15;
@@ -677,9 +679,9 @@ async function acceptRequest(id, adminId) {
       expectedDurationHours: hours,
       lineItems: quoteLines(request),
       // Part 3: the deposit is no invoice; the note reminds whoever bills
-      // this deal to book it on the invoice (Clients → Bookings).
+      // this deal to book it on the invoice (CRM → Bookings).
       internalNotes: request.deposit_status === 'paid'
-        ? `Booking ${request.reference}: deposit ${new Intl.NumberFormat('en-GB', { style: 'currency', currency: request.currency || 'CHF' }).format(Number(request.deposit_minor) / 100)} paid by card (Stripe ${request.payment_intent_id || ''}). Book it on the invoice under Clients → Bookings.`
+        ? `Booking ${request.reference}: deposit ${new Intl.NumberFormat('en-GB', { style: 'currency', currency: request.currency || 'CHF' }).format(Number(request.deposit_minor) / 100)} paid by card (Stripe ${request.payment_intent_id || ''}). Book it on the invoice under CRM → Bookings.`
         : undefined,
     }, adminId);
     await projectService.assignQuote(project.id, quoteId, { id: adminId });

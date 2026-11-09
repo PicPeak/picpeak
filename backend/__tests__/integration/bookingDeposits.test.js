@@ -466,6 +466,29 @@ describe('review round 1', () => {
     await webhook('charge.dispute.created', { id: 'dp_x', payment_intent: intent }).expect(200);
     expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('disputed');
   });
+
+  test('a won dispute is paid again, a partial refund changes nothing, a refund is not overwritten', async () => {
+    const { row } = await open(day(36), '13:00', 'dispute-won@example.test');
+    const session = await payAndHook(row);
+    const intent = session.payment_intent;
+    const status = async () => (await db('booking_requests').where({ id: row.id }).first()).deposit_status;
+    await webhook('charge.refunded', { id: 'ch_p', payment_intent: intent, refunded: false }).expect(200);
+    expect(await status()).toBe('paid');
+    await webhook('refund.updated', { id: 're_p', payment_intent: intent, status: 'succeeded', amount: 100 }).expect(200);
+    expect(await status()).toBe('paid');
+    await webhook('charge.dispute.created', { id: 'dp_w', payment_intent: intent }).expect(200);
+    expect(await status()).toBe('disputed');
+    // A disputed deposit holds the request like a paid one: it does not expire.
+    await db('booking_requests').where({ id: row.id }).update({ hold_expires_at: new Date(Date.now() - 60000).toISOString() });
+    await request(adminApp).get('/api/admin/booking/requests').set(auth).expect(200);
+    expect((await db('booking_requests').where({ id: row.id }).first()).status).toBe('pending');
+    await webhook('charge.dispute.closed', { id: 'dp_w', payment_intent: intent, status: 'won' }).expect(200);
+    expect(await status()).toBe('paid');
+    await webhook('charge.refunded', { id: 'ch_f', payment_intent: intent, refunded: true }).expect(200);
+    expect(await status()).toBe('refunded');
+    await webhook('charge.dispute.created', { id: 'dp_l', payment_intent: intent }).expect(200);
+    expect(await status()).toBe('refunded');
+  });
 });
 
 describe('blind review', () => {

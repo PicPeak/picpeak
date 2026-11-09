@@ -9654,7 +9654,7 @@
       }
     },
     "service": {
-      "unlockFullHint": "Counts the invoices of the deal in PicPeak. If you invoice elsewhere, choose \"Right away\" or open the gallery by hand under Clients → Bookings.",
+      "unlockFullHint": "Counts the invoices of the deal in PicPeak. If you invoice elsewhere, choose \"Right away\" or open the gallery by hand under CRM → Bookings.",
       "depositHint": "Paid by card through the Stripe account under Settings → Payments. Without Stripe set up, requests come in without a deposit.",
       "unlockOff": "Right away",
       "unlockDeposit": "Once the deposit is paid",
