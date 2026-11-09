@@ -59,6 +59,15 @@ describe('a gallery viewer fetching its own images', () => {
       cookies: { 'gallery_token_wedding-2026': galleryToken('wedding-2026') } };
     expect(isOwnGalleryImageRequest(r)).toBe(true);
   });
+
+  // Issue 2438: the kiosk's session lives in its own cookie, which its image
+  // URLs name with ?slideshow=1. Without the marker it is not read.
+  it('reads the slideshow cookie for a marked image request', () => {
+    const r = (query) => ({ path: '/api/gallery/wedding-2026/preview/42', method: 'GET', headers: {}, query,
+      cookies: { 'gallery_show_token_wedding-2026': galleryToken('wedding-2026') } });
+    expect(isOwnGalleryImageRequest(r({ slideshow: '1' }))).toBe(true);
+    expect(isOwnGalleryImageRequest(r({}))).toBe(false);
+  });
 });
 
 describe('everything else stays on the budget', () => {

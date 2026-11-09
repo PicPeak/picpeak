@@ -28,6 +28,21 @@
   background-position: center;
 }
 
+/* The whole photo (issue 2429): uncropped and centred, over a blurred
+   copy of itself that fills the rest of the hero. */
+.gallery-premium-hero-bg--whole {
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.gallery-premium-hero-backdrop {
+  position: absolute;
+  inset: -40px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(28px);
+}
+
 .gallery-premium-hero-overlay {
   position: absolute;
   inset: 0;

@@ -4286,6 +4286,14 @@
     "galleryLayout": "Gallery Layout",
     "layoutSettings": "Layout Settings",
     "photoSpacing": "Photo Spacing",
+    "photoGap": "Gap between photos (px)",
+    "photoGapHint": "From 0 to 32 pixels. Photos keep their own proportions.",
+    "heroFit": "Hero photo",
+    "heroFitDescription": "Fill crops the photo to a wide banner. Whole photo shows it uncropped, with space beside a portrait photo.",
+    "heroFitOptions": {
+      "cover": "Fill the header",
+      "contain": "Whole photo"
+    },
     "spacing": {
       "tight": "Tight",
       "normal": "Normal",
