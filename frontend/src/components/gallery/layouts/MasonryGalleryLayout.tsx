@@ -17,6 +17,7 @@ import { useWindowedItems, WINDOW_MIN_PHOTOS, type WindowItem } from './rowWindo
 import { quiltedSpan, useQuiltedWindow } from './quiltedWindow';
 import { boxStyle, ghostBox, gridBoxStyle, useMeasuredWindow } from './measuredWindow';
 import { densityColumnDelta, densitySizeFactor, useGridDensity } from '../gridDensity';
+import { masonryModeOf } from './masonryMode';
 
 const NO_ITEMS: WindowItem[] = [];
 
@@ -298,9 +299,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const dimClass = (photo: Photo) => (dimmed(photo) ? ' opacity-40' : '');
   const gallerySettings = theme.gallerySettings || {};
   const gutter = gallerySettings.masonryGutter || 16;
-  // 'justified' is the picker's "Google Photos" option: the same justified rows.
-  const storedMode = gallerySettings.masonryMode || 'columns';
-  const mode = storedMode === 'justified' ? 'rows' : storedMode;
+  // 'justified' renders as rows, an unknown value as columns (masonryMode.ts).
+  const mode = masonryModeOf(gallerySettings.masonryMode);
   // The viewer's density (issue 1733, E4): a column more or less in columns
   // mode, a shorter or taller row (or quilted cell) in the others.
   const density = useGridDensity();

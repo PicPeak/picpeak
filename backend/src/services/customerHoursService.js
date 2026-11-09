@@ -26,6 +26,7 @@ const { db, logActivity } = require('../database/db');
 const { adminActivityActor } = require('../utils/activityActor');
 const { AppError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
+const { vatMinorFor, roundsVatDown } = require('../utils/vatAmount');
 const invoiceService = require('./invoiceService');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('./accountingHistory');
 
@@ -373,7 +374,7 @@ async function updateEntry(entryId, payload, adminId) {
         if (li.parent_line_item_id == null) netMinor += Number(li.line_total_minor || 0);
       }
       const vatRate = Number(invoice.vat_rate || 0);
-      const vatMinor = Math.round(netMinor * vatRate / 100);
+      const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: await roundsVatDown(trx) });
       const shippingMinor = Number(invoice.shipping_amount_minor || 0);
       const totalMinor = netMinor + vatMinor + shippingMinor;
       await auditedUpdate(trx, 'invoices', { id: entry.invoice_id }, {
@@ -433,7 +434,7 @@ async function deleteEntry(entryId, adminId) {
         if (li.parent_line_item_id == null) netMinor += Number(li.line_total_minor || 0);
       }
       const vatRate = Number(invoice.vat_rate || 0);
-      const vatMinor = Math.round(netMinor * vatRate / 100);
+      const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: await roundsVatDown(trx) });
       const shippingMinor = Number(invoice.shipping_amount_minor || 0);
       const totalMinor = netMinor + vatMinor + shippingMinor;
       await auditedUpdate(trx, 'invoices', { id: entry.invoice_id }, {

@@ -284,7 +284,8 @@ async function append(tx, invoice, items, adminId) {
     .select('li.*', 'parent.position as parent_position');
   const roundTotal = (await require('../../utils/appSettings').getAppSetting('crm_invoice_round_total', false, tx)) === true;
   const totals = require('../quoteService')._internal.computeTotals(
-    stored, invoice.vat_rate, invoice.shipping_amount_minor, { roundTotal },
+    stored, invoice.vat_rate, invoice.shipping_amount_minor,
+    { roundTotal, roundVatDown: await require('../../utils/vatAmount').roundsVatDown(tx) },
   );
   for (const line of totals.lineItems) {
     const previous = stored.find((row) => row.id === line.id);

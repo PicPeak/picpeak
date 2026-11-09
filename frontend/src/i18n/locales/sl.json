@@ -9372,7 +9372,7 @@
         "section": "Razdelek",
         "description": "Opis (namig za skrbnika)",
         "body": "Vsebina",
-        "placeholderHint": "Kot nadomestne označevalnike lahko uporabite {{customer_name}}, {{event_name}}, {{event_date}}, {{net_days}}, {{skonto_percent}}, {{skonto_within_days}}, {{cancellation_30d_percent}}, {{currency}}, {{issuer_company_name}}, {{issuer_address}}, {{contract_number}}, {{source_quote_number}} — zamenjajo se ob izrisu pogodbe."
+        "placeholderHint": "Kot nadomestne označevalnike lahko uporabite {{customer_name}}, {{event_name}}, {{event_date}}, {{net_days}}, {{skonto_percent}}, {{skonto_within_days}}, {{cancellation_30d_percent}}, {{currency}}, {{issuer_company_name}}, {{issuer_address}}, {{governing_law}}, {{contract_number}}, {{source_quote_number}} — zamenjajo se ob izrisu pogodbe."
       },
       "quoteLineItems": {
         "calloutTitle": "Samodejno ustvarjena tabela sledi besedilu",
