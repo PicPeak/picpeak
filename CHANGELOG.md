@@ -5,6 +5,18 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.197.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.196.2-beta.0...v3.197.0-beta.0) (2026-11-09)
+
+
+### Features
+
+* **gallery:** Premium columns per device and gap, whole-photo hero ([#2435](https://github.com/PicPeak/picpeak/issues/2435)) ([8e5b125](https://github.com/PicPeak/picpeak/commit/8e5b1259c6be2eb848a2b55882a04e010af97127))
+
+
+### Bug Fixes
+
+* **gallery:** keep Live Slideshow sessions apart from guest logins ([#2441](https://github.com/PicPeak/picpeak/issues/2441)) ([1427122](https://github.com/PicPeak/picpeak/commit/1427122e8e600f1d14550efd8463cf3187e3ab05))
+
 ## [3.196.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.196.1-beta.0...v3.196.2-beta.0) (2026-11-08)
 
 
