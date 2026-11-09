@@ -16,7 +16,6 @@
  */
 
 const request = require('supertest');
-const crypto = require('crypto');
 const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('./helpers/crmDb');
@@ -91,17 +90,17 @@ function formToken(ageMs = 60000) {
 
 const sendRequest = (start, extra = {}) => request(publicApp).post('/api/public/booking/requests')
   .set('X-Forwarded-For', `198.51.100.${(clientIp += 1)}`).send({
-  serviceId: shoot.id,
-  values: { [sessionLength.id]: 2 },
-  start,
-  name: 'Mia Keller',
-  email: 'mia@band.example',
-  company: 'The Echoes',
-  message: 'Music video for our single',
-  language: 'en',
-  formToken: formToken(),
-  ...extra,
-});
+    serviceId: shoot.id,
+    values: { [sessionLength.id]: 2 },
+    start,
+    name: 'Mia Keller',
+    email: 'mia@band.example',
+    company: 'The Echoes',
+    message: 'Music video for our single',
+    language: 'en',
+    formToken: formToken(),
+    ...extra,
+  });
 
 beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
@@ -501,9 +500,35 @@ describe('review round 2', () => {
     expect(await offered(day(monday, 42), '09:00')).toBe(false);
     expect(await offered(day(monday, 42), '13:00')).toBe(false);
     await db('quotes').where({ id: declined.quote_id }).update({ status: 'declined' });
-    await db('booking_requests').where({ id: deleted.id }).update({ quote_id: null });
+    // A deleted quote (FK SET NULL) frees the time once the accept is past.
+    await db('booking_requests').where({ id: deleted.id })
+      .update({ quote_id: null, decided_at: new Date(Date.now() - 20 * 60000).toISOString() });
     expect(await offered(day(monday, 42), '09:00')).toBe(true);
     expect(await offered(day(monday, 42), '13:00')).toBe(true);
+  });
+
+  test('a request being accepted keeps its time before its quote exists', async () => {
+    // What the accept claim leaves until quote_id is written: accepted, no quote.
+    const res = await post(zurich(day(monday, 45), '09:00'));
+    await db('booking_requests').where({ reference: res.body.reference })
+      .update({ status: 'accepted', decided_at: new Date().toISOString(), quote_id: null });
+    expect(await offered(day(monday, 45), '09:00')).toBe(false);
+    const rival = await post(zurich(day(monday, 45), '09:00'));
+    expect(rival.status).toBe(409);
+  });
+
+  test('an expired request still counts for its client until a day after it was sent', async () => {
+    const ip = '203.0.113.77';
+    const first = await post(zurich(day(monday, 46), '09:00'), { ip, email: 'w1@window.example' });
+    await db('booking_requests').where({ reference: first.body.reference })
+      .update({ status: 'expired', hold_expires_at: new Date(Date.now() - 60000).toISOString() });
+    expect((await post(zurich(day(monday, 46), '11:00'), { ip, email: 'w2@window.example' })).status).toBe(201);
+    const third = await post(zurich(day(monday, 46), '13:00'), { ip, email: 'w3@window.example' });
+    expect([third.status, third.body.code || third.body.error?.code]).toEqual([429, 'BOOKING_TOO_MANY_OPEN']);
+    // Past the day, the expired one no longer counts.
+    await db('booking_requests').where({ reference: first.body.reference })
+      .update({ created_at: new Date(Date.now() - 25 * 3600000).toISOString() });
+    expect((await post(zurich(day(monday, 46), '13:00'), { ip, email: 'w3@window.example' })).status).toBe(201);
   });
 
   test('one client is counted per /56 network, and a request counts for a day after it is sent', async () => {
