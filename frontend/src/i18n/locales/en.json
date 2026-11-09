@@ -9978,6 +9978,9 @@
     "resend": "Resend",
     "markPaid": "Mark paid",
     "sendReminder": "Send reminder",
+    "needsGbpRate": "Needs GBP rate",
+    "needsGbpRateTitle": "This invoice needs its GBP exchange rate.",
+    "needsGbpRateBody": "A UK VAT invoice in {{currency}} also states its VAT in GBP. Enter the rate below; until then it can't be sent, and a scheduled send waits.",
     "field": {
       "vatGbpRate": "GBP per {{currency}} for the VAT in sterling",
       "vatGbpRateHint": "HMRC requires the VAT total in GBP on a UK VAT invoice in another currency. Use the UK market selling rate at the tax point or HMRC's period rate.",
