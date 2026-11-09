@@ -26,6 +26,7 @@ const { isTruthyFlag } = require('../utils/lineItemTotals');
 const { normaliseSchedule, _internal: tz } = require('../utils/businessHours');
 const { toTimestamp } = require('../utils/dateNormalize');
 const pricingFactors = require('./pricingFactorService');
+const { scheduledTask } = require('./scheduledTask');
 
 const STATUSES = ['pending', 'accepted', 'declined', 'expired'];
 const MAX_RANGE_DAYS = 42;
@@ -36,6 +37,8 @@ const MAX_DURATION_MINUTES = 24 * 60;
 // address and by email. A real client has one or two; a script many.
 const MAX_OPEN_PER_CLIENT = 2;
 const MAX_OPEN_PER_EMAIL = 2;
+// ...and a request counts against the client's two for this long after it was sent.
+const CLIENT_WINDOW_MS = 24 * 3600000;
 // Declined and expired requests are purged after this many days.
 const RETENTION_DAYS = 180;
 const LANGUAGES = ['en', 'de', 'fr', 'nl', 'pt', 'ru', 'es', 'sl'];
@@ -74,12 +77,24 @@ async function getSettings(conn = db) {
   };
 }
 
-/** HMAC of a client key (rateLimitKey: the IP, IPv6 by /64); never the address itself. */
+/**
+ * The client a request is counted against: the rateLimitKey (the IP, IPv6
+ * by /64) widened to the /56 for IPv6. A single home connection often gets
+ * a /56, so counting per /64 would let it fill the studio's total.
+ */
+function clientScope(clientKey) {
+  const m = String(clientKey).match(/^([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4})::\/64$/i);
+  if (!m) return String(clientKey);
+  const fourth = (parseInt(m[4], 16) & 0xff00).toString(16);
+  return `${m[1]}:${m[2]}:${m[3]}:${fourth}::/56`.toLowerCase();
+}
+
+/** HMAC of the client scope (see clientScope); never the address itself. */
 function clientHash(clientKey) {
   if (!clientKey) return null;
   const secret = process.env.JWT_SECRET;
   if (!secret) return null;
-  return crypto.createHmac('sha256', `booking-client:${secret}`).update(String(clientKey)).digest('hex');
+  return crypto.createHmac('sha256', `booking-client:${secret}`).update(clientScope(clientKey)).digest('hex');
 }
 
 async function saveSettings(patch) {
@@ -229,7 +244,10 @@ async function busyIntervals(from, to, zone, { excludeRequestId = null, now = ne
 
   const requests = conn('booking_requests')
     .where('starts_at', '<', ts(to)).andWhere('ends_at', '>', ts(from))
-    .andWhere((q) => q.where('status', 'accepted')
+    // An accepted request is busy while its quote is: once the quote is
+    // deleted or declined the time is free again, with no step for the admin.
+    .andWhere((q) => q.where((a) => a.where('status', 'accepted').whereExists((e) => e.select(conn.raw('1')).from('quotes')
+      .whereRaw('quotes.id = booking_requests.quote_id').whereNot('quotes.status', 'declined')))
       .orWhere((p) => p.where('status', 'pending').andWhere('hold_expires_at', '>', ts(now))));
   if (excludeRequestId) requests.whereNot('id', excludeRequestId);
   for (const r of await requests) busy.push({ start: toDate(r.starts_at).getTime(), end: toDate(r.ends_at).getTime() });
@@ -326,6 +344,12 @@ function newReference() {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
 
+// Hourly, so holds run out and old requests are purged while the booking
+// pages are not being used, and with the flag off.
+const housekeeping = scheduledTask(() => expireStaleHolds(), { schedule: '25 * * * *' });
+function startBookingHousekeeping() { housekeeping.start(); }
+const stopBookingHousekeeping = () => housekeeping.stop();
+
 /** Pending requests whose hold ran out become `expired`. */
 async function expireStaleHolds(now = new Date()) {
   await db('booking_requests').where({ status: 'pending' }).andWhere('hold_expires_at', '<=', ts(now))
@@ -343,15 +367,30 @@ async function expireStaleHolds(now = new Date()) {
  */
 async function forgetCustomer(trx, customerId, emails = []) {
   const addresses = [...new Set(emails.filter(Boolean).map((e) => String(e).toLowerCase()))];
-  await trx('booking_requests')
-    .where((q) => {
-      q.where('customer_account_id', customerId);
-      if (addresses.length) q.orWhereIn(trx.raw('LOWER(email)'), addresses);
-    })
-    .update({
-      name: 'Erased', email: 'erased@deleted.invalid', phone: null, company: null, message: null,
-      client_ip_hash: null, updated_at: ts(new Date()),
-    });
+  const rows = () => trx('booking_requests').where((q) => {
+    q.where('customer_account_id', customerId);
+    if (addresses.length) q.orWhereIn(trx.raw('LOWER(email)'), addresses);
+  });
+  // A postcode entered for a zone factor is the client's address too.
+  for (const row of await rows().select('id', 'pricing_factors')) {
+    const snapshot = pricingFactors.parseSnapshot(row.pricing_factors);
+    if (!snapshot || !snapshot.values) continue;
+    let changed = false;
+    for (const value of Object.values(snapshot.values)) {
+      if (value && typeof value === 'object' && 'postcode' in value) {
+        delete value.postcode;
+        changed = true;
+      }
+    }
+    if (changed) await trx('booking_requests').where({ id: row.id }).update({ pricing_factors: JSON.stringify(snapshot) });
+  }
+  // An open request of someone erased cannot be accepted any more.
+  await rows().whereIn('status', ['pending', 'expired'])
+    .update({ status: 'declined', decided_at: ts(new Date()) });
+  await rows().update({
+    name: 'Erased', email: 'erased@deleted.invalid', phone: null, company: null, message: null,
+    decline_reason: null, client_ip_hash: null, updated_at: ts(new Date()),
+  });
 }
 
 /**
@@ -384,11 +423,17 @@ function openRequests(conn, now) {
  */
 async function assertMayRequest(conn, { email, ipHash, settings, now }) {
   const count = async (q) => Number((await q.count('* as n').first()).n);
-  if (ipHash && await count(openRequests(conn, now).where({ client_ip_hash: ipHash })) >= MAX_OPEN_PER_CLIENT) {
-    throw new AppError('You already have open booking requests. Please wait for the studio to answer them.', 429, 'BOOKING_TOO_MANY_OPEN');
+  // Per client, a request counts while it is open and for a day after it
+  // was sent: with a short notice period a hold can last only minutes, and
+  // a new address per request must not buy a new client mail each time.
+  const counted = () => conn('booking_requests').where((q) => q
+    .whereIn('id', openRequests(conn, now).select('id'))
+    .orWhere('created_at', '>', ts(now.getTime() - CLIENT_WINDOW_MS)));
+  if (ipHash && await count(counted().where({ client_ip_hash: ipHash })) >= MAX_OPEN_PER_CLIENT) {
+    throw new AppError('You already have open or recent booking requests. Please wait for the studio to answer them.', 429, 'BOOKING_TOO_MANY_OPEN');
   }
   if (await count(openRequests(conn, now).whereRaw('LOWER(email) = ?', [email])) >= MAX_OPEN_PER_EMAIL) {
-    throw new AppError('You already have open booking requests. Please wait for the studio to answer them.', 429, 'BOOKING_TOO_MANY_OPEN');
+    throw new AppError('You already have open or recent booking requests. Please wait for the studio to answer them.', 429, 'BOOKING_TOO_MANY_OPEN');
   }
   if (await count(openRequests(conn, now)) >= Number(settings.max_open_requests)) {
     throw new AppError('The studio has too many open requests right now. Please write to them directly.', 429, 'BOOKING_REQUESTS_FULL');
@@ -711,6 +756,8 @@ module.exports = {
   LANGUAGES,
   iso,
   forgetCustomer,
+  startBookingHousekeeping,
+  stopBookingHousekeeping,
   numberFactorStart,
   withDurationValue,
   getSettings,

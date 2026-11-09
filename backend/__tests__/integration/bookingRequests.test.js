@@ -482,3 +482,57 @@ describe('review round 1', () => {
     expect(await db('booking_requests').where({ id: old.id }).first()).toBeUndefined();
   });
 });
+
+describe('review round 2', () => {
+  const post = (start, extra = {}) => request(publicApp).post('/api/public/booking/requests')
+    .set('X-Forwarded-For', extra.ip || `198.51.100.${(clientIp += 1)}`)
+    .send({ serviceId: shoot.id, values: {}, start, name: 'Lea', email: `l${clientIp}@band.example`, language: 'en', formToken: formToken(), ...extra, ip: undefined });
+  const accept = async (res) => {
+    const row = await db('booking_requests').where({ reference: res.body.reference }).first();
+    const ok = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/accept`).set(auth);
+    expect(ok.status).toBe(200);
+    return db('booking_requests').where({ id: row.id }).first();
+  };
+  const offered = async (date, time) => (await slotsOn(date)).includes(time);
+
+  test('an accepted request keeps its time only while its quote stands', async () => {
+    const declined = await accept(await post(zurich(day(monday, 42), '09:00')));
+    const deleted = await accept(await post(zurich(day(monday, 42), '13:00')));
+    expect(await offered(day(monday, 42), '09:00')).toBe(false);
+    expect(await offered(day(monday, 42), '13:00')).toBe(false);
+    await db('quotes').where({ id: declined.quote_id }).update({ status: 'declined' });
+    await db('booking_requests').where({ id: deleted.id }).update({ quote_id: null });
+    expect(await offered(day(monday, 42), '09:00')).toBe(true);
+    expect(await offered(day(monday, 42), '13:00')).toBe(true);
+  });
+
+  test('one client is counted per /56 network, and a request counts for a day after it is sent', async () => {
+    const a = await post(zurich(day(monday, 43), '09:00'), { ip: '2001:db8:aa:1200::1', email: 'n1@net.example' });
+    expect(a.status).toBe(201);
+    const row = await db('booking_requests').where({ reference: a.body.reference }).first();
+    await request(adminApp).post(`/api/admin/booking/requests/${row.id}/decline`).set(auth).send({}).expect(200);
+    // Declined, yet still counted: a /64 next door in the same /56 gets one more.
+    expect((await post(zurich(day(monday, 43), '11:00'), { ip: '2001:db8:aa:12ff::1', email: 'n2@net.example' })).status).toBe(201);
+    const third = await post(zurich(day(monday, 43), '13:00'), { ip: '2001:db8:aa:1234::9', email: 'n3@net.example' });
+    expect([third.status, third.body.code || third.body.error?.code]).toEqual([429, 'BOOKING_TOO_MANY_OPEN']);
+    // Another /56 is another client.
+    expect((await post(zurich(day(monday, 43), '13:00'), { ip: '2001:db8:aa:1300::1', email: 'n4@net.example' })).status).toBe(201);
+  });
+
+  test('erasing a customer declines their open request and drops the postcode', async () => {
+    const res = await post(zurich(day(monday, 44), '09:00'), { email: 'erase-me@band.example' });
+    const row = await db('booking_requests').where({ reference: res.body.reference }).first();
+    const snapshot = JSON.parse(row.pricing_factors);
+    snapshot.values.zone = { postcode: '8001', optionId: 1 };
+    await db('booking_requests').where({ id: row.id }).update({ pricing_factors: JSON.stringify(snapshot), decline_reason: 'kept' });
+    const customer = await require('../../src/database/crmAccess').withTrustedCrmAccess('test',
+      () => require('../../src/services/customerAccountsService').createDirect({ email: 'erase-me@band.example', createdByAdminId: adminId }));
+    await require('../../src/database/crmAccess').withTrustedCrmAccess('test',
+      () => require('../../src/services/customerAccountsService').eraseCustomer(customer.id, adminId));
+    const after = await db('booking_requests').where({ id: row.id }).first();
+    expect(after).toMatchObject({ status: 'declined', name: 'Erased', decline_reason: null });
+    expect(JSON.parse(after.pricing_factors).values.zone).toEqual({ optionId: 1 });
+    const refused = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/accept`).set(auth);
+    expect(refused.status).not.toBe(200);
+  });
+});
