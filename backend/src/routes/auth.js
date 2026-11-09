@@ -1019,6 +1019,17 @@ router.get('/session', async (req, res) => {
         const event = await db('events').where({ id: decoded.eventId }).first();
         if (!event) return res.json({ valid: false, error: 'Gallery no longer available' });
         await access.authorize(event, access.grant(event, 'gallery', decoded));
+        // A Live Slideshow session is display-only (denySlideshowToken refuses
+        // every write and download). It has its own cookie now, but a browser
+        // can still send one here: as a Bearer, or in the guest cookie where
+        // slideshows kept it before. Reported as valid, the gallery page kept
+        // it as the guest login, so that browser could not rate, comment,
+        // favourite or download until the token expired. Not valid here: the
+        // page logs in through the share link (or asks for the password) and
+        // replaces it.
+        if (decoded.accessLevel === 'slideshow') {
+          return res.json({ valid: false, error: 'Slideshow sessions are display-only' });
+        }
       } else {
         return res.status(403).json({ valid: false, error: 'Invalid token type' });
       }
