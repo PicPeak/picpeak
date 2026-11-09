@@ -394,7 +394,7 @@ export const PricingFactorsTab: React.FC = () => {
                   <td className="py-2 text-right tabular-nums">{effectSummary(f)}</td>
                   <td className="py-2">
                     <PermissionGate permission="quotes.manage">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <Button variant="outline" size="sm" onClick={() => edit(f)}>{t('common.edit', 'Edit')}</Button>
                         {f.isActive
                           ? <Button variant="outline" size="sm" onClick={() => setActive(f, false)}>{t('quotes.catalog.archive', 'Archive')}</Button>
