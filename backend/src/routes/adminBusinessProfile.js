@@ -176,6 +176,13 @@ function transformProfile(p) {
     defaultLocale: p.default_locale || 'de',
     defaultQrFormat: p.default_qr_format || 'none',
     footerLine: p.footer_line || '',
+    // Migration 352 — UK disclosures and governing law.
+    legalForm: p.legal_form || '',
+    registeredName: p.registered_name || '',
+    companyNumber: p.company_number || '',
+    registeredOffice: p.registered_office || '',
+    jurisdiction: p.jurisdiction || '',
+    proprietorName: p.proprietor_name || '',
     logoPath: p.logo_path || '',
     pdfFontTtfPath: p.pdf_font_ttf_path || '',
     // Bundled-fonts dropdown (migration 121). NULL = no preference,
@@ -538,6 +545,13 @@ router.put(
     // toggle can actually be switched off.
     body('emailSignatureEnabled').optional().isBoolean(),
     body('emailSignatureExtra').optional({ values: 'falsy' }).isString().isLength({ max: 500 }),
+    // Migration 352 — UK disclosures. Enums are checked in the service.
+    body('legalForm').optional({ values: 'falsy' }).isString().isLength({ max: 20 }),
+    body('registeredName').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
+    body('companyNumber').optional({ values: 'falsy' }).isString().isLength({ max: 20 }),
+    body('registeredOffice').optional({ values: 'falsy' }).isString().isLength({ max: 500 }),
+    body('jurisdiction').optional({ values: 'falsy' }).isString().isLength({ max: 32 }),
+    body('proprietorName').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -583,6 +597,13 @@ router.put(
       // Migration 198 — global email footer signature.
       emailSignatureEnabled: 'email_signature_enabled',
       emailSignatureExtra: 'email_signature_extra',
+      // Migration 352 — UK disclosures and governing law.
+      legalForm: 'legal_form',
+      registeredName: 'registered_name',
+      companyNumber: 'company_number',
+      registeredOffice: 'registered_office',
+      jurisdiction: 'jurisdiction',
+      proprietorName: 'proprietor_name',
     };
     for (const [api, db] of Object.entries(map)) {
       if (Object.prototype.hasOwnProperty.call(req.body, api)) {

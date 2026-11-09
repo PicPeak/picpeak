@@ -21,7 +21,7 @@ import { Button, Card, Loading, Input, CountrySelect, TimeField } from '../../..
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { toast } from 'react-toastify';
 import { currencyOptions, normalizeCurrency } from '../../../constants/currencies';
-import { cityLine, isUnitedStates } from '../../../utils/postalAddress';
+import { cityLine, isUnitedKingdom, isUnitedStates } from '../../../utils/postalAddress';
 import { useMutationWithToast } from '../../../hooks';
 
 // Full IANA timezone list for the picker. `Intl.supportedValuesOf` is ES2022
@@ -34,6 +34,81 @@ const IANA_TIMEZONES: string[] = (() => {
     return ['UTC', 'Europe/Vaduz', 'Europe/Zurich', 'Europe/Berlin', 'Europe/Vienna', 'Europe/Paris', 'Europe/London'];
   }
 })();
+
+const selectClass = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus:ring-2 focus:ring-accent';
+
+/**
+ * What a business in the United Kingdom states on its documents (issue 2439):
+ * a company's or LLP's registered name, number and office, or a sole
+ * trader's or partnership's owners, and the part of the UK whose law governs
+ * its contracts. Shown only for a UK business; the PDF footer prints them.
+ */
+const UkDetailsCard: React.FC<{
+  profile: BusinessProfile;
+  setProfile: (p: BusinessProfile) => void;
+}> = ({ profile, setProfile }) => {
+  const { t } = useTranslation();
+  const company = profile.legalForm === 'ltd' || profile.legalForm === 'llp';
+  const owner = profile.legalForm === 'sole_trader' || profile.legalForm === 'partnership';
+  return (
+    <Card>
+      <h3 className="font-semibold text-heading mb-1">{t('businessProfile.section.uk', 'UK legal details')}</h3>
+      <p className="text-xs text-soft mb-3">
+        {t('businessProfile.uk.hint', 'Printed in the footer of your quotes, invoices and contracts, as UK law requires. The jurisdiction is the law your contracts are governed by.')}
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-body mb-1">{t('businessProfile.field.legalForm', 'Legal form')}</label>
+          <select value={profile.legalForm || ''} className={selectClass}
+            onChange={(e) => setProfile({ ...profile, legalForm: e.target.value as BusinessProfile['legalForm'] })}>
+            <option value="">{t('businessProfile.legalForm.unset', 'Not set')}</option>
+            <option value="sole_trader">{t('businessProfile.legalForm.soleTrader', 'Sole trader')}</option>
+            <option value="partnership">{t('businessProfile.legalForm.partnership', 'Partnership')}</option>
+            <option value="ltd">{t('businessProfile.legalForm.ltd', 'Limited company (Ltd)')}</option>
+            <option value="llp">{t('businessProfile.legalForm.llp', 'Limited liability partnership (LLP)')}</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-body mb-1">{t('businessProfile.field.jurisdiction', 'Jurisdiction')}</label>
+          <select value={profile.jurisdiction || ''} className={selectClass}
+            onChange={(e) => setProfile({ ...profile, jurisdiction: e.target.value as BusinessProfile['jurisdiction'] })}>
+            <option value="">{t('businessProfile.jurisdiction.unset', 'Not set (contracts use England and Wales)')}</option>
+            <option value="england_wales">{t('businessProfile.jurisdiction.englandWales', 'England and Wales')}</option>
+            <option value="scotland">{t('businessProfile.jurisdiction.scotland', 'Scotland')}</option>
+            <option value="northern_ireland">{t('businessProfile.jurisdiction.northernIreland', 'Northern Ireland')}</option>
+          </select>
+        </div>
+        {company && (
+          <>
+            <Input label={t('businessProfile.field.registeredName', 'Registered name (if different from the company name)') as string}
+              value={profile.registeredName || ''}
+              onChange={(e) => setProfile({ ...profile, registeredName: e.target.value })} />
+            <Input label={t('businessProfile.field.companyNumber', 'Company number') as string}
+              value={profile.companyNumber || ''} maxLength={20}
+              onChange={(e) => setProfile({ ...profile, companyNumber: e.target.value })} />
+            <div className="md:col-span-2">
+              <Input label={t('businessProfile.field.registeredOffice', 'Registered office (if different from the address above)') as string}
+                value={profile.registeredOffice || ''}
+                onChange={(e) => setProfile({ ...profile, registeredOffice: e.target.value })} />
+            </div>
+          </>
+        )}
+        {owner && (
+          <div className="md:col-span-2">
+            <Input label={(profile.legalForm === 'partnership'
+              ? t('businessProfile.field.partnerNames', 'Partners\' names')
+              : t('businessProfile.field.proprietorName', 'Owner\'s name')) as string}
+              value={profile.proprietorName || ''}
+              onChange={(e) => setProfile({ ...profile, proprietorName: e.target.value })} />
+            <p className="text-xs text-soft mt-1">
+              {t('businessProfile.uk.proprietorHint', 'Needed when you trade under a name other than your own surname(s).')}
+            </p>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+};
 
 export const SettingsBusinessProfilePage: React.FC = () => {
   const { t } = useTranslation();
@@ -108,7 +183,9 @@ export const SettingsBusinessProfilePage: React.FC = () => {
               its documents label them so (pdf-i18n en-US). */}
           <Input label={(isUnitedStates(profile.countryCode)
             ? t('businessProfile.field.vatIdUs', 'EIN')
-            : t('businessProfile.field.vatId', 'VAT ID (USt-IdNr.)')) as string} value={profile.vatId}
+            : isUnitedKingdom(profile.countryCode)
+              ? t('businessProfile.field.vatIdGb', 'VAT registration number (GB…)')
+              : t('businessProfile.field.vatId', 'VAT ID (USt-IdNr.)')) as string} value={profile.vatId}
             onChange={(e) => setProfile({ ...profile, vatId: e.target.value })} />
           {/* Migration 139 — Steuernummer. Distinct from VAT-ID. §14
               UStG requires one or both on every invoice; many
@@ -138,6 +215,8 @@ export const SettingsBusinessProfilePage: React.FC = () => {
               fallback remain, so any legacy override still renders. */}
         </div>
       </Card>
+
+      {isUnitedKingdom(profile.countryCode) && <UkDetailsCard profile={profile} setProfile={setProfile} />}
 
       <Card>
         <h3 className="font-semibold text-heading mb-3">{t('businessProfile.section.contact', 'Contact')}</h3>

@@ -46,6 +46,14 @@ export interface BusinessProfile {
   defaultLocale: string;
   defaultQrFormat: QrFormat;
   footerLine: string;
+  /** UK trading disclosures and governing law (migration 352, issue 2439).
+   *  Printed on the documents of a business in the United Kingdom only. */
+  legalForm: '' | 'sole_trader' | 'partnership' | 'ltd' | 'llp';
+  registeredName: string;
+  companyNumber: string;
+  registeredOffice: string;
+  jurisdiction: '' | 'england_wales' | 'scotland' | 'northern_ireland';
+  proprietorName: string;
   logoPath: string;
   /** Path (absolute or relative to storage/) to a TTF/OTF used by the
    *  PDF renderer. Falls back to Helvetica when blank or missing.

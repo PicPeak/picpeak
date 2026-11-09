@@ -49,6 +49,12 @@ function renderTemplatedBody(template, variables, { output = 'markdown' } = {}) 
  * dates formatted DD.MM.YYYY in DE-CH style (MM/DD/YYYY from a US
  * business), numbers as-is.
  */
+const GOVERNING_LAW = {
+  england_wales: 'England and Wales',
+  scotland: 'Scotland',
+  northern_ireland: 'Northern Ireland',
+};
+
 async function buildPlaceholderContext(contract, customer) {
   const profile = (await businessProfileService.getProfile()).profile || {};
   const issuerCompany = profile.company_name || '';
@@ -114,6 +120,9 @@ async function buildPlaceholderContext(contract, customer) {
     currency: (profile.default_currency || 'CHF').toUpperCase(),
     issuer_company_name: issuerCompany,
     issuer_address: issuerAddress,
+    // UK closing provisions (issue 2439). The legal system's own name, so the
+    // same value serves an English and a German contract.
+    governing_law: GOVERNING_LAW[profile.jurisdiction] || GOVERNING_LAW.england_wales,
     source_quote_number: sourceQuoteNumber,
   };
 }

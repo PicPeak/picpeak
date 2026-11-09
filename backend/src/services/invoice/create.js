@@ -11,6 +11,8 @@ const businessProfileService = require('../businessProfileService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
 const { hasColumnCached } = require('../../utils/schemaCache');
+const { vatMinorFor, normaliseVatGbpRate } = require('../../utils/vatAmount');
+const { isUnitedKingdom } = require('../../utils/postalAddress');
 const { computeDueDate, computeScheduledSendAt, ensureCustomerCanBill, ensureEventMatchesCustomer, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
 const { appendToMonthlyDraft } = require('./drafts');
 const { auditedInsert } = require('../accountingHistory');
@@ -113,7 +115,8 @@ async function createInvoice(payload, adminId, trx = db) {
     netMinor = cleanNetMinor(items, { parentKey: 'parent_position', positionKey: 'position' });
   }
   const vatRate = ensureNumber(payload.vatRate, 0);
-  const vatMinor = Math.round(netMinor * vatRate / 100);
+  // A UK business rounds its VAT total down (utils/vatAmount).
+  const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: isUnitedKingdom(profile?.country_code) });
   const shippingMinor = ensureInt(payload.shippingAmountMinor);
   const totalMinor = netMinor + vatMinor + shippingMinor;
 
@@ -289,6 +292,11 @@ async function createInvoice(payload, adminId, trx = db) {
   // accounting export emits exactly this rather than re-deriving from the map).
   if (payload.vatCode !== undefined && await hasColumnCached('invoices', 'vat_code')) {
     row.vat_code = payload.vatCode ? String(payload.vatCode).slice(0, 16) : null;
+  }
+  // Migration 352 — a UK invoice in another currency keeps the GBP rate its
+  // VAT total is stated at (VAT Notice 700/21 s.4.1).
+  if (payload.vatGbpRate !== undefined && await hasColumnCached('invoices', 'vat_gbp_rate')) {
+    row.vat_gbp_rate = normaliseVatGbpRate(payload.vatGbpRate, { countryCode: profile?.country_code, currency });
   }
   // Migration 315 — created from a project page. The route vets the project.
   // Only POST /invoices passes projectId, without a transaction, so this schema

@@ -12,7 +12,7 @@
  * via `t(labels, locale, key)`.
  */
 
-const { isUnitedStates } = require('../utils/postalAddress');
+const { isUnitedStates, isUnitedKingdom } = require('../utils/postalAddress');
 
 const LABELS = {
   en: {
@@ -84,6 +84,23 @@ const LABELS = {
     page: 'Page',
     of: 'of',
     page_of: 'Page {current} of {total}',
+    // UK trading disclosures in the footer (issue 2439).
+    disclosure_registered_in: 'Registered in {place}',
+    disclosure_company_number: 'Company no. {number}',
+    disclosure_registered_office: 'Registered office: {address}',
+    disclosure_proprietor: 'Proprietor: {name}',
+    disclosure_partners: 'Partners: {name}',
+    jurisdiction_england_wales: 'England and Wales',
+    jurisdiction_scotland: 'Scotland',
+    jurisdiction_northern_ireland: 'Northern Ireland',
+    // UK VAT invoices (issue 2439): the per-line rate column, the sterling
+    // VAT row of an invoice in another currency, the B2B late-payment notice.
+    table_vat_rate: 'VAT',
+    totals_vat_gbp: 'VAT in GBP',
+    vat_gbp_rate_note: 'Converted at {rate} GBP per {currency}',
+    late_payment_title: 'Late payment',
+    late_payment_notice: 'If this invoice is paid late, we may claim statutory interest at 8% a year above the Bank of England base rate and fixed-sum compensation of {compensation} under the Late Payment of Commercial Debts (Interest) Act 1998.',
+    late_payment_compensation_scale: '£40, £70 or £100, depending on the amount',
     // Contract template previews (#1445): which template and version this is.
     template_preview_label: 'Preview — {name} {version} — sample data, not a contract',
     template_preview_draft: 'draft',
@@ -314,6 +331,21 @@ const LABELS = {
     page: 'Seite',
     of: 'von',
     page_of: 'Seite {current} von {total}',
+    // Britische Pflichtangaben in der Fusszeile (Issue 2439).
+    disclosure_registered_in: 'Eingetragen in {place}',
+    disclosure_company_number: 'Firmennummer {number}',
+    disclosure_registered_office: 'Eingetragener Sitz: {address}',
+    disclosure_proprietor: 'Inhaber: {name}',
+    disclosure_partners: 'Gesellschafter: {name}',
+    jurisdiction_england_wales: 'England und Wales',
+    jurisdiction_scotland: 'Schottland',
+    jurisdiction_northern_ireland: 'Nordirland',
+    table_vat_rate: 'MwSt.',
+    totals_vat_gbp: 'MwSt. in GBP',
+    vat_gbp_rate_note: 'Umgerechnet zu {rate} GBP je {currency}',
+    late_payment_title: 'Zahlungsverzug',
+    late_payment_notice: 'Bei verspäteter Zahlung können wir nach dem Late Payment of Commercial Debts (Interest) Act 1998 gesetzliche Zinsen von 8 % pro Jahr über dem Leitzins der Bank of England sowie eine Pauschale von {compensation} verlangen.',
+    late_payment_compensation_scale: '£40, £70 oder £100 je nach Betrag',
     template_preview_label: 'Vorschau — {name} {version} — Beispieldaten, kein Vertrag',
     template_preview_draft: 'Entwurf',
     epc_qr_title: 'Zum Bezahlen scannen (SEPA)',
@@ -935,11 +967,29 @@ LABELS['en-US'] = {
 };
 
 /**
+ * British English for a business in the United Kingdom (issue 2439): HMRC's
+ * wording for the VAT number and the time of supply. Layered over `en`.
+ */
+LABELS['en-GB'] = {
+  ...LABELS.en,
+  vat_id_label: 'VAT Reg. No.',
+  vat_id_label_ch: 'VAT Reg. No.',
+  vat_id_label_at: 'VAT Reg. No.',
+  // The date of the service is the tax point (VAT Notice 700 s.14.2).
+  service_date: 'Tax point',
+  service_date_same_as_issue: 'same as invoice date',
+};
+
+/**
  * The label set a document is written in: its language, except that an
- * English document from a business in the United States reads in US English.
+ * English document from a business in the United States reads in US English,
+ * and one from a business in the United Kingdom in British English.
  */
 function documentLocale(locale, issuerCountryCode) {
-  return locale === 'en' && isUnitedStates(issuerCountryCode) ? 'en-US' : locale;
+  if (locale !== 'en') return locale;
+  if (isUnitedStates(issuerCountryCode)) return 'en-US';
+  if (isUnitedKingdom(issuerCountryCode)) return 'en-GB';
+  return locale;
 }
 
 function t(locale, key, vars = {}) {

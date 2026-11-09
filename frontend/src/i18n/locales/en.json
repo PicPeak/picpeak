@@ -8309,6 +8309,12 @@
       "keep": "Keep invitation"
     },
     "detail": {
+      "customerKind": "Business or consumer",
+      "customerKindAutoBusiness": "Automatic (business: has a company name or VAT ID)",
+      "customerKindAutoConsumer": "Automatic (consumer: no company name or VAT ID)",
+      "customerKindBusiness": "Business",
+      "customerKindConsumer": "Consumer",
+      "customerKindHint": "A consumer's contract gets the 14-day cancellation notice; a business's invoices can carry the late-payment notice.",
       "loadError": "Could not load customer",
       "saved": "Customer saved",
       "saveError": "Could not save changes.",
@@ -9965,6 +9971,8 @@
     "markPaid": "Mark paid",
     "sendReminder": "Send reminder",
     "field": {
+      "vatGbpRate": "GBP per {{currency}} for the VAT in sterling",
+      "vatGbpRateHint": "HMRC requires the VAT total in GBP on a UK VAT invoice in another currency. Use the UK market selling rate at the tax point or HMRC's period rate.",
       "issueDate": "Issued",
       "dueDate": "Due",
       "dueDateOverrideOn": "Manual due date — untick to auto-set from send date + payment term",
@@ -10101,6 +10109,23 @@
     "confirmReissueNoMail": "A Stornorechnung will be issued for this invoice (this customer gets no email), and a new scheduled draft will be created with the same line items. The new invoice will reference this one as \"Replaces R-XXXX\". Continue?"
   },
   "businessProfile": {
+    "jurisdiction": {
+      "unset": "Not set (contracts use England and Wales)",
+      "englandWales": "England and Wales",
+      "scotland": "Scotland",
+      "northernIreland": "Northern Ireland"
+    },
+    "legalForm": {
+      "unset": "Not set",
+      "soleTrader": "Sole trader",
+      "partnership": "Partnership",
+      "ltd": "Limited company (Ltd)",
+      "llp": "Limited liability partnership (LLP)"
+    },
+    "uk": {
+      "hint": "Printed in the footer of your quotes, invoices and contracts, as UK law requires. The jurisdiction is the law your contracts are governed by.",
+      "proprietorHint": "Needed when you trade under a name other than your own surname(s)."
+    },
     "savedToast": "Business profile saved.",
     "movedToAccounting": "The VAT rate, VAT label and default hourly rate now live under Settings → Accounting.",
     "title": "Business profile",
@@ -10127,12 +10152,21 @@
       }
     },
     "section": {
+      "uk": "UK legal details",
       "company": "Company",
       "contact": "Contact",
       "defaults": "Defaults",
       "banks": "Bank accounts"
     },
     "field": {
+      "vatIdGb": "VAT registration number (GB…)",
+      "legalForm": "Legal form",
+      "jurisdiction": "Jurisdiction",
+      "registeredName": "Registered name (if different from the company name)",
+      "companyNumber": "Company number",
+      "registeredOffice": "Registered office (if different from the address above)",
+      "partnerNames": "Partners' names",
+      "proprietorName": "Owner's name",
       "companyName": "Company name",
       "vatId": "VAT ID (USt-IdNr.)",
       "taxId": "Tax number (Steuernummer)",
@@ -10214,6 +10248,10 @@
     }
   },
   "crmSettings": {
+    "crm_invoices_late_payment_notice": {
+      "label": "UK: print the statutory late-payment notice on invoices to business customers",
+      "help": "Only for a business in the United Kingdom, and only on invoices to customers who are a business (Customers → Business or consumer). States the interest and fixed-sum compensation under the Late Payment of Commercial Debts (Interest) Act 1998."
+    },
     "savedToast": "CRM settings saved.",
     "title": "CRM settings",
     "subtitle": "Fine-tune quote and invoice behaviour.",
@@ -10876,7 +10914,7 @@
         "section": "Section",
         "description": "Description (admin hint)",
         "body": "Body",
-        "placeholderHint": "You can use {{customer_name}}, {{event_name}}, {{event_date}}, {{net_days}}, {{skonto_percent}}, {{skonto_within_days}}, {{cancellation_30d_percent}}, {{currency}}, {{issuer_company_name}}, {{issuer_address}}, {{contract_number}}, {{source_quote_number}} as placeholders — substituted when the contract is rendered."
+        "placeholderHint": "You can use {{customer_name}}, {{event_name}}, {{event_date}}, {{net_days}}, {{skonto_percent}}, {{skonto_within_days}}, {{cancellation_30d_percent}}, {{currency}}, {{issuer_company_name}}, {{issuer_address}}, {{governing_law}}, {{contract_number}}, {{source_quote_number}} as placeholders — substituted when the contract is rendered."
       },
       "quoteLineItems": {
         "calloutTitle": "Auto-generated table follows the body",

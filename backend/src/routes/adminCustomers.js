@@ -61,6 +61,8 @@ function transformCustomer(c) {
     companyName: c.company_name,
     billingEmail: c.billing_email,
     vatId: c.vat_id,
+    // Migration 352 — 'business' | 'consumer' | null (automatic).
+    customerKind: c.customer_kind || null,
     addressLine1: c.address_line1,
     addressLine2: c.address_line2,
     postalCode: c.postal_code,
@@ -615,6 +617,8 @@ router.put('/:id', [
   body('company_name').optional({ nullable: true }).isString().isLength({ max: 120 }),
   body('billing_email').optional({ nullable: true }).isString(),
   body('vat_id').optional({ nullable: true }).isString().isLength({ max: 40 }),
+  // Migration 352 — business or consumer; null = automatic.
+  body('customer_kind').optional({ nullable: true }).isIn(['business', 'consumer']),
   body('address_line1').optional({ nullable: true }).isString().isLength({ max: 255 }),
   body('address_line2').optional({ nullable: true }).isString().isLength({ max: 255 }),
   body('postal_code').optional({ nullable: true }).isString().isLength({ max: 20 }),

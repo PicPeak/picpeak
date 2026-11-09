@@ -196,7 +196,7 @@ async function createContract(payload, adminId, { idempotencyKey = null, importe
     : null;
   // A US business's contract from the standard template closes under US law
   // instead of Swiss or German law (contract/regionalClauses).
-  await regionalClauses.fitVersionToBusiness(version, profile?.country_code);
+  await regionalClauses.fitVersionToBusiness(version, profile?.country_code, customer);
   const validDays = ensureInt(await getAppSetting('crm_contracts_default_valid_days')) || 30;
   const issueDate = payload.issueDate || new Date().toISOString().slice(0, 10);
   const validUntil = payload.validUntil || new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
@@ -290,7 +290,7 @@ async function createContract(payload, adminId, { idempotencyKey = null, importe
       // The clauses for the business's legal system (contract/regionalClauses).
       const systemBlocks = regionalClauses.systemBlocksFor(await trx('contract_blocks')
         .where({ is_system: true, is_active: true })
-        .orderBy(['section', 'display_order']), profile?.country_code);
+        .orderBy(['section', 'display_order']), profile?.country_code, customer);
       const sectionCounters = {};
       const inclusionRows = systemBlocks.map((block) => {
         sectionCounters[block.section] = (sectionCounters[block.section] || 0) + 1;

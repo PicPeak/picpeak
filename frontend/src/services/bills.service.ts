@@ -211,6 +211,9 @@ export interface InvoiceCreatePayload {
   vatRate?: number;
   /** Migration 130 — snapshot of the chosen output VAT code (null = custom rate). */
   vatCode?: string | null;
+  /** Migration 352 — GBP per unit of the invoice currency, for a UK invoice in
+   *  another currency (its VAT total is also stated in sterling). */
+  vatGbpRate?: number | null;
   shippingAmountMinor?: number;
   // null clears the field on save (the editor sends a cleared field as null).
   ccPdfEmail?: string | null;

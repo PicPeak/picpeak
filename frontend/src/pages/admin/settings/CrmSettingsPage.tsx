@@ -36,6 +36,8 @@ const SETTING_KEYS = [
   'crm_invoices_vat_note_text',
   // What the Leistungsdatum row does when the service date is the invoice date (#1546).
   'crm_invoices_service_date_mode',
+  // UK B2B late-payment notice on invoices (issue 2439).
+  'crm_invoices_late_payment_notice',
   'crm_invoices_reminders_enabled',
   'crm_invoices_reminder_first_days',
   'crm_invoices_reminder_second_days',
@@ -334,6 +336,15 @@ export const CrmSettingsPage: React.FC = () => {
           </select>
           <p className="mt-1 text-xs text-muted">
             {t('crmSettings.crm_invoices_service_date_mode.help', 'Only applies when the service date falls on the invoice date; a service period always prints. Tax law in CH/LI and DE/AT wants the time of supply on the invoice, so leaving the row out is a decision to confirm with your tax advisor.')}
+          </p>
+        </div>
+
+        {/* UK statutory late-payment notice (issue 2439): a UK business's
+            invoices to business customers only. */}
+        <div className="mt-3">
+          {checkbox('crm_invoices_late_payment_notice', 'UK: print the statutory late-payment notice on invoices to business customers')}
+          <p className="text-xs text-muted">
+            {t('crmSettings.crm_invoices_late_payment_notice.help', 'Only for a business in the United Kingdom, and only on invoices to customers who are a business (Customers → Business or consumer). States the interest and fixed-sum compensation under the Late Payment of Commercial Debts (Interest) Act 1998.')}
           </p>
         </div>
 

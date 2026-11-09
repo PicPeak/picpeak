@@ -49,6 +49,7 @@ import { userManagementService } from '../../../services/userManagement.service'
 import { settingsService } from '../../../services/settings.service';
 import { useAdminAuth } from '../../../contexts/AdminAuthContext';
 import { usePermissions } from '../../../contexts/PermissionsContext';
+import { isUnitedKingdom } from '../../../utils/postalAddress';
 import { currencyOptions } from '../../../constants/currencies';
 import { toast } from 'react-toastify';
 import { quoteErrorText } from '../../../utils/quoteErrors';
@@ -291,7 +292,8 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
     queryKey: ['business-profile-snapshot'],
     queryFn: () => businessProfileService.get(),
     staleTime: 5 * 60 * 1000,
-    enabled: !isEdit && canReadProfile,
+    // Edits read it too: a UK business's VAT preview rounds down.
+    enabled: canReadProfile,
   });
   useEffect(() => {
     const profile = profileSnapshot?.profile;
@@ -766,6 +768,7 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
           vatRate={form.vatRate / 100}
           shippingAmount={form.shippingAmount}
           roundTotal={appSettings?.crm_invoice_round_total === true}
+          vatRoundDown={isUnitedKingdom(profileSnapshot?.profile?.countryCode)}
           presets={liPresets?.presets || []}
           mode="quote"
           hours={form.hours}

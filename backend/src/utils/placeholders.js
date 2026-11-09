@@ -96,6 +96,11 @@ const CONTRACT_PLACEHOLDER_REGISTRY = Object.freeze([
   { key: 'issuer_address', category: 'issuer', conditional: false,
     label: { en: 'Your address', de: 'Ihre Adresse' },
     sample: { en: 'Weg 1, 9490, Vaduz', de: 'Weg 1, 9490, Vaduz' } },
+  // UK closing provisions (issue 2439): the part of the UK whose law governs
+  // the contract (Settings → Business profile), England and Wales when unset.
+  { key: 'governing_law', category: 'issuer', conditional: false,
+    label: { en: 'Governing law (UK)', de: 'Anwendbares Recht (UK)' },
+    sample: { en: 'England and Wales', de: 'England and Wales' } },
 ].map((entry) => Object.freeze(entry)));
 
 // Keys contract texts may use: derived from the registry, so the allowlist

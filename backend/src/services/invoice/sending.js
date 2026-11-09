@@ -368,6 +368,9 @@ async function createStorno(originalId, adminId, trx = db) {
     // both documents export the same code. Conditional spread = safe on pre-130
     // DBs (undefined → omitted).
     ...(original.vat_code ? { vat_code: original.vat_code } : {}),
+    // Migration 352 — the Storno states its (negative) VAT in GBP at the
+    // rate the invoice it cancels used.
+    ...(original.vat_gbp_rate != null ? { vat_gbp_rate: original.vat_gbp_rate } : {}),
     shipping_amount_minor: -ensureInt(original.shipping_amount_minor || 0),
     net_amount_minor: -ensureInt(original.net_amount_minor),
     vat_amount_minor: -ensureInt(original.vat_amount_minor),
