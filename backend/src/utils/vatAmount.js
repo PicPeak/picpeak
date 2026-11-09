@@ -77,6 +77,30 @@ async function isUkBusiness(conn = db) {
 /** Does this business round its VAT total down? A UK business does. */
 const roundsVatDown = isUkBusiness;
 
+/**
+ * Does this invoice still need its GBP rate before it can be issued? A UK
+ * business's invoice in another currency that carries VAT states the VAT in
+ * GBP too (VAT Notice 700/21 s.4.1). The row's half of the rule; the caller
+ * knows whether the business is in the UK. The scheduler's query mirrors it
+ * in SQL, and the frontend's bills list in utils/vatGbpRate.ts.
+ */
+function lacksGbpRate(invoice) {
+  return !!invoice && Number(invoice.vat_amount_minor) !== 0
+    && String(invoice.currency || '').toUpperCase() !== 'GBP'
+    && !(Number(invoice.vat_gbp_rate) > 0);
+}
+
+/** Refuse with 409 VAT_GBP_RATE_REQUIRED while a UK invoice lacks its GBP rate. */
+async function assertGbpRateEntered(invoice, conn = db) {
+  if (!lacksGbpRate(invoice) || !(await isUkBusiness(conn))) return;
+  const { AppError } = require('./errors');
+  throw new AppError(
+    `Enter the GBP exchange rate before sending: a UK VAT invoice in ${invoice.currency} must also state its VAT in GBP.`,
+    409, 'VAT_GBP_RATE_REQUIRED',
+  );
+}
+
 module.exports = {
   vatMinorFor, vatGbpMinorFor, normaliseVatGbpRate, latePaymentCompensationPounds, roundsVatDown, isUkBusiness,
+  lacksGbpRate, assertGbpRateEntered,
 };

@@ -21,7 +21,7 @@ const { buildInvoiceRenderContext } = require('./render');
 const { collectRebillProofAttachments } = require('./rebillProofs');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 const { hasColumnCached } = require('../../utils/schemaCache');
-const { isUkBusiness } = require('../../utils/vatAmount');
+const { assertGbpRateEntered } = require('../../utils/vatAmount');
 
 async function billingContactEmails(customer) {
   const contacts = await customerContactsService.mailRecipients(customer?.id, 'bills');
@@ -116,16 +116,8 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
   // A UK VAT invoice in another currency states its VAT total in GBP too
   // (VAT Notice 700/21 s.4.1), and a sent invoice can't be changed. So its
   // first send waits for the rate: the invoice stays scheduled and editable,
-  // and a scheduled send retries once the admin has entered it.
-  if (invoice.status === 'scheduled' && Number(invoice.vat_amount_minor) !== 0
-      && String(invoice.currency || '').toUpperCase() !== 'GBP'
-      && !(Number(invoice.vat_gbp_rate) > 0)
-      && await isUkBusiness()) {
-    throw new AppError(
-      `Enter the GBP exchange rate before sending: a UK VAT invoice in ${invoice.currency} must also state its VAT in GBP.`,
-      409, 'VAT_GBP_RATE_REQUIRED',
-    );
-  }
+  // and a scheduled send goes out once the admin has entered it.
+  if (invoice.status === 'scheduled') await assertGbpRateEntered(invoice);
 
   // Re-sync the invoice's language from the customer's current
   // preferred_language at send time when the invoice has never been
@@ -740,6 +732,9 @@ async function releaseForDelivery(id, adminId) {
       'NOT_PENDING_DELIVERY',
     );
   }
+  // Released, it is sent at once; without its GBP rate that send is refused,
+  // so the release is refused first and the invoice stays awaiting delivery.
+  await assertGbpRateEntered(invoice);
   const now = new Date();
   // ISO text: on SQLite a Date comes back as a number sendInvoice cannot parse.
   const updates = { status: 'scheduled', scheduled_send_at: now.toISOString(), updated_at: now };
@@ -841,6 +836,11 @@ async function triggerMonthlyBillNow(customerId, adminId) {
   if (items.length === 0) {
     throw new AppError('Monthly draft is empty — nothing to bill', 409, 'EMPTY_DRAFT');
   }
+
+  // The draft is sent at once; without its GBP rate that send is refused and
+  // the scheduler leaves it out, so refuse before arming and the admin sees
+  // why (the draft stays a draft, ready once the rate is entered).
+  await assertGbpRateEntered(draft);
 
   // Arm the draft: clear the discriminator, pin issue_date to today,
   // and set scheduled_send_at to now so the flush pass + sendInvoice

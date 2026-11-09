@@ -9894,6 +9894,9 @@
       "cancelled": "Storniert",
       "skipped": "Übersprungen (leerer Monat)"
     },
+    "needsGbpRate": "GBP-Kurs fehlt",
+    "needsGbpRateTitle": "Dieser Rechnung fehlt der GBP-Wechselkurs.",
+    "needsGbpRateBody": "Eine britische MwSt.-Rechnung in {{currency}} weist die MwSt. auch in GBP aus. Tragen Sie den Kurs unten ein; bis dahin kann sie nicht versendet werden, und ein geplanter Versand wartet.",
     "field": {
       "vatGbpRate": "GBP je {{currency}} für die MwSt. in Pfund",
       "vatGbpRateHint": "Auf einer britischen MwSt.-Rechnung in einer anderen Währung verlangt HMRC den MwSt.-Betrag auch in GBP. Verwenden Sie den britischen Marktkurs zum Leistungszeitpunkt oder den Periodenkurs von HMRC.",

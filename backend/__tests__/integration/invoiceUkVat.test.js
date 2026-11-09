@@ -289,3 +289,34 @@ describe('the GBP rate on the way to the send', () => {
     await db('invoices').whereIn('id', waiting).update({ status: 'draft' });
   });
 });
+
+// Second review pass on PR 2447: the paths that send at once refuse before
+// they change the invoice, so nothing is left armed that can't go out.
+describe('sending at once without the GBP rate', () => {
+  beforeAll(() => setCountry('GB'));
+  afterEach(() => setCustomer({ billing_cadence: 'per_event' }));
+
+  test('a release for delivery is refused and the invoice keeps waiting for delivery', async () => {
+    const invoice = await createInvoice({ currency: 'EUR' });
+    await db('invoices').where({ id: invoice.id }).update({ status: 'pending_delivery', scheduled_send_at: null });
+    await expect(invoiceService().releaseForDelivery(invoice.id, adminId))
+      .rejects.toMatchObject({ code: 'VAT_GBP_RATE_REQUIRED' });
+    const row = await db('invoices').where({ id: invoice.id }).first();
+    expect(row.status).toBe('pending_delivery');
+    expect(row.due_date).toEqual(invoice.due_date);
+  });
+
+  test('"Trigger invoice now" is refused and the monthly draft stays a draft', async () => {
+    await setCustomer({ billing_cadence: 'manual' });
+    const { invoiceIds } = await invoiceService().createInvoice({
+      customerAccountId: customerId, currency: 'EUR', vatRate: 20,
+      lineItems: [{ position: 1, quantity: 1, description: 'Edit', unit_price_minor: 1000, discount_percent: 0 }],
+    }, adminId);
+    await db('invoices').where({ id: invoiceIds[0] }).update({ vat_gbp_rate: null });
+    await expect(invoiceService().triggerMonthlyBillNow(customerId, adminId))
+      .rejects.toMatchObject({ code: 'VAT_GBP_RATE_REQUIRED' });
+    const draft = await db('invoices').where({ id: invoiceIds[0] }).first();
+    expect(draft.is_monthly_draft === true || draft.is_monthly_draft === 1).toBe(true);
+    await db('invoices').where({ id: invoiceIds[0] }).update({ is_monthly_draft: false, status: 'cancelled' });
+  });
+});
