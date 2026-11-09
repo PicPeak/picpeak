@@ -672,7 +672,9 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       // And invoice send dates in the shapes migration 356 rewrote, for an
       // archive made before it (an unknown level counts as before). A newer
       // archive's rows are already canonical, and its scheduled invoices
-      // restore as they were.
+      // restore as they were. Its hold writes history rows, so
+      // accounting_change_history must load before invoices: it does because
+      // the export lists tables by name (picpeakExportService listDataTables).
       if (table === 'invoices' && archivePredates(archiveLatestMigration, 356)) {
         await isoSqliteInvoiceSendAt(trx, { actor: 'import' });
       }
