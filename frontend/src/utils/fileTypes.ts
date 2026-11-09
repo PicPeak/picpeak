@@ -69,6 +69,10 @@ const DNG_TYPE_ALIASES = new Set(['', 'application/octet-stream', 'image/dng', '
 // Chromium on Linux reports no type for an iPhone's `.HEIC` and image/heif for
 // `.heic`, and the two names cover one container.
 const HEIF_TYPE_ALIASES = new Set(['', 'application/octet-stream', 'image/heic', 'image/heif']);
+// No type at all. A dropped file can arrive without the type the file chooser
+// gives the same file (issue 2404: a dropped .mov was refused, a picked one
+// was not), so for every extension in the table the extension decides then.
+const UNTYPED_TYPES = new Set(['', 'application/octet-stream']);
 
 /**
  * The MIME type to validate a picked file against. Mirrors the backend's
@@ -78,7 +82,18 @@ export function normalizeFileMimeType(name: string, type: string): string {
   if (/\.dng$/i.test(name) && DNG_TYPE_ALIASES.has(type)) return EXTENSION_TO_MIME.dng;
   const heif = /\.(hei[cf])$/i.exec(name);
   if (heif && HEIF_TYPE_ALIASES.has(type)) return EXTENSION_TO_MIME[heif[1].toLowerCase()];
+  const ext = /\.([^.]+)$/.exec(name)?.[1].toLowerCase();
+  if (ext && EXTENSION_TO_MIME[ext] && UNTYPED_TYPES.has((type || '').trim())) return EXTENSION_TO_MIME[ext];
   return type;
+}
+
+/**
+ * Is this file a video, judged by the type it will be uploaded as? Picks
+ * the per-file size limit, so an untyped .mov is held to the video limit
+ * rather than the photo one.
+ */
+export function isVideoUploadFile(file: { name: string; type: string }): boolean {
+  return normalizeFileMimeType(file.name, file.type).startsWith('video/');
 }
 
 /**

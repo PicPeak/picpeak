@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { categoriesService } from '../../services/categories.service';
 import { settingsService } from '../../services/settings.service';
 import { useTranslation } from 'react-i18next';
-import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, normalizeFileMimeType } from '../../utils/fileTypes';
+import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, normalizeFileMimeType, isVideoUploadFile } from '../../utils/fileTypes';
 import { useUploadProgress } from '../../hooks/useUploadProgress';
 import { photosService } from '../../services/photos.service';
 import { uploadMultipartBudget } from '../../utils/uploadMultipartBudget';
@@ -142,7 +142,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
   const videoUploadsAllowed = allowedMimeTypes.some((type) => type.startsWith('video/'));
 
   const sizeLimitMbFor = (file: File) =>
-    (file.type.startsWith('video/') ? maxVideoSizeMb : maxFileSizeMb);
+    (isVideoUploadFile(file) ? maxVideoSizeMb : maxFileSizeMb);
 
   const remainingSlots = Math.max(maxFilesPerUpload - selectedFiles.length, 0);
   const [isDragOver, setIsDragOver] = useState(false);
