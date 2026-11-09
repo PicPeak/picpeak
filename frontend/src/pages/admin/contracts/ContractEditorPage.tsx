@@ -203,9 +203,13 @@ export const ContractForm = forwardRef<ContractFormHandle, ContractFormProps>(({
   // admin can opt-IN to non-system blocks (system blocks are pre-toggled
   // on by the server on create). We still show them all here for parity
   // with the edit flow.
+  // With the customer: a UK business's business customer gets no consumer
+  // cancellation clause (the server drops it on create; issue 2439).
   const { data: blockLibrary } = useQuery({
-    queryKey: ['contracts', 'blocks-library', 'new-contract'],
-    queryFn: () => contractsService.listBlocks({ includeInactive: false, forNewContract: true }),
+    queryKey: ['contracts', 'blocks-library', 'new-contract', customerAccountId],
+    queryFn: () => contractsService.listBlocks({
+      includeInactive: false, forNewContract: true, customerAccountId: customerAccountId || undefined,
+    }),
   });
 
   const { data: templateList, isError: templatesFailed } = useQuery({
@@ -303,10 +307,12 @@ export const ContractForm = forwardRef<ContractFormHandle, ContractFormProps>(({
   // state from the library once it arrives so the admin can preview
   // the inclusion list before saving. The server will replace these
   // positions deterministically on create, but the UI shape matches.
+  // When the customer changes, the list follows the library for that
+  // customer: blocks it no longer offers go, blocks it now offers come in
+  // (system blocks ticked), and the rest keep what the admin set.
   useEffect(() => {
     if (isEdit || !blockLibrary) return;
-    if (blocks.length > 0) return;
-    const rows: BlockRow[] = blockLibrary.blocks.map((b) => ({
+    const toRow = (b: (typeof blockLibrary.blocks)[number]): BlockRow => ({
       blockId: b.id,
       section: b.section,
       name: b.name,
@@ -314,9 +320,16 @@ export const ContractForm = forwardRef<ContractFormHandle, ContractFormProps>(({
       isSystem: b.isSystem,
       included: b.isSystem,                 // system blocks toggled on by default
       position: b.displayOrder,
-    }));
-    setBlocks(rows);
-  }, [blockLibrary, isEdit, blocks.length]);
+    });
+    setBlocks((cur) => {
+      if (cur.length === 0) return blockLibrary.blocks.map(toRow);
+      const offered = new Set(blockLibrary.blocks.map((b) => b.id));
+      const kept = cur.filter((row) => offered.has(row.blockId));
+      const have = new Set(kept.map((row) => row.blockId));
+      const added = blockLibrary.blocks.filter((b) => !have.has(b.id)).map(toRow);
+      return added.length === 0 && kept.length === cur.length ? cur : [...kept, ...added];
+    });
+  }, [blockLibrary, isEdit]);
 
   // An edit answers the error the admin is looking at, so the summary goes
   // away rather than pointing at a field that has since changed. Compared by

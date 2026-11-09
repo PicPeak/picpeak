@@ -18,7 +18,8 @@ const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
 const { normaliseSchedule } = require('../utils/businessHours');
-const { cityLine, printsCountryLine, isUnitedStates } = require('../utils/postalAddress');
+const { cityLine, printsCountryLine, isUnitedStates, isUnitedKingdom } = require('../utils/postalAddress');
+const { isValidUkVatNumber } = require('../utils/ukVatNumber');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('./accountingHistory');
 
 const ALLOWED_PROFILE_FIELDS = [
@@ -95,7 +96,18 @@ const ALLOWED_PROFILE_FIELDS = [
   // the address/contact columns above, so there is no second copy.
   'email_signature_enabled',
   'email_signature_extra',
+  // UK disclosures and governing law (migration 352, issue 2439). Printed
+  // on the documents of a business in the United Kingdom only.
+  'legal_form',
+  'registered_name',
+  'company_number',
+  'registered_office',
+  'jurisdiction',
+  'proprietor_name',
 ];
+
+const LEGAL_FORMS = new Set(['sole_trader', 'partnership', 'ltd', 'llp']);
+const JURISDICTIONS = new Set(['england_wales', 'scotland', 'northern_ireland']);
 
 const ALLOWED_BANK_FIELDS = [
   'label',
@@ -175,10 +187,20 @@ function sanitiseProfilePayload(payload) {
   for (const field of ['company_name', 'address_line1', 'address_line2',
     'city', 'state', 'country_name', 'phone', 'mobile', 'email', 'website',
     'vat_id', 'tax_id', 'vat_label', 'footer_line', 'logo_path',
-    'email_signature_extra']) {
+    'email_signature_extra', 'registered_name', 'company_number',
+    'registered_office', 'proprietor_name']) {
     if (typeof updates[field] === 'string') {
       updates[field] = updates[field].trim();
     }
+  }
+  // UK legal form and jurisdiction (migration 352): a fixed set, blank clears.
+  for (const [field, allowed] of [['legal_form', LEGAL_FORMS], ['jurisdiction', JURISDICTIONS]]) {
+    if (updates[field] === undefined) continue;
+    const v = String(updates[field] || '').trim().toLowerCase();
+    if (v && !allowed.has(v)) {
+      throw new AppError(`Invalid ${field} '${updates[field]}'`, 400, 'INVALID_PROFILE_FIELD');
+    }
+    updates[field] = v || null;
   }
   // Normalise the boolean PDF visibility toggles. Empty / undefined
   // stays untouched (so partial updates don't reset existing values).
@@ -306,6 +328,20 @@ async function updateProfile(payload, adminId) {
   const updates = sanitiseProfilePayload(payload);
   if (Object.keys(updates).length === 0) {
     return await getProfile();
+  }
+  // A UK business's VAT number is checked against HMRC's check digits, so a
+  // typo never reaches an invoice. Either field may arrive alone.
+  // The settings page sends the whole profile, so only a number or country
+  // that actually changes is checked: a stored number never blocks an
+  // unrelated save.
+  if (updates.vat_id !== undefined || updates.country_code !== undefined) {
+    const current = (await getProfile()).profile || {};
+    const country = updates.country_code !== undefined ? updates.country_code : current.country_code;
+    const vatId = updates.vat_id !== undefined ? updates.vat_id : current.vat_id;
+    const changed = (vatId || '') !== (current.vat_id || '') || (country || '') !== (current.country_code || '');
+    if (changed && isUnitedKingdom(country) && vatId && !isValidUkVatNumber(vatId)) {
+      throw new AppError('This is not a valid UK VAT registration number (GB or XI and 9 digits).', 400, 'INVALID_UK_VAT_NUMBER');
+    }
   }
   updates.updated_at = new Date();
 

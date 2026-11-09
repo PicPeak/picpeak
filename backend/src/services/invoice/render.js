@@ -9,6 +9,11 @@ const businessProfileService = require('../businessProfileService');
 const { buildIssuerBlock, buildRecipientBlock } = require('../_renderContext');
 const pdfService = require('../pdfService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
+const {
+  vatMinorFor, vatGbpMinorFor, normaliseVatGbpRate, latePaymentCompensationPounds,
+} = require('../../utils/vatAmount');
+const { isUnitedKingdom } = require('../../utils/postalAddress');
+const { isBusinessCustomer } = require('../../utils/customerKind');
 const { parsePromotionSnapshot } = require('../../utils/lineItemTotals');
 const { readStoredDocumentPdf } = require('../../utils/storedDocumentPdf');
 const { getHierarchyHelpers } = require('./helpers');
@@ -192,6 +197,17 @@ async function buildInvoiceRenderContext(invoice, lineItems) {
   const serviceDateModeRaw = await getAppSetting('crm_invoices_service_date_mode');
   const serviceDateMode = ['note', 'repeat', 'omit'].includes(serviceDateModeRaw)
     ? serviceDateModeRaw : 'note';
+  // A UK business's invoice (issue 2439): its VAT total in sterling when it
+  // is in another currency, and — when switched on in Settings → CRM →
+  // Invoices — the statutory late-payment notice to a business customer.
+  const ukBusiness = isUnitedKingdom(profile?.country_code);
+  const vatGbpMinor = ukBusiness && String(invoice.currency || '').toUpperCase() !== 'GBP'
+    ? vatGbpMinorFor(invoice.vat_amount_minor, invoice.vat_gbp_rate) : null;
+  const latePayment = ukBusiness && invoice.kind !== 'storno'
+    && (await getAppSetting('crm_invoices_late_payment_notice')) === true
+    && isBusinessCustomer(customer)
+    ? { compensationPounds: latePaymentCompensationPounds(invoice.total_amount_minor, invoice.currency) }
+    : null;
 
   return {
     locale: invoice.language || profile?.default_locale || 'de',
@@ -214,6 +230,8 @@ async function buildInvoiceRenderContext(invoice, lineItems) {
     vatNote,
     vatRegistered,
     serviceDateMode,
+    vatGbp: vatGbpMinor == null ? null : { amountMinor: vatGbpMinor, rate: Number(invoice.vat_gbp_rate) },
+    latePayment,
     lineItems: lineItems.map((li) => ({
       quantity: li.quantity,
       description: li.description,
@@ -361,7 +379,8 @@ async function renderInvoicePdfFromPayload(payload) {
     netMinor = cleanNetMinor(items, { parentKey: 'parent_position', positionKey: 'position' });
   }
   const vatRate = ensureNumber(payload.vatRate, 0);
-  const vatMinor = Math.round(netMinor * vatRate / 100);
+  const { profile: issuerProfile } = await businessProfileService.getProfile();
+  const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: isUnitedKingdom(issuerProfile?.country_code) });
   const shippingMinor = ensureInt(payload.shippingAmountMinor);
   const totalMinor = netMinor + vatMinor + shippingMinor;
   const fakeInvoice = {
@@ -376,6 +395,9 @@ async function renderInvoicePdfFromPayload(payload) {
     net_amount_minor: netMinor,
     vat_rate: vatRate,
     vat_amount_minor: vatMinor,
+    vat_gbp_rate: normaliseVatGbpRate(payload.vatGbpRate, {
+      countryCode: issuerProfile?.country_code, currency: payload.currency || 'CHF',
+    }),
     shipping_amount_minor: shippingMinor,
     total_amount_minor: totalMinor,
   };

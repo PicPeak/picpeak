@@ -49,6 +49,7 @@ import { userManagementService } from '../../../services/userManagement.service'
 import { settingsService } from '../../../services/settings.service';
 import { useAdminAuth } from '../../../contexts/AdminAuthContext';
 import { usePermissions } from '../../../contexts/PermissionsContext';
+import { useUkBusiness } from '../../../hooks/useUkBusiness';
 import { currencyOptions } from '../../../constants/currencies';
 import { toast } from 'react-toastify';
 import { quoteErrorText } from '../../../utils/quoteErrors';
@@ -286,6 +287,8 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
   // The profile route asks for these (adminBusinessProfile.js); without them
   // the form stays on CHF, as it always did.
   const { hasAnyPermission, isSuperAdmin } = usePermissions();
+  // A UK business's VAT preview rounds down (issue 2439).
+  const ukBusiness = useUkBusiness();
   const canReadProfile = isSuperAdmin || hasAnyPermission(['settings.view', 'settings.banking']);
   const { data: profileSnapshot } = useQuery({
     queryKey: ['business-profile-snapshot'],
@@ -766,6 +769,7 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
           vatRate={form.vatRate / 100}
           shippingAmount={form.shippingAmount}
           roundTotal={appSettings?.crm_invoice_round_total === true}
+          vatRoundDown={ukBusiness}
           presets={liPresets?.presets || []}
           mode="quote"
           hours={form.hours}
