@@ -684,6 +684,69 @@ Zur Weiterleitung an das Inkasso / für die Betreibung.`,
       body_text: 'Guten Tag {{customer_name}},\n\nwir haben {{product_name}}{{#if event_name}} für "{{event_name}}"{{/if}} per Post an Sie verschickt.\n\nSendungsnummer{{#if carrier_name}} ({{carrier_name}}){{/if}}: {{tracking_number}}{{#if tracking_link}}\nSendung verfolgen: {{tracking_link}}{{/if}}{{#if portal_link}}\n\nIhr Kundenportal: {{portal_link}}{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
     },
   },
+  // Client booking requests (#2440).
+  booking_request_received: {
+    category: 'quotes', feature_flag: 'calendarBooking',
+    variables: ['client_name', 'business_name', 'service_name', 'booking_date', 'booking_time', 'estimate', 'reference', 'hold_until'],
+    en: {
+      subject: 'Your booking request: {{service_name}} on {{booking_date}}',
+      body_html: `<p>Hello {{client_name}},</p>
+<p>thank you for your request. We have reserved <strong>{{service_name}}</strong> on <strong>{{booking_date}}</strong> at <strong>{{booking_time}}</strong> for you until {{hold_until}}.</p>
+<p>Estimated price: <strong>{{estimate}}</strong>. This is an estimate: you will receive a quote with the final price once we have looked at your request.</p>
+<p>Your reference: <strong>{{reference}}</strong></p>
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Hello {{client_name}},\n\nthank you for your request. We have reserved {{service_name}} on {{booking_date}} at {{booking_time}} for you until {{hold_until}}.\n\nEstimated price: {{estimate}}. This is an estimate: you will receive a quote with the final price once we have looked at your request.\n\nYour reference: {{reference}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+    de: {
+      subject: 'Ihre Buchungsanfrage: {{service_name}} am {{booking_date}}',
+      body_html: `<p>Guten Tag {{client_name}},</p>
+<p>vielen Dank für Ihre Anfrage. Wir halten Ihnen <strong>{{service_name}}</strong> am <strong>{{booking_date}}</strong> um <strong>{{booking_time}}</strong> bis {{hold_until}} frei.</p>
+<p>Geschätzter Preis: <strong>{{estimate}}</strong>. Das ist eine Schätzung: Sie erhalten eine Offerte mit dem definitiven Preis, sobald wir Ihre Anfrage angesehen haben.</p>
+<p>Ihre Referenz: <strong>{{reference}}</strong></p>
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Guten Tag {{client_name}},\n\nvielen Dank für Ihre Anfrage. Wir halten Ihnen {{service_name}} am {{booking_date}} um {{booking_time}} bis {{hold_until}} frei.\n\nGeschätzter Preis: {{estimate}}. Das ist eine Schätzung: Sie erhalten eine Offerte mit dem definitiven Preis, sobald wir Ihre Anfrage angesehen haben.\n\nIhre Referenz: {{reference}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+  },
+  booking_request_admin: {
+    category: 'quotes', feature_flag: 'calendarBooking',
+    variables: ['client_name', 'client_email', 'service_name', 'booking_date', 'booking_time', 'estimate', 'reference', 'hold_until', 'admin_link'],
+    en: {
+      subject: 'New booking request: {{service_name}} on {{booking_date}}',
+      body_html: `<h2>New booking request</h2>
+<p>{{client_name}} ({{client_email}}) asks for <strong>{{service_name}}</strong> on <strong>{{booking_date}}</strong> at <strong>{{booking_time}}</strong>. Estimate: {{estimate}}.</p>
+<p>The slot is held until {{hold_until}}. Accept it to create the customer, a project and a draft quote.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{admin_link}}" class="button">Open request {{reference}}</a></p>`,
+      body_text: '{{client_name}} ({{client_email}}) asks for {{service_name}} on {{booking_date}} at {{booking_time}}. Estimate: {{estimate}}.\n\nThe slot is held until {{hold_until}}. Accept it to create the customer, a project and a draft quote.\n\nOpen: {{admin_link}}',
+    },
+    de: {
+      subject: 'Neue Buchungsanfrage: {{service_name}} am {{booking_date}}',
+      body_html: `<h2>Neue Buchungsanfrage</h2>
+<p>{{client_name}} ({{client_email}}) fragt <strong>{{service_name}}</strong> am <strong>{{booking_date}}</strong> um <strong>{{booking_time}}</strong> an. Schätzung: {{estimate}}.</p>
+<p>Der Termin ist bis {{hold_until}} reserviert. Beim Annehmen entstehen Kunde, Projekt und Offerten-Entwurf.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{admin_link}}" class="button">Anfrage {{reference}} öffnen</a></p>`,
+      body_text: '{{client_name}} ({{client_email}}) fragt {{service_name}} am {{booking_date}} um {{booking_time}} an. Schätzung: {{estimate}}.\n\nDer Termin ist bis {{hold_until}} reserviert. Beim Annehmen entstehen Kunde, Projekt und Offerten-Entwurf.\n\nÖffnen: {{admin_link}}',
+    },
+  },
+  booking_request_declined: {
+    category: 'quotes', feature_flag: 'calendarBooking',
+    variables: ['client_name', 'business_name', 'service_name', 'booking_date', 'booking_time', 'reference', 'decline_reason'],
+    en: {
+      subject: 'Your booking request {{reference}}',
+      body_html: `<p>Hello {{client_name}},</p>
+<p>unfortunately we cannot take on <strong>{{service_name}}</strong> on {{booking_date}} at {{booking_time}}. The time is free again.</p>
+{{#if decline_reason}}<p>{{decline_reason}}</p>{{/if}}
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Hello {{client_name}},\n\nunfortunately we cannot take on {{service_name}} on {{booking_date}} at {{booking_time}}. The time is free again.{{#if decline_reason}}\n\n{{decline_reason}}{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+    de: {
+      subject: 'Ihre Buchungsanfrage {{reference}}',
+      body_html: `<p>Guten Tag {{client_name}},</p>
+<p>leider können wir <strong>{{service_name}}</strong> am {{booking_date}} um {{booking_time}} nicht übernehmen. Der Termin ist wieder frei.</p>
+{{#if decline_reason}}<p>{{decline_reason}}</p>{{/if}}
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Guten Tag {{client_name}},\n\nleider können wir {{service_name}} am {{booking_date}} um {{booking_time}} nicht übernehmen. Der Termin ist wieder frei.{{#if decline_reason}}\n\n{{decline_reason}}{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+  },
 };
 
 let _seeded = false;

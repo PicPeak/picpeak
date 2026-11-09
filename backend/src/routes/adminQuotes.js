@@ -275,6 +275,10 @@ function transformLineItemPreset(p) {
     productId: p.product_id || null, productSurcharges: p.product_surcharges ? JSON.parse(p.product_surcharges) : [],
     // Pricing factors attached to the item, in order (#2440).
     factorIds: Array.isArray(p.factor_ids) ? p.factor_ids : [],
+    // Client booking (#2440, migration 354).
+    bookable: p.bookable === 1 || p.bookable === true,
+    bookingDurationMinutes: p.booking_duration_minutes == null ? null : Number(p.booking_duration_minutes),
+    bookingDurationFactorId: p.booking_duration_factor_id || null,
   };
 }
 
@@ -814,6 +818,9 @@ const PRESET_CATALOGUE_VALIDATORS = [
   body('pinnedRateMinor').optional({ nullable: true }).isInt({ min: 0 }),
   body('factorIds').optional().isArray({ max: 30 }),
   body('factorIds.*').isInt({ min: 1 }),
+  body('bookable').optional().isBoolean(),
+  body('bookingDurationMinutes').optional({ nullable: true }).isInt({ min: 15, max: 1440 }),
+  body('bookingDurationFactorId').optional({ nullable: true }).isInt({ min: 1 }),
 ];
 
 function presetCatalogueFields(reqBody) {
@@ -825,6 +832,9 @@ function presetCatalogueFields(reqBody) {
     price_mode: reqBody.priceMode,
     pinned_rate_minor: reqBody.pinnedRateMinor,
     factor_ids: reqBody.factorIds,
+    bookable: reqBody.bookable,
+    booking_duration_minutes: reqBody.bookingDurationMinutes,
+    booking_duration_factor_id: reqBody.bookingDurationFactorId,
   };
 }
 

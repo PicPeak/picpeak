@@ -988,6 +988,8 @@ app.use('/api/admin/contract-templates', require('./src/routes/adminContractTemp
 app.use('/api/admin/document-attachments', require('./src/routes/adminDocumentAttachments'));
 app.use('/api/admin/projects',   require('./src/routes/adminProjects'));
 app.use('/api/admin/calendar',   require('./src/routes/adminCalendar'));
+// Client booking requests (#2440): admin side and the public booking page.
+app.use('/api/admin/booking', require('./src/routes/adminBooking'));
 app.use('/api/admin/deals',      require('./src/routes/adminDeals'));
 app.use('/api/admin/workflows',  require('./src/routes/adminWorkflows'));
 app.use('/api/admin/tax-report', require('./src/routes/adminTaxReport'));
@@ -1002,6 +1004,7 @@ app.use('/api/admin/transfers',  require('./src/routes/adminTransfers'));
 // Newsletter campaigns (#1264). Flag-gated inside the router.
 app.use('/api/admin/newsletters', require('./src/routes/adminNewsletters'));
 app.use('/api/public/quotes',  require('./src/routes/publicQuotes'));
+app.use('/api/public/booking', require('./src/routes/publicBooking'));
 app.use('/api/public/contracts', require('./src/routes/publicContracts'));
 // Signing with a link per signer and an emailed code (#1446).
 app.use('/api/public/contract-signing', require('./src/routes/publicContractSigning'));

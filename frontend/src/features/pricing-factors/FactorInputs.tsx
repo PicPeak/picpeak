@@ -9,9 +9,22 @@ import { useTranslation } from 'react-i18next';
 import { DecimalInput } from '../../components/common/DecimalInput';
 import type { FactorValue, PricingFactor } from '../../services/quoteCatalog.service';
 
-const inputCls = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900';
-const selectCls = `${inputCls} h-10`;
-const labelCls = 'block text-sm font-medium text-body mb-1';
+// Admin pages use the admin tokens; the public booking page the gallery
+// theme (branding colours, light/dark from the public settings).
+const STYLES = {
+  admin: {
+    input: 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900',
+    label: 'block text-sm font-medium text-body mb-1',
+    check: 'flex items-center gap-2 text-sm text-body',
+    muted: 'mt-1 text-xs text-muted',
+  },
+  public: {
+    input: 'input-themed w-full',
+    label: 'block text-sm font-medium mb-1',
+    check: 'flex items-center gap-2 text-sm',
+    muted: 'mt-1 text-xs text-muted-theme',
+  },
+};
 
 /** The value a factor starts with: its default, else nothing chosen. */
 export function initialFactorValue(f: PricingFactor): FactorValue {
@@ -34,12 +47,17 @@ interface Props {
   /** Zone factors whose postcode matched no zone. */
   unmatched?: number[];
   idPrefix?: string;
+  variant?: 'admin' | 'public';
 }
 
 export const FactorInputs: React.FC<Props> = ({
-  factors, values, onChange, zoneMode = 'pick', unmatched = [], idPrefix = 'factor',
+  factors, values, onChange, zoneMode = 'pick', unmatched = [], idPrefix = 'factor', variant = 'admin',
 }) => {
   const { t } = useTranslation();
+  const css = STYLES[variant];
+  const inputCls = css.input;
+  const selectCls = `${css.input} h-10`;
+  const labelCls = css.label;
   const set = (id: number, value: FactorValue) => onChange({ ...values, [id]: value });
 
   return (
@@ -47,12 +65,12 @@ export const FactorInputs: React.FC<Props> = ({
       {factors.map((f) => {
         const id = `${idPrefix}-${f.id}`;
         const value = values[f.id];
-        const hint = f.description ? <p className="mt-1 text-xs text-muted">{f.description}</p> : null;
+        const hint = f.description ? <p className={css.muted}>{f.description}</p> : null;
 
         if (f.inputType === 'toggle') {
           return (
             <div key={f.id}>
-              <label htmlFor={id} className="flex items-center gap-2 text-sm text-body">
+              <label htmlFor={id} className={css.check}>
                 <input id={id} type="checkbox" checked={value === true} onChange={(e) => set(f.id, e.target.checked)} />
                 {f.name}
               </label>
@@ -71,7 +89,7 @@ export const FactorInputs: React.FC<Props> = ({
                 min={f.minValue ?? undefined} max={f.maxValue ?? undefined}
                 onChange={(n) => set(f.id, Number.isFinite(n) ? n : null)} />
               {(f.minValue != null || f.maxValue != null) && (
-                <p className="mt-1 text-xs text-muted">
+                <p className={css.muted}>
                   {f.minValue != null && f.maxValue != null
                     ? t('quotes.factors.range', '{{min}} to {{max}}', { min: f.minValue, max: f.maxValue })
                     : f.minValue != null
@@ -120,7 +138,7 @@ export const FactorInputs: React.FC<Props> = ({
               {f.options.map((o) => <option key={o.id} value={String(o.id)}>{o.label}</option>)}
             </select>
             {zonePostcode && (
-              <p className="mt-1 text-xs text-muted">
+              <p className={css.muted}>
                 {t('quotes.factors.fromPostcode', 'From postcode {{postcode}}', { postcode: zonePostcode })}
               </p>
             )}

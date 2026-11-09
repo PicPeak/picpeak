@@ -44,7 +44,7 @@ export const FEATURE_STATUS: Record<FeatureKey | PortalFeatureKey, FeatureStatus
   documents: { maturity: 'beta' },
   customerGifts: { maturity: 'beta' },
   calendar: { maturity: 'beta' },
-  calendarBooking: { maturity: 'roadmap' },
+  calendarBooking: { maturity: 'beta' },
   quotes: { maturity: 'beta' },
   contracts: { maturity: 'beta' },
   bills: { maturity: 'beta' },

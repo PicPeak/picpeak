@@ -2140,7 +2140,12 @@
       "decision": "excluded",
       "signals": [],
       "reason": "Installation payment credentials and provider probes are excluded from product usage.",
-      "route_signatures": ["GET /", "PUT /", "GET /orders", "POST /test"]
+      "route_signatures": [
+        "GET /",
+        "PUT /",
+        "GET /orders",
+        "POST /test"
+      ]
     },
     "stripeWebhook.js": {
       "decision": "excluded",
@@ -2148,6 +2153,33 @@
       "reason": "Public payment and gallery purchase surface: financial state and buyer activity are excluded from product usage.",
       "route_signatures": [
         "POST /"
+      ]
+    },
+    "adminBooking.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Client booking requests, blocked times and booking settings (issue 2440): no product-usage middleware, counters or report triggers. Requests hold client names, contact details, appointment times and estimates.",
+      "route_signatures": [
+        "GET /requests",
+        "GET /requests/:id",
+        "POST /requests/:id/accept",
+        "POST /requests/:id/decline",
+        "GET /blocks",
+        "POST /blocks",
+        "DELETE /blocks/:id",
+        "GET /settings",
+        "PUT /settings"
+      ]
+    },
+    "publicBooking.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /",
+        "POST /estimate",
+        "GET /slots",
+        "POST /requests"
       ]
     }
   },
@@ -2185,7 +2217,7 @@
     },
     "calendarBooking": {
       "signals": [],
-      "reason": "Excluded: disabled roadmap placeholder, not an implemented booking capability."
+      "reason": "Excluded: client booking requests (issue 2440) are not reported as a capability. No flag value, request counts, times or estimates."
     },
     "clients": {
       "signals": [

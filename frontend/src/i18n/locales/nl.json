@@ -1639,7 +1639,6 @@
     "features": {
       "title": "Functies",
       "intro": "Schakel productonderdelen aan of uit. Ingeschakelde functies verschijnen in de linker navigatie en worden beschikbaar voor uw team. Sommige functies zijn nog in beta — schakel ze aan om ze te proberen, uit om ze te verbergen.",
-      "notYetAvailable": "Nog niet beschikbaar — deze schakelaar wordt actief zodra de functie wordt uitgebracht.",
       "sidebarHidden": "Geen item in de zijbalk — draait op de achtergrond",
       "unsavedChanges": "U heeft niet-opgeslagen wijzigingen",
       "preview": {

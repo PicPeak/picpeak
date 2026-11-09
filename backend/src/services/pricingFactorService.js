@@ -241,6 +241,19 @@ async function validatePresetFactors(preset, factorIds, conn = db) {
   return ids;
 }
 
+/**
+ * The factor that sets a bookable service's slot length (#2440, part 2) must
+ * be one of the service's own factors, and a number.
+ */
+async function assertDurationFactor(factorIds, durationFactorId, conn = db) {
+  if (!durationFactorId) return;
+  const id = ensureInt(durationFactorId);
+  const factor = factorIds.includes(id) ? await conn('pricing_factors').where({ id }).first('input_type') : null;
+  if (!factor || factor.input_type !== 'number') {
+    throw new AppError('The slot length must come from one of the service\'s number factors', 400, 'BOOKING_DURATION_FACTOR');
+  }
+}
+
 /** Replace the factors attached to a catalogue item (ids already validated). */
 async function writePresetFactors(trx, presetId, ids) {
   await trx('quote_preset_factors').where({ preset_id: presetId }).del();
@@ -553,6 +566,7 @@ module.exports = {
   archiveFactor,
   presetFactorIds,
   validatePresetFactors,
+  assertDurationFactor,
   writePresetFactors,
   priceWithFactors,
   parseSnapshot,

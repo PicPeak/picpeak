@@ -3430,7 +3430,6 @@
     "features": {
       "title": "Features",
       "intro": "Turn product surfaces on or off. Enabled features appear in the left navigation and become available to your team. Some features are still in beta — flip them on to try them, off to hide them.",
-      "notYetAvailable": "Not yet available — this toggle activates when the feature ships.",
       "sidebarHidden": "No sidebar item — runs in the background",
       "unsavedChanges": "You have unsaved changes",
       "preview": {
@@ -3480,7 +3479,8 @@
       },
       "calendarBooking": {
         "title": "Customer booking",
-        "description": "Let customers see free slots on a public calendar and book directly. Coming soon.",
+        "description": "A public page where clients pick a service, see an estimate and request a free slot. You accept a request into a quote.",
+        "requires": "Needs Calendar and Quotes.",
         "sidebar": "Booking"
       },
       "quotes": {
@@ -8691,6 +8691,7 @@
       "body": "Enable Accounts (or another CRM sub-feature) under Settings → Features to get started."
     },
     "subnav": {
+      "bookings": "Bookings",
       "accounts": "Accounts",
       "quotes": "Quotes",
       "contracts": "Contracts",
@@ -9524,6 +9525,100 @@
     "cancelledFootnote_one": "{{count}} cancelled invoice(s) — amounts excluded from totals (shown for audit-trail continuity).",
     "cancelledFootnote_other": "{{count}} cancelled invoice(s) — amounts excluded from totals (shown for audit-trail continuity).",
     "costsErrorTitle": "Costs could not be loaded"
+  },
+  "booking": {
+    "admin": {
+      "accept": "Accept and draft quote",
+      "acceptedToast": "Accepted. The draft quote is ready to review and send.",
+      "blockAdd": "Block",
+      "blockFrom": "From",
+      "blockNote": "Note",
+      "blockTo": "To",
+      "blocksIntro": "Times nobody can book, on top of your business hours and the dates of your galleries.",
+      "copied": "Link copied.",
+      "copy": "Copy",
+      "decline": "Decline",
+      "declineConfirm": "Decline and tell the client",
+      "declineReason": "Note to the client (optional)",
+      "editHours": "Business hours",
+      "empty": "No booking requests yet.",
+      "estimate": "Estimate",
+      "heldUntil": "Held until {{time}}",
+      "hoursInfo": "Clients can book within your business hours ({{zone}}).",
+      "noBlocks": "No blocked times.",
+      "noHours": "Set your business hours first: without them no time can be booked.",
+      "open": "Open",
+      "openProject": "Open project",
+      "openQuote": "Open quote",
+      "publicLink": "Public booking page",
+      "servicesHint": "Services show up there once they are marked bookable under Quotes → Catalogue → Services.",
+      "title": "Bookings",
+      "field": {
+        "intro": "Text at the top of the booking page",
+        "leadTime": "Minimum notice (hours)",
+        "leadTimeHint": "How long before a slot it can still be booked.",
+        "horizon": "Bookable ahead (days)",
+        "horizonHint": "How far into the future clients can book.",
+        "step": "Start times every (minutes)",
+        "stepHint": "Offered start times, e.g. every 30 minutes.",
+        "buffer": "Buffer (minutes)",
+        "bufferHint": "Kept free before and after every booking.",
+        "hold": "Hold a request for (hours)",
+        "holdHint": "An unanswered request frees its time after this."
+      },
+      "status": {
+        "accepted": "Accepted",
+        "declined": "Declined",
+        "expired": "Hold expired",
+        "pending": "Waiting"
+      },
+      "tab": {
+        "blocks": "Blocked times",
+        "requests": "Requests",
+        "settings": "Settings"
+      }
+    },
+    "public": {
+      "estimate": "Estimate",
+      "estimateFailed": "The price could not be worked out.",
+      "estimateNote": "This is an estimate. You will receive a quote with the final price.",
+      "nextWeek": "Next week",
+      "noDetails": "Nothing to fill in for this service.",
+      "noSlots": "No free times this week. Try the next one.",
+      "prevWeek": "Previous week",
+      "reference": "Your reference: {{reference}}",
+      "send": "Send booking request",
+      "sendFailed": "The request could not be sent. Please try again.",
+      "sentBody": "We have reserved the time for you and will send you a quote with the final price. You will also get an email confirmation.",
+      "sentSlot": "{{service}} on {{day}} at {{time}}",
+      "sentTitle": "Request sent",
+      "summary": "{{service}} on {{day}} at {{time}}",
+      "timezone": "Times in {{zone}}.",
+      "title": "Book a shoot",
+      "titleWithName": "Book {{name}}",
+      "unavailable": "Online booking is not available at the moment.",
+      "field": {
+        "company": "Company or band (optional)",
+        "email": "Email",
+        "message": "Message (optional)",
+        "name": "Name",
+        "phone": "Phone (optional)"
+      },
+      "step": {
+        "contact": "4. Your details",
+        "details": "2. Details",
+        "service": "1. Service",
+        "time": "3. Time"
+      }
+    },
+    "service": {
+      "bookable": "Clients can book this online",
+      "durationFixed": "Fixed length",
+      "durationFrom": "Slot length",
+      "durationFromFactor": "From \"{{name}}\" (hours)",
+      "durationMinutes": "Length (minutes)",
+      "legend": "Online booking"
+    }
   },
   "quotes": {
     "factors": {

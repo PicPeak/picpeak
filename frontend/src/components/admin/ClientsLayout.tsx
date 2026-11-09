@@ -13,7 +13,7 @@
 import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Briefcase, Gift, UserCog, FileText, Receipt, Wrench, Clock, ScrollText, Calendar, FolderKanban, Megaphone } from 'lucide-react';
+import { Briefcase, Gift, UserCog, FileText, Receipt, Wrench, Clock, ScrollText, Calendar, CalendarCheck, FolderKanban, Megaphone } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
@@ -66,6 +66,15 @@ export function useClientsNavItems(): ClientsNavItem[] {
       label: t('clients.subnav.calendar', 'Calendar'),
       icon: Calendar,
       featureFlag: 'calendar',
+    },
+    {
+      // Client booking requests (#2440).
+      key: 'bookings',
+      to: '/admin/clients/bookings',
+      label: t('clients.subnav.bookings', 'Bookings'),
+      icon: CalendarCheck,
+      featureFlag: 'calendarBooking',
+      permission: 'quotes.view',
     },
     {
       key: 'quotes',

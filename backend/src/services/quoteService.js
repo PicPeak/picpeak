@@ -2733,6 +2733,17 @@ function presetCatalogueColumns(payload) {
       ? null
       : ensureInt(payload.pinned_rate_minor);
   }
+  // Migration 354 (#2440) — shown on the public booking page, and the slot
+  // length (fixed, or the value of a number factor in hours).
+  if (payload.bookable !== undefined) out.bookable = formatBoolean(Boolean(payload.bookable));
+  if (payload.booking_duration_minutes !== undefined) {
+    out.booking_duration_minutes = payload.booking_duration_minutes == null || payload.booking_duration_minutes === ''
+      ? null
+      : ensureInt(payload.booking_duration_minutes);
+  }
+  if (payload.booking_duration_factor_id !== undefined) {
+    out.booking_duration_factor_id = payload.booking_duration_factor_id ? ensureInt(payload.booking_duration_factor_id) : null;
+  }
   return out;
 }
 
@@ -2753,6 +2764,7 @@ async function createLineItemPreset(payload) {
   // Pricing factors (#2440): checked before the write, stored with it.
   const factors = require('./pricingFactorService');
   const factorIds = payload.factor_ids === undefined ? [] : await factors.validatePresetFactors(row, payload.factor_ids);
+  await factors.assertDurationFactor(factorIds, row.booking_duration_factor_id);
   const id = await db.transaction(async (trx) => {
     const inserted = await trx('quote_line_item_presets').insert(row).returning('id');
     const newId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
@@ -2786,6 +2798,7 @@ async function updateLineItemPreset(id, payload) {
     ? payload.factor_ids
     : existing ? (await factors.presetFactorIds([id])).get(id) || [] : [];
   const validIds = existing ? await factors.validatePresetFactors(after, factorIds) : [];
+  if (existing) await factors.assertDurationFactor(validIds, after.booking_duration_factor_id);
   await db.transaction(async (trx) => {
     await trx('quote_line_item_presets').where({ id }).update(updates);
     if (existing && payload.factor_ids !== undefined) await factors.writePresetFactors(trx, id, validIds);

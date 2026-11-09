@@ -252,6 +252,10 @@ export interface LineItemPreset {
   pinnedRateMinor?: number | null;
   /** Pricing factors attached to the item, in order (#2440). */
   factorIds?: number[];
+  /** Client booking (#2440): shown on the public page; slot length. */
+  bookable?: boolean;
+  bookingDurationMinutes?: number | null;
+  bookingDurationFactorId?: number | null;
 }
 
 export interface QuoteCreatePayload {

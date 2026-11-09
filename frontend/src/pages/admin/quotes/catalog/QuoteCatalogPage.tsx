@@ -26,6 +26,7 @@ import { formatMoneyMinor } from '../../../../utils/money';
 import { PermissionGate } from '../../../../components/admin/PermissionGate';
 import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
 import { PricingFactorsTab } from './PricingFactorsTab';
+import { useFeatureEnabled } from '../../../../contexts/FeatureFlagsContext';
 import type { BoundTo, LineUnit, PriceMode } from '../../../../utils/lineItemTotals';
 
 type Tab = 'services' | 'factors' | 'packages' | 'promotions' | 'textBlocks' | 'templates';
@@ -102,11 +103,16 @@ interface ServiceForm {
   detailsText: string;
   /** Pricing factors attached to the service (#2440). */
   factorIds: number[];
+  /** Client booking (#2440): on the public page, and the slot length. */
+  bookable: boolean;
+  bookingDurationMinutes: number;
+  bookingDurationFactorId: number | null;
 }
 
 const emptyService: ServiceForm = {
   name: '', description: '', unitPrice: NaN, currency: 'CHF', quantityDefault: 1, unit: '', priceMode: 'fixed',
   pinnedRate: NaN, category: '', detailsText: '', factorIds: [],
+  bookable: false, bookingDurationMinutes: 60, bookingDurationFactorId: null,
 };
 
 /** Which pricing factors a service uses, in the order they were ticked (#2440). */
@@ -153,6 +159,7 @@ const ServicesTab: React.FC = () => {
     queryFn: () => quoteCatalogService.listFactors(),
   });
   const [form, setForm] = useState<ServiceForm | null>(null);
+  const bookingOn = useFeatureEnabled('calendarBooking');
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['line-item-presets'] });
 
@@ -170,6 +177,9 @@ const ServicesTab: React.FC = () => {
     category: p.category || '',
     detailsText: p.detailsText || '',
     factorIds: p.factorIds || [],
+    bookable: Boolean(p.bookable),
+    bookingDurationMinutes: p.bookingDurationMinutes ?? 60,
+    bookingDurationFactorId: p.bookingDurationFactorId ?? null,
   });
 
   const save = async () => {
@@ -188,6 +198,13 @@ const ServicesTab: React.FC = () => {
       category: form.category || null,
       detailsText: form.detailsText || null,
       factorIds: form.productId ? [] : form.factorIds,
+      ...(bookingOn ? {
+        bookable: form.bookable,
+        bookingDurationMinutes: form.bookingDurationMinutes || 60,
+        // Only a factor the service still has can set the slot length.
+        bookingDurationFactorId: form.bookingDurationFactorId && form.factorIds.includes(form.bookingDurationFactorId)
+          ? form.bookingDurationFactorId : null,
+      } : {}),
     };
     try {
       if (form.id) await quotesService.updateLineItemPreset(form.id, payload);
@@ -302,6 +319,36 @@ const ServicesTab: React.FC = () => {
               <textarea id="service-details" rows={2} className={inputCls} value={form.detailsText}
                 onChange={(e) => setForm({ ...form, detailsText: e.target.value })} />
             </div>
+            {bookingOn && (
+              <fieldset className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                <legend className={labelCls}>{t('booking.service.legend', 'Online booking')}</legend>
+                <label className="flex items-center gap-2 text-sm text-body pb-2">
+                  <input type="checkbox" checked={form.bookable} onChange={(e) => setForm({ ...form, bookable: e.target.checked })} />
+                  {t('booking.service.bookable', 'Clients can book this online')}
+                </label>
+                {form.bookable && (
+                  <>
+                    <div>
+                      <label htmlFor="service-duration-factor" className={labelCls}>{t('booking.service.durationFrom', 'Slot length')}</label>
+                      <select id="service-duration-factor" className={selectCls} value={form.bookingDurationFactorId ?? ''}
+                        onChange={(e) => setForm({ ...form, bookingDurationFactorId: e.target.value ? Number(e.target.value) : null })}>
+                        <option value="">{t('booking.service.durationFixed', 'Fixed length')}</option>
+                        {factors.filter((f) => f.inputType === 'number' && form.factorIds.includes(f.id)).map((f) => (
+                          <option key={f.id} value={f.id}>{t('booking.service.durationFromFactor', 'From "{{name}}" (hours)', { name: f.name })}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {!form.bookingDurationFactorId && (
+                      <div>
+                        <label htmlFor="service-duration" className={labelCls}>{t('booking.service.durationMinutes', 'Length (minutes)')}</label>
+                        <DecimalInput id="service-duration" className={inputCls} value={form.bookingDurationMinutes} fractionDigits={0}
+                          onChange={(n) => setForm({ ...form, bookingDurationMinutes: Number.isFinite(n) ? Math.round(n) : 60 })} />
+                      </div>
+                    )}
+                  </>
+                )}
+              </fieldset>
+            )}
             {!form.productId && (
               <ServiceFactorPicker
                 factors={factors.filter((f) => f.currency === form.currency && (f.isActive || form.factorIds.includes(f.id)))}

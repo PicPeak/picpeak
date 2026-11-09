@@ -1668,7 +1668,6 @@
     "features": {
       "title": "Fonctionnalités",
       "intro": "Activez ou désactivez les surfaces du produit. Les fonctionnalités activées apparaissent dans la navigation de gauche et deviennent disponibles pour votre équipe. Certaines fonctionnalités sont encore en version bêta — activez-les pour les essayer, désactivez-les pour les masquer.",
-      "notYetAvailable": "Pas encore disponible — cette bascule s'active lorsque la fonctionnalité est livrée.",
       "sidebarHidden": "Aucun élément de barre latérale — s'exécute en arrière-plan",
       "unsavedChanges": "Vous avez des modifications non enregistrées",
       "preview": {
