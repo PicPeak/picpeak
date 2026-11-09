@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.10](https://github.com/PicPeak/picpeak/compare/v3.135.9...v3.135.10) (2026-11-09)
+
+
+### Bug Fixes
+
+* **gallery:** show the photos for the "Google Photos" masonry mode on stable ([#2449](https://github.com/PicPeak/picpeak/issues/2449)) ([6924990](https://github.com/PicPeak/picpeak/commit/6924990ce63450ae669cdb767fabda33d7916afc))
+* **uploads:** honour Max Video Size for guests and upload large guest files in chunks ([#2437](https://github.com/PicPeak/picpeak/issues/2437)) ([3ef519f](https://github.com/PicPeak/picpeak/commit/3ef519f8351624f2ec2613f103e67b4d3c7e8982))
+* **uploads:** name an untyped media file by its extension, keep the notification menu on screen ([#2436](https://github.com/PicPeak/picpeak/issues/2436)) ([3890afc](https://github.com/PicPeak/picpeak/commit/3890afcc4cfa2e13309cf92a7da88f859de57373))
+
 ## [3.135.9](https://github.com/PicPeak/picpeak/compare/v3.135.8...v3.135.9) (2026-11-08)
 
 
