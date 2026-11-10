@@ -230,8 +230,8 @@ describe('S3 Backup Integration Tests', () => {
       // Record database backup. The service signs the restore point with the
       // dump's recorded sha256 and refuses one it cannot verify.
       await db('database_backup_runs').insert({
-        started_at: new Date(),
-        completed_at: new Date(),
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
         status: 'completed',
         backup_type: 'sqlite',
         file_path: dbBackupPath,
@@ -492,7 +492,7 @@ describe('S3 Backup Integration Tests', () => {
         .insert({
           setting_type: 'backup',
           ...setting,
-          updated_at: new Date(),
+          updated_at: new Date().toISOString(),
         })
         .onConflict('setting_key')
         .merge();
