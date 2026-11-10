@@ -311,6 +311,11 @@ exports.down = async function down(knex) {
     await knex('feature_flags').where({ key: 'backupRestoreTest' }).del();
   }
   if (await knex.schema.hasTable('email_templates')) {
+    // SQLite does not enforce 075's cascade: the translations go first.
+    const template = await knex('email_templates').where({ template_key: TEMPLATE_KEY }).first('id');
+    if (template && await knex.schema.hasTable('email_template_translations')) {
+      await knex('email_template_translations').where({ template_id: template.id }).del();
+    }
     await knex('email_templates').where({ template_key: TEMPLATE_KEY }).del();
   }
 };

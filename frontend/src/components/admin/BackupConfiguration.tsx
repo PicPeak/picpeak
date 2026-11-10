@@ -302,7 +302,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
       return;
     }
     const samplePercent = Number(formData.backup_verify_sample_percent);
-    if (restoreTestEnabled && (!Number.isFinite(samplePercent) || samplePercent < 0 || samplePercent > 100)) {
+    if (restoreTestEnabled && (!Number.isInteger(samplePercent) || samplePercent < 0 || samplePercent > 100)) {
       toast.error(t('backup.restoreTest.config.invalidSamplePercent', 'The file sample must be between 0 and 100 percent'));
       return;
     }
@@ -798,7 +798,8 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
               <DecimalInput
                 id="backup-verify-sample"
                 value={formData.backup_verify_sample_percent}
-                onChange={(next) => handleChange('backup_verify_sample_percent', Number.isFinite(next) ? next : 0)}
+                onChange={(next) => handleChange('backup_verify_sample_percent', Number.isFinite(next) ? Math.round(next) : 0)}
+                fractionDigits={0}
                 className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-md focus:outline-none focus:ring-accent focus:border-accent"
               />
               <p className="mt-1 text-xs text-muted">

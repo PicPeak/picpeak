@@ -1449,12 +1449,15 @@ async function retainedRestorePoints(config) {
     const snapshot = standaloneSnapshotOfRun(config, run);
     if (snapshot && byType[snapshot.type]) byType[snapshot.type].push({ ...run, snapshot });
   }
-  const timeZone = policy.monthly > 0 ? await require('../utils/galleryExpiry').getInstanceTimeZone() : 'UTC';
+  // Retention count 0 = automatic pruning off ("keep all"). The manual
+  // cleanups are then the admin's own tool for removing old points, so
+  // nothing is reported as kept by retention.
   const kept = new Set();
-  for (const runs of Object.values(byType)) {
-    const ids = policy.keepAll ? runs.map((run) => run.id)
-      : [...selectRetainedRuns(runs, { keep: policy.keep, monthly: policy.monthly, timeZone })];
-    ids.forEach((id) => kept.add(id));
+  if (!policy.keepAll) {
+    const timeZone = policy.monthly > 0 ? await require('../utils/galleryExpiry').getInstanceTimeZone() : 'UTC';
+    for (const runs of Object.values(byType)) {
+      selectRetainedRuns(runs, { keep: policy.keep, monthly: policy.monthly, timeZone }).forEach((id) => kept.add(id));
+    }
   }
   return { byType, kept, policy };
 }
@@ -2060,12 +2063,17 @@ async function cleanupOldBackupRuns(retentionDays = 30) {
       logger.warn(`Could not remove the restore tests of old backup runs: ${error.message}`);
     }
     const deleted = await old().delete();
+    const kept = keptIds.length
+      ? Number((await db('backup_runs').where('started_at', '<', cutoff).whereIn('id', keptIds).count({ c: '*' }))[0]?.c) || 0
+      : 0;
 
     if (deleted > 0) {
       logger.info(`Cleaned up ${deleted} old backup runs`);
     }
+    return { deleted, kept };
   } catch (error) {
     logger.error('Failed to cleanup old backup runs:', error);
+    return { deleted: 0, kept: 0 };
   }
 }
 

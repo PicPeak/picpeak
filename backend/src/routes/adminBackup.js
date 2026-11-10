@@ -254,10 +254,9 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
     if (has('backup_verify_cron') && !backupVerification.isCron(updates.backup_verify_cron)) {
       return res.status(400).json({ error: 'backup_verify_cron must be a valid 5-field cron expression' });
     }
-    if (has('backup_verify_sample_percent') && (typeof updates.backup_verify_sample_percent !== 'number'
-        || !Number.isFinite(updates.backup_verify_sample_percent)
+    if (has('backup_verify_sample_percent') && (!Number.isInteger(updates.backup_verify_sample_percent)
         || updates.backup_verify_sample_percent < 0 || updates.backup_verify_sample_percent > 100)) {
-      return res.status(400).json({ error: 'backup_verify_sample_percent must be a number between 0 and 100' });
+      return res.status(400).json({ error: 'backup_verify_sample_percent must be a whole number between 0 and 100' });
     }
 
     const restricted = await changedRestrictedBackupSettings(updates);
@@ -756,9 +755,15 @@ router.delete('/cleanup', adminAuth, requirePermission('backup.delete'), async (
   try {
     const { days = 30 } = req.body;
     
-    await cleanupOldBackupRuns(days);
-    
-    res.json({ success: true, message: `Cleaned up backup runs older than ${days} days` });
+    const result = await cleanupOldBackupRuns(days) || { deleted: 0, kept: 0 };
+
+    res.json({
+      success: true,
+      deleted: result.deleted,
+      keptByRetention: result.kept,
+      message: `Cleaned up backup runs older than ${days} days`
+        + (result.kept ? `; kept ${result.kept} that backup retention keeps` : ''),
+    });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to cleanup backup runs');
   }

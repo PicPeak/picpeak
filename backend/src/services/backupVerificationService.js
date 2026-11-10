@@ -94,7 +94,7 @@ async function readSettings() {
   return {
     enabled: toBool(config.backup_verify_enabled, DEFAULTS.enabled),
     cron: isCron(config.backup_verify_cron) ? config.backup_verify_cron.trim() : DEFAULTS.cron,
-    samplePercent: Number.isFinite(percent) && percent >= 0 && percent <= 100 ? percent : DEFAULTS.samplePercent,
+    samplePercent: Number.isFinite(percent) && percent >= 0 && percent <= 100 ? Math.round(percent) : DEFAULTS.samplePercent,
     config,
   };
 }
@@ -179,16 +179,19 @@ async function readMaintenanceMode() {
   return Boolean(row && (row.setting_value === 'true' || row.setting_value === true));
 }
 
-// A backup or restore on ANY replica writes a 'running' row. Rows older than
-// this are left by a process that died and no longer count, so a crash
-// blocks restore tests for at most this long.
+// A backup or restore on ANY replica writes a 'running' row. Nothing clears
+// the row of a process that died mid-run, so only rows started since this
+// process booted count (a crash before the restart cannot have written
+// one), and none older than RUNNING_ROW_WINDOW_MS. The cost: a backup that
+// another replica started before this one booted is not seen.
 const RUNNING_ROW_WINDOW_MS = 12 * 60 * 60 * 1000;
-const MONITOR_INTERVAL_MS = 30 * 1000;
+const BOOTED_AT = Date.now() - Math.round(process.uptime() * 1000);
+let monitorIntervalMs = 30 * 1000;
 
 /** 'backup' / 'restore' when another process (any replica) is running one. */
 async function sharedWorkRunning() {
   const { toTimestamp } = require('../utils/dateNormalize');
-  const since = Date.now() - RUNNING_ROW_WINDOW_MS;
+  const since = Math.max(BOOTED_AT, Date.now() - RUNNING_ROW_WINDOW_MS);
   const live = (rows) => rows.some((row) => {
     const at = toTimestamp(row.started_at);
     return at !== null && at !== undefined && !Number.isNaN(at) && at >= since;
@@ -686,7 +689,7 @@ async function execute(id, target, { full, samplePercent, drill }) {
  * one message and not one per retained backup.
  */
 async function notifyFailures(ids) {
-  const rows = ids.length ? await db('backup_verifications').whereIn('id', ids).where({ status: 'failed' }) : [];
+  const rows = ids.length ? await db('backup_verifications').whereIn('id', ids).where({ status: 'failed' }).orderBy('id') : [];
   if (rows.length === 0) return;
   const { config } = await readSettings();
   if (!toBool(config.backup_email_on_failure, false)) return;
@@ -782,7 +785,7 @@ async function runOne(target, options = {}) {
   const monitor = setInterval(() => {
     if (lease.lost()) { yieldTo('lost'); return; }
     sharedWorkRunning().then((reason) => { if (reason) yieldTo(reason); }).catch(() => {});
-  }, MONITOR_INTERVAL_MS);
+  }, monitorIntervalMs);
   monitor.unref?.();
   try {
     if (!options.id && !(await targetExists(target))) return null;
@@ -922,7 +925,14 @@ async function startNow({ backupRunId, databaseBackupRunId, full = false, adminI
     const { samplePercent } = await readSettings();
     id = await insertRow({ ...target, trigger: 'admin', adminId, full, samplePercent });
     applicationWork.defer('backup verification', () => runOne(target, { id, token, full, samplePercent, trigger: 'admin', adminId }))
-      .catch(() => {});
+      .catch(async (error) => {
+        // Never started (admission closed for a restore in between): the
+        // row and the lease must not stay behind as "running".
+        if (current && current.id === id) return;
+        logger.warn(`Restore test ${id} did not start: ${error.message}`);
+        await finishRow(id, { status: 'skipped', skipReason: 'interrupted' }).catch(() => {});
+        await releaseLease(token, id);
+      });
   } catch (error) {
     await releaseLease(token, id);
     throw error;
@@ -936,8 +946,28 @@ async function startNow({ backupRunId, databaseBackupRunId, full = false, adminI
  * restore drill. With no file backups, the newest database-only dump.
  * Failures of the round go out as one mail.
  */
+const ROUND_JOB = 'backup_verification_round';
+const ROUND_STALE_MS = 24 * 60 * 60 * 1000;
+const ROUND_REPEAT_GUARD_MS = 60 * 60 * 1000;
+
 async function runScheduled() {
   if (!(await automaticRunsEnabled())) return;
+  // Every replica's cron fires; one round runs. The round lease decides
+  // who, and a round that finished within the last hour is not repeated
+  // by a replica whose tick came late.
+  await jobState.ensure(ROUND_JOB);
+  const last = await jobState.read(ROUND_JOB, { staleAfterMs: ROUND_STALE_MS });
+  if (last.finishedAt && Date.now() - new Date(last.finishedAt).getTime() < ROUND_REPEAT_GUARD_MS) return;
+  const roundToken = await jobState.claim(ROUND_JOB, { staleAfterMs: ROUND_STALE_MS });
+  if (!roundToken) return;
+  try {
+    await runRound();
+  } finally {
+    await jobState.release(ROUND_JOB, roundToken, { at: nowIso() }).catch(() => {});
+  }
+}
+
+async function runRound() {
   const batch = [];
   const runs = await db('backup_runs').where('status', 'completed').whereNotNull('manifest_path').orderBy('id', 'desc').select('id');
   if (runs.length === 0) {
@@ -1018,6 +1048,9 @@ async function getHealth() {
 
 /** Restore points with a test running right now; retention leaves them. */
 async function runsUnderTest() {
+  // With the feature off nothing runs, and a row a crash left at 'running'
+  // (the boot sweep is off too) must not hold a restore point forever.
+  if (!(await isFeatureEnabled(FLAG))) return new Set();
   if (!(await hasVerificationTable())) return new Set();
   const rows = await db('backup_verifications').where({ status: 'running' }).whereNotNull('backup_run_id').select('backup_run_id');
   return new Set(rows.map((row) => Number(row.backup_run_id)));
@@ -1124,5 +1157,5 @@ module.exports = {
   sweepStale,
   yieldTo,
   runsUnderTest,
-  _internal: { current: () => current, leftByDeadProcess, fileCheckResult, runWorker, setWorkerPath: (p) => { workerPath = p || WORKER; }, privileges, selectFiles, bucketOf, overallStatus, planFileBackup, planDatabaseBackup, liveTarget, drain: () => draining, drainNow: () => drain(), queue },
+  _internal: { current: () => current, setMonitorInterval: (ms) => { monitorIntervalMs = ms; }, leftByDeadProcess, fileCheckResult, runWorker, setWorkerPath: (p) => { workerPath = p || WORKER; }, privileges, selectFiles, bucketOf, overallStatus, planFileBackup, planDatabaseBackup, liveTarget, drain: () => draining, drainNow: () => drain(), queue },
 };

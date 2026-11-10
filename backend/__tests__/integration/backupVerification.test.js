@@ -513,4 +513,59 @@ describe('backup restore tests', () => {
       valid.mockRestore();
     }
   });
+
+  it('concern 7: a running row from before this process booted (a crash) does not block or stop tests', async () => {
+    const beforeBoot = new Date(Date.now() - process.uptime() * 1000 - 60 * 1000).toISOString();
+    const [id] = (await db('backup_runs').insert({ started_at: beforeBoot, status: 'running', backup_type: 'scheduled' })
+      .returning('id')).map((r) => r.id ?? r);
+    try {
+      expect(await verification.busyReason()).toBeNull();
+    } finally {
+      await db('backup_runs').where({ id }).del();
+    }
+  });
+
+  it('concern 7: a running test yields when a backup starts on another replica', async () => {
+    const run = await freshDumpAndBackup();
+    verification._internal.setMonitorInterval(20);
+    let other;
+    try {
+      const id = await verification.startNow({ backupRunId: run.id });
+      for (let i = 0; i < 300; i += 1) {
+        const cur = verification._internal.current();
+        if (cur && cur.children.size > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      [other] = (await db('backup_runs').insert({ started_at: new Date().toISOString(), status: 'running', backup_type: 'scheduled' })
+        .returning('id')).map((r) => r.id ?? r);
+      const row = await finished({ id });
+      expect(row).toMatchObject({ status: 'skipped', skip_reason: 'busy' });
+    } finally {
+      verification._internal.setMonitorInterval(30000);
+      if (other) await db('backup_runs').where({ id: other }).del();
+    }
+  });
+
+  it('runs one scheduled round across replicas: a round that just finished is not repeated', async () => {
+    await setFlag(true);
+    const run = await freshDumpAndBackup();
+    const jobState = require('../../src/services/maintenanceJobState');
+    await jobState.ensure('backup_verification_round');
+    await db('maintenance_jobs').where({ job_name: 'backup_verification_round' })
+      .update({ is_running: false, finished_at: new Date().toISOString() });
+    await db('backup_verifications').del();
+    await verification.runScheduled();
+    expect(await db('backup_verifications').where({ backup_run_id: run.id })).toEqual([]);
+    await db('maintenance_jobs').where({ job_name: 'backup_verification_round' }).update({ finished_at: null });
+  });
+
+  it('with the flag off, a row left at running does not hold its restore point from retention', async () => {
+    const run = await freshDumpAndBackup();
+    await db('backup_verifications').insert({
+      backup_run_id: run.id, level: 'deep', status: 'running', checks: '[]', triggered_by: 'schedule', started_at: new Date().toISOString(),
+    });
+    expect([...await verification.runsUnderTest()]).toEqual([]);
+    await setFlag(true);
+    expect([...await verification.runsUnderTest()]).toEqual([run.id]);
+  });
 });

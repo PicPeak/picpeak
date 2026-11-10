@@ -96,6 +96,8 @@ describe('backup restore test routes', () => {
     const put = (body) => request(app).put('/api/admin/backup/config').set('x-perms', 'backup.create').send(body);
     expect((await put({ backup_verify_cron: 'every sunday' })).status).toBe(400);
     expect((await put({ backup_verify_sample_percent: 101 })).status).toBe(400);
+    // The column is an integer; 2.5 would fail every insert on PostgreSQL.
+    expect((await put({ backup_verify_sample_percent: 2.5 })).status).toBe(400);
     expect((await put({ backup_verify_enabled: 'true' })).status).toBe(400);
   });
 });

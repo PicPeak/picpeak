@@ -86,6 +86,12 @@ describe('tiered backup retention', () => {
   });
 
   it('leaves a restore point that is under test, and removes the test rows of the ones it prunes', async () => {
+    // A test can only be running with the feature on.
+    await db('feature_flags').where({ key: 'backupRestoreTest' }).update({ value: true });
+    require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+    // ...but no automatic tests of these backups, which would sweep the
+    // hand-made running row as a leftover.
+    await setting('backup_verify_enabled', false);
     await setting('backup_retention_count', 2);
     const underTest = await backupAt(null);
     const tested = await backupAt(null);

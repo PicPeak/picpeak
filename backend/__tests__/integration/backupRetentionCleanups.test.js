@@ -138,4 +138,16 @@ describe('history cleanups keep the restore points retention keeps', () => {
     expect(has(notFirst)).toBe(false);
     expect(await remaining()).toEqual([monthly.id, current.id]);
   });
+
+  it('with retention keeping everything (count 0), DELETE /cleanup still removes old rows as before', async () => {
+    await setting('backup_destination_type', 'local');
+    const { current } = await scenario();
+    await setting('backup_retention_count', 0);
+
+    const res = await request(app).delete('/api/admin/backup/cleanup').send({ days: 1 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.keptByRetention).toBe(0);
+    expect(await remaining()).toEqual([current.id]);
+  });
 });
