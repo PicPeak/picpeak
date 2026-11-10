@@ -29,6 +29,7 @@ const { toTimestamp } = require('../utils/dateNormalize');
 const { withTrustedCrmAccess } = require('../database/crmAccess');
 
 const { hasColumnCached } = require('../utils/schemaCache');
+const { formatBoolean } = require('../utils/dbCompat');
 
 const DEPOSIT_TYPES = ['none', 'percent', 'fixed'];
 const GALLERY_UNLOCK = ['full_payment', 'deposit', 'off'];
@@ -43,16 +44,23 @@ const hashToken = (token) => crypto.createHash('sha256').update(String(token)).d
 // (hundredths, JPY included), from Stripe's published minimums. A currency
 // not listed here is not raised; Stripe refuses a charge below its minimum.
 const STRIPE_MINIMUM_MINOR = {
-  AUD: 50, CAD: 50, CHF: 50, CZK: 1500, DKK: 250, EUR: 50, GBP: 30, HKD: 400, HUF: 17500, INR: 50,
-  JPY: 5000, NOK: 300, NZD: 50, PLN: 200, RON: 200, SEK: 300, SGD: 50, THB: 1000, USD: 50,
+  AED: 200, AUD: 50, CAD: 50, CHF: 50, CZK: 1500, DKK: 250, EUR: 50, GBP: 30, HKD: 400, HUF: 17500, INR: 50,
+  JPY: 5000, KRW: 5000, MXN: 1000, MYR: 200, NOK: 300, NZD: 50, PLN: 200, RON: 200, SEK: 300, SGD: 50,
+  THB: 1000, USD: 50,
 };
-const stripeMinimumMinor = (currency) => STRIPE_MINIMUM_MINOR[String(currency || '').toUpperCase()] || 0;
+const stripeMinimumMinor = (currency) => STRIPE_MINIMUM_MINOR[upper(currency)] || 0;
 
 // Currencies Stripe counts in whole units. The app keeps every currency in
 // hundredths, so these are divided by 100 on the way to Stripe and
 // multiplied on the way back; their deposits are whole units.
-const STRIPE_ZERO_DECIMAL = new Set(['BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF']);
-const zeroDecimal = (currency) => STRIPE_ZERO_DECIMAL.has(String(currency || '').toUpperCase());
+const STRIPE_ZERO_DECIMAL = new Set(['BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG', 'RWF', 'VND', 'VUV', 'XAF', 'XOF', 'XPF']);
+// Whole units too, but Stripe still takes them with two decimals for
+// backwards compatibility (Stripe's special cases): the amount is sent as
+// is, and must be a whole unit.
+const STRIPE_WHOLE_TWO_DECIMAL = new Set(['ISK', 'UGX']);
+const upper = (currency) => String(currency || '').toUpperCase();
+const zeroDecimal = (currency) => STRIPE_ZERO_DECIMAL.has(upper(currency));
+const wholeUnits = (currency) => zeroDecimal(currency) || STRIPE_WHOLE_TWO_DECIMAL.has(upper(currency));
 const toStripeAmount = (minor, currency) => (zeroDecimal(currency) ? Math.round(Number(minor) / 100) : Number(minor));
 const fromStripeAmount = (amount, currency) => (zeroDecimal(currency) ? Number(amount) * 100 : Number(amount));
 
@@ -70,11 +78,17 @@ function depositFor(preset, estimateMinor) {
     const pct = Math.min(100, Math.max(0, Number(preset.booking_deposit_percent) || 0));
     deposit = Math.round(total * pct / 100);
   } else if (type === 'fixed') {
-    deposit = Math.min(total, Math.max(0, Math.round(Number(preset.booking_deposit_minor) || 0)));
+    deposit = Math.max(0, Math.round(Number(preset.booking_deposit_minor) || 0));
   }
-  // Whole units where Stripe charges whole units (JPY): what is charged is
-  // then exactly the deposit, and the amount check holds.
-  if (zeroDecimal(preset.currency)) deposit = Math.round(deposit / 100) * 100;
+  // Whole units where Stripe charges whole units (JPY, ISK): what is charged
+  // is then exactly the deposit, and the amount check holds. Rounded before
+  // the cap, and capped at the whole units of the estimate, so rounding
+  // never lifts it past the estimate.
+  if (wholeUnits(preset.currency)) {
+    deposit = Math.min(Math.round(deposit / 100) * 100, Math.floor(total / 100) * 100);
+  } else {
+    deposit = Math.min(deposit, total);
+  }
   if (deposit <= 0) return 0;
   const minimum = stripeMinimumMinor(preset.currency);
   if (deposit >= minimum) return deposit;
@@ -484,16 +498,23 @@ async function businessDay(instant) {
  */
 async function depositDecisionsOpen() {
   if (!(await hasColumnCached('booking_requests', 'deposit_status'))) return false;
-  const row = await db('booking_requests').whereIn('deposit_status', ['paid', 'review', 'disputed', 'refund_failed'])
+  const pending = db('booking_requests').whereIn('deposit_status', ['paid', 'review', 'disputed', 'refund_failed'])
     .whereNot((settled) => settled.where({ status: 'accepted', deposit_status: 'paid' })
-      .whereRaw('COALESCE(deposit_applied_minor, 0) >= COALESCE(deposit_received_minor, deposit_minor)'))
-    .first('id');
+      .whereRaw('COALESCE(deposit_applied_minor, 0) >= COALESCE(deposit_received_minor, deposit_minor)'));
+  // With quotes off only declining is left, and an accepted request can't be
+  // declined: its deposit waits for quotes to come back on, on invoices.
+  const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
+  if (!(await isFeatureEnabled('quotes'))) pending.whereIn('status', ['pending', 'expired']);
+  const row = await pending.first('id');
   if (row) return true;
   // A gallery still locked until its deal is paid: the admin may need to
   // open it by hand. Existence only, so read across owners.
   if (!(await hasColumnCached('events', 'payment_lock'))) return false;
   const locked = await withTrustedCrmAccess('booking: locked galleries', () => db('events')
-    .whereNotNull('payment_lock').whereNull('payment_unlocked_at').first('id'));
+    .whereNotNull('payment_lock').whereNull('payment_unlocked_at')
+    // An archived gallery is done with; its stale lock is no decision.
+    .where((live) => live.where('is_archived', formatBoolean(false)).orWhereNull('is_archived'))
+    .first('id'));
   return Boolean(locked);
 }
 
@@ -570,13 +591,16 @@ async function applyDepositToInvoice(requestId, invoiceId, adminId) {
       capToOpen: true,
     }, adminId));
   } catch (err) {
-    // Only while the claim still stands: a dispute or refund recorded
-    // meanwhile is not turned back into paid.
-    await db('booking_requests').where({ id: requestId, deposit_applied_minor: applied + amountMinor, deposit_status: 'paid' })
-      .update({
-        deposit_applied_minor: applied, deposit_invoice_id: request.deposit_invoice_id || null,
-        deposit_status: request.deposit_status, updated_at: ts(new Date()),
-      });
+    // Nothing was booked, so the claimed amount always goes back while the
+    // claim still stands. The status goes back only while it is still the
+    // claim's `paid`: a dispute or refund recorded meanwhile stays.
+    const released = await db('booking_requests')
+      .where({ id: requestId, deposit_applied_minor: applied + amountMinor, deposit_invoice_id: invoice.id })
+      .update({ deposit_applied_minor: applied, deposit_invoice_id: request.deposit_invoice_id || null, updated_at: ts(new Date()) });
+    if (released && request.deposit_status !== 'paid') {
+      await db('booking_requests').where({ id: requestId, deposit_status: 'paid' })
+        .update({ deposit_status: request.deposit_status, updated_at: ts(new Date()) });
+    }
     if (err.code === 'INVOICE_ALREADY_PAID') throw new AppError('This invoice is already paid', 409, 'BOOKING_INVOICE_NOT_OPEN');
     throw err;
   }

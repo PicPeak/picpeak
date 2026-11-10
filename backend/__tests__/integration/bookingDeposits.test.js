@@ -928,6 +928,114 @@ describe('blind review, round 3', () => {
     } finally {
       spy.mockRestore();
     }
-    expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('disputed');
+    const after = await db('booking_requests').where({ id: row.id }).first();
+    // The dispute stays, and nothing counts as booked: no payment row is
+    // behind the claim.
+    expect([after.deposit_status, Number(after.deposit_applied_minor || 0), after.deposit_invoice_id]).toEqual(['disputed', 0, null]);
+  });
+});
+
+describe('review round 4', () => {
+  const setFlags = async (values) => {
+    for (const [key, value] of Object.entries(values)) await db('feature_flags').where({ key }).update({ value });
+    require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+  };
+
+  test('UGX is sent to Stripe with two decimals, in whole shillings', async () => {
+    const created = await request(quoteApp).post('/api/admin/quotes/presets/line-items').set(auth).send({
+      name: 'Shilling session', unitPriceMinor: 1234567, currency: 'UGX', bookable: true, bookingDurationMinutes: 60,
+      bookingDepositType: 'percent', bookingDepositPercent: 10, galleryUnlock: 'off',
+    });
+    expect(created.status).toBe(201);
+    const res = await sendRequest(zurich(day(105), '09:00'), { email: 'ugx@example.test', serviceId: created.body.preset.id });
+    expect(res.status).toBe(201);
+    const row = await db('booking_requests').where({ reference: res.body.reference }).first();
+    // 10% of USh 12,345.67 is USh 1,234.57: whole shillings, USh 1,235.
+    expect(Number(row.deposit_minor)).toBe(123500);
+    const session = sessions.get(row.checkout_session_id);
+    // Stripe takes UGX with two decimals: the amount goes as is.
+    expect(session.amount_total).toBe(123500);
+    pay(row.checkout_session_id);
+    await webhook('checkout.session.completed', { id: session.id, metadata: session.metadata }).expect(200);
+    const paid = await db('booking_requests').where({ id: row.id }).first();
+    expect([paid.deposit_status, Number(paid.deposit_received_minor)]).toEqual(['paid', 123500]);
+  });
+
+  test('whole-unit currencies round before the cap; the newer Stripe minimums apply', () => {
+    const { depositFor } = require('../../src/services/bookingDeposits');
+    expect(depositFor({ booking_deposit_type: 'percent', booking_deposit_percent: 10, currency: 'ISK' }, 123450)).toBe(12300);
+    // A fixed deposit above the estimate: capped at the estimate's whole units, not above it.
+    expect(depositFor({ booking_deposit_type: 'fixed', booking_deposit_minor: 500000, currency: 'JPY' }, 12360)).toBe(12300);
+    const fixed = (currency) => depositFor({ booking_deposit_type: 'fixed', booking_deposit_minor: 100, currency }, 1000000);
+    expect([fixed('AED'), fixed('KRW'), fixed('MXN'), fixed('MYR')]).toEqual([200, 5000, 1000, 200]);
+  });
+
+  test('with quotes off, a paid deposit can be refunded and a locked gallery opened; nothing else, and nothing undeclinable keeps the page open', async () => {
+    const res = await sendRequest(zurich(day(105), '13:00'), { email: 'quotes-off@example.test' });
+    const row = await db('booking_requests').where({ reference: res.body.reference }).first();
+    await webhook('checkout.session.completed', { id: pay(row.checkout_session_id).id, metadata: sessions.get(row.checkout_session_id).metadata }).expect(200);
+    const locked = await db('events').whereNotNull('payment_lock').orderBy('id', 'desc').first('id');
+    await db('events').where({ id: locked.id }).update({ payment_unlocked_at: null });
+    await setFlags({ quotes: false, calendarBooking: false });
+    try {
+      expect((await request(adminApp).get('/api/admin/booking/requests').set(auth)).status).toBe(200);
+      const accept = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/accept`).set(auth);
+      expect([accept.status, accept.body.code]).toEqual([403, 'QUOTES_DISABLED']);
+      const declined = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/decline`).set(auth).send({});
+      expect([declined.status, declined.body.request?.depositStatus]).toEqual([200, 'refunded']);
+      const unlocked = await request(adminApp).post(`/api/admin/booking/galleries/${locked.id}/unlock`).set(auth);
+      expect(unlocked.status).toBe(200);
+      // An accepted request with a deposit still to book can't be declined:
+      // with quotes off it waits, and doesn't keep the page open.
+      await db('events').whereNotNull('payment_lock').update({ payment_unlocked_at: new Date().toISOString() });
+      await db('booking_requests').whereNot({ id: row.id }).whereIn('deposit_status', ['paid', 'review', 'disputed', 'refund_failed']).update({ deposit_status: 'refunded' });
+      await db('booking_requests').where({ id: row.id }).update({ status: 'accepted', deposit_status: 'paid', deposit_applied_minor: 0 });
+      const { depositDecisionsOpen } = require('../../src/services/bookingDeposits');
+      expect(await depositDecisionsOpen()).toBe(false);
+      await setFlags({ quotes: true });
+      expect(await depositDecisionsOpen()).toBe(true);
+    } finally {
+      await setFlags({ quotes: true, calendarBooking: true });
+    }
+  });
+
+  test('a failed booking of a review deposit puts it back under review', async () => {
+    const res = await sendRequest(zurich(day(112), '09:00'), { email: 'review-rollback@example.test' });
+    const row = await db('booking_requests').where({ reference: res.body.reference }).first();
+    const session = pay(row.checkout_session_id);
+    session.amount_total = 15000;
+    await webhook('checkout.session.completed', { id: session.id, metadata: session.metadata }).expect(200);
+    const accepted = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/accept`).set(auth);
+    const quoteId = accepted.body.request.quoteId;
+    await withTrusted(() => db('quotes').where({ id: quoteId }).update({ status: 'accepted' }));
+    await withTrusted(() => require('../../src/services/quoteService').convertToEvent(quoteId, adminId));
+    const quote = await withTrusted(() => db('quotes').where({ id: quoteId }).first());
+    const invoice = await withTrusted(() => db('invoices').where({ deal_uuid: quote.deal_uuid }).first());
+    await withTrusted(() => db('invoices').where({ id: invoice.id }).update({ status: 'sent' }));
+    const payments = require('../../src/services/invoice/payments');
+    const spy = jest.spyOn(payments, 'markPaid').mockRejectedValueOnce(new Error('booking failed'));
+    try {
+      const out = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/apply-deposit`).set(auth).send({ invoiceId: invoice.id });
+      expect(out.status).toBe(500);
+    } finally {
+      spy.mockRestore();
+    }
+    const after = await db('booking_requests').where({ id: row.id }).first();
+    expect([after.deposit_status, Number(after.deposit_applied_minor || 0), after.deposit_invoice_id]).toEqual(['review', 0, null]);
+  });
+
+  test('an archived gallery\'s stale lock does not keep the page open', async () => {
+    await db('booking_requests').whereIn('deposit_status', ['paid', 'review', 'disputed', 'refund_failed']).update({ deposit_status: 'refunded' });
+    const locked = await db('events').whereNotNull('payment_lock').orderBy('id', 'desc').first('id');
+    await db('events').whereNotNull('payment_lock').update({ payment_unlocked_at: new Date().toISOString() });
+    await db('events').where({ id: locked.id }).update({ payment_unlocked_at: null, is_archived: true });
+    const { depositDecisionsOpen } = require('../../src/services/bookingDeposits');
+    try {
+      expect(await depositDecisionsOpen()).toBe(false);
+      await db('events').where({ id: locked.id }).update({ is_archived: false });
+      expect(await depositDecisionsOpen()).toBe(true);
+    } finally {
+      await db('events').where({ id: locked.id }).update({ payment_unlocked_at: new Date().toISOString(), is_archived: false });
+    }
   });
 });

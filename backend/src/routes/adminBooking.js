@@ -25,7 +25,7 @@ const express = require('express');
 const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireFeatureFlag');
+const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { requireEventOwner } = require('../middleware/ownership');
 const deposits = require('../services/bookingDeposits');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
@@ -38,17 +38,25 @@ router.use(adminAuth);
 // (accept, decline and refund, booking the deposit, opening a gallery) until
 // none is left. New blocks and settings wait for the flag.
 const DECISION_ROUTES = [/^\/requests\/\d+\/(accept|decline|apply-deposit)$/, /^\/galleries\/\d+\/unlock$/];
-router.use(async (req, res, next) => {
-  try {
-    if (await isFeatureEnabled('calendarBooking')) return next();
-    const deciding = req.method === 'GET' || (req.method === 'POST' && DECISION_ROUTES.some((r) => r.test(req.path)));
-    if (deciding && await deposits.depositDecisionsOpen()) return next();
-    return res.status(403).json({ error: 'calendarBooking feature is disabled', code: 'BOOKING_DISABLED' });
-  } catch (err) {
-    return next(err);
-  }
-});
-router.use(requireFeatureFlag('quotes', 'QUOTES_DISABLED'));
+// With `quotes` off (which also switches booking off) there is no quote or
+// invoice to accept into or book on, but a paid deposit can still be
+// declined and refunded, and a gallery waiting for payment opened by hand:
+// otherwise it would stay locked with no way to record the payment.
+const NO_QUOTES_ROUTES = [/^\/requests\/\d+\/decline$/, /^\/galleries\/\d+\/unlock$/];
+function openForDecisions(flag, routes, code) {
+  return async (req, res, next) => {
+    try {
+      if (await isFeatureEnabled(flag)) return next();
+      const deciding = req.method === 'GET' || (req.method === 'POST' && routes.some((r) => r.test(req.path)));
+      if (deciding && await deposits.depositDecisionsOpen()) return next();
+      return res.status(403).json({ error: `${flag} feature is disabled`, code });
+    } catch (err) {
+      return next(err);
+    }
+  };
+}
+router.use(openForDecisions('calendarBooking', DECISION_ROUTES, 'BOOKING_DISABLED'));
+router.use(openForDecisions('quotes', NO_QUOTES_ROUTES, 'QUOTES_DISABLED'));
 
 // For the admin menu: whether the bookings page is open although the flag
 // is off, because deposits still wait for a decision.

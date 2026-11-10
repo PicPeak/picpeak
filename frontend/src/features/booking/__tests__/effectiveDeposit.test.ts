@@ -13,4 +13,9 @@ describe('effectiveDeposit', () => {
     expect(effectiveDeposit('none', { ...base, estimateMinor: 10000 })).toBe(0);
     expect(effectiveDeposit('percent', { percent: 25, fixedMinor: 0, estimateMinor: 1234567, minimumMinor: 5000, currency: 'JPY' })).toBe(308600);
   });
+  it('rounds ISK and UGX to whole units, and never past the estimate', () => {
+    expect(effectiveDeposit('percent', { percent: 10, fixedMinor: 0, estimateMinor: 123450, minimumMinor: 0, currency: 'ISK' })).toBe(12300);
+    expect(effectiveDeposit('percent', { percent: 10, fixedMinor: 0, estimateMinor: 500000, minimumMinor: 0, currency: 'UGX' })).toBe(50000);
+    expect(effectiveDeposit('fixed', { percent: 0, fixedMinor: 500000, estimateMinor: 12360, minimumMinor: 0, currency: 'JPY' })).toBe(12300);
+  });
 });

@@ -62,6 +62,8 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
   });
   const at = useStudioTime(timezone);
   const projectsOn = useFeatureEnabled('projects');
+  // With quotes off only declining (refunds) and opening galleries remain.
+  const quotesOn = useFeatureEnabled('quotes');
   const [declining, setDeclining] = useState<{ id: number; reason: string } | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [depositInvoice, setDepositInvoice] = useState<Record<number, number>>({});
@@ -217,7 +219,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
               </ul>
             </div>
           </div>
-          {['paid', 'review'].includes(r.depositStatus) && r.depositAppliedMinor < received(r) && openInvoices(r).length > 0 && (
+          {quotesOn && ['paid', 'review'].includes(r.depositStatus) && r.depositAppliedMinor < received(r) && openInvoices(r).length > 0 && (
             // The route needs both: the booking (quotes) and the payment (bills).
             <PermissionGate permissions={['quotes.manage', 'bills.manage']} requireAll>
               <div className="mt-3 flex flex-wrap items-end justify-end gap-2">
@@ -244,7 +246,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
             </PermissionGate>
           )}
           <div className="mt-3 flex flex-wrap justify-end gap-2">
-            {r.quoteId && (
+            {r.quoteId && quotesOn && (
               <Link to={`/admin/clients/quotes/${r.quoteId}`}>
                 <Button variant="outline" size="sm">{t('booking.admin.openQuote', 'Open quote')}</Button>
               </Link>
@@ -262,7 +264,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
                 </Button>
               </PermissionGate>
             )}
-            {(r.status === 'pending' || r.status === 'expired') && (
+            {quotesOn && (r.status === 'pending' || r.status === 'expired') && (
               // The route needs all three: new customer, project and quote.
               <PermissionGate permissions={['quotes.manage', 'customers.create', 'events.edit']} requireAll>
                 <Button size="sm" disabled={busy === r.id} onClick={() => accept(r)}>
@@ -452,6 +454,7 @@ export const BookingsPage: React.FC = () => {
   // Switched off, the page is open only to decide deposits still waiting:
   // blocked times and settings wait for the flag.
   const bookingOn = useFeatureEnabled('calendarBooking');
+  const quotesOn = useFeatureEnabled('quotes');
   const tabs = bookingOn ? TABS : (['requests'] as Tab[]);
   const requested = searchParams.get('tab') as Tab | null;
   const tab: Tab = requested && tabs.includes(requested) ? requested : 'requests';
@@ -474,7 +477,9 @@ export const BookingsPage: React.FC = () => {
       <h2 className="text-xl font-bold text-heading">{t('booking.admin.title', 'Bookings')}</h2>
       {!bookingOn && (
         <div className="rounded-lg border border-line bg-shell p-3 text-sm text-body">
-          {t('booking.admin.flagOffNotice', 'Online booking is switched off. Clients cannot send new requests. Deposits that came in still wait for you here: decline to refund them, or accept and book them on an invoice.')}
+          {quotesOn
+            ? t('booking.admin.flagOffNotice', 'Online booking is switched off. Clients cannot send new requests. Deposits that came in still wait for you here: decline to refund them, or accept and book them on an invoice.')
+            : t('booking.admin.quotesOffNotice', 'Quotes are switched off, and online booking with them. Deposits that came in still wait for you here: decline to refund them. Galleries waiting for payment can be opened by hand.')}
         </div>
       )}
       <div role="tablist" className="flex flex-wrap gap-1 border-b border-line">

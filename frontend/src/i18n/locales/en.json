@@ -9625,7 +9625,8 @@
         "settings": "Settings"
       },
       "applyReviewHint": "{{amount}} came in. Booking it on an invoice settles the review.",
-      "flagOffNotice": "Online booking is switched off. Clients cannot send new requests. Deposits that came in still wait for you here: decline to refund them, or accept and book them on an invoice."
+      "flagOffNotice": "Online booking is switched off. Clients cannot send new requests. Deposits that came in still wait for you here: decline to refund them, or accept and book them on an invoice.",
+      "quotesOffNotice": "Quotes are switched off, and online booking with them. Deposits that came in still wait for you here: decline to refund them. Galleries waiting for payment can be opened by hand."
     },
     "public": {
       "sendAndPay": "Send and pay the deposit",

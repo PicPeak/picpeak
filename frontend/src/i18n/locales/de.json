@@ -9590,7 +9590,8 @@
         "settings": "Einstellungen"
       },
       "applyReviewHint": "{{amount}} sind eingegangen. Mit dem Verbuchen auf einer Rechnung ist die Prüfung erledigt.",
-      "flagOffNotice": "Die Online-Buchung ist ausgeschaltet. Kunden können keine neuen Anfragen senden. Eingegangene Anzahlungen warten hier weiter auf Ihren Entscheid: ablehnen, um sie zurückzuerstatten, oder annehmen und auf einer Rechnung verbuchen."
+      "flagOffNotice": "Die Online-Buchung ist ausgeschaltet. Kunden können keine neuen Anfragen senden. Eingegangene Anzahlungen warten hier weiter auf Ihren Entscheid: ablehnen, um sie zurückzuerstatten, oder annehmen und auf einer Rechnung verbuchen.",
+      "quotesOffNotice": "Angebote sind ausgeschaltet und damit auch die Online-Buchung. Eingegangene Anzahlungen warten hier weiter auf Ihren Entscheid: ablehnen, um sie zurückzuerstatten. Galerien, die auf die Zahlung warten, können Sie von Hand öffnen."
     },
     "public": {
       "sendAndPay": "Senden und Anzahlung bezahlen",

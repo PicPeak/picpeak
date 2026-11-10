@@ -2156,6 +2156,7 @@
       "signals": [],
       "reason": "Client booking requests, deposits, gallery unlock, blocked times and booking settings (issue 2440): no product-usage middleware, counters or report triggers. Requests hold client names, contact details, appointment times, estimates and payments.",
       "route_signatures": [
+        "GET /decisions-open",
         "GET /requests",
         "GET /requests/:id",
         "POST /requests/:id/accept",
