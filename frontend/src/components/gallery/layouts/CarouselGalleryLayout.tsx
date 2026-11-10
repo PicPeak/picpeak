@@ -18,6 +18,7 @@ import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { downloadLimitReachedMessage } from '../../../utils/downloadLimit';
 import { usePhotoDownloadPending, preparingDownloadMessage } from '../../../hooks/usePhotoDownloadPending';
 import { withFocalPosition } from '../../../utils/focalPoint';
+import { lightboxImageUrl } from '../imageTiers';
 
 export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   photos,
@@ -117,9 +118,10 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
       <div className="photo-card relative h-[50vh] sm:h-[60vh] lg:h-[70vh] bg-black rounded-lg overflow-hidden">
         {/* A video's original cannot render as an image, and on a gallery
             with a download limit fetching it takes a slot (issue 1560):
-            its poster instead. */}
+            its poster instead. A photo shows the lightbox preview, not the
+            original (issue 2465); Download still hands over the original. */}
         <AuthenticatedImage
-          src={currentPhoto.media_type === 'video' && currentPhoto.thumbnail_url ? currentPhoto.thumbnail_url : currentPhoto.url}
+          src={currentPhoto.media_type === 'video' && currentPhoto.thumbnail_url ? currentPhoto.thumbnail_url : lightboxImageUrl(currentPhoto)}
           alt={photoLabels.of(currentPhoto, currentPhoto.filename)}
           // Dimmed when the client hid it from guests, as in Grid (issue 1992).
           className={`w-full h-full object-contain${isClient && onToggleVisibility && isHiddenFromGuests(currentPhoto) ? ' opacity-40' : ''}`}
