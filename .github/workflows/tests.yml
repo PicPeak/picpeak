@@ -25,7 +25,17 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Installed by the media tools step; part of its apt cache key.
-      MEDIA_APT_PACKAGES: build-essential ffmpeg libimage-exiftool-perl sqlite3
+      # postgresql-client gives the runner createdb for the worker database.
+      MEDIA_APT_PACKAGES: build-essential ffmpeg libimage-exiftool-perl sqlite3 postgresql-client
+      # S3-compatible store for the backup/restore S3 suites (started below).
+      # MinIO no longer publishes images on Docker Hub or quay.io; Chainguard's
+      # free build is pinned by digest. Bump it by pulling
+      # cgr.dev/chainguard/minio:latest and copying its RepoDigest.
+      MINIO_IMAGE: cgr.dev/chainguard/minio@sha256:fb893e36fc369d41e92f678b17ec27378fa5bf0576aeef7ac15460c13629ab5a
+      # The generation suites sign with these fixed keys, so the server's
+      # root account uses them and every S3 suite shares one login.
+      MINIO_ROOT_USER: owned-generation-access
+      MINIO_ROOT_PASSWORD: owned-generation-secret
     # Runaway guard for the whole job, not a performance budget. The suite is
     # the only one that boots Postgres and runs the full integration set, so
     # it is the only one long enough for runner contention to matter, and it
@@ -67,6 +77,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Not a `services:` entry: a service container cannot be given a command,
+      # and MinIO needs `server /data`. /data is a tmpfs because MinIO renames
+      # across its data directory, which an overlay filesystem refuses. Every
+      # suite creates and deletes its own bucket, so no bucket is made here.
+      - name: Start MinIO
+        timeout-minutes: 5
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            --mount type=tmpfs,destination=/data,tmpfs-mode=1777 \
+            -e MINIO_ROOT_USER -e MINIO_ROOT_PASSWORD \
+            "$MINIO_IMAGE" server /data
+          for attempt in $(seq 1 60); do
+            curl -sf http://127.0.0.1:9000/minio/health/ready && exit 0
+            sleep 1
+          done
+          docker logs minio
+          exit 1
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -121,6 +149,18 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" ~/apt-debs
           npm run build:native
 
+      # portableRestoreWorkerPg.test.js restores into a database it requires to
+      # be new, empty and disposable, and checks the name has this shape. The
+      # runner owns createdb; the job's Postgres service goes away with the
+      # job, which is the dropdb. Never the shared picpeak_test database.
+      - name: Create the PostgreSQL worker test database
+        env:
+          PGPASSWORD: testpass
+        run: |
+          name="picpeak_owned_worker_$(openssl rand -hex 8)_main"
+          createdb -h 127.0.0.1 -U picpeak "$name"
+          echo "PICPEAK_PG_WORKER_TEST_URL=postgres://picpeak:testpass@127.0.0.1:5432/$name" >> "$GITHUB_ENV"
+
       - name: Run Jest suite
         working-directory: ./backend
         # On the step, not only on the job: a job that hits its own cap is
@@ -130,10 +170,16 @@ jobs:
         # from a cancellation in the checks list and in the log.
         timeout-minutes: 35
         env:
-          # backupService tests would otherwise try a real S3 round-trip.
-          # The S3 path itself is covered separately by the integration
-          # suite when MinIO is provisioned.
-          SKIP_S3_TESTS: 'true'
+          # MinIO (started above) un-gates the S3 suites: backup-s3,
+          # storageBackend and imageProcessor.storage read TEST_S3_* and skip
+          # unless SKIP_S3_TESTS is 'false' (jest.setup.js defaults it to
+          # 'true'); the S3 generation and restore-worker suites read
+          # PICPEAK_GENERATION_S3_TEST_URL and set their own STORAGE_S3_*.
+          SKIP_S3_TESTS: 'false'
+          TEST_S3_ENDPOINT: 'http://127.0.0.1:9000'
+          TEST_S3_ACCESS_KEY: owned-generation-access
+          TEST_S3_SECRET_KEY: owned-generation-secret
+          PICPEAK_GENERATION_S3_TEST_URL: 'http://127.0.0.1:9000'
           # Un-gates the real-Postgres cases in the .picpeak restore suites
           # (see the `services:` note above). Absent it they silently skip.
           PICPEAK_PG_TEST_URL: 'postgres://picpeak:testpass@127.0.0.1:5432/picpeak_test'

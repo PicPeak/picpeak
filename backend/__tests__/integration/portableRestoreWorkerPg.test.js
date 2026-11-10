@@ -74,7 +74,7 @@ postgres('portable restore actual hard-limited PostgreSQL worker', () => {
       .where('role_permissions.role_id', operator.role_id).pluck('permissions.name');
     ({ importFromPicpeak } = require('../../src/services/picpeakImportService'));
     expect(require('../../src/services/portableRestoreWorker').workerConfiguration()).toMatchObject({
-      memoryBytes: 768 * 1024 * 1024, heap: 384,
+      memoryBytes: 768 * 1024 * 1024, heap: 460,
     });
   }, 120000);
 
