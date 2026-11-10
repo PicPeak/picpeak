@@ -58,6 +58,7 @@ function normaliseEventTimeTriple({ event_time_start, event_time_end, is_full_da
 }
 
 const { getStoragePath } = require('../config/storage');
+const { toDateOnly } = require('../utils/dateOnly');
 
 // Cache for schema detection
 let customerColumnCache = null;
@@ -99,6 +100,12 @@ const mapEventForApi = (event) => {
     customer_email,
     ...rest
   } = event;
+
+  // A pg `date` is a Date at local midnight, which JSON sends as the day
+  // before east of UTC. Send the day, as SQLite installs already do.
+  for (const col of ['event_date', 'event_end_date']) {
+    if (rest[col] instanceof Date) rest[col] = toDateOnly(rest[col]);
+  }
 
   return {
     ...rest,

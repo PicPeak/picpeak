@@ -53,6 +53,7 @@ const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { db } = require('../database/db');
+const { toDateOnly } = require('../utils/dateOnly');
 const customerHoursService = require('../services/customerHoursService');
 
 const router = express.Router();
@@ -84,8 +85,9 @@ const PENDING_CONTRACT_STATUSES = ['signed_by_customer', 'fully_signed'];
  *
  * Different drivers return the value differently:
  *   - SQLite (dev) returns a string like "2026-05-18" — slice it.
- *   - node-postgres (prod) returns a JS Date set to UTC midnight of
- *     the stored day — extract the UTC components.
+ *   - node-postgres (prod) returns a JS Date at LOCAL midnight of the
+ *     stored day — read it with local getters (toDateOnly). UTC getters
+ *     gave the day before east of UTC.
  *
  * The previous shape kept the Date object as-is in the JSON response
  * ("2026-05-18T00:00:00.000Z"), which the frontend then concatenated
@@ -99,12 +101,7 @@ const PENDING_CONTRACT_STATUSES = ['signed_by_customer', 'fully_signed'];
 function toIsoDateString(value) {
   if (!value) return null;
   if (typeof value === 'string') return value.slice(0, 10);
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const y = value.getUTCFullYear();
-    const m = String(value.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(value.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return toDateOnly(value);
   return null;
 }
 

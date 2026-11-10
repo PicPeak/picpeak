@@ -8,6 +8,7 @@ const { issuerIntlLocale } = require('../../utils/issuerIntlLocale');
 const { AppError } = require('../../utils/errors');
 const { nextDocumentNumber } = require('../../utils/documentSequences');
 const { ensureInt } = require('../../utils/numericHelpers');
+const { toDateOnly } = require('../../utils/dateOnly');
 
 // Migration 119 line-item hierarchy helpers, shared with quoteService.
 // We import lazily inside the functions that use them to avoid a
@@ -64,23 +65,55 @@ async function ensureEventMatchesCustomer(eventId, customerAccountId, trx = db) 
 function computeScheduledSendAt(trigger, offsetDays, eventDate, baseDate = new Date()) {
   const ms = 24 * 60 * 60 * 1000;
   const offset = ensureInt(offsetDays) * ms;
-  const eventTs = eventDate ? new Date(eventDate).getTime() : null;
+  // Event-relative sends go out at local midnight of the event day plus
+  // whole calendar days, so the issue date (the local day of this instant,
+  // see issueDayOf) is the event day moved by the offset, across DST too.
+  const eventDay = localDayStart(eventDate);
   switch (trigger) {
   case 'quote_accepted':
     return new Date(baseDate.getTime() + offset);
   case 'before_event':
   case 'after_event':
-    if (!eventTs) return new Date(baseDate.getTime() + offset);
-    return new Date(eventTs + offset);
+    if (!eventDay) return new Date(baseDate.getTime() + offset);
+    return addLocalDays(eventDay, ensureInt(offsetDays));
   case 'after_delivery':
     // Treat as event_date + 14 days as a sensible default; admin can
     // edit the scheduled_send_at on the invoice later.
-    if (!eventTs) return new Date(baseDate.getTime() + 14 * ms + offset);
-    return new Date(eventTs + 14 * ms + offset);
+    if (!eventDay) return new Date(baseDate.getTime() + 14 * ms + offset);
+    return addLocalDays(eventDay, 14 + ensureInt(offsetDays));
   case 'fixed_date':
   default:
     return new Date(baseDate.getTime() + offset);
   }
+}
+
+// Local midnight of the calendar day `value` names. A pg `date` arrives as a
+// Date at local midnight, SQLite's as 'YYYY-MM-DD' text, which `new Date()`
+// would read as UTC midnight: the day before west of UTC.
+function localDayStart(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const day = toDateOnly(typeof value === 'number' ? new Date(value) : value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day));
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function addLocalDays(date, days) {
+  const out = new Date(date.getTime());
+  out.setDate(out.getDate() + days);
+  return out;
+}
+
+// The day an invoice sent at `instant` is issued on: the server's local
+// calendar day. toISOString would give the UTC day, the day before east of
+// UTC for anything near local midnight.
+function issueDayOf(instant) {
+  return toDateOnly(instant instanceof Date ? instant : new Date(instant));
+}
+
+// 'YYYY-MM-DD' plus whole days, as calendar arithmetic (UTC, so no DST).
+function addDaysToDay(day, days) {
+  return computeDueDate(new Date(`${toDateOnly(day)}T00:00:00.000Z`), days).toISOString().slice(0, 10);
 }
 
 function computeDueDate(scheduledSendAt, netDays = 30) {
@@ -329,6 +362,9 @@ module.exports = {
   ensureEventMatchesCustomer,
   computeScheduledSendAt,
   computeDueDate,
+  addDaysToDay,
+  issueDayOf,
+  localDayStart,
   resolveNetDays,
   resolveNetDaysForRow,
   resolveDealUuid,

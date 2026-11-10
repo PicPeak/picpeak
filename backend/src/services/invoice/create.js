@@ -14,7 +14,7 @@ const { hasColumnCached } = require('../../utils/schemaCache');
 const { toStoredTimestamp, toTimestamp } = require('../../utils/dateNormalize');
 const { vatMinorFor, normaliseVatGbpRate, roundsVatDown } = require('../../utils/vatAmount');
 const { isUnitedKingdom } = require('../../utils/postalAddress');
-const { computeDueDate, computeScheduledSendAt, ensureCustomerCanBill, ensureEventMatchesCustomer, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
+const { addDaysToDay, computeDueDate, computeScheduledSendAt, ensureCustomerCanBill, issueDayOf, ensureEventMatchesCustomer, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
 const { appendToMonthlyDraft } = require('./drafts');
 const { auditedInsert } = require('../accountingHistory');
 
@@ -457,7 +457,8 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
     const rowScheduledSendAt = (isDeliveryTrigger || hold) ? null : scheduledSendAt;
 
     const invoiceNumber = await nextInvoiceNumber(trx);
-    const dueDate = computeDueDate(scheduledSendAt, resolvedNetDays).toISOString().slice(0, 10);
+    const issueDay = issueDayOf(scheduledSendAt);
+    const dueDate = addDaysToDay(issueDay, resolvedNetDays);
 
     const row = {
       invoice_number: invoiceNumber,
@@ -474,7 +475,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       event_time_end: eventTimeEnd || null,
       language,
       currency,
-      issue_date: scheduledSendAt.toISOString().slice(0, 10),
+      issue_date: issueDay,
       due_date: dueDate,
       installment_index: i,
       installment_total: total,

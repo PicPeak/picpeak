@@ -59,7 +59,7 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
   const periodEnd = isManual ? null : target;
   // Placeholder issue/due date for the empty draft row — recomputed at
   // issuance time. Manual drafts have no period_end, so fall back to today.
-  const placeholderDate = (periodEnd || today).toISOString().slice(0, 10);
+  const placeholderDate = toDateOnly(periodEnd || today);
 
   // Look up any existing open draft for this customer. We deliberately
   // do NOT filter by monthly_period_end here — only one draft can be
@@ -113,8 +113,8 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
     business_bank_account_id: bank?.id || null,
     qr_format: null,
     is_monthly_draft: true,
-    monthly_period_start: periodStart ? periodStart.toISOString().slice(0, 10) : null,
-    monthly_period_end: periodEnd ? periodEnd.toISOString().slice(0, 10) : null,
+    monthly_period_start: periodStart ? toDateOnly(periodStart) : null,
+    monthly_period_end: periodEnd ? toDateOnly(periodEnd) : null,
     // Migration 140 — each monthly-draft cycle is its own deal (no
     // quote/contract chain). Fresh UUID at creation; subsequent line
     // appends just mutate this same row, so the uuid sticks.

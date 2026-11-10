@@ -25,7 +25,9 @@ function extractNormaliseDateKey() {
   const match = ROUTE_SRC.match(/function normaliseDateKey\([\s\S]*?\n\}/);
   if (!match) throw new Error('normaliseDateKey not found in adminDashboard.js');
   // eslint-disable-next-line no-new-func
-  return new Function(`${match[0]}; return normaliseDateKey;`)();
+  return new Function('toDateOnly', `${match[0]}; return normaliseDateKey;`)(
+    require('../../src/utils/dateOnly').toDateOnly,
+  );
 }
 
 const normaliseDateKey = extractNormaliseDateKey();

@@ -41,6 +41,7 @@ const customerDocumentRequestsService = require('../services/customerDocumentReq
 const customerGroupsService = require('../services/customerGroupsService');
 const { receiveDocumentUpload, discardTempFile, sendDocumentAttachment } = require('../middleware/customerDocumentUpload');
 const documentFormats = require('../services/documentFormats');
+const { toDateOnly } = require('../utils/dateOnly');
 
 const router = express.Router();
 
@@ -1043,7 +1044,7 @@ function transformHourEntry(h) {
   return {
     id: h.id,
     customerAccountId: h.customer_account_id,
-    entryDate: typeof h.entry_date === 'string' ? h.entry_date.slice(0, 10) : h.entry_date,
+    entryDate: toDateOnly(h.entry_date),
     startTime: h.start_time,
     endTime: h.end_time,
     durationMinutes: Number(h.duration_minutes),

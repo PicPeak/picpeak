@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
+const { toDateOnly } = require('../utils/dateOnly');
 
 const SECRET_PREFIX = 'whsec_';
 
@@ -262,7 +263,9 @@ function buildEventSubject(input = {}) {
     slug: e.slug ?? null,
     event_name: e.event_name ?? null,
     event_type: e.event_type ?? null,
-    event_date: e.event_date ?? null,
+    // A pg `date` is a Date at local midnight; JSON would send the day before
+    // east of UTC. SQLite values pass through as stored.
+    event_date: e.event_date instanceof Date ? toDateOnly(e.event_date) : (e.event_date ?? null),
     share_url: e.share_url ?? null,
     share_token: e.share_token ?? null,
     customer_name: e.customer_name ?? null,

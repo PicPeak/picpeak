@@ -8,6 +8,7 @@ const { sanitizeDays } = require('../utils/sqlSecurity');
 const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
 const { resolveAdapter } = require('../services/trackers');
 const logger = require('../utils/logger');
+const { toDateOnly } = require('../utils/dateOnly');
 const { withDocumentNumbers } = require('../services/activityDocumentNumbers');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
@@ -23,11 +24,13 @@ const router = express.Router();
  * driver auto-converts it to a JavaScript Date object, which broke the
  * old `dateObj.date === row.date` merge below — every Postgres install saw
  * an all-zero `chartData[]` even with real traffic (#661 Bug A). Always
- * normalise before comparing.
+ * normalise before comparing. A pg `date` is a Date at LOCAL midnight of
+ * the UTC day the database computed, so it is read with local getters
+ * (toDateOnly): toISOString gave the day before east of UTC.
  */
 function normaliseDateKey(value) {
   if (!value) return null;
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (value instanceof Date) return toDateOnly(value);
   // Strings might arrive with time component, slice defensively.
   return String(value).slice(0, 10);
 }

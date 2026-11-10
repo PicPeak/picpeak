@@ -9,7 +9,7 @@ const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
 const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('../accountingHistory');
-const { computeDueDate, computeScheduledSendAt, isInvoiceEditable, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
+const { addDaysToDay, computeScheduledSendAt, isInvoiceEditable, issueDayOf, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
 
 
 /**
@@ -268,7 +268,8 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
     const isDeliveryTrigger = inst.trigger === 'after_delivery';
     const rowStatus = isDeliveryTrigger ? 'pending_delivery' : 'scheduled';
     const rowScheduledSendAt = isDeliveryTrigger ? null : scheduledSendAt;
-    const dueDate = computeDueDate(scheduledSendAt, netDays).toISOString().slice(0, 10);
+    const issueDay = issueDayOf(scheduledSendAt);
+    const dueDate = addDaysToDay(issueDay, netDays);
     const label = inst.label || `Installment ${i + 1}/${newCount}`;
 
     if (i < reusableCount) {
@@ -280,7 +281,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
         installment_trigger: inst.trigger,
         status: rowStatus,
         scheduled_send_at: toStoredTimestamp(rowScheduledSendAt),
-        issue_date: scheduledSendAt.toISOString().slice(0, 10),
+        issue_date: issueDay,
         due_date: dueDate,
         net_amount_minor: slice.net,
         vat_amount_minor: slice.vat,
@@ -316,7 +317,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
       event_time_end: sample.event_time_end,
       language: sample.language,
       currency: sample.currency,
-      issue_date: scheduledSendAt.toISOString().slice(0, 10),
+      issue_date: issueDay,
       due_date: dueDate,
       installment_index: i,
       installment_total: newCount,

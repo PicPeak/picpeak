@@ -54,6 +54,7 @@ const REPORTABLE_STATUSES = ['sent', 'paid', 'overdue', 'cancelled'];
 // D.2 — `ensureInt` consolidated into utils/numericHelpers.
 const { ensureInt } = require('../utils/numericHelpers');
 const { toTimestamp } = require('../utils/dateNormalize');
+const { toDateOnly } = require('../utils/dateOnly');
 const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
 const logger = require('../utils/logger');
 
@@ -611,6 +612,26 @@ async function getTaxReport({ from, to, currency, includeCosts = true } = {}) {
   });
 }
 
+// The report as the JSON route sends it. On PostgreSQL the row dates are
+// Dates (`date` columns at local midnight), which JSON sends as the day before
+// east of UTC, and the on-screen table slices that string. Send the local
+// day, as the CSV export prints it. The PDF and CSV renderers keep reading the
+// Dates: a bare day there would be read as UTC midnight, west of UTC the day
+// before.
+const dayOf = (value) => (value instanceof Date ? toDateOnly(value) : value);
+function withDayDates(report) {
+  if (!report) return report;
+  const withDate = (rows, key) => (Array.isArray(rows) ? rows.map((r) => ({ ...r, [key]: dayOf(r[key]) })) : rows);
+  return {
+    ...report,
+    rows: withDate(report.rows, 'issueDate'),
+    costs: report.costs && Array.isArray(report.costs.rows)
+      ? { ...report.costs, rows: withDate(report.costs.rows, 'date') }
+      : report.costs,
+    ledger: withDate(report.ledger, 'date'),
+  };
+}
+
 // ---------------------------------------------------------------------
 // PDF + CSV renderers
 // ---------------------------------------------------------------------
@@ -1137,6 +1158,7 @@ async function renderTaxReportCsv({ from, to, currency, locale, scope } = {}) {
 
 module.exports = {
   getTaxReport,
+  withDayDates,
   renderTaxReportPdf,
   renderTaxReportCsv,
   // Exposed for unit tests.

@@ -85,7 +85,7 @@ router.get(
   handleAsync(async (req, res) => {
     validateRequest(req);
     const report = await taxReportService.getTaxReport(parseParams(req));
-    return successResponse(res, { report });
+    return successResponse(res, { report: taxReportService.withDayDates(report) });
   })
 );
 

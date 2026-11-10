@@ -11,6 +11,7 @@ const { sendInvoice } = require('./sending');
 const { auditedUpdate } = require('../accountingHistory');
 const { isUkBusiness } = require('../../utils/vatAmount');
 const { hasColumnCached } = require('../../utils/schemaCache');
+const { toDateOnly } = require('../../utils/dateOnly');
 
 
 /**
@@ -70,7 +71,7 @@ async function runScheduledTasks() {
   monthlyToday.setHours(0, 0, 0, 0);
   const dueDrafts = await db('invoices')
     .where({ is_monthly_draft: true })
-    .andWhere('monthly_period_end', '<=', monthlyToday.toISOString().slice(0, 10))
+    .andWhere('monthly_period_end', '<=', toDateOnly(monthlyToday))
     .limit(50);
   for (const draft of dueDrafts) {
     try {
@@ -107,7 +108,7 @@ async function runScheduledTasks() {
       // time to now, recompute due_date from issue_date + the global
       // crm_invoices_net_days_default (best-effort; admin can override
       // by editing the draft before the cadence day).
-      const issueDate = monthlyToday.toISOString().slice(0, 10);
+      const issueDate = toDateOnly(monthlyToday);
       await auditedUpdate(db, 'invoices', { id: draft.id }, {
         is_monthly_draft: false,
         issue_date: issueDate,

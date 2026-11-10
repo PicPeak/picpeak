@@ -15,7 +15,7 @@ const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
-const { computeDueDate, ensureCustomerCanBill, formatMajor, getHierarchyHelpers, nextInvoiceNumber, resolveNetDaysForRow, isInvoiceEditable } = require('./helpers');
+const { addDaysToDay, computeDueDate, ensureCustomerCanBill, issueDayOf, formatMajor, getHierarchyHelpers, nextInvoiceNumber, resolveNetDaysForRow, isInvoiceEditable } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 const { createInvoice } = require('./create');
 const { buildInvoiceRenderContext } = require('./render');
@@ -146,7 +146,7 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
   // Only on the first send (status 'scheduled'); 'sent' / 'overdue'
   // rows are immutable legal records and keep their stamped date.
   if (invoice.status === 'scheduled') {
-    const sendDateIso = new Date().toISOString().slice(0, 10);
+    const sendDateIso = issueDayOf(new Date());
     const netDays = await resolveNetDaysForRow(invoice);
     // Re-anchor the due date too, but only when it was machine-set: if
     // the stored due_date still equals the auto formula off the OLD
@@ -154,16 +154,21 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     // hand-edited it and we slide it to the new issue date. A divergent
     // value means a manual override (the editor's "Override due date"
     // toggle) — leave it untouched.
+    // The old base's issue day is its local day (issueDayOf). Rows written
+    // before that read it as the UTC day, so that formula counts as
+    // machine-set too.
     const oldBase = invoice.scheduled_send_at
       ? new Date(invoice.scheduled_send_at)
       : new Date(invoice.issue_date);
-    const oldAutoDue = computeDueDate(oldBase, netDays).toISOString().slice(0, 10);
-    const storedDue = invoice.due_date
-      ? new Date(invoice.due_date).toISOString().slice(0, 10)
-      : null;
+    const oldIssueDay = invoice.scheduled_send_at ? issueDayOf(oldBase) : toDateOnly(invoice.issue_date);
+    const oldAutoDues = new Set([
+      addDaysToDay(oldIssueDay, netDays),
+      computeDueDate(oldBase, netDays).toISOString().slice(0, 10),
+    ]);
+    const storedDue = toDateOnly(invoice.due_date);
     const updates = { issue_date: sendDateIso, updated_at: new Date() };
-    if (storedDue && storedDue === oldAutoDue) {
-      updates.due_date = computeDueDate(new Date(sendDateIso), netDays).toISOString().slice(0, 10);
+    if (storedDue && oldAutoDues.has(storedDue)) {
+      updates.due_date = addDaysToDay(sendDateIso, netDays);
     }
     await auditedUpdate(db, 'invoices', { id, status: 'scheduled' }, updates, { actor: adminId, source: 'invoice.send.issueDate' });
     invoice.issue_date = updates.issue_date;
@@ -344,7 +349,7 @@ async function createStorno(originalId, adminId, trx = db) {
   // SQLite deadlocks otherwise (1-connection default).
   const stornoNumber = await nextInvoiceNumber(trx);
   const now = new Date();
-  const issueDate = now.toISOString().slice(0, 10);
+  const issueDate = issueDayOf(now);
 
   // Insert the Storno row. Totals negated for accounting integrity
   // (tax report aggregates by row-level totals, so a Storno
@@ -743,9 +748,9 @@ async function releaseForDelivery(id, adminId) {
   // happen here: sendInvoice compares against scheduled_send_at, which from
   // this update on is today and would read the old date as a manual override.
   const netDays = await resolveNetDaysForRow(invoice);
-  const assumedDue = computeDueDate(new Date(toDateOnly(invoice.issue_date)), netDays).toISOString().slice(0, 10);
+  const assumedDue = addDaysToDay(invoice.issue_date, netDays);
   if (toDateOnly(invoice.due_date) === assumedDue) {
-    updates.due_date = computeDueDate(now, netDays).toISOString().slice(0, 10);
+    updates.due_date = addDaysToDay(issueDayOf(now), netDays);
   }
   const released = await auditedUpdate(db, 'invoices', { id, status: 'pending_delivery' }, updates,
     { actor: adminId, source: 'invoice.releaseForDelivery' });
@@ -847,7 +852,7 @@ async function triggerMonthlyBillNow(customerId, adminId) {
   // path treats it like any other ready-to-send invoice. Logged as a
   // distinct activity so the audit trail shows admin override vs the
   // scheduler's automatic fire.
-  const issueDate = new Date().toISOString().slice(0, 10);
+  const issueDate = issueDayOf(new Date());
   await auditedUpdate(db, 'invoices', { id: draft.id }, {
     is_monthly_draft: false,
     issue_date: issueDate,
