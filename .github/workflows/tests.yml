@@ -94,7 +94,7 @@ jobs:
             image="$MINIO_FALLBACK_IMAGE"
             docker pull --quiet "$image"
             digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$image")
-            echo "::warning title=MinIO pin unavailable::$MINIO_IMAGE could not be pulled; ran $digest instead. Pin that digest as MINIO_IMAGE in tests.yml."
+            echo "::warning title=MinIO pin not pulled::$MINIO_IMAGE could not be pulled (gone upstream, or a registry error); ran $digest instead. If the pin is gone, pin that digest as MINIO_IMAGE in tests.yml."
           fi
           docker run -d --name minio -p 9000:9000 \
             --mount type=tmpfs,destination=/data,tmpfs-mode=1777,tmpfs-size=1g \
