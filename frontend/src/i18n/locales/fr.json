@@ -3113,6 +3113,7 @@
         "not_standalone": "Cette sauvegarde ne peut pas être restaurée seule ; elle n'a donc pas été restaurée à titre de test.",
         "no_manifest": "Cette sauvegarde n'a pas de manifeste ; son contenu n'a donc pas pu être vérifié.",
         "interrupted": "Le test a été interrompu avant la fin, par exemple par un redémarrage du serveur.",
+        "no_database_in_backup": "Cette sauvegarde a été faite sans la base de données (Configuration → Éléments à sauvegarder) : seuls ses fichiers ont été vérifiés. Incluez la base de données pour des tests de restauration complets.",
         "no_database_dump": "Cette sauvegarde ne contient pas de dump de la base de données ; il n'y avait donc rien à restaurer à titre de test.",
         "legacy_manifest": "Cette sauvegarde date d'avant la signature des manifestes : ses sommes de contrôle ne sont pas fiables et elle n'a pas été testée. Les nouvelles sauvegardes sont signées et testées."
       },

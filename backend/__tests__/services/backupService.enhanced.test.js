@@ -896,6 +896,7 @@ describe('Enhanced Backup Service Tests', () => {
 
     it('should clean up old backup runs', async () => {
       mockDb.delete.mockResolvedValue(5);
+      jest.spyOn(backupService, 'retainedRestorePoints').mockResolvedValue({ kept: new Set(), byType: { local: [], s3: [] } });
       
       await backupService.cleanupOldBackupRuns(30);
       

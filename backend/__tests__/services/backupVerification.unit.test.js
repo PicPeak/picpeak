@@ -120,3 +120,26 @@ describe('tiered retention selection', () => {
     expect([...selectRetainedRuns(runs, { keep: 0, monthly: 1, now, timeZone: 'Europe/Zurich' })]).toEqual([2]);
   });
 });
+
+describe('review round 1 (PR 2461)', () => {
+  const { _internal: { fileCheckResult, leftByDeadProcess } } = require('../../src/services/backupVerificationService');
+
+  it('concern 5: matching 100k hashed paths is linear (a Set), not list x results', () => {
+    const list = Array.from({ length: 100000 }, (_, i) => ({ path: `events/active/E/${i}.jpg` }));
+    const results = list.map((e, i) => ({ path: e.path, ok: i !== 99999, error: i === 99999 ? 'missing' : undefined }));
+    const started = Date.now();
+    const result = fileCheckResult('files_all', list, results, { what: 'files', none: '-' });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(result).toMatchObject({ result: 'failed' });
+    expect(result.detail).toMatch(/^1 of 100000 files failed: events\/active\/E\/99999\.jpg \(missing\)/);
+  });
+
+  it('concern 3: lease ownership by host and pid', () => {
+    const row = (owner) => ({ is_running: true, owner });
+    expect(leftByDeadProcess(row('h:42'), { hostname: 'h', pid: 42 })).toBe(true);           // this very pid
+    expect(leftByDeadProcess(row(`h:${process.ppid}`), { hostname: 'h', pid: 42 })).toBe(false); // alive
+    expect(leftByDeadProcess(row('h:2147483646'), { hostname: 'h', pid: 42 })).toBe(true);   // gone
+    expect(leftByDeadProcess(row('other:42'), { hostname: 'h', pid: 42 })).toBe(false);      // another host
+    expect(leftByDeadProcess({ is_running: false, owner: 'h:42' }, { hostname: 'h', pid: 42 })).toBe(false);
+  });
+});

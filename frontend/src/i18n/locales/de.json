@@ -1474,6 +1474,7 @@
         "not_standalone": "Dieses Backup lässt sich nicht für sich allein wiederherstellen und wurde daher nicht testweise wiederhergestellt.",
         "no_manifest": "Dieses Backup hat kein Manifest, daher konnte sein Inhalt nicht geprüft werden.",
         "interrupted": "Der Test wurde vor dem Abschluss unterbrochen, zum Beispiel durch einen Neustart des Servers.",
+        "no_database_in_backup": "Dieses Backup wurde ohne Datenbank erstellt (Konfiguration → Was soll gesichert werden), daher wurden nur seine Dateien geprüft. Nehmen Sie die Datenbank auf, um vollständige Wiederherstellungstests zu erhalten.",
         "no_database_dump": "Dieses Backup enthält keinen Datenbank-Dump, daher gab es nichts testweise wiederherzustellen.",
         "legacy_manifest": "Dieses Backup wurde erstellt, bevor Backup-Manifeste signiert wurden. Seinen Prüfsummen ist daher nicht zu trauen, und es wurde nicht getestet. Neue Backups werden signiert und getestet."
       },

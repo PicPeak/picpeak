@@ -53,6 +53,7 @@ const JOB_NAME = 'backup_verification';
 const STALE_DAYS = 14;
 const DEFAULTS = { enabled: true, cron: '0 4 * * 0', samplePercent: 5 };
 const WORKER = path.join(__dirname, '../workers/backupVerificationWorker.js');
+let workerPath = WORKER;
 const WORKER_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const BUSY_RETRY_MS = 60 * 1000;
 const BUSY_GIVE_UP_MS = 6 * 60 * 60 * 1000;
@@ -178,6 +179,27 @@ async function readMaintenanceMode() {
   return Boolean(row && (row.setting_value === 'true' || row.setting_value === true));
 }
 
+// A backup or restore on ANY replica writes a 'running' row. Rows older than
+// this are left by a process that died and no longer count, so a crash
+// blocks restore tests for at most this long.
+const RUNNING_ROW_WINDOW_MS = 12 * 60 * 60 * 1000;
+const MONITOR_INTERVAL_MS = 30 * 1000;
+
+/** 'backup' / 'restore' when another process (any replica) is running one. */
+async function sharedWorkRunning() {
+  const { toTimestamp } = require('../utils/dateNormalize');
+  const since = Date.now() - RUNNING_ROW_WINDOW_MS;
+  const live = (rows) => rows.some((row) => {
+    const at = toTimestamp(row.started_at);
+    return at !== null && at !== undefined && !Number.isNaN(at) && at >= since;
+  });
+  for (const [table, reason] of [['backup_runs', 'backup'], ['database_backup_runs', 'backup'], ['restore_runs', 'restore']]) {
+    const rows = await db(table).where({ status: 'running' }).select('started_at').catch(() => []);
+    if (live(rows)) return reason;
+  }
+  return null;
+}
+
 /** Why a test cannot start right now, or null. */
 async function busyReason() {
   if (current !== null || reserving) return 'verification';
@@ -189,6 +211,8 @@ async function busyReason() {
   const { restoreService } = require('./restoreService');
   if (restoreService.isRunning) return 'restore';
   if (await readMaintenanceMode()) return 'maintenance';
+  const shared = await sharedWorkRunning();
+  if (shared) return shared;
   await jobState.ensure(JOB_NAME);
   if ((await jobState.read(JOB_NAME)).isRunning) return 'verification';
   return null;
@@ -223,8 +247,17 @@ async function releaseLease(token, id) {
  */
 function yieldTo(reason) {
   if (!current) return;
-  current.aborted = reason;
-  for (const child of current.children) child.kill('SIGKILL');
+  current.aborted = current.aborted || reason;
+  for (const child of current.children) killTree(child);
+}
+
+// The worker runs in its own process group, so its psql goes with it.
+function killTree(child) {
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch (_) {
+    try { child.kill('SIGKILL'); } catch (__) { /* already gone */ }
+  }
 }
 
 // ----------------------------------------------------------- persistence --
@@ -274,16 +307,18 @@ function runWorker(mode, job, env = process.env) {
       reject(new Error('Restore test stopped'));
       return;
     }
-    const child = spawn(process.execPath, [WORKER, mode], {
+    const child = spawn(process.execPath, [workerPath, mode], {
       cwd: path.join(__dirname, '../..'),
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      // Own process group: stopping the test also stops its psql.
+      detached: true,
     });
     if (current) current.children.add(child);
     try { require('os').setPriority(child.pid, 19); } catch (_) { /* the worker lowers itself too */ }
     let stdout = '';
     let stderr = '';
-    const timer = setTimeout(() => child.kill('SIGKILL'), WORKER_TIMEOUT_MS);
+    const timer = setTimeout(() => killTree(child), WORKER_TIMEOUT_MS);
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-4000); });
     child.on('error', (error) => { clearTimeout(timer); reject(error); });
@@ -295,8 +330,18 @@ function runWorker(mode, job, env = process.env) {
         reject(new Error(`Verification worker ended without a result (${signal || `exit ${code}`}): ${stderr.trim().split('\n').slice(-3).join(' ')}`));
         return;
       }
-      const result = JSON.parse(line.slice(RESULT_PREFIX.length));
-      if (result.error) reject(new Error(result.error)); else resolve(result);
+      // A worker killed halfway through writing leaves a cut-off line; that
+      // must reject, never throw inside this listener.
+      let result;
+      try {
+        result = JSON.parse(line.slice(RESULT_PREFIX.length));
+      } catch (error) {
+        reject(new Error(`Verification worker returned an unreadable result (${signal || `exit ${code}`})`));
+        return;
+      }
+      if (!result || typeof result !== 'object') reject(new Error('Verification worker returned no result'));
+      else if (result.error) reject(new Error(result.error));
+      else resolve(result);
     });
     child.stdin.end(JSON.stringify(job));
   });
@@ -437,6 +482,10 @@ async function planFileBackup(run, config, checks) {
     dump: dumpEntry,
     files: fileEntries,
     engine: dumpEngine(manifest.database && manifest.database.type),
+    // Made with backup_include_database off, as the signed manifest records:
+    // a files-only restore point, not a broken one.
+    withoutDatabase: !dumpEntry && toBool(manifest.metadata && manifest.metadata.backup_settings
+      && manifest.metadata.backup_settings.backup_include_database, true) === false,
     expectedRowCounts: (manifest.database && manifest.database.row_counts) || {},
     plainSize: await recordedPlainSize(manifest.database && manifest.database.checksum),
   };
@@ -482,6 +531,23 @@ async function hasSpaceFor(dir, plan) {
 }
 
 // ------------------------------------------------------------ the test --
+
+/**
+ * One check over a list of hashed files. Matching goes through a Set: a
+ * "hash every file" run over a large library must not do list × results
+ * comparisons on the API process.
+ */
+function fileCheckResult(name, list, results, label) {
+  if (list.length === 0) return check(name, 'skipped', label.none);
+  const wanted = new Set(list.map((entry) => entry.path));
+  const bad = [];
+  for (const result of results) {
+    if (wanted.has(result.path) && !result.ok) bad.push(result);
+  }
+  return bad.length
+    ? check(name, 'failed', `${bad.length} of ${list.length} ${label.what} failed: ${bad.slice(0, 5).map((r) => `${r.path} (${r.error})`).join(', ')}${bad.length > 5 ? ', …' : ''}`)
+    : check(name, 'passed', `${list.length} ${label.what} match`);
+}
 
 async function runDrill(id, plan, workDir, checks) {
   const live = liveTarget();
@@ -533,7 +599,7 @@ async function execute(id, target, { full, samplePercent, drill }) {
   // A test stopped for a backup or a shutdown says so; its half-done checks
   // are not a verdict on the backup.
   const stopped = () => (current && current.aborted
-    ? finishRow(id, { status: 'skipped', skipReason: current.aborted === 'backup' ? 'busy' : 'interrupted', level, checks })
+    ? finishRow(id, { status: 'skipped', skipReason: ['backup', 'restore'].includes(current.aborted) ? 'busy' : 'interrupted', level, checks })
     : null);
   try {
     let plan;
@@ -547,7 +613,11 @@ async function execute(id, target, { full, samplePercent, drill }) {
       plan = await planDatabaseBackup(run, checks);
     }
     if (plan.stop) return finishRow(id, { status: 'failed', checks });
-    if (plan.skip) return finishRow(id, { status: 'skipped', skipReason: plan.skip, checks });
+    // A check that already failed (the parent chain, say) is not hidden
+    // behind the skip.
+    if (plan.skip) {
+      return finishRow(id, { status: checks.some((c) => c.result === 'failed') ? 'failed' : 'skipped', skipReason: plan.skip, checks });
+    }
 
     await fs.mkdir(workDir, { recursive: true, mode: 0o700 });
     if (!(await hasSpaceFor(workDir, plan))) {
@@ -568,7 +638,9 @@ async function execute(id, target, { full, samplePercent, drill }) {
       return finishRow(id, { status: 'failed', checks });
     }
 
-    if (!plan.dump) {
+    if (!plan.dump && plan.withoutDatabase) {
+      checks.push(check('dump_checksum', 'skipped', 'This backup was made without the database (backup_include_database is off), so there is no dump to test'));
+    } else if (!plan.dump) {
       checks.push(check('dump_checksum', 'failed', 'The backup holds no database dump'));
     } else if (deep.dump.ok) {
       checks.push(check('dump_checksum', 'passed', 'Database dump matches its recorded SHA-256'));
@@ -576,14 +648,7 @@ async function execute(id, target, { full, samplePercent, drill }) {
       checks.push(check('dump_checksum', 'failed', deep.dump.error ? `Database dump: ${deep.dump.error}` : 'Database dump does not match its recorded SHA-256'));
     }
 
-    const fileCheck = (name, list, label) => {
-      const results = deep.files.filter((r) => list.some((e) => e.path === r.path));
-      const bad = results.filter((r) => !r.ok);
-      if (list.length === 0) return check(name, 'skipped', label.none);
-      return bad.length
-        ? check(name, 'failed', `${bad.length} of ${list.length} ${label.what} failed: ${bad.slice(0, 5).map((r) => `${r.path} (${r.error})`).join(', ')}${bad.length > 5 ? ', …' : ''}`)
-        : check(name, 'passed', `${list.length} ${label.what} match`);
-    };
+    const fileCheck = (name, list, label) => fileCheckResult(name, list, deep.files, label);
     if (plan.files.length || target.backupRunId) {
       checks.push(fileCheck('business_docs', docs, { what: 'business documents', none: 'No business documents in this backup' }));
       checks.push(fileCheck(full ? 'files_all' : 'files_sample', sample, {
@@ -600,6 +665,9 @@ async function execute(id, target, { full, samplePercent, drill }) {
         level = 'drill';
         checks.push(check('drill_load', 'failed', String(error.message).slice(0, 500)));
       }
+    }
+    if (plan.withoutDatabase && !checks.some((c) => c.result === 'failed')) {
+      return stopped() || finishRow(id, { status: 'skipped', skipReason: 'no_database_in_backup', level, checks });
     }
     return stopped() || finishRow(id, { status: overallStatus(checks), level, checks });
   } catch (error) {
@@ -708,6 +776,14 @@ async function runOne(target, options = {}) {
   const state = { id: null, aborted: null, children: new Set() };
   current = state;
   const lease = jobState.startLeaseKeeper(JOB_NAME, token);
+  // While the test runs: a lease that moved on means another process took
+  // over (stop, never run two); a backup or restore started on another
+  // replica gets the same yield as one started here.
+  const monitor = setInterval(() => {
+    if (lease.lost()) { yieldTo('lost'); return; }
+    sharedWorkRunning().then((reason) => { if (reason) yieldTo(reason); }).catch(() => {});
+  }, MONITOR_INTERVAL_MS);
+  monitor.unref?.();
   try {
     if (!options.id && !(await targetExists(target))) return null;
     const id = options.id ?? await insertRow(rowFields);
@@ -719,6 +795,7 @@ async function runOne(target, options = {}) {
     }
     return id;
   } finally {
+    clearInterval(monitor);
     current = null;
     lease.stop();
     await releaseLease(token, state.id);
@@ -981,19 +1058,38 @@ async function stopVerificationSchedule() {
 }
 
 /**
- * Boot: clean what a test that died with the previous process left. Takes
- * the lease for it, so a test another replica is running is never touched.
- * A lease still held by this host under another pid belongs to the process
- * this one replaced, and is taken over rather than waited out.
+ * Whether a lease row belongs to a process of this host that cannot be
+ * holding it: this very pid (a fresh process holds nothing yet; in Docker a
+ * restarted node usually gets the same pid), or a pid that no longer runs.
+ * A live other pid on this host (PM2 cluster, host networking) keeps it.
+ */
+function leftByDeadProcess(row, { hostname = require('os').hostname(), pid = process.pid } = {}) {
+  if (!row || !(row.is_running === true || row.is_running === 1) || typeof row.owner !== 'string') return false;
+  const at = row.owner.lastIndexOf(':');
+  if (at < 0 || row.owner.slice(0, at) !== hostname) return false;
+  const ownerPid = Number(row.owner.slice(at + 1));
+  if (!Number.isInteger(ownerPid) || ownerPid <= 0) return false;
+  if (ownerPid === pid) return true;
+  try {
+    process.kill(ownerPid, 0);
+    return false;
+  } catch (error) {
+    return error.code === 'ESRCH';
+  }
+}
+
+/**
+ * Boot: clean what a test that died with the previous process left. Only
+ * with the feature on (with it off, boot does nothing new). Takes the lease
+ * for it, so a test another process is running is never touched.
  */
 async function sweepStale() {
   try {
+    if (!(await isFeatureEnabled(FLAG))) return;
     if (!(await hasVerificationTable())) return;
     await jobState.ensure(JOB_NAME);
     const row = await db('maintenance_jobs').where({ job_name: JOB_NAME }).first();
-    const self = `${require('os').hostname()}:${process.pid}`;
-    if (row && (row.is_running === true || row.is_running === 1) && typeof row.owner === 'string'
-        && row.owner.startsWith(`${require('os').hostname()}:`) && row.owner !== self) {
+    if (leftByDeadProcess(row)) {
       await db('maintenance_jobs').where({ job_name: JOB_NAME, claim_token: row.claim_token })
         .update({ is_running: formatBoolean(false), finished_at: nowIso() });
     }
@@ -1028,5 +1124,5 @@ module.exports = {
   sweepStale,
   yieldTo,
   runsUnderTest,
-  _internal: { current: () => current, privileges, selectFiles, bucketOf, overallStatus, planFileBackup, planDatabaseBackup, liveTarget, drain: () => draining, drainNow: () => drain(), queue },
+  _internal: { current: () => current, leftByDeadProcess, fileCheckResult, runWorker, setWorkerPath: (p) => { workerPath = p || WORKER; }, privileges, selectFiles, bucketOf, overallStatus, planFileBackup, planDatabaseBackup, liveTarget, drain: () => draining, drainNow: () => drain(), queue },
 };

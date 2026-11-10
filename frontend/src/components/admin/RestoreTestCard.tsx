@@ -76,6 +76,10 @@ const SKIP_REASONS: Record<string, [string, string]> = {
     'backup.restoreTest.skipReasons.legacy_manifest',
     'This backup was made before backup manifests were signed, so its checksums cannot be trusted and it was not tested. Backups made from now on are signed and tested.',
   ],
+  no_database_in_backup: [
+    'backup.restoreTest.skipReasons.no_database_in_backup',
+    'This backup was made without the database (Configuration → What to Backup), so only its files were checked. Include the database to get full restore tests.',
+  ],
   no_database_dump: [
     'backup.restoreTest.skipReasons.no_database_dump',
     'This backup holds no database dump, so there was nothing to test-restore.',

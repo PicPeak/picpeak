@@ -36,10 +36,10 @@ const RESTORE_TEST_TONE: Record<VerificationHealth, string> = {
 
 export const SystemHealthPage: React.FC = () => {
   const { t } = useTranslation();
-  // The Backup tab opens for settings.view or backup.view; System health
-  // also for system.view alone.
-  const { hasAnyPermission } = usePermissions();
-  const canOpenBackup = hasAnyPermission(['settings.view', 'backup.view']);
+  // The restore test card the link opens needs backup.view (the Backup tab
+  // itself also opens for settings.view, without the card).
+  const { hasPermission } = usePermissions();
+  const canOpenBackup = hasPermission('backup.view');
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   const { flags } = useFeatureFlags();
 

@@ -1245,9 +1245,19 @@ router.delete('/s3/cleanup', adminAuth, requirePermission('backup.delete'), asyn
     } while (continuationToken);
 
     const newestRun = Math.max(...[...groups.values()].filter((group) => group.standalone).map((group) => group.newest));
+    // Restore points retention keeps (the newest ones and the monthly ones)
+    // stay, whatever their age; this cleanup must not undo that setting.
+    const { byType, kept } = await require('../services/backupService').retainedRestorePoints(config);
+    const keptPrefixes = new Set((byType.s3 || []).filter((run) => kept.has(run.id))
+      .map((run) => run.snapshot.prefix.replace(/\/+$/, '')));
     const filesToDelete = [];
     let totalSize = 0;
-    for (const group of groups.values()) {
+    let keptByRetention = 0;
+    for (const [groupKey, group] of groups.entries()) {
+      if (group.standalone && keptPrefixes.has(groupKey)) {
+        if (group.newest < cutoffDate.getTime()) keptByRetention += 1;
+        continue;
+      }
       if (group.standalone && group.newest < cutoffDate.getTime() && group.newest !== newestRun) {
         filesToDelete.push(...group.keys);
         totalSize += group.size;
@@ -1257,6 +1267,7 @@ router.delete('/s3/cleanup', adminAuth, requirePermission('backup.delete'), asyn
     if (dryRun) {
       return res.json({
         wouldDelete: filesToDelete.length,
+        keptByRetention,
         totalSize: totalSize,
         files: filesToDelete.slice(0, 100), // Limit preview
         message: 'Dry run completed - no files were deleted'
@@ -1273,8 +1284,10 @@ router.delete('/s3/cleanup', adminAuth, requirePermission('backup.delete'), asyn
     res.json({
       success: true,
       deletedCount: deletedCount,
+      keptByRetention,
       totalSize: totalSize,
       message: `Cleaned up ${deletedCount} S3 backup files older than ${retentionDays} days`
+        + (keptByRetention ? `; kept ${keptByRetention} older restore point(s) that backup retention keeps` : '')
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to cleanup S3 backups');

@@ -5363,6 +5363,7 @@
         "not_standalone": "Te kopije ni mogoče obnoviti samostojno, zato ni bila poskusno obnovljena.",
         "no_manifest": "Ta kopija nima manifesta, zato njene vsebine ni bilo mogoče preveriti.",
         "interrupted": "Preizkus je bil prekinjen, preden se je končal, na primer zaradi ponovnega zagona strežnika.",
+        "no_database_in_backup": "Ta varnostna kopija je nastala brez baze podatkov (Nastavitve → Kaj varnostno kopirati), zato so bile preverjene le datoteke. Vključite bazo podatkov za celovite preizkuse obnovitve.",
         "no_database_dump": "Ta kopija ne vsebuje izpisa podatkovne baze, zato ni bilo ničesar za poskusno obnovitev.",
         "legacy_manifest": "Ta varnostna kopija je nastala, preden so bili manifesti podpisani, zato njenim kontrolnim vsotam ni mogoče zaupati in ni bila preizkušena. Nove kopije so podpisane in preizkušene."
       },

@@ -3053,6 +3053,7 @@
         "not_standalone": "Deze back-up kan niet op zichzelf worden teruggezet en is daarom niet bij wijze van test teruggezet.",
         "no_manifest": "Deze back-up heeft geen manifest, dus de inhoud kon niet worden gecontroleerd.",
         "interrupted": "De test is onderbroken voordat hij klaar was, bijvoorbeeld door een herstart van de server.",
+        "no_database_in_backup": "Deze back-up is gemaakt zonder de database (Configuratie → Wat te back-uppen), dus alleen de bestanden zijn gecontroleerd. Neem de database op voor volledige hersteltests.",
         "no_database_dump": "Deze back-up bevat geen databasedump, dus er was niets om bij wijze van test terug te zetten.",
         "legacy_manifest": "Deze back-up is gemaakt voordat manifesten werden ondertekend, dus de controlesommen zijn niet betrouwbaar en hij is niet getest. Nieuwe back-ups worden ondertekend en getest."
       },

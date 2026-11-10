@@ -2830,6 +2830,7 @@
         "not_standalone": "Esta copia no se puede restaurar por sí sola, así que no se restauró de prueba.",
         "no_manifest": "Esta copia no tiene manifiesto, así que no se pudo comprobar su contenido.",
         "interrupted": "La prueba se interrumpió antes de terminar, por ejemplo por un reinicio del servidor.",
+        "no_database_in_backup": "Esta copia se hizo sin la base de datos (Configuración → Qué copiar), así que solo se comprobaron sus archivos. Incluya la base de datos para obtener pruebas de restauración completas.",
         "no_database_dump": "Esta copia no contiene un volcado de la base de datos, así que no había nada que restaurar de prueba.",
         "legacy_manifest": "Esta copia se hizo antes de que los manifiestos se firmaran, así que sus sumas de comprobación no son fiables y no se ha probado. Las copias nuevas se firman y se prueban."
       },

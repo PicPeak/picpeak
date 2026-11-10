@@ -139,7 +139,7 @@ describe('backup restore tests', () => {
     const tmp = await fs.readdir(path.join(storage, 'tmp')).catch(() => []);
     expect(tmp.filter((name) => name.startsWith('backup-verify-'))).toEqual([]);
     if (isPg) {
-      const drills = await db.raw("SELECT datname FROM pg_database WHERE datname LIKE 'picpeak_drill_%'");
+      const drills = await db.raw('SELECT datname FROM pg_database WHERE datname LIKE \'picpeak_drill_%\'');
       expect(drills.rows).toEqual([]);
     }
   });
@@ -291,6 +291,7 @@ describe('backup restore tests', () => {
   });
 
   it('sweeps rows and work directories left by a crashed test on boot', async () => {
+    await setFlag(true);
     await db('backup_verifications').insert({
       level: 'deep', status: 'running', checks: '[]', triggered_by: 'schedule', started_at: new Date().toISOString(),
     });
@@ -304,6 +305,7 @@ describe('backup restore tests', () => {
   });
 
   it('takes over a lease this host held under a pid that is gone, and sweeps on boot', async () => {
+    await setFlag(true);
     await db('backup_verifications').insert({
       level: 'deep', status: 'running', checks: '[]', triggered_by: 'schedule', started_at: new Date().toISOString(),
     });
@@ -412,5 +414,103 @@ describe('backup restore tests', () => {
     expect(failed.length).toBeGreaterThanOrEqual(2);
     expect(await db('email_queue').where({ email_type: 'backup_verification_failed' })).toHaveLength(admins);
   });
-});
 
+  // Review round 1 (PR 2461).
+
+  const holdLease = async (owner) => {
+    const jobState = require('../../src/services/maintenanceJobState');
+    await jobState.ensure('backup_verification');
+    await db('maintenance_jobs').where({ job_name: 'backup_verification' }).update({
+      is_running: true, heartbeat_at: new Date().toISOString(), owner, claim_token: `t-${owner}`,
+    });
+    return jobState;
+  };
+  const stuckRow = () => db('backup_verifications').insert({
+    level: 'deep', status: 'running', checks: '[]', triggered_by: 'schedule', started_at: new Date().toISOString(),
+  });
+  const releaseLease = () => db('maintenance_jobs').where({ job_name: 'backup_verification' }).update({ is_running: false });
+
+  it('concern 1: a backup made without the database is skipped (no_database_in_backup), not failed', async () => {
+    await setting('backup_include_database', false);
+    try {
+      const run = await freshDumpAndBackup();
+      const row = await verify({ backupRunId: run.id });
+      expect(row).toMatchObject({ status: 'skipped', skip_reason: 'no_database_in_backup', level: 'deep' });
+      expect(resultOf(row, 'dump_checksum')).toBe('skipped');
+      expect(resultOf(row, 'business_docs')).toBe('passed');
+      expect(resultOf(row, 'drill_load')).toBeUndefined();
+      expect(await db('email_queue').where({ email_type: 'backup_verification_failed' })).toEqual([]);
+    } finally {
+      await setting('backup_include_database', true);
+    }
+  });
+
+  it('concern 2: the boot sweep does nothing with the flag off', async () => {
+    await stuckRow();
+    await verification.sweepStale();
+    expect(await db('backup_verifications').where({ status: 'running' })).toHaveLength(1);
+  });
+
+  it('concern 3: at boot a lease held under this very pid counts as stale (Docker restart keeps the pid)', async () => {
+    await setFlag(true);
+    await stuckRow();
+    const jobState = await holdLease(`${require('os').hostname()}:${process.pid}`);
+    await verification.sweepStale();
+    expect((await db('backup_verifications').first()).skip_reason).toBe('interrupted');
+    expect((await jobState.read('backup_verification')).isRunning).toBe(false);
+  });
+
+  it('concern 3: a lease held by another live process on this host is left alone', async () => {
+    await setFlag(true);
+    await stuckRow();
+    const jobState = await holdLease(`${require('os').hostname()}:${process.ppid}`);
+    try {
+      await verification.sweepStale();
+      expect(await db('backup_verifications').where({ status: 'running' })).toHaveLength(1);
+      expect((await jobState.read('backup_verification')).isRunning).toBe(true);
+    } finally {
+      await releaseLease();
+    }
+  });
+
+  it('concern 4: a cut-off worker result line rejects instead of throwing in the listener', async () => {
+    const script = path.join(fixtureRoot, 'bad-worker.js');
+    await fs.writeFile(script, 'process.stdin.resume(); process.stdin.on(\'end\', () => { process.stdout.write(\'PICPEAK_VERIFY_RESULT={"files":[{"pa\'); });');
+    verification._internal.setWorkerPath(script);
+    try {
+      await expect(verification._internal.runWorker('deep', {})).rejects.toThrow(/unreadable result/);
+    } finally {
+      verification._internal.setWorkerPath(null);
+    }
+  });
+
+  it('concern 7: a backup running on another replica (a running row) makes the test wait', async () => {
+    const [id] = (await db('backup_runs').insert({
+      started_at: new Date().toISOString(), status: 'running', backup_type: 'scheduled',
+    }).returning('id')).map((r) => r.id ?? r);
+    try {
+      expect(await verification.busyReason()).toBe('backup');
+      // A row left by a process that died long ago no longer counts.
+      await db('backup_runs').where({ id }).update({ started_at: new Date(Date.now() - 13 * 3600 * 1000).toISOString() });
+      expect(await verification.busyReason()).toBeNull();
+    } finally {
+      await db('backup_runs').where({ id }).del();
+    }
+  });
+
+  it('nit: a failed parent chain is not hidden behind a skip', async () => {
+    const run = await freshDumpAndBackup();
+    const manifest = await require('../../src/services/backupManifest').loadManifest(run.manifest_path);
+    const signed = { ...manifest, backup: { ...manifest.backup, parent_backup_id: 'backup-gone' } };
+    const valid = jest.spyOn(backupService, 'validateBackupManifest').mockResolvedValue({ valid: true, manifest: signed, authentication: { authenticated: true } });
+    // A manifest outside the destination: not a standalone restore point.
+    await db('backup_runs').where({ id: run.id }).update({ manifest_path: '/elsewhere/manifests/backup-manifest-x.json' });
+    try {
+      const row = await verify({ backupRunId: run.id });
+      expect(row).toMatchObject({ status: 'failed', skip_reason: 'not_standalone' });
+      expect(resultOf(row, 'parent_chain')).toBe('failed');
+    } finally {
+      valid.mockRestore();
+    }
+  });
+});

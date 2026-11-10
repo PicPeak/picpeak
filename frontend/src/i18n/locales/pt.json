@@ -3203,6 +3203,7 @@
         "not_standalone": "Este backup não pode ser restaurado sozinho, por isso não foi restaurado em teste.",
         "no_manifest": "Este backup não tem manifesto, por isso o seu conteúdo não pôde ser verificado.",
         "interrupted": "O teste foi interrompido antes de terminar, por exemplo por uma reinicialização do servidor.",
+        "no_database_in_backup": "Esta cópia foi feita sem a base de dados (Configuração → O que copiar), por isso só os ficheiros foram verificados. Inclua a base de dados para testes de restauro completos.",
         "no_database_dump": "Este backup não contém um dump do banco de dados, por isso não havia nada para restaurar em teste.",
         "legacy_manifest": "Esta cópia foi feita antes de os manifestos serem assinados, por isso as somas de verificação não são fiáveis e não foi testada. As novas cópias são assinadas e testadas."
       },
