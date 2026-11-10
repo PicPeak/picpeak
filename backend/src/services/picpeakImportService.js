@@ -450,6 +450,55 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
   });
 }
 
+// PostgreSQL `date` columns of a target table (see repairDateOnly).
+async function dateOnlyColumnsFor(trx, table) {
+  if (!isPostgres()) return [];
+  const info = await trx(table).columnInfo();
+  return Object.entries(info)
+    .filter(([, meta]) => String(meta.type || '').toLowerCase() === 'date')
+    .map(([name]) => name);
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const QUARTER_HOUR_MS = 15 * 60 * 1000;
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+
+// The calendar day a `date` value in an archive stands for. Until the export
+// wrote pg `date` columns as YYYY-MM-DD, it wrote them as the UTC instant of
+// LOCAL midnight on the source ("2024-08-10T22:00:00.000Z" for 2024-08-11 in
+// Berlin, "2024-08-11T04:00:00.000Z" in New York), and Postgres, casting that
+// in a UTC session, kept the UTC day: one day early east of UTC. A SQLite
+// source's epoch values for a local-midnight Date have the same shape once
+// epochToIso has made them ISO. The source day is the nearest UTC midnight,
+// which holds for every source zone from UTC-11:59 to UTC+12 (a value exactly
+// at 12:00Z counts as east of UTC). Only instants on a quarter hour are
+// treated as shifted midnights, since every zone offset in use is one; any
+// other instant is left for Postgres to cast as before. Plain dates pass
+// through unchanged.
+function repairDateOnly(value) {
+  if (typeof value !== 'string' || !ISO_INSTANT.test(value)) return value;
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return value;
+  const timeOfDay = ((ms % DAY_MS) + DAY_MS) % DAY_MS;
+  if (timeOfDay % QUARTER_HOUR_MS !== 0) return value;
+  return new Date(Math.round(ms / DAY_MS) * DAY_MS).toISOString().slice(0, 10);
+}
+
+function repairDateOnlyColumns(rows, columns) {
+  if (!columns.length) return rows;
+  return rows.map((row) => {
+    let out = row;
+    for (const col of columns) {
+      const repaired = repairDateOnly(row[col]);
+      if (repaired !== row[col]) {
+        if (out === row) out = { ...row };
+        out[col] = repaired;
+      }
+    }
+    return out;
+  });
+}
+
 // Columns that name a file by a key relative to a root this install joins it
 // onto: the storage root for archives, photos and their derived files, the
 // external media root for referenced photos. Readers contain most of them
@@ -649,9 +698,11 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     for (const table of tables) {
       const jsonCols = await jsonColumnsFor(trx, table);
       const types = crossEngine ? await typedColumnsFor(trx, table) : null;
+      const dateOnlyColumns = await dateOnlyColumnsFor(trx, table);
       for await (const rows of rowBatches(path.join(dataDir, `${table}.ndjson`), { allowMissing: true })) {
         let prepared = rows;
         if (crossEngine) prepared = coerceForTargetEngine(prepared, types);
+        prepared = repairDateOnlyColumns(prepared, dateOnlyColumns);
         // SQLite JSON is already serialized; PG JSON values need serialization.
         prepared = serialiseJsonColumns(prepared, crossEngine ? new Set() : jsonCols);
         prepared = relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
@@ -790,6 +841,9 @@ module.exports = {
   epochToIso,
   coerceForTargetEngine,
   typedColumnsFor,
+  repairDateOnly,
+  repairDateOnlyColumns,
+  dateOnlyColumnsFor,
   relocateStoredPaths,
   reinjectCurrentAdmin,
   captureOperatorRole,

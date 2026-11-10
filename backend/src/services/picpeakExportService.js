@@ -25,6 +25,7 @@ const { getStoragePath } = require('../config/storage');
 const logger = require('../utils/logger');
 const { collectLegacyStoredFiles, storedPathMap } = require('../utils/legacyStoredFiles');
 const { STORED_PATH_COLUMNS } = require('../utils/storedPath');
+const { toDateOnly } = require('../utils/dateOnly');
 const packageJson = require('../../package.json');
 const recoveryFiles = require('./recoveryFiles');
 const { getStorage } = require('./storage');
@@ -112,9 +113,23 @@ async function getLatestMigration() {
   }
 }
 
+// PostgreSQL `date` columns of a table. node-pg reads a `date` as a Date at
+// LOCAL midnight, which JSON.stringify would write as a UTC instant: the day
+// before east of UTC (2024-08-11 → "2024-08-10T22:00:00.000Z" in Berlin), and
+// the import would then restore that earlier day. SQLite has no date type, so
+// its rows are written as stored.
+async function pgDateColumns(table) {
+  if (!isPostgres()) return [];
+  const info = await db(table).columnInfo();
+  return Object.entries(info)
+    .filter(([, meta]) => String(meta.type || '').toLowerCase() === 'date')
+    .map(([name]) => name);
+}
+
 // Write one table to <dataDir>/<table>.ndjson (one JSON object per line).
 // Returns { rowCount, checksum } for the manifest. JSON.stringify serialises
-// Dates to ISO strings, which re-import cleanly on both engines.
+// timestamps to ISO strings, which re-import cleanly on both engines; pg
+// `date` columns are written as their calendar day (YYYY-MM-DD) instead.
 //
 // Uses a plain select rather than knex `.stream()`: streaming on Postgres pulls
 // in the optional `pg-query-stream` dependency (not bundled), so it throws on
@@ -130,9 +145,13 @@ async function writeTableNdjson(table, dataDir, pathMap = null, onRows) {
   const pathColumns = pathMap
     ? STORED_PATH_COLUMNS.filter((c) => c.table === table).map((c) => c.column)
     : [];
+  const dateColumns = await pgDateColumns(table);
   const rows = (await db(table).select('*')).map((row) => {
-    if (!pathColumns.length) return row;
+    if (!pathColumns.length && !dateColumns.length) return row;
     const out = { ...row };
+    for (const col of dateColumns) {
+      if (out[col] instanceof Date) out[col] = toDateOnly(out[col]);
+    }
     for (const col of pathColumns) {
       if (typeof out[col] === 'string' && Object.prototype.hasOwnProperty.call(pathMap, out[col])) {
         out[col] = pathMap[out[col]];
@@ -393,4 +412,5 @@ module.exports = {
   // exported for reuse/testing
   listDataTables,
   collectFiles,
+  writeTableNdjson,
 };
