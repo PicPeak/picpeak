@@ -61,7 +61,11 @@ const FILES = {
 
 // Values chosen so a lossy restore shows: milliseconds on every timestamp, a
 // bigint above 2^53 (a JS Number cannot hold it), and decimals that use every
-// digit of their column's scale.
+// digit of their column's scale. The bigint only proves something on a
+// Postgres source: the SQLite driver already reads it back as a Number
+// (…992), so a SQLite source's first archive holds the rounded value.
+// Booleans alternate between true and false by column, so a restore that
+// sets every flag one way shows.
 const FIXED_DATE = new Date('2024-08-11T18:13:20.123Z');
 const BIG_INTEGER = '9007199254740993';
 
@@ -200,7 +204,7 @@ function syntheticValue(table, column, meta, allowed) {
     const value = `fx-${table}-${column}`;
     return meta.maxLength ? value.slice(0, meta.maxLength) : value;
   };
-  if (/bool/.test(type) || type === 'tinyint(1)') return true;
+  if (/bool/.test(type) || type === 'tinyint(1)') return column.length % 2 === 0;
   if (/^(timestamp|datetime)/.test(type)) return FIXED_DATE;
   if (/^date$/.test(type)) return '2024-08-11';
   if (/^time/.test(type)) return '18:13:20';

@@ -68,7 +68,8 @@ const RESTORE_REWRITES = {
   admin_webauthn_credentials: {
     dropSourceRows: (row, { operatorId }) => String(row.admin_user_id) === String(operatorId),
   },
-  // The restore invalidates every session issued before it.
+  // The restore invalidates every session issued before it
+  // (portableImportMaintenance → utils/sessionCutoff.setSessionsValidAfter).
   app_settings: { dropRestoredRows: row => row.setting_key === 'security_sessions_valid_after' },
   // utils/costTimestamps: epoch cost timestamps come back as ISO text.
   expenses: {},
@@ -158,7 +159,8 @@ async function readTables(file) {
 // bigint as strings. Normalise both sides to one shape. Timestamps compare
 // as instants: a zone-less "YYYY-MM-DD HH:MM:SS" is UTC, as the app writes it.
 // A numeric string stays a string: only a pg bigint or numeric column (kind
-// 'numeric') may meet a SQLite number, and then only digit for digit.
+// 'numeric') may meet a SQLite number, and then only digit for digit. JSON
+// text stays text too: only a pg json column (kind 'json') parses it.
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_TIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
 const NUMERIC = /^-?\d+(\.\d+)?$/;
@@ -177,9 +179,6 @@ function normaliseValue(value) {
     const zoned = /(Z|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${value.replace(' ', 'T')}Z`;
     const instant = Date.parse(zoned);
     if (!Number.isNaN(instant)) return { instant };
-  }
-  if (/^[[{]/.test(value)) {
-    try { return normaliseValue(JSON.parse(value)); } catch (_) { /* plain text */ }
   }
   return value;
 }
@@ -346,7 +345,7 @@ describe('fidelity comparison helpers', () => {
     expect(sameValue('12345.670', 12345.67, { kind: 'numeric' })).toBe(true);
     expect(sameValue(9007199254740992, '9007199254740992', { kind: 'numeric' })).toBe(true);
     expect(sameValue(1723400000123, '2024-08-11T18:13:20.123Z')).toBe(true);
-    expect(sameValue('{"b":1,"a":[true]}', { a: [true], b: 1 })).toBe(true);
+    expect(sameValue('{"b":1,"a":[true]}', { a: [true], b: 1 }, { kind: 'json' })).toBe(true);
     expect(sameValue('"en"', 'en', { kind: 'json' })).toBe(true);
     expect(sameValue('false', false, { kind: 'json' })).toBe(true);
     expect(sameValue('[{"b":1,"a":2}]', [{ a: 2, b: 1 }], { kind: 'json' })).toBe(true);
@@ -369,6 +368,8 @@ describe('fidelity comparison helpers', () => {
     expect(sameValue('12345.67', '12345.6', { kind: 'numeric' })).toBe(false);
     expect(sameValue('1.50', 1.5)).toBe(false); // outside a pg numeric column, text is not a number
     expect(sameValue('1', 1)).toBe(false);
+    expect(sameValue('{"a":1}', '{"a": 1}')).toBe(false); // JSON text outside a json column stays text
+    expect(sameValue(0, true)).toBe(false);
     expect(sameValue(1723400000123, '2024-08-11T18:13:20.000Z')).toBe(false);
   });
 

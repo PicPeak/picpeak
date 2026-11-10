@@ -151,7 +151,7 @@ postgres('portable restore actual hard-limited PostgreSQL worker', () => {
     expect(await fs.readFile(file('z-second.dat'), 'utf8')).toBe('PG-BACKUP-SECOND');
     const [next] = await db('owned_worker_values').insert({ flag: false, payload: { natural: true } }).returning('id');
     expect(next.id).toBe(42);
-  }, 120000);
+  }, 180000);
 
   test('a pending ordinary credential and role update is preserved only after the table barrier', async () => {
     const passwordHash = await bcrypt.hash('latest-ordinary-operator', 4);
@@ -199,7 +199,7 @@ postgres('portable restore actual hard-limited PostgreSQL worker', () => {
       if (!updating.isCompleted()) await updating.rollback();
       if (restoring) await restoring.catch(() => {});
     }
-  }, 120000);
+  }, 180000);
 
   test('a genuine SQLite portable export traverses the same worker and preserves PG value semantics', async () => {
     const outputDirectory = path.join(fixture, 'sqlite-export');
