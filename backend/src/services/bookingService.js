@@ -258,6 +258,7 @@ async function busyIntervals(from, to, zone, { excludeRequestId = null, now = ne
     .andWhere((q) => {
       // An accepted request is busy while its quote is: once the quote is
       // deleted or declined the time is free again, with no step for the admin.
+      // An expired quote still holds it: the admin may reissue it.
       // Accepting claims the request first and writes quote_id only after the
       // customer, project and quote exist, so a request accepted moments ago
       // with no quote yet is busy too.
@@ -271,7 +272,11 @@ async function busyIntervals(from, to, zone, { excludeRequestId = null, now = ne
       if (hasDeposits) q.orWhere((p) => p.where('status', 'pending').whereIn('deposit_status', PAID_DEPOSIT));
     });
   if (excludeRequestId) requests.whereNot('id', excludeRequestId);
-  for (const r of await requests) busy.push({ start: toDate(r.starts_at).getTime(), end: toDate(r.ends_at).getTime() });
+  // Read as trusted: the public routes run with no CRM actor, which may not
+  // query quotes, and an admin's own view of quotes must not decide what is
+  // free (another admin's accepted request is busy for everyone).
+  const rows = await require('../database/crmAccess').withTrustedCrmAccess('booking availability', () => requests);
+  for (const r of rows) busy.push({ start: toDate(r.starts_at).getTime(), end: toDate(r.ends_at).getTime() });
 
   // Gallery events: a full-day event (the default) blocks its whole day,
   // a timed one its hours. Dates are compared as local days.
@@ -605,7 +610,7 @@ function splitName(name) {
 async function customerFor(request, adminId) {
   const email = request.email.toLowerCase();
   const ids = new Set((await db('customer_accounts').whereRaw('LOWER(email) = ?', [email]).pluck('id')).map(Number));
-  if (!ids.size && await db.schema.hasTable('customer_contacts')) {
+  if (!ids.size && await hasColumnCached('customer_contacts', 'email')) {
     for (const id of await db('customer_contacts').whereRaw('LOWER(email) = ?', [email]).pluck('customer_account_id')) {
       ids.add(Number(id));
     }
@@ -666,13 +671,6 @@ function quoteLines(request) {
 }
 
 /**
- * Accept: customer (reused by email, else created passive), a project
- * (website inquiry; it turns active as the quote attaches) and a draft quote
- * holding the estimate. The request is claimed
- * first so a double click creates nothing twice; when a step fails the claim
- * is released and the project made here is removed again.
- */
-/**
  * Does anything now take the request's time (a block or gallery added since,
  * another held or accepted request)? Notice period and opening hours are not
  * re-checked: the studio may accept what it likes.
@@ -687,6 +685,15 @@ async function slotTaken(request, conn = db) {
   return busy.some((b) => start < b.end + bufferMs && end > b.start - bufferMs);
 }
 
+/**
+ * Accept: customer (reused by email, else created passive), a project
+ * (website inquiry; it turns active as the quote attaches) and a draft quote
+ * holding the estimate. The request is claimed
+ * first so a double click creates nothing twice; when a step fails the claim
+ * is released and the project made here is removed again. A customer made
+ * here stays: it holds the client's details, and a retry finds it by email
+ * (customer_accounts.email is unique).
+ */
 async function acceptRequest(id, adminId) {
   await expireStaleHolds();
   // A request whose hold ran out can still be accepted while its time is free.
