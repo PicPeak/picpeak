@@ -12,6 +12,8 @@ import { ClientAccessPage } from './pages/ClientAccessPage';
 import { PreviewPage } from './pages/gallery/PreviewPage';
 import { PurchasedDownloadsPage } from './pages/public/PurchasedDownloadsPage';
 import { PhotoCheckoutPage } from './pages/public/PhotoCheckoutPage';
+import { BookingPage } from './pages/public/BookingPage';
+import { BookingsPage } from './pages/admin/clients/BookingsPage';
 const SlideshowPage = lazy(() => import('./pages/gallery/SlideshowPage').then((m) => ({ default: m.SlideshowPage })));
 import { LegalPage } from './pages/public/LegalPage';
 import {
@@ -341,6 +343,11 @@ const router = createBrowserRouter(
             {/* Admin calendar (migration 137) — gated by
                 `calendar`. Lazy-loaded so the FullCalendar
                 bundle stays out of the main chunk. */}
+            {/* Client booking requests (#2440). */}
+            <Route element={<RequireFeature flag="calendarBooking" />}>
+              <Route path="bookings" element={<BookingsPage />} />
+            </Route>
+
             <Route element={<RequireFeature flag="calendar" />}>
               <Route
                 path="calendar"
@@ -503,6 +510,10 @@ const router = createBrowserRouter(
     {/* PicTransfer (#997) — recipient download + client upload,
         token-only, no auth. */}
     <Route path="/transfer/:token" element={<TransferDownloadPage />} />
+
+    {/* Public booking page (#2440). The page asks the public API whether
+        booking is on (calendarBooking flag); no admin flag context here. */}
+    <Route path="/book" element={<BookingPage />} />
     <Route path="/transfer-upload/:token" element={<TransferUploadPage />} />
 
     {/* Customer surface (#354). Strictly separate provider /

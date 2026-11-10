@@ -1768,7 +1768,6 @@
     "features": {
       "title": "Recursos",
       "intro": "Ative ou desative os recursos do produto. Os recursos ativados aparecem na navegação à esquerda e ficam disponíveis para sua equipe. Alguns recursos ainda estão em beta — ative-os para experimentar ou desative-os para ocultar.",
-      "notYetAvailable": "Ainda não disponível — este controle será ativado quando o recurso for lançado.",
       "sidebarHidden": "Sem item na barra lateral — executa em segundo plano",
       "unsavedChanges": "Você tem alterações não salvas",
       "preview": {

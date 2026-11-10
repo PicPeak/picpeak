@@ -2952,7 +2952,6 @@
     "features": {
       "title": "Funkcije",
       "intro": "Vklopite ali izklopite površine izdelka. Omogočene funkcije se prikažejo v levi navigaciji in so na voljo vaši ekipi. Nekatere funkcije so še v beta različici — vklopite jih za preizkus ali izklopite, da jih skrijete.",
-      "notYetAvailable": "Še ni na voljo — stikalo se aktivira, ko je funkcija izdana.",
       "sidebarHidden": "Ni elementa v stranski vrstici — deluje v ozadju",
       "unsavedChanges": "Imate neshranjene spremembe",
       "preview": {

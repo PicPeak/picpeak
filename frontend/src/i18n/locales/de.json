@@ -4021,7 +4021,6 @@
     "features": {
       "title": "Funktionen",
       "intro": "Schalten Sie Produktbereiche ein oder aus. Aktivierte Funktionen erscheinen in der linken Navigation und werden für Ihr Team verfügbar. Einige Funktionen sind noch im Beta-Status — schalten Sie sie ein, um sie auszuprobieren, oder aus, um sie zu verbergen.",
-      "notYetAvailable": "Noch nicht verfügbar — dieser Schalter wird aktiv, sobald die Funktion ausgeliefert wird.",
       "sidebarHidden": "Kein Sidebar-Eintrag — läuft im Hintergrund",
       "unsavedChanges": "Sie haben ungespeicherte Änderungen",
       "preview": {
@@ -4071,7 +4070,8 @@
       },
       "calendarBooking": {
         "title": "Kundenbuchung",
-        "description": "Kunden sehen freie Slots auf einem öffentlichen Kalender und können direkt buchen. In Kürze verfügbar.",
+        "description": "Eine öffentliche Seite, auf der Kunden eine Leistung wählen, eine Schätzung sehen und einen freien Termin anfragen. Eine Anfrage nehmen Sie als Offerte an.",
+        "requires": "Braucht Kalender und Offerten.",
         "sidebar": "Buchung"
       },
       "quotes": {
@@ -8662,6 +8662,7 @@
       "body": "Aktivieren Sie „Konten\" (oder eine andere CRM-Unterfunktion) unter Einstellungen → Funktionen, um loszulegen."
     },
     "subnav": {
+      "bookings": "Buchungen",
       "accounts": "Konten",
       "quotes": "Angebote",
       "contracts": "Verträge",
@@ -9495,6 +9496,102 @@
     "cancelledFootnote_one": "{{count}} stornierte Rechnung — Betrag nicht in den Summen enthalten (für lückenlose Nummernfolge dargestellt).",
     "cancelledFootnote_other": "{{count}} stornierte Rechnungen — Beträge nicht in den Summen enthalten (für lückenlose Nummernfolge dargestellt).",
     "costsErrorTitle": "Kosten konnten nicht geladen werden"
+  },
+  "booking": {
+    "admin": {
+      "accept": "Annehmen und Offerte entwerfen",
+      "acceptedToast": "Angenommen. Der Offerten-Entwurf ist bereit zum Prüfen und Senden.",
+      "blockAdd": "Sperren",
+      "blockFrom": "Von",
+      "blockNote": "Notiz",
+      "blockTo": "Bis",
+      "blocksIntro": "Zeiten, die niemand buchen kann, zusätzlich zu Ihren Geschäftszeiten und den Daten Ihrer Galerien.",
+      "copied": "Link kopiert.",
+      "copy": "Kopieren",
+      "decline": "Ablehnen",
+      "declineConfirm": "Ablehnen und Kunde informieren",
+      "declineReason": "Nachricht an den Kunden (optional)",
+      "editHours": "Geschäftszeiten",
+      "empty": "Noch keine Buchungsanfragen.",
+      "estimate": "Schätzung",
+      "heldUntil": "Reserviert bis {{time}}",
+      "hoursInfo": "Kunden können innerhalb Ihrer Geschäftszeiten buchen ({{zone}}).",
+      "noBlocks": "Keine gesperrten Zeiten.",
+      "noHours": "Legen Sie zuerst Ihre Geschäftszeiten fest: ohne sie kann keine Zeit gebucht werden.",
+      "open": "Öffnen",
+      "openProject": "Projekt öffnen",
+      "openQuote": "Offerte öffnen",
+      "publicLink": "Öffentliche Buchungsseite",
+      "servicesHint": "Leistungen erscheinen dort, sobald sie unter Offerten → Katalog → Leistungen als buchbar markiert sind.",
+      "title": "Buchungen",
+      "field": {
+        "intro": "Text oben auf der Buchungsseite",
+        "leadTime": "Mindestvorlauf (Stunden)",
+        "leadTimeHint": "Wie lange vor einem Termin er noch gebucht werden kann.",
+        "horizon": "Buchbar im Voraus (Tage)",
+        "horizonHint": "Wie weit im Voraus Kunden buchen können.",
+        "step": "Startzeiten alle (Minuten)",
+        "stepHint": "Angebotene Startzeiten, z. B. alle 30 Minuten.",
+        "buffer": "Puffer (Minuten)",
+        "bufferHint": "Wird vor und nach jeder Buchung frei gehalten.",
+        "hold": "Anfrage reservieren für (Stunden)",
+        "maxOpen": "Höchstens offene Anfragen",
+        "maxOpenHint": "Alle Kunden zusammen. Jeder Kunde kann 2 gleichzeitig halten; darüber bittet die Seite alle, Ihnen direkt zu schreiben, bis eine Anfrage beantwortet ist oder ihre Reservierung abläuft.",
+        "holdHint": "Eine unbeantwortete Anfrage gibt den Termin danach wieder frei."
+      },
+      "status": {
+        "accepted": "Angenommen",
+        "declined": "Abgelehnt",
+        "expired": "Reservierung abgelaufen",
+        "pending": "Offen"
+      },
+      "tab": {
+        "blocks": "Gesperrte Zeiten",
+        "requests": "Anfragen",
+        "settings": "Einstellungen"
+      }
+    },
+    "public": {
+      "estimate": "Schätzung",
+      "estimateFailed": "Der Preis konnte nicht berechnet werden.",
+      "estimateNote": "Das ist eine Schätzung. Sie erhalten eine Offerte mit dem definitiven Preis.",
+      "nextWeek": "Nächste Woche",
+      "noDetails": "Für diese Leistung ist nichts auszufüllen.",
+      "noSlots": "Diese Woche ist nichts frei. Versuchen Sie die nächste.",
+      "prevWeek": "Vorherige Woche",
+      "reference": "Ihre Referenz: {{reference}}",
+      "send": "Buchungsanfrage senden",
+      "sendFailed": "Die Anfrage konnte nicht gesendet werden. Bitte versuchen Sie es erneut.",
+      "sentBody": "Wir haben den Termin für Sie reserviert und senden Ihnen eine Offerte mit dem definitiven Preis. Sie erhalten zusätzlich eine Bestätigung per E-Mail.",
+      "sentSlot": "{{service}} am {{day}} um {{time}}",
+      "sentTitle": "Anfrage gesendet",
+      "summary": "{{service}} am {{day}} um {{time}}",
+      "timezone": "Zeiten in {{zone}}.",
+      "title": "Shooting buchen",
+      "titleWithName": "{{name}} buchen",
+      "unavailable": "Online-Buchung ist im Moment nicht verfügbar.",
+      "field": {
+        "company": "Firma oder Band (optional)",
+        "email": "E-Mail",
+        "message": "Nachricht (optional)",
+        "name": "Name",
+        "phone": "Telefon (optional)"
+      },
+      "step": {
+        "contact": "4. Ihre Angaben",
+        "details": "2. Details",
+        "service": "1. Leistung",
+        "time": "3. Termin"
+      }
+    },
+    "service": {
+      "bookable": "Kunden können das online buchen",
+      "durationFixed": "Feste Dauer",
+      "durationFrom": "Termindauer",
+      "durationFromFactor": "Aus «{{name}}» (Stunden)",
+      "durationMinutes": "Dauer (Minuten)",
+      "legend": "Online-Buchung"
+    }
   },
   "quotes": {
     "factors": {

@@ -112,13 +112,6 @@ export const FeaturesTab: React.FC = () => {
     'No sidebar item — runs in the background',
   );
 
-  // "Coming soon" lock reason for unbuilt features. Keep wording neutral —
-  // we don't promise a release date.
-  const NOT_YET_AVAILABLE = t(
-    'settings.features.notYetAvailable',
-    'Not yet available — this toggle activates when the feature ships.',
-  );
-
   return (
     <div className="space-y-6">
       <SectionPageHeader
@@ -376,22 +369,23 @@ export const FeaturesTab: React.FC = () => {
             enabled={staged.calendar}
             onToggle={(next) => setFlag('calendar', next)}
           />
-          {/* Customer-facing booking — placeholder. UI-disabled per
-              spec; backend dependency rule already gates it on
-              `calendar`. Re-enable when the booking flow ships. */}
+          {/* Client booking requests (#2440). Needs the calendar and
+              quotes (the dependency rules switch it off without them). */}
           <FeatureCard
             icon={CalendarDays}
             title={t('settings.features.calendarBooking.title', 'Customer booking')}
             description={t(
               'settings.features.calendarBooking.description',
-              'Let customers see free slots on a public calendar and book directly. Coming soon.',
+              'A public page where clients pick a service, see an estimate and request a free slot. You accept a request into a quote.',
             )}
             feature="calendarBooking"
             sidebarLabel={t('settings.features.calendarBooking.sidebar', 'Booking')}
             enabled={staged.calendarBooking}
-            onToggle={() => { /* locked */ }}
-            disabled
-            lockedReason={NOT_YET_AVAILABLE}
+            onToggle={(next) => setFlag('calendarBooking', next)}
+            disabled={!staged.calendar || !staged.quotes}
+            lockedReason={!staged.calendar || !staged.quotes
+              ? t('settings.features.calendarBooking.requires', 'Needs Calendar and Quotes.')
+              : undefined}
           />
         </Section>
 

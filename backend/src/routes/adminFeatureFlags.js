@@ -7,6 +7,7 @@
  * Server-side dependency rules mirror the frontend:
  *   - quotes=false  forces bills=false
  *   - calendar=false forces calendarBooking=false
+ *   - quotes=false forces calendarBooking=false
  *   - galleries is hard-coded true regardless of input
  *
  * Audit log: every successful PUT writes one activity_logs row with the
@@ -201,6 +202,8 @@ function applyDependencyRules(flags) {
   // Sub-features can't outlive their parents.
   if (out.quotes === false) out.bills = false;
   if (out.calendar === false) out.calendarBooking = false;
+  // Accepting a booking request drafts a quote (#2440).
+  if (out.quotes === false) out.calendarBooking = false;
   // Invoices (Bills) force-enable the Accounting master: invoice VAT config
   // (codes + label) and the hourly rate live under Settings → Accounting, so
   // an install with invoices must have Accounting available. Runs BEFORE the

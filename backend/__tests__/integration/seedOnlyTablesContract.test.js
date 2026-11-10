@@ -23,6 +23,7 @@ const { bootCrmDb } = require('./helpers/crmDb');
 const SEEDED_BUT_NOT_SEED_ONLY = new Set([
   'album_product_catalogue',       // editable installation data; an older restore must not retain local products
   'print_sales_settings',          // 341; editable lab configuration must clear; profiles.settings/save recover the empty singleton
+  'booking_settings',              // 354; editable booking settings must clear; getSettings falls back to defaults and saveSettings re-inserts the singleton
   'external_media_source_lock',    // 274; assignment/revocation reseed the lock at runtime after an older restore
   'migrations',                   // migration ledger itself (runner bookkeeping)
   'app_settings',                 // db.js base schema

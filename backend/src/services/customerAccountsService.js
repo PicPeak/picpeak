@@ -1335,6 +1335,14 @@ async function eraseCustomer(id, erasedByAdminId) {
     // queue is cancelled below; forgetCustomer says why the order matters.
     await require('./downloadJobNotifier').forgetCustomer(trx, id, customer.email);
 
+    // Booking requests (issue 2440): the client's details on requests linked
+    // to this customer or sent from one of its addresses.
+    if (await trx.schema.hasTable('booking_requests')) {
+      const contactEmails = await trx.schema.hasTable('customer_contacts')
+        ? await trx('customer_contacts').where({ customer_account_id: id }).pluck('email') : [];
+      await require('./bookingService').forgetCustomer(trx, id, [customer.email, ...contactEmails]);
+    }
+
     // email_queue (#1593): cancel what hasn't gone out yet, then redact the
     // variables + recipient on every row for this address that isn't
     // already gone (sent, failed, or the row just cancelled above) — done

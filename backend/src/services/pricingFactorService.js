@@ -300,6 +300,19 @@ async function validatePresetFactors(preset, factorIds, conn = db) {
   return ids;
 }
 
+/**
+ * The factor that sets a bookable service's slot length (#2440, part 2) must
+ * be one of the service's own factors, and a number.
+ */
+async function assertDurationFactor(factorIds, durationFactorId, conn = db) {
+  if (!durationFactorId) return;
+  const id = ensureInt(durationFactorId);
+  const factor = factorIds.includes(id) ? await conn('pricing_factors').where({ id }).first('input_type') : null;
+  if (!factor || factor.input_type !== 'number') {
+    throw new AppError('The slot length must come from one of the service\'s number factors', 400, 'BOOKING_DURATION_FACTOR');
+  }
+}
+
 /** Replace the factors attached to a catalogue item (ids already validated). */
 async function writePresetFactors(trx, presetId, ids) {
   await trx('quote_preset_factors').where({ preset_id: presetId }).del();
@@ -486,6 +499,10 @@ async function priceWithFactors(presetId, opts = {}) {
       rateSource = 'item';
     } else {
       const rate = rateResolver.pickRate(await rateResolver.loadRates(customerId), priceMode);
+      if (!rate && clientOnly) {
+        // The public page: no pointer into the admin's settings.
+        throw new AppError('This service cannot be priced online right now.', 400, 'BOOKING_PRICE_UNAVAILABLE');
+      }
       if (!rate) {
         throw new AppError(
           priceMode === 'hour'
@@ -570,7 +587,8 @@ async function priceWithFactors(presetId, opts = {}) {
       lines.push({
         kind: 'factor',
         factorId: factor.id,
-        description: line.description,
+        // A factor the client does not see is not named to them either.
+        description: useDefault ? pdfI18n.t(language, 'factor_hidden') : line.description,
         quantity: line.quantity,
         unit: null,
         unitPriceMinor: line.unitPriceMinor,
@@ -631,6 +649,7 @@ module.exports = {
   archiveFactor,
   presetFactorIds,
   validatePresetFactors,
+  assertDurationFactor,
   writePresetFactors,
   priceWithFactors,
   parseSnapshot,

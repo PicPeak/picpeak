@@ -115,6 +115,7 @@ function applyDependencyRules(flags: FeatureFlags): FeatureFlags {
   out.galleries = true;                            // foundation — always on
   if (out.quotes === false) out.bills = false;     // bills depend on quotes
   if (out.calendar === false) out.calendarBooking = false;  // booking depends on calendar
+  if (out.quotes === false) out.calendarBooking = false;    // accepting a request drafts a quote (#2440)
   // Invoices (Bills) force-enable the Accounting master — invoice VAT config +
   // hourly rate live under Settings → Accounting. Before the accounting→children
   // rule so sub-features keep their own state.
@@ -159,7 +160,8 @@ function applyDependencyRules(flags: FeatureFlags): FeatureFlags {
  * visible effect.
  */
 export const CUSTOMER_PORTAL_DEPENDENT_FLAGS: FeatureKey[] = [
-  'calendar', 'calendarBooking', 'quotes', 'bills', 'messaging',
+  // calendarBooking is not here: the booking page is public, no portal needed.
+  'calendar', 'quotes', 'bills', 'messaging',
 ];
 
 function flagsEqual(a: FeatureFlags, b: FeatureFlags): boolean {
