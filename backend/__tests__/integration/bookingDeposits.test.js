@@ -723,3 +723,39 @@ describe('review round 3', () => {
     expect((await mailTo('spaet@example.test')).decline_reason).toMatch(/inzwischen vergeben/);
   });
 });
+
+describe('public routes outside a CRM context', () => {
+  // Production serves the public routes and the webhook with no CRM actor;
+  // jest.setup.js runs everything in a trusted fixture context instead.
+  const denied = (mount, router) => {
+    const { withoutCrmContext } = require('../../src/database/crmAccess');
+    const app = express();
+    app.set('trust proxy', true);
+    app.use((req, res, next) => withoutCrmContext(() => next()));
+    if (!mount.includes('webhook')) app.use(express.json());
+    app.use(mount, router);
+    // eslint-disable-next-line no-unused-vars
+    app.use((err, req, res, next) => res.status(err.statusCode || 500).json({ error: err.message }));
+    return app;
+  };
+
+  test('a request, its late payment and its status page work without a CRM actor', async () => {
+    const pub = denied('/api/public/booking', require('../../src/routes/publicBooking'));
+    const hookApp = denied('/api/photo-sales/stripe/webhook', require('../../src/routes/stripeWebhook'));
+    const res = await request(pub).post('/api/public/booking/requests').set('X-Forwarded-For', '192.0.2.88')
+      .send({ serviceId: shoot.id, values: {}, start: zurich(day(70), '09:00'), name: 'Noa', email: 'noa-deposit@example.test', language: 'en', formToken: formToken() });
+    expect([res.status, res.body.error]).toEqual([201, undefined]);
+    const row = await db('booking_requests').where({ reference: res.body.reference }).first();
+    // Paid after the hold ran out: the late path re-checks the slot.
+    await db('booking_requests').where({ id: row.id }).update({ status: 'expired', deposit_status: 'expired' });
+    const session = pay(row.checkout_session_id);
+    const payload = JSON.stringify({ id: `evt_${crypto.randomUUID()}`, type: 'checkout.session.completed', livemode: false, data: { object: { id: session.id, metadata: session.metadata } } });
+    const header = sdk.webhooks.generateTestHeaderString({ payload, secret: process.env.STRIPE_WEBHOOK_SECRET });
+    const hook = await request(hookApp).post('/api/photo-sales/stripe/webhook')
+      .set('Content-Type', 'application/json').set('stripe-signature', header).send(payload);
+    expect([hook.status, hook.body.error]).toEqual([200, undefined]);
+    expect(await db('booking_requests').where({ id: row.id }).first()).toMatchObject({ status: 'pending', deposit_status: 'paid' });
+    const status = await request(pub).get(`/api/public/booking/requests/status/${res.body.statusToken}`);
+    expect([status.status, status.body.error]).toEqual([200, undefined]);
+  });
+});
