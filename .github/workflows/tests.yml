@@ -25,14 +25,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Installed by the media tools step; part of its apt cache key.
-      # postgresql-client gives the runner createdb for the worker database.
-      MEDIA_APT_PACKAGES: build-essential ffmpeg libimage-exiftool-perl sqlite3 postgresql-client
+      MEDIA_APT_PACKAGES: build-essential ffmpeg libimage-exiftool-perl sqlite3
       # S3-compatible store for the backup/restore S3 suites (started below).
       # MinIO no longer publishes images on Docker Hub or quay.io; Chainguard's
       # free build is pinned by digest. The free tier only promises :latest, so
-      # an old digest can disappear upstream: when "Start MinIO" fails to pull,
-      # pull cgr.dev/chainguard/minio:latest and copy its RepoDigest here.
+      # an old digest can disappear upstream. "Start MinIO" then falls back to
+      # MINIO_FALLBACK_IMAGE with a warning instead of failing every run; copy
+      # the RepoDigest the warning prints here to pin again.
       MINIO_IMAGE: cgr.dev/chainguard/minio@sha256:fb893e36fc369d41e92f678b17ec27378fa5bf0576aeef7ac15460c13629ab5a
+      MINIO_FALLBACK_IMAGE: cgr.dev/chainguard/minio:latest
       # The generation suites sign with these fixed keys, so the server's
       # root account uses them and every S3 suite shares one login.
       MINIO_ROOT_USER: owned-generation-access
@@ -81,17 +82,26 @@ jobs:
 
       # Not a `services:` entry: a service container cannot be given a command,
       # and MinIO needs `server /data`. /data is a tmpfs because MinIO renames
-      # across its data directory, which an overlay filesystem refuses. Every
-      # suite creates and deletes its own bucket, so no bucket is made here.
+      # across its data directory, which an overlay filesystem refuses; 1 GiB
+      # holds the suites' test objects, where the default is half the RAM.
+      # Every suite creates and deletes its own bucket, so no bucket is made
+      # here.
       - name: Start MinIO
         timeout-minutes: 5
         run: |
+          image="$MINIO_IMAGE"
+          if ! docker pull --quiet "$image"; then
+            image="$MINIO_FALLBACK_IMAGE"
+            docker pull --quiet "$image"
+            digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$image")
+            echo "::warning title=MinIO pin unavailable::$MINIO_IMAGE could not be pulled; ran $digest instead. Pin that digest as MINIO_IMAGE in tests.yml."
+          fi
           docker run -d --name minio -p 9000:9000 \
-            --mount type=tmpfs,destination=/data,tmpfs-mode=1777 \
+            --mount type=tmpfs,destination=/data,tmpfs-mode=1777,tmpfs-size=1g \
             -e MINIO_ROOT_USER -e MINIO_ROOT_PASSWORD \
-            "$MINIO_IMAGE" server /data
+            "$image" server /data
           for attempt in $(seq 1 60); do
-            curl -sf http://127.0.0.1:9000/minio/health/ready && exit 0
+            curl -sf --max-time 2 http://127.0.0.1:9000/minio/health/ready && exit 0
             sleep 1
           done
           docker logs minio
@@ -152,8 +162,9 @@ jobs:
 
       # portableRestoreWorkerPg.test.js restores into a database it requires to
       # be new, empty and disposable, and checks the name has this shape. The
-      # runner owns createdb; the job's Postgres service goes away with the
-      # job, which is the dropdb. Never the shared picpeak_test database.
+      # runner image ships the PostgreSQL client, so createdb needs no apt
+      # package; the job's Postgres service goes away with the job, which is
+      # the dropdb. Never the shared picpeak_test database.
       - name: Create the PostgreSQL worker test database
         env:
           PGPASSWORD: testpass
