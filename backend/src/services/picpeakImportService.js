@@ -483,12 +483,25 @@ function repairDateOnly(value) {
   return new Date(Math.round(ms / DAY_MS) * DAY_MS).toISOString().slice(0, 10);
 }
 
-function repairDateOnlyColumns(rows, columns) {
+// Same-engine (pg → pg) archives: an ISO instant in a `date` column is the
+// shifted midnight the export used to write, so repairDateOnly applies.
+// Cross-engine (SQLite → pg): only an epoch number came from a Date the app
+// wrote at local midnight, and that is repaired. A string was stored as the
+// writer sent it, and SQLite showed its first ten characters (toDateOnly);
+// Postgres keeps that day for a plain date or a Z instant cast in a UTC
+// session, so it is left alone. Runs before coerceForTargetEngine, which then
+// sees a plain date and leaves it as it is.
+const EPOCH = /^-?\d+$/;
+function repairDateOnlyColumns(rows, columns, { crossEngine = false } = {}) {
   if (!columns.length) return rows;
+  const repair = crossEngine
+    ? (value) => ((typeof value === 'number' || (typeof value === 'string' && EPOCH.test(value)))
+      ? repairDateOnly(epochToIso(value)) : value)
+    : repairDateOnly;
   return rows.map((row) => {
     let out = row;
     for (const col of columns) {
-      const repaired = repairDateOnly(row[col]);
+      const repaired = repair(row[col]);
       if (repaired !== row[col]) {
         if (out === row) out = { ...row };
         out[col] = repaired;
@@ -496,6 +509,14 @@ function repairDateOnlyColumns(rows, columns) {
     }
     return out;
   });
+}
+
+// The engine-dependent part of preparing archive rows for the load: the date
+// repair, then (SQLite → pg) the epoch and boolean coercion. replaceAllTables
+// and the zone probe in the tests both go through this.
+function prepareEngineRows(rows, { crossEngine = false, types = null, dateOnlyColumns = [] } = {}) {
+  const repaired = repairDateOnlyColumns(rows, dateOnlyColumns, { crossEngine });
+  return crossEngine ? coerceForTargetEngine(repaired, types) : repaired;
 }
 
 // Columns that name a file by a key relative to a root this install joins it
@@ -700,9 +721,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       const types = crossEngine ? await typedColumnsFor(trx, table) : null;
       const dateOnlyColumns = dateColumnsByTable.get(table) || [];
       for await (const rows of rowBatches(path.join(dataDir, `${table}.ndjson`), { allowMissing: true })) {
-        let prepared = rows;
-        if (crossEngine) prepared = coerceForTargetEngine(prepared, types);
-        prepared = repairDateOnlyColumns(prepared, dateOnlyColumns);
+        let prepared = prepareEngineRows(rows, { crossEngine, types, dateOnlyColumns });
         // SQLite JSON is already serialized; PG JSON values need serialization.
         prepared = serialiseJsonColumns(prepared, crossEngine ? new Set() : jsonCols);
         prepared = relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
@@ -843,6 +862,7 @@ module.exports = {
   typedColumnsFor,
   repairDateOnly,
   repairDateOnlyColumns,
+  prepareEngineRows,
   dateOnlyColumnsByTable,
   relocateStoredPaths,
   reinjectCurrentAdmin,

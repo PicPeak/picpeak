@@ -35,10 +35,11 @@ const legacyInstants = (zone, days) => JSON.parse(runInZone(zone, [
 describe('repairDateOnly (archives written before the fix)', () => {
   let repairDateOnly;
   let repairDateOnlyColumns;
+  let prepareEngineRows;
 
   beforeAll(() => {
     jest.resetModules();
-    ({ repairDateOnly, repairDateOnlyColumns } = require('../../src/services/picpeakImportService'));
+    ({ repairDateOnly, repairDateOnlyColumns, prepareEngineRows } = require('../../src/services/picpeakImportService'));
   });
 
   const zones = [
@@ -95,6 +96,29 @@ describe('repairDateOnly (archives written before the fix)', () => {
     expect(rows[0]).toEqual({ id: 1, d: '2024-08-11', ts: '2024-08-10T22:00:00.000Z' });
     expect(rows[1]).toBe(untouched);
   });
+
+  it('on a SQLite source, repairs epoch numbers only and leaves strings as SQLite showed them', () => {
+    const berlinMidnight = Date.UTC(2024, 7, 10, 22); // 2024-08-11 00:00 in Berlin
+    const newYorkMidnight = Date.UTC(2024, 7, 11, 4); // 2024-08-11 00:00 in New York
+    const rows = repairDateOnlyColumns([
+      { id: 1, d: berlinMidnight },
+      { id: 2, d: String(newYorkMidnight) },
+      { id: 3, d: '2024-08-11T13:00:00.000Z' },
+      { id: 4, d: '2024-08-10T22:00:00.000Z' },
+      { id: 5, d: '2024-08-11' },
+      { id: 6, d: null },
+    ], ['d'], { crossEngine: true });
+    expect(rows.map((r) => r.d)).toEqual([
+      '2024-08-11', '2024-08-11', '2024-08-11T13:00:00.000Z', '2024-08-10T22:00:00.000Z', '2024-08-11', null,
+    ]);
+  });
+
+  it('prepareEngineRows repairs before the cross-engine coercion', () => {
+    const types = { timestamps: ['d', 'ts'], booleans: ['b'] };
+    const [row] = prepareEngineRows([{ d: Date.UTC(2024, 7, 10, 22), ts: Date.UTC(2024, 7, 10, 22), b: 1 }],
+      { crossEngine: true, types, dateOnlyColumns: ['d'] });
+    expect(row).toEqual({ d: '2024-08-11', ts: '2024-08-10T22:00:00.000Z', b: true });
+  });
 });
 
 // ── Real-Postgres roundtrips (gated) ─────────────────────────────────────────
@@ -124,11 +148,14 @@ maybe('pg date columns roundtrip through a .picpeak archive', () => {
         expect(out.pgToPg).toHaveLength(2);
       });
 
-      it('sqlite → pg keeps the day for date strings and local-midnight Dates', () => {
+      it('sqlite → pg keeps the day SQLite showed: date strings, local-midnight Dates, client instants', () => {
         // The app's Dates reach the archive as epoch ms of local midnight.
-        expect(out.sqliteToPg.archived.slice(DAYS.length).every((v) => typeof v === 'number')).toBe(true);
-        expect(out.sqliteToPg.stored).toEqual([...DAYS, ...DAYS]);
-        expect(out.sqliteToPg.reexported).toEqual([...DAYS, ...DAYS]);
+        expect(out.sqliteToPg.archived.slice(DAYS.length, 2 * DAYS.length).every((v) => typeof v === 'number')).toBe(true);
+        // An instant an API client stored is a string, not a shifted midnight,
+        // so it keeps its first ten characters rather than the nearest UTC day.
+        const clientDays = ['2024-08-11', '2024-08-10'];
+        expect(out.sqliteToPg.stored).toEqual([...DAYS, ...DAYS, ...clientDays]);
+        expect(out.sqliteToPg.reexported).toEqual([...DAYS, ...DAYS, ...clientDays]);
       });
 
       it('a legacy pg archive with shifted instants restores the source day', () => {

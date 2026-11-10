@@ -17,6 +17,7 @@ const knexLib = require('knex');
 const SERVICES = path.resolve(__dirname, '../../../src/services');
 const TABLE = 'picpeak_date_probe';
 const DAYS = ['2024-08-11', '2024-01-15', '2024-12-31'];
+const CLIENT_INSTANTS = ['2024-08-11T13:00:00.000Z', '2024-08-10T22:00:00.000Z'];
 
 // Load a service against `db` on `client`, as the jest suites do with doMock.
 function load(client, db, service) {
@@ -65,14 +66,13 @@ async function main() {
       .split('\n').filter(Boolean).map((line) => JSON.parse(line));
     // The stored day as text, so the driver's own parsing plays no part.
     const storedDays = async () => (await pgDb.raw(`SELECT d::text AS d FROM ${TABLE} ORDER BY id`)).rows.map((r) => r.d);
-    // The import's per-row preparation for a pg target, in replaceAllTables order.
+    // The import's row preparation for a pg target (prepareEngineRows, which
+    // replaceAllTables calls; picpeakDateOnlyImport.test.js pins that).
     const importRows = (rows, crossEngine) => pgDb.transaction(async (trx) => {
       await trx(TABLE).del();
       const types = crossEngine ? await pgImport.typedColumnsFor(trx, TABLE) : null;
-      const dateColumns = (await pgImport.dateOnlyColumnsByTable(trx)).get(TABLE) || [];
-      let prepared = rows;
-      if (crossEngine) prepared = pgImport.coerceForTargetEngine(prepared, types);
-      prepared = pgImport.repairDateOnlyColumns(prepared, dateColumns);
+      const dateOnlyColumns = (await pgImport.dateOnlyColumnsByTable(trx)).get(TABLE) || [];
+      const prepared = pgImport.prepareEngineRows(rows, { crossEngine, types, dateOnlyColumns });
       await trx.batchInsert(TABLE, prepared, prepared.length);
     });
     const localMidnight = (day) => {
@@ -94,10 +94,13 @@ async function main() {
       out.pgToPg.push({ archived: rows.map((r) => r.d), archivedTs: rows[0].ts, stored: await storedDays() });
     }
 
-    // sqlite → pg: date strings, and Dates the app wrote (epoch ms of local midnight).
+    // sqlite → pg: date strings, Dates the app wrote (epoch ms of local
+    // midnight), and full instants an API client sent as they were. SQLite
+    // shows the first ten characters of those (toDateOnly).
     await sqliteDb(TABLE).insert([
       ...DAYS.map((d, i) => ({ id: i + 1, d, ts: Date.UTC(2024, 7, 11, 10) })),
       ...DAYS.map((d, i) => ({ id: DAYS.length + i + 1, d: localMidnight(d), ts: null })),
+      ...CLIENT_INSTANTS.map((d, i) => ({ id: 2 * DAYS.length + i + 1, d, ts: null })),
     ]);
     await sqliteExport.writeTableNdjson(TABLE, dataDir);
     out.sqliteToPg.archived = readNdjson().map((r) => r.d);
