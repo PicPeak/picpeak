@@ -5,6 +5,18 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.199.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.198.0-beta.0...v3.199.0-beta.0) (2026-11-10)
+
+
+### Features
+
+* **crm:** client booking requests with availability ([#2452](https://github.com/PicPeak/picpeak/issues/2452)) ([1d5f030](https://github.com/PicPeak/picpeak/commit/1d5f03004456501709d329d2e824682bb45a937e))
+
+
+### Bug Fixes
+
+* **crm:** store invoice send dates in one shape ([#2454](https://github.com/PicPeak/picpeak/issues/2454)) ([9e092ee](https://github.com/PicPeak/picpeak/commit/9e092eee148274b5fc2d0ec551e4f2be902b6a71))
+
 ## [3.198.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.197.0-beta.0...v3.198.0-beta.0) (2026-11-09)
 
 
