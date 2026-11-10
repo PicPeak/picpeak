@@ -69,7 +69,7 @@ async function main() {
     const importRows = (rows, crossEngine) => pgDb.transaction(async (trx) => {
       await trx(TABLE).del();
       const types = crossEngine ? await pgImport.typedColumnsFor(trx, TABLE) : null;
-      const dateColumns = await pgImport.dateOnlyColumnsFor(trx, TABLE);
+      const dateColumns = (await pgImport.dateOnlyColumnsByTable(trx)).get(TABLE) || [];
       let prepared = rows;
       if (crossEngine) prepared = pgImport.coerceForTargetEngine(prepared, types);
       prepared = pgImport.repairDateOnlyColumns(prepared, dateColumns);

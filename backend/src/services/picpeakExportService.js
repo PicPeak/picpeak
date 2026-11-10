@@ -25,7 +25,7 @@ const { getStoragePath } = require('../config/storage');
 const logger = require('../utils/logger');
 const { collectLegacyStoredFiles, storedPathMap } = require('../utils/legacyStoredFiles');
 const { STORED_PATH_COLUMNS } = require('../utils/storedPath');
-const { toDateOnly, dateColumnsOf } = require('../utils/dateOnly');
+const { toDateOnly, pgDateColumnsByTable } = require('../utils/dateOnly');
 const packageJson = require('../../package.json');
 const recoveryFiles = require('./recoveryFiles');
 const { getStorage } = require('./storage');
@@ -113,13 +113,13 @@ async function getLatestMigration() {
   }
 }
 
-// PostgreSQL `date` columns of a table. node-pg reads a `date` as a Date at
-// LOCAL midnight, which JSON.stringify would write as a UTC instant: the day
-// before east of UTC (2024-08-11 → "2024-08-10T22:00:00.000Z" in Berlin), and
-// the import would then restore that earlier day. SQLite has no date type, so
-// its rows are written as stored.
-async function pgDateColumns(table) {
-  return isPostgres() ? dateColumnsOf(db, table) : [];
+// PostgreSQL `date` columns, by table (one query for the whole export).
+// node-pg reads a `date` as a Date at LOCAL midnight, which JSON.stringify
+// would write as a UTC instant: the day before east of UTC (2024-08-11 →
+// "2024-08-10T22:00:00.000Z" in Berlin), and the import would then restore
+// that earlier day. SQLite has no date type, so its rows are written as stored.
+async function pgDateColumns() {
+  return isPostgres() ? pgDateColumnsByTable(db) : new Map();
 }
 
 // Write one table to <dataDir>/<table>.ndjson (one JSON object per line).
@@ -135,13 +135,15 @@ async function pgDateColumns(table) {
 // `pathMap` ({ stored value: archived path }, legacy-root documents) is
 // applied to the stored-path columns as the rows are written, so the archive
 // names each document where its bytes are, for any importer.
-async function writeTableNdjson(table, dataDir, pathMap = null, onRows) {
+// `dateColumnsByTable` (pgDateColumns) is looked up once per export and passed
+// in; a caller writing a single table may leave it out.
+async function writeTableNdjson(table, dataDir, pathMap = null, onRows, dateColumnsByTable = null) {
   const outPath = path.join(dataDir, `${table}.ndjson`);
   const hash = crypto.createHash('sha256');
   const pathColumns = pathMap
     ? STORED_PATH_COLUMNS.filter((c) => c.table === table).map((c) => c.column)
     : [];
-  const dateColumns = await pgDateColumns(table);
+  const dateColumns = (dateColumnsByTable || await pgDateColumns()).get(table) || [];
   const rows = (await db(table).select('*')).map((row) => {
     if (!pathColumns.length && !dateColumns.length) return row;
     const out = { ...row };
@@ -280,10 +282,11 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
     const referenceRows = new Map();
     let largestRowBytes = 0;
     let tableBytes = 0;
+    const dateColumnsByTable = await pgDateColumns();
     for (const table of tables) {
       const { largestRowBytes: largest, ...meta } = await writeTableNdjson(table, dataDir, pathMap, (name, rows) => {
         if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files', 'print_sales_assets'].includes(name)) referenceRows.set(name, rows);
-      });
+      }, dateColumnsByTable);
       tableMeta[table] = meta;
       largestRowBytes = Math.max(largestRowBytes, largest);
       tableBytes += (await fsp.stat(path.join(dataDir, `${table}.ndjson`))).size;

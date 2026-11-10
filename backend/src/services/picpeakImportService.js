@@ -28,7 +28,7 @@ const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
 const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
 const { isoSqliteCostTimestamps, COST_TIMESTAMP_TABLES } = require('../utils/costTimestamps');
 const { isoSqliteInvoiceSendAt } = require('../utils/invoiceSendAt');
-const { dateColumnsOf } = require('../utils/dateOnly');
+const { pgDateColumnsByTable } = require('../utils/dateOnly');
 const { rowBatches } = require('./portableImportRows');
 const {
   dedupeExternalPhotos,
@@ -451,9 +451,9 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
   });
 }
 
-// PostgreSQL `date` columns of a target table (see repairDateOnly).
-async function dateOnlyColumnsFor(trx, table) {
-  return isPostgres() ? dateColumnsOf(trx, table) : [];
+// PostgreSQL `date` columns of the target, by table (see repairDateOnly).
+async function dateOnlyColumnsByTable(trx) {
+  return isPostgres() ? pgDateColumnsByTable(trx) : new Map();
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -470,10 +470,10 @@ const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 // which holds for every source zone from UTC-11:59 to UTC+12 (a value exactly
 // at 12:00Z counts as east of UTC, so a UTC-12 source would gain a day; no
 // inhabited zone uses that offset). UTC+13 and later cannot be told apart
-// from the day before at UTC-11 and stay one day early, as before. Only instants on a quarter hour are
-// treated as shifted midnights, since every zone offset in use is one; any
-// other instant is left for Postgres to cast as before. Plain dates pass
-// through unchanged.
+// from the day before at UTC-11 and stay one day early, as before. Only
+// instants on a quarter hour are treated as shifted midnights, since every
+// zone offset in use is one; any other instant is left for Postgres to cast
+// as before. Plain dates pass through unchanged.
 function repairDateOnly(value) {
   if (typeof value !== 'string' || !ISO_INSTANT.test(value)) return value;
   const ms = Date.parse(value);
@@ -694,10 +694,11 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     // 2096). Such rows come back as 0, so the background refresh cleans them.
     const markLegacyRenditions = tables.includes('photos') && await trx.schema.hasColumn('photos', 'rendition_version');
 
+    const dateColumnsByTable = await dateOnlyColumnsByTable(trx);
     for (const table of tables) {
       const jsonCols = await jsonColumnsFor(trx, table);
       const types = crossEngine ? await typedColumnsFor(trx, table) : null;
-      const dateOnlyColumns = await dateOnlyColumnsFor(trx, table);
+      const dateOnlyColumns = dateColumnsByTable.get(table) || [];
       for await (const rows of rowBatches(path.join(dataDir, `${table}.ndjson`), { allowMissing: true })) {
         let prepared = rows;
         if (crossEngine) prepared = coerceForTargetEngine(prepared, types);
@@ -842,7 +843,7 @@ module.exports = {
   typedColumnsFor,
   repairDateOnly,
   repairDateOnlyColumns,
-  dateOnlyColumnsFor,
+  dateOnlyColumnsByTable,
   relocateStoredPaths,
   reinjectCurrentAdmin,
   captureOperatorRole,
