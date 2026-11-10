@@ -34,7 +34,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const knex = require('knex');
 const StreamZip = require('node-stream-zip');
-const { OPERATOR } = require('./helpers/fidelityInstance');
+const { OPERATOR, FILES } = require('./helpers/fidelityInstance');
 
 const executeFile = promisify(execFile);
 const BACKEND = path.resolve(__dirname, '../..');
@@ -49,6 +49,16 @@ const pgDescribe = linux && PG_URL ? describe : describe.skip;
 // new table that lands here needs a fixture (an OVERRIDES entry in
 // helpers/fidelityInstance.js, or a parent the seeding can reach).
 const ZERO_ROW_TABLES = [];
+
+// Tables that refused the full synthetic row and took only their required
+// columns, by source engine. Their nullable columns are null on both sides,
+// so the comparison says nothing about them. Pinned the same way as
+// ZERO_ROW_TABLES: the list may not grow, and an entry that now takes the
+// full row must leave it. Each entry carries the reason the full row failed.
+const PARTIAL_ROW_TABLES = {
+  sqlite: {},
+  pg: {},
+};
 
 // What a restore changes ON PURPOSE. Every entry names the code that does it.
 // A table that differs for any other reason is a fidelity failure.
@@ -147,6 +157,8 @@ async function readTables(file) {
 // returns Date (serialised as ISO), true/false, parsed json, and numeric /
 // bigint as strings. Normalise both sides to one shape. Timestamps compare
 // as instants: a zone-less "YYYY-MM-DD HH:MM:SS" is UTC, as the app writes it.
+// A numeric string stays a string: only a pg bigint or numeric column (kind
+// 'numeric') may meet a SQLite number, and then only digit for digit.
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_TIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
 const NUMERIC = /^-?\d+(\.\d+)?$/;
@@ -166,7 +178,6 @@ function normaliseValue(value) {
     const instant = Date.parse(zoned);
     if (!Number.isNaN(instant)) return { instant };
   }
-  if (NUMERIC.test(value)) return Number(value);
   if (/^[[{]/.test(value)) {
     try { return normaliseValue(JSON.parse(value)); } catch (_) { /* plain text */ }
   }
@@ -179,8 +190,10 @@ function normaliseValue(value) {
 // target's column type (reported by the restore instance) to compare:
 //   json: SQLite stores JSON text ('"en"', 'true'), pg returns it parsed.
 //   date: a pg `date` keeps the calendar day of a SQLite epoch.
+//   numeric: pg returns bigint and numeric as strings, SQLite as numbers.
 function sameValue(a, b, { kind } = {}) {
   if (kind === 'date') return utcDay(a) === utcDay(b);
+  if (kind === 'numeric' && typeof a !== typeof b) return sameNumber(a, b);
   // Kinds come from a pg target, so `a` is the SQLite source's spelling (JSON
   // text) and `b` the value pg already parsed, a plain string included.
   if (kind === 'json') {
@@ -194,6 +207,15 @@ function sameValue(a, b, { kind } = {}) {
   return JSON.stringify(x) === JSON.stringify(y);
 }
 const epochMs = n => (Math.abs(n) < 1e11 ? n * 1000 : n);
+// '12345.670' and 12345.67 are one value; '9007199254740993' and the Number
+// 9007199254740992 are not, and neither are '12345.67' and 12345.6. The
+// number's own digits must spell the string's, so precision loss shows.
+function sameNumber(a, b) {
+  const [text, number] = typeof a === 'number' ? [b, a] : [a, b];
+  if (typeof number !== 'number' || typeof text !== 'string' || !NUMERIC.test(text)) return false;
+  const canonical = text.includes('.') ? text.replace(/0+$/, '').replace(/\.$/, '') : text;
+  return String(number) === canonical.replace(/^(-?)0+(?=\d)/, '$1');
+}
 const parseJson = text => { try { return JSON.parse(text); } catch (_) { return { unparseable: text }; } };
 function utcDay(value) {
   if (value === null || value === undefined) return null;
@@ -203,12 +225,15 @@ function utcDay(value) {
 }
 
 // Keyless tables (composite keys) match on their normalised values, with
-// instants as epoch numbers so an epoch on one side keys like an ISO string.
+// instants as epoch numbers so an epoch on one side keys like an ISO string,
+// and numeric strings as numbers so a pg bigint keys like a SQLite integer.
+// The key only pairs rows; the columns are then compared strictly.
 function rowKey(row) {
   if (row.id !== undefined && row.id !== null) return `id:${row.id}`;
   return JSON.stringify(Object.keys(row).sort().map((key) => {
     const value = normaliseValue(row[key]);
-    return [key, value && typeof value === 'object' && 'instant' in value ? value.instant : value];
+    if (value && typeof value === 'object' && 'instant' in value) return [key, value.instant];
+    return [key, typeof value === 'string' && NUMERIC.test(value) ? Number(value) : value];
   }));
 }
 
@@ -259,6 +284,15 @@ async function assertFidelity(source, restored, { sameEngine }) {
   const nowFilled = ZERO_ROW_TABLES.filter(table => first.tables[table] && !empty.includes(table));
   expect({ newlyEmpty, nowFilled }).toEqual({ newlyEmpty: [], nowFilled: [] });
 
+  // A table that only took its required columns proves nothing about the
+  // rest, so the same rule holds for that list, per source engine.
+  const pinnedPartial = PARTIAL_ROW_TABLES[source.engine];
+  const partial = source.seeding.partial;
+  const newlyPartial = Object.keys(partial).filter(table => !(table in pinnedPartial))
+    .map(table => `${table}: ${partial[table]}`);
+  const nowFull = Object.keys(pinnedPartial).filter(table => !(table in partial));
+  expect({ newlyPartial, nowFull }).toEqual({ newlyPartial: [], nowFull: [] });
+
   const before = await readTables(source.filePath);
   const after = await readTables(restored.filePath);
   const operator = (before.admin_users || []).find(row => row.email === OPERATOR.email);
@@ -287,9 +321,10 @@ async function assertFidelity(source, restored, { sameEngine }) {
     RESTORE_REWRITES[table], context));
   expect(differences).toEqual([]);
 
-  // Files: path, size and sha256.
+  // Files: path, size and sha256. Every seeded file must be there by name, so
+  // an export that drops a whole root (transfers/, say) fails on both sides.
   expect(fileList(second)).toEqual(fileList(first));
-  expect(fileList(first).length).toBeGreaterThan(0);
+  expect(fileList(first).map(file => file.path)).toEqual(expect.arrayContaining(Object.keys(FILES)));
 }
 
 beforeAll(async () => {
@@ -307,7 +342,10 @@ describe('fidelity comparison helpers', () => {
     expect(sameValue('2024-08-11 18:13:20', '2024-08-11T18:13:20.000Z')).toBe(true);
     expect(sameValue('2024-08-11', '2024-08-11T00:00:00.000Z')).toBe(true);
     expect(sameValue(1, true)).toBe(true);
-    expect(sameValue('1.50', 1.5)).toBe(true);
+    expect(sameValue('1.50', 1.5, { kind: 'numeric' })).toBe(true);
+    expect(sameValue('12345.670', 12345.67, { kind: 'numeric' })).toBe(true);
+    expect(sameValue(9007199254740992, '9007199254740992', { kind: 'numeric' })).toBe(true);
+    expect(sameValue(1723400000123, '2024-08-11T18:13:20.123Z')).toBe(true);
     expect(sameValue('{"b":1,"a":[true]}', { a: [true], b: 1 })).toBe(true);
     expect(sameValue('"en"', 'en', { kind: 'json' })).toBe(true);
     expect(sameValue('false', false, { kind: 'json' })).toBe(true);
@@ -323,6 +361,15 @@ describe('fidelity comparison helpers', () => {
     expect(sameValue(1723400000000, '2024-08-12T00:00:00.000Z', { kind: 'date' })).toBe(false);
     expect(sameValue('"en"', 'en')).toBe(false); // outside a json column, text stays text
     expect(sameValue('"en"', 'de', { kind: 'json' })).toBe(false);
+  });
+
+  it('shows precision loss and type changes instead of normalising them away', () => {
+    expect(sameValue('9007199254740993', 9007199254740992, { kind: 'numeric' })).toBe(false);
+    expect(sameValue('12345.67', 12345.6, { kind: 'numeric' })).toBe(false);
+    expect(sameValue('12345.67', '12345.6', { kind: 'numeric' })).toBe(false);
+    expect(sameValue('1.50', 1.5)).toBe(false); // outside a pg numeric column, text is not a number
+    expect(sameValue('1', 1)).toBe(false);
+    expect(sameValue(1723400000123, '2024-08-11T18:13:20.000Z')).toBe(false);
   });
 
   it('reports a dropped column and a changed value by table, key and column', () => {

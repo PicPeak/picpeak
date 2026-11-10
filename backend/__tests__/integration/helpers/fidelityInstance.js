@@ -18,8 +18,9 @@
  * inserts one synthetic row into every exported table that the migrations
  * left empty, parents before children, so a column added tomorrow is covered
  * without anyone touching this file. Tables it cannot fill (a CHECK it cannot
- * satisfy, a required parent that stayed empty) are reported, and the test
- * pins that list.
+ * satisfy, a required parent that stayed empty) are reported, and so are the
+ * tables that only took a row of their required columns. The test pins both
+ * lists.
  */
 
 process.env.NODE_ENV = 'test';
@@ -58,7 +59,11 @@ const FILES = {
   'transfers/fidelity/delivery.bin': Buffer.from([0, 1, 2, 3, 254, 255]),
 };
 
-const FIXED_DATE = new Date('2024-08-11T18:13:20.000Z');
+// Values chosen so a lossy restore shows: milliseconds on every timestamp, a
+// bigint above 2^53 (a JS Number cannot hold it), and decimals that use every
+// digit of their column's scale.
+const FIXED_DATE = new Date('2024-08-11T18:13:20.123Z');
+const BIG_INTEGER = '9007199254740993';
 
 // The few columns where a synthetic value would break an invariant the export
 // or restore rightly enforces (a storage key must sit under its recovery root
@@ -90,14 +95,13 @@ async function bootInstance() {
 }
 
 const isPg = db => db.client.config.client === 'pg';
-const rowsOf = (db, result) => (isPg(db) ? result.rows : result);
 
 // { column: { type, nullable, hasDefault, maxLength, autoIncrement } }
 async function describeColumns(db, table) {
   if (isPg(db)) {
     const result = await db.raw(`
       SELECT column_name, data_type, udt_name, is_nullable, column_default,
-             character_maximum_length, is_identity
+             character_maximum_length, is_identity, numeric_precision, numeric_scale
       FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = ?
       ORDER BY ordinal_position`, [table]);
@@ -108,17 +112,26 @@ async function describeColumns(db, table) {
       maxLength: c.character_maximum_length,
       autoIncrement: c.is_identity === 'YES' || /^nextval\(/.test(c.column_default || ''),
       udt: c.udt_name,
+      // Only a declared numeric(p,s) has a scale; integer types report one too.
+      ...(c.data_type === 'numeric' && c.numeric_scale !== null
+        ? { precision: Number(c.numeric_precision), scale: Number(c.numeric_scale) } : {}),
     }]));
   }
   const info = await db.raw(`PRAGMA table_info(${JSON.stringify(table)})`);
   const pkColumns = info.filter(c => c.pk);
-  return Object.fromEntries(info.map(c => [c.name, {
-    type: String(c.type || '').toLowerCase(),
-    nullable: !c.notnull && !c.pk,
-    hasDefault: c.dflt_value !== null,
-    maxLength: Number((/\((\d+)\)/.exec(c.type || '') || [])[1]) || null,
-    autoIncrement: pkColumns.length === 1 && c.pk === 1 && /int/i.test(c.type || ''),
-  }]));
+  return Object.fromEntries(info.map((c) => {
+    // knex writes decimal(p, s) as `decimal(8, 2)` or `float(8, 2)` on SQLite.
+    const scaled = /^(?:decimal|numeric|float|double|real)\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/i.exec(c.type || '');
+    return [c.name, {
+      type: String(c.type || '').toLowerCase(),
+      nullable: !c.notnull && !c.pk,
+      hasDefault: c.dflt_value !== null,
+      maxLength: Number((/\((\d+)\)/.exec(c.type || '') || [])[1]) || null,
+      autoIncrement: pkColumns.length === 1 && c.pk === 1 && /int/i.test(c.type || ''),
+      ...(scaled ? { precision: Number(scaled[1]), scale: Number(scaled[2]) } : {}),
+      sqlite: true,
+    }];
+  }));
 }
 
 // [{ column, table, to }]
@@ -142,7 +155,7 @@ async function describeForeignKeys(db, table) {
 // on SQLite and a CHECK ... = ANY (ARRAY[...]) (or a native enum) on Postgres.
 async function describeAllowedValues(db, table, columns) {
   const allowed = {};
-  const literals = text => [...text.matchAll(/'((?:[^']|'')*)'/g)].map(m => m[1].replace(/''/g, "'"));
+  const literals = text => [...text.matchAll(/'((?:[^']|'')*)'/g)].map(m => m[1].replace(/''/g, '\''));
   if (isPg(db)) {
     const checks = await db.raw(`
       SELECT pg_get_constraintdef(c.oid) AS def
@@ -195,11 +208,25 @@ function syntheticValue(table, column, meta, allowed) {
   // knex's uuid() is char(36) on SQLite and a native uuid on Postgres.
   if (/uuid/.test(type) || type === 'char(36)') return crypto.randomUUID();
   if (/blob|bytea|binary/.test(type)) return Buffer.from(`fx-${table}-${column}`);
-  // Small values: they satisfy the range CHECKs (a 1-5 rating) and the
-  // narrow numerics (numeric(3,2)) that only Postgres enforces.
+  if (/bigint|int8/.test(type)) return BIG_INTEGER;
+  // Other integers stay small: they satisfy the range CHECKs (a 1-5 rating).
   if (/int/.test(type)) return 1;
-  if (/real|float|double|numeric|decimal/.test(type)) return 1.5;
+  if (/real|float|double|numeric|decimal/.test(type)) return decimalValue(meta);
   return text();
+}
+
+// 12345.67 where it fits; a narrower column (numeric(3,2), which only
+// Postgres enforces) gets as many integer digits as it allows and a fraction
+// that fills its scale, so a dropped decimal place shows. SQLite mostly loses
+// the declared precision (a rebuilt table's decimals read back as `float`),
+// so an undeclared SQLite decimal gets the shape that fits the narrowest
+// Postgres column a SQLite → Postgres restore can meet: one integer digit,
+// two decimals.
+function decimalValue({ precision, scale, sqlite }) {
+  if (precision === undefined) return sqlite ? '1.67' : '12345.67';
+  const integer = '12345'.slice(0, Math.max(precision - scale, 0)) || '0';
+  const fraction = '6789012345'.repeat(4).slice(0, scale);
+  return fraction ? `${integer}.${fraction}` : integer;
 }
 
 async function primaryKeyValue(db, table, column) {
@@ -209,7 +236,9 @@ async function primaryKeyValue(db, table, column) {
 
 /**
  * Insert one synthetic row into every listed table that is still empty.
- * Returns { filled, unfilled: { table: reason } }.
+ * Returns { filled, unfilled: { table: reason }, partial: { table: reason } }:
+ * `partial` names the tables that refused the full row and took only their
+ * required columns, so their nullable columns stay null on both sides.
  */
 async function fillEmptyTables(db, tables) {
   const pending = new Set();
@@ -219,6 +248,7 @@ async function fillEmptyTables(db, tables) {
   }
   const filled = [];
   const reasons = {};
+  const partial = {};
   // Parents before children: retry while any pass makes progress.
   let progress = true;
   while (pending.size && progress) {
@@ -251,9 +281,10 @@ async function fillEmptyTables(db, tables) {
       // the columns the table requires.
       const attempts = [row, Object.fromEntries(Object.entries(row)
         .filter(([column]) => !columns[column].nullable && !columns[column].hasDefault))];
-      for (const attempt of attempts) {
+      for (const [index, attempt] of attempts.entries()) {
         try {
           await db.transaction(trx => trx(table).insert(attempt));
+          if (index > 0) partial[table] = reasons[table];
           filled.push(table);
           pending.delete(table);
           delete reasons[table];
@@ -265,7 +296,11 @@ async function fillEmptyTables(db, tables) {
       }
     }
   }
-  return { filled, unfilled: Object.fromEntries([...pending].sort().map(t => [t, reasons[t] || 'not attempted'])) };
+  return {
+    filled,
+    unfilled: Object.fromEntries([...pending].sort().map(t => [t, reasons[t] || 'not attempted'])),
+    partial: Object.fromEntries(Object.keys(partial).sort().map(t => [t, partial[t]])),
+  };
 }
 
 async function writeFiles() {
@@ -302,14 +337,16 @@ async function restore(picpeakPath, outDir) {
     const { importFromPicpeak } = require('../../../src/services/picpeakImportService');
     const result = await importFromPicpeak({ picpeakPath, currentAdminId: instance.operatorId });
     // Column kinds whose values a SQLite archive spells differently: a pg
-    // `date` keeps the calendar day of a SQLite epoch, and a pg json column
-    // holds what SQLite stores as JSON text. The test compares by kind.
+    // `date` keeps the calendar day of a SQLite epoch, a pg json column holds
+    // what SQLite stores as JSON text, and pg returns bigint and numeric as
+    // strings where SQLite returns numbers. The test compares by kind.
     const columnKinds = {};
     if (isPg(instance.db)) {
+      const kinds = { date: 'date', json: 'json', jsonb: 'json', bigint: 'numeric', numeric: 'numeric' };
       const result = await instance.db.raw(`SELECT table_name, column_name, data_type FROM information_schema.columns
-        WHERE table_schema = 'public' AND data_type IN ('date', 'json', 'jsonb')`);
+        WHERE table_schema = 'public' AND data_type IN ('date', 'json', 'jsonb', 'bigint', 'numeric')`);
       for (const row of result.rows) {
-        (columnKinds[row.table_name] ||= {})[row.column_name] = row.data_type === 'date' ? 'date' : 'json';
+        (columnKinds[row.table_name] ||= {})[row.column_name] = kinds[row.data_type];
       }
     }
     return { ...await exportTo(outDir), restore: result, columnKinds, engine: isPg(instance.db) ? 'pg' : 'sqlite' };
