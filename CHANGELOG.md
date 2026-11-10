@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.200.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.199.1-beta.0...v3.200.0-beta.0) (2026-11-10)
+
+
+### Features
+
+* **backup:** restore tests that prove a backup restores, plus tiered retention ([#2461](https://github.com/PicPeak/picpeak/issues/2461)) ([693d181](https://github.com/PicPeak/picpeak/commit/693d181c91ca63c1c782afcc18ffba347446d0ea))
+* **crm:** booking deposit and gallery unlock on payment ([#2453](https://github.com/PicPeak/picpeak/issues/2453)) ([00bab50](https://github.com/PicPeak/picpeak/commit/00bab505fc9b087ec098ca88e9d322bb78add4e0))
+
 ## [3.199.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.199.0-beta.0...v3.199.1-beta.0) (2026-11-10)
 
 
