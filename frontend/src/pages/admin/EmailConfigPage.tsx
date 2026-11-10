@@ -141,6 +141,7 @@ const TEMPLATE_DISPLAY_NAMES: Record<string, string> = {
   // core / backup
   backup_completed: 'Backup Completed',
   backup_failed: 'Backup Failed',
+  backup_verification_failed: 'Backup Verification Failed',
   database_backup_completed: 'Database Backup Completed',
   database_backup_failed: 'Database Backup Failed',
   restore_completed: 'Restore Completed',

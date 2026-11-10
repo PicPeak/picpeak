@@ -672,6 +672,17 @@
     "archive": "Prenosi ZIP so za trenutek zaustavljeni. Posamezne fotografije si lahko še vedno ogledate in prenesete."
   },
   "systemHealth": {
+    "backupRestoreTest": {
+      "title": "Preizkus obnovitve varnostnih kopij",
+      "ok": "Nedavna varnostna kopija je uspešno prestala preizkus obnovitve.",
+      "stale": "V zadnjih {{days}} dneh ni bilo uspešnega preizkusa obnovitve.",
+      "none": "Noben preizkus obnovitve še ni bil uspešen.",
+      "failed": "Zadnji preizkus obnovitve ni uspel. Kopije morda ni mogoče obnoviti.",
+      "running": "Preizkus obnovitve poteka.",
+      "lastPassed": "Zadnji uspešen: {{when}}",
+      "neverPassed": "Ni zabeleženega uspešnega preizkusa obnovitve.",
+      "open": "Odpri preizkus obnovitve"
+    },
     "retry": "Ponovi",
     "dismiss": "Zapri",
     "retriedToast": "E-pošta ponovno dodana v čakalno vrsto.",
@@ -2950,6 +2961,10 @@
       "title": "Blagovna znamka"
     },
     "features": {
+      "backupRestoreTest": {
+        "title": "Preizkus obnovitve varnostnih kopij",
+        "description": "Vsaka varnostna kopija se poskusno obnovi v začasno podatkovno bazo in preveri: podpis, kontrolne vsote, zgoščene vrednosti datotek, število vrstic in migracije. Shranjene kopije se tedensko ponovno preverijo, ob neuspehu pa prejmete e-pošto."
+      },
       "title": "Funkcije",
       "intro": "Vklopite ali izklopite površine izdelka. Omogočene funkcije se prikažejo v levi navigaciji in so na voljo vaši ekipi. Nekatere funkcije so še v beta različici — vklopite jih za preizkus ali izklopite, da jih skrijete.",
       "sidebarHidden": "Ni elementa v stranski vrstici — deluje v ozadju",
@@ -5283,6 +5298,92 @@
     }
   },
   "backup": {
+    "restoreTest": {
+      "title": "Preizkus obnovitve",
+      "description": "Po vsaki varnostni kopiji in tedensko za shranjene kopije strežnik preveri, ali je kopijo dejansko mogoče obnoviti: preveri podpis in kontrolne vsote, obnovi podatkovno bazo v začasno kopijo in jo preveri.",
+      "runNow": "Zaženi preizkus obnovitve",
+      "hashAll": "Izračunaj zgoščeno vrednost vsake datoteke",
+      "started": "Preizkus obnovitve se je začel.",
+      "busy": "Varnostno kopiranje, obnovitev ali preizkus obnovitve že poteka. Poskusite znova, ko se konča.",
+      "noBackup": "Uspešne varnostne kopije za preizkus še ni.",
+      "startFailed": "Preizkusa obnovitve ni bilo mogoče zagnati.",
+      "loadFailed": "Rezultatov preizkusa obnovitve ni bilo mogoče naložiti.",
+      "stale": "V zadnjih {{days}} dneh ni bilo uspešnega preizkusa obnovitve",
+      "disabled": "Samodejni preizkusi obnovitve so v nastavitvah izklopljeni. Kopije se preizkusijo le, če preizkus zaženete tukaj.",
+      "empty": "Preizkus obnovitve se še ni izvedel.",
+      "fullCheck": "preverjene vse datoteke",
+      "when": "Kdaj",
+      "tested": "Preizkušeno",
+      "triggeredBy": "Sprožilec",
+      "history": "Prejšnji preizkusi ({{count}})",
+      "status": {
+        "passed": "Uspešno",
+        "warning": "Uspešno z opozorili",
+        "failed": "Neuspešno",
+        "skipped": "Preskočeno",
+        "running": "Poteka"
+      },
+      "level": {
+        "deep": "Poglobljeno preverjanje",
+        "drill": "Poskusna obnovitev"
+      },
+      "trigger": {
+        "backup": "Po varnostni kopiji",
+        "schedule": "Načrtovano ponovno preverjanje",
+        "admin": "Zagnal skrbnik"
+      },
+      "target": {
+        "backupRun": "Varnostna kopija #{{id}}",
+        "databaseRun": "Kopija podatkovne baze #{{id}}",
+        "none": "Ni varnostne kopije"
+      },
+      "checks": {
+        "manifest_signature": "Podpis manifesta",
+        "dump_checksum": "Kontrolna vsota izpisa podatkovne baze",
+        "parent_chain": "Veriga varnostnih kopij",
+        "business_docs": "Poslovni dokumenti",
+        "files_sample": "Vzorec datotek",
+        "files_all": "Vse datoteke",
+        "drill_load": "Nalaganje v preizkusno podatkovno bazo",
+        "drill_integrity": "Celovitost podatkovne baze",
+        "drill_foreign_keys": "Tuji ključi",
+        "drill_row_counts": "Število vrstic",
+        "drill_migrate": "Migracija na trenutno različico",
+        "drill_invariants": "Doslednost podatkov",
+        "createdb_privilege": "Dovoljenje za ustvarjanje preizkusne podatkovne baze",
+        "destination": "Cilj varnostnih kopij"
+      },
+      "skipReasons": {
+        "not_verifiable_rsync": "Varnostnih kopij, poslanih prek rsync, ni mogoče prenesti nazaj za preizkus, zato niso preverjene. Za preizkuse obnovitve uporabite lokalni cilj ali S3.",
+        "insufficient_space": "Za obnovitev preizkusne kopije ni bilo dovolj prostora na disku. Sprostite prostor na strežniku in znova zaženite preizkus.",
+        "busy": "Takrat je potekalo varnostno kopiranje, obnovitev ali drug preizkus, zato je bil ta preizkus preskočen.",
+        "no_backup": "Ni bilo uspešne varnostne kopije za preizkus.",
+        "not_standalone": "Te kopije ni mogoče obnoviti samostojno, zato ni bila poskusno obnovljena.",
+        "no_manifest": "Ta kopija nima manifesta, zato njene vsebine ni bilo mogoče preveriti.",
+        "interrupted": "Preizkus je bil prekinjen, preden se je končal, na primer zaradi ponovnega zagona strežnika.",
+        "no_database_dump": "Ta kopija ne vsebuje izpisa podatkovne baze, zato ni bilo ničesar za poskusno obnovitev."
+      },
+      "badge": {
+        "hint": "Preizkus obnovitve: ali je bila ta kopija preverjena in poskusno obnovljena v začasno podatkovno bazo.",
+        "warningHint": "Obnovljivo, z opozorili.",
+        "running": "Preizkušanje",
+        "verified": "Preverjeno",
+        "failed": "Preizkus neuspešen",
+        "skipped": "Ni mogoče preizkusiti",
+        "notVerified": "Ni preverjeno"
+      },
+      "config": {
+        "title": "Preizkus obnovitve",
+        "enabled": "Samodejno izvajaj preizkuse obnovitve",
+        "enabledHelp": "Preizkusi vsako kopijo, ko se konča, in ponovno preveri shranjene kopije po spodnjem urniku.",
+        "schedule": "Urnik ponovnega preverjanja (cron)",
+        "scheduleHelp": "Privzeto: nedelja 04:00 (0 4 * * 0)",
+        "samplePercent": "Vzorec datotek na zagon (%)",
+        "samplePercentHelp": "Poslovni dokumenti vsake kopije se vedno preverijo z zgoščeno vrednostjo; to je delež drugih datotek (fotografije ipd.), ki se preveri ob vsakem zagonu, izmenično, da so sčasoma zajete vse datoteke.",
+        "invalidCron": "Vnesite veljaven izraz cron (5 polj) za urnik preizkusa obnovitve",
+        "invalidSamplePercent": "Vzorec datotek mora biti med 0 in 100 odstotki"
+      }
+    },
     "picpeak": {
       "restoreIntro": "Naložite datoteko .picpeak iz te ali druge namestitve. Obnova varnostne kopije SQLite na PostgreSQL je podprta (pot nadgradnje); druge kombinacije pogonov se morajo ujemati.",
       "crossEngineNote": "Obnova med različnimi pogoni: varnostna kopija SQLite je bila pretvorjena v to namestitev PostgreSQL.",

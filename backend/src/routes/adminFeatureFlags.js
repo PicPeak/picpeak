@@ -132,6 +132,11 @@ const KNOWN_FLAGS = [
   // suggestions, gift stock and the gift history on the customer record.
   // Strictly opt-in: while off, every /admin/gifts route answers 403.
   'customerGifts',
+  // Backup restore tests (migration 357). Every backup is fetched back,
+  // hashed and test-restored into a throwaway database. Strictly opt-in:
+  // while off, nothing is tested and the /admin/backup/verifications routes
+  // answer 403.
+  'backupRestoreTest',
 ];
 
 // Spec defaults for any flag missing from the DB (e.g. a row added by a
@@ -171,6 +176,7 @@ const DEFAULT_FLAGS = {
   newsletters: false,
   documents: false,
   customerGifts: false,
+  backupRestoreTest: false,
 };
 
 async function readAllFlags() {

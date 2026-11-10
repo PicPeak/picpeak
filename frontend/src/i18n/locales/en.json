@@ -684,6 +684,17 @@
     "archive": "ZIP downloads are paused for a moment. You can still view and download single photos."
   },
   "systemHealth": {
+    "backupRestoreTest": {
+      "title": "Backup restore test",
+      "ok": "A recent backup passed its restore test.",
+      "stale": "No passed restore test in the last {{days}} days.",
+      "none": "No restore test has passed yet.",
+      "failed": "The latest restore test failed. The backup may not be restorable.",
+      "running": "A restore test is running.",
+      "lastPassed": "Last passed: {{when}}",
+      "neverPassed": "No passed restore test on record.",
+      "open": "Open restore test"
+    },
     "dependencies": {
       "title": "Dependencies",
       "description": "Live checks of what PicPeak relies on. A dependency has to fail repeatedly before it counts as degraded, and stay good for about two minutes before it counts as healthy again.",
@@ -3428,6 +3439,10 @@
       "title": "Branding"
     },
     "features": {
+      "backupRestoreTest": {
+        "title": "Backup restore test",
+        "description": "Every backup is test-restored into a throwaway database and checked: signature, checksums, file hashes, row counts and migrations. Retained backups are re-checked weekly, and you are emailed when one fails."
+      },
       "title": "Features",
       "intro": "Turn product surfaces on or off. Enabled features appear in the left navigation and become available to your team. Some features are still in beta — flip them on to try them, off to hide them.",
       "sidebarHidden": "No sidebar item — runs in the background",
@@ -6229,6 +6244,92 @@
     }
   },
   "backup": {
+    "restoreTest": {
+      "title": "Restore test",
+      "description": "After every backup, and on a schedule for retained backups, the server checks the backup can actually be restored: it verifies the signature and checksums, then restores the database into a throwaway copy and checks it.",
+      "runNow": "Run restore test now",
+      "hashAll": "Hash every file",
+      "started": "Restore test started.",
+      "busy": "A backup, restore or restore test is already running. Try again when it has finished.",
+      "noBackup": "There is no successful backup to test yet.",
+      "startFailed": "The restore test could not be started.",
+      "loadFailed": "Restore test results could not be loaded.",
+      "stale": "No passed restore test in the last {{days}} days",
+      "disabled": "Automatic restore tests are turned off under Configuration. Backups are not tested unless you start a test here.",
+      "empty": "No restore test has run yet.",
+      "fullCheck": "every file hashed",
+      "when": "When",
+      "tested": "Tested",
+      "triggeredBy": "Trigger",
+      "history": "Earlier tests ({{count}})",
+      "status": {
+        "passed": "Passed",
+        "warning": "Passed with warnings",
+        "failed": "Failed",
+        "skipped": "Skipped",
+        "running": "Running"
+      },
+      "level": {
+        "deep": "Deep verify",
+        "drill": "Restore drill"
+      },
+      "trigger": {
+        "backup": "After the backup",
+        "schedule": "Scheduled re-check",
+        "admin": "Started by an admin"
+      },
+      "target": {
+        "backupRun": "Backup #{{id}}",
+        "databaseRun": "Database backup #{{id}}",
+        "none": "No backup"
+      },
+      "checks": {
+        "manifest_signature": "Manifest signature",
+        "dump_checksum": "Database dump checksum",
+        "parent_chain": "Backup chain",
+        "business_docs": "Business documents",
+        "files_sample": "File sample",
+        "files_all": "All files",
+        "drill_load": "Load into a test database",
+        "drill_integrity": "Database integrity",
+        "drill_foreign_keys": "Foreign keys",
+        "drill_row_counts": "Row counts",
+        "drill_migrate": "Migrate to the current version",
+        "drill_invariants": "Data consistency",
+        "createdb_privilege": "Permission to create a test database",
+        "destination": "Backup destination"
+      },
+      "skipReasons": {
+        "not_verifiable_rsync": "Backups sent over rsync can't be fetched back for testing, so they aren't verified. Use a local or S3 destination to get restore tests.",
+        "insufficient_space": "There was not enough free disk space to restore a test copy. Free up space on the server, then run the test again.",
+        "busy": "A backup, restore or another test was running at the time, so this test was skipped.",
+        "no_backup": "There was no successful backup to test.",
+        "not_standalone": "This backup can't be restored on its own, so it was not test-restored.",
+        "no_manifest": "This backup has no manifest, so its contents could not be checked.",
+        "interrupted": "The test was interrupted before it finished, for example by a server restart.",
+        "no_database_dump": "This backup holds no database dump, so there was nothing to test-restore."
+      },
+      "badge": {
+        "hint": "Restore test: whether this backup was verified and test-restored into a throwaway database.",
+        "warningHint": "Restorable, with warnings.",
+        "running": "Testing",
+        "verified": "Verified",
+        "failed": "Test failed",
+        "skipped": "Not testable",
+        "notVerified": "Not verified"
+      },
+      "config": {
+        "title": "Restore test",
+        "enabled": "Run restore tests automatically",
+        "enabledHelp": "Test every backup after it finishes, and re-check retained backups on the schedule below.",
+        "schedule": "Re-check schedule (cron)",
+        "scheduleHelp": "Default: Sunday 04:00 (0 4 * * 0)",
+        "samplePercent": "File sample per run (%)",
+        "samplePercentHelp": "Every backup's business documents are always hashed; this is the share of other files (photos etc.) checked each run, rotating so all files get covered over time.",
+        "invalidCron": "Please enter a valid cron expression (5 fields) for the restore test schedule",
+        "invalidSamplePercent": "The file sample must be between 0 and 100 percent"
+      }
+    },
     "picpeak": {
       "restoreIntro": "Upload a .picpeak taken from this or another instance. Restoring a SQLite backup onto a PostgreSQL instance is supported (the upgrade path); other engine combinations must match.",
       "crossEngineNote": "Cross-engine restore: a SQLite backup was converted onto this PostgreSQL instance.",

@@ -298,7 +298,8 @@ async function ensureDatabaseDumpForBackup(config) {
   if (!inlineDumpExplicitlyOff) {
     logger.info('Running inline database dump before file backup...');
     const { databaseBackupService } = require('./databaseBackup');
-    const dumpResult = await databaseBackupService.backup({});
+    // The file backup's own restore test covers this dump.
+    const dumpResult = await databaseBackupService.backup({ inline: true });
     logger.info(`Inline database dump completed: ${dumpResult.path} ` +
       `(${(dumpResult.size / 1024 / 1024).toFixed(2)} MB)`);
   }
@@ -1440,6 +1441,7 @@ async function runBackupInternal(isManual = false) {
   const startTime = new Date();
   let runId = null;
   let recoveryStage = null;
+  let completedRunId = null;
 
   try {
     const config = await resolveConfigWithFallback();
@@ -1674,6 +1676,7 @@ async function runBackupInternal(isManual = false) {
       });
 
     logger.info(`Backup completed: ${result.backedUpCount} files, ${(result.backedUpSize / 1024 / 1024).toFixed(2)} MB in ${durationSeconds}s`);
+    completedRunId = runId;
 
     if (destinationType === 'local' || destinationType === 's3') {
       await pruneStandaloneSnapshots(config, destinationType, runId, result.s3Client);
@@ -1718,6 +1721,11 @@ async function runBackupInternal(isManual = false) {
   } finally {
     if (recoveryStage) await fs.rm(recoveryStage, { recursive: true, force: true }).catch(error => logger.warn(`Could not remove recovery staging: ${error.message}`));
     isRunning = false;
+  }
+  // The restore test runs on its own after the run is final; its outcome is
+  // its own row and never changes this run's status.
+  if (completedRunId !== null) {
+    await require('./backupVerificationService').queueAfterBackup(completedRunId);
   }
 }
 
@@ -1893,12 +1901,19 @@ async function getBackupStatus(limit = 10) {
       && (Date.now() - new Date(r.started_at).getTime()) > ZOMBIE_THRESHOLD_MS
     );
 
+    // Restore tests (backupRestoreTest flag): a failed one makes the backup
+    // unhealthy. A stale one only shows as a warning. Null with the flag off.
+    const verification = await require('./backupVerificationService').getHealth()
+      .catch((error) => { logger.warn(`Could not read backup restore tests: ${error.message}`); return null; });
+
     return {
       isRunning,
       // A latest manifest that merely predates authentication is not a fault:
       // the next backup signs a new one. It still cannot be restored as-is.
       isHealthy: Boolean(lastRun && lastRun.status === 'completed' && signingKey.ready
-        && (manifestAuthentication.state === 'legacy' || (manifestValid && manifestAuthentication.authenticated))),
+        && (manifestAuthentication.state === 'legacy' || (manifestValid && manifestAuthentication.authenticated))
+        && !(verification && verification.health === 'failed')),
+      verification,
       signingKey,
       manifestAuthentication,
       lastRun: lastRunWithManifest,
@@ -2255,6 +2270,7 @@ service.startBackupService = startBackupService;
 service.stopBackupService = stopBackupService;
 service.triggerManualBackup = triggerManualBackup;
 service.getBackupStatus = getBackupStatus;
+service.isBackupRunning = () => isRunning;
 service.cleanupOldBackupRuns = cleanupOldBackupRuns;
 service.getBackupManifest = getBackupManifest;
 service.validateBackupManifest = validateBackupManifest;

@@ -27,7 +27,11 @@ const {
   policyApplies: s3PolicyApplies,
 } = require('../utils/s3EndpointPolicy');
 
+const backupVerification = require('../services/backupVerificationService');
+const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
+
 const router = express.Router();
+const restoreTestGate = requireFeatureFlag(backupVerification.FLAG);
 
 // Where backups are sent, and whether they carry the database, decides who
 // ends up with a full copy of this instance. backup.create is held by the
@@ -233,6 +237,21 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
       return res.status(400).json({ error: 'backup_retention_count must be a whole number between 0 and 1000' });
     }
 
+    // Restore test settings (backupRestoreTest): validated here because the
+    // schedule and the sampler run unattended on whatever is stored.
+    const has = (key) => Object.prototype.hasOwnProperty.call(updates || {}, key);
+    if (has('backup_verify_enabled') && typeof updates.backup_verify_enabled !== 'boolean') {
+      return res.status(400).json({ error: 'backup_verify_enabled must be true or false' });
+    }
+    if (has('backup_verify_cron') && !backupVerification.isCron(updates.backup_verify_cron)) {
+      return res.status(400).json({ error: 'backup_verify_cron must be a valid 5-field cron expression' });
+    }
+    if (has('backup_verify_sample_percent') && (typeof updates.backup_verify_sample_percent !== 'number'
+        || !Number.isFinite(updates.backup_verify_sample_percent)
+        || updates.backup_verify_sample_percent < 0 || updates.backup_verify_sample_percent > 100)) {
+      return res.status(400).json({ error: 'backup_verify_sample_percent must be a number between 0 and 100' });
+    }
+
     const restricted = await changedRestrictedBackupSettings(updates);
     if (restricted.length > 0 && !(await isSuperAdminUser(req.admin && req.admin.id))) {
       return res.status(403).json({
@@ -314,6 +333,10 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
       }
     }
     
+    if (has('backup_verify_enabled') || has('backup_verify_cron')) {
+      await backupVerification.startVerificationSchedule();
+    }
+
     res.json({ success: true, message: 'Backup configuration updated' });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to update backup configuration');
@@ -329,6 +352,47 @@ router.get('/status', adminAuth, requirePermission('backup.view'), async (req, r
     res.json(status);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to get backup status');
+  }
+});
+
+// Restore tests (backupRestoreTest flag): the latest results and the
+// health they add up to.
+router.get('/verifications', adminAuth, restoreTestGate, requirePermission('backup.view'), async (req, res) => {
+  try {
+    const { limit } = getPagination(req, { limit: 20 });
+    res.json(await backupVerification.getSummary({ limit }));
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to load backup restore tests');
+  }
+});
+
+// Run a restore test now. Same bar as a restore dry run (backup.restore):
+// it fetches the backup back and loads its dump, if into a throwaway DB.
+router.post('/verifications', adminAuth, restoreTestGate, requirePermission('backup.restore'), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const id = (value) => (value === undefined || value === null ? null : value);
+    const backupRunId = id(body.backupRunId);
+    const databaseBackupRunId = id(body.databaseBackupRunId);
+    for (const [key, value] of [['backupRunId', backupRunId], ['databaseBackupRunId', databaseBackupRunId]]) {
+      if (value !== null && (!Number.isInteger(value) || value <= 0)) {
+        return res.status(400).json({ error: `${key} must be a positive whole number` });
+      }
+    }
+    if (backupRunId !== null && databaseBackupRunId !== null) {
+      return res.status(400).json({ error: 'Give either backupRunId or databaseBackupRunId, not both' });
+    }
+    if (body.full !== undefined && typeof body.full !== 'boolean') {
+      return res.status(400).json({ error: 'full must be true or false' });
+    }
+    const verificationId = await backupVerification.startNow({
+      backupRunId, databaseBackupRunId, full: body.full === true, adminId: req.admin && req.admin.id,
+    });
+    res.status(202).json({ id: verificationId });
+  } catch (error) {
+    if (error.code === 'VERIFICATION_BUSY') return res.status(409).json({ error: error.message, code: error.code });
+    if (error.code === 'NO_BACKUP') return res.status(404).json({ error: error.message, code: error.code });
+    errorResponse(res, error, 500, 'Failed to start the backup restore test');
   }
 });
 

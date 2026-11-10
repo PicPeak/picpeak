@@ -789,6 +789,13 @@ class DatabaseBackupService {
         });
       
       logger.info(`Database backup completed: ${finalFile} (${(finalStats.size / 1024 / 1024).toFixed(2)} MB) in ${durationSeconds}s`);
+
+      // A database-only backup gets its own restore test once this method
+      // has returned. The dump a file backup makes inline is tested with
+      // that file backup instead.
+      if (!options.inline) {
+        setImmediate(() => require('./backupVerificationService').queueAfterDatabaseBackup(runId));
+      }
       
       // Send success notification if configured
       if (config.database_backup_email_on_success) {

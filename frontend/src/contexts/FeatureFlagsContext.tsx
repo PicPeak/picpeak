@@ -84,6 +84,9 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   documents: false,
   // Customer gifts (migration 343). Off by default.
   customerGifts: false,
+  // Backup restore test - verify + restore drill after every backup and
+  // weekly. Off by default.
+  backupRestoreTest: false,
 };
 
 export const FEATURE_FLAGS_QUERY_KEY = ['feature-flags'] as const;

@@ -309,11 +309,13 @@
         "s3_storage",
         "s3_backups"
       ],
-      "reason": "Admin backup initiation, portable export and successful S3 roundtrip test. Coordinated restore control is excluded separately; names, schedules, sizes, contents and history excluded.",
+      "reason": "Admin backup initiation, portable export and successful S3 roundtrip test. Coordinated restore control is excluded separately; restore tests (results, schedules, checks) excluded; names, schedules, sizes, contents and history excluded.",
       "route_signatures": [
         "GET /config",
         "PUT /config",
         "GET /status",
+        "GET /verifications",
+        "POST /verifications",
         "POST /run",
         "GET /picpeak/export",
         "GET /runs/:id",
@@ -2358,6 +2360,10 @@
     "customerGifts": {
       "signals": [],
       "reason": "Excluded: customer gifts are not reported as their own capability; no flag value, counts or amounts."
+    },
+    "backupRestoreTest": {
+      "signals": [],
+      "reason": "Excluded: backup restore tests are not reported as their own capability; no flag value, results, checks or schedules."
     }
   },
   "excluded_runtime": [

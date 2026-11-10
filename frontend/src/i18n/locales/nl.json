@@ -1,4 +1,17 @@
 {
+  "systemHealth": {
+    "backupRestoreTest": {
+      "title": "Hersteltest voor back-ups",
+      "ok": "Een recente back-up is geslaagd voor de hersteltest.",
+      "stale": "Geen geslaagde hersteltest in de afgelopen {{days}} dagen.",
+      "none": "Er is nog geen hersteltest geslaagd.",
+      "failed": "De laatste hersteltest is mislukt. De back-up kan mogelijk niet worden teruggezet.",
+      "running": "Er loopt een hersteltest.",
+      "lastPassed": "Laatst geslaagd: {{when}}",
+      "neverPassed": "Geen geslaagde hersteltest bekend.",
+      "open": "Hersteltest openen"
+    }
+  },
   "userManagement": {
     "title": "Gebruikersbeheer",
     "subtitle": "Beheer beheerders en uitnodigingen",
@@ -1637,6 +1650,10 @@
       "title": "Huisstijl"
     },
     "features": {
+      "backupRestoreTest": {
+        "title": "Hersteltest voor back-ups",
+        "description": "Elke back-up wordt bij wijze van test teruggezet in een wegwerpdatabase en gecontroleerd: handtekening, controlesommen, bestandshashes, aantallen rijen en migraties. Bewaarde back-ups worden wekelijks opnieuw gecontroleerd, en u krijgt een e-mail als er een mislukt."
+      },
       "title": "Functies",
       "intro": "Schakel productonderdelen aan of uit. Ingeschakelde functies verschijnen in de linker navigatie en worden beschikbaar voor uw team. Sommige functies zijn nog in beta — schakel ze aan om ze te proberen, uit om ze te verbergen.",
       "sidebarHidden": "Geen item in de zijbalk — draait op de achtergrond",
@@ -2971,6 +2988,92 @@
     }
   },
   "backup": {
+    "restoreTest": {
+      "title": "Hersteltest",
+      "description": "Na elke back-up, en wekelijks voor bewaarde back-ups, controleert de server of de back-up echt kan worden teruggezet: hij controleert de handtekening en controlesommen, zet de database terug in een wegwerpkopie en controleert die.",
+      "runNow": "Hersteltest nu uitvoeren",
+      "hashAll": "Elk bestand hashen",
+      "started": "Hersteltest gestart.",
+      "busy": "Er loopt al een back-up, herstel of hersteltest. Probeer het opnieuw zodra die klaar is.",
+      "noBackup": "Er is nog geen geslaagde back-up om te testen.",
+      "startFailed": "De hersteltest kon niet worden gestart.",
+      "loadFailed": "De resultaten van de hersteltest konden niet worden geladen.",
+      "stale": "Geen geslaagde hersteltest in de afgelopen {{days}} dagen",
+      "disabled": "Automatische hersteltests staan uit onder Configuratie. Back-ups worden alleen getest als u hier een test start.",
+      "empty": "Er is nog geen hersteltest uitgevoerd.",
+      "fullCheck": "elk bestand gehasht",
+      "when": "Wanneer",
+      "tested": "Getest",
+      "triggeredBy": "Aanleiding",
+      "history": "Eerdere tests ({{count}})",
+      "status": {
+        "passed": "Geslaagd",
+        "warning": "Geslaagd met waarschuwingen",
+        "failed": "Mislukt",
+        "skipped": "Overgeslagen",
+        "running": "Bezig"
+      },
+      "level": {
+        "deep": "Diepe controle",
+        "drill": "Herstelproef"
+      },
+      "trigger": {
+        "backup": "Na de back-up",
+        "schedule": "Geplande hercontrole",
+        "admin": "Gestart door een beheerder"
+      },
+      "target": {
+        "backupRun": "Back-up #{{id}}",
+        "databaseRun": "Databaseback-up #{{id}}",
+        "none": "Geen back-up"
+      },
+      "checks": {
+        "manifest_signature": "Handtekening van het manifest",
+        "dump_checksum": "Controlesom van de databasedump",
+        "parent_chain": "Back-upketen",
+        "business_docs": "Zakelijke documenten",
+        "files_sample": "Steekproef van bestanden",
+        "files_all": "Alle bestanden",
+        "drill_load": "Laden in een testdatabase",
+        "drill_integrity": "Database-integriteit",
+        "drill_foreign_keys": "Externe sleutels",
+        "drill_row_counts": "Aantallen rijen",
+        "drill_migrate": "Migreren naar de huidige versie",
+        "drill_invariants": "Consistentie van de gegevens",
+        "createdb_privilege": "Recht om een testdatabase aan te maken",
+        "destination": "Back-upbestemming"
+      },
+      "skipReasons": {
+        "not_verifiable_rsync": "Back-ups die via rsync worden verzonden, kunnen niet worden teruggehaald om te testen en worden dus niet gecontroleerd. Gebruik een lokale of S3-bestemming om hersteltests te krijgen.",
+        "insufficient_space": "Er was niet genoeg vrije schijfruimte om een testkopie terug te zetten. Maak ruimte vrij op de server en voer de test opnieuw uit.",
+        "busy": "Er liep op dat moment een back-up, herstel of andere test, dus deze test is overgeslagen.",
+        "no_backup": "Er was geen geslaagde back-up om te testen.",
+        "not_standalone": "Deze back-up kan niet op zichzelf worden teruggezet en is daarom niet bij wijze van test teruggezet.",
+        "no_manifest": "Deze back-up heeft geen manifest, dus de inhoud kon niet worden gecontroleerd.",
+        "interrupted": "De test is onderbroken voordat hij klaar was, bijvoorbeeld door een herstart van de server.",
+        "no_database_dump": "Deze back-up bevat geen databasedump, dus er was niets om bij wijze van test terug te zetten."
+      },
+      "badge": {
+        "hint": "Hersteltest: of deze back-up is gecontroleerd en bij wijze van test is teruggezet in een wegwerpdatabase.",
+        "warningHint": "Herstelbaar, met waarschuwingen.",
+        "running": "Wordt getest",
+        "verified": "Gecontroleerd",
+        "failed": "Test mislukt",
+        "skipped": "Niet testbaar",
+        "notVerified": "Niet gecontroleerd"
+      },
+      "config": {
+        "title": "Hersteltest",
+        "enabled": "Hersteltests automatisch uitvoeren",
+        "enabledHelp": "Elke back-up testen zodra die klaar is, en bewaarde back-ups opnieuw controleren volgens de planning hieronder.",
+        "schedule": "Planning voor opnieuw controleren (cron)",
+        "scheduleHelp": "Standaard: zondag 04:00 (0 4 * * 0)",
+        "samplePercent": "Steekproef van bestanden per run (%)",
+        "samplePercentHelp": "De zakelijke documenten van elke back-up worden altijd gehasht; dit is het aandeel van de overige bestanden (foto’s enz.) dat per run wordt gecontroleerd, roterend zodat na verloop van tijd alle bestanden aan bod komen.",
+        "invalidCron": "Voer een geldige cron-expressie (5 velden) in voor de planning van de hersteltest",
+        "invalidSamplePercent": "De steekproef van bestanden moet tussen 0 en 100 procent liggen"
+      }
+    },
     "title": "Back-upbeheer",
     "subtitle": "Beheer systeemback-ups, configureer geautomatiseerde back-ups en herstel vanuit eerdere back-ups.",
     "tabs": {

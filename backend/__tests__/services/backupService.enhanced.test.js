@@ -18,6 +18,11 @@ jest.mock('../../src/services/databaseBackup', () => ({
     backup: jest.fn()
   }
 }));
+// And for the restore test hooks (status health, post-run queue).
+jest.mock('../../src/services/backupVerificationService', () => ({
+  queueAfterBackup: jest.fn(),
+  getHealth: jest.fn().mockResolvedValue(null),
+}));
 // Same deal for the rsync path's lazy requires.
 jest.mock('../../src/utils/safeExec', () => ({
   spawnAsync: jest.fn(),
@@ -840,6 +845,7 @@ describe('Enhanced Backup Service Tests', () => {
       expect(status).toEqual({
         isRunning: false,
         isHealthy: true,
+        verification: null,
         signingKey: { ready: true, source: 'env', keyId: expect.any(String) },
         manifestAuthentication: { valid: true, authenticated: true, recovery: false, warnings: [] },
         lastRun: { ...run, manifestValid: true, authentication: { valid: true, authenticated: true, recovery: false, warnings: [] } },

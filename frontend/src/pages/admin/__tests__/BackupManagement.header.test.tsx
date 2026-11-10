@@ -33,6 +33,8 @@ vi.mock('../../../components/admin/RestoreWizard', () => ({ RestoreWizard: () =>
 vi.mock('../../../components/admin/PicpeakBackupCard', () => ({ PicpeakExportCard: () => null }));
 vi.mock('../../../components/admin/BackupIntegrityCard', () => ({ BackupIntegrityCard: () => null }));
 vi.mock('../../../components/admin/BackupCoverageCard', () => ({ BackupCoverageCard: () => null }));
+vi.mock('../../../components/admin/RestoreTestCard', () => ({ RestoreTestCard: () => null }));
+vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureFlags: () => ({ flags: { backupRestoreTest: false } }) }));
 
 const completed = { id: 1, status: 'completed', created_at: '2026-09-23T03:00:00Z' };
 const failed = { id: 2, status: 'failed', created_at: '2026-09-24T08:38:00Z' };
