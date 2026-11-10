@@ -561,3 +561,29 @@ describe('review round 2', () => {
     expect(refused.status).not.toBe(200);
   });
 });
+
+describe('public routes outside a CRM context', () => {
+  // Production serves public routes with no CRM actor (server.js listens
+  // under withoutCrmContext); jest.setup.js enters a trusted fixture context
+  // instead, which hides a query on a CRM table such as the busy check's quotes.
+  test('slots and requests answer without a CRM actor', async () => {
+    const express = require('express');
+    const { withoutCrmContext } = require('../../src/database/crmAccess');
+    const app = express();
+    app.set('trust proxy', true);
+    app.use(express.json());
+    app.use((req, res, next) => withoutCrmContext(() => next()));
+    app.use('/api/public/booking', require('../../src/routes/publicBooking'));
+    // eslint-disable-next-line no-unused-vars
+    app.use((err, req, res, next) => res.status(err.statusCode || 500).json({ error: err.message }));
+    expect((await request(app).get('/api/public/booking')).status).toBe(200);
+    expect((await request(app).post('/api/public/booking/estimate').send({ serviceId: shoot.id, values: {} })).status).toBe(200);
+    const date = day(monday, 8);
+    const slots = await request(app).get('/api/public/booking/slots').query({ serviceId: shoot.id, from: date, to: date });
+    expect([slots.status, slots.body.error]).toEqual([200, undefined]);
+    expect(slots.body.slots.length).toBeGreaterThan(0);
+    const sent = await request(app).post('/api/public/booking/requests').set('X-Forwarded-For', '192.0.2.77')
+      .send({ serviceId: shoot.id, values: {}, start: slots.body.slots[0].start, name: 'Noa', email: 'noa-public@band.example', language: 'en', formToken: formToken() });
+    expect([sent.status, sent.body.error]).toEqual([201, undefined]);
+  });
+});

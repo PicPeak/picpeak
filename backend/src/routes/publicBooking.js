@@ -25,6 +25,7 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const booking = require('../services/bookingService');
 const pricingFactors = require('../services/pricingFactorService');
+const { isTruthyFlag } = require('../utils/lineItemTotals');
 
 const router = express.Router();
 router.use(requireFeatureFlag('calendarBooking', 'BOOKING_DISABLED'));
@@ -164,7 +165,7 @@ router.get(
     const durationFactor = preset.booking_duration_factor_id
       ? await db('pricing_factors').where({ id: preset.booking_duration_factor_id }).first('client_visible')
       : null;
-    const visible = durationFactor && (durationFactor.client_visible === true || durationFactor.client_visible === 1);
+    const visible = durationFactor && isTruthyFlag(durationFactor.client_visible);
     const values = visible && req.query.duration
       ? { [preset.booking_duration_factor_id]: Number(req.query.duration) }
       : {};
