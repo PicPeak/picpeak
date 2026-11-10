@@ -53,7 +53,7 @@ describe('migration 358', () => {
     }).returning('id');
     return db('invoices').insert({
       invoice_number: number, customer_account_id: row?.id ?? row, status: 'scheduled', currency: 'CHF',
-    issue_date: '2026-08-14', due_date: '2026-09-13', is_monthly_draft: true,
+      issue_date: '2026-08-14', due_date: '2026-09-13', is_monthly_draft: true,
       net_amount_minor: 0, vat_amount_minor: 0, total_amount_minor: 0, ...overrides,
     });
   };
