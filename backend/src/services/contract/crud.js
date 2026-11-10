@@ -12,6 +12,7 @@ const businessProfileService = require('../businessProfileService');
 const { ensureSystemBlocksSeeded } = require('../contractBlocksService');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { unicodeSearchForms } = require('../../utils/sqlSecurity');
+const { addDaysToDay, localDay } = require('../../utils/dateOnly');
 const { adminActor, ensureCustomerActive, nextContractNumber, releaseQuoteOnDeadContract } = require('./helpers');
 const { auditedInsert, auditedUpdate, auditedDelete } = require('../accountingHistory');
 const regionalClauses = require('./regionalClauses');
@@ -198,9 +199,8 @@ async function createContract(payload, adminId, { idempotencyKey = null, importe
   // instead of Swiss or German law (contract/regionalClauses).
   await regionalClauses.fitVersionToBusiness(version, profile?.country_code, customer);
   const validDays = ensureInt(await getAppSetting('crm_contracts_default_valid_days')) || 30;
-  const issueDate = payload.issueDate || new Date().toISOString().slice(0, 10);
-  const validUntil = payload.validUntil || new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
-    .toISOString().slice(0, 10);
+  const issueDate = payload.issueDate || localDay();
+  const validUntil = payload.validUntil || addDaysToDay(localDay(), validDays);
 
   // Schema-drift guard for the event-snapshot columns added as
   // in-place migration 130 edits. We only write them when the DB

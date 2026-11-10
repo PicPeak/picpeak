@@ -19,7 +19,7 @@ require.cache[dbFile] = stub;
 
 // Route-internal helpers, taken from the shipping source (as
 // analyticsDateMerge.test.js does).
-const { toDateOnly } = require(path.join(SRC, 'utils/dateOnly'));
+const { toDateOnly, localDay } = require(path.join(SRC, 'utils/dateOnly'));
 function routeHelper(file, name) {
   const source = fs.readFileSync(path.join(SRC, file), 'utf8');
   const match = source.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`));
@@ -58,6 +58,8 @@ const out = {
     const at = helpers.computeScheduledSendAt('after_event', 30, pgDate('2024-10-20'));
     return [at.getHours(), at.getMinutes()];
   })(),
+  // A quote, contract or invoice made half an hour after local midnight.
+  todayJustAfterMidnight: localDay(new Date(2024, 9, 2, 0, 30)),
   dueDay: helpers.addDaysToDay('2024-10-20', 30),
   dueDayFromPg: helpers.addDaysToDay(pgDate('2024-12-20'), 30),
   localDayStart: [pgDate('2024-08-11'), '2024-08-11', '2024-08-11T00:00:00.000Z', null, 'garbage']

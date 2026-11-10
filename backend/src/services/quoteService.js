@@ -42,7 +42,7 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { nextDocumentNumber } = require('../utils/documentSequences');
 const { resolveDefaultEventType } = require('./eventTypeService');
 const { formatShortDate } = require('../utils/dateFormatter');
-const { toDateOnly } = require('../utils/dateOnly');
+const { toDateOnly, addDaysToDay, localDay } = require('../utils/dateOnly');
 const { getInstanceTimeZone, endOfDayInZone } = require('../utils/galleryExpiry');
 const businessProfileService = require('./businessProfileService');
 const pdfThemeService = require('./pdfThemeService');
@@ -521,9 +521,8 @@ async function createQuote(payload, adminId) {
   // CRM → "Quote default validity (days)" (key
   // `crm_quotes_default_valid_days`).
   const validDays = ensureInt(await getAppSetting('crm_quotes_default_valid_days')) || 7;
-  const issueDate = payload.issueDate || new Date().toISOString().slice(0, 10);
-  const validUntil = payload.validUntil || new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
-    .toISOString().slice(0, 10);
+  const issueDate = payload.issueDate || localDay();
+  const validUntil = payload.validUntil || addDaysToDay(localDay(), validDays);
 
   // Authoritative totals. Rates, hours/days and promotions are resolved
   // server-side first (#1451).
@@ -1067,7 +1066,7 @@ async function renderQuotePdfFromPayload(payload) {
     customer_account_id: payload.customerAccountId,
     language: payload.language || customer?.preferred_language || profile?.default_locale || 'de',
     currency,
-    issue_date: payload.issueDate || new Date().toISOString().slice(0, 10),
+    issue_date: payload.issueDate || localDay(),
     valid_until: payload.validUntil,
     intro_text: payload.introText,
     outro_text: payload.outroText,

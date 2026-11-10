@@ -16,6 +16,7 @@ const { isUnitedKingdom } = require('../../utils/postalAddress');
 const { isBusinessCustomer } = require('../../utils/customerKind');
 const { parsePromotionSnapshot } = require('../../utils/lineItemTotals');
 const { readStoredDocumentPdf } = require('../../utils/storedDocumentPdf');
+const { addDaysToDay, localDay } = require('../../utils/dateOnly');
 const { getHierarchyHelpers } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 
@@ -388,8 +389,8 @@ async function renderInvoicePdfFromPayload(payload) {
     customer_account_id: payload.customerAccountId,
     language: payload.language || customer?.preferred_language || 'de',
     currency: (payload.currency || 'CHF').toUpperCase(),
-    issue_date: payload.issueDate || new Date().toISOString().slice(0, 10),
-    due_date: payload.dueDate || new Date(Date.now() + 30 * 86400e3).toISOString().slice(0, 10),
+    issue_date: payload.issueDate || localDay(),
+    due_date: payload.dueDate || addDaysToDay(localDay(), 30),
     business_bank_account_id: payload.businessBankAccountId,
     qr_format: payload.qrFormat,
     net_amount_minor: netMinor,

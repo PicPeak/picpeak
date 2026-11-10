@@ -11,6 +11,7 @@ const { adminActivityActor } = require('../utils/activityActor');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { isUniqueViolation } = require('../utils/dbErrors');
+const { localDay } = require('../utils/dateOnly');
 const businessProfileService = require('./businessProfileService');
 const themeModel = require('./pdf/theme');
 const { availableFamilies } = require('./pdf/fonts');
@@ -174,7 +175,7 @@ async function renderPreview(scope, settings) {
   const currency = String((profile && profile.default_currency) || 'CHF').toUpperCase();
   const issuer = buildIssuerBlock(profile || {}, logoPath, { quoteToggles: docType === 'quote' });
   const recipient = buildRecipientBlock(profile || {}, SAMPLE_CUSTOMER);
-  const issueDate = new Date().toISOString().slice(0, 10);
+  const issueDate = localDay();
 
   const lines = sampleLines(locale);
   const totals = { ...SAMPLE_TOTALS };

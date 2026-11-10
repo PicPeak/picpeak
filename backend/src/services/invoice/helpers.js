@@ -8,7 +8,7 @@ const { issuerIntlLocale } = require('../../utils/issuerIntlLocale');
 const { AppError } = require('../../utils/errors');
 const { nextDocumentNumber } = require('../../utils/documentSequences');
 const { ensureInt } = require('../../utils/numericHelpers');
-const { toDateOnly } = require('../../utils/dateOnly');
+const { toDateOnly, addDaysToDay, localDay } = require('../../utils/dateOnly');
 
 // Migration 119 line-item hierarchy helpers, shared with quoteService.
 // We import lazily inside the functions that use them to avoid a
@@ -105,16 +105,8 @@ function addLocalDays(date, days) {
 }
 
 // The day an invoice sent at `instant` is issued on: the server's local
-// calendar day. toISOString would give the UTC day, the day before east of
-// UTC for anything near local midnight.
-function issueDayOf(instant) {
-  return toDateOnly(instant instanceof Date ? instant : new Date(instant));
-}
-
-// 'YYYY-MM-DD' plus whole days, as calendar arithmetic (UTC, so no DST).
-function addDaysToDay(day, days) {
-  return computeDueDate(new Date(`${toDateOnly(day)}T00:00:00.000Z`), days).toISOString().slice(0, 10);
-}
+// calendar day (utils/dateOnly localDay).
+const issueDayOf = (instant) => localDay(instant);
 
 function computeDueDate(scheduledSendAt, netDays = 30) {
   return new Date(scheduledSendAt.getTime() + ensureInt(netDays) * 24 * 60 * 60 * 1000);

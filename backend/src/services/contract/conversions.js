@@ -11,6 +11,7 @@ const { hasColumnCached } = require('../../utils/schemaCache');
 const businessProfileService = require('../businessProfileService');
 const { ensureSystemBlocksSeeded } = require('../contractBlocksService');
 const { ensureInt } = require('../../utils/numericHelpers');
+const { addDaysToDay, localDay } = require('../../utils/dateOnly');
 const { adminActor, ensureCustomerActive, nextContractNumber } = require('./helpers');
 const regionalClauses = require('./regionalClauses');
 const { resolveDefaultEventType } = require('../eventTypeService');
@@ -76,9 +77,8 @@ async function createFromQuote(quoteId, adminId, { contractTemplateId = null } =
   const profile = (await businessProfileService.getProfile()).profile;
   await regionalClauses.fitVersionToBusiness(version, profile?.country_code, customer);
   const validDays = ensureInt(await getAppSetting('crm_contracts_default_valid_days')) || 30;
-  const issueDate = new Date().toISOString().slice(0, 10);
-  const validUntil = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
-    .toISOString().slice(0, 10);
+  const issueDate = localDay();
+  const validUntil = addDaysToDay(issueDate, validDays);
 
   const title = quote.event_name
     ? `Contract — ${quote.event_name}`
@@ -510,9 +510,9 @@ async function convertClaimedContractToInvoice(contract, contractId, adminId, ha
   const profile = (await businessProfileService.getProfile()).profile || {};
   const currency = (profile.default_currency || 'CHF').toUpperCase();
   const language = contract.language || customer.preferred_language || profile.default_locale || 'de';
-  const issueDate = new Date().toISOString().slice(0, 10);
+  const issueDate = localDay();
   const netDays = ensureInt(await getAppSetting('crm_payment_default_net_days')) || 30;
-  const dueDate = new Date(Date.now() + netDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const dueDate = addDaysToDay(issueDate, netDays);
 
   // Pre-resolve which event-snapshot columns the invoices table has
   // (migration 123) so we can copy contract.event_name etc onto the

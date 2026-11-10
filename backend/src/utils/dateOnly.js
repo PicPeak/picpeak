@@ -25,4 +25,16 @@ function toDateOnly(value) {
   return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text;
 }
 
-module.exports = { toDateOnly };
+// 'YYYY-MM-DD' (or anything toDateOnly reads) plus whole days, as calendar
+// arithmetic in UTC, so no DST change can move it.
+function addDaysToDay(day, days) {
+  const at = new Date(`${toDateOnly(day)}T00:00:00.000Z`);
+  at.setUTCDate(at.getUTCDate() + Math.trunc(Number(days) || 0));
+  return at.toISOString().slice(0, 10);
+}
+
+// The server's local calendar day now, or of `instant`. toISOString gives the
+// UTC day, the day before east of UTC for anything near local midnight.
+const localDay = (instant = new Date()) => toDateOnly(instant instanceof Date ? instant : new Date(instant));
+
+module.exports = { toDateOnly, addDaysToDay, localDay };

@@ -26,6 +26,7 @@ const { ensureInt } = require('../../utils/numericHelpers');
 const { upsertAppSetting } = require('../../utils/appSettings');
 const { unknownPlaceholders, conditionalProblems, CONTRACT_PLACEHOLDERS } = require('../../utils/placeholders');
 const { canonicalSha256 } = require('../../utils/canonicalJson');
+const { localDay } = require('../../utils/dateOnly');
 const { ALLOWED_SECTIONS } = require('../contractBlocksService');
 const { DEFAULT_SETTING, ensureDefaultTemplate, getDefaultTemplateId } = require('./defaultTemplate');
 const content = require('./content');
@@ -773,7 +774,7 @@ async function previewInputs(template, version, { customer = null } = {}) {
     contract_number: 'PREVIEW',
     customer_account_id: customer ? customer.id : null,
     language,
-    issue_date: new Date().toISOString().slice(0, 10),
+    issue_date: localDay(),
     event_name: sample.sampleText(language).eventName,
     event_date: '2027-06-12',
     title: version.title || template.name,

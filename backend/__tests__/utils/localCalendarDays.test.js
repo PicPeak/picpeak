@@ -44,6 +44,7 @@ describe.each(['Europe/Berlin', 'America/New_York', 'Asia/Tokyo', 'Pacific/Honol
   it('issues an accepted-quote invoice on the local day of acceptance', () => {
     expect(out.quoteAccepted).toBe('2024-10-01');
     expect(out.quoteAcceptedJustAfterMidnight).toBe('2024-10-02');
+    expect(out.todayJustAfterMidnight).toBe('2024-10-02');
   });
 
   it('counts due days as calendar days', () => {
