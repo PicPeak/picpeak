@@ -469,11 +469,16 @@ const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 // epochToIso has made them ISO. The source day is the nearest UTC midnight,
 // which holds for every source zone from UTC-11:59 to UTC+12 (a value exactly
 // at 12:00Z counts as east of UTC, so a UTC-12 source would gain a day; no
-// inhabited zone uses that offset). UTC+13 and later cannot be told apart
-// from the day before at UTC-11 and stay one day early, as before. Only
-// instants on a quarter hour are treated as shifted midnights, since every
-// zone offset in use is one; any other instant is left for Postgres to cast
-// as before. Plain dates pass through unchanged.
+// inhabited zone uses that offset). Zones east of UTC+12 (Chatham at +12:45,
+// Tonga, New Zealand summer time) cannot be told apart from the day before
+// west of UTC-12 and stay one day early, as before. Only instants on a
+// quarter hour are treated as shifted midnights, since every zone offset in
+// use is one; any other instant is left for Postgres to cast as before. Two
+// edges follow from that: an instant that is on a quarter hour to the
+// millisecond but was not a midnight is rounded to the nearest day too, and a
+// day before about 1900, when zones still used local mean time (Berlin
+// +0:53:28), is not on a quarter hour and stays as it was. Plain dates pass
+// through unchanged.
 function repairDateOnly(value) {
   if (typeof value !== 'string' || !ISO_INSTANT.test(value)) return value;
   const ms = Date.parse(value);

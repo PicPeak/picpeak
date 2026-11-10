@@ -60,13 +60,17 @@ describe('repairDateOnly (archives written before the fix)', () => {
     });
   }
 
-  // Local midnight at UTC+13 or later lands 11h or less before the next UTC
-  // midnight, the same instant as UTC-11 to UTC-13 for the day before; one
-  // archive cannot tell them apart. Pinned so the limit stays a choice.
-  it('cannot recover UTC+13 sources (Tonga, New Zealand summer)', () => {
-    const [legacy] = legacyInstants('Pacific/Tongatapu', [[2024, 8, 11]]);
-    expect(legacy).toBe('2024-08-10T11:00:00.000Z');
-    expect(repairDateOnly(legacy)).toBe('2024-08-10');
+  // Local midnight east of UTC+12 lands less than 12h before the next UTC
+  // midnight, the same instant as a zone west of UTC-12 for the day before;
+  // one archive cannot tell them apart. Pinned so the limit stays a choice.
+  it('cannot recover sources east of UTC+12 (Tonga, Chatham, New Zealand summer)', () => {
+    const [tonga] = legacyInstants('Pacific/Tongatapu', [[2024, 8, 11]]);
+    expect(tonga).toBe('2024-08-10T11:00:00.000Z');
+    expect(repairDateOnly(tonga)).toBe('2024-08-10');
+    // Chatham is UTC+12:45 in winter, so even its standard time is past the line.
+    const [chatham] = legacyInstants('Pacific/Chatham', [[2024, 7, 11]]);
+    expect(chatham).toBe('2024-07-10T11:15:00.000Z');
+    expect(repairDateOnly(chatham)).toBe('2024-07-10');
   });
 
   it('shows the shift it repairs', () => {
