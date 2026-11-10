@@ -46,6 +46,10 @@ const OPERATOR = {
   updated_at: '2024-08-11T18:13:20.000Z',
 };
 
+// A second admin, only in the source, so rows that point at an admin are not
+// all the operator's (whose rows a restore treats specially).
+const COLLEAGUE = { ...OPERATOR, username: 'fidelity-colleague', email: 'fidelity-colleague@example.com' };
+
 // Files under the roots a .picpeak always carries, with a non-ASCII name and
 // binary bytes, so the file half of the manifest is compared too.
 const FILES = {
@@ -67,6 +71,12 @@ const OVERRIDES = {
   // Postgres-only CHECK (migration 078 adds it on pg alone), so a SQLite
   // source cannot tell the seeding which values a Postgres target accepts.
   event_feedback_settings: { identity_mode: 'simple' },
+  // The restore drops archived passkeys on the operator's own account
+  // (preserveOperatorPasskeys), so the seeded key belongs to a colleague and
+  // is compared like any other row.
+  admin_webauthn_credentials: async db => ({
+    admin_user_id: (await db('admin_users').where({ email: COLLEAGUE.email }).first('id')).id,
+  }),
 };
 
 async function bootInstance() {
@@ -235,7 +245,8 @@ async function fillEmptyTables(db, tables) {
         row[column] = syntheticValue(table, column, meta, allowed[column]);
       }
       if (blocked) { reasons[table] = blocked; continue; }
-      Object.assign(row, OVERRIDES[table]);
+      const override = OVERRIDES[table];
+      Object.assign(row, typeof override === 'function' ? await override(db) : override);
       // Full row first; when a CHECK or trigger refuses it, retry with only
       // the columns the table requires.
       const attempts = [row, Object.fromEntries(Object.entries(row)
@@ -275,6 +286,8 @@ async function source(outDir) {
   const instance = await bootInstance();
   try {
     const { listDataTables } = require('../../../src/services/picpeakExportService');
+    const role = await instance.db('roles').where({ name: 'super_admin' }).first();
+    await instance.db('admin_users').insert({ ...COLLEAGUE, role_id: role.id });
     const seeding = await fillEmptyTables(instance.db, await listDataTables());
     await writeFiles();
     return { ...await exportTo(outDir), seeding, engine: isPg(instance.db) ? 'pg' : 'sqlite' };

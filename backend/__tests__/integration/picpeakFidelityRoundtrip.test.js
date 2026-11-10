@@ -94,21 +94,31 @@ async function runInstance(env, ...args) {
   return JSON.parse(line.slice('FIDELITY_RESULT:'.length));
 }
 
-function sqliteEnv(name) {
+// The SQLite file and the storage root come from bootCrmDb, which gives every
+// instance its own temporary directory.
+function sqliteEnv() {
   return {
-    DATABASE_CLIENT: 'sqlite3', TEST_DATABASE_PATH: path.join(workRoot, `${name}.db`),
-    STORAGE_PATH: path.join(workRoot, `${name}-storage`),
+    DATABASE_CLIENT: 'sqlite3',
     DB_HOST: undefined, DB_PORT: undefined, DB_USER: undefined, DB_PASSWORD: undefined, DB_NAME: undefined,
   };
 }
 
-function pgEnv(database, name) {
+function pgEnv(database) {
   const url = new URL(PG_URL);
   return {
     DATABASE_CLIENT: 'pg', DB_HOST: url.hostname, DB_PORT: url.port || '5432',
     DB_USER: decodeURIComponent(url.username), DB_PASSWORD: decodeURIComponent(url.password), DB_NAME: database,
-    STORAGE_PATH: path.join(workRoot, `${name}-storage`), TEST_DATABASE_PATH: undefined,
   };
+}
+
+// One failed DROP must not keep the rest behind. WITH (FORCE) needs
+// PostgreSQL 13 or later (CI runs 15).
+async function dropDatabases(admin, names) {
+  for (const name of names) {
+    try { await admin.raw('DROP DATABASE IF EXISTS ?? WITH (FORCE)', [name]); } catch (error) {
+      console.warn(`fidelity: could not drop ${name}: ${error.message}`);
+    }
+  }
 }
 
 async function readTables(file) {
@@ -320,12 +330,12 @@ sqliteDescribe('.picpeak fidelity roundtrip (SQLite source)', () => {
   let source;
 
   beforeAll(async () => {
-    source = await runInstance(sqliteEnv('sqlite-source'), 'source', path.join(workRoot, 'sqlite-source-out'));
+    source = await runInstance(sqliteEnv(), 'source', path.join(workRoot, 'sqlite-source-out'));
     expect(source.engine).toBe('sqlite');
   }, 300000);
 
   it('sqlite → sqlite restores every table and file unchanged', async () => {
-    const restored = await runInstance(sqliteEnv('sqlite-target'), 'restore', source.filePath,
+    const restored = await runInstance(sqliteEnv(), 'restore', source.filePath,
       path.join(workRoot, 'sqlite-target-out'));
     expect(restored.engine).toBe('sqlite');
     await assertFidelity(source, restored, { sameEngine: true });
@@ -335,7 +345,7 @@ sqliteDescribe('.picpeak fidelity roundtrip (SQLite source)', () => {
     let admin; const databases = [];
     beforeAll(async () => { admin = knex({ client: 'pg', connection: PG_URL }); });
     afterAll(async () => {
-      for (const name of databases) await admin.raw('DROP DATABASE IF EXISTS ?? WITH (FORCE)', [name]);
+      await dropDatabases(admin, databases);
       if (admin) await admin.destroy();
     });
 
@@ -343,7 +353,7 @@ sqliteDescribe('.picpeak fidelity roundtrip (SQLite source)', () => {
       const name = `picpeak_fidelity_${crypto.randomBytes(6).toString('hex')}`;
       await admin.raw('CREATE DATABASE ??', [name]);
       databases.push(name);
-      const restored = await runInstance(pgEnv(name, 'xengine-target'), 'restore', source.filePath,
+      const restored = await runInstance(pgEnv(name), 'restore', source.filePath,
         path.join(workRoot, 'xengine-target-out'));
       expect(restored.engine).toBe('pg');
       await assertFidelity(source, restored, { sameEngine: false });
@@ -361,17 +371,17 @@ pgDescribe('.picpeak fidelity roundtrip (PostgreSQL source)', () => {
   };
   beforeAll(async () => { admin = knex({ client: 'pg', connection: PG_URL }); });
   afterAll(async () => {
-    for (const name of databases) await admin.raw('DROP DATABASE IF EXISTS ?? WITH (FORCE)', [name]);
+    await dropDatabases(admin, databases);
     if (admin) await admin.destroy();
   });
 
   it('pg → pg restores every table and file unchanged', async () => {
-    const source = await runInstance(pgEnv(await createDatabase(), 'pg-source'), 'source',
+    const source = await runInstance(pgEnv(await createDatabase()), 'source',
       path.join(workRoot, 'pg-source-out'));
     expect(source.engine).toBe('pg');
-    const restored = await runInstance(pgEnv(await createDatabase(), 'pg-target'), 'restore', source.filePath,
+    const restored = await runInstance(pgEnv(await createDatabase()), 'restore', source.filePath,
       path.join(workRoot, 'pg-target-out'));
     expect(restored.engine).toBe('pg');
     await assertFidelity(source, restored, { sameEngine: true });
-  }, 300000);
+  }, 2 * 240000 + 60000);
 });
