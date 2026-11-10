@@ -613,9 +613,11 @@ async function getTaxReport({ from, to, currency, includeCosts = true } = {}) {
 }
 
 // The report as the JSON route sends it. On PostgreSQL the row dates are
-// Dates (`date` columns at local midnight), which JSON sends as the day before
-// east of UTC, and the on-screen table slices that string. Send the local
-// day, as the CSV export prints it. The PDF and CSV renderers keep reading the
+// Dates: invoice and supplier-invoice `date` columns at local midnight, and
+// the created_at timestamp of expenses (and of supplier invoices without a
+// date). JSON sends those as UTC instants, the day before east of UTC for the
+// first kind, and the on-screen table slices that string. Send the local day,
+// as the CSV export prints it. SQLite rows are passed through as stored. The PDF and CSV renderers keep reading the
 // Dates: a bare day there would be read as UTC midnight, west of UTC the day
 // before.
 const dayOf = (value) => (value instanceof Date ? toDateOnly(value) : value);

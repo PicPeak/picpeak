@@ -13,6 +13,7 @@ const validateHeroImageAnchor = (value) => {
 
 // Get storage path from environment or default
 const { getStoragePath } = require('../config/storage');
+const { toDateOnly } = require('../utils/dateOnly');
 
 // Helper to get event field requirements from settings
 const getEventFieldRequirements = async () => {
@@ -345,6 +346,11 @@ const mapEventForApi = (event) => {
   // /:id/password. Removed by name (not destructured) so a secret scanner
   // does not read the binding as a hard-coded password.
   for (const column of RECOVERABLE_PASSWORD_COLUMNS) delete rest[column];
+  // A pg `date` is a Date at local midnight, which JSON sends as the day
+  // before east of UTC. Send the day, as SQLite installs already do.
+  for (const column of ['event_date', 'event_end_date']) {
+    if (rest[column] instanceof Date) rest[column] = toDateOnly(rest[column]);
+  }
 
   return {
     ...rest,

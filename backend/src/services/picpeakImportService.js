@@ -28,6 +28,7 @@ const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
 const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
 const { isoSqliteCostTimestamps, COST_TIMESTAMP_TABLES } = require('../utils/costTimestamps');
 const { isoSqliteInvoiceSendAt } = require('../utils/invoiceSendAt');
+const { repairMonthlyDraftPeriods } = require('../utils/monthlyDraftPeriods');
 const { rowBatches } = require('./portableImportRows');
 const {
   dedupeExternalPhotos,
@@ -677,6 +678,11 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       // the export lists tables by name (picpeakExportService listDataTables).
       if (table === 'invoices' && archivePredates(archiveLatestMigration, 356)) {
         await isoSqliteInvoiceSendAt(trx, { actor: 'import' });
+      }
+      // And open monthly drafts' periods in the shape migration 358 moved
+      // (needs customer_accounts, which loads before invoices).
+      if (table === 'invoices' && archivePredates(archiveLatestMigration, 358)) {
+        await repairMonthlyDraftPeriods(trx, { actor: 'import' });
       }
     }
 

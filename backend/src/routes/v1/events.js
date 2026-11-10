@@ -86,6 +86,18 @@ const { recordSingleDownload } = require('../../services/apiDownloadNotification
 const { parseResolution } = require('../../utils/downloadResolutions');
 const { renderPhotoForDownload, isVideo } = require('../../services/downloadRendition');
 const { detectedFocalColumns } = require('../../utils/focalPoint');
+const { toDateOnly } = require('../../utils/dateOnly');
+
+// event_date is `format: date` in the OpenAPI spec. A pg `date` is a Date at
+// local midnight, which JSON sends as the day before east of UTC; send the
+// day, as SQLite installs already do.
+function withEventDays(event) {
+  const out = { ...event };
+  for (const column of ['event_date', 'event_end_date']) {
+    if (out[column] instanceof Date) out[column] = toDateOnly(out[column]);
+  }
+  return out;
+}
 
 const router = express.Router();
 
@@ -303,7 +315,7 @@ router.get(
         scopeEventsQuery(db('events').count('id as count'), req.admin).first()
       ]);
       const total = parseInt(totalRow?.count || 0, 10);
-      res.json({ events, pagination: { page, limit, total } });
+      res.json({ events: events.map(withEventDays), pagination: { page, limit, total } });
     } catch (error) {
       logger.error('v1 GET /events failed', { error: error.message });
       res.status(500).json({ error: 'Failed to list events' });
@@ -382,7 +394,7 @@ router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requirePermissi
     // #1271 — the encrypted copies are server-only as well
     delete event.password_recoverable;
     delete event.client_password_recoverable;
-    res.json(event);
+    res.json(withEventDays(event));
   } catch (error) {
     logger.error('v1 GET /events/:id failed', { error: error.message });
     res.status(500).json({ error: 'Failed to fetch event' });

@@ -57,7 +57,7 @@ async function createInvoice(payload, adminId, trx = db) {
   // are present, spawnInstallmentInvoices claims one number per
   // sibling and we never reach the single-row insert that would have
   // used `invoiceNumber` here.
-  const issueDate = payload.issueDate || new Date().toISOString().slice(0, 10);
+  const issueDate = payload.issueDate || issueDayOf(new Date());
   // A zone-less editor value reads as UTC, as the update route reads it and
   // as the editor shows the stored value.
   const scheduledSendAt = payload.scheduledSendAt ? new Date(toTimestamp(payload.scheduledSendAt)) : null;

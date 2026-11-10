@@ -29,7 +29,7 @@ function routeHelper(file, name) {
 
 const helpers = require(path.join(SRC, 'services/invoice/helpers'));
 const { buildEventSubject } = require(path.join(SRC, 'services/webhookService'));
-const { mapEventForApi } = require(path.join(SRC, 'services/eventService'));
+const { mapEventForApi } = require(path.join(SRC, 'services/eventSettings'));
 const { withDayDates } = require(path.join(SRC, 'services/taxReportService'));
 const { buildLineItemFromEntry } = require(path.join(SRC, 'services/customerHoursService'))._internal;
 
