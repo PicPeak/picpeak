@@ -126,7 +126,9 @@ postgres('portable restore actual hard-limited PostgreSQL worker', () => {
     restoring.then(value => { terminal = { value }; }, error => { terminal = { error }; });
     try {
       let waiting = false;
-      for (let attempt = 0; attempt < 400; attempt += 1) {
+      // A deadline, not an attempt count: on a loaded CI runner the worker
+      // takes longer than the 8 s 400 polls used to allow to reach the lock.
+      for (const deadline = Date.now() + 60000; Date.now() < deadline;) {
         const pending = await observer('pg_locks').where({ locktype: 'advisory', classid: LOCK_CLASS,
           objid: LOCK_RESOURCE, objsubid: 2, granted: false }).first();
         if (pending) { waiting = true; break; }
