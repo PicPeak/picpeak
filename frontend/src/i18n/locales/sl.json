@@ -5312,6 +5312,8 @@
       "disabled": "Samodejni preizkusi obnovitve so v nastavitvah izklopljeni. Kopije se preizkusijo le, če preizkus zaženete tukaj.",
       "empty": "Preizkus obnovitve se še ni izvedel.",
       "fullCheck": "preverjene vse datoteke",
+      "scheduleSummary": "Urnik ponovnega preverjanja: {{cron}} · vzorec drugih datotek na zagon: {{percent}} %",
+      "sampled": "{{percent}} % drugih datotek v vzorcu",
       "when": "Kdaj",
       "tested": "Preizkušeno",
       "triggeredBy": "Sprožilec",
@@ -5361,7 +5363,8 @@
         "not_standalone": "Te kopije ni mogoče obnoviti samostojno, zato ni bila poskusno obnovljena.",
         "no_manifest": "Ta kopija nima manifesta, zato njene vsebine ni bilo mogoče preveriti.",
         "interrupted": "Preizkus je bil prekinjen, preden se je končal, na primer zaradi ponovnega zagona strežnika.",
-        "no_database_dump": "Ta kopija ne vsebuje izpisa podatkovne baze, zato ni bilo ničesar za poskusno obnovitev."
+        "no_database_dump": "Ta kopija ne vsebuje izpisa podatkovne baze, zato ni bilo ničesar za poskusno obnovitev.",
+        "legacy_manifest": "Ta varnostna kopija je nastala, preden so bili manifesti podpisani, zato njenim kontrolnim vsotam ni mogoče zaupati in ni bila preizkušena. Nove kopije so podpisane in preizkušene."
       },
       "badge": {
         "hint": "Preizkus obnovitve: ali je bila ta kopija preverjena in poskusno obnovljena v začasno podatkovno bazo.",

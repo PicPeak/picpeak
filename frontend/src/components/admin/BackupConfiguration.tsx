@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button, Card, Input, Notice, Switch } from '../common';
+import { DecimalInput } from '../common/DecimalInput';
 import { SettingsSaveBar } from './SettingsSaveBar';
 import { api } from '../../config/api';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
@@ -36,6 +37,7 @@ interface BackupFormData {
   backup_schedule: string;
   backup_schedule_cron: string;
   backup_retention_count: number;
+  backup_retention_monthly_count: number;
   backup_include_database: boolean;
   backup_include_photos: boolean;
   backup_include_archives: boolean;
@@ -135,6 +137,7 @@ const INITIAL_FORM: BackupFormData = {
   backup_schedule: 'daily',
   backup_schedule_cron: '0 3 * * *',
   backup_retention_count: 7,
+  backup_retention_monthly_count: 0,
   backup_include_database: true,
   backup_include_photos: true,
   backup_include_archives: true,
@@ -291,6 +294,11 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
 
     if (restoreTestEnabled && formData.backup_verify_enabled && !isCronExpression(formData.backup_verify_cron)) {
       toast.error(t('backup.restoreTest.config.invalidCron', 'Please enter a valid cron expression (5 fields) for the restore test schedule'));
+      return;
+    }
+    const monthly = Number(formData.backup_retention_monthly_count);
+    if (!Number.isInteger(monthly) || monthly < 0 || monthly > 120) {
+      toast.error(t('backup.configuration.schedule.retentionMonthlyInvalid', 'Monthly restore points must be a whole number between 0 and 120'));
       return;
     }
     const samplePercent = Number(formData.backup_verify_sample_percent);
@@ -729,6 +737,22 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
               {t('backup.configuration.schedule.retentionCountHelp')}
             </p>
           </div>
+
+          <div>
+            <label htmlFor="backup-retention-monthly-count" className="block text-sm font-medium text-body mb-1">
+              {t('backup.configuration.schedule.retentionMonthlyCount', 'Monthly restore points to keep')}
+            </label>
+            <DecimalInput
+              id="backup-retention-monthly-count"
+              value={formData.backup_retention_monthly_count}
+              onChange={(next) => handleChange('backup_retention_monthly_count', Number.isFinite(next) ? Math.max(0, Math.trunc(next)) : 0)}
+              fractionDigits={0}
+              className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-md focus:outline-none focus:ring-accent focus:border-accent"
+            />
+            <p className="mt-1 text-xs text-muted">
+              {t('backup.configuration.schedule.retentionMonthlyCountHelp', 'Also keeps the first restore point of each of the last N calendar months, on top of the number above. Example: a daily backup, 7 above and 6 here keep the last 7 days plus the first backup of each of the last 6 months. 0 adds none. Like the setting above, this applies to local and S3 destinations; rsync destinations are never pruned.')}
+            </p>
+          </div>
         </div>
       </Card>
 
@@ -771,14 +795,11 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
               <label htmlFor="backup-verify-sample" className="block text-sm font-medium text-body mb-1">
                 {t('backup.restoreTest.config.samplePercent', 'File sample per run (%)')}
               </label>
-              <Input
+              <DecimalInput
                 id="backup-verify-sample"
-                type="number"
                 value={formData.backup_verify_sample_percent}
-                onChange={(e) => handleChange('backup_verify_sample_percent', e.target.value === '' ? 0 : parseInt(e.target.value, 10))}
-                min="0"
-                max="100"
-                step="1"
+                onChange={(next) => handleChange('backup_verify_sample_percent', Number.isFinite(next) ? next : 0)}
+                className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-md focus:outline-none focus:ring-accent focus:border-accent"
               />
               <p className="mt-1 text-xs text-muted">
                 {t('backup.restoreTest.config.samplePercentHelp', "Every backup's business documents are always hashed; this is the share of other files (photos etc.) checked each run, rotating so all files get covered over time.")}

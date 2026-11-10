@@ -89,7 +89,7 @@ beforeEach(() => {
   post.mockReset();
   toast.success.mockReset();
   toast.error.mockReset();
-  hasPermission.mockReset().mockImplementation((perm: string) => perm === 'backup.restore');
+  hasPermission.mockReset().mockImplementation((perm: string) => perm === 'backup.restore' || perm === 'backup.view');
 });
 afterEach(cleanup);
 
@@ -144,12 +144,19 @@ describe('RestoreTestCard', () => {
   });
 
   it('hides the run buttons without backup.restore', async () => {
-    hasPermission.mockReturnValue(false);
+    hasPermission.mockImplementation((perm: string) => perm === 'backup.view');
     renderCard(response(verification()));
 
     await screen.findByText(rt.status.passed);
     expect(screen.queryByRole('button', { name: rt.runNow })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(rt.hashAll)).not.toBeInTheDocument();
+  });
+
+  it('renders nothing and asks for nothing without backup.view', async () => {
+    hasPermission.mockReturnValue(false);
+    const { container } = render(<QueryClientProvider client={new QueryClient()}><RestoreTestCard /></QueryClientProvider>);
+    expect(container).toBeEmptyDOMElement();
+    expect(get).not.toHaveBeenCalled();
   });
 
   it('starts a test, with every file hashed when asked', async () => {

@@ -3152,6 +3152,8 @@
       "disabled": "Os testes de restauração automáticos estão desativados em Configuração. Os backups só são testados se você iniciar um teste aqui.",
       "empty": "Nenhum teste de restauração foi executado ainda.",
       "fullCheck": "hash de todos os arquivos",
+      "scheduleSummary": "Agendamento da verificação: {{cron}} · amostra de outros ficheiros por execução: {{percent}} %",
+      "sampled": "{{percent}} % dos outros ficheiros na amostra",
       "when": "Quando",
       "tested": "Testado",
       "triggeredBy": "Origem",
@@ -3201,7 +3203,8 @@
         "not_standalone": "Este backup não pode ser restaurado sozinho, por isso não foi restaurado em teste.",
         "no_manifest": "Este backup não tem manifesto, por isso o seu conteúdo não pôde ser verificado.",
         "interrupted": "O teste foi interrompido antes de terminar, por exemplo por uma reinicialização do servidor.",
-        "no_database_dump": "Este backup não contém um dump do banco de dados, por isso não havia nada para restaurar em teste."
+        "no_database_dump": "Este backup não contém um dump do banco de dados, por isso não havia nada para restaurar em teste.",
+        "legacy_manifest": "Esta cópia foi feita antes de os manifestos serem assinados, por isso as somas de verificação não são fiáveis e não foi testada. As novas cópias são assinadas e testadas."
       },
       "badge": {
         "hint": "Teste de restauração: se este backup foi verificado e restaurado em teste num banco de dados descartável.",

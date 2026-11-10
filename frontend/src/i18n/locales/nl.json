@@ -3002,6 +3002,8 @@
       "disabled": "Automatische hersteltests staan uit onder Configuratie. Back-ups worden alleen getest als u hier een test start.",
       "empty": "Er is nog geen hersteltest uitgevoerd.",
       "fullCheck": "elk bestand gehasht",
+      "scheduleSummary": "Schema hercontrole: {{cron}} · steekproef andere bestanden per run: {{percent}} %",
+      "sampled": "{{percent}} % van de andere bestanden steekproefsgewijs gecontroleerd",
       "when": "Wanneer",
       "tested": "Getest",
       "triggeredBy": "Aanleiding",
@@ -3051,7 +3053,8 @@
         "not_standalone": "Deze back-up kan niet op zichzelf worden teruggezet en is daarom niet bij wijze van test teruggezet.",
         "no_manifest": "Deze back-up heeft geen manifest, dus de inhoud kon niet worden gecontroleerd.",
         "interrupted": "De test is onderbroken voordat hij klaar was, bijvoorbeeld door een herstart van de server.",
-        "no_database_dump": "Deze back-up bevat geen databasedump, dus er was niets om bij wijze van test terug te zetten."
+        "no_database_dump": "Deze back-up bevat geen databasedump, dus er was niets om bij wijze van test terug te zetten.",
+        "legacy_manifest": "Deze back-up is gemaakt voordat manifesten werden ondertekend, dus de controlesommen zijn niet betrouwbaar en hij is niet getest. Nieuwe back-ups worden ondertekend en getest."
       },
       "badge": {
         "hint": "Hersteltest: of deze back-up is gecontroleerd en bij wijze van test is teruggezet in een wegwerpdatabase.",

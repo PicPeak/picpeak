@@ -689,7 +689,7 @@
       "ok": "A recent backup passed its restore test.",
       "stale": "No passed restore test in the last {{days}} days.",
       "none": "No restore test has passed yet.",
-      "failed": "The latest restore test failed. The backup may not be restorable.",
+      "failed": "The newest backup failed its restore test. It may not be restorable.",
       "running": "A restore test is running.",
       "lastPassed": "Last passed: {{when}}",
       "neverPassed": "No passed restore test on record.",
@@ -6258,6 +6258,8 @@
       "disabled": "Automatic restore tests are turned off under Configuration. Backups are not tested unless you start a test here.",
       "empty": "No restore test has run yet.",
       "fullCheck": "every file hashed",
+      "scheduleSummary": "Re-check schedule: {{cron}} · other files sampled per run: {{percent}} %",
+      "sampled": "{{percent}} % of other files sampled",
       "when": "When",
       "tested": "Tested",
       "triggeredBy": "Trigger",
@@ -6307,7 +6309,8 @@
         "not_standalone": "This backup can't be restored on its own, so it was not test-restored.",
         "no_manifest": "This backup has no manifest, so its contents could not be checked.",
         "interrupted": "The test was interrupted before it finished, for example by a server restart.",
-        "no_database_dump": "This backup holds no database dump, so there was nothing to test-restore."
+        "no_database_dump": "This backup holds no database dump, so there was nothing to test-restore.",
+        "legacy_manifest": "This backup was made before backup manifests were signed, so its checksums cannot be trusted and it was not tested. Backups made from now on are signed and tested."
       },
       "badge": {
         "hint": "Restore test: whether this backup was verified and test-restored into a throwaway database.",
@@ -6620,7 +6623,10 @@
         "customCron": "Cron Expression",
         "customCronHelp": "Enter a valid cron expression (e.g., 0 3 * * *)",
         "retentionCount": "Restore points to keep",
-        "retentionCountHelp": "Complete restore points kept at a local or S3 destination. Older ones are deleted after each successful backup. 0 keeps all of them."
+        "retentionCountHelp": "Complete restore points kept at a local or S3 destination. Older ones are deleted after each successful backup. 0 keeps all of them.",
+        "retentionMonthlyCount": "Monthly restore points to keep",
+        "retentionMonthlyCountHelp": "Also keeps the first restore point of each of the last N calendar months, on top of the number above. Example: a daily backup, 7 above and 6 here keep the last 7 days plus the first backup of each of the last 6 months. 0 adds none. Like the setting above, this applies to local and S3 destinations; rsync destinations are never pruned.",
+        "retentionMonthlyInvalid": "Monthly restore points must be a whole number between 0 and 120"
       },
       "whatToBackup": {
         "title": "What to Backup",

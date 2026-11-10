@@ -249,8 +249,8 @@ async function seedTemplate(knex) {
   if ('category' in cols) row.category = 'core';
   if ('subcategory' in cols) row.subcategory = 'backup';
   if ('feature_flag' in cols) row.feature_flag = 'backupRestoreTest';
-  if ('created_at' in cols) row.created_at = new Date();
-  if ('updated_at' in cols) row.updated_at = new Date();
+  if ('created_at' in cols) row.created_at = new Date().toISOString();
+  if ('updated_at' in cols) row.updated_at = new Date().toISOString();
   // Pre-075 installs keep content in per-language columns.
   for (const col of Object.keys(cols)) {
     if (col === 'subject' || /^subject_[a-z]{2,3}$/i.test(col)) row[col] = en.subject;
@@ -268,8 +268,8 @@ async function seedTemplate(knex) {
         subject: content.subject,
         body_html: content.body_html,
         body_text: content.body_text,
-        created_at: new Date(),
-        updated_at: new Date(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       });
     }
   }

@@ -2779,6 +2779,8 @@
       "disabled": "Las pruebas de restauración automáticas están desactivadas en Configuración. Las copias no se prueban salvo que inicie una prueba aquí.",
       "empty": "Todavía no se ha ejecutado ninguna prueba de restauración.",
       "fullCheck": "hash de todos los archivos",
+      "scheduleSummary": "Programación de la comprobación: {{cron}} · muestra de otros archivos por ejecución: {{percent}} %",
+      "sampled": "{{percent}} % de los demás archivos en la muestra",
       "when": "Cuándo",
       "tested": "Probado",
       "triggeredBy": "Origen",
@@ -2828,7 +2830,8 @@
         "not_standalone": "Esta copia no se puede restaurar por sí sola, así que no se restauró de prueba.",
         "no_manifest": "Esta copia no tiene manifiesto, así que no se pudo comprobar su contenido.",
         "interrupted": "La prueba se interrumpió antes de terminar, por ejemplo por un reinicio del servidor.",
-        "no_database_dump": "Esta copia no contiene un volcado de la base de datos, así que no había nada que restaurar de prueba."
+        "no_database_dump": "Esta copia no contiene un volcado de la base de datos, así que no había nada que restaurar de prueba.",
+        "legacy_manifest": "Esta copia se hizo antes de que los manifiestos se firmaran, así que sus sumas de comprobación no son fiables y no se ha probado. Las copias nuevas se firman y se prueban."
       },
       "badge": {
         "hint": "Prueba de restauración: si esta copia se verificó y se restauró de prueba en una base de datos desechable.",

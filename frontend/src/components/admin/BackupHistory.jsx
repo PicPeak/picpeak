@@ -31,6 +31,7 @@ import { useMutationWithToast } from '../../hooks';
 // AM/PM) and 'PPP' (US-locale long date), which ignored the settings —
 // Ralf 2026-05-31 flagged "11:25 PM" on a 24h-configured install.
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { usePermissions } from '../../contexts/PermissionsContext';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
 import { BACKUP_VERIFICATIONS_QUERY_KEY, backupVerificationService } from '../../services/backupVerification.service';
 import { RestoreTestRunBadge } from './RestoreTestStatus';
@@ -59,6 +60,7 @@ const formatBytes = (bytes) => {
 export const BackupHistory = ({ restoreTestEnabled = false } = {}) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const { hasPermission } = usePermissions();
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -90,7 +92,8 @@ export const BackupHistory = ({ restoreTestEnabled = false } = {}) => {
   const { data: verifications } = useQuery({
     queryKey: BACKUP_VERIFICATIONS_QUERY_KEY,
     queryFn: () => backupVerificationService.list(20),
-    enabled: restoreTestEnabled,
+    // The results route needs backup.view.
+    enabled: restoreTestEnabled && hasPermission('backup.view'),
     refetchInterval: (query) => (query.state.data?.running ? 5000 : false),
   });
   const verificationByRun = (restoreTestEnabled && verifications?.byBackupRun) || null;

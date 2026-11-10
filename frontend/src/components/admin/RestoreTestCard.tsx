@@ -72,6 +72,10 @@ const SKIP_REASONS: Record<string, [string, string]> = {
     'backup.restoreTest.skipReasons.interrupted',
     'The test was interrupted before it finished, for example by a server restart.',
   ],
+  legacy_manifest: [
+    'backup.restoreTest.skipReasons.legacy_manifest',
+    'This backup was made before backup manifests were signed, so its checksums cannot be trusted and it was not tested. Backups made from now on are signed and tested.',
+  ],
   no_database_dump: [
     'backup.restoreTest.skipReasons.no_database_dump',
     'This backup holds no database dump, so there was nothing to test-restore.',
@@ -118,6 +122,7 @@ export const RestoreTestCard: React.FC = () => {
   const { t } = useTranslation();
   const { formatDateTime, formatDistanceToNow } = useLocalizedDate();
   const { hasPermission } = usePermissions();
+  const canView = hasPermission('backup.view');
   const canRun = hasPermission('backup.restore');
   const [hashAll, setHashAll] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -125,6 +130,9 @@ export const RestoreTestCard: React.FC = () => {
   const { data, isLoading, isError } = useQuery({
     queryKey: BACKUP_VERIFICATIONS_QUERY_KEY,
     queryFn: () => backupVerificationService.list(20),
+    // The results route needs backup.view; the Backup tab also opens for
+    // settings.view alone.
+    enabled: canView,
     refetchInterval: (query) => (query.state.data?.running ? POLL_MS : false),
   });
 
@@ -143,6 +151,8 @@ export const RestoreTestCard: React.FC = () => {
     },
     invalidateKeys: [BACKUP_VERIFICATIONS_QUERY_KEY],
   });
+
+  if (!canView) return null;
 
   const latest = data?.latest ?? null;
   const running = Boolean(data?.running);
@@ -203,6 +213,15 @@ export const RestoreTestCard: React.FC = () => {
         </Notice>
       )}
 
+      {data && data.settings.enabled && (
+        <p className="mb-4 text-xs text-muted">
+          {t('backup.restoreTest.scheduleSummary', 'Re-check schedule: {{cron}} · other files sampled per run: {{percent}} %', {
+            cron: data.settings.cron,
+            percent: data.settings.samplePercent,
+          })}
+        </p>
+      )}
+
       {data && !data.settings.enabled && (
         <Notice tone="info" className="mb-4">
           {t('backup.restoreTest.disabled', 'Automatic restore tests are turned off under Configuration. Backups are not tested unless you start a test here.')}
@@ -220,8 +239,12 @@ export const RestoreTestCard: React.FC = () => {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <VerificationStatusBadge status={latest.status} />
             <span className="text-sm font-medium text-heading">{levelLabel(latest.level, t)}</span>
-            {latest.full && (
+            {latest.full ? (
               <span className="text-xs text-muted">{t('backup.restoreTest.fullCheck', 'every file hashed')}</span>
+            ) : latest.sample_percent != null && (
+              <span className="text-xs text-muted">
+                {t('backup.restoreTest.sampled', '{{percent}} % of other files sampled', { percent: latest.sample_percent })}
+              </span>
             )}
           </div>
 

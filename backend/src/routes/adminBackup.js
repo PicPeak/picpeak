@@ -237,6 +237,14 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
       return res.status(400).json({ error: 'backup_retention_count must be a whole number between 0 and 1000' });
     }
 
+    // Extra restore points kept per calendar month (the first backup of each
+    // of the last N months), on top of backup_retention_count. 0 = none.
+    if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_retention_monthly_count')
+        && (!Number.isInteger(updates.backup_retention_monthly_count)
+          || updates.backup_retention_monthly_count < 0 || updates.backup_retention_monthly_count > 120)) {
+      return res.status(400).json({ error: 'backup_retention_monthly_count must be a whole number between 0 and 120' });
+    }
+
     // Restore test settings (backupRestoreTest): validated here because the
     // schedule and the sampler run unattended on whatever is stored.
     const has = (key) => Object.prototype.hasOwnProperty.call(updates || {}, key);
@@ -689,6 +697,7 @@ router.delete('/runs/:id', adminAuth, requirePermission('backup.delete'), async 
     // without its audit row; a failed audit rolls the record back.
     await db.transaction(async (trx) => {
       await trx('backup_manifest').where('backup_run_id', id).del();
+      await require('../services/backupService').deleteVerificationsOf(trx, { backupRunIds: [id] });
       await trx('backup_runs').where('parent_backup_id', id).update({ parent_backup_id: null });
       await trx('backup_runs').where('id', id).del();
       await trx('activity_logs').insert({

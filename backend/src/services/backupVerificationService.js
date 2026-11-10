@@ -30,7 +30,6 @@
 
 const fs = require('fs').promises;
 const path = require('path');
-const crypto = require('crypto');
 const { spawn } = require('child_process');
 const cron = require('node-cron');
 const knexLib = require('knex');
@@ -45,7 +44,7 @@ const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { standaloneSnapshotOfRun } = require('../utils/backupRestorePoint');
 const { backupS3Access } = require('../utils/s3EndpointPolicy');
 const {
-  DRILL_PREFIX, DRILL_TEMP_PREFIX, drillDatabaseName, assertDrillDatabaseName,
+  DRILL_TEMP_PREFIX, drillDatabaseName, drillPrefixFor, assertDrillDatabaseName,
 } = require('../utils/drillDatabase');
 const { RESULT_PREFIX } = require('./backupVerificationWorker');
 
@@ -59,10 +58,12 @@ const BUSY_RETRY_MS = 60 * 1000;
 const BUSY_GIVE_UP_MS = 6 * 60 * 60 * 1000;
 const SPACE_MARGIN_BYTES = 64 * 1024 * 1024;
 // A gzip'd dump expands; without a recorded plain size, assume this ratio.
-const ASSUMED_EXPANSION = 5;
+const ASSUMED_EXPANSION = 10;
 
 let scheduleJob = null;
-let activeId = null;
+// The test running in this process: { id, aborted, children }.
+let current = null;
+let reserving = false;
 const queue = [];
 let draining = null;
 
@@ -179,7 +180,7 @@ async function readMaintenanceMode() {
 
 /** Why a test cannot start right now, or null. */
 async function busyReason() {
-  if (activeId !== null) return 'verification';
+  if (current !== null || reserving) return 'verification';
   if (applicationWork.isClosed()) return 'restore';
   const backupService = require('./backupService');
   if (backupService.isBackupRunning && backupService.isBackupRunning()) return 'backup';
@@ -193,43 +194,92 @@ async function busyReason() {
   return null;
 }
 
+/**
+ * Take the single-flight slot: this process first (synchronously, so two
+ * requests in the same tick cannot both pass), then the shared lease every
+ * replica uses. Returns the lease token, or null when another test holds it.
+ * Rows are only ever 'running' while their test holds the lease, so a holder
+ * may treat any other running row as left behind by a dead process.
+ */
+async function reserve() {
+  if (current !== null || reserving) return null;
+  reserving = true;
+  try {
+    await jobState.ensure(JOB_NAME);
+    return await jobState.claim(JOB_NAME);
+  } finally {
+    reserving = false;
+  }
+}
+
+async function releaseLease(token, id) {
+  await jobState.release(JOB_NAME, token, { id }).catch(() => {});
+}
+
+/**
+ * Stop the test running in this process: a backup is starting (it may prune
+ * the restore point under test), or the services are stopping (shutdown, a
+ * portable restore). The test ends as skipped with `reason`.
+ */
+function yieldTo(reason) {
+  if (!current) return;
+  current.aborted = reason;
+  for (const child of current.children) child.kill('SIGKILL');
+}
+
 // ----------------------------------------------------------- persistence --
 
-async function insertRow({ backupRunId = null, databaseBackupRunId = null, trigger, adminId = null, full = false, samplePercent = null }) {
+async function insertRow({ backupRunId = null, databaseBackupRunId = null, trigger, adminId = null, full = false, samplePercent = null, status = 'running', skipReason = null }) {
   const inserted = await db('backup_verifications').insert({
     backup_run_id: backupRunId,
     database_backup_run_id: databaseBackupRunId,
     level: 'deep',
-    status: 'running',
+    status,
+    skip_reason: skipReason,
     checks: JSON.stringify([]),
     full: formatBoolean(Boolean(full)),
     sample_percent: samplePercent,
     triggered_by: trigger,
     triggered_by_admin_id: adminId,
     started_at: nowIso(),
+    completed_at: status === 'running' ? null : nowIso(),
   }).returning('id');
   return inserted[0]?.id ?? inserted[0];
 }
 
 async function finishRow(id, { status, level = 'deep', checks = [], skipReason = null }) {
-  await db('backup_verifications').where({ id }).update({
+  const updated = await db('backup_verifications').where({ id }).update({
     status,
     level,
     skip_reason: skipReason,
     checks: JSON.stringify(checks),
     completed_at: nowIso(),
   });
+  // Pruning the restore point removes its rows; that is the only way here.
+  if (!updated) logger.warn(`Backup verification ${id} was removed before it finished (its restore point was pruned)`);
+}
+
+async function targetExists(target) {
+  const row = target.backupRunId
+    ? await db('backup_runs').where({ id: target.backupRunId, status: 'completed' }).first('id')
+    : await db('database_backup_runs').where({ id: target.databaseBackupRunId, status: 'completed' }).first('id');
+  return Boolean(row);
 }
 
 // --------------------------------------------------------------- worker --
 
 function runWorker(mode, job, env = process.env) {
   return new Promise((resolve, reject) => {
+    if (current && current.aborted) {
+      reject(new Error('Restore test stopped'));
+      return;
+    }
     const child = spawn(process.execPath, [WORKER, mode], {
       cwd: path.join(__dirname, '../..'),
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    if (current) current.children.add(child);
     try { require('os').setPriority(child.pid, 19); } catch (_) { /* the worker lowers itself too */ }
     let stdout = '';
     let stderr = '';
@@ -239,6 +289,7 @@ function runWorker(mode, job, env = process.env) {
     child.on('error', (error) => { clearTimeout(timer); reject(error); });
     child.on('close', (code, signal) => {
       clearTimeout(timer);
+      if (current) current.children.delete(child);
       const line = stdout.split('\n').reverse().find((l) => l.startsWith(RESULT_PREFIX));
       if (!line) {
         reject(new Error(`Verification worker ended without a result (${signal || `exit ${code}`}): ${stderr.trim().split('\n').slice(-3).join(' ')}`));
@@ -264,7 +315,22 @@ function pgMaintenanceKnex() {
 }
 
 // On an object so a test can stand in for a role without CREATEDB.
-const privileges = { canCreateDatabase };
+const privileges = { canCreateDatabase, maintenanceReachable };
+
+// CREATE/DROP DATABASE go through the maintenance database (DB_CHECK_DB,
+// default "postgres"), as the restore path does. Where it is not reachable
+// the drill cannot run; that is a setup limit, not a broken backup.
+async function maintenanceReachable() {
+  const admin = pgMaintenanceKnex();
+  try {
+    await admin.raw('SELECT 1');
+    return true;
+  } catch (error) {
+    return false;
+  } finally {
+    await admin.destroy().catch(() => {});
+  }
+}
 
 async function canCreateDatabase() {
   const result = await db.raw('SELECT (rolcreatedb OR rolsuper) AS ok FROM pg_roles WHERE rolname = current_user');
@@ -321,10 +387,14 @@ async function planFileBackup(run, config, checks) {
   const backupService = require('./backupService');
   const validation = await backupService.validateBackupManifest(run.manifest_path);
   if (!validation.valid || !validation.manifest) {
-    const legacy = validation.authentication && validation.authentication.state === 'legacy';
-    checks.push(check('manifest_signature', 'failed', legacy
-      ? 'The manifest predates manifest signing, so its checksums cannot be trusted'
-      : `The manifest could not be read or its signature does not match: ${validation.error || 'unknown error'}`));
+    // Written before manifests were signed: the backup status counts that
+    // as healthy (the next backup signs a new one), so it is not a failure
+    // here either. Its checksums cannot be trusted, so nothing is tested.
+    if (validation.authentication && validation.authentication.state === 'legacy') {
+      checks.push(check('manifest_signature', 'warning', 'The manifest predates manifest signing, so its checksums cannot be trusted and the backup was not tested'));
+      return { skip: 'legacy_manifest' };
+    }
+    checks.push(check('manifest_signature', 'failed', `The manifest could not be read or its signature does not match: ${validation.error || 'unknown error'}`));
     return { stop: true };
   }
   const manifest = validation.manifest;
@@ -368,8 +438,16 @@ async function planFileBackup(run, config, checks) {
     files: fileEntries,
     engine: dumpEngine(manifest.database && manifest.database.type),
     expectedRowCounts: (manifest.database && manifest.database.row_counts) || {},
-    plainSize: null,
+    plainSize: await recordedPlainSize(manifest.database && manifest.database.checksum),
   };
+}
+
+// The database size recorded when the dump was made: the run whose dump has
+// this checksum. Without one, hasSpaceFor assumes a generous expansion.
+async function recordedPlainSize(checksum) {
+  if (!checksum) return null;
+  const row = await db('database_backup_runs').where({ checksum }).first('original_size_bytes').catch(() => null);
+  return row && Number(row.original_size_bytes) > 0 ? Number(row.original_size_bytes) : null;
 }
 
 async function planDatabaseBackup(run, checks) {
@@ -391,7 +469,8 @@ async function hasSpaceFor(dir, plan) {
   const dumpSize = Number(plan.dump.size) || 0;
   const plain = plan.plainSize || dumpSize * ASSUMED_EXPANSION;
   // The fetched dump plus its decompressed form (the SQLite drill copy, or
-  // the SQL psql reads).
+  // the SQL psql reads). On PostgreSQL the drill database itself lives on
+  // the database server, whose free space is not visible from here.
   const needed = dumpSize + plain + SPACE_MARGIN_BYTES;
   try {
     const stat = await fs.statfs(dir);
@@ -416,7 +495,11 @@ async function runDrill(id, plan, workDir, checks) {
       checks.push(check('createdb_privilege', 'warning', 'The database user may not create databases, so only the deep check ran. Grant CREATEDB to the PicPeak database user to run full restore tests.'));
       return false;
     }
-    const name = drillDatabaseName(id);
+    if (!(await privileges.maintenanceReachable())) {
+      checks.push(check('createdb_privilege', 'warning', `The maintenance database "${process.env.DB_CHECK_DB || 'postgres'}" cannot be reached, so no test database could be created and only the deep check ran. Set DB_CHECK_DB to a database the PicPeak user may connect to.`));
+      return false;
+    }
+    const name = drillDatabaseName(id, live.database);
     assertDrillDatabaseName(name, live.database);
     await createDrillDatabase(name);
     try {
@@ -447,6 +530,11 @@ async function execute(id, target, { full, samplePercent, drill }) {
   const settings = await readSettings();
   const workDir = path.join(workRoot(), `${DRILL_TEMP_PREFIX}${id}`);
   let level = 'deep';
+  // A test stopped for a backup or a shutdown says so; its half-done checks
+  // are not a verdict on the backup.
+  const stopped = () => (current && current.aborted
+    ? finishRow(id, { status: 'skipped', skipReason: current.aborted === 'backup' ? 'busy' : 'interrupted', level, checks })
+    : null);
   try {
     let plan;
     if (target.backupRunId) {
@@ -475,6 +563,7 @@ async function execute(id, target, { full, samplePercent, drill }) {
         files: [...docs, ...sample].map((entry) => ({ path: entry.path, checksum: entry.checksum, size: entry.size })),
       });
     } catch (error) {
+      if (current && current.aborted) return stopped();
       checks.push(check('destination', 'failed', error.message));
       return finishRow(id, { status: 'failed', checks });
     }
@@ -507,12 +596,14 @@ async function execute(id, target, { full, samplePercent, drill }) {
       try {
         if (await runDrill(id, plan, workDir, checks)) level = 'drill';
       } catch (error) {
+        if (current && current.aborted) return stopped();
         level = 'drill';
         checks.push(check('drill_load', 'failed', String(error.message).slice(0, 500)));
       }
     }
-    return finishRow(id, { status: overallStatus(checks), level, checks });
+    return stopped() || finishRow(id, { status: overallStatus(checks), level, checks });
   } catch (error) {
+    if (current && current.aborted) return stopped();
     logger.error(`Backup verification ${id} failed`, { error: error.message });
     checks.push(check('destination', 'failed', error.message));
     return finishRow(id, { status: 'failed', level, checks });
@@ -521,102 +612,184 @@ async function execute(id, target, { full, samplePercent, drill }) {
   }
 }
 
-async function notifyFailure(id) {
-  const row = await db('backup_verifications').where({ id }).first();
-  if (!row || row.status !== 'failed') return;
+/**
+ * One mail per admin for a set of failed tests: a single test after a
+ * backup, or the whole scheduled round, so an outage at the destination is
+ * one message and not one per retained backup.
+ */
+async function notifyFailures(ids) {
+  const rows = ids.length ? await db('backup_verifications').whereIn('id', ids).where({ status: 'failed' }) : [];
+  if (rows.length === 0) return;
   const { config } = await readSettings();
   if (!toBool(config.backup_email_on_failure, false)) return;
   const { queueEmail } = require('./emailProcessor');
-  const checks = parseJson(row.checks, []);
-  const failed = checks.filter((c) => c.result === 'failed')
-    .map((c) => `${c.name}: ${c.detail || 'failed'}`).join('\n');
-  const label = row.backup_run_id ? `Backup run ${row.backup_run_id}` : `Database backup run ${row.database_backup_run_id}`;
+  const labelOf = (row) => (row.backup_run_id ? `Backup run ${row.backup_run_id}` : `Database backup run ${row.database_backup_run_id}`);
+  const failedChecks = rows.map((row) => {
+    const lines = parseJson(row.checks, []).filter((c) => c.result === 'failed')
+      .map((c) => `${c.name}: ${c.detail || 'failed'}`);
+    return rows.length > 1 ? `${labelOf(row)}\n${lines.join('\n')}` : lines.join('\n');
+  }).join('\n\n');
+  const newest = rows[rows.length - 1];
   const admins = await db('admin_users').where('is_active', formatBoolean(true));
   for (const admin of admins) {
     await queueEmail(null, admin.email, 'backup_verification_failed', {
-      backup_label: label,
-      checked_at: new Date(row.completed_at || Date.now()).toISOString(),
-      verification_level: row.level === 'drill' ? 'Restore drill' : 'Deep verify',
-      failed_checks: failed || 'unknown',
+      backup_label: rows.length > 1 ? `${rows.length} backups` : labelOf(newest),
+      checked_at: new Date(newest.completed_at || Date.now()).toISOString(),
+      verification_level: rows.some((row) => row.level === 'drill') ? 'Restore drill' : 'Deep verify',
+      failed_checks: failedChecks || 'unknown',
     });
   }
 }
 
 /**
- * Run one test now, in this process. Resolves when the row is final.
- * `id` is an already inserted running row (startNow) or null.
+ * Leftovers of a test that died with its process: rows stuck at running,
+ * work directories and this install's drill databases. Only called while
+ * holding the lease, so nothing else of this install is mid-test; `exceptId`
+ * is the caller's own row.
  */
-async function runOne(target, options) {
+async function cleanupLeftovers(exceptId = null) {
+  const stuck = await db('backup_verifications').where({ status: 'running' })
+    .modify((q) => { if (exceptId !== null) q.whereNot({ id: exceptId }); })
+    .update({ status: 'skipped', skip_reason: 'interrupted', completed_at: nowIso() });
+  if (stuck) logger.warn(`Marked ${stuck} interrupted backup restore test(s)`);
+
+  const keep = exceptId === null ? null : `${DRILL_TEMP_PREFIX}${exceptId}`;
+  const entries = await fs.readdir(workRoot(), { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.isDirectory() && entry.name.startsWith(DRILL_TEMP_PREFIX) && entry.name !== keep) {
+      await fs.rm(path.join(workRoot(), entry.name), { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  const live = liveTarget();
+  if (live.engine !== 'pg') return;
+  const prefix = drillPrefixFor(live.database);
+  const own = exceptId === null ? null : drillDatabaseName(exceptId, live.database);
+  const admin = pgMaintenanceKnex();
+  try {
+    const result = await admin.raw('SELECT datname FROM pg_database WHERE starts_with(datname, ?)', [prefix]);
+    for (const { datname } of result.rows) {
+      if (datname === own) continue;
+      try {
+        await dropDrillDatabase(assertDrillDatabaseName(datname, live.database));
+        logger.warn(`Dropped stale restore-drill database ${datname}`);
+      } catch (error) {
+        logger.warn(`Could not drop stale restore-drill database ${datname}: ${error.message}`);
+      }
+    }
+  } catch (error) {
+    logger.warn(`Could not list restore-drill databases: ${error.message}`);
+  } finally {
+    await admin.destroy().catch(() => {});
+  }
+}
+
+/**
+ * Run one test in this process and resolve when its row is final.
+ * `token` is a lease startNow already took; without it the lease is taken
+ * here. The row is written only while the lease is held.
+ */
+async function runOne(target, options = {}) {
   const settings = await readSettings();
   const samplePercent = options.samplePercent ?? settings.samplePercent;
-  const id = options.id ?? await insertRow({
+  const rowFields = {
     backupRunId: target.backupRunId || null,
     databaseBackupRunId: target.databaseBackupRunId || null,
     trigger: options.trigger, adminId: options.adminId || null,
     full: Boolean(options.full), samplePercent,
-  });
-
-  await jobState.ensure(JOB_NAME);
-  const token = await jobState.claim(JOB_NAME);
+  };
+  const token = options.token || await reserve();
   if (!token) {
-    await finishRow(id, { status: 'skipped', skipReason: 'busy' });
-    return id;
+    // Another replica is testing. A queued test for a run that still exists
+    // says so; one whose run is gone leaves nothing behind.
+    if (await targetExists(target)) return insertRow({ ...rowFields, status: 'skipped', skipReason: 'busy' });
+    return null;
   }
+  const state = { id: null, aborted: null, children: new Set() };
+  current = state;
   const lease = jobState.startLeaseKeeper(JOB_NAME, token);
-  activeId = id;
   try {
+    if (!options.id && !(await targetExists(target))) return null;
+    const id = options.id ?? await insertRow(rowFields);
+    state.id = id;
+    await cleanupLeftovers(id);
     await execute(id, target, { full: Boolean(options.full), samplePercent, drill: options.drill !== false });
+    if (options.notify !== false) {
+      await notifyFailures([id]).catch((error) => logger.error(`Could not queue the verification failure email: ${error.message}`));
+    }
+    return id;
   } finally {
-    activeId = null;
+    current = null;
     lease.stop();
-    await jobState.release(JOB_NAME, token, { id }).catch(() => {});
+    await releaseLease(token, state.id);
   }
-  await notifyFailure(id).catch((error) => logger.error(`Could not queue the verification failure email: ${error.message}`));
-  return id;
 }
 
 // ---------------------------------------------------------------- queue --
-
-async function waitUntilIdle() {
-  const deadline = Date.now() + BUSY_GIVE_UP_MS;
-  for (;;) {
-    const reason = await busyReason();
-    if (!reason) return true;
-    if (Date.now() >= deadline) return false;
-    await new Promise((resolve) => { const t = setTimeout(resolve, BUSY_RETRY_MS); t.unref?.(); });
-  }
-}
-
-function drain() {
-  if (draining) return draining;
-  draining = applicationWork.defer('backup verification', async () => {
-    while (queue.length) {
-      const item = queue.shift();
-      try {
-        if (!(await waitUntilIdle())) {
-          const id = await insertRow({ ...item.target, trigger: item.trigger });
-          await finishRow(id, { status: 'skipped', skipReason: 'busy' });
-          continue;
-        }
-        await runOne(item.target, item);
-      } catch (error) {
-        logger.error('Backup verification failed to run', { error: error.message });
-      }
-    }
-  }).finally(() => { draining = null; });
-  return draining;
-}
 
 async function automaticRunsEnabled() {
   if (!(await isFeatureEnabled(FLAG))) return false;
   return (await readSettings()).enabled;
 }
 
+// 'run', 'busy' (gave up waiting) or 'abandon' (a coordinated restore is
+// under way: the queue is dropped so the restore can drain its work).
+async function waitUntilIdle() {
+  const deadline = Date.now() + BUSY_GIVE_UP_MS;
+  for (;;) {
+    if (applicationWork.isClosed()) return 'abandon';
+    const reason = await busyReason();
+    if (!reason) return 'run';
+    if (Date.now() >= deadline) return 'busy';
+    await new Promise((resolve) => { const t = setTimeout(resolve, BUSY_RETRY_MS); t.unref?.(); });
+  }
+}
+
+/**
+ * Work through the queue. The waiting is deliberately NOT application work:
+ * a portable restore drains application work before it starts, and a queue
+ * waiting for that restore to end must not hold it up. Only the test itself
+ * is tracked, and admission being closed drops the queue.
+ */
+function drain() {
+  if (draining) return draining;
+  draining = (async () => {
+    while (queue.length) {
+      const item = queue.shift();
+      try {
+        // Switching the feature or the automatic runs off also stops what
+        // was already queued.
+        if (!(await automaticRunsEnabled())) { queue.length = 0; break; }
+        const outcome = await waitUntilIdle();
+        if (outcome === 'abandon') { queue.length = 0; break; }
+        if (outcome === 'busy') {
+          if (await targetExists(item.target)) {
+            await insertRow({ ...item.target, trigger: item.trigger, status: 'skipped', skipReason: 'busy' });
+          }
+          continue;
+        }
+        const id = await applicationWork.track('backup verification', () => runOne(item.target, { ...item, notify: !item.batch }));
+        if (item.batch && id) item.batch.push(id);
+      } catch (error) {
+        if (error && error.code === 'RESTORE_MAINTENANCE') { queue.length = 0; break; }
+        logger.error('Backup verification failed to run', { error: error.message });
+      }
+    }
+  })().finally(() => { draining = null; });
+  return draining;
+}
+
+function enqueue(item) {
+  const key = JSON.stringify(item.target);
+  if (queue.some((queued) => JSON.stringify(queued.target) === key)) return;
+  queue.push(item);
+}
+
 /** After a successful file backup run. Never touches the run itself. */
 async function queueAfterBackup(backupRunId) {
   try {
     if (!(await automaticRunsEnabled())) return;
-    queue.push({ target: { backupRunId }, trigger: 'backup' });
+    enqueue({ target: { backupRunId }, trigger: 'backup' });
     drain();
   } catch (error) {
     logger.warn(`Could not queue a restore test for backup run ${backupRunId}: ${error.message}`);
@@ -627,7 +800,7 @@ async function queueAfterBackup(backupRunId) {
 async function queueAfterDatabaseBackup(databaseBackupRunId) {
   try {
     if (!(await automaticRunsEnabled())) return;
-    queue.push({ target: { databaseBackupRunId }, trigger: 'backup' });
+    enqueue({ target: { databaseBackupRunId }, trigger: 'backup' });
     drain();
   } catch (error) {
     logger.warn(`Could not queue a restore test for database backup run ${databaseBackupRunId}: ${error.message}`);
@@ -642,37 +815,41 @@ async function defaultTarget() {
   return dbRun ? { databaseBackupRunId: dbRun.id } : null;
 }
 
+function busyError(reason) {
+  const error = new Error(`A ${reason} is running; try the restore test again when it has finished`);
+  error.code = 'VERIFICATION_BUSY';
+  return error;
+}
+
 /**
- * An admin's "Run restore test now". Inserts the running row and returns its
- * id; the test continues in the background. Throws with code
- * VERIFICATION_BUSY / NO_BACKUP for the route to map.
+ * An admin's "Run restore test now". Takes the lease, inserts the running
+ * row and returns its id; the test continues in the background. Throws with
+ * code VERIFICATION_BUSY / NO_BACKUP for the route to map.
  */
 async function startNow({ backupRunId, databaseBackupRunId, full = false, adminId }) {
   const reason = await busyReason();
-  if (reason) {
-    const error = new Error(`A ${reason} is running; try the restore test again when it has finished`);
-    error.code = 'VERIFICATION_BUSY';
-    throw error;
-  }
+  if (reason) throw busyError(reason);
   let target;
-  if (backupRunId) {
-    const run = await db('backup_runs').where({ id: backupRunId, status: 'completed' }).first();
-    target = run ? { backupRunId: run.id } : null;
-  } else if (databaseBackupRunId) {
-    const run = await db('database_backup_runs').where({ id: databaseBackupRunId, status: 'completed' }).first();
-    target = run ? { databaseBackupRunId: run.id } : null;
-  } else {
-    target = await defaultTarget();
-  }
-  if (!target) {
+  if (backupRunId) target = { backupRunId };
+  else if (databaseBackupRunId) target = { databaseBackupRunId };
+  else target = await defaultTarget();
+  if (!target || !(await targetExists(target))) {
     const error = new Error('There is no completed backup to test');
     error.code = 'NO_BACKUP';
     throw error;
   }
-  const { samplePercent } = await readSettings();
-  const id = await insertRow({ ...target, trigger: 'admin', adminId, full, samplePercent });
-  applicationWork.defer('backup verification', () => runOne(target, { id, full, samplePercent, trigger: 'admin', adminId }))
-    .catch(() => {});
+  const token = await reserve();
+  if (!token) throw busyError('verification');
+  let id;
+  try {
+    const { samplePercent } = await readSettings();
+    id = await insertRow({ ...target, trigger: 'admin', adminId, full, samplePercent });
+    applicationWork.defer('backup verification', () => runOne(target, { id, token, full, samplePercent, trigger: 'admin', adminId }))
+      .catch(() => {});
+  } catch (error) {
+    await releaseLease(token, id);
+    throw error;
+  }
   return id;
 }
 
@@ -680,35 +857,55 @@ async function startNow({ backupRunId, databaseBackupRunId, full = false, adminI
  * The periodic re-check: every retained file restore point gets a deep
  * verify (bit rot, deletion at the destination); the newest also gets the
  * restore drill. With no file backups, the newest database-only dump.
+ * Failures of the round go out as one mail.
  */
 async function runScheduled() {
   if (!(await automaticRunsEnabled())) return;
+  const batch = [];
   const runs = await db('backup_runs').where('status', 'completed').whereNotNull('manifest_path').orderBy('id', 'desc').select('id');
   if (runs.length === 0) {
     const target = await defaultTarget();
-    if (target) queue.push({ target, trigger: 'schedule' });
+    if (target) enqueue({ target, trigger: 'schedule', batch });
   }
-  runs.forEach((run, index) => queue.push({ target: { backupRunId: run.id }, trigger: 'schedule', drill: index === 0 }));
+  runs.forEach((run, index) => enqueue({ target: { backupRunId: run.id }, trigger: 'schedule', drill: index === 0, batch }));
   await drain();
+  await notifyFailures(batch).catch((error) => logger.error(`Could not queue the verification failure email: ${error.message}`));
 }
 
 // ------------------------------------------------------------- reading --
 
+let tableKnown = false;
+async function hasVerificationTable() {
+  if (!tableKnown) tableKnown = await db.schema.hasTable('backup_verifications');
+  return tableKnown;
+}
+
+/**
+ * Health follows the newest restore point: its latest finished test decides
+ * failed vs not. An older retained backup failing its re-check is reported
+ * (row, history badge, mail) but does not override a newer backup that
+ * restores. "Stale" means no pass in STALE_DAYS.
+ */
 async function getSummary({ limit = 20 } = {}) {
   const rows = await db('backup_verifications').orderBy('id', 'desc').limit(Math.min(Math.max(Number(limit) || 20, 1), 200));
   const items = rows.map(serialize);
   const latest = items[0] || null;
-  const decisive = await db('backup_verifications').whereIn('status', ['passed', 'warning', 'failed']).orderBy('id', 'desc').first();
+  const newest = await defaultTarget();
+  const decisive = newest
+    ? await db('backup_verifications').where(newest.backupRunId
+      ? { backup_run_id: newest.backupRunId } : { database_backup_run_id: newest.databaseBackupRunId })
+      .whereIn('status', ['passed', 'warning', 'failed']).orderBy('id', 'desc').first()
+    : null;
   const lastPass = await db('backup_verifications').whereIn('status', ['passed', 'warning']).orderBy('id', 'desc').first();
-  const running = items.some((item) => item.status === 'running');
+  const running = (await db('backup_verifications').where({ status: 'running' }).first('id')) !== undefined;
   const lastPassedAt = lastPass && lastPass.completed_at ? new Date(lastPass.completed_at).toISOString() : null;
   const staleBefore = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
 
   let health;
   if (decisive && decisive.status === 'failed') health = 'failed';
   else if (lastPassedAt && new Date(lastPassedAt).getTime() >= staleBefore) health = 'ok';
-  else if (items.length === 0) health = 'none';
-  else if (!decisive && running) health = 'running';
+  else if (items.length === 0) health = running ? 'running' : 'none';
+  else if (!lastPassedAt && running) health = 'running';
   else health = 'stale';
 
   const byBackupRun = {};
@@ -737,15 +934,25 @@ async function getSummary({ limit = 20 } = {}) {
 /** The health part for backup status / System health; null when the flag is off. */
 async function getHealth() {
   if (!(await isFeatureEnabled(FLAG))) return null;
-  if (!(await db.schema.hasTable('backup_verifications'))) return null;
+  if (!(await hasVerificationTable())) return null;
   const { health, lastPassedAt, latest, staleDays } = await getSummary({ limit: 1 });
   return { health, lastPassedAt, latest, staleDays };
+}
+
+/** Restore points with a test running right now; retention leaves them. */
+async function runsUnderTest() {
+  if (!(await hasVerificationTable())) return new Set();
+  const rows = await db('backup_verifications').where({ status: 'running' }).whereNotNull('backup_run_id').select('backup_run_id');
+  return new Set(rows.map((row) => Number(row.backup_run_id)));
 }
 
 // ------------------------------------------------------ schedule + boot --
 
 async function startVerificationSchedule() {
-  stopVerificationSchedule();
+  if (scheduleJob) {
+    scheduleJob.stop();
+    scheduleJob = null;
+  }
   try {
     const settings = await readSettings();
     if (!settings.enabled) return;
@@ -759,51 +966,43 @@ async function startVerificationSchedule() {
   }
 }
 
-function stopVerificationSchedule() {
+/**
+ * Service stop (shutdown, or a portable restore pausing the services): the
+ * schedule stops, the queue is dropped and a running test is stopped, so
+ * nothing holds up the drain that follows.
+ */
+async function stopVerificationSchedule() {
   if (scheduleJob) {
     scheduleJob.stop();
     scheduleJob = null;
   }
+  queue.length = 0;
+  yieldTo('shutdown');
 }
 
 /**
- * Leftovers of a test that died with its process: temp directories, drill
- * databases and rows stuck at running. Only when no replica holds the lease.
+ * Boot: clean what a test that died with the previous process left. Takes
+ * the lease for it, so a test another replica is running is never touched.
+ * A lease still held by this host under another pid belongs to the process
+ * this one replaced, and is taken over rather than waited out.
  */
 async function sweepStale() {
   try {
-    if (!(await db.schema.hasTable('backup_verifications'))) return;
+    if (!(await hasVerificationTable())) return;
     await jobState.ensure(JOB_NAME);
-    if ((await jobState.read(JOB_NAME)).isRunning) return;
-
-    const entries = await fs.readdir(workRoot(), { withFileTypes: true }).catch(() => []);
-    for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.startsWith(DRILL_TEMP_PREFIX)) {
-        await fs.rm(path.join(workRoot(), entry.name), { recursive: true, force: true }).catch(() => {});
-      }
+    const row = await db('maintenance_jobs').where({ job_name: JOB_NAME }).first();
+    const self = `${require('os').hostname()}:${process.pid}`;
+    if (row && (row.is_running === true || row.is_running === 1) && typeof row.owner === 'string'
+        && row.owner.startsWith(`${require('os').hostname()}:`) && row.owner !== self) {
+      await db('maintenance_jobs').where({ job_name: JOB_NAME, claim_token: row.claim_token })
+        .update({ is_running: formatBoolean(false), finished_at: nowIso() });
     }
-
-    const stuck = await db('backup_verifications').where({ status: 'running' }).update({
-      status: 'skipped', skip_reason: 'interrupted', completed_at: nowIso(),
-    });
-    if (stuck) logger.warn(`Marked ${stuck} interrupted backup restore test(s)`);
-
-    const live = liveTarget();
-    if (live.engine === 'pg') {
-      const admin = pgMaintenanceKnex();
-      try {
-        const result = await admin.raw('SELECT datname FROM pg_database WHERE datname LIKE ?', [`${DRILL_PREFIX}%`]);
-        for (const { datname } of result.rows) {
-          try {
-            await dropDrillDatabase(assertDrillDatabaseName(datname, live.database));
-            logger.warn(`Dropped stale restore-drill database ${datname}`);
-          } catch (error) {
-            logger.warn(`Could not drop stale restore-drill database ${datname}: ${error.message}`);
-          }
-        }
-      } finally {
-        await admin.destroy();
-      }
+    const token = await reserve();
+    if (!token) return;
+    try {
+      await cleanupLeftovers(null);
+    } finally {
+      await releaseLease(token, null);
     }
   } catch (error) {
     logger.warn(`Backup verification boot sweep failed: ${error.message}`);
@@ -827,5 +1026,7 @@ module.exports = {
   startVerificationSchedule,
   stopVerificationSchedule,
   sweepStale,
-  _internal: { privileges, selectFiles, bucketOf, overallStatus, planFileBackup, planDatabaseBackup, liveTarget, drain: () => draining, queue },
+  yieldTo,
+  runsUnderTest,
+  _internal: { current: () => current, privileges, selectFiles, bucketOf, overallStatus, planFileBackup, planDatabaseBackup, liveTarget, drain: () => draining, drainNow: () => drain(), queue },
 };

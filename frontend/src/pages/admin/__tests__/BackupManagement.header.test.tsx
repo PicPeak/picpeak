@@ -5,6 +5,7 @@
  */
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import { BackupManagement } from '../BackupManagement';
@@ -45,7 +46,7 @@ const renderWithStatus = async (status: Record<string, unknown>) => {
     data: url.endsWith('/status') ? { isRunning: false, ...status } : { backup_enabled: true },
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><BackupManagement /></QueryClientProvider>);
+  render(<MemoryRouter><QueryClientProvider client={client}><BackupManagement /></QueryClientProvider></MemoryRouter>);
   await screen.findByText('backup.title');
 };
 

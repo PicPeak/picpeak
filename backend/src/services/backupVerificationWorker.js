@@ -248,7 +248,7 @@ async function coreMigrationFiles() {
 
 async function checkInvariants(knex, engine) {
   const problems = [];
-  const active = engine === 'pg' ? true : 1;
+  const active = require('../utils/dbCompat').formatBoolean(true);
   if (!(await knex.schema.hasTable('admin_users')) || !(await knex.schema.hasTable('roles'))) {
     problems.push('admin_users or roles table missing');
   } else {
@@ -311,7 +311,7 @@ async function runDrill(job) {
   try {
     if (job.engine === 'pg') {
       checks.push(check('drill_integrity', 'passed', 'Every statement of the dump applied'));
-      const unvalidated = await knex.raw("SELECT count(*) AS c FROM pg_constraint WHERE contype = 'f' AND NOT convalidated");
+      const unvalidated = await knex.raw('SELECT count(*) AS c FROM pg_constraint WHERE contype = ? AND NOT convalidated', ['f']);
       const n = countOf(unvalidated.rows);
       checks.push(n === 0
         ? check('drill_foreign_keys', 'passed', 'All foreign keys validated during the load')
@@ -370,6 +370,7 @@ async function readStdin() {
 async function main(mode) {
   try { os.setPriority(19); } catch (_) { /* best effort */ }
   // Migration and library logging must not be mistaken for the result line.
+  // eslint-disable-next-line no-console
   console.log = (...args) => process.stderr.write(`${args.join(' ')}\n`);
   const job = await readStdin();
   let result;

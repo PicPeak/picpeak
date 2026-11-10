@@ -14,10 +14,21 @@ const DRILL_PREFIX = 'picpeak_drill_';
 const DRILL_NAME_RE = /^picpeak_drill_[a-z0-9_]{1,40}$/;
 const DRILL_TEMP_PREFIX = 'backup-verify-';
 
-function drillDatabaseName(verificationId) {
+// Several installs may share one PostgreSQL server (production and a beta,
+// say). Each install's drills carry a tag derived from its own database name,
+// so one install's boot sweep never drops another install's running drill.
+function installTag(liveName) {
+  return require('crypto').createHash('sha256').update(String(liveName || '')).digest('hex').slice(0, 8);
+}
+
+function drillPrefixFor(liveName) {
+  return `${DRILL_PREFIX}${installTag(liveName)}_`;
+}
+
+function drillDatabaseName(verificationId, liveName) {
   const id = String(verificationId).replace(/[^0-9]/g, '');
   if (!id) throw new Error('A restore drill needs a numeric verification id');
-  return `${DRILL_PREFIX}${id}`;
+  return `${drillPrefixFor(liveName)}${id}`;
 }
 
 function assertDrillDatabaseName(name, liveName) {
@@ -30,4 +41,4 @@ function assertDrillDatabaseName(name, liveName) {
   return name;
 }
 
-module.exports = { DRILL_PREFIX, DRILL_NAME_RE, DRILL_TEMP_PREFIX, drillDatabaseName, assertDrillDatabaseName };
+module.exports = { DRILL_PREFIX, DRILL_NAME_RE, DRILL_TEMP_PREFIX, drillDatabaseName, drillPrefixFor, assertDrillDatabaseName };

@@ -3062,6 +3062,8 @@
       "disabled": "Les tests de restauration automatiques sont désactivés dans Configuration. Les sauvegardes ne sont testées que si vous lancez un test ici.",
       "empty": "Aucun test de restauration n'a encore été exécuté.",
       "fullCheck": "empreinte de chaque fichier",
+      "scheduleSummary": "Planification de la vérification : {{cron}} · échantillon d'autres fichiers par exécution : {{percent}} %",
+      "sampled": "{{percent}} % des autres fichiers échantillonnés",
       "when": "Quand",
       "tested": "Testé",
       "triggeredBy": "Déclencheur",
@@ -3111,7 +3113,8 @@
         "not_standalone": "Cette sauvegarde ne peut pas être restaurée seule ; elle n'a donc pas été restaurée à titre de test.",
         "no_manifest": "Cette sauvegarde n'a pas de manifeste ; son contenu n'a donc pas pu être vérifié.",
         "interrupted": "Le test a été interrompu avant la fin, par exemple par un redémarrage du serveur.",
-        "no_database_dump": "Cette sauvegarde ne contient pas de dump de la base de données ; il n'y avait donc rien à restaurer à titre de test."
+        "no_database_dump": "Cette sauvegarde ne contient pas de dump de la base de données ; il n'y avait donc rien à restaurer à titre de test.",
+        "legacy_manifest": "Cette sauvegarde date d'avant la signature des manifestes : ses sommes de contrôle ne sont pas fiables et elle n'a pas été testée. Les nouvelles sauvegardes sont signées et testées."
       },
       "badge": {
         "hint": "Test de restauration : indique si cette sauvegarde a été vérifiée et restaurée à titre de test dans une base jetable.",

@@ -689,7 +689,7 @@
       "ok": "Ein aktuelles Backup hat seinen Wiederherstellungstest bestanden.",
       "stale": "Kein bestandener Wiederherstellungstest in den letzten {{days}} Tagen.",
       "none": "Bisher hat noch kein Wiederherstellungstest bestanden.",
-      "failed": "Der letzte Wiederherstellungstest ist fehlgeschlagen. Das Backup ist möglicherweise nicht wiederherstellbar.",
+      "failed": "Das neueste Backup hat den Wiederherstellungstest nicht bestanden. Es ist möglicherweise nicht wiederherstellbar.",
       "running": "Ein Wiederherstellungstest läuft.",
       "lastPassed": "Zuletzt bestanden: {{when}}",
       "neverPassed": "Kein bestandener Wiederherstellungstest vorhanden.",
@@ -1423,6 +1423,8 @@
       "disabled": "Automatische Wiederherstellungstests sind unter Konfiguration ausgeschaltet. Backups werden nur getestet, wenn Sie hier einen Test starten.",
       "empty": "Es wurde noch kein Wiederherstellungstest ausgeführt.",
       "fullCheck": "jede Datei gehasht",
+      "scheduleSummary": "Zeitplan der Nachprüfung: {{cron}} · Stichprobe weiterer Dateien pro Lauf: {{percent}} %",
+      "sampled": "{{percent}} % der weiteren Dateien stichprobenartig geprüft",
       "when": "Wann",
       "tested": "Getestet",
       "triggeredBy": "Auslöser",
@@ -1472,7 +1474,8 @@
         "not_standalone": "Dieses Backup lässt sich nicht für sich allein wiederherstellen und wurde daher nicht testweise wiederhergestellt.",
         "no_manifest": "Dieses Backup hat kein Manifest, daher konnte sein Inhalt nicht geprüft werden.",
         "interrupted": "Der Test wurde vor dem Abschluss unterbrochen, zum Beispiel durch einen Neustart des Servers.",
-        "no_database_dump": "Dieses Backup enthält keinen Datenbank-Dump, daher gab es nichts testweise wiederherzustellen."
+        "no_database_dump": "Dieses Backup enthält keinen Datenbank-Dump, daher gab es nichts testweise wiederherzustellen.",
+        "legacy_manifest": "Dieses Backup wurde erstellt, bevor Backup-Manifeste signiert wurden. Seinen Prüfsummen ist daher nicht zu trauen, und es wurde nicht getestet. Neue Backups werden signiert und getestet."
       },
       "badge": {
         "hint": "Wiederherstellungstest: ob dieses Backup geprüft und testweise in eine Wegwerf-Datenbank wiederhergestellt wurde.",
@@ -1784,7 +1787,10 @@
         "customCron": "Cron-Ausdruck",
         "customCronHelp": "Geben Sie einen gültigen Cron-Ausdruck ein (z.B. 0 3 * * *)",
         "retentionCount": "Aufzubewahrende Wiederherstellungspunkte",
-        "retentionCountHelp": "Vollständige Wiederherstellungspunkte, die an einem lokalen oder S3-Ziel aufbewahrt werden. Ältere werden nach jedem erfolgreichen Backup gelöscht. 0 behält alle."
+        "retentionCountHelp": "Vollständige Wiederherstellungspunkte, die an einem lokalen oder S3-Ziel aufbewahrt werden. Ältere werden nach jedem erfolgreichen Backup gelöscht. 0 behält alle.",
+        "retentionMonthlyCount": "Monatliche Wiederherstellungspunkte",
+        "retentionMonthlyCountHelp": "Behält zusätzlich zur Anzahl oben den ersten Wiederherstellungspunkt jedes der letzten N Kalendermonate. Beispiel: Bei täglichem Backup, 7 oben und 6 hier bleiben die letzten 7 Tage plus das erste Backup jedes der letzten 6 Monate. 0 behält keine zusätzlichen. Wie die Einstellung oben gilt das für lokale und S3-Ziele; rsync-Ziele werden nie bereinigt.",
+        "retentionMonthlyInvalid": "Monatliche Wiederherstellungspunkte müssen eine ganze Zahl zwischen 0 und 120 sein"
       },
       "whatToBackup": {
         "title": "Was soll gesichert werden",

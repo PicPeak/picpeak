@@ -1,10 +1,15 @@
 const path = require('path');
-const { assertDrillDatabaseName, drillDatabaseName } = require('../../src/utils/drillDatabase');
+const { assertDrillDatabaseName, drillDatabaseName, drillPrefixFor } = require('../../src/utils/drillDatabase');
 
 describe('restore-drill database guard', () => {
-  it('builds drill names from the verification id only', () => {
-    expect(drillDatabaseName(42)).toBe('picpeak_drill_42');
-    expect(() => drillDatabaseName('x')).toThrow();
+  it('builds drill names from the install and the verification id', () => {
+    const name = drillDatabaseName(42, 'picpeak');
+    expect(name).toMatch(/^picpeak_drill_[0-9a-f]{8}_42$/);
+    expect(assertDrillDatabaseName(name, 'picpeak')).toBe(name);
+    // Another install on the same server gets another prefix.
+    expect(drillDatabaseName(42, 'picpeak_beta')).not.toBe(name);
+    expect(drillPrefixFor('picpeak_beta')).not.toBe(drillPrefixFor('picpeak'));
+    expect(() => drillDatabaseName('x', 'picpeak')).toThrow();
   });
 
   it('refuses anything without the drill prefix', () => {
@@ -69,5 +74,49 @@ describe('file selection', () => {
     expect(overallStatus([{ result: 'passed' }, { result: 'skipped' }])).toBe('passed');
     expect(overallStatus([{ result: 'passed' }, { result: 'warning' }])).toBe('warning');
     expect(overallStatus([{ result: 'warning' }, { result: 'failed' }])).toBe('failed');
+  });
+});
+
+describe('tiered retention selection', () => {
+  const { selectRetainedRuns } = require('../../src/services/backupService');
+  // Daily runs, newest first, ids counting up with time.
+  const daily = (fromIso, days) => Array.from({ length: days }, (_, i) => {
+    const at = new Date(new Date(fromIso).getTime() + i * 24 * 3600 * 1000);
+    return { id: i + 1, completed_at: at.toISOString() };
+  }).reverse();
+
+  it('keeps only the newest N when no monthly points are asked for, exactly as before', () => {
+    const runs = daily('2026-06-01T02:00:00Z', 120);
+    expect([...selectRetainedRuns(runs, { keep: 7, now: new Date('2026-09-28T12:00:00Z') })].sort((a, b) => a - b))
+      .toEqual(runs.slice(0, 7).map((r) => r.id).sort((a, b) => a - b));
+  });
+
+  it('adds the first backup of each of the last M calendar months, this month included', () => {
+    const runs = daily('2026-06-01T02:00:00Z', 120); // 1 Jun .. 28 Sep
+    const kept = selectRetainedRuns(runs, { keep: 7, monthly: 6, now: new Date('2026-09-28T12:00:00Z') });
+    const byId = new Map(runs.map((r) => [r.id, r.completed_at.slice(0, 10)]));
+    const keptDates = [...kept].map((id) => byId.get(id)).sort();
+    // Sep, Aug, Jul, Jun have backups; May and Apr have none and add nothing.
+    expect(keptDates).toEqual(expect.arrayContaining(['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01']));
+    expect(kept.size).toBe(7 + 4);
+  });
+
+  it('crosses a year boundary', () => {
+    const runs = daily('2025-11-20T02:00:00Z', 60); // 20 Nov 2025 .. 18 Jan 2026
+    const kept = selectRetainedRuns(runs, { keep: 1, monthly: 3, now: new Date('2026-01-18T12:00:00Z') });
+    const dates = [...kept].map((id) => runs.find((r) => r.id === id).completed_at.slice(0, 10)).sort();
+    expect(dates).toEqual(['2025-11-20', '2025-12-01', '2026-01-01', '2026-01-18']);
+  });
+
+  it('decides the month in the instance time zone', () => {
+    // 31 Mar 23:30 UTC is already 1 Apr in Zurich.
+    const runs = [
+      { id: 3, completed_at: '2026-04-02T01:00:00Z' },
+      { id: 2, completed_at: '2026-03-31T23:30:00Z' },
+      { id: 1, completed_at: '2026-03-15T01:00:00Z' },
+    ];
+    const now = new Date('2026-04-10T12:00:00Z');
+    expect([...selectRetainedRuns(runs, { keep: 0, monthly: 1, now, timeZone: 'UTC' })]).toEqual([3]);
+    expect([...selectRetainedRuns(runs, { keep: 0, monthly: 1, now, timeZone: 'Europe/Zurich' })]).toEqual([2]);
   });
 });

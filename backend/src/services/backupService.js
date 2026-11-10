@@ -1390,25 +1390,70 @@ const DEFAULT_RETENTION_COUNT = 7;
 // remove the older ones whole, with their history rows. 0 keeps everything.
 // Legacy trees and anything not shaped like a standalone snapshot are never
 // candidates, and a failure here never fails the backup that just succeeded.
+/**
+ * Which restore points retention keeps: the newest `keep` runs, plus, for
+ * each of the last `monthly` calendar months (this month included, in the
+ * instance time zone), the first run completed in that month. A month with
+ * no run keeps nothing extra. `runs` are this destination's standalone runs,
+ * newest first: [{ id, completed_at }]. Pure, so the tests can pin it.
+ */
+function selectRetainedRuns(runs, { keep, monthly = 0, now = new Date(), timeZone = 'UTC' }) {
+  const { dateInZone } = require('../utils/galleryExpiry');
+  const { toTimestamp } = require('../utils/dateNormalize');
+  const kept = new Set(runs.slice(0, keep).map((run) => run.id));
+  if (monthly > 0) {
+    const months = new Set();
+    let [y, m] = dateInZone(now, timeZone).split('-').map(Number);
+    for (let i = 0; i < monthly; i += 1) {
+      months.add(`${y}-${String(m).padStart(2, '0')}`);
+      m -= 1;
+      if (m === 0) { m = 12; y -= 1; }
+    }
+    const firstOfMonth = new Map();
+    for (const run of runs) {
+      const at = toTimestamp(run.completed_at);
+      if (at === null || at === undefined || Number.isNaN(at)) continue;
+      const month = dateInZone(new Date(at), timeZone).slice(0, 7);
+      if (!months.has(month)) continue;
+      const seen = firstOfMonth.get(month);
+      if (!seen || at < seen.at || (at === seen.at && run.id < seen.id)) firstOfMonth.set(month, { id: run.id, at });
+    }
+    for (const { id } of firstOfMonth.values()) kept.add(id);
+  }
+  return kept;
+}
+
 async function pruneStandaloneSnapshots(config, destinationType, currentRunId, s3Client) {
   try {
     const raw = config.backup_retention_count;
     const keep = raw === undefined || raw === null || raw === '' ? DEFAULT_RETENTION_COUNT : Number(raw);
     if (!Number.isInteger(keep) || keep <= 0) return;
+    const rawMonthly = Number(config.backup_retention_monthly_count);
+    const monthly = Number.isInteger(rawMonthly) && rawMonthly > 0 ? Math.min(rawMonthly, 120) : 0;
 
-    const runs = await db('backup_runs')
+    const rows = await db('backup_runs')
       .where('status', 'completed')
       .whereNotNull('manifest_path')
       .orderBy('id', 'desc')
-      .select('id', 'manifest_path', 'statistics');
-    let kept = 0;
-    for (const run of runs) {
+      .select('id', 'manifest_path', 'statistics', 'completed_at');
+    const runs = [];
+    for (const run of rows) {
       const snapshot = standaloneSnapshotOfRun(config, run);
-      if (!snapshot || snapshot.type !== destinationType) continue;
-      if (run.id === currentRunId || kept < keep) {
-        kept += 1;
+      if (snapshot && snapshot.type === destinationType) runs.push({ ...run, snapshot });
+    }
+    const timeZone = monthly > 0 ? await require('../utils/galleryExpiry').getInstanceTimeZone() : 'UTC';
+    const kept = selectRetainedRuns(runs, { keep, monthly, timeZone });
+    kept.add(currentRunId);
+    // A restore point being tested right now stays until the next run.
+    const underTest = await require('./backupVerificationService').runsUnderTest().catch(() => new Set());
+
+    for (const run of runs) {
+      if (kept.has(run.id)) continue;
+      if (underTest.has(Number(run.id))) {
+        logger.info(`Backup retention left run ${run.id} for now: a restore test of it is running`);
         continue;
       }
+      const { snapshot } = run;
       try {
         if (snapshot.type === 's3') {
           await removeS3Snapshot(s3Client, snapshot.prefix);
@@ -1418,6 +1463,7 @@ async function pruneStandaloneSnapshots(config, destinationType, currentRunId, s
         }
         await db.transaction(async (trx) => {
           await trx('backup_manifest').where('backup_run_id', run.id).del();
+          await deleteVerificationsOf(trx, { backupRunIds: [run.id] });
           await trx('backup_runs').where('parent_backup_id', run.id).update({ parent_backup_id: null });
           await trx('backup_runs').where('id', run.id).del();
         });
@@ -1431,6 +1477,17 @@ async function pruneStandaloneSnapshots(config, destinationType, currentRunId, s
   }
 }
 
+/**
+ * A removed run takes its restore-test rows with it: they describe a restore
+ * point that no longer exists. Explicit, because SQLite does not enforce the
+ * ON DELETE CASCADE the migration declares.
+ */
+async function deleteVerificationsOf(knex, { backupRunIds = [], databaseBackupRunIds = [] }) {
+  if (!(await knex.schema.hasTable('backup_verifications'))) return;
+  if (backupRunIds.length) await knex('backup_verifications').whereIn('backup_run_id', backupRunIds).del();
+  if (databaseBackupRunIds.length) await knex('backup_verifications').whereIn('database_backup_run_id', databaseBackupRunIds).del();
+}
+
 async function runBackupInternal(isManual = false) {
   if (isRunning) {
     logger.warn('Backup already running, skipping');
@@ -1442,6 +1499,8 @@ async function runBackupInternal(isManual = false) {
   let runId = null;
   let recoveryStage = null;
   let completedRunId = null;
+  // A backup may prune the restore point a test is reading; the test yields.
+  require('./backupVerificationService').yieldTo('backup');
 
   try {
     const config = await resolveConfigWithFallback();
@@ -1956,6 +2015,14 @@ async function cleanupOldBackupRuns(retentionDays = 30) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - retentionDays);
 
+    // Their restore-test rows go with them (SQLite does not enforce the
+    // cascade). Failing that only leaves rows naming a run that is gone.
+    try {
+      const old = await db('backup_runs').where('started_at', '<', cutoff).select('id');
+      await deleteVerificationsOf(db, { backupRunIds: old.map((row) => row.id) });
+    } catch (error) {
+      logger.warn(`Could not remove the restore tests of old backup runs: ${error.message}`);
+    }
     const deleted = await db('backup_runs')
       .where('started_at', '<', cutoff)
       .delete();
@@ -2286,5 +2353,7 @@ service.normalizeBoolean = normalizeBoolean;
 service.buildRsyncArgs = buildRsyncArgs;
 service.resolveScheduleCron = resolveScheduleCron;
 service.getNextScheduledRun = getNextScheduledRun;
+service.selectRetainedRuns = selectRetainedRuns;
+service.deleteVerificationsOf = deleteVerificationsOf;
 
 module.exports = service;

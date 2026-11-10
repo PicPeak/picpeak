@@ -22,6 +22,8 @@ jest.mock('../../src/services/databaseBackup', () => ({
 jest.mock('../../src/services/backupVerificationService', () => ({
   queueAfterBackup: jest.fn(),
   getHealth: jest.fn().mockResolvedValue(null),
+  yieldTo: jest.fn(),
+  runsUnderTest: jest.fn().mockResolvedValue(new Set()),
 }));
 // Same deal for the rsync path's lazy requires.
 jest.mock('../../src/utils/safeExec', () => ({

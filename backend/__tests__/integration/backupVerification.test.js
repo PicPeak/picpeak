@@ -264,14 +264,15 @@ describe('backup restore tests', () => {
   });
 
   it('reports health from the latest results: failed beats an older pass, and a failure makes the backup unhealthy', async () => {
+    const newest = await freshDumpAndBackup();
     await setFlag(true);
     await db('backup_verifications').insert({
-      level: 'drill', status: 'passed', checks: '[]', triggered_by: 'schedule',
+      backup_run_id: newest.id, level: 'drill', status: 'passed', checks: '[]', triggered_by: 'schedule',
       started_at: new Date().toISOString(), completed_at: new Date().toISOString(),
     });
     expect((await verification.getHealth()).health).toBe('ok');
     await db('backup_verifications').insert({
-      level: 'deep', status: 'failed', checks: '[]', triggered_by: 'schedule',
+      backup_run_id: newest.id, level: 'deep', status: 'failed', checks: '[]', triggered_by: 'schedule',
       started_at: new Date().toISOString(), completed_at: new Date().toISOString(),
     });
     expect((await verification.getHealth()).health).toBe('failed');
@@ -301,4 +302,115 @@ describe('backup restore tests', () => {
     expect((await db('backup_verifications').first()).skip_reason).toBe('interrupted');
     await expect(fs.stat(path.join(storage, 'tmp', 'backup-verify-999'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
+
+  it('takes over a lease this host held under a pid that is gone, and sweeps on boot', async () => {
+    await db('backup_verifications').insert({
+      level: 'deep', status: 'running', checks: '[]', triggered_by: 'schedule', started_at: new Date().toISOString(),
+    });
+    const jobState = require('../../src/services/maintenanceJobState');
+    await jobState.ensure('backup_verification');
+    await db('maintenance_jobs').where({ job_name: 'backup_verification' }).update({
+      is_running: true, heartbeat_at: new Date().toISOString(), owner: `${require('os').hostname()}:999999`, claim_token: 'dead',
+    });
+
+    await verification.sweepStale();
+
+    expect((await db('backup_verifications').first()).skip_reason).toBe('interrupted');
+    expect((await jobState.read('backup_verification')).isRunning).toBe(false);
+  });
+
+  it('bases health on the newest restore point: an older failure does not flip it, a newest failure does', async () => {
+    await setFlag(true);
+    const older = await freshDumpAndBackup();
+    const newest = await freshDumpAndBackup();
+    const row = (fields) => db('backup_verifications').insert({
+      level: 'drill', checks: '[]', triggered_by: 'schedule',
+      started_at: new Date().toISOString(), completed_at: new Date().toISOString(), ...fields,
+    });
+    await row({ backup_run_id: newest.id, status: 'passed' });
+    await row({ backup_run_id: older.id, status: 'failed' });
+    expect((await verification.getHealth()).health).toBe('ok');
+    await row({ backup_run_id: newest.id, status: 'failed' });
+    await row({ backup_run_id: older.id, status: 'passed' });
+    expect((await verification.getHealth()).health).toBe('failed');
+  });
+
+  it('skips a backup whose manifest predates signing instead of failing it', async () => {
+    const run = await freshDumpAndBackup();
+    const legacy = jest.spyOn(backupService, 'validateBackupManifest')
+      .mockResolvedValue({ valid: false, error: 'unsigned', authentication: { authenticated: false, state: 'legacy' } });
+    try {
+      const row = await verify({ backupRunId: run.id });
+      expect(row).toMatchObject({ status: 'skipped', skip_reason: 'legacy_manifest' });
+      expect(resultOf(row, 'manifest_signature')).toBe('warning');
+    } finally {
+      legacy.mockRestore();
+    }
+  });
+
+  it('answers a second "run now" with busy instead of starting a second test', async () => {
+    const run = await freshDumpAndBackup();
+    const [first, second] = await Promise.allSettled([
+      verification.startNow({ backupRunId: run.id }),
+      verification.startNow({ backupRunId: run.id }),
+    ]);
+    expect([first.status, second.status].sort()).toEqual(['fulfilled', 'rejected']);
+    const rejected = first.status === 'rejected' ? first : second;
+    expect(rejected.reason.code).toBe('VERIFICATION_BUSY');
+    const id = (first.status === 'fulfilled' ? first : second).value;
+    const row = await finished({ id });
+    expect(row.status).toBe('passed');
+    expect(await db('backup_verifications').count({ c: '*' }).then((r) => Number(r[0].c))).toBe(1);
+  });
+
+  it('yields to a backup that starts mid-test, ending as skipped rather than failed', async () => {
+    const run = await freshDumpAndBackup();
+    const id = await verification.startNow({ backupRunId: run.id });
+    for (let i = 0; i < 300; i += 1) {
+      const cur = verification._internal.current();
+      if (cur && cur.children.size > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    verification.yieldTo('backup');
+    const row = await finished({ id });
+    expect(row).toMatchObject({ status: 'skipped', skip_reason: 'busy' });
+  });
+
+  it('drops queued tests when the feature is switched off, and when a portable restore closes admission', async () => {
+    const run = await freshDumpAndBackup();
+    const applicationWork = require('../../src/services/activeApplicationWork');
+    verification._internal.queue.push({ target: { backupRunId: run.id }, trigger: 'backup' });
+    await setFlag(false);
+    await verification._internal.drainNow();
+    expect(verification._internal.queue).toHaveLength(0);
+
+    await setFlag(true);
+    verification._internal.queue.push({ target: { backupRunId: run.id }, trigger: 'backup' });
+    applicationWork.closeAdmission();
+    try {
+      await verification._internal.drainNow();
+    } finally {
+      applicationWork.openAdmission();
+    }
+    expect(verification._internal.queue).toHaveLength(0);
+    expect(await db('backup_verifications')).toEqual([]);
+  });
+
+  it('sends one mail for a scheduled round with several failures', async () => {
+    const a = await freshDumpAndBackup();
+    const b = await freshDumpAndBackup();
+    await setFlag(true);
+    for (const run of [a, b]) {
+      await fs.writeFile(path.join(stats(run).snapshot_path, 'business-docs/invoice/2026-001.pdf'), 'bit rot');
+    }
+    const admins = await db('admin_users').where({ is_active: true }).count({ c: '*' }).then((r) => Number(r[0].c));
+    await db('email_queue').del();
+
+    await verification.runScheduled();
+
+    const failed = await db('backup_verifications').where({ status: 'failed' });
+    expect(failed.length).toBeGreaterThanOrEqual(2);
+    expect(await db('email_queue').where({ email_type: 'backup_verification_failed' })).toHaveLength(admins);
+  });
 });
+

@@ -18,6 +18,7 @@ import { AlertCircle, RefreshCw, Trash2, CheckCircle, Clock, DatabaseBackup, Fil
 import { Button, Card, Loading } from '../../components/common';
 import { DependencyStatusCard } from '../../components/admin/DependencyStatusCard';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
+import { usePermissions } from '../../contexts/PermissionsContext';
 import { useMutationWithToast } from '../../hooks';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { systemHealthService, type StuckEmail } from '../../services/systemHealth.service';
@@ -35,6 +36,10 @@ const RESTORE_TEST_TONE: Record<VerificationHealth, string> = {
 
 export const SystemHealthPage: React.FC = () => {
   const { t } = useTranslation();
+  // The Backup tab opens for settings.view or backup.view; System health
+  // also for system.view alone.
+  const { hasAnyPermission } = usePermissions();
+  const canOpenBackup = hasAnyPermission(['settings.view', 'backup.view']);
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   const { flags } = useFeatureFlags();
 
@@ -315,7 +320,7 @@ export const SystemHealthPage: React.FC = () => {
                   ok: t('systemHealth.backupRestoreTest.ok', 'A recent backup passed its restore test.'),
                   stale: t('systemHealth.backupRestoreTest.stale', 'No passed restore test in the last {{days}} days.', { days: data.backupVerification.staleDays }),
                   none: t('systemHealth.backupRestoreTest.none', 'No restore test has passed yet.'),
-                  failed: t('systemHealth.backupRestoreTest.failed', 'The latest restore test failed. The backup may not be restorable.'),
+                  failed: t('systemHealth.backupRestoreTest.failed', 'The newest backup failed its restore test. It may not be restorable.'),
                   running: t('systemHealth.backupRestoreTest.running', 'A restore test is running.'),
                 }[data.backupVerification.health]}
               </p>
@@ -324,12 +329,14 @@ export const SystemHealthPage: React.FC = () => {
                   ? t('systemHealth.backupRestoreTest.lastPassed', 'Last passed: {{when}}', { when: fmtDateTime(data.backupVerification.lastPassedAt) })
                   : t('systemHealth.backupRestoreTest.neverPassed', 'No passed restore test on record.')}
               </p>
-              <Link
-                to="/admin/settings?tab=backup&backupTab=integrity"
-                className="inline-block mt-2 text-sm font-medium text-accent hover:underline"
-              >
-                {t('systemHealth.backupRestoreTest.open', 'Open restore test')}
-              </Link>
+              {canOpenBackup && (
+                <Link
+                  to="/admin/settings?tab=backup&backupTab=integrity"
+                  className="inline-block mt-2 text-sm font-medium text-accent hover:underline"
+                >
+                  {t('systemHealth.backupRestoreTest.open', 'Open restore test')}
+                </Link>
+              )}
             </div>
           </div>
         </Card>

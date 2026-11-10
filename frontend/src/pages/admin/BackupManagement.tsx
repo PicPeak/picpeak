@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   HardDrive,
   Settings,
@@ -47,6 +48,15 @@ const initialTab = (): TabId => {
 
 export const BackupManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+  // Drop ?backupTab= once read, so a reload or Back after switching tabs
+  // does not jump to the linked tab again.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (!searchParams.has('backupTab')) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('backupTab');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const { t } = useTranslation();
   const { flags } = useFeatureFlags();
   const restoreTestEnabled = flags.backupRestoreTest;

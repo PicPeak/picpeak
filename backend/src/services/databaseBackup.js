@@ -606,6 +606,8 @@ class DatabaseBackupService {
     this.isRunning = true;
     const startTime = new Date();
     let backupRun = null;
+    // A restore test running now yields to the backup.
+    require('./backupVerificationService').yieldTo('backup');
     
     try {
       // Get configuration. getBackupConfig() returns the raw
@@ -942,7 +944,9 @@ class DatabaseBackupService {
             await fs.rm(`${backup.file_path}${recoveryFiles.REFERENCES_SUFFIX}`, { force: true });
           }
           
-          // Delete the record
+          // Delete the record, and its restore-test rows (SQLite does not
+          // enforce the cascade).
+          await require('./backupService').deleteVerificationsOf(db, { databaseBackupRunIds: [backup.id] });
           await db('database_backup_runs')
             .where('id', backup.id)
             .delete();
