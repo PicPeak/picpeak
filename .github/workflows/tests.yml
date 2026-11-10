@@ -29,8 +29,9 @@ jobs:
       MEDIA_APT_PACKAGES: build-essential ffmpeg libimage-exiftool-perl sqlite3 postgresql-client
       # S3-compatible store for the backup/restore S3 suites (started below).
       # MinIO no longer publishes images on Docker Hub or quay.io; Chainguard's
-      # free build is pinned by digest. Bump it by pulling
-      # cgr.dev/chainguard/minio:latest and copying its RepoDigest.
+      # free build is pinned by digest. The free tier only promises :latest, so
+      # an old digest can disappear upstream: when "Start MinIO" fails to pull,
+      # pull cgr.dev/chainguard/minio:latest and copy its RepoDigest here.
       MINIO_IMAGE: cgr.dev/chainguard/minio@sha256:fb893e36fc369d41e92f678b17ec27378fa5bf0576aeef7ac15460c13629ab5a
       # The generation suites sign with these fixed keys, so the server's
       # root account uses them and every S3 suite shares one login.
