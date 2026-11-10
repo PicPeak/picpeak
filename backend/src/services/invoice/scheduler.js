@@ -5,6 +5,7 @@ const { db, logActivity } = require('../../database/db');
 const logger = require('../../utils/logger');
 const { getAppSetting } = require('../../utils/appSettings');
 const { ensureInt } = require('../../utils/numericHelpers');
+const { toStoredTimestamp } = require('../../utils/dateNormalize');
 const { queuePaymentCheckEmail } = require('./payments');
 const { sendInvoice } = require('./sending');
 const { auditedUpdate } = require('../accountingHistory');
@@ -31,7 +32,9 @@ async function runScheduledTasks() {
   const ready = await db('invoices')
     .where({ status: 'scheduled' })
     .andWhere(function() {
-      this.whereNotNull('scheduled_send_at').andWhere('scheduled_send_at', '<=', now);
+      // Compared as stored (ISO text): a Date would bind as epoch milliseconds
+      // on SQLite and never match a text value.
+      this.whereNotNull('scheduled_send_at').andWhere('scheduled_send_at', '<=', toStoredTimestamp(now));
     })
     .modify((q) => {
       if (!waitsForGbpRate) return;
@@ -108,7 +111,7 @@ async function runScheduledTasks() {
       await auditedUpdate(db, 'invoices', { id: draft.id }, {
         is_monthly_draft: false,
         issue_date: issueDate,
-        scheduled_send_at: new Date(),
+        scheduled_send_at: toStoredTimestamp(new Date()),
         updated_at: new Date(),
       }, { actor: 'scheduler', source: 'invoice.monthly.issue' });
       try {

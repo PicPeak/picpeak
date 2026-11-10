@@ -4,6 +4,7 @@
 const { logActivity } = require('../../database/db');
 const { adminActivityActor } = require('../../utils/activityActor');
 const { AppError } = require('../../utils/errors');
+const { toStoredTimestamp } = require('../../utils/dateNormalize');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
 const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
@@ -278,7 +279,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
         installment_label: label,
         installment_trigger: inst.trigger,
         status: rowStatus,
-        scheduled_send_at: rowScheduledSendAt,
+        scheduled_send_at: toStoredTimestamp(rowScheduledSendAt),
         issue_date: scheduledSendAt.toISOString().slice(0, 10),
         due_date: dueDate,
         net_amount_minor: slice.net,
@@ -322,7 +323,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
       installment_label: label,
       installment_trigger: inst.trigger,
       status: rowStatus,
-      scheduled_send_at: rowScheduledSendAt,
+      scheduled_send_at: toStoredTimestamp(rowScheduledSendAt),
       net_amount_minor: slice.net,
       vat_rate: ensureNumber(sample.vat_rate, 0),
       vat_amount_minor: slice.vat,

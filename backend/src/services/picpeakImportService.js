@@ -27,6 +27,7 @@ const { PICPEAK_FORMAT_VERSION } = require('./picpeakExportService');
 const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
 const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
 const { isoSqliteCostTimestamps, COST_TIMESTAMP_TABLES } = require('../utils/costTimestamps');
+const { isoSqliteInvoiceSendAt } = require('../utils/invoiceSendAt');
 const { rowBatches } = require('./portableImportRows');
 const {
   dedupeExternalPhotos,
@@ -53,6 +54,11 @@ const isPostgres = () => knexConfig.client === 'pg';
 function migrationOrder(name) {
   const m = String(name || '').match(/^(\d+)/);
   return m ? parseInt(m[1], 10) : -1;
+}
+
+function archivePredates(latestMigration, number) {
+  const order = migrationOrder(latestMigration);
+  return order < 0 || order < number;
 }
 
 function archiveLimitError(message, statusCode) {
@@ -538,7 +544,7 @@ const SEED_ONLY_TABLES = new Set([
 // session_replication_role=replica on the trx connection, reset before commit;
 // sqlite: defer_foreign_keys so checks run at commit). knex_migrations is never
 // in the data set, so the target's schema/migration state is left intact.
-async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine = false, allTables, executor } = {}) {
+async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine = false, allTables, executor, archiveLatestMigration = null } = {}) {
   await require('./portableRestoreWorker').assertWorkerAuthority(executor);
   const replace = async trx => {
     if (isPostgres()) {
@@ -663,6 +669,15 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       if (table === 'events') await canonicaliseSqliteExpiresAt(trx);
       // And cost timestamps stored as epoch ms, which migration 337 rewrote.
       if (COST_TIMESTAMP_TABLES.includes(table)) await isoSqliteCostTimestamps(trx, [table]);
+      // And invoice send dates in the shapes migration 356 rewrote, for an
+      // archive made before it (an unknown level counts as before). A newer
+      // archive's rows are already canonical, and its scheduled invoices
+      // restore as they were. Its hold writes history rows, so
+      // accounting_change_history must load before invoices: it does because
+      // the export lists tables by name (picpeakExportService listDataTables).
+      if (table === 'invoices' && archivePredates(archiveLatestMigration, 356)) {
+        await isoSqliteInvoiceSendAt(trx, { actor: 'import' });
+      }
     }
 
     // Rebuild only missing legacy accounting from the RESTORED rows in this
@@ -759,6 +774,7 @@ module.exports = {
   importInMaintenanceWorker,
   recoverInMaintenanceWorker,
   replaceAllTables,
+  archivePredates,
   detectExternalMedia,
   jsonColumnsFor,
   serialiseJsonColumns,
