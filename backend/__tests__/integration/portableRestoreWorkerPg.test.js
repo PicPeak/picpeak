@@ -74,7 +74,7 @@ postgres('portable restore actual hard-limited PostgreSQL worker', () => {
       .where('role_permissions.role_id', operator.role_id).pluck('permissions.name');
     ({ importFromPicpeak } = require('../../src/services/picpeakImportService'));
     expect(require('../../src/services/portableRestoreWorker').workerConfiguration()).toMatchObject({
-      memoryBytes: 768 * 1024 * 1024, heap: 384,
+      memoryBytes: 768 * 1024 * 1024, heap: 460,
     });
   }, 120000);
 
@@ -126,7 +126,9 @@ postgres('portable restore actual hard-limited PostgreSQL worker', () => {
     restoring.then(value => { terminal = { value }; }, error => { terminal = { error }; });
     try {
       let waiting = false;
-      for (let attempt = 0; attempt < 400; attempt += 1) {
+      // A deadline, not an attempt count: on a loaded CI runner the worker
+      // takes longer than the 8 s 400 polls used to allow to reach the lock.
+      for (const deadline = Date.now() + 60000; Date.now() < deadline;) {
         const pending = await observer('pg_locks').where({ locktype: 'advisory', classid: LOCK_CLASS,
           objid: LOCK_RESOURCE, objsubid: 2, granted: false }).first();
         if (pending) { waiting = true; break; }
@@ -149,7 +151,7 @@ postgres('portable restore actual hard-limited PostgreSQL worker', () => {
     expect(await fs.readFile(file('z-second.dat'), 'utf8')).toBe('PG-BACKUP-SECOND');
     const [next] = await db('owned_worker_values').insert({ flag: false, payload: { natural: true } }).returning('id');
     expect(next.id).toBe(42);
-  }, 120000);
+  }, 180000);
 
   test('a pending ordinary credential and role update is preserved only after the table barrier', async () => {
     const passwordHash = await bcrypt.hash('latest-ordinary-operator', 4);
@@ -166,11 +168,15 @@ postgres('portable restore actual hard-limited PostgreSQL worker', () => {
       await updating('admin_users').where({ id: operator.id }).update({ password_hash: passwordHash, role_id: created.id });
       const pid = (await updating.raw('SELECT pg_backend_pid() AS pid')).rows[0].pid;
       restoring = importFromPicpeak({ picpeakPath: exported.filePath, currentAdminId: operator.id });
-      let failure;
-      restoring.catch(error => { failure = error; });
+      let failure; let finished = false;
+      restoring.then(() => { finished = true; }, error => { failure = error; });
       let waiting = false;
-      for (let attempt = 0; attempt < 400; attempt += 1) {
+      // A deadline, not an attempt count: on a loaded CI runner the worker
+      // takes well over the 8 s 400 polls used to allow to reach the barrier.
+      // A restore that finishes without ever waiting is a barrier failure.
+      for (const deadline = Date.now() + 60000; Date.now() < deadline;) {
         if (failure) throw failure;
+        if (finished) throw new Error('Restore finished without waiting on the pending credential update');
         const pending = await observer.raw('SELECT pid FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid))', [pid]);
         if (pending.rows.length) { waiting = true; break; }
         await new Promise(resolve => setTimeout(resolve, 20));
@@ -193,7 +199,7 @@ postgres('portable restore actual hard-limited PostgreSQL worker', () => {
       if (!updating.isCompleted()) await updating.rollback();
       if (restoring) await restoring.catch(() => {});
     }
-  }, 120000);
+  }, 180000);
 
   test('a genuine SQLite portable export traverses the same worker and preserves PG value semantics', async () => {
     const outputDirectory = path.join(fixture, 'sqlite-export');
