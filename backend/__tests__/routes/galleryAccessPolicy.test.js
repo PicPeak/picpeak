@@ -144,10 +144,15 @@ it('keeps a gallery from a booking closed until it is paid, without ending the s
   // session and shows "opens once the invoice is paid", not the login.
   const session = await get(`/api/auth/session?slug=${slug}`, bearer);
   expect(session.body).toMatchObject({ valid: false, code: 'GALLERY_AWAITING_PAYMENT' });
-  // With client booking switched off nobody could open it by hand: no lock.
+  // Switched off, the lock holds: the Bookings page stays open to unlock it.
   await setFlag(false);
+  try {
+    await expectDirect(bearer, 403);
+  } finally {
+    await db('events').where({ id: eventId }).update({ payment_lock: null });
+    await setFlag(true);
+  }
   await expectDirect(bearer, 200);
-  await db('events').where({ id: eventId }).update({ payment_lock: null });
 });
 
 it('blocks share links while disabled and restores them unchanged', async () => {

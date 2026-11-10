@@ -29,7 +29,6 @@ const { toTimestamp } = require('../utils/dateNormalize');
 const { withTrustedCrmAccess } = require('../database/crmAccess');
 
 const { hasColumnCached } = require('../utils/schemaCache');
-const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 
 const DEPOSIT_TYPES = ['none', 'percent', 'fixed'];
 const GALLERY_UNLOCK = ['full_payment', 'deposit', 'off'];
@@ -49,6 +48,14 @@ const STRIPE_MINIMUM_MINOR = {
 };
 const stripeMinimumMinor = (currency) => STRIPE_MINIMUM_MINOR[String(currency || '').toUpperCase()] || 0;
 
+// Currencies Stripe counts in whole units. The app keeps every currency in
+// hundredths, so these are divided by 100 on the way to Stripe and
+// multiplied on the way back; their deposits are whole units.
+const STRIPE_ZERO_DECIMAL = new Set(['BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF']);
+const zeroDecimal = (currency) => STRIPE_ZERO_DECIMAL.has(String(currency || '').toUpperCase());
+const toStripeAmount = (minor, currency) => (zeroDecimal(currency) ? Math.round(Number(minor) / 100) : Number(minor));
+const fromStripeAmount = (amount, currency) => (zeroDecimal(currency) ? Number(amount) * 100 : Number(amount));
+
 /**
  * Deposit in minor units for a service and an estimate; 0 = none. Below
  * Stripe's minimum charge it is raised to the minimum, at most to the
@@ -65,6 +72,9 @@ function depositFor(preset, estimateMinor) {
   } else if (type === 'fixed') {
     deposit = Math.min(total, Math.max(0, Math.round(Number(preset.booking_deposit_minor) || 0)));
   }
+  // Whole units where Stripe charges whole units (JPY): what is charged is
+  // then exactly the deposit, and the amount check holds.
+  if (zeroDecimal(preset.currency)) deposit = Math.round(deposit / 100) * 100;
   if (deposit <= 0) return 0;
   const minimum = stripeMinimumMinor(preset.currency);
   if (deposit >= minimum) return deposit;
@@ -117,7 +127,7 @@ async function startCheckout(request, statusToken) {
         quantity: 1,
         price_data: {
           currency: String(request.currency || 'CHF').toLowerCase(),
-          unit_amount: Number(request.deposit_minor),
+          unit_amount: toStripeAmount(request.deposit_minor, request.currency),
           product_data: { name: `Deposit: ${request.service_name}` },
         },
       }],
@@ -163,7 +173,8 @@ const LATE_STATUSES = ['expired', 'awaiting_payment'];
  */
 async function reconcileSession(request, session) {
   const paid = session.payment_status === 'paid' && session.status === 'complete';
-  const amountOk = Number(session.amount_total) === Number(request.deposit_minor)
+  const charged = fromStripeAmount(session.amount_total, request.currency);
+  const amountOk = charged === Number(request.deposit_minor)
     && String(session.currency || '').toUpperCase() === String(request.currency || '').toUpperCase();
   const now = new Date();
   if (paid && amountOk) {
@@ -174,7 +185,7 @@ async function reconcileSession(request, session) {
       deposit_status: 'paid',
       deposit_paid_at: ts(now),
       payment_intent_id: intentOf(session),
-      deposit_received_minor: Number(session.amount_total),
+      deposit_received_minor: charged,
       hold_expires_at: ts(now.getTime() + settings.hold_hours * 3600000),
       updated_at: ts(now),
     };
@@ -257,7 +268,7 @@ async function reconcileSession(request, session) {
     // Already expired: marked for review, but not put back on the calendar.
     const reviewFields = {
       deposit_status: 'review', deposit_paid_at: ts(now), payment_intent_id: intentOf(session),
-      deposit_received_minor: Number(session.amount_total), updated_at: ts(now),
+      deposit_received_minor: charged, updated_at: ts(now),
     };
     // Only while the hold still runs, as for the right amount: a pending
     // review deposit keeps its time whatever the hold says, so a request
@@ -467,8 +478,9 @@ async function businessDay(instant) {
 /**
  * Whether a deposit still waits for the studio: money came in (paid, under
  * review, disputed, or a refund that failed) and the request is not an
- * accepted one whose deposit is fully booked on invoices. While one does,
- * switching calendarBooking off keeps the admin side open to decide it.
+ * accepted one whose deposit is fully booked on invoices; or a gallery from
+ * a booking is still locked. While one does, switching calendarBooking off
+ * keeps the admin side open to decide it.
  */
 async function depositDecisionsOpen() {
   if (!(await hasColumnCached('booking_requests', 'deposit_status'))) return false;
@@ -476,7 +488,13 @@ async function depositDecisionsOpen() {
     .whereNot((settled) => settled.where({ status: 'accepted', deposit_status: 'paid' })
       .whereRaw('COALESCE(deposit_applied_minor, 0) >= COALESCE(deposit_received_minor, deposit_minor)'))
     .first('id');
-  return Boolean(row);
+  if (row) return true;
+  // A gallery still locked until its deal is paid: the admin may need to
+  // open it by hand. Existence only, so read across owners.
+  if (!(await hasColumnCached('events', 'payment_lock'))) return false;
+  const locked = await withTrustedCrmAccess('booking: locked galleries', () => db('events')
+    .whereNotNull('payment_lock').whereNull('payment_unlocked_at').first('id'));
+  return Boolean(locked);
 }
 
 /**
@@ -552,7 +570,9 @@ async function applyDepositToInvoice(requestId, invoiceId, adminId) {
       capToOpen: true,
     }, adminId));
   } catch (err) {
-    await db('booking_requests').where({ id: requestId, deposit_applied_minor: applied + amountMinor })
+    // Only while the claim still stands: a dispute or refund recorded
+    // meanwhile is not turned back into paid.
+    await db('booking_requests').where({ id: requestId, deposit_applied_minor: applied + amountMinor, deposit_status: 'paid' })
       .update({
         deposit_applied_minor: applied, deposit_invoice_id: request.deposit_invoice_id || null,
         deposit_status: request.deposit_status, updated_at: ts(new Date()),
@@ -640,9 +660,9 @@ async function dealFullyPaid(requestId) {
  */
 async function refreshGalleryLock(event) {
   if (!event || !event.payment_lock || event.payment_unlocked_at) return false;
-  // With client booking switched off nobody can open it by hand (the
-  // Bookings page is gone), so the lock does not apply.
-  if (!(await isFeatureEnabled('calendarBooking'))) return false;
+  // The lock holds with client booking switched off too: the Bookings page
+  // and its unlock stay reachable while a gallery is locked
+  // (depositDecisionsOpen).
   if (!event.payment_lock_request_id || !(await dealFullyPaid(event.payment_lock_request_id))) return true;
   await db('events').where({ id: event.id }).whereNull('payment_unlocked_at')
     .update({ payment_unlocked_at: ts(new Date()) });

@@ -11,5 +11,6 @@ describe('effectiveDeposit', () => {
     expect(effectiveDeposit('fixed', { ...base, estimateMinor: 10000 })).toBe(50);
     expect(effectiveDeposit('fixed', { ...base, estimateMinor: 10000, minimumMinor: 0 })).toBe(20);
     expect(effectiveDeposit('none', { ...base, estimateMinor: 10000 })).toBe(0);
+    expect(effectiveDeposit('percent', { percent: 25, fixedMinor: 0, estimateMinor: 1234567, minimumMinor: 5000, currency: 'JPY' })).toBe(308600);
   });
 });

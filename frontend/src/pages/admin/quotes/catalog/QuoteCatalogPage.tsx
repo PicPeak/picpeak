@@ -178,7 +178,7 @@ const ServicesTab: React.FC = () => {
   // The deposit charged at the base price (one unit), as the booking computes it.
   const baseMinor = form && Number.isFinite(form.unitPrice) ? Math.round(form.unitPrice * 100 * (form.quantityDefault || 1)) : NaN;
   const depositAtBase = form && Number.isFinite(baseMinor) ? effectiveDeposit(form.bookingDepositType, {
-    percent: form.bookingDepositPercent, fixedMinor: Math.round(form.bookingDepositAmount * 100), estimateMinor: baseMinor, minimumMinor: depositMinimum,
+    percent: form.bookingDepositPercent, fixedMinor: Math.round(form.bookingDepositAmount * 100), estimateMinor: baseMinor, minimumMinor: depositMinimum, currency: form.currency,
   }) : null;
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['line-item-presets'] });
