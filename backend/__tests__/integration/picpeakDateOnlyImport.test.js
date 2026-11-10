@@ -94,7 +94,9 @@ describe('portable import repairs date columns in replaceAllTables', () => {
       event(203, '2024-08-11T13:00:00.000Z'),
       event(204, '2024-08-10T22:00:00.000Z'),
       event(205, '2024-08-11'),
+      event(206, BERLIN_MIDNIGHT / 1000), // epoch seconds, as older SQLite rows hold
+      event(207, String(NEW_YORK_MIDNIGHT)), // epoch as a digit string
     ], { crossEngine: true });
-    expect(stored).toEqual(['2024-08-11', '2024-08-11', '2024-08-11', '2024-08-10', '2024-08-11']);
+    expect(stored).toEqual(['2024-08-11', '2024-08-11', '2024-08-11', '2024-08-10', '2024-08-11', '2024-08-11', '2024-08-11']);
   });
 });
