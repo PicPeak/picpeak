@@ -43,6 +43,7 @@ const { AppError } = require('../utils/errors');
 const { computeDueDate, ensureEventMatchesCustomer, isInvoiceEditable, resolveNetDaysForRow, UNISSUED_INVOICE_STATUSES } = require('../services/invoice/helpers');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { toDateOnly } = require('../utils/dateOnly');
+const { toIso, toStoredTimestamp, toTimestamp } = require('../utils/dateNormalize');
 const { vatMinorFor, roundsVatDown, normaliseVatGbpRate } = require('../utils/vatAmount');
 
 const router = express.Router();
@@ -151,7 +152,7 @@ function transformInvoice(i) {
     installmentLabel: i.installment_label,
     installmentTrigger: i.installment_trigger,
     status: i.status,
-    scheduledSendAt: i.scheduled_send_at,
+    scheduledSendAt: toIso(i.scheduled_send_at) || null,
     sentAt: i.sent_at,
     netAmountMinor: i.net_amount_minor,
     vatRate: i.vat_rate == null ? null : Number(i.vat_rate),
@@ -263,7 +264,10 @@ const INVOICE_BODY_VALIDATORS = [
   body('currency').optional({ values: 'falsy' }).isString().isLength({ min: 3, max: 3 }),
   body('issueDate').optional({ values: 'falsy' }).isISO8601(),
   body('dueDate').optional({ values: 'falsy' }).isISO8601(),
-  body('scheduledSendAt').optional({ values: 'falsy' }).isISO8601(),
+  // isISO8601 also passes forms that name no instant ('2026-W45'), which would
+  // be stored as no send date and turn the invoice into a draft.
+  body('scheduledSendAt').optional({ values: 'falsy' }).isISO8601()
+    .custom((value) => Number.isFinite(toTimestamp(value))).withMessage('scheduledSendAt is not a date and time'),
   body('installmentIndex').optional({ values: 'falsy' }).isInt({ min: 0 }),
   body('installmentTotal').optional({ values: 'falsy' }).isInt({ min: 1 }),
   body('installmentLabel').optional({ values: 'falsy' }).isString().isLength({ max: 128 }),
@@ -854,6 +858,12 @@ router.put(
     };
     for (const [api, col] of Object.entries(map)) {
       if (Object.prototype.hasOwnProperty.call(payload, api)) updates[col] = payload[api];
+    }
+    // Stored as ISO text, so the scheduler's comparison matches on SQLite too.
+    // The editor sends a zone-less 'YYYY-MM-DDTHH:mm' cut from the stored UTC
+    // value, so it is read as UTC: an unchanged save keeps the same instant.
+    if (Object.prototype.hasOwnProperty.call(updates, 'scheduled_send_at')) {
+      updates.scheduled_send_at = toStoredTimestamp(updates.scheduled_send_at);
     }
     // Payment-term selection: re-snapshot the template when the admin
     // changes it. Mirrors createInvoice — once the column is set the

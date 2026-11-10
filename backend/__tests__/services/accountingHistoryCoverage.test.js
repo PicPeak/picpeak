@@ -56,16 +56,35 @@ function offenders(tables, allowFile, writePattern = WRITE) {
   return result;
 }
 
+// The one sanctioned raw write outside the recorder: utils/invoiceSendAt
+// (migration 356, and the portable import of an older archive) rewrites a send
+// date SQLite stored as a number or as non-canonical text into the SAME instant
+// as canonical ISO text. That changes how the instant is stored, never which
+// instant it is, so it records no history. Clearing a send date there goes
+// through auditedUpdate. Matched by file and statement form, and counted, so
+// no other write can slip in under it.
+const SEND_AT_FILE = path.join('utils', 'invoiceSendAt.js');
+const SAME_INSTANT_REWRITE = /^\s*await knex\.raw\(`UPDATE invoices SET scheduled_send_at = strftime\('\$\{ISO\}',/;
+function isSameInstantRewrite(hit) {
+  const match = /^(.+):(\d+) invoices \(raw SQL\)$/.exec(hit);
+  if (!match || match[1] !== SEND_AT_FILE) return false;
+  const source = fs.readFileSync(path.join(SRC, match[1]), 'utf8').split('\n')[Number(match[2]) - 1];
+  return SAME_INSTANT_REWRITE.test(source);
+}
+
 describe('accounting change history coverage', () => {
   it('writes audited tables only through the recorder', () => {
-    expect(offenders(Object.keys(AUDITED_TABLES), (file) => file === RECORDER)).toEqual([]);
+    const hits = offenders(Object.keys(AUDITED_TABLES), (file) => file === RECORDER);
+    expect(hits.filter((hit) => !isSameInstantRewrite(hit))).toEqual([]);
+    expect(hits.filter(isSameInstantRewrite)).toHaveLength(2);
   });
 
   it('routes parent deletions that can change audited records through the recorder', () => {
     const parents = Object.entries(DELETE_REFERENCES)
       .filter(([, refs]) => refs.some((ref) => AUDITED_TABLES[ref.table]))
       .map(([table]) => table);
-    expect(offenders(parents, (file) => file === RECORDER, /\.(del|delete|truncate)\s*\(/)).toEqual([]);
+    expect(offenders(parents, (file) => file === RECORDER, /\.(del|delete|truncate)\s*\(/)
+      .filter((hit) => !isSameInstantRewrite(hit))).toEqual([]);
   });
 
   it('never updates or deletes history rows, and only the recorder inserts them', () => {
