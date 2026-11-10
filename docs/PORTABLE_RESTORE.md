@@ -150,6 +150,19 @@ expanded data and 20 ms per entry (at most seven days), no CPU-time limit.
 override them. These variables belong in the backend environment, not in the
 frontend's build-time `VITE_*` settings.
 
+## Dates in older archives
+
+Older releases exported calendar dates from PostgreSQL (an event's date, an
+invoice's issue date) as the moment of local midnight on the exporting server.
+A restore of such an archive put them one day early whenever that server ran
+east of UTC. Exports now write plain dates, and a restore repairs older
+archives from servers between UTC−11 and UTC+12.
+
+Servers east of UTC+12, such as the Chatham Islands, Tonga, or New Zealand in
+summer, cannot be repaired that way: their dates still come back one day early
+from an archive made before the fix. If you can, export again from the source
+server after updating it, and restore the new archive.
+
 ## SQLite to PostgreSQL migration
 
 `scripts/migrate-sqlite-to-postgres.js` uses the same supervised restore and

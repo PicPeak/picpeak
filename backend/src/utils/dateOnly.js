@@ -25,4 +25,21 @@ function toDateOnly(value) {
   return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text;
 }
 
-module.exports = { toDateOnly };
+// Every `date` column of the public schema, as a Map of table name to column
+// names, in one query. Only PostgreSQL has a real `date` type that node-pg
+// reads as a local-midnight Date; callers decide whether the engine they run
+// on needs this. The schema is named, as listDataTables (picpeakExportService)
+// and jsonColumnsFor (picpeakImportService) name it.
+async function pgDateColumnsByTable(executor) {
+  const res = await executor.raw(
+    'SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = \'public\' AND data_type = \'date\' ORDER BY table_name, ordinal_position'
+  );
+  const byTable = new Map();
+  for (const { table_name: table, column_name: column } of res.rows) {
+    if (!byTable.has(table)) byTable.set(table, []);
+    byTable.get(table).push(column);
+  }
+  return byTable;
+}
+
+module.exports = { toDateOnly, pgDateColumnsByTable };
