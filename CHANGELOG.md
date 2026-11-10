@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.199.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.199.0-beta.0...v3.199.1-beta.0) (2026-11-10)
+
+
+### Bug Fixes
+
+* **backup:** keep PostgreSQL date columns on their day across a .picpeak roundtrip ([#2462](https://github.com/PicPeak/picpeak/issues/2462)) ([3f219ad](https://github.com/PicPeak/picpeak/commit/3f219ade7fd03177e8216b0ad5d2f94f123fab57))
+* **gallery:** show the lightbox preview on the Carousel stage, not the original ([#2466](https://github.com/PicPeak/picpeak/issues/2466)) ([95bc769](https://github.com/PicPeak/picpeak/commit/95bc769b4ed2bff1e2c58e3d595cc0eb5d14db79))
+
 ## [3.199.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.198.0-beta.0...v3.199.0-beta.0) (2026-11-10)
 
 
