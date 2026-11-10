@@ -28,6 +28,7 @@ const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
 const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
 const { isoSqliteCostTimestamps, COST_TIMESTAMP_TABLES } = require('../utils/costTimestamps');
 const { isoSqliteInvoiceSendAt } = require('../utils/invoiceSendAt');
+const { dateColumnsOf } = require('../utils/dateOnly');
 const { rowBatches } = require('./portableImportRows');
 const {
   dedupeExternalPhotos,
@@ -452,11 +453,7 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
 
 // PostgreSQL `date` columns of a target table (see repairDateOnly).
 async function dateOnlyColumnsFor(trx, table) {
-  if (!isPostgres()) return [];
-  const info = await trx(table).columnInfo();
-  return Object.entries(info)
-    .filter(([, meta]) => String(meta.type || '').toLowerCase() === 'date')
-    .map(([name]) => name);
+  return isPostgres() ? dateColumnsOf(trx, table) : [];
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -471,7 +468,9 @@ const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 // source's epoch values for a local-midnight Date have the same shape once
 // epochToIso has made them ISO. The source day is the nearest UTC midnight,
 // which holds for every source zone from UTC-11:59 to UTC+12 (a value exactly
-// at 12:00Z counts as east of UTC). Only instants on a quarter hour are
+// at 12:00Z counts as east of UTC, so a UTC-12 source would gain a day; no
+// inhabited zone uses that offset). UTC+13 and later cannot be told apart
+// from the day before at UTC-11 and stay one day early, as before. Only instants on a quarter hour are
 // treated as shifted midnights, since every zone offset in use is one; any
 // other instant is left for Postgres to cast as before. Plain dates pass
 // through unchanged.

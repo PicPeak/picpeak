@@ -25,4 +25,14 @@ function toDateOnly(value) {
   return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text;
 }
 
-module.exports = { toDateOnly };
+// The columns of `table` whose type is `date`. Only PostgreSQL has a real
+// `date` type that node-pg reads as a local-midnight Date; callers decide
+// whether the engine they run on needs this.
+async function dateColumnsOf(executor, table) {
+  const info = await executor(table).columnInfo();
+  return Object.entries(info)
+    .filter(([, meta]) => String(meta.type || '').toLowerCase() === 'date')
+    .map(([name]) => name);
+}
+
+module.exports = { toDateOnly, dateColumnsOf };

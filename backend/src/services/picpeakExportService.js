@@ -25,7 +25,7 @@ const { getStoragePath } = require('../config/storage');
 const logger = require('../utils/logger');
 const { collectLegacyStoredFiles, storedPathMap } = require('../utils/legacyStoredFiles');
 const { STORED_PATH_COLUMNS } = require('../utils/storedPath');
-const { toDateOnly } = require('../utils/dateOnly');
+const { toDateOnly, dateColumnsOf } = require('../utils/dateOnly');
 const packageJson = require('../../package.json');
 const recoveryFiles = require('./recoveryFiles');
 const { getStorage } = require('./storage');
@@ -119,11 +119,7 @@ async function getLatestMigration() {
 // the import would then restore that earlier day. SQLite has no date type, so
 // its rows are written as stored.
 async function pgDateColumns(table) {
-  if (!isPostgres()) return [];
-  const info = await db(table).columnInfo();
-  return Object.entries(info)
-    .filter(([, meta]) => String(meta.type || '').toLowerCase() === 'date')
-    .map(([name]) => name);
+  return isPostgres() ? dateColumnsOf(db, table) : [];
 }
 
 // Write one table to <dataDir>/<table>.ndjson (one JSON object per line).
