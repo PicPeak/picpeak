@@ -90,6 +90,13 @@ class GalleryAccessService {
       // Only a current credentialed session may learn about a pause here.
       assertGalleryAvailable(event);
     }
+    // A gallery from a booking waits for full payment (#2440): clients and
+    // guests see a notice, admins preview it. Re-checked here, so a paid deal
+    // opens even if the payment hook missed it.
+    if (grant.kind !== 'admin' && event.payment_lock && !event.payment_unlocked_at
+      && await require('./bookingDeposits').refreshGalleryLock(event)) {
+      throw new AppError('This gallery opens once the invoice is paid', 403, 'GALLERY_AWAITING_PAYMENT');
+    }
     return grant;
   }
 }

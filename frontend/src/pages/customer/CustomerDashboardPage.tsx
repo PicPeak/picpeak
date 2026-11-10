@@ -36,7 +36,7 @@ import {
   customerService, type CustomerDashboard, type CustomerEvent, type CustomerRecentItem, type CustomerShipment,
 } from '../../services/customer.service';
 import { isDownloadLimitError } from '../../utils/downloadLimit';
-import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
+import { galleryClosedReason, isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
 import { calendarDay } from '../../utils/calendarDay';
 import { RecentList } from './recentFeed';
@@ -282,7 +282,9 @@ const CustomerDashboardContent: React.FC = () => {
     } catch (e: any) {
       const status = e?.response?.status;
       if (isGalleryTemporarilyDisabled(e)) {
-        toast.error(t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'));
+        toast.error(galleryClosedReason(e) === 'payment'
+          ? t('gallery.awaitingPaymentHelp', 'It opens as soon as the invoice is paid. Your gallery link will stay the same.')
+          : t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'));
       } else if (status === 410) {
         toast.error(t('customer.dashboard.eventExpired', 'This gallery has expired.'));
       } else if (status === 403) {
@@ -309,7 +311,9 @@ const CustomerDashboardContent: React.FC = () => {
       if (isDownloadLimitError(e)) return;
       const status = e?.response?.status;
       if (isGalleryTemporarilyDisabled(e)) {
-        toast.error(t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'));
+        toast.error(galleryClosedReason(e) === 'payment'
+          ? t('gallery.awaitingPaymentHelp', 'It opens as soon as the invoice is paid. Your gallery link will stay the same.')
+          : t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'));
       } else if (status === 410) {
         toast.error(t('customer.dashboard.eventExpired', 'This gallery has expired.'));
       } else if (status === 403) {

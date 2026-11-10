@@ -188,6 +188,8 @@ export interface InvoiceWithLineItems {
   invoice: InvoiceDetail;
   lineItems: QuoteLineItem[];
   payments: InvoicePayment[];
+  /** Booking deposits booked here whose money was refunded or disputed since (#2440). */
+  depositAlerts?: Array<{ requestId: number; reference: string; depositStatus: 'refunded' | 'disputed' }>;
   /** Migration 140 + commit #4. Always present on create; single
    *  invoice = one-element array, multi-installment spawn = N. */
   invoiceIds?: number[];

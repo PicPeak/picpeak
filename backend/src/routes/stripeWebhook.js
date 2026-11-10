@@ -36,7 +36,11 @@ router.post('/', webhookLimiter, express.raw({ type: 'application/json', limit: 
       // re-fetches the authoritative session, locks/rechecks order state, and
       // claims email_sent transactionally. Replays and the recovery worker
       // therefore share the same idempotent fulfillment path.
-      await reconcileWebhook(event, client);
+      // Booking deposits (#2440) carry their own metadata; everything else
+      // is photo sales.
+      if (!(await require('../services/bookingDeposits').reconcileWebhook(event, client))) {
+        await reconcileWebhook(event, client);
+      }
       // Never return access tokens: providers retain webhook responses.
       return res.json({ ok: true });
     } catch (error) {

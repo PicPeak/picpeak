@@ -17,6 +17,7 @@ import { Briefcase, Gift, UserCog, FileText, Receipt, Wrench, Clock, ScrollText,
 import type { LucideIcon } from 'lucide-react';
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
+import { useBookingsReachable } from '../../features/booking/useBookingsReachable';
 
 export interface ClientsNavItem {
   key: string;
@@ -43,6 +44,7 @@ export function useClientsNavItems(): ClientsNavItem[] {
   const { t } = useTranslation();
   const { flags } = useFeatureFlags();
   const { hasPermission } = usePermissions();
+  const { reachable: bookingsReachable } = useBookingsReachable();
 
   const navItems: ClientsNavItem[] = [
     {
@@ -133,8 +135,11 @@ export function useClientsNavItems(): ClientsNavItem[] {
     },
   ];
 
+  // Bookings also stays listed while deposits wait for a decision with the
+  // flag off (useBookingsReachable).
   return navItems.filter((item) =>
-    flags[item.featureFlag] && (!item.permission || hasPermission(item.permission)));
+    (flags[item.featureFlag] || (item.key === 'bookings' && bookingsReachable))
+    && (!item.permission || hasPermission(item.permission)));
 }
 
 export const ClientsLayout: React.FC = () => {

@@ -256,6 +256,11 @@ export interface LineItemPreset {
   bookable?: boolean;
   bookingDurationMinutes?: number | null;
   bookingDurationFactorId?: number | null;
+  /** Deposit at booking and when a gallery from a booking opens (#2440, part 3). */
+  bookingDepositType?: 'none' | 'percent' | 'fixed';
+  bookingDepositPercent?: number | null;
+  bookingDepositMinor?: number | null;
+  galleryUnlock?: 'full_payment' | 'deposit' | 'off';
 }
 
 export interface QuoteCreatePayload {

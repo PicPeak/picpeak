@@ -729,22 +729,26 @@ Zur Weiterleitung an das Inkasso / für die Betreibung.`,
   },
   booking_request_declined: {
     category: 'quotes', feature_flag: 'calendarBooking',
-    variables: ['client_name', 'business_name', 'service_name', 'booking_date', 'booking_time', 'reference', 'decline_reason'],
+    variables: ['client_name', 'business_name', 'service_name', 'booking_date', 'booking_time', 'reference', 'decline_reason', 'deposit_refunded', 'deposit_refund_pending'],
     en: {
       subject: 'Your booking request {{reference}}',
       body_html: `<p>Hello {{client_name}},</p>
 <p>unfortunately we cannot take on <strong>{{service_name}}</strong> on {{booking_date}} at {{booking_time}}.</p>
 {{#if decline_reason}}<p>{{decline_reason}}</p>{{/if}}
+{{#if deposit_refunded}}<p>Your deposit of {{deposit_refunded}} has been refunded to your card.</p>{{/if}}
+{{#if deposit_refund_pending}}<p>We will refund your deposit of {{deposit_refund_pending}} separately.</p>{{/if}}
 {{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
-      body_text: 'Hello {{client_name}},\n\nunfortunately we cannot take on {{service_name}} on {{booking_date}} at {{booking_time}}.{{#if decline_reason}}\n\n{{decline_reason}}{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+      body_text: 'Hello {{client_name}},\n\nunfortunately we cannot take on {{service_name}} on {{booking_date}} at {{booking_time}}.{{#if decline_reason}}\n\n{{decline_reason}}{{/if}}{{#if deposit_refunded}}\n\nYour deposit of {{deposit_refunded}} has been refunded to your card.{{/if}}{{#if deposit_refund_pending}}\n\nWe will refund your deposit of {{deposit_refund_pending}} separately.{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
     },
     de: {
       subject: 'Ihre Buchungsanfrage {{reference}}',
       body_html: `<p>Guten Tag {{client_name}},</p>
 <p>leider können wir <strong>{{service_name}}</strong> am {{booking_date}} um {{booking_time}} nicht übernehmen.</p>
 {{#if decline_reason}}<p>{{decline_reason}}</p>{{/if}}
+{{#if deposit_refunded}}<p>Ihre Anzahlung von {{deposit_refunded}} wurde auf Ihre Karte zurückerstattet.</p>{{/if}}
+{{#if deposit_refund_pending}}<p>Ihre Anzahlung von {{deposit_refund_pending}} erstatten wir Ihnen separat zurück.</p>{{/if}}
 {{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
-      body_text: 'Guten Tag {{client_name}},\n\nleider können wir {{service_name}} am {{booking_date}} um {{booking_time}} nicht übernehmen.{{#if decline_reason}}\n\n{{decline_reason}}{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+      body_text: 'Guten Tag {{client_name}},\n\nleider können wir {{service_name}} am {{booking_date}} um {{booking_time}} nicht übernehmen.{{#if decline_reason}}\n\n{{decline_reason}}{{/if}}{{#if deposit_refunded}}\n\nIhre Anzahlung von {{deposit_refunded}} wurde auf Ihre Karte zurückerstattet.{{/if}}{{#if deposit_refund_pending}}\n\nIhre Anzahlung von {{deposit_refund_pending}} erstatten wir Ihnen separat zurück.{{/if}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
     },
   },
 };

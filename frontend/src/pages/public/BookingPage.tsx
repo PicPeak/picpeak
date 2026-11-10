@@ -18,7 +18,7 @@ import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { FactorInputs, initialFactorValue } from '../../features/pricing-factors/FactorInputs';
-import { bookingService, type PublicService, type Slot } from '../../services/booking.service';
+import { bookingService, type PublicRequestResult, type PublicService, type Slot } from '../../services/booking.service';
 import type { FactorValue, PricingFactor } from '../../services/quoteCatalog.service';
 import { formatMoneyMinor } from '../../utils/money';
 import { addDays, isoWeekday, zonedWallClock } from '../../utils/zonedWallClock';
@@ -109,7 +109,7 @@ export const BookingPage: React.FC = () => {
   const [contact, setContact] = useState({ name: '', email: '', phone: '', company: '', message: '', website: '' });
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [sent, setSent] = useState<{ reference: string | null; holdExpiresAt?: string } | null>(null);
+  const [sent, setSent] = useState<PublicRequestResult | null>(null);
 
   const wallTime = (instant: string) => formatTime(zonedWallClock(instant, timezone).time);
   const wallDay = (day: string) => format(new Date(`${day}T12:00:00`));
@@ -128,6 +128,12 @@ export const BookingPage: React.FC = () => {
         company: contact.company || undefined, message: contact.message || undefined,
         language: i18n.language, website: contact.website || undefined, formToken: info?.formToken,
       });
+      // Part 3: a deposit is paid in Stripe Checkout; it comes back to the
+      // status page. The slot is held while the checkout is open.
+      if (res.checkoutUrl) {
+        window.location.assign(res.checkoutUrl);
+        return;
+      }
       setSent(res);
     } catch (err: any) {
       setSendError(errorText(err, t('booking.public.sendFailed', 'The request could not be sent. Please try again.')));
@@ -234,6 +240,13 @@ export const BookingPage: React.FC = () => {
                   </ul>
                 </>
               ) : estimateError ? <p className="text-sm">{estimateError}</p> : <Loading />}
+              {service.deposit && estimate && estimate.depositMinor > 0 && (
+                <p className="mt-3 text-sm">
+                  {t('booking.public.depositNote', 'Deposit to secure the date: {{amount}}, paid by card when you send the request.', {
+                    amount: formatMoneyMinor(estimate.depositMinor, estimate.currency),
+                  })}
+                </p>
+              )}
               <p className="mt-3 text-xs text-muted-theme">
                 {t('booking.public.estimateNote', 'This is an estimate. You will receive a quote with the final price.')}
               </p>
@@ -339,7 +352,9 @@ export const BookingPage: React.FC = () => {
           {sendError && <p role="alert" className="mt-3 text-sm text-danger-text">{sendError}</p>}
           <div className="mt-4 flex justify-end">
             <Button type="submit" disabled={sending || !contact.name.trim() || !contact.email.trim()}>
-              {t('booking.public.send', 'Send booking request')}
+              {service.deposit && (estimate?.depositMinor ?? 0) > 0
+                ? t('booking.public.sendAndPay', 'Send and pay the deposit')
+                : t('booking.public.send', 'Send booking request')}
             </Button>
           </div>
         </section>

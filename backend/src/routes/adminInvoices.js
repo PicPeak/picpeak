@@ -478,6 +478,8 @@ router.get(
       invoice: invoiceOut,
       lineItems: data.lineItems.map(transformLineItem),
       payments: data.payments.map(transformPaymentLog),
+      // A booking deposit booked here that was refunded or disputed since.
+      depositAlerts: await require('../services/bookingDeposits').depositAlertsForInvoice(data.payments),
     });
   })
 );

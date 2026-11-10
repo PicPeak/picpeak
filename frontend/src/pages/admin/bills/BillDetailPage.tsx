@@ -510,6 +510,15 @@ export const BillDetailPage: React.FC = () => {
 
           <Card>
             <h3 className="font-semibold mb-3">{t('bills.section.paymentLog', 'Payment log')}</h3>
+            {(data.depositAlerts || []).map((a) => (
+              // A booking deposit counted here as paid went back to the
+              // client; the payment stays until the admin corrects it.
+              <p key={a.requestId} className="mb-3 rounded-lg border border-danger-line bg-danger-soft p-3 text-sm text-danger-text">
+                {a.depositStatus === 'disputed'
+                  ? t('bills.depositAlert.disputed', 'The booking deposit {{reference}} is booked here as paid, but the client disputed the payment. If you lose the dispute, record a negative payment or cancel the invoice with a Storno.', { reference: a.reference })
+                  : t('bills.depositAlert.refunded', 'The booking deposit {{reference}} is booked here as paid, but it was refunded since. Record a negative payment, or cancel the invoice with a Storno.', { reference: a.reference })}
+              </p>
+            ))}
             {data.payments.length === 0 ? (
               <p className="text-sm text-muted">{t('bills.noPayments', 'No payments recorded yet.')}</p>
             ) : (
@@ -531,7 +540,8 @@ export const BillDetailPage: React.FC = () => {
                       <td className="py-2 pr-4 whitespace-nowrap">{fmtDate(p.paidAt)}</td>
                       <td className="py-2 px-4 text-right tabular-nums whitespace-nowrap">{formatMoney(Number(p.amountMinor) / 100, inv.currency)}</td>
                       <td className="py-2 pl-4 pr-4 whitespace-nowrap">{p.paymentMethod || '—'}</td>
-                      <td className="py-2 pr-4 font-mono text-xs">{p.reference || '—'}</td>
+                      {/* break-all: a Stripe PaymentIntent (a booked deposit) has no break point. */}
+                      <td className="py-2 pr-4 font-mono text-xs break-all">{p.reference || '—'}</td>
                       <td className="py-2">{p.notes || '—'}</td>
                     </tr>
                   ))}

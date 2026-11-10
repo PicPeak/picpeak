@@ -5,7 +5,10 @@
  *   GET  /                 bookable services with their client-visible factors
  *   POST /estimate         price a service with the client's answers
  *   GET  /slots            free slots for a service between two dates
- *   POST /requests         send a booking request (holds the slot)
+ *   POST /requests         send a booking request (holds the slot); with a
+ *                          deposit (part 3) it answers with the Stripe
+ *                          Checkout link and holds the slot for the checkout
+ *   GET  /requests/status/:token   the client's status page
  *
  * A request writes only a booking_requests row; nothing reaches the CRM until
  * an admin accepts it. Abuse guards: per-IP rate limits, a honeypot field
@@ -16,7 +19,7 @@
 
 const crypto = require('crypto');
 const express = require('express');
-const { body, query } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const { rateLimitKey } = require('../utils/rateLimitKey');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
@@ -28,7 +31,10 @@ const pricingFactors = require('../services/pricingFactorService');
 const { isTruthyFlag } = require('../utils/lineItemTotals');
 
 const router = express.Router();
-router.use(requireFeatureFlag('calendarBooking', 'BOOKING_DISABLED'));
+// Switched off, nothing new is booked; a client who already sent a request
+// can still see what became of it (and of a deposit they paid).
+const bookingFlag = requireFeatureFlag('calendarBooking', 'BOOKING_DISABLED');
+router.use((req, res, next) => (req.method === 'GET' && req.path.startsWith('/requests/status/') ? next() : bookingFlag(req, res, next)));
 
 const limiter = (max, windowMs = 60 * 1000, extra = {}) => rateLimit({
   windowMs, max, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey, ...extra,
@@ -89,11 +95,13 @@ router.get(
   '/',
   readLimiter,
   handleAsync(async (req, res) => {
-    const [catalogue, settings, { timezone }, profile] = await Promise.all([
+    const deposits = require('../services/bookingDeposits');
+    const [catalogue, settings, { timezone }, profile, stripeReady] = await Promise.all([
       booking.publicCatalogue(),
       booking.getSettings(),
       booking.workingHours(),
       db('business_profile').where({ id: 1 }).first('company_name', 'default_locale'),
+      deposits.stripeReady(),
     ]);
     return successResponse(res, {
       businessName: profile?.company_name || null,
@@ -111,6 +119,14 @@ router.get(
         durationMinutes: booking.durationMinutes(preset, await booking.withDurationValue(preset, {})),
         durationFactorId: preset.booking_duration_factor_id || null,
         factors: factors.map(publicFactor),
+        // Part 3: shown before the client sends; only when Stripe can take it.
+        deposit: stripeReady && deposits.DEPOSIT_TYPES.includes(preset.booking_deposit_type) && preset.booking_deposit_type !== 'none'
+          ? {
+            type: preset.booking_deposit_type,
+            percent: preset.booking_deposit_percent == null ? null : Number(preset.booking_deposit_percent),
+            amountMinor: preset.booking_deposit_minor == null ? null : Number(preset.booking_deposit_minor),
+          }
+          : null,
       }))),
     });
   })
@@ -140,6 +156,8 @@ router.post(
       totalMinor: result.totalMinor,
       lines: result.lines.map((l) => ({ description: l.description, totalMinor: l.totalMinor })),
       unmatched: result.unmatched,
+      depositMinor: (await require('../services/bookingDeposits').stripeReady())
+        ? require('../services/bookingDeposits').depositFor(preset, result.totalMinor) : 0,
       // The length the request will be checked with: the priced values, so a
       // factor the client cannot see keeps its default here too.
       durationMinutes: booking.durationMinutes(preset, await booking.withDurationValue(preset, result.snapshot.values || {})),
@@ -201,7 +219,7 @@ router.post(
       logger.info('Booking request dropped by the spam guard', { honeypot: Boolean(req.body.website) });
       return successResponse(res, { reference: null, status: 'pending' }, 201);
     }
-    const request = await booking.createRequest({
+    const { request, checkoutUrl, statusToken } = await booking.createRequest({
       serviceId: req.body.serviceId,
       values: req.body.values || {},
       start: req.body.start,
@@ -216,12 +234,51 @@ router.post(
     return successResponse(res, {
       reference: request.reference,
       status: request.status,
+      // Part 3: pay the deposit there; the status page follows the request.
+      checkoutUrl: checkoutUrl || null,
+      statusToken: statusToken || null,
+      depositMinor: Number(request.deposit_minor || 0),
       startsAt: booking.iso(request.starts_at),
       endsAt: booking.iso(request.ends_at),
       holdExpiresAt: booking.iso(request.hold_expires_at),
       estimateMinor: Number(request.estimate_minor),
       currency: request.currency,
     }, 201);
+  })
+);
+
+// The client's status page (part 3): the token from the request answer,
+// stored hashed. Coming back from Checkout, a still-open payment is looked up
+// at Stripe once, so the page does not wait for the webhook.
+router.get(
+  '/requests/status/:token',
+  readLimiter,
+  [param('token').isHexadecimal().isLength({ min: 48, max: 48 }), query('cancelled').optional().isIn(['1'])],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const deposits = require('../services/bookingDeposits');
+    let request = await db('booking_requests').where({ status_token_hash: deposits.hashToken(req.params.token) }).first();
+    if (!request) return res.status(404).json({ error: 'Booking request not found', code: 'BOOKING_NOT_FOUND' });
+    // Stripe first: a payment that is in must count before any expiry runs.
+    request = req.query.cancelled === '1'
+      ? await deposits.cancelCheckout(request)
+      : await deposits.refreshFromStripe(request);
+    await booking.expireStaleHolds();
+    request = await db('booking_requests').where({ id: request.id }).first();
+    const { timezone } = await booking.workingHours();
+    return successResponse(res, {
+      reference: request.reference,
+      status: request.status,
+      serviceName: request.service_name,
+      startsAt: booking.iso(request.starts_at),
+      endsAt: booking.iso(request.ends_at),
+      holdExpiresAt: booking.iso(request.hold_expires_at),
+      estimateMinor: Number(request.estimate_minor),
+      depositMinor: Number(request.deposit_minor || 0),
+      depositStatus: request.deposit_status || 'none',
+      currency: request.currency,
+      timezone,
+    });
   })
 );
 

@@ -279,6 +279,11 @@ function transformLineItemPreset(p) {
     bookable: p.bookable === 1 || p.bookable === true,
     bookingDurationMinutes: p.booking_duration_minutes == null ? null : Number(p.booking_duration_minutes),
     bookingDurationFactorId: p.booking_duration_factor_id || null,
+    // Migration 355 — deposit at booking and gallery unlock.
+    bookingDepositType: p.booking_deposit_type || 'none',
+    bookingDepositPercent: p.booking_deposit_percent == null ? null : Number(p.booking_deposit_percent),
+    bookingDepositMinor: p.booking_deposit_minor == null ? null : Number(p.booking_deposit_minor),
+    galleryUnlock: p.gallery_unlock || 'full_payment',
   };
 }
 
@@ -821,6 +826,10 @@ const PRESET_CATALOGUE_VALIDATORS = [
   body('bookable').optional().isBoolean(),
   body('bookingDurationMinutes').optional({ nullable: true }).isInt({ min: 15, max: 1440 }),
   body('bookingDurationFactorId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('bookingDepositType').optional().isIn(['none', 'percent', 'fixed']),
+  body('bookingDepositPercent').optional({ nullable: true }).isFloat({ min: 0, max: 100 }),
+  body('bookingDepositMinor').optional({ nullable: true }).isInt({ min: 0 }),
+  body('galleryUnlock').optional().isIn(['full_payment', 'deposit', 'off']),
 ];
 
 function presetCatalogueFields(reqBody) {
@@ -835,6 +844,10 @@ function presetCatalogueFields(reqBody) {
     bookable: reqBody.bookable,
     booking_duration_minutes: reqBody.bookingDurationMinutes,
     booking_duration_factor_id: reqBody.bookingDurationFactorId,
+    booking_deposit_type: reqBody.bookingDepositType,
+    booking_deposit_percent: reqBody.bookingDepositPercent,
+    booking_deposit_minor: reqBody.bookingDepositMinor,
+    gallery_unlock: reqBody.galleryUnlock,
   };
 }
 

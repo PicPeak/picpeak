@@ -2009,6 +2009,8 @@
     }
   },
   "gallery": {
+    "awaitingPayment": "Ihre Galerie ist fast bereit.",
+    "awaitingPaymentHelp": "Sie öffnet sich, sobald die Rechnung bezahlt ist. Ihr Galerie-Link bleibt gleich.",
     "backToAccount": "Zurück zum Kundenkonto",
     "temporarilyUnavailable": "Diese Galerie ist vorübergehend nicht verfügbar.",
     "temporarilyUnavailableHelp": "Bitte versuchen Sie es später erneut. Ihr Galerie-Link bleibt gleich.",
@@ -9498,7 +9500,42 @@
     "costsErrorTitle": "Kosten konnten nicht geladen werden"
   },
   "booking": {
+    "status": {
+      "notFound": "Diese Buchungsanfrage wurde nicht gefunden.",
+      "payCancelled": "Zahlung nicht abgeschlossen",
+      "payPending": "Wir warten auf Ihre Zahlung",
+      "payCancelledText": "Die Anzahlung wurde nicht bezahlt, der Termin ist daher nicht reserviert. Bitte buchen Sie erneut.",
+      "payPendingText": "Wir warten auf die Zahlungsbestätigung. Diese Seite aktualisiert sich von selbst.",
+      "accepted": "Anfrage angenommen",
+      "acceptedText": "Sie erhalten die Offerte per E-Mail.",
+      "declined": "Anfrage abgelehnt",
+      "declinedRefunded": "Das Studio kann diesen Termin nicht übernehmen. Ihre Anzahlung wurde rückerstattet.",
+      "declinedText": "Das Studio kann diesen Termin nicht übernehmen.",
+      "expired": "Reservierung abgelaufen",
+      "expiredText": "Der Termin ist wieder frei. Sie können gerne erneut buchen.",
+      "depositPaid": "Anzahlung bezahlt: {{amount}}",
+      "bookAgain": "Erneut buchen"
+    },
     "admin": {
+      "deposit": {
+        "bookedAmount": "davon {{applied}} verbucht, zuletzt auf Rechnung {{number}}",
+        "disputed": "Anzahlung {{amount}}: Der Kunde hat eine Rückbuchung eröffnet. Bitte in Stripe beantworten.",
+        "open": "Anzahlung {{amount}} noch nicht bezahlt",
+        "paid": "Anzahlung {{amount}} per Karte bezahlt",
+        "refunded": "Anzahlung {{amount}} rückerstattet",
+        "refundFailed": "Anzahlung {{amount}}: Rückerstattung fehlgeschlagen. Bitte in Stripe zurückerstatten.",
+        "expired": "Anzahlung nicht bezahlt; der Bezahlvorgang ist abgelaufen",
+        "review": "Eine Zahlung ist eingegangen, aber nicht der Anzahlungsbetrag. Bitte in Stripe prüfen.",
+        "bookedThenReturned": "Diese Anzahlung ist auf einer Rechnung als bezahlt verbucht. Bitte die Rechnung korrigieren: eine negative Zahlung erfassen oder sie mit einer Stornorechnung stornieren."
+      },
+      "declineRefund": "Ablehnen, rückerstatten und Kunde informieren",
+      "unlockNow": "Jetzt öffnen",
+      "galleryOpen": "Galerie «{{name}}» ist offen",
+      "galleryLocked": "Galerie «{{name}}» öffnet sich, wenn alle Rechnungen in PicPeak bezahlt sind",
+      "applyDeposit": "Anzahlung verbuchen",
+      "depositInvoice": "Anzahlung verbuchen auf",
+      "galleryUnlocked": "Galerie geöffnet.",
+      "depositApplied": "Anzahlung auf der Rechnung verbucht.",
       "accept": "Annehmen und Offerte entwerfen",
       "acceptedToast": "Angenommen. Der Offerten-Entwurf ist bereit zum Prüfen und Senden.",
       "blockAdd": "Sperren",
@@ -9514,6 +9551,7 @@
       "editHours": "Geschäftszeiten",
       "empty": "Noch keine Buchungsanfragen.",
       "estimate": "Schätzung",
+      "heldPaid": "Reserviert bis zu Ihrem Entscheid (Anzahlung bezahlt)",
       "heldUntil": "Reserviert bis {{time}}",
       "hoursInfo": "Kunden können innerhalb Ihrer Geschäftszeiten buchen ({{zone}}).",
       "noBlocks": "Keine gesperrten Zeiten.",
@@ -9540,6 +9578,7 @@
         "holdHint": "Eine unbeantwortete Anfrage gibt den Termin danach wieder frei."
       },
       "status": {
+        "awaitingPayment": "Wartet auf Anzahlung",
         "accepted": "Angenommen",
         "declined": "Abgelehnt",
         "expired": "Reservierung abgelaufen",
@@ -9549,9 +9588,14 @@
         "blocks": "Gesperrte Zeiten",
         "requests": "Anfragen",
         "settings": "Einstellungen"
-      }
+      },
+      "applyReviewHint": "{{amount}} sind eingegangen. Mit dem Verbuchen auf einer Rechnung ist die Prüfung erledigt.",
+      "flagOffNotice": "Die Online-Buchung ist ausgeschaltet. Kunden können keine neuen Anfragen senden. Eingegangene Anzahlungen warten hier weiter auf Ihren Entscheid: ablehnen, um sie zurückzuerstatten, oder annehmen und auf einer Rechnung verbuchen.",
+      "quotesOffNotice": "Angebote sind ausgeschaltet und damit auch die Online-Buchung. Eingegangene Anzahlungen warten hier weiter auf Ihren Entscheid: ablehnen, um sie zurückzuerstatten. Galerien, die auf die Zahlung warten, können Sie von Hand öffnen."
     },
     "public": {
+      "sendAndPay": "Senden und Anzahlung bezahlen",
+      "depositNote": "Anzahlung zur Reservierung: {{amount}}, per Karte beim Senden der Anfrage.",
       "estimate": "Schätzung",
       "estimateFailed": "Der Preis konnte nicht berechnet werden.",
       "estimateNote": "Das ist eine Schätzung. Sie erhalten eine Offerte mit dem definitiven Preis.",
@@ -9585,12 +9629,24 @@
       }
     },
     "service": {
+      "unlockFullHint": "Zählt die Rechnungen des Deals in PicPeak. Wenn Sie anderswo verrechnen, wählen Sie «Sofort» oder öffnen Sie die Galerie von Hand unter CRM → Buchungen.",
+      "depositHint": "Bezahlt per Karte über das Stripe-Konto unter Einstellungen → Zahlungen. Ohne eingerichtetes Stripe kommen Anfragen ohne Anzahlung.",
+      "unlockOff": "Sofort",
+      "unlockDeposit": "Sobald die Anzahlung bezahlt ist",
+      "unlockFull": "Wenn alle Rechnungen bezahlt sind",
+      "galleryUnlock": "Galerie öffnet sich",
+      "depositFixed": "Fester Betrag",
+      "depositPercent": "Prozent der Schätzung",
+      "depositNone": "Keine",
+      "deposit": "Anzahlung bei Buchung",
       "bookable": "Kunden können das online buchen",
       "durationFixed": "Feste Dauer",
       "durationFrom": "Termindauer",
       "durationFromFactor": "Aus «{{name}}» (Stunden)",
       "durationMinutes": "Dauer (Minuten)",
-      "legend": "Online-Buchung"
+      "legend": "Online-Buchung",
+      "depositMinimum": "Stripe belastet mindestens {{amount}}: Eine kleinere Anzahlung wird darauf angehoben, höchstens auf die Schätzung. Liegt die Schätzung darunter, wird keine Anzahlung verlangt.",
+      "depositAtBase": "Beim Grundpreis von {{price}} bezahlt der Kunde {{amount}}."
     }
   },
   "quotes": {
@@ -10248,7 +10304,11 @@
     "reminderRecordedToast": "Mahnung erfasst; es wurde keine E-Mail gesendet.",
     "confirmCancelIssuedNoMail": "Eine Stornorechnung wird erstellt; dieser Kunde erhält keine E-Mail. Das kann nicht rückgängig gemacht werden. Fortfahren?",
     "cancelledWithStornoNoMailToast": "Rechnung storniert — Stornorechnung ausgestellt; es wurde keine E-Mail gesendet.",
-    "confirmReissueNoMail": "Für diese Rechnung wird eine Stornorechnung ausgestellt (dieser Kunde erhält keine E-Mail), und ein neuer geplanter Entwurf mit denselben Positionen wird erstellt. Die neue Rechnung verweist auf diese als „Ersetzt R-XXXX“. Fortfahren?"
+    "confirmReissueNoMail": "Für diese Rechnung wird eine Stornorechnung ausgestellt (dieser Kunde erhält keine E-Mail), und ein neuer geplanter Entwurf mit denselben Positionen wird erstellt. Die neue Rechnung verweist auf diese als „Ersetzt R-XXXX“. Fortfahren?",
+    "depositAlert": {
+      "refunded": "Die Buchungsanzahlung {{reference}} ist hier als bezahlt verbucht, wurde aber inzwischen zurückerstattet. Bitte eine negative Zahlung erfassen oder die Rechnung mit einer Stornorechnung stornieren.",
+      "disputed": "Die Buchungsanzahlung {{reference}} ist hier als bezahlt verbucht, aber der Kunde hat die Zahlung angefochten. Geht die Rückbuchung verloren, bitte eine negative Zahlung erfassen oder die Rechnung mit einer Stornorechnung stornieren."
+    }
   },
   "businessProfile": {
     "jurisdiction": {

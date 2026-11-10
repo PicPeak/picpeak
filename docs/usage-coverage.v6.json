@@ -2154,12 +2154,15 @@
     "adminBooking.js": {
       "decision": "excluded",
       "signals": [],
-      "reason": "Client booking requests, blocked times and booking settings (issue 2440): no product-usage middleware, counters or report triggers. Requests hold client names, contact details, appointment times and estimates.",
+      "reason": "Client booking requests, deposits, gallery unlock, blocked times and booking settings (issue 2440): no product-usage middleware, counters or report triggers. Requests hold client names, contact details, appointment times, estimates and payments.",
       "route_signatures": [
+        "GET /decisions-open",
         "GET /requests",
         "GET /requests/:id",
         "POST /requests/:id/accept",
         "POST /requests/:id/decline",
+        "POST /requests/:id/apply-deposit",
+        "POST /galleries/:eventId/unlock",
         "GET /blocks",
         "POST /blocks",
         "DELETE /blocks/:id",
@@ -2175,7 +2178,8 @@
         "GET /",
         "POST /estimate",
         "GET /slots",
-        "POST /requests"
+        "POST /requests",
+        "GET /requests/status/:token"
       ]
     }
   },

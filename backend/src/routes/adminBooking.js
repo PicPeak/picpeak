@@ -11,6 +11,10 @@
  *   POST   /requests/:id/decline                          quotes.manage
  *   GET    /blocks  POST /blocks  DELETE /blocks/:id     quotes.view / quotes.manage
  *   GET    /settings  PUT /settings                        quotes.view / quotes.manage
+ *   POST   /requests/:id/apply-deposit  book the paid deposit on an
+ *                                 invoice of the deal   quotes.manage + bills.manage
+ *   POST   /galleries/:eventId/unlock   open a gallery that waits for
+ *                                 payment               events.edit + event owner
  *
  * Accept takes the same three permissions the manual path takes (new
  * customer, new project, new quote), so a booking request is no way around
@@ -21,17 +25,48 @@ const express = require('express');
 const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
+const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
+const { requireEventOwner } = require('../middleware/ownership');
+const deposits = require('../services/bookingDeposits');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const booking = require('../services/bookingService');
 const pricingFactors = require('../services/pricingFactorService');
 
 const router = express.Router();
 router.use(adminAuth);
-router.use(requireFeatureFlag('calendarBooking', 'BOOKING_DISABLED'));
-router.use(requireFeatureFlag('quotes', 'QUOTES_DISABLED'));
+// Switched off with deposits still to decide: reading and deciding stay open
+// (accept, decline and refund, booking the deposit, opening a gallery) until
+// none is left. New blocks and settings wait for the flag.
+const DECISION_ROUTES = [/^\/requests\/\d+\/(accept|decline|apply-deposit)$/, /^\/galleries\/\d+\/unlock$/];
+// With `quotes` off (which also switches booking off) there is no quote or
+// invoice to accept into or book on, but a paid deposit can still be
+// declined and refunded, and a gallery waiting for payment opened by hand:
+// otherwise it would stay locked with no way to record the payment.
+const NO_QUOTES_ROUTES = [/^\/requests\/\d+\/decline$/, /^\/galleries\/\d+\/unlock$/];
+function openForDecisions(flag, routes, code) {
+  return async (req, res, next) => {
+    try {
+      if (await isFeatureEnabled(flag)) return next();
+      const deciding = req.method === 'GET' || (req.method === 'POST' && routes.some((r) => r.test(req.path)));
+      if (deciding && await deposits.depositDecisionsOpen()) return next();
+      return res.status(403).json({ error: `${flag} feature is disabled`, code });
+    } catch (err) {
+      return next(err);
+    }
+  };
+}
+router.use(openForDecisions('calendarBooking', DECISION_ROUTES, 'BOOKING_DISABLED'));
+router.use(openForDecisions('quotes', NO_QUOTES_ROUTES, 'QUOTES_DISABLED'));
 
-function transformRequest(r) {
+// For the admin menu: whether the bookings page is open although the flag
+// is off, because deposits still wait for a decision.
+router.get(
+  '/decisions-open',
+  requirePermission('quotes.view'),
+  handleAsync(async (req, res) => successResponse(res, { open: await deposits.depositDecisionsOpen() }))
+);
+
+function transformRequest(r, extras = {}) {
   let lines = [];
   try { lines = JSON.parse(r.estimate_lines || '[]'); } catch { lines = []; }
   return {
@@ -59,7 +94,35 @@ function transformRequest(r) {
     projectId: r.project_id || null,
     quoteId: r.quote_id || null,
     createdAt: booking.iso(r.created_at),
+    // Part 3 — deposit and gallery unlock.
+    depositMinor: Number(r.deposit_minor || 0),
+    depositStatus: r.deposit_status || 'none',
+    depositPaidAt: booking.iso(r.deposit_paid_at),
+    depositInvoiceId: r.deposit_invoice_id || null,
+    depositAppliedMinor: Number(r.deposit_applied_minor || 0),
+    // What actually came in (another amount puts the deposit under review).
+    depositReceivedMinor: r.deposit_received_minor == null ? null : Number(r.deposit_received_minor),
+    paymentIntentId: r.payment_intent_id || null,
+    galleryUnlock: r.gallery_unlock || null,
+    galleries: (extras.galleries || []).map((g) => ({
+      id: g.id, slug: g.slug, name: g.event_name, locked: Boolean(g.payment_lock) && !g.payment_unlocked_at,
+      canUnlock: Boolean(g.can_unlock),
+    })),
+    invoices: (extras.invoices || []).map((i) => ({
+      id: i.id, number: i.invoice_number, status: i.status, currency: i.currency,
+      totalMinor: Number(i.total_amount_minor), paidMinor: Number(i.paid_amount_minor || 0),
+    })),
   };
+}
+
+/** Requests with their galleries and the invoices of their deal. */
+async function transformRequests(rows, admin) {
+  const accepted = rows.filter((r) => r.quote_id);
+  const [galleries, invoices] = await Promise.all([
+    deposits.galleryLocksForRequests(accepted.map((r) => r.id), admin),
+    deposits.dealInvoicesForRequests(accepted),
+  ]);
+  return rows.map((r) => transformRequest(r, { galleries: galleries.get(r.id), invoices: invoices.get(r.id) }));
 }
 
 function transformSettings(s) {
@@ -87,7 +150,7 @@ router.get(
   handleAsync(async (req, res) => {
     validateRequest(req);
     const rows = await booking.listRequests({ status: req.query.status || null });
-    return successResponse(res, { requests: rows.map(transformRequest) });
+    return successResponse(res, { requests: await transformRequests(rows, req.admin) });
   })
 );
 
@@ -97,7 +160,8 @@ router.get(
   [idParam],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, { request: transformRequest(await booking.getRequest(Number(req.params.id))) });
+    const [row] = await transformRequests([await booking.getRequest(Number(req.params.id))], req.admin);
+    return successResponse(res, { request: row });
   })
 );
 
@@ -108,7 +172,8 @@ router.post(
   handleAsync(async (req, res) => {
     validateRequest(req);
     const row = await booking.acceptRequest(Number(req.params.id), req.admin.id);
-    return successResponse(res, { request: transformRequest(row) });
+    const [out] = await transformRequests([row], req.admin);
+    return successResponse(res, { request: out });
   })
 );
 
@@ -119,7 +184,34 @@ router.post(
   handleAsync(async (req, res) => {
     validateRequest(req);
     const row = await booking.declineRequest(Number(req.params.id), req.admin.id, req.body.reason);
-    return successResponse(res, { request: transformRequest(row) });
+    const [out] = await transformRequests([row], req.admin);
+    return successResponse(res, { request: out });
+  })
+);
+
+router.post(
+  '/requests/:id/apply-deposit',
+  requirePermission(['quotes.manage', 'bills.manage'], { requireAll: true }),
+  [idParam, body('invoiceId').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const row = await deposits.applyDepositToInvoice(Number(req.params.id), Number(req.body.invoiceId), req.admin.id);
+    const [out] = await transformRequests([row], req.admin);
+    return successResponse(res, { request: out });
+  })
+);
+
+router.post(
+  '/galleries/:eventId/unlock',
+  requirePermission('events.edit'),
+  [param('eventId').isInt({ min: 1 })],
+  // Owner only, not an assigned admin: opening before payment is a money
+  // decision (the issue 743 rule for such actions).
+  requireEventOwner,
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    await deposits.unlockGallery(Number(req.params.eventId));
+    return successResponse(res, { unlocked: true });
   })
 );
 
@@ -163,6 +255,9 @@ router.get(
       settings: transformSettings(settings),
       timezone: hours.timezone,
       hasBusinessHours: Boolean(hours.schedule && Object.values(hours.schedule).some((d) => d.length)),
+      // Stripe's smallest charge per currency: a smaller deposit is raised
+      // to it (the service form says so).
+      depositMinimumsMinor: deposits.STRIPE_MINIMUM_MINOR,
     });
   })
 );
