@@ -79,12 +79,18 @@ let workRoot;
 
 async function runInstance(env, ...args) {
   // TZ pinned: pg returns a `date` column as local midnight.
-  const childEnv = { ...process.env, TZ: 'UTC', ...env };
+  // TMPDIR inside workRoot: the instance's database and storage directory
+  // (bootCrmDb) go with workRoot even when the instance is killed.
+  const tmpdir = await fs.mkdtemp(path.join(workRoot, 'instance-'));
+  const childEnv = { ...process.env, TZ: 'UTC', TMPDIR: tmpdir, ...env };
   for (const [key, value] of Object.entries(env)) if (value === undefined) delete childEnv[key];
   let stdout;
   try {
+    // SIGKILL on timeout: the restore worker runs under the native guard,
+    // which ends it when its parent dies (PR_SET_PDEATHSIG), while a SIGTERM
+    // can be held up by the services' own shutdown handlers.
     ({ stdout } = await executeFile(process.execPath, [INSTANCE, ...args], {
-      cwd: BACKEND, env: childEnv, timeout: 240000, maxBuffer: 256 * 1024 * 1024,
+      cwd: BACKEND, env: childEnv, timeout: 240000, killSignal: 'SIGKILL', maxBuffer: 256 * 1024 * 1024,
     }));
   } catch (error) {
     throw new Error(`fidelity instance ${args[0]} failed:\n${String(error.stderr || error.message).slice(-4000)}`);
