@@ -9560,7 +9560,8 @@
         "refunded": "Deposit {{amount}} refunded",
         "refundFailed": "Deposit {{amount}}: the refund failed. Refund it in Stripe.",
         "expired": "Deposit not paid; the checkout expired",
-        "review": "A payment came in, but not the deposit amount. Check it in Stripe."
+        "review": "A payment came in, but not the deposit amount. Check it in Stripe.",
+        "bookedThenReturned": "This deposit is booked on an invoice as paid. Correct the invoice: record a negative payment, or cancel it with a Storno."
       },
       "declineRefund": "Decline, refund and tell the client",
       "unlockNow": "Open now",
@@ -9622,7 +9623,9 @@
         "blocks": "Blocked times",
         "requests": "Requests",
         "settings": "Settings"
-      }
+      },
+      "applyReviewHint": "{{amount}} came in. Booking it on an invoice settles the review.",
+      "flagOffNotice": "Online booking is switched off. Clients cannot send new requests. Deposits that came in still wait for you here: decline to refund them, or accept and book them on an invoice."
     },
     "public": {
       "sendAndPay": "Send and pay the deposit",
@@ -9675,7 +9678,9 @@
       "durationFrom": "Slot length",
       "durationFromFactor": "From \"{{name}}\" (hours)",
       "durationMinutes": "Length (minutes)",
-      "legend": "Online booking"
+      "legend": "Online booking",
+      "depositMinimum": "Stripe charges at least {{amount}}: a smaller deposit is raised to that, at most to the estimate, and an estimate below it takes no deposit.",
+      "depositAtBase": "At the base price of {{price}}, the client pays {{amount}}."
     }
   },
   "quotes": {
@@ -10332,7 +10337,11 @@
     "reminderRecordedToast": "Reminder recorded; no email was sent.",
     "confirmCancelIssuedNoMail": "A Stornorechnung will be generated; this customer gets no email. This cannot be undone. Continue?",
     "cancelledWithStornoNoMailToast": "Invoice cancelled — Stornorechnung issued; no email was sent.",
-    "confirmReissueNoMail": "A Stornorechnung will be issued for this invoice (this customer gets no email), and a new scheduled draft will be created with the same line items. The new invoice will reference this one as \"Replaces R-XXXX\". Continue?"
+    "confirmReissueNoMail": "A Stornorechnung will be issued for this invoice (this customer gets no email), and a new scheduled draft will be created with the same line items. The new invoice will reference this one as \"Replaces R-XXXX\". Continue?",
+    "depositAlert": {
+      "refunded": "The booking deposit {{reference}} is booked here as paid, but it was refunded since. Record a negative payment, or cancel the invoice with a Storno.",
+      "disputed": "The booking deposit {{reference}} is booked here as paid, but the client disputed the payment. If you lose the dispute, record a negative payment or cancel the invoice with a Storno."
+    }
   },
   "businessProfile": {
     "jurisdiction": {

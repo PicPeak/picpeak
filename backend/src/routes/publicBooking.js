@@ -31,7 +31,10 @@ const pricingFactors = require('../services/pricingFactorService');
 const { isTruthyFlag } = require('../utils/lineItemTotals');
 
 const router = express.Router();
-router.use(requireFeatureFlag('calendarBooking', 'BOOKING_DISABLED'));
+// Switched off, nothing new is booked; a client who already sent a request
+// can still see what became of it (and of a deposit they paid).
+const bookingFlag = requireFeatureFlag('calendarBooking', 'BOOKING_DISABLED');
+router.use((req, res, next) => (req.method === 'GET' && req.path.startsWith('/requests/status/') ? next() : bookingFlag(req, res, next)));
 
 const limiter = (max, windowMs = 60 * 1000, extra = {}) => rateLimit({
   windowMs, max, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey, ...extra,

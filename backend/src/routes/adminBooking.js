@@ -25,7 +25,7 @@ const express = require('express');
 const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
+const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { requireEventOwner } = require('../middleware/ownership');
 const deposits = require('../services/bookingDeposits');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
@@ -34,8 +34,29 @@ const pricingFactors = require('../services/pricingFactorService');
 
 const router = express.Router();
 router.use(adminAuth);
-router.use(requireFeatureFlag('calendarBooking', 'BOOKING_DISABLED'));
+// Switched off with deposits still to decide: reading and deciding stay open
+// (accept, decline and refund, booking the deposit, opening a gallery) until
+// none is left. New blocks and settings wait for the flag.
+const DECISION_ROUTES = [/^\/requests\/\d+\/(accept|decline|apply-deposit)$/, /^\/galleries\/\d+\/unlock$/];
+router.use(async (req, res, next) => {
+  try {
+    if (await isFeatureEnabled('calendarBooking')) return next();
+    const deciding = req.method === 'GET' || (req.method === 'POST' && DECISION_ROUTES.some((r) => r.test(req.path)));
+    if (deciding && await deposits.depositDecisionsOpen()) return next();
+    return res.status(403).json({ error: 'calendarBooking feature is disabled', code: 'BOOKING_DISABLED' });
+  } catch (err) {
+    return next(err);
+  }
+});
 router.use(requireFeatureFlag('quotes', 'QUOTES_DISABLED'));
+
+// For the admin menu: whether the bookings page is open although the flag
+// is off, because deposits still wait for a decision.
+router.get(
+  '/decisions-open',
+  requirePermission('quotes.view'),
+  handleAsync(async (req, res) => successResponse(res, { open: await deposits.depositDecisionsOpen() }))
+);
 
 function transformRequest(r, extras = {}) {
   let lines = [];
@@ -71,6 +92,8 @@ function transformRequest(r, extras = {}) {
     depositPaidAt: booking.iso(r.deposit_paid_at),
     depositInvoiceId: r.deposit_invoice_id || null,
     depositAppliedMinor: Number(r.deposit_applied_minor || 0),
+    // What actually came in (another amount puts the deposit under review).
+    depositReceivedMinor: r.deposit_received_minor == null ? null : Number(r.deposit_received_minor),
     paymentIntentId: r.payment_intent_id || null,
     galleryUnlock: r.gallery_unlock || null,
     galleries: (extras.galleries || []).map((g) => ({
@@ -224,6 +247,9 @@ router.get(
       settings: transformSettings(settings),
       timezone: hours.timezone,
       hasBusinessHours: Boolean(hours.schedule && Object.values(hours.schedule).some((d) => d.length)),
+      // Stripe's smallest charge per currency: a smaller deposit is raised
+      // to it (the service form says so).
+      depositMinimumsMinor: deposits.STRIPE_MINIMUM_MINOR,
     });
   })
 );

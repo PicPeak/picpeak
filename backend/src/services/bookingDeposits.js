@@ -40,16 +40,35 @@ const CHECKOUT_HOLD_MINUTES = 35;
 const ts = (v) => new Date(v instanceof Date ? v.getTime() : toTimestamp(v)).toISOString();
 const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
 
-/** Deposit in minor units for a service and an estimate; 0 = none. */
+// Stripe's smallest card charge per currency, in the app's minor units
+// (hundredths, JPY included), from Stripe's published minimums. A currency
+// not listed here is not raised; Stripe refuses a charge below its minimum.
+const STRIPE_MINIMUM_MINOR = {
+  AUD: 50, CAD: 50, CHF: 50, CZK: 1500, DKK: 250, EUR: 50, GBP: 30, HKD: 400, HUF: 17500, INR: 50,
+  JPY: 5000, NOK: 300, NZD: 50, PLN: 200, RON: 200, SEK: 300, SGD: 50, THB: 1000, USD: 50,
+};
+const stripeMinimumMinor = (currency) => STRIPE_MINIMUM_MINOR[String(currency || '').toUpperCase()] || 0;
+
+/**
+ * Deposit in minor units for a service and an estimate; 0 = none. Below
+ * Stripe's minimum charge it is raised to the minimum, at most to the
+ * estimate; an estimate below the minimum takes no deposit, since Stripe
+ * could not charge it.
+ */
 function depositFor(preset, estimateMinor) {
   const type = DEPOSIT_TYPES.includes(preset.booking_deposit_type) ? preset.booking_deposit_type : 'none';
   const total = Math.max(0, Number(estimateMinor) || 0);
+  let deposit = 0;
   if (type === 'percent') {
     const pct = Math.min(100, Math.max(0, Number(preset.booking_deposit_percent) || 0));
-    return Math.round(total * pct / 100);
+    deposit = Math.round(total * pct / 100);
+  } else if (type === 'fixed') {
+    deposit = Math.min(total, Math.max(0, Math.round(Number(preset.booking_deposit_minor) || 0)));
   }
-  if (type === 'fixed') return Math.min(total, Math.max(0, Math.round(Number(preset.booking_deposit_minor) || 0)));
-  return 0;
+  if (deposit <= 0) return 0;
+  const minimum = stripeMinimumMinor(preset.currency);
+  if (deposit >= minimum) return deposit;
+  return total >= minimum ? minimum : 0;
 }
 
 /** Stripe is set up (keys + webhook) and switched on for checkouts. */
@@ -237,7 +256,8 @@ async function reconcileSession(request, session) {
     // Waiting for the checkout: held for review until the admin decides.
     // Already expired: marked for review, but not put back on the calendar.
     const reviewFields = {
-      deposit_status: 'review', payment_intent_id: intentOf(session), deposit_received_minor: Number(session.amount_total), updated_at: ts(now),
+      deposit_status: 'review', deposit_paid_at: ts(now), payment_intent_id: intentOf(session),
+      deposit_received_minor: Number(session.amount_total), updated_at: ts(now),
     };
     // Only while the hold still runs, as for the right amount: a pending
     // review deposit keeps its time whatever the hold says, so a request
@@ -320,7 +340,9 @@ async function reconcilePaymentEvent(event, client = null) {
       // paid only when the charge was the deposit (otherwise still review).
       // On a declined request the client is still owed it, so it shows as
       // a refund to make by hand.
-      let back = Number(request.deposit_received_minor) === Number(request.deposit_minor) ? 'paid' : 'review';
+      // A review deposit the admin booked on an invoice was settled then.
+      let back = Number(request.deposit_received_minor) === Number(request.deposit_minor)
+        || Number(request.deposit_applied_minor || 0) > 0 ? 'paid' : 'review';
       if (request.status === 'declined') back = 'refund_failed';
       await db('booking_requests').where({ id: request.id, deposit_status: 'disputed' })
         .update({ deposit_status: back, updated_at: now });
@@ -443,15 +465,51 @@ async function businessDay(instant) {
 }
 
 /**
- * Book a paid deposit as a payment on an invoice of the request's deal.
- * Once per request.
+ * Whether a deposit still waits for the studio: money came in (paid, under
+ * review, disputed, or a refund that failed) and the request is not an
+ * accepted one whose deposit is fully booked on invoices. While one does,
+ * switching calendarBooking off keeps the admin side open to decide it.
+ */
+async function depositDecisionsOpen() {
+  if (!(await hasColumnCached('booking_requests', 'deposit_status'))) return false;
+  const row = await db('booking_requests').whereIn('deposit_status', ['paid', 'review', 'disputed', 'refund_failed'])
+    .whereNot((settled) => settled.where({ status: 'accepted', deposit_status: 'paid' })
+      .whereRaw('COALESCE(deposit_applied_minor, 0) >= COALESCE(deposit_received_minor, deposit_minor)'))
+    .first('id');
+  return Boolean(row);
+}
+
+/**
+ * Booking deposits booked on this invoice whose money has gone back since:
+ * refunded, or disputed by the client. The payment stays recorded (issued
+ * invoices and their ledger are not changed behind the admin's back); the
+ * invoice shows a warning and the admin corrects it (a negative payment or
+ * a Storno). Matched on the payment's reference, the deposit's
+ * PaymentIntent, so a deposit split over several invoices warns on each.
+ */
+async function depositAlertsForInvoice(payments) {
+  const intents = (payments || []).map((p) => p.reference).filter((r) => typeof r === 'string' && r.startsWith('pi_'));
+  if (!intents.length || !(await hasColumnCached('booking_requests', 'payment_intent_id'))) return [];
+  const rows = await db('booking_requests').whereIn('payment_intent_id', intents)
+    .whereIn('deposit_status', ['refunded', 'disputed']).select('id', 'reference', 'deposit_status');
+  return rows.map((r) => ({ requestId: r.id, reference: r.reference, depositStatus: r.deposit_status }));
+}
+
+/** What came in for a deposit: the charged amount, or the deposit on rows from before it was recorded. */
+const receivedMinor = (request) => Number(request.deposit_received_minor ?? request.deposit_minor ?? 0);
+
+/**
+ * Book a paid deposit as a payment on an invoice of the request's deal,
+ * over several invoices when one has less open. A deposit held for review
+ * (another amount came in) is booked for what came in, which settles the
+ * review.
  */
 async function applyDepositToInvoice(requestId, invoiceId, adminId) {
   const request = await db('booking_requests').where({ id: requestId }).first();
   if (!request) throw new AppError('Booking request not found', 404);
-  if (request.deposit_status !== 'paid') throw new AppError('This request has no paid deposit', 409, 'BOOKING_NO_DEPOSIT');
+  if (!['paid', 'review'].includes(request.deposit_status)) throw new AppError('This request has no paid deposit', 409, 'BOOKING_NO_DEPOSIT');
   const applied = Number(request.deposit_applied_minor || 0);
-  const remaining = Number(request.deposit_minor) - applied;
+  const remaining = receivedMinor(request) - applied;
   if (remaining <= 0) throw new AppError('The deposit is already booked on invoices', 409, 'BOOKING_DEPOSIT_APPLIED');
   // Read in the admin's own CRM scope (the route's context): an invoice the
   // admin may not see is not one they can book a payment on.
@@ -475,22 +533,36 @@ async function applyDepositToInvoice(requestId, invoiceId, adminId) {
     throw new AppError('The invoice is in another currency', 400, 'BOOKING_INVOICE_MISMATCH');
   }
   // Claimed against the amount read above: two bookings at once cannot both
-  // take the same remainder.
-  const claimed = await db('booking_requests').where({ id: requestId, deposit_applied_minor: applied, deposit_status: 'paid' })
-    .update({ deposit_applied_minor: applied + amountMinor, deposit_invoice_id: invoice.id, updated_at: ts(new Date()) });
+  // take the same remainder. Booking a review deposit settles the review.
+  const claimed = await db('booking_requests').where({ id: requestId, deposit_applied_minor: applied, deposit_status: request.deposit_status })
+    .update({ deposit_applied_minor: applied + amountMinor, deposit_invoice_id: invoice.id, deposit_status: 'paid', updated_at: ts(new Date()) });
   if (!claimed) throw new AppError('The deposit changed meanwhile; reload and try again', 409, 'BOOKING_DEPOSIT_APPLIED');
+  let booked;
   try {
-    await require('./invoice/payments').markPaid(invoice.id, {
+    // Capped again under the invoice's lock: a payment recorded since the
+    // read above leaves less open, and the deposit must not overpay.
+    ({ bookedMinor: booked } = await require('./invoice/payments').markPaid(invoice.id, {
       amountMinor,
-      paidAt: await businessDay(request.deposit_paid_at),
+      // When the money came in; a review row from before that was recorded
+      // books on today.
+      paidAt: await businessDay(request.deposit_paid_at || new Date()),
       paymentMethod: 'stripe',
       reference: request.payment_intent_id,
       notes: `Booking deposit ${request.reference}`,
-    }, adminId);
+      capToOpen: true,
+    }, adminId));
   } catch (err) {
     await db('booking_requests').where({ id: requestId, deposit_applied_minor: applied + amountMinor })
-      .update({ deposit_applied_minor: applied, deposit_invoice_id: request.deposit_invoice_id || null, updated_at: ts(new Date()) });
+      .update({
+        deposit_applied_minor: applied, deposit_invoice_id: request.deposit_invoice_id || null,
+        deposit_status: request.deposit_status, updated_at: ts(new Date()),
+      });
+    if (err.code === 'INVOICE_ALREADY_PAID') throw new AppError('This invoice is already paid', 409, 'BOOKING_INVOICE_NOT_OPEN');
     throw err;
+  }
+  if (booked < amountMinor) {
+    await db('booking_requests').where({ id: requestId, deposit_applied_minor: applied + amountMinor })
+      .update({ deposit_applied_minor: applied + booked, updated_at: ts(new Date()) });
   }
   return db('booking_requests').where({ id: requestId }).first();
 }
@@ -644,6 +716,9 @@ module.exports = {
   hashToken,
   newStatusToken,
   depositFor,
+  depositAlertsForInvoice,
+  depositDecisionsOpen,
+  STRIPE_MINIMUM_MINOR,
   stripeReady,
   startCheckout,
   cancelCheckout,

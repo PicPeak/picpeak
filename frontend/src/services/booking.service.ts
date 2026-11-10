@@ -40,6 +40,8 @@ export interface BookingRequest {
   depositInvoiceId: number | null;
   /** How much of the deposit is booked on invoices so far. */
   depositAppliedMinor: number;
+  /** What actually came in; null on rows from before it was recorded. */
+  depositReceivedMinor: number | null;
   paymentIntentId: string | null;
   galleryUnlock: 'full_payment' | 'deposit' | 'off' | null;
   galleries: Array<{ id: number; slug: string; name: string; locked: boolean; canUnlock: boolean }>;
@@ -157,6 +159,11 @@ export const bookingService = {
     const { data } = await api.post(`/admin/booking/requests/${id}/apply-deposit`, { invoiceId });
     return unwrap<{ request: BookingRequest }>(data).request;
   },
+  /** Whether deposits still wait for a decision (keeps Bookings open with the flag off). */
+  async decisionsOpen(): Promise<boolean> {
+    const { data } = await api.get('/admin/booking/decisions-open');
+    return Boolean(data?.open);
+  },
   async unlockGallery(eventId: number): Promise<void> {
     await api.post(`/admin/booking/galleries/${eventId}/unlock`);
   },
@@ -171,7 +178,7 @@ export const bookingService = {
   async deleteBlock(id: number): Promise<void> {
     await api.delete(`/admin/booking/blocks/${id}`);
   },
-  async getSettings(): Promise<{ settings: BookingSettings; timezone: string; hasBusinessHours: boolean }> {
+  async getSettings(): Promise<{ settings: BookingSettings; timezone: string; hasBusinessHours: boolean; depositMinimumsMinor?: Record<string, number> }> {
     const { data } = await api.get('/admin/booking/settings');
     return unwrap<{ settings: BookingSettings; timezone: string; hasBusinessHours: boolean }>(data);
   },

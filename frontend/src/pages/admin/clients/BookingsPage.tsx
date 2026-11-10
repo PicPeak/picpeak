@@ -30,6 +30,8 @@ const labelCls = 'block text-sm font-medium text-body mb-1';
 const errorText = (err: any): string => err?.response?.data?.error || err?.message || 'Failed';
 
 /** Invoices the deposit can be booked on: issued and still open (the server checks too). */
+/** What came in for the deposit: the charged amount, else the deposit. */
+const received = (r: BookingRequest) => r.depositReceivedMinor ?? r.depositMinor;
 const openInvoices = (r: BookingRequest) => r.invoices.filter((i) => ['sent', 'overdue'].includes(i.status) && i.paidMinor < i.totalMinor);
 
 const STATUS_CLS: Record<BookingStatus, string> = {
@@ -89,7 +91,9 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
     }
   };
   const depositLabel = (r: BookingRequest): string | null => {
-    const amount = formatMoneyMinor(r.depositMinor, r.currency);
+    // Once money came in, what came in (a review deposit booked on an
+    // invoice is paid for that amount); before, the deposit asked for.
+    const amount = formatMoneyMinor(r.depositStatus === 'open' ? r.depositMinor : received(r), r.currency);
     switch (r.depositStatus) {
       case 'open': return t('booking.admin.deposit.open', 'Deposit {{amount}} not paid yet', { amount });
       case 'paid': return t('booking.admin.deposit.paid', 'Deposit {{amount}} paid by card', { amount });
@@ -177,6 +181,13 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
                   })}`}
                 </div>
               )}
+              {r.depositAppliedMinor > 0 && ['refunded', 'disputed'].includes(r.depositStatus) && (
+                // The money went back after it was booked: the invoice still
+                // counts it as paid until the admin corrects it.
+                <div className="text-xs text-danger-text">
+                  {t('booking.admin.deposit.bookedThenReturned', 'This deposit is booked on an invoice as paid. Correct the invoice: record a negative payment, or cancel it with a Storno.')}
+                </div>
+              )}
               {r.galleries.map((g) => (
                 <div key={g.id} className="text-xs text-body flex items-center gap-2">
                   <span>
@@ -206,10 +217,15 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
               </ul>
             </div>
           </div>
-          {r.depositStatus === 'paid' && r.depositAppliedMinor < r.depositMinor && openInvoices(r).length > 0 && (
+          {['paid', 'review'].includes(r.depositStatus) && r.depositAppliedMinor < received(r) && openInvoices(r).length > 0 && (
             // The route needs both: the booking (quotes) and the payment (bills).
             <PermissionGate permissions={['quotes.manage', 'bills.manage']} requireAll>
               <div className="mt-3 flex flex-wrap items-end justify-end gap-2">
+                {r.depositStatus === 'review' && (
+                  <p className="basis-full text-right text-xs text-muted">
+                    {t('booking.admin.applyReviewHint', '{{amount}} came in. Booking it on an invoice settles the review.', { amount: formatMoneyMinor(received(r), r.currency) })}
+                  </p>
+                )}
                 <div>
                   <label htmlFor={`deposit-invoice-${r.id}`} className={labelCls}>{t('booking.admin.depositInvoice', 'Book the deposit on')}</label>
                   <select id={`deposit-invoice-${r.id}`} className={`${inputCls} h-9`} value={depositInvoice[r.id] ?? openInvoices(r)[0].id}
@@ -433,8 +449,12 @@ const SettingsTab: React.FC<{ settings: BookingSettings; timezone: string; hasBu
 export const BookingsPage: React.FC = () => {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
+  // Switched off, the page is open only to decide deposits still waiting:
+  // blocked times and settings wait for the flag.
+  const bookingOn = useFeatureEnabled('calendarBooking');
+  const tabs = bookingOn ? TABS : (['requests'] as Tab[]);
   const requested = searchParams.get('tab') as Tab | null;
-  const tab: Tab = requested && TABS.includes(requested) ? requested : 'requests';
+  const tab: Tab = requested && tabs.includes(requested) ? requested : 'requests';
   const { data: settingsData, isLoading } = useQuery({
     queryKey: ['booking-settings'],
     queryFn: () => bookingService.getSettings(),
@@ -452,8 +472,13 @@ export const BookingsPage: React.FC = () => {
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-bold text-heading">{t('booking.admin.title', 'Bookings')}</h2>
+      {!bookingOn && (
+        <div className="rounded-lg border border-line bg-shell p-3 text-sm text-body">
+          {t('booking.admin.flagOffNotice', 'Online booking is switched off. Clients cannot send new requests. Deposits that came in still wait for you here: decline to refund them, or accept and book them on an invoice.')}
+        </div>
+      )}
       <div role="tablist" className="flex flex-wrap gap-1 border-b border-line">
-        {TABS.map((key) => (
+        {tabs.map((key) => (
           <button key={key} role="tab" aria-selected={tab === key} onClick={() => setSearchParams({ tab: key })}
             className={`px-3 py-2 text-sm -mb-px border-b-2 ${tab === key ? 'border-accent text-heading font-medium' : 'border-transparent text-soft hover:text-heading'}`}>
             {tabLabel(key)}

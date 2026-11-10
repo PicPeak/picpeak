@@ -28,6 +28,8 @@ import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
 import { PricingFactorsTab } from './PricingFactorsTab';
 import { useFeatureEnabled } from '../../../../contexts/FeatureFlagsContext';
 import type { BoundTo, LineUnit, PriceMode } from '../../../../utils/lineItemTotals';
+import { bookingService } from '../../../../services/booking.service';
+import { effectiveDeposit } from '../../../../features/booking/effectiveDeposit';
 
 type Tab = 'services' | 'factors' | 'packages' | 'promotions' | 'textBlocks' | 'templates';
 const TABS: Tab[] = ['services', 'factors', 'packages', 'promotions', 'textBlocks', 'templates'];
@@ -166,6 +168,18 @@ const ServicesTab: React.FC = () => {
   });
   const [form, setForm] = useState<ServiceForm | null>(null);
   const bookingOn = useFeatureEnabled('calendarBooking');
+  // Stripe's smallest charge per currency, for the deposit hint.
+  const { data: bookingSettings } = useQuery({
+    queryKey: ['booking-settings'],
+    queryFn: () => bookingService.getSettings(),
+    enabled: bookingOn,
+  });
+  const depositMinimum = form ? (bookingSettings?.depositMinimumsMinor?.[(form.currency || '').toUpperCase()] ?? 0) : 0;
+  // The deposit charged at the base price (one unit), as the booking computes it.
+  const baseMinor = form && Number.isFinite(form.unitPrice) ? Math.round(form.unitPrice * 100 * (form.quantityDefault || 1)) : NaN;
+  const depositAtBase = form && Number.isFinite(baseMinor) ? effectiveDeposit(form.bookingDepositType, {
+    percent: form.bookingDepositPercent, fixedMinor: Math.round(form.bookingDepositAmount * 100), estimateMinor: baseMinor, minimumMinor: depositMinimum,
+  }) : null;
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['line-item-presets'] });
 
@@ -405,6 +419,10 @@ const ServicesTab: React.FC = () => {
                     {form.bookingDepositType !== 'none' && (
                       <p className="md:col-span-3 text-xs text-muted">
                         {t('booking.service.depositHint', 'Paid by card through the Stripe account under Settings → Payments. Without Stripe set up, requests come in without a deposit.')}
+                        {depositMinimum > 0 && ` ${t('booking.service.depositMinimum', 'Stripe charges at least {{amount}}: a smaller deposit is raised to that, at most to the estimate, and an estimate below it takes no deposit.', { amount: formatMoneyMinor(depositMinimum, form.currency) })}`}
+                        {depositAtBase != null && ` ${t('booking.service.depositAtBase', 'At the base price of {{price}}, the client pays {{amount}}.', {
+                          price: formatMoneyMinor(baseMinor, form.currency), amount: formatMoneyMinor(depositAtBase, form.currency),
+                        })}`}
                       </p>
                     )}
                   </>

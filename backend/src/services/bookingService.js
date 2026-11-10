@@ -490,7 +490,12 @@ async function assertMayRequest(conn, { email, ipHash, settings, now, hasDeposit
   if (await count(openRequests(conn, now, hasDeposits).whereRaw('LOWER(email) = ?', [email])) >= MAX_OPEN_PER_EMAIL) {
     throw new AppError('You already have open or recent booking requests. Please wait for the studio to answer them.', 429, 'BOOKING_TOO_MANY_OPEN');
   }
-  if (await count(openRequests(conn, now, hasDeposits)) >= Number(settings.max_open_requests)) {
+  // The total leaves out requests whose deposit came in (paid, review,
+  // disputed): they do not expire, so a few of them would close the form for
+  // everyone until the studio decides. They still count per client and email.
+  const unpaid = openRequests(conn, now, hasDeposits);
+  if (hasDeposits) unpaid.where((q) => q.whereNull('deposit_status').orWhereNotIn('deposit_status', PAID_DEPOSIT));
+  if (await count(unpaid) >= Number(settings.max_open_requests)) {
     throw new AppError('The studio has too many open requests right now. Please write to them directly.', 429, 'BOOKING_REQUESTS_FULL');
   }
 }

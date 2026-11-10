@@ -68,6 +68,12 @@ async function revokePendingPaymentCheckTokens(conn, invoiceId, nowIso, reason) 
  * Record a payment against an invoice. Supports partial payments
  * (multiple rows accumulate into `paid_amount_minor`). Status flips
  * to `paid` once the running total meets or exceeds total_amount_minor.
+ *
+ * `capToOpen` (opt-in): book at most what is still open, read under the
+ * invoice lock, and refuse a settled invoice (409 INVOICE_ALREADY_PAID).
+ * For a caller that books money it holds elsewhere (a booking deposit),
+ * so a payment recorded meanwhile cannot make it overpay. The result's
+ * `bookedMinor` says what was booked.
  */
 async function markPaid(id, payment, adminId) {
   return recordPayment(id, payment, adminId, adminId);
@@ -76,8 +82,8 @@ async function markPaid(id, payment, adminId) {
 // markPaid with the change-history actor kept apart from
 // recorded_by_admin_id: the payment-check link records the payment on
 // behalf of the invoice's admin, but the history names the link.
-async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference, notes, skontoApplied }, adminId, actor) {
-  const amount = ensureInt(amountMinor);
+async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference, notes, skontoApplied, capToOpen = false }, adminId, actor) {
+  let amount = ensureInt(amountMinor);
   if (amount <= 0) {
     throw new AppError('amount must be > 0', 400);
   }
@@ -106,6 +112,11 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
     // so it would never reach the customer.
     if (invoice.status === 'pending_delivery') {
       throw new AppError('This invoice is awaiting delivery. Mark it delivered before recording a payment.', 409, 'INVOICE_AWAITING_DELIVERY');
+    }
+    if (capToOpen) {
+      const open = ensureInt(invoice.total_amount_minor) - ensureInt(invoice.paid_amount_minor || 0);
+      if (open <= 0 || invoice.status === 'paid') throw new AppError('This invoice is already paid', 409, 'INVOICE_ALREADY_PAID');
+      amount = Math.min(amount, open);
     }
     skontoAmountMinor = skontoFlag
       ? Math.max(0, ensureInt(invoice.total_amount_minor) - amount)
@@ -165,7 +176,7 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
       { invoiceId: id, amountMinor: amount, totalPaidMinor: total },
       invoice.event_id || null, normalizeActor(actor), trx); } catch (_) { /* non-fatal */ }
 
-    return { paidTotalMinor: total, status: isFull ? 'paid' : invoice.status };
+    return { paidTotalMinor: total, status: isFull ? 'paid' : invoice.status, bookedMinor: amount };
   });
 
   // Migration 127 — admin payment-received notification. Fires only

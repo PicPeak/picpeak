@@ -759,3 +759,116 @@ describe('public routes outside a CRM context', () => {
     expect([status.status, status.body.error]).toEqual([200, undefined]);
   });
 });
+
+describe('review round 3: the six deposit decisions', () => {
+  const open = async (date, hhmm, email) => {
+    const res = await sendRequest(zurich(date, hhmm), { email });
+    expect(res.status).toBe(201);
+    return { res, row: await db('booking_requests').where({ reference: res.body.reference }).first() };
+  };
+  const hook = async (session) => webhook('checkout.session.completed', { id: session.id, metadata: session.metadata }).expect(200);
+  const acceptAndInvoice = async (row) => {
+    const accepted = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/accept`).set(auth);
+    expect(accepted.status).toBe(200);
+    const quoteId = accepted.body.request.quoteId;
+    await withTrusted(() => db('quotes').where({ id: quoteId }).update({ status: 'accepted' }));
+    await withTrusted(() => require('../../src/services/quoteService').convertToEvent(quoteId, adminId));
+    const quote = await withTrusted(() => db('quotes').where({ id: quoteId }).first());
+    const invoice = await withTrusted(() => db('invoices').where({ deal_uuid: quote.deal_uuid }).first());
+    await withTrusted(() => db('invoices').where({ id: invoice.id }).update({ status: 'sent' }));
+    return invoice;
+  };
+  const apply = (row, invoice) => request(adminApp).post(`/api/admin/booking/requests/${row.id}/apply-deposit`).set(auth).send({ invoiceId: invoice.id });
+
+  test('a review deposit is booked for what came in, which settles the review', async () => {
+    const { row } = await open(day(77), '09:00', 'review-apply@example.test');
+    const session = pay(row.checkout_session_id);
+    session.amount_total = 15000;
+    await hook(session);
+    expect((await db('booking_requests').where({ id: row.id }).first()).deposit_status).toBe('review');
+    const invoice = await acceptAndInvoice(row);
+    const res = await apply(row, invoice);
+    expect([res.status, res.body.error]).toEqual([200, undefined]);
+    const settled = await db('booking_requests').where({ id: row.id }).first();
+    // A bigint column: a string on PostgreSQL.
+    expect([settled.deposit_status, Number(settled.deposit_applied_minor)]).toEqual(['paid', 15000]);
+    const log = await withTrusted(() => db('invoice_payment_log').where({ invoice_id: invoice.id }).first());
+    expect(Number(log.amount_minor)).toBe(15000);
+
+    // A refund made in Stripe afterwards: the invoice warns, the payment stays.
+    const invoiceApp = buildRouteApp('/api/admin/invoices', require('../../src/routes/adminInvoices'));
+    const before = await request(invoiceApp).get(`/api/admin/invoices/${invoice.id}`).set(auth);
+    expect(before.body.depositAlerts).toEqual([]);
+    await webhook('charge.refunded', { id: 'ch_r4', payment_intent: session.payment_intent, refunded: true }).expect(200);
+    const after = await request(invoiceApp).get(`/api/admin/invoices/${invoice.id}`).set(auth);
+    expect(after.body.depositAlerts).toEqual([expect.objectContaining({ reference: row.reference, depositStatus: 'refunded' })]);
+    expect(after.body.payments).toHaveLength(1);
+  });
+
+  test('a capped payment books at most what is open, under the invoice lock', async () => {
+    const { row } = await open(day(78), '09:00', 'capped@example.test');
+    await hook(pay(row.checkout_session_id));
+    const invoice = await acceptAndInvoice(row);
+    const payments = require('../../src/services/invoice/payments');
+    const total = Number(invoice.total_amount_minor);
+    // A manual payment leaves 30.00 open after the deposit's read.
+    await withTrusted(() => payments.markPaid(invoice.id, { amountMinor: total - 3000, paymentMethod: 'bank_transfer' }, adminId));
+    const result = await withTrusted(() => payments.markPaid(invoice.id, { amountMinor: 20000, paymentMethod: 'stripe', capToOpen: true }, adminId));
+    expect([result.bookedMinor, result.status]).toEqual([3000, 'paid']);
+    await expect(withTrusted(() => payments.markPaid(invoice.id, { amountMinor: 100, capToOpen: true }, adminId)))
+      .rejects.toMatchObject({ code: 'INVOICE_ALREADY_PAID' });
+    // Without the option nothing changes for the other callers.
+    const plain = await withTrusted(() => payments.markPaid(invoice.id, { amountMinor: 100, paymentMethod: 'cash' }, adminId));
+    expect(plain.bookedMinor).toBe(100);
+  });
+
+  test('a deposit below Stripe\'s minimum is raised to it, at most to the estimate', () => {
+    const { depositFor } = require('../../src/services/bookingDeposits');
+    const percent = { booking_deposit_type: 'percent', booking_deposit_percent: 10, currency: 'CHF' };
+    expect(depositFor(percent, 300)).toBe(50); // 10% of 3.00 = 0.30, raised to 0.50
+    expect(depositFor(percent, 40)).toBe(0); // an estimate below 0.50 takes none
+    expect(depositFor(percent, 100000)).toBe(10000);
+    const fixed = { booking_deposit_type: 'fixed', booking_deposit_minor: 20, currency: 'GBP' };
+    expect(depositFor(fixed, 10000)).toBe(30);
+    expect(depositFor({ ...fixed, currency: 'XXX' }, 10000)).toBe(20); // unknown currency: not raised
+  });
+
+  test('paid requests do not count against the total cap, but still per client', async () => {
+    await db('booking_requests').whereIn('status', ['pending', 'awaiting_payment']).update({ status: 'declined' });
+    await request(adminApp).put('/api/admin/booking/settings').set(auth).send({ maxOpenRequests: 1 }).expect(200);
+    try {
+      const { row } = await open(day(84), '09:00', 'cap-paid@example.test');
+      await hook(pay(row.checkout_session_id));
+      const { row: unpaid } = await open(day(84), '13:00', 'cap-unpaid@example.test');
+      expect(unpaid.status).toBe('awaiting_payment');
+      const full = await sendRequest(zurich(day(85), '09:00'), { email: 'cap-third@example.test' });
+      expect([full.status, full.body.code || full.body.error?.code]).toEqual([429, 'BOOKING_REQUESTS_FULL']);
+    } finally {
+      await request(adminApp).put('/api/admin/booking/settings').set(auth).send({ maxOpenRequests: 200 }).expect(200);
+    }
+  });
+
+  test('switched off, deposits still waiting can be read and decided; nothing new is taken', async () => {
+    const { res, row } = await open(day(91), '09:00', 'flag-off@example.test');
+    await hook(pay(row.checkout_session_id));
+    const setFlag = async (value) => {
+      await db('feature_flags').where({ key: 'calendarBooking' }).update({ value });
+      require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+    };
+    await setFlag(false);
+    try {
+      expect((await request(adminApp).get('/api/admin/booking/decisions-open').set(auth)).body.open).toBe(true);
+      expect((await request(adminApp).get('/api/admin/booking/requests').set(auth)).status).toBe(200);
+      expect((await request(adminApp).put('/api/admin/booking/settings').set(auth).send({ holdHours: 24 })).status).toBe(403);
+      expect((await sendRequest(zurich(day(91), '13:00'), { email: 'flag-off-new@example.test' })).status).toBe(403);
+      expect((await request(publicApp).get(`/api/public/booking/requests/status/${res.body.statusToken}`)).status).toBe(200);
+      const declined = await request(adminApp).post(`/api/admin/booking/requests/${row.id}/decline`).set(auth).send({});
+      expect([declined.status, declined.body.request?.depositStatus]).toEqual([200, 'refunded']);
+      // Nothing left to decide: closed like the rest of the feature.
+      await db('booking_requests').whereIn('deposit_status', ['paid', 'review', 'disputed', 'refund_failed']).update({ deposit_status: 'refunded' });
+      expect((await request(adminApp).get('/api/admin/booking/requests').set(auth)).status).toBe(403);
+    } finally {
+      await setFlag(true);
+    }
+  });
+});

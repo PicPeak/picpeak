@@ -13,6 +13,7 @@ import { PreviewPage } from './pages/gallery/PreviewPage';
 import { PurchasedDownloadsPage } from './pages/public/PurchasedDownloadsPage';
 import { PhotoCheckoutPage } from './pages/public/PhotoCheckoutPage';
 import { BookingPage } from './pages/public/BookingPage';
+import { RequireBookings } from './features/booking/RequireBookings';
 import { BookingStatusPage } from './pages/public/BookingStatusPage';
 import { BookingsPage } from './pages/admin/clients/BookingsPage';
 const SlideshowPage = lazy(() => import('./pages/gallery/SlideshowPage').then((m) => ({ default: m.SlideshowPage })));
@@ -345,7 +346,7 @@ const router = createBrowserRouter(
                 `calendar`. Lazy-loaded so the FullCalendar
                 bundle stays out of the main chunk. */}
             {/* Client booking requests (#2440). */}
-            <Route element={<RequireFeature flag="calendarBooking" />}>
+            <Route element={<RequireBookings />}>
               <Route path="bookings" element={<BookingsPage />} />
             </Route>
 
