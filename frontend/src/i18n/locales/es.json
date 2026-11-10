@@ -1,4 +1,17 @@
 {
+  "systemHealth": {
+    "backupRestoreTest": {
+      "title": "Prueba de restauración de copias de seguridad",
+      "ok": "Una copia de seguridad reciente superó su prueba de restauración.",
+      "stale": "Ninguna prueba de restauración superada en los últimos {{days}} días.",
+      "none": "Todavía no se ha superado ninguna prueba de restauración.",
+      "failed": "La última prueba de restauración falló. Es posible que la copia no se pueda restaurar.",
+      "running": "Hay una prueba de restauración en curso.",
+      "lastPassed": "Última superada: {{when}}",
+      "neverPassed": "No consta ninguna prueba de restauración superada.",
+      "open": "Abrir prueba de restauración"
+    }
+  },
   "userManagement": {
     "title": "Gestión de usuarios",
     "subtitle": "Administrar usuarios administradores e invitaciones",
@@ -1660,6 +1673,10 @@
       "noResults": "Ningún ajuste coincide con «{{query}}»."
     },
     "features": {
+      "backupRestoreTest": {
+        "title": "Prueba de restauración de copias de seguridad",
+        "description": "Cada copia de seguridad se restaura de prueba en una base de datos desechable y se comprueba: firma, sumas de verificación, hashes de archivos, recuentos de filas y migraciones. Las copias conservadas se vuelven a comprobar cada semana y recibirá un correo si una falla."
+      },
       "configure": "Configurar",
       "sidebarInSettings": "Sin entrada en la barra lateral — está en los ajustes",
       "autoTagging": {
@@ -2748,6 +2765,96 @@
     }
   },
   "backup": {
+    "restoreTest": {
+      "title": "Prueba de restauración",
+      "description": "Después de cada copia de seguridad, y semanalmente para las copias conservadas, el servidor comprueba que la copia se puede restaurar realmente: verifica la firma y las sumas de verificación, restaura la base de datos en una copia desechable y la comprueba.",
+      "runNow": "Ejecutar prueba de restauración ahora",
+      "hashAll": "Calcular el hash de todos los archivos",
+      "started": "Prueba de restauración iniciada.",
+      "busy": "Ya hay una copia de seguridad, restauración o prueba de restauración en curso. Inténtelo de nuevo cuando termine.",
+      "noBackup": "Todavía no hay ninguna copia de seguridad correcta que probar.",
+      "startFailed": "No se pudo iniciar la prueba de restauración.",
+      "loadFailed": "No se pudieron cargar los resultados de la prueba de restauración.",
+      "stale": "Ninguna prueba de restauración superada en los últimos {{days}} días",
+      "disabled": "Las pruebas de restauración automáticas están desactivadas en Configuración. Las copias no se prueban salvo que inicie una prueba aquí.",
+      "empty": "Todavía no se ha ejecutado ninguna prueba de restauración.",
+      "fullCheck": "hash de todos los archivos",
+      "scheduleSummary": "Programación de la comprobación: {{cron}} · muestra de otros archivos por ejecución: {{percent}} %",
+      "sampled": "{{percent}} % de los demás archivos en la muestra",
+      "when": "Cuándo",
+      "tested": "Probado",
+      "triggeredBy": "Origen",
+      "history": "Pruebas anteriores ({{count}})",
+      "status": {
+        "passed": "Superada",
+        "warning": "Superada con advertencias",
+        "failed": "Fallida",
+        "skipped": "Omitida",
+        "running": "En curso"
+      },
+      "level": {
+        "deep": "Verificación profunda",
+        "drill": "Simulacro de restauración"
+      },
+      "trigger": {
+        "backup": "Tras la copia de seguridad",
+        "schedule": "Comprobación programada",
+        "admin": "Iniciada por un administrador"
+      },
+      "target": {
+        "backupRun": "Copia de seguridad #{{id}}",
+        "databaseRun": "Copia de la base de datos #{{id}}",
+        "none": "Sin copia de seguridad"
+      },
+      "checks": {
+        "manifest_signature": "Firma del manifiesto",
+        "dump_checksum": "Suma de verificación del volcado de la base de datos",
+        "parent_chain": "Cadena de copias",
+        "business_docs": "Documentos comerciales",
+        "files_sample": "Muestra de archivos",
+        "files_all": "Todos los archivos",
+        "drill_load": "Carga en una base de datos de prueba",
+        "drill_integrity": "Integridad de la base de datos",
+        "drill_foreign_keys": "Claves foráneas",
+        "drill_row_counts": "Recuentos de filas",
+        "drill_migrate": "Migración a la versión actual",
+        "drill_invariants": "Coherencia de los datos",
+        "createdb_privilege": "Permiso para crear una base de datos de prueba",
+        "destination": "Destino de la copia de seguridad"
+      },
+      "skipReasons": {
+        "not_verifiable_rsync": "Las copias enviadas por rsync no se pueden recuperar para probarlas, así que no se verifican. Use un destino local o S3 para obtener pruebas de restauración.",
+        "insufficient_space": "No había espacio libre suficiente para restaurar una copia de prueba. Libere espacio en el servidor y vuelva a ejecutar la prueba.",
+        "busy": "En ese momento había una copia de seguridad, restauración u otra prueba en curso, así que esta prueba se omitió.",
+        "no_backup": "No había ninguna copia de seguridad correcta que probar.",
+        "not_standalone": "Esta copia no se puede restaurar por sí sola, así que no se restauró de prueba.",
+        "no_manifest": "Esta copia no tiene manifiesto, así que no se pudo comprobar su contenido.",
+        "interrupted": "La prueba se interrumpió antes de terminar, por ejemplo por un reinicio del servidor.",
+        "no_database_in_backup": "Esta copia se hizo sin la base de datos (Configuración → Qué copiar), así que solo se comprobaron sus archivos. Incluya la base de datos para obtener pruebas de restauración completas.",
+        "no_database_dump": "Esta copia no contiene un volcado de la base de datos, así que no había nada que restaurar de prueba.",
+        "legacy_manifest": "Esta copia se hizo antes de que los manifiestos se firmaran, así que sus sumas de comprobación no son fiables y no se ha probado. Las copias nuevas se firman y se prueban."
+      },
+      "badge": {
+        "hint": "Prueba de restauración: si esta copia se verificó y se restauró de prueba en una base de datos desechable.",
+        "warningHint": "Restaurable, con advertencias.",
+        "running": "Probando",
+        "verified": "Verificada",
+        "failed": "Prueba fallida",
+        "skipped": "No comprobable",
+        "notVerified": "Sin verificar"
+      },
+      "config": {
+        "title": "Prueba de restauración",
+        "enabled": "Ejecutar pruebas de restauración automáticamente",
+        "enabledHelp": "Probar cada copia al terminar y volver a comprobar las copias conservadas según la programación siguiente.",
+        "schedule": "Programación de la nueva comprobación (cron)",
+        "scheduleHelp": "Predeterminado: domingo 04:00 (0 4 * * 0)",
+        "samplePercent": "Muestra de archivos por ejecución (%)",
+        "samplePercentHelp": "Los documentos comerciales de cada copia siempre se comprueban por hash; esta es la proporción de los demás archivos (fotos, etc.) que se comprueba en cada ejecución, de forma rotatoria para cubrir todos los archivos con el tiempo.",
+        "invalidCron": "Introduzca una expresión cron válida (5 campos) para la programación de la prueba de restauración",
+        "invalidSamplePercent": "La muestra de archivos debe estar entre 0 y 100 por ciento"
+      }
+    },
     "external": {
       "warning": {
         "title": "Medios externos excluidos",

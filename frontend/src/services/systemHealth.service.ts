@@ -7,6 +7,7 @@
  * "everything went out".
  */
 import { api } from '../config/api';
+import type { BackupVerificationSummary } from './backupVerification.service';
 
 export interface StuckEmail {
   id: number;
@@ -36,6 +37,8 @@ export interface SystemHealthFailures {
     /** `legacy`: intact, but written before manifests were authenticated. */
     latestManifest: { authenticated: boolean; keyId?: string; state?: string };
   };
+  /** Backup restore test summary; null while `backupRestoreTest` is off. */
+  backupVerification?: BackupVerificationSummary | null;
   stuckEmails: StuckEmail[];
   /** Due, under the retry cap, and still unsent — nobody picked them up. */
   waitingEmails: StuckEmail[];

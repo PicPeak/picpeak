@@ -1505,6 +1505,14 @@ async function startServerInternal() {
     // Start database backup service
     await startScheduledBackups();
 
+    // Backup restore tests: clear what a crashed test left behind, then
+    // start the periodic re-check.
+    {
+      const backupVerification = require('./src/services/backupVerificationService');
+      await backupVerification.sweepStale();
+      await backupVerification.startVerificationSchedule();
+    }
+
     // Start the async photo-processing worker pool. Picks up
     // photos in 'pending' state (from POST /upload) and runs the
     // sharp/ffmpeg/EXIF pipeline off the request thread.

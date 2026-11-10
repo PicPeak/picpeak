@@ -1,4 +1,17 @@
 {
+  "systemHealth": {
+    "backupRestoreTest": {
+      "title": "Test de restauration des sauvegardes",
+      "ok": "Une sauvegarde récente a réussi son test de restauration.",
+      "stale": "Aucun test de restauration réussi au cours des {{days}} derniers jours.",
+      "none": "Aucun test de restauration n'a encore réussi.",
+      "failed": "Le dernier test de restauration a échoué. La sauvegarde n'est peut-être pas restaurable.",
+      "running": "Un test de restauration est en cours.",
+      "lastPassed": "Dernière réussite : {{when}}",
+      "neverPassed": "Aucun test de restauration réussi enregistré.",
+      "open": "Ouvrir le test de restauration"
+    }
+  },
   "userManagement": {
     "title": "Gestion des utilisateurs",
     "subtitle": "Gérer les utilisateurs administrateurs et les invitations",
@@ -1666,6 +1679,10 @@
       "title": "Marque"
     },
     "features": {
+      "backupRestoreTest": {
+        "title": "Test de restauration des sauvegardes",
+        "description": "Chaque sauvegarde est restaurée à titre de test dans une base de données jetable puis vérifiée : signature, sommes de contrôle, empreintes des fichiers, nombres de lignes et migrations. Les sauvegardes conservées sont revérifiées chaque semaine, et vous recevez un e-mail en cas d'échec."
+      },
       "title": "Fonctionnalités",
       "intro": "Activez ou désactivez les surfaces du produit. Les fonctionnalités activées apparaissent dans la navigation de gauche et deviennent disponibles pour votre équipe. Certaines fonctionnalités sont encore en version bêta — activez-les pour les essayer, désactivez-les pour les masquer.",
       "sidebarHidden": "Aucun élément de barre latérale — s'exécute en arrière-plan",
@@ -3031,6 +3048,96 @@
     }
   },
   "backup": {
+    "restoreTest": {
+      "title": "Test de restauration",
+      "description": "Après chaque sauvegarde, et chaque semaine pour les sauvegardes conservées, le serveur vérifie que la sauvegarde peut réellement être restaurée : il contrôle la signature et les sommes de contrôle, restaure la base de données dans une copie jetable et la vérifie.",
+      "runNow": "Lancer le test de restauration",
+      "hashAll": "Calculer l’empreinte de chaque fichier",
+      "started": "Test de restauration lancé.",
+      "busy": "Une sauvegarde, une restauration ou un test de restauration est déjà en cours. Réessayez une fois terminé.",
+      "noBackup": "Il n'y a encore aucune sauvegarde réussie à tester.",
+      "startFailed": "Le test de restauration n'a pas pu être lancé.",
+      "loadFailed": "Les résultats du test de restauration n'ont pas pu être chargés.",
+      "stale": "Aucun test de restauration réussi au cours des {{days}} derniers jours",
+      "disabled": "Les tests de restauration automatiques sont désactivés dans Configuration. Les sauvegardes ne sont testées que si vous lancez un test ici.",
+      "empty": "Aucun test de restauration n'a encore été exécuté.",
+      "fullCheck": "empreinte de chaque fichier",
+      "scheduleSummary": "Planification de la vérification : {{cron}} · échantillon d'autres fichiers par exécution : {{percent}} %",
+      "sampled": "{{percent}} % des autres fichiers échantillonnés",
+      "when": "Quand",
+      "tested": "Testé",
+      "triggeredBy": "Déclencheur",
+      "history": "Tests précédents ({{count}})",
+      "status": {
+        "passed": "Réussi",
+        "warning": "Réussi avec avertissements",
+        "failed": "Échoué",
+        "skipped": "Ignoré",
+        "running": "En cours"
+      },
+      "level": {
+        "deep": "Vérification approfondie",
+        "drill": "Exercice de restauration"
+      },
+      "trigger": {
+        "backup": "Après la sauvegarde",
+        "schedule": "Vérification planifiée",
+        "admin": "Lancé par un administrateur"
+      },
+      "target": {
+        "backupRun": "Sauvegarde n° {{id}}",
+        "databaseRun": "Sauvegarde de la base de données n° {{id}}",
+        "none": "Aucune sauvegarde"
+      },
+      "checks": {
+        "manifest_signature": "Signature du manifeste",
+        "dump_checksum": "Somme de contrôle du dump de la base",
+        "parent_chain": "Chaîne de sauvegardes",
+        "business_docs": "Documents commerciaux",
+        "files_sample": "Échantillon de fichiers",
+        "files_all": "Tous les fichiers",
+        "drill_load": "Chargement dans une base de test",
+        "drill_integrity": "Intégrité de la base de données",
+        "drill_foreign_keys": "Clés étrangères",
+        "drill_row_counts": "Nombres de lignes",
+        "drill_migrate": "Migration vers la version actuelle",
+        "drill_invariants": "Cohérence des données",
+        "createdb_privilege": "Droit de créer une base de test",
+        "destination": "Destination de la sauvegarde"
+      },
+      "skipReasons": {
+        "not_verifiable_rsync": "Les sauvegardes envoyées par rsync ne peuvent pas être récupérées pour être testées ; elles ne sont donc pas vérifiées. Utilisez une destination locale ou S3 pour bénéficier des tests de restauration.",
+        "insufficient_space": "L'espace disque libre était insuffisant pour restaurer une copie de test. Libérez de l'espace sur le serveur puis relancez le test.",
+        "busy": "Une sauvegarde, une restauration ou un autre test était en cours à ce moment-là ; ce test a donc été ignoré.",
+        "no_backup": "Il n'y avait aucune sauvegarde réussie à tester.",
+        "not_standalone": "Cette sauvegarde ne peut pas être restaurée seule ; elle n'a donc pas été restaurée à titre de test.",
+        "no_manifest": "Cette sauvegarde n'a pas de manifeste ; son contenu n'a donc pas pu être vérifié.",
+        "interrupted": "Le test a été interrompu avant la fin, par exemple par un redémarrage du serveur.",
+        "no_database_in_backup": "Cette sauvegarde a été faite sans la base de données (Configuration → Éléments à sauvegarder) : seuls ses fichiers ont été vérifiés. Incluez la base de données pour des tests de restauration complets.",
+        "no_database_dump": "Cette sauvegarde ne contient pas de dump de la base de données ; il n'y avait donc rien à restaurer à titre de test.",
+        "legacy_manifest": "Cette sauvegarde date d'avant la signature des manifestes : ses sommes de contrôle ne sont pas fiables et elle n'a pas été testée. Les nouvelles sauvegardes sont signées et testées."
+      },
+      "badge": {
+        "hint": "Test de restauration : indique si cette sauvegarde a été vérifiée et restaurée à titre de test dans une base jetable.",
+        "warningHint": "Restaurable, avec avertissements.",
+        "running": "Test en cours",
+        "verified": "Vérifiée",
+        "failed": "Test échoué",
+        "skipped": "Non testable",
+        "notVerified": "Non vérifiée"
+      },
+      "config": {
+        "title": "Test de restauration",
+        "enabled": "Exécuter automatiquement les tests de restauration",
+        "enabledHelp": "Tester chaque sauvegarde une fois terminée et revérifier les sauvegardes conservées selon la planification ci-dessous.",
+        "schedule": "Planification de la revérification (cron)",
+        "scheduleHelp": "Par défaut : dimanche 04:00 (0 4 * * 0)",
+        "samplePercent": "Échantillon de fichiers par exécution (%)",
+        "samplePercentHelp": "Les documents commerciaux de chaque sauvegarde sont toujours vérifiés par empreinte ; ceci est la part des autres fichiers (photos, etc.) vérifiée à chaque exécution, par rotation afin que tous les fichiers soient couverts avec le temps.",
+        "invalidCron": "Veuillez saisir une expression cron valide (5 champs) pour la planification du test de restauration",
+        "invalidSamplePercent": "L'échantillon de fichiers doit être compris entre 0 et 100 %"
+      }
+    },
     "title": "Gestion des sauvegardes",
     "subtitle": "Gérer les sauvegardes du système, configurer les sauvegardes automatiques et restaurer à partir de sauvegardes précédentes.",
     "tabs": {

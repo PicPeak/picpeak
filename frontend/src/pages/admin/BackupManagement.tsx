@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   HardDrive,
   Settings,
@@ -28,15 +29,37 @@ import { RestoreWizard } from '../../components/admin/RestoreWizard';
 import { PicpeakExportCard } from '../../components/admin/PicpeakBackupCard';
 import { BackupIntegrityCard } from '../../components/admin/BackupIntegrityCard';
 import { BackupCoverageCard } from '../../components/admin/BackupCoverageCard';
+import { RestoreTestCard } from '../../components/admin/RestoreTestCard';
+import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { api } from '../../config/api';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 
 type TabId = 'dashboard' | 'configuration' | 'history' | 'restore' | 'integrity' | 'coverage';
+const TAB_IDS: TabId[] = ['dashboard', 'configuration', 'history', 'restore', 'integrity', 'coverage'];
+
+// `?backupTab=integrity` opens a tab directly (System health links to the
+// restore test this way). Read once on mount; the tabs are local state.
+const initialTab = (): TabId => {
+  if (typeof window === 'undefined') return 'dashboard';
+  const requested = new URLSearchParams(window.location.search).get('backupTab');
+  return TAB_IDS.find((id) => id === requested) ?? 'dashboard';
+};
 
 export const BackupManagement: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+  // Drop ?backupTab= once read, so a reload or Back after switching tabs
+  // does not jump to the linked tab again.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (!searchParams.has('backupTab')) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('backupTab');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const { t } = useTranslation();
+  const { flags } = useFeatureFlags();
+  const restoreTestEnabled = flags.backupRestoreTest;
   // Full-instance export contains every secret, so the endpoint is
   // super_admin-only (GHSA-pv6w) — hide the card for other roles instead
   // of showing a button that always 403s. The backup destination and
@@ -270,11 +293,12 @@ export const BackupManagement: React.FC = () => {
             isSaving={updateConfigMutation.isPending}
             canManageDestination={isSuperAdmin}
             privateEndpointOrigin={privateEndpointOrigin}
+            restoreTestEnabled={restoreTestEnabled}
           />
         )}
 
         {activeTab === 'history' && (
-          <BackupHistory />
+          <BackupHistory restoreTestEnabled={restoreTestEnabled} />
         )}
 
         {activeTab === 'restore' && (isSuperAdmin ? (
@@ -288,7 +312,10 @@ export const BackupManagement: React.FC = () => {
         ))}
 
         {activeTab === 'integrity' && (
-          <BackupIntegrityCard />
+          <div className="space-y-6">
+            {restoreTestEnabled && <RestoreTestCard />}
+            <BackupIntegrityCard />
+          </div>
         )}
 
         {activeTab === 'coverage' && (

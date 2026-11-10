@@ -410,6 +410,8 @@ router.get(
 
     return successResponse(res, {
       backupAuthentication,
+      // Restore tests (null with the backupRestoreTest flag off).
+      backupVerification: backupStatus.verification || null,
       signingSignals,
       stuckEmails: stuckEmails.map(mapEmailRow),
       waitingEmails: waitingEmails.map(mapEmailRow),

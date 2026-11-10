@@ -606,6 +606,8 @@ class DatabaseBackupService {
     this.isRunning = true;
     const startTime = new Date();
     let backupRun = null;
+    // A restore test running now yields to the backup.
+    require('./backupVerificationService').yieldTo('backup');
     
     try {
       // Get configuration. getBackupConfig() returns the raw
@@ -789,6 +791,13 @@ class DatabaseBackupService {
         });
       
       logger.info(`Database backup completed: ${finalFile} (${(finalStats.size / 1024 / 1024).toFixed(2)} MB) in ${durationSeconds}s`);
+
+      // A database-only backup gets its own restore test once this method
+      // has returned. The dump a file backup makes inline is tested with
+      // that file backup instead.
+      if (!options.inline) {
+        setImmediate(() => require('./backupVerificationService').queueAfterDatabaseBackup(runId));
+      }
       
       // Send success notification if configured
       if (config.database_backup_email_on_success) {
@@ -935,7 +944,9 @@ class DatabaseBackupService {
             await fs.rm(`${backup.file_path}${recoveryFiles.REFERENCES_SUFFIX}`, { force: true });
           }
           
-          // Delete the record
+          // Delete the record, and its restore-test rows (SQLite does not
+          // enforce the cascade).
+          await require('./backupService').deleteVerificationsOf(db, { databaseBackupRunIds: [backup.id] });
           await db('database_backup_runs')
             .where('id', backup.id)
             .delete();

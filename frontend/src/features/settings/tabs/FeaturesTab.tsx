@@ -27,6 +27,7 @@ import {
   Megaphone,
   Tags,
   Gift,
+  ShieldCheck,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -214,6 +215,24 @@ export const FeaturesTab: React.FC = () => {
             lockedReason={isSingleContainer
               ? t('settings.features.autoTagging.lockedSingleContainer')
               : undefined}
+          />
+
+          {/* Backup restore test. Background check after every backup plus a
+              weekly re-check; results live on Backup → Integrity. */}
+          <FeatureCard
+            icon={ShieldCheck}
+            title={t('settings.features.backupRestoreTest.title', 'Backup restore test')}
+            description={t(
+              'settings.features.backupRestoreTest.description',
+              'Every backup is test-restored into a throwaway database and checked: signature, checksums, file hashes, row counts and migrations. Retained backups are re-checked weekly, and you are emailed when one fails.',
+            )}
+            feature="backupRestoreTest"
+            sidebarHidden
+            sidebarHiddenLabel={sidebarHiddenLabel}
+            enabled={staged.backupRestoreTest}
+            onToggle={(next) => setFlag('backupRestoreTest', next)}
+            configureHref={settingsTabLink('backupRestoreTest', 'backup')}
+            configureLabel={configureLabel}
           />
         </Section>
 

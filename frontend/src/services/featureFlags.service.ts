@@ -102,7 +102,12 @@ export type FeatureKey =
   | 'documents'
   // Customer gifts (migration 343) - milestone suggestions, gift stock and the
   // gift history. Child of `clients`; the backend refuses /admin/gifts while off.
-  | 'customerGifts';
+  | 'customerGifts'
+  // Backup restore test - every backup is verified (manifest signature, dump
+  // checksum, file hashes) and test-restored into a throwaway database, plus a
+  // weekly re-check of retained backups. Background only; the backend refuses
+  // /admin/backup/verifications while off.
+  | 'backupRestoreTest';
 
 export type FeatureFlags = Record<FeatureKey, boolean>;
 

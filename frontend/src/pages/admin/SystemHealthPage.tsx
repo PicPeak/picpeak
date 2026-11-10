@@ -13,17 +13,33 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, RefreshCw, Trash2, CheckCircle, Clock, FileCheck, KeyRound, Mail, MailX, ShieldAlert } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AlertCircle, RefreshCw, Trash2, CheckCircle, Clock, DatabaseBackup, FileCheck, KeyRound, Loader2, Mail, MailX, ShieldAlert } from 'lucide-react';
 import { Button, Card, Loading } from '../../components/common';
 import { DependencyStatusCard } from '../../components/admin/DependencyStatusCard';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
+import { usePermissions } from '../../contexts/PermissionsContext';
 import { useMutationWithToast } from '../../hooks';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { systemHealthService, type StuckEmail } from '../../services/systemHealth.service';
+import type { VerificationHealth } from '../../services/backupVerification.service';
 import { mailPolicyMessage } from '../../utils/mailErrors';
+
+// Colour of the backup restore test tile per health state.
+const RESTORE_TEST_TONE: Record<VerificationHealth, string> = {
+  ok: 'text-success-text',
+  stale: 'text-warning-text',
+  none: 'text-warning-text',
+  failed: 'text-danger-text',
+  running: 'text-info-text',
+};
 
 export const SystemHealthPage: React.FC = () => {
   const { t } = useTranslation();
+  // The restore test card the link opens needs backup.view (the Backup tab
+  // itself also opens for settings.view, without the card).
+  const { hasPermission } = usePermissions();
+  const canOpenBackup = hasPermission('backup.view');
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   const { flags } = useFeatureFlags();
 
@@ -283,6 +299,44 @@ export const SystemHealthPage: React.FC = () => {
                     ? 'systemHealth.backupAuthentication.legacy' : 'systemHealth.backupAuthentication.unverified')}
               </p>
               <p className="text-xs text-soft mt-2">{t('systemHealth.backupAuthentication.hint')}</p>
+            </div>
+          </div>
+        </Card>
+      )}
+      {/* Backup restore test (feature flag backupRestoreTest): whether the
+          backups were actually shown to restore. null while the flag is off. */}
+      {!isLoading && data?.backupVerification && (
+        <Card padding="lg" className="mb-4">
+          <div className="flex items-start gap-3">
+            {data.backupVerification.health === 'running'
+              ? <Loader2 className="w-5 h-5 mt-0.5 shrink-0 text-info-text animate-spin" />
+              : <DatabaseBackup className={`w-5 h-5 mt-0.5 shrink-0 ${RESTORE_TEST_TONE[data.backupVerification.health]}`} />}
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-heading">
+                {t('systemHealth.backupRestoreTest.title', 'Backup restore test')}
+              </h2>
+              <p className={`text-sm mt-0.5 ${RESTORE_TEST_TONE[data.backupVerification.health]}`}>
+                {{
+                  ok: t('systemHealth.backupRestoreTest.ok', 'A recent backup passed its restore test.'),
+                  stale: t('systemHealth.backupRestoreTest.stale', 'No passed restore test in the last {{days}} days.', { days: data.backupVerification.staleDays }),
+                  none: t('systemHealth.backupRestoreTest.none', 'No restore test has passed yet.'),
+                  failed: t('systemHealth.backupRestoreTest.failed', 'The newest backup failed its restore test. It may not be restorable.'),
+                  running: t('systemHealth.backupRestoreTest.running', 'A restore test is running.'),
+                }[data.backupVerification.health]}
+              </p>
+              <p className="text-xs text-muted mt-1">
+                {data.backupVerification.lastPassedAt
+                  ? t('systemHealth.backupRestoreTest.lastPassed', 'Last passed: {{when}}', { when: fmtDateTime(data.backupVerification.lastPassedAt) })
+                  : t('systemHealth.backupRestoreTest.neverPassed', 'No passed restore test on record.')}
+              </p>
+              {canOpenBackup && (
+                <Link
+                  to="/admin/settings?tab=backup&backupTab=integrity"
+                  className="inline-block mt-2 text-sm font-medium text-accent hover:underline"
+                >
+                  {t('systemHealth.backupRestoreTest.open', 'Open restore test')}
+                </Link>
+              )}
             </div>
           </div>
         </Card>

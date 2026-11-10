@@ -1,4 +1,17 @@
 {
+  "systemHealth": {
+    "backupRestoreTest": {
+      "title": "Teste de restauração de backups",
+      "ok": "Um backup recente foi aprovado no teste de restauração.",
+      "stale": "Nenhum teste de restauração aprovado nos últimos {{days}} dias.",
+      "none": "Nenhum teste de restauração foi aprovado ainda.",
+      "failed": "O último teste de restauração falhou. O backup pode não ser restaurável.",
+      "running": "Há um teste de restauração em andamento.",
+      "lastPassed": "Último aprovado: {{when}}",
+      "neverPassed": "Nenhum teste de restauração aprovado registrado.",
+      "open": "Abrir teste de restauração"
+    }
+  },
   "userManagement": {
     "title": "Gerenciamento de Usuários",
     "subtitle": "Gerenciar usuários administradores e convites",
@@ -1766,6 +1779,10 @@
       "title": "Identidade Visual"
     },
     "features": {
+      "backupRestoreTest": {
+        "title": "Teste de restauração de backups",
+        "description": "Cada backup é restaurado em teste num banco de dados descartável e verificado: assinatura, somas de verificação, hashes dos arquivos, contagens de linhas e migrações. Os backups retidos são verificados novamente toda semana, e você recebe um e-mail quando um falha."
+      },
       "title": "Recursos",
       "intro": "Ative ou desative os recursos do produto. Os recursos ativados aparecem na navegação à esquerda e ficam disponíveis para sua equipe. Alguns recursos ainda estão em beta — ative-os para experimentar ou desative-os para ocultar.",
       "sidebarHidden": "Sem item na barra lateral — executa em segundo plano",
@@ -3121,6 +3138,96 @@
     }
   },
   "backup": {
+    "restoreTest": {
+      "title": "Teste de restauração",
+      "description": "Após cada backup, e semanalmente para os backups retidos, o servidor verifica se o backup pode realmente ser restaurado: confere a assinatura e as somas de verificação, restaura o banco de dados numa cópia descartável e a verifica.",
+      "runNow": "Executar teste de restauração agora",
+      "hashAll": "Calcular o hash de todos os arquivos",
+      "started": "Teste de restauração iniciado.",
+      "busy": "Já há um backup, uma restauração ou um teste de restauração em andamento. Tente novamente quando terminar.",
+      "noBackup": "Ainda não há nenhum backup bem-sucedido para testar.",
+      "startFailed": "Não foi possível iniciar o teste de restauração.",
+      "loadFailed": "Não foi possível carregar os resultados do teste de restauração.",
+      "stale": "Nenhum teste de restauração aprovado nos últimos {{days}} dias",
+      "disabled": "Os testes de restauração automáticos estão desativados em Configuração. Os backups só são testados se você iniciar um teste aqui.",
+      "empty": "Nenhum teste de restauração foi executado ainda.",
+      "fullCheck": "hash de todos os arquivos",
+      "scheduleSummary": "Agendamento da verificação: {{cron}} · amostra de outros ficheiros por execução: {{percent}} %",
+      "sampled": "{{percent}} % dos outros ficheiros na amostra",
+      "when": "Quando",
+      "tested": "Testado",
+      "triggeredBy": "Origem",
+      "history": "Testes anteriores ({{count}})",
+      "status": {
+        "passed": "Aprovado",
+        "warning": "Aprovado com avisos",
+        "failed": "Falhou",
+        "skipped": "Ignorado",
+        "running": "Em andamento"
+      },
+      "level": {
+        "deep": "Verificação profunda",
+        "drill": "Simulação de restauração"
+      },
+      "trigger": {
+        "backup": "Após o backup",
+        "schedule": "Verificação agendada",
+        "admin": "Iniciado por um administrador"
+      },
+      "target": {
+        "backupRun": "Backup #{{id}}",
+        "databaseRun": "Backup do banco de dados #{{id}}",
+        "none": "Nenhum backup"
+      },
+      "checks": {
+        "manifest_signature": "Assinatura do manifesto",
+        "dump_checksum": "Soma de verificação do dump do banco",
+        "parent_chain": "Cadeia de backups",
+        "business_docs": "Documentos comerciais",
+        "files_sample": "Amostra de arquivos",
+        "files_all": "Todos os arquivos",
+        "drill_load": "Carregar num banco de teste",
+        "drill_integrity": "Integridade do banco de dados",
+        "drill_foreign_keys": "Chaves estrangeiras",
+        "drill_row_counts": "Contagens de linhas",
+        "drill_migrate": "Migrar para a versão atual",
+        "drill_invariants": "Consistência dos dados",
+        "createdb_privilege": "Permissão para criar um banco de teste",
+        "destination": "Destino do backup"
+      },
+      "skipReasons": {
+        "not_verifiable_rsync": "Backups enviados por rsync não podem ser trazidos de volta para teste, por isso não são verificados. Use um destino local ou S3 para ter testes de restauração.",
+        "insufficient_space": "Não havia espaço livre suficiente para restaurar uma cópia de teste. Libere espaço no servidor e execute o teste novamente.",
+        "busy": "Havia um backup, uma restauração ou outro teste em andamento naquele momento, por isso este teste foi ignorado.",
+        "no_backup": "Não havia nenhum backup bem-sucedido para testar.",
+        "not_standalone": "Este backup não pode ser restaurado sozinho, por isso não foi restaurado em teste.",
+        "no_manifest": "Este backup não tem manifesto, por isso o seu conteúdo não pôde ser verificado.",
+        "interrupted": "O teste foi interrompido antes de terminar, por exemplo por uma reinicialização do servidor.",
+        "no_database_in_backup": "Esta cópia foi feita sem a base de dados (Configuração → O que copiar), por isso só os ficheiros foram verificados. Inclua a base de dados para testes de restauro completos.",
+        "no_database_dump": "Este backup não contém um dump do banco de dados, por isso não havia nada para restaurar em teste.",
+        "legacy_manifest": "Esta cópia foi feita antes de os manifestos serem assinados, por isso as somas de verificação não são fiáveis e não foi testada. As novas cópias são assinadas e testadas."
+      },
+      "badge": {
+        "hint": "Teste de restauração: se este backup foi verificado e restaurado em teste num banco de dados descartável.",
+        "warningHint": "Restaurável, com avisos.",
+        "running": "Testando",
+        "verified": "Verificado",
+        "failed": "Teste falhou",
+        "skipped": "Não testável",
+        "notVerified": "Não verificado"
+      },
+      "config": {
+        "title": "Teste de restauração",
+        "enabled": "Executar testes de restauração automaticamente",
+        "enabledHelp": "Testar cada backup quando terminar e verificar novamente os backups retidos conforme o agendamento abaixo.",
+        "schedule": "Agendamento da nova verificação (cron)",
+        "scheduleHelp": "Padrão: domingo 04:00 (0 4 * * 0)",
+        "samplePercent": "Amostra de arquivos por execução (%)",
+        "samplePercentHelp": "Os documentos comerciais de cada backup são sempre verificados por hash; esta é a parcela dos demais arquivos (fotos etc.) verificada em cada execução, em rodízio para que todos os arquivos sejam cobertos com o tempo.",
+        "invalidCron": "Insira uma expressão cron válida (5 campos) para o agendamento do teste de restauração",
+        "invalidSamplePercent": "A amostra de arquivos deve estar entre 0 e 100 por cento"
+      }
+    },
     "title": "Gerenciamento de Backup",
     "subtitle": "Gerencie backups do sistema, configure backups automáticos e restaure dados.",
     "tabs": {
