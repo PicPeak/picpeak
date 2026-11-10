@@ -105,6 +105,9 @@ async function preflightRows(tables, dataDir, crossEngine, manifest) {
     for await (const batch of rowBatches(file, { allowMissing: true })) {
       rows += batch.length;
       if (batch.some(row => Object.keys(row).some(column => !known.has(column)))) throw new Error('Portable table contains an unknown target column');
+      // The load also runs repairDateOnlyColumns on pg `date` columns
+      // (replaceAllTables). It only turns a value into a plain date, which
+      // passes every check below, so preflight does not repeat it.
       let prepared = crossEngine ? helpers().coerceForTargetEngine(batch, types) : batch;
       prepared = helpers().serialiseJsonColumns(prepared, crossEngine ? new Set() : json);
       prepared = helpers().relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
