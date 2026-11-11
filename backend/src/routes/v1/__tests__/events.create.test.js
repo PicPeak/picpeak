@@ -72,3 +72,55 @@ it.each([{ feedback_enabled: 'maybe' }, { event_type: 'unknown' }])('rejects inv
     expect(response.status).toBe(400);
   }
 });
+describe('is_draft on the v1 surface (issue 2468)', () => {
+  let fire, queueWhatsapp;
+  beforeAll(async () => {
+    await db('app_settings').insert({ setting_key: 'event_phone_field_enabled', setting_value: 'true', setting_type: 'boolean' })
+      .onConflict('setting_key').merge({ setting_value: 'true' });
+  });
+  beforeEach(() => {
+    fire = jest.spyOn(require('../../../services/webhookService'), 'fire').mockResolvedValue();
+    const whatsapp = require('../../../services/whatsappProcessor');
+    jest.spyOn(whatsapp, 'getWhatsAppConfig').mockResolvedValue({ enabled: true });
+    queueWhatsapp = jest.spyOn(whatsapp, 'queueWhatsapp').mockResolvedValue();
+  });
+  afterEach(() => jest.restoreAllMocks());
+  const published = () => fire.mock.calls.filter(([type]) => type === 'event.published');
+  const announce = { customer_phone: '+491701234567' };
+
+  it.each([true, 'true'])('creates a silent draft for is_draft %j, and publishing announces it', async isDraft => {
+    const created = await create('v1', { ...announce, is_draft: isDraft });
+    expect(created.is_draft).toBe(true);
+    const row = await db('events').where({ id: created.id }).first();
+    expect([true, 1]).toContain(row.is_draft);
+    expect(await db('email_queue').where({ event_id: created.id })).toHaveLength(0);
+    expect(published()).toHaveLength(0);
+    expect(queueWhatsapp).not.toHaveBeenCalled();
+
+    const publish = await request(app).post(`/admin/${created.id}/publish`).set('Authorization', `Bearer ${adminToken}`).send({});
+    expect(publish.status).toBe(200);
+    expect(await db('email_queue').where({ event_id: created.id, email_type: 'gallery_created' })).toHaveLength(1);
+    expect(published()).toHaveLength(1);
+    expect(queueWhatsapp).toHaveBeenCalledWith(created.id, announce.customer_phone, 'gallery_created', expect.any(Object));
+  });
+
+  it('still publishes and announces right away when is_draft is omitted', async () => {
+    const { is_draft: _omitted, ...withoutDraft } = { ...base, ...announce };
+    const response = await request(app).post('/v1/events').set('Authorization', `Bearer ${apiToken}`).send(withoutDraft);
+    expect(response.status).toBe(201);
+    expect(response.body.is_draft).toBe(false);
+    const row = await db('events').where({ id: response.body.id }).first();
+    expect([false, 0]).toContain(row.is_draft);
+    expect(await db('email_queue').where({ event_id: row.id, email_type: 'gallery_created' })).toHaveLength(1);
+    expect(published()).toHaveLength(1);
+    expect(queueWhatsapp).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['maybe', null, 'yes'])('rejects is_draft %j with 400 before persistence', async isDraft => {
+    const before = await db('events').count('id as n').first();
+    const response = await request(app).post('/v1/events').set('Authorization', `Bearer ${apiToken}`)
+      .send({ ...base, event_name: 'Rejected draft', is_draft: isDraft });
+    expect(response.status).toBe(400);
+    expect(await db('events').count('id as n').first()).toEqual(before);
+  });
+});

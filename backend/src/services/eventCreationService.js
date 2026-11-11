@@ -40,8 +40,9 @@ function creationError(body) {
   return error;
 }
 
-/** Shared creation operation. v1 explicitly publishes immediately and accepts
- * an optional absolute expiry; admin/legacy use configured field requirements.
+/** Shared creation operation. v1 publishes immediately unless it sends
+ * is_draft: true, and accepts an optional absolute expiry; admin/legacy use
+ * configured field requirements.
  */
 async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) {
   const input = await validateCreationInput(data);
@@ -49,7 +50,8 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     enabled: parseBooleanInput(input.client_pin_entry_enabled, false),
     clientAccessEnabled: parseBooleanInput(input.client_access_enabled, false), password: input.client_password,
   });
-  if (source === 'v1') input.is_draft = false;
+  // v1 publishes unless the caller sends is_draft: true; admin defaults to draft.
+  if (source === 'v1') input.is_draft = parseBooleanInput(input.is_draft, false);
   if (!actor || !Number.isInteger(actor.id)) throw new AppError('Event owner required', 400, 'EVENT_OWNER_REQUIRED');
   // Get field requirements from settings
   const fieldRequirements = source === 'v1'
