@@ -195,6 +195,8 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
   // The revision guards even zero-priced products without raw CRM queries.
   const claimed = await auditedUpdate(db, 'invoices', { id, status: invoice.status, ...(invoice.product_items_revision == null ? {} : { product_items_revision: invoice.product_items_revision }) }, {
     status: newStatus, sent_at: new Date(), pdf_path: storedPath, updated_at: new Date(),
+    // Sent, a held invoice (migration 358) is released.
+    ...(invoice.send_held_at ? { send_held_at: null } : {}),
   }, { actor: adminId, source: 'invoice.send' });
   if (!claimed) {
     const current = await db('invoices').where({ id }).first('status');

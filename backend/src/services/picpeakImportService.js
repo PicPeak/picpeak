@@ -27,7 +27,7 @@ const { PICPEAK_FORMAT_VERSION } = require('./picpeakExportService');
 const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
 const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
 const { isoSqliteCostTimestamps, COST_TIMESTAMP_TABLES } = require('../utils/costTimestamps');
-const { isoSqliteInvoiceSendAt } = require('../utils/invoiceSendAt');
+const { isoSqliteInvoiceSendAt, holdPassedPgSendDates, markHeldInvoices } = require('../utils/invoiceSendAt');
 const { pgDateColumnsByTable } = require('../utils/dateOnly');
 const { migrationOrder, latestMigration } = require('../utils/schemaLevel');
 const { rowBatches } = require('./portableImportRows');
@@ -745,7 +745,15 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       // accounting_change_history must load before invoices: it does because
       // the export lists tables by name (picpeakExportService listDataTables).
       if (table === 'invoices' && archivePredates(archiveLatestMigration, 356)) {
-        await isoSqliteInvoiceSendAt(trx, { actor: 'import' });
+        await isoSqliteInvoiceSendAt(trx, { actor: 'import', markHeld: true });
+        // A SQLite archive on PostgreSQL: the coercion above already made its
+        // send dates timestamps, so only the hold is left (issue 2459).
+        if (crossEngine) await holdPassedPgSendDates(trx, { actor: 'import' });
+      }
+      // An archive made before 358 has no hold marker; mark its held invoices
+      // from their history, as migration 358 did here.
+      if (table === 'invoices' && archivePredates(archiveLatestMigration, 358)) {
+        await markHeldInvoices(trx, { actor: 'import' });
       }
     }
 

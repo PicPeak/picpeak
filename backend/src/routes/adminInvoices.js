@@ -864,6 +864,8 @@ router.put(
     // value, so it is read as UTC: an unchanged save keeps the same instant.
     if (Object.prototype.hasOwnProperty.call(updates, 'scheduled_send_at')) {
       updates.scheduled_send_at = toStoredTimestamp(updates.scheduled_send_at);
+      // A new send date releases an invoice held after its date passed.
+      if (updates.scheduled_send_at && existing.send_held_at) updates.send_held_at = null;
     }
     // Payment-term selection: re-snapshot the template when the admin
     // changes it. Mirrors createInvoice — once the column is set the

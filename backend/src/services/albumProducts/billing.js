@@ -195,7 +195,9 @@ async function lock(tx, offer, eventId, adminId) {
   });
   item.id = inserted[0]?.id ?? inserted[0];
   // Only an unarmed, unissued invoice is safe to extend automatically. More
-  // than one candidate needs the photographer to choose explicitly.
+  // than one candidate needs the photographer to choose explicitly. An
+  // invoice held after its send date passed (send_held_at, migration 358)
+  // was armed by the admin and is left as it was.
   if (event.project_id) {
     const candidates = await tx('invoices')
       .where({
@@ -208,6 +210,7 @@ async function lock(tx, offer, eventId, adminId) {
       })
       .whereNull('sent_at')
       .whereNull('scheduled_send_at')
+      .whereNull('send_held_at')
       .whereNull('cancels_invoice_id')
       .forUpdate();
     if (candidates.length === 1)

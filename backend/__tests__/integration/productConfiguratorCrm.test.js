@@ -1366,6 +1366,22 @@ test('locking appends a distinct frozen line to one unissued project invoice usi
   });
 });
 
+test('locking leaves an invoice held after its send date passed alone and extends the plain draft', async () => {
+  const f = await billableFixture({ project: true });
+  const draft = async () => (await require('../../src/services/invoiceService').createInvoice({
+    customerAccountId: customerId, projectId: f.event.project_id, eventId: f.event.id,
+    currency: 'EUR', vatCode: f.vat.code, vatRate: Number(f.vat.rate),
+    lineItems: [{ position: 1, description: 'Photography', quantity: 1, unit_price_minor: 50000 }],
+  }, adminId)).invoiceIds[0];
+  const heldId = await draft();
+  const plainId = await draft();
+  // As migration 356 or the import left it: no send date, marked (migration 358).
+  await db('invoices').where({ id: heldId }).update({ send_held_at: '2026-11-10T09:00:00.000Z' });
+  await f.change('lock');
+  expect(await db('invoice_line_items').where({ invoice_id: heldId })).toHaveLength(1);
+  expect(await db('invoice_line_items').where({ invoice_id: plainId })).toHaveLength(2);
+});
+
 test('customer billing retains open items after gallery deletion and enforces creator scope and selected-item atomicity', async () => {
   const f = await billableFixture();
   await f.change('lock');
