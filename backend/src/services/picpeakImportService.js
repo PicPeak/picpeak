@@ -29,6 +29,7 @@ const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
 const { isoSqliteCostTimestamps, COST_TIMESTAMP_TABLES } = require('../utils/costTimestamps');
 const { isoSqliteInvoiceSendAt } = require('../utils/invoiceSendAt');
 const { pgDateColumnsByTable } = require('../utils/dateOnly');
+const { migrationOrder, latestMigration } = require('../utils/schemaLevel');
 const { rowBatches } = require('./portableImportRows');
 const {
   dedupeExternalPhotos,
@@ -50,12 +51,6 @@ const {
 } = require('./accountRecoveryStorageHardening');
 
 const isPostgres = () => knexConfig.client === 'pg';
-
-// Compare migrations by their numeric filename prefix (001_, 107_, 129_ …).
-function migrationOrder(name) {
-  const m = String(name || '').match(/^(\d+)/);
-  return m ? parseInt(m[1], 10) : -1;
-}
 
 function archivePredates(latestMigration, number) {
   const order = migrationOrder(latestMigration);
@@ -170,10 +165,9 @@ async function validateManifest(manifest) {
   // Forward-only: the target schema must be at least as new as the backup's.
   let targetLatest = null;
   try {
-    const applied = await db('knex_migrations').orderBy('id', 'desc').limit(1);
-    targetLatest = applied[0] ? applied[0].name : null;
+    targetLatest = await latestMigration(db);
   } catch (_) {
-    // No knex_migrations table (e.g. some test harnesses) — skip the check.
+    // An unreadable ledger leaves the level unknown — skip the check.
   }
   const backupLatest = manifest.database ? manifest.database.latest_migration : null;
   if (backupLatest && targetLatest && migrationOrder(backupLatest) > migrationOrder(targetLatest)) {

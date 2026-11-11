@@ -41,6 +41,11 @@ beforeAll(async () => {
   await invoiceRow('R-SENDAT-EDITOR', '2030-01-01T09:00');
   // Edited, passed, never sent: held as a draft rather than sent late.
   await invoiceRow('R-SENDAT-STUCK', '2020-01-01T09:00');
+  // The rows above are in pre-356 shapes, so export as an install from
+  // before 356: the archive's level comes from this ledger.
+  const { migrationOrder } = require('../../src/utils/schemaLevel');
+  const ledger = await db('migrations').select('filename');
+  await db('migrations').whereIn('filename', ledger.map((r) => r.filename).filter((f) => migrationOrder(f) >= 356)).del();
   ({ filePath: backupFile } = await createPicpeak({ includePhotos: false }));
   await db('invoices').whereIn('invoice_number', ['R-SENDAT-MS', 'R-SENDAT-EDITOR', 'R-SENDAT-STUCK']).del();
   if (process.platform === 'linux') await importFromPicpeak({ picpeakPath: backupFile, currentAdminId: adminId });
@@ -60,8 +65,7 @@ linuxTest('restored send dates are ISO text, and a future one is not due', async
   expect(due).toHaveLength(0);
   const stuck = await db('invoices').where({ invoice_number: 'R-SENDAT-STUCK' }).first('status', 'scheduled_send_at');
   expect(stuck).toEqual({ status: 'scheduled', scheduled_send_at: null });
-  // The harness records no knex_migrations, so the archive's level is unknown
-  // and counts as older than 356. The hold is the import's, in the history.
+  // The archive predates 356. The hold is the import's, in the history.
   const { id } = await db('invoices').where({ invoice_number: 'R-SENDAT-STUCK' }).first('id');
   const history = await db('accounting_change_history')
     .where({ entity_type: 'invoice', entity_id: id, action: 'updated' }).orderBy('id', 'desc').first('actor_name');

@@ -29,6 +29,7 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
+const { latestMigration } = require('../utils/schemaLevel');
 
 const RESULT_PREFIX = 'PICPEAK_VERIFY_RESULT=';
 const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
@@ -179,17 +180,10 @@ function migrationNumber(filename) {
   return match ? Number(match[1]) : null;
 }
 
-// The schema level the migration runner records: the highest numeric prefix
-// in `migrations.filename`, falling back to knex_migrations for an install
-// that only has that. Same shape as the planned fix for issue 2458.
+// The schema level the migration runner records, as a number (the shared
+// helper in utils/schemaLevel reads it).
 async function schemaLevel(knex) {
-  for (const [table, column] of [['migrations', 'filename'], ['knex_migrations', 'name']]) {
-    if (!(await knex.schema.hasTable(table))) continue;
-    const rows = await knex(table).select(column);
-    const numbers = rows.map((row) => migrationNumber(row[column])).filter((n) => n !== null);
-    if (numbers.length) return Math.max(...numbers);
-  }
-  return null;
+  return migrationNumber(await latestMigration(knex));
 }
 
 function countOf(rows) {

@@ -5,6 +5,7 @@ const yaml = require('js-yaml');
 const os = require('os');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
+const { latestMigration } = require('../utils/schemaLevel');
 const manifestKey = require('../utils/backupManifestKey');
 const { canonicalize, recoveryDigest } = require('../utils/manifestCanonical');
 const authenticationResults = new WeakMap();
@@ -414,10 +415,7 @@ class BackupManifestGenerator {
 
   async getSchemaVersion() {
     try {
-      const result = await db('migrations')
-        .orderBy('run_at', 'desc')
-        .first();
-      return result ? result.migration_name : 'unknown';
+      return (await latestMigration(db)) || 'unknown';
     } catch (error) {
       return 'unknown';
     }
