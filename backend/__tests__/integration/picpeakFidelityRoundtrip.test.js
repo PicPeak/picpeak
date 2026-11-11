@@ -89,7 +89,9 @@ const RESTORE_REWRITES = {
 let workRoot;
 
 async function runInstance(env, ...args) {
-  // TZ pinned: pg returns a `date` column as local midnight.
+  // TZ is UTC unless the leg names a zone: the sqlite → pg leg restores
+  // under Europe/Berlin, east of UTC, where a pg `date` read as local
+  // midnight used to come back a day early (fixed in PR 2462).
   // TMPDIR inside workRoot: the instance's database and storage directory
   // (bootCrmDb) go with workRoot even when the instance is killed.
   const tmpdir = await fs.mkdtemp(path.join(workRoot, 'instance-'));
@@ -403,11 +405,11 @@ sqliteDescribe('.picpeak fidelity roundtrip (SQLite source)', () => {
       if (admin) await admin.destroy();
     });
 
-    it('sqlite → pg restores every value, after engine normalisation', async () => {
+    it('sqlite → pg restores every value, after engine normalisation, east of UTC', async () => {
       const name = `picpeak_fidelity_${crypto.randomBytes(6).toString('hex')}`;
       await admin.raw('CREATE DATABASE ??', [name]);
       databases.push(name);
-      const restored = await runInstance(pgEnv(name), 'restore', source.filePath,
+      const restored = await runInstance({ ...pgEnv(name), TZ: 'Europe/Berlin' }, 'restore', source.filePath,
         path.join(workRoot, 'xengine-target-out'));
       expect(restored.engine).toBe('pg');
       await assertFidelity(source, restored, { sameEngine: false });

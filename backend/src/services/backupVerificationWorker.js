@@ -268,19 +268,93 @@ async function checkInvariants(knex, engine) {
     : check('drill_invariants', 'passed', 'Active super admin, roles, permissions and settings present');
 }
 
+// pg_dump writes its session settings at the top of a plain dump, before the
+// first object. A newer pg_dump writes settings an older server does not have
+// (pg_dump 17 always writes `SET transaction_timeout = 0;`, which PostgreSQL
+// 15 and 16 reject). A real restore runs psql without ON_ERROR_STOP and steps
+// over that line; the drill stops on the first error, so it would fail a
+// backup that restores fine. The scan reads comments, `\` meta lines, SET and
+// set_config lines from the top and stops at the first other statement (for a
+// dump whose first object is a table, that takes in its `-- Name: …` comment
+// and its `SET default_tablespace` lines too, which every server has). It
+// never reads more than this many bytes.
+const HEADER_SCAN_BYTES = 64 * 1024;
+const HEADER_LINE = /^(?:--.*|\\.*|SET\s.*|SELECT pg_catalog\.set_config\(.*|\s*)$/;
+const HEADER_SET = /^SET\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*=|\s+TO\s)/i;
+
+// Comments out, in place, every header `SET name = ...;` whose setting the
+// target server does not have, by turning `SET` into `-- ` (same length, so
+// nothing after the header moves and psql's line numbers stay right). Only
+// the private copy in the work directory is ever edited. Dotted names are
+// custom placeholders any server accepts, so they are never asked about.
+// `findUnknown(names)` resolves to the subset the server does not have.
+// Returns the names it commented out.
+async function neutraliseUnknownSettings(file, workDir, findUnknown) {
+  if (!contained(path.resolve(workDir), path.resolve(file))) {
+    throw new Error('Refusing to edit a dump outside the work directory');
+  }
+  const handle = await fsp.open(file, 'r+');
+  try {
+    const { buffer, bytesRead } = await handle.read(Buffer.alloc(HEADER_SCAN_BYTES), 0, HEADER_SCAN_BYTES, 0);
+    const head = buffer.subarray(0, bytesRead);
+    const sets = [];
+    let offset = 0;
+    while (offset < head.length) {
+      const end = head.indexOf(0x0a, offset);
+      if (end === -1) break; // a line cut off by the scan window is not judged
+      const line = head.subarray(offset, end).toString('utf8').replace(/\r$/, '');
+      if (!HEADER_LINE.test(line)) break; // first other statement: the scan is over
+      const match = HEADER_SET.exec(line);
+      if (match) sets.push({ name: match[1].toLowerCase(), offset });
+      offset = end + 1;
+    }
+    if (sets.length === 0) return [];
+    const unknown = new Set(await findUnknown([...new Set(sets.map((s) => s.name))]));
+    const skipped = [];
+    for (const set of sets) {
+      if (!unknown.has(set.name)) continue;
+      await handle.write(Buffer.from('-- '), 0, 3, set.offset);
+      skipped.push(set.name);
+    }
+    return skipped;
+  } finally {
+    await handle.close();
+  }
+}
+
 async function loadPostgres(job, plain) {
   const { spawnAsync } = require('../utils/safeExec');
   const knexConfig = require('../../knexfile');
   const { host, port, user, password, database } = knexConfig.connection;
   const env = { ...process.env };
   if (password) env.PGPASSWORD = password;
+  const target = ['-h', host, '-p', String(port), '-U', user, '-d', database];
+  const firstErrors = (error) => String(error.stderr || error.message).trim().split('\n')
+    .filter((l) => /ERROR|FATAL/.test(l)).slice(0, 3).join(' ') || error.message;
+
+  // Asks the server itself, so an alias it accepts counts as known too
+  // (pg_settings lists canonical names only). The names passed HEADER_SET,
+  // so they are plain identifiers and safe as literals.
+  const findUnknown = async (names) => {
+    const list = names.map((name) => `'${name}'`).join(', ');
+    const { stdout } = await spawnAsync('psql', ['-X', '-q', '-A', '-t', ...target, '-c',
+      `SELECT n FROM unnest(ARRAY[${list}]::text[]) AS n WHERE current_setting(n, true) IS NULL`], { env });
+    return stdout.split('\n').map((name) => name.trim()).filter(Boolean);
+  };
+  let skipped;
+  try {
+    skipped = await neutraliseUnknownSettings(plain, job.workDir, findUnknown);
+  } catch (error) {
+    throw new Error(firstErrors(error));
+  }
   // -f rather than stdin, so the statement that stopped the load is named
   // in the error instead of a broken pipe.
   try {
-    await spawnAsync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-h', host, '-p', String(port), '-U', user, '-d', database, '-f', plain], { env });
+    await spawnAsync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', ...target, '-f', plain], { env });
   } catch (error) {
-    throw new Error(String(error.stderr || error.message).trim().split('\n').filter((l) => /ERROR|FATAL/.test(l)).slice(0, 3).join(' ') || error.message);
+    throw new Error(firstErrors(error));
   }
+  return { skipped };
 }
 
 async function runDrill(job) {
@@ -293,8 +367,10 @@ async function runDrill(job) {
 
   if (job.engine === 'pg') {
     try {
-      await loadPostgres(job, plain);
-      checks.push(check('drill_load', 'passed', 'Loaded with psql (ON_ERROR_STOP)'));
+      const { skipped } = await loadPostgres(job, plain);
+      checks.push(check('drill_load', 'passed', skipped.length
+        ? `Loaded with psql (ON_ERROR_STOP); skipped dump settings this server does not have: ${skipped.join(', ')}`
+        : 'Loaded with psql (ON_ERROR_STOP)'));
     } catch (error) {
       checks.push(check('drill_load', 'failed', String(error.message || error).slice(0, 500)));
       return { checks };
@@ -384,4 +460,4 @@ async function main(mode) {
   await new Promise((resolve) => process.stdout.write(`${RESULT_PREFIX}${JSON.stringify(result)}\n`, resolve));
 }
 
-module.exports = { main, RESULT_PREFIX, schemaLevel, migrationNumber, _internal: { runDeep, runDrill, checkRowCounts, assertTarget } };
+module.exports = { main, RESULT_PREFIX, schemaLevel, migrationNumber, _internal: { runDeep, runDrill, checkRowCounts, assertTarget, neutraliseUnknownSettings, loadPostgres } };
