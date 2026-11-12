@@ -84,6 +84,29 @@ test('an archive before 356 comes back with a passed send date held and marked',
   expect(history.actor_name).toBe('import');
 });
 
+// On PostgreSQL the archive's history rows take ids the target's sequence
+// has not handed out yet, and the hold's history row comes from that
+// sequence before the post-commit resync.
+test('a hold restores when the archive history holds the next sequence ids', async () => {
+  let next = 1;
+  if (isPg) {
+    const { rows: [seq] } = await db.raw(`SELECT COALESCE(pg_sequence_last_value(
+      pg_get_serial_sequence('accounting_change_history', 'id')::regclass), 0) AS last`);
+    next = Number(seq.last) + 1;
+  }
+  const history = [0, 1, 2].map((i) => ({
+    id: next + i, document_type: 'invoice', document_id: 532, entity_type: 'invoice', entity_id: 532,
+    action: 'updated', changes: JSON.stringify({ notes: { from: null, to: `n${i}` } }),
+    actor_type: 'system', actor_id: null, actor_name: 'upgrade', source: null, created_at: '2026-01-01T00:00:00.000Z',
+  }));
+  const restored = await restore([invoice(531, '2026-01-05T09:00'), invoice(532, null)], '355_booking_deposits.js', history);
+  expect(restored[531]).toMatchObject({ status: 'scheduled', scheduled_send_at: null });
+  expect(restored[531].send_held_at).not.toBeNull();
+  const hold = await db('accounting_change_history')
+    .where({ entity_type: 'invoice', entity_id: 531, source: 'invoice.sendAt.holdStuck' }).first('id');
+  expect(Number(hold.id)).toBeGreaterThan(next + 2);
+});
+
 test('an archive from 356 on restores its scheduled invoices as they were', async () => {
   const restored = await restore([invoice(511, '2026-01-05T09:00:00.000Z')], '357_backup_verifications.js');
   expect(new Date(restored[511].scheduled_send_at).toISOString()).toBe('2026-01-05T09:00:00.000Z');

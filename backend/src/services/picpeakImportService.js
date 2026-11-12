@@ -364,6 +364,20 @@ async function resyncSequences(tables, { executor = db, strict = false } = {}) {
   }
 }
 
+// Move a restored table's sequence up to its MAX(id) inside the restore, for
+// a table the restore itself writes to after loading it (the history rows of
+// the invoice holds and the mail ledger backfill). Without it the next id can
+// be one the archive's rows already took, and the duplicate key rolls the
+// whole restore back. setval survives a rollback, so this only ever raises
+// the sequence: a rolled-back restore leaves a gap, never a value below an
+// existing row. resyncSequences still sets the exact value after commit.
+async function advanceSequence(trx, table) {
+  if (!isPostgres()) return;
+  await trx.raw(`SELECT setval(s, m) FROM (
+      SELECT pg_get_serial_sequence(?, 'id')::regclass AS s, (SELECT MAX(id) FROM ??) AS m) x
+    WHERE m IS NOT NULL AND m > COALESCE(pg_sequence_last_value(s), 0)`, [table, table]);
+}
+
 // AUTH-critical admin_users columns preserved when overwriting a restored row
 // that shares the operator's email. Deliberately excludes relationship/audit
 // FKs (role_id, created_by) — see reinjectCurrentAdmin for why.
@@ -735,6 +749,8 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
         }
         await trx.batchInsert(table, prepared, prepared.length);
       }
+      // The invoice holds below and backfillMailIntake write history rows.
+      if (table === 'accounting_change_history') await advanceSequence(trx, table);
       // Archived queue rows come back as they were, text timestamps included,
       // and migration 256 will not run again on this target (issue 1670).
       if (table === 'email_queue') await normaliseSqliteEmailQueue(trx);

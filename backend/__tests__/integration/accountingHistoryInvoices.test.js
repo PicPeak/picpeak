@@ -258,6 +258,30 @@ describe('installment plan', () => {
     expect(invoiceDeleted.changes.status).toEqual({ from: 'scheduled', to: null });
     expect(await db('invoices').where({ id: second }).first()).toBeUndefined();
   });
+
+  it('reshaping re-arms a held sibling and clears its hold marker', async () => {
+    const [first] = await createViaRoute({
+      installments: [
+        { label: 'Anzahlung', percent: 50, trigger: 'quote_accepted', offset_days: 0 },
+        { label: 'Rest', percent: 50, trigger: 'after_event', offset_days: 7 },
+      ],
+    });
+    await db('invoices').where({ id: first })
+      .update({ scheduled_send_at: null, send_held_at: '2026-11-01T08:00:00.000Z' });
+    const { deal_uuid: dealUuid } = await db('invoices').where({ id: first }).first();
+
+    await db.transaction((trx) => invoiceService.updateInstallmentPlan({
+      trx, dealUuid, adminId,
+      installments: [
+        { label: 'Anzahlung', percent: 40, trigger: 'quote_accepted', offset_days: 0 },
+        { label: 'Rest', percent: 60, trigger: 'after_event', offset_days: 7 },
+      ],
+    }));
+
+    const row = await db('invoices').where({ id: first }).first();
+    expect(row.scheduled_send_at).not.toBeNull();
+    expect(row.send_held_at).toBeNull();
+  });
 });
 
 describe('a history row that cannot be written', () => {
