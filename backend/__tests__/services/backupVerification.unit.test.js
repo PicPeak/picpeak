@@ -230,6 +230,15 @@ describe('drill: settings a newer pg_dump writes that the target server lacks', 
     expect(after).toContain('SET SESSION AUTHORIZATION DEFAULT;');
   });
 
+  it('judges a lowercase header set like an uppercase one, instead of ending the scan on it', async () => {
+    const file = await write(['-- header', 'set lock_timeout = 0;', 'set transaction_timeout = 0;', 'SET row_security = off;',
+      'CREATE TABLE public.t (id integer);', '']);
+    expect(await neutraliseUnknownSettings(file, workDir, unknownTo(PG15))).toEqual(['transaction_timeout']);
+    const after = await fs.readFile(file, 'utf8');
+    expect(after).toContain('\n--  transaction_timeout = 0;\n');
+    expect(after).toContain('\nset lock_timeout = 0;\n');
+  });
+
   it('refuses to edit a file outside the work directory', async () => {
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'drill-outside-'));
     try {

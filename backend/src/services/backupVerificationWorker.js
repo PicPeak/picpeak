@@ -274,13 +274,15 @@ async function checkInvariants(knex, engine) {
 // 15 and 16 reject). A real restore runs psql without ON_ERROR_STOP and steps
 // over that line; the drill stops on the first error, so it would fail a
 // backup that restores fine. The scan reads comments, `\` meta lines, SET and
-// set_config lines from the top and stops at the first other statement (for a
-// dump whose first object is a table, that takes in its `-- Name: …` comment
-// and its `SET default_tablespace` lines too, which every server has). It
-// never reads more than this many bytes.
+// set_config lines from the top, in either case as the server reads them, and
+// stops at the first other statement (for a dump whose first object is a
+// table, that takes in its `-- Name: …` comment and its `SET
+// default_tablespace` lines too, which every server has). It never reads more
+// than this many bytes.
 const HEADER_SCAN_BYTES = 64 * 1024;
-const HEADER_LINE = /^(?:--.*|\\.*|SET\s.*|SELECT pg_catalog\.set_config\(.*|\s*)$/;
+const HEADER_LINE = /^(?:--.*|\\.*|SET\s.*|SELECT pg_catalog\.set_config\(.*|\s*)$/i;
 const HEADER_SET = /^SET\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*=|\s+TO\s)/i;
+const SETTING_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 // Comments out, in place, every header `SET name = ...;` whose setting the
 // target server does not have, by turning `SET` into `-- ` (same length, so
@@ -333,9 +335,12 @@ async function loadPostgres(job, plain) {
     .filter((l) => /ERROR|FATAL/.test(l)).slice(0, 3).join(' ') || error.message;
 
   // Asks the server itself, so an alias it accepts counts as known too
-  // (pg_settings lists canonical names only). The names passed HEADER_SET,
-  // so they are plain identifiers and safe as literals.
+  // (pg_settings lists canonical names only). The names come from HEADER_SET,
+  // and each is checked again here before it becomes a literal, so this does
+  // not rest on that regex alone. (psql does not interpolate -v variables in
+  // a -c command, so a psql variable is not an option here.)
   const findUnknown = async (names) => {
+    if (!names.every((name) => SETTING_NAME.test(name))) throw new Error('Unexpected setting name in the dump header');
     const list = names.map((name) => `'${name}'`).join(', ');
     const { stdout } = await spawnAsync('psql', ['-X', '-q', '-A', '-t', ...target, '-c',
       `SELECT n FROM unnest(ARRAY[${list}]::text[]) AS n WHERE current_setting(n, true) IS NULL`], { env });
