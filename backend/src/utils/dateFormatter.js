@@ -59,10 +59,6 @@ async function formatDate(date, language = 'en') {
       locale = 'de-DE';
     } else if (language === 'pt') {
       locale = 'pt-BR';
-    } else if (LANGUAGE_LOCALES[language]) {
-      // The other app languages, so a long date names its month in the
-      // language around it, not in English (issue 2489).
-      locale = LANGUAGE_LOCALES[language];
     } else if (language === 'en' && dateConfig.format === 'MM/DD/YYYY') {
       locale = 'en-US';
     }
@@ -90,8 +86,10 @@ async function formatDate(date, language = 'en') {
         year: 'numeric'
       });
     default:
-      // Use long format as fallback
-      return dateObj.toLocaleDateString(locale, {
+      // Use long format as fallback. The other app languages name the month
+      // in their own words (issue 2489); only here, because a locale also
+      // sets the field order of the numeric formats above.
+      return dateObj.toLocaleDateString(LANGUAGE_LOCALES[language] || locale, {
         year: 'numeric',
         month: 'long',
         day: 'numeric'
