@@ -11,12 +11,11 @@
 process.env.FRONTEND_URL = 'https://gallery.example';
 
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
-const { TEXT, normaliseLanguage } = require('../../src/services/ogText');
 
 const DAY = 24 * 3600 * 1000;
 
 describe('link previews follow the default language', () => {
-  let db; let cleanup; let og;
+  let db; let cleanup; let og; let TEXT; let normaliseLanguage;
 
   const setSetting = async (key, value) => {
     const encoded = JSON.stringify(value);
@@ -48,7 +47,10 @@ describe('link previews follow the default language', () => {
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
     await seedMinimal(db);
+    // After bootCrmDb: these load database/db, which must bind to the
+    // fixture's database.
     og = require('../../src/services/galleryOgService');
+    ({ TEXT, normaliseLanguage } = require('../../src/services/ogText'));
     await addEvent('og-lang');
     await addEvent('og-lang-nodate', { event_date: null });
     await clearSetting('branding_company_tagline');
@@ -92,6 +94,12 @@ describe('link previews follow the default language', () => {
     await setSetting('general_default_language', 'de');
     expect((await og.buildOgMetadata('og-lang', '/gallery/og-lang')).description)
       .toBe('Fotogalerie: Sommerfest vom 10. November 2026.');
+    // A numeric format keeps its configured order: the language only names
+    // months, it never turns 11/10 into 10/11.
+    await setSetting('general_date_format', { format: 'MM/DD/YYYY', locale: 'en-US' });
+    await setSetting('general_default_language', 'fr');
+    expect((await og.buildOgMetadata('og-lang', '/gallery/og-lang')).description)
+      .toBe('Galerie photo de Sommerfest du 11/10/2026.');
     await setSetting('general_date_format', { format: 'DD.MM.YYYY', locale: 'de-DE' });
   });
 
