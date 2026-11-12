@@ -16,6 +16,8 @@ import { toast } from 'react-toastify';
 import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 import { useEscapeClose } from '../../../components/common/useEscapeClose';
 import { todayIsoDate } from '../../../utils/localDate';
+import { useUkBusiness } from '../../../hooks/useUkBusiness';
+import { lacksGbpRate } from '../../../utils/vatGbpRate';
 
 const STATUSES: InvoiceStatus[] = ['scheduled', 'pending_delivery', 'sent', 'paid', 'overdue', 'cancelled', 'skipped'];
 
@@ -33,6 +35,8 @@ const SORT_COLUMNS: SortColumnMap = {
 
 export const BillsListPage: React.FC = () => {
   const { t } = useTranslation();
+  // A UK business's invoice waits for its GBP rate (issue 2439).
+  const ukBusiness = useUkBusiness();
   const navigate = useNavigate();
   const { format: fmtDate } = useLocalizedDate();
   const [search, setSearch] = useState('');
@@ -183,6 +187,7 @@ export const BillsListPage: React.FC = () => {
                           {formatMoney(Number(inv.totalAmountMinor) / 100, inv.currency)}
                         </td>
                         <td className="px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-1">
                           {isDraftInvoice(inv) ? (
                             // Held invoice: 'scheduled' with no send date (incl. the
                             // monthly/manual accumulator) never auto-ships, so badge it
@@ -200,6 +205,12 @@ export const BillsListPage: React.FC = () => {
                                 : 'bg-warning-soft text-warning-text'
                             }`}>{t(`bills.status.${inv.status}`, inv.status)}</span>
                           )}
+                          {ukBusiness && lacksGbpRate(inv) && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-danger-soft text-danger-text whitespace-nowrap">
+                              {t('bills.needsGbpRate', 'Needs GBP rate')}
+                            </span>
+                          )}
+                          </div>
                         </td>
                       </tr>
                     ))}

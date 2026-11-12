@@ -367,7 +367,7 @@ export const GalleryPage: React.FC = () => {
   }
 
   if (loginUnavailable || (identifierError && identifierDisabled && !resolvedSlug && !isResolvingIdentifier) || isGalleryTemporarilyDisabled(infoError)) {
-    return <GalleryUnavailableNotice />;
+    return <GalleryUnavailableNotice error={infoError} />;
   }
 
   // Gallery missing / archived / expired-link / unresolvable identifier all

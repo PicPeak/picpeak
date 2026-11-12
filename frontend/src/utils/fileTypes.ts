@@ -47,6 +47,14 @@ const UNTYPED_EXTENSIONS = new Set([
   'dng', 'arw', 'sr2', 'srf', 'cr2', 'nef', 'nrw', 'orf', 'pef', 'srw',
 ]);
 
+/**
+ * HEIC and HEIF get a dotted accept token and an extension fallback too, but
+ * are kept apart from the RAW set, which is pinned to the backend's. Chromium
+ * on Linux reports no type for an iPhone's `.HEIC` and image/heif for `.heic`,
+ * and the two names cover one container.
+ */
+const HEIF_EXTENSIONS = new Set(['heic', 'heif']);
+
 const extensionOf = (filename: string): string =>
   filename.toLowerCase().split('.').pop() || '';
 
@@ -79,11 +87,11 @@ export function extensionsToMimeTypes(extString?: string | null): string[] {
  * Convert a comma-separated extension string to an HTML `accept` attribute
  * value, e.g. "image/jpeg,image/png,video/mp4".
  *
- * The untyped extensions are also listed in their dotted form. A file chooser
- * matches accept MIME types against the operating system's own type table,
- * and macOS, iOS and Windows map none of the RAW extensions, so the MIME type
- * alone hid every DNG from the chooser (issue 821) and greys out a .arw. Only
- * those extensions get a token, so a default install's accept string is
+ * The untyped extensions and HEIC/HEIF are also listed in their dotted form. A
+ * file chooser matches accept MIME types against the operating system's own
+ * type table, and macOS, iOS and Windows map none of the RAW extensions, so the
+ * MIME type alone hid every DNG from the chooser (issue 821) and greys out a
+ * .arw. Only those extensions get a token, so a default install's accept string is
  * unchanged - which matters on Android, where a non-MIME token reroutes the
  * system picker (see buildUploadAcceptString).
  */
@@ -92,7 +100,7 @@ export function extensionsToAcceptString(extString?: string | null): string {
   const dotted = (extString?.trim() || DEFAULT_ALLOWED)
     .split(',')
     .map(ext => ext.trim().toLowerCase().replace(/^\./, ''))
-    .filter(ext => UNTYPED_EXTENSIONS.has(ext) && EXTENSION_TO_MIME[ext])
+    .filter(ext => (UNTYPED_EXTENSIONS.has(ext) || HEIF_EXTENSIONS.has(ext)) && EXTENSION_TO_MIME[ext])
     .map(ext => `.${ext}`);
   return [...mimeTypes, ...Array.from(new Set(dotted))].join(',');
 }
@@ -101,6 +109,11 @@ export function extensionsToAcceptString(extString?: string | null): string {
 // OS type table decides, so a DNG can arrive as image/dng or image/tiff, and a
 // machine with no RAW codec reports nothing.
 const GENERIC_RAW_TYPES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
+const GENERIC_HEIF_TYPES = new Set(['', 'application/octet-stream', 'image/heic', 'image/heif']);
+// No type at all. A dropped file can arrive without the type the file chooser
+// gives the same file (issue 2404: a dropped .mov was refused, a picked one
+// was not), so for every extension in the table the extension decides then.
+const UNTYPED_TYPES = new Set(['', 'application/octet-stream']);
 
 /**
  * The MIME type an upload should be judged as.
@@ -114,7 +127,22 @@ export function normalizeFileMimeType(name: string, type: string): string {
   if (UNTYPED_EXTENSIONS.has(ext) && GENERIC_RAW_TYPES.has((type || '').trim())) {
     return EXTENSION_TO_MIME[ext] || type;
   }
+  if (HEIF_EXTENSIONS.has(ext) && GENERIC_HEIF_TYPES.has((type || '').trim())) {
+    return EXTENSION_TO_MIME[ext];
+  }
+  if (EXTENSION_TO_MIME[ext] && UNTYPED_TYPES.has((type || '').trim())) {
+    return EXTENSION_TO_MIME[ext];
+  }
   return type;
+}
+
+/**
+ * Is this file a video, judged by the type it will be uploaded as? Picks
+ * the per-file size limit, so an untyped .mov is held to the video limit
+ * rather than the photo one.
+ */
+export function isVideoUploadFile(file: { name: string; type: string }): boolean {
+  return normalizeFileMimeType(file.name, file.type).startsWith('video/');
 }
 
 /**

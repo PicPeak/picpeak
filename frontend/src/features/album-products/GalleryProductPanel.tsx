@@ -9,8 +9,83 @@ import { Button, Input } from '../../components/common';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../config/api';
-import { albumProducts, errorMessage, type Offer } from './model';
+import { albumProducts, CHOOSE_ALBUM, errorMessage, isConfirmed, type Offer } from './model';
 import { ProductImage } from './ProductImage';
+import { GuidedAlbumFlow } from './GuidedAlbumFlow';
+// What can still change follows the product: a guided draft stays in the plain
+// form once the studio turns guiding off. What can't is shown as it was made.
+const isGuided = (offer: Offer) =>
+  offer.product && !isConfirmed(offer)
+    ? !!offer.product.guided
+    : !!offer.product?.guided || !!offer.selection?.photoRoles;
+/** The entry to a released album. The portal's deep link opens it directly. */
+function GuidedAlbumEntry({
+  offers,
+  slug,
+  onClosed,
+}: {
+  offers: Offer[];
+  slug: string;
+  onClosed: () => void;
+}) {
+  const { t } = useTranslation();
+  const [link] = useState(() =>
+    new URLSearchParams(window.location.search).get('album'),
+  );
+  const [open, setOpen] = useState(
+    () => link === CHOOSE_ALBUM || offers.some((o) => o.id === link),
+  );
+  // The link has done its work: leave it in the URL and closing would reopen.
+  const close = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('album');
+    window.history.replaceState(window.history.state, '', url);
+    setOpen(false);
+    onClosed();
+  };
+  const confirmed = offers.find(isConfirmed);
+  // A view-only portal login sees a confirmed album, but can't make one.
+  const viewOnly = !confirmed && offers.every((o) => o.readOnly);
+  return (
+    <section
+      aria-label={t('albumProducts.yourAlbum', 'Your album')}
+      className="max-w-7xl mx-auto px-4 py-4 text-text-primary"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-token bg-surface p-4">
+        <div className="min-w-0">
+          <h3 className="font-semibold">
+            {t('albumProducts.yourAlbum', 'Your album')}
+          </h3>
+          <p className="text-sm">
+            {confirmed
+              ? t('albumProducts.entryConfirmed', 'Your selection is confirmed.')
+              : viewOnly
+                ? t('albumProducts.readOnlyHelp', 'Your login can view this choice but not make it.')
+                : t(
+                    'albumProducts.entryOpen',
+                    'Choose your album, its look and your cover and poster photos.',
+                  )}
+          </p>
+        </div>
+        {!viewOnly && <Button onClick={() => setOpen(true)}>
+          {confirmed
+            ? t('albumProducts.viewSelection', 'View your selection')
+            : offers.some((o) => o.selection)
+              ? t('albumProducts.continueSelection', 'Continue your selection')
+              : t('albumProducts.startSelection', 'Configure your album')}
+        </Button>}
+      </div>
+      {open && !viewOnly && (
+        <GuidedAlbumFlow
+          offers={offers}
+          slug={slug}
+          startOfferId={link}
+          onClose={close}
+        />
+      )}
+    </section>
+  );
+}
 function ProductChoice({
   initial,
   slug,
@@ -33,11 +108,12 @@ function ProductChoice({
     [model, setModel] = useState(initial.selection?.model?.id || ''),
     [colour, setColour] = useState(initial.selection?.colour?.id || ''),
     [name, setName] = useState(''),
-    [busy, setBusy] = useState(false),
+    [saving, setBusy] = useState(false),
     [error, setError] = useState('');
   const attempt = useRef<{ fingerprint: string; id: string } | null>(null);
   const product = offer.product,
-    locked = offer.status === 'locked';
+    locked = offer.status === 'locked',
+    busy = saving || !!offer.readOnly;
   const submit = async (commit: boolean) => {
     setBusy(true);
     setError('');
@@ -77,6 +153,11 @@ function ProductChoice({
         {product?.name || offer.selection?.product.name}
       </h3>
       {product?.description && <p>{product.description}</p>}
+      {product?.heroImageId && (
+        <div className="max-w-xs">
+          <ProductImage slug={slug} imageId={product.heroImageId} alt={product.name} shape="natural" />
+        </div>
+      )}
       {offer.selection && (
         <p role="status">
           {t('albumProducts.savedChoice', 'Saved choice')}:{' '}
@@ -93,6 +174,14 @@ function ProductChoice({
           {t(
             'products.needsReview',
             'Your selected options changed. Please review and submit your choice again.',
+          )}
+        </p>
+      )}
+      {!locked && offer.readOnly && (
+        <p>
+          {t(
+            'albumProducts.readOnlyHelp',
+            'Your login can view this choice but not make it.',
           )}
         </p>
       )}
@@ -274,7 +363,7 @@ function ProductChoice({
               }
               onClick={() => submit(true)}
             >
-              {busy
+              {saving
                 ? t('common.saving', 'Saving…')
                 : t('albumProducts.submit', 'Submit choice')}
             </Button>
@@ -300,7 +389,8 @@ function ProductChoice({
     </article>
   );
 }
-export function GalleryProductPanel({ slug }: { slug: string }) {
+/** `className` wraps the panel when it has anything to show, never an empty box. */
+export function GalleryProductPanel({ slug, className }: { slug: string; className?: string }) {
   const { t } = useTranslation();
   const [offers, setOffers] = useState<Offer[]>([]),
     [error, setError] = useState(''),
@@ -329,30 +419,44 @@ export function GalleryProductPanel({ slug }: { slug: string }) {
     };
   }, [slug, reload, t]);
   if (!offers.length && !error) return null;
+  const guided = offers.filter(isGuided),
+    classic = offers.filter((offer) => !isGuided(offer));
   return (
-    <details
-      aria-label={t('products.clientTitle', 'Your product choices')}
-      className="max-w-7xl mx-auto px-4 py-6 space-y-4 text-text-primary bg-background"
-    >
-      <summary className="cursor-pointer text-lg font-semibold">
-        {t('products.clientTitle', 'Your product choices')}
-      </summary>
-      {offers.map((offer) => (
-        <ProductChoice
-          key={`${offer.id}-${reload}`}
-          initial={offer}
+    <div className={className}>
+      {guided.length > 0 && (
+        <GuidedAlbumEntry
+          key={reload}
+          offers={guided}
           slug={slug}
-          onRefresh={() => setReload(reload + 1)}
+          onClosed={() => setReload(reload + 1)}
         />
-      ))}
-      {error && (
-        <p role="status">
-          {error}{' '}
-          <button className="underline" onClick={() => setReload(reload + 1)}>
-            {t('common.retry', 'Try again')}
-          </button>
-        </p>
       )}
-    </details>
+      {(classic.length > 0 || error) && (
+        <details
+          aria-label={t('products.clientTitle', 'Your product choices')}
+          className="max-w-7xl mx-auto px-4 py-6 space-y-4 text-text-primary bg-background"
+        >
+          <summary className="cursor-pointer text-lg font-semibold">
+            {t('products.clientTitle', 'Your product choices')}
+          </summary>
+          {classic.map((offer) => (
+            <ProductChoice
+              key={`${offer.id}-${reload}`}
+              initial={offer}
+              slug={slug}
+              onRefresh={() => setReload(reload + 1)}
+            />
+          ))}
+          {error && (
+            <p role="status">
+              {error}{' '}
+              <button className="underline" onClick={() => setReload(reload + 1)}>
+                {t('common.retry', 'Try again')}
+              </button>
+            </p>
+          )}
+        </details>
+      )}
+    </div>
   );
 }

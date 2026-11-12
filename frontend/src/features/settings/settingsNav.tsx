@@ -30,6 +30,7 @@ import {
   Send as SendIcon,
   Users,
   HeartPulse,
+  CreditCard,
   type LucideIcon,
 } from 'lucide-react';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
@@ -46,6 +47,7 @@ import { usePermissions } from '../../contexts/PermissionsContext';
 // SettingsPage.
 export type SettingsTab =
   | 'albumProducts'
+  | 'printSales'
   | 'usage'
   | 'features'
   | 'general'
@@ -70,6 +72,7 @@ export type SettingsTab =
   | 'seo'
   | 'apiTokens'
   | 'webhooks'
+  | 'payments'
   | 'status'
   | 'analytics'
   | 'backup'
@@ -108,13 +111,13 @@ export interface SettingsNavGroup {
 }
 
 export const ALL_SETTINGS_TABS: SettingsTab[] = [
-  'usage', 'albumProducts',
+  'usage', 'albumProducts', 'printSales',
   'features', 'general', 'events', 'eventTypes',
   'users',
   'branding', 'watermark', 'categories', 'thumbnails', 'downloads', 'styling', 'cms',
   'email', 'moderation', 'transfers',
   'security', 'sso', 'imageSecurity', 'seo',
-  'apiTokens', 'webhooks',
+  'apiTokens', 'webhooks', 'payments',
   'status', 'health', 'analytics', 'backup',
   'businessProfile', 'crm', 'contracts', 'accounting', 'whatsapp',
   'slideshow',
@@ -141,6 +144,7 @@ export function settingsTabHref(tab: SettingsTab): string {
 // permission it holds. Backend routes enforce the same perms regardless of UI.
 export const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, string[]> = {
   albumProducts: ['products.view'],
+  printSales: ['products.view'],
   usage:            ['settings.edit'],
   features:          ['settings.view', 'settings.features'],
   general:           ['settings.view', 'settings.domains'],
@@ -161,6 +165,7 @@ export const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, string[]> = {
   seo:               ['settings.view'],
   apiTokens:         ['settings.view', 'settings.integrations'],
   webhooks:          ['settings.view', 'settings.integrations'],
+  payments:          ['settings.integrations'],
   status:            ['settings.view', 'system.view', 'system.manage'],
   analytics:         ['settings.view', 'analytics.view'],
   backup:            ['settings.view', 'backup.view'],
@@ -224,6 +229,7 @@ type Flags = ReturnType<typeof useFeatureFlags>['flags'];
 export function settingsTabGatedOff(flags: Flags): Partial<Record<SettingsTab, boolean>> {
   return {
     albumProducts: !flags.albumProducts,
+    printSales: !flags.printSales,
     crm: !(flags.quotes || flags.bills || flags.contracts || flags.documents),
     contracts: !flags.contracts,
     accounting: !flags.accounting,
@@ -242,12 +248,13 @@ export function settingsTabGatedOff(flags: Flags): Partial<Record<SettingsTab, b
 export function useSettingsNavGroups(): SettingsNavGroup[] {
   const { t } = useTranslation();
   const { flags } = useFeatureFlags();
-  const { hasAnyPermission } = usePermissions();
+  const { hasAnyPermission, isSuperAdmin } = usePermissions();
 
   const groups: SettingsNavGroup[] = [
     {
       label: t('settings.groups.general', 'General'),
       items: [
+        ...(flags.printSales ? [{key:'printSales' as const,label:t('printSales.adminTitle','Print sales'),icon:ImageIcon}] : []),
         ...(flags.albumProducts ? [{key:'albumProducts' as const,label:t('albumProducts.catalogue','Product catalogue'),icon:ImageIcon}] : []),
         { key: 'features',   label: t('settings.features.title',   'Features'),       icon: ToggleRight },
         { key: 'general',    label: t('settings.general.title'),                       icon: Sliders },
@@ -309,6 +316,7 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
     {
       label: t('settings.groups.integrations', 'Integrations'),
       items: [
+        ...(isSuperAdmin ? [{ key: 'payments' as const, label: t('settings.payments.title', 'Payments'), icon: CreditCard }] : []),
         { key: 'apiTokens', label: t('settings.apiTokens.title', 'API Tokens'), icon: KeyRound },
         { key: 'webhooks',  label: t('settings.webhooks.title',  'Webhooks'),   icon: Webhook },
       ],

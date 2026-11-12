@@ -345,7 +345,7 @@ class PhotoExportService {
           width: photo.width || null,
           height: photo.height || null
         },
-        size_bytes: photo.size_bytes || null,
+        size_bytes: Number(photo.size_bytes) || null,
         uploaded_at: photo.uploaded_at || null,
         credit: photo.credit_name || null
       }))

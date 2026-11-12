@@ -39,6 +39,7 @@ const {
 const quoteService = require('../services/quoteService');
 const accountingHistory = require('../services/accountingHistory');
 const { db } = require('../database/db');
+const { toDateOnly } = require('../utils/dateOnly');
 
 const router = express.Router();
 
@@ -119,10 +120,10 @@ function transformQuote(q) {
     dealUuid: q.deal_uuid || null,
     language: q.language,
     currency: q.currency,
-    issueDate: q.issue_date,
-    validUntil: q.valid_until,
+    issueDate: toDateOnly(q.issue_date),
+    validUntil: toDateOnly(q.valid_until),
     eventName: q.event_name,
-    eventDate: q.event_date,
+    eventDate: toDateOnly(q.event_date),
     eventType: q.event_type ?? null,
     bookingWorkflowId: q.booking_workflow_id ?? null,
     eventTimeStart: q.event_time_start,
@@ -272,7 +273,25 @@ function transformLineItemPreset(p) {
     priceMode: p.price_mode || 'fixed',
     pinnedRateMinor: p.pinned_rate_minor == null ? null : Number(p.pinned_rate_minor),
     productId: p.product_id || null, productSurcharges: p.product_surcharges ? JSON.parse(p.product_surcharges) : [],
+    // Pricing factors attached to the item, in order (#2440).
+    factorIds: Array.isArray(p.factor_ids) ? p.factor_ids : [],
+    // Client booking (#2440, migration 354).
+    bookable: p.bookable === 1 || p.bookable === true,
+    bookingDurationMinutes: p.booking_duration_minutes == null ? null : Number(p.booking_duration_minutes),
+    bookingDurationFactorId: p.booking_duration_factor_id || null,
+    // Migration 355 — deposit at booking and gallery unlock.
+    bookingDepositType: p.booking_deposit_type || 'none',
+    bookingDepositPercent: p.booking_deposit_percent == null ? null : Number(p.booking_deposit_percent),
+    bookingDepositMinor: p.booking_deposit_minor == null ? null : Number(p.booking_deposit_minor),
+    galleryUnlock: p.gallery_unlock || 'full_payment',
   };
+}
+
+/** Attach each preset's pricing factor ids (#2440). */
+async function withFactorIds(rows) {
+  const list = rows.filter(Boolean);
+  const map = await require('../services/pricingFactorService').presetFactorIds(list.map((r) => r.id));
+  return list.map((r) => ({ ...r, factor_ids: map.get(r.id) || [] }));
 }
 
 // ----- payload conversion helpers ------------------------------------
@@ -434,6 +453,8 @@ const QUOTE_LINE_VALIDATORS = [
   body('lineItems.*.boundTo').optional({ values: 'falsy' }).isIn(BOUND_TO),
   body('lineItems.*.promotionId').optional({ values: 'falsy' }).isInt({ min: 1 }),
   body('lineItems.*.promotionSnapshot').optional({ nullable: true }).isObject(),
+  // Pricing-factor snapshot on a factor-priced service line (#2440).
+  body('lineItems.*.pricingFactors').optional({ nullable: true }).isObject(),
   body('hours').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0, max: 9999 }),
   body('days').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0, max: 999 }),
 ];
@@ -788,7 +809,7 @@ router.get(
       await require('../services/quoteCatalogExamples').ensureCatalogExamples();
     }
     const rows = await quoteService.listLineItemPresets({ includeInactive: req.query.includeInactive === 'true' });
-    return successResponse(res, { presets: rows.map(transformLineItemPreset) });
+    return successResponse(res, { presets: (await withFactorIds(rows)).map(transformLineItemPreset) });
   })
 );
 
@@ -800,6 +821,15 @@ const PRESET_CATALOGUE_VALIDATORS = [
   body('vatCode').optional({ values: 'falsy' }).isString().isLength({ max: 16 }),
   body('priceMode').optional({ values: 'falsy' }).isIn(PRICE_MODES),
   body('pinnedRateMinor').optional({ nullable: true }).isInt({ min: 0 }),
+  body('factorIds').optional().isArray({ max: 30 }),
+  body('factorIds.*').isInt({ min: 1 }),
+  body('bookable').optional().isBoolean(),
+  body('bookingDurationMinutes').optional({ nullable: true }).isInt({ min: 15, max: 1440 }),
+  body('bookingDurationFactorId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('bookingDepositType').optional().isIn(['none', 'percent', 'fixed']),
+  body('bookingDepositPercent').optional({ nullable: true }).isFloat({ min: 0, max: 100 }),
+  body('bookingDepositMinor').optional({ nullable: true }).isInt({ min: 0 }),
+  body('galleryUnlock').optional().isIn(['full_payment', 'deposit', 'off']),
 ];
 
 function presetCatalogueFields(reqBody) {
@@ -810,6 +840,14 @@ function presetCatalogueFields(reqBody) {
     vat_code: reqBody.vatCode,
     price_mode: reqBody.priceMode,
     pinned_rate_minor: reqBody.pinnedRateMinor,
+    factor_ids: reqBody.factorIds,
+    bookable: reqBody.bookable,
+    booking_duration_minutes: reqBody.bookingDurationMinutes,
+    booking_duration_factor_id: reqBody.bookingDurationFactorId,
+    booking_deposit_type: reqBody.bookingDepositType,
+    booking_deposit_percent: reqBody.bookingDepositPercent,
+    booking_deposit_minor: reqBody.bookingDepositMinor,
+    gallery_unlock: reqBody.galleryUnlock,
   };
 }
 
@@ -837,7 +875,8 @@ router.post(
       product_id: req.body.productId, product_surcharges: req.body.productSurcharges,
       ...presetCatalogueFields(req.body),
     });
-    return successResponse(res, { preset: transformLineItemPreset(row) }, 201);
+    const [withIds] = await withFactorIds([row]);
+    return successResponse(res, { preset: transformLineItemPreset(withIds) }, 201);
   })
 );
 
@@ -869,7 +908,8 @@ router.put(
       product_id: req.body.productId, product_surcharges: req.body.productSurcharges,
       ...presetCatalogueFields(req.body),
     });
-    return successResponse(res, { preset: transformLineItemPreset(row) });
+    const [withIds] = await withFactorIds([row]);
+    return successResponse(res, { preset: transformLineItemPreset(withIds) });
   })
 );
 

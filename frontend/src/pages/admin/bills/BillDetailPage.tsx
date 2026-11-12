@@ -23,9 +23,13 @@ import { formatMoneyMinor } from '../../../utils/money';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { toast } from 'react-toastify';
 import { todayIsoDate } from '../../../utils/localDate';
+import { useUkBusiness } from '../../../hooks/useUkBusiness';
+import { lacksGbpRate } from '../../../utils/vatGbpRate';
 
 export const BillDetailPage: React.FC = () => {
   const { t } = useTranslation();
+  // A UK business's invoice waits for its GBP rate (issue 2439).
+  const ukBusiness = useUkBusiness();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { format: fmtDate } = useLocalizedDate();
@@ -128,7 +132,7 @@ export const BillDetailPage: React.FC = () => {
 
   const confirm = useConfirm();
   const canManage = usePermission('bills.manage');
-  // A scheduled invoice's page is its editor; the form reports unsaved edits.
+  // An unissued invoice's page is its editor; the form reports unsaved edits.
   const formRef = useRef<BillFormHandle>(null);
   const [formState, setFormState] = useState<BillFormState>({ dirty: false, busy: false, valid: true, spawnCount: 0 });
   const onFormState = useCallback((next: BillFormState) => setFormState(next), []);
@@ -140,7 +144,8 @@ export const BillDetailPage: React.FC = () => {
   const noMail = !!inv.customer?.noAdminEmails;
   // Not issued yet: the server still takes edits. Issued invoices never
   // change again (§ 14 UStG) — Storno and reissue instead.
-  const editable = canManage && inv.kind !== 'storno' && inv.status === 'scheduled';
+  const unissued = inv.status === 'scheduled' || (inv.status === 'pending_delivery' && !Number(inv.paidAmountMinor));
+  const editable = canManage && inv.kind !== 'storno' && unissued;
   const dirty = editable && formState.dirty;
 
   const handlePreview = async () => {
@@ -223,13 +228,13 @@ export const BillDetailPage: React.FC = () => {
     // invoices trigger a Stornorechnung that's emailed to the
     // customer immediately. We surface that contract explicitly so
     // admins know it can't be undone.
-    const msg = inv.status === 'scheduled'
+    const msg = unissued
       ? t('bills.confirmCancelDraft', 'Cancel this draft invoice? No document goes out.')
       : noMail
         ? t('bills.confirmCancelIssuedNoMail', 'A Stornorechnung will be generated; this customer gets no email. This cannot be undone. Continue?')
         : t('bills.confirmCancelIssued',
           'A Stornorechnung will be generated and emailed to the customer immediately. This cannot be undone. Continue?');
-    if (!(await confirm({ message: msg, variant: 'danger', confirmLabel: inv.status === 'scheduled' ? t('bills.cancelDraft', 'Cancel draft') : t('bills.cancelWithStorno', 'Cancel with Storno') }))) return;
+    if (!(await confirm({ message: msg, variant: 'danger', confirmLabel: unissued ? t('bills.cancelDraft', 'Cancel draft') : t('bills.cancelWithStorno', 'Cancel with Storno') }))) return;
     try {
       const result = await billsService.cancel(inv.id);
       toast.success(result.stornoId
@@ -292,6 +297,7 @@ export const BillDetailPage: React.FC = () => {
     if (!(await confirm(noMail
       ? { message: t('bills.confirmReleaseIssue', 'Mark the photos as delivered and issue this invoice now? This customer gets no email.'), confirmLabel: t('bills.releaseForDeliveryIssue', 'Mark delivered & issue') }
       : { message: t('bills.confirmRelease', 'Mark the photos as delivered and send this invoice to the customer now?'), confirmLabel: t('bills.releaseForDelivery', 'Mark delivered & send') }))) return;
+    if (dirty && !(await formRef.current?.save())) return;
     try {
       await billsService.releaseForDelivery(inv.id);
       toast.success(noMail
@@ -300,6 +306,8 @@ export const BillDetailPage: React.FC = () => {
       qc.invalidateQueries({ queryKey: ['invoice', id] });
     } catch (e: any) {
       toast.error(e?.response?.data?.error || 'Release failed');
+      // A failed send leaves the invoice released for the scheduler to retry.
+      qc.invalidateQueries({ queryKey: ['invoice', id] });
     }
   };
   const submitPayment = async () => {
@@ -342,7 +350,7 @@ export const BillDetailPage: React.FC = () => {
   const customerName = inv.customer.companyName || inv.customer.displayName || inv.customer.email;
   const isIssued = ['sent', 'overdue', 'paid'].includes(inv.status);
   const canSend = canManage && ['scheduled', 'sent', 'overdue'].includes(inv.status) && !inv.isMonthlyDraft;
-  const canPay = canManage && inv.kind !== 'storno' && inv.status !== 'paid' && inv.status !== 'cancelled';
+  const canPay = canManage && inv.kind !== 'storno' && !['paid', 'cancelled', 'pending_delivery'].includes(inv.status);
   const openPay = () => {
     // Pre-fill the reference with the invoice number — that's what the
     // admin types 95% of the time.
@@ -362,7 +370,7 @@ export const BillDetailPage: React.FC = () => {
   const menu: ActionMenuItem[] = canManage ? [
     // Resend only re-mails an issued invoice — nothing to do when the customer takes no mail.
     ...(canSend && !noMail && inv.status !== 'scheduled' ? [{ key: 'resend', icon: <Send />, label: t('bills.resend', 'Resend'), disabled: sending, onSelect: () => { void handleSend(); } }] : []),
-    ...(canPay && primary !== 'pay' ? [{ key: 'pay', icon: <CheckCircle />, label: t('bills.markPaid', 'Mark paid'), onSelect: openPay }] : []),
+    ...(canPay && primary !== 'pay' ? [{ key: 'pay', icon: <CheckCircle />, label: t('bills.markPaid', 'Mark paid'), disabled: dirty, onSelect: openPay }] : []),
     ...(inv.kind !== 'storno' && (inv.status === 'sent' || inv.status === 'overdue') && inv.reminderLevel < 2
       ? [{ key: 'reminder', icon: <BellRing />, label: noMail ? t('bills.recordReminder', 'Record reminder') : t('bills.sendReminder', 'Send reminder'), onSelect: () => { void handleReminder(); } }] : []),
     // Cancel & reissue: the legally clean alternative to editing an issued
@@ -370,7 +378,7 @@ export const BillDetailPage: React.FC = () => {
     ...(inv.kind !== 'storno' && ['sent', 'overdue', 'paid', 'cancelled'].includes(inv.status)
       ? [{ key: 'reissue', icon: <RefreshCw />, label: inv.status === 'cancelled' ? t('bills.reissue', 'Reissue') : t('bills.cancelAndReissue', 'Cancel & reissue'), danger: inv.status !== 'cancelled', onSelect: () => { void handleReissue(); } }] : []),
     ...(inv.kind !== 'storno' && inv.status !== 'cancelled'
-      ? [{ key: 'cancel', icon: <XCircle />, label: inv.status === 'scheduled' ? t('bills.cancelDraft', 'Cancel draft') : t('bills.cancelWithStorno', 'Cancel with Storno'), danger: true, onSelect: () => { void handleCancel(); } }] : []),
+      ? [{ key: 'cancel', icon: <XCircle />, label: unissued ? t('bills.cancelDraft', 'Cancel draft') : t('bills.cancelWithStorno', 'Cancel with Storno'), danger: true, onSelect: () => { void handleCancel(); } }] : []),
   ] : [];
 
   return (
@@ -404,7 +412,7 @@ export const BillDetailPage: React.FC = () => {
               </Button>
             )}
             {primary === 'release' && (
-              <Button onClick={() => { void handleRelease(); }} leftIcon={<Truck className="w-4 h-4" />}>{noMail ? t('bills.releaseForDeliveryIssue', 'Mark delivered & issue') : t('bills.releaseForDelivery', 'Mark delivered & send')}</Button>
+              <Button onClick={() => { void handleRelease(); }} disabled={formState.busy || (dirty && !formState.valid)} leftIcon={<Truck className="w-4 h-4" />}>{noMail ? t('bills.releaseForDeliveryIssue', 'Mark delivered & issue') : t('bills.releaseForDelivery', 'Mark delivered & send')}</Button>
             )}
             {primary === 'pay' && (
               <Button onClick={openPay} leftIcon={<CheckCircle className="w-4 h-4" />}>{t('bills.markPaid', 'Mark paid')}</Button>
@@ -418,6 +426,11 @@ export const BillDetailPage: React.FC = () => {
             invoice now" on the customer page — never directly (migration 128). */}
         {inv.isMonthlyDraft && (
           <Notice tone="info">{t('bills.monthlyDraftBadge', 'Monthly draft — ships via the customer\'s cadence day or "Trigger invoice now"')}</Notice>
+        )}
+        {ukBusiness && lacksGbpRate(inv) && (
+          <Notice tone="warning" title={t('bills.needsGbpRateTitle', 'This invoice needs its GBP exchange rate.')}>
+            {t('bills.needsGbpRateBody', 'A UK VAT invoice in {{currency}} also states its VAT in GBP. Enter the rate below; until then it can\'t be sent, and a scheduled send waits.', { currency: inv.currency })}
+          </Notice>
         )}
         {inv.kind === 'storno' && inv.cancelsInvoiceId && (
           <Notice tone="neutral">
@@ -497,6 +510,15 @@ export const BillDetailPage: React.FC = () => {
 
           <Card>
             <h3 className="font-semibold mb-3">{t('bills.section.paymentLog', 'Payment log')}</h3>
+            {(data.depositAlerts || []).map((a) => (
+              // A booking deposit counted here as paid went back to the
+              // client; the payment stays until the admin corrects it.
+              <p key={a.requestId} className="mb-3 rounded-lg border border-danger-line bg-danger-soft p-3 text-sm text-danger-text">
+                {a.depositStatus === 'disputed'
+                  ? t('bills.depositAlert.disputed', 'The booking deposit {{reference}} is booked here as paid, but the client disputed the payment. If you lose the dispute, record a negative payment or cancel the invoice with a Storno.', { reference: a.reference })
+                  : t('bills.depositAlert.refunded', 'The booking deposit {{reference}} is booked here as paid, but it was refunded since. Record a negative payment, or cancel the invoice with a Storno.', { reference: a.reference })}
+              </p>
+            ))}
             {data.payments.length === 0 ? (
               <p className="text-sm text-muted">{t('bills.noPayments', 'No payments recorded yet.')}</p>
             ) : (
@@ -518,7 +540,8 @@ export const BillDetailPage: React.FC = () => {
                       <td className="py-2 pr-4 whitespace-nowrap">{fmtDate(p.paidAt)}</td>
                       <td className="py-2 px-4 text-right tabular-nums whitespace-nowrap">{formatMoney(Number(p.amountMinor) / 100, inv.currency)}</td>
                       <td className="py-2 pl-4 pr-4 whitespace-nowrap">{p.paymentMethod || '—'}</td>
-                      <td className="py-2 pr-4 font-mono text-xs">{p.reference || '—'}</td>
+                      {/* break-all: a Stripe PaymentIntent (a booked deposit) has no break point. */}
+                      <td className="py-2 pr-4 font-mono text-xs break-all">{p.reference || '—'}</td>
                       <td className="py-2">{p.notes || '—'}</td>
                     </tr>
                   ))}

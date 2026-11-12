@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Calendar, Clock, Download, LogOut, Facebook, Instagram, Twitter, Youtube, MessageCircle } from 'lucide-react';
+import { BackToAccountLink } from './BackToAccountLink';
 import { parseISO } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -84,6 +85,8 @@ interface GalleryLayoutProps {
   onHeaderDownload?: () => void;
   headerExtra?: React.ReactNode;
   menuButton?: React.ReactNode;
+  /** A gallery opened from the customer portal: the way back, leftmost in the bar. */
+  showBackToAccount?: boolean;
   headerStyle?: HeaderStyleType;
   children: React.ReactNode;
 }
@@ -134,10 +137,14 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
   onHeaderDownload,
   headerExtra,
   menuButton,
+  showBackToAccount = false,
   headerStyle: headerStyleProp,
   children,
 }) => {
   const { t } = useTranslation();
+  const backToAccount = showBackToAccount ? (
+    <BackToAccountLink className="gallery-back-to-account inline-flex items-center gap-1.5 flex-shrink-0 text-sm text-muted-theme hover:text-theme transition-colors" />
+  ) : null;
   const { format, formatExpiry } = useLocalizedDate();
   const { theme } = useTheme();
   // Dark-mode logo variant. Symmetric fallback: a single uploaded logo
@@ -364,6 +371,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
             <div className="flex items-center justify-between gap-2 sm:gap-4">
               {/* Left side - Logo (menu lives in the absolute wrapper above) */}
               <div className={`flex items-center gap-2 sm:gap-4 flex-shrink-0 ${menuButton ? 'pl-12 sm:pl-14' : ''}`}>
+                {backToAccount}
                 {/* Logo - Show custom logo or fallback to PicPeak logo */}
                 {shouldShowLogo('header') && (
                   <div className={`gallery-logo-wrapper flex-shrink-0 flex items-center gap-2 ${brandingSettings?.logo_position === 'center' ? 'flex-1' : ''} ${getLogoPositionClass()}`}>
@@ -493,6 +501,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 {menuButton}
+                {backToAccount}
                 <h1
                   className="text-sm font-semibold text-theme truncate"
                   style={{ fontFamily: headingFontFamily }}
@@ -546,6 +555,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 {menuButton}
+                {backToAccount}
                 {headerExtra}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
@@ -595,6 +605,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
               {/* Left side - Menu button */}
               <div className="flex items-center gap-3">
                 {menuButton}
+                {backToAccount}
                 {headerExtra}
               </div>
 

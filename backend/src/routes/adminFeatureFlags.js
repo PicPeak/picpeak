@@ -7,6 +7,7 @@
  * Server-side dependency rules mirror the frontend:
  *   - quotes=false  forces bills=false
  *   - calendar=false forces calendarBooking=false
+ *   - quotes=false forces calendarBooking=false
  *   - galleries is hard-coded true regardless of input
  *
  * Audit log: every successful PUT writes one activity_logs row with the
@@ -25,6 +26,7 @@ const logger = require('../utils/logger');
 // `FeatureKey` union in frontend/src/contexts/FeatureFlagsContext.tsx.
 const KNOWN_FLAGS = [
   'albumProducts',
+  'printSales',
   'galleries',
   'reminderEmails',
   // Incoming mail (migration 128) — IMAP polling of a dedicated mailbox into
@@ -126,12 +128,22 @@ const KNOWN_FLAGS = [
   // portal plus the Documents card on the customer record. Strictly opt-in:
   // while off, every documents route (portal and admin) answers 403.
   'documents',
+  // Customer gifts (migration 343). Child of `clients` - milestone gift
+  // suggestions, gift stock and the gift history on the customer record.
+  // Strictly opt-in: while off, every /admin/gifts route answers 403.
+  'customerGifts',
+  // Backup restore tests (migration 357). Every backup is fetched back,
+  // hashed and test-restored into a throwaway database. Strictly opt-in:
+  // while off, nothing is tested and the /admin/backup/verifications routes
+  // answer 403.
+  'backupRestoreTest',
 ];
 
 // Spec defaults for any flag missing from the DB (e.g. a row added by a
 // new release that hasn't run its migration yet on this instance).
 const DEFAULT_FLAGS = {
   albumProducts: false,
+  printSales: false,
   galleries: true,
   incomingMail: false,
   // F.3 — reminderEmails is a placeholder card in the Features tab
@@ -163,6 +175,8 @@ const DEFAULT_FLAGS = {
   autoTagging: false,
   newsletters: false,
   documents: false,
+  customerGifts: false,
+  backupRestoreTest: false,
 };
 
 async function readAllFlags() {
@@ -194,6 +208,8 @@ function applyDependencyRules(flags) {
   // Sub-features can't outlive their parents.
   if (out.quotes === false) out.bills = false;
   if (out.calendar === false) out.calendarBooking = false;
+  // Accepting a booking request drafts a quote (#2440).
+  if (out.quotes === false) out.calendarBooking = false;
   // Invoices (Bills) force-enable the Accounting master: invoice VAT config
   // (codes + label) and the hourly rate live under Settings → Accounting, so
   // an install with invoices must have Accounting available. Runs BEFORE the
@@ -231,6 +247,7 @@ function applyDependencyRules(flags) {
     || out.calendar
     // Migration 199 (#1264) — newsletter campaigns live under Clients.
     || out.newsletters
+    || out.customerGifts
     // future siblings (out.messaging) go here
   );
   return out;

@@ -187,6 +187,7 @@ export const adminNavigation: NavItem[] = [
       // #1264 — newsletters is a Clients child and must light up the entry,
       // or a newsletter-only install has no way into the section.
       'newsletters',
+      'customerGifts',
     ],
   },
   // Accounting section (migration 122) — inbound supplier invoices,

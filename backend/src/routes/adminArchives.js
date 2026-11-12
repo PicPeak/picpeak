@@ -227,7 +227,7 @@ router.get('/:id', adminAuth, requirePermission('archives.view'), requireEventOw
       createdAt: archive.created_at,
       expiresAt: archive.expires_at,
       archivedAt: archive.archived_at,
-      photos: photos,
+      photos: photos.map((p) => ({ ...p, size_bytes: p.size_bytes == null ? null : Number(p.size_bytes) })),
       archiveFile: archiveFileInfo
     });
   } catch (error) {
@@ -1013,14 +1013,24 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       }
       // SQLite does not enable FK cascades: erase client names/session
       // digests on this deletion path too, with history before its offers.
+      if (await trx.schema.hasTable('print_sales_orders'))
+        await trx('print_sales_orders').where({ event_id: Number(req.params.id) }).update({ event_id: null });
       if (await trx.schema.hasTable('event_album_products')) {
         if (await trx.schema.hasTable('album_product_choice_history')) {
           await trx('album_product_choice_history')
             .whereIn('offer_id', trx('event_album_products').where('event_id', req.params.id).select('id')).del();
         }
+        if (await trx.schema.hasTable('album_shipments')) {
+          await trx('album_shipments')
+            .whereIn('offer_id', trx('event_album_products').where('event_id', req.params.id).select('id')).del();
+        }
         await trx('event_album_products').where('event_id', req.params.id).del();
       }
       await trx('photos').where('event_id', req.params.id).del();
+      // Favourite lists (issue 2303), for the reason deleteEventCascade gives.
+      if (await trx.schema.hasTable('favorite_lists')) {
+        await trx('favorite_lists').where('event_id', req.params.id).del();
+      }
       // Scene tags (issue 1733) stay with an archived gallery's photo rows.
       // After the photos: a tagging worker locks the photo row first, and
       // taking the two in the other order can deadlock on PostgreSQL.

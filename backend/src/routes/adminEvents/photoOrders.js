@@ -15,6 +15,8 @@ const { buildPurchasedDownloadUrl, pauseAdjustedExpiry } = require('../../module
 const { summarisePurchaseOrder } = require('../../modules/photoSales/adminOrders');
 const { queueEmail, getSupportEmail } = require('../../services/emailProcessor');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
+const { stripeConfiguration } = require('../../modules/photoSales/stripeClient');
+const { configuration } = require('../../modules/photoSales/providers');
 
 async function loadOwnedEvent(req) {
   // Defence in depth — requireEventOwner already ran on write routes.
@@ -44,6 +46,7 @@ module.exports = (router) => {
 
       const orders = await db('photo_purchase_orders')
         .where({ gallery_id: event.id })
+        .modify((q) => { if (req.query.include_abandoned !== 'true') q.whereNotIn('status', ['expired', 'cancelled', 'failed']); })
         .orderBy('purchased_at', 'desc');
 
       const summaries = [];
@@ -56,13 +59,9 @@ module.exports = (router) => {
 
       res.json({
         orders: summaries,
-        // Whether this install can sell at all: without the public key the
-        // gallery shows no cart, without the secret key every webhook is
-        // refused and no order is ever granted.
-        store: {
-          checkout_configured: !!(process.env.SNIPCART_API_KEY || '').trim(),
-          webhook_configured: !!(process.env.SNIPCART_SECRET_API_KEY || '').trim(),
-        },
+        // Presence only; this does not claim that credentials or webhook
+        // delivery have been verified with the provider.
+        store: { ...await configuration(), stripe: await stripeConfiguration() },
       });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to load photo orders');

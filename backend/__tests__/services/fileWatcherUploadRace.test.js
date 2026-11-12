@@ -246,6 +246,8 @@ describe('s3AutoImporter vs. an upload in flight or never finished (issue 1970)'
   const twoPolls = async (names) => {
     const { processEvent, previousSnapshot } = require('../../src/services/s3AutoImporter').__test;
     previousSnapshot.clear();
+    // The importer validates its copy of each object, so each one is there.
+    for (const name of names) fs.writeFileSync(path.join(process.env.STORAGE_PATH, key(name)), jpeg);
     await processEvent({ id: eventId, slug: EVENT_SLUG }, bucket(names));
     await processEvent({ id: eventId, slug: EVENT_SLUG }, bucket(names));
   };

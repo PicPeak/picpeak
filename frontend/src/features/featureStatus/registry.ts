@@ -31,18 +31,21 @@ export const FEATURE_STATUS: Record<FeatureKey | PortalFeatureKey, FeatureStatus
   // Core
   galleries: { maturity: 'stable' },
   albumProducts: { maturity: 'experimental' },
+  printSales: { maturity: 'experimental' },
   slideshow: { maturity: 'beta' },
   transfers: { maturity: 'beta' },
   faces: { maturity: 'beta' },
   autoTagging: { maturity: 'beta' },
+  backupRestoreTest: { maturity: 'beta' },
   // Automation
   workflows: { maturity: 'beta' },
   // CRM
   clients: { maturity: 'stable' },
   customerPortal: { maturity: 'beta' },
   documents: { maturity: 'beta' },
+  customerGifts: { maturity: 'beta' },
   calendar: { maturity: 'beta' },
-  calendarBooking: { maturity: 'roadmap' },
+  calendarBooking: { maturity: 'beta' },
   quotes: { maturity: 'beta' },
   contracts: { maturity: 'beta' },
   bills: { maturity: 'beta' },

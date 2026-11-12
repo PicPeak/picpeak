@@ -23,6 +23,7 @@ import { useGridDensity } from './gridDensity';
 import { PhotoPurchaseBadge } from '../../features/photo-sales/PhotoPurchaseBadge';
 import { usePhotoSales } from '../../features/photo-sales/PhotoSalesContext';
 import type { Photo } from '../../types';
+import { withFocalPosition } from '../../utils/focalPoint';
 
 export /** Action buttons (36px) + gap + rating pill (28px); below this the row would overlap the buttons. */
 const MIN_TILE_HEIGHT_FOR_RATING_ROW = 104;
@@ -376,10 +377,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const actionIconClass = actionVariant === 'dark' ? 'w-5 h-5 text-white' : 'w-5 h-5 text-neutral-800';
 
   const handlePhotoClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Photo sales: cart controls let the click bubble to
-    // Snipcart's document-level delegation; the tile must ignore those
-    // clicks instead of opening the lightbox.
-    if ((e.target as HTMLElement | null)?.closest?.('.snipcart-add-item, .snipcart-checkout')) {
+    // Purchase controls own their click instead of opening the lightbox.
+    if ((e.target as HTMLElement | null)?.closest?.('[data-photo-purchase]')) {
       return;
     }
     if (isTouchDevice && !overlayVisible && !isSelectionMode) {
@@ -548,7 +547,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {/* Inside the mounted branch on purpose: the blurred placeholder
               (issue 1733) is decoded only for tiles that are mounted, and
               goes with them when the release band lets a tile go. */}
-          <TileImage {...imageProps} src={tileSrc} alt={tileAlt} thumbHash={photo.thumb_hash} />
+          {/* Cropped around the photo's focal point (issue 2377). */}
+          <TileImage {...imageProps} src={tileSrc} alt={tileAlt} thumbHash={photo.thumb_hash} style={withFocalPosition(photo, imageProps.style)} />
 
           {/* The guest's own colour label (#1044) — visible without hovering
               or opening anything, which is the point: the client watches
@@ -588,7 +588,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {beforeOverlay}
 
           {/* Photo sales: always-visible price chip; one
-              tap puts the photo into the Snipcart cart. */}
+              tap puts the photo into the cart. */}
           <PhotoPurchaseBadge photo={photo} />
 
           {/* Hover Overlay */}

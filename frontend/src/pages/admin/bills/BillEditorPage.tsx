@@ -3,7 +3,7 @@
  * quote conversion; this is for one-off / ad-hoc invoicing. Smaller
  * surface than the quote form on purpose.
  *
- * One page per invoice: `BillForm` is the body of a scheduled invoice's own
+ * One page per invoice: `BillForm` is the body of an unissued invoice's own
  * page (BillDetailPage, which owns the header, the save bar and Send) and of
  * /bills/new (BillEditorPage below). Once an invoice is issued it is never
  * edited again (§ 14 UStG): its page is read-only, Storno and reissue.
@@ -21,6 +21,8 @@ import { billsService, type InvoiceCreatePayload, type InvoiceQrFormat } from '.
 import { quotesService } from '../../../services/quotes.service';
 import { contractsService } from '../../../services/contracts.service';
 import { businessProfileService } from '../../../services/businessProfile.service';
+import { DecimalInput } from '../../../components/common/DecimalInput';
+import { useUkBusiness } from '../../../hooks/useUkBusiness';
 import { CustomerPicker } from '../../../components/admin/CustomerPicker';
 import { VatRateSelect } from '../../../components/admin/VatRateSelect';
 import { accountingService } from '../../../services/accounting.service';
@@ -90,7 +92,9 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   // on the day the invoice actually goes out. Flipping this lets the
   // admin type a different date by hand; we keep it pinned so the auto
   // effect below stops clobbering their value.
-  const [dueDateOverridden, setDueDateOverridden] = useState(false);
+  // A saved invoice keeps its due date. hydrate() sets this too, but with
+  // cached data the auto-track effect runs right after it, on the old value.
+  const [dueDateOverridden, setDueDateOverridden] = useState(isEdit);
   const [scheduledSendAt, setScheduledSendAt] = useState('');
   // null = inherit profile default at render time. 'none' / 'swiss' /
   // 'epc' = explicit per-invoice override. (Existing invoices that
@@ -100,6 +104,8 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   const [vatRate, setVatRate] = useState(0);
   // Migration 130 — snapshot of the chosen output VAT code (null = custom rate).
   const [vatCode, setVatCode] = useState<string | null>(null);
+  // Migration 352 — GBP rate of a UK invoice in another currency (NaN = none).
+  const [vatGbpRate, setVatGbpRate] = useState<number>(NaN);
   const [shipping, setShipping] = useState(0);
   const [ccPdfEmail, setCcPdfEmail] = useState('');
   const [lineItems, setLineItems] = useState<EditableLineItem[]>([]);
@@ -142,6 +148,9 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     queryKey: ['business-bank-accounts'],
     queryFn: () => businessProfileService.listBankAccounts(),
   });
+  // A UK business rounds its VAT total down and states the VAT in GBP on an
+  // invoice in another currency. Read from a route every bill editor may call.
+  const ukBusiness = useUkBusiness();
   const bankAccounts = bankAccountsData?.bankAccounts || [];
 
   // Migration 124 split the legacy payment-term template into Net days
@@ -162,6 +171,7 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     queryFn: () => billsService.get(parseInt(id!, 10)),
     enabled: !!isEdit,
   });
+  const awaitingDelivery = existing?.invoice.status === 'pending_delivery';
 
   // Dirty tracking: the payload the fields build right after a saved
   // invoice is loaded into them is the snapshot to compare against.
@@ -187,6 +197,8 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     // it inherits the profile default at render time.
     setQrFormat((inv.qrFormat as InvoiceQrFormat | null) || null);
     setVatRate(Number(inv.vatRate || 0));
+    const storedGbpRate = (inv as { vatGbpRate?: number | null }).vatGbpRate;
+    setVatGbpRate(storedGbpRate == null ? NaN : Number(storedGbpRate));
     setVatCode(((inv as { vatCode?: string | null }).vatCode
       ?? (inv as { totals?: { vatCode?: string | null } }).totals?.vatCode) ?? null);
     setShipping(Number(inv.shippingAmountMinor || 0) / 100);
@@ -446,6 +458,11 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     qrFormat: qrFormat || undefined,
     vatRate,
     vatCode,
+    // The GBP rate as loaded or typed, null when there is none or the invoice
+    // is in GBP; the server keeps it only for a UK business. Not tied to the
+    // country query, so a loaded invoice doesn't turn dirty when that query
+    // lands, and a failed query still saves the stored rate back.
+    vatGbpRate: currency !== 'GBP' && Number.isFinite(vatGbpRate) && vatGbpRate > 0 ? vatGbpRate : null,
     shippingAmountMinor: toMinor(shipping),
     // A cleared field is sent as null so the save clears it (see the event
     // snapshot below).
@@ -605,7 +622,19 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
       <Card>
         <h3 className="font-semibold mb-2">{t('bills.section.details', 'Details')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <LocalizedDateInput label={t('bills.field.issueDate', 'Issue date') as string} value={issueDate} onChange={setIssueDate} />
+          <div>
+            <LocalizedDateInput
+              label={t('bills.field.issueDate', 'Issue date') as string}
+              value={issueDate}
+              onChange={setIssueDate}
+              disabled={awaitingDelivery}
+            />
+            {awaitingDelivery && (
+              <p className="text-xs text-muted mt-1">
+                {t('bills.field.issueDateOnDelivery', 'Set when you mark this invoice delivered. The due date then counts from it, unless you changed it.')}
+              </p>
+            )}
+          </div>
           <div>
             <LocalizedDateInput
               label={t('bills.field.dueDate', 'Due date') as string}
@@ -625,6 +654,8 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
                 : t('bills.field.dueDateOverrideOff', 'Auto from send date + payment term — tick to set manually')}
             </label>
           </div>
+          {/* A delivery invoice goes out with "Mark delivered & send", not by date. */}
+          {!awaitingDelivery && (
           <div>
             <label className="block text-sm font-medium mb-1">{t('bills.field.scheduledSendAt', 'Scheduled send (optional)')}</label>
             {/* Localized date + time (honours general_date_format +
@@ -650,6 +681,7 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
               />
             </div>
           </div>
+          )}
           <div>
             <label className="block text-sm font-medium mb-1">{t('bills.field.qrFormat', 'Payment QR format')}</label>
             <select
@@ -709,7 +741,8 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
         <h3 className="font-semibold mb-2">{t('bills.section.lineItems', 'Line items')}</h3>
         <LineItemsTable items={lineItems} currency={currency} showDiscount={false}
           vatRate={vatRate / 100} shippingAmount={shipping}
-          roundTotal={appSettings?.crm_invoice_round_total === true} onChange={setLineItems} />
+          roundTotal={appSettings?.crm_invoice_round_total === true}
+          vatRoundDown={ukBusiness} onChange={setLineItems} />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
           <VatRateSelect
             label={t('bills.field.vatRate', 'VAT rate %') as string}
@@ -725,6 +758,20 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
               <option>CHF</option><option>EUR</option><option>USD</option><option>GBP</option>
             </select>
           </div>
+          {/* A UK invoice in another currency also states its VAT in
+              sterling, with the rate used (VAT Notice 700/21 s.4.1). */}
+          {ukBusiness && currency !== 'GBP' && (
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium mb-1">
+                {t('bills.field.vatGbpRate', 'GBP per {{currency}} for the VAT in sterling', { currency })}
+              </label>
+              <DecimalInput value={vatGbpRate} onChange={setVatGbpRate} placeholder="0.87"
+                className="w-full md:w-48 px-3 py-2 rounded-md border border-line-strong bg-panel text-sm" />
+              <p className="text-xs text-soft mt-1">
+                {t('bills.field.vatGbpRateHint', 'HMRC requires the VAT total in GBP on a UK VAT invoice in another currency. Use the UK market selling rate at the tax point or HMRC\'s period rate.')}
+              </p>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -797,14 +844,14 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
             a multi-row plan and clicks Save, the backend spawns one
             invoice per row via spawnInstallmentInvoices (commit #4)
             and returns the array of new ids. */}
-        <div className="mt-4 pt-4 border-t border-line">
+        {!isEdit && <div className="mt-4 pt-4 border-t border-line">
           <InstallmentsPanel
             value={installments}
             onChange={setInstallments}
             onValidityChange={setInstallmentsValid}
             eventDate={eventDate || null}
           />
-        </div>
+        </div>}
       </Card>
 
       <Card>

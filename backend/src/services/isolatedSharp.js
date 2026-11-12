@@ -9,9 +9,11 @@ const { spawn } = require('child_process');
 const logger = require('../utils/logger');
 const { configuration, refusal, MiB } = require('./imageResourcePolicy');
 
-const methods = ['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw'];
+const methods = ['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'tiff', 'flatten', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw'];
 const WORKER = path.join(__dirname, 'sharpWorker.js');
-const NODE_FLAGS = ['--jitless', '--no-expose-wasm', '--max-old-space-size=64'];
+// --jitless also turns WebAssembly off, on every supported Node. Node 24 removed
+// --no-expose-wasm and refuses to start with it.
+const NODE_FLAGS = Object.freeze(['--jitless', '--max-old-space-size=64']);
 const MESSAGE_BYTES = 1024 * 1024;
 const READY_MS = 15000;
 const IDLE_MS = 30000;
@@ -135,6 +137,10 @@ function resolveMode(policy) {
       } catch (exit) {
         logger.warn(`IMAGE PROCESSING RUNS INSIDE THE BACKEND PROCESS: ${reason}, and a plain image worker did not start either ` +
           `(${startFailure(exit)}). The pixel limit still applies, but a crash or memory exhaustion in the image library now takes the backend down with it.`);
+        // No worker starts when sharp itself cannot load: every image would
+        // fail, so this line has to be findable before the first upload.
+        try { require('./sharpWorker').loadSharp(); }
+        catch (error) { logger.error(`IMAGE PROCESSING IS UNAVAILABLE: ${error.message}${error.detail ? ` (${error.detail})` : ''}`); }
         return 'inprocess';
       }
     })();
@@ -289,8 +295,13 @@ function pump() {
  * Background work (the default) waits for a free worker however long the
  * queue is: back-pressure, never a refusal. A caller that answers a request
  * passes `interactive: true` and gets IMAGE_QUEUE_FULL (503) instead of
- * joining a queue that is already `queueLength` deep.
+ * joining a queue that is already `queueLength` deep. Someone is waiting on
+ * that request, so it goes ahead of queued background work, in its own order.
+ * The first background job lets at most MAX_OVERTAKES of them past, so steady
+ * guest traffic cannot hold library work back for ever.
  */
+const MAX_OVERTAKES = 8;
+
 function submit(job, { signal, interactive } = {}) {
   let policy;
   try { policy = configuration(); } catch (error) { return Promise.reject(error); }
@@ -301,7 +312,7 @@ function submit(job, { signal, interactive } = {}) {
     return Promise.reject(refusal('Image processing is busy; try again shortly', 'IMAGE_QUEUE_FULL', { retryAfter: 5 }));
   }
   return new Promise((resolve, reject) => {
-    const entry = { job, policy, signal, resolve, reject, done: false, running: false, worker: null };
+    const entry = { job, policy, signal, interactive, overtaken: 0, resolve, reject, done: false, running: false, worker: null };
     entry.fail = error => {
       if (entry.done) return;
       entry.done = true;
@@ -317,7 +328,14 @@ function submit(job, { signal, interactive } = {}) {
     };
     entry.cancel = () => entry.fail(refusal('Image processing was cancelled', 'IMAGE_CANCELLED'));
     signal?.addEventListener('abort', entry.cancel, { once: true });
-    queue.push(entry);
+    const firstBackground = interactive
+      ? queue.findIndex(queued => !queued.interactive && queued.overtaken < MAX_OVERTAKES) : -1;
+    if (firstBackground >= 0) {
+      queue[firstBackground].overtaken += 1;
+      queue.splice(firstBackground, 0, entry);
+    } else {
+      queue.push(entry);
+    }
     pump();
   });
 }
@@ -338,6 +356,7 @@ sharp.concurrency = () => 1;
 // Bounded header admission batches avoid one job per small upload.
 sharp.metadataBatch = (entries, { signal, interactive, validate = false } = {}) =>
   submit({ entries, validate, terminal: 'metadataBatch' }, { signal, interactive });
+sharp.nodeFlags = NODE_FLAGS;
 /** Decide the isolation mode now, so its warning lands in the startup log. */
 sharp.prepare = () => resolveMode(configuration());
 /** Stop the idle workers (shutdown, tests). Running jobs finish first. */

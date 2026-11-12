@@ -17,7 +17,9 @@ const {
 } = require('../services/downloadFilenameService');
 const { escapeLikePattern, likeWithEscape } = require('../utils/sqlSecurity');
 const { COLOR_LABELS, dominantColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
-const { normalizeDecisionFilter, whereDecision } = require('../utils/photoFilterBuilder');
+const {
+  normalizeDecisionFilter, whereDecision, normalizeFavoriteListFilter, whereInFavoriteList,
+} = require('../utils/photoFilterBuilder');
 const feedbackService = require('../services/feedbackService');
 const photoAdminMarksService = require('../services/photoAdminMarksService');
 const { validateUploadedFiles } = require('../middleware/uploadValidation');
@@ -32,6 +34,7 @@ const {
 } = require('../services/uploadSettings');
 const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { adminThumbnailUrl, adminThumbnailVersion } = require('../utils/adminThumbnailUrl');
+const { focalPointOf, normalizeFocalPoint } = require('../utils/focalPoint');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
 const { toIso, toServerWallClock, cameraWallClock } = require('../utils/dateNormalize');
@@ -39,6 +42,7 @@ const { parseStoredExif } = require('../services/photoExif');
 const { originalNeedsPreview } = require('../utils/rawFormats');
 const { processUploadedPhotos } = require('../services/photoProcessor');
 const chunkedUpload = require('../services/chunkedUploadService');
+const { requireCapability } = require('../middleware/requireCapability');
 const downloadZipService = require('../services/downloadZipService');
 const { findReplacementCandidate, replacePhoto } = require('../services/photoReplacementService');
 const { requireEventOwnership, canAccessEvent } = require('../middleware/ownership');
@@ -80,7 +84,7 @@ async function folderIdUpdate(eventId, raw) {
 const { photoCapOf, countEventPhotos, insertPhotoWithinCap, photoCapError } = require('../services/photoCap');
 const { claimPromotion } = require('../services/watchFolderClaims');
 const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
-const { sha256File, findDuplicate, duplicateName } = require('../services/photoDuplicates');
+const { sha256File, findDuplicate, duplicateName, listDuplicateGroups, duplicatesOf, uploadedMs, DEFAULT_GROUP_LIMIT, MAX_GROUP_LIMIT } = require('../services/photoDuplicates');
 
 
 const { validateFileType, validateFileContent, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
@@ -174,7 +178,7 @@ const validateUploadContent = async (req, res, next) => {
 };
 
 // Both mounted admin aliases share this raw-body and persistent admission.
-router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), requireEventOwnership, resolveAllowedTypes, async (req, res) => {
+router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), requireEventOwnership, resolveAllowedTypes, requireCapability('uploads.new'), async (req, res) => {
   const eventId = Number(req.params.eventId);
   if (!/^\d+$/.test(req.params.eventId) || !Number.isSafeInteger(eventId) || eventId < 1) {
     if (!req.readableEnded) res.set('Connection', 'close');
@@ -295,6 +299,17 @@ async function handleAdminPhotoUpload(req, res) {
       }
     }
 
+    // Every file was refused by the validation: say why (issue 2395). 422
+    // when each one is over an image limit, as the single-file uploads answer.
+    const refused = req.invalidFiles || [];
+    if ((!req.files || req.files.length === 0) && refused.length > 0) {
+      const policy = require('../services/imageResourcePolicy');
+      return res.status(refused.every(policy.isResourceError) ? 422 : 400).json({
+        error: refused.length === 1 ? refused[0].error
+          : `None of the ${refused.length} files could be uploaded. ${refused[0].filename}: ${refused[0].error}`,
+        errors: refused,
+      });
+    }
     if (!req.files || req.files.length === 0) {
       logger.error('No files in request. req.files:', req.files);
       logger.error('Request body keys:', Object.keys(req.body));
@@ -1362,6 +1377,156 @@ router.post('/:eventId/photos/trash/purge', adminAuth, requirePermission('photos
   }
 });
 
+// The duplicates view (issue 2194): photos of this gallery with the same
+// bytes, by the content hash uploads store. Only byte-identical files match,
+// never across galleries, and a photo without a hash (imported before
+// hashing) is not compared.
+const photoSource = (photo) => {
+  if (photo.uploaded_by === 'guest') return 'guest';
+  if (photo.source_origin === 'external' || photo.source_origin === 'reference') return 'external';
+  return 'admin';
+};
+
+router.get('/:eventId/photos/duplicates', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.eventId, 10);
+    const limitParam = parseInt(req.query.limit, 10);
+    const offsetParam = parseInt(req.query.offset, 10);
+    const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, MAX_GROUP_LIMIT) : DEFAULT_GROUP_LIMIT;
+    const offset = Number.isInteger(offsetParam) && offsetParam > 0 ? offsetParam : 0;
+    const result = await listDuplicateGroups(eventId, {
+      limit,
+      offset,
+      columns: ['filename', 'original_filename', 'size_bytes', 'media_type', 'uploaded_by', 'source_origin',
+        'moderation_status', 'processing_error', 'poster_offset_seconds'],
+    });
+    res.json({
+      groups: result.groups.map((group) => ({
+        content_sha256: group.content_sha256,
+        photos: group.photos.map((photo) => ({
+          id: photo.id,
+          filename: duplicateName(photo),
+          // One shape for every row: SQLite's zone-less default would be
+          // read in the browser's zone and pick the wrong oldest copy.
+          uploaded_at: Number.isFinite(uploadedMs(photo)) ? new Date(uploadedMs(photo)).toISOString() : null,
+          size: photo.size_bytes == null ? null : Number(photo.size_bytes),
+          media_type: photo.media_type || 'image',
+          source: photoSource(photo),
+          moderation_status: photo.moderation_status || null,
+          thumbnail_url: adminThumbnailUrl(eventId, photo),
+        })),
+      })),
+      total_groups: result.total_groups,
+      total_photos: result.total_photos,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to list duplicate photos');
+  }
+});
+
+// Keep one photo of each named group and move the others to the trash. The
+// server picks "the others" from the kept photo's hash, so a stale page can
+// never trash a photo that is not a copy, nor the kept one. Trash only: with
+// a retention of 0 deleting is final, and this cleanup does not do that.
+router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.eventId, 10);
+    // Each kept photo comes with the hash of the group the admin saw: a photo
+    // replaced by other bytes since the page loaded keeps its id, and must not
+    // stand for the new content's group.
+    const { keep } = req.body || {};
+    const validKeep = (k) => k && Number.isInteger(k.id) && k.id > 0
+      && typeof k.content_sha256 === 'string' && /^[0-9a-f]{64}$/.test(k.content_sha256);
+    if (!Array.isArray(keep) || keep.length === 0 || !keep.every(validKeep)) {
+      return res.status(400).json({ error: 'Invalid photo IDs' });
+    }
+    const keepIds = keep.map((k) => k.id);
+    const shownHash = new Map(keep.map((k) => [k.id, k.content_sha256]));
+    if (keep.length > MAX_GROUP_LIMIT) {
+      return res.status(400).json({ error: `At most ${MAX_GROUP_LIMIT} groups per request` });
+    }
+    const event = await db('events').where({ id: eventId }).first();
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+
+    const retentionDays = await photoTrash.getRetentionDays();
+    if (retentionDays <= 0) {
+      return res.status(409).json({ error: 'The trash is turned off', code: 'TRASH_OFF' });
+    }
+
+    const kept = await livePhotos(db).where('event_id', eventId).whereIn('id', [...new Set(keepIds)]);
+    const keptHashes = new Set();
+    for (const photo of kept) {
+      if (!photo.content_sha256 || photo.content_sha256 !== shownHash.get(Number(photo.id))) continue;
+      if (keptHashes.has(photo.content_sha256)) {
+        return res.status(400).json({ error: 'Keep one photo per group', code: 'SAME_GROUP' });
+      }
+      keptHashes.add(photo.content_sha256);
+    }
+
+    // One resolve at a time per gallery: two admins keeping different photos
+    // of one group must not trash every copy between them. On PostgreSQL the
+    // gallery row and then the group's photo rows are locked, so neither a
+    // second resolve nor a replacement upload (which rewrites content_sha256)
+    // can change them between the read and the trash; SQLite runs every query
+    // on one connection, so the transaction alone serialises it. Each kept
+    // photo is read again under the lock: a keep the other request already
+    // trashed, or one replaced by different bytes, trashes nothing here.
+    const gone = await db.transaction(async (trx) => {
+      const pg = trx.client.config.client === 'pg';
+      const gallery = trx('events').where({ id: eventId });
+      if (pg) gallery.forUpdate();
+      await gallery.first('id');
+      const trashed = [];
+      for (const stale of kept) {
+        // Replaced since the page loaded: its new bytes are not the group shown.
+        const shown = shownHash.get(Number(stale.id));
+        if (!stale.content_sha256 || stale.content_sha256 !== shown) continue;
+        const group = livePhotos(trx).where({ event_id: eventId, content_sha256: shown }).orderBy('id');
+        if (pg) group.forUpdate();
+        const rows = await group;
+        const keep = rows.find((row) => Number(row.id) === Number(stale.id));
+        if (!keep) continue;
+        for (const photo of await duplicatesOf(eventId, keep, trx)) {
+          if (!rows.some((row) => Number(row.id) === Number(photo.id))) continue;
+          if (await photoTrash.trashPhoto(photo, req.admin.id, retentionDays, Date.now(), trx)) trashed.push(photo);
+        }
+      }
+      return trashed;
+    });
+    const failedIds = [];
+
+    // As the bulk delete: one photo.deleted per photo, one activity entry.
+    try {
+      const webhookService = require('../services/webhookService');
+      for (const photo of gone) {
+        await webhookService.fire('photo.deleted', {
+          event: { id: eventId, slug: event.slug, event_name: event.event_name },
+          photo: { id: photo.id, filename: photo.filename },
+        });
+      }
+    } catch (e) { /* non-fatal */ }
+    if (gone.length > 0) {
+      await logActivity('photos_bulk_deleted',
+        { count: gone.length, eventName: event.event_name, trashed: gone.length, duplicates: true },
+        eventId,
+        { type: 'admin', id: req.admin.id, name: req.admin.username }
+      );
+      downloadZipService.invalidate(eventId);
+    }
+
+    res.json({
+      trashed: gone.length,
+      photo_ids: gone.map((photo) => photo.id),
+      failed: failedIds,
+      retention_days: retentionDays,
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to move duplicate photos to the trash');
+  }
+});
+
 // How many photos of the event wait for review, or were rejected (issue 743),
 // for the photo grid's banner.
 router.get('/:eventId/photos/moderation', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
@@ -1582,6 +1747,79 @@ router.put('/:eventId/photos/:photoId/poster', adminAuth, requirePermission('pho
   }
 });
 
+// Set where a photo's crops keep its subject (issue 2377): `{ x, y }`
+// fractions of the image, or `null` to go back to the detected point. The
+// cover-cropped thumbnail and its tiers are cut again around it; the gallery
+// URL names the point, so no browser keeps the old crop.
+// Detect the focal point of every photo in the gallery again (issue 2377):
+// from its faces where the scan found any, from sharp's guess otherwise.
+// Points set by hand stay. The focal point backfill cuts them in the
+// background; this only queues them.
+router.post('/:eventId/photos/focal-points/redetect', adminAuth, requirePermission('photos.edit'), requireEventOwnership, async (req, res) => {
+  try {
+    const event = await db('events').where({ id: req.params.eventId }).first('id', 'is_archived');
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+    if (event.is_archived === true || event.is_archived === 1) {
+      return res.status(409).json({ error: 'An archived gallery has no thumbnails to cut again' });
+    }
+    const queued = await livePhotos(db)
+      .where({ event_id: event.id })
+      .where(function () { this.whereNull('focal_source').orWhereNot('focal_source', 'manual'); })
+      .where(function () { this.whereNull('media_type').orWhereNot('media_type', 'video'); })
+      .update({ focal_checked: 0 });
+    await logActivity('photo_focal_points_redetect', { queued }, event.id, { type: 'admin', id: req.admin.id, name: req.admin.username });
+    require('../services/focalPointBackfill').requestPass();
+    res.json({ queued });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to queue the focal points');
+  }
+});
+
+router.put('/:eventId/photos/:photoId/focal-point', adminAuth, requirePermission('photos.edit'), requireEventOwnership, async (req, res) => {
+  try {
+    const raw = req.body?.focal_point;
+    const point = raw === null ? null : normalizeFocalPoint(raw);
+    if (raw === undefined || (raw !== null && !point)) {
+      return res.status(400).json({ error: 'focal_point must be { x, y } with both between 0 and 1, or null for the detected point' });
+    }
+    const photo = await livePhotos(db)
+      .where({ id: req.params.photoId, event_id: req.params.eventId })
+      .first();
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    if (photo.media_type === 'video' || isVideoMimeType(photo.mime_type) || photo.type === 'video') {
+      return res.status(400).json({ error: 'A video has no focal point to set' });
+    }
+    if (photo.processing_status === 'pending' || photo.processing_status === 'processing') {
+      return res.status(409).json({ error: 'The photo is still being processed' });
+    }
+
+    // Handed to the rebuild, never written ahead of it: the point lands on
+    // the row with the thumbnail cut around it (a reset: with the point
+    // detected for it), as a poster pick does. A listing read meanwhile names
+    // the old point with the old crop, and a failed or thrown rebuild leaves
+    // both as they were. The rebuild drops the tiers once the row moved.
+    const key = await ensureThumbnail(photo, { force: true, focalPoint: { point } });
+    if (!key) {
+      return res.status(422).json({ error: 'The thumbnail could not be cut again around that point' });
+    }
+    await logActivity('photo_focal_point_updated', {
+      photo_id: photo.id, reset: point === null,
+    }, photo.event_id, { type: 'admin', id: req.admin.id, name: req.admin.username });
+    const updated = await livePhotos(db).where({ id: photo.id }).first();
+    res.json({
+      focal_point: focalPointOf(updated),
+      focal_source: updated?.focal_source || null,
+      thumbnail_url: adminThumbnailUrl(req.params.eventId, updated || photo),
+      thumb_hash: updated?.thumb_hash || null,
+    });
+  } catch (error) {
+    if (answerVanished(res, error, 'Photo file not found')) return;
+    errorResponse(res, error, 500, 'Failed to update the focal point');
+  }
+});
+
 // Download a photo
 router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('photos.download'), requireEventOwnership, async (req, res) => {
   try {
@@ -1767,6 +2005,11 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
           .orWhereRaw(likeWithEscape('photos.original_filename'), [pattern]);
       });
     }
+
+    // One favourite list, or one guest's favourites (issue 2303), from the
+    // guest detail's "show in photos". ANDed with everything, like a folder.
+    const favoriteList = normalizeFavoriteListFilter(req.query);
+    if (favoriteList) whereInFavoriteList(query, Number(eventId), favoriteList);
 
     // Feedback filters (has likes / favorites / comments / min rating) with AND/OR logic
     const feedbackConditions = [];
@@ -1982,8 +2225,12 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         height: photo.height || null,
         // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
         thumb_hash: photo.thumb_hash || null,
+        // Where crops keep the subject (issue 2377), and whether an admin
+        // set it ('manual') or it was detected ('auto'); null: the centre.
+        focal_point: isVideoRow(photo) ? null : focalPointOf(photo),
+        focal_source: isVideoRow(photo) ? null : (photo.focal_source || null),
         duration: photo.duration || null,
-        size: photo.size_bytes,
+        size: photo.size_bytes == null ? null : Number(photo.size_bytes),
         uploaded_at: photo.uploaded_at,
         // The camera clock, zone-less, for the list's Captured column
         // (issue 1739). Formatted here, in the zone exifr read the EXIF time
@@ -2277,7 +2524,7 @@ const canonicalChunkEvent = (req, res, next) => {
   req.params.eventId = String(id);
   next();
 };
-router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photos.upload'), canonicalChunkEvent, requireEventOwnership, async (req, res) => {
+router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photos.upload'), canonicalChunkEvent, requireEventOwnership, requireCapability('uploads.new'), async (req, res) => {
   try {
     const { eventId } = req.params;
     const { filename, fileSize, totalChunks } = req.body;
@@ -2456,17 +2703,22 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     const resolvedMimeType = normalizeUploadMimeType(mergedFile.filename, mergedFile.mimeType);
     const contentFiles = [{ originalname: mergedFile.filename, path: mergedFile.path, mimetype: resolvedMimeType }];
     let contentError = null;
+    let limitRefusal = null;
     if (!(await validateFileContent(mergedFile.path, resolvedMimeType))) {
       contentError = `File content does not match declared type: ${mergedFile.filename}`;
     } else {
       const checked = { files: contentFiles };
       await validateUploadedFiles(checked, res, () => {});
       if (checked.files.length === 0) {
-        contentError = `Invalid image file: ${mergedFile.filename}`;
+        const [rejected] = checked.invalidFiles || [];
+        const policy = require('../services/imageResourcePolicy');
+        limitRefusal = policy.uploadRefusal(rejected);
+        contentError = rejected?.code === policy.LIBRARY_UNAVAILABLE ? rejected.error : `Invalid image file: ${mergedFile.filename}`;
       }
     }
     if (contentError) {
       await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
+      if (limitRefusal) return res.status(limitRefusal.status).json(limitRefusal.body);
       return res.status(400).json({ error: contentError });
     }
 
@@ -2503,6 +2755,15 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       await fs.rm(mergedFile.tempDir, { recursive: true, force: true });
     } catch (cleanupErr) {
       logger.warn('Failed to clean up temp directory:', cleanupErr.message);
+    }
+
+    // processUploadedPhotos logs a failed file and goes on to the next; with
+    // the one file of a chunked upload, an empty result means it was dropped.
+    if (!uploadedPhotos.length) {
+      if (mergedFile.uploadReservation?.isCancelled?.()) {
+        return res.status(400).json({ error: 'Upload cancelled', code: 'UPLOAD_CANCELLED' });
+      }
+      return res.status(500).json({ error: `Failed to process ${mergedFile.filename}`, code: 'UPLOAD_PROCESSING_FAILED' });
     }
 
     res.json({

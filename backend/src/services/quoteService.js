@@ -29,11 +29,13 @@
 const crypto = require('crypto');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { unicodeSearchForms } = require('../utils/sqlSecurity');
+const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
 const { db, withRetry, logActivity } = require('../database/db');
 const { adminActivityActor } = require('../utils/activityActor');
 const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
 const { cleanNetMinor } = require('../utils/invoiceRounding');
+const { vatMinorFor, roundsVatDown } = require('../utils/vatAmount');
 const { AppError } = require('../utils/errors');
 const { validateLineItemHierarchy } = require('../utils/lineItemPositions');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -211,7 +213,8 @@ function computeTotals(lineItems, vatRate, shippingAmountMinor = 0, options = {}
   }
 
   const vatPercent = ensureNumber(vatRate, 0);
-  const vatMinor = Math.round(netMinor * vatPercent / 100);
+  // A UK business rounds its VAT total down (utils/vatAmount).
+  const vatMinor = vatMinorFor(netMinor, vatPercent, { roundDown: options.roundVatDown === true });
   const shipping = ensureInt(shippingAmountMinor);
   const totalMinor = netMinor + vatMinor + shipping;
   return {
@@ -532,7 +535,7 @@ async function createQuote(payload, adminId) {
     preparedLineItems,
     payload.vatRate,
     payload.shippingAmountMinor,
-    { roundTotal }
+    { roundTotal, roundVatDown: await roundsVatDown() }
   );
 
   // Negative line items (Rabatt) are allowed, but the resulting
@@ -713,7 +716,7 @@ async function updateQuote(id, payload, adminId) {
     preparedLineItems,
     payload.vatRate ?? existing.vat_rate,
     payload.shippingAmountMinor ?? existing.shipping_amount_minor,
-    { roundTotal }
+    { roundTotal, roundVatDown: await roundsVatDown() }
   );
 
   // Negative line items (Rabatt) are allowed, but the resulting
@@ -1043,10 +1046,13 @@ async function getQuotePdfBuffer(quoteId) {
  */
 async function renderQuotePdfFromPayload(payload) {
   const customer = await db('customer_accounts').where({ id: payload.customerAccountId }).first();
+  // The same fallbacks as createQuote, so the preview is the quote it saves.
+  const profile = (await businessProfileService.getProfile()).profile;
+  const currency = (payload.currency || profile?.default_currency || 'CHF').toUpperCase();
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
   const preparedLineItems = await prepareQuoteLineItems(payload.lineItems, {
     customerId: payload.customerAccountId,
-    currency: (payload.currency || 'CHF').toUpperCase(),
+    currency,
     hours: payload.hours,
     days: payload.days,
   });
@@ -1054,13 +1060,13 @@ async function renderQuotePdfFromPayload(payload) {
     preparedLineItems,
     payload.vatRate,
     payload.shippingAmountMinor,
-    { roundTotal }
+    { roundTotal, roundVatDown: await roundsVatDown() }
   );
   const fakeQuote = {
     quote_number: 'PREVIEW',
     customer_account_id: payload.customerAccountId,
-    language: payload.language || customer?.preferred_language || 'de',
-    currency: (payload.currency || 'CHF').toUpperCase(),
+    language: payload.language || customer?.preferred_language || profile?.default_locale || 'de',
+    currency,
     issue_date: payload.issueDate || new Date().toISOString().slice(0, 10),
     valid_until: payload.validUntil,
     intro_text: payload.introText,
@@ -1205,7 +1211,7 @@ async function sendQuote(id, adminId) {
     response_url: responseUrl,
     accept_url: `${responseUrl}?action=accept`,
     decline_url: `${responseUrl}?action=decline`,
-    valid_until: formatShortDate(quote.valid_until),
+    valid_until: formatShortDate(quote.valid_until, ctx.issuer?.countryCode),
     event_name: quote.event_name || '',
     total_amount: formatMajor(quote.total_amount_minor, quote.currency, ctx.locale, ctx.issuer?.countryCode),
     has_add_ons: hasAddOns,
@@ -1238,10 +1244,9 @@ function formatMajor(minor, currency, locale, issuerCountryCode) {
   // language. de-CH is the only Intl locale that produces that
   // format, so we force it whenever the issuer sits in that region.
   // Outside DACH we still honour the document locale.
-  const cc = (issuerCountryCode || '').toUpperCase();
-  const intlLocale = ['CH', 'LI', 'DE', 'AT'].includes(cc)
-    ? 'de-CH'
-    : (locale === 'de' ? 'de-CH' : 'en-GB');
+  // A US issuer writes $1,000.00 the same way (utils/issuerIntlLocale).
+  const intlLocale = issuerIntlLocale(issuerCountryCode)
+    || (locale === 'de' ? 'de-CH' : 'en-GB');
   return new Intl.NumberFormat(intlLocale, {
     style: 'currency', currency: (currency || 'CHF').toUpperCase(),
   }).format(Number(minor || 0) / 100);
@@ -1340,7 +1345,7 @@ async function totalsForSelection(quote, lineItems, selectedPositions, configura
   const { chosen, lines: optionalLines } = applyOptionalSelection(lineItems, selectedPositions);
   const lines = require('./albumProducts/crm').configureLines(optionalLines, configurations, { complete });
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
-  const totals = computeTotals(lines, quote.vat_rate, quote.shipping_amount_minor, { roundTotal });
+  const totals = computeTotals(lines, quote.vat_rate, quote.shipping_amount_minor, { roundTotal, roundVatDown: await roundsVatDown() });
   // Same rule as create and update: a quote is an offer, never a credit
   // note. Removing an add-on shrinks the subtotal a manual negative line is
   // taken from, so a choice the customer is free to make could otherwise
@@ -1980,9 +1985,7 @@ async function adminAcceptQuote(id, adminId) {
         { actor: adminId, source: 'quote.accept.admin' });
 
       const formatMoney = (minor, currency, locale) =>
-        new Intl.NumberFormat(locale === 'de' ? 'de-CH' : 'en-GB', {
-          style: 'currency', currency: (currency || 'CHF').toUpperCase(),
-        }).format(Number(minor || 0) / 100);
+        formatMajor(minor, currency, locale, ctx.issuer && ctx.issuer.countryCode);
 
       const lang = customer.preferred_language || ctx.locale || 'de';
       await emailProcessor.queueEmail(null, customer.email, 'quote_accepted_customer', {
@@ -2440,6 +2443,10 @@ async function convertToEvent(quoteId, adminId, options = {}) {
   const carriedProject = await require('./projectService')
     .carriedProjectId(options.projectId || quote.project_id, adminId, { target: 'events' });
 
+  // Booking requests (#2440): resolved before the transaction (a cold column
+  // lookup inside it would wait on SQLite's single connection).
+  const canLockForPayment = await hasColumnCached('events', 'payment_lock');
+
   const result = await db.transaction(async (trx) => {
     // Claim the quote before creating anything. Two concurrent conversions
     // both pass the reads above; on PostgreSQL the second waits here on the
@@ -2524,6 +2531,10 @@ async function convertToEvent(quoteId, adminId, options = {}) {
     }
     const inserted = await trx('events').insert(eventRow).returning('id');
     const eventId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+
+    // A gallery from a booking request waits for full payment when its
+    // service says so (#2440). In the same transaction: it never exists open.
+    if (canLockForPayment) await require('./bookingDeposits').applyGalleryLock(trx, quote.id, eventId);
 
     // Junction row so the customer can already see the event in their
     // dashboard once the admin activates it.
@@ -2732,6 +2743,34 @@ function presetCatalogueColumns(payload) {
       ? null
       : ensureInt(payload.pinned_rate_minor);
   }
+  // Migration 354 (#2440) — shown on the public booking page, and the slot
+  // length (fixed, or the value of a number factor in hours).
+  if (payload.bookable !== undefined) out.bookable = formatBoolean(Boolean(payload.bookable));
+  if (payload.booking_duration_minutes !== undefined) {
+    out.booking_duration_minutes = payload.booking_duration_minutes == null || payload.booking_duration_minutes === ''
+      ? null
+      : ensureInt(payload.booking_duration_minutes);
+  }
+  if (payload.booking_duration_factor_id !== undefined) {
+    out.booking_duration_factor_id = payload.booking_duration_factor_id ? ensureInt(payload.booking_duration_factor_id) : null;
+  }
+  // Migration 355 (#2440) — deposit at booking, and when a gallery from the
+  // booking opens.
+  const { DEPOSIT_TYPES, GALLERY_UNLOCK } = require('./bookingDeposits');
+  if (payload.booking_deposit_type !== undefined) {
+    out.booking_deposit_type = DEPOSIT_TYPES.includes(payload.booking_deposit_type) ? payload.booking_deposit_type : 'none';
+  }
+  if (payload.booking_deposit_percent !== undefined) {
+    out.booking_deposit_percent = payload.booking_deposit_percent == null || payload.booking_deposit_percent === ''
+      ? null : Math.min(100, Math.max(0, ensureNumber(payload.booking_deposit_percent)));
+  }
+  if (payload.booking_deposit_minor !== undefined) {
+    out.booking_deposit_minor = payload.booking_deposit_minor == null || payload.booking_deposit_minor === ''
+      ? null : Math.max(0, ensureInt(payload.booking_deposit_minor));
+  }
+  if (payload.gallery_unlock !== undefined) {
+    out.gallery_unlock = GALLERY_UNLOCK.includes(payload.gallery_unlock) ? payload.gallery_unlock : 'full_payment';
+  }
   return out;
 }
 
@@ -2749,8 +2788,16 @@ async function createLineItemPreset(payload) {
     created_at: new Date(),
     updated_at: new Date(),
   };
-  const inserted = await db('quote_line_item_presets').insert(row).returning('id');
-  const id = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+  // Pricing factors (#2440): checked before the write, stored with it.
+  const factors = require('./pricingFactorService');
+  const factorIds = payload.factor_ids === undefined ? [] : await factors.validatePresetFactors(row, payload.factor_ids);
+  await factors.assertDurationFactor(factorIds, row.booking_duration_factor_id);
+  const id = await db.transaction(async (trx) => {
+    const inserted = await trx('quote_line_item_presets').insert(row).returning('id');
+    const newId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+    await factors.writePresetFactors(trx, newId, factorIds);
+    return newId;
+  });
   return await db('quote_line_item_presets').where({ id }).first();
 }
 
@@ -2768,8 +2815,21 @@ async function updateLineItemPreset(id, payload) {
       updates[col] = col === 'is_active' ? formatBoolean(Boolean(payload[api])) : payload[api];
     }
   }
-  Object.assign(updates, presetCatalogueColumns(payload), await require('./albumProducts/crm').presetColumns(db, payload, await db('quote_line_item_presets').where({ id }).first()));
-  await db('quote_line_item_presets').where({ id }).update(updates);
+  const existing = await db('quote_line_item_presets').where({ id }).first();
+  Object.assign(updates, presetCatalogueColumns(payload), await require('./albumProducts/crm').presetColumns(db, payload, existing));
+  // Pricing factors (#2440): the list as it will be after this write, checked
+  // against the item as it will be (currency, product link).
+  const factors = require('./pricingFactorService');
+  const after = { ...existing, ...updates };
+  const factorIds = payload.factor_ids !== undefined
+    ? payload.factor_ids
+    : existing ? (await factors.presetFactorIds([id])).get(id) || [] : [];
+  const validIds = existing ? await factors.validatePresetFactors(after, factorIds) : [];
+  if (existing) await factors.assertDurationFactor(validIds, after.booking_duration_factor_id);
+  await db.transaction(async (trx) => {
+    await trx('quote_line_item_presets').where({ id }).update(updates);
+    if (existing && payload.factor_ids !== undefined) await factors.writePresetFactors(trx, id, validIds);
+  });
   return await db('quote_line_item_presets').where({ id }).first();
 }
 

@@ -5,11 +5,15 @@ const os = require('os');
 const fs = require('fs').promises;
 const crypto = require('crypto');
 
-// Load services
-const backupService = require('../../src/services/backupService');
-const S3StorageAdapter = require('../../src/services/storage/s3Storage');
-const { db, initializeDatabase: initDb } = require('../../src/database/db');
+const { bootCrmDb } = require('./helpers/crmDb');
 const logger = require('../../src/utils/logger');
+
+// Services load after bootCrmDb() (see beforeAll) so they share its freshly
+// migrated test database instead of whatever db.js would open at import time.
+let backupService;
+let S3StorageAdapter;
+let db;
+let cleanupDb;
 
 // Test configuration
 // Defaults match the dev MinIO container in docker-compose.dev.yml (port 7104).
@@ -60,17 +64,12 @@ describe('S3 Backup Integration Tests', () => {
       }
     }
 
-    // Schema is expected to already be applied by `npm run migrate` against
-    // the dev database. db.migrate.latest() can't be used here because
-    // PicPeak's custom run-migrations.js tracks state in the `migrations`
-    // table (not knex's `knex_migrations`), so knex would try to re-apply
-    // every migration and crash on duplicate-table errors.
-    const ok = await db.schema.hasTable('events')
-      && await db.schema.hasTable('app_settings')
-      && await db.schema.hasTable('backup_runs');
-    if (!ok) {
-      throw new Error('Required tables missing — run `npm run migrate` against the dev DB first.');
-    }
+    // A migrated, disposable database of its own (the shared CRM harness),
+    // so the suite runs anywhere S3 is reachable, CI included, instead of
+    // needing a hand-migrated dev database.
+    ({ db, cleanup: cleanupDb } = await bootCrmDb());
+    backupService = require('../../src/services/backupService');
+    S3StorageAdapter = require('../../src/services/storage/s3Storage');
 
     // Create test storage directory
     testStoragePath = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-s3-backup-storage-'));
@@ -101,13 +100,13 @@ describe('S3 Backup Integration Tests', () => {
     }
 
     // Clean up test storage
-    await fs.rm(testStoragePath, { recursive: true, force: true });
+    if (testStoragePath) await fs.rm(testStoragePath, { recursive: true, force: true });
 
     // Restore environment
     process.env = originalEnv;
 
-    // Close database
-    await db.destroy();
+    // Close and remove the suite's database
+    if (cleanupDb) await cleanupDb();
   });
 
   beforeEach(async () => {
@@ -225,17 +224,19 @@ describe('S3 Backup Integration Tests', () => {
       // Create a mock database backup
       const dbBackupPath = path.join(testStoragePath, 'backups/db-backup.sql');
       await fs.mkdir(path.dirname(dbBackupPath), { recursive: true });
-      await fs.writeFile(dbBackupPath, 'CREATE TABLE test (id INT);');
+      const dump = 'CREATE TABLE test (id INT);';
+      await fs.writeFile(dbBackupPath, dump);
 
-      // Record database backup
+      // Record database backup. The service signs the restore point with the
+      // dump's recorded sha256 and refuses one it cannot verify.
       await db('database_backup_runs').insert({
-        started_at: new Date(),
-        completed_at: new Date(),
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
         status: 'completed',
         backup_type: 'sqlite',
         file_path: dbBackupPath,
-        file_size_bytes: 100,
-        checksum: 'test123',
+        file_size_bytes: Buffer.byteLength(dump),
+        checksum: crypto.createHash('sha256').update(dump).digest('hex'),
         statistics: JSON.stringify({ tables: {} }),
         table_checksums: JSON.stringify({})
       });
@@ -491,7 +492,7 @@ describe('S3 Backup Integration Tests', () => {
         .insert({
           setting_type: 'backup',
           ...setting,
-          updated_at: new Date(),
+          updated_at: new Date().toISOString(),
         })
         .onConflict('setting_key')
         .merge();

@@ -11,6 +11,11 @@ import { GalleryPage } from './pages/GalleryPage';
 import { ClientAccessPage } from './pages/ClientAccessPage';
 import { PreviewPage } from './pages/gallery/PreviewPage';
 import { PurchasedDownloadsPage } from './pages/public/PurchasedDownloadsPage';
+import { PhotoCheckoutPage } from './pages/public/PhotoCheckoutPage';
+import { BookingPage } from './pages/public/BookingPage';
+import { RequireBookings } from './features/booking/RequireBookings';
+import { BookingStatusPage } from './pages/public/BookingStatusPage';
+import { BookingsPage } from './pages/admin/clients/BookingsPage';
 const SlideshowPage = lazy(() => import('./pages/gallery/SlideshowPage').then((m) => ({ default: m.SlideshowPage })));
 import { LegalPage } from './pages/public/LegalPage';
 import {
@@ -45,6 +50,7 @@ import { CrmDevelopmentPage } from './pages/admin/clients/CrmDevelopmentPage';
 // Clients block; the API refuses these routes independently when it is off.
 import { NewsletterListPage } from './pages/admin/newsletters/NewsletterListPage';
 import { NewsletterDetailPage } from './pages/admin/newsletters/NewsletterDetailPage';
+import { GiftsPage } from './pages/admin/clients/GiftsPage';
 import { TaxReportPage } from './pages/admin/clients/TaxReportPage';
 import { HoursLoggingPage } from './pages/admin/clients/HoursLoggingPage';
 // E.6 — Calendar page lazy-loaded so the ~200 KB FullCalendar bundle
@@ -80,6 +86,7 @@ import { TransferUploadPage } from './pages/public/TransferUploadPage';
 import {
   CustomerLoginPage,
   CustomerDashboardPage,
+  CustomerActivityPage,
   CustomerAcceptInvitePage,
   CustomerLayout,
   CustomerProfilePage,
@@ -101,6 +108,7 @@ import { AccountingLayout, AccountingIndex } from './components/admin/Accounting
 import { AccountingInboxPage } from './pages/admin/accounting/AccountingInboxPage';
 import { ExpensesLedgerPage } from './pages/admin/accounting/ExpensesLedgerPage';
 import { RequireFeature } from './components/admin/RequireFeature';
+import { CapabilityNotice } from './components/common/CapabilityNotice';
 import { PageErrorBoundary, OfflineIndicator, SkipLink, DynamicFavicon, RobotsMetaTags, CMSContentBlock, Loading } from './components/common';
 import { MaintenanceWrapper } from './components/MaintenanceWrapper';
 import { GlobalThemeProvider } from './components/GlobalThemeProvider';
@@ -204,6 +212,7 @@ const router = createBrowserRouter(
     {/* Photo sales: buyer access page; the
         token is bound to the order and the entitlement runs
         against photo_purchases.expires_at server-side. */}
+    <Route path="/photo-checkout/:token" element={<PhotoCheckoutPage />} />
     <Route path="/purchased-downloads/:accessToken" element={<PurchasedDownloadsPage />} />
     {/* Live Slideshow ("Diashow") — token-only fullscreen kiosk.
         Self-manages its session token; no GalleryAuthProvider. */}
@@ -277,8 +286,9 @@ const router = createBrowserRouter(
                 page hosts the newsletter consent control, so a
                 newsletter-only install (portal off) must still
                 be able to open a customer to record a phone
-                opt-out (#1264). */}
-            <Route element={<RequireFeature anyOf={['customerPortal', 'newsletters']} />}>
+                opt-out (#1264). Gifts link here too: undo, No
+                gifts and the start date live on this page. */}
+            <Route element={<RequireFeature anyOf={['customerPortal', 'newsletters', 'customerGifts']} />}>
               <Route path="accounts" element={<CustomerManagementPage />} />
               <Route path="accounts/:id" element={<CustomerDetailPage />} />
             </Route>
@@ -335,6 +345,11 @@ const router = createBrowserRouter(
             {/* Admin calendar (migration 137) — gated by
                 `calendar`. Lazy-loaded so the FullCalendar
                 bundle stays out of the main chunk. */}
+            {/* Client booking requests (#2440). */}
+            <Route element={<RequireBookings />}>
+              <Route path="bookings" element={<BookingsPage />} />
+            </Route>
+
             <Route element={<RequireFeature flag="calendar" />}>
               <Route
                 path="calendar"
@@ -357,6 +372,12 @@ const router = createBrowserRouter(
               <Route path="newsletters" element={<NewsletterListPage />} />
               <Route path="newsletters/:id" element={<NewsletterDetailPage />} />
               <Route path="newsletters/:id/edit" element={<RedirectToRecord base="/admin/clients/newsletters" />} />
+            </Route>
+            {/* Customer gifts (migration 343) — gated by `customerGifts`. */}
+            <Route element={<RequireFeature flag="customerGifts" />}>
+              <Route element={<RequirePermission permission="customers.gifts.view" />}>
+                <Route path="gifts" element={<GiftsPage />} />
+              </Route>
             </Route>
             {/* Developer tools — gated by `crmDevelopment`. */}
             <Route element={<RequireFeature flag="crmDevelopment" />}>
@@ -491,6 +512,11 @@ const router = createBrowserRouter(
     {/* PicTransfer (#997) — recipient download + client upload,
         token-only, no auth. */}
     <Route path="/transfer/:token" element={<TransferDownloadPage />} />
+
+    {/* Public booking page (#2440). The page asks the public API whether
+        booking is on (calendarBooking flag); no admin flag context here. */}
+    <Route path="/book" element={<BookingPage />} />
+    <Route path="/book/status/:token" element={<BookingStatusPage />} />
     <Route path="/transfer-upload/:token" element={<TransferUploadPage />} />
 
     {/* Customer surface (#354). Strictly separate provider /
@@ -519,6 +545,7 @@ const router = createBrowserRouter(
               unauthenticated visitors to /customer/login. */}
           <Route element={<CustomerLayout />}>
             <Route path="dashboard" element={<CustomerDashboardPage />} />
+            <Route path="activity" element={<CustomerActivityPage />} />
             <Route path="calendar" element={<CustomerCalendarPage />} />
             <Route path="quotes" element={<CustomerQuotesPage />} />
             {/* Respond / sign inside the portal session, so the
@@ -581,6 +608,7 @@ function App() {
 
             {/* Offline indicator */}
             <OfflineIndicator />
+            <CapabilityNotice />
 
             {/* Toast notifications */}
             <ToastContainer

@@ -1,7 +1,8 @@
 import { CrmProductFields, type Surcharge } from '../../../../features/album-products/CrmProductFields';
 /**
- * Quote catalogue & templates (#1451). Five tabs:
+ * Quote catalogue & templates (#1451). Six tabs:
  *   Services     — the catalogue items (the existing line-item presets)
+ *   Factors      — pricing factors attached to services (#2440)
  *   Packages     — bundles of catalogue items
  *   Promotions   — named discounts ("Vereinsrabatt −300 CHF", "−10 %")
  *   Text blocks  — reusable intro / scope / closing texts with {{placeholders}}
@@ -19,15 +20,19 @@ import { DecimalInput } from '../../../../components/common/DecimalInput';
 import { quotesService, type LineItemPreset } from '../../../../services/quotes.service';
 import {
   quoteCatalogService,
-  type QuotePackage, type QuotePromotion, type QuoteTextBlock, type TextBlockKind,
+  type PricingFactor, type QuotePackage, type QuotePromotion, type QuoteTextBlock, type TextBlockKind,
 } from '../../../../services/quoteCatalog.service';
 import { formatMoneyMinor } from '../../../../utils/money';
 import { PermissionGate } from '../../../../components/admin/PermissionGate';
 import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
+import { PricingFactorsTab } from './PricingFactorsTab';
+import { useFeatureEnabled } from '../../../../contexts/FeatureFlagsContext';
 import type { BoundTo, LineUnit, PriceMode } from '../../../../utils/lineItemTotals';
+import { bookingService } from '../../../../services/booking.service';
+import { effectiveDeposit } from '../../../../features/booking/effectiveDeposit';
 
-type Tab = 'services' | 'packages' | 'promotions' | 'textBlocks' | 'templates';
-const TABS: Tab[] = ['services', 'packages', 'promotions', 'textBlocks', 'templates'];
+type Tab = 'services' | 'factors' | 'packages' | 'promotions' | 'textBlocks' | 'templates';
+const TABS: Tab[] = ['services', 'factors', 'packages', 'promotions', 'textBlocks', 'templates'];
 const UNITS: LineUnit[] = ['hour', 'day', 'piece', 'km', 'flat'];
 const CURRENCIES = ['CHF', 'EUR', 'USD', 'GBP'];
 const TEXT_BLOCK_KINDS: TextBlockKind[] = ['intro', 'scope', 'note', 'closing', 'terms'];
@@ -98,11 +103,56 @@ interface ServiceForm {
   pinnedRate: number;
   category: string;
   detailsText: string;
+  /** Pricing factors attached to the service (#2440). */
+  factorIds: number[];
+  /** Client booking (#2440): on the public page, and the slot length. */
+  bookable: boolean;
+  bookingDurationMinutes: number;
+  bookingDurationFactorId: number | null;
+  /** Part 3: deposit at booking, and when a gallery from the booking opens. */
+  bookingDepositType: 'none' | 'percent' | 'fixed';
+  bookingDepositPercent: number;
+  bookingDepositAmount: number;
+  galleryUnlock: 'full_payment' | 'deposit' | 'off';
 }
 
 const emptyService: ServiceForm = {
   name: '', description: '', unitPrice: NaN, currency: 'CHF', quantityDefault: 1, unit: '', priceMode: 'fixed',
-  pinnedRate: NaN, category: '', detailsText: '',
+  pinnedRate: NaN, category: '', detailsText: '', factorIds: [],
+  bookable: false, bookingDurationMinutes: 60, bookingDurationFactorId: null,
+  bookingDepositType: 'none', bookingDepositPercent: NaN, bookingDepositAmount: NaN, galleryUnlock: 'full_payment',
+};
+
+/** Which pricing factors a service uses, in the order they were ticked (#2440). */
+const ServiceFactorPicker: React.FC<{
+  factors: PricingFactor[];
+  selected: number[];
+  onChange: (ids: number[]) => void;
+}> = ({ factors, selected, onChange }) => {
+  const { t } = useTranslation();
+  return (
+    <fieldset className="md:col-span-2">
+      <legend className={labelCls}>{t('quotes.factors.onService', 'Pricing factors')}</legend>
+      {factors.length === 0 ? (
+        <p className="text-xs text-muted">
+          {t('quotes.factors.noneForCurrency', 'No pricing factors in this currency yet. Add them on the Pricing factors tab.')}
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {factors.map((f) => (
+            <label key={f.id} className="flex items-center gap-2 text-sm text-body">
+              <input type="checkbox" checked={selected.includes(f.id)}
+                onChange={(e) => onChange(e.target.checked ? [...selected, f.id] : selected.filter((id) => id !== f.id))} />
+              {f.name}
+            </label>
+          ))}
+        </div>
+      )}
+      <p className="mt-1 text-xs text-muted">
+        {t('quotes.factors.onServiceHint', 'Adding this service to a quote then asks for these values and prices it from them.')}
+      </p>
+    </fieldset>
+  );
 };
 
 const ServicesTab: React.FC = () => {
@@ -112,7 +162,24 @@ const ServicesTab: React.FC = () => {
     queryKey: ['line-item-presets', 'all'],
     queryFn: () => quotesService.listLineItemPresets({ includeInactive: true }),
   });
+  const { data: factors = [] } = useQuery({
+    queryKey: ['quote-catalog', 'factors', 'all'],
+    queryFn: () => quoteCatalogService.listFactors(),
+  });
   const [form, setForm] = useState<ServiceForm | null>(null);
+  const bookingOn = useFeatureEnabled('calendarBooking');
+  // Stripe's smallest charge per currency, for the deposit hint.
+  const { data: bookingSettings } = useQuery({
+    queryKey: ['booking-settings'],
+    queryFn: () => bookingService.getSettings(),
+    enabled: bookingOn,
+  });
+  const depositMinimum = form ? (bookingSettings?.depositMinimumsMinor?.[(form.currency || '').toUpperCase()] ?? 0) : 0;
+  // The deposit charged at the base price (one unit), as the booking computes it.
+  const baseMinor = form && Number.isFinite(form.unitPrice) ? Math.round(form.unitPrice * 100 * (form.quantityDefault || 1)) : NaN;
+  const depositAtBase = form && Number.isFinite(baseMinor) ? effectiveDeposit(form.bookingDepositType, {
+    percent: form.bookingDepositPercent, fixedMinor: Math.round(form.bookingDepositAmount * 100), estimateMinor: baseMinor, minimumMinor: depositMinimum, currency: form.currency,
+  }) : null;
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['line-item-presets'] });
 
@@ -129,6 +196,14 @@ const ServicesTab: React.FC = () => {
     pinnedRate: p.pinnedRateMinor != null ? p.pinnedRateMinor / 100 : NaN,
     category: p.category || '',
     detailsText: p.detailsText || '',
+    factorIds: p.factorIds || [],
+    bookable: Boolean(p.bookable),
+    bookingDurationMinutes: p.bookingDurationMinutes ?? 60,
+    bookingDurationFactorId: p.bookingDurationFactorId ?? null,
+    bookingDepositType: p.bookingDepositType || 'none',
+    bookingDepositPercent: p.bookingDepositPercent ?? NaN,
+    bookingDepositAmount: p.bookingDepositMinor != null ? p.bookingDepositMinor / 100 : NaN,
+    galleryUnlock: p.galleryUnlock || 'full_payment',
   });
 
   const save = async () => {
@@ -146,6 +221,24 @@ const ServicesTab: React.FC = () => {
       pinnedRateMinor: rateBased && Number.isFinite(form.pinnedRate) ? toMinor(form.pinnedRate) : null,
       category: form.category || null,
       detailsText: form.detailsText || null,
+      // Only factors in the service's currency: after a currency change the
+      // others are no longer listed, so they must not be sent either. A
+      // factor not loaded (yet) is sent as it is; the server checks it.
+      factorIds: form.productId ? [] : form.factorIds.filter((id) => {
+        const factor = factors.find((f) => f.id === id);
+        return !factor || factor.currency === form.currency;
+      }),
+      ...(bookingOn ? {
+        bookable: form.bookable,
+        bookingDurationMinutes: form.bookingDurationMinutes || 60,
+        // Only a factor the service still has can set the slot length.
+        bookingDurationFactorId: form.bookingDurationFactorId && form.factorIds.includes(form.bookingDurationFactorId)
+          ? form.bookingDurationFactorId : null,
+        bookingDepositType: form.bookingDepositType,
+        bookingDepositPercent: form.bookingDepositType === 'percent' && Number.isFinite(form.bookingDepositPercent) ? form.bookingDepositPercent : null,
+        bookingDepositMinor: form.bookingDepositType === 'fixed' && Number.isFinite(form.bookingDepositAmount) ? toMinor(form.bookingDepositAmount) : null,
+        galleryUnlock: form.galleryUnlock,
+      } : {}),
     };
     try {
       if (form.id) await quotesService.updateLineItemPreset(form.id, payload);
@@ -260,6 +353,89 @@ const ServicesTab: React.FC = () => {
               <textarea id="service-details" rows={2} className={inputCls} value={form.detailsText}
                 onChange={(e) => setForm({ ...form, detailsText: e.target.value })} />
             </div>
+            {bookingOn && (
+              <fieldset className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                <legend className={labelCls}>{t('booking.service.legend', 'Online booking')}</legend>
+                <label className="flex items-center gap-2 text-sm text-body pb-2">
+                  <input type="checkbox" checked={form.bookable} onChange={(e) => setForm({ ...form, bookable: e.target.checked })} />
+                  {t('booking.service.bookable', 'Clients can book this online')}
+                </label>
+                {form.bookable && (
+                  <>
+                    <div>
+                      <label htmlFor="service-duration-factor" className={labelCls}>{t('booking.service.durationFrom', 'Slot length')}</label>
+                      <select id="service-duration-factor" className={selectCls} value={form.bookingDurationFactorId ?? ''}
+                        onChange={(e) => setForm({ ...form, bookingDurationFactorId: e.target.value ? Number(e.target.value) : null })}>
+                        <option value="">{t('booking.service.durationFixed', 'Fixed length')}</option>
+                        {factors.filter((f) => f.inputType === 'number' && form.factorIds.includes(f.id)).map((f) => (
+                          <option key={f.id} value={f.id}>{t('booking.service.durationFromFactor', 'From "{{name}}" (hours)', { name: f.name })}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {!form.bookingDurationFactorId && (
+                      <div>
+                        <label htmlFor="service-duration" className={labelCls}>{t('booking.service.durationMinutes', 'Length (minutes)')}</label>
+                        <DecimalInput id="service-duration" className={inputCls} value={form.bookingDurationMinutes} fractionDigits={0}
+                          onChange={(n) => setForm({ ...form, bookingDurationMinutes: Number.isFinite(n) ? Math.round(n) : 60 })} />
+                      </div>
+                    )}
+                    <div>
+                      <label htmlFor="service-deposit-type" className={labelCls}>{t('booking.service.deposit', 'Deposit at booking')}</label>
+                      <select id="service-deposit-type" className={selectCls} value={form.bookingDepositType}
+                        onChange={(e) => setForm({ ...form, bookingDepositType: e.target.value as ServiceForm['bookingDepositType'] })}>
+                        <option value="none">{t('booking.service.depositNone', 'None')}</option>
+                        <option value="percent">{t('booking.service.depositPercent', 'Percent of the estimate')}</option>
+                        <option value="fixed">{t('booking.service.depositFixed', 'Fixed amount')}</option>
+                      </select>
+                    </div>
+                    {form.bookingDepositType === 'percent' && (
+                      <div>
+                        <label htmlFor="service-deposit-percent" className={labelCls}>{t('quotes.factors.field.percent', 'Percent')}</label>
+                        <DecimalInput id="service-deposit-percent" className={inputCls} value={form.bookingDepositPercent} fractionDigits={2}
+                          onChange={(n) => setForm({ ...form, bookingDepositPercent: n })} />
+                      </div>
+                    )}
+                    {form.bookingDepositType === 'fixed' && (
+                      <div>
+                        <label htmlFor="service-deposit-amount" className={labelCls}>{t('quotes.factors.field.amount', 'Amount')}</label>
+                        <DecimalInput id="service-deposit-amount" className={inputCls} value={form.bookingDepositAmount} fractionDigits={2}
+                          onChange={(n) => setForm({ ...form, bookingDepositAmount: n })} />
+                      </div>
+                    )}
+                    <div>
+                      <label htmlFor="service-gallery-unlock" className={labelCls}>{t('booking.service.galleryUnlock', 'Gallery opens')}</label>
+                      <select id="service-gallery-unlock" className={selectCls} value={form.galleryUnlock}
+                        onChange={(e) => setForm({ ...form, galleryUnlock: e.target.value as ServiceForm['galleryUnlock'] })}>
+                        <option value="full_payment">{t('booking.service.unlockFull', 'When every invoice is paid')}</option>
+                        <option value="deposit">{t('booking.service.unlockDeposit', 'Once the deposit is paid')}</option>
+                        <option value="off">{t('booking.service.unlockOff', 'Right away')}</option>
+                      </select>
+                    </div>
+                    {form.galleryUnlock === 'full_payment' && (
+                      <p className="md:col-span-3 text-xs text-muted">
+                        {t('booking.service.unlockFullHint', 'Counts the invoices of the deal in PicPeak. If you invoice elsewhere, choose "Right away" or open the gallery by hand under CRM → Bookings.')}
+                      </p>
+                    )}
+                    {form.bookingDepositType !== 'none' && (
+                      <p className="md:col-span-3 text-xs text-muted">
+                        {t('booking.service.depositHint', 'Paid by card through the Stripe account under Settings → Payments. Without Stripe set up, requests come in without a deposit.')}
+                        {depositMinimum > 0 && ` ${t('booking.service.depositMinimum', 'Stripe charges at least {{amount}}: a smaller deposit is raised to that, at most to the estimate, and an estimate below it takes no deposit.', { amount: formatMoneyMinor(depositMinimum, form.currency) })}`}
+                        {depositAtBase != null && ` ${t('booking.service.depositAtBase', 'At the base price of {{price}}, the client pays {{amount}}.', {
+                          price: formatMoneyMinor(baseMinor, form.currency), amount: formatMoneyMinor(depositAtBase, form.currency),
+                        })}`}
+                      </p>
+                    )}
+                  </>
+                )}
+              </fieldset>
+            )}
+            {!form.productId && (
+              <ServiceFactorPicker
+                factors={factors.filter((f) => f.currency === form.currency && (f.isActive || form.factorIds.includes(f.id)))}
+                selected={form.factorIds}
+                onChange={(factorIds) => setForm({ ...form, factorIds })}
+              />
+            )}
           </div>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setForm(null)}>{t('common.cancel', 'Cancel')}</Button>
@@ -280,6 +456,11 @@ const ServicesTab: React.FC = () => {
                     <span className="font-medium">{p.name}</span>
                     {!p.isActive && <ArchivedBadge />}
                     {p.category && <div className="text-xs text-muted">{p.category}</div>}
+                    {(p.factorIds?.length ?? 0) > 0 && (
+                      <div className="text-xs text-muted">
+                        {t('quotes.factors.attachedCount', '{{count}} pricing factors', { count: p.factorIds!.length })}
+                      </div>
+                    )}
                   </td>
                   <td className="py-2 text-right tabular-nums">{priceLabel(p)}</td>
                   <td className="py-2">
@@ -887,6 +1068,7 @@ export const QuoteCatalogPage: React.FC = () => {
 
   const tabLabel = (key: Tab) => ({
     services: t('quotes.catalog.tab.services', 'Services'),
+    factors: t('quotes.catalog.tab.factors', 'Pricing factors'),
     packages: t('quotes.catalog.tab.packages', 'Packages'),
     promotions: t('quotes.catalog.tab.promotions', 'Promotions'),
     textBlocks: t('quotes.catalog.tab.textBlocks', 'Text blocks'),
@@ -918,6 +1100,7 @@ export const QuoteCatalogPage: React.FC = () => {
       </p>
 
       {tab === 'services' && <ServicesTab />}
+      {tab === 'factors' && <PricingFactorsTab />}
       {tab === 'packages' && <PackagesTab />}
       {tab === 'promotions' && <PromotionsTab />}
       {tab === 'textBlocks' && <TextBlocksTab />}

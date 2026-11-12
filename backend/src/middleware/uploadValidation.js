@@ -2,11 +2,38 @@ const fs = require('fs').promises;
 const path = require('path');
 const sharp = require('../services/isolatedSharp');
 const logger = require('../utils/logger');
+const { LIBRARY_UNAVAILABLE } = require('../services/imageResourcePolicy');
+
+// Whether Sharp reads the file as an image with dimensions. A busy image
+// worker says nothing about the file, so it passes; a resource limit is
+// thrown, as the decode check below throws one.
+async function readsAsImage(filePath, options = {}, { passBusy = true } = {}) {
+  try {
+    const meta = await sharp(filePath, options).metadata();
+    return Boolean(meta && meta.width && meta.height);
+  } catch (error) {
+    // A server that cannot load the image library says nothing about the file.
+    if (error.code === LIBRARY_UNAVAILABLE) throw error;
+    const policy = require('../services/imageResourcePolicy');
+    if (policy.isTransient(error)) {
+      if (!passBusy) throw error;
+      return true;
+    }
+    // A host error (ENOSPC, EIO, ...) says nothing about the file either; a
+    // caller that can check again later hears it rather than "unreadable".
+    if (!passBusy && /^E[A-Z0-9]+$/.test(error.code || '')) throw error;
+    if (policy.isResourceError(error)) throw error;
+    return false;
+  }
+}
 
 /**
- * Validate uploaded file is complete and not corrupted
+ * Validate uploaded file is complete and not corrupted. A busy image worker
+ * passes a HEIF file, as an upload waiting on it would otherwise fail;
+ * `passBusy: false` throws the worker's error instead, and a host error the
+ * HEIF check met, for a caller that can check again later.
  */
-async function validateUploadedFile(filePath, extension, queueing = {}) {
+async function validateUploadedFile(filePath, extension, queueing = {}, { passBusy = true } = {}) {
   try {
     // Check file exists and has size
     const stats = await fs.stat(filePath);
@@ -30,6 +57,10 @@ async function validateUploadedFile(filePath, extension, queueing = {}) {
           ...queueing
         }).metadata();
       } catch (metadataError) {
+        // A server that cannot load the image library says nothing about the file.
+        if (metadataError.code === LIBRARY_UNAVAILABLE) throw metadataError;
+        // An image over the server's limits is not a broken file: its own message names the limit.
+        if (require('../services/imageResourcePolicy').isResourceError(metadataError)) throw metadataError;
         // If metadata reading fails, the file is likely incomplete
         throw Object.assign(new Error(`Invalid image file: ${metadataError.message}`), { code: metadataError.code, imageLimit: metadataError.imageLimit, imageMax: metadataError.imageMax });
       }
@@ -53,10 +84,18 @@ async function validateUploadedFile(filePath, extension, queueing = {}) {
           .resize(10, 10) // Try to resize to very small size
           .toBuffer();
       } catch (decodeError) {
+        if (require('../services/imageResourcePolicy').isResourceError(decodeError)) throw decodeError;
         throw Object.assign(new Error(`Image decode failed - file may be corrupted: ${decodeError.message}`), { code: decodeError.code, imageLimit: decodeError.imageLimit, imageMax: decodeError.imageMax });
       }
       
       return true;
+    }
+
+    // The HEIF signature is only a container's `ftyp`, which says nothing about
+    // an image in it, so a HEIF name has to read as one as well. A HEVC HEIC
+    // only decodes through ffmpeg later; its header is enough here.
+    if ((ext === '.heic' || ext === '.heif') && !(await readsAsImage(filePath, queueing, { passBusy }))) {
+      throw new Error('Invalid image file: no readable HEIF image');
     }
     
     return true;
@@ -135,6 +174,7 @@ async function validateUploadedFiles(req, res, next) {
 }
 
 module.exports = {
+  readsAsImage,
   validateUploadedFile,
   validateUploadedFiles
 };

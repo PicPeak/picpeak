@@ -50,16 +50,19 @@ const ALL_TRIGGERS: PaymentTermInstallment['trigger'][] = [
   'quote_accepted', 'before_event', 'after_event', 'after_delivery', 'fixed_date',
 ];
 
+// Calendar-day arithmetic in UTC: the dates are bare 'YYYY-MM-DD' days
+// (issue 2333), and local setDate across a DST change moved the result by a
+// day west of UTC. A full timestamp is cut to its day first.
+const utcDay = (value: string): Date => new Date(`${value.slice(0, 10)}T00:00:00Z`);
+
 function addDays(base: string, days: number): string {
-  const d = new Date(base);
-  d.setDate(d.getDate() + days);
+  const d = utcDay(base);
+  d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
 function daysBetween(from: string, to: string): number {
-  const f = new Date(from);
-  const t = new Date(to);
-  return Math.round((t.getTime() - f.getTime()) / 86_400_000);
+  return Math.round((utcDay(to).getTime() - utcDay(from).getTime()) / 86_400_000);
 }
 
 export const InstallmentsPanel: React.FC<InstallmentsPanelProps> = ({

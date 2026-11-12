@@ -26,6 +26,8 @@ import {
   Workflow,
   Megaphone,
   Tags,
+  Gift,
+  ShieldCheck,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -111,13 +113,6 @@ export const FeaturesTab: React.FC = () => {
     'No sidebar item — runs in the background',
   );
 
-  // "Coming soon" lock reason for unbuilt features. Keep wording neutral —
-  // we don't promise a release date.
-  const NOT_YET_AVAILABLE = t(
-    'settings.features.notYetAvailable',
-    'Not yet available — this toggle activates when the feature ships.',
-  );
-
   return (
     <div className="space-y-6">
       <SectionPageHeader
@@ -176,6 +171,7 @@ export const FeaturesTab: React.FC = () => {
             onToggle={(next) => setFlag('transfers', next)}
           />
 
+          <FeatureCard icon={Images} title={t('printSales.adminTitle','Print sales')} description={t('printSales.featureDescription','Catalogue-backed photographic prints, invoice payments and manual lab fulfilment. Requires product configuration and billing.')} feature="printSales" sidebarHidden sidebarHiddenLabel={settingsOnlyLabel} enabled={staged.printSales} onToggle={next=>setFlag('printSales',next)} configureHref={settingsTabLink('printSales','printSales')} configureLabel={configureLabel}/>
           <FeatureCard icon={Images} title={t('albumProducts.featureTitle','Product configurator')} description={t('albumProducts.featureDescription','Shared product options for galleries and CRM quotes.')} feature="albumProducts" sidebarHidden sidebarHiddenLabel={settingsOnlyLabel} enabled={staged.albumProducts} onToggle={next=>setFlag('albumProducts',next)} configureHref={settingsTabLink('albumProducts','albumProducts')} configureLabel={configureLabel}/>
 
           {/* Face recognition (#1074). Requires the optional picpeak-ml
@@ -219,6 +215,24 @@ export const FeaturesTab: React.FC = () => {
             lockedReason={isSingleContainer
               ? t('settings.features.autoTagging.lockedSingleContainer')
               : undefined}
+          />
+
+          {/* Backup restore test. Background check after every backup plus a
+              weekly re-check; results live on Backup → Integrity. */}
+          <FeatureCard
+            icon={ShieldCheck}
+            title={t('settings.features.backupRestoreTest.title', 'Backup restore test')}
+            description={t(
+              'settings.features.backupRestoreTest.description',
+              'Every backup is test-restored into a throwaway database and checked: signature, checksums, file hashes, row counts and migrations. Retained backups are re-checked weekly, and you are emailed when one fails.',
+            )}
+            feature="backupRestoreTest"
+            sidebarHidden
+            sidebarHiddenLabel={sidebarHiddenLabel}
+            enabled={staged.backupRestoreTest}
+            onToggle={(next) => setFlag('backupRestoreTest', next)}
+            configureHref={settingsTabLink('backupRestoreTest', 'backup')}
+            configureLabel={configureLabel}
           />
         </Section>
 
@@ -280,6 +294,18 @@ export const FeaturesTab: React.FC = () => {
             onToggle={(next) => setFlag('documents', next)}
             configureHref={settingsTabLink('documents', 'crm')}
             configureLabel={configureLabel}
+          />
+          <FeatureCard
+            icon={Gift}
+            title={t('settings.features.customerGifts.title', 'Customer gifts')}
+            description={t(
+              'settings.features.customerGifts.description',
+              'Suggest gifts at customer milestones, track gift stock and record who received what. Every gift is confirmed by an admin.',
+            )}
+            feature="customerGifts"
+            sidebarLabel={t('settings.features.customerGifts.sidebar', 'Gifts')}
+            enabled={staged.customerGifts}
+            onToggle={(next) => setFlag('customerGifts', next)}
           />
           {/* Future sub-features (Calendar / Quotes / Bills / Messaging)
               slot in here as FeatureCard entries when they ship. No
@@ -362,22 +388,23 @@ export const FeaturesTab: React.FC = () => {
             enabled={staged.calendar}
             onToggle={(next) => setFlag('calendar', next)}
           />
-          {/* Customer-facing booking — placeholder. UI-disabled per
-              spec; backend dependency rule already gates it on
-              `calendar`. Re-enable when the booking flow ships. */}
+          {/* Client booking requests (#2440). Needs the calendar and
+              quotes (the dependency rules switch it off without them). */}
           <FeatureCard
             icon={CalendarDays}
             title={t('settings.features.calendarBooking.title', 'Customer booking')}
             description={t(
               'settings.features.calendarBooking.description',
-              'Let customers see free slots on a public calendar and book directly. Coming soon.',
+              'A public page where clients pick a service, see an estimate and request a free slot. You accept a request into a quote.',
             )}
             feature="calendarBooking"
             sidebarLabel={t('settings.features.calendarBooking.sidebar', 'Booking')}
             enabled={staged.calendarBooking}
-            onToggle={() => { /* locked */ }}
-            disabled
-            lockedReason={NOT_YET_AVAILABLE}
+            onToggle={(next) => setFlag('calendarBooking', next)}
+            disabled={!staged.calendar || !staged.quotes}
+            lockedReason={!staged.calendar || !staged.quotes
+              ? t('settings.features.calendarBooking.requires', 'Needs Calendar and Quotes.')
+              : undefined}
           />
         </Section>
 

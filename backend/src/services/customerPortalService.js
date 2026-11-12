@@ -19,7 +19,12 @@ const { toIso } = require('../utils/dateNormalize');
 const { toMillis } = require('../utils/queueTimestamps');
 const customerAccountsService = require('./customerAccountsService');
 const customerDocumentsService = require('./customerDocumentsService');
+const { hasRight } = require('./customerContactsService');
 const { followSlugRedirect } = require('./slugRedirects');
+const { orPaidAwaitingDelivery } = require('./invoice/helpers');
+const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
+const { isPostgreSQL, sqliteTimestampMs } = require('../utils/dbCompat');
+const { livePhotos, applyPhotoVisibilityFilter, wherePhotoProcessed } = require('../utils/photoVisibility');
 
 const isTrue = (v) => v === true || v === 1 || v === '1';
 const pad = (n) => String(n).padStart(2, '0');
@@ -63,13 +68,52 @@ function shapeEvent(e) {
 
 const money = (v) => Number(v) || 0;
 
-async function needsActionFor(customerId, features) {
+/**
+ * The product offers released to this customer in one gallery (issue 2320),
+ * through the same rule the gallery applies, so the portal never links to an
+ * offer the gallery would refuse.
+ */
+async function productOffersFor(customerId, eventId) {
+  if (!(await isFeatureEnabled('albumProducts'))) return [];
+  const offers = await require('./albumProducts/service').application()
+    .clientOffers(eventId, { customerId });
+  return offers.map((o) => {
+    // A reopened offer keeps its selection, `clientFinal` included.
+    const confirmed = o.status === 'locked' || (o.status === 'submitted' && !!o.selection?.clientFinal);
+    return {
+      id: o.id,
+      name: o.selection?.product?.name || o.product?.name || null,
+      status: o.status,
+      confirmed,
+      // As in the gallery: a confirmed album stays one whatever the catalogue does.
+      guided: o.product && !confirmed ? !!o.product.guided : !!o.product?.guided || !!o.selection?.photoRoles,
+    };
+  });
+}
+
+/** Galleries with a released guided album the customer has not confirmed yet. */
+async function albumsAwaitingCustomer(customerId, galleries) {
+  const out = [];
+  for (const gallery of galleries) {
+    const offers = (await productOffersFor(customerId, gallery.id)).filter((o) => o.guided);
+    if (!offers.length || offers.some((o) => o.confirmed || o.status !== 'draft')) continue;
+    out.push({
+      eventName: gallery.eventName,
+      link: `/customer/events/${encodeURIComponent(gallery.slug)}`,
+    });
+  }
+  return out;
+}
+
+async function needsActionFor(customerId, features, session = null) {
   const today = todayDateOnly();
+  // Same rules as the lists these link to: only what this login can act on.
+  const mayAct = (area) => !session || hasRight(session.rights, area, 'act');
   const out = {
     quotes: [], contracts: [], contractDetails: [], invoices: [], documents: [], documentRequests: [],
   };
 
-  if (features.quotes) {
+  if (features.quotes && mayAct('quotes')) {
     const rows = await db('quotes')
       .where({ customer_account_id: customerId, status: 'sent' })
       .whereNull('response_locked_at')
@@ -88,13 +132,19 @@ async function needsActionFor(customerId, features) {
       }));
   }
 
-  if (features.contracts) {
-    const rows = await db('contracts')
+  if (features.contracts && mayAct('contracts')) {
+    const signingV2 = require('./contract/signingV2');
+    let rows = await db('contracts')
       .where({ customer_account_id: customerId })
       .whereIn('status', ['sent', 'signed_by_admin'])
       .whereNull('signed_by_customer_at')
       .orderBy('id', 'desc')
-      .select('id', 'contract_number', 'title', 'event_name', 'valid_until', 'sent_at');
+      .select('id', 'contract_number', 'title', 'event_name', 'valid_until', 'sent_at', 'status', 'signing_version');
+    // A contact signs only as a named signer of a signatures-v2 contract.
+    if (session?.contactId) {
+      const mine = await signingV2.portalSignerStates({ email: session.email }, rows);
+      rows = rows.filter((c) => mine.get(c.id)?.canSign);
+    }
     out.contracts = rows.map((c) => ({
       id: c.id,
       contractNumber: c.contract_number,
@@ -108,10 +158,14 @@ async function needsActionFor(customerId, features) {
     // can be rendered and sent for signature (#1446 collect-then-freeze,
     // issue 1590). Same guard as canCompleteDetails in customer.js:785 — only
     // a signing-v2 contract has a details-collection step.
-    const detailRows = await db('contracts')
+    let detailRows = await db('contracts')
       .where({ customer_account_id: customerId, status: 'awaiting_data', signing_version: 2 })
       .orderBy('id', 'desc')
-      .select('id', 'contract_number', 'title', 'event_name', 'valid_until', 'sent_at');
+      .select('id', 'contract_number', 'title', 'event_name', 'valid_until', 'sent_at', 'status', 'signing_version');
+    if (session?.contactId) {
+      const mine = await signingV2.portalDetailsContracts(session, detailRows);
+      detailRows = detailRows.filter((c) => mine.has(Number(c.id)));
+    }
     out.contractDetails = detailRows.map((c) => ({
       id: c.id,
       contractNumber: c.contract_number,
@@ -149,7 +203,7 @@ async function needsActionFor(customerId, features) {
     });
   }
 
-  if (features.documents) {
+  if (features.documents && mayAct('documents')) {
     // Only what the customer can act on: a rejected upload of theirs (upload
     // a corrected one, or delete it). A pending upload waits on the studio.
     //
@@ -193,6 +247,47 @@ async function needsActionFor(customerId, features) {
 }
 
 /**
+ * New photos and videos in the customer's galleries, one row per gallery and
+ * upload day (UTC), so a bulk import of 500 files is one entry, not 500. Only
+ * what came in after the gallery was assigned to this customer — the set it
+ * was assigned with is "gallery is ready" — and only what the customer's
+ * gallery view lists: their portal token opens the gallery at guest level, so
+ * the guest visibility filter (no hidden or held uploads), no trash and no
+ * media still processing. Aggregated in SQL and cut to `limit`, newest first:
+ * a group past that could never make the feed.
+ *
+ * Rows: { event_id, day: 'YYYY-MM-DD', total, videos, latest }.
+ */
+async function photoGroupsFor(customerId, eventIds, limit) {
+  if (eventIds.length === 0) return [];
+  const isVideo = 'CASE WHEN photos.media_type = \'video\' OR photos.mime_type LIKE \'video/%\' THEN 1 ELSE 0 END';
+  const query = wherePhotoProcessed(applyPhotoVisibilityFilter(livePhotos(db)
+    .join('event_customer_assignments as eca', 'eca.event_id', 'photos.event_id')
+    .where('eca.customer_account_id', customerId)
+    .whereIn('photos.event_id', eventIds), 'guest'))
+    .select('photos.event_id', db.raw('COUNT(*) as total'), db.raw(`SUM(${isVideo}) as videos`))
+    .orderByRaw('latest DESC')
+    .orderBy('photos.event_id', 'desc')
+    .limit(limit);
+  if (isPostgreSQL()) {
+    const day = 'to_char(photos.uploaded_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD\')';
+    query.whereRaw('?? > ??', ['photos.uploaded_at', 'eca.assigned_at'])
+      .select(db.raw(`${day} as day`), db.raw('MAX(photos.uploaded_at) as latest'))
+      .groupBy('photos.event_id').groupByRaw(day);
+  } else {
+    // uploaded_at / assigned_at may be ISO text, CURRENT_TIMESTAMP text or
+    // epoch ms on SQLite; compare and bucket them as epoch ms.
+    const uploaded = sqliteTimestampMs('photos.uploaded_at');
+    const assigned = sqliteTimestampMs('eca.assigned_at');
+    const day = `date(${uploaded.sql} / 1000.0, 'unixepoch')`;
+    query.whereRaw(`${uploaded.sql} > ${assigned.sql}`, [...uploaded.bindings, ...assigned.bindings])
+      .select(db.raw(`${day} as day`, uploaded.bindings), db.raw(`MAX(${uploaded.sql}) as latest`, uploaded.bindings))
+      .groupBy('photos.event_id').groupByRaw(day, uploaded.bindings);
+  }
+  return query;
+}
+
+/**
  * What happened lately, for the dashboard's "Recent" (#1444 slice 6).
  *
  * Derived from the source tables — not from activity_logs — with the same
@@ -201,13 +296,14 @@ async function needsActionFor(customerId, features) {
  * note being edited, a document unshared) out of it: an unshared document
  * simply no longer matches customerVisibleQuery.
  *
- * Each item: { kind, id, title, at, link }.
+ * Each item: { kind, id, title, at, link }; a photos_added item also carries
+ * counts: { photos, videos }.
  */
-async function recentFor(customerId, features, limit = 10) {
+async function recentFor(customerId, features, limit = 10, { galleries = true } = {}) {
   const items = [];
-  const push = (kind, id, title, at, link) => {
+  const push = (kind, id, title, at, link, extra) => {
     const ms = toMillis(at);
-    if (ms !== null) items.push({ kind, id, title, at: new Date(ms).toISOString(), link });
+    if (ms !== null) items.push({ kind, id, title, at: new Date(ms).toISOString(), link, ...extra });
   };
 
   if (features.documents) {
@@ -240,32 +336,71 @@ async function recentFor(customerId, features, limit = 10) {
   if (features.bills) {
     // Same visibility as GET /api/customer/invoices.
     const rows = await db('invoices').where({ customer_account_id: customerId })
-      .whereNotIn('status', ['scheduled', 'skipped'])
+      .where((q) => orPaidAwaitingDelivery(q.whereNotIn('status', ['scheduled', 'pending_delivery', 'skipped'])))
       .andWhere((q) => q.whereNot('status', 'cancelled').orWhereNotNull('cancellation_storno_id'))
       .select('id', 'invoice_number', 'sent_at');
     for (const i of rows) push('invoice_sent', i.id, i.invoice_number, i.sent_at, '/customer/bills');
   }
-  const events = (await customerAccountsService.listEventsForCustomer(customerId))
-    .filter((e) => !isTrue(e.is_draft));
+  const events = galleries
+    ? (await customerAccountsService.listEventsForCustomer(customerId)).filter((e) => !isTrue(e.is_draft))
+    : [];
+  const eventLink = (e) => `/customer/events/${encodeURIComponent(e.slug)}`;
   for (const e of events) {
-    push('gallery_assigned', e.id, e.event_name, e.assigned_at, `/customer/events/${encodeURIComponent(e.slug)}`);
+    push('gallery_assigned', e.id, e.event_name, e.assigned_at, eventLink(e));
+  }
+  const byId = new Map(events.map((e) => [Number(e.id), e]));
+  for (const g of await photoGroupsFor(customerId, [...byId.keys()], limit)) {
+    const e = byId.get(Number(g.event_id));
+    const videos = Number(g.videos) || 0;
+    push('photos_added', `${e.id}-${g.day}`, e.event_name, g.latest, eventLink(e),
+      { counts: { photos: (Number(g.total) || 0) - videos, videos } });
   }
 
   items.sort((a, b) => (b.at < a.at ? -1 : b.at > a.at ? 1 : 0));
   return items.slice(0, limit);
 }
 
-async function getDashboard(customerId) {
-  const features = await customerAccountsService.getEffectiveFeaturesForCustomer(customerId);
-  const events = (await customerAccountsService.listEventsForCustomer(customerId)).map(shapeEvent);
+// `session` is req.customer. Without one, the view of the whole customer.
+async function featuresFor(customerId, session) {
+  return session
+    ? customerAccountsService.getEffectiveFeaturesForSession(session)
+    : customerAccountsService.getEffectiveFeaturesForCustomer(customerId);
+}
+
+async function getDashboard(customerId, session = null) {
+  const features = await featuresFor(customerId, session);
+  const galleries = !session || hasRight(session.rights, 'galleries');
+  const events = galleries
+    ? (await customerAccountsService.listEventsForCustomer(customerId)).map(shapeEvent)
+    : [];
   return {
-    needsAction: await needsActionFor(customerId, features),
-    recent: await recentFor(customerId, features),
+    needsAction: {
+      ...await needsActionFor(customerId, features, session),
+      // A login without the right to act on galleries has no album to confirm.
+      albums: !session || hasRight(session.rights, 'galleries', 'act')
+        ? await albumsAwaitingCustomer(customerId, events.filter((e) => e.availability === 'active'))
+        : [],
+    },
+    recent: await recentFor(customerId, features, 10, { galleries }),
     galleries: {
       active: events.filter((e) => e.availability !== 'expired'),
       expired: events.filter((e) => e.availability === 'expired'),
     },
+    // Parcels of their album orders (issue 2422), gated like the albums.
+    shipments: galleries && await isFeatureEnabled('albumProducts')
+      ? await require('./albumProducts/shipments').forCustomer(db, customerId)
+      : [],
   };
+}
+
+// The activity page lists more than the dashboard's Recent box.
+const ACTIVITY_LIMIT = 100;
+
+/** Everything Recent shows, for the portal's activity page. */
+async function getActivity(customerId, session = null) {
+  const features = await featuresFor(customerId, session);
+  const galleries = !session || hasRight(session.rights, 'galleries');
+  return { items: await recentFor(customerId, features, ACTIVITY_LIMIT, { galleries }) };
 }
 
 /**
@@ -315,7 +450,7 @@ async function dealLineageForEvent(customerId, event) {
  * for all three so the endpoint can't be used to probe for other customers'
  * events.
  */
-async function getEventOverview(customerId, slug) {
+async function getEventOverview(customerId, slug, session = null) {
   let event = await db('events').where({ slug }).first();
   // Links mailed before a rename carry the old slug. The access check below
   // still decides, so this finds nothing a slug lookup would not.
@@ -323,7 +458,7 @@ async function getEventOverview(customerId, slug) {
   if (!event || isTrue(event.is_archived)) return null;
   if (!(await customerAccountsService.customerHasAccessToEvent(customerId, event.id))) return null;
 
-  const features = await customerAccountsService.getEffectiveFeaturesForCustomer(customerId);
+  const features = await featuresFor(customerId, session);
 
   const lineage = await dealLineageForEvent(customerId, event);
   const dealList = lineage.dealUuids;
@@ -376,7 +511,7 @@ async function getEventOverview(customerId, slug) {
     // Same visibility as GET /api/customer/invoices.
     invoices = (await db('invoices')
       .where({ customer_account_id: customerId })
-      .whereNotIn('status', ['scheduled', 'skipped'])
+      .where((q) => orPaidAwaitingDelivery(q.whereNotIn('status', ['scheduled', 'pending_delivery', 'skipped'])))
       .andWhere((q) => q.whereNot('status', 'cancelled').orWhereNotNull('cancellation_storno_id'))
       .andWhere(linkedTo('event_id'))
       .orderBy('id', 'desc')
@@ -402,6 +537,7 @@ async function getEventOverview(customerId, slug) {
       projectIds: lineage.projectIds,
     })
     : [];
+  const mayActOnDocuments = !session || hasRight(session.rights, 'documents', 'act');
 
   return {
     event: shapeEvent(event),
@@ -414,10 +550,11 @@ async function getEventOverview(customerId, slug) {
     quotes,
     contracts,
     invoices,
-    documents,
+    documents: mayActOnDocuments ? documents : documents.map((doc) => ({ ...doc, canDelete: false })),
+    productOffers: await productOffersFor(customerId, event.id),
   };
 }
 
 module.exports = {
-  shapeEvent, getDashboard, getEventOverview, dealLineageForEvent, _internal: { toDateOnly, needsActionFor, recentFor },
+  shapeEvent, getDashboard, getActivity, getEventOverview, dealLineageForEvent, _internal: { toDateOnly, needsActionFor, recentFor },
 };

@@ -44,6 +44,11 @@ const {
   validatePasswordInContext,
   MAX_PASSWORD_LENGTH
 } = require('../utils/passwordValidation');
+// A gallery closed for now, with the visitor's access intact: paused by the
+// studio, or (issue 2440) waiting for the booking's invoices to be paid. The
+// code is passed through so the page keeps the session and shows a notice.
+const GALLERY_CLOSED_CODES = new Set(['GALLERY_TEMPORARILY_DISABLED', 'GALLERY_AWAITING_PAYMENT']);
+
 const router = express.Router();
 
 /**
@@ -740,7 +745,7 @@ router.post('/gallery/verify', [
       }
     });
   } catch (error) {
-    if (error.code === 'GALLERY_TEMPORARILY_DISABLED') {
+    if (GALLERY_CLOSED_CODES.has(error.code)) {
       return res.status(error.statusCode).json({ error: error.message, code: error.code });
     }
     errorResponse(res, error, 500, 'Verification failed');
@@ -834,7 +839,7 @@ router.post('/gallery/:slug/client-login', [
       accessLevel: 'client'
     });
   } catch (error) {
-    if (error.code === 'GALLERY_TEMPORARILY_DISABLED') {
+    if (GALLERY_CLOSED_CODES.has(error.code)) {
       return res.status(error.statusCode).json({ error: error.message, code: error.code });
     }
     errorResponse(res, error, 500, 'Authentication failed');
@@ -937,7 +942,7 @@ router.post('/gallery/share-login', [
       }
     });
   } catch (error) {
-    if (error.code === 'GALLERY_TEMPORARILY_DISABLED') {
+    if (GALLERY_CLOSED_CODES.has(error.code)) {
       return res.status(error.statusCode).json({ error: error.message, code: error.code });
     }
     errorResponse(res, error, 500, 'Share link login failed');
@@ -1019,6 +1024,17 @@ router.get('/session', async (req, res) => {
         const event = await db('events').where({ id: decoded.eventId }).first();
         if (!event) return res.json({ valid: false, error: 'Gallery no longer available' });
         await access.authorize(event, access.grant(event, 'gallery', decoded));
+        // A Live Slideshow session is display-only (denySlideshowToken refuses
+        // every write and download). It has its own cookie now, but a browser
+        // can still send one here: as a Bearer, or in the guest cookie where
+        // slideshows kept it before. Reported as valid, the gallery page kept
+        // it as the guest login, so that browser could not rate, comment,
+        // favourite or download until the token expired. Not valid here: the
+        // page logs in through the share link (or asks for the password) and
+        // replaces it.
+        if (decoded.accessLevel === 'slideshow') {
+          return res.json({ valid: false, error: 'Slideshow sessions are display-only' });
+        }
       } else {
         return res.status(403).json({ valid: false, error: 'Invalid token type' });
       }
@@ -1056,7 +1072,7 @@ router.get('/session', async (req, res) => {
         ...(carried && { token: carried }),
       });
     } catch (err) {
-      if (err.code === 'GALLERY_TEMPORARILY_DISABLED') {
+      if (GALLERY_CLOSED_CODES.has(err.code)) {
         return res.status(err.statusCode).json({ valid: false, error: err.message, code: err.code });
       }
       res.json({

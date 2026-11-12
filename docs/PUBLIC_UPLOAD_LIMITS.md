@@ -75,6 +75,27 @@ Configure `ADMIN_UPLOAD_LIMITS_JSON` in the backend environment with the same po
 ADMIN_UPLOAD_LIMITS_JSON={"stagedBytes":214748364800,"accountRequests":32}
 ```
 
+### Admin duplicate handling
+
+The admin upload dialog offers **Skip exact duplicates**, checked by default.
+It uses the existing content-hash check within the target gallery for both
+multipart batches and large, chunked files. Renamed files with identical bytes
+match; matching filenames or visually similar photographs alone do not.
+Uncheck it to add copies deliberately. The upload bar lists skipped duplicates
+separately from failures and still offers **Upload anyway**.
+
+**Replace existing photos with same name** is supported for files uploaded in
+one multipart request and runs before duplicate detection. Gallery moderation
+disables name-based replacement for uploads that require review. Large files
+sent in chunks never replace photos by name: with duplicate skipping enabled,
+identical content is skipped; otherwise the upload is added as a new photo.
+
+Detection requires a recorded content hash on the existing photo. For older
+or imported originals without one, run the existing content-hash backfill
+before relying on duplicate detection. The file still transfers to the server
+before it is checked; this option neither resumes a selection after a page
+reload nor avoids the browser-to-server transfer of duplicate bytes.
+
 ## Cleanup and capacity recovery
 
 Staging directories are private and request-owned under `STORAGE_PATH/temp/public-uploads`. Writers settle before cleanup or reservation release.

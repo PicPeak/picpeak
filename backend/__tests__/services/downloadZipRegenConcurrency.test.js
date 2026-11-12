@@ -108,6 +108,29 @@ describe('downloadZipService background regen concurrency (#1399)', () => {
     expect(inFlight).toBe(3);
   });
 
+  it('does not start a queued rebuild once ZIP builds are paused, and lets running ones end', async () => {
+    const health = require('../../src/services/dependencyHealth');
+    const rows = Array.from({ length: 5 }, (_, i) => ({ id: i + 1 }));
+    db.mockReturnValue({
+      whereNotNull: () => ({ select: () => Promise.resolve(rows) }),
+    });
+
+    await service.invalidateAll();
+    jest.runAllTimers();
+    await flush();
+    expect(service.generateZip).toHaveBeenCalledTimes(2);
+
+    health.forcedOff = ['downloads.archive'];
+    try {
+      while (release.length) { release.shift()(); await flush(); }
+      expect(service.generateZip).toHaveBeenCalledTimes(2);
+      expect(service.regenWaiters).toHaveLength(0);
+      expect(service.regenActive).toBe(0);
+    } finally {
+      health.forcedOff = [];
+    }
+  });
+
   it('releases anything parked for a slot on shutdown', async () => {
     const rows = Array.from({ length: 6 }, (_, i) => ({ id: i + 1 }));
     db.mockReturnValue({

@@ -29,6 +29,11 @@ function verifiesAs(token, type) {
 
 async function authorizes(event, decoded) {
   if (!decoded || Number(decoded.eventId) !== Number(event.id)) return false;
+  // A Live Slideshow session is display-only, never a guest login (issue
+  // 2438). Left out here, the search looks past one (a kiosk's Bearer in the
+  // same tab, or a slideshow token an older release kept in the guest cookie)
+  // to the live guest session, instead of writing it into the guest cookie.
+  if (decoded.accessLevel === 'slideshow') return false;
   try {
     await access.authorize(event, access.grant(event, 'gallery', decoded));
     return true;

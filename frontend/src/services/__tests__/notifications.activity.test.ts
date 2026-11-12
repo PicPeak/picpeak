@@ -23,6 +23,24 @@ const base: Omit<Notification, 'type'> = {
 } as any;
 
 describe('client-activity notifications (#746)', () => {
+  it.each(['en', 'de'])('identifies a print order and invoice after gallery deletion (%s)', async (language) => {
+    const previousLanguage = i18n.language;
+    try {
+      await i18n.changeLanguage(language);
+      const message = notificationsService.formatNotificationMessage({
+        ...base, type: 'print_order_accepted', eventName: null,
+        metadata: { orderId: '12345678-1234-4123-8123-123456789abc', invoiceId: 19, eventName: 'Anna & Tom' },
+      } as Notification);
+      expect(message).toContain('Anna & Tom');
+      expect(message).toContain('12345678');
+      expect(message).toContain('#19');
+      expect(message).not.toContain('{{');
+      expect(message).not.toContain('printSales.');
+    } finally {
+      await i18n.changeLanguage(previousLanguage);
+    }
+  });
+
   it.each(['en', 'de'])('explains the PIN-entry security pause in the bell and feed (%s)', async (language) => {
     await i18n.changeLanguage(language);
     const msg = notificationsService.formatNotificationMessage({ ...base, type: 'gallery_pin_entry_paused' } as Notification);

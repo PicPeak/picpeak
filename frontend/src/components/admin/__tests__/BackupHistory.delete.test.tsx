@@ -16,6 +16,7 @@ const confirmDialog = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../config/api', () => ({ api }));
 vi.mock('react-toastify', () => ({ toast }));
+vi.mock('../../../contexts/PermissionsContext', () => ({ usePermissions: () => ({ hasPermission: () => true }) }));
 vi.mock('../../common', async () => {
   const actual = await vi.importActual<typeof import('../../common')>('../../common');
   return { ...actual, useConfirm: () => confirmDialog };

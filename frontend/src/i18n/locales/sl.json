@@ -668,7 +668,21 @@
     },
     "creditNameHelp": "Navedeno pri fotografijah, ki jih naloži ta račun, če datoteka v metapodatkih nima imena fotografa."
   },
+  "capabilityNotice": {
+    "archive": "Prenosi ZIP so za trenutek zaustavljeni. Posamezne fotografije si lahko še vedno ogledate in prenesete."
+  },
   "systemHealth": {
+    "backupRestoreTest": {
+      "title": "Preizkus obnovitve varnostnih kopij",
+      "ok": "Nedavna varnostna kopija je uspešno prestala preizkus obnovitve.",
+      "stale": "V zadnjih {{days}} dneh ni bilo uspešnega preizkusa obnovitve.",
+      "none": "Noben preizkus obnovitve še ni bil uspešen.",
+      "failed": "Zadnji preizkus obnovitve ni uspel. Kopije morda ni mogoče obnoviti.",
+      "running": "Preizkus obnovitve poteka.",
+      "lastPassed": "Zadnji uspešen: {{when}}",
+      "neverPassed": "Ni zabeleženega uspešnega preizkusa obnovitve.",
+      "open": "Odpri preizkus obnovitve"
+    },
     "retry": "Ponovi",
     "dismiss": "Zapri",
     "retriedToast": "E-pošta ponovno dodana v čakalno vrsto.",
@@ -822,6 +836,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Preskoči natančne dvojnike",
+      "skipHelp": "Preskoči datoteke z enako vsebino, ki so že v tej galeriji, tudi če imajo drugo ime.",
       "title_one": "{{count}} datoteka je že v tej galeriji",
       "title_two": "{{count}} datoteki sta že v tej galeriji",
       "title_few": "{{count}} datoteke so že v tej galeriji",
@@ -946,7 +962,10 @@
       "nothingToUpload": "Nobene od izbranih datotek ni mogoče naložiti: vse so v skritih ali preskočenih mapah.",
       "keptForNext": "Datoteke, dodane med pripravo map, so še vedno izbrane: {{count}}."
     },
-    "largeFileReplaceSkipped": "Zamenjava po imenu ni podprta za datoteke, večje od velikosti paketa; naložite jo brez zamenjave."
+    "largeFileReplaceSkipped": "Zamenjava po imenu ni podprta za datoteke, večje od velikosti paketa; naložite jo brez zamenjave.",
+    "capacity": {
+      "paused": "Nalaganje je za trenutek zaustavljeno. Poskusite znova čez nekaj trenutkov."
+    }
   },
   "navigation": {
     "dashboard": "Nadzorna plošča",
@@ -1228,6 +1247,7 @@
     }
   },
   "gallery": {
+    "backToAccount": "Nazaj na vaš račun",
     "revealPendingTitle": "Fotografije so še presenečenje",
     "revealPendingMessage": "Gostitelj bo galerijo razkril pozneje — kmalu preverite znova!",
     "revealScheduledFor": "Razkritje načrtovano za {{date}}",
@@ -1613,6 +1633,27 @@
     "toolbar": {
       "browse": "Orodja galerije",
       "selection": "Izbira"
+    },
+    "favoriteLists": {
+      "saveTo": "Shrani na seznam",
+      "defaultList": "Moje priljubljene",
+      "manage": "Upravljanje seznamov …",
+      "title": "Vaši seznami",
+      "intro": "Priljubljene fotografije razvrstite na sezname. Zaznamek shrani na izbrani seznam.",
+      "defaultHint": "Privzeti seznam",
+      "nameLabel": "Ime seznama",
+      "rename": "Preimenuj {{name}}",
+      "deleteNamed": "Izbriši {{name}}",
+      "confirmDelete_one": "Izbrišem »{{name}}« in {{count}} fotografijo, shranjeno na njem?",
+      "confirmDelete_two": "Izbrišem »{{name}}« in {{count}} fotografiji, shranjeni na njem?",
+      "confirmDelete_few": "Izbrišem »{{name}}« in {{count}} fotografije, shranjene na njem?",
+      "confirmDelete_other": "Izbrišem »{{name}}« in {{count}} fotografij, shranjenih na njem?",
+      "delete": "Izbriši seznam",
+      "newPlaceholder": "Nov seznam, npr. Album",
+      "create": "Dodaj",
+      "nameTaken": "Seznam s tem imenom že imate.",
+      "limitReached": "Ustvarite lahko največ {{count}} seznamov.",
+      "saveError": "Seznama ni bilo mogoče shraniti."
     }
   },
   "categories": {
@@ -1702,6 +1743,25 @@
     "archived": "Arhiviran",
     "totalSize": "Skupna velikost",
     "shareLink": "Povezava za deljenje",
+    "whatsappInvite": {
+      "title": "Pošlji prek WhatsAppa",
+      "description": "Odpre WhatsApp s tem besedilom. Pošljete ga iz svojega računa.",
+      "open": "Odpri WhatsApp",
+      "phoneLabel": "Telefonska številka",
+      "phoneEmpty": "Brez številke vas WhatsApp vpraša, kateri klepet izberete.",
+      "phoneNational": "Vnesite številko v mednarodni obliki, npr. +386 41 123 456. Brez nje vas WhatsApp vpraša, kateri klepet izberete.",
+      "phoneInvalid": "To ni videti kot telefonska številka. Brez nje vas WhatsApp vpraša, kateri klepet izberete.",
+      "messageLabel": "Sporočilo",
+      "editTemplate": "Spremeni privzeto besedilo",
+      "templateLabel": "Privzeto besedilo za vse galerije",
+      "templateHelp": "Oznake: {{name}} ime stranke, {{event}} ime galerije, {{link}} povezava, {{date}} datum dogodka. Pustite prazno za vgrajeno besedilo.",
+      "saveTemplate": "Shrani privzeto besedilo",
+      "templateSaved": "Privzeto besedilo za WhatsApp shranjeno.",
+      "templateSaveFailed": "Privzetega besedila ni bilo mogoče shraniti.",
+      "passwordNote": "Ta galerija je zaščitena z geslom. Sporočilo gesla ne vsebuje: pošljite ga ločeno.",
+      "pinNote": "Stranka za prijavo potrebuje tudi PIN stranke. Sporočilo ga ne vsebuje: pošljite ga ločeno.",
+      "defaultTemplate": "Pozdravljeni, {{name}}, vaša galerija »{{event}}« je na spletu: {{link}}"
+    },
     "shareLinkOwnerOnly": "Samo lastnik galerije lahko vidi in deli to povezavo.",
     "qrCode": "QR-koda",
     "qrTableCard": "Namizna kartica (A6)",
@@ -2566,6 +2626,7 @@
       "defaultAllowRatings": "Ocene z zvezdicami",
       "defaultAllowLikes": "Všečki",
       "defaultAllowFavorites": "Priljubljene",
+      "defaultAllowFavoriteLists": "Seznami priljubljenih",
       "defaultAllowComments": "Komentarji",
       "defaultAllowReactions": "Odzivi z emoji",
       "defaultAllowColorLabels": "Barvne oznake",
@@ -2797,7 +2858,11 @@
       "confirmRevoke": "Prekličem »{{name}}«? Obstoječe integracije, ki uporabljajo ta žeton, bodo začele prejemati napako 401.",
       "revoke": "Prekliči",
       "empty": "Žetonov še ni. Ustvarite enega zgoraj za začetek.",
-      "preview": "Predogled"
+      "preview": "Predogled",
+      "galleryPasswordScopes": "Gesla galerij",
+      "galleryPasswordScopesWarning": "Ti obsegi izdajajo gesla galerij. Niso del admin: označite jih le pri žetonu, ki jih potrebuje. Vsaka uporaba se zabeleži pod vašim imenom.",
+      "scopeGalleryPasswordsRead": "Prikaže shranjeno geslo galerije. Deluje le, dokler je vklopljeno »Hrani gesla galerij v obnovljivi obliki«.",
+      "scopeGalleryPasswordsReset": "Ponastavi geslo galerije in lahko novo pošlje stranki po e-pošti. Gostje se morajo znova prijaviti."
     },
     "webhooks": {
       "title": "Webhooki",
@@ -2896,9 +2961,12 @@
       "title": "Blagovna znamka"
     },
     "features": {
+      "backupRestoreTest": {
+        "title": "Preizkus obnovitve varnostnih kopij",
+        "description": "Vsaka varnostna kopija se poskusno obnovi v začasno podatkovno bazo in preveri: podpis, kontrolne vsote, zgoščene vrednosti datotek, število vrstic in migracije. Shranjene kopije se tedensko ponovno preverijo, ob neuspehu pa prejmete e-pošto."
+      },
       "title": "Funkcije",
       "intro": "Vklopite ali izklopite površine izdelka. Omogočene funkcije se prikažejo v levi navigaciji in so na voljo vaši ekipi. Nekatere funkcije so še v beta različici — vklopite jih za preizkus ali izklopite, da jih skrijete.",
-      "notYetAvailable": "Še ni na voljo — stikalo se aktivira, ko je funkcija izdana.",
       "sidebarHidden": "Ni elementa v stranski vrstici — deluje v ozadju",
       "unsavedChanges": "Imate neshranjene spremembe",
       "preview": {
@@ -3353,6 +3421,24 @@
       "running": "Računanje nadomestnih slik...",
       "noneToFill": "Vse fotografije že imajo nadomestno sliko",
       "button": "Izračunaj nadomestne slike"
+    },
+    "contentHashBackfill": {
+      "title": "Zgoščene vrednosti vsebine",
+      "description": "Izračuna zgoščeno vrednost vsebine, po kateri primerja zaznavanje dvojnikov, za fotografije in videoposnetke, uvožene prek nadzorovane mape, zunanjih medijev ali S3, ter za tiste, dodane preden so zgoščene vrednosti obstajale. Datoteke se berejo ena za drugo; kadar koli lahko začasno ustavite in pozneje znova zaženete, da se nadaljuje, kjer se je ustavilo. Izvirniki, ki jih ni mogoče prebrati, so preskočeni in prešteti. Nove fotografije dobijo zgoščeno vrednost samodejno; novi videoposnetki jo dobijo tukaj.",
+      "ioWarning": "Vsak izvirnik brez zgoščene vrednosti se enkrat prebere: pričakujte obremenitev diska na NAS in odhodni promet pri S3.",
+      "total": "Fotografije in videoposnetki",
+      "hashed": "Z zgoščeno vrednostjo",
+      "pending": "Še brez zgoščene vrednosti",
+      "unreadable": "Neberljivi",
+      "result": "Zadnji zagon: izračunanih {{hashed}}, neberljivih izvirnikov {{failed}}",
+      "resultPaused": "Začasno ustavljeno: doslej izračunanih {{hashed}}, neberljivih izvirnikov {{failed}}",
+      "running": "Branje izvirnikov...",
+      "pause": "Začasno ustavi",
+      "pausing": "Ustavljanje po trenutni datoteki...",
+      "resume": "Nadaljuj",
+      "button": "Izračunaj zgoščene vrednosti",
+      "noneToHash": "Vsi izvirniki imajo zgoščeno vrednost",
+      "retryUnreadable": "Znova poskusi neberljive ({{count}})"
     },
     "health": {
       "title": "Stanje",
@@ -4114,7 +4200,11 @@
       "photosTrashPurged_one": "{{count}} fotografija trajno izbrisana iz koša galerije »{{eventName}}«",
       "photosTrashPurged_two": "{{count}} fotografiji trajno izbrisani iz koša galerije »{{eventName}}«",
       "photosTrashPurged_few": "{{count}} fotografije trajno izbrisane iz koša galerije »{{eventName}}«",
-      "photosTrashPurged_other": "{{count}} fotografij trajno izbrisanih iz koša galerije »{{eventName}}«"
+      "photosTrashPurged_other": "{{count}} fotografij trajno izbrisanih iz koša galerije »{{eventName}}«",
+      "productChoiceReopened": "{{eventName}}: {{productName}} znova odprt za stranko",
+      "productChoiceUnlocked": "{{eventName}}: {{productName}} odklenjen",
+      "productReleased": "{{eventName}}: {{productName}} sproščen stranki",
+      "productWithdrawn": "{{eventName}}: sprostitev {{productName}} preklicana"
     },
     "notificationToasts": {
       "markedAllRead": "Vsa obvestila so označena kot prebrana",
@@ -4268,6 +4358,41 @@
         "deleteFailed_two": "{{count}} fotografij ni bilo mogoče izbrisati in sta še v galeriji",
         "deleteFailed_few": "{{count}} fotografij ni bilo mogoče izbrisati in so še v galeriji",
         "deleteFailed_other": "{{count}} fotografij ni bilo mogoče izbrisati in so še v galeriji"
+      },
+      "duplicates": {
+        "open": "Dvojniki",
+        "title": "Podvojene fotografije",
+        "intro": "Ujemajo se le bajtno enake datoteke: ponovno izvožene ali pomanjšane kopije niso zaznane, fotografije brez zgoščene vrednosti (uvožene pred zgoščevanjem) pa se ne primerjajo.",
+        "empty": "V tej galeriji ni dvojnikov",
+        "emptyHelp": "Nobeni dve fotografiji tukaj nimata iste datoteke.",
+        "loadFailed": "Dvojnikov ni bilo mogoče naložiti",
+        "copies_one": "{{count}} enaka kopija",
+        "copies_two": "{{count}} enaki kopiji",
+        "copies_few": "{{count}} enake kopije",
+        "copies_other": "{{count}} enakih kopij",
+        "keep": "Obdrži",
+        "keepThis": "Obdrži {{name}}",
+        "keepOne_one": "Obdrži označeno, {{count}} v koš",
+        "keepOne_two": "Obdrži označeno, {{count}} v koš",
+        "keepOne_few": "Obdrži označeno, {{count}} v koš",
+        "keepOne_other": "Obdrži označeno, {{count}} v koš",
+        "keepAll_one": "Obdrži označeno fotografijo v {{count}} skupini",
+        "keepAll_two": "Obdrži označeno fotografijo v obeh {{count}} skupinah",
+        "keepAll_few": "Obdrži označeno fotografijo v vseh {{count}} skupinah",
+        "keepAll_other": "Obdrži označeno fotografijo v vseh {{count}} skupinah",
+        "trashed_one": "{{count}} kopija premaknjena v koš",
+        "trashed_two": "{{count}} kopiji premaknjeni v koš",
+        "trashed_few": "{{count}} kopije premaknjene v koš",
+        "trashed_other": "{{count}} kopij premaknjenih v koš",
+        "failed": "Kopij ni bilo mogoče premakniti v koš",
+        "trashOff": "Koš je izklopljen in brisanje je dokončno, zato ta pogled kopije le navaja.",
+        "sourceAdmin": "Nalaganje ali uvoz",
+        "sourceGuest": "Nalaganje gosta",
+        "sourceExternal": "Zunanja mapa",
+        "range_one": "Skupine {{from}}–{{to}} od {{count}}",
+        "range_two": "Skupine {{from}}–{{to}} od {{count}}",
+        "range_few": "Skupine {{from}}–{{to}} od {{count}}",
+        "range_other": "Skupine {{from}}–{{to}} od {{count}}"
       }
     },
     "events": {
@@ -4340,7 +4465,18 @@
         "rated": "Ocenjeno",
         "reacted": "Odzval se",
         "commented": "Komentirano",
-        "labeled": "Barvne oznake"
+        "labeled": "Barvne oznake",
+        "defaultList": "Privzeti seznam",
+        "favoriteLists": "Seznami priljubljenih",
+        "listCount_one": "{{count}} fotografija",
+        "listCount_two": "{{count}} fotografiji",
+        "listCount_few": "{{count}} fotografije",
+        "listCount_other": "{{count}} fotografij",
+        "listUpdated": "Posodobljeno {{date}}",
+        "showInPhotos": "Prikaži med fotografijami",
+        "clearListFilter": "Prikaži vse fotografije",
+        "listFilterNamed": "Prikazane so fotografije s seznama {{name}}.",
+        "listFilter": "Prikazane so fotografije z enega seznama priljubljenih."
       },
       "inviteStatus": {
         "pending": "Čaka",
@@ -4578,7 +4714,11 @@
       "approval_submitted": "{{guestName}} je odobril(a) obdelane fotografije v {{eventName}}",
       "selection_reopened": "Oddaja gosta {{guestName}} znova odprta v {{eventName}}",
       "photos_restored": "{{count}} fotografij obnovljenih iz koša galerije {{eventName}}",
-      "photos_trash_purged": "{{count}} fotografij trajno izbrisanih iz koša galerije {{eventName}}"
+      "photos_trash_purged": "{{count}} fotografij trajno izbrisanih iz koša galerije {{eventName}}",
+      "album_product_reopened": "{{productName}} znova odprt za stranko v {{eventName}}",
+      "album_product_unlocked": "{{productName}} odklenjen v {{eventName}}",
+      "album_product_released": "{{productName}} sproščen stranki v {{eventName}}",
+      "album_product_withdrawn": "Sprostitev {{productName}} preklicana v {{eventName}}"
     },
     "customerActivity": {
       "customer_invitation_created": "Povabilo poslano",
@@ -5158,6 +5298,96 @@
     }
   },
   "backup": {
+    "restoreTest": {
+      "title": "Preizkus obnovitve",
+      "description": "Po vsaki varnostni kopiji in tedensko za shranjene kopije strežnik preveri, ali je kopijo dejansko mogoče obnoviti: preveri podpis in kontrolne vsote, obnovi podatkovno bazo v začasno kopijo in jo preveri.",
+      "runNow": "Zaženi preizkus obnovitve",
+      "hashAll": "Izračunaj zgoščeno vrednost vsake datoteke",
+      "started": "Preizkus obnovitve se je začel.",
+      "busy": "Varnostno kopiranje, obnovitev ali preizkus obnovitve že poteka. Poskusite znova, ko se konča.",
+      "noBackup": "Uspešne varnostne kopije za preizkus še ni.",
+      "startFailed": "Preizkusa obnovitve ni bilo mogoče zagnati.",
+      "loadFailed": "Rezultatov preizkusa obnovitve ni bilo mogoče naložiti.",
+      "stale": "V zadnjih {{days}} dneh ni bilo uspešnega preizkusa obnovitve",
+      "disabled": "Samodejni preizkusi obnovitve so v nastavitvah izklopljeni. Kopije se preizkusijo le, če preizkus zaženete tukaj.",
+      "empty": "Preizkus obnovitve se še ni izvedel.",
+      "fullCheck": "preverjene vse datoteke",
+      "scheduleSummary": "Urnik ponovnega preverjanja: {{cron}} · vzorec drugih datotek na zagon: {{percent}} %",
+      "sampled": "{{percent}} % drugih datotek v vzorcu",
+      "when": "Kdaj",
+      "tested": "Preizkušeno",
+      "triggeredBy": "Sprožilec",
+      "history": "Prejšnji preizkusi ({{count}})",
+      "status": {
+        "passed": "Uspešno",
+        "warning": "Uspešno z opozorili",
+        "failed": "Neuspešno",
+        "skipped": "Preskočeno",
+        "running": "Poteka"
+      },
+      "level": {
+        "deep": "Poglobljeno preverjanje",
+        "drill": "Poskusna obnovitev"
+      },
+      "trigger": {
+        "backup": "Po varnostni kopiji",
+        "schedule": "Načrtovano ponovno preverjanje",
+        "admin": "Zagnal skrbnik"
+      },
+      "target": {
+        "backupRun": "Varnostna kopija #{{id}}",
+        "databaseRun": "Kopija podatkovne baze #{{id}}",
+        "none": "Ni varnostne kopije"
+      },
+      "checks": {
+        "manifest_signature": "Podpis manifesta",
+        "dump_checksum": "Kontrolna vsota izpisa podatkovne baze",
+        "parent_chain": "Veriga varnostnih kopij",
+        "business_docs": "Poslovni dokumenti",
+        "files_sample": "Vzorec datotek",
+        "files_all": "Vse datoteke",
+        "drill_load": "Nalaganje v preizkusno podatkovno bazo",
+        "drill_integrity": "Celovitost podatkovne baze",
+        "drill_foreign_keys": "Tuji ključi",
+        "drill_row_counts": "Število vrstic",
+        "drill_migrate": "Migracija na trenutno različico",
+        "drill_invariants": "Doslednost podatkov",
+        "createdb_privilege": "Dovoljenje za ustvarjanje preizkusne podatkovne baze",
+        "destination": "Cilj varnostnih kopij"
+      },
+      "skipReasons": {
+        "not_verifiable_rsync": "Varnostnih kopij, poslanih prek rsync, ni mogoče prenesti nazaj za preizkus, zato niso preverjene. Za preizkuse obnovitve uporabite lokalni cilj ali S3.",
+        "insufficient_space": "Za obnovitev preizkusne kopije ni bilo dovolj prostora na disku. Sprostite prostor na strežniku in znova zaženite preizkus.",
+        "busy": "Takrat je potekalo varnostno kopiranje, obnovitev ali drug preizkus, zato je bil ta preizkus preskočen.",
+        "no_backup": "Ni bilo uspešne varnostne kopije za preizkus.",
+        "not_standalone": "Te kopije ni mogoče obnoviti samostojno, zato ni bila poskusno obnovljena.",
+        "no_manifest": "Ta kopija nima manifesta, zato njene vsebine ni bilo mogoče preveriti.",
+        "interrupted": "Preizkus je bil prekinjen, preden se je končal, na primer zaradi ponovnega zagona strežnika.",
+        "no_database_in_backup": "Ta varnostna kopija je nastala brez baze podatkov (Nastavitve → Kaj varnostno kopirati), zato so bile preverjene le datoteke. Vključite bazo podatkov za celovite preizkuse obnovitve.",
+        "no_database_dump": "Ta kopija ne vsebuje izpisa podatkovne baze, zato ni bilo ničesar za poskusno obnovitev.",
+        "legacy_manifest": "Ta varnostna kopija je nastala, preden so bili manifesti podpisani, zato njenim kontrolnim vsotam ni mogoče zaupati in ni bila preizkušena. Nove kopije so podpisane in preizkušene."
+      },
+      "badge": {
+        "hint": "Preizkus obnovitve: ali je bila ta kopija preverjena in poskusno obnovljena v začasno podatkovno bazo.",
+        "warningHint": "Obnovljivo, z opozorili.",
+        "running": "Preizkušanje",
+        "verified": "Preverjeno",
+        "failed": "Preizkus neuspešen",
+        "skipped": "Ni mogoče preizkusiti",
+        "notVerified": "Ni preverjeno"
+      },
+      "config": {
+        "title": "Preizkus obnovitve",
+        "enabled": "Samodejno izvajaj preizkuse obnovitve",
+        "enabledHelp": "Preizkusi vsako kopijo, ko se konča, in ponovno preveri shranjene kopije po spodnjem urniku.",
+        "schedule": "Urnik ponovnega preverjanja (cron)",
+        "scheduleHelp": "Privzeto: nedelja 04:00 (0 4 * * 0)",
+        "samplePercent": "Vzorec datotek na zagon (%)",
+        "samplePercentHelp": "Poslovni dokumenti vsake kopije se vedno preverijo z zgoščeno vrednostjo; to je delež drugih datotek (fotografije ipd.), ki se preveri ob vsakem zagonu, izmenično, da so sčasoma zajete vse datoteke.",
+        "invalidCron": "Vnesite veljaven izraz cron (5 polj) za urnik preizkusa obnovitve",
+        "invalidSamplePercent": "Vzorec datotek mora biti med 0 in 100 odstotki"
+      }
+    },
     "picpeak": {
       "restoreIntro": "Naložite datoteko .picpeak iz te ali druge namestitve. Obnova varnostne kopije SQLite na PostgreSQL je podprta (pot nadgradnje); druge kombinacije pogonov se morajo ujemati.",
       "crossEngineNote": "Obnova med različnimi pogoni: varnostna kopija SQLite je bila pretvorjena v to namestitev PostgreSQL.",
@@ -5736,6 +5966,8 @@
       "reactions": "Emoji odzivi",
       "reactionsDesc": "En emoji na gosta na fotografijo (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Označi fotografije kot priljubljene",
+      "favoriteLists": "Seznami priljubljenih",
+      "favoriteListsDesc": "Gostje priljubljene fotografije razvrstijo na sezname z lastnim imenom, npr. »Album« ali »Tisk«",
       "perGuestLimits": "Omejitve na gosta",
       "perGuestLimitsDesc": "Omejite, koliko fotografij lahko vsak gost doda med priljubljene ali všečka — uporabno pri poteku dela »izberite svojih najboljših N za album«. Za brez omejitve pustite 0. Če omejitev znižate pod trenutno število gosta, se njegovi obstoječi vnosi ohranijo; nova dodajanja so blokirana, dokler nekaterih ne odstrani.",
       "maxFavoritesPerGuest": "Največ priljubljenih na gosta",
@@ -6524,10 +6756,35 @@
         "contractSigned": "Podpisali ste pogodbo {{title}}",
         "quoteSent": "Ponudba {{title}} vam je bila poslana",
         "invoiceSent": "Račun {{title}} vam je bil poslan",
-        "galleryAssigned": "Galerija {{title}} vam je zdaj na voljo"
+        "galleryAssigned": "Galerija {{title}} vam je zdaj na voljo",
+        "photosAdded_one": "{{count}} nova fotografija v {{title}}",
+        "photosAdded_two": "{{count}} novi fotografiji v {{title}}",
+        "photosAdded_few": "{{count}} nove fotografije v {{title}}",
+        "photosAdded_other": "{{count}} novih fotografij v {{title}}",
+        "videosAdded_one": "{{count}} nov videoposnetek v {{title}}",
+        "videosAdded_two": "{{count}} nova videoposnetka v {{title}}",
+        "videosAdded_few": "{{count}} novi videoposnetki v {{title}}",
+        "videosAdded_other": "{{count}} novih videoposnetkov v {{title}}",
+        "mediaAdded": "{{photos}} in {{videos}} v {{title}}",
+        "newPhotos_one": "{{count}} nova fotografija",
+        "newPhotos_two": "{{count}} novi fotografiji",
+        "newPhotos_few": "{{count}} nove fotografije",
+        "newPhotos_other": "{{count}} novih fotografij",
+        "videos_one": "{{count}} videoposnetek",
+        "videos_two": "{{count}} videoposnetka",
+        "videos_few": "{{count}} videoposnetki",
+        "videos_other": "{{count}} videoposnetkov"
       },
       "documentRequested": "Naložite: {{title}}",
-      "uploadDocument": "Naloži"
+      "uploadDocument": "Naloži",
+      "albumAwaiting": "Vaš album za {{name}} je pripravljen za sestavljanje",
+      "configureAlbum": "Sestavi album",
+      "recentShowAll": "Prikaži vso dejavnost",
+      "shipmentsTitle": "Pošiljke",
+      "shipmentAlbum": "Album",
+      "shipmentCarrierOther": "Paket",
+      "shipmentSent": "poslano {{date}}",
+      "trackParcel": "Sledi paketu"
     },
     "layout": {
       "greeting": "Pozdravljeni, {{name}}"
@@ -6773,7 +7030,12 @@
       "pdfError": "PDF-ja ni bilo mogoče odpreti. Poskusite znova.",
       "pdf": "PDF",
       "dueOn": "Zapade {{date}}",
-      "nothingElse": "Za ta dogodek še ni dokumentov."
+      "nothingElse": "Za ta dogodek še ni dokumentov.",
+      "album": "Vaš album",
+      "albumConfirmed": "Vaš izbor je potrjen.",
+      "albumOpen": "Sestavite svoj album",
+      "albumReady": "Studio je sprostil vaš album. Izberite njegov videz in svoje fotografije.",
+      "albumView": "Oglejte si izbor"
     },
     "document": {
       "back": "Vsi dokumenti",
@@ -6796,6 +7058,11 @@
       "sharedAt": "V skupni rabi",
       "reviewedAt": "Pregledano",
       "event": "Dogodek"
+    },
+    "activity": {
+      "title": "Dejavnost",
+      "loadError": "Dejavnosti ni bilo mogoče naložiti. Poskusite znova.",
+      "empty": "Zaenkrat se še ni nič zgodilo."
     }
   },
   "customers": {
@@ -8321,6 +8588,7 @@
       "dueDate": "Zapadlo",
       "dueDateOverrideOn": "Ročni datum zapadlosti — odstranite kljukico za samodejni izračun iz datuma pošiljanja + plačilnega roka",
       "dueDateOverrideOff": "Samodejno iz datuma pošiljanja + plačilnega roka — označite za ročno nastavitev",
+      "issueDateOnDelivery": "Nastavi se, ko račun označite kot dostavljen. Rok plačila se nato šteje od tega dne, razen če ste ga spremenili.",
       "scheduledSendAt": "Načrtovano pošiljanje",
       "installment": "Obrok",
       "total": "Skupaj",
@@ -8478,6 +8746,8 @@
       "companyName": "Ime podjetja",
       "vatId": "ID za DDV (USt-IdNr.)",
       "taxId": "Davčna številka (Steuernummer)",
+      "vatIdUs": "EIN",
+      "taxIdUs": "ID za prometni davek (ZDA)",
       "addressLine1": "Naslovna vrstica 1",
       "addressLine2": "Naslovna vrstica 2",
       "postalCode": "Poštna številka",
@@ -9206,7 +9476,7 @@
         "section": "Razdelek",
         "description": "Opis (namig za skrbnika)",
         "body": "Vsebina",
-        "placeholderHint": "Kot nadomestne označevalnike lahko uporabite {{customer_name}}, {{event_name}}, {{event_date}}, {{net_days}}, {{skonto_percent}}, {{skonto_within_days}}, {{cancellation_30d_percent}}, {{currency}}, {{issuer_company_name}}, {{issuer_address}}, {{contract_number}}, {{source_quote_number}} — zamenjajo se ob izrisu pogodbe."
+        "placeholderHint": "Kot nadomestne označevalnike lahko uporabite {{customer_name}}, {{event_name}}, {{event_date}}, {{net_days}}, {{skonto_percent}}, {{skonto_within_days}}, {{cancellation_30d_percent}}, {{currency}}, {{issuer_company_name}}, {{issuer_address}}, {{governing_law}}, {{contract_number}}, {{source_quote_number}} — zamenjajo se ob izrisu pogodbe."
       },
       "quoteLineItems": {
         "calloutTitle": "Samodejno ustvarjena tabela sledi besedilu",
@@ -10209,6 +10479,130 @@
     },
     "subnav": {
       "approvals": "Odobritve"
+    }
+  },
+  "albumProducts": {
+    "actorClient": "Stranka",
+    "actorStudio": "Studio",
+    "album": "Album",
+    "audience": "Komu je ponudba namenjena",
+    "audienceClient": "Stranka galerije (PIN)",
+    "audienceFixed": "Ta ponudba že vsebuje izbiro, zato ostane pri tej stranki. Za drugo stranko dodajte novo ponudbo.",
+    "audienceShared": "To galerijo si deli več strank, zato te ponudbe v portalu ne vidi nobena. Izberite stranko ali uporabite PIN.",
+    "confirmBack": "Nadaljuj z urejanjem",
+    "confirmFinal": "Potrdi zdaj",
+    "confirmSelection": "Potrdi izbor",
+    "confirmWarning": "Pozor: po potrditvi tega izbora ni več mogoče spremeniti.",
+    "confirmedByClient": "Stranka je potrdila",
+    "confirmedLocked": "Vaš izbor je potrjen in ga je studio zaklenil.",
+    "confirmedWaiting": "Vaš izbor je potrjen. Studio ga je prejel.",
+    "continueSelection": "Nadaljujte z izborom",
+    "copyLink": "Kopiraj povezavo za stranko",
+    "coverPhoto": "Naslovna fotografija",
+    "entryConfirmed": "Vaš izbor je potrjen.",
+    "entryOpen": "Izberite album, njegov videz ter fotografije za naslovnico in plakate.",
+    "history": "Zgodovina izbire",
+    "linkCopied": "Povezava za stranko je kopirana",
+    "linkCopyFailed": "Povezave ni bilo mogoče kopirati",
+    "noPhotos": "Fotografij za izbiro še ni.",
+    "notReleased": "Ni sproščeno",
+    "photoCountExact": "Izbrano: {{count}} od {{max}}",
+    "photoCountOne": "Izbrano: {{count}} od 1",
+    "photoCountRange": "Izbrano: {{count}}, izberite od {{min}} do {{max}}",
+    "photoGone": "Ni več na voljo",
+    "photoNumber": "Fotografija {{number}}",
+    "photoUnavailable": "Ni več na voljo, zamenjajte jo",
+    "photosFailed": "Fotografij iz galerije ni bilo mogoče naložiti. Zaprite to okno in poskusite znova.",
+    "posterPhotos": "Fotografije za plakate",
+    "release": "Sprosti stranki",
+    "released": "Sproščeno",
+    "releasedTo": "Samo za {{name}}",
+    "removePhoto": "Odstrani",
+    "reopen": "Znova odpri za stranko",
+    "reopenMessage": "Stranka lahko potrjeni izbor znova spremeni in ga mora ponovno potrditi. Ponovno odprtje se zabeleži v dnevnik dejavnosti.",
+    "reopenTitle": "Znova odprem ta izbor?",
+    "reviewIncomplete": "Nekaj korakov še manjka. Vrnite se in jih dokončajte.",
+    "selectedPhoto": "Izbrana fotografija",
+    "showMorePhotos": "Pokaži več fotografij",
+    "startSelection": "Sestavite svoj album",
+    "stepAlbum": "Izberite album",
+    "stepColour": "Izberite barvo",
+    "stepCover": "Izberite naslovno fotografijo",
+    "coverHint": "Naslovna fotografija je na zunanji strani albuma, to je prvo, kar se vidi, preden ga odprete.",
+    "stepExtras": "Še nekaj podrobnosti",
+    "stepFormat": "Primerjajte formate",
+    "stepMaterial": "Izberite material",
+    "stepOf": "Korak {{current}} od {{total}}",
+    "stepPoster": "Izberite fotografije za plakate",
+    "stepReview": "Preglejte svoj album",
+    "stepSize": "Izberite velikost",
+    "viewSelection": "Oglejte si izbor",
+    "withdraw": "Prekliči sprostitev",
+    "yourAlbum": "Vaš album",
+    "shipments": {
+      "title": "Pošiljke",
+      "other": "Drug prevoznik",
+      "carrier": "Prevoznik",
+      "number": "Številka za sledenje",
+      "url": "Povezava za sledenje (neobvezno)",
+      "notify": "Stranko obvesti po e-pošti",
+      "notifyTo": "Za {{name}} ({{email}}), s povezavo za sledenje.",
+      "noRecipient": "K temu naročilu ne spada noben račun stranke, zato ni mogoče nikogar obvestiti in portal paketa ne more prikazati. Lahko ga vseeno zabeležite.",
+      "add": "Dodaj paket",
+      "added": "Paket zabeležen.",
+      "addedMailed": "Paket zabeležen. E-pošta o pošiljki je v čakalni vrsti za {{email}}.",
+      "mailFailed": "Paket zabeležen, vendar e-pošte o pošiljki ni bilo mogoče postaviti v čakalno vrsto.",
+      "mailed": "E-pošta poslana",
+      "notMailed": "Brez obvestila",
+      "mailQueued": "E-pošta načrtovana",
+      "mailFailed": "Pošiljanje e-pošte ni uspelo",
+      "deleteTitle": "Izbrišem ta paket?",
+      "deleteMessage": "Paket {{number}} izgine iz skrbništva in iz portala za stranke. Že poslana e-pošta ostane poslana.",
+      "delete": "Izbriši paket",
+      "deleteNamed": "Izbriši paket {{number}}"
+    }
+  },
+  "products": {
+    "addAlbumStarter": "Dodaj začetni nabor za album",
+    "attributeRole": "Vloga v vodenem albumu",
+    "availabilityHelp": "Označite, s čim se posamezna možnost ujema. Brez oznake je na voljo z vsemi.",
+    "clearColourValue": "Odstrani vrednost barve",
+    "clientFinal": "Potrditev stranke je dokončna",
+    "colourValue": "Vrednost barve",
+    "dependsOnNothing": "Od ničesar: vedno vse",
+    "guidedAlbum": "Vodeno naročilo albuma",
+    "guidedHelp": "Stranka gre skozi album, material, barvo, format in velikost, nato izbere fotografije. Vrsta izdelka potrebuje vse štiri vloge, barve, vezane na material, in velikosti, vezane na format. Album ostane skrit, dokler ga ne sprostite v galeriji.",
+    "heroImage": "Slika izdelka (PNG, do 6 MB)",
+    "optionsDependOn": "Ponujene možnosti so odvisne od",
+    "posterMax": "Fotografije za plakate, največ",
+    "posterMin": "Fotografije za plakate, najmanj",
+    "removeHeroImage": "Odstrani sliko",
+    "requireCover": "Zahtevaj naslovno fotografijo",
+    "roleNone": "Brez: dodatna izbira",
+    "sizesAreSpreads": "Velikosti veljajo za odprt album (dve strani)",
+    "role": {
+      "material": "Material",
+      "colour": "Barva",
+      "format": "Format",
+      "size": "Velikost"
+    },
+    "starter": {
+      "black": "Črna",
+      "champagne": "Šampanjec",
+      "cognac": "Konjak",
+      "colours": "Barva albuma",
+      "cotton": "Bombaž",
+      "formats": "Format albuma",
+      "ivory": "Slonovina",
+      "landscape": "Ležeče",
+      "leather": "Usnje",
+      "materials": "Material albuma",
+      "natural": "Naravna",
+      "silk": "Svila",
+      "sizes": "Velikost albuma",
+      "slate": "Skrilasta",
+      "square": "Kvadratno",
+      "type": "Album"
     }
   }
 }

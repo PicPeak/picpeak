@@ -25,6 +25,7 @@ const { getStoragePath } = require('../config/storage');
 const logger = require('../utils/logger');
 const { collectLegacyStoredFiles, storedPathMap } = require('../utils/legacyStoredFiles');
 const { STORED_PATH_COLUMNS } = require('../utils/storedPath');
+const { toDateOnly, pgDateColumnsByTable } = require('../utils/dateOnly');
 const packageJson = require('../../package.json');
 const recoveryFiles = require('./recoveryFiles');
 const { getStorage } = require('./storage');
@@ -42,6 +43,7 @@ const PICPEAK_FORMAT_VERSION = 1;
 // photographer assigned to people are lost too, since they live in
 // event_people. That is accepted — see ml/README.md and the #1074 thread.
 const EXCLUDED_TABLES = new Set([
+  'print_sales_downloads', // Ephemeral browser delivery status, not retained orders.
   'knex_migrations',
   'knex_migrations_lock',
   'photo_faces',
@@ -51,6 +53,9 @@ const EXCLUDED_TABLES = new Set([
   // they would attach to whatever ids the target's own re-scan happens to
   // mint, silently suppressing merge suggestions in unrelated galleries.
   'event_people_merge_dismissals',
+  // Short-lived promo verification state, not data: code and identity hashes
+  // are worthless after restore and should not leave the install in an archive.
+  'photo_checkout_verifications',
   // Live lease state for the maintenance sweeps (#1181), not data. An archive
   // taken while a sweep was running would otherwise carry is_running = true and
   // a claim token belonging to a process on the source install. Restored within
@@ -64,7 +69,7 @@ const EXCLUDED_TABLES = new Set([
 ]);
 
 // Storage subdirs holding non-recalculable blobs — always included.
-const DOC_DIRS = ['business-docs', 'uploads', 'transfers', 'album-products'];
+const DOC_DIRS = ['business-docs', 'uploads', 'transfers', 'album-products', '.print-sales'];
 // Original gallery photos — only when includePhotos is true (large; otherwise
 // the admin re-uploads originals per gallery and previews are re-rendered).
 const PHOTO_DIRS = ['events/active', 'events/archived', 'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];
@@ -108,9 +113,19 @@ async function getLatestMigration() {
   }
 }
 
+// PostgreSQL `date` columns, by table (one query for the whole export).
+// node-pg reads a `date` as a Date at LOCAL midnight, which JSON.stringify
+// would write as a UTC instant: the day before east of UTC (2024-08-11 →
+// "2024-08-10T22:00:00.000Z" in Berlin), and the import would then restore
+// that earlier day. SQLite has no date type, so its rows are written as stored.
+async function pgDateColumns() {
+  return isPostgres() ? pgDateColumnsByTable(db) : new Map();
+}
+
 // Write one table to <dataDir>/<table>.ndjson (one JSON object per line).
 // Returns { rowCount, checksum } for the manifest. JSON.stringify serialises
-// Dates to ISO strings, which re-import cleanly on both engines.
+// timestamps to ISO strings, which re-import cleanly on both engines; pg
+// `date` columns are written as their calendar day (YYYY-MM-DD) instead.
 //
 // Uses a plain select rather than knex `.stream()`: streaming on Postgres pulls
 // in the optional `pg-query-stream` dependency (not bundled), so it throws on
@@ -120,15 +135,21 @@ async function getLatestMigration() {
 // `pathMap` ({ stored value: archived path }, legacy-root documents) is
 // applied to the stored-path columns as the rows are written, so the archive
 // names each document where its bytes are, for any importer.
-async function writeTableNdjson(table, dataDir, pathMap = null, onRows) {
+// `dateColumnsByTable` (pgDateColumns) is looked up once per export and passed
+// in; a caller writing a single table may leave it out.
+async function writeTableNdjson(table, dataDir, pathMap = null, onRows, dateColumnsByTable = null) {
   const outPath = path.join(dataDir, `${table}.ndjson`);
   const hash = crypto.createHash('sha256');
   const pathColumns = pathMap
     ? STORED_PATH_COLUMNS.filter((c) => c.table === table).map((c) => c.column)
     : [];
+  const dateColumns = (dateColumnsByTable || await pgDateColumns()).get(table) || [];
   const rows = (await db(table).select('*')).map((row) => {
-    if (!pathColumns.length) return row;
+    if (!pathColumns.length && !dateColumns.length) return row;
     const out = { ...row };
+    for (const col of dateColumns) {
+      if (out[col] instanceof Date) out[col] = toDateOnly(out[col]);
+    }
     for (const col of pathColumns) {
       if (typeof out[col] === 'string' && Object.prototype.hasOwnProperty.call(pathMap, out[col])) {
         out[col] = pathMap[out[col]];
@@ -188,6 +209,7 @@ async function collectDir(subdir, storageRoot, acc) {
   }
   for (const entry of entries) {
     const childRel = path.join(subdir, entry.name);
+    if (recoveryFiles.printTemporaryKey(childRel.split(path.sep).join('/'))) continue;
     if (entry.isDirectory()) {
       await collectDir(childRel, storageRoot, acc);
     } else if (entry.isFile()) {
@@ -203,7 +225,7 @@ async function collectFiles(includePhotos, requiredReferences) {
   for (const d of dirs) {
     await collectDir(d, storageRoot, acc);
   }
-  if (getStorage().kind() !== 's3') return acc;
+  if (getStorage().kind() !== 's3') return recoveryFiles.localPrintInventory(db, acc, key => dirs.some(root => key.startsWith(`${root}/`)));
   const remote = await recoveryFiles.adapterInventory(db, dirs, undefined, requiredReferences);
   return [...acc.filter(file => !recoveryFiles.managedKey(file.rel.split(path.sep).join('/'))),
     ...remote.map(file => ({ ...file, rel: file.relativePath }))];
@@ -215,7 +237,9 @@ async function catalogueInPlace(files) {
   const byKey = new Map();
   for (const file of files) {
     const key = recoveryFiles.validKey(file.rel.split(path.sep).join('/'));
-    const handle = await fsp.open(file.abs, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    let handle;
+    try { handle = await fsp.open(file.abs, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0)); }
+    catch (error) { if (await recoveryFiles.discardedPrintFile(db, key, error)) continue; throw error; }
     const hash = crypto.createHash('sha256');
     let size = 0;
     try {
@@ -258,10 +282,11 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
     const referenceRows = new Map();
     let largestRowBytes = 0;
     let tableBytes = 0;
+    const dateColumnsByTable = await pgDateColumns();
     for (const table of tables) {
       const { largestRowBytes: largest, ...meta } = await writeTableNdjson(table, dataDir, pathMap, (name, rows) => {
-        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files'].includes(name)) referenceRows.set(name, rows);
-      });
+        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files', 'print_sales_assets'].includes(name)) referenceRows.set(name, rows);
+      }, dateColumnsByTable);
       tableMeta[table] = meta;
       largestRowBytes = Math.max(largestRowBytes, largest);
       tableBytes += (await fsp.stat(path.join(dataDir, `${table}.ndjson`))).size;
@@ -283,9 +308,14 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
       // video fails it.
       const fileStage = path.join(staging, 'captured');
       await fsp.mkdir(fileStage, { mode: 0o700 });
-      files = await recoveryFiles.materialize(files, fileStage, Number.MAX_SAFE_INTEGER);
+      files = await recoveryFiles.materialize(files, fileStage, Number.MAX_SAFE_INTEGER, db);
     } else if (includeFiles) {
-      files = await catalogueInPlace(files);
+      // Print files can be discarded after the catalogue but before ZIP reads.
+      // Capture only this changing private estate; the media library stays in place.
+      const printFiles = files.filter(file => (file.relativePath || file.rel).startsWith('.print-sales/'));
+      const captured = printFiles.length
+        ? await recoveryFiles.materialize(printFiles, path.join(staging, 'captured'), Number.MAX_SAFE_INTEGER, db) : [];
+      files = await catalogueInPlace([...files.filter(file => !printFiles.includes(file)), ...captured]);
     }
 
     // 3. Manifest — everything the importer needs to validate + reconstruct.
@@ -381,4 +411,5 @@ module.exports = {
   // exported for reuse/testing
   listDataTables,
   collectFiles,
+  writeTableNdjson,
 };

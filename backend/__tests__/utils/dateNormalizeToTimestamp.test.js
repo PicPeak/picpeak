@@ -39,3 +39,40 @@ describe('toTimestamp', () => {
     expect(toTimestamp(null)).toBeNaN();
   });
 });
+
+describe('toStoredTimestamp', () => {
+  const { toStoredTimestamp } = require('../../src/utils/dateNormalize');
+
+  // The invoice editor sends the stored UTC value cut to 'YYYY-MM-DDTHH:mm';
+  // create and update store it through toStoredTimestamp (create via
+  // toTimestamp). Read in the server's zone, every unchanged save would move
+  // the send time by the offset. Forced away from UTC in a child, as above.
+  it('stores the editor value as the same UTC instant whatever the server zone', () => {
+    const helper = path.resolve(__dirname, '../../src/utils/dateNormalize');
+    const out = execFileSync(process.execPath, ['-e', `
+      const { toStoredTimestamp, toTimestamp } = require(${JSON.stringify(helper)});
+      const stored = '2030-01-01T09:00:00.000Z';
+      const field = stored.slice(0, 16);
+      process.stdout.write(JSON.stringify({
+        offset: new Date(stored).getTimezoneOffset(),
+        update: toStoredTimestamp(field),
+        create: toStoredTimestamp(new Date(toTimestamp(field))),
+        twice: toStoredTimestamp(toStoredTimestamp(field).slice(0, 16)),
+      }));
+    `], { env: { ...process.env, TZ: 'Europe/Berlin' }, encoding: 'utf8' });
+    const seen = JSON.parse(out);
+    expect(seen.offset).toBe(-60);
+    expect(seen).toEqual({ offset: -60, update: '2030-01-01T09:00:00.000Z', create: '2030-01-01T09:00:00.000Z', twice: '2030-01-01T09:00:00.000Z' });
+  });
+
+  it('writes every shape as ISO UTC text, and nothing usable as null', () => {
+    const ms = Date.parse('2026-11-12T09:00:00.250Z');
+    expect(toStoredTimestamp(new Date(ms))).toBe('2026-11-12T09:00:00.250Z');
+    expect(toStoredTimestamp(ms)).toBe('2026-11-12T09:00:00.250Z');
+    expect(toStoredTimestamp(String(ms))).toBe('2026-11-12T09:00:00.250Z');
+    expect(toStoredTimestamp('2026-11-12T09:00:00.250Z')).toBe('2026-11-12T09:00:00.250Z');
+    expect(toStoredTimestamp(null)).toBeNull();
+    expect(toStoredTimestamp('')).toBeNull();
+    expect(toStoredTimestamp('not a date')).toBeNull();
+  });
+});

@@ -17,19 +17,22 @@ const { getUseOriginalFilenames } = require('./downloadFilenameService');
 const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const { resolveHeroLogoVisible, originalNeedsPreview } = require('./galleryModel');
 const { heroAnchorQuery } = require('../utils/heroAnchor');
+const { focalPointOf, focalQuery } = require('../utils/focalPoint');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
 const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
 const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
+const { SLIDESHOW_QUERY_PARAM } = require('../utils/tokenUtils');
 
 // Photo sales: the free quota is a one-time giveaway per
 // gallery: true until the gallery's promo code has been redeemed once (a
 // buyer who forgets the code does not burn the quota — only actual promo use
-// does, matching the single-use Snipcart discount).
+// does, matching the single-use gallery promo).
 async function freeQuotaAvailable(event) {
   try {
     if (!parseBooleanInput(event.is_priced, false)) return false;
     const prior = await db('photo_purchase_orders')
-      .where({ gallery_id: event.id, promo_used: true })
+      .where({ gallery_id: event.id })
+      .where((q) => q.where({ promo_used: true }).orWhere({ promo_gallery_id: event.id }))
       .first('id');
     return !prior;
   } catch {
@@ -40,6 +43,7 @@ async function freeQuotaAvailable(event) {
 
 const { guestUploadMaxEdgeOf } = require('./guestUploadDownscale');
 const { isPhotoSellable, signPhotoSale } = require('../modules/photoSales/sellable');
+const { configuration: paymentProviders } = require('../modules/photoSales/providers');
 const { isDiscountId } = require('../modules/photoSales/promoDiscount');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed, whereNotVideo } = require('../utils/photoVisibility');
 const {
@@ -151,6 +155,13 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     : (parseBooleanInput(event.watermark_downloads, false)
       // The gallery's own text is drawn there too, so changing it is a new URL.
       ? `wm=ev${watermarkSettings?.text ? watermarkService.versionTag(watermarkSettings) : ''}` : '');
+
+  // A contain thumbnail is the whole photo padded to the box, so a point of
+  // the photo is not the same fraction of it (issue 2377): object-position
+  // would push the photo aside and show the padding. Such installs keep the
+  // centre everywhere, as before focal points.
+  const { getThumbnailSettings } = require('./imageProcessor');
+  const focalApplies = (await getThumbnailSettings()).fit !== 'contain';
 
   // Build the query with sorting
   const sortOrder = order === 'asc' ? 'asc' : 'desc';
@@ -627,6 +638,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   const showExif = parseBooleanInput(event.show_exif_to_guests, false);
 
   const theme = await publicThemeFields(event);
+  const checkout = event.promo_code ? await paymentProviders() : null;
   return {
     pagination: { page, limit: limit || total, total, has_more: !!limit && page * limit < total },
     event: {
@@ -700,17 +712,18 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       hero_image_anchor: event.hero_image_anchor || 'center',
       default_photo_sort: event.default_photo_sort || 'upload_date_desc',
       // Photo sales: priced-gallery settings drive the
-      // Snipcart buttons and the free quota in the gallery UI.
+      // purchase buttons and the free quota in the gallery UI.
       is_priced: parseBooleanInput(event.is_priced, false),
       free_photo_count: Number(event.free_photo_count ?? 0),
       photo_price: event.photo_price != null ? Number(event.photo_price) : null,
       purchase_access_days: Number(event.purchase_access_days ?? 30),
       // The free quota applies ONCE per gallery via a one-time promo code
-      // (Snipcart discount). Exposed only while the discount actually exists
+      // (gallery promo). Exposed when checkout is configured
       // in the store, so the UI never advertises a dead code.
       free_quota_available: await freeQuotaAvailable(event),
       promo_code: event.promo_code || null,
-      promo_discount_ready: !!event.promo_code && isDiscountId(event.snipcart_discount_id),
+      promo_discount_ready: !!(event.promo_code && (checkout?.available.includes('stripe') || (checkout?.available.includes('snipcart') && isDiscountId(event.snipcart_discount_id)))
+        && await require('../modules/photoSales/promoIdentity').emailReady()),
       // Promo banner override (#440). GalleryView has always read
       // promo_mode from THIS payload, but it was never sent — so every
       // per-event promo override silently resolved to 'inherit' and a
@@ -766,15 +779,24 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // preview mode no gallery cookie is minted, so each <img> request must
       // re-assert the admin session — thread the flag onto every /api/gallery
       // image URL so the browser sends it (the admin_token cookie rides along
-      // same-origin).
-      const imgQuery = [wmVersion, adminPreview ? 'admin_preview=1' : ''].filter(Boolean).join('&');
+      // same-origin). A slideshow session's images name its own cookie the
+      // same way (issue 2438): it lives apart from the guest cookie, and an
+      // <img> has no other way to say which one it means.
+      const imgQuery = [
+        wmVersion,
+        adminPreview ? 'admin_preview=1' : '',
+        accessLevel === 'slideshow' ? `${SLIDESHOW_QUERY_PARAM}=1` : '',
+      ].filter(Boolean).join('&');
       const wmQuery = imgQuery ? `?${imgQuery}` : '';
       // The thumbnail route caches for half an hour and a rebuilt poster
       // lands under the same key, so the frame an admin picked for a video
       // (issue 2263, item 4) rides in the URL: a new pick is a new URL.
+      // A photo's crop follows its focal point (issue 2377) under the same
+      // key, so a moved point rides in the URL the same way.
+      const photoFocalQuery = isVideo ? '' : focalQuery(photo);
       const posterQuery = isVideo && photo.poster_offset_seconds != null
         ? `?${[imgQuery, `poster=${photo.poster_offset_seconds}`].filter(Boolean).join('&')}`
-        : wmQuery;
+        : photoFocalQuery ? `?${[imgQuery, photoFocalQuery].filter(Boolean).join('&')}` : wmQuery;
       // The hero crop follows the event's focal point (issue 1737) and the
       // hero route caches for an hour, so a non-centre anchor rides in the
       // URL: a changed anchor is a new URL, not a stale cached crop.
@@ -875,13 +897,13 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // again costs nothing.
         download_granted: grantedIds.has(Number(photo.id)),
         // Photo sales: per-photo price override (null =
-        // gallery default) for the Snipcart buy button.
+        // gallery default) for the purchase button.
         photo_price: photo.photo_price != null ? Number(photo.photo_price) : null,
         // Photo sales: the cart line's proof that its buyer passed this
         // gallery's access check (modules/photoSales/sellable.js). Only
         // sellable photos get one: no client-only photo, no video.
         sale_token: parseBooleanInput(event.is_priced, false) && isPhotoSellable(photo) ? signPhotoSale(photo.id) : null,
-        size: photo.size_bytes,
+        size: photo.size_bytes == null ? null : Number(photo.size_bytes),
         // toIso: on SQLite installs rows written with a raw Date (e.g.
         // the pre-fix archive-restore path) hold epoch numbers — the
         // Timeline layout's parseISO() crashes on those (#485 class).
@@ -891,6 +913,12 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         height: photo.height || null,
         // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
         thumb_hash: photo.thumb_hash || null,
+        // Where a crop keeps the photo's subject (issue 2377), as fractions
+        // of the image; null: the centre. The layouts apply it as CSS
+        // object-position to any rendition (utils/focalPoint says why the
+        // cover-cropped thumbnail needs no other value). Videos have none, nor
+        // does any photo under a contain thumbnail (focalApplies).
+        focal_point: isVideo || !focalApplies ? null : focalPointOf(photo),
         // EXIF capture date
         captured_at: toIso(photo.captured_at) || null,
         // Camera details (issue 1733, D1), only when the gallery shows them

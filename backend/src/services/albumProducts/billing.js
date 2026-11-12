@@ -144,6 +144,7 @@ async function lock(tx, offer, eventId, adminId) {
   });
   const customerId =
     offer.billing_customer_id ||
+    offer.released_customer_id ||
     (assignments.length === 1 ? assignments[0].customer_account_id : null);
   if (
     !customerId ||
@@ -283,7 +284,8 @@ async function append(tx, invoice, items, adminId) {
     .select('li.*', 'parent.position as parent_position');
   const roundTotal = (await require('../../utils/appSettings').getAppSetting('crm_invoice_round_total', false, tx)) === true;
   const totals = require('../quoteService')._internal.computeTotals(
-    stored, invoice.vat_rate, invoice.shipping_amount_minor, { roundTotal },
+    stored, invoice.vat_rate, invoice.shipping_amount_minor,
+    { roundTotal, roundVatDown: await require('../../utils/vatAmount').roundsVatDown(tx) },
   );
   for (const line of totals.lineItems) {
     const previous = stored.find((row) => row.id === line.id);

@@ -1,4 +1,17 @@
 {
+  "systemHealth": {
+    "backupRestoreTest": {
+      "title": "Hersteltest voor back-ups",
+      "ok": "Een recente back-up is geslaagd voor de hersteltest.",
+      "stale": "Geen geslaagde hersteltest in de afgelopen {{days}} dagen.",
+      "none": "Er is nog geen hersteltest geslaagd.",
+      "failed": "De laatste hersteltest is mislukt. De back-up kan mogelijk niet worden teruggezet.",
+      "running": "Er loopt een hersteltest.",
+      "lastPassed": "Laatst geslaagd: {{when}}",
+      "neverPassed": "Geen geslaagde hersteltest bekend.",
+      "open": "Hersteltest openen"
+    }
+  },
   "userManagement": {
     "title": "Gebruikersbeheer",
     "subtitle": "Beheer beheerders en uitnodigingen",
@@ -74,6 +87,9 @@
     },
     "creditNameHelp": "Wordt vermeld bij foto's die dit account uploadt als het bestand geen fotografennaam in de metadata heeft."
   },
+  "capabilityNotice": {
+    "archive": "ZIP-downloads zijn even gepauzeerd. Je kunt losse foto's nog steeds bekijken en downloaden."
+  },
   "common": {
     "loading": "Laden...",
     "error": "Fout",
@@ -130,6 +146,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Exacte duplicaten overslaan",
+      "skipHelp": "Bestanden met identieke inhoud die al in deze galerij staan overslaan, ook als ze anders heten.",
       "title_one": "{{count}} bestand staat al in deze galerij",
       "title_other": "{{count}} bestanden staan al in deze galerij",
       "toast_one": "{{count}} bestand staat al in deze galerij en is overgeslagen — details in de uploadbalk bovenaan.",
@@ -218,7 +236,10 @@
       "nothingToUpload": "Geen van de geselecteerde bestanden kan worden geüpload: ze staan allemaal in verborgen of overgeslagen mappen.",
       "keptForNext": "Bestanden die werden toegevoegd terwijl de mappen werden voorbereid, zijn nog geselecteerd: {{count}}."
     },
-    "largeFileReplaceSkipped": "Vervangen op naam wordt niet ondersteund voor bestanden boven de batchgrootte; upload het bestand zonder vervangen."
+    "largeFileReplaceSkipped": "Vervangen op naam wordt niet ondersteund voor bestanden boven de batchgrootte; upload het bestand zonder vervangen.",
+    "capacity": {
+      "paused": "Uploaden is even gepauzeerd. Probeer het zo meteen opnieuw."
+    }
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -287,6 +308,7 @@
     "passwordHint": "Het wachtwoord is verstrekt door de organisator van het evenement. Neem contact op als u het niet heeft."
   },
   "gallery": {
+    "backToAccount": "Terug naar uw account",
     "preparingHint": "De bestanden worden voorbereid — bij grote galerijen kan dit even duren.",
     "revealPendingTitle": "De foto's zijn nog een verrassing",
     "revealPendingMessage": "De gastheer onthult de galerij later — kom snel terug!",
@@ -614,6 +636,25 @@
     "toolbar": {
       "browse": "Galerijtools",
       "selection": "Selectie"
+    },
+    "favoriteLists": {
+      "saveTo": "Opslaan in lijst",
+      "defaultList": "Mijn favorieten",
+      "manage": "Lijsten beheren…",
+      "title": "Je lijsten",
+      "intro": "Sorteer je favorieten in lijsten. De bladwijzer slaat op in de lijst die je kiest.",
+      "defaultHint": "Standaardlijst",
+      "nameLabel": "Naam van de lijst",
+      "rename": "{{name}} hernoemen",
+      "deleteNamed": "{{name}} verwijderen",
+      "confirmDelete_one": "„{{name}}” en de {{count}} foto erin verwijderen?",
+      "confirmDelete_other": "„{{name}}” en de {{count}} foto’s erin verwijderen?",
+      "delete": "Lijst verwijderen",
+      "newPlaceholder": "Nieuwe lijst, bijv. Album",
+      "create": "Toevoegen",
+      "nameTaken": "Je hebt al een lijst met deze naam.",
+      "limitReached": "Je kunt maximaal {{count}} lijsten hebben.",
+      "saveError": "De lijst kon niet worden opgeslagen."
     }
   },
   "categories": {
@@ -681,6 +722,25 @@
     "archived": "Gearchiveerd",
     "totalSize": "Totale grootte",
     "shareLink": "Deellink",
+    "whatsappInvite": {
+      "title": "Versturen via WhatsApp",
+      "description": "Opent WhatsApp met deze tekst. U verstuurt hem vanaf uw eigen account.",
+      "open": "WhatsApp openen",
+      "phoneLabel": "Telefoonnummer",
+      "phoneEmpty": "Geen nummer: WhatsApp vraagt u de chat te kiezen.",
+      "phoneNational": "Voer het nummer in internationaal formaat in, bijv. +31 6 12345678. Zonder nummer vraagt WhatsApp u de chat te kiezen.",
+      "phoneInvalid": "Dit lijkt geen telefoonnummer. Zonder nummer vraagt WhatsApp u de chat te kiezen.",
+      "messageLabel": "Bericht",
+      "editTemplate": "Standaardtekst wijzigen",
+      "templateLabel": "Standaardtekst voor alle galerijen",
+      "templateHelp": "Plaatshouders: {{name}} naam van de klant, {{event}} naam van de galerij, {{link}} link, {{date}} datum van het evenement. Laat leeg voor de ingebouwde tekst.",
+      "saveTemplate": "Standaardtekst opslaan",
+      "templateSaved": "Standaard WhatsApp-tekst opgeslagen.",
+      "templateSaveFailed": "De standaardtekst kon niet worden opgeslagen.",
+      "passwordNote": "Deze galerij is met een wachtwoord beveiligd. Het bericht bevat het wachtwoord niet: stuur het apart.",
+      "pinNote": "De klant heeft ook zijn klant-PIN nodig om in te loggen. Het bericht bevat die niet: stuur hem apart.",
+      "defaultTemplate": "Hallo {{name}}, uw galerij \"{{event}}\" staat online: {{link}}"
+    },
     "qrCode": "QR-code",
     "qrTableCard": "Tafelkaart (A6)",
     "qrPoster": "Poster (A4)",
@@ -1364,6 +1424,7 @@
       "defaultAllowRatings": "Sterbeoordelingen",
       "defaultAllowLikes": "Likes",
       "defaultAllowFavorites": "Favorieten",
+      "defaultAllowFavoriteLists": "Favorietenlijsten",
       "defaultAllowComments": "Reacties",
       "defaultAllowReactions": "Emoji-reacties",
       "defaultAllowColorLabels": "Kleurlabels",
@@ -1551,7 +1612,11 @@
       "statusActive": "Actief",
       "confirmRevoke": "Dit token intrekken? Deze actie kan niet ongedaan worden gemaakt.",
       "revoke": "Intrekken",
-      "empty": "Nog geen tokens. Genereer er een hierboven om te beginnen."
+      "empty": "Nog geen tokens. Genereer er een hierboven om te beginnen.",
+      "galleryPasswordScopes": "Galerijwachtwoorden",
+      "galleryPasswordScopesWarning": "Deze scopes geven galerijwachtwoorden vrij. Ze vallen niet onder admin: vink ze alleen aan bij een token dat ze nodig heeft. Elk gebruik wordt op jouw naam gelogd.",
+      "scopeGalleryPasswordsRead": "Toont het opgeslagen wachtwoord van een galerij. Werkt alleen zolang \"Galerijwachtwoorden herstelbaar bewaren\" aan staat.",
+      "scopeGalleryPasswordsReset": "Stelt het wachtwoord van een galerij opnieuw in en kan het nieuwe naar de klant mailen. Gasten moeten opnieuw inloggen."
     },
     "webhooks": {
       "title": "Webhooks",
@@ -1585,9 +1650,12 @@
       "title": "Huisstijl"
     },
     "features": {
+      "backupRestoreTest": {
+        "title": "Hersteltest voor back-ups",
+        "description": "Elke back-up wordt bij wijze van test teruggezet in een wegwerpdatabase en gecontroleerd: handtekening, controlesommen, bestandshashes, aantallen rijen en migraties. Bewaarde back-ups worden wekelijks opnieuw gecontroleerd, en u krijgt een e-mail als er een mislukt."
+      },
       "title": "Functies",
       "intro": "Schakel productonderdelen aan of uit. Ingeschakelde functies verschijnen in de linker navigatie en worden beschikbaar voor uw team. Sommige functies zijn nog in beta — schakel ze aan om ze te proberen, uit om ze te verbergen.",
-      "notYetAvailable": "Nog niet beschikbaar — deze schakelaar wordt actief zodra de functie wordt uitgebracht.",
       "sidebarHidden": "Geen item in de zijbalk — draait op de achtergrond",
       "unsavedChanges": "U heeft niet-opgeslagen wijzigingen",
       "preview": {
@@ -1695,6 +1763,24 @@
       "running": "Plaatshouders worden berekend...",
       "noneToFill": "Alle foto’s hebben al een plaatshouder",
       "button": "Plaatshouders berekenen"
+    },
+    "contentHashBackfill": {
+      "title": "Inhoudshashes",
+      "description": "Berekent de inhoudshash waarop de duplicaatdetectie vergelijkt, voor foto's en video's die via de bewaakte map, externe media of S3 zijn geïmporteerd, en voor alles wat werd toegevoegd voordat er hashes bestonden. Bestanden worden één voor één gelezen; je kunt op elk moment pauzeren en later opnieuw starten om verder te gaan waar het stopte. Originelen die niet te lezen zijn, worden overgeslagen en geteld. Nieuwe foto's krijgen hun hash automatisch; nieuwe video's krijgen die hier.",
+      "ioWarning": "Hierbij wordt elk origineel zonder hash één keer gelezen: reken op schijfbelasting op een NAS en uitgaand verkeer bij S3.",
+      "total": "Foto's en video's",
+      "hashed": "Met hash",
+      "pending": "Nog zonder hash",
+      "unreadable": "Onleesbaar",
+      "result": "Laatste run: {{hashed}} berekend, {{failed}} originelen onleesbaar",
+      "resultPaused": "Gepauzeerd: tot nu toe {{hashed}} berekend, {{failed}} originelen onleesbaar",
+      "running": "Originelen worden gelezen...",
+      "pause": "Pauzeren",
+      "pausing": "Pauzeert na het huidige bestand...",
+      "resume": "Hervatten",
+      "button": "Hashes berekenen",
+      "noneToHash": "Alle originelen hebben een hash",
+      "retryUnreadable": "Onleesbare opnieuw proberen ({{count}})"
     },
     "health": {
       "title": "Gezondheid",
@@ -2231,7 +2317,11 @@
       "photosRestored_one": "{{count}} foto hersteld uit de prullenbak van \"{{eventName}}\"",
       "photosRestored_other": "{{count}} foto's hersteld uit de prullenbak van \"{{eventName}}\"",
       "photosTrashPurged_one": "{{count}} foto definitief verwijderd uit de prullenbak van \"{{eventName}}\"",
-      "photosTrashPurged_other": "{{count}} foto's definitief verwijderd uit de prullenbak van \"{{eventName}}\""
+      "photosTrashPurged_other": "{{count}} foto's definitief verwijderd uit de prullenbak van \"{{eventName}}\"",
+      "productChoiceReopened": "{{eventName}}: {{productName}} heropend voor de klant",
+      "productChoiceUnlocked": "{{eventName}}: {{productName}} ontgrendeld",
+      "productReleased": "{{eventName}}: {{productName}} vrijgegeven voor de klant",
+      "productWithdrawn": "{{eventName}}: vrijgave van {{productName}} ingetrokken"
     },
     "notificationToasts": {
       "markedAllRead": "Alle meldingen als gelezen gemarkeerd",
@@ -2343,6 +2433,31 @@
         "deleted_other": "{{count}} foto's verwijderd",
         "deleteFailed_one": "{{count}} foto kon niet worden verwijderd en staat nog in de galerij",
         "deleteFailed_other": "{{count}} foto's konden niet worden verwijderd en staan nog in de galerij"
+      },
+      "duplicates": {
+        "open": "Duplicaten",
+        "title": "Dubbele foto's",
+        "intro": "Alleen byte-identieke bestanden komen overeen: opnieuw geëxporteerde of verkleinde kopieën worden niet herkend, en foto's zonder hash (geïmporteerd vóór het hashen) worden niet vergeleken.",
+        "empty": "Geen duplicaten in deze galerij",
+        "emptyHelp": "Geen twee foto's hier delen hetzelfde bestand.",
+        "loadFailed": "De duplicaten konden niet worden geladen",
+        "copies_one": "{{count}} identieke kopie",
+        "copies_other": "{{count}} identieke kopieën",
+        "keep": "Behouden",
+        "keepThis": "{{name}} behouden",
+        "keepOne_one": "Gemarkeerde behouden, {{count}} naar de prullenbak",
+        "keepOne_other": "Gemarkeerde behouden, {{count}} naar de prullenbak",
+        "keepAll_one": "Gemarkeerde foto in {{count}} groep behouden",
+        "keepAll_other": "Gemarkeerde foto in alle {{count}} groepen behouden",
+        "trashed_one": "{{count}} kopie naar de prullenbak verplaatst",
+        "trashed_other": "{{count}} kopieën naar de prullenbak verplaatst",
+        "failed": "De kopieën konden niet naar de prullenbak worden verplaatst",
+        "trashOff": "De prullenbak staat uit en verwijderen is definitief, dus deze weergave toont de kopieën alleen.",
+        "sourceAdmin": "Upload of import",
+        "sourceGuest": "Gastupload",
+        "sourceExternal": "Externe map",
+        "range_one": "Groep {{from}}–{{to}} van {{count}}",
+        "range_other": "Groepen {{from}}–{{to}} van {{count}}"
       }
     },
     "events": {
@@ -2415,7 +2530,16 @@
         "rated": "Beoordeeld",
         "reacted": "Gereageerd",
         "commented": "Becommentarieerd",
-        "labeled": "Kleurlabels"
+        "labeled": "Kleurlabels",
+        "defaultList": "Standaardlijst",
+        "favoriteLists": "Favorietenlijsten",
+        "listCount_one": "{{count}} foto",
+        "listCount_other": "{{count}} foto’s",
+        "listUpdated": "Gewijzigd {{date}}",
+        "showInPhotos": "Tonen bij foto’s",
+        "clearListFilter": "Alle foto’s tonen",
+        "listFilterNamed": "De foto’s in {{name}} worden getoond.",
+        "listFilter": "De foto’s in één favorietenlijst worden getoond."
       },
       "inviteStatus": {
         "pending": "In behandeling",
@@ -2555,7 +2679,11 @@
       "approval_submitted": "{{guestName}} heeft de bewerkte foto’s in {{eventName}} goedgekeurd",
       "selection_reopened": "Inzending van {{guestName}} heropend in {{eventName}}",
       "photos_restored": "{{count}} foto's hersteld uit de prullenbak van {{eventName}}",
-      "photos_trash_purged": "{{count}} foto's definitief verwijderd uit de prullenbak van {{eventName}}"
+      "photos_trash_purged": "{{count}} foto's definitief verwijderd uit de prullenbak van {{eventName}}",
+      "album_product_reopened": "{{productName}} heropend voor de klant in {{eventName}}",
+      "album_product_unlocked": "{{productName}} ontgrendeld in {{eventName}}",
+      "album_product_released": "{{productName}} vrijgegeven voor de klant in {{eventName}}",
+      "album_product_withdrawn": "Vrijgave van {{productName}} ingetrokken in {{eventName}}"
     },
     "customerActivity": {
       "customer_invitation_created": "Uitnodiging verzonden",
@@ -2860,6 +2988,96 @@
     }
   },
   "backup": {
+    "restoreTest": {
+      "title": "Hersteltest",
+      "description": "Na elke back-up, en wekelijks voor bewaarde back-ups, controleert de server of de back-up echt kan worden teruggezet: hij controleert de handtekening en controlesommen, zet de database terug in een wegwerpkopie en controleert die.",
+      "runNow": "Hersteltest nu uitvoeren",
+      "hashAll": "Elk bestand hashen",
+      "started": "Hersteltest gestart.",
+      "busy": "Er loopt al een back-up, herstel of hersteltest. Probeer het opnieuw zodra die klaar is.",
+      "noBackup": "Er is nog geen geslaagde back-up om te testen.",
+      "startFailed": "De hersteltest kon niet worden gestart.",
+      "loadFailed": "De resultaten van de hersteltest konden niet worden geladen.",
+      "stale": "Geen geslaagde hersteltest in de afgelopen {{days}} dagen",
+      "disabled": "Automatische hersteltests staan uit onder Configuratie. Back-ups worden alleen getest als u hier een test start.",
+      "empty": "Er is nog geen hersteltest uitgevoerd.",
+      "fullCheck": "elk bestand gehasht",
+      "scheduleSummary": "Schema hercontrole: {{cron}} · steekproef andere bestanden per run: {{percent}} %",
+      "sampled": "{{percent}} % van de andere bestanden steekproefsgewijs gecontroleerd",
+      "when": "Wanneer",
+      "tested": "Getest",
+      "triggeredBy": "Aanleiding",
+      "history": "Eerdere tests ({{count}})",
+      "status": {
+        "passed": "Geslaagd",
+        "warning": "Geslaagd met waarschuwingen",
+        "failed": "Mislukt",
+        "skipped": "Overgeslagen",
+        "running": "Bezig"
+      },
+      "level": {
+        "deep": "Diepe controle",
+        "drill": "Herstelproef"
+      },
+      "trigger": {
+        "backup": "Na de back-up",
+        "schedule": "Geplande hercontrole",
+        "admin": "Gestart door een beheerder"
+      },
+      "target": {
+        "backupRun": "Back-up #{{id}}",
+        "databaseRun": "Databaseback-up #{{id}}",
+        "none": "Geen back-up"
+      },
+      "checks": {
+        "manifest_signature": "Handtekening van het manifest",
+        "dump_checksum": "Controlesom van de databasedump",
+        "parent_chain": "Back-upketen",
+        "business_docs": "Zakelijke documenten",
+        "files_sample": "Steekproef van bestanden",
+        "files_all": "Alle bestanden",
+        "drill_load": "Laden in een testdatabase",
+        "drill_integrity": "Database-integriteit",
+        "drill_foreign_keys": "Externe sleutels",
+        "drill_row_counts": "Aantallen rijen",
+        "drill_migrate": "Migreren naar de huidige versie",
+        "drill_invariants": "Consistentie van de gegevens",
+        "createdb_privilege": "Recht om een testdatabase aan te maken",
+        "destination": "Back-upbestemming"
+      },
+      "skipReasons": {
+        "not_verifiable_rsync": "Back-ups die via rsync worden verzonden, kunnen niet worden teruggehaald om te testen en worden dus niet gecontroleerd. Gebruik een lokale of S3-bestemming om hersteltests te krijgen.",
+        "insufficient_space": "Er was niet genoeg vrije schijfruimte om een testkopie terug te zetten. Maak ruimte vrij op de server en voer de test opnieuw uit.",
+        "busy": "Er liep op dat moment een back-up, herstel of andere test, dus deze test is overgeslagen.",
+        "no_backup": "Er was geen geslaagde back-up om te testen.",
+        "not_standalone": "Deze back-up kan niet op zichzelf worden teruggezet en is daarom niet bij wijze van test teruggezet.",
+        "no_manifest": "Deze back-up heeft geen manifest, dus de inhoud kon niet worden gecontroleerd.",
+        "interrupted": "De test is onderbroken voordat hij klaar was, bijvoorbeeld door een herstart van de server.",
+        "no_database_in_backup": "Deze back-up is gemaakt zonder de database (Configuratie → Wat te back-uppen), dus alleen de bestanden zijn gecontroleerd. Neem de database op voor volledige hersteltests.",
+        "no_database_dump": "Deze back-up bevat geen databasedump, dus er was niets om bij wijze van test terug te zetten.",
+        "legacy_manifest": "Deze back-up is gemaakt voordat manifesten werden ondertekend, dus de controlesommen zijn niet betrouwbaar en hij is niet getest. Nieuwe back-ups worden ondertekend en getest."
+      },
+      "badge": {
+        "hint": "Hersteltest: of deze back-up is gecontroleerd en bij wijze van test is teruggezet in een wegwerpdatabase.",
+        "warningHint": "Herstelbaar, met waarschuwingen.",
+        "running": "Wordt getest",
+        "verified": "Gecontroleerd",
+        "failed": "Test mislukt",
+        "skipped": "Niet testbaar",
+        "notVerified": "Niet gecontroleerd"
+      },
+      "config": {
+        "title": "Hersteltest",
+        "enabled": "Hersteltests automatisch uitvoeren",
+        "enabledHelp": "Elke back-up testen zodra die klaar is, en bewaarde back-ups opnieuw controleren volgens de planning hieronder.",
+        "schedule": "Planning voor opnieuw controleren (cron)",
+        "scheduleHelp": "Standaard: zondag 04:00 (0 4 * * 0)",
+        "samplePercent": "Steekproef van bestanden per run (%)",
+        "samplePercentHelp": "De zakelijke documenten van elke back-up worden altijd gehasht; dit is het aandeel van de overige bestanden (foto’s enz.) dat per run wordt gecontroleerd, roterend zodat na verloop van tijd alle bestanden aan bod komen.",
+        "invalidCron": "Voer een geldige cron-expressie (5 velden) in voor de planning van de hersteltest",
+        "invalidSamplePercent": "De steekproef van bestanden moet tussen 0 en 100 procent liggen"
+      }
+    },
     "title": "Back-upbeheer",
     "subtitle": "Beheer systeemback-ups, configureer geautomatiseerde back-ups en herstel vanuit eerdere back-ups.",
     "tabs": {
@@ -3289,6 +3507,8 @@
       "reactions": "Emoji-reacties",
       "reactionsDesc": "Eén emoji per gast per foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Foto's als favoriet markeren",
+      "favoriteLists": "Favorietenlijsten",
+      "favoriteListsDesc": "Gasten sorteren hun favorieten in lijsten met een eigen naam, zoals „Album” of „Afdruk”",
       "identityMode": "Identiteitsmodus",
       "identityModeSimple": "Eenvoudige feedback",
       "identityModeSimpleDesc": "Anoniem, apparaatgebaseerd. Alle bezoekers op hetzelfde apparaat delen de toestand.",
@@ -3749,7 +3969,26 @@
       "sortNewest": "Nieuwste eerst",
       "sortOldest": "Oudste eerst",
       "sortName": "Op naam",
-      "open": "Openen"
+      "open": "Openen",
+      "albumAwaiting": "Je album voor {{name}} staat klaar om samen te stellen",
+      "configureAlbum": "Album samenstellen",
+      "recent": {
+        "photosAdded_one": "{{count}} nieuwe foto in {{title}}",
+        "photosAdded_other": "{{count}} nieuwe foto's in {{title}}",
+        "videosAdded_one": "{{count}} nieuwe video in {{title}}",
+        "videosAdded_other": "{{count}} nieuwe video's in {{title}}",
+        "mediaAdded": "{{photos}} en {{videos}} in {{title}}",
+        "newPhotos_one": "{{count}} nieuwe foto",
+        "newPhotos_other": "{{count}} nieuwe foto's",
+        "videos_one": "{{count}} video",
+        "videos_other": "{{count}} video's"
+      },
+      "recentShowAll": "Alle activiteit tonen",
+      "shipmentsTitle": "Zendingen",
+      "shipmentAlbum": "Album",
+      "shipmentCarrierOther": "Pakket",
+      "shipmentSent": "verzonden op {{date}}",
+      "trackParcel": "Pakket volgen"
     },
     "layout": {
       "greeting": "Hallo, {{name}}"
@@ -3841,6 +4080,18 @@
       "successToast": "Wachtwoord bijgewerkt. Log nu in.",
       "invalidSubmission": "Je wachtwoord kon niet worden bijgewerkt.",
       "generalError": "Je wachtwoord kon niet worden bijgewerkt. Probeer het opnieuw."
+    },
+    "event": {
+      "album": "Je album",
+      "albumConfirmed": "Je selectie is bevestigd.",
+      "albumOpen": "Stel je album samen",
+      "albumReady": "De studio heeft je album vrijgegeven. Kies de uitvoering en je foto’s.",
+      "albumView": "Bekijk je selectie"
+    },
+    "activity": {
+      "title": "Activiteit",
+      "loadError": "De activiteit kon niet worden geladen. Probeer het opnieuw.",
+      "empty": "Er is nog niets gebeurd."
     }
   },
   "customers": {
@@ -4052,6 +4303,130 @@
     },
     "subnav": {
       "approvals": "Goedkeuringen"
+    }
+  },
+  "albumProducts": {
+    "actorClient": "Klant",
+    "actorStudio": "Studio",
+    "album": "Album",
+    "audience": "Voor wie is dit aanbod",
+    "audienceClient": "De klant van de galerij (pincode)",
+    "audienceFixed": "Dit aanbod bevat al een keuze en blijft daarom bij deze klant. Voeg een nieuw aanbod toe voor een andere klant.",
+    "audienceShared": "Meerdere klanten delen deze galerij, dus geen van hen ziet dit aanbod in het portaal. Kies een klant of gebruik de pincode.",
+    "confirmBack": "Verder bewerken",
+    "confirmFinal": "Nu bevestigen",
+    "confirmSelection": "Selectie bevestigen",
+    "confirmWarning": "Let op: na bevestiging kan deze selectie niet meer worden gewijzigd.",
+    "confirmedByClient": "Bevestigd door de klant",
+    "confirmedLocked": "Je selectie is bevestigd en door de studio vergrendeld.",
+    "confirmedWaiting": "Je selectie is bevestigd. De studio heeft die ontvangen.",
+    "continueSelection": "Selectie voortzetten",
+    "copyLink": "Klantlink kopiëren",
+    "coverPhoto": "Omslagfoto",
+    "entryConfirmed": "Je selectie is bevestigd.",
+    "entryOpen": "Kies je album, de uitvoering en je omslag- en posterfoto’s.",
+    "history": "Keuzegeschiedenis",
+    "linkCopied": "Klantlink gekopieerd",
+    "linkCopyFailed": "De link kon niet worden gekopieerd",
+    "noPhotos": "Er zijn nog geen foto’s om uit te kiezen.",
+    "notReleased": "Niet vrijgegeven",
+    "photoCountExact": "{{count}} van {{max}} geselecteerd",
+    "photoCountOne": "{{count}} van 1 geselecteerd",
+    "photoCountRange": "{{count}} geselecteerd, kies er {{min}} tot {{max}}",
+    "photoGone": "Niet meer beschikbaar",
+    "photoNumber": "Foto {{number}}",
+    "photoUnavailable": "Niet meer beschikbaar, vervang deze foto",
+    "photosFailed": "De foto’s van de galerij konden niet worden geladen. Sluit dit venster en probeer het opnieuw.",
+    "posterPhotos": "Posterfoto’s",
+    "release": "Vrijgeven voor de klant",
+    "released": "Vrijgegeven",
+    "releasedTo": "Alleen voor {{name}}",
+    "removePhoto": "Verwijderen",
+    "reopen": "Heropenen voor de klant",
+    "reopenMessage": "De klant kan de bevestigde selectie weer wijzigen en moet die opnieuw bevestigen. Het heropenen wordt vastgelegd in het activiteitenlogboek.",
+    "reopenTitle": "Deze selectie heropenen?",
+    "reviewIncomplete": "Er ontbreken nog stappen. Ga terug om ze af te ronden.",
+    "selectedPhoto": "Geselecteerde foto",
+    "showMorePhotos": "Meer foto’s tonen",
+    "startSelection": "Stel je album samen",
+    "stepAlbum": "Kies je album",
+    "stepColour": "Kies een kleur",
+    "stepCover": "Kies je omslagfoto",
+    "coverHint": "De omslagfoto staat op de buitenkant van het album, het eerste wat je ziet voordat je het openslaat.",
+    "stepExtras": "Nog een paar details",
+    "stepFormat": "Vergelijk de formaten",
+    "stepMaterial": "Kies een materiaal",
+    "stepOf": "Stap {{current}} van {{total}}",
+    "stepPoster": "Kies je posterfoto’s",
+    "stepReview": "Controleer je album",
+    "stepSize": "Kies een formaat",
+    "viewSelection": "Bekijk je selectie",
+    "withdraw": "Vrijgave intrekken",
+    "yourAlbum": "Je album",
+    "shipments": {
+      "title": "Zendingen",
+      "other": "Andere vervoerder",
+      "carrier": "Vervoerder",
+      "number": "Trackingnummer",
+      "url": "Trackinglink (optioneel)",
+      "notify": "Klant per e-mail op de hoogte brengen",
+      "notifyTo": "Aan {{name}} ({{email}}), met de trackinglink.",
+      "noRecipient": "Er hoort geen klantaccount bij deze bestelling, dus niemand kan op de hoogte worden gebracht en het portaal kan het pakket niet tonen. Je kunt het toch vastleggen.",
+      "add": "Pakket toevoegen",
+      "added": "Pakket vastgelegd.",
+      "addedMailed": "Pakket vastgelegd. Verzend-e-mail aan {{email}} in de wachtrij gezet.",
+      "mailFailed": "Pakket vastgelegd, maar de verzend-e-mail kon niet in de wachtrij worden gezet.",
+      "mailed": "E-mail verzonden",
+      "notMailed": "Niet op de hoogte gebracht",
+      "mailQueued": "E-mail gepland",
+      "mailFailed": "E-mail mislukt",
+      "deleteTitle": "Dit pakket verwijderen?",
+      "deleteMessage": "Pakket {{number}} verdwijnt uit de beheeromgeving en uit het klantenportaal. Een al verzonden e-mail blijft verzonden.",
+      "delete": "Pakket verwijderen",
+      "deleteNamed": "Pakket {{number}} verwijderen"
+    }
+  },
+  "products": {
+    "addAlbumStarter": "Startset voor album toevoegen",
+    "attributeRole": "Rol in een begeleid album",
+    "availabilityHelp": "Vink aan waar elke optie bij hoort. Niets aangevinkt betekent: bij alles.",
+    "clearColourValue": "Kleurwaarde verwijderen",
+    "clientFinal": "De bevestiging van de klant is definitief",
+    "colourValue": "Kleurwaarde",
+    "dependsOnNothing": "Niets: altijd allemaal",
+    "guidedAlbum": "Begeleide albumbestelling",
+    "guidedHelp": "De klant doorloopt album, materiaal, kleur, formaat en maat en kiest daarna foto’s. Het producttype heeft de vier rollen nodig, kleuren gekoppeld aan het materiaal en maten gekoppeld aan het formaat. Het blijft verborgen tot je het in de galerij vrijgeeft.",
+    "heroImage": "Productafbeelding (PNG, tot 6 MB)",
+    "optionsDependOn": "Welke opties worden aangeboden, hangt af van",
+    "posterMax": "Posterfoto’s, maximaal",
+    "posterMin": "Posterfoto’s, minimaal",
+    "removeHeroImage": "Afbeelding verwijderen",
+    "requireCover": "Omslagfoto verplicht",
+    "roleNone": "Geen: een extra keuze",
+    "sizesAreSpreads": "Maten gelden voor het open album (twee pagina’s)",
+    "role": {
+      "material": "Materiaal",
+      "colour": "Kleur",
+      "format": "Formaat",
+      "size": "Maat"
+    },
+    "starter": {
+      "black": "Zwart",
+      "champagne": "Champagne",
+      "cognac": "Cognac",
+      "colours": "Albumkleur",
+      "cotton": "Katoen",
+      "formats": "Albumformaat",
+      "ivory": "Ivoor",
+      "landscape": "Liggend",
+      "leather": "Leer",
+      "materials": "Albummateriaal",
+      "natural": "Naturel",
+      "silk": "Zijde",
+      "sizes": "Albummaat",
+      "slate": "Leisteen",
+      "square": "Vierkant",
+      "type": "Album"
     }
   }
 }

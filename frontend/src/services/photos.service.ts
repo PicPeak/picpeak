@@ -14,6 +14,9 @@ export interface AdminPhoto {
   thumbnail_url: string | null;
   // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
   thumb_hash?: string | null;
+  // Oriented dimensions; null when they were never read.
+  width?: number | null;
+  height?: number | null;
   type: string;
   category_id: number | string | null;
   category_name: string | null;
@@ -86,6 +89,10 @@ export interface AdminPhoto {
   // Seconds into a video its preview image is taken (issue 2263); null: the
   // default frame.
   poster_offset_seconds?: number | null;
+  // Where crops keep the subject (issue 2377), 0..1 fractions of the photo;
+  // null: the centre. 'auto' was detected, 'manual' set by an admin.
+  focal_point?: { x: number; y: number } | null;
+  focal_source?: 'auto' | 'manual' | null;
 }
 
 /** Frames offered as a video's preview image, taken on request. */
@@ -147,6 +154,47 @@ export interface TrashRestoreResult {
   failed: Array<{ id: number; filename: string; code: string; error: string }>;
 }
 
+/** One photo of a duplicates group (issue 2194). */
+export interface DuplicatePhoto {
+  id: number;
+  /** The name it was uploaded under. */
+  filename: string;
+  uploaded_at: string | null;
+  size: number | null;
+  media_type: string;
+  /** How it arrived: an admin upload or import, a guest upload, an external folder. */
+  source: 'admin' | 'guest' | 'external';
+  moderation_status: PhotoModerationStatus | null;
+  thumbnail_url: string;
+}
+
+/** Photos of one gallery with the same bytes, oldest upload first. */
+export interface DuplicateGroup {
+  content_sha256: string;
+  photos: DuplicatePhoto[];
+}
+
+export interface DuplicateGroupsPage {
+  groups: DuplicateGroup[];
+  total_groups: number;
+  /** Photos across all groups, the kept ones included. */
+  total_photos: number;
+  limit: number;
+  offset: number;
+}
+
+export interface DuplicateKeep {
+  id: number;
+  content_sha256: string;
+}
+
+export interface DuplicatesResolveResult {
+  trashed: number;
+  photo_ids: number[];
+  failed: number[];
+  retention_days: number;
+}
+
 /** Admin filter on the guests' approve / reject (issue 744). */
 export type DecisionFilter = 'approved' | 'rejected' | 'undecided';
 
@@ -177,6 +225,9 @@ export interface PhotoFilters {
   hasLikes?: boolean;
   hasFavorites?: boolean;
   hasComments?: boolean;
+  /** One favourite list / one guest's favourites (issue 2303). */
+  favoriteList?: number | 'default';
+  favoriteGuest?: number;
   minRating?: number | null;
   /** Colour labels to keep, e.g. ['green'] (#1044). */
   colorLabels?: string[];
@@ -263,6 +314,8 @@ class PhotosService {
       if (filters.hasLikes) params.append('has_likes', 'true');
       if (filters.hasFavorites) params.append('has_favorites', 'true');
       if (filters.hasComments) params.append('has_comments', 'true');
+      if (filters.favoriteList !== undefined) params.append('favorite_list', String(filters.favoriteList));
+      if (filters.favoriteGuest !== undefined) params.append('favorite_guest', String(filters.favoriteGuest));
       if (filters.minRating !== undefined && filters.minRating !== null) {
         params.append('min_rating', filters.minRating.toString());
       }
@@ -341,6 +394,22 @@ class PhotosService {
     return response.data;
   }
 
+  /** Sets where a photo's crops keep its subject (issue 2377); null: back to the detected point. */
+  async setFocalPoint(
+    eventId: number,
+    photoId: number,
+    focalPoint: { x: number; y: number } | null
+  ): Promise<{ focal_point: { x: number; y: number } | null; focal_source: 'auto' | 'manual' | null; thumbnail_url: string }> {
+    const response = await api.put(`/admin/photos/${eventId}/photos/${photoId}/focal-point`, { focal_point: focalPoint });
+    return response.data;
+  }
+
+  /** Detects the focal point of every photo in a gallery again, points set by hand excepted (issue 2377). */
+  async redetectFocalPoints(eventId: number): Promise<{ queued: number }> {
+    const response = await api.post(`/admin/photos/${eventId}/photos/focal-points/redetect`);
+    return response.data;
+  }
+
   async deletePhoto(eventId: number, photoId: number): Promise<PhotoDeleteResult> {
     const response = await api.delete(`/admin/events/${eventId}/photos/${photoId}`);
     return response.data;
@@ -367,6 +436,22 @@ class PhotosService {
 
   async purgeFromTrash(eventId: number, ids: number[]): Promise<{ purged: number; failed: number[] }> {
     const response = await api.post(`/admin/events/${eventId}/photos/trash/purge`, { ids });
+    return response.data;
+  }
+
+  /** Groups of byte-identical photos in the gallery (issue 2194), a page at a time. */
+  async getDuplicates(eventId: number, params: { limit?: number; offset?: number } = {}): Promise<DuplicateGroupsPage> {
+    const response = await api.get(`/admin/events/${eventId}/photos/duplicates`, { params });
+    return response.data;
+  }
+
+  /**
+   * Keep each named photo and move the other copies of it to the trash. Each
+   * keep carries the hash of the group shown, so a photo replaced since the
+   * page loaded is skipped instead of standing for its new content.
+   */
+  async resolveDuplicates(eventId: number, keep: DuplicateKeep[]): Promise<DuplicatesResolveResult> {
+    const response = await api.post(`/admin/events/${eventId}/photos/duplicates/resolve`, { keep });
     return response.data;
   }
 
@@ -687,6 +772,13 @@ export interface FeedbackFilters {
   hasFavorites?: boolean;
   minFavorites?: number;
   hasComments?: boolean;
+  /**
+   * One favourite list (issue 2303): a list id, or 'default' for a guest's
+   * default list (with favoriteGuest). From the guest detail's "Show in photos".
+   */
+  favoriteList?: number | 'default';
+  /** A registered guest's favourites, in any list or the one above. */
+  favoriteGuest?: number;
   /** Colour labels to keep, e.g. ['green'] (#1044). Empty = no filtering. */
   colorLabels?: string[];
   /** Same, against the caller's own marks. */
@@ -744,6 +836,8 @@ export interface ExportFilter {
   has_favorites?: boolean;
   min_favorites?: number;
   has_comments?: boolean;
+  favorite_list?: number | 'default';
+  favorite_guest?: number;
   color_labels?: string[];
   my_color_labels?: string[];
   decisions?: DecisionFilter[];

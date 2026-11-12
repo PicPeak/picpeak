@@ -11,6 +11,7 @@ export type { FeatureKey, FeatureFlags };
 // hasn't run its migration yet on this instance).
 export const DEFAULT_FLAGS: FeatureFlags = {
   albumProducts: false,
+  printSales: false,
   galleries: true,
   // F.3 — these three are placeholders. The UI cards are locked
   // (lockedReason: NOT_YET_AVAILABLE) because the underlying flows
@@ -81,6 +82,11 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   newsletters: false,
   // Customer documents (migration 225, #1444). Off by default.
   documents: false,
+  // Customer gifts (migration 343). Off by default.
+  customerGifts: false,
+  // Backup restore test - verify + restore drill after every backup and
+  // weekly. Off by default.
+  backupRestoreTest: false,
 };
 
 export const FEATURE_FLAGS_QUERY_KEY = ['feature-flags'] as const;
@@ -112,6 +118,7 @@ function applyDependencyRules(flags: FeatureFlags): FeatureFlags {
   out.galleries = true;                            // foundation — always on
   if (out.quotes === false) out.bills = false;     // bills depend on quotes
   if (out.calendar === false) out.calendarBooking = false;  // booking depends on calendar
+  if (out.quotes === false) out.calendarBooking = false;    // accepting a request drafts a quote (#2440)
   // Invoices (Bills) force-enable the Accounting master — invoice VAT config +
   // hourly rate live under Settings → Accounting. Before the accounting→children
   // rule so sub-features keep their own state.
@@ -143,6 +150,7 @@ function applyDependencyRules(flags: FeatureFlags): FeatureFlags {
     // #1264 — newsletters is a Clients child; without it here the staged
     // sidebar preview disagrees with the server until Save.
     || out.newsletters
+    || out.customerGifts
   );
   return out;
 }
@@ -155,7 +163,8 @@ function applyDependencyRules(flags: FeatureFlags): FeatureFlags {
  * visible effect.
  */
 export const CUSTOMER_PORTAL_DEPENDENT_FLAGS: FeatureKey[] = [
-  'calendar', 'calendarBooking', 'quotes', 'bills', 'messaging',
+  // calendarBooking is not here: the booking page is public, no portal needed.
+  'calendar', 'quotes', 'bills', 'messaging',
 ];
 
 function flagsEqual(a: FeatureFlags, b: FeatureFlags): boolean {

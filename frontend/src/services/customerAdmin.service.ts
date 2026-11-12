@@ -132,6 +132,8 @@ export interface CustomerAccountDetail extends CustomerAccountSummary {
   phone: string | null;
   billingEmail: string | null;
   vatId: string | null;
+  /** Business or consumer (migration 352); null = decided from company name / VAT ID. */
+  customerKind?: 'business' | 'consumer' | null;
   addressLine1: string | null;
   addressLine2: string | null;
   postalCode: string | null;
@@ -221,6 +223,42 @@ export interface CustomerActivityEntry {
   actorName: string | null;
   eventId: number | null;
   metadata: { documentId?: number; status?: string; eventId?: number; requestId?: number; count?: number };
+}
+
+export type ContactLevel = 'none' | 'view' | 'act';
+
+export interface ContactRights {
+  galleries: ContactLevel;
+  quotes: ContactLevel;
+  contracts: ContactLevel;
+  bills: ContactLevel;
+  documents: ContactLevel;
+  company: ContactLevel;
+}
+
+export interface CustomerContact {
+  id: number;
+  customerAccountId: number;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string | null;
+  isActive: boolean;
+  receivesMail: boolean;
+  hasLogin: boolean;
+  invitationPending: boolean;
+  lastLogin: string | null;
+  rights: ContactRights;
+}
+
+export interface CustomerContactInput {
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+  receivesMail?: boolean;
+  isActive?: boolean;
+  invite?: boolean;
+  rights?: ContactRights;
 }
 
 export const customerAdminService = {
@@ -329,6 +367,7 @@ export const customerAdminService = {
       companyName: 'company_name',
       billingEmail: 'billing_email',
       vatId: 'vat_id',
+      customerKind: 'customer_kind',
       addressLine1: 'address_line1',
       addressLine2: 'address_line2',
       postalCode: 'postal_code',
@@ -487,6 +526,39 @@ export const customerAdminService = {
       `/admin/customers/${id}/send-invite`,
     );
     return unwrap(response.data).invitation;
+  },
+
+  // -------------------------------------------------------------------
+  // Contacts (migration 346).
+  // -------------------------------------------------------------------
+
+  async listContacts(customerId: number): Promise<CustomerContact[]> {
+    const response = await api.get<Enveloped<{ contacts: CustomerContact[] }>>(`/admin/customers/${customerId}/contacts`);
+    return unwrap(response.data).contacts;
+  },
+
+  async createContact(customerId: number, payload: CustomerContactInput): Promise<CustomerContact> {
+    const response = await api.post<Enveloped<{ contact: CustomerContact }>>(`/admin/customers/${customerId}/contacts`, payload);
+    return unwrap(response.data).contact;
+  },
+
+  async updateContact(customerId: number, contactId: number, payload: CustomerContactInput): Promise<CustomerContact> {
+    const response = await api.put<Enveloped<{ contact: CustomerContact }>>(
+      `/admin/customers/${customerId}/contacts/${contactId}`, payload,
+    );
+    return unwrap(response.data).contact;
+  },
+
+  async deleteContact(customerId: number, contactId: number): Promise<void> {
+    await api.delete(`/admin/customers/${customerId}/contacts/${contactId}`);
+  },
+
+  async sendContactInvite(customerId: number, contactId: number): Promise<void> {
+    await api.post(`/admin/customers/${customerId}/contacts/${contactId}/send-invite`);
+  },
+
+  async sendContactPasswordReset(customerId: number, contactId: number): Promise<void> {
+    await api.post(`/admin/customers/${customerId}/contacts/${contactId}/password-reset`);
   },
 
   // -------------------------------------------------------------------

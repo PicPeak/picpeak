@@ -5,12 +5,13 @@ import { KEEP_BAND_VIEWPORTS } from './lazyBands';
 
 /**
  * Row windowing for the layouts that position every tile from a precomputed
- * box (Masonry rows) — issue 1733, step 2.
+ * box (Masonry rows and flickr) — issue 1733, step 2 — and for Masonry
+ * quilted, which pins its tiles to grid lines (see quiltedWindow.ts).
  *
  * Only the rows near the viewport are in the DOM. The grid container keeps
- * the layout's full height and the tiles stay absolutely positioned at their
- * own offsets, so the container is its own spacer: the scrollbar and every
- * tile's position are exactly what they are with all rows mounted.
+ * the layout's full height and the tiles stay at their own offsets, so the
+ * container is its own spacer: the scrollbar and every tile's position are
+ * exactly what they are with all rows mounted.
  */
 
 /** Below this many photos every row is mounted, as before. */
@@ -26,6 +27,12 @@ export const WINDOW_OVERSCAN_VIEWPORTS = KEEP_BAND_VIEWPORTS;
 export interface RowBox {
   top: number;
   bottom: number;
+  /**
+   * How far down this row and all before it go. Rows can overlap (a tall tile
+   * of a column layout runs past many that start after it), so `bottom` alone
+   * isn't sorted, and this is what the window searches.
+   */
+  reach: number;
   /** Index range into the layout's items, `to` exclusive. */
   from: number;
   to: number;
@@ -37,18 +44,36 @@ export interface RowRange {
   end: number;
 }
 
-/** Group layout items (already in row order) into their rows. */
+/** A layout item, for the hook below. */
+export interface WindowItem extends JustifiedLayoutItem {
+  /**
+   * The photo's place in the list, where the layout's row order is another
+   * one (Masonry quilted backfills holes with later photos).
+   */
+  listIndex?: number;
+}
+
+/**
+ * Group layout items (already in row order) into their rows. A row reaches as
+ * far down as its tallest tile: Masonry quilted has tiles spanning two rows.
+ */
 export function buildRows(items: JustifiedLayoutItem[]): RowBox[] {
   const rows: RowBox[] = [];
   let rowIndex = -1;
   items.forEach((item, i) => {
     if (item.rowIndex !== rowIndex) {
       rowIndex = item.rowIndex;
-      rows.push({ top: item.y, bottom: item.y + item.height, from: i, to: i + 1 });
+      rows.push({ top: item.y, bottom: item.y + item.height, reach: 0, from: i, to: i + 1 });
     } else {
-      rows[rows.length - 1].to = i + 1;
+      const row = rows[rows.length - 1];
+      row.to = i + 1;
+      row.bottom = Math.max(row.bottom, item.y + item.height);
     }
   });
+  rows.reduce((reach, row) => {
+    row.reach = Math.max(reach, row.bottom);
+    return row.reach;
+  }, 0);
   return rows;
 }
 
@@ -74,9 +99,23 @@ export function visibleRowRange(
   viewBottom: number,
   overscan: number,
 ): RowRange {
-  const start = firstRow(rows, (row) => row.bottom > viewTop - overscan);
+  const start = firstRow(rows, (row) => row.reach > viewTop - overscan);
   const end = firstRow(rows, (row) => row.top >= viewBottom + overscan);
   return { start, end: Math.max(start, end) };
+}
+
+const isStylesheet = (node: Node) => node.nodeName === 'STYLE' || node.nodeName === 'LINK';
+
+/** Calls back when a stylesheet arrives or changes: a CSS template comes after the first layout. */
+export function watchStylesheets(onChange: () => void): () => void {
+  const styles = new MutationObserver((records) => {
+    if (records.some((record) => isStylesheet(record.target.nodeType === Node.TEXT_NODE ? record.target.parentNode! : record.target)
+      || Array.from(record.addedNodes).some(isStylesheet))) {
+      onChange();
+    }
+  });
+  styles.observe(document.head, { childList: true, subtree: true, characterData: true });
+  return () => styles.disconnect();
 }
 
 interface ScrollAnchor {
@@ -106,7 +145,7 @@ export interface WindowedItems {
  */
 export function useWindowedItems(
   containerRef: RefObject<HTMLElement | null>,
-  items: JustifiedLayoutItem[],
+  items: WindowItem[],
   width: number,
   enabled: boolean,
   rowHeight = 0,
@@ -115,13 +154,15 @@ export function useWindowedItems(
     const rows = enabled ? buildRows(items) : [];
     const rowOf = new Map<number, number>();
     const indexOf = new Map<number, number>();
+    const listIndexOf = new Map<number, number>();
     rows.forEach((row, index) => {
       for (let i = row.from; i < row.to; i++) {
         rowOf.set(items[i].photoId, index);
         indexOf.set(items[i].photoId, i);
+        listIndexOf.set(items[i].photoId, items[i].listIndex ?? i);
       }
     });
-    return { items, rows, rowOf, indexOf };
+    return { items, rows, rowOf, indexOf, listIndexOf };
   }, [items, enabled]);
 
   // The rows in the window, and the layout they were measured in.
@@ -164,7 +205,7 @@ export function useWindowedItems(
     const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
     if (!rearranged && Math.abs(container.clientWidth - padding - widthRef.current) >= 1) return;
     const viewTop = -container.getBoundingClientRect().top;
-    const top = firstRow(rows, (row) => row.bottom > viewTop);
+    const top = firstRow(rows, (row) => row.reach > viewTop);
     if (viewTop <= 0 || top >= rows.length) {
       anchorRef.current = null;
       return;
@@ -172,11 +213,17 @@ export function useWindowedItems(
     // Hold on to the same photo while its row is still the one at the top:
     // another width puts it in a row that starts with a different photo, and
     // switching to that one would drift a row per resize, never to return.
+    // Rows can overlap (a tile of a column layout is one), so that means
+    // still crossing the top of the viewport, not just being the first to.
     const { items, rowOf } = modelRef.current;
     const previous = anchorRef.current;
+    const held = previous ? rowOf.get(previous.photoId) : undefined;
+    const kept = held !== undefined
+      && (held === top || (rows[held].top <= viewTop && rows[held].bottom > viewTop));
+    const row = rows[kept ? held : top];
     anchorRef.current = {
-      photoId: previous && rowOf.get(previous.photoId) === top ? previous.photoId : items[rows[top].from].photoId,
-      ratio: Math.max(0, (viewTop - rows[top].top) / (rows[top].bottom - rows[top].top)),
+      photoId: kept ? previous!.photoId : items[row.from].photoId,
+      ratio: Math.max(0, (viewTop - row.top) / (row.bottom - row.top)),
     };
   }, [containerRef]);
 
@@ -191,7 +238,7 @@ export function useWindowedItems(
     // Sorted, filtered or grown ahead of the anchor: its photo is somewhere
     // else in the list, or gone. A cache patch leaves it where it was.
     const rearranged = anchor !== null
-      && model.indexOf.get(anchor.photoId) !== previous.indexOf.get(anchor.photoId);
+      && model.listIndexOf.get(anchor.photoId) !== previous.listIndexOf.get(anchor.photoId);
     const resized = (widthRef.current !== width && widthRef.current > 0)
       || rowHeightRef.current !== rowHeight;
     widthRef.current = width;

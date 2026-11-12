@@ -211,6 +211,7 @@ module.exports = (router) => {
     body('allow_reactions').optional().isBoolean(),
     body('allow_color_labels').optional().isBoolean(),
     body('allow_decisions').optional().isBoolean(),
+    body('allow_favorite_lists').optional().isBoolean(),
     body('allow_selection_submit').optional().isBoolean(),
     body('allow_annotations').optional().isBoolean(),
     body('keybind_mode').optional().isIn(KEYBIND_MODES),
@@ -289,7 +290,7 @@ module.exports = (router) => {
       });
 
       // Photo sales: priced galleries get their one-time
-      // promo code and the backing Snipcart discount right at creation.
+      // promo code at creation.
       try {
         const promoService = require('../../modules/photoSales/promoDiscount');
         if (created && created.id) {
@@ -574,7 +575,7 @@ module.exports = (router) => {
         total_views: parseInt(totalViews) || 0,
         total_downloads: parseInt(totalDownloads) || 0,
         unique_visitors: parseInt(uniqueVisitors) || 0,
-        recent_photos: recentPhotos,
+        recent_photos: recentPhotos.map((p) => ({ ...p, size_bytes: p.size_bytes == null ? null : Number(p.size_bytes) })),
         customer_accounts: customerAccounts.map((c) => ({
           id: c.id,
           email: c.email,
@@ -1117,6 +1118,7 @@ module.exports = (router) => {
           // row rather than the global defaults (#1044).
           allow_color_labels: sourceFeedback.allow_color_labels,
           allow_decisions: sourceFeedback.allow_decisions,
+          allow_favorite_lists: sourceFeedback.allow_favorite_lists,
           allow_selection_submit: sourceFeedback.allow_selection_submit,
           allow_annotations: sourceFeedback.allow_annotations,
           keybind_mode: sourceFeedback.keybind_mode,
@@ -1591,6 +1593,9 @@ module.exports = (router) => {
         // the due-date source is derived below from how the date was set.
         'delivery_completed_at', 'delivery_reminder_sent_at', 'delivery_overdue_notified_at',
         'delivery_due_source',
+        // Print ordering and its billing owner: PUT /admin/print-sales/events/:eventId
+        // only, which needs billing permissions an events.edit holder may not have.
+        'print_sales_enabled', 'print_sales_admin_id',
       ];
       // Only canonical keys reach the UPDATE. SQLite resolves quoted
       // identifiers case-insensitively, so `{ "Event_Name": ... }` lands on
@@ -2318,7 +2323,7 @@ module.exports = (router) => {
             .queueForEvent(parseInt(id, 10))
             .catch(() => {});
         }
-        // One-time promo code + Snipcart discount follow the pricing fields.
+        // The one-time promo code follows the pricing fields.
         try {
           const fresh = await db('events').where({ id }).first(
             'id', 'event_name', 'is_priced', 'free_photo_count', 'photo_price', 'promo_code', 'snipcart_discount_id'

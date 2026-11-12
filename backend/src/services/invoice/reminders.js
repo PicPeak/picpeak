@@ -4,11 +4,13 @@
 const { db, logActivity } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
 const { AppError } = require('../../utils/errors');
-const { formatShortDate } = require('../../utils/dateFormatter');
+const { toDateOnly } = require('../../utils/dateOnly');
 const { resolveBillingRecipients } = require('../_billingRecipients');
+const customerContactsService = require('../customerContactsService');
 const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt } = require('../../utils/numericHelpers');
+const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
 const { hasColumnCached } = require('../../utils/schemaCache');
 const { formatMajor } = require('./helpers');
 const { getInvoiceById } = require('./queries');
@@ -68,7 +70,7 @@ async function resolvePerReminderFeeMinor(invoice) {
   const net = await resolveLateFeeNetMinor(invoice);
   if (net <= 0) return 0;
   const rate = await resolveLateFeeVatRate();
-  return rate > 0 ? net + Math.round(net * rate / 100) : net;
+  return rate > 0 ? net + vatMinorFor(net, rate, { roundDown: await roundsVatDown() }) : net;
 }
 
 // `actor` names who triggered the reminder in the accounting change history.
@@ -90,7 +92,8 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
   if (level >= 2 && feeCommunicated) {
     const net = await resolveLateFeeNetMinor(invoice);
     const rate = await resolveLateFeeVatRate();
-    const vatPer = rate > 0 ? Math.round(net * rate / 100) : 0;
+    // A UK business rounds VAT down here too (utils/vatAmount).
+    const vatPer = rate > 0 ? vatMinorFor(net, rate, { roundDown: await roundsVatDown() }) : 0;
     lateFeeGross = (level - 1) * (net + vatPer);
     lateFeeVat = (level - 1) * vatPer;
   }
@@ -104,6 +107,8 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
     updated_at: new Date(),
   };
   if (await hasColumnCached('invoices', 'late_fee_vat_minor')) update.late_fee_vat_minor = lateFeeVat;
+  // Before the fee lands: a failed lookup must not charge it with no mail.
+  const contactRecipients = await customerContactsService.mailRecipients(customer?.id, 'bills');
   // Conditional on the row still waiting on the customer: every caller
   // checked that, but from a snapshot. A payment or a Storno landing in
   // between must not be overwritten with `overdue`, a fee and a Mahnung.
@@ -175,7 +180,10 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
   }
   attachments.push({ filename: `${fresh.invoice_number}_Mahnung.pdf`, contentPath: mahnungPath, contentType: 'application/pdf' });
 
-  const { to: reminderTo, cc: reminderCc } = resolveBillingRecipients(customer, invoice.cc_pdf_email);
+  const { to: reminderTo, cc: reminderCc } = resolveBillingRecipients(
+    customer, invoice.cc_pdf_email,
+    contactRecipients.map((contact) => contact.email),
+  );
   try {
     await emailProcessor.queueEmail(invoice.event_id || null, reminderTo, templateKey, {
       // Render in the customer/invoice language, not the gallery event's (#760).
@@ -187,7 +195,7 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
       outstanding_amount: formatMajor(outstandingMinor, invoice.currency, locale),
       paid_amount: formatMajor(invoice.paid_amount_minor, invoice.currency, locale),
       late_fee_amount: formatMajor(lateFeeGross, invoice.currency, locale),
-      due_date: formatShortDate(invoice.due_date),
+      due_date: toDateOnly(invoice.due_date),
       days_overdue: daysOverdue,
       cc: reminderCc,
       attachments,

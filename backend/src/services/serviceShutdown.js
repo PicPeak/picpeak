@@ -5,12 +5,14 @@ const applicationWork = require('./activeApplicationWork');
 // the function server.js starts the service with: a portable restore that was
 // rolled back restarts those in the same process (resumeServices).
 const resources = [
+  ['./printSales/worker', 'stop', 'start'],
   ['../middleware/sessionTimeout', 'dispose', 'startSessionCleanup'], ['./chunkedUploadService', 'stop', 'start'],
   ['../utils/cleanupTempUploads', 'stopTempUploadCleanup', 'startTempUploadCleanup'],
   ['../middleware/feedbackRateLimit', 'dispose'],
   ['./downloadZipService', 'stop'],
   ['./fileWatcher', 'stopFileWatcher', 'startFileWatcher'], ['./externalMediaWatcher', 'stopExternalMediaWatcher', 'startExternalMediaWatcher'],
   ['./expirationChecker', 'stopExpirationChecker', 'startExpirationChecker'], ['./transferCleanupService', 'stopTransferCleanup', 'startTransferCleanup'],
+  ['./bookingService', 'stopBookingHousekeeping', 'startBookingHousekeeping'],
   ['./customerDocumentRetentionService', 'stopCustomerDocumentRetention', 'startCustomerDocumentRetention'],
   ['./photoTrash', 'stopPhotoTrashPurge', 'startPhotoTrashPurge'],
   ['./customerDocumentRescanService', 'stopCustomerDocumentRescan', 'startCustomerDocumentRescan'],
@@ -19,14 +21,17 @@ const resources = [
   ['./downloadJobCleanupService', 'stopDownloadJobCleanup', 'startDownloadJobCleanup'], ['./revealScheduler', 'stopRevealScheduler', 'startRevealScheduler'],
   ['./feedbackRateLimitCleanupService', 'stopFeedbackRateLimitCleanup', 'startFeedbackRateLimitCleanup'],
   ['./invoiceSchedulerService', 'stopInvoiceScheduler', 'startInvoiceScheduler'], ['./emailProcessor', 'stopEmailQueueProcessor', 'startEmailQueueProcessor'],
+  ['./photoCheckoutReconciler', 'stop', 'start'],
   ['./whatsappProcessor', 'stopWhatsAppQueueProcessor', 'startWhatsAppQueueProcessor'], ['./emailIntakeService', 'stopIncomingMailPoller', 'startIncomingMailPoller'],
   ['./webhookDeliveryWorker', 'stopWebhookDeliveryWorker', 'startWebhookDeliveryWorker'], ['./s3AutoImporter', 'stopS3AutoImporter', 'startS3AutoImporter'],
   ['./backupService', 'stopBackupService', 'startBackupService'], ['./databaseBackup', 'stopScheduledBackups', 'startScheduledBackups'],
-  ['./backgroundProcessor', 'stop', 'start'], ['./faceQueue', 'stop', 'start'], ['./tagQueue', 'stop', 'start'], ['./videoRenditionQueue', 'stop', 'start'], ['./videoHlsQueue', 'stop', 'start'], ['./renditionRefresh', 'stop', 'start'],
+  ['./backupVerificationService', 'stopVerificationSchedule', 'startVerificationSchedule'],
+  ['./backgroundProcessor', 'stop', 'start'], ['./faceQueue', 'stop', 'start'], ['./tagQueue', 'stop', 'start'], ['./videoRenditionQueue', 'stop', 'start'], ['./videoHlsQueue', 'stop', 'start'], ['./renditionRefresh', 'stop', 'start'], ['./focalPointBackfill', 'stop', 'start'],
   ['./mediaProcessService', 'stop', 'start'], ['./nativeProcessRunner', 'stop', 'start'],
   ['./imageProcessor', 'stopVideoThumbnailQueue', 'startVideoThumbnailQueue'],
   ['../utils/authSecurity', 'stopCleanupJob', 'initializeCleanupJob'], ['../utils/tokenRevocation', 'stopRevocationCleanup'],
   ['./publicUploadQuota', 'stopMaintenance', 'startMaintenance'],
+  ['./dependencyHealth', 'stop', 'start'],
 ];
 async function stopServices() {
   const results = await Promise.allSettled(resources.map(async ([path, method]) => {

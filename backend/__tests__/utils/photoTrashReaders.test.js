@@ -40,14 +40,16 @@ const ALL_ROWS = {
   'services/externalPhotoDedupe.js': [8, 'dedupe decides which row owns a file and deletes the others outright, their streaming ladders included'],
   'services/externalRelpathFold.js': [5, 'data backfill run by a migration'],
   'services/faceAutoCategories.js': [3, 'derived categorisation kept consistent for a restore'],
+  'services/faceFocalPoint.js': [1, 'the size of a photo whose faces a scan or a rebuild in flight just read'],
   'services/faceProcessor.js': [4, 'guard of a scan claim in flight, queueing (the queue skips trashed rows), purge of face data'],
   'services/faceQueue.js': [3, 'state of a claimed scan and the stuck-scan janitor; the claim itself is live only'],
   'services/feedbackIntegrity.js': [2, 'migration 309 and the portable restore: the rating dedupe recomputes the average of a photo it removed a duplicate from, and the comment_count backfill recounts every row, trashed or not'],
   'services/feedbackService.js': [5, 'row lock and per-photo counters by id, after the route checked the photo; recounts keep trashed rows consistent'],
   'services/fileWatcher.js': [9, 'which file already belongs to a photo; insert; unlink removes the row whatever its state; start-up repair gives every row on a shared thumbnail, preview or hero its own, trashed rows included'],
+  'services/focalPointBackfill.js': [2, 'marks a row it walked from a live-photo query by id; waits while the upload pipeline has rows in flight'],
   'services/folderRequestService.js': [4, 'settling a folder request moves trashed photos with the rest'],
   'services/folderTreeService.js': [1, 'deleting a folder moves every photo in it to the parent'],
-  'services/imageProcessor.js': [9,'derivative of a photo in flight; whether another row shares a hero file; the size of a row handed in without it; whether a fresh tier still matches the row; whether a photo is stored under its camera name; the picked poster frame of a video in flight; the poster a frame pick replaces, and whether another row (trashed included) still names it'],
+  'services/imageProcessor.js': [12,'derivative of a photo in flight; whether another row shares a hero file; the size of a row handed in without it; whether a fresh tier still matches the row; whether a photo is stored under its camera name; the picked poster frame of a video in flight; the poster a frame pick replaces, and whether another row (trashed included) still names it; the focal point of a row handed in without it; whether a row in flight still has the focal point its render read; the thumbnail a redetect that changes nothing keeps'],
   'services/mediaAttemptService.js': [11, 'attempts in flight and their recovery, restore-time reset of every row; the claim itself is live only'],
   'services/photoCap.js': [3, 'inserts of new photos'],
   'services/photoCredit.js': [7, 'guest erasure and merge treat trashed photos like any other'],
@@ -82,15 +84,15 @@ const ALL_ROWS = {
 const CHILD_TABLES = /\(\s*['"`](?:photo_feedback|photo_admin_marks|transfer_files|photo_faces|event_download_grants)(?: as \w+)?['"`]/g;
 const CHILD_REFERENCES = {
   'routes/adminArchives.js': 3, 'routes/adminEvents/faces.js': 2, 'routes/adminEvents/helpers.js': 3,
-  'routes/adminFeedback.js': 7, 'routes/adminGuests.js': 5, 'routes/adminPhotos.js': 3,
+  'routes/adminFeedback.js': 7, 'routes/adminGuests.js': 4, 'routes/adminPhotos.js': 3,
   'routes/galleryFeedback.js': 4, 'services/downloadQuota.js': 10, 'services/externalPhotoDedupe.js': 4,
-  'services/faceAutoCategories.js': 1, 'services/faceClustering.js': 8, 'services/facePeopleService.js': 3,
-  'services/faceProcessor.js': 7, 'services/feedbackIntegrity.js': 8,
-  'services/feedbackModeration.js': 2, 'services/feedbackService.js': 40,
+  'services/faceAutoCategories.js': 1, 'services/faceClustering.js': 8, 'services/faceFocalPoint.js': 1, 'services/facePeopleService.js': 3,
+  'services/faceProcessor.js': 7, 'services/favoriteLists.js': 4, 'services/feedbackIntegrity.js': 8,
+  'services/feedbackModeration.js': 2, 'services/feedbackService.js': 42,
   'services/galleryPhotoQuery.js': 1, 'services/galleryQueryService.js': 6,
   'services/photoAdminMarksService.js': 8, 'services/picpeakImportService.js': 2,
   'services/selectionSubmissions.js': 2, 'services/transferCleanupService.js': 1, 'services/transferService.js': 12,
-  'utils/anonymousFeedbackIdentity.js': 3, 'utils/photoFilterBuilder.js': 5,
+  'utils/anonymousFeedbackIdentity.js': 3, 'utils/photoFilterBuilder.js': 6,
 };
 
 const TABLE_CALL = /(?<![\w.])(\w+)\(\s*['"`]photos(?: as \w+)?['"`]\s*[,)]/g;

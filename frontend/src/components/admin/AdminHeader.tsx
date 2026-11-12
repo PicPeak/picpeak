@@ -353,7 +353,10 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
 
               {/* Notifications dropdown */}
               {notificationsModal.isOpen && (
-                <div className="absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-panel rounded-lg shadow-lg border border-line">
+                // Below sm the panel is placed against the viewport, not the
+                // bell: the user menu sits to the bell's right, so a panel
+                // anchored at the bell ran off the left edge (issue 2404).
+                <div className="fixed inset-x-4 top-[4.5rem] sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:w-96 bg-panel rounded-lg shadow-lg border border-line">
                   {/* Wraps instead of squeezing: the two actions beside the title overran the 384px panel in German (issue 2088). */}
                   <div className="px-4 py-3 border-b border-line flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                     <h3 className="text-sm font-semibold text-heading">{t('admin.notifications')}</h3>
@@ -378,7 +381,8 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
                       </button>
                     </div>
                   </div>
-                  <div className="max-h-96 overflow-y-auto">
+                  {/* Capped by the viewport too, so a phone held sideways can still reach the list's end. */}
+                  <div className="max-h-[min(24rem,calc(100dvh-12rem))] overflow-y-auto">
                     {notifications.length === 0 ? (
                       <div className="px-4 py-8 text-center text-sm text-muted">
                         {t('admin.noNotificationsMessage')}

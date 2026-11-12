@@ -111,7 +111,7 @@ test('the snapshot freezes the counted line items and the quote\'s own totals', 
   const snapshot = parsed((await contractRow(contractId)).rendered_content);
   const quote = await db('quotes').where({ id: quoteId }).first();
 
-  expect(snapshot.format).toBe(3);
+  expect(snapshot.format).toBe(4);
   expect(snapshot.quote.number).toBe(quote.quote_number);
   expect(snapshot.quote.currency).toBe('CHF');
 
@@ -218,7 +218,7 @@ test('a contract with no source quote freezes no commercial terms', async () => 
   const id = await contractService.createContract({ customerAccountId: customerId, title: 'No quote' }, adminId);
   await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
   const snapshot = parsed((await contractRow(id)).rendered_content);
-  expect(snapshot.format).toBe(3);
+  expect(snapshot.format).toBe(4);
   expect(snapshot.quote).toBeUndefined();
 });
 

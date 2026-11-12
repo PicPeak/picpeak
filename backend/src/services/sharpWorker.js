@@ -2,12 +2,13 @@
  * child and feeds it one JSON job per line; `run` is also its last-resort
  * in-process fallback. Nothing else may load it. */
 const fs = require('fs');
-const { estimate, refusal, MiB } = require('./imageResourcePolicy');
+const { estimate, refusal, MiB, LIBRARY_UNAVAILABLE } = require('./imageResourcePolicy');
 
 const RESPONSE_BYTES = MiB;
 // EXIF/ICC/XMP/IPTC blocks travel back base64-encoded inside one response.
 // Blocks beyond this budget are left out rather than failing the photo.
 const METADATA_BLOCK_BYTES = 512 * 1024;
+const REQUIREMENTS_URL = 'https://docs.picpeak.app/deployment/system-requirements#cpu';
 
 function errorCode(error) {
   if (error.code?.startsWith('IMAGE_')) return error.code;
@@ -43,10 +44,21 @@ function serializableMetadata(metadata) {
   }
   return result;
 }
+// sharp refuses to load on an x86-64 CPU without the v2 instructions, and on
+// a broken install. Either way it is this host, never the file at hand.
+function libraryUnavailable(error) {
+  const message = String(error.message || error);
+  const cause = /microarchitecture|Unsupported CPU/i.test(message)
+    ? 'this CPU lacks the x86-64-v2 instructions the image library needs (on a VM, check the virtual CPU type)'
+    : 'the image library could not be loaded';
+  return refusal(`Image processing is unavailable on this server: ${cause}. The file itself may be fine. See ${REQUIREMENTS_URL}`,
+    LIBRARY_UNAVAILABLE, { detail: message });
+}
 let native;
 function loadSharp() {
   if (!native) {
-    native = require('sharp');
+    try { native = require('sharp'); }
+    catch (error) { throw libraryUnavailable(error); }
     native.cache(false);
     native.concurrency(1);
   }
@@ -132,14 +144,26 @@ async function run(job) {
     }
   };
   let pipeline = sharp(input, options);
-  const allowed = new Set(['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw']);
+  const allowed = new Set(['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'tiff', 'flatten', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw']);
   for (const [name, encodedArgs] of job.steps) {
     if (!allowed.has(name)) throw refusal('Unsupported image operation');
     const args = decode(encodedArgs);
-    // Narrow on purpose: a profile argument can be a file path, the profile is
-    // never attached, and EXIF is only ever written to carry an Orientation tag.
-    if (name === 'withIccProfile' && (args.length !== 2 || args[0] !== 'srgb' || !args[1] ||
-        Object.keys(args[1]).join() !== 'attach' || args[1].attach !== false)) throw refusal('Unsupported image operation');
+    if (name === 'flatten') {
+      const o = args[0];
+      if (args.length !== 1 || !o || Object.keys(o).join() !== 'background' ||
+          typeof o.background !== 'string' || !/^#[a-f0-9]{6}$/i.test(o.background)) throw refusal('Unsupported image operation');
+    }
+    if (name === 'tiff') {
+      const o = args[0], keys = ['compression', 'xres', 'yres', 'resolutionUnit'];
+      if (args.length !== 1 || !o || Object.keys(o).length !== keys.length || Object.keys(o).some(k => !keys.includes(k)) ||
+          !['lzw', 'deflate', 'none'].includes(o.compression) || o.resolutionUnit !== 'inch' ||
+          ![o.xres, o.yres].every(n => Number.isFinite(n) && n >= 72 / 25.4 && n <= 600 / 25.4))
+        throw refusal('Unsupported image operation');
+    }
+    // Only built-in sRGB and the pinned print RGB profiles are allowed.
+    // EXIF is only ever written to carry an Orientation tag.
+    if (name === 'withIccProfile' && (args.length !== 2 || !require('./printSales/colourProfiles').allowed(args[0]) || !args[1] ||
+        Object.keys(args[1]).join() !== 'attach' || typeof args[1].attach !== 'boolean')) throw refusal('Unsupported image operation');
     if (name === 'withExif') {
       const exif = args[0];
       const keys = exif && typeof exif === 'object' ? Object.keys(exif) : [];
@@ -188,6 +212,7 @@ async function run(job) {
 }
 
 function serve() {
+  if (typeof WebAssembly !== 'undefined') process.exit(127);
   const cap = Number(process.argv[2] || 0);
   if (cap > 0) {
     // Started under `ulimit -v`: refuse to parse anything if the address
@@ -227,4 +252,4 @@ function serve() {
   process.stdin.on('end', () => process.exit(0));
 }
 if (require.main === module) serve();
-module.exports = { run, serializeError };
+module.exports = { run, serializeError, loadSharp };

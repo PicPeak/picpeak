@@ -47,14 +47,20 @@ function makeRes() {
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+// Wait for the real lazy-open lifecycle. A busy CI runner can take longer
+// than 50 ms to deliver ENOENT; do not install an error listener in the test,
+// since that would mask the unhandled-error regression this suite detects.
+const pipeFailedFile = (stream, res, options) => new Promise((resolve) => {
+  stream.once('close', resolve);
+  pipeStreamToResponse(stream, res, options);
+});
 
 describe('pipeStreamToResponse (#1128)', () => {
   it('turns a missing file into a 404 instead of an unhandled error', async () => {
     const missing = path.join(os.tmpdir(), `picpeak-not-here-${Date.now()}.jpg`);
     const res = makeRes();
 
-    pipeStreamToResponse(stream_(missing), res, { context: 'thumbnail for photo 1' });
-    await settle();
+    await pipeFailedFile(stream_(missing), res, { context: 'thumbnail for photo 1' });
 
     expect(res.statusCode).toBe(404);
     expect(res.body).toEqual({ error: 'File not found' });
@@ -81,8 +87,7 @@ describe('pipeStreamToResponse (#1128)', () => {
     };
     const stream = fs.createReadStream(path.join(os.tmpdir(), `gone-${Date.now()}.jpg`));
 
-    pipeStreamToResponse(stream, res);
-    await settle();
+    await pipeFailedFile(stream, res);
 
     expect(res.headers['Content-Length']).toBeUndefined();
     expect(res.headers.ETag).toBeUndefined();
@@ -98,8 +103,7 @@ describe('pipeStreamToResponse (#1128)', () => {
     res.headers = { 'Cache-Control': 'private, max-age=1800' };
     const stream = fs.createReadStream(path.join(os.tmpdir(), `gone3-${Date.now()}.jpg`));
 
-    pipeStreamToResponse(stream, res);
-    await settle();
+    await pipeFailedFile(stream, res);
 
     // The regeneration race is transient by definition: the tier exists moments
     // later. Caching this 404 would keep the tile broken long after the file is
@@ -111,8 +115,7 @@ describe('pipeStreamToResponse (#1128)', () => {
     const res = makeRes();
     const stream = fs.createReadStream(path.join(os.tmpdir(), `gone2-${Date.now()}.zip`));
 
-    pipeStreamToResponse(stream, res, { missingStatus: 410 });
-    await settle();
+    await pipeFailedFile(stream, res, { missingStatus: 410 });
 
     expect(res.statusCode).toBe(410);
   });

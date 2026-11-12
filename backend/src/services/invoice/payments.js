@@ -14,6 +14,7 @@ const { toMillis } = require('../../utils/queueTimestamps');
 const { formatMajor } = require('./helpers');
 const { auditedInsert, auditedUpdate, normalizeActor } = require('../accountingHistory');
 const { applyReminder, resolveAdminEmailForInvoice, resolvePerReminderFeeMinor, resolveSkontoPercentForInvoice } = require('./reminders');
+const { toDateOnly } = require('../../utils/dateOnly');
 
 // Payment-check token lifetime (GHSA-wg94-f86h-vq68 hardening). This
 // unauthenticated magic link is the only gate on a write to the
@@ -67,6 +68,12 @@ async function revokePendingPaymentCheckTokens(conn, invoiceId, nowIso, reason) 
  * Record a payment against an invoice. Supports partial payments
  * (multiple rows accumulate into `paid_amount_minor`). Status flips
  * to `paid` once the running total meets or exceeds total_amount_minor.
+ *
+ * `capToOpen` (opt-in): book at most what is still open, read under the
+ * invoice lock, and refuse a settled invoice (409 INVOICE_ALREADY_PAID).
+ * For a caller that books money it holds elsewhere (a booking deposit),
+ * so a payment recorded meanwhile cannot make it overpay. The result's
+ * `bookedMinor` says what was booked.
  */
 async function markPaid(id, payment, adminId) {
   return recordPayment(id, payment, adminId, adminId);
@@ -75,8 +82,8 @@ async function markPaid(id, payment, adminId) {
 // markPaid with the change-history actor kept apart from
 // recorded_by_admin_id: the payment-check link records the payment on
 // behalf of the invoice's admin, but the history names the link.
-async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference, notes, skontoApplied }, adminId, actor) {
-  const amount = ensureInt(amountMinor);
+async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference, notes, skontoApplied, capToOpen = false }, adminId, actor) {
+  let amount = ensureInt(amountMinor);
   if (amount <= 0) {
     throw new AppError('amount must be > 0', 400);
   }
@@ -100,6 +107,16 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
     if (!invoice) throw new AppError('Invoice not found', 404);
     if (invoice.status === 'cancelled') {
       throw new AppError('Cannot mark a cancelled invoice as paid', 409);
+    }
+    // Not issued yet, and a paid invoice can no longer be marked delivered,
+    // so it would never reach the customer.
+    if (invoice.status === 'pending_delivery') {
+      throw new AppError('This invoice is awaiting delivery. Mark it delivered before recording a payment.', 409, 'INVOICE_AWAITING_DELIVERY');
+    }
+    if (capToOpen) {
+      const open = ensureInt(invoice.total_amount_minor) - ensureInt(invoice.paid_amount_minor || 0);
+      if (open <= 0 || invoice.status === 'paid') throw new AppError('This invoice is already paid', 409, 'INVOICE_ALREADY_PAID');
+      amount = Math.min(amount, open);
     }
     skontoAmountMinor = skontoFlag
       ? Math.max(0, ensureInt(invoice.total_amount_minor) - amount)
@@ -159,7 +176,7 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
       { invoiceId: id, amountMinor: amount, totalPaidMinor: total },
       invoice.event_id || null, normalizeActor(actor), trx); } catch (_) { /* non-fatal */ }
 
-    return { paidTotalMinor: total, status: isFull ? 'paid' : invoice.status };
+    return { paidTotalMinor: total, status: isFull ? 'paid' : invoice.status, bookedMinor: amount };
   });
 
   // Migration 127 — admin payment-received notification. Fires only
@@ -213,6 +230,13 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
     // send ("Payment received?") must stay with the admin.
     if (invoice.status === 'scheduled') {
       await require('../workflows').answerGatesForInvoice(id);
+    }
+    // A gallery from a booking that waits for full payment opens now (#2440).
+    // Best effort: the gallery re-checks when a client opens it.
+    try {
+      await require('../bookingDeposits').onInvoicePaid(id);
+    } catch (err) {
+      logger.warn('Could not re-check booking gallery locks', { invoiceId: id, error: err.message });
     }
   }
   return markResult;
@@ -271,7 +295,7 @@ async function queueInvoicePaidAdminNotification({
       paid_amount: formatMajor(paidTotalMinor, invoice.currency, locale),
       payment_method: paymentMethod || '',
       payment_reference: paymentReference || '',
-      paid_at: formatShortDate(paidAt),
+      paid_at: formatShortDate(paidAt, profile?.country_code),
       skonto_applied: !!skontoApplied,
       skonto_percent: skontoApplied && skontoPercent ? skontoPercent : '',
       skonto_discount_amount: skontoApplied
@@ -440,7 +464,7 @@ async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
         // Keep the body language consistent with the locale the amounts are
         // formatted in, instead of event-first resolution (admin-facing gate).
         __language: locale,
-        due_date: formatShortDate(invoice.due_date),
+        due_date: toDateOnly(invoice.due_date),
         total_amount: formatMajor(invoice.total_amount_minor, invoice.currency, locale),
         paid_amount: formatMajor(paidMinor, invoice.currency, locale),
         outstanding_amount: formatMajor(outstandingMinor, invoice.currency, locale),
@@ -528,8 +552,8 @@ async function getPaymentCheckByToken(token) {
         || customer?.display_name || customer?.email || '',
       email: customer?.email,
     },
-    issueDate: invoice.issue_date,
-    dueDate: invoice.due_date,
+    issueDate: toDateOnly(invoice.issue_date),
+    dueDate: toDateOnly(invoice.due_date),
     totalMinor: invoice.total_amount_minor,
     paidMinor: invoice.paid_amount_minor,
     lateFeeMinor: invoice.late_fee_amount_minor,
@@ -579,7 +603,7 @@ async function notifyAdminOfPaymentCheckAction({ invoice, action, amountMinor, i
       amount: amountMinor ? formatMajor(ensureInt(amountMinor), invoice.currency, locale) : '',
       has_amount: !!amountMinor,
       ip: ip || 'unknown',
-      recorded_at: formatShortDate(new Date()),
+      recorded_at: formatShortDate(new Date(), profile?.country_code),
     });
 }
 

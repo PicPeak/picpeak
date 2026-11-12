@@ -7,17 +7,27 @@ const { adminActivityActor } = require('../../utils/activityActor');
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/errors');
 const { formatShortDate } = require('../../utils/dateFormatter');
+const { toDateOnly } = require('../../utils/dateOnly');
+const { toStoredTimestamp } = require('../../utils/dateNormalize');
 const { resolveBillingRecipients } = require('../_billingRecipients');
+const customerContactsService = require('../customerContactsService');
 const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
-const { computeDueDate, ensureCustomerCanBill, formatMajor, getHierarchyHelpers, nextInvoiceNumber, resolveNetDaysForRow } = require('./helpers');
+const { computeDueDate, ensureCustomerCanBill, formatMajor, getHierarchyHelpers, nextInvoiceNumber, resolveNetDaysForRow, isInvoiceEditable } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 const { createInvoice } = require('./create');
 const { buildInvoiceRenderContext } = require('./render');
 const { collectRebillProofAttachments } = require('./rebillProofs');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
+const { hasColumnCached } = require('../../utils/schemaCache');
+const { assertGbpRateEntered } = require('../../utils/vatAmount');
+
+async function billingContactEmails(customer) {
+  const contacts = await customerContactsService.mailRecipients(customer?.id, 'bills');
+  return contacts.map((contact) => contact.email);
+}
 
 
 /**
@@ -104,6 +114,11 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
   }
   const customer = await db('customer_accounts').where({ id: invoice.customer_account_id }).first();
   ensureCustomerCanBill(customer);
+  // A UK VAT invoice in another currency states its VAT total in GBP too
+  // (VAT Notice 700/21 s.4.1), and a sent invoice can't be changed. So its
+  // first send waits for the rate: the invoice stays scheduled and editable,
+  // and a scheduled send goes out once the admin has entered it.
+  if (invoice.status === 'scheduled') await assertGbpRateEntered(invoice);
 
   // Re-sync the invoice's language from the customer's current
   // preferred_language at send time when the invoice has never been
@@ -170,6 +185,8 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     issuer: ctx.issuer,
   });
 
+  // Before the claim: a failed lookup must not leave it sent with no mail.
+  const contactEmails = await billingContactEmails(customer);
   const newStatus = invoice.status === 'overdue' ? 'overdue' : 'sent';
   // Conditional on the status read above: when another process sent this
   // scheduled invoice in the meantime, the row is no longer 'scheduled',
@@ -186,7 +203,9 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     return { sent: false, alreadySent: true };
   }
 
-  const { to: invoiceTo, cc: invoiceCc } = resolveBillingRecipients(customer, invoice.cc_pdf_email);
+  const { to: invoiceTo, cc: invoiceCc } = resolveBillingRecipients(
+    customer, invoice.cc_pdf_email, contactEmails,
+  );
 
   // Re-bill/passthrough proof attachments (#866). Separate attachments — the
   // invoice PDF above is never touched. Selection comes from the Send dialog on
@@ -209,7 +228,7 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     customer_name: customer.display_name || customer.first_name || customer.email.split('@')[0],
     event_name: invoice.event_name || '',
     total_amount: formatMajor(invoice.total_amount_minor, invoice.currency, ctx.locale),
-    due_date: formatShortDate(invoice.due_date),
+    due_date: toDateOnly(invoice.due_date),
     installment_label: invoice.installment_label || '',
     installment_index: invoice.installment_index + 1,
     installment_total: invoice.installment_total,
@@ -307,7 +326,7 @@ async function createStorno(originalId, adminId, trx = db) {
   if (original.kind === 'storno') {
     throw new AppError('Cannot Storno a Storno', 409, 'IS_STORNO');
   }
-  if (original.status === 'scheduled') {
+  if (isInvoiceEditable(original)) {
     throw new AppError(
       'This invoice has not been sent yet — Storno only applies to issued documents.',
       409,
@@ -357,6 +376,9 @@ async function createStorno(originalId, adminId, trx = db) {
     // both documents export the same code. Conditional spread = safe on pre-130
     // DBs (undefined → omitted).
     ...(original.vat_code ? { vat_code: original.vat_code } : {}),
+    // Migration 352 — the Storno states its (negative) VAT in GBP at the
+    // rate the invoice it cancels used.
+    ...(original.vat_gbp_rate != null ? { vat_gbp_rate: original.vat_gbp_rate } : {}),
     shipping_amount_minor: -ensureInt(original.shipping_amount_minor || 0),
     net_amount_minor: -ensureInt(original.net_amount_minor),
     vat_amount_minor: -ensureInt(original.vat_amount_minor),
@@ -364,7 +386,7 @@ async function createStorno(originalId, adminId, trx = db) {
     late_fee_amount_minor: 0,
     paid_amount_minor: 0,
     status: 'scheduled',
-    scheduled_send_at: now,
+    scheduled_send_at: toStoredTimestamp(now),
     issue_date: issueDate,
     // Storni have no payment due — mirror issue_date to satisfy the
     // schema's NOT NULL constraint on due_date. The field is dead data
@@ -497,6 +519,7 @@ async function sendStornoOnce(stornoId, adminId) {
     issuer: ctx.issuer,
   });
 
+  const contactEmails = await billingContactEmails(customer);
   // Same claim as sendInvoice: only the caller that flips the row mails it
   // (cancelInvoice's inline send and the scheduler retry can overlap).
   const claimed = await auditedUpdate(db, 'invoices', { id: stornoId, status: storno.status }, {
@@ -514,11 +537,13 @@ async function sendStornoOnce(stornoId, adminId) {
       .select('invoice_number', 'issue_date').first()
     : null;
 
-  const { to: stornoTo, cc: stornoCc } = resolveBillingRecipients(customer, storno.cc_pdf_email);
+  const { to: stornoTo, cc: stornoCc } = resolveBillingRecipients(
+    customer, storno.cc_pdf_email, contactEmails,
+  );
   await emailProcessor.queueEmail(storno.event_id || null, stornoTo, 'storno_issued', {
     storno_number: storno.invoice_number,
     original_invoice_number: originalRow?.invoice_number || '',
-    original_issue_date: originalRow?.issue_date ? formatShortDate(originalRow.issue_date) : '',
+    original_issue_date: originalRow?.issue_date ? formatShortDate(originalRow.issue_date, ctx.issuer?.countryCode) : '',
     customer_name: customer.display_name || customer.first_name || customer.email.split('@')[0],
     total_amount: formatMajor(Math.abs(storno.total_amount_minor), storno.currency, ctx.locale),
     // Match the customer's language (as with the ctx.locale-formatted amount).
@@ -564,7 +589,7 @@ async function reissueInvoice(id, adminId) {
   if (original.kind === 'storno') {
     throw new AppError('Cannot reissue a Storno document', 409, 'IS_STORNO');
   }
-  if (original.status === 'scheduled') {
+  if (isInvoiceEditable(original)) {
     throw new AppError(
       'This invoice has not been sent yet — use Edit instead of Cancel & reissue.',
       409,
@@ -595,7 +620,10 @@ async function reissueInvoice(id, adminId) {
   // later validation failure, leaving orphan drafts after the Storno
   // already committed. createInvoice's internal reads (getProfile,
   // getAppSetting, bank resolution, audit) all accept the trx now, so
-  // the round-1 SQLite deadlock is gone the right way.
+  // the round-1 SQLite deadlock is gone the right way. createInvoice's
+  // vat_gbp_rate schema check reads the global db, so it is cached here
+  // first, before the transaction holds the only SQLite connection.
+  if (original.vat_gbp_rate != null) await hasColumnCached('invoices', 'vat_gbp_rate');
   return await db.transaction(async (trx) => {
     // One live replacement per original. Two reissues that both found the
     // original already cancelled (or one that lost the Storno race above and
@@ -633,6 +661,8 @@ async function reissueInvoice(id, adminId) {
       language: original.language,
       currency: original.currency,
       vatRate: original.vat_rate,
+      // Migration 352 — the replacement states its VAT in GBP at the same rate.
+      vatGbpRate: original.vat_gbp_rate ?? undefined,
       shippingAmountMinor: original.shipping_amount_minor,
       ccPdfEmail: original.cc_pdf_email,
       businessBankAccountId: original.business_bank_account_id,
@@ -703,12 +733,23 @@ async function releaseForDelivery(id, adminId) {
       'NOT_PENDING_DELIVERY',
     );
   }
+  // Released, it is sent at once; without its GBP rate that send is refused,
+  // so the release is refused first and the invoice stays awaiting delivery.
+  await assertGbpRateEntered(invoice);
   const now = new Date();
-  await auditedUpdate(db, 'invoices', { id }, {
-    status: 'scheduled',
-    scheduled_send_at: now,
-    updated_at: now,
-  }, { actor: adminId, source: 'invoice.releaseForDelivery' });
+  const updates = { status: 'scheduled', scheduled_send_at: toStoredTimestamp(now), updated_at: now };
+  // Until now the dates assume delivery on event day + 14. Payment runs from
+  // the real delivery, unless an admin set the due date by hand. This has to
+  // happen here: sendInvoice compares against scheduled_send_at, which from
+  // this update on is today and would read the old date as a manual override.
+  const netDays = await resolveNetDaysForRow(invoice);
+  const assumedDue = computeDueDate(new Date(toDateOnly(invoice.issue_date)), netDays).toISOString().slice(0, 10);
+  if (toDateOnly(invoice.due_date) === assumedDue) {
+    updates.due_date = computeDueDate(now, netDays).toISOString().slice(0, 10);
+  }
+  const released = await auditedUpdate(db, 'invoices', { id, status: 'pending_delivery' }, updates,
+    { actor: adminId, source: 'invoice.releaseForDelivery' });
+  if (!released) throw new AppError('Invoice is no longer awaiting delivery', 409, 'NOT_PENDING_DELIVERY');
   try {
     await logActivity('invoice_released_for_delivery', { invoiceId: id }, invoice.event_id || null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
@@ -721,7 +762,7 @@ async function releaseForDelivery(id, adminId) {
  * Cancel an invoice. The behaviour depends on whether the document
  * was ever issued:
  *
- *   - `scheduled` (draft, no PDF emitted): soft cancel — status
+ *   - `scheduled` / `pending_delivery` (not issued, no PDF emitted): soft cancel — status
  *     flips to 'cancelled', nothing leaves the system. No Storno is
  *     generated because no document exists for the customer to
  *     reverse.
@@ -755,10 +796,11 @@ async function cancelInvoice(id, adminId) {
   }
 
   // Draft path: nothing was issued, soft cancel and we're done.
-  if (invoice.status === 'scheduled') {
-    await auditedUpdate(db, 'invoices', { id }, {
+  if (isInvoiceEditable(invoice)) {
+    const cancelled = await auditedUpdate(db, 'invoices', { id, status: invoice.status }, {
       status: 'cancelled', updated_at: new Date(),
     }, { actor: adminId, source: 'invoice.cancel' });
+    if (!cancelled) throw new AppError('This invoice changed in the meantime. Reload it.', 409, 'INVOICE_STATUS_CHANGED');
     // Free any re-billed supplier invoices so the cost isn't stranded (#866 review).
     await releaseRebillsForCancelledInvoice(db, id, adminId);
     try {
@@ -795,6 +837,11 @@ async function triggerMonthlyBillNow(customerId, adminId) {
     throw new AppError('Monthly draft is empty — nothing to bill', 409, 'EMPTY_DRAFT');
   }
 
+  // The draft is sent at once; without its GBP rate that send is refused and
+  // the scheduler leaves it out, so refuse before arming and the admin sees
+  // why (the draft stays a draft, ready once the rate is entered).
+  await assertGbpRateEntered(draft);
+
   // Arm the draft: clear the discriminator, pin issue_date to today,
   // and set scheduled_send_at to now so the flush pass + sendInvoice
   // path treats it like any other ready-to-send invoice. Logged as a
@@ -804,7 +851,7 @@ async function triggerMonthlyBillNow(customerId, adminId) {
   await auditedUpdate(db, 'invoices', { id: draft.id }, {
     is_monthly_draft: false,
     issue_date: issueDate,
-    scheduled_send_at: new Date(),
+    scheduled_send_at: toStoredTimestamp(new Date()),
     updated_at: new Date(),
   }, { actor: adminId, source: 'invoice.monthly.triggerNow' });
   try {

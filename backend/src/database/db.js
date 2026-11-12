@@ -296,7 +296,7 @@ async function initializeDatabaseInternal() {
       table.string('path').notNullable();
       table.string('thumbnail_path');
       table.string('type').notNullable(); // 'collage' or 'individual'
-      table.integer('size_bytes');
+      table.bigInteger('size_bytes');
       table.string('uploaded_by').defaultTo('admin');
       table.datetime('uploaded_at').defaultTo(db.fn.now());
       table.integer('view_count').defaultTo(0);

@@ -11,7 +11,7 @@
  * /quotes/new (QuoteEditorPage below). It holds the fields and saving; the
  * page asks it to save, discard or preview through a ref.
  */
-import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -32,7 +32,7 @@ import {
 import { DiscountsPanel } from '../../../components/admin/quotes/DiscountsPanel';
 import { TextBlockPicker, appendTextBlock } from '../../../components/admin/quotes/TextBlockPicker';
 import { DecimalInput } from '../../../components/common/DecimalInput';
-import { quoteCatalogService } from '../../../services/quoteCatalog.service';
+import { quoteCatalogService, type FactorValue } from '../../../services/quoteCatalog.service';
 import { CustomerPicker } from '../../../components/admin/CustomerPicker';
 import { ProjectSelect } from '../../../components/admin/ProjectSelect';
 import { VatRateSelect } from '../../../components/admin/VatRateSelect';
@@ -44,9 +44,13 @@ import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import { useProjectPrefill } from '../projects/useProjectPrefill';
 import { InstallmentsPanel } from '../../../components/admin/InstallmentsPanel';
 import { customerAdminService } from '../../../services/customerAdmin.service';
+import { businessProfileService } from '../../../services/businessProfile.service';
 import { userManagementService } from '../../../services/userManagement.service';
 import { settingsService } from '../../../services/settings.service';
 import { useAdminAuth } from '../../../contexts/AdminAuthContext';
+import { usePermissions } from '../../../contexts/PermissionsContext';
+import { useUkBusiness } from '../../../hooks/useUkBusiness';
+import { currencyOptions } from '../../../constants/currencies';
 import { toast } from 'react-toastify';
 import { quoteErrorText } from '../../../utils/quoteErrors';
 import { todayIsoDate } from '../../../utils/localDate';
@@ -98,7 +102,9 @@ const empty: FormState = {
   customerAccountId: null,
   customerLabel: '',
   customerIsPassive: false,
-  language: 'de',
+  // No language of its own: the customer's is taken when one is picked, and
+  // the server falls back to the business's (quoteService.createQuote).
+  language: '',
   currency: 'CHF',
   issueDate: todayIsoDate(),
   validUntil: '',
@@ -129,6 +135,30 @@ const empty: FormState = {
 
 function toMinor(amount: number) {
   return Math.round((Number(amount) || 0) * 100);
+}
+
+/**
+ * A new quote's form: in the business's currency (Settings → Business
+ * profile), with no language of its own. It used to start in German and CHF
+ * whatever the business; the editor has no language field, so every quote
+ * went out in German.
+ */
+export function newQuoteForm(profile?: { defaultCurrency?: string | null } | null): FormState {
+  return { ...empty, currency: (profile?.defaultCurrency || empty.currency).toUpperCase() };
+}
+
+/** The quote's language once a customer is picked: its own, else the customer's. */
+export function languageForCustomer(current: string, customer: { preferredLanguage?: string | null }): string {
+  return current || customer.preferredLanguage || '';
+}
+
+/**
+ * A new quote has no language of its own, so changing the customer drops the
+ * one the last customer brought and the server takes the new one's. A saved
+ * quote keeps its language.
+ */
+export function languageAfterCustomerChange(current: string, isEdit: boolean): string {
+  return isEdit ? current : '';
 }
 
 // A field the admin cleared is sent as null so the save clears it: undefined
@@ -241,7 +271,7 @@ interface QuoteFormProps {
 }
 
 export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId, onStateChange }, ref) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const id = quoteId ? String(quoteId) : undefined;
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -250,6 +280,27 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
 
   const [form, setForm] = useState<FormState>(empty);
   const [installmentsValid, setInstallmentsValid] = useState(true);
+
+  // A new quote starts in the business's currency once its profile is in,
+  // unless the admin picked one first.
+  const currencyChosenRef = useRef(false);
+  // The profile route asks for these (adminBusinessProfile.js); without them
+  // the form stays on CHF, as it always did.
+  const { hasAnyPermission, isSuperAdmin } = usePermissions();
+  // A UK business's VAT preview rounds down (issue 2439).
+  const ukBusiness = useUkBusiness();
+  const canReadProfile = isSuperAdmin || hasAnyPermission(['settings.view', 'settings.banking']);
+  const { data: profileSnapshot } = useQuery({
+    queryKey: ['business-profile-snapshot'],
+    queryFn: () => businessProfileService.get(),
+    staleTime: 5 * 60 * 1000,
+    enabled: !isEdit && canReadProfile,
+  });
+  useEffect(() => {
+    const profile = profileSnapshot?.profile;
+    if (isEdit || !profile || currencyChosenRef.current) return;
+    setForm((prev) => ({ ...prev, currency: newQuoteForm(profile).currency }));
+  }, [isEdit, profileSnapshot]);
   const [busy, setBusy] = useState(false);
 
   // Pre-fill the customer when the editor is opened from a customer
@@ -274,7 +325,7 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
           customerIsPassive: Boolean(c.isPassive),
           // Inherit the customer's preferred language for the quote so
           // the email + PDF land in the right locale automatically.
-          language: prev.language || c.preferredLanguage || 'de',
+          language: languageForCustomer(prev.language, c),
         }));
       } catch {
         // Silent fail — admin can still pick the customer manually.
@@ -375,6 +426,12 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
     queryKey: ['quote-catalog', 'packages', 'active'],
     queryFn: () => quoteCatalogService.listPackages({ activeOnly: true }),
   });
+  // Pricing factors (#2440): archived ones too, since an item keeps the
+  // factors it had when one is archived.
+  const { data: factors = [] } = useQuery({
+    queryKey: ['quote-catalog', 'factors', 'all'],
+    queryFn: () => quoteCatalogService.listFactors(),
+  });
   const { data: promotions = [] } = useQuery({
     queryKey: ['quote-catalog', 'promotions', 'active'],
     queryFn: () => quoteCatalogService.listPromotions({ activeOnly: true }),
@@ -383,6 +440,14 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
     queryKey: ['quote-catalog', 'text-blocks', 'active'],
     queryFn: () => quoteCatalogService.listTextBlocks({ activeOnly: true }),
   });
+  // Prices a catalogue item with its factors on the server: the customer's
+  // rate for hour/day items, line texts in the quote's language.
+  const priceWithFactors = useCallback(
+    (presetId: number, values: Record<string, FactorValue>) => quoteCatalogService.priceWithFactors({
+      presetId, values, customerId: form.customerAccountId || null, language: form.language || i18n.language,
+    }),
+    [form.customerAccountId, form.language, i18n.language],
+  );
 
   // Admin user list — used to pre-fill + offer a dropdown for the
   // "CC PDF to" field, mirroring CreateEventPage's admin_email picker.
@@ -589,6 +654,7 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
             customerAccountId: c.id,
             customerLabel: c.companyName || c.displayName || c.email,
             customerIsPassive: Boolean(c.isPassive),
+            language: languageAfterCustomerChange(f.language, isEdit),
           }))}
           onCreate={(c) => setForm((f) => ({
             ...f,
@@ -597,10 +663,11 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
             customerIsPassive: Boolean(c.isPassive),
             // Inherit the new customer's language so the quote
             // gets rendered in their locale by default.
-            language: f.language || c.preferredLanguage || 'de',
+            language: languageForCustomer(f.language, c),
           }))}
           onClear={() => setForm((f) => ({
             ...f, customerAccountId: null, customerLabel: '', customerIsPassive: false,
+            language: languageAfterCustomerChange(f.language, isEdit),
           }))}
           searchPlaceholder={t('quotes.customerSearch', 'Search customer by email or company…') as string}
         />
@@ -716,11 +783,14 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
           vatRate={form.vatRate / 100}
           shippingAmount={form.shippingAmount}
           roundTotal={appSettings?.crm_invoice_round_total === true}
+          vatRoundDown={ukBusiness}
           presets={liPresets?.presets || []}
           mode="quote"
           hours={form.hours}
           days={form.days}
           packages={packages}
+          factors={factors}
+          priceWithFactors={priceWithFactors}
           onChange={(items) => setForm((f) => ({ ...f, lineItems: items }))}
         />
         <DiscountsPanel
@@ -740,9 +810,12 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
             onChange={(e) => setForm((f) => ({ ...f, shippingAmount: Number(e.target.value) }))} />
           <div>
             <label className="block text-sm font-medium mb-1">{t('quotes.field.currency', 'Currency')}</label>
-            <select value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
+            <select value={form.currency} onChange={(e) => {
+              currencyChosenRef.current = true;
+              setForm((f) => ({ ...f, currency: e.target.value }));
+            }}
               className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm">
-              <option>CHF</option><option>EUR</option><option>USD</option><option>GBP</option>
+              {currencyOptions(form.currency).map((code) => <option key={code}>{code}</option>)}
             </select>
           </div>
         </div>

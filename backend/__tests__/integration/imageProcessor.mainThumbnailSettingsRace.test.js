@@ -73,7 +73,8 @@ describe('a lazy main thumbnail across a settings change and a forced regenerate
 
   // Replica A. `whileRendering` runs once, after A has read its settings and
   // fetched the source, before its first sharp call. `seen.sourceOpens`
-  // counts A's sharp calls on a file (two per thumbnail render).
+  // counts A's sharp calls on a file (three per thumbnail render of a photo
+  // with no focal point yet: metadata, the detection (issue 2377), the render).
   function replicaA(whileRendering, seen = {}) {
     const shared = { db: require(DB), storage: require(STORAGE), sharp: require(SHARP) };
     let pending = whileRendering;
@@ -321,7 +322,7 @@ describe('a lazy main thumbnail across a settings change and a forced regenerate
     const key = await a.ensureThumbnail(row);
 
     expect(read.failed).toBe(true);
-    expect(seen.sourceOpens).toBe(2);
+    expect(seen.sourceOpens).toBe(3);
     expect(key).toMatch(/^thumbnails\/thumb_/);
     expect(await rowKey(row.id)).toBe(key);
     expect(await heightOf(key)).toBe(300);

@@ -54,7 +54,12 @@ const templatesUrl = (path = '') => `/api/admin/contract-templates${path}`;
 async function systemBlocksInLegacyOrder() {
   const { SECTIONS_ORDER } = require('../../src/services/contract/helpers');
   const rank = (s) => (SECTIONS_ORDER.indexOf(s) === -1 ? 99 : SECTIONS_ORDER.indexOf(s));
-  const rows = await db('contract_blocks').where({ is_system: true, is_active: true });
+  // All but the US and UK clauses, which only a US or UK business's
+  // contracts carry (contract/regionalClauses); this business is in no
+  // country yet.
+  const { isRegionalOnlyClause } = require('../../src/services/contract/regionalClauses');
+  const rows = (await db('contract_blocks').where({ is_system: true, is_active: true }))
+    .filter((row) => !isRegionalOnlyClause(row.slug));
   return rows.sort((a, b) => rank(a.section) - rank(b.section) || a.display_order - b.display_order || a.id - b.id);
 }
 

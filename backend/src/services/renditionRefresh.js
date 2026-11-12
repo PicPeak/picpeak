@@ -43,6 +43,7 @@
  */
 
 const { db } = require('../database/db');
+const loadGovernor = require('./loadGovernor');
 const logger = require('../utils/logger');
 const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
@@ -74,6 +75,8 @@ const PHOTO_COLUMNS = [
   'thumbnail_path', 'preview_path', 'hero_path', 'hero_anchor',
   'source_origin', 'external_relpath', 'filename', 'size_bytes', 'source_mtime_ms', 'source_filename',
   'rendition_version',
+  // A thumbnail tier's key names the focal point (issue 2377).
+  'focal_x', 'focal_y', 'focal_source',
 ];
 
 const needsRefresh = (photo) => photo != null && photo.rendition_version != null
@@ -306,7 +309,8 @@ async function runPass({ active = () => running, sleep = (ms) => waits.sleep(ms)
     if (done % PROGRESS_EVERY === 0) {
       logger.info(`Rendition refresh: ${counts.refreshed} photos cleaned, ${counts.failed} failed so far`);
     }
-    if (pause) await sleep(pause);
+    const wait = Math.max(pause, loadGovernor.bulkDelayMs());
+    if (wait) await sleep(wait);
     return true;
   };
 

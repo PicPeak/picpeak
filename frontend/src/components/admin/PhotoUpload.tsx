@@ -8,7 +8,7 @@ import { categoriesService } from '../../services/categories.service';
 import { folderQueryKey, foldersService, MAX_RESOLVE_PATHS } from '../../services/folders.service';
 import { settingsService } from '../../services/settings.service';
 import { useTranslation } from 'react-i18next';
-import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, isAllowedUploadFile } from '../../utils/fileTypes';
+import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, isAllowedUploadFile, isVideoUploadFile } from '../../utils/fileTypes';
 import { useUploadSession, type UploadBatch } from '../../contexts/UploadSessionContext';
 import { collectDroppedEntries, pickedFromInput, type PickedFile } from '../../utils/droppedFiles';
 import { buildUploadPreview, groupFilesByPlacement, hasDirectories, uniqueDirectories } from '../../utils/uploadStructure';
@@ -68,6 +68,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
   };
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [replaceByName, setReplaceByName] = useState(false);
+  const [skipDuplicates, setSkipDuplicates] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   // Folder uploads (issue 1786).
@@ -156,7 +157,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
   const videoUploadsAllowed = allowedMimeTypes.some((type) => type.startsWith('video/'));
 
   const sizeLimitMbFor = (file: File) =>
-    (file.type.startsWith('video/') ? maxVideoSizeMb : maxFileSizeMb);
+    (isVideoUploadFile(file) ? maxVideoSizeMb : maxFileSizeMb);
 
   const remainingSlots = Math.max(maxFilesPerUpload - selectedFiles.length, 0);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -449,6 +450,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
       eventId,
       batches,
       replaceByName,
+      allowDuplicates: !skipDuplicates,
       maxFilesPerChunk: Math.max(1, Math.min(50, maxFilesPerUpload)), // Max 50 files per chunk
       maxBytesPerChunk: maxBatchSizeMb * 1024 * 1024,
     });
@@ -542,6 +544,25 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
         <label htmlFor="replace-by-name" className="text-sm text-body">
           {t('upload.replaceByName', 'Replace existing photos with same name')}
         </label>
+      </div>
+
+      <div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="skip-duplicates"
+            checked={skipDuplicates}
+            onChange={(e) => setSkipDuplicates(e.target.checked)}
+            aria-describedby="skip-duplicates-help"
+            className="rounded border-line-strong text-accent focus:ring-accent"
+          />
+          <label htmlFor="skip-duplicates" className="text-sm text-body">
+            {t('upload.duplicates.skip', 'Skip exact duplicates')}
+          </label>
+        </div>
+        <p id="skip-duplicates-help" className="mt-1 text-xs text-muted">
+          {t('upload.duplicates.skipHelp', 'Skip files with identical contents already in this gallery, even if renamed.')}
+        </p>
       </div>
 
       {/* File Input Area — accepts both click-to-pick and drag-and-drop (#504). */}

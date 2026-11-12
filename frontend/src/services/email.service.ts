@@ -257,8 +257,8 @@ export const emailService = {
   /** Flush the email queue immediately. Sends every pending email now,
    *  bypassing the business-hours floor — the escape hatch for draining
    *  the queue before maintenance/updates. */
-  async flushQueue(): Promise<{ processed: number; sent: number; failed: number }> {
-    const response = await api.post<{ processed: number; sent: number; failed: number }>(
+  async flushQueue(): Promise<{ processed: number; sent: number; failed: number; deferred?: number }> {
+    const response = await api.post<{ processed: number; sent: number; failed: number; deferred?: number }>(
       '/admin/email/flush-queue'
     );
     return response.data;

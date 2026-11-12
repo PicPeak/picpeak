@@ -17,7 +17,7 @@
  */
 
 const express = require('express');
-const { query } = require('express-validator');
+const { body, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
@@ -25,12 +25,15 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const { verifyDocumentArtefacts } = require('../services/backupIntegrityService');
 const { getCoverageReport } = require('../services/backupCoverageService');
 const { getQueueProcessorStatus } = require('../services/emailProcessor');
+const dependencyHealth = require('../services/dependencyHealth');
+const { CAPABILITIES, isCapability } = require('../services/capabilities');
 const { toMillis } = require('../utils/queueTimestamps');
+const { hasColumnCached } = require('../utils/schemaCache');
 const {
   isEncryptedEmailData, isProtectedEmailType, PROTECTED_PENDING_STATUS,
 } = require('../utils/emailQueueEncryption');
 const { parseEmailData } = require('../utils/emailSecretRedaction');
-const { db } = require('../database/db');
+const { db, logActivity } = require('../database/db');
 
 const router = express.Router();
 const PENDING_EMAIL_STATUSES = ['pending', PROTECTED_PENDING_STATUS];
@@ -91,6 +94,77 @@ async function evidenceKeyUsage(currentKeyId) {
     scanTruncated: rows.length === EVIDENCE_SCAN_LIMIT,
   };
 }
+
+/**
+ * GET /api/admin/system-health/status
+ *
+ * What the app depends on and which capabilities that leaves available, from
+ * the last probes. Runs no query of its own, though admin auth does. Probe
+ * details can name hosts and paths: this stays behind admin auth.
+ */
+router.get(
+  '/status',
+  requirePermission(['settings.view', 'system.view']),
+  handleAsync(async (req, res) => successResponse(res, dependencyHealth.snapshot())),
+);
+
+/**
+ * POST /api/admin/system-health/status/recheck
+ *
+ * Probes now. A dependency that answers well recovers at once instead of
+ * waiting out its stable run, for the admin who just fixed the share.
+ */
+router.post(
+  '/status/recheck',
+  requirePermission('system.manage'),
+  handleAsync(async (req, res) => {
+    const snapshot = await dependencyHealth.recheck();
+    await logActivity('degradation_rechecked', {}, null, { type: 'admin', id: req.admin.id, name: req.admin.username });
+    return successResponse(res, snapshot);
+  }),
+);
+
+/**
+ * PUT /api/admin/system-health/status/settings
+ *
+ * Observe or enforce, and which capabilities an admin forced off. Only catalog
+ * names are accepted, so this cannot reach a security check. There is no
+ * force-on: a broken dependency cannot be overruled from here.
+ */
+router.put(
+  '/status/settings',
+  requirePermission('system.manage'),
+  [
+    body('enforcement').optional().isIn(['observe', 'enforce']),
+    body('forcedOff').optional().isArray({ max: Object.keys(CAPABILITIES).length }),
+    body('forcedOff.*').isString().custom(isCapability),
+    body('cpuThresholds').optional().isObject(),
+    body('cpuThresholds.throttlePercent').if(body('cpuThresholds').exists()).isInt({ min: 20, max: 95 }).toInt(),
+    body('cpuThresholds.resumePercent').if(body('cpuThresholds').exists()).isInt({ min: 5, max: 90 }).toInt(),
+  ],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const { enforcement, forcedOff, cpuThresholds } = req.body;
+    // Both values arrive together, so this check needs no stored state to race.
+    // Without a gap between the two, the workers would flip at every reading.
+    if (cpuThresholds && cpuThresholds.resumePercent >= cpuThresholds.throttlePercent) {
+      return res.status(400).json({ error: 'The resume point must be below the throttle limit', code: 'INVALID_LOAD_THRESHOLDS' });
+    }
+    const changes = {
+      enforcement,
+      forcedOff,
+      cpuThresholds: cpuThresholds && {
+        throttlePercent: cpuThresholds.throttlePercent,
+        resumePercent: cpuThresholds.resumePercent,
+      },
+    };
+    const snapshot = await dependencyHealth.updateSettings(changes);
+    await logActivity('degradation_settings_updated', changes, null, {
+      type: 'admin', id: req.admin.id, name: req.admin.username,
+    });
+    return successResponse(res, snapshot);
+  }),
+);
 
 router.get(
   '/backup-integrity',
@@ -336,6 +410,8 @@ router.get(
 
     return successResponse(res, {
       backupAuthentication,
+      // Restore tests (null with the backupRestoreTest flag off).
+      backupVerification: backupStatus.verification || null,
       signingSignals,
       stuckEmails: stuckEmails.map(mapEmailRow),
       waitingEmails: waitingEmails.map(mapEmailRow),
@@ -403,6 +479,8 @@ router.post(
       retry_count: 0,
       error_message: null,
       scheduled_at: null,
+      // A retry starts the outage allowance again, like the attempts.
+      ...(await hasColumnCached('email_queue', 'deferred_since') ? { deferred_since: null } : {}),
     });
     if (!updated) return res.status(404).json({ error: 'Email not found' });
     return successResponse(res, { retried: true });

@@ -34,7 +34,10 @@ const DEFAULT_RATE_LIMITS = {
   decision: { max: 2000, window: 3600 },
   // Finish selection / approve edited photos (issue 1733, A1): one deliberate
   // click per kind, repeated only after an admin reopened it.
-  selection_submit: { max: 20, window: 3600 }
+  selection_submit: { max: 20, window: 3600 },
+  // Creating, renaming and deleting favourite lists (issue 2303): a few
+  // deliberate clicks per gallery, not one per photo.
+  favorite_list: { max: 60, window: 3600 }
 };
 
 /**

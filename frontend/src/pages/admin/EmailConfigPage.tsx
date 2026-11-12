@@ -141,6 +141,7 @@ const TEMPLATE_DISPLAY_NAMES: Record<string, string> = {
   // core / backup
   backup_completed: 'Backup Completed',
   backup_failed: 'Backup Failed',
+  backup_verification_failed: 'Backup Verification Failed',
   database_backup_completed: 'Database Backup Completed',
   database_backup_failed: 'Database Backup Failed',
   restore_completed: 'Restore Completed',
@@ -161,6 +162,7 @@ const TEMPLATE_DISPLAY_NAMES: Record<string, string> = {
   customer_document_access_alert_admin: 'Unusual Document Access (Admin)',
   customer_document_requested: 'Document Requested from Customer',
   customer_document_request_reminder: 'Document Request Reminder',
+  album_shipped: 'Album Shipped',
   // quotes
   quote_sent: 'Quote Sent',
   quote_accepted_customer: 'Quote Accepted (Customer)',
@@ -364,7 +366,9 @@ export const EmailConfigPage: React.FC = () => {
   const flushQueueMutation = useMutation({
     mutationFn: () => emailService.flushQueue(),
     onSuccess: (summary) => {
-      if (summary.processed === 0) {
+      if (summary.deferred) {
+        toast.warning(t('email.flushQueue.deferred', { count: summary.deferred }));
+      } else if (summary.processed === 0) {
         toast.info(t('email.flushQueue.empty'));
       } else {
         toast.success(t('email.flushQueue.success', { sent: summary.sent, failed: summary.failed }));

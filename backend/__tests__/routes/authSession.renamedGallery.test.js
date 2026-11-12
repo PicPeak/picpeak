@@ -179,3 +179,23 @@ describe('every token already names this slug', () => {
     expect(res.body.token).toBeUndefined();
   });
 });
+
+// Issue 2438: a Live Slideshow session is display-only and never a guest
+// login, so the search looks past one to the guest session next to it.
+it('carries the guest session, not a slideshow token kept in a guest cookie', async () => {
+  const slideshow = gallery({ accessLevel: 'slideshow' });
+  const guest = gallery();
+  const res = await session({ gallery_token: slideshow, [`gallery_token_${oldSlug}`]: guest });
+  expect(res.body).toMatchObject({ valid: true, eventSlug: newSlug, accessLevel: 'guest' });
+  const renewed = jwt.verify(cookieValue(res, `gallery_token_${newSlug}`), process.env.JWT_SECRET, { issuer: 'picpeak-auth' });
+  expect(renewed.accessLevel).toBeUndefined();
+  expect(renewed.jti).toBe(jwt.decode(guest).jti);
+});
+
+it('looks past a kiosk Bearer to the live guest cookie and hands that back', async () => {
+  const guest = gallery({ eventSlug: newSlug });
+  const res = await request(app).get(`/api/auth/session?slug=${newSlug}`)
+    .set('Authorization', `Bearer ${gallery({ eventSlug: newSlug, accessLevel: 'slideshow' })}`)
+    .set('Cookie', `gallery_token_${newSlug}=${guest}`);
+  expect(res.body).toMatchObject({ valid: true, eventSlug: newSlug, accessLevel: 'guest', token: guest });
+});

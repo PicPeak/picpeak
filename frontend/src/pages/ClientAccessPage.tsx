@@ -100,7 +100,7 @@ export const ClientAccessPage: React.FC = () => {
     );
   }
 
-  if (loginUnavailable || isGalleryTemporarilyDisabled(infoError)) return <GalleryUnavailableNotice />;
+  if (loginUnavailable || isGalleryTemporarilyDisabled(infoError)) return <GalleryUnavailableNotice error={infoError} />;
 
   if (infoError || !galleryInfo) {
     return (

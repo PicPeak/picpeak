@@ -7,6 +7,7 @@
  * "everything went out".
  */
 import { api } from '../config/api';
+import type { BackupVerificationSummary } from './backupVerification.service';
 
 export interface StuckEmail {
   id: number;
@@ -36,6 +37,8 @@ export interface SystemHealthFailures {
     /** `legacy`: intact, but written before manifests were authenticated. */
     latestManifest: { authenticated: boolean; keyId?: string; state?: string };
   };
+  /** Backup restore test summary; null while `backupRestoreTest` is off. */
+  backupVerification?: BackupVerificationSummary | null;
   stuckEmails: StuckEmail[];
   /** Due, under the retry cap, and still unsent — nobody picked them up. */
   waitingEmails: StuckEmail[];
@@ -89,10 +92,54 @@ export interface SystemHealthFailures {
   } | null;
 }
 
+export type DependencyState = 'healthy' | 'degraded' | 'down';
+
+export interface DependencyStatus {
+  state: DependencyState;
+  since: string;
+  lastCheckedAt?: string;
+  detail: string | null;
+  metrics: Record<string, number | null> | null;
+}
+
+export interface CapabilityStatus {
+  name: string;
+  available: boolean;
+  paused: boolean;
+  forced: boolean;
+  blockedBy: string[];
+}
+
+export interface DegradationStatus {
+  enforcement: 'observe' | 'enforce';
+  forcedOff: string[];
+  dependencies: Record<string, DependencyStatus>;
+  capabilities: CapabilityStatus[];
+  load: { level: number; applied: boolean; throttlePercent: number; resumePercent: number };
+}
+
 export const systemHealthService = {
+  async getStatus(): Promise<DegradationStatus> {
+    const { data } = await api.get('/admin/system-health/status');
+    return data;
+  },
+
   async getFailures(): Promise<SystemHealthFailures> {
     const { data } = await api.get('/admin/system-health/failures');
     return data.data || data;
+  },
+
+  async recheckStatus(): Promise<DegradationStatus> {
+    const { data } = await api.post('/admin/system-health/status/recheck');
+    return data;
+  },
+
+  async updateDegradationSettings(
+    settings: Partial<Pick<DegradationStatus, 'enforcement' | 'forcedOff'>>
+      & { cpuThresholds?: { throttlePercent: number; resumePercent: number } },
+  ): Promise<DegradationStatus> {
+    const { data } = await api.put('/admin/system-health/status/settings', settings);
+    return data;
   },
 
   async retryEmail(id: number): Promise<void> {

@@ -90,8 +90,7 @@ describe('normalizeUploadMimeType', () => {
     expect(validateFileType('shot.dng', 'image/jpeg', allowed)).toBe(false);
   });
 
-  it('only applies to .dng files', () => {
-    expect(normalizeUploadMimeType('photo.jpg', 'application/octet-stream')).toBe('application/octet-stream');
+  it('leaves a type the browser did name to other formats', () => {
     expect(normalizeUploadMimeType('scan.tiff', 'image/tiff')).toBe('image/tiff');
     expect(normalizeUploadMimeType(undefined, '')).toBe('');
   });

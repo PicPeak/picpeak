@@ -49,16 +49,26 @@ export interface AdminGuestPhoto {
 
 export interface AdminGuestSelections {
   liked: AdminGuestPhoto[];
-  favorited: AdminGuestPhoto[];
+  /** One entry per list a photo is in (issue 2303); null is the default list. */
+  favorited: Array<AdminGuestPhoto & { favorite_list_id?: number | null }>;
   rated: Array<{ photo: AdminGuestPhoto; rating: number }>;
   commented: Array<{ photo: AdminGuestPhoto; comment: string; created_at: string }>;
   reacted: Array<{ photo: AdminGuestPhoto; reaction: string }>;
   labeled: Array<{ photo: AdminGuestPhoto; color_label: string }>;
 }
 
+/** One of the guest's favourite lists (issue 2303); id and name null = default. */
+export interface AdminGuestFavoriteList {
+  id: number | null;
+  name: string | null;
+  count: number;
+  updated_at: string | number | null;
+}
+
 export interface AdminGuestDetail {
   guest: AdminGuest;
   selections: AdminGuestSelections;
+  favorite_lists?: AdminGuestFavoriteList[];
 }
 
 export interface AggregatePhoto extends AdminGuestPhoto {

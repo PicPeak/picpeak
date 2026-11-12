@@ -10,6 +10,8 @@ import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { useLazyBands } from './lazyBands';
 import { densityColumnDelta, useGridDensity } from '../gridDensity';
+import { WINDOW_MIN_PHOTOS } from './rowWindow';
+import { boxStyle, ghostBox, gridBoxStyle, useMeasuredWindow, type TileBox } from './measuredWindow';
 
 /**
  * Mosaic Gallery Layout
@@ -21,7 +23,16 @@ import { densityColumnDelta, useGridDensity } from '../gridDensity';
  * Based on:
  * - https://css-tricks.com/seamless-responsive-photo-grid/
  * - https://www.30secondsofcode.org/css/s/image-mosaic/
+ *
+ * In a large gallery only the tiles near the viewport are mounted (issue
+ * 2193), absolutely positioned where the browser's own balancing put them:
+ * see measuredWindow.ts. Unbalanced by missing tiles, the columns would move.
  */
+
+const MOSAIC_TILE_CLASS = 'photo-card relative group cursor-pointer overflow-hidden rounded-lg bg-elevated mb-2';
+
+// From the stored dimensions (fallback to 1 if unknown).
+const mosaicAspectRatio = (photo: Photo) => ((photo.width && photo.height) ? photo.width / photo.height : 1);
 
 interface MosaicPhotoProps {
   photo: Photo;
@@ -42,11 +53,17 @@ interface MosaicPhotoProps {
   /** One identity per viewer, held by the layout so no second tile asks again. */
   savedIdentity: { name: string; email: string } | null;
   onIdentitySaved: (identity: { name: string; email: string }) => void;
+  onRequireIdentity: (action: 'like', photoId: number) => void;
   onQuickComment?: () => void;
+  /** Held by the layout: a tile that scrolled out of the window goes with its state. */
+  liked: boolean;
+  onLikeSuccess: () => void;
   /** The client's hide/show button (issue 1992), when the viewer is the client. */
   visibilityToggle?: React.ReactNode;
   /** Dim the photo: the client hid it from guests. */
   dimmed?: boolean;
+  /** Where the tile is, when the gallery is windowed. */
+  box?: TileBox;
 }
 
 const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
@@ -63,115 +80,87 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
   onQuickComment,
   savedIdentity,
   onIdentitySaved,
+  onRequireIdentity,
+  liked,
+  onLikeSuccess,
   visibilityToggle,
   dimmed = false,
+  box,
 }) => {
   const bands = useLazyBands();
-  const [showIdentityModal, setShowIdentityModal] = React.useState(false);
-  const [pendingAction, setPendingAction] = React.useState<null | { type: 'like'; photoId: number }>(null);
-  // Seed from server is_liked (#590 follow-up). useState's initializer
-  // fires once on mount, so subsequent prop updates don't reseed.
-  const [likedLocal, setLikedLocal] = React.useState(photo.is_liked ?? false);
-
-  // Calculate aspect ratio from photo dimensions (fallback to 1 if unknown)
-  const aspectRatio = (photo.width && photo.height) ? photo.width / photo.height : 1;
 
   return (
-    <>
-      <PhotoCard
-        photo={photo}
-        // Above the like indicator and the collage chip, both bottom-left (issue 1562).
-        firstLookClassName={firstLookAboveChips(
-          (((photo.like_count ?? 0) > 0 || likedLocal) ? 1 : 0) + (photo.type === 'collage' ? 1 : 0)
-        )}
-        isSelected={isSelected}
-        isSelectionMode={isSelectionMode}
-        onClick={(e) => {
-          e.stopPropagation();
-          onClick(e);
-        }}
-        onDownload={onDownload}
-        onToggleSelect={onToggleSelect}
-        className="photo-card relative group cursor-pointer overflow-hidden rounded-lg bg-elevated mb-2"
-        style={{
-          breakInside: 'avoid',
-          aspectRatio: aspectRatio.toString()
-        }}
-        /*
-         * Lazy, with Grid's bands (#1695). `loading: 'lazy'` on the <img>
-         * below defers nothing here: AuthenticatedImage fetches in an effect
-         * the moment it mounts, so without `lazy` every tile of a 266-photo
-         * gallery entered the fetch queue on first render, ahead of the hero.
-         *
-         * Mosaic can release like Grid: the explicit `aspectRatio` above holds
-         * the tile's box whether or not the image is mounted, so unmounting a
-         * far-off tile shifts nothing. Same values as Grid, for the same
-         * reasons — see the comments there.
-         */
-        lazy
-        inViewRootMargin={bands.load}
-        releaseRootMargin={bands.keep}
-        imageProps={{
-          src: photo.thumbnail_url || photo.url,
-          alt: photo.filename,
-          className: `w-full h-full object-cover transition-transform duration-300 group-hover:scale-105${dimmed ? ' opacity-40' : ''}`,
-          loading: 'lazy',
-          isGallery: true,
-        }}
-        overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 flex items-center justify-center gap-2"
-        allowDownloads={allowDownloads}
-        feedbackEnabled={feedbackEnabled}
-        feedbackOptions={feedbackOptions}
-        slug={slug}
-        onQuickComment={onQuickComment}
-        liked={likedLocal}
-        onLikeSuccess={() => {
-          // Toggle — server /feedback like is a toggle (#590).
-          setLikedLocal(prev => !prev);
-        }}
-        savedIdentity={savedIdentity}
-        onIdentitySaved={onIdentitySaved}
-        onRequireIdentity={(action, photoId) => {
-          setPendingAction({ type: action, photoId });
-          setShowIdentityModal(true);
-        }}
-        likeBeforeComment
-        checkboxTestId
-        topLeftControl={visibilityToggle}
-        afterOverlay={((photo.like_count ?? 0) > 0 || likedLocal) ? (
-          <div className={`absolute ${photo.type === 'collage' ? 'bottom-8' : 'bottom-2'} left-2 z-10`}>
-            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Liked">
-              <Heart className="w-3.5 h-3.5 text-danger" fill="currentColor" />
-            </span>
-          </div>
-        ) : undefined}
-      >
-        {photo.type === 'collage' && (
-          <div className="absolute bottom-2 left-2">
-            <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">
-              Collage
-            </span>
-          </div>
-        )}
-      </PhotoCard>
-      <FeedbackIdentityModal
-        isOpen={showIdentityModal}
-        onClose={() => { setShowIdentityModal(false); setPendingAction(null); }}
-        onSubmit={async (name, email) => {
-          onIdentitySaved({ name, email });
-          setShowIdentityModal(false);
-          if (pendingAction) {
-            await feedbackService.submitFeedback(slug!, String(pendingAction.photoId), {
-              feedback_type: pendingAction.type,
-              guest_name: name,
-              guest_email: email,
-            });
-            setPendingAction(null);
-          }
-        }}
-        feedbackType="like"
-      />
-    </>
+    <PhotoCard
+      photo={photo}
+      // Above the like indicator and the collage chip, both bottom-left (issue 1562).
+      firstLookClassName={firstLookAboveChips(
+        (((photo.like_count ?? 0) > 0 || liked) ? 1 : 0) + (photo.type === 'collage' ? 1 : 0)
+      )}
+      isSelected={isSelected}
+      isSelectionMode={isSelectionMode}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(e);
+      }}
+      onDownload={onDownload}
+      onToggleSelect={onToggleSelect}
+      className={MOSAIC_TILE_CLASS}
+      style={{
+        breakInside: 'avoid',
+        aspectRatio: mosaicAspectRatio(photo).toString(),
+        ...boxStyle(box),
+      }}
+      /*
+       * Lazy, with Grid's bands (#1695). `loading: 'lazy'` on the <img>
+       * below defers nothing here: AuthenticatedImage fetches in an effect
+       * the moment it mounts, so without `lazy` every tile of a 266-photo
+       * gallery entered the fetch queue on first render, ahead of the hero.
+       *
+       * Mosaic can release like Grid: the explicit `aspectRatio` above holds
+       * the tile's box whether or not the image is mounted, so unmounting a
+       * far-off tile shifts nothing. Same values as Grid, for the same
+       * reasons — see the comments there.
+       */
+      lazy
+      inViewRootMargin={bands.load}
+      releaseRootMargin={bands.keep}
+      imageProps={{
+        src: photo.thumbnail_url || photo.url,
+        alt: photo.filename,
+        className: `w-full h-full object-cover transition-transform duration-300 group-hover:scale-105${dimmed ? ' opacity-40' : ''}`,
+        loading: 'lazy',
+        isGallery: true,
+      }}
+      overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 flex items-center justify-center gap-2"
+      allowDownloads={allowDownloads}
+      feedbackEnabled={feedbackEnabled}
+      feedbackOptions={feedbackOptions}
+      slug={slug}
+      onQuickComment={onQuickComment}
+      liked={liked}
+      onLikeSuccess={onLikeSuccess}
+      savedIdentity={savedIdentity}
+      onIdentitySaved={onIdentitySaved}
+      onRequireIdentity={onRequireIdentity}
+      likeBeforeComment
+      checkboxTestId
+      topLeftControl={visibilityToggle}
+      afterOverlay={((photo.like_count ?? 0) > 0 || liked) ? (
+        <div className={`absolute ${photo.type === 'collage' ? 'bottom-8' : 'bottom-2'} left-2 z-10`}>
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Liked">
+            <Heart className="w-3.5 h-3.5 text-danger" fill="currentColor" />
+          </span>
+        </div>
+      ) : undefined}
+    >
+      {photo.type === 'collage' && (
+        <div className="absolute bottom-2 left-2">
+          <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">
+            Collage
+          </span>
+        </div>
+      )}
+    </PhotoCard>
   );
 };
 
@@ -193,6 +182,12 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // Shared by every tile (issue 1733): the identity typed into one tile's
   // modal — for a like or a rating — is reused by all the others.
   const [savedIdentity, setSavedIdentity] = React.useState<{ name: string; email: string } | null>(null);
+  const [showIdentityModal, setShowIdentityModal] = React.useState(false);
+  const [pendingAction, setPendingAction] = React.useState<null | { type: 'like'; photoId: number }>(null);
+  // The viewer's like toggles, on top of the server's is_liked (#590
+  // follow-up). Here and not in the tile: a tile that leaves the window would
+  // take its toggle with it, and nothing refetches the list on this layout.
+  const [likeToggles, setLikeToggles] = React.useState<Map<number, boolean>>(new Map());
   const { theme } = useTheme();
   const scale = theme.gallerySettings?.thumbnailScale || 'md';
   const scaleOffsets: Record<string, number> = { xs: 3, sm: 1, md: 0, lg: -1, xl: -2 };
@@ -205,12 +200,39 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const lgDown = applyScale(2);
   const mobile = Math.min(applyScale(1), 2); // Cap mobile at 2
 
+  // A large gallery mounts only the tiles near the viewport (issue 2193).
+  const gridRef = React.useRef<HTMLDivElement>(null);
+  const photoIds = React.useMemo(() => photos.map((photo) => photo.id), [photos]);
+  // A like changes `photos`, not the shapes in it.
+  const shapes = React.useMemo(
+    () => photos.map((photo) => `${photo.id}:${mosaicAspectRatio(photo)}`).join(),
+    [photos],
+  );
+  const tileWindow = useMeasuredWindow(
+    gridRef,
+    photoIds,
+    `${shapes}|${desktop},${xlDown},${lgDown},${mobile}`,
+    (root) => new Map(photos.map((photo) => {
+      const tile = ghostBox(root, MOSAIC_TILE_CLASS, {
+        breakInside: 'avoid',
+        aspectRatio: mosaicAspectRatio(photo).toString(),
+      });
+      // WebKit balances columns differently around a box with nothing in it:
+      // a tile went to the next column, as far off as a whole column's height.
+      ghostBox(tile, 'w-full h-full', {});
+      return [photo.id, tile];
+    })),
+    photos.length >= WINDOW_MIN_PHOTOS,
+  );
+
   return (
     <div
+      ref={gridRef}
       className="photo-grid w-full"
       style={{
         columnCount: desktop,
         columnGap: '8px',
+        ...gridBoxStyle(tileWindow),
       }}
     >
       <style>{`
@@ -224,7 +246,7 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           .photo-grid { column-count: ${mobile} !important; }
         }
       `}</style>
-      {photos.map((photo, index) => (
+      {photos.map((photo, index) => tileWindow.mounted.has(photo.id) && (
         <MosaicPhoto
           key={photo.id}
           photo={photo}
@@ -245,6 +267,16 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           feedbackOptions={feedbackOptions}
           savedIdentity={savedIdentity}
           onIdentitySaved={setSavedIdentity}
+          onRequireIdentity={(action, photoId) => {
+            setPendingAction({ type: action, photoId });
+            setShowIdentityModal(true);
+          }}
+          liked={likeToggles.get(photo.id) ?? photo.is_liked ?? false}
+          onLikeSuccess={() => {
+            // Toggle — server /feedback like is a toggle (#590).
+            setLikeToggles((prev) => new Map(prev).set(photo.id, !(prev.get(photo.id) ?? photo.is_liked ?? false)));
+          }}
+          box={tileWindow.boxes?.get(photo.id)}
           // The client's hide/show button and dimmed hidden photos, as in Grid (issue 1992).
           visibilityToggle={isClient && onToggleVisibility
             ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
@@ -257,6 +289,23 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           }}
         />
       ))}
+      <FeedbackIdentityModal
+        isOpen={showIdentityModal}
+        onClose={() => { setShowIdentityModal(false); setPendingAction(null); }}
+        onSubmit={async (name, email) => {
+          setSavedIdentity({ name, email });
+          setShowIdentityModal(false);
+          if (pendingAction) {
+            await feedbackService.submitFeedback(slug!, String(pendingAction.photoId), {
+              feedback_type: pendingAction.type,
+              guest_name: name,
+              guest_email: email,
+            });
+            setPendingAction(null);
+          }
+        }}
+        feedbackType="like"
+      />
     </div>
   );
 };

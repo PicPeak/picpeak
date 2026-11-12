@@ -167,7 +167,7 @@ async function announceApproved(eventId, photos) {
           id: photo.id,
           filename: photo.filename,
           original_filename: photo.original_filename,
-          size_bytes: photo.size_bytes,
+          size_bytes: photo.size_bytes == null ? null : Number(photo.size_bytes),
         },
       });
     }

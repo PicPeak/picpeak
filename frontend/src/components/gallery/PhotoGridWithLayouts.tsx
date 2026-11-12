@@ -78,6 +78,8 @@ interface PhotoGridWithLayoutsProps {
   welcomeMessage?: string;
   // Logout callback for full-page layouts
   onLogout?: () => void;
+  // Customer-portal galleries: the way back to the account (full-page layouts)
+  showBackToAccount?: boolean;
   onManageGallery?: () => void;
   clientModeBusy?: boolean;
   // Guest upload for full-page layouts (they have no gallery header)
@@ -174,6 +176,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   heroImageAnchor = 'center',
   welcomeMessage,
   onLogout,
+  showBackToAccount,
   onManageGallery,
   clientModeBusy,
   onUploadClick,
@@ -198,7 +201,11 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   const selectedPhotos = parentSelectedPhotos ?? localSelectedPhotos;
   const isSelectionMode = parentSelectionMode ?? localSelectionMode;
   const setSelectedPhotos = onSelectionChange ?? setLocalSelectedPhotos;
-  const toggleSelectionMode = parentToggleSelectionMode ?? (() => setLocalSelectionMode(!localSelectionMode));
+  // Leaving selection mode drops the selection, as the gallery's own toggle does.
+  const toggleSelectionMode = parentToggleSelectionMode ?? (() => {
+    if (localSelectionMode) setSelectedPhotos(new Set());
+    setLocalSelectionMode(!localSelectionMode);
+  });
 
   // Clear selection when category changes
   useEffect(() => {
@@ -515,6 +522,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     heroLogoPosition,
     welcomeMessage,
     onLogout,
+    showBackToAccount,
     onManageGallery,
     clientModeBusy,
     onUploadClick,

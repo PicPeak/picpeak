@@ -171,8 +171,8 @@ const ALLOWED_IMAGE_TYPES = {
   },
   // HEIC/HEIF (iPhone). ISO-BMFF container: bytes 4-7 are the "ftyp" box marker,
   // present in every HEIF/HEIC file (single entry — the magic check is `.every`,
-  // so alternatives can't be listed as separate entries). Sharp's libvips
-  // decodes these; extension + MIME are already gated by validateFileType.
+  // so alternatives can't be listed as separate entries). Decoded through
+  // withProcessableImage; extension + MIME are already gated by validateFileType.
   'image/heic': {
     extensions: ['.heic'],
     magicNumbers: [
@@ -309,6 +309,27 @@ const ALLOWED_DOCUMENT_TYPES = {
 // one of them can be taken at its word.
 const GENERIC_RAW_MIMES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
 
+// HEIC is the same story with fewer names. The extension is often uppercase on
+// an iPhone file, and Chromium on Linux reports no type for `.HEIC` and
+// image/heif for `.heic`. The two names cover one container, so neither says
+// more about the file than the extension does.
+const HEIF_EXTENSION_TO_MIME = { '.heic': 'image/heic', '.heif': 'image/heif' };
+const GENERIC_HEIF_MIMES = new Set(['', 'application/octet-stream', 'image/heic', 'image/heif']);
+
+// A file that arrives with no type at all. A drag and drop can hand the
+// browser a file without the type the file chooser would have given it (a
+// .mov dropped on the admin uploader was refused while the same file picked
+// by hand went through, issue 2404), and multer then sees an empty string or
+// application/octet-stream. Neither claims anything, so for the media table's
+// own extensions the extension names the type. A type the browser did name is
+// still taken at its word.
+const UNTYPED_MIMES = new Set(['', 'application/octet-stream']);
+const MEDIA_EXTENSION_TO_MIME = Object.entries(ALLOWED_MEDIA_TYPES)
+  .reduce((map, [mimeType, config]) => {
+    config.extensions.forEach((extension) => { map[extension] = mimeType; });
+    return map;
+  }, {});
+
 /**
  * The MIME type an upload should be validated and stored as.
  *
@@ -317,12 +338,14 @@ const GENERIC_RAW_MIMES = new Set(['', 'application/octet-stream', 'image/dng', 
  * Windows arrives with an empty type - or type generically, as image/tiff or
  * application/octet-stream. None of those answers tells a Sony original apart
  * from a random binary, so for RAW extensions the extension decides instead.
+ * HEIC/HEIF is handled the same way, and any other media extension when the
+ * browser reported no type at all (empty or application/octet-stream).
  *
  * A reported MIME is a name, not evidence, so this admits nothing new: the
  * extension still has to be allowed and routes that inspect content still
- * check the TIFF signature. It is narrow in two further ways. It rescues
- * nothing outside the RAW set, so an untyped .exe is left exactly as it
- * arrived. And the type it returns is still tested against the caller's own
+ * check the signature. A client could always have claimed the type outright.
+ * It is narrow in two further ways. It rescues nothing outside the media
+ * table, so an untyped .exe is left exactly as it arrived. And the type it returns is still tested against the caller's own
  * allow-list, so a route that does not permit image/x-sony-arw does not
  * quietly start taking .arw files. That second point is load-bearing:
  * publicTransferUpload.js is unauthenticated and shares this code.
@@ -337,6 +360,14 @@ function normalizeUploadMimeType(filename, mimetype) {
   if (rawMime && GENERIC_RAW_MIMES.has(mimetype || '')) {
     return rawMime;
   }
+  const heifMime = HEIF_EXTENSION_TO_MIME[ext];
+  if (heifMime && GENERIC_HEIF_MIMES.has(mimetype || '')) {
+    return heifMime;
+  }
+  const mediaMime = MEDIA_EXTENSION_TO_MIME[ext];
+  if (mediaMime && UNTYPED_MIMES.has(mimetype || '')) {
+    return mediaMime;
+  }
   return mimetype;
 }
 
@@ -348,8 +379,8 @@ function normalizeUploadMimeType(filename, mimetype) {
  * @returns {boolean} - True if file type is valid
  */
 function validateFileType(filename, mimetype, allowedTypes) {
-  // RAW arrives untyped from the browser; every other format is taken at its
-  // word, exactly as before.
+  // RAW and HEIC arrive badly typed from the browser; every other format is
+  // taken at its word, exactly as before.
   const effectiveMime = normalizeUploadMimeType(filename, mimetype);
 
   // Check if MIME type is allowed

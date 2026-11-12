@@ -1,4 +1,5 @@
 const { secretValues, redactEmailData, redactRenderedHtml, replaceMaskedSecrets, isSecretKey, redactRecoveryLinks, redactRecoveryLinksInData, hasMaskedRecoveryLink } = require('../utils/emailSecretRedaction');
+const { queueTimestamp, toMillis } = require('../utils/queueTimestamps');
 const nodemailer = require('nodemailer');
 const { smtpConnectionOptions } = require('../utils/mailConnection');
 const { db } = require('../database/db');
@@ -288,7 +289,8 @@ function darkenColor(hex, amount = 0.15) {
 
 // VAT is the one value that needs a label to mean anything. en/de only;
 // every other locale falls back to the English label, same as the rest of
-// the wrapper chrome ("All rights reserved").
+// the wrapper chrome ("All rights reserved"). A US business's signature
+// carries its own label (EIN), which wins over these.
 const SIGNATURE_VAT_LABELS = { en: 'VAT ID', de: 'USt-IdNr.' };
 
 // tel: hrefs take digits and a leading +; strip everything else so a pasted
@@ -352,7 +354,7 @@ function renderEmailSignature(signature, { mutedTextColor, brandingCompanyName, 
   }
 
   if (signature.vatId) {
-    const label = SIGNATURE_VAT_LABELS[language] || SIGNATURE_VAT_LABELS.en;
+    const label = signature.vatIdLabel || SIGNATURE_VAT_LABELS[language] || SIGNATURE_VAT_LABELS.en;
     rows.push(`<p style="${lineStyle}">${escapeHtml(label)}: ${escapeHtml(signature.vatId)}</p>`);
   }
 
@@ -399,7 +401,7 @@ function renderEmailSignatureText(signature, { brandingCompanyName, language } =
     .filter(Boolean);
   if (contact.length) lines.push(contact.join(' \u00b7 '));
   if (signature.vatId) {
-    const label = SIGNATURE_VAT_LABELS[language] || SIGNATURE_VAT_LABELS.en;
+    const label = signature.vatIdLabel || SIGNATURE_VAT_LABELS[language] || SIGNATURE_VAT_LABELS.en;
     lines.push(`${label}: ${signature.vatId}`);
   }
   if (signature.extra) lines.push(signature.extra);
@@ -1207,9 +1209,7 @@ async function sendTemplateEmail(to, templateKey, variables, { usageEligible = t
         : htmlToText(htmlBody),
       attachments,
     };
-    const info = viaWebhook
-      ? await emailWebhookTransport.send(mail)
-      : await transporter.sendMail(mail);
+    const info = await deliver(() => (viaWebhook ? emailWebhookTransport.send(mail) : transporter.sendMail(mail)));
 
     // Transport acceptance is the measured event, not rendering or inbox
     // delivery. The service accepts only the fixed bit under confirmed v5
@@ -1328,9 +1328,7 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
     text: text || htmlToText(html),
     attachments: atts,
   };
-  const info = viaWebhook
-    ? await emailWebhookTransport.send(mail)
-    : await tx.sendMail(mail);
+  const info = await deliver(() => (viaWebhook ? emailWebhookTransport.send(mail) : tx.sendMail(mail)));
   logger.info(`Manual email sent: ${info.messageId}`);
   return { messageId: info.messageId, html, transport: viaWebhook ? 'webhook' : 'smtp' };
 }
@@ -1428,13 +1426,92 @@ const processorStatus = {
 // refusal reaches System Health instead of a generic "check the settings".
 let transporterError = null;
 
+// What proves a send never reached the server. nodemailer reports a connection
+// lost after the body went out as ETIMEDOUT, ESOCKET or ECONNECTION with command
+// CONN, the same codes as a dead server, so the code alone must not decide: a
+// retry that skips the attempt cap could then deliver one mail every 5 minutes.
+// syscall and timeoutType tell the two apart. The shapes come from running real
+// nodemailer against a failing server at each stage.
+const MAIL_NEVER_CONNECTED_SYSCALLS = new Set(['connect', 'getaddrinfo']);
+// CONNECT_TIMEOUT is a host that drops packets: a firewall or a dead machine.
+const MAIL_NEVER_GREETED_TIMEOUTS = new Set(['CONNECT_TIMEOUT', 'GREETING_TIMEOUT']);
+// Set by emailWebhookTransport only when nothing can have been delivered.
+const MAIL_UNDELIVERED_CODES = new Set([
+  'EDNS', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'EWEBHOOK_UNAVAILABLE',
+]);
+// A connection lost at an unknown stage. The mail may have arrived.
+const MAIL_UNCERTAIN_CODES = new Set(['ETIMEDOUT', 'ESOCKET', 'ECONNECTION', 'ECONNRESET']);
+const MAIL_OUTAGE_RETRY_MS = 5 * 60 * 1000;
+// Deferred mail is due again every 5 minutes, so a real outage fails more often
+// than this. A longer silence means it ended without a send to prove it, for
+// example because the waiting mail was cancelled.
+const MAIL_OUTAGE_GAP_MS = 15 * 60 * 1000;
+// After this long mail goes back to the cap, so a server that never returns
+// ends in failed mail an admin can see, not in retries for ever. Counted per
+// mail from its first deferral (email_queue.deferred_since), not from when it
+// was queued: a mail queued weeks ahead is just as new to the outage. On the
+// row, so neither a restart nor another mail getting through starts it again.
+const MAIL_OUTAGE_MAX_MS = 3 * 24 * 60 * 60 * 1000;
+// What System Health shows. In memory: it only reports.
+let mailOutage = null;
+
+// Set on failures of the transport call alone. A database or template error
+// can carry the same shape (a refused database connection also has syscall
+// 'connect'), and deferring it could send a delivered mail again.
+const TRANSPORT_FAILURE = Symbol('mailTransportFailure');
+
+async function deliver(send) {
+  try {
+    return await send();
+  } catch (error) {
+    if (error && typeof error === 'object') error[TRANSPORT_FAILURE] = true;
+    throw error;
+  }
+}
+
+function isTemporaryAnswer(error) {
+  return error?.responseCode >= 400 && error?.responseCode < 500;
+}
+
+// The server or the webhook receiver answered this mail. A connection lost at
+// an unknown stage (MAIL_UNCERTAIN_CODES) carries no answer, so it does not
+// count, and neither does any other failure the transport could not reach.
+function serverAnswered(error) {
+  if (!error?.[TRANSPORT_FAILURE]) return false;
+  return Number.isFinite(error.responseCode) || Number.isFinite(error.responseStatus);
+}
+
+// A 4xx at MAIL FROM says the server is not taking mail at all.
+function isMailOutage(error) {
+  if (!error?.[TRANSPORT_FAILURE]) return false;
+  if (error.code === 'EENVELOPE') return error.command === 'MAIL FROM' && isTemporaryAnswer(error);
+  return MAIL_UNDELIVERED_CODES.has(error?.code)
+    || MAIL_NEVER_CONNECTED_SYSCALLS.has(error?.syscall)
+    || MAIL_NEVER_GREETED_TIMEOUTS.has(error?.timeoutType);
+}
+
+// These spend an attempt, but wait first. Three tries a minute apart would all
+// land inside a greylist, and an uncertain send must stay capped at three.
+function waitsBeforeRetry(error) {
+  if (!error?.[TRANSPORT_FAILURE]) return false;
+  return (error.code === 'EENVELOPE' && error.command === 'RCPT TO' && isTemporaryAnswer(error))
+    || MAIL_UNCERTAIN_CODES.has(error?.code);
+}
+
+function currentMailOutage(now = Date.now()) {
+  return mailOutage && now - mailOutage.lastFailureAt < MAIL_OUTAGE_GAP_MS ? mailOutage : null;
+}
+
 function getQueueProcessorStatus() {
   return {
     started: processorStatus.started,
     lastRunAt: processorStatus.lastRunAt,
     lastResult: processorStatus.lastResult,
-    lastError: processorStatus.lastError,
+    // Each pass clears lastError, and a deferred row is not due for 5 minutes,
+    // so the passes in between would read clear while mail is held back.
+    lastError: processorStatus.lastError ?? currentMailOutage()?.error ?? null,
     lastErrorCode: processorStatus.lastErrorCode,
+    outage: currentMailOutage(),
   };
 }
 
@@ -1522,9 +1599,10 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
     }
 
     logger.info(`Processing ${pendingEmails.length} emails from queue`);
-    result.processed = pendingEmails.length;
-
     for (const email of pendingEmails) {
+      // Counted as each row is tried: a pass that stops on an outage leaves
+      // the rest of the batch untouched.
+      result.processed += 1;
       // Declared outside the try: the failure branch redacts the variables
       // once the row is out of retries, so it needs them too.
       let emailData = {};
@@ -1674,6 +1752,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
           }
         }
 
+        mailOutage = null;
         result.sent += 1;
         logger.info(`Email ${email.id} sent successfully`);
       } catch (error) {
@@ -1689,6 +1768,33 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
           logger.error(`Email ${email.id} not sent: ${error.message}`);
           continue;
         }
+        // The server could not be reached, so this says nothing about the
+        // mail and must not spend one of its three attempts: at one pass a
+        // minute, a short outage would strand everything queued. It waits and
+        // the pass ends, since the next row would only hit the same server.
+        const now = Date.now();
+        const outage = isMailOutage(error);
+        if (outage) {
+          mailOutage = { since: currentMailOutage(now)?.since ?? now, lastFailureAt: now, error: error.message };
+        }
+        const deferredSince = email.deferred_since == null ? now : toMillis(email.deferred_since);
+        if (outage && now - deferredSince < MAIL_OUTAGE_MAX_MS) {
+          result.failed -= 1;
+          result.deferred = (result.deferred || 0) + 1;
+          logger.warn(`Mail server unavailable, email ${email.id} deferred: ${error.message}`);
+          try {
+            await db('email_queue').where({ id: email.id, status: email.status }).update({
+              error_message: error.message,
+              scheduled_at: queueTimestamp(now + MAIL_OUTAGE_RETRY_MS),
+              ...(email.deferred_since == null && await hasColumnCached('email_queue', 'deferred_since')
+                ? { deferred_since: queueTimestamp(now) } : {}),
+            });
+          } catch (updateError) {
+            logger.error(`Failed to defer email ${email.id}:`, updateError);
+          }
+          break;
+        }
+
         // Increment retry count without rewriting email_data. Protected
         // account-recovery rows therefore remain encrypted, and so do the
         // password fields of ordinary rows; those keep their variables
@@ -1699,7 +1805,11 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
             .where('id', email.id)
             .update({
               retry_count: email.retry_count + 1,
-              error_message: error.message
+              error_message: error.message,
+              ...(waitsBeforeRetry(error) ? { scheduled_at: queueTimestamp(Date.now() + MAIL_OUTAGE_RETRY_MS) } : {}),
+              // The server answered, so any outage this mail waited out is over,
+              // and a later one gets the full allowance again.
+              ...(email.deferred_since != null && serverAnswered(error) ? { deferred_since: null } : {}),
             });
         } catch (updateError) {
           logger.error(`Failed to update email retry count for ${email.id}:`, updateError);
@@ -1880,7 +1990,15 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
     }
     // options.trx: the caller's transaction, when the row must commit or roll
     // back together with its own write (downloadJobNotifier's claim).
-    await (options.trx || db)('email_queue').insert(row);
+    // options.onQueued: gets the row's id, for a caller that may have to
+    // withdraw the mail while it is still pending (album shipments).
+    const insert = (options.trx || db)('email_queue').insert(row);
+    if (options.onQueued) {
+      const inserted = await insert.returning('id');
+      options.onQueued(inserted[0]?.id ?? inserted[0]);
+    } else {
+      await insert;
+    }
 
     logger.info(`Email queued: ${emailType} to ${recipientEmail}${
       row.scheduled_at ? ` (scheduled ${row.scheduled_at.toISOString()}${

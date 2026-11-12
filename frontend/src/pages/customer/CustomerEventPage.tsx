@@ -21,7 +21,8 @@ import { customerService } from '../../services/customer.service';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
 import { CustomerDocumentList } from './CustomerDocumentsPage';
 import { DOWNLOAD_JOB_QUERY_PARAM, readDownloadJobParam } from '../../components/gallery/downloadJobLink';
-import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
+import { galleryClosedReason, isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
+import { CHOOSE_ALBUM } from '../../features/album-products/model';
 
 /** Open a blob URL produced by `load` in a new tab, keeping the click gesture. */
 async function openPdf(load: () => Promise<string>, blockedMessage: string, failedMessage: string) {
@@ -78,7 +79,7 @@ export const CustomerEventPage: React.FC = () => {
   const blocked = t('customer.event.popupBlocked', 'Allow pop-ups for this site to open the PDF.');
   const failed = t('customer.event.pdfError', 'The PDF could not be opened. Please try again.');
 
-  const openGallery = async () => {
+  const openGallery = async (albumOfferId?: string) => {
     if (opening) return;
     setOpening(true);
     try {
@@ -88,17 +89,24 @@ export const CustomerEventPage: React.FC = () => {
       // A "your download is ready" mail links here for an account (issue
       // 1733); the gallery is what offers the job, so hand the token on.
       const downloadJob = readDownloadJobParam(location.search);
-      navigate(`/gallery/${encodeURIComponent(event.slug)}${
-        downloadJob ? `?${DOWNLOAD_JOB_QUERY_PARAM}=${downloadJob}` : ''}`);
+      const query = albumOfferId
+        ? `?album=${albumOfferId}`
+        : downloadJob ? `?${DOWNLOAD_JOB_QUERY_PARAM}=${downloadJob}` : '';
+      navigate(`/gallery/${encodeURIComponent(event.slug)}${query}`);
     } catch (error) {
       toast.error(isGalleryTemporarilyDisabled(error)
-        ? t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.')
+        ? (galleryClosedReason(error) === 'payment'
+          ? t('gallery.awaitingPaymentHelp', 'It opens as soon as the invoice is paid. Your gallery link will stay the same.')
+          : t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'))
         : t('customer.dashboard.openError', 'Could not open this gallery. Please try again.'));
     } finally {
       setOpening(false);
     }
   };
 
+  // The product list of the gallery itself; guided albums get their own entry.
+  const albumOffers = (data.productOffers ?? []).filter((offer) => offer.guided);
+  const confirmedAlbum = albumOffers.find((offer) => offer.confirmed);
   const nothingElse = (!sections.quotes || data.quotes.length === 0)
     && (!sections.contracts || data.contracts.length === 0)
     && (!sections.invoices || data.invoices.length === 0)
@@ -133,7 +141,7 @@ export const CustomerEventPage: React.FC = () => {
             type="button"
             variant="primary"
             size="sm"
-            onClick={openGallery}
+            onClick={() => openGallery()}
             disabled={opening}
             leftIcon={<ExternalLink className="w-4 h-4" />}
           >
@@ -153,6 +161,24 @@ export const CustomerEventPage: React.FC = () => {
           </p>
         )}
       </Card>
+
+      {event.availability === 'active' && albumOffers.length > 0 && (
+        <Card padding="lg" className="mb-4">
+          <h2 className="text-base font-semibold text-theme mb-1">{t('customer.event.album', 'Your album')}</h2>
+          <p className="text-sm text-muted-theme mb-3">
+            {confirmedAlbum
+              ? `${confirmedAlbum.name}: ${t('customer.event.albumConfirmed', 'Your selection is confirmed.')}`
+              : t('customer.event.albumReady', 'The studio has released your album. Choose its look and your photos.')}
+          </p>
+          <Button type="button" variant={confirmedAlbum ? 'outline' : 'primary'} size="sm" disabled={opening}
+            leftIcon={<ExternalLink className="w-4 h-4" />}
+            onClick={() => openGallery((confirmedAlbum || (albumOffers.length === 1 ? albumOffers[0] : null))?.id ?? CHOOSE_ALBUM)}>
+            {confirmedAlbum
+              ? t('customer.event.albumView', 'View your selection')
+              : t('customer.event.albumOpen', 'Configure your album')}
+          </Button>
+        </Card>
+      )}
 
       {sections.quotes && data.quotes.length > 0 && (
         <Section title={t('customer.nav.quotes', 'Quotes')}>

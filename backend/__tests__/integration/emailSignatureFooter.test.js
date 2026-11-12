@@ -36,6 +36,7 @@ describe('wrapEmailHtml — business-profile signature footer', () => {
       address_line2: null,
       postal_code: null,
       city: null,
+      state: null,
       country_code: null,
       country_name: null,
       phone: null,
@@ -104,6 +105,41 @@ describe('wrapEmailHtml — business-profile signature footer', () => {
     expect(html).toContain('LI-9494 Schaan / Liechtenstein');
     expect(html).toContain('VAT ID: CHE-123.456.789');
     expect(html).toContain('Handelsregister Vaduz<br />FL-0002.123.456-7');
+  });
+
+  it("writes a US business's address as city, state and ZIP, with no country", async () => {
+    await enable({
+      postal_code: '80202', city: 'Denver', state: 'CO', country_code: 'US', country_name: 'United States',
+    });
+
+    const html = await wrapEmailHtml('<p>Body</p>', 'Subject');
+
+    expect(html).toContain('Denver, CO 80202');
+    expect(html).not.toContain('US-80202');
+    expect(html).not.toContain('United States');
+  });
+
+  it("writes a UK business's address as town then postcode, with no country (issue 2445)", async () => {
+    await enable({
+      address_line1: '12 Bath Street', postal_code: 'g1 1aa', city: 'Glasgow', state: null,
+      country_code: 'GB', country_name: 'United Kingdom',
+    });
+
+    const html = await wrapEmailHtml('<p>Body</p>', 'Subject');
+
+    expect(html).toContain('Glasgow G1 1AA');
+    expect(html).not.toContain('GB-');
+    expect(html).not.toContain('United Kingdom');
+  });
+
+  it("labels a US business's tax number as an EIN", async () => {
+    await enable({ country_code: 'US', vat_id: '12-3456789' });
+
+    const html = await wrapEmailHtml('<p>Body</p>', 'Subject');
+    const signature = await businessProfileService.getEmailSignature();
+
+    expect(html).toContain('EIN: 12-3456789');
+    expect(renderEmailSignatureText(signature, { language: 'en' })).toContain('EIN: 12-3456789');
   });
 
   it('links phone, mobile, email and website with safe schemes', async () => {

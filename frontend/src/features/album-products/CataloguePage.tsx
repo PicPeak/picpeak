@@ -1,4 +1,5 @@
 import { LibraryEditor } from './LibraryEditor';
+import { GuidedProductFields } from './GuidedProductFields';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -347,6 +348,22 @@ export function AlbumProductCataloguePage() {
                             p.id === product.id
                               ? { ...p, description: e.target.value }
                               : p,
+                          ),
+                        }
+                      : c,
+                  )
+                }
+              />
+              <GuidedProductFields
+                product={product}
+                onBusy={(delta) => setUploads((count) => count + delta)}
+                onChange={(patch) =>
+                  setDraft((c) =>
+                    c
+                      ? {
+                          ...c,
+                          products: c.products.map((p) =>
+                            p.id === product.id ? { ...p, ...patch } : p,
                           ),
                         }
                       : c,

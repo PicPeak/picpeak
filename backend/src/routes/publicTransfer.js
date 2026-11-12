@@ -12,6 +12,7 @@
  */
 
 const express = require('express');
+const { refuseCapability } = require('../middleware/requireCapability');
 const rateLimit = require('express-rate-limit');
 const { rateLimitKey } = require('../utils/rateLimitKey');
 const { param } = require('express-validator');
@@ -68,6 +69,8 @@ router.get('/:token/download', downloadLimiter, tokenValidator, handleAsync(asyn
   if ((await transferService.countRecipientFiles(transfer.id)) === 0) {
     return res.status(404).json({ error: 'File not found', code: 'FILE_NOT_FOUND' });
   }
+  // Before the claim, so a paused archive does not use up a capped download.
+  if (refuseCapability(req, res, 'downloads.archive')) return undefined;
   // Claim the download BEFORE streaming: the claim is the cap check, so
   // concurrent requests cannot all pass a cap read from the same snapshot, and
   // a mid-stream disconnect still counts ("disable after N downloads").

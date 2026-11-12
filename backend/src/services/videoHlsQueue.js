@@ -30,6 +30,7 @@ const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { isEnabled, queuePending, renderLadder } = require('./videoHlsService');
 const mediaAttempts = require('./mediaAttemptService');
+const loadGovernor = require('./loadGovernor');
 const { isTransient } = require('./imageResourcePolicy');
 const { livePhotos } = require('../utils/photoVisibility');
 
@@ -72,6 +73,8 @@ async function workerLoop(workerIdx) {
       await sleep(POLL_INTERVAL_MS * 5);
       continue;
     }
+    const pause = loadGovernor.bulkDelayMs();
+    if (pause) await sleep(pause);
     if (!running) break;
 
     let claimed;

@@ -7,6 +7,8 @@ import { PhotoFavorites } from './PhotoFavorites';
 import { PhotoReactions } from './PhotoReactions';
 import { PhotoComments } from './PhotoComments';
 import { Skeleton } from '../common';
+import { FavoriteListSwitcher } from './FavoriteListSwitcher';
+import { inActiveList, useFavoriteListsOptional } from '../../contexts/FavoriteListsContext';
 
 interface PhotoFeedbackProps {
   photoId: string;
@@ -50,6 +52,12 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [isFavorited, setIsFavorited] = useState(false);
+  // Named lists (issue 2303): the bookmark shows the active list.
+  const favoriteLists = useFavoriteListsOptional();
+  const [favoriteListIds, setFavoriteListIds] = useState<Array<number | null> | null>(null);
+  const bookmarkFilled = favoriteLists && favoriteListIds
+    ? inActiveList(favoriteListIds, favoriteLists.activeListId)
+    : isFavorited;
   const [favoriteCount, setFavoriteCount] = useState(0);
   const [myReaction, setMyReaction] = useState<string | null>(null);
   const [reactionCounts, setReactionCounts] = useState<Record<string, number>>({});
@@ -61,6 +69,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
       setIsLiked(Boolean(feedbackData.my_feedback.liked));
       setLikeCount(Number(feedbackData.summary.like_count) || 0);
       setIsFavorited(Boolean(feedbackData.my_feedback.favorited));
+      setFavoriteListIds(feedbackData.my_feedback.favorite_list_ids ?? null);
       setFavoriteCount(Number(feedbackData.summary.favorite_count) || 0);
       setMyReaction(feedbackData.my_feedback.reaction || null);
       setReactionCounts(feedbackData.reactions || {});
@@ -80,6 +89,13 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
 
   const handleFavoriteChange = (favorited: boolean) => {
     setIsFavorited(favorited);
+    if (favoriteLists) {
+      const active = favoriteLists.activeListId;
+      setFavoriteListIds((ids) => {
+        const rest = (ids ?? []).filter((id) => id !== active);
+        return favorited ? [...rest, active] : rest;
+      });
+    }
     setFavoriteCount(prev => favorited ? prev + 1 : Math.max(0, prev - 1));
   };
 
@@ -159,16 +175,19 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
           )}
 
           {settings.allow_favorites && (
-            <PhotoFavorites
-              photoId={photoId}
-              gallerySlug={gallerySlug}
-              isFavorited={isFavorited}
-              favoriteCount={favoriteCount}
-              isEnabled={true}
-              requireNameEmail={settings.require_name_email || false}
-              onFavoriteChange={handleFavoriteChange}
-              onSaved={onFeedbackUpdate ? handleToggleSaved : undefined}
-            />
+            <>
+              <PhotoFavorites
+                photoId={photoId}
+                gallerySlug={gallerySlug}
+                isFavorited={bookmarkFilled}
+                favoriteCount={favoriteCount}
+                isEnabled={true}
+                requireNameEmail={settings.require_name_email || false}
+                onFavoriteChange={handleFavoriteChange}
+                onSaved={onFeedbackUpdate ? handleToggleSaved : undefined}
+              />
+              <FavoriteListSwitcher />
+            </>
           )}
         </div>
       )}

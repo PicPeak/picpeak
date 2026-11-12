@@ -39,8 +39,12 @@ const expenseService = require('../services/expenseService');
 const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { db } = require('../database/db');
 const { canLinkCrmToEvent, ownsProject } = require('../middleware/ownership');
-const { ensureEventMatchesCustomer } = require('../services/invoice/helpers');
+const { AppError } = require('../utils/errors');
+const { computeDueDate, ensureEventMatchesCustomer, isInvoiceEditable, resolveNetDaysForRow, UNISSUED_INVOICE_STATUSES } = require('../services/invoice/helpers');
 const { hasColumnCached } = require('../utils/schemaCache');
+const { toDateOnly } = require('../utils/dateOnly');
+const { toIso, toStoredTimestamp, toTimestamp } = require('../utils/dateNormalize');
+const { vatMinorFor, roundsVatDown, normaliseVatGbpRate } = require('../utils/vatAmount');
 
 const router = express.Router();
 // Re-bill proof endpoints (#866) are behind the incoming-invoices flag.
@@ -141,14 +145,14 @@ function transformInvoice(i) {
     projectId: i.project_id ?? null,
     language: i.language,
     currency: i.currency,
-    issueDate: i.issue_date,
-    dueDate: i.due_date,
+    issueDate: toDateOnly(i.issue_date),
+    dueDate: toDateOnly(i.due_date),
     installmentIndex: i.installment_index,
     installmentTotal: i.installment_total,
     installmentLabel: i.installment_label,
     installmentTrigger: i.installment_trigger,
     status: i.status,
-    scheduledSendAt: i.scheduled_send_at,
+    scheduledSendAt: toIso(i.scheduled_send_at) || null,
     sentAt: i.sent_at,
     netAmountMinor: i.net_amount_minor,
     vatRate: i.vat_rate == null ? null : Number(i.vat_rate),
@@ -156,6 +160,9 @@ function transformInvoice(i) {
     // VatRateSelect on edit; without it the dropdown falls back to rate-matching
     // and a custom-rate code is silently lost.
     vatCode: i.vat_code || null,
+    // Migration 352 — GBP per unit of the invoice currency (UK invoices in
+    // another currency only); null = no sterling VAT row.
+    vatGbpRate: i.vat_gbp_rate == null ? null : Number(i.vat_gbp_rate),
     vatAmountMinor: i.vat_amount_minor,
     shippingAmountMinor: i.shipping_amount_minor,
     totalAmountMinor: i.total_amount_minor,
@@ -185,8 +192,8 @@ function transformInvoice(i) {
     // monthlyPeriodStart/End drive the period banner on the customer
     // detail page and (later) the PDF header.
     isMonthlyDraft: i.is_monthly_draft === true || i.is_monthly_draft === 1,
-    monthlyPeriodStart: i.monthly_period_start || null,
-    monthlyPeriodEnd: i.monthly_period_end || null,
+    monthlyPeriodStart: toDateOnly(i.monthly_period_start),
+    monthlyPeriodEnd: toDateOnly(i.monthly_period_end),
     // Storno wiring (migration 114). The four FK columns drive the
     // admin UI's banners + action gating:
     //  - kind: 'invoice' | 'storno' — defaults to 'invoice' for rows
@@ -205,7 +212,7 @@ function transformInvoice(i) {
     // these, the list page shows event_name as a column, and email
     // / tax-report rendering reads them in preference to the FK.
     eventName: i.event_name || null,
-    eventDate: i.event_date || null,
+    eventDate: toDateOnly(i.event_date),
     eventTimeStart: i.event_time_start || null,
     eventTimeEnd: i.event_time_end || null,
     // `isImported` surfaces the historical-PDF flag to the admin UI
@@ -257,7 +264,10 @@ const INVOICE_BODY_VALIDATORS = [
   body('currency').optional({ values: 'falsy' }).isString().isLength({ min: 3, max: 3 }),
   body('issueDate').optional({ values: 'falsy' }).isISO8601(),
   body('dueDate').optional({ values: 'falsy' }).isISO8601(),
-  body('scheduledSendAt').optional({ values: 'falsy' }).isISO8601(),
+  // isISO8601 also passes forms that name no instant ('2026-W45'), which would
+  // be stored as no send date and turn the invoice into a draft.
+  body('scheduledSendAt').optional({ values: 'falsy' }).isISO8601()
+    .custom((value) => Number.isFinite(toTimestamp(value))).withMessage('scheduledSendAt is not a date and time'),
   body('installmentIndex').optional({ values: 'falsy' }).isInt({ min: 0 }),
   body('installmentTotal').optional({ values: 'falsy' }).isInt({ min: 1 }),
   body('installmentLabel').optional({ values: 'falsy' }).isString().isLength({ max: 128 }),
@@ -265,6 +275,8 @@ const INVOICE_BODY_VALIDATORS = [
   body('vatRate').optional({ values: 'falsy' }).isFloat({ min: 0, max: 100 }),
   // Migration 130 — the output VAT code the rate came from (null = custom rate).
   body('vatCode').optional({ nullable: true }).isString().isLength({ max: 16 }),
+  // Migration 352 — GBP rate for a UK invoice in another currency.
+  body('vatGbpRate').optional({ nullable: true }).isFloat({ gt: 0, max: 1000000 }),
   body('shippingAmountMinor').optional({ values: 'falsy' }).isInt({ min: 0 }),
   body('ccPdfEmail').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
   body('businessBankAccountId').optional({ values: 'falsy' }).isInt({ min: 1 }),
@@ -319,6 +331,8 @@ const INVOICE_BODY_VALIDATORS = [
   body('lineItems.*.rateSource').optional({ values: 'falsy' }).isIn(RATE_SOURCES),
   body('lineItems.*.boundTo').optional({ values: 'falsy' }).isIn(BOUND_TO),
   body('lineItems.*.promotionSnapshot').optional({ nullable: true }).isObject(),
+  // Pricing-factor snapshot on a factor-priced service line (#2440).
+  body('lineItems.*.pricingFactors').optional({ nullable: true }).isObject(),
 ];
 
 function mapPayloadToService(body) {
@@ -335,7 +349,7 @@ function mapPayloadToService(body) {
     installmentTotal: 'installmentTotal',
     installmentLabel: 'installmentLabel',
     installmentTrigger: 'installmentTrigger',
-    vatRate: 'vatRate', vatCode: 'vatCode', shippingAmountMinor: 'shippingAmountMinor',
+    vatRate: 'vatRate', vatCode: 'vatCode', vatGbpRate: 'vatGbpRate', shippingAmountMinor: 'shippingAmountMinor',
     ccPdfEmail: 'ccPdfEmail', businessBankAccountId: 'businessBankAccountId',
     qrFormat: 'qrFormat',
     eventName: 'eventName',
@@ -464,6 +478,8 @@ router.get(
       invoice: invoiceOut,
       lineItems: data.lineItems.map(transformLineItem),
       payments: data.payments.map(transformPaymentLog),
+      // A booking deposit booked here that was refunded or disputed since.
+      depositAlerts: await require('../services/bookingDeposits').depositAlertsForInvoice(data.payments),
     });
   })
 );
@@ -742,15 +758,36 @@ router.put(
     // legal record under CH/LI/DE/AT tax rules ("Rechnung ist
     // ausgestellt"). Modifying it in place would break the audit
     // trail — the correct workflow is to cancel the original +
-    // issue a new one. Only `scheduled` (not yet sent) invoices
-    // remain editable.
-    if (existing.status !== 'scheduled') {
+    // issue a new one. Only invoices that have not left the system
+    // remain editable: `scheduled`, and `pending_delivery`, which
+    // is hidden from the customer and the books until "Mark delivered & send".
+    if (!UNISSUED_INVOICE_STATUSES.has(existing.status)) {
       return res.status(409).json({
         error: `Cannot edit invoice with status '${existing.status}'. Sent invoices are locked — cancel and reissue if changes are needed.`,
         code: 'INVOICE_LOCKED',
       });
     }
+    if (!isInvoiceEditable(existing)) {
+      return res.status(409).json({
+        error: 'This invoice already has a payment recorded. Cancel and reissue it if changes are needed.',
+        code: 'INVOICE_LOCKED',
+      });
+    }
     const payload = mapPayloadToService(req.body);
+    // A delivery invoice goes out with "Mark delivered & send", never by date.
+    // Sending sets the issue date, and the release compares the due date with it.
+    if (existing.status === 'pending_delivery' && (payload.scheduledSendAt
+        || (payload.installmentTrigger && payload.installmentTrigger !== existing.installment_trigger)
+        || (payload.issueDate && toDateOnly(payload.issueDate) !== toDateOnly(existing.issue_date)))) {
+      return res.status(409).json({
+        error: 'An invoice awaiting delivery is sent by marking it delivered. It cannot take a send date, an issue date or another trigger.',
+        code: 'INVOICE_SENDS_ON_DELIVERY',
+      });
+    }
+    // The checks above are reads; this makes the write lose to a send or a
+    // payment that landed since, instead of changing what was just issued.
+    const unchanged = { id, status: existing.status, paid_amount_minor: existing.paid_amount_minor };
+    const lockedError = () => new AppError('This invoice was sent or paid in the meantime. Reload it.', 409, 'INVOICE_LOCKED');
 
     const history = { actor: req.admin.id, source: 'invoice.update' };
     // Configured lines carry an agreed specification and, for gallery items,
@@ -788,6 +825,16 @@ router.put(
     if (Object.prototype.hasOwnProperty.call(payload, 'vatCode') && await hasColumnCached('invoices', 'vat_code')) {
       updates.vat_code = payload.vatCode ? String(payload.vatCode).slice(0, 16) : null;
     }
+    // Migration 352 — the GBP rate of a UK invoice in another currency. A
+    // currency change re-checks it, so a switch to GBP drops the rate.
+    if ((Object.prototype.hasOwnProperty.call(payload, 'vatGbpRate') || payload.currency !== undefined)
+        && await hasColumnCached('invoices', 'vat_gbp_rate')) {
+      const { profile } = await require('../services/businessProfileService').getProfile();
+      updates.vat_gbp_rate = normaliseVatGbpRate(
+        Object.prototype.hasOwnProperty.call(payload, 'vatGbpRate') ? payload.vatGbpRate : existing.vat_gbp_rate,
+        { countryCode: profile?.country_code, currency: payload.currency ?? existing.currency },
+      );
+    }
     const map = {
       language: 'language', currency: 'currency',
       issueDate: 'issue_date', dueDate: 'due_date',
@@ -802,8 +849,8 @@ router.put(
       // Per-invoice Skonto opt-out (migration 126).
       skontoDisabled: 'skonto_disabled',
       // Inline event snapshot (migration 123) — editable as long as
-      // the invoice is still in 'scheduled' status (this route already
-      // gates on that above).
+      // the invoice has not been issued (this route already gates on
+      // that above).
       eventName: 'event_name',
       eventDate: 'event_date',
       eventTimeStart: 'event_time_start',
@@ -811,6 +858,12 @@ router.put(
     };
     for (const [api, col] of Object.entries(map)) {
       if (Object.prototype.hasOwnProperty.call(payload, api)) updates[col] = payload[api];
+    }
+    // Stored as ISO text, so the scheduler's comparison matches on SQLite too.
+    // The editor sends a zone-less 'YYYY-MM-DDTHH:mm' cut from the stored UTC
+    // value, so it is read as UTC: an unchanged save keeps the same instant.
+    if (Object.prototype.hasOwnProperty.call(updates, 'scheduled_send_at')) {
+      updates.scheduled_send_at = toStoredTimestamp(updates.scheduled_send_at);
     }
     // Payment-term selection: re-snapshot the template when the admin
     // changes it. Mirrors createInvoice — once the column is set the
@@ -876,6 +929,17 @@ router.put(
       }
     }
 
+    // A delivery invoice's due date stays machine-set until someone changes
+    // it, so marking delivered can still re-anchor it. Keep it on the formula
+    // when the payment term moves underneath it.
+    if (existing.status === 'pending_delivery' && Object.prototype.hasOwnProperty.call(updates, 'payment_term_snapshot')
+        && (!payload.dueDate || toDateOnly(payload.dueDate) === toDateOnly(existing.due_date))) {
+      const dueAfter = (netDays) => computeDueDate(new Date(toDateOnly(existing.issue_date)), netDays).toISOString().slice(0, 10);
+      if (toDateOnly(existing.due_date) === dueAfter(await resolveNetDaysForRow(existing))) {
+        updates.due_date = dueAfter(await resolveNetDaysForRow({ ...existing, ...updates }));
+      }
+    }
+
     if (Array.isArray(payload.lineItems)) {
       // Recompute everything authoritatively. Migration 119 — sub-
       // items don't roll into net directly; parent totals auto-
@@ -907,7 +971,7 @@ router.put(
         if (it.parent_position == null) net += parseInt(it.line_total_minor, 10) || 0;
       }
       const vatRate = Number(payload.vatRate ?? existing.vat_rate ?? 0);
-      const vatAmount = Math.round(net * vatRate / 100);
+      const vatAmount = vatMinorFor(net, vatRate, { roundDown: await roundsVatDown() });
       const shipping = parseInt(payload.shippingAmountMinor ?? existing.shipping_amount_minor ?? 0, 10);
       updates.net_amount_minor = net;
       updates.vat_amount_minor = vatAmount;
@@ -928,15 +992,15 @@ router.put(
       const quoteService = require('../services/quoteService');
       const { validateLineItemHierarchy, insertLineItemsHierarchical } = quoteService._internal;
       await db.transaction(async (trx) => {
+        if (!(await accountingHistory.auditedUpdate(trx, 'invoices', unchanged, updates, history))) throw lockedError();
         await accountingHistory.auditedDelete(trx, 'invoice_line_items', { invoice_id: id }, history);
         if (items.length > 0) {
           validateLineItemHierarchy(items);
           await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', id, items, history);
         }
-        await accountingHistory.auditedUpdate(trx, 'invoices', { id }, updates, history);
       });
-    } else {
-      await accountingHistory.auditedUpdate(db, 'invoices', { id }, updates, history);
+    } else if (!(await accountingHistory.auditedUpdate(db, 'invoices', unchanged, updates, history))) {
+      throw lockedError();
     }
 
     const data = await invoiceService.getInvoiceById(id);

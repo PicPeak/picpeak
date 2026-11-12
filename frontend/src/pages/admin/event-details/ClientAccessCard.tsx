@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Shield, Key, Copy, CheckCircle } from 'lucide-react';
+import { Shield, Key, Copy, CheckCircle, MessageCircle } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, Card, Input, Modal } from '../../../components/common';
 import { eventsService } from '../../../services/events.service';
+import { WhatsAppInviteDialog } from './WhatsAppInviteDialog';
+import { useWhatsAppConfigured } from '../../../hooks/useWhatsAppConfigured';
 
 interface ClientAccessCardProps {
   event: Event;
@@ -14,6 +16,8 @@ interface ClientAccessCardProps {
 export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refetchEvent }) => {
   const { t } = useTranslation();
   const [copiedClientLink, setCopiedClientLink] = useState(false);
+  const [whatsAppOpen, setWhatsAppOpen] = useState(false);
+  const whatsAppConfigured = useWhatsAppConfigured();
   const [clientPin, setClientPin] = useState('');
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [enrollPin, setEnrollPin] = useState('');
@@ -150,12 +154,12 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                 <label className="block text-sm font-medium text-body mb-1">
                   {t('clientAccess.linkLabel')}
                 </label>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="text"
                     value={`${window.location.origin}/gallery/${event.slug}/client-access?token=${event.client_share_token}`}
                     readOnly
-                    className="flex-1 px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm"
+                    className="flex-1 min-w-[12rem] px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm"
                   />
                   <Button
                     variant="outline"
@@ -179,7 +183,28 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                   >
                     {copiedClientLink ? t('events.copied') : t('events.copy')}
                   </Button>
+                  {whatsAppConfigured && (
+                    <Button
+                      variant="outline"
+                      size="md"
+                      leftIcon={<MessageCircle className="w-4 h-4" />}
+                      onClick={() => setWhatsAppOpen(true)}
+                      aria-label={t('events.whatsappInvite.title', 'Send via WhatsApp')}
+                      title={t('events.whatsappInvite.title', 'Send via WhatsApp')}
+                    >
+                      WhatsApp
+                    </Button>
+                  )}
                 </div>
+                {whatsAppOpen && (
+                  <WhatsAppInviteDialog
+                    open
+                    onClose={() => setWhatsAppOpen(false)}
+                    event={event}
+                    link={`${window.location.origin}/gallery/${event.slug}/client-access?token=${event.client_share_token}`}
+                    credential="pin"
+                  />
+                )}
 
                 {ownsEvent && (
                 <Button

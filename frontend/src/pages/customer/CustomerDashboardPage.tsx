@@ -23,23 +23,23 @@
  */
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Download, ExternalLink, History, ImageIcon, Info } from 'lucide-react';
+import { Calendar, Clock, Download, ExternalLink, History, ImageIcon, Info, Package } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 import { ArchiveDownloadProvider, useArchiveDownload } from '../../contexts/ArchiveDownloadContext';
-import type { TFunction } from 'i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useQuery } from '@tanstack/react-query';
 
 import { Button, EmptyState, ErrorState, Loading } from '../../components/common';
 import { formatMoneyMinor } from '../../utils/money';
 import {
-  customerService, type CustomerDashboard, type CustomerEvent, type CustomerRecentItem,
+  customerService, type CustomerDashboard, type CustomerEvent, type CustomerRecentItem, type CustomerShipment,
 } from '../../services/customer.service';
 import { isDownloadLimitError } from '../../utils/downloadLimit';
-import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
+import { galleryClosedReason, isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
 import { calendarDay } from '../../utils/calendarDay';
+import { RecentList } from './recentFeed';
 
 type SortKey = 'newest' | 'oldest' | 'name';
 
@@ -62,8 +62,9 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
   const documents = items.documents ?? [];
   const requests = items.documentRequests ?? [];
   const contractDetails = items.contractDetails ?? [];
+  const albums = items.albums ?? [];
   const total = items.quotes.length + items.contracts.length + items.invoices.length
-    + documents.length + requests.length + contractDetails.length;
+    + documents.length + requests.length + contractDetails.length + albums.length;
   if (total === 0) return null;
 
   return (
@@ -73,6 +74,16 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
         {t('customer.dashboard.needsAction', 'Needs your attention')}
       </h2>
       <ul className="divide-y divide-border-token">
+        {albums.map((album) => (
+          <li key={album.link} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-sm text-theme">
+              {t('customer.dashboard.albumAwaiting', 'Your album for {{name}} is ready to configure', { name: album.eventName })}
+            </span>
+            <Link to={album.link} className="text-sm underline text-theme">
+              {t('customer.dashboard.configureAlbum', 'Configure album')}
+            </Link>
+          </li>
+        ))}
         {items.quotes.map((q) => (
           <li key={`q-${q.id}`} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
             <span className="text-sm text-theme">
@@ -158,25 +169,51 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
   );
 };
 
-function recentLabel(t: TFunction, item: CustomerRecentItem): string {
-  const vars = { title: item.title };
-  switch (item.kind) {
-    case 'document_shared': return t('customer.dashboard.recent.documentShared', 'New document: {{title}}', vars);
-    case 'document_uploaded': return t('customer.dashboard.recent.documentUploaded', 'You uploaded {{title}}', vars);
-    case 'document_accepted': return t('customer.dashboard.recent.documentAccepted', '{{title}} was accepted', vars);
-    case 'document_rejected': return t('customer.dashboard.recent.documentRejected', '{{title}} was not accepted', vars);
-    case 'contract_sent': return t('customer.dashboard.recent.contractSent', 'Contract {{title}} was sent to you', vars);
-    case 'contract_signed': return t('customer.dashboard.recent.contractSigned', 'You signed contract {{title}}', vars);
-    case 'quote_sent': return t('customer.dashboard.recent.quoteSent', 'Quote {{title}} was sent to you', vars);
-    case 'invoice_sent': return t('customer.dashboard.recent.invoiceSent', 'Invoice {{title}} was sent to you', vars);
-    case 'gallery_assigned': return t('customer.dashboard.recent.galleryAssigned', 'Gallery {{title}} is now available to you', vars);
-    default: return item.title;
-  }
-}
+/** Parcels the studio sent for the customer's album orders (issue 2422). */
+const Shipments: React.FC<{ items: CustomerShipment[]; formatDate: (iso: string | null) => string | null }> = ({ items, formatDate }) => {
+  const { t } = useTranslation();
+  if (items.length === 0) return null;
+  return (
+    <section aria-labelledby="shipments-title" className="rounded-xl border mb-6 overflow-hidden bg-surface border-border-token">
+      <h2 id="shipments-title" className="px-4 pt-4 pb-2 text-base font-semibold text-theme flex items-center gap-2">
+        <Package className="w-5 h-5" />
+        {t('customer.dashboard.shipmentsTitle', 'Shipments')}
+      </h2>
+      <ul className="divide-y divide-border-token">
+        {items.map((s) => (
+          <li key={s.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-theme break-words">
+                {s.productName || t('customer.dashboard.shipmentAlbum', 'Album')} · {s.eventName}
+              </p>
+              <p className="text-sm text-muted-theme break-words">
+                {s.carrierName || t('customer.dashboard.shipmentCarrierOther', 'Parcel')} · <span className="break-all">{s.trackingNumber}</span>
+                {s.shippedAt && ` · ${t('customer.dashboard.shipmentSent', 'sent {{date}}', { date: formatDate(s.shippedAt) })}`}
+              </p>
+            </div>
+            {s.trackingUrl && (
+              <a
+                href={s.trackingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline whitespace-nowrap"
+              >
+                {t('customer.dashboard.trackParcel', 'Track parcel')}
+                <ExternalLink className="w-4 h-4" aria-hidden="true" />
+              </a>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+};
+
+// The dashboard shows the newest few; the rest is on the activity page.
+const RECENT_ON_DASHBOARD = 3;
 
 const Recent: React.FC<{ items: CustomerRecentItem[] }> = ({ items }) => {
   const { t } = useTranslation();
-  const { format: fmtDate } = useLocalizedDate();
   if (items.length === 0) return null;
   return (
     <section aria-labelledby="recent-title" className="rounded-xl border mb-6 overflow-hidden bg-surface border-border-token">
@@ -184,16 +221,14 @@ const Recent: React.FC<{ items: CustomerRecentItem[] }> = ({ items }) => {
         <History className="w-5 h-5" />
         {t('customer.dashboard.recentTitle', 'Recent')}
       </h2>
-      <ul className="divide-y divide-border-token">
-        {items.map((item) => (
-          <li key={`${item.kind}-${item.id}`} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-            <Link to={item.link} className="text-sm text-theme hover:underline min-w-0 break-all">
-              {recentLabel(t, item)}
-            </Link>
-            <time dateTime={item.at} className="text-xs text-muted-theme whitespace-nowrap">{fmtDate(item.at)}</time>
-          </li>
-        ))}
-      </ul>
+      <RecentList items={items.slice(0, RECENT_ON_DASHBOARD)} />
+      {items.length > RECENT_ON_DASHBOARD && (
+        <div className="px-4 py-3 border-t border-border-token">
+          <Link to="/customer/activity" className="text-sm font-medium text-accent hover:underline">
+            {t('customer.dashboard.recentShowAll', 'Show all activity')}
+          </Link>
+        </div>
+      )}
     </section>
   );
 };
@@ -247,7 +282,9 @@ const CustomerDashboardContent: React.FC = () => {
     } catch (e: any) {
       const status = e?.response?.status;
       if (isGalleryTemporarilyDisabled(e)) {
-        toast.error(t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'));
+        toast.error(galleryClosedReason(e) === 'payment'
+          ? t('gallery.awaitingPaymentHelp', 'It opens as soon as the invoice is paid. Your gallery link will stay the same.')
+          : t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'));
       } else if (status === 410) {
         toast.error(t('customer.dashboard.eventExpired', 'This gallery has expired.'));
       } else if (status === 403) {
@@ -274,7 +311,9 @@ const CustomerDashboardContent: React.FC = () => {
       if (isDownloadLimitError(e)) return;
       const status = e?.response?.status;
       if (isGalleryTemporarilyDisabled(e)) {
-        toast.error(t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'));
+        toast.error(galleryClosedReason(e) === 'payment'
+          ? t('gallery.awaitingPaymentHelp', 'It opens as soon as the invoice is paid. Your gallery link will stay the same.')
+          : t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'));
       } else if (status === 410) {
         toast.error(t('customer.dashboard.eventExpired', 'This gallery has expired.'));
       } else if (status === 403) {
@@ -323,6 +362,7 @@ const CustomerDashboardContent: React.FC = () => {
           <NeedsAction items={data.needsAction} />
           <p className="text-sm text-muted-theme mb-4">{t('products.portalPointer', 'Open a gallery to view any product choices your studio has offered.')}</p>
           <Recent items={data.recent ?? []} />
+          <Shipments items={data.shipments ?? []} formatDate={formatDate} />
 
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
             <div>

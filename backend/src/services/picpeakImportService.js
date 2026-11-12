@@ -26,6 +26,9 @@ const logger = require('../utils/logger');
 const { PICPEAK_FORMAT_VERSION } = require('./picpeakExportService');
 const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
 const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
+const { isoSqliteCostTimestamps, COST_TIMESTAMP_TABLES } = require('../utils/costTimestamps');
+const { isoSqliteInvoiceSendAt } = require('../utils/invoiceSendAt');
+const { pgDateColumnsByTable } = require('../utils/dateOnly');
 const { rowBatches } = require('./portableImportRows');
 const {
   dedupeExternalPhotos,
@@ -54,6 +57,11 @@ function migrationOrder(name) {
   return m ? parseInt(m[1], 10) : -1;
 }
 
+function archivePredates(latestMigration, number) {
+  const order = migrationOrder(latestMigration);
+  return order < 0 || order < number;
+}
+
 function archiveLimitError(message, statusCode) {
   const err = new Error(message);
   err.statusCode = statusCode;
@@ -66,7 +74,7 @@ function archiveLimitError(message, statusCode) {
 // was not produced by PicPeak and is refused before any live state changes:
 // the import copies files/ into STORAGE_PATH as-is, and some of that tree is
 // served publicly (fonts/, uploads/logos, uploads/favicons).
-const IMPORT_FILE_ROOTS = ['album-products', 'business-docs', 'uploads', 'transfers', 'events/active', 'events/archived',
+const IMPORT_FILE_ROOTS = ['.print-sales', 'album-products', 'business-docs', 'uploads', 'transfers', 'events/active', 'events/archived',
   'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];
 // The storage subtrees (inside the roots above) that the app serves as
 // static web content, without authentication:
@@ -443,6 +451,79 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
   });
 }
 
+// PostgreSQL `date` columns of the target, by table (see repairDateOnly).
+async function dateOnlyColumnsByTable(trx) {
+  return isPostgres() ? pgDateColumnsByTable(trx) : new Map();
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const QUARTER_HOUR_MS = 15 * 60 * 1000;
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+
+// The calendar day a `date` value in an archive stands for. Until the export
+// wrote pg `date` columns as YYYY-MM-DD, it wrote them as the UTC instant of
+// LOCAL midnight on the source ("2024-08-10T22:00:00.000Z" for 2024-08-11 in
+// Berlin, "2024-08-11T04:00:00.000Z" in New York), and Postgres, casting that
+// in a UTC session, kept the UTC day: one day early east of UTC. A SQLite
+// source's epoch values for a local-midnight Date have the same shape once
+// epochToIso has made them ISO. The source day is the nearest UTC midnight,
+// which holds for every source zone from UTC-11:59 to UTC+12 (a value exactly
+// at 12:00Z counts as east of UTC, so a UTC-12 source would gain a day; no
+// inhabited zone uses that offset). Zones east of UTC+12 (Chatham at +12:45,
+// Tonga, New Zealand summer time) cannot be told apart from the day before
+// west of UTC-12 and stay one day early, as before. Only instants on a
+// quarter hour are treated as shifted midnights, since every zone offset in
+// use is one; any other instant is left for Postgres to cast as before. Two
+// edges follow from that: an instant that is on a quarter hour to the
+// millisecond but was not a midnight is rounded to the nearest day too, and a
+// day before about 1900, when zones still used local mean time (Berlin
+// +0:53:28), is not on a quarter hour and stays as it was. Plain dates pass
+// through unchanged.
+function repairDateOnly(value) {
+  if (typeof value !== 'string' || !ISO_INSTANT.test(value)) return value;
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return value;
+  const timeOfDay = ((ms % DAY_MS) + DAY_MS) % DAY_MS;
+  if (timeOfDay % QUARTER_HOUR_MS !== 0) return value;
+  return new Date(Math.round(ms / DAY_MS) * DAY_MS).toISOString().slice(0, 10);
+}
+
+// Same-engine (pg → pg) archives: an ISO instant in a `date` column is the
+// shifted midnight the export used to write, so repairDateOnly applies.
+// Cross-engine (SQLite → pg): only an epoch number came from a Date the app
+// wrote at local midnight, and that is repaired. A string was stored as the
+// writer sent it, and SQLite showed its first ten characters (toDateOnly);
+// Postgres keeps that day for a plain date or a Z instant cast in a UTC
+// session, so it is left alone. Runs before coerceForTargetEngine, which then
+// sees a plain date and leaves it as it is.
+const EPOCH = /^-?\d+$/;
+function repairDateOnlyColumns(rows, columns, { crossEngine = false } = {}) {
+  if (!columns.length) return rows;
+  const repair = crossEngine
+    ? (value) => ((typeof value === 'number' || (typeof value === 'string' && EPOCH.test(value)))
+      ? repairDateOnly(epochToIso(value)) : value)
+    : repairDateOnly;
+  return rows.map((row) => {
+    let out = row;
+    for (const col of columns) {
+      const repaired = repair(row[col]);
+      if (repaired !== row[col]) {
+        if (out === row) out = { ...row };
+        out[col] = repaired;
+      }
+    }
+    return out;
+  });
+}
+
+// The engine-dependent part of preparing archive rows for the load: the date
+// repair, then (SQLite → pg) the epoch and boolean coercion. replaceAllTables
+// and the zone probe in the tests both go through this.
+function prepareEngineRows(rows, { crossEngine = false, types = null, dateOnlyColumns = [] } = {}) {
+  const repaired = repairDateOnlyColumns(rows, dateOnlyColumns, { crossEngine });
+  return crossEngine ? coerceForTargetEngine(repaired, types) : repaired;
+}
+
 // Columns that name a file by a key relative to a root this install joins it
 // onto: the storage root for archives, photos and their derived files, the
 // external media root for referenced photos. Readers contain most of them
@@ -454,6 +535,7 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
 // a backup that was tampered with is not one to restore in part.
 const CONTAINED_PATH_COLUMNS = {
   album_product_images: ['storage_key'],
+  print_sales_assets: ['storage_key'],
   events: ['archive_path'],
   photos: ['path', 'thumbnail_path', 'watermark_path', 'external_relpath'],
 };
@@ -536,7 +618,7 @@ const SEED_ONLY_TABLES = new Set([
 // session_replication_role=replica on the trx connection, reset before commit;
 // sqlite: defer_foreign_keys so checks run at commit). knex_migrations is never
 // in the data set, so the target's schema/migration state is left intact.
-async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine = false, allTables, executor } = {}) {
+async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine = false, allTables, executor, archiveLatestMigration = null } = {}) {
   await require('./portableRestoreWorker').assertWorkerAuthority(executor);
   const replace = async trx => {
     if (isPostgres()) {
@@ -638,12 +720,13 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     // 2096). Such rows come back as 0, so the background refresh cleans them.
     const markLegacyRenditions = tables.includes('photos') && await trx.schema.hasColumn('photos', 'rendition_version');
 
+    const dateColumnsByTable = await dateOnlyColumnsByTable(trx);
     for (const table of tables) {
       const jsonCols = await jsonColumnsFor(trx, table);
       const types = crossEngine ? await typedColumnsFor(trx, table) : null;
+      const dateOnlyColumns = dateColumnsByTable.get(table) || [];
       for await (const rows of rowBatches(path.join(dataDir, `${table}.ndjson`), { allowMissing: true })) {
-        let prepared = rows;
-        if (crossEngine) prepared = coerceForTargetEngine(prepared, types);
+        let prepared = prepareEngineRows(rows, { crossEngine, types, dateOnlyColumns });
         // SQLite JSON is already serialized; PG JSON values need serialization.
         prepared = serialiseJsonColumns(prepared, crossEngine ? new Set() : jsonCols);
         prepared = relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
@@ -659,6 +742,17 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       // Likewise events.expires_at text that julianday() cannot read, which
       // migration 263 rewrote once on this target (issue 1733).
       if (table === 'events') await canonicaliseSqliteExpiresAt(trx);
+      // And cost timestamps stored as epoch ms, which migration 337 rewrote.
+      if (COST_TIMESTAMP_TABLES.includes(table)) await isoSqliteCostTimestamps(trx, [table]);
+      // And invoice send dates in the shapes migration 356 rewrote, for an
+      // archive made before it (an unknown level counts as before). A newer
+      // archive's rows are already canonical, and its scheduled invoices
+      // restore as they were. Its hold writes history rows, so
+      // accounting_change_history must load before invoices: it does because
+      // the export lists tables by name (picpeakExportService listDataTables).
+      if (table === 'invoices' && archivePredates(archiveLatestMigration, 356)) {
+        await isoSqliteInvoiceSendAt(trx, { actor: 'import' });
+      }
     }
 
     // Rebuild only missing legacy accounting from the RESTORED rows in this
@@ -755,6 +849,7 @@ module.exports = {
   importInMaintenanceWorker,
   recoverInMaintenanceWorker,
   replaceAllTables,
+  archivePredates,
   detectExternalMedia,
   jsonColumnsFor,
   serialiseJsonColumns,
@@ -770,6 +865,10 @@ module.exports = {
   epochToIso,
   coerceForTargetEngine,
   typedColumnsFor,
+  repairDateOnly,
+  repairDateOnlyColumns,
+  prepareEngineRows,
+  dateOnlyColumnsByTable,
   relocateStoredPaths,
   reinjectCurrentAdmin,
   captureOperatorRole,

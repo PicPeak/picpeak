@@ -6,6 +6,7 @@ const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
 const { resolveCredit } = require('./photoCredit');
 const { exifColumn } = require('./photoExif');
+const { sha256File } = require('./photoDuplicates');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -19,6 +20,7 @@ const { getAllowedExtensions } = require('./uploadSettings');
 const downloadZipService = require('./downloadZipService');
 const { promotionSettled } = require('./watchFolderClaims');
 const { unfinishedKeys } = require('./publicUploadQuota');
+const { detectedFocalColumns } = require('../utils/focalPoint');
 
 const { getStoragePath } = require('../config/storage');
 const WATCH_PATH = () => path.join(getStoragePath(), 'events/active');
@@ -362,6 +364,15 @@ async function processNewPhoto(filePath) {
   // wait for the next switch-on backfill. No transaction is open here.
   // Metadata stripping (issue 2102) queues it too.
   const webCopyEnabled = isVideo && await require('./videoRenditionService').queuesVideos();
+  // Content hash (issue 2194), as the upload paths store it, so a later
+  // upload of the same file into this gallery is caught as a duplicate.
+  // Images only: a second full read of a large video would hold up the
+  // import, so videos are left to the content-hash backfill. Best-effort: a
+  // file that cannot be read now is imported without one, for the same.
+  const contentSha256 = isVideo ? null : await sha256File(filePath).catch((err) => {
+    logger.warn(`Could not hash ${relativePath}: ${err.message}`);
+    return null;
+  });
 
   // Add to database
   const insertResult = await db('photos').insert({
@@ -374,6 +385,8 @@ async function processNewPhoto(filePath) {
     path: relativePath,
     thumbnail_path: relativeThumbPath,
     thumb_hash: thumbMeta.thumbHash || null,
+    // Detected while the thumbnail was cut (issue 2377).
+    ...detectedFocalColumns(thumbMeta),
     type: isVideo ? 'video' : photoType,
     // The column defaults to 'image', so a watched video was filed as a
     // photo. Migration 286 corrects the rows imported before this.
@@ -381,6 +394,7 @@ async function processNewPhoto(filePath) {
     source_origin: 'managed',
     processing_status: 'complete',
     size_bytes: stats.size,
+    content_sha256: contentSha256,
     mime_type: mimeType,
     captured_at: capturedAt ? capturedAt.toISOString() : null,
     ...captureWallColumn(capture),

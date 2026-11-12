@@ -2,6 +2,7 @@ import { api } from '../config/api';
 
 export type FeatureKey =
   | 'albumProducts'
+  | 'printSales'
   | 'galleries'
   | 'reminderEmails'
   | 'calendar'
@@ -98,7 +99,15 @@ export type FeatureKey =
   // Customer documents (migration 225, #1444) — PDF exchange in the customer
   // portal and the Documents card on the customer record. Strictly opt-in;
   // the backend refuses every documents route while it is off.
-  | 'documents';
+  | 'documents'
+  // Customer gifts (migration 343) - milestone suggestions, gift stock and the
+  // gift history. Child of `clients`; the backend refuses /admin/gifts while off.
+  | 'customerGifts'
+  // Backup restore test - every backup is verified (manifest signature, dump
+  // checksum, file hashes) and test-restored into a throwaway database, plus a
+  // weekly re-check of retained backups. Background only; the backend refuses
+  // /admin/backup/verifications while off.
+  | 'backupRestoreTest';
 
 export type FeatureFlags = Record<FeatureKey, boolean>;
 

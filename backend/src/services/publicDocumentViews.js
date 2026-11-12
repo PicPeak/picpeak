@@ -12,6 +12,8 @@ const { db } = require('../database/db');
 const { getAppSetting } = require('../utils/appSettings');
 const { isTruthyFlag, isUnselectedOptional, parsePromotionSnapshot } = require('../utils/lineItemTotals');
 const { toTimestamp } = require('../utils/dateNormalize');
+const { clauseTitle } = require('./contract/renderContext');
+const { toDateOnly } = require('../utils/dateOnly');
 
 // Normalise a Settings → Branding logo value (absolute URL, /-rooted path,
 // or bare `uploads/...` filename) into a URL the public page can load.
@@ -46,7 +48,8 @@ function publicContractView(contract, inclusions, customer, profile, locale, bra
     //    page renders body as plain `whitespace-pre-line` text and
     //    has no inline-bold UI. The PDF path keeps them as bold
     //    runs via pdfService.renderBodyMarkdown.
-    const body = (locale === 'de' ? (bodyDe || bodyEn) : (bodyEn || bodyDe))
+    const text = locale === 'de' ? (bodyDe || bodyEn) : (bodyEn || bodyDe);
+    const body = text
       .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, '')
       .replace(/\*\*([^*]+)\*\*/g, '$1');
     if (!blocksBySection[inc.section]) continue;
@@ -54,7 +57,8 @@ function publicContractView(contract, inclusions, customer, profile, locale, bra
       blockId: inc.block_id,
       section: inc.section,
       position: inc.position,
-      name: inc.block_name,
+      // The same heading the PDF prints (renderContext, format 4).
+      name: (isTruthyFlag(inc.block_is_system) && clauseTitle(contract, locale, text)) || inc.block_name,
       body,
     });
   }
@@ -66,8 +70,8 @@ function publicContractView(contract, inclusions, customer, profile, locale, bra
     contractNumber: contract.contract_number,
     status: contract.status,
     language: contract.language,
-    issueDate: contract.issue_date,
-    validUntil: contract.valid_until,
+    issueDate: toDateOnly(contract.issue_date),
+    validUntil: toDateOnly(contract.valid_until),
     title: contract.title,
     introText: contract.intro_text,
     outroText: contract.outro_text,
@@ -121,10 +125,10 @@ function publicQuoteView(quote, lineItems, customer, profile, tosRequired, tosTe
     status: quote.status,
     language: quote.language,
     currency: quote.currency,
-    issueDate: quote.issue_date,
-    validUntil: quote.valid_until,
+    issueDate: toDateOnly(quote.issue_date),
+    validUntil: toDateOnly(quote.valid_until),
     eventName: quote.event_name,
-    eventDate: quote.event_date,
+    eventDate: toDateOnly(quote.event_date),
     eventTimeStart: quote.event_time_start,
     eventTimeEnd: quote.event_time_end,
     // The row keeps the raw text; {{placeholders}} resolve wherever it is

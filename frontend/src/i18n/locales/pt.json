@@ -1,4 +1,17 @@
 {
+  "systemHealth": {
+    "backupRestoreTest": {
+      "title": "Teste de restauração de backups",
+      "ok": "Um backup recente foi aprovado no teste de restauração.",
+      "stale": "Nenhum teste de restauração aprovado nos últimos {{days}} dias.",
+      "none": "Nenhum teste de restauração foi aprovado ainda.",
+      "failed": "O último teste de restauração falhou. O backup pode não ser restaurável.",
+      "running": "Há um teste de restauração em andamento.",
+      "lastPassed": "Último aprovado: {{when}}",
+      "neverPassed": "Nenhum teste de restauração aprovado registrado.",
+      "open": "Abrir teste de restauração"
+    }
+  },
   "userManagement": {
     "title": "Gerenciamento de Usuários",
     "subtitle": "Gerenciar usuários administradores e convites",
@@ -73,6 +86,9 @@
       "message": "Tem certeza que deseja cancelar o convite para {{email}}?"
     },
     "creditNameHelp": "Indicado nas fotos que esta conta envia quando o arquivo não tem nome de fotógrafo nos metadados."
+  },
+  "capabilityNotice": {
+    "archive": "Os downloads em ZIP estão pausados por um momento. Você ainda pode ver e baixar fotos individuais."
   },
   "common": {
     "loading": "Carregando...",
@@ -149,6 +165,8 @@
   },
   "upload": {
     "duplicates": {
+      "skip": "Ignorar duplicados exatos",
+      "skipHelp": "Ignorar ficheiros com conteúdo idêntico já presente nesta galeria, mesmo com outro nome.",
       "title_one": "{{count}} arquivo já está nesta galeria",
       "title_other": "{{count}} arquivos já estão nesta galeria",
       "toast_one": "{{count}} arquivo já está nesta galeria e foi ignorado — detalhes na barra de envio no topo.",
@@ -265,7 +283,10 @@
       "nothingToUpload": "Nenhum dos arquivos selecionados pode ser enviado: estão todos em pastas ocultas ou ignoradas.",
       "keptForNext": "Arquivos adicionados enquanto as pastas eram preparadas continuam selecionados: {{count}}."
     },
-    "largeFileReplaceSkipped": "Substituir pelo nome não é suportado para arquivos acima do tamanho do lote; envie-o sem substituir."
+    "largeFileReplaceSkipped": "Substituir pelo nome não é suportado para arquivos acima do tamanho do lote; envie-o sem substituir.",
+    "capacity": {
+      "paused": "O envio está pausado por um momento. Tente novamente em instantes."
+    }
   },
   "navigation": {
     "dashboard": "Painel",
@@ -346,6 +367,7 @@
     }
   },
   "gallery": {
+    "backToAccount": "Voltar à sua conta",
     "revealPendingTitle": "As fotos ainda são uma surpresa",
     "revealPendingMessage": "O anfitrião revelará a galeria mais tarde — volte em breve!",
     "revealScheduledFor": "Revelação agendada para {{date}}",
@@ -730,6 +752,25 @@
     "toolbar": {
       "browse": "Ferramentas da galeria",
       "selection": "Seleção"
+    },
+    "favoriteLists": {
+      "saveTo": "Salvar na lista",
+      "defaultList": "Meus favoritos",
+      "manage": "Gerenciar listas…",
+      "title": "Suas listas",
+      "intro": "Organize seus favoritos em listas. O marcador salva na lista escolhida.",
+      "defaultHint": "Lista padrão",
+      "nameLabel": "Nome da lista",
+      "rename": "Renomear {{name}}",
+      "deleteNamed": "Excluir {{name}}",
+      "confirmDelete_one": "Excluir \"{{name}}\" e a {{count}} foto salva nela?",
+      "confirmDelete_other": "Excluir \"{{name}}\" e as {{count}} fotos salvas nela?",
+      "delete": "Excluir lista",
+      "newPlaceholder": "Nova lista, ex.: Álbum",
+      "create": "Adicionar",
+      "nameTaken": "Você já tem uma lista com este nome.",
+      "limitReached": "Você pode ter até {{count}} listas.",
+      "saveError": "Não foi possível salvar a lista."
     }
   },
   "categories": {
@@ -797,6 +838,25 @@
     "archived": "Arquivado",
     "totalSize": "Tamanho Total",
     "shareLink": "Link de Compartilhamento",
+    "whatsappInvite": {
+      "title": "Enviar pelo WhatsApp",
+      "description": "Abre o WhatsApp com este texto. Você envia pela sua própria conta.",
+      "open": "Abrir WhatsApp",
+      "phoneLabel": "Número de telefone",
+      "phoneEmpty": "Sem número: o WhatsApp pede para escolher a conversa.",
+      "phoneNational": "Digite o número no formato internacional, ex. +55 11 91234 5678. Sem ele, o WhatsApp pede para escolher a conversa.",
+      "phoneInvalid": "Isto não parece um número de telefone. Sem ele, o WhatsApp pede para escolher a conversa.",
+      "messageLabel": "Mensagem",
+      "editTemplate": "Alterar o texto padrão",
+      "templateLabel": "Texto padrão para todas as galerias",
+      "templateHelp": "Marcadores: {{name}} nome do cliente, {{event}} nome da galeria, {{link}} link, {{date}} data do evento. Deixe vazio para usar o texto embutido.",
+      "saveTemplate": "Salvar texto padrão",
+      "templateSaved": "Texto padrão do WhatsApp salvo.",
+      "templateSaveFailed": "Não foi possível salvar o texto padrão.",
+      "passwordNote": "Esta galeria é protegida por senha. A mensagem não contém a senha: envie-a separadamente.",
+      "pinNote": "O cliente também precisa do PIN do cliente para entrar. A mensagem não o contém: envie-o separadamente.",
+      "defaultTemplate": "Olá {{name}}, sua galeria \"{{event}}\" está online: {{link}}"
+    },
     "qrCode": "Código QR",
     "qrTableCard": "Cartão de mesa (A6)",
     "qrPoster": "Pôster (A4)",
@@ -1493,6 +1553,7 @@
       "defaultAllowRatings": "Classificação por estrelas",
       "defaultAllowLikes": "Gostos",
       "defaultAllowFavorites": "Favoritos",
+      "defaultAllowFavoriteLists": "Listas de favoritos",
       "defaultAllowComments": "Comentários",
       "defaultAllowReactions": "Reações emoji",
       "defaultAllowColorLabels": "Etiquetas de cor",
@@ -1680,7 +1741,11 @@
       "statusActive": "Ativo",
       "confirmRevoke": "Revogar este token? Esta ação é irreversível.",
       "revoke": "Revogar",
-      "empty": "Ainda sem tokens. Gere um acima para começar."
+      "empty": "Ainda sem tokens. Gere um acima para começar.",
+      "galleryPasswordScopes": "Senhas das galerias",
+      "galleryPasswordScopesWarning": "Estes scopes revelam senhas de galerias. Não fazem parte de admin: marque-os apenas num token que precise deles. Cada uso é registado em seu nome.",
+      "scopeGalleryPasswordsRead": "Mostra a senha guardada de uma galeria. Só funciona enquanto \"Manter senhas das galerias recuperáveis\" estiver ativado.",
+      "scopeGalleryPasswordsReset": "Redefine a senha de uma galeria e pode enviar a nova ao cliente por e-mail. Os convidados têm de iniciar sessão novamente."
     },
     "webhooks": {
       "title": "Webhooks",
@@ -1714,9 +1779,12 @@
       "title": "Identidade Visual"
     },
     "features": {
+      "backupRestoreTest": {
+        "title": "Teste de restauração de backups",
+        "description": "Cada backup é restaurado em teste num banco de dados descartável e verificado: assinatura, somas de verificação, hashes dos arquivos, contagens de linhas e migrações. Os backups retidos são verificados novamente toda semana, e você recebe um e-mail quando um falha."
+      },
       "title": "Recursos",
       "intro": "Ative ou desative os recursos do produto. Os recursos ativados aparecem na navegação à esquerda e ficam disponíveis para sua equipe. Alguns recursos ainda estão em beta — ative-os para experimentar ou desative-os para ocultar.",
-      "notYetAvailable": "Ainda não disponível — este controle será ativado quando o recurso for lançado.",
       "sidebarHidden": "Sem item na barra lateral — executa em segundo plano",
       "unsavedChanges": "Você tem alterações não salvas",
       "preview": {
@@ -1824,6 +1892,24 @@
       "running": "A calcular marcadores...",
       "noneToFill": "Todas as fotos já têm marcador",
       "button": "Calcular marcadores"
+    },
+    "contentHashBackfill": {
+      "title": "Hashes de conteúdo",
+      "description": "Calcula o hash de conteúdo usado pela detecção de duplicados, para fotos e vídeos importados pela pasta monitorada, por mídia externa ou pelo S3, e para os adicionados antes de os hashes existirem. Os arquivos são lidos um de cada vez; você pode pausar a qualquer momento e iniciar de novo depois para continuar de onde parou. Originais que não podem ser lidos são ignorados e contados. Fotos novas recebem o hash automaticamente; vídeos novos o recebem aqui.",
+      "ioWarning": "Isso lê uma vez cada original sem hash: espere carga de E/S em um NAS e tráfego de saída no S3.",
+      "total": "Fotos e vídeos",
+      "hashed": "Com hash",
+      "pending": "Ainda sem hash",
+      "unreadable": "Ilegíveis",
+      "result": "Última execução: {{hashed}} calculados, {{failed}} originais ilegíveis",
+      "resultPaused": "Pausado: {{hashed}} calculados, {{failed}} originais ilegíveis até agora",
+      "running": "Lendo originais...",
+      "pause": "Pausar",
+      "pausing": "Pausando após o arquivo atual...",
+      "resume": "Retomar",
+      "button": "Calcular hashes",
+      "noneToHash": "Todos os originais têm hash",
+      "retryUnreadable": "Tentar ilegíveis novamente ({{count}})"
     },
     "health": {
       "title": "Saúde",
@@ -2365,7 +2451,11 @@
       "photosRestored_other": "{{count}} fotos restauradas da lixeira de \"{{eventName}}\"",
       "photosTrashPurged_one": "{{count}} foto excluída definitivamente da lixeira de \"{{eventName}}\"",
       "photosTrashPurged_many": "{{count}} fotos excluídas definitivamente da lixeira de \"{{eventName}}\"",
-      "photosTrashPurged_other": "{{count}} fotos excluídas definitivamente da lixeira de \"{{eventName}}\""
+      "photosTrashPurged_other": "{{count}} fotos excluídas definitivamente da lixeira de \"{{eventName}}\"",
+      "productChoiceReopened": "{{eventName}}: {{productName}} reaberto para o cliente",
+      "productChoiceUnlocked": "{{eventName}}: {{productName}} desbloqueado",
+      "productReleased": "{{eventName}}: {{productName}} disponibilizado ao cliente",
+      "productWithdrawn": "{{eventName}}: disponibilização de {{productName}} retirada"
     },
     "notificationToasts": {
       "markedAllRead": "Todas as notificações marcadas como lidas",
@@ -2489,6 +2579,31 @@
         "deleteFailed_one": "Não foi possível excluir {{count}} foto; ela continua na galeria",
         "deleteFailed_many": "Não foi possível excluir {{count}} fotos; elas continuam na galeria",
         "deleteFailed_other": "Não foi possível excluir {{count}} fotos; elas continuam na galeria"
+      },
+      "duplicates": {
+        "open": "Duplicados",
+        "title": "Fotos duplicadas",
+        "intro": "Só coincidem ficheiros idênticos byte a byte: cópias reexportadas ou redimensionadas não são detetadas, e fotos ainda sem hash (importadas antes do hash) não são comparadas.",
+        "empty": "Sem duplicados nesta galeria",
+        "emptyHelp": "Nenhuma foto aqui partilha o mesmo ficheiro com outra.",
+        "loadFailed": "Não foi possível carregar os duplicados",
+        "copies_one": "{{count}} cópia idêntica",
+        "copies_other": "{{count}} cópias idênticas",
+        "keep": "Manter",
+        "keepThis": "Manter {{name}}",
+        "keepOne_one": "Manter a marcada, mover {{count}} para o lixo",
+        "keepOne_other": "Manter a marcada, mover {{count}} para o lixo",
+        "keepAll_one": "Manter a foto marcada em {{count}} grupo",
+        "keepAll_other": "Manter a foto marcada nos {{count}} grupos",
+        "trashed_one": "{{count}} cópia movida para o lixo",
+        "trashed_other": "{{count}} cópias movidas para o lixo",
+        "failed": "Não foi possível mover as cópias para o lixo",
+        "trashOff": "O lixo está desativado e eliminar é definitivo, por isso esta vista apenas lista as cópias.",
+        "sourceAdmin": "Envio ou importação",
+        "sourceGuest": "Envio de convidado",
+        "sourceExternal": "Pasta externa",
+        "range_one": "Grupo {{from}}–{{to}} de {{count}}",
+        "range_other": "Grupos {{from}}–{{to}} de {{count}}"
       }
     },
     "events": {
@@ -2565,7 +2680,16 @@
         "rated": "Avaliado",
         "reacted": "Reagiu",
         "commented": "Comentado",
-        "labeled": "Etiquetas de cor"
+        "labeled": "Etiquetas de cor",
+        "defaultList": "Lista padrão",
+        "favoriteLists": "Listas de favoritos",
+        "listCount_one": "{{count}} foto",
+        "listCount_other": "{{count}} fotos",
+        "listUpdated": "Atualizada {{date}}",
+        "showInPhotos": "Mostrar nas fotos",
+        "clearListFilter": "Mostrar todas as fotos",
+        "listFilterNamed": "Mostrando as fotos de {{name}}.",
+        "listFilter": "Mostrando as fotos de uma lista de favoritos."
       },
       "inviteStatus": {
         "pending": "Pendente",
@@ -2705,7 +2829,11 @@
       "approval_submitted": "{{guestName}} aprovou as fotos editadas em {{eventName}}",
       "selection_reopened": "Envio de {{guestName}} reaberto em {{eventName}}",
       "photos_restored": "{{count}} fotos restauradas da lixeira de {{eventName}}",
-      "photos_trash_purged": "{{count}} fotos excluídas definitivamente da lixeira de {{eventName}}"
+      "photos_trash_purged": "{{count}} fotos excluídas definitivamente da lixeira de {{eventName}}",
+      "album_product_reopened": "{{productName}} reaberto para o cliente em {{eventName}}",
+      "album_product_unlocked": "{{productName}} desbloqueado em {{eventName}}",
+      "album_product_released": "{{productName}} disponibilizado ao cliente em {{eventName}}",
+      "album_product_withdrawn": "Disponibilização de {{productName}} retirada em {{eventName}}"
     },
     "customerActivity": {
       "customer_invitation_created": "Convite enviado",
@@ -3010,6 +3138,96 @@
     }
   },
   "backup": {
+    "restoreTest": {
+      "title": "Teste de restauração",
+      "description": "Após cada backup, e semanalmente para os backups retidos, o servidor verifica se o backup pode realmente ser restaurado: confere a assinatura e as somas de verificação, restaura o banco de dados numa cópia descartável e a verifica.",
+      "runNow": "Executar teste de restauração agora",
+      "hashAll": "Calcular o hash de todos os arquivos",
+      "started": "Teste de restauração iniciado.",
+      "busy": "Já há um backup, uma restauração ou um teste de restauração em andamento. Tente novamente quando terminar.",
+      "noBackup": "Ainda não há nenhum backup bem-sucedido para testar.",
+      "startFailed": "Não foi possível iniciar o teste de restauração.",
+      "loadFailed": "Não foi possível carregar os resultados do teste de restauração.",
+      "stale": "Nenhum teste de restauração aprovado nos últimos {{days}} dias",
+      "disabled": "Os testes de restauração automáticos estão desativados em Configuração. Os backups só são testados se você iniciar um teste aqui.",
+      "empty": "Nenhum teste de restauração foi executado ainda.",
+      "fullCheck": "hash de todos os arquivos",
+      "scheduleSummary": "Agendamento da verificação: {{cron}} · amostra de outros ficheiros por execução: {{percent}} %",
+      "sampled": "{{percent}} % dos outros ficheiros na amostra",
+      "when": "Quando",
+      "tested": "Testado",
+      "triggeredBy": "Origem",
+      "history": "Testes anteriores ({{count}})",
+      "status": {
+        "passed": "Aprovado",
+        "warning": "Aprovado com avisos",
+        "failed": "Falhou",
+        "skipped": "Ignorado",
+        "running": "Em andamento"
+      },
+      "level": {
+        "deep": "Verificação profunda",
+        "drill": "Simulação de restauração"
+      },
+      "trigger": {
+        "backup": "Após o backup",
+        "schedule": "Verificação agendada",
+        "admin": "Iniciado por um administrador"
+      },
+      "target": {
+        "backupRun": "Backup #{{id}}",
+        "databaseRun": "Backup do banco de dados #{{id}}",
+        "none": "Nenhum backup"
+      },
+      "checks": {
+        "manifest_signature": "Assinatura do manifesto",
+        "dump_checksum": "Soma de verificação do dump do banco",
+        "parent_chain": "Cadeia de backups",
+        "business_docs": "Documentos comerciais",
+        "files_sample": "Amostra de arquivos",
+        "files_all": "Todos os arquivos",
+        "drill_load": "Carregar num banco de teste",
+        "drill_integrity": "Integridade do banco de dados",
+        "drill_foreign_keys": "Chaves estrangeiras",
+        "drill_row_counts": "Contagens de linhas",
+        "drill_migrate": "Migrar para a versão atual",
+        "drill_invariants": "Consistência dos dados",
+        "createdb_privilege": "Permissão para criar um banco de teste",
+        "destination": "Destino do backup"
+      },
+      "skipReasons": {
+        "not_verifiable_rsync": "Backups enviados por rsync não podem ser trazidos de volta para teste, por isso não são verificados. Use um destino local ou S3 para ter testes de restauração.",
+        "insufficient_space": "Não havia espaço livre suficiente para restaurar uma cópia de teste. Libere espaço no servidor e execute o teste novamente.",
+        "busy": "Havia um backup, uma restauração ou outro teste em andamento naquele momento, por isso este teste foi ignorado.",
+        "no_backup": "Não havia nenhum backup bem-sucedido para testar.",
+        "not_standalone": "Este backup não pode ser restaurado sozinho, por isso não foi restaurado em teste.",
+        "no_manifest": "Este backup não tem manifesto, por isso o seu conteúdo não pôde ser verificado.",
+        "interrupted": "O teste foi interrompido antes de terminar, por exemplo por uma reinicialização do servidor.",
+        "no_database_in_backup": "Esta cópia foi feita sem a base de dados (Configuração → O que copiar), por isso só os ficheiros foram verificados. Inclua a base de dados para testes de restauro completos.",
+        "no_database_dump": "Este backup não contém um dump do banco de dados, por isso não havia nada para restaurar em teste.",
+        "legacy_manifest": "Esta cópia foi feita antes de os manifestos serem assinados, por isso as somas de verificação não são fiáveis e não foi testada. As novas cópias são assinadas e testadas."
+      },
+      "badge": {
+        "hint": "Teste de restauração: se este backup foi verificado e restaurado em teste num banco de dados descartável.",
+        "warningHint": "Restaurável, com avisos.",
+        "running": "Testando",
+        "verified": "Verificado",
+        "failed": "Teste falhou",
+        "skipped": "Não testável",
+        "notVerified": "Não verificado"
+      },
+      "config": {
+        "title": "Teste de restauração",
+        "enabled": "Executar testes de restauração automaticamente",
+        "enabledHelp": "Testar cada backup quando terminar e verificar novamente os backups retidos conforme o agendamento abaixo.",
+        "schedule": "Agendamento da nova verificação (cron)",
+        "scheduleHelp": "Padrão: domingo 04:00 (0 4 * * 0)",
+        "samplePercent": "Amostra de arquivos por execução (%)",
+        "samplePercentHelp": "Os documentos comerciais de cada backup são sempre verificados por hash; esta é a parcela dos demais arquivos (fotos etc.) verificada em cada execução, em rodízio para que todos os arquivos sejam cobertos com o tempo.",
+        "invalidCron": "Insira uma expressão cron válida (5 campos) para o agendamento do teste de restauração",
+        "invalidSamplePercent": "A amostra de arquivos deve estar entre 0 e 100 por cento"
+      }
+    },
     "title": "Gerenciamento de Backup",
     "subtitle": "Gerencie backups do sistema, configure backups automáticos e restaure dados.",
     "tabs": {
@@ -3439,6 +3657,8 @@
       "reactions": "Reações com emojis",
       "reactionsDesc": "Um emoji por convidado por foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Marcar fotos como favoritas",
+      "favoriteLists": "Listas de favoritos",
+      "favoriteListsDesc": "Os convidados organizam os favoritos em listas com nome próprio, como \"Álbum\" ou \"Impressão\"",
       "perGuestLimits": "Limites por convidado",
       "perGuestLimitsDesc": "Limite quantas fotos cada convidado pode favoritar ou curtir — útil para pedidos como \"escolha suas N favoritas para o álbum\". Deixe em 0 para não ter limite. Se você reduzir o limite para menos do que um convidado já marcou, as marcações dele continuam; só novas adições ficam bloqueadas até ele remover algumas.",
       "maxFavoritesPerGuest": "Máximo de favoritas por convidado",
@@ -4027,7 +4247,30 @@
       "sortNewest": "Mais recentes",
       "sortOldest": "Mais antigos",
       "sortName": "Por nome",
-      "open": "Abrir"
+      "open": "Abrir",
+      "albumAwaiting": "O seu álbum de {{name}} está pronto a configurar",
+      "configureAlbum": "Configurar álbum",
+      "recent": {
+        "photosAdded_one": "{{count}} nova foto em {{title}}",
+        "photosAdded_many": "{{count}} novas fotos em {{title}}",
+        "photosAdded_other": "{{count}} novas fotos em {{title}}",
+        "videosAdded_one": "{{count}} novo vídeo em {{title}}",
+        "videosAdded_many": "{{count}} novos vídeos em {{title}}",
+        "videosAdded_other": "{{count}} novos vídeos em {{title}}",
+        "mediaAdded": "{{photos}} e {{videos}} em {{title}}",
+        "newPhotos_one": "{{count}} nova foto",
+        "newPhotos_many": "{{count}} novas fotos",
+        "newPhotos_other": "{{count}} novas fotos",
+        "videos_one": "{{count}} vídeo",
+        "videos_many": "{{count}} vídeos",
+        "videos_other": "{{count}} vídeos"
+      },
+      "recentShowAll": "Ver toda a atividade",
+      "shipmentsTitle": "Envios",
+      "shipmentAlbum": "Álbum",
+      "shipmentCarrierOther": "Encomenda",
+      "shipmentSent": "enviada a {{date}}",
+      "trackParcel": "Seguir encomenda"
     },
     "layout": {
       "greeting": "Olá, {{name}}"
@@ -4119,6 +4362,18 @@
       "successToast": "Senha atualizada. Faça login.",
       "invalidSubmission": "Não foi possível atualizar sua senha.",
       "generalError": "Não foi possível atualizar sua senha. Tente novamente."
+    },
+    "event": {
+      "album": "O seu álbum",
+      "albumConfirmed": "A sua seleção está confirmada.",
+      "albumOpen": "Configurar o seu álbum",
+      "albumReady": "O estúdio disponibilizou o seu álbum. Escolha o acabamento e as suas fotos.",
+      "albumView": "Ver a sua seleção"
+    },
+    "activity": {
+      "title": "Atividade",
+      "loadError": "Não foi possível carregar a atividade. Tente novamente.",
+      "empty": "Ainda não aconteceu nada."
     }
   },
   "customers": {
@@ -4330,6 +4585,130 @@
     },
     "subnav": {
       "approvals": "Aprovações"
+    }
+  },
+  "albumProducts": {
+    "actorClient": "Cliente",
+    "actorStudio": "Estúdio",
+    "album": "Álbum",
+    "audience": "Quem recebe esta oferta",
+    "audienceClient": "O cliente da galeria (PIN)",
+    "audienceFixed": "Esta oferta já contém uma escolha, por isso fica com este cliente. Adicione uma nova oferta para outro cliente.",
+    "audienceShared": "Vários clientes partilham esta galeria, por isso nenhum vê esta oferta no portal. Escolha um cliente ou use o PIN.",
+    "confirmBack": "Continuar a editar",
+    "confirmFinal": "Confirmar agora",
+    "confirmSelection": "Confirmar seleção",
+    "confirmWarning": "Atenção: após a confirmação, esta seleção já não pode ser alterada.",
+    "confirmedByClient": "Confirmado pelo cliente",
+    "confirmedLocked": "A sua seleção está confirmada e bloqueada pelo estúdio.",
+    "confirmedWaiting": "A sua seleção está confirmada. O estúdio já a recebeu.",
+    "continueSelection": "Continuar a seleção",
+    "copyLink": "Copiar ligação do cliente",
+    "coverPhoto": "Foto de capa",
+    "entryConfirmed": "A sua seleção está confirmada.",
+    "entryOpen": "Escolha o seu álbum, o acabamento e as fotos de capa e de póster.",
+    "history": "Histórico da escolha",
+    "linkCopied": "Ligação do cliente copiada",
+    "linkCopyFailed": "Não foi possível copiar a ligação",
+    "noPhotos": "Ainda não há fotos para escolher.",
+    "notReleased": "Não disponibilizado",
+    "photoCountExact": "{{count}} de {{max}} selecionadas",
+    "photoCountOne": "{{count}} de 1 selecionadas",
+    "photoCountRange": "{{count}} selecionadas, escolha de {{min}} a {{max}}",
+    "photoGone": "Já não disponível",
+    "photoNumber": "Foto {{number}}",
+    "photoUnavailable": "Já não disponível, substitua-a",
+    "photosFailed": "Não foi possível carregar as fotos da galeria. Feche esta janela e tente novamente.",
+    "posterPhotos": "Fotos de póster",
+    "release": "Disponibilizar ao cliente",
+    "released": "Disponibilizado",
+    "releasedTo": "Apenas para {{name}}",
+    "removePhoto": "Remover",
+    "reopen": "Reabrir para o cliente",
+    "reopenMessage": "O cliente pode voltar a alterar a seleção confirmada e tem de a confirmar novamente. A reabertura fica registada no registo de atividade.",
+    "reopenTitle": "Reabrir esta seleção?",
+    "reviewIncomplete": "Ainda faltam alguns passos. Volte atrás para os concluir.",
+    "selectedPhoto": "Foto selecionada",
+    "showMorePhotos": "Mostrar mais fotos",
+    "startSelection": "Configurar o seu álbum",
+    "stepAlbum": "Escolha o seu álbum",
+    "stepColour": "Escolha uma cor",
+    "stepCover": "Escolha a foto de capa",
+    "coverHint": "A foto de capa fica na parte de fora do álbum, é a primeira coisa que se vê antes de abri-lo.",
+    "stepExtras": "Mais alguns detalhes",
+    "stepFormat": "Compare os formatos",
+    "stepMaterial": "Escolha um material",
+    "stepOf": "Passo {{current}} de {{total}}",
+    "stepPoster": "Escolha as fotos de póster",
+    "stepReview": "Reveja o seu álbum",
+    "stepSize": "Escolha um tamanho",
+    "viewSelection": "Ver a sua seleção",
+    "withdraw": "Retirar disponibilização",
+    "yourAlbum": "O seu álbum",
+    "shipments": {
+      "title": "Envios",
+      "other": "Outra transportadora",
+      "carrier": "Transportadora",
+      "number": "Número de rastreio",
+      "url": "Link de rastreio (opcional)",
+      "notify": "Avisar o cliente por e-mail",
+      "notifyTo": "Para {{name}} ({{email}}), com o link de rastreio.",
+      "noRecipient": "Nenhuma conta de cliente pertence a esta encomenda, por isso ninguém pode ser avisado e o portal não pode mostrar a encomenda. Ainda pode registá-la.",
+      "add": "Adicionar encomenda",
+      "added": "Encomenda registada.",
+      "addedMailed": "Encomenda registada. E-mail de envio em fila para {{email}}.",
+      "mailFailed": "Encomenda registada, mas não foi possível pôr o e-mail de envio em fila.",
+      "mailed": "E-mail enviado",
+      "notMailed": "Não avisado",
+      "mailQueued": "E-mail agendado",
+      "mailFailed": "Falha no e-mail",
+      "deleteTitle": "Eliminar esta encomenda?",
+      "deleteMessage": "A encomenda {{number}} desaparece da administração e do portal do cliente. Um e-mail já enviado continua enviado.",
+      "delete": "Eliminar encomenda",
+      "deleteNamed": "Eliminar encomenda {{number}}"
+    }
+  },
+  "products": {
+    "addAlbumStarter": "Adicionar conjunto inicial de álbum",
+    "attributeRole": "Função num álbum guiado",
+    "availabilityHelp": "Marque com o que cada opção combina. Sem nada marcado, é oferecida com todas.",
+    "clearColourValue": "Remover valor da cor",
+    "clientFinal": "A confirmação do cliente é definitiva",
+    "colourValue": "Valor da cor",
+    "dependsOnNothing": "Nada: sempre todas",
+    "guidedAlbum": "Encomenda guiada de álbum",
+    "guidedHelp": "O cliente passa por álbum, material, cor, formato e tamanho e depois escolhe as fotos. O tipo de produto precisa das quatro funções, cores ligadas ao material e tamanhos ligados ao formato. Fica oculto até o disponibilizar na galeria.",
+    "heroImage": "Imagem do produto (PNG, até 6 MB)",
+    "optionsDependOn": "As opções oferecidas dependem de",
+    "posterMax": "Fotos de póster, no máximo",
+    "posterMin": "Fotos de póster, no mínimo",
+    "removeHeroImage": "Remover imagem",
+    "requireCover": "Exigir uma foto de capa",
+    "roleNone": "Nenhuma: uma escolha adicional",
+    "sizesAreSpreads": "Os tamanhos medem o álbum aberto (duas páginas)",
+    "role": {
+      "material": "Material",
+      "colour": "Cor",
+      "format": "Formato",
+      "size": "Tamanho"
+    },
+    "starter": {
+      "black": "Preto",
+      "champagne": "Champanhe",
+      "cognac": "Conhaque",
+      "colours": "Cor do álbum",
+      "cotton": "Algodão",
+      "formats": "Formato do álbum",
+      "ivory": "Marfim",
+      "landscape": "Horizontal",
+      "leather": "Pele",
+      "materials": "Material do álbum",
+      "natural": "Natural",
+      "silk": "Seda",
+      "sizes": "Tamanho do álbum",
+      "slate": "Ardósia",
+      "square": "Quadrado",
+      "type": "Álbum"
     }
   }
 }

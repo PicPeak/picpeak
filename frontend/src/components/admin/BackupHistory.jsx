@@ -31,7 +31,10 @@ import { useMutationWithToast } from '../../hooks';
 // AM/PM) and 'PPP' (US-locale long date), which ignored the settings —
 // Ralf 2026-05-31 flagged "11:25 PM" on a 24h-configured install.
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { usePermissions } from '../../contexts/PermissionsContext';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
+import { BACKUP_VERIFICATIONS_QUERY_KEY, backupVerificationService } from '../../services/backupVerification.service';
+import { RestoreTestRunBadge } from './RestoreTestStatus';
 
 const statusIcons = {
   completed: { icon: CheckCircle, color: 'text-success' },
@@ -52,9 +55,12 @@ const formatBytes = (bytes) => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 };
 
-export const BackupHistory = () => {
+// restoreTestEnabled: the `backupRestoreTest` feature flag, passed in by
+// BackupManagement. When on, each row shows whether its restore test passed.
+export const BackupHistory = ({ restoreTestEnabled = false } = {}) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const { hasPermission } = usePermissions();
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -80,6 +86,17 @@ export const BackupHistory = () => {
       return response.data;
     }
   });
+
+  // Restore test status per backup run (shared cache with the Integrity
+  // tab's Restore test card). Polls only while a test is running.
+  const { data: verifications } = useQuery({
+    queryKey: BACKUP_VERIFICATIONS_QUERY_KEY,
+    queryFn: () => backupVerificationService.list(20),
+    // The results route needs backup.view.
+    enabled: restoreTestEnabled && hasPermission('backup.view'),
+    refetchInterval: (query) => (query.state.data?.running ? 5000 : false),
+  });
+  const verificationByRun = (restoreTestEnabled && verifications?.byBackupRun) || null;
 
   // Delete backup mutation (issue 1711). The route removes the run's own
   // stored artifact before the record, and answers with a stable code when
@@ -234,6 +251,11 @@ export const BackupHistory = () => {
                               {backup.status}
                             </span>
                           </div>
+                          {verificationByRun && backup.status !== 'running' && (
+                            <div className="mt-1 ml-7">
+                              <RestoreTestRunBadge status={verificationByRun[String(backup.id)]} />
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>

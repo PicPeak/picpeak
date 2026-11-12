@@ -230,6 +230,18 @@ describe('exportPostings', () => {
     expect(docCell).toBe('\' =cmd|"/C calc"!A1');
   });
 
+  it('sorts Postgres Date objects chronologically, not by weekday name (issue 2335)', async () => {
+    // String(Date) starts with the weekday: a string compare put Fri 16 Oct
+    // before Mon 12 Oct before Thu 15 Oct.
+    invoiceRows = [
+      { id: 1, invoice_number: 'R1', issue_date: new Date(2026, 9, 16), vat_rate: 8.1, net_amount_minor: 100, vat_amount_minor: 8, total_amount_minor: 108, customer_company_name: 'A' },
+      { id: 2, invoice_number: 'R2', issue_date: new Date(2026, 9, 12), vat_rate: 8.1, net_amount_minor: 100, vat_amount_minor: 8, total_amount_minor: 108, customer_company_name: 'A' },
+    ];
+    inboundRows = [{ id: 5, invoice_number: 'L1', invoice_date: new Date(2026, 9, 15), created_at: new Date(2026, 9, 20, 9), supplier_name: 'Lab', tax_treatment: 'domestic', net_amount_minor: 50, vat_amount_minor: 4, total_amount_minor: 54, event_id: null, cat_account_id: null }];
+    const { postings } = await ledgerService.buildPostings({ from: '2026-10-01', to: '2026-10-31', currency: 'CHF' });
+    expect(postings.map((p) => p.docNumber)).toEqual(['R2', 'L1', 'R1']);
+  });
+
   it('formats a Postgres Date object as yyyy-mm-dd (not "Thu Jan ...")', async () => {
     // PG returns DATE columns as JS Date objects (SQLite returns strings); the
     // export must still emit an ISO date, or Banana rejects it and the Date

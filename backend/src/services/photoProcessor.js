@@ -17,6 +17,7 @@ const { isResourceError, describe: describeImageError } = require('./imageResour
 const { sha256File } = require('./photoDuplicates');
 const mediaAttempts = require('./mediaAttemptService');
 const { refusal: mediaRefusal, isInterruption } = require('./mediaProcessPolicy');
+const { detectedFocalColumns, focalPointOf } = require('../utils/focalPoint');
 
 function normalizeFiles(files) {
   // Handle null, undefined, or falsy values
@@ -295,6 +296,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         path: relativePath,
         thumbnail_path: relativeThumbPath,
         thumb_hash: thumbMeta.thumbHash || null,
+        // Detected while the thumbnail was cut (issue 2377).
+        ...detectedFocalColumns(thumbMeta),
         type: photoType,
         size_bytes: actualSize,
         content_sha256: contentSha256,
@@ -802,10 +805,19 @@ async function processPhoto(photoId) {
       try {
         try {
           const meta = {};
-          const thumbnailPath = await generateThumbnail(proc.path, { outputBasename: mediaAttempts.outputName(proc.outputBasename || photo.filename), meta });
+          // A point the admin set (a failed photo can get one before its
+          // Retry) is the crop's, and stays; otherwise one is detected while
+          // the thumbnail is cut (issue 2377).
+          const manualFocal = photo.focal_source === 'manual' ? focalPointOf(photo) : null;
+          const thumbnailPath = await generateThumbnail(proc.path, {
+            outputBasename: mediaAttempts.outputName(proc.outputBasename || photo.filename),
+            meta,
+            ...(manualFocal ? { focal: manualFocal } : {}),
+          });
           if (thumbnailPath) {
             updateData.thumbnail_path = thumbnailPath;
             updateData.thumb_hash = meta.thumbHash || null;
+            if (!manualFocal) Object.assign(updateData, detectedFocalColumns(meta));
           }
         } catch (e) {
           if (isResourceError(e)) throw e;
@@ -942,7 +954,7 @@ async function processPhoto(photoId) {
           id: photo.id,
           filename: photo.filename,
           original_filename: photo.original_filename,
-          size_bytes: photo.size_bytes,
+          size_bytes: photo.size_bytes == null ? null : Number(photo.size_bytes),
         },
       });
     } catch (e) {

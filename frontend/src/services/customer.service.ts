@@ -11,8 +11,23 @@ import { api } from '../config/api';
 import type { ContractStatus, PublicContractView } from './contracts.service';
 import type { PublicQuoteView, QuoteStatus } from './quotes.service';
 
+/** What this login may do. The account holder has every right. */
+export interface CustomerRights {
+  galleries: 'none' | 'view' | 'act';
+  quotes: 'none' | 'view' | 'act';
+  contracts: 'none' | 'view' | 'act';
+  bills: 'none' | 'view';
+  documents: 'none' | 'view' | 'act';
+  company: 'none' | 'act';
+}
+
 export interface CustomerProfile {
   id: number;
+  /** Set when a contact is signed in; `id` stays the customer account. */
+  contactId?: number | null;
+  rights?: CustomerRights;
+  /** Every company this login can work in; the session is in one of them. */
+  companies?: { id: number; name: string | null }[];
   email: string;
   displayName: string | null;
   firstName: string | null;
@@ -96,6 +111,8 @@ export interface CustomerInvitationInfo {
   email: string;
   expiresAt: string;
   invitedBy: string | null;
+  /** A contact joins an existing customer: no company data to ask for. */
+  forContact?: boolean;
   /** Admin-supplied prefill — populates the accept-invite profile form. */
   prefill: CustomerProfilePrefill | null;
 }
@@ -167,6 +184,8 @@ export interface CustomerDocumentLimits {
 
 export interface CustomerDashboard {
   needsAction: {
+    /** Released albums the customer has not confirmed yet. */
+    albums?: Array<{ eventName: string; link: string }>;
     quotes: Array<{
       id: number; quoteNumber: string; eventName: string | null; validUntil: string | null;
       sentAt: string | null; totalAmountMinor: number; currency: string;
@@ -192,24 +211,46 @@ export interface CustomerDashboard {
   /** Newest first, from the same visibility rules as the lists they link to. */
   recent?: CustomerRecentItem[];
   galleries: { active: CustomerEvent[]; expired: CustomerEvent[] };
+  /** Parcels of the customer's album orders, newest first (issue 2422). */
+  shipments?: CustomerShipment[];
+}
+
+export interface CustomerShipment {
+  id: number;
+  carrier: string;
+  /** Null for a carrier the studio typed in ("other"). */
+  carrierName: string | null;
+  trackingNumber: string;
+  trackingUrl: string | null;
+  shippedAt: string | null;
+  productName: string | null;
+  eventName: string;
 }
 
 export type CustomerRecentKind =
   | 'document_shared' | 'document_uploaded' | 'document_accepted' | 'document_rejected'
-  | 'contract_sent' | 'contract_signed' | 'quote_sent' | 'invoice_sent' | 'gallery_assigned';
+  | 'contract_sent' | 'contract_signed' | 'quote_sent' | 'invoice_sent' | 'gallery_assigned'
+  | 'photos_added';
 
 export interface CustomerRecentItem {
   kind: CustomerRecentKind;
-  id: number;
+  /** A string for photos_added: one item per gallery and upload day. */
+  id: number | string;
   title: string;
   at: string;
   /** A portal path. */
   link: string;
+  /** photos_added only: what came in that day. */
+  counts?: { photos: number; videos: number };
 }
 
 export interface CustomerEventOverview {
   event: CustomerEvent;
   sections: { quotes: boolean; contracts: boolean; invoices: boolean; documents: boolean };
+  /** Product offers released to this customer in this gallery. */
+  productOffers?: Array<{
+    id: string; name: string | null; status: 'draft' | 'submitted' | 'locked'; confirmed: boolean; guided: boolean;
+  }>;
   quotes: Array<{
     id: number; quoteNumber: string; status: CustomerQuote['status']; issueDate: string | null;
     validUntil: string | null; totalAmountMinor: number; currency: string;
@@ -295,6 +336,16 @@ export const customerService = {
    *               (including the brief window while the admin saves
    *               an unrelated change like gallery assignments).
    */
+  /** Move this session to another company of the same login. */
+  async switchCompany(customerId: number): Promise<{
+    customer: CustomerProfile;
+    features: CustomerFeatures;
+    branding: CustomerBranding;
+  }> {
+    const { data } = await api.post('/customer/auth/switch-company', { customerId });
+    return data;
+  },
+
   async session(): Promise<{
     customer: CustomerProfile;
     features: CustomerFeatures;
@@ -389,6 +440,12 @@ export const customerService = {
   async getDashboard(): Promise<CustomerDashboard> {
     const response = await api.get<CustomerDashboard>('/customer/dashboard');
     return response.data;
+  },
+
+  /** The Recent feed at full length, for the activity page. */
+  async getActivity(): Promise<CustomerRecentItem[]> {
+    const response = await api.get<{ items: CustomerRecentItem[] }>('/customer/activity');
+    return response.data.items;
   },
 
   /** Everything the customer has for one event (#1444). */

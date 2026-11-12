@@ -4,10 +4,12 @@
 const { logActivity } = require('../../database/db');
 const { adminActivityActor } = require('../../utils/activityActor');
 const { AppError } = require('../../utils/errors');
+const { toStoredTimestamp } = require('../../utils/dateNormalize');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
+const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('../accountingHistory');
-const { computeDueDate, computeScheduledSendAt, EDITABLE_INSTALLMENT_STATUSES, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
+const { computeDueDate, computeScheduledSendAt, isInvoiceEditable, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
 
 
 /**
@@ -16,7 +18,18 @@ const { computeDueDate, computeScheduledSendAt, EDITABLE_INSTALLMENT_STATUSES, g
  * percent share; the last slice absorbs rounding drift so the per-slice
  * sums exactly equal the plan total.
  */
-function computeSliceTotals(installments, totals, i) {
+function computeSliceTotals(installments, totals, i, { roundVatDown = false } = {}) {
+  const slice = proportionalSlice(installments, totals, i);
+  // Each instalment is a VAT invoice of its own: a UK business rounds its VAT
+  // down on its own net (utils/vatAmount), as spawnInstallmentInvoices does.
+  if (roundVatDown) {
+    slice.vat = vatMinorFor(slice.net, ensureNumber(totals.vatRate, 0), { roundDown: true });
+    slice.total = slice.net + slice.vat + slice.shipping;
+  }
+  return slice;
+}
+
+function proportionalSlice(installments, totals, i) {
   const lastIndex = installments.length - 1;
   const pct = ensureNumber(installments[i].percent, 0);
   if (i < lastIndex) {
@@ -150,7 +163,7 @@ async function replaceReconciliationLine(
  *
  * Guards:
  *   - dealUuid must exist + own ≥1 invoice (else 404)
- *   - all siblings must be in EDITABLE_INSTALLMENT_STATUSES (else 409
+ *   - all siblings must pass isInvoiceEditable (else 409
  *     `INVOICE_LOCKED`)
  *   - no Storno on the deal (else 409 `PLAN_HAS_STORNO`)
  *   - new plan validated by validateInstallmentPlanInput
@@ -196,9 +209,9 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
         'PLAN_HAS_STORNO',
       );
     }
-    if (!EDITABLE_INSTALLMENT_STATUSES.has(row.status)) {
+    if (!isInvoiceEditable(row)) {
       throw new AppError(
-        `Cannot reshape — invoice ${row.invoice_number} is '${row.status}'`,
+        `Cannot reshape — invoice ${row.invoice_number} is '${row.status}' or has a payment recorded`,
         409,
         'INVOICE_LOCKED',
       );
@@ -214,6 +227,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
   }), { net: 0, vat: 0, shipping: 0, total: 0, vatRate: 0 });
 
   const sample = existing[0]; // canonical event + customer + payment-term shape
+  const roundVatDown = await roundsVatDown(trx);
 
   // netDays inferred from sample's issue → due gap so the new rows
   // honour the same payment-term the customer agreed to. Falls back
@@ -241,7 +255,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
 
   for (let i = 0; i < newCount; i++) {
     const inst = installments[i];
-    const slice = computeSliceTotals(installments, totals, i);
+    const slice = computeSliceTotals(installments, totals, i, { roundVatDown });
 
     let scheduledSendAt = computeScheduledSendAt(
       inst.trigger, inst.offset_days, eventDate, acceptanceTime,
@@ -265,7 +279,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
         installment_label: label,
         installment_trigger: inst.trigger,
         status: rowStatus,
-        scheduled_send_at: rowScheduledSendAt,
+        scheduled_send_at: toStoredTimestamp(rowScheduledSendAt),
         issue_date: scheduledSendAt.toISOString().slice(0, 10),
         due_date: dueDate,
         net_amount_minor: slice.net,
@@ -309,7 +323,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
       installment_label: label,
       installment_trigger: inst.trigger,
       status: rowStatus,
-      scheduled_send_at: rowScheduledSendAt,
+      scheduled_send_at: toStoredTimestamp(rowScheduledSendAt),
       net_amount_minor: slice.net,
       vat_rate: ensureNumber(sample.vat_rate, 0),
       vat_amount_minor: slice.vat,

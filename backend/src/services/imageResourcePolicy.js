@@ -13,6 +13,10 @@ const TRANSIENT = new Set(['IMAGE_QUEUE_FULL', 'IMAGE_TIMEOUT', 'IMAGE_CANCELLED
   // starts, so running it again would only take as long again.
   'MEDIA_QUEUE_FULL', 'MEDIA_CANCELLED', 'MEDIA_WORKER_UNAVAILABLE', 'MEDIA_LEASE_BUSY', 'MEDIA_LEASE_UNAVAILABLE', 'MEDIA_ADMISSION_UNAVAILABLE']);
 
+// sharp cannot load on this host. Deliberately not an IMAGE_ code: background
+// work keeps treating it as an ordinary sharp failure, so a photo completes
+// without a thumbnail instead of failing with nothing to requeue it.
+const LIBRARY_UNAVAILABLE = 'SHARP_UNAVAILABLE';
 function refusal(message, code = 'IMAGE_RESOURCE_LIMIT', detail) {
   return Object.assign(new Error(message), { code, status: TRANSIENT.has(code) ? 503 : 422 }, detail);
 }
@@ -118,21 +122,31 @@ function isTransient(error) {
   return TRANSIENT.has(error?.code);
 }
 /** Runs `work` again after a pause while the image worker says "not now". */
-async function retryTransient(work, { attempts = 3, pauseMs = 2000 } = {}) {
+async function retryTransient(work, { attempts = 3, pauseMs = 2000, retryIf = isTransient } = {}) {
   for (let attempt = 1; ; attempt++) {
     try { return await work(); }
     catch (error) {
-      if (!isTransient(error) || attempt >= attempts) throw error;
+      if (!retryIf(error) || attempt >= attempts) throw error;
       await new Promise(resolve => setTimeout(resolve, pauseMs));
     }
   }
 }
 /** The fields an upload response carries so the client can name the limit. */
 function describe(error) {
+  if (error?.code === LIBRARY_UNAVAILABLE) return { code: error.code };
   if (!isResourceError(error)) return {};
   return {
     code: error.code,
     ...(error.imageLimit ? { imageLimit: error.imageLimit, imageMax: error.imageMax } : {}),
   };
 }
-module.exports = { configuration, estimate, refusal, isResourceError, isTransient, retryTransient, describe, effectiveMemory, MiB };
+/**
+ * How a single-file upload answers a file refused for one of these limits:
+ * 422 with the refusal's message and the limit, not a 400 or a 500. Takes
+ * the refusal or its `req.invalidFiles` entry; null for anything else.
+ */
+function uploadRefusal(refused) {
+  if (!isResourceError(refused) || isTransient(refused)) return null;
+  return { status: 422, body: { error: typeof refused.error === 'string' ? refused.error : refused.message, ...describe(refused) } };
+}
+module.exports = { LIBRARY_UNAVAILABLE, configuration, estimate, refusal, isResourceError, isTransient, retryTransient, describe, uploadRefusal, effectiveMemory, MiB };

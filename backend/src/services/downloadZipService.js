@@ -24,12 +24,14 @@ const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getStorage } = require('./storage');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
+const { uniquifyZipNames } = require('../utils/filenameSanitizer');
 const {
-  renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, resolveWatermarkSettings, isVideo,
+  renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, renderedDownloadType, resolveWatermarkSettings, isVideo,
 } = require('./downloadRendition');
 const { isGalleryPriced, resolveForcedWatermarkSettingsForPhoto } = require('../modules/photoSales/priceRules');
 const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const logger = require('../utils/logger');
+const dependencyHealth = require('./dependencyHealth');
 
 const DEBOUNCE_MS = 5000;
 
@@ -336,6 +338,10 @@ class DownloadZipService {
       // streaming starts so the loop just indexes the precomputed array.
       const useOriginal = await getUseOriginalFilenames();
       const entryNames = getZipEntryNames(photos, useOriginal);
+      // A converted entry takes the new format's extension, which can give it
+      // the name of another entry: uniquify the final names as they ship.
+      const finalNames = new Map();
+      const finalName = (name) => uniquifyZipNames([name], finalNames)[0];
 
       this.buildCancellers.set(eventId, () => {
         if (failBuild) failBuild(new Error('Build invalidated'));
@@ -415,7 +421,7 @@ class DownloadZipService {
                 // No preview means no photo: the original must never stand in.
                 if (!preview) throw new Error('No sales preview of this photo');
                 archive.append(preview.buffer, {
-                  name: previewDownloadName(archiveName, preview.extension),
+                  name: finalName(previewDownloadName(archiveName, preview.extension)),
                 });
                 continue;
               }
@@ -426,7 +432,8 @@ class DownloadZipService {
             }
 
             if (rendered) {
-              archive.append(rendered, { name: archiveName });
+              // A capped HEIC/AVIF/RAW comes back as JPEG: name it so.
+              archive.append(rendered, { name: finalName(renderedDownloadType(rendered, photo, archiveName).name) });
             } else if (storageKey) {
               await waitForReadSlot();
               if (cancelled) return;
@@ -438,10 +445,10 @@ class DownloadZipService {
                 if (cancelled) return;
                 return failBuild(new Error('Build invalidated'));
               }
-              archive.append(trackRead(stream), { name: archiveName });
+              archive.append(trackRead(stream), { name: finalName(archiveName) });
             } else {
               const filePath = resolvePhotoFilePath(event, photo);
-              archive.file(filePath, { name: archiveName });
+              archive.file(filePath, { name: finalName(archiveName) });
             }
           }
 
@@ -551,7 +558,13 @@ class DownloadZipService {
       this.debounceTimers.delete(eventId);
       // Through the cap (#1399): invalidateAll arms every one of these in the
       // same tick, so without it they all start building together.
-      this._withRegenSlot(() => this.generateZip(eventId)).catch(err =>
+      this._withRegenSlot(() => {
+        // Checked once the slot is free, not when the timer fires: a rebuild
+        // can wait behind others for a while. While paused it waits for the
+        // next download, which streams or rebuilds it; a running build ends.
+        if (dependencyHealth.evaluate('downloads.archive').paused) return undefined;
+        return this.generateZip(eventId);
+      }).catch(err =>
         logger.warn('downloadZipService debounced regen error', { eventId, error: err.message })
       );
     }, DEBOUNCE_MS);

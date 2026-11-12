@@ -617,6 +617,8 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           'photos.size_bytes', 'photos.source_mtime_ms',
           // A RAW row's tier keys are scoped by its processing attempt.
           'photos.processing_attempt_id',
+          // A thumbnail tier's key names the focal point (issue 2377).
+          'photos.focal_x', 'photos.focal_y', 'photos.focal_source',
           // The video branch: which rows are videos, and the date it fills.
           'photos.media_type', 'photos.type', 'photos.mime_type', 'photos.captured_at',
           'events.source_mode', 'events.external_path', 'events.slug'
@@ -1316,6 +1318,49 @@ router.get('/repair-thumb-hashes/status', adminAuth, requirePermission('system.m
   } catch (error) {
     logger.error('Error fetching placeholder backfill status:', error);
     res.status(500).json({ error: 'Failed to fetch placeholder backfill status' });
+  }
+});
+
+// Content-hash backfill (issue 2194): see services/contentHashBackfill.js.
+// Reads every original without a hash once, so it starts from this button
+// only, and can be paused; a later start resumes where it stopped.
+// system.manage for the same reason as the other sweeps.
+router.post('/repair-content-hashes', adminAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    const backfill = require('../services/contentHashBackfill');
+    const started = await backfill.start({ retryUnreadable: req.body?.retryUnreadable === true });
+    if (!started) {
+      return res.status(409).json({ error: 'Content-hash backfill is already running' });
+    }
+    if (!started.run) {
+      return res.json({ message: 'No photos need a content hash', count: 0 });
+    }
+    res.json({ message: `Started hashing ${started.count} originals`, count: started.count });
+    applicationWork.defer('photo content hash backfill', started.run);
+  } catch (error) {
+    logger.error('Error starting content-hash backfill:', error);
+    res.status(500).json({ error: 'Failed to start content-hash backfill' });
+  }
+});
+
+router.post('/repair-content-hashes/pause', adminAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    if (!(await require('../services/contentHashBackfill').pause())) {
+      return res.status(409).json({ error: 'Content-hash backfill is not running' });
+    }
+    res.json({ message: 'Pausing after the current file' });
+  } catch (error) {
+    logger.error('Error pausing content-hash backfill:', error);
+    res.status(500).json({ error: 'Failed to pause content-hash backfill' });
+  }
+});
+
+router.get('/repair-content-hashes/status', adminAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    res.json(await require('../services/contentHashBackfill').status());
+  } catch (error) {
+    logger.error('Error fetching content-hash backfill status:', error);
+    res.status(500).json({ error: 'Failed to fetch content-hash backfill status' });
   }
 });
 

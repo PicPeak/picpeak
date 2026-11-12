@@ -41,6 +41,8 @@
  * verbatim duplicates across all three services.
  */
 
+const { cityLine, isUnitedStates, isUnitedKingdom } = require('../utils/postalAddress');
+
 /**
  * Build the `issuer` field for a render context. The shape mirrors the
  * legacy inline construction exactly so existing callers + the
@@ -97,6 +99,14 @@ function buildIssuerBlock(profile, logoPath, options = {}) {
     logoHeight: profile.pdf_logo_height == null ? 56 : Number(profile.pdf_logo_height),
     companyNameInline: profile.pdf_company_name_inline === true || profile.pdf_company_name_inline === 1 || profile.pdf_company_name_inline === '1',
     foldingMarks: profile.pdf_folding_marks || 'none',
+    // UK trading disclosures (migration 352): pdfService prints them in the
+    // footer of a UK business's documents only (legalDisclosureLines).
+    legalForm: profile.legal_form || null,
+    registeredName: profile.registered_name || null,
+    companyNumber: profile.company_number || null,
+    registeredOffice: profile.registered_office || null,
+    jurisdiction: profile.jurisdiction || null,
+    proprietorName: profile.proprietor_name || null,
   };
   if (options.quoteToggles) {
     // Quote payment-block toggles (migration 110). Quote-only — invoices
@@ -144,13 +154,22 @@ function buildRecipientBlock(profile, customer) {
   // PDF, but having the string available means audit views can show
   // it. This unifies the previously-drifted contractService and
   // quote/invoice behavior under the renderer-aware contract.
+  // "Attn:" from a US or UK business, "z. Hd." everywhere else.
   const attentionParts = [customer?.salutation, personFull].filter(Boolean);
+  const attentionPrefix = isUnitedStates(profile?.country_code) || isUnitedKingdom(profile?.country_code)
+    ? 'Attn:' : 'z. Hd.';
   const attentionLine = attentionParts.length > 0
-    ? `z. Hd. ${attentionParts.join(' ')}`
+    ? `${attentionPrefix} ${attentionParts.join(' ')}`
     : '';
+  // The return address shown in the envelope window, on one line. A US
+  // business's ends in "Denver, CO 80202", a UK one's in "Glasgow G1 1AA"
+  // (utils/postalAddress).
+  const returnCity = isUnitedStates(profile?.country_code) || isUnitedKingdom(profile?.country_code)
+    ? cityLine({ postalCode: profile.postal_code, city: profile.city, state: profile.state, countryCode: profile.country_code })
+    : `${profile?.postal_code || ''} ${profile?.city || ''}`;
   return {
     issuerLine: profile?.company_name
-      ? `${profile.company_name} * ${profile.address_line1 || ''} * ${profile.postal_code || ''} ${profile.city || ''}`
+      ? `${profile.company_name} * ${profile.address_line1 || ''} * ${returnCity}`
       : '',
     companyName: header,
     hasCompany: headerWithCompany,
@@ -163,6 +182,8 @@ function buildRecipientBlock(profile, customer) {
     addressLine2: customer?.address_line2,
     postalCode: customer?.postal_code,
     city: customer?.city,
+    // Printed on a US address ("Denver, CO 80203").
+    state: customer?.state || null,
     // Country name override (migration 107); falls back to the
     // locale-aware COUNTRY_NAMES lookup on countryCodeIso in pdfService.
     country: customer?.country_name || null,

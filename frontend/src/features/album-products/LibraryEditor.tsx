@@ -9,9 +9,60 @@ import {
   type LibraryGroup,
   type ProductType,
   type Attribute,
+  type AttributeRole,
 } from './model';
 import { ProductImage } from './ProductImage';
+import { PrintSizePicker } from './PrintSizePicker';
+import { albumStarter } from './albumStarter';
+const ROLES: AttributeRole[] = ['material', 'colour', 'format', 'size'];
 type Update = (updater: (current: Catalogue) => Catalogue) => void;
+/** For each option here, the parent options it goes with. */
+function AvailabilityEditor({
+  attribute,
+  parent,
+  library,
+  onChange,
+}: {
+  attribute: Attribute;
+  parent?: Attribute;
+  library: LibraryGroup[];
+  onChange: (options: Record<string, string[]>) => void;
+}) {
+  const { t } = useTranslation();
+  const choices = (a?: Attribute) =>
+    library.find((g) => g.id === a?.groupId)?.options.filter((o) => a?.optionIds.includes(o.id)) || [];
+  const rules = attribute.availableWhen?.options || {};
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-muted">
+        {t('products.availabilityHelp', 'Tick what each option goes with. Nothing ticked offers it with all of them.')}
+      </p>
+      {choices(attribute).map((option) => (
+        <fieldset key={option.id} className="rounded-lg border border-line p-2">
+          <legend className="px-1 text-sm">{option.name}</legend>
+          <div className="flex flex-wrap gap-3">
+            {choices(parent).map((p) => (
+              <label key={p.id} className="flex gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={rules[option.id]?.includes(p.id) || false}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                      ? [...(rules[option.id] || []), p.id]
+                      : (rules[option.id] || []).filter((id) => id !== p.id);
+                    const { [option.id]: _removed, ...rest } = rules;
+                    onChange(next.length ? { ...rest, [option.id]: next } : rest);
+                  }}
+                />
+                {p.name}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ))}
+    </div>
+  );
+}
 export function LibraryEditor({
   catalogue,
   update,
@@ -120,12 +171,54 @@ export function LibraryEditor({
                       }))
                     }
                   />
+                  {group.kind === 'colour' && (
+                    <div className="flex flex-wrap items-end gap-3">
+                      <label className="text-sm">
+                        {t('products.colourValue', 'Colour value')}
+                        <input
+                          type="color"
+                          className="block h-10 w-16 rounded border border-line-strong bg-panel"
+                          value={option.hex || '#000000'}
+                          onChange={(e) =>
+                            groupChange(group.id, (g) => ({
+                              ...g,
+                              options: g.options.map((o) =>
+                                o.id === option.id ? { ...o, hex: e.target.value } : o,
+                              ),
+                            }))
+                          }
+                        />
+                      </label>
+                      {option.hex && (
+                        <Button
+                          variant="ghost"
+                          onClick={() =>
+                            groupChange(group.id, (g) => ({
+                              ...g,
+                              options: g.options.map((o) => {
+                                if (o.id !== option.id) return o;
+                                const { hex: _hex, ...rest } = o;
+                                return rest;
+                              }),
+                            }))
+                          }
+                        >
+                          {t('products.clearColourValue', 'Remove colour value')}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {group.kind === 'size' && (
+                    <PrintSizePicker onChange={size => groupChange(group.id, g => ({ ...g,
+                      options: g.options.map(o => o.id === option.id ? { ...o, width: size.width, height: size.height, unit: size.unit } : o) }))} />
+                  )}
                   {group.kind === 'size' && (
                     <div className="grid grid-cols-3 gap-3">
                       <label htmlFor={`product-width-${option.id}`}>
                         {t('products.width', 'Width')}
                         <DecimalInput
                           id={`product-width-${option.id}`}
+                          className="input w-full"
                           aria-label={t('products.width', 'Width')}
                           value={option.width || 0}
                           onChange={(width) =>
@@ -142,6 +235,7 @@ export function LibraryEditor({
                         {t('products.height', 'Height')}
                         <DecimalInput
                           id={`product-height-${option.id}`}
+                          className="input w-full"
                           aria-label={t('products.height', 'Height')}
                           value={option.height || 0}
                           onChange={(height) =>
@@ -250,6 +344,22 @@ export function LibraryEditor({
             {t(`products.addLibrary.${kind}`, `Add ${kind} library`)}
           </Button>
         ))}
+        <Button
+          variant="secondary"
+          disabled={library.length > 46 || types.length >= 30}
+          onClick={() =>
+            update((c) => {
+              const starter = albumStarter(t);
+              return {
+                ...c,
+                library: [...(c.library || []), ...starter.library],
+                types: [...(c.types || []), starter.type],
+              };
+            })
+          }
+        >
+          {t('products.addAlbumStarter', 'Add album starter set')}
+        </Button>
       </div>
       <h2 className="text-lg font-semibold">
         {t('products.types', 'Product types')}
@@ -297,6 +407,37 @@ export function LibraryEditor({
                   />
                 ))}
               </div>
+              <label className="block text-sm">
+                {t('products.attributeRole', 'Role in a guided album')}
+                <select
+                  className="input"
+                  value={a.role || ''}
+                  onChange={(e) =>
+                    attributeChange(type.id, a.id, {
+                      role: (e.target.value || undefined) as AttributeRole | undefined,
+                      ...(e.target.value === 'size' ? {} : { spread: undefined }),
+                    })
+                  }
+                >
+                  <option value="">
+                    {t('products.roleNone', 'None: an extra choice')}
+                  </option>
+                  {ROLES.filter(
+                    (role) => role === a.role || !type.attributes.some((p) => p.role === role),
+                  ).map((role) => (
+                    <option key={role} value={role}>
+                      {t(`products.role.${role}`, role)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {a.role === 'size' && (
+                <Switch
+                  label={t('products.sizesAreSpreads', 'Sizes measure the open album (two pages)')}
+                  checked={!!a.spread}
+                  onChange={(spread) => attributeChange(type.id, a.id, { spread })}
+                />
+              )}
               <fieldset>
                 <legend className="text-sm">
                   {t('products.allowedOptions', 'Allowed options')}
@@ -322,6 +463,41 @@ export function LibraryEditor({
                     ))}
                 </div>
               </fieldset>
+              <label className="block text-sm">
+                {t('products.optionsDependOn', 'Which options to offer depends on')}
+                <select
+                  className="input"
+                  value={a.availableWhen?.attributeId || ''}
+                  onChange={(e) =>
+                    attributeChange(type.id, a.id, {
+                      availableWhen: e.target.value
+                        ? { attributeId: e.target.value, options: {} }
+                        : undefined,
+                    })
+                  }
+                >
+                  <option value="">{t('products.dependsOnNothing', 'Nothing: always all of them')}</option>
+                  {type.attributes
+                    .filter((p) => p.id !== a.id)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              {a.availableWhen && (
+                <AvailabilityEditor
+                  attribute={a}
+                  parent={type.attributes.find((p) => p.id === a.availableWhen?.attributeId)}
+                  library={library}
+                  onChange={(options) =>
+                    attributeChange(type.id, a.id, {
+                      availableWhen: { attributeId: a.availableWhen?.attributeId as string, options },
+                    })
+                  }
+                />
+              )}
               {a.dependsOn.map((d, index) => (
                 <div key={index} className="space-y-2">
                   <p className="text-sm">

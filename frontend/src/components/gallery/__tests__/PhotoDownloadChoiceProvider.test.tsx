@@ -1,7 +1,8 @@
 /**
  * Download menu for one photo (issue 1733, E2): a gallery that lets guests
  * pick a size asks before a single photo's download starts; with nothing to
- * pick, or for a video, the download starts at once as before.
+ * pick, or for a video, the download starts at once as before. RAW, HEIC and
+ * AVIF photos get the menu too: the server caps them as JPEG.
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
@@ -81,14 +82,21 @@ describe('PhotoDownloadChoiceProvider', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('downloads a camera RAW at once: the server ships it as stored at any size', async () => {
+  it.each([
+    ['a camera RAW', 'IMG_1.CR2'],
+    ['a HEIC', 'IMG_2.HEIC'],
+    ['an AVIF', 'IMG_3.avif'],
+  ])('offers the sizes for %s: a size comes back as a capped JPEG', async (_kind, originalName) => {
     const start = vi.fn();
     const user = userEvent.setup();
-    const raw = { id: 5, filename: 'evt_5.jpg', original_filename: 'IMG_1.CR2', size: 1000, media_type: 'photo' } as Photo;
-    renderWith([ORIGINAL, MEDIUM], raw, start);
+    const item = { id: 5, filename: 'evt_5.jpg', original_filename: originalName, size: 1000, media_type: 'photo' } as Photo;
+    renderWith([ORIGINAL, MEDIUM], item, start);
     await user.click(screen.getByRole('button', { name: 'download evt_5.jpg' }));
-    expect(start).toHaveBeenCalledWith();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(start).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: /^Medium/ }));
+    await user.click(screen.getByRole('button', { name: 'Download' }));
+    expect(start).toHaveBeenCalledWith('1500x1000');
   });
 
   it('opens on body, outside the app root the Premium lightbox makes inert', async () => {

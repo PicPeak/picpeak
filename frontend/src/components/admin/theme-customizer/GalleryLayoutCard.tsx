@@ -5,6 +5,8 @@ import { Card, Input, Switch } from '../../common';
 import { ThemeConfig, STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { LayoutPicker } from './LayoutPicker';
 import { masonryModeWireframes, useGalleryLayoutOptions, type MasonryPickerMode } from './layoutWireframes';
+import { masonryModeOf } from '../../gallery/layouts/masonryMode';
+import { PREMIUM_COLUMN_LIMITS, PREMIUM_GAP_LIMITS, clampPremiumColumns, clampPremiumGap, premiumColumns, premiumGap } from '../../gallery/layouts/premiumGeometry';
 
 interface GalleryLayoutCardProps {
   localTheme: ThemeConfig;
@@ -31,11 +33,12 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
   const layoutOptions = useGalleryLayoutOptions();
   const layoutHeadingId = useId();
   const masonryModeLabelId = useId();
-  // A stored 'justified' renders as rows (MasonryGalleryLayout), so the
-  // picker and the settings below treat it as Rows; the stored value stays
-  // until the admin picks.
-  const storedMasonryMode = localTheme.gallerySettings?.masonryMode || 'columns';
-  const masonryMode: MasonryPickerMode = storedMasonryMode === 'justified' ? 'rows' : storedMasonryMode;
+  // The mode Masonry renders (masonryModeOf): a stored 'justified' shows as
+  // Rows and an unknown value as Columns; the stored value stays until the
+  // admin picks.
+  const masonryMode: MasonryPickerMode = masonryModeOf(localTheme.gallerySettings?.masonryMode);
+  const isPremium = localTheme.galleryLayout === 'gallery-premium';
+  const premium = premiumColumns(localTheme.gallerySettings);
 
   return (
     <Card className="p-6">
@@ -84,6 +87,8 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
 
           {/* Common settings */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Premium sets its gap in pixels below and ignores this. */}
+            {!isPremium && (
             <div>
               <label className="block text-sm font-medium text-body mb-2">
                 {t('branding.photoSpacing')}
@@ -98,6 +103,7 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
                 <option value="relaxed">{t('branding.spacing.relaxed')}</option>
               </select>
             </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-body mb-2">
@@ -182,6 +188,54 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
                 </select>
                 <p className="text-xs text-muted mt-1">
                   {t('branding.thumbnailScaleHint', 'Adjusts column count relative to the base grid columns')}
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* Gallery Premium specific (issue 2425) */}
+          {isPremium && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-body mb-2">
+                  {t('branding.columns')}
+                </label>
+                <div className="grid grid-cols-3 gap-4">
+                  {(['mobile', 'tablet', 'desktop'] as const).map((device) => (
+                    <div key={device}>
+                      <label htmlFor={`premium-columns-${device}`} className="text-xs text-soft">
+                        {t(`branding.${device}`)}
+                      </label>
+                      <Input
+                        id={`premium-columns-${device}`}
+                        type="number"
+                        min={PREMIUM_COLUMN_LIMITS[device].min}
+                        max={PREMIUM_COLUMN_LIMITS[device].max}
+                        value={premium[device]}
+                        // An emptied field keeps the stored value until a number is typed.
+                        onChange={(e) => e.target.value !== '' && updateGallerySettings('premiumColumns', {
+                          ...premium,
+                          [device]: clampPremiumColumns(device, e.target.value),
+                        })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label htmlFor="premium-gap" className="block text-sm font-medium text-body mb-2">
+                  {t('branding.photoGap', 'Gap between photos (px)')}
+                </label>
+                <Input
+                  id="premium-gap"
+                  type="number"
+                  min={PREMIUM_GAP_LIMITS.min}
+                  max={PREMIUM_GAP_LIMITS.max}
+                  value={premiumGap(localTheme.gallerySettings)}
+                  onChange={(e) => e.target.value !== '' && updateGallerySettings('premiumGap', clampPremiumGap(e.target.value))}
+                />
+                <p className="text-xs text-muted mt-1">
+                  {t('branding.photoGapHint', 'From 0 to 32 pixels. Photos keep their own proportions.')}
                 </p>
               </div>
             </>

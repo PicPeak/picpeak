@@ -13,10 +13,11 @@
 import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Briefcase, UserCog, FileText, Receipt, Wrench, Clock, ScrollText, Calendar, FolderKanban, Megaphone } from 'lucide-react';
+import { Briefcase, Gift, UserCog, FileText, Receipt, Wrench, Clock, ScrollText, Calendar, CalendarCheck, FolderKanban, Megaphone } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
+import { useBookingsReachable } from '../../features/booking/useBookingsReachable';
 
 export interface ClientsNavItem {
   key: string;
@@ -43,6 +44,7 @@ export function useClientsNavItems(): ClientsNavItem[] {
   const { t } = useTranslation();
   const { flags } = useFeatureFlags();
   const { hasPermission } = usePermissions();
+  const { reachable: bookingsReachable } = useBookingsReachable();
 
   const navItems: ClientsNavItem[] = [
     {
@@ -66,6 +68,15 @@ export function useClientsNavItems(): ClientsNavItem[] {
       label: t('clients.subnav.calendar', 'Calendar'),
       icon: Calendar,
       featureFlag: 'calendar',
+    },
+    {
+      // Client booking requests (#2440).
+      key: 'bookings',
+      to: '/admin/clients/bookings',
+      label: t('clients.subnav.bookings', 'Bookings'),
+      icon: CalendarCheck,
+      featureFlag: 'calendarBooking',
+      permission: 'quotes.view',
     },
     {
       key: 'quotes',
@@ -108,6 +119,14 @@ export function useClientsNavItems(): ClientsNavItem[] {
       permission: 'newsletters.view',
     },
     {
+      key: 'gifts',
+      to: '/admin/clients/gifts',
+      label: t('clients.subnav.gifts', 'Gifts'),
+      icon: Gift,
+      featureFlag: 'customerGifts',
+      permission: 'customers.gifts.view',
+    },
+    {
       key: 'development',
       to: '/admin/clients/development',
       label: t('clients.subnav.development', 'Development'),
@@ -116,8 +135,11 @@ export function useClientsNavItems(): ClientsNavItem[] {
     },
   ];
 
+  // Bookings also stays listed while deposits wait for a decision with the
+  // flag off (useBookingsReachable).
   return navItems.filter((item) =>
-    flags[item.featureFlag] && (!item.permission || hasPermission(item.permission)));
+    (flags[item.featureFlag] || (item.key === 'bookings' && bookingsReachable))
+    && (!item.permission || hasPermission(item.permission)));
 }
 
 export const ClientsLayout: React.FC = () => {

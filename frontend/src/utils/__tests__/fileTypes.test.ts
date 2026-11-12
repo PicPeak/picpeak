@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, buildUploadAcceptString, normalizeFileMimeType, isAllowedUploadFile } from '../fileTypes';
+import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, buildUploadAcceptString, normalizeFileMimeType, isAllowedUploadFile, isVideoUploadFile } from '../fileTypes';
 
 describe('fileTypes', () => {
   describe('extensionsToMimeTypes', () => {
@@ -32,7 +32,7 @@ describe('fileTypes', () => {
 
   describe('extensionsToAcceptString', () => {
     it('joins MIME types for the input accept attribute', () => {
-      expect(extensionsToAcceptString('jpg,heic')).toBe('image/jpeg,image/heic');
+      expect(extensionsToAcceptString('jpg,heic')).toBe('image/jpeg,image/heic,.heic');
     });
 
     it('also lists RAW extensions in dotted form', () => {
@@ -62,8 +62,7 @@ describe('fileTypes', () => {
       expect(normalizeFileMimeType('DSC01234.arw', 'image/tiff')).toBe('image/x-sony-arw');
     });
 
-    it('leaves anything else exactly as the browser typed it', () => {
-      expect(normalizeFileMimeType('holiday.jpg', '')).toBe('');
+    it('leaves anything outside the table exactly as the browser typed it', () => {
       expect(normalizeFileMimeType('payload.exe', 'application/octet-stream'))
         .toBe('application/octet-stream');
     });
@@ -75,8 +74,64 @@ describe('fileTypes', () => {
 
     it('does not loosen anything else', () => {
       expect(isAllowedUploadFile(file('payload.exe'), allowed)).toBe(false);
-      expect(isAllowedUploadFile(file('holiday.jpg'), allowed)).toBe(false);
       expect(isAllowedUploadFile(file('holiday.jpg', 'image/jpeg'), allowed)).toBe(true);
+    });
+  });
+
+  // Issue 2404: a dropped .mov arrived without a type and was refused, while
+  // the same file picked by hand said video/quicktime.
+  describe('untyped uploads (any format, issue 2404)', () => {
+    it.each([
+      ['clip.mov', '', 'video/quicktime'],
+      ['CLIP.MOV', 'application/octet-stream', 'video/quicktime'],
+      ['clip.m4v', '', 'video/mp4'],
+      ['holiday.jpg', '', 'image/jpeg'],
+    ])('names %s reported as "%s" by its extension', (name, type, expected) => {
+      expect(normalizeFileMimeType(name, type)).toBe(expected);
+    });
+
+    it('needs the type enabled', () => {
+      expect(isAllowedUploadFile({ name: 'clip.mov', type: '' }, ['image/jpeg', 'video/quicktime'])).toBe(true);
+      expect(isAllowedUploadFile({ name: 'clip.mov', type: '' }, ['image/jpeg'])).toBe(false);
+    });
+
+    it('does not override a type the browser did name', () => {
+      expect(normalizeFileMimeType('clip.mov', 'text/html')).toBe('text/html');
+    });
+
+    it('holds an untyped video to the video limit', () => {
+      expect(isVideoUploadFile({ name: 'clip.mov', type: '' })).toBe(true);
+      expect(isVideoUploadFile({ name: 'clip.mov', type: 'video/quicktime' })).toBe(true);
+      expect(isVideoUploadFile({ name: 'holiday.jpg', type: '' })).toBe(false);
+    });
+  });
+
+  describe('badly typed uploads (HEIC/HEIF, issue 2359)', () => {
+    const both = ['image/heic', 'image/heif'];
+
+    it.each([
+      ['IMG_1.HEIC', ''],
+      ['IMG_1.heic', 'image/heif'],
+      ['IMG_1.HEIC', 'application/octet-stream'],
+      ['IMG_1.heif', 'image/heic'],
+    ])('accepts %s reported as "%s"', (name, type) => {
+      expect(isAllowedUploadFile({ name, type }, both)).toBe(true);
+    });
+
+    it('judges the file by its extension', () => {
+      expect(normalizeFileMimeType('IMG_1.HEIC', '')).toBe('image/heic');
+      expect(normalizeFileMimeType('IMG_1.heic', 'image/heif')).toBe('image/heic');
+      expect(isAllowedUploadFile({ name: 'IMG_1.heif', type: 'image/heif' }, ['image/heic'])).toBe(false);
+    });
+
+    it('still refuses a HEIC that names another type, and any file HEIC is not enabled for', () => {
+      expect(normalizeFileMimeType('page.heic', 'text/html')).toBe('text/html');
+      expect(isAllowedUploadFile({ name: 'IMG_1.HEIC', type: '' }, ['image/jpeg'])).toBe(false);
+    });
+
+    it('adds the token only when an admin enabled the type', () => {
+      expect(extensionsToAcceptString('jpg,heic,heif')).toBe('image/jpeg,image/heic,image/heif,.heic,.heif');
+      expect(extensionsToAcceptString('jpg,png')).toBe('image/jpeg,image/png');
     });
   });
 

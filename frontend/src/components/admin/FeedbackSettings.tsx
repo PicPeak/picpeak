@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Star, Heart, Bookmark, Shield, Eye, User, Users, Smile, Palette, Keyboard, Tag, ThumbsUp, CheckCircle, Pencil } from 'lucide-react';
+import { MessageSquare, Star, Heart, Bookmark, Shield, Eye, User, Users, Smile, Palette, Keyboard, Tag, ThumbsUp, CheckCircle, Pencil, ListPlus } from 'lucide-react';
 import { Card } from '../common';
 import { useTranslation } from 'react-i18next';
 import { COLOR_LABELS, COLOR_LABEL_SWATCHES, KEYBIND_SCHEMES, type KeybindMode } from '../../services/feedback.service';
@@ -21,6 +21,8 @@ interface FeedbackSettings {
   // Approve / reject per photo (issue 744). Optional: rows and callers that
   // predate it read as off.
   allow_decisions?: boolean;
+  // Named favourite lists per guest (issue 2303). Optional, as above.
+  allow_favorite_lists?: boolean;
   allow_selection_submit?: boolean;
   // Drawing on a photo with a comment (issue 1733).
   allow_annotations?: boolean;
@@ -256,6 +258,26 @@ export const FeedbackSettings: React.FC<FeedbackSettingsProps> = ({
                     </div>
                     <div className="text-xs text-muted">
                       {t('feedback.settings.favoritesDesc', 'Mark photos as favorites')}
+                    </div>
+                  </div>
+                </label>
+
+                {/* Named favourite lists (issue 2303): a modifier of favourites. */}
+                <label className={`flex items-center gap-3 p-3 bg-subtle rounded-lg ${settings.allow_favorites ? 'cursor-pointer hover:bg-hover' : 'opacity-60 cursor-not-allowed'}`}>
+                  <input
+                    type="checkbox"
+                    checked={!!settings.allow_favorite_lists}
+                    disabled={!settings.allow_favorites}
+                    onChange={() => handleToggle('allow_favorite_lists')}
+                    className="w-4 h-4 text-accent bg-inset border-line-strong rounded focus:ring-accent"
+                  />
+                  <ListPlus className="w-5 h-5 text-soft" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-heading">
+                      {t('feedback.settings.favoriteLists', 'Favorite lists')}
+                    </div>
+                    <div className="text-xs text-muted">
+                      {t('feedback.settings.favoriteListsDesc', 'Guests sort their favorites into lists they name, such as "Album" or "Print"')}
                     </div>
                   </div>
                 </label>

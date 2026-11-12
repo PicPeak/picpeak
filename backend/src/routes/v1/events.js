@@ -22,8 +22,13 @@ const { safeValidationErrors } = require('../../utils/routeHelpers');
 const { db, logActivity } = require('../../database/db');
 const { livePhotos } = require('../../utils/photoVisibility');
 const { parseBooleanInput } = require('../../utils/parsers');
-const { apiTokenAuth, requireApiScope } = require('../../middleware/apiTokenAuth');
-const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
+const rateLimit = require('express-rate-limit');
+const {
+  apiTokenAuth, requireApiScope, GALLERY_PASSWORD_READ_SCOPE, GALLERY_PASSWORD_RESET_SCOPE
+} = require('../../middleware/apiTokenAuth');
+const { requireEventOwnership, requireEventOwner, scopeEventsQuery } = require('../../middleware/ownership');
+const { noStoreCache } = require('../../middleware/noStoreCache');
+const { revealGalleryPassword, resetGalleryPassword } = require('../../services/galleryPasswordService');
 const { holdsForReview, adminUploadColumns } = require('../../services/uploadReviewService');
 const { claimPromotion } = require('../../services/watchFolderClaims');
 // GHSA-9697: migration 081 defines a token's effective permissions as the
@@ -38,6 +43,7 @@ const { requirePermission } = require('../../middleware/permissions');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const {
   generateThumbnail,
+  withProcessableImage,
   extractCapture,
   captureWallColumn,
   ensurePreviewImage,
@@ -58,7 +64,8 @@ const { withPublicUpload } = require('../../middleware/publicUploadStream');
 const { createUploadFileGuard } = require('../../utils/uploadAdmissionType');
 const uploadQuota = require('../../services/publicUploadQuota');
 const { validateFileContent, validateFileType, normalizeUploadMimeType, ALLOWED_MEDIA_TYPES } = require('../../utils/fileSecurityUtils');
-const { validateUploadedFiles } = require('../../middleware/uploadValidation');
+const { isHeifFilename } = require('../../utils/rawFormats');
+const { validateUploadedFiles, readsAsImage } = require('../../middleware/uploadValidation');
 const downloadZipService = require('../../services/downloadZipService');
 const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
 const { PhotoExportService } = require('../../services/photoExportService');
@@ -68,7 +75,8 @@ const archiver = require('archiver');
 const { Readable } = require('stream');
 const { getStorage } = require('../../services/storage');
 const { isStorageNotFoundError } = require('../../services/storage/storageErrors');
-const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../../services/photoResolver');
+const { requireCapability } = require('../../middleware/requireCapability');
+const { resolvePhotoStorageKey, resolvePhotoFilePath, isManagedOriginalKey } = require('../../services/photoResolver');
 const { pickRawDownloadName } = require('../../services/downloadFilenameService');
 const { buildContentDisposition, sanitizeForZipEntry } = require('../../utils/filenameSanitizer');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
@@ -77,6 +85,7 @@ const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
 const { recordSingleDownload } = require('../../services/apiDownloadNotifications');
 const { parseResolution } = require('../../utils/downloadResolutions');
 const { renderPhotoForDownload, isVideo } = require('../../services/downloadRendition');
+const { detectedFocalColumns } = require('../../utils/focalPoint');
 
 const router = express.Router();
 
@@ -99,6 +108,8 @@ const buildPhotoUpload = (maxFileSizeBytes, { storage, streamHandler, rejectBody
     // understood by its processing path without the UI's extension allow-list.
     // A video takes the UI's gate instead (Lightroom plugin issue 8): only a
     // type the admin enabled in general_allowed_file_types, extension matching.
+    // A .HEIC or RAW file often arrives with a generic type (issue 2368).
+    file.mimetype = normalizeUploadMimeType(file.originalname, file.mimetype);
     if (/^image\//.test(file.mimetype)) cb(null, true);
     else if (isVideoMimeType(file.mimetype) && validateFileType(file.originalname, file.mimetype, req.allowedMimeTypes)) cb(null, true);
     else {
@@ -444,6 +455,20 @@ router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requirePermissi
  *                 media_type: { type: string, enum: [image, video] }
  *       400: { description: "No file, an invalid or disabled type, a file over its cap, or a replacement by another media type" }
  *       404: { description: Event not found, or replaces_photo_id not in this event }
+ *       422:
+ *         description: |
+ *           An image over one of the server's image limits (IMAGE_MAX_PIXELS,
+ *           IMAGE_MAX_DIMENSION, IMAGE_MAX_FRAMES, IMAGE_MAX_DECODED_MIB, ...).
+ *           Nothing is stored; the message names the limit.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string }
+ *                 code: { type: string, example: IMAGE_RESOURCE_LIMIT }
+ *                 imageLimit: { type: string, enum: [pixels, dimension, frames, decoded, input, memory] }
+ *                 imageMax: { type: number, description: "The limit's value: megapixels, px, frames or MiB." }
  */
 router.post(
   '/events/:id/photos',
@@ -451,6 +476,7 @@ router.post(
   requireApiScope('write'),
   requirePermission('photos.upload'),
   requireEventOwnership,
+  requireCapability('uploads.new'),
   async (req, res) => {
     const eventId = Number(req.params.id);
     if (!/^\d+$/.test(req.params.id) || !Number.isSafeInteger(eventId) || eventId < 1) {
@@ -484,21 +510,6 @@ router.post(
   }
 );
 
-// Whether Sharp reads the file as an image with dimensions. A busy image
-// worker says nothing about the file, so it passes; a resource limit is
-// thrown like the metadata read further down throws it.
-async function readsAsImage(filePath) {
-  try {
-    const meta = await sharp(filePath).metadata();
-    return Boolean(meta && meta.width && meta.height);
-  } catch (error) {
-    const policy = require('../../services/imageResourcePolicy');
-    if (policy.isTransient(error)) return true;
-    if (policy.isResourceError(error)) throw error;
-    return false;
-  }
-}
-
 async function handleV1PhotoUpload(req, res) {
   let tempPath = null;
   let object;
@@ -515,10 +526,17 @@ async function handleV1PhotoUpload(req, res) {
     // (TIFF, AVIF, ...); one the signature table does not know has to be an
     // image Sharp can read instead. A video passed the file filter only as a
     // type the table knows, so it gets the signature check and no decode.
-    const declaredType = normalizeUploadMimeType(req.file.originalname, req.file.mimetype);
+    // A photo is served by its name's type, so a HEIF name has to hold HEIF bytes.
+    const declaredType = isHeifFilename(req.file.originalname)
+      ? normalizeUploadMimeType(req.file.originalname, '')
+      : req.file.mimetype;
+    req.file.mimetype = declaredType;
     const videoUpload = isVideoMimeType(declaredType);
+    // The HEIF signature is only a container's `ftyp`, which says nothing about
+    // an image in it, so that name has to read as one as well.
     const contentMatches = ALLOWED_MEDIA_TYPES[declaredType]
       ? await validateFileContent(tempPath, declaredType)
+        && (!isHeifFilename(req.file.originalname) || await readsAsImage(tempPath))
       : await readsAsImage(tempPath);
     if (!contentMatches) {
       await fs.unlink(tempPath).catch(() => {});
@@ -531,7 +549,10 @@ async function handleV1PhotoUpload(req, res) {
     await validateUploadedFiles(checked, res, () => {});
     if (checked.files.length === 0) {
       await fs.unlink(tempPath).catch(() => {});
-      return res.status(400).json({ error: `Invalid image file: ${req.file.originalname}` });
+      const [rejected] = checked.invalidFiles || [];
+      const limitRefusal = require('../../services/imageResourcePolicy').uploadRefusal(rejected);
+      if (limitRefusal) return res.status(limitRefusal.status).json(limitRefusal.body);
+      return res.status(400).json({ error: rejected?.code === require('../../services/imageResourcePolicy').LIBRARY_UNAVAILABLE ? rejected.error : `Invalid image file: ${req.file.originalname}` });
     }
 
     const event = await db('events').where({ id: req.params.id }).first();
@@ -669,7 +690,7 @@ async function handleV1PhotoUpload(req, res) {
           original_filename: result.photo.original_filename,
           source_filename: result.photo.source_filename,
           previous_filename: result.previousFilename,
-          size_bytes: result.photo.size_bytes,
+          size_bytes: result.photo.size_bytes == null ? null : Number(result.photo.size_bytes),
           width: result.photo.width,
           height: result.photo.height,
         },
@@ -719,7 +740,12 @@ async function handleV1PhotoUpload(req, res) {
       captureWall = captureWallColumn(capture);
 
       try {
-        thumbRel = await generateThumbnail(tempPath, { meta: thumbMeta });
+        const processable = await withProcessableImage(tempPath, req.file.originalname);
+        try {
+          thumbRel = await generateThumbnail(processable.path, { meta: thumbMeta, outputBasename: path.basename(tempPath) });
+        } finally {
+          await processable.cleanup();
+        }
       } catch (err) {
         if (require('../../services/imageResourcePolicy').isResourceError(err)) throw err;
         logger.warn('v1 thumbnail generation failed', { err: err.message });
@@ -756,6 +782,8 @@ async function handleV1PhotoUpload(req, res) {
       path: relPath,
       thumbnail_path: thumbRel,
       thumb_hash: thumbMeta.thumbHash || null,
+      // Detected while the thumbnail was cut (issue 2377).
+      ...detectedFocalColumns(thumbMeta),
       type: photoType,
       category_id: folderId ? null : categoryId,
       folder_id: folderId,
@@ -827,6 +855,11 @@ async function handleV1PhotoUpload(req, res) {
     }
     logger.error('v1 POST /events/:id/photos failed', { error: error.message });
     if (tempPath) await fs.unlink(tempPath).catch(() => {});
+    // An image over the server's limits, met past the decode check (an
+    // image/* type the signature table does not know, the metadata or the
+    // thumbnail), is a refusal of the file, not a server fault (issue 2395).
+    const limitRefusal = require('../../services/imageResourcePolicy').uploadRefusal(error);
+    if (limitRefusal) return res.status(limitRefusal.status).json(limitRefusal.body);
     res.status(500).json({ error: 'Failed to upload photo' });
   } finally {
     releaseClaim?.();
@@ -1252,7 +1285,7 @@ function locateOriginal(event, photo) {
   try {
     const key = resolvePhotoStorageKey(event, photo);
     if (key) {
-      return path.posix.normalize(key).startsWith('events/active/') ? { key } : null;
+      return isManagedOriginalKey(key) ? { key } : null;
     }
     return { filePath: resolvePhotoFilePath(event, photo) };
   } catch {
@@ -1542,6 +1575,7 @@ router.get(
   requirePermission(['photos.view', 'photos.download'], { requireAll: true }),
   requireNumericEventId,
   requireEventOwnership,
+  requireCapability('downloads.archive'),
   [
     query('ids').optional().isString(),
     resolutionValidator,
@@ -2204,6 +2238,189 @@ router.get(
         error: errorClass(error)
       });
       if (!res.headersSent) res.status(500).json({ error: 'Failed to serve preview' });
+    }
+  }
+);
+
+// ──────────────────────────────────────────────────────────────────────────
+// Gallery passwords (issue 2326): the API-token twins of the admin routes
+// GET /api/admin/events/:id/password and POST /api/admin/events/:id/reset-password.
+// Each needs its own gallery_passwords:* scope, which no other scope implies.
+// The same role permission and owner rule as the admin routes apply
+// (requireEventOwner: an assignment does not hand over the password), and both
+// share their logic with them through galleryPasswordService. Every reveal and
+// reset is in the activity log under the token's owner, naming the token.
+// ──────────────────────────────────────────────────────────────────────────
+
+// Per token, in memory like the other limiters (a restart resets it). Placed
+// before the permission and owner checks, so probing foreign ids counts too.
+const galleryPasswordLimiter = (bucket) => rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `v1-${bucket}:${req.apiToken.id}`,
+  handler: (_req, res) => res.status(429).json({
+    error: 'Too many gallery password requests for this token. Try again later.',
+    code: 'RATE_LIMITED'
+  })
+});
+const passwordReadLimiter = galleryPasswordLimiter('gallery-password-read');
+const passwordResetLimiter = galleryPasswordLimiter('gallery-password-reset');
+
+const tokenAudit = (req) => ({ via: 'api_token', apiTokenId: req.apiToken.id, apiTokenName: req.apiToken.name });
+const tokenActor = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
+
+/**
+ * @openapi
+ * /events/{id}/password:
+ *   get:
+ *     tags: [Events]
+ *     summary: Reveal a gallery's recoverable password
+ *     description: |
+ *       Needs the `gallery_passwords:read` scope (not implied by `admin`) and,
+ *       for the token's owner, the events.edit or events.support permission
+ *       and ownership of the event (an assignment is not enough). A password
+ *       exists only while the security setting "Keep gallery passwords
+ *       recoverable" is on and a copy was saved after it was switched on;
+ *       otherwise `available` is false and `reason` says why. Every reveal is
+ *       written to the activity log. Limited to 10 requests per 15 minutes
+ *       per token. The response is never cached.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: The stored passwords, or why there are none
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 available: { type: boolean, description: "True when at least one of the two passwords is returned." }
+ *                 reason:
+ *                   type: string
+ *                   nullable: true
+ *                   enum: [recoverable_storage_disabled, no_saved_copy]
+ *                 enabled: { type: boolean, description: "Whether recoverable storage is switched on." }
+ *                 password: { type: string, nullable: true, description: "The gallery password." }
+ *                 client_password: { type: string, nullable: true, description: "The client access password." }
+ *       403: { description: "Missing scope or permission, or not the event's owner" }
+ *       404: { description: Not found }
+ *       429: { description: Rate limited }
+ */
+router.get(
+  '/events/:id/password',
+  apiTokenAuth,
+  noStoreCache,
+  requireApiScope(GALLERY_PASSWORD_READ_SCOPE),
+  passwordReadLimiter,
+  requirePermission(['events.edit', 'events.support']),
+  requireEventOwner,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin, 'created_by', { assignments: false }).first('id', 'event_name');
+      if (!event) return res.status(404).json({ error: 'Event not found' });
+
+      const stored = await revealGalleryPassword(id, event, tokenActor(req), tokenAudit(req));
+      const available = Boolean(stored.password || stored.clientPassword);
+      res.json({
+        available,
+        reason: available ? null : (stored.enabled ? 'no_saved_copy' : 'recoverable_storage_disabled'),
+        enabled: stored.enabled,
+        password: stored.password,
+        client_password: stored.clientPassword
+      });
+    } catch (error) {
+      logger.error('v1 GET /events/:id/password failed', { eventId: req.params.id, error: error.message });
+      res.status(500).json({ error: 'Failed to read gallery password' });
+    }
+  }
+);
+
+/**
+ * @openapi
+ * /events/{id}/reset-password:
+ *   post:
+ *     tags: [Events]
+ *     summary: Reset a gallery's password
+ *     description: |
+ *       Needs the `gallery_passwords:reset` scope (not implied by `admin`) and
+ *       the same permission and ownership as the password read. Same behaviour
+ *       as the admin reset: sets the given password, or generates one when
+ *       none is given, signs out guests who used the old one, and mails the
+ *       new one to the customer unless `send_email` is false. Recoverable
+ *       storage does not have to be on. Archived galleries are refused.
+ *       Every reset is written to the activity log. Limited to 10 requests per
+ *       15 minutes per token. The response is never cached.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               password: { type: string, description: "The new password. Omitted or empty: a password is generated. Must meet the gallery password rules." }
+ *               send_email: { type: boolean, default: true, description: "Mail the new password to the customer (or host) address." }
+ *     responses:
+ *       200:
+ *         description: Password reset
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 password: { type: string, description: "The new gallery password." }
+ *                 email_sent: { type: boolean, description: "False when no mail was queued, for example because the event has no address." }
+ *       400: { description: "Invalid body, a password that fails the rules, or an archived gallery" }
+ *       403: { description: "Missing scope or permission, or not the event's owner" }
+ *       404: { description: Not found }
+ *       429: { description: Rate limited }
+ */
+router.post(
+  '/events/:id/reset-password',
+  apiTokenAuth,
+  noStoreCache,
+  requireApiScope(GALLERY_PASSWORD_RESET_SCOPE),
+  passwordResetLimiter,
+  requirePermission(['events.edit', 'events.support']),
+  requireEventOwner,
+  [
+    body('password').optional({ nullable: true }).isString().isLength({ max: 256 }),
+    body('send_email').optional().isBoolean({ strict: true })
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
+      }
+      const { id } = req.params;
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin, 'created_by', { assignments: false }).first();
+      if (!event) return res.status(404).json({ error: 'Event not found' });
+      if (event.is_archived) {
+        return res.status(400).json({ error: 'Cannot reset password for archived event' });
+      }
+
+      const result = await resetGalleryPassword(id, event, {
+        password: req.body.password,
+        sendEmail: req.body.send_email !== false
+      }, tokenActor(req), tokenAudit(req));
+      if (result.rejected) return res.status(400).json(result.rejected);
+      res.json({ password: result.newPassword, email_sent: result.emailSent });
+    } catch (error) {
+      logger.error('v1 POST /events/:id/reset-password failed', { eventId: req.params.id, error: error.message });
+      res.status(500).json({ error: 'Failed to reset password' });
     }
   }
 );
