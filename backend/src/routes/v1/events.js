@@ -171,6 +171,7 @@ const buildPhotoUpload = (maxFileSizeBytes, { storage, streamHandler, rejectBody
  *               external_path: { type: string, nullable: true, description: "Required with source_mode reference. A folder relative to EXTERNAL_MEDIA_ROOT that must exist; the root itself ('', '.') is rejected." }
  *               external_watch: { type: boolean, default: false, description: "With source_mode reference: import new files that appear in the folder automatically. Requires the token owner to hold photos.upload (403 otherwise)." }
  *               import_now: { type: boolean, default: false, description: "With source_mode reference: start the folder's first import in the background right after the gallery is created. Requires photos.upload (403 otherwise). Progress: GET /api/admin/external-media/events/{id}/status." }
+ *               is_draft: { type: boolean, default: false, description: "true = create the gallery as a draft, like an admin-created one: guests cannot open it, and no gallery email, WhatsApp message or event.published webhook goes out until an admin publishes it. Omitted or false = published right away." }
  *     responses:
  *       201:
  *         description: Event created
@@ -183,6 +184,7 @@ const buildPhotoUpload = (maxFileSizeBytes, { storage, streamHandler, rejectBody
  *                 slug: { type: string }
  *                 share_url: { type: string, format: uri }
  *                 share_token: { type: string }
+ *                 is_draft: { type: boolean }
  *       400: { description: "Validation error, or an external_path that is missing, the media root itself, or not a folder" }
  *       401: { description: Missing/invalid token }
  *       403: { description: "Token lacks admin scope, or external_watch / import_now without photos.upload" }
@@ -219,7 +221,8 @@ router.post(
     body('hero_logo_visible').optional().isBoolean(),
     body('hero_logo_size').optional().isIn(['small', 'medium', 'large', 'xlarge']),
     body('hero_logo_position').optional().isIn(['top', 'center', 'bottom']),
-    body('download_limit').optional({ nullable: true }).not().isArray().isInt({ min: 1, max: 2147483647 }).toInt()
+    body('download_limit').optional({ nullable: true }).not().isArray().isInt({ min: 1, max: 2147483647 }).toInt(),
+    body('is_draft').optional().isBoolean()
   ],
   async (req, res) => {
     try {
@@ -228,7 +231,7 @@ router.post(
       const created = await require('../../services/eventCreationService').createEvent(req.body, {
         actor: req.admin, source: 'v1',
       });
-      res.status(201).json({ id: created.id, slug: created.slug, share_url: created.share_link, share_token: created.share_token });
+      res.status(201).json({ id: created.id, slug: created.slug, share_url: created.share_link, share_token: created.share_token, is_draft: created.is_draft });
     } catch (error) {
       if (error.isOperational) return res.status(error.statusCode).json(error.responseBody || { error: error.message, code: error.code });
       logger.error('v1 POST /events failed', { error: error.message, stack: error.stack });
