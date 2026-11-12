@@ -45,6 +45,9 @@ const PICPEAK_FORMAT_VERSION = 1;
 // event_people. That is accepted — see ml/README.md and the #1074 thread.
 const EXCLUDED_TABLES = new Set([
   'print_sales_downloads', // Ephemeral browser delivery status, not retained orders.
+  // The runner's own ledger, `migrations`, is exported on purpose: restoring
+  // it makes the next start re-run the migrations an older archive predates
+  // (see replaceAllTables in picpeakImportService, issue 2458).
   'knex_migrations',
   'knex_migrations_lock',
   'photo_faces',
