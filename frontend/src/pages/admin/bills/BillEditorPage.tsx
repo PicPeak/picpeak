@@ -37,7 +37,7 @@ import { userManagementService } from '../../../services/userManagement.service'
 import { settingsService } from '../../../services/settings.service';
 import { useAdminAuth } from '../../../contexts/AdminAuthContext';
 import { toast } from 'react-toastify';
-import { todayIsoDate } from '../../../utils/localDate';
+import { fromLocalDateTimeInput, todayIsoDate, toLocalDateTimeInput } from '../../../utils/localDate';
 import { useProjectPrefill } from '../projects/useProjectPrefill';
 
 function toMinor(amount: number) {
@@ -95,7 +95,9 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   // A saved invoice keeps its due date. hydrate() sets this too, but with
   // cached data the auto-track effect runs right after it, on the old value.
   const [dueDateOverridden, setDueDateOverridden] = useState(isEdit);
+  // Browser-local "YYYY-MM-DDTHH:MM"; loadedSendAt is the instant it was loaded from.
   const [scheduledSendAt, setScheduledSendAt] = useState('');
+  const [loadedSendAt, setLoadedSendAt] = useState<string | null>(null);
   // null = inherit profile default at render time. 'none' / 'swiss' /
   // 'epc' = explicit per-invoice override. (Existing invoices that
   // already have a value carry it through `setQrFormat` in the load
@@ -192,7 +194,8 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     // letting the auto effect recompute and surprise the admin. They
     // can untick "Override" to re-enable auto-tracking.
     setDueDateOverridden(true);
-    setScheduledSendAt(inv.scheduledSendAt ? inv.scheduledSendAt.slice(0, 16) : '');
+    setScheduledSendAt(toLocalDateTimeInput(inv.scheduledSendAt));
+    setLoadedSendAt(inv.scheduledSendAt || null);
     // Preserve null when the saved invoice has no explicit format —
     // it inherits the profile default at render time.
     setQrFormat((inv.qrFormat as InvoiceQrFormat | null) || null);
@@ -435,7 +438,10 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   // match the backend (which parses the YYYY-MM-DD base as UTC midnight).
   useEffect(() => {
     if (dueDateOverridden) return;
-    const base = (scheduledSendAt ? scheduledSendAt.slice(0, 10) : issueDate) || '';
+    // The send field is local time; the backend anchors on the UTC day of
+    // the instant it receives (sending.js oldAutoDue), so this does too.
+    const sendAt = fromLocalDateTimeInput(scheduledSendAt, loadedSendAt);
+    const base = (sendAt ? new Date(sendAt).toISOString().slice(0, 10) : issueDate) || '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(base)) return;
     const tpl = netDaysTemplates?.templates?.find((t) => t.id === paymentNetDaysTemplateId);
     const netDays = tpl?.netDays != null
@@ -444,14 +450,14 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     const d = new Date(`${base}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + netDays);
     setDueDate(d.toISOString().slice(0, 10));
-  }, [dueDateOverridden, scheduledSendAt, issueDate, paymentNetDaysTemplateId, netDaysTemplates, appSettings]);
+  }, [dueDateOverridden, scheduledSendAt, loadedSendAt, issueDate, paymentNetDaysTemplateId, netDaysTemplates, appSettings]);
 
   const buildPayload = (): InvoiceCreatePayload => ({
     customerAccountId: customerId || 0,
     currency,
     issueDate,
     dueDate: dueDate || undefined,
-    scheduledSendAt: scheduledSendAt || undefined,
+    scheduledSendAt: fromLocalDateTimeInput(scheduledSendAt, loadedSendAt),
     // Omit when null so the server inherits the profile default;
     // including null would persist as an explicit "no preference"
     // which is the same outcome but pollutes the column.
@@ -661,7 +667,7 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
             {/* Localized date + time (honours general_date_format +
                 general_time_format) instead of a native datetime-local, which
                 renders in the browser locale (US date + 12h). Recombined into
-                the "YYYY-MM-DDTHH:MM" the payload + scheduler expect. */}
+                a local "YYYY-MM-DDTHH:MM"; buildPayload sends it as an instant. */}
             <div className="grid grid-cols-2 gap-3">
               <LocalizedDateInput
                 value={scheduledSendAt ? scheduledSendAt.slice(0, 10) : ''}
