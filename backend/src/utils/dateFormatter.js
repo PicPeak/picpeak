@@ -53,11 +53,10 @@ async function formatDate(date, language = 'en') {
     // Format based on the configured format
     switch (dateConfig.format) {
     case 'MM/DD/YYYY':
-      return dateObj.toLocaleDateString(locale, {
-        month: '2-digit',
-        day: '2-digit',
-        year: 'numeric'
-      });
+      // Spelled out: a German or Portuguese locale would put the day first
+      // and turn 11/10 into 10.11 or 10/11, a different date for a reader of
+      // the configured order.
+      return `${String(dateObj.getMonth() + 1).padStart(2, '0')}/${String(dateObj.getDate()).padStart(2, '0')}/${dateObj.getFullYear()}`;
     case 'DD/MM/YYYY':
       return dateObj.toLocaleDateString(locale, {
         day: '2-digit',
