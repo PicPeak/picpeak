@@ -23,6 +23,7 @@ const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
 const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const transferService = require('./transferService');
 const { fetchBranding, absoluteUrl, renderOgHtml } = require('./galleryOgService');
+const { previewLanguage, ogText } = require('./ogText');
 
 const LONG_TOKEN_RE = /^[a-f0-9]{64}$/;
 
@@ -31,15 +32,15 @@ const KINDS = {
     pathPrefix: '/transfer',
     resolve: (token) => transferService.getTransferByToken(token),
     usable: (t) => transferService.assertDownloadable(t).ok,
-    fallbackDescription: 'Files shared with you.',
-    linkLabel: 'View files',
+    descriptionKey: 'filesShared',
+    linkLabelKey: 'viewFiles',
   },
   request: {
     pathPrefix: '/transfer-upload',
     resolve: (token) => transferService.getRequestByToken(token),
     usable: (t) => transferService.assertUploadable(t).ok,
-    fallbackDescription: 'Upload your files here.',
-    linkLabel: 'Upload files',
+    descriptionKey: 'uploadHere',
+    linkLabelKey: 'uploadFiles',
   },
 };
 
@@ -47,6 +48,7 @@ async function buildTransferOgMetadata(kind, token) {
   const cfg = KINDS[kind];
   const branding = await fetchBranding();
   const base = await getAbsoluteFrontendUrl();
+  const language = await previewLanguage();
   const siteName = branding.companyName || 'PicPeak';
   const image = absoluteUrl(branding.logoUrl, base) || `${base}/picpeak-logo-transparent.png`;
 
@@ -61,11 +63,12 @@ async function buildTransferOgMetadata(kind, token) {
 
   return {
     title,
-    description: branding.companyTagline || cfg.fallbackDescription,
+    description: branding.companyTagline || ogText(language, cfg.descriptionKey),
     image,
     url: `${base}${cfg.pathPrefix}/${token}`,
     siteName,
-    linkLabel: cfg.linkLabel,
+    linkLabel: ogText(language, cfg.linkLabelKey),
+    language,
   };
 }
 

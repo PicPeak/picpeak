@@ -145,3 +145,18 @@ it('malformed token → 400', async () => {
   const res = await request(app).get('/og/transfer/not_a-token!');
   expect(res.status).toBe(400);
 });
+
+it('speaks the default language (issue 2489)', async () => {
+  const token = await makeTransfer({ kind: 'request' });
+  await setSetting('general_default_language', 'de');
+  await db('app_settings').where({ setting_key: 'branding_company_tagline' }).del();
+  try {
+    const res = await request(app).get(`/og/transfer-upload/${token}`);
+    expect(ogDesc(res.text)).toBe('Laden Sie Ihre Dateien hier hoch.');
+    expect(res.text).toContain('<html lang="de">');
+    expect(res.text).toContain('>Dateien hochladen</a>');
+  } finally {
+    await setSetting('general_default_language', 'en');
+    await setSetting('branding_company_tagline', 'Wedding & portrait photography');
+  }
+});
