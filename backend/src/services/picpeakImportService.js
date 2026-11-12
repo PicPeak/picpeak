@@ -615,8 +615,12 @@ const SEED_ONLY_TABLES = new Set([
 
 // Whole-DB replace in one transaction with FK enforcement suspended (pg:
 // session_replication_role=replica on the trx connection, reset before commit;
-// sqlite: defer_foreign_keys so checks run at commit). knex_migrations is never
-// in the data set, so the target's schema/migration state is left intact.
+// sqlite: defer_foreign_keys so checks run at commit). The schema stays the
+// target's, but the runner's ledger (`migrations`) is in the data set, so the
+// archive's ledger replaces the target's. That is deliberate: on the next
+// start the runner re-runs every migration above the archive's level, which is
+// how an older archive receives the data repairs (permission rows, templates,
+// security scrubs …) that have no import hook (issue 2458).
 async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine = false, allTables, executor, archiveLatestMigration = null } = {}) {
   await require('./portableRestoreWorker').assertWorkerAuthority(executor);
   const replace = async trx => {
@@ -735,8 +739,9 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
         }
         await trx.batchInsert(table, prepared, prepared.length);
       }
-      // Archived queue rows come back as they were, text timestamps included,
-      // and migration 256 will not run again on this target (issue 1670).
+      // Archived queue rows come back as they were, text timestamps included.
+      // Migration 256 re-runs on the next start only for an archive below it,
+      // and the scheduler may read the queue before that (issue 1670).
       if (table === 'email_queue') await normaliseSqliteEmailQueue(trx);
       // Likewise events.expires_at text that julianday() cannot read, which
       // migration 263 rewrote once on this target (issue 1733).
