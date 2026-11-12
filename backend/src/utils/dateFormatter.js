@@ -7,6 +7,8 @@ const DEFAULT_FORMAT = {
   locale: 'en-GB'
 };
 
+const LANGUAGE_LOCALES = { es: 'es-ES', fr: 'fr-FR', nl: 'nl-NL', ru: 'ru-RU', sl: 'sl-SI' };
+
 // Format date based on system settings
 async function formatDate(date, language = 'en') {
   try {
@@ -57,6 +59,10 @@ async function formatDate(date, language = 'en') {
       locale = 'de-DE';
     } else if (language === 'pt') {
       locale = 'pt-BR';
+    } else if (LANGUAGE_LOCALES[language]) {
+      // The other app languages, so a long date names its month in the
+      // language around it, not in English (issue 2489).
+      locale = LANGUAGE_LOCALES[language];
     } else if (language === 'en' && dateConfig.format === 'MM/DD/YYYY') {
       locale = 'en-US';
     }

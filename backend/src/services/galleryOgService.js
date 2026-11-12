@@ -5,6 +5,7 @@ const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
 const { getStorage } = require('./storage');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
 const { isGalleryAvailable } = require('../utils/galleryLifecycle');
+const { previewLanguage, ogText, ogLocale } = require('./ogText');
 
 const SOCIAL_CRAWLER_PATTERNS = [
   /facebookexternalhit/i,
@@ -159,13 +160,13 @@ async function frontendBase() {
 // admin-configured `general_date_format` (defaults to DD.MM.YYYY when
 // unset). Previously hardcoded en-US "May 20, 2026" which ignored the
 // operator's locale.
-async function formatEventDate(value) {
+async function formatEventDate(value, language) {
   if (!value) return null;
   try {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return null;
     const { formatDate } = require('../utils/dateFormatter');
-    return await formatDate(d);
+    return await formatDate(d, language);
   } catch {
     return null;
   }
@@ -179,21 +180,24 @@ async function buildOgMetadata(slug, requestPath) {
   const event = isGalleryAvailable(resolved) ? resolved : null;
   const branding = await fetchBranding();
   const base = await frontendBase();
+  const language = await previewLanguage();
   const siteName = branding.companyName || 'PicPeak';
   const logoUrl = absoluteUrl(branding.logoUrl, base) || `${base}/picpeak-logo-transparent.png`;
 
   if (!event) {
     return {
       title: siteName,
-      description: branding.companyTagline || 'Photo gallery shared with PicPeak.',
+      description: branding.companyTagline || ogText(language, 'shared'),
       image: logoUrl,
       url: `${base}${requestPath}`,
-      siteName
+      siteName,
+      language,
+      linkLabel: ogText(language, 'viewGallery')
     };
   }
 
-  const eventName = event.event_name || 'Photo Gallery';
-  const eventDate = await formatEventDate(event.event_date);
+  const eventName = event.event_name || ogText(language, 'untitled');
+  const eventDate = await formatEventDate(event.event_date, language);
   const titleParts = [eventName];
   if (siteName && siteName !== eventName) titleParts.push(siteName);
   const title = titleParts.join(' — ');
@@ -206,9 +210,9 @@ async function buildOgMetadata(slug, requestPath) {
   if (isPasswordFree && !isGalleryHidden(event) && event.welcome_message) {
     description = String(event.welcome_message).replace(/\s+/g, ' ').trim().slice(0, 200);
   } else if (eventDate) {
-    description = `Photo gallery from ${eventName} on ${eventDate}.`;
+    description = ogText(language, 'galleryOn', { name: eventName, date: eventDate });
   } else {
-    description = `Photo gallery from ${eventName}.`;
+    description = ogText(language, 'gallery', { name: eventName });
   }
 
   // Per-event hero-photo opt-in (#474). When the admin has flipped
@@ -238,7 +242,9 @@ async function buildOgMetadata(slug, requestPath) {
     url: `${base}/gallery/${event.slug}`,
     siteName,
     eventName,
-    eventDate
+    eventDate,
+    language,
+    linkLabel: ogText(language, 'viewGallery')
   };
 }
 
@@ -252,15 +258,19 @@ function renderOgHtml(meta) {
   const i = escapeHtml(meta.image);
   const u = escapeHtml(meta.url);
   const s = escapeHtml(meta.siteName);
+  const l = escapeHtml(meta.linkLabel || ogText('en', 'viewGallery'));
+  const lang = escapeHtml(meta.language || 'en');
+  const locale = escapeHtml(ogLocale(meta.language));
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
   <meta charset="utf-8" />
   <meta name="robots" content="noindex" />
   <title>${t}</title>
   <meta name="description" content="${d}" />
   <meta property="og:type" content="website" />
+  <meta property="og:locale" content="${locale}" />
   <meta property="og:site_name" content="${s}" />
   <meta property="og:title" content="${t}" />
   <meta property="og:description" content="${d}" />
@@ -275,7 +285,7 @@ function renderOgHtml(meta) {
 <body>
   <h1>${t}</h1>
   <p>${d}</p>
-  <p><a href="${u}">View gallery</a></p>
+  <p><a href="${u}">${l}</a></p>
 </body>
 </html>`;
 }
