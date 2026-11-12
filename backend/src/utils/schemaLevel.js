@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 // The schema level of a database: the applied migration with the highest
 // numeric filename prefix. The runner (migrations/run-migrations-safe.js)
 // records applied migrations in `migrations.filename`; knex's own ledger is
@@ -30,4 +33,21 @@ async function latestMigration(knex) {
   return null;
 }
 
-module.exports = { migrationOrder, latestMigration };
+// The newest migration file this code ships (migrations/core, what the runner
+// applies on every start), or null when the folder can't be read. A portable
+// restore replaces the ledger with the archive's, so until the next start the
+// ledger can sit below the schema the code has already built (issue 2458).
+function shippedMigration(dir = path.join(__dirname, '../../migrations/core')) {
+  let files;
+  try {
+    files = fs.readdirSync(dir).filter((name) => /\.js$/.test(name) && migrationOrder(name) >= 0);
+  } catch (_) {
+    return null;
+  }
+  return files.reduce((latest, name) => (
+    latest === null || migrationOrder(name) > migrationOrder(latest)
+      || (migrationOrder(name) === migrationOrder(latest) && name > latest) ? name : latest
+  ), null);
+}
+
+module.exports = { migrationOrder, latestMigration, shippedMigration };

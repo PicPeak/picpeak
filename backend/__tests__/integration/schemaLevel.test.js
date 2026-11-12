@@ -56,6 +56,22 @@ test('the import guard refuses a newer archive and accepts an older, equal or un
   expect(await validateManifest(manifest(null))).toEqual([]);
 });
 
+test('after an older archive replaced the ledger, the guard still goes by the shipped schema', async () => {
+  const { validateManifest } = require('../../src/services/picpeakImportService');
+  const { shippedMigration } = require('../../src/utils/schemaLevel');
+  expect(shippedMigration()).toBe(newest);
+  const removed = await db('migrations').where('filename', '>', '200').select('filename');
+  await db('migrations').whereIn('filename', removed.map((r) => r.filename)).del();
+  try {
+    expect(migrationOrder(await latestMigration(db))).toBeLessThan(migrationOrder(newest));
+    expect(await validateManifest(manifest(newest))).toEqual([]);
+    const newer = `${migrationOrder(newest) + 1}_from_the_future.js`;
+    expect((await validateManifest(manifest(newer))).some((b) => /newer database schema/.test(b))).toBe(true);
+  } finally {
+    await db('migrations').insert(removed);
+  }
+});
+
 test('the backup services report the schema level', async () => {
   const backupService = require('../../src/services/backupService');
   const { databaseBackupService } = require('../../src/services/databaseBackup');
