@@ -17,11 +17,8 @@ describe('portable restore: validate before fencing, verify tables, operator res
   beforeAll(async () => {
     ({ db, cleanup, tmpDir } = await bootCrmDb());
     tmpDir = await fsp.realpath(tmpDir);
-    // The schema-version check reads knex's ledger, which the migrated test
-    // template does not carry.
-    latest = '250_applied_here.js';
-    await db.schema.createTable('knex_migrations', table => { table.increments('id'); table.string('name'); });
-    await db('knex_migrations').insert({ name: latest });
+    // The schema-version check reads the runner's ledger, `migrations`.
+    latest = await require('../../src/utils/schemaLevel').latestMigration(db);
   });
   afterAll(async () => { await cleanup(); });
   afterEach(() => { jest.restoreAllMocks(); });

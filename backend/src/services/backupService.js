@@ -16,6 +16,7 @@ const applicationWork = require('./activeApplicationWork');
 const { formatBytes } = require('../utils/formatBytes');
 const { formatBoolean } = require('../utils/dbCompat');
 const backupManifest = require('./backupManifest');
+const { latestMigration } = require('../utils/schemaLevel');
 const { collectLegacyStoredFiles, storedPathMap, storedPathChecksums } = require('../utils/legacyStoredFiles');
 const S3StorageAdapter = require('./storage/s3Storage');
 const recoveryFiles = require('./recoveryFiles');
@@ -193,10 +194,7 @@ async function calculateChecksum(filePath) {
 
 async function getCurrentSchemaVersion() {
   try {
-    const record = await db('knex_migrations')
-      .orderBy('id', 'desc')
-      .first();
-    return record ? record.name : 'unknown';
+    return (await latestMigration(db)) || 'unknown';
   } catch (error) {
     logger.error('Failed to get schema version:', error);
     return 'unknown';
@@ -2381,6 +2379,7 @@ service.triggerManualBackup = triggerManualBackup;
 service.getBackupStatus = getBackupStatus;
 service.isBackupRunning = () => isRunning;
 service.cleanupOldBackupRuns = cleanupOldBackupRuns;
+service.getCurrentSchemaVersion = getCurrentSchemaVersion;
 service.getBackupManifest = getBackupManifest;
 service.validateBackupManifest = validateBackupManifest;
 service.loadManifestFromS3Bounded = loadManifestFromS3Bounded;
