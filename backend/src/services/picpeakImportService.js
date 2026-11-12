@@ -27,7 +27,7 @@ const { PICPEAK_FORMAT_VERSION } = require('./picpeakExportService');
 const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
 const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
 const { isoSqliteCostTimestamps, COST_TIMESTAMP_TABLES } = require('../utils/costTimestamps');
-const { isoSqliteInvoiceSendAt } = require('../utils/invoiceSendAt');
+const { isoSqliteInvoiceSendAt, holdPassedPgSendDates, markHeldInvoices } = require('../utils/invoiceSendAt');
 const { pgDateColumnsByTable } = require('../utils/dateOnly');
 const { migrationOrder, latestMigration, shippedMigration } = require('../utils/schemaLevel');
 const { rowBatches } = require('./portableImportRows');
@@ -362,6 +362,20 @@ async function resyncSequences(tables, { executor = db, strict = false } = {}) {
       logger.warn(`[picpeak-import] could not resync sequence for ${table}: ${err.message}`);
     }
   }
+}
+
+// Move a restored table's sequence up to its MAX(id) inside the restore, for
+// a table the restore itself writes to after loading it (the history rows of
+// the invoice holds and the mail ledger backfill). Without it the next id can
+// be one the archive's rows already took, and the duplicate key rolls the
+// whole restore back. setval survives a rollback, so this only ever raises
+// the sequence: a rolled-back restore leaves a gap, never a value below an
+// existing row. resyncSequences still sets the exact value after commit.
+async function advanceSequence(trx, table) {
+  if (!isPostgres()) return;
+  await trx.raw(`SELECT setval(s, m) FROM (
+      SELECT pg_get_serial_sequence(?, 'id')::regclass AS s, (SELECT MAX(id) FROM ??) AS m) x
+    WHERE m IS NOT NULL AND m > COALESCE(pg_sequence_last_value(s), 0)`, [table, table]);
 }
 
 // AUTH-critical admin_users columns preserved when overwriting a restored row
@@ -739,6 +753,8 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
         }
         await trx.batchInsert(table, prepared, prepared.length);
       }
+      // The invoice holds below and backfillMailIntake write history rows.
+      if (table === 'accounting_change_history') await advanceSequence(trx, table);
       // Archived queue rows come back as they were, text timestamps included.
       // Migration 256 re-runs on the next start only for an archive below it,
       // and the scheduler may read the queue before that (issue 1670).
@@ -755,7 +771,15 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       // accounting_change_history must load before invoices: it does because
       // the export lists tables by name (picpeakExportService listDataTables).
       if (table === 'invoices' && archivePredates(archiveLatestMigration, 356)) {
-        await isoSqliteInvoiceSendAt(trx, { actor: 'import' });
+        await isoSqliteInvoiceSendAt(trx, { actor: 'import', markHeld: true });
+        // A SQLite archive on PostgreSQL: the coercion above already made its
+        // send dates timestamps, so only the hold is left (issue 2459).
+        if (crossEngine) await holdPassedPgSendDates(trx, { actor: 'import' });
+      }
+      // An archive made before 358 has no hold marker; mark its held invoices
+      // from their history, as migration 358 did here.
+      if (table === 'invoices' && archivePredates(archiveLatestMigration, 358)) {
+        await markHeldInvoices(trx, { actor: 'import' });
       }
     }
 

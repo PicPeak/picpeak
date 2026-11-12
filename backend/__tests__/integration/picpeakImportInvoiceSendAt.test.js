@@ -65,6 +65,8 @@ linuxTest('restored send dates are ISO text, and a future one is not due', async
   expect(due).toHaveLength(0);
   const stuck = await db('invoices').where({ invoice_number: 'R-SENDAT-STUCK' }).first('status', 'scheduled_send_at');
   expect(stuck).toEqual({ status: 'scheduled', scheduled_send_at: null });
+  // Marked, so the automatic product append leaves it alone (migration 358).
+  expect((await db('invoices').where({ invoice_number: 'R-SENDAT-STUCK' }).first('send_held_at')).send_held_at).not.toBeNull();
   // The archive predates 356. The hold is the import's, in the history.
   const { id } = await db('invoices').where({ invoice_number: 'R-SENDAT-STUCK' }).first('id');
   const history = await db('accounting_change_history')

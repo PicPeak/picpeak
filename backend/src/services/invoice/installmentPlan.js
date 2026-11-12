@@ -280,6 +280,8 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
         installment_trigger: inst.trigger,
         status: rowStatus,
         scheduled_send_at: toStoredTimestamp(rowScheduledSendAt),
+        // Re-armed with a new date, so no longer held (issue 2456).
+        send_held_at: null,
         issue_date: scheduledSendAt.toISOString().slice(0, 10),
         due_date: dueDate,
         net_amount_minor: slice.net,

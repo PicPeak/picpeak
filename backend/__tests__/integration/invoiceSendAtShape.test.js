@@ -177,6 +177,72 @@ describe('invoice send date', () => {
     expect(history.actor_name).toBe('import');
   });
 
+  (isSqliteEnv ? it : it.skip)('the import marks what it holds, the upgrade leaves that to migration 358', async () => {
+    const make = async () => {
+      const id = await scheduledInvoice(new Date(Date.now() + 5 * DAY).toISOString());
+      await db('invoices').where({ id }).update({ scheduled_send_at: '2026-03-05T09:00' });
+      return id;
+    };
+    const { isoSqliteInvoiceSendAt } = require('../../src/utils/invoiceSendAt');
+    const upgraded = await make();
+    expect((await isoSqliteInvoiceSendAt(db)).held).toEqual([upgraded]);
+    expect((await db('invoices').where({ id: upgraded }).first('send_held_at')).send_held_at).toBeNull();
+    const imported = await make();
+    expect((await isoSqliteInvoiceSendAt(db, { actor: 'import', markHeld: true })).held).toEqual([imported]);
+    expect((await db('invoices').where({ id: imported }).first('send_held_at')).send_held_at).toEqual(expect.any(String));
+  });
+
+  (isSqliteEnv ? it : it.skip)('migration 358 marks the invoices a hold left as drafts, unless they moved since', async () => {
+    const make = async () => {
+      const id = await scheduledInvoice(new Date(Date.now() + 5 * DAY).toISOString());
+      await db('invoices').where({ id }).update({ scheduled_send_at: '2026-04-05T09:00' });
+      return id;
+    };
+    const held = await make();
+    const redated = await make();
+    const sent = await make();
+    const { isoSqliteInvoiceSendAt, markHeldInvoices } = require('../../src/utils/invoiceSendAt');
+    await isoSqliteInvoiceSendAt(db);
+    // Given a new date and cleared again: a plain draft now, not held.
+    for (const value of [editorValue(Date.now() + 2 * DAY), null]) {
+      const res = await request(invoiceApp).put(`/api/admin/invoices/${redated}`).set(auth()).send({ scheduledSendAt: value });
+      expect(res.status).toBe(200);
+    }
+    expect((await request(invoiceApp).post(`/api/admin/invoices/${sent}/send`).set(auth()).send({})).status).toBe(200);
+
+    const marked = await markHeldInvoices(db);
+    expect(marked).toContain(held);
+    expect(marked).not.toContain(redated);
+    expect(marked).not.toContain(sent);
+    const { created_at: heldAt } = await db('accounting_change_history')
+      .where({ entity_type: 'invoice', entity_id: held, source: 'invoice.sendAt.holdStuck' }).first('created_at');
+    expect((await db('invoices').where({ id: held }).first('send_held_at')).send_held_at).toBe(heldAt);
+    expect(await markHeldInvoices(db)).toEqual([]);
+  });
+
+  it('a held invoice is released by a new send date, and by sending it', async () => {
+    const hold = async () => {
+      const id = await scheduledInvoice(new Date(Date.now() + 5 * DAY).toISOString());
+      await db('invoices').where({ id }).update({ scheduled_send_at: null, send_held_at: '2026-11-10T09:00:00.000Z' });
+      return id;
+    };
+    const heldAt = async (id) => (await db('invoices').where({ id }).first('send_held_at')).send_held_at;
+
+    const redated = await hold();
+    const other = await request(invoiceApp).put(`/api/admin/invoices/${redated}`).set(auth()).send({ currency: 'CHF' });
+    expect(other.status).toBe(200);
+    expect(await heldAt(redated)).not.toBeNull();
+    const res = await request(invoiceApp).put(`/api/admin/invoices/${redated}`).set(auth())
+      .send({ scheduledSendAt: editorValue(Date.now() + 2 * DAY) });
+    expect(res.status).toBe(200);
+    expect(await heldAt(redated)).toBeNull();
+
+    const sent = await hold();
+    expect((await request(invoiceApp).post(`/api/admin/invoices/${sent}/send`).set(auth()).send({})).status).toBe(200);
+    expect(await statusOf(sent)).toBe('sent');
+    expect(await heldAt(sent)).toBeNull();
+  });
+
   it('a created invoice that is due is sent by the scheduler', async () => {
     const id = await scheduledInvoice(new Date(Date.now() - 60 * 1000).toISOString());
     await scheduler.runScheduledTasks();
