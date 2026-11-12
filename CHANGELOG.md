@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.12](https://github.com/PicPeak/picpeak/compare/v3.135.11...v3.135.12) (2026-11-12)
+
+
+### Bug Fixes
+
+* **backup:** read the schema level from the runner's migrations ledger ([#2478](https://github.com/PicPeak/picpeak/issues/2478)) ([eccfeca](https://github.com/PicPeak/picpeak/commit/eccfeca7af278b7c1d6a31d2e7bed409c064de50))
+* **deps:** bump joi, qs, follow-redirects, fast-xml-parser, glob, minimatch, i18next-http-backend for Trivy alerts ([#2488](https://github.com/PicPeak/picpeak/issues/2488)) ([3dd891e](https://github.com/PicPeak/picpeak/commit/3dd891e50134ef6056f3537b260af7c5ae3f9444))
+* **gallery:** keep Live Slideshow sessions apart from guest logins ([#2486](https://github.com/PicPeak/picpeak/issues/2486)) ([e108874](https://github.com/PicPeak/picpeak/commit/e1088749cb080fbc8f3e03d4780b8e31892822b7))
+
 ## [3.135.11](https://github.com/PicPeak/picpeak/compare/v3.135.10...v3.135.11) (2026-11-10)
 
 
