@@ -5,6 +5,26 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.201.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.200.0-beta.0...v3.201.0-beta.0) (2026-11-12)
+
+
+### Features
+
+* **api:** create v1 events as drafts with is_draft ([#2473](https://github.com/PicPeak/picpeak/issues/2473)) ([f11e4d0](https://github.com/PicPeak/picpeak/commit/f11e4d06756700de2e818ed7f43e86ca4f1c5fb7))
+
+
+### Bug Fixes
+
+* **backup:** read the schema level from the migrations ledger the runner writes ([#2474](https://github.com/PicPeak/picpeak/issues/2474)) ([7e92c3d](https://github.com/PicPeak/picpeak/commit/7e92c3d2c162260cd3a1c4b65cd6dcc7eb2b2fff))
+* **backup:** restore test loads dumps from a newer pg_dump into older PostgreSQL ([#2477](https://github.com/PicPeak/picpeak/issues/2477)) ([1b59c31](https://github.com/PicPeak/picpeak/commit/1b59c3113f071d3aeaca769eccc6a8cd1447038e))
+* **bills:** show and send the scheduled send time in local time ([#2472](https://github.com/PicPeak/picpeak/issues/2472)) ([3e1fca2](https://github.com/PicPeak/picpeak/commit/3e1fca25fa3f8df4d469b3328595fdc0fbab95c6))
+* **invoices:** keep held invoices out of product appends, hold on cross-engine restore ([#2475](https://github.com/PicPeak/picpeak/issues/2475)) ([a39d9cf](https://github.com/PicPeak/picpeak/commit/a39d9cf2bd6ee82adb6efe4bf239c58fc01a3a57))
+
+
+### Documentation
+
+* **backup:** say why the migrations ledger travels with a portable archive ([#2479](https://github.com/PicPeak/picpeak/issues/2479)) ([60c683b](https://github.com/PicPeak/picpeak/commit/60c683b16a0d48bd7847c9ae7d40796950bc61ff))
+
 ## [3.200.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.199.1-beta.0...v3.200.0-beta.0) (2026-11-10)
 
 
