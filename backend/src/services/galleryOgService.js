@@ -166,7 +166,7 @@ async function formatEventDate(value, language) {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return null;
     const { formatDate } = require('../utils/dateFormatter');
-    return await formatDate(d, language);
+    return await formatDate(d, language, { monthNames: true });
   } catch {
     return null;
   }
