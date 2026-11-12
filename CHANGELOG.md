@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.202.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.202.0-beta.0...v3.202.1-beta.0) (2026-11-12)
+
+
+### Bug Fixes
+
+* **deps:** bump joi, qs, follow-redirects, fast-xml-parser, glob, minimatch, i18next-http-backend for Trivy alerts ([#2487](https://github.com/PicPeak/picpeak/issues/2487)) ([881155a](https://github.com/PicPeak/picpeak/commit/881155aa470f2b69f9051f6ca5f3f9bbb75cee1a))
+
 ## [3.202.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.201.0-beta.0...v3.202.0-beta.0) (2026-11-12)
 
 
