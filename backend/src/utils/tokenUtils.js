@@ -4,6 +4,16 @@ const ADMIN_COOKIE_NAME = 'admin_token';
 const GALLERY_COOKIE_NAME = 'gallery_token';
 const GALLERY_COOKIE_PREFIX = 'gallery_token_';
 const GUEST_COOKIE_PREFIX = 'guest_token_';
+// Live Slideshow session cookie (issue 2438). A slideshow session is
+// display-only; kept in the guest cookie it either shadowed a guest login in
+// the same browser or was overwritten by one. Its own name keeps both alive.
+// Deliberately not under GALLERY_COOKIE_PREFIX, so no guest lookup (and no
+// prefix sweep in clearGalleryAuthCookies) ever picks it up.
+const SLIDESHOW_COOKIE_PREFIX = 'gallery_show_token_';
+// Query marker on the image URLs a slideshow session is handed. <img> cannot
+// send a header, so this is how an image request says which session cookie
+// it means. It selects, it never authorizes: the cookie is verified as usual.
+const SLIDESHOW_QUERY_PARAM = 'slideshow';
 // Customer-account session cookie (#354). Distinct name from the admin
 // cookie so a single browser can hold both an admin and a customer
 // session without one clobbering the other (e.g. for the admin
@@ -151,6 +161,17 @@ function setGalleryAuthCookies(res, token, slug) {
   }
 }
 
+function setSlideshowAuthCookie(res, token, slug, maxAgeMs) {
+  if (!token || !slug) return;
+  res.cookie(`${SLIDESHOW_COOKIE_PREFIX}${sanitizeSlugForCookie(slug)}`, token,
+    buildCookieOptionsWithExpiry(res, maxAgeMs));
+}
+
+/** Does this request name the slideshow session cookie (see SLIDESHOW_QUERY_PARAM)? */
+function wantsSlideshowSession(req) {
+  return req?.query?.[SLIDESHOW_QUERY_PARAM] === '1';
+}
+
 function clearGalleryAuthCookies(res, slug) {
   const clearOptions = buildClearCookieOptions();
   res.clearCookie(GALLERY_COOKIE_NAME, clearOptions);
@@ -195,6 +216,16 @@ function getGalleryTokenFromRequest(req, slug) {
 
   if (!req.cookies) {
     return null;
+  }
+
+  // A slideshow image asks for the slideshow cookie. Without one it falls
+  // through to the guest lookup: a kiosk opened before this cookie existed
+  // still holds its session in the guest cookie until it reloads.
+  if (slug && wantsSlideshowSession(req)) {
+    const showCookie = req.cookies[`${SLIDESHOW_COOKIE_PREFIX}${sanitizeSlugForCookie(slug)}`];
+    if (showCookie) {
+      return showCookie;
+    }
   }
 
   if (slug) {
@@ -254,6 +285,8 @@ module.exports = {
   GALLERY_COOKIE_NAME,
   GALLERY_COOKIE_PREFIX,
   GUEST_COOKIE_PREFIX,
+  SLIDESHOW_COOKIE_PREFIX,
+  SLIDESHOW_QUERY_PARAM,
   CUSTOMER_COOKIE_NAME,
   sanitizeSlugForCookie,
   setAdminAuthCookie,
@@ -262,6 +295,8 @@ module.exports = {
   clearCustomerAuthCookie,
   setGalleryAuthCookies,
   clearGalleryAuthCookies,
+  setSlideshowAuthCookie,
+  wantsSlideshowSession,
   getAdminTokenFromRequest,
   getCustomerTokenFromRequest,
   getGalleryTokenFromRequest,
