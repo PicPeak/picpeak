@@ -438,7 +438,10 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   // match the backend (which parses the YYYY-MM-DD base as UTC midnight).
   useEffect(() => {
     if (dueDateOverridden) return;
-    const base = (scheduledSendAt ? scheduledSendAt.slice(0, 10) : issueDate) || '';
+    // The send field is local time; the backend anchors on the UTC day of
+    // the instant it receives (sending.js oldAutoDue), so this does too.
+    const sendAt = fromLocalDateTimeInput(scheduledSendAt, loadedSendAt);
+    const base = (sendAt ? new Date(sendAt).toISOString().slice(0, 10) : issueDate) || '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(base)) return;
     const tpl = netDaysTemplates?.templates?.find((t) => t.id === paymentNetDaysTemplateId);
     const netDays = tpl?.netDays != null
@@ -447,7 +450,7 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     const d = new Date(`${base}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + netDays);
     setDueDate(d.toISOString().slice(0, 10));
-  }, [dueDateOverridden, scheduledSendAt, issueDate, paymentNetDaysTemplateId, netDaysTemplates, appSettings]);
+  }, [dueDateOverridden, scheduledSendAt, loadedSendAt, issueDate, paymentNetDaysTemplateId, netDaysTemplates, appSettings]);
 
   const buildPayload = (): InvoiceCreatePayload => ({
     customerAccountId: customerId || 0,
