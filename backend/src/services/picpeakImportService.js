@@ -26,6 +26,7 @@ const logger = require('../utils/logger');
 const { PICPEAK_FORMAT_VERSION } = require('./picpeakExportService');
 const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
 const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
+const { migrationOrder, latestMigration, shippedMigration } = require('../utils/schemaLevel');
 const { rowBatches } = require('./portableImportRows');
 const {
   dedupeExternalPhotos,
@@ -40,12 +41,6 @@ const {
 } = require('./accountRecoveryStorageHardening');
 
 const isPostgres = () => knexConfig.client === 'pg';
-
-// Compare migrations by their numeric filename prefix (001_, 107_, 129_ …).
-function migrationOrder(name) {
-  const m = String(name || '').match(/^(\d+)/);
-  return m ? parseInt(m[1], 10) : -1;
-}
 
 function archiveLimitError(message, statusCode) {
   const err = new Error(message);
@@ -153,12 +148,16 @@ async function validateManifest(manifest) {
     errors.push(`Database engine mismatch: the backup is "${backupEngine}" but this instance is "${engine}". Cross-engine restore is only supported from a SQLite backup onto a PostgreSQL instance.`);
   }
   // Forward-only: the target schema must be at least as new as the backup's.
-  let targetLatest = null;
+  // The target's level is the higher of its ledger and the newest migration
+  // this code ships: after a restore of an older archive the ledger holds the
+  // archive's level until the next start, while the schema is already the
+  // code's, so a backup at the code's level must still be accepted.
+  let targetLatest = shippedMigration();
   try {
-    const applied = await db('knex_migrations').orderBy('id', 'desc').limit(1);
-    targetLatest = applied[0] ? applied[0].name : null;
+    const ledger = await latestMigration(db);
+    if (ledger && (!targetLatest || migrationOrder(ledger) > migrationOrder(targetLatest))) targetLatest = ledger;
   } catch (_) {
-    // No knex_migrations table (e.g. some test harnesses) — skip the check.
+    // An unreadable ledger leaves the shipped level.
   }
   const backupLatest = manifest.database ? manifest.database.latest_migration : null;
   if (backupLatest && targetLatest && migrationOrder(backupLatest) > migrationOrder(targetLatest)) {

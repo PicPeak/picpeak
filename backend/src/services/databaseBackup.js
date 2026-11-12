@@ -11,6 +11,7 @@ const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
+const { latestMigration } = require('../utils/schemaLevel');
 const packageJson = require('../../package.json');
 const recoveryFiles = require('./recoveryFiles');
 const { getStorage } = require('./storage');
@@ -976,10 +977,7 @@ class DatabaseBackupService {
    */
   async getCurrentSchemaVersion() {
     try {
-      const result = await db('knex_migrations')
-        .orderBy('id', 'desc')
-        .first();
-      return result ? result.name : 'unknown';
+      return (await latestMigration(db)) || 'unknown';
     } catch (error) {
       logger.error('Failed to get schema version:', error);
       return 'unknown';

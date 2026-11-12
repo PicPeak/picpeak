@@ -28,6 +28,7 @@ const { STORED_PATH_COLUMNS } = require('../utils/storedPath');
 const packageJson = require('../../package.json');
 const recoveryFiles = require('./recoveryFiles');
 const { getStorage } = require('./storage');
+const { latestMigration } = require('../utils/schemaLevel');
 
 // Bump only on a breaking change to the on-disk layout below.
 const PICPEAK_FORMAT_VERSION = 1;
@@ -101,8 +102,7 @@ async function listDataTables() {
 // refuse a backup that is NEWER than the target (forward-only guarantee).
 async function getLatestMigration() {
   try {
-    const rows = await db('knex_migrations').orderBy('id', 'desc').limit(1);
-    return rows[0]?.name || null;
+    return await latestMigration(db);
   } catch (_) {
     return null;
   }

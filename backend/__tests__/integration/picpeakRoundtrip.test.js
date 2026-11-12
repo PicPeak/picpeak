@@ -152,25 +152,13 @@ describe('.picpeak manifest validation', () => {
   });
 
   it('rejects a backup from a newer schema (forward-only)', async () => {
-    // validateManifest reads knex_migrations for the target's latest migration;
-    // the harness has none, so create it with an older migration than the backup.
-    await db.schema.createTable('knex_migrations', (t) => {
-      t.increments('id');
-      t.string('name');
-      t.integer('batch');
-      t.timestamp('migration_time');
+    // The target's level is the newest migration in the harness's ledger.
+    const blockers = await validateManifest({
+      kind: 'picpeak-backup', format: 1,
+      database: { engine: 'sqlite', latest_migration: '999_from_the_future' },
+      tables: {},
     });
-    try {
-      await db('knex_migrations').insert({ name: '100_baseline', batch: 1 });
-      const blockers = await validateManifest({
-        kind: 'picpeak-backup', format: 1,
-        database: { engine: 'sqlite', latest_migration: '999_from_the_future' },
-        tables: {},
-      });
-      expect(blockers.some((b) => /newer/i.test(b))).toBe(true);
-    } finally {
-      await db.schema.dropTableIfExists('knex_migrations');
-    }
+    expect(blockers.some((b) => /newer/i.test(b))).toBe(true);
   });
 
   it('rejects a file that is not a PicPeak backup', async () => {
