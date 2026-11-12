@@ -26,24 +26,19 @@ async function context(request) {
   const start = parts(request.starts_at);
   const hold = parts(request.hold_expires_at);
   const locale = issuerIntlLocale(profile && profile.country_code) || (language === 'de' ? 'de-CH' : 'en-GB');
-  // The admin notice reuses these vars; its dates go in the admin's language.
-  const dates = async (lang) => ({
-    booking_date: await formatDate(day(start), lang),
-    hold_until: `${await formatDate(day(hold), lang)} ${time(hold)}`,
-  });
   const estimate = new Intl.NumberFormat(locale, { style: 'currency', currency: request.currency || 'CHF' })
     .format(Number(request.estimate_minor || 0) / 100);
   return {
     profile,
     language,
-    dates,
     vars: {
       client_name: request.name,
       client_email: request.email,
       business_name: (profile && (profile.company_name || profile.business_name)) || '',
       service_name: request.service_name,
-      ...await dates(language),
+      booking_date: await formatDate(day(start), language),
       booking_time: time(start),
+      hold_until: `${await formatDate(day(hold), language)} ${time(hold)}`,
       estimate,
       reference: request.reference,
     },
@@ -63,16 +58,14 @@ async function queue(type, recipient, data) {
 
 /** A new request: confirm to the client, tell the business. */
 async function notifyReceived(request, { mailClient = true } = {}) {
-  const { profile, language, dates, vars } = await context(request);
+  const { profile, language, vars } = await context(request);
   const base = ((await getFrontendBaseUrl()) || '').replace(/\/+$/, '');
   if (mailClient) await queue('booking_request_received', request.email, { ...vars, __language: language });
   if (profile && profile.email) {
-    const adminLanguage = (profile && profile.default_locale) || language;
     await queue('booking_request_admin', profile.email, {
       ...vars,
-      ...(adminLanguage !== language ? await dates(adminLanguage) : {}),
       admin_link: `${base}/admin/clients/bookings?request=${request.id}`,
-      __language: adminLanguage,
+      __language: (profile && profile.default_locale) || language,
     });
   }
   await logActivity('booking_request_received', {
