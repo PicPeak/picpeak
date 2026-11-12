@@ -100,6 +100,12 @@ describe('link previews follow the default language', () => {
     await setSetting('general_default_language', 'fr');
     expect((await og.buildOgMetadata('og-lang', '/gallery/og-lang')).description)
       .toBe('Galerie photo de Sommerfest du 11/10/2026.');
+    await setSetting('general_default_language', 'de');
+    expect((await og.buildOgMetadata('og-lang', '/gallery/og-lang')).description)
+      .toBe('Fotogalerie: Sommerfest vom 11/10/2026.');
+    await setSetting('general_default_language', 'pt');
+    expect((await og.buildOgMetadata('og-lang', '/gallery/og-lang')).description)
+      .toBe('Galeria de fotos de Sommerfest em 11/10/2026.');
     await setSetting('general_date_format', { format: 'DD.MM.YYYY', locale: 'de-DE' });
   });
 
