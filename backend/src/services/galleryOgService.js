@@ -176,7 +176,7 @@ async function formatEventDate(value, language) {
     const day = toDateOnly(typeof value === 'number' ? new Date(value) : value);
     if (!day || Number.isNaN(new Date(day).getTime())) return null;
     const { formatDate } = require('../utils/dateFormatter');
-    return await formatDate(day, language);
+    return await formatDate(day, language, { monthNames: true });
   } catch {
     return null;
   }

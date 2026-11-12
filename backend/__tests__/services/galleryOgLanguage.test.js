@@ -94,6 +94,10 @@ describe('link previews follow the default language', () => {
     await setSetting('general_default_language', 'de');
     expect((await og.buildOgMetadata('og-lang', '/gallery/og-lang')).description)
       .toBe('Fotogalerie: Sommerfest vom 10. November 2026.');
+    // Emails keep their month names: only the preview asks for them, since
+    // some mails reuse one formatted date for recipients in other languages.
+    const { formatDate } = require('../../src/utils/dateFormatter');
+    expect(await formatDate('2026-11-10', 'fr')).toBe('10 November 2026');
     // A numeric format keeps its configured order: the language only names
     // months, it never turns 11/10 into 10/11.
     await setSetting('general_date_format', { format: 'MM/DD/YYYY', locale: 'en-US' });
