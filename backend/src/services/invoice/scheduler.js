@@ -68,8 +68,15 @@ async function runScheduledTasks() {
   //   instead of duplicating logic here.
   const monthlyToday = new Date(now);
   monthlyToday.setHours(0, 0, 0, 0);
+  // Drafts cancelled or paid before closing a draft cleared its marker still
+  // carry it: release them, so lists show them as the closed invoices they
+  // are and the customer's next item opens a fresh draft.
+  await auditedUpdate(db, 'invoices',
+    (q) => q.where({ is_monthly_draft: true }).whereNot('status', 'scheduled'),
+    { is_monthly_draft: false, updated_at: new Date() },
+    { actor: 'scheduler', source: 'invoice.monthly.releaseClosedDraft' });
   const dueDrafts = await db('invoices')
-    .where({ is_monthly_draft: true })
+    .where({ is_monthly_draft: true, status: 'scheduled' })
     .andWhere('monthly_period_end', '<=', monthlyToday.toISOString().slice(0, 10))
     .limit(50);
   for (const draft of dueDrafts) {

@@ -112,6 +112,11 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
     if (invoice.status === 'cancelled') {
       throw new AppError('Cannot mark a cancelled invoice as paid', 409);
     }
+    // A running monthly bill still collects items and has not been issued;
+    // it is paid once it went out.
+    if (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1) {
+      throw new AppError('This is the running monthly bill. Send it before recording a payment.', 409, 'MONTHLY_DRAFT_NOT_PAYABLE');
+    }
     // Not issued yet, and a paid invoice can no longer be marked delivered,
     // so it would never reach the customer.
     if (invoice.status === 'pending_delivery') {

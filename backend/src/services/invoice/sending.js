@@ -810,8 +810,10 @@ async function cancelInvoice(id, adminId) {
 
   // Draft path: nothing was issued, soft cancel and we're done.
   if (isInvoiceEditable(invoice)) {
+    // A cancelled monthly draft stops collecting items: the next one opens
+    // a fresh draft.
     const cancelled = await auditedUpdate(db, 'invoices', { id, status: invoice.status }, {
-      status: 'cancelled', updated_at: new Date(),
+      status: 'cancelled', is_monthly_draft: false, updated_at: new Date(),
     }, { actor: adminId, source: 'invoice.cancel' });
     if (!cancelled) throw new AppError('This invoice changed in the meantime. Reload it.', 409, 'INVOICE_STATUS_CHANGED');
     // Free any re-billed supplier invoices so the cost isn't stranded (#866 review).
@@ -839,7 +841,7 @@ async function cancelInvoice(id, adminId) {
 
 async function triggerMonthlyBillNow(customerId, adminId) {
   const draft = await db('invoices')
-    .where({ customer_account_id: customerId, is_monthly_draft: true })
+    .where({ customer_account_id: customerId, is_monthly_draft: true, status: 'scheduled' })
     .orderBy('id', 'desc')
     .first();
   if (!draft) {

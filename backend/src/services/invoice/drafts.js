@@ -70,10 +70,14 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
   // ours. forUpdate() locks the row on Postgres so concurrent appenders
   // serialize on totals recomputation; SQLite's transaction write-lock
   // gives us the same guarantee implicitly.
+  //
+  // Only a draft that is still `scheduled` takes items: a cancelled or paid
+  // row is a closed document, whatever its draft flag says.
   const existing = await trx('invoices')
     .where({
       customer_account_id: customer.id,
       is_monthly_draft: true,
+      status: 'scheduled',
     })
     .orderBy('id', 'desc')
     .forUpdate()
@@ -81,6 +85,13 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
   if (existing) {
     return { id: existing.id, row: existing, created: false };
   }
+  // Rows closed while still flagged as the draft (cancelled or paid before
+  // cancelling and paying cleared the flag) would hold the one-draft-per-
+  // customer index and keep a fresh draft from being opened.
+  await auditedUpdate(trx, 'invoices',
+    (q) => q.where({ customer_account_id: customer.id, is_monthly_draft: true }).whereNot('status', 'scheduled'),
+    { is_monthly_draft: false, updated_at: new Date() },
+    { actor: adminId, source: 'invoice.monthly.releaseClosedDraft' });
 
   // None yet — mint one with zero line items + zero totals. The
   // caller appends items + recomputes immediately after.
@@ -141,7 +152,7 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
       /sqlite_constraint/i.test(msg);
     if (!isUniqueViolation) throw err;
     const winner = await trx('invoices')
-      .where({ customer_account_id: customer.id, is_monthly_draft: true })
+      .where({ customer_account_id: customer.id, is_monthly_draft: true, status: 'scheduled' })
       .orderBy('id', 'desc')
       .first();
     if (!winner) {
@@ -237,7 +248,7 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
     if (rate != null) gbpRateUpdate.vat_gbp_rate = rate;
   }
 
-  await auditedUpdate(trx, 'invoices', { id: draft.id }, {
+  const updated = await auditedUpdate(trx, 'invoices', { id: draft.id, status: 'scheduled', is_monthly_draft: true }, {
     net_amount_minor: netMinor,
     vat_rate: vatRate,
     vat_amount_minor: vatMinor,
@@ -245,6 +256,9 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
     ...gbpRateUpdate,
     updated_at: new Date(),
   }, { actor: adminId, source: 'invoice.monthly.appendItems' });
+  if (!updated) {
+    throw new AppError('The running monthly bill was closed in the meantime. Try again.', 409, 'MONTHLY_DRAFT_CLOSED');
+  }
 
   try {
     await logActivity('monthly_billing_items_queued',
@@ -273,29 +287,20 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
  */
 async function appendOneLineItemToMonthlyDraft(customer, lineItem, adminId, trx) {
   // Reuse the accumulator path — it handles get-or-create + totals
-  // recompute + activity log. We pass a single-item array.
-  await appendToMonthlyDraft({
+  // recompute + activity log. We pass a single-item array, and take the
+  // draft it appended onto from its return value.
+  const draftId = await appendToMonthlyDraft({
     customerAccountId: customer.id,
     lineItems: [lineItem],
     vatRate: 0, // hours logging doesn't ship with VAT today
   }, customer, adminId, trx);
 
-  // Look up the draft we just appended onto + its tail line item.
-  // Newest insert wins by id desc; we filter by position match so
-  // concurrent appends in another tx don't return the wrong row.
-  const draft = await trx('invoices')
-    .where({ customer_account_id: customer.id, is_monthly_draft: true })
-    .orderBy('id', 'desc')
-    .first();
-  if (!draft) {
-    // Defensive — appendToMonthlyDraft would have created one.
-    throw new AppError('Monthly draft missing after append', 500);
-  }
+  // The tail line item of that draft is the one just appended.
   const tail = await trx('invoice_line_items')
-    .where({ invoice_id: draft.id })
+    .where({ invoice_id: draftId })
     .orderBy('position', 'desc')
     .first();
-  return { invoiceId: draft.id, lineItemId: tail?.id || null };
+  return { invoiceId: draftId, lineItemId: tail?.id || null };
 }
 
 /**
@@ -323,7 +328,7 @@ async function appendOneLineItemToMonthlyDraft(customer, lineItem, adminId, trx)
  */
 async function getMonthlyDraft(customerId) {
   const draft = await db('invoices')
-    .where({ customer_account_id: customerId, is_monthly_draft: true })
+    .where({ customer_account_id: customerId, is_monthly_draft: true, status: 'scheduled' })
     .orderBy('id', 'desc')
     .first();
   if (!draft) return null;
