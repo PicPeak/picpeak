@@ -75,6 +75,21 @@ describe('resolveLogoFile', () => {
     expect(out).toBe('/app/storage/uploads/logos/branding.png');
   });
 
+  it('reads branding_logo_url only as an uploaded logo, never another file under storage', async () => {
+    const photo = '/app/storage/events/active/someone-else/IMG_0001.png';
+    existsSpy.mockImplementation((p) => p === photo || p === '/app/storage/uploads/logos/IMG_0001.png');
+    for (const value of [
+      'events/active/someone-else/IMG_0001.png',
+      '/events/active/someone-else/IMG_0001.png',
+      '/uploads/logos/../../events/active/someone-else/IMG_0001.png',
+      '/uploads/logos/sub/IMG_0001.png',
+      photo,
+    ]) {
+      getAppSetting.mockImplementation(async (key) => (key === 'branding_logo_url' ? value : null));
+      expect(await resolveLogoFile({})).toBeNull();
+    }
+  });
+
   it('skips SVG (PDFKit cannot embed)', async () => {
     existsSpy.mockImplementation((p) => p === '/app/storage/uploads/logos/logo.svg');
     getAppSetting.mockResolvedValue(null);

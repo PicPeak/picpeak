@@ -18,7 +18,8 @@
  *   2. app_settings.branding_logo_path  — absolute multer path from
  *      Settings → Branding (preferred — already absolute)
  *   3. app_settings.branding_logo_url   — URL path from the same
- *      branding upload (fallback for older installs)
+ *      branding upload (fallback for older installs); only an
+ *      /uploads/logos/<file> value the upload wrote is read
  *
  * For each source we try multiple candidate disk paths:
  *   - The raw value as an absolute path (if absolute)
@@ -39,6 +40,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { getStoragePath } = require('../config/storage');
 const { getAppSetting } = require('./appSettings');
+const { uploadedAssetPath } = require('./safePath');
 const logger = require('./logger');
 
 // Bump this whenever the SVG→PNG rendering environment changes in a way that
@@ -182,9 +184,12 @@ async function resolveLogoFile(profile) {
   } catch (_) { /* ignore */ }
 
   try {
+    // A URL setting, not a path: only a logo the upload route wrote
+    // (/uploads/logos/<file>) is read, never another file under storage.
     const brandingUrl = await getAppSetting('branding_logo_url');
-    if (brandingUrl && typeof brandingUrl === 'string' && brandingUrl.trim()) {
-      raws.push({ source: 'branding_logo_url', value: brandingUrl.trim() });
+    const url = typeof brandingUrl === 'string' ? brandingUrl.trim() : '';
+    if (url && uploadedAssetPath(url, 'logos', storageRoot)) {
+      raws.push({ source: 'branding_logo_url', value: url });
     }
   } catch (_) { /* ignore */ }
 
