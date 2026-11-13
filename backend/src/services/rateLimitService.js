@@ -463,6 +463,18 @@ function refundRateLimit(req) {
   Promise.resolve().then(refund).catch((error) => logger.warn('Rate limit refund failed', { error: error.message }));
 }
 
+/**
+ * Refund a website-embed image read (issue 1112) that middleware/gallery.js
+ * has authorised by its embed token. The embed's counterpart of the image
+ * exemption, so it rides on the same switch: with skip_authenticated off,
+ * every image request counts, embed images included.
+ */
+async function refundEmbedImageRead(req) {
+  if (!req.rateLimitRefund || !isGalleryImageRequest(req)) return;
+  const config = await getRateLimitSettings();
+  if (config.skipAuthenticated) refundRateLimit(req);
+}
+
 const getGeneralLimiter = () => current.general;
 const getAuthLimiter = () => current.auth;
 
@@ -478,6 +490,7 @@ module.exports = {
   isAuthenticated,
   isOwnGalleryImageRequest,
   isGalleryImageRequest,
+  refundEmbedImageRead,
   isOwnGalleryViewerRequest,
   GALLERY_VIEWER_BUDGET_FACTOR,
   shouldSkipRateLimit,

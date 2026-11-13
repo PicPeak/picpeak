@@ -192,6 +192,23 @@ describe('gallery embed (issue 1112)', () => {
       expect(refunds).toEqual([photo.thumbnail_url]);
     });
 
+    it('keeps counting embed images when the operator turned the image exemption off', async () => {
+      const rateLimit = require('../../src/services/rateLimitService');
+      const [photo] = (await photos()).body.photos;
+      await db('app_settings').where({ setting_key: 'rate_limit_skip_authenticated' }).del();
+      await db('app_settings').insert({ setting_key: 'rate_limit_skip_authenticated', setting_value: 'false', setting_type: 'security' });
+      rateLimit.clearSettingsCache();
+      try {
+        refunds.length = 0;
+        await request(app).get(photo.thumbnail_url);
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(refunds).toEqual([]);
+      } finally {
+        await db('app_settings').where({ setting_key: 'rate_limit_skip_authenticated' }).del();
+        rateLimit.clearSettingsCache();
+      }
+    });
+
     it('keeps answering on the old slug after a rename', async () => {
       await db('slug_redirects').insert({ old_slug: 'embed-gallery-old', new_slug: SLUG, event_id: eventId });
       try {
