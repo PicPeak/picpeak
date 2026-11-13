@@ -164,8 +164,9 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
 };
 
 export const GalleryView: React.FC<GalleryViewProps> = (props) => {
-  const { isClient, viaCustomer } = useGalleryAuth();
-  const scope = isClient ? 'client' : viaCustomer ? 'customer' : 'guest';
+  const { isClient, viaCustomer, fullView } = useGalleryAuth();
+  // A full-link session's archive (issue 2356) holds more than a guest's.
+  const scope = isClient ? 'client' : viaCustomer ? 'customer' : fullView ? 'full' : 'guest';
   return <ArchiveDownloadProvider scopeKey={`${props.slug}:${scope}`} renderDialog={false}>
     <GalleryViewContent {...props} />
   </ArchiveDownloadProvider>;
@@ -175,8 +176,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const archives = useArchiveDownload();
   const { t } = useTranslation();
   const { formatDateTime } = useLocalizedDate();
-  const { logout, endSession, isClient, viaCustomer, viaClientPin, enterClientMode, leaveClientMode, isSwitchingClientMode } = useGalleryAuth();
-  const accessScope = isClient ? 'client' : viaCustomer ? 'customer' : 'guest';
+  const { logout, endSession, isClient, viaCustomer, viaClientPin, fullView, enterClientMode, leaveClientMode, isSwitchingClientMode } = useGalleryAuth();
+  // A full-link session (issue 2356) sees more photos than an ordinary guest,
+  // so its cached lists are kept apart.
+  const accessScope = isClient ? 'client' : viaCustomer ? 'customer' : fullView ? 'full' : 'guest';
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
@@ -1751,7 +1754,9 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Query for five minutes on a key that knows nothing about the session, so
   // opening a gallery as a guest and then from the portal would have reused
   // the guest answer, and vice versa.
-  const showLogoutControl = requiresPassword || isClient || viaCustomer;
+  // A full-link session (issue 2356) can be ended too, also on a gallery
+  // without a password: its cookie outlives the tab.
+  const showLogoutControl = requiresPassword || isClient || viaCustomer || fullView;
   // The way back to the portal: only a portal-minted session has one, the
   // same server-side flag as above, so a share-link visitor never sees it.
   // Not in an admin preview.

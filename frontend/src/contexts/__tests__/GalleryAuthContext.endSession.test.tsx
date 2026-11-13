@@ -14,9 +14,10 @@ import { MemoryRouter } from 'react-router-dom';
 
 const SLUG = 'wedding';
 
+const { sessionExtra } = vi.hoisted(() => ({ sessionExtra: { current: {} as Record<string, unknown> } }));
 vi.mock('../../config/api', () => ({
   api: {
-    get: vi.fn(async () => ({ data: { valid: true, type: 'gallery', eventSlug: SLUG, accessLevel: 'guest' } })),
+    get: vi.fn(async () => ({ data: { valid: true, type: 'gallery', eventSlug: SLUG, accessLevel: 'guest', ...sessionExtra.current } })),
   },
 }));
 
@@ -43,12 +44,14 @@ const guestToken = `${b64({ alg: 'none' })}.${b64({ type: 'guest', exp: Math.flo
 let auth: ReturnType<typeof useGalleryAuth> | null = null;
 const Probe: React.FC = () => { auth = useGalleryAuth(); return null; };
 
+let queryClient: QueryClient;
 const mountAuthenticated = async () => {
+  queryClient = new QueryClient();
   storeGalleryToken(SLUG, 'gallery-session');
   storeGuestIdentity(SLUG, { id: 5, name: 'Invited' } as never, guestToken);
   render(
     <MemoryRouter initialEntries={[`/gallery/${SLUG}`]}>
-      <QueryClientProvider client={new QueryClient()}><GalleryAuthProvider><Probe /></GalleryAuthProvider></QueryClientProvider>
+      <QueryClientProvider client={queryClient}><GalleryAuthProvider><Probe /></GalleryAuthProvider></QueryClientProvider>
     </MemoryRouter>,
   );
   await waitFor(() => expect(auth?.isAuthenticated).toBe(true));
@@ -59,6 +62,7 @@ afterEach(() => {
   sessionStorage.clear();
   localStorage.clear();
   galleryLogout.mockClear();
+  sessionExtra.current = {};
 });
 
 describe('GalleryAuthProvider: ending a rejected session keeps the guest', () => {
@@ -92,5 +96,18 @@ describe('GalleryAuthProvider: ending a rejected session keeps the guest', () =>
     act(() => auth!.logout());
     await waitFor(() => expect(auth?.isAuthenticated).toBe(false));
     expect(getFullLinkToken(SLUG)).toBeNull();
+  });
+
+  it('reports a full-link session, and logout drops it with its cached photo lists', async () => {
+    sessionExtra.current = { fullView: true };
+    await mountAuthenticated();
+    expect(auth!.fullView).toBe(true);
+    queryClient.setQueryData(['gallery-photos', SLUG, 'all', 'g1', 'full'], { photos: [{ id: 1 }] });
+    queryClient.setQueryData(['gallery-photos', 'other', 'all', 'g1', 'guest'], { photos: [] });
+    act(() => auth!.logout());
+    await waitFor(() => expect(auth?.isAuthenticated).toBe(false));
+    expect(auth!.fullView).toBe(false);
+    expect(queryClient.getQueryData(['gallery-photos', SLUG, 'all', 'g1', 'full'])).toBeUndefined();
+    expect(queryClient.getQueryData(['gallery-photos', 'other', 'all', 'g1', 'guest'])).toBeDefined();
   });
 });

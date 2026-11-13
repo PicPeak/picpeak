@@ -629,6 +629,8 @@ export interface GalleryAuthResponse {
   accessLevel?: GalleryAccessLevel;
   viaCustomer?: boolean;
   viaClientPin?: boolean;
+  // Opened with the full link of a gallery with a curated selection (issue 2356).
+  full_view?: boolean;
 }
 
 // API Error type

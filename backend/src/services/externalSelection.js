@@ -53,10 +53,27 @@ function selectionHiddenFor(prefix, relpath) {
  * the importer (selectionHiddenFor, a case-sensitive startsWith) hides it.
  * substr() counts characters on both engines, as [...prefix] does.
  */
-async function recomputeSelection(eventId, conn = db) {
+async function recomputeSelection(eventId, conn = db, { selectionPath } = {}) {
+  // One transaction, the event row locked on PostgreSQL (SQLite runs one
+  // writer at a time): a pass computed for an older selection cannot finish
+  // after a newer one and leave its flags behind. With selectionPath the
+  // selection is saved in the same transaction.
+  if (!conn.isTransaction) {
+    const changed = await conn.transaction((trx) => recomputeSelection(eventId, trx, { selectionPath }));
+    // A prebuilt "download all" archive holds what the ordinary link showed
+    // when it was built; once the flags move it is stale. invalidate() also
+    // drops a build still running.
+    if (changed > 0) require('./downloadZipService').invalidate(eventId);
+    return changed;
+  }
+  const lock = conn('events').where({ id: eventId });
+  if (conn.client.config.client === 'pg') lock.forUpdate();
+  if (!(await lock.first('id'))) return 0;
+  if (selectionPath !== undefined) {
+    await conn('events').where({ id: eventId }).update({ selection_path: selectionPath });
+  }
   const event = await conn('events').where({ id: eventId })
     .first('id', 'source_mode', 'external_path', 'selection_path');
-  if (!event) return 0;
   const prefix = selectionPrefix(event);
   const photos = () => conn('photos').where({ event_id: eventId });
   if (!prefix) {

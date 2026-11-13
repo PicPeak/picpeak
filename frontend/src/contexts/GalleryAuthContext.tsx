@@ -49,6 +49,9 @@ interface GalleryAuthContextType {
   viaCustomer: boolean;
   /** This session entered the client role from the regular gallery PIN form. */
   viaClientPin: boolean;
+  // A session opened with the full link (issue 2356): sees the photos outside
+  // the curated selection too.
+  fullView: boolean;
   login: (slug: string, password?: string, recaptchaToken?: string | null) => Promise<void>;
   clientLogin: (slug: string, password: string, token: string) => Promise<void>;
   enterClientMode: (slug: string, password: string) => Promise<void>;
@@ -85,6 +88,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
   const [accessLevel, setAccessLevel] = useState<GalleryAccessLevel>('guest');
   const [viaCustomer, setViaCustomer] = useState(false);
   const [viaClientPin, setViaClientPin] = useState(false);
+  const [fullView, setFullView] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSwitchingClientMode, setIsSwitchingClientMode] = useState(false);
@@ -239,7 +243,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         setIsLoading(true);
         const sessionResponse = await api.get<{
           valid: boolean; type: string; eventSlug?: string;
-          accessLevel?: GalleryAccessLevel | 'slideshow'; viaCustomer?: boolean; viaClientPin?: boolean; token?: string;
+          accessLevel?: GalleryAccessLevel | 'slideshow'; viaCustomer?: boolean; viaClientPin?: boolean; fullView?: boolean; token?: string;
         }>(
           '/auth/session',
           { params: { slug: currentSlug } }
@@ -274,6 +278,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
           }
           setViaCustomer(Boolean(sessionResponse.data.viaCustomer));
           setViaClientPin(sessionResponse.data.accessLevel === 'client' && sessionResponse.data.viaClientPin === true);
+          setFullView(sessionResponse.data.fullView === true);
 
           // Always refresh from the server — the stored event from sessionStorage
           // is shown above as an instant placeholder for perceived perf, but it
@@ -323,6 +328,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
                 storeGalleryToken(currentSlug, response.token);
               }
               setActiveGallerySlug(currentSlug);
+              setFullView(false);
               const normalizedEvent = normalizeEvent(response.event);
               setEvent(normalizedEvent);
               if (normalizedEvent) {
@@ -369,6 +375,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       const response = await authService.verifyGalleryPassword(slug, password, recaptchaToken);
       setViaClientPin(false);
       setViaCustomer(false);
+      setFullView(response.full_view === true);
       setAccessLevel('guest');
       // Store token and slug BEFORE setting authenticated state to avoid
       // race condition where photo queries fire before token is available
@@ -398,6 +405,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       const response = await authService.clientLogin(slug, password, token);
       setViaClientPin(false);
       setViaCustomer(false);
+      setFullView(false);
       if (response.token) {
         storeGalleryToken(slug, response.token);
       }
@@ -480,6 +488,15 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       }
     }
     authService.galleryLogout(currentSlug || undefined);
+    if (currentSlug) {
+      // A full-link session's photo list (issue 2356) must not be what the
+      // next, ordinary session in this tab is shown from the cache.
+      const predicate = (query: { queryKey: readonly unknown[] }) => query.queryKey[1] === currentSlug
+        && (String(query.queryKey[0]).startsWith('gallery-') || query.queryKey[0] === 'my-feedback');
+      void queryClient.cancelQueries({ predicate });
+      queryClient.removeQueries({ predicate });
+    }
+    setFullView(false);
     setIsAuthenticated(false);
     setEvent(null);
     setAccessLevel('guest');
@@ -499,6 +516,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         isClient: accessLevel === 'client',
         viaCustomer,
         viaClientPin,
+        fullView,
         login,
         clientLogin: clientLoginFn,
         enterClientMode: (slug, password) => changeClientMode(slug, password),

@@ -262,6 +262,40 @@ describe('curated selection inside an external source (issue 2356)', () => {
     });
   });
 
+  it('leaves the flags of the selection saved last when changes overlap, and drops the prebuilt archive', async () => {
+    const eventId = await seedEvent();
+    await writeJpeg('shoot/gallery/a.jpg');
+    await writeJpeg('shoot/best/b.jpg', { r: 200, g: 10, b: 10 });
+    await db('events').where({ id: eventId }).update({ external_path: 'shoot' });
+    await scan(eventId);
+    const zip = require('../../src/services/downloadZipService');
+    const invalidate = jest.spyOn(zip, 'invalidate').mockImplementation(() => {});
+    try {
+      await Promise.all([setSelection(eventId, 'best'), setSelection(eventId, 'gallery'), setSelection(eventId, 'best')]);
+      const { selection_path: saved } = await db('events').where({ id: eventId }).first('selection_path');
+      const f = await flags(eventId);
+      expect(f['shoot/gallery/a.jpg'].hidden).toBe(saved !== 'gallery');
+      expect(f['shoot/best/b.jpg'].hidden).toBe(saved !== 'best');
+      expect(invalidate).toHaveBeenCalledWith(eventId);
+    } finally {
+      invalidate.mockRestore();
+    }
+  });
+
+  it('puts every photo back in the selection when the source is detached', async () => {
+    const eventId = await seedEvent();
+    await writeJpeg('shoot/gallery/a.jpg');
+    await writeJpeg('shoot/best/b.jpg', { r: 200, g: 10, b: 10 });
+    await db('events').where({ id: eventId }).update({ external_path: 'shoot', selection_path: 'gallery' });
+    await scan(eventId);
+    expect((await flags(eventId))['shoot/best/b.jpg'].hidden).toBe(true);
+
+    const res = await request(app).put(`/api/admin/events/${eventId}`).send({ source_mode: 'managed' });
+    expect(res.status).toBe(200);
+    expect((await db('events').where({ id: eventId }).first()).selection_path).toBeNull();
+    expect(Object.values(await flags(eventId)).every((f) => !f.hidden)).toBe(true);
+  });
+
   it('manages the full link: needs a selection, rotates, removes', async () => {
     const eventId = await seedEvent();
     await writeJpeg('shoot/gallery/a.jpg');

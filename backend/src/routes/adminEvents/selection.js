@@ -71,8 +71,8 @@ module.exports = (router) => {
         }
         throw error;
       }
-      await db('events').where({ id: event.id }).update({ selection_path: selectionPath });
-      await externalSelection.recomputeSelection(event.id);
+      // Saved and applied in one transaction (externalSelection.js).
+      await externalSelection.recomputeSelection(event.id, db, { selectionPath });
       await logActivity('event_selection_updated', { selection_path: selectionPath }, event.id, actorOf(req));
       res.json(await selectionState({ ...event, selection_path: selectionPath }));
     } catch (error) {
