@@ -138,7 +138,7 @@ async function getGalleryPhotoState({ event, query = {}, identity, accessLevel, 
   return { count: Number(row.count), max_id: row.max_id == null ? null : Number(row.max_id), processing };
 }
 
-async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaCustomer = false, adminPreview, hiddenForGuest, slug }) {
+async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaCustomer = false, adminPreview, hiddenForGuest, slug, stillsOnly = false }) {
   // Get filter and sort parameters from query
   // `guest_id` is deliberately NOT read from the query string: the viewer's
   // own feedback is resolved from the request identity instead (see the
@@ -169,6 +169,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   const list = await galleryListQuery({ event, query, identity, accessLevel });
   const { feedbackService, feedbackSettings, showFeedbackToGuests, sharedColorMode } = list;
   let { photosQuery } = list;
+  // The website embed (issue 1112) has no player: its pages count stills
+  // only, so a videos-first gallery does not open on pages of nothing.
+  if (stillsOnly) whereNotVideo(photosQuery);
 
   // Apply sort option.
   //

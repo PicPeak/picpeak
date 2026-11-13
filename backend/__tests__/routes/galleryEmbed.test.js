@@ -2,7 +2,8 @@
  * Website embed (issue 1112, migration 359).
  *
  * Public side: /api/gallery/:slug/embed/:token answers only for a gallery that
- * is already public (no password, live, not hidden until a reveal) with the
+ * is already public (no password, live, not hidden until a reveal, not waiting
+ * for a booking payment) with the
  * `embed` flag on and the current token; its photo list holds the guest's
  * visible stills with the preview tier for the lightbox, and reading it logs
  * no visit. The frame policy nginx asks for names the allowed websites.
@@ -40,6 +41,7 @@ describe('gallery embed (issue 1112)', () => {
     embed_token: TOKEN, embed_allowed_origins: null,
     expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
     is_active: 1, is_archived: 0, is_draft: 0, temporarily_disabled: 0, reveal_mode: 0, revealed_at: null,
+    videos_first: 0, payment_lock: null, payment_lock_request_id: null, payment_unlocked_at: null,
   });
 
   beforeAll(async () => {
@@ -115,11 +117,46 @@ describe('gallery embed (issue 1112)', () => {
       ['an expired gallery', { expires_at: new Date(Date.now() - 3600 * 1000).toISOString() }],
       ['a gallery hidden until its reveal', { reveal_mode: 1 }],
       ['a removed embed', { embed_token: null }],
+      ['a gallery waiting for its booking payment', { payment_lock: 'full_payment' }],
     ])('is a 404 with %s', async (_label, changes, token = TOKEN) => {
       if (Object.keys(changes).length > 0) await db('events').where({ id: eventId }).update(changes);
       expect((await info(token)).status).toBe(404);
       expect((await request(app).get(`/api/gallery/${SLUG}/embed/${token}/photos`)).status).toBe(404);
       expect((await policy(`/gallery/${SLUG}/embed/${token}`)).status).toBe(404);
+    });
+
+    it('pages stills only, so a videos-first gallery does not open on empty pages', async () => {
+      await db('events').where({ id: eventId }).update({ videos_first: 1 });
+      const rows = Array.from({ length: 61 }, (_, i) => ({
+        event_id: eventId, filename: `extra-${i}.mp4`, path: `events/${SLUG}/extra-${i}.mp4`,
+        thumbnail_path: `thumbnails/thumb_extra-${i}.jpg`, media_type: 'video', mime_type: 'video/mp4',
+        type: 'individual', processing_status: 'complete', uploaded_at: new Date().toISOString(),
+      }));
+      try {
+        await db('photos').insert(rows);
+        const res = await photos();
+        expect(res.status).toBe(200);
+        expect(res.body.photos.map((p) => p.id)).toHaveLength(1);
+        expect(res.body.pagination).toMatchObject({ total: 1, has_more: false });
+      } finally {
+        await db('photos').where({ event_id: eventId }).where('filename', 'like', 'extra-%').del();
+      }
+    });
+
+    it('keeps a still whose thumbnail is not recorded yet, through the thumbnail route', async () => {
+      const id = unwrap(await db('photos').insert({
+        event_id: eventId, filename: 'fresh.jpg', path: `events/${SLUG}/fresh.jpg`, thumbnail_path: null,
+        media_type: 'image', mime_type: 'image/jpeg', type: 'individual', processing_status: 'complete',
+        uploaded_at: new Date().toISOString(),
+      }).returning('id'));
+      try {
+        const res = await photos();
+        const fresh = res.body.photos.find((p) => p.id === id);
+        expect(fresh).toBeDefined();
+        expect(fresh.thumbnail_url).toBe(`/api/gallery/${SLUG}/thumbnail/${id}`);
+      } finally {
+        await db('photos').where({ id }).del();
+      }
     });
 
     it('is a 404 with the embed flag off', async () => {

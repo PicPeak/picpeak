@@ -4,7 +4,8 @@
  *
  * The embed is /gallery/:slug/embed/:token in an <iframe>. Only a gallery that
  * is already public can be embedded: no password, live (active, published,
- * not archived, not expired, not paused) and not hidden until a reveal. Its
+ * not archived, not expired, not paused), not hidden until a reveal and not
+ * waiting for a booking payment. Its
  * photos are readable without a session today (galleryAccessService grants a
  * public viewer on such a gallery), so the token is not what keeps them
  * private. It is the photographer's consent to the embed and the handle to
@@ -44,6 +45,11 @@ async function resolveEmbed(slug, token) {
     .first();
   if (!event || !isGalleryAvailable(event)) return null;
   if (requiresGalleryPassword(event) || isGalleryHidden(event)) return null;
+  // A booking gallery waiting for payment is closed to guests (issue 2440):
+  // its images would all be refused, so it is not embeddable either. Same
+  // re-check as galleryAccessService, so a paid deal opens here too.
+  if (event.payment_lock && !event.payment_unlocked_at
+    && await require('./bookingDeposits').refreshGalleryLock(event)) return null;
   return event;
 }
 

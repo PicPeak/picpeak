@@ -47,19 +47,23 @@ router.get('/:slug/embed/:token/photos', noStoreCache, handleAsync(async (req, r
     // No viewer: a fixed identifier matches no guest's likes or ratings.
     identity: { guestIdentifier: 'embed' },
     accessLevel: 'guest',
+    stillsOnly: true,
   });
   res.json({
     pagination: payload.pagination,
-    // Stills only: the embed has no player. The lightbox gets the preview
-    // tier (slideshow_url is that URL, emitted for every still regardless of
-    // lightbox_preview_enabled), never the original.
+    // Stills only (the query left videos out before paging): the embed has
+    // no player. The lightbox gets the preview tier (slideshow_url is that
+    // URL, emitted for every still regardless of lightbox_preview_enabled),
+    // never the original. A still whose thumbnail is not recorded yet gets
+    // the thumbnail route, which renders it on first request, as the gallery
+    // grid's own tile does.
     photos: (payload.photos || [])
-      .filter((photo) => photo.media_type !== 'video' && photo.slideshow_url && photo.thumbnail_url)
+      .filter((photo) => photo.slideshow_url)
       .map((photo) => ({
         id: photo.id,
         width: photo.width ?? null,
         height: photo.height ?? null,
-        thumbnail_url: photo.thumbnail_url,
+        thumbnail_url: photo.thumbnail_url || `/api/gallery/${event.slug}/thumbnail/${photo.id}`,
         preview_url: photo.slideshow_url,
       })),
   });
