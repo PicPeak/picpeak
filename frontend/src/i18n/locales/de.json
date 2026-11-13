@@ -2574,6 +2574,24 @@
     "nestedFoldersHint": "Ordner in Ordnern verwalten Sie in der Ordnerleiste im Fotos-Tab."
   },
   "events": {
+    "selection": {
+      "title": "Auswahl für Gäste",
+      "help": "Geben Sie einen Unterordner dieses Ordners an, zum Beispiel „gallery“. Der Galerie-Link und sein QR-Code zeigen dann nur die Fotos in diesem Unterordner. Der Vollzugriffs-Link und der Kundenzugang zeigen alle Fotos des Ordners.",
+      "folder": "Unterordner der Auswahl",
+      "folderPlaceholder": "Keine Auswahl: Gäste sehen alle Fotos",
+      "save": "Übernehmen",
+      "saved": "Auswahl aktualisiert",
+      "counts": "{{inside}} Fotos in der Auswahl, {{outside}} nur in der Gesamtansicht",
+      "fullLinkHelp": "Der Vollzugriffs-Link öffnet diese Galerie mit allen Fotos. Geben Sie ihn nur an Personen weiter, die alle sehen sollen.",
+      "fullLink": "Vollzugriffs-Link",
+      "createLink": "Vollzugriffs-Link erstellen",
+      "rotate": "Neuer Link",
+      "rotateConfirm": "Einen neuen Vollzugriffs-Link erstellen? Der bisherige funktioniert dann nicht mehr, und alle, die ihn geöffnet haben, brauchen den neuen.",
+      "remove": "Entfernen",
+      "removeConfirm": "Den Vollzugriffs-Link entfernen? Alle, die ihn geöffnet haben, sehen wieder nur die Auswahl.",
+      "linkCreated": "Vollzugriffs-Link erstellt",
+      "linkRemoved": "Vollzugriffs-Link entfernt"
+    },
     "disabled": "Deaktiviert",
     "enableEvent": "Galerie aktivieren",
     "disableEvent": "Galerie deaktivieren",
@@ -5729,6 +5747,12 @@
     "noEventsExpiring": "Keine Galerien laufen in den nächsten 7 Tagen ab",
     "noRecentActivity": "Keine aktuellen Aktivitäten",
     "photos": {
+      "selection": {
+        "filterLabel": "Auswahl",
+        "all": "Auswahl und Gesamtansicht",
+        "in": "In der Auswahl",
+        "out": "Nur in der Gesamtansicht"
+      },
       "hidden": "Versteckt",
       "hiddenTooltip": "Für Gäste ausgeblendet — dieses Foto erscheint nicht in der Kundengalerie.",
       "hideSelected": "Ausblenden",

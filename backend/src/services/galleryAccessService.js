@@ -12,10 +12,11 @@ const sessions = require('./sessionAccessService');
 // enters a media URL. Only use grants from this service or a verified signature.
 // parentIat/parentJti identify the portal session a gallery token was minted from.
 // showLink names the slideshow link a slideshow session was opened with.
+// view/fullLink mark a session opened with the full link (issue 2356).
 const { hasRight, rightsOf } = require('./customerContactsService');
 
 const CLAIMS = ['type', 'id', 'customerId', 'contactId', 'eventId', 'eventSlug', 'iat', 'exp', 'jti', 'via', 'accessLevel',
-  'parentIat', 'parentJti', 'showLink', 'clientPinEntry'];
+  'parentIat', 'parentJti', 'showLink', 'clientPinEntry', 'view', 'fullLink'];
 
 class GalleryAccessService {
   grant(event, kind, decoded) {

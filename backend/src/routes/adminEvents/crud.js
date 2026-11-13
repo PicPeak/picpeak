@@ -1577,6 +1577,9 @@ module.exports = (router) => {
         // Server-managed timestamps
         'download_zip_generated_at', 'archived_at', 'revealed_at', 'event_reminder_sent_at',
         'temporarily_disabled_at',
+        // The selection and its full link (issue 2356): set through
+        // /:id/selection, which checks the folder and re-marks the photos.
+        'selection_path', 'full_share_token',
         // Credential-change cutoffs: clearing one would revive the sessions
         // the password change ended.
         'gallery_password_changed_at', 'client_password_changed_at',

@@ -21,9 +21,13 @@ async function replaceGallerySession(res, event, source, accessLevel, ip, presen
     ...(source.contactId !== undefined && { contactId: source.contactId }),
     parentIat: source.parentIat, parentJti: source.parentJti,
   } : {};
+  // A full-link session (issue 2356) stays one across a PIN switch; the link
+  // check in galleryCredentialCutoff keeps applying to it.
+  const fullLink = source.view === 'full' && source.fullLink !== undefined
+    ? { view: 'full', fullLink: source.fullLink } : {};
   const token = jwt.sign({
     type: 'gallery', eventId: event.id, eventSlug: event.slug,
-    jti: crypto.randomUUID(), iat: now, accessLevel, ip, loginTime: Date.now(), ...provenance,
+    jti: crypto.randomUUID(), iat: now, accessLevel, ip, loginTime: Date.now(), ...provenance, ...fullLink,
     ...(accessLevel === 'client' ? clientPinEntryClaim(event) : {}),
   }, process.env.JWT_SECRET, { expiresIn: lifetime, issuer: 'picpeak-auth' });
   const theme = await publicThemeFields(event);

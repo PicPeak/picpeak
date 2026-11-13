@@ -37,7 +37,7 @@ const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolve
 const { parseResolution, getDownloadGlobals, resolveEventDownloadPolicy, pickRequestedResolution } = require('../utils/downloadResolutions');
 const { isGalleryAvailable, isGalleryExpired } = require('../utils/galleryLifecycle');
 const { parseBooleanInput } = require('../utils/parsers');
-const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, seesWholeSource, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 const { buildEntryManifest } = require('./downloadJobManifest');
@@ -79,8 +79,11 @@ const LEASE_TIMEOUT_MS = 5 * 60 * 1000;
  * ordinary guests are another. Part of the job dedup identity so archives are
  * never shared across the boundary.
  */
-function visibilityScope(accessLevel) {
-  return canSeeHiddenPhotos(accessLevel) ? 'hidden' : 'public';
+function visibilityScope(viewer) {
+  if (canSeeHiddenPhotos(viewer)) return 'hidden';
+  // A full-link guest (issue 2356) also sees the photos outside the
+  // selection, which an ordinary guest must not receive.
+  return seesWholeSource(viewer) ? 'full' : 'public';
 }
 
 class DownloadJobService {
@@ -678,10 +681,12 @@ class DownloadJobService {
     if (!isGalleryAvailable(event, { adminPreview: true }) || isGalleryExpired(event)) return false;
     if (!parseBooleanInput(event.allow_downloads, true)) return false;
     if (job.preview_only && !downloadLimitOf(event)) return false;
-    // The two scopes map onto the two access levels that differ in what they
-    // see: a 'hidden' archive was built for a client, the rest for a guest.
-    const accessLevel = job.visibility_scope === 'hidden' ? 'client' : 'guest';
-    return this.isStillDeliverable(job, event, accessLevel);
+    // The scopes map onto the viewers that differ in what they see: a
+    // 'hidden' archive was built for a client, a 'full' one for a full-link
+    // guest (issue 2356), the rest for a guest.
+    const viewer = job.visibility_scope === 'hidden' ? 'client'
+      : { accessLevel: 'guest', fullView: job.visibility_scope === 'full' };
+    return this.isStillDeliverable(job, event, viewer);
   }
 
   /** A failed or stalled key must not prevent cleanup of other archives. */

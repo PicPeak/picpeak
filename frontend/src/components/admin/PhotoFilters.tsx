@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Filter, SortAsc, SortDesc, UserRound, Eye } from 'lucide-react';
+import { Search, Filter, SortAsc, SortDesc, UserRound, Eye, FolderCheck } from 'lucide-react';
 import { Input } from '../common';
 import { useTranslation } from 'react-i18next';
 import type { PhotoSortKey, PhotoVisibility } from '../../services/photos.service';
@@ -18,6 +18,9 @@ interface PhotoFiltersProps {
   showMediaFilter?: boolean;
   visibility?: 'all' | PhotoVisibility;
   onVisibilityChange?: (visibility: 'all' | PhotoVisibility) => void;
+  // Curated selection (issue 2356); shown only for a gallery that has one.
+  selection?: 'all' | 'in' | 'out';
+  onSelectionChange?: (selection: 'all' | 'in' | 'out') => void;
   // Credit filter (#1561). Rendered only when the event has at least one
   // credited photo. `creditNoneValue` is the backend's "no credit" token.
   credits?: Array<{ name: string; count: number }>;
@@ -41,6 +44,8 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
   showMediaFilter = false,
   visibility = 'all',
   onVisibilityChange,
+  selection = 'all',
+  onSelectionChange,
   credits = [],
   creditNoneCount = 0,
   creditNoneValue = '__none__',
@@ -106,6 +111,22 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
               <option value="all">{t('gallery.allPhotos', 'All Photos')}</option>
               <option value="visible">{t('admin.photos.visibility.visible', 'Visible Photos')}</option>
               <option value="hidden">{t('admin.photos.visibility.hidden', 'Hidden Photos')}</option>
+            </select>
+          </div>
+        )}
+
+        {onSelectionChange && (
+          <div className="flex items-center gap-2">
+            <FolderCheck className="w-5 h-5 text-faint" aria-hidden="true" />
+            <select
+              value={selection}
+              onChange={(e) => onSelectionChange(e.target.value as 'all' | 'in' | 'out')}
+              aria-label={t('admin.photos.selection.filterLabel', 'Selection')}
+              className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent-dark"
+            >
+              <option value="all">{t('admin.photos.selection.all', 'Selection and full view')}</option>
+              <option value="in">{t('admin.photos.selection.in', 'In the selection')}</option>
+              <option value="out">{t('admin.photos.selection.out', 'Only in the full view')}</option>
             </select>
           </div>
         )}

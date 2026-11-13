@@ -20,7 +20,7 @@ const os = require('os');
 const crypto = require('crypto');
 const archiver = require('archiver');
 const { db } = require('../database/db');
-const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getStorage } = require('./storage');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
@@ -308,11 +308,9 @@ class DownloadZipService {
       // photos — NULL visibility counts as visible (pre-migration rows).
       // PIN-clients bypass this cache and stream a full archive instead.
       // Photos still processing (or failed) are not in the gallery list either.
-      const photos = await wherePhotoProcessed(livePhotos(db))
-        .where({ event_id: eventId })
-        .where(function () {
-          this.where('visibility', 'visible').orWhereNull('visibility');
-        })
+      // The selection only (issue 2356), as an ordinary guest sees it.
+      const photos = await applyPhotoVisibilityFilter(wherePhotoProcessed(livePhotos(db))
+        .where({ event_id: eventId }), 'guest')
         .select('*')
         .orderBy('type', 'asc')
         .orderBy('uploaded_at', 'desc');

@@ -38,6 +38,10 @@ function attachAccess(req, event, grant) {
   req.isAdminPreview = grant.kind === 'admin';
   req.accessLevel = grant.session?.accessLevel || 'guest';
   req.viaCustomer = grant.session?.via === 'customer';
+  // A session opened with the full link (issue 2356) also sees the photos
+  // outside the selection; authorize() has checked the link is still current.
+  req.galleryFullView = grant.kind === 'gallery' && grant.session?.view === 'full'
+    && grant.session?.fullLink !== undefined && req.accessLevel !== 'slideshow';
   req.sessionID = req.isAdminPreview ? `gallery_admin_preview_${event.id}`
     : `gallery_${grant.kind === 'public' ? 'public_' : ''}${event.id}_${Date.now()}`;
   const ip = req.ip || req.connection?.remoteAddress || 'unknown';

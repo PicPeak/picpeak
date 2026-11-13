@@ -142,7 +142,7 @@ function visibleFeedback(eventId, viewer, executor) {
         .modify(joinLivePhotos, 'photo_feedback.photo_id', 'photos.id')
         // Hidden rows are absent everywhere else, the cap included (#1150).
         .where({ 'photo_feedback.event_id': eventId, 'photo_feedback.is_hidden': false })),
-      viewer.accessLevel,
+      { accessLevel: viewer.accessLevel, fullView: viewer.fullView === true },
     ),
     viewer,
     'photo_feedback',

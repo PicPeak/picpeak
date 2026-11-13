@@ -38,6 +38,7 @@ const ALL_ROWS = {
   'services/eventRenameService.js': [2, 'renaming a gallery renames the files of trashed photos too'],
   'services/externalImportService.js': [20, 'which files already belong to a photo; state of the import in flight; queues the rows it just imported for tagging; refreshes a row whose file changed by id (and records the mtime of one imported before it was; a video\'s ladder state and web copy read before and under the row lock, its poster and note fenced on the new version, and its own poster dropped when another won), and keeps a derivative any other row (trashed included) still points at'],
   'services/externalPhotoDedupe.js': [8, 'dedupe decides which row owns a file and deletes the others outright, their streaming ladders included'],
+  'services/externalSelection.js': [1, 'marks every photo of the source in or out of the selection, a trashed one too, so it is right when restored'],
   'services/externalRelpathFold.js': [5, 'data backfill run by a migration'],
   'services/faceAutoCategories.js': [3, 'derived categorisation kept consistent for a restore'],
   'services/faceFocalPoint.js': [1, 'the size of a photo whose faces a scan or a rebuild in flight just read'],

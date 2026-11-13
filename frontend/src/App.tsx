@@ -17,6 +17,7 @@ import { RequireBookings } from './features/booking/RequireBookings';
 import { BookingStatusPage } from './pages/public/BookingStatusPage';
 import { BookingsPage } from './pages/admin/clients/BookingsPage';
 const SlideshowPage = lazy(() => import('./pages/gallery/SlideshowPage').then((m) => ({ default: m.SlideshowPage })));
+const FullLinkPage = lazy(() => import('./pages/gallery/FullLinkPage').then((m) => ({ default: m.FullLinkPage })));
 import { LegalPage } from './pages/public/LegalPage';
 import {
   AdminLoginPage,
@@ -219,6 +220,12 @@ const router = createBrowserRouter(
     <Route path="/gallery/:slug/show/:token" element={
       <Suspense fallback={<Loading />}>
         <SlideshowPage />
+      </Suspense>
+    } />
+    {/* Full link of a gallery with a curated selection (issue 2356). */}
+    <Route path="/gallery/:slug/full/:token" element={
+      <Suspense fallback={<Loading />}>
+        <FullLinkPage />
       </Suspense>
     } />
     <Route path="/gallery/:slug/client-access" element={

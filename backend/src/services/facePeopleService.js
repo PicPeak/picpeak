@@ -17,7 +17,7 @@
  */
 
 const { db } = require('../database/db');
-const { joinLivePhotos, livePhotos } = require('../utils/photoVisibility');
+const { joinLivePhotos, livePhotos, whereGuestVisible, whereInSelection } = require('../utils/photoVisibility');
 
 /**
  * Apply the visibility predicate a given audience is allowed to see.
@@ -33,9 +33,9 @@ function applyVisibilityScope(query, { isClient, forAdmin = false }) {
   // A file gone from the share (migration 312): in no gallery view.
   if (!forAdmin) query.whereNull('photos.unavailable_reason');
   if (!isClient) {
-    query.where(function () {
-      this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
-    });
+    // A guest sees the selection only (issue 2356); counts and covers follow.
+    if (!forAdmin) whereInSelection(query);
+    whereGuestVisible(query);
   } else if (!forAdmin) {
     query.whereNull('photos.moderation_status');
   }

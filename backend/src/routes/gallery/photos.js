@@ -51,6 +51,7 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, scopeGuestToFeedb
       event: req.event, slug: req.params.slug, query: req.query,
       identity: { guestId: req.guest?.id, guestIdentifier },
       accessLevel: req.accessLevel, viaCustomer: req.viaCustomer, adminPreview: req.isAdminPreview,
+      fullView: req.galleryFullView === true,
       hiddenForGuest: guestBlockedByReveal(req),
     });
     // Log view — but NOT for the Live Slideshow kiosk. A running projector
@@ -89,7 +90,7 @@ router.get('/:slug/photos/state', verifyGalleryAccess, resolveGuest, scopeGuestT
     const galleryQueryService = require('../../services/galleryQueryService');
     const hiddenForGuest = guestBlockedByReveal(req);
     const processing = await galleryQueryService.hasMediaProcessing({
-      event: req.event, accessLevel: req.accessLevel, hiddenForGuest,
+      event: req.event, accessLevel: req.accessLevel, hiddenForGuest, fullView: req.galleryFullView === true,
     });
     if (!processing && !parseBooleanInput(req.event.live_refresh, false)) {
       return res.status(404).json({ error: 'Live refresh is not enabled for this gallery' });
@@ -98,7 +99,7 @@ router.get('/:slug/photos/state', verifyGalleryAccess, resolveGuest, scopeGuestT
     res.json(await galleryQueryService.getGalleryPhotoState({
       event: req.event, query: req.query,
       identity: { guestId: req.guest?.id, guestIdentifier },
-      accessLevel: req.accessLevel, hiddenForGuest, processing,
+      accessLevel: req.accessLevel, hiddenForGuest, processing, fullView: req.galleryFullView === true,
     }));
   } catch (error) { errorResponse(res, error, 500, 'Failed to fetch photo state'); }
 });

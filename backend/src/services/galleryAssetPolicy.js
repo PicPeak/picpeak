@@ -1,6 +1,6 @@
 const { db } = require('../database/db');
 const { parseBooleanInput } = require('../utils/parsers');
-const { isPhotoHiddenFromViewer } = require('../utils/photoVisibility');
+const { isPhotoHiddenFromViewer, viewerOf } = require('../utils/photoVisibility');
 const folderTree = require('./folderTreeService');
 const { currentDownloadLimit, isOriginalWithheld, drawsOnQuota, clientOnlyError } = require('./downloadQuota');
 const { ORIGINAL, resolveEventDownloadPolicy, pickRequestedResolution } = require('../utils/downloadResolutions');
@@ -19,7 +19,7 @@ function grantDenial(req, photo = null) {
     return { error: 'Slideshow tokens are display-only' };
   }
   if (photo && (Number(photo.event_id) !== Number(req.event.id)
-      || isPhotoHiddenFromViewer(photo, req.accessLevel))) return { error: 'Photo not available' };
+      || isPhotoHiddenFromViewer(photo, viewerOf(req)))) return { error: 'Photo not available' };
   return null;
 }
 

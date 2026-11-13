@@ -1,5 +1,5 @@
 const { db } = require('../database/db');
-const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { ensureThumbnail } = require('./imageProcessor');
 const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
@@ -239,7 +239,9 @@ async function buildOgMetadata(slug, requestPath) {
   // photo either, like a hidden one.
   const awaitingPayment = Boolean(event.payment_lock) && !event.payment_unlocked_at;
   if (event.og_image_share_enabled && event.hero_photo_id && !isGalleryHidden(event) && !awaitingPayment) {
-    const heroPhoto = await wherePhotoProcessed(livePhotos(db))
+    // Only a photo an ordinary guest may see: not hidden, and inside the
+    // selection (issue 2356); the preview goes to anyone with the link.
+    const heroPhoto = await applyPhotoVisibilityFilter(wherePhotoProcessed(livePhotos(db)), 'guest')
       .where({ id: event.hero_photo_id, event_id: event.id })
       // Never a team upload still under review (issue 743), nor a photo the
       // worker has not finished, which the gallery itself does not show.
@@ -357,7 +359,7 @@ async function handleGalleryOgCover(req, res) {
       return;
     }
 
-    const coverQuery = () => wherePhotoProcessed(livePhotos(db))
+    const coverQuery = () => applyPhotoVisibilityFilter(wherePhotoProcessed(livePhotos(db)), 'guest')
       .where({ id: event.hero_photo_id, event_id: event.id })
       .whereNull('moderation_status')
       .first();

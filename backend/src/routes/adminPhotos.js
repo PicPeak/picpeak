@@ -1922,8 +1922,17 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
 
     // Photos whose file is gone from the external share (issue 2121), for
     // the admin to delete or wait for.
+    // Only those: a file taken out of the selection folder (issue 2356) is
+    // not missing from the source and needs no cleanup.
     if (req.query.unavailable === 'true') {
-      query = query.whereNotNull('photos.unavailable_reason');
+      query = query.where('photos.unavailable_reason', 'source_missing');
+    }
+
+    // The curated selection (issue 2356): in it, or only in the full view.
+    if (req.query.selection === 'in') {
+      query = query.where((q) => q.where('photos.selection_hidden', false).orWhereNull('photos.selection_hidden'));
+    } else if (req.query.selection === 'out') {
+      query = query.where('photos.selection_hidden', true);
     }
 
     // Match the gallery's visibility semantics: legacy NULL rows are visible.
@@ -2203,6 +2212,9 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // Why no gallery viewer sees the photo right now (issue 2121):
         // 'source_missing' when its file is gone from the share.
         unavailable_reason: photo.unavailable_reason || null,
+        // Outside the curated selection (issue 2356): only the full link,
+        // the client login and the admin see it.
+        selection_hidden: photo.selection_hidden === true || photo.selection_hidden === 1,
         category_id: photo.category_id || photo.type,
         // Only a real category has a name here. The fallback used to be the
         // English "Individual Photos" / "Collages", which no locale could

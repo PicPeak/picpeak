@@ -21,7 +21,7 @@
 
 const crypto = require('crypto');
 const {
-  livePhotos, applyPhotoVisibilityFilter, wherePhotoProcessed, isPhotoProcessed,
+  livePhotos, applyPhotoVisibilityFilter, wherePhotoProcessed, isPhotoProcessed, isPhotoHiddenFromViewer,
 } = require('../../utils/photoVisibility');
 const { isGalleryAvailable } = require('../../utils/galleryLifecycle');
 const { isGalleryPriced } = require('./priceRules');
@@ -62,9 +62,8 @@ function sellablePhotos(conn, eventId) {
 /** Single-row form of sellablePhotos, for a photo already read. */
 function isPhotoSellable(photo) {
   return !!photo
-    && photo.deleted_at == null
-    && photo.moderation_status == null
-    && (photo.visibility == null || photo.visibility === 'visible')
+    // As an ordinary guest sees it: also the selection only (issue 2356).
+    && !isPhotoHiddenFromViewer(photo, 'guest')
     && isPhotoProcessed(photo)
     && !isVideoPhoto(photo);
 }

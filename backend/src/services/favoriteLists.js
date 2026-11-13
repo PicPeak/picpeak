@@ -84,7 +84,7 @@ async function listForViewer(eventId, viewer, executor = db) {
           'photo_feedback.feedback_type': 'favorite',
           'photo_feedback.is_hidden': false,
         })),
-      viewer.accessLevel,
+      { accessLevel: viewer.accessLevel, fullView: viewer.fullView === true },
     ),
     viewer,
     'photo_feedback',

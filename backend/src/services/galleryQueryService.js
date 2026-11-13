@@ -55,7 +55,7 @@ const {
  * and the feedback filter. The one place that decides it, so the list, its
  * total and the live-refresh state (getGalleryPhotoState) cannot disagree.
  */
-async function galleryListQuery({ event, query = {}, identity, accessLevel }) {
+async function galleryListQuery({ event, query = {}, identity, accessLevel, fullView = false }) {
   const isClient = accessLevel === 'client';
   // Guests/clients never see photos still being processed by the
   // background worker — the original is on disk but the thumbnail
@@ -68,7 +68,8 @@ async function galleryListQuery({ event, query = {}, identity, accessLevel }) {
     .select('photos.*');
 
   // Guests only see visible photos; clients see all but those under review
-  photosQuery = applyPhotoVisibilityFilter(photosQuery, accessLevel);
+  // fullView: a full-link session (issue 2356) also sees outside the selection.
+  photosQuery = applyPhotoVisibilityFilter(photosQuery, { accessLevel, fullView });
 
   // The slideshow shows no videos (issue 2285): a video has no slideshow
   // tier, so its slide fell back to /photo, which a slideshow session may
@@ -116,11 +117,11 @@ async function galleryListQuery({ event, query = {}, identity, accessLevel }) {
  * or held upload never shows up here. Not for the slideshow, which follows
  * new uploads on its own poll.
  */
-async function hasMediaProcessing({ event, accessLevel, hiddenForGuest }) {
+async function hasMediaProcessing({ event, accessLevel, hiddenForGuest, fullView = false }) {
   if (hiddenForGuest || accessLevel === 'slideshow') return false;
   const row = await applyPhotoVisibilityFilter(livePhotos(db)
     .where('photos.event_id', event.id)
-    .whereIn('photos.processing_status', ['pending', 'processing']), accessLevel)
+    .whereIn('photos.processing_status', ['pending', 'processing']), { accessLevel, fullView })
     .first('photos.id');
   return !!row;
 }
@@ -130,15 +131,15 @@ async function hasMediaProcessing({ event, accessLevel, hiddenForGuest }) {
  * the highest id among them. One aggregate over galleryListQuery, no rows.
  * `processing` is hasMediaProcessing, when the caller has already read it.
  */
-async function getGalleryPhotoState({ event, query = {}, identity, accessLevel, hiddenForGuest, processing = false }) {
+async function getGalleryPhotoState({ event, query = {}, identity, accessLevel, hiddenForGuest, processing = false, fullView = false }) {
   if (hiddenForGuest) return { count: 0, max_id: null, processing: false };
-  const { photosQuery } = await galleryListQuery({ event, query, identity, accessLevel });
+  const { photosQuery } = await galleryListQuery({ event, query, identity, accessLevel, fullView });
   const row = await photosQuery.clearSelect().count('photos.id as count').max('photos.id as max_id').first();
   // PostgreSQL hands count back as a string.
   return { count: Number(row.count), max_id: row.max_id == null ? null : Number(row.max_id), processing };
 }
 
-async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaCustomer = false, adminPreview, hiddenForGuest, slug }) {
+async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaCustomer = false, adminPreview, hiddenForGuest, slug, fullView = false }) {
   // Get filter and sort parameters from query
   // `guest_id` is deliberately NOT read from the query string: the viewer's
   // own feedback is resolved from the request identity instead (see the
@@ -166,7 +167,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   // Build the query with sorting
   const sortOrder = order === 'asc' ? 'asc' : 'desc';
   const isClient = accessLevel === 'client';
-  const list = await galleryListQuery({ event, query, identity, accessLevel });
+  const list = await galleryListQuery({ event, query, identity, accessLevel, fullView });
   const { feedbackService, feedbackSettings, showFeedbackToGuests, sharedColorMode } = list;
   let { photosQuery } = list;
 
@@ -214,7 +215,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   // Read before the list (issue 2263): media that finishes between the two
   // reads is then in the list, or still reported as processing — never
   // missing from the list while the flag says nothing is pending.
-  const mediaProcessing = await hasMediaProcessing({ event, accessLevel, hiddenForGuest });
+  const mediaProcessing = await hasMediaProcessing({ event, accessLevel, hiddenForGuest, fullView });
   const countRow = hiddenForGuest ? { total: 0 } : await photosQuery.clone().clearSelect().clearOrder().count('photos.id as total').first();
   const total = Number(countRow.total);
   if (limit) photosQuery.limit(limit).offset((page - 1) * limit);
@@ -452,7 +453,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       if (!hiddenForGuest) {
         const tagQueries = require('./tagQueries');
         tagKeysByPhoto = await tagQueries.getTagKeysByPhoto(event.id, limit ? photos.map((p) => p.id) : null);
-        tagCounts = await tagQueries.getEventTagCounts(event.id, accessLevel);
+        tagCounts = await tagQueries.getEventTagCounts(event.id, { accessLevel, fullView });
       }
     }
   } catch (err) {
@@ -468,7 +469,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   // (issue 743), must not ship its name.
   const usedFilterIds = hiddenForGuest ? [] : await applyPhotoVisibilityFilter(livePhotos(db)
     .where('event_id', event.id)
-    .whereNotNull('category_id'), accessLevel)
+    .whereNotNull('category_id'), { accessLevel, fullView })
     .distinct('category_id')
     .pluck('category_id');
   // Folders (issue 1786): every folder that holds photos, plus all of its
@@ -486,7 +487,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       .whereNotNull('folder_id')
       .where((q) => q.where('processing_status', 'complete').orWhereNull('processing_status'))
       .whereNull('unavailable_reason');
-    directQuery = applyPhotoVisibilityFilter(directQuery, accessLevel);
+    directQuery = applyPhotoVisibilityFilter(directQuery, { accessLevel, fullView });
     const direct = await directQuery.distinct('folder_id').pluck('folder_id');
     for (const id of direct) {
       let cur = folderById.get(Number(id));

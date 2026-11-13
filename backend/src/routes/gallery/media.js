@@ -42,7 +42,7 @@ const { pipeStreamToResponse, answerVanished } = require('../../utils/streamResp
 
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
-const { isPhotoHiddenFromViewer, isPhotoProcessed, livePhotos } = require('../../utils/photoVisibility');
+const { isPhotoHiddenFromViewer, isPhotoProcessed, livePhotos, viewerOf } = require('../../utils/photoVisibility');
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../../services/imageProcessor');
 const { isStorageUnavailableError, isStorageNotFoundError } = require('../../services/storage/storageErrors');
 const { heroQueryRedirect } = require('../../utils/heroAnchor');
@@ -127,7 +127,7 @@ async function admitVideoStream(req, res, photo) {
  * category's photos by id. Applied by every route below that resolves a photo.
  */
 function isPhotoOutsideGrant(req, photo) {
-  if (isPhotoHiddenFromViewer(photo, req.accessLevel)) return true;
+  if (isPhotoHiddenFromViewer(photo, viewerOf(req))) return true;
   // A photo the worker has not finished, or failed on, is not in the gallery
   // list (wherePhotoProcessed); by id it must not be either. The admin
   // preview keeps reaching it, as the admin views do.
@@ -186,7 +186,7 @@ router.post('/:slug/photo/:photoId/view',
     try {
       const photo = await livePhotos(db)
         .where({ id: req.params.photoId, event_id: req.event.id })
-        .first('id', 'visibility', 'moderation_status', 'category_id', 'processing_status', 'unavailable_reason');
+        .first('id', 'visibility', 'selection_hidden', 'moderation_status', 'category_id', 'processing_status', 'unavailable_reason');
       if (!photo) {
         return res.status(404).json({ error: 'Photo not found' });
       }

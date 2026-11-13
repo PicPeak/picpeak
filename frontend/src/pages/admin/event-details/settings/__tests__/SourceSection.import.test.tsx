@@ -20,6 +20,8 @@ const imp = vi.hoisted(() => ({
 const useExternalImport = vi.hoisted(() => vi.fn());
 vi.mock('../../useExternalImport', () => ({ useExternalImport }));
 vi.mock('../../ExternalFolderPicker', () => ({ ExternalFolderPicker: () => null }));
+// The selection panel (issue 2356) has its own test.
+vi.mock('../SelectionPanel', () => ({ SelectionPanel: () => null }));
 vi.mock('../../../../../hooks/usePermission', () => ({ usePermission: () => true }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_k: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : _k), i18n: { language: 'en' } }),

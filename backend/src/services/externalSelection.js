@@ -1,0 +1,100 @@
+/**
+ * The curated selection inside an external source (issue 2356).
+ *
+ * events.selection_path names a folder inside the event's source, relative to
+ * it ("gallery" for <source>/gallery). Every photo of the source outside that
+ * folder carries photos.selection_hidden: the ordinary link, its QR code and
+ * the slideshow show the selection only, while the full link, the client
+ * login and the admin see every photo (utils/photoVisibility.js).
+ *
+ * The flag is written in three places, all through selectionHiddenFor():
+ * the importer for each new row, the importer for a row it moves to a new
+ * path, and recomputeSelection() after a pass and after a selection change.
+ * Photos without a source path (uploads into the gallery) are always in the
+ * selection.
+ */
+
+const path = require('path');
+const fs = require('fs').promises;
+const { db } = require('../database/db');
+const { formatBoolean } = require('../utils/dbCompat');
+const { normalizeSourcePath, storedBinding, ExternalMediaAccessError } = require('./externalMediaAccess');
+
+/**
+ * The selection folder as a prefix of photos.external_relpath (which is
+ * relative to EXTERNAL_MEDIA_ROOT), with a trailing slash; null when the
+ * event has no source or no selection.
+ */
+function selectionPrefix(event) {
+  const source = storedBinding(event);
+  if (source === null || !event?.selection_path) return null;
+  let selection;
+  try {
+    selection = normalizeSourcePath(event.selection_path);
+  } catch (_) {
+    return null;
+  }
+  if (!selection) return null;
+  return `${source}/${selection}/`;
+}
+
+/** Is a photo at this root-relative path outside the selection? */
+function selectionHiddenFor(prefix, relpath) {
+  if (!prefix || !relpath) return false;
+  return !String(relpath).split(path.sep).join('/').startsWith(prefix);
+}
+
+const escapeLike = (value) => value.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+/**
+ * Rewrite selection_hidden for every photo of the event from its path and the
+ * event's current selection. Returns how many rows changed.
+ */
+async function recomputeSelection(eventId, conn = db) {
+  const event = await conn('events').where({ id: eventId })
+    .first('id', 'source_mode', 'external_path', 'selection_path');
+  if (!event) return 0;
+  const prefix = selectionPrefix(event);
+  const photos = () => conn('photos').where({ event_id: eventId });
+  if (!prefix) {
+    return photos().where('selection_hidden', formatBoolean(true))
+      .update({ selection_hidden: formatBoolean(false) });
+  }
+  const like = `${escapeLike(prefix)}%`;
+  const inside = (q) => q.whereNotNull('external_relpath').whereRaw('external_relpath LIKE ? ESCAPE \'\\\'', [like]);
+  let changed = await photos().where('selection_hidden', formatBoolean(true))
+    .where((q) => q.whereNull('external_relpath').orWhereRaw('external_relpath LIKE ? ESCAPE \'\\\'', [like]))
+    .update({ selection_hidden: formatBoolean(false) });
+  changed += await photos().where('selection_hidden', formatBoolean(false))
+    .whereNotNull('external_relpath')
+    .whereNot((q) => inside(q))
+    .update({ selection_hidden: formatBoolean(true) });
+  return changed;
+}
+
+/**
+ * Check a selection folder an admin entered: a folder inside the event's
+ * source that exists on the mount. Returns the normalised value, or null to
+ * clear the selection.
+ */
+async function validateSelectionPath(event, value) {
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return null;
+  const source = storedBinding(event);
+  if (source === null) {
+    throw new ExternalMediaAccessError('A selection folder needs an external photo source', 400);
+  }
+  const selection = normalizeSourcePath(value);
+  if (!selection) throw new ExternalMediaAccessError('Invalid selection folder', 400);
+  const { getExternalMediaRoot } = require('./externalMediaService');
+  const root = getExternalMediaRoot();
+  const target = path.join(root, source, selection);
+  const real = await fs.realpath(target).catch(() => null);
+  const realRoot = await fs.realpath(root).catch(() => root);
+  const stat = real ? await fs.stat(real).catch(() => null) : null;
+  if (!stat || !stat.isDirectory() || !(real === realRoot || real.startsWith(realRoot + path.sep))) {
+    throw new ExternalMediaAccessError('The selection folder does not exist in the photo source', 400);
+  }
+  return selection;
+}
+
+module.exports = { selectionPrefix, selectionHiddenFor, recomputeSelection, validateSelectionPath };
