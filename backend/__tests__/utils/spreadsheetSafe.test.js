@@ -96,3 +96,23 @@ describe('neutralizeSpreadsheetFormula — trigger after leading whitespace', ()
     expect(_internal.csvEscape('\u3000-2+3')).toBe('"\'\u3000-2+3"');
   });
 });
+
+describe('csvCell — values a reader could split', () => {
+  it.each([
+    ['a semicolon', 'Nice photo;=1+2;', '"Nice photo;=1+2;"'],
+    ['a semicolon before a minus', 'a;-2+3', '"a;-2+3"'],
+    ['a tab', 'Nice\t=1+2', '"Nice\t=1+2"'],
+    ['a plain semicolon', 'one; two', '"one; two"'],
+  ])('quotes a value holding %s', (_label, value, expected) => {
+    expect(csvCell(value)).toBe(expected);
+  });
+
+  it('still prefixes a leading formula inside the quotes', () => {
+    expect(csvCell('=1+2;x')).toBe('"\'=1+2;x"');
+  });
+
+  it('leaves values without a separator unquoted', () => {
+    expect(csvCell('Nice photo')).toBe('Nice photo');
+    expect(csvCell('-12.5')).toBe('-12.5');
+  });
+});

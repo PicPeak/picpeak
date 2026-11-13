@@ -46,19 +46,14 @@ function serializeGuest(row) {
   };
 }
 
-const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
+const { csvCell } = require('../utils/spreadsheetSafe');
 const { sanitizeName } = require('../utils/personName');
 
-function escapeCsvCell(value) {
-  // Neutralize spreadsheet formulas FIRST (a `=cmd()` guest name executes on
-  // open — RFC-4180 quoting doesn't stop it), then quote-wrap (GHSA-wc99 /
-  // GHSA-f4fp).
-  const str = neutralizeSpreadsheetFormula(value);
-  if (/[,"\n\r]/.test(str)) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
+// Neutralize spreadsheet formulas FIRST (a `=cmd()` guest name executes on
+// open — RFC-4180 quoting doesn't stop it), then quote-wrap any value holding
+// a separator, quote or line break. The shared helper is the single place
+// that decides which characters count as separators.
+const escapeCsvCell = csvCell;
 
 /**
  * A guest's likes and favourites for the per-guest exports, each favourite
