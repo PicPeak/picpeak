@@ -6,7 +6,9 @@
  *
  * Images load through plain <img> tags: the embed only exists for a gallery
  * without a password, whose images the backend serves without a session, so
- * no cookie or token has to reach a third-party frame.
+ * no cookie or token has to reach a third-party frame. Their URLs carry the
+ * embed token (?embed=), so a gallery cookie the visitor's browser holds for
+ * this site does not decide over them.
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
@@ -26,6 +28,7 @@ export const EmbedGalleryPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
 
   useEffect(() => {
@@ -50,13 +53,16 @@ export const EmbedGalleryPage: React.FC = () => {
 
   const loadMore = async () => {
     setLoadingMore(true);
+    setLoadMoreFailed(false);
     try {
       const next = await embedService.getPhotos(slug, token, page + 1);
       setPhotos((current) => [...current, ...next.photos]);
       setHasMore(next.pagination.has_more);
       setPage(page + 1);
     } catch {
-      setHasMore(false);
+      // Keep the button: a dropped request or a busy server must not cut the
+      // grid short until the visitor reloads the page around it.
+      setLoadMoreFailed(true);
     } finally {
       setLoadingMore(false);
     }
@@ -135,14 +141,19 @@ export const EmbedGalleryPage: React.FC = () => {
       )}
 
       {hasMore && (
-        <div className="flex justify-center py-3">
+        <div className="flex flex-col items-center gap-2 py-3">
+          {loadMoreFailed && (
+            <p role="alert" className="text-sm text-neutral-500">
+              {t('embed.loadMoreFailed', 'More photos could not be loaded.')}
+            </p>
+          )}
           <button
             type="button"
             onClick={loadMore}
             disabled={loadingMore}
             className="px-4 py-2 text-sm rounded-md border border-neutral-300 dark:border-neutral-700 disabled:opacity-50"
           >
-            {t('embed.loadMore', 'Load more')}
+            {loadMoreFailed ? t('embed.retry', 'Try again') : t('embed.loadMore', 'Load more')}
           </button>
         </div>
       )}

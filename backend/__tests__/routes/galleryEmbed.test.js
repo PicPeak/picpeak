@@ -101,8 +101,8 @@ describe('gallery embed (issue 1112)', () => {
       expect(res.body.photos).toHaveLength(1);
       const [photo] = res.body.photos;
       expect(Object.keys(photo).sort()).toEqual(['height', 'id', 'preview_url', 'thumbnail_url', 'width']);
-      expect(photo.thumbnail_url).toBe(`/api/gallery/${SLUG}/thumbnail/${photo.id}`);
-      expect(photo.preview_url).toMatch(new RegExp(`^/api/gallery/${SLUG}/preview/${photo.id}`));
+      expect(photo.thumbnail_url).toBe(`/api/gallery/${SLUG}/thumbnail/${photo.id}?embed=${TOKEN}`);
+      expect(photo.preview_url).toMatch(new RegExp(`^/api/gallery/${SLUG}/preview/${photo.id}\\?.*embed=${TOKEN}$`));
       expect((await db('access_logs').where({ event_id: eventId })).length).toBe(before);
     });
 
@@ -153,10 +153,23 @@ describe('gallery embed (issue 1112)', () => {
         const res = await photos();
         const fresh = res.body.photos.find((p) => p.id === id);
         expect(fresh).toBeDefined();
-        expect(fresh.thumbnail_url).toBe(`/api/gallery/${SLUG}/thumbnail/${id}`);
+        expect(fresh.thumbnail_url).toBe(`/api/gallery/${SLUG}/thumbnail/${id}?embed=${TOKEN}`);
       } finally {
         await db('photos').where({ id }).del();
       }
+    });
+
+    it('serves its images past a stale gallery cookie the browser sends along', async () => {
+      const jwt = require('jsonwebtoken');
+      const stale = jwt.sign({ type: 'gallery', eventId }, process.env.JWT_SECRET, { issuer: 'picpeak-auth', expiresIn: -10 });
+      const [photo] = (await photos()).body.photos;
+      const plain = await request(app).get(`/api/gallery/${SLUG}/thumbnail/${photo.id}`).set('Cookie', `gallery_token=${stale}`);
+      expect([401, 403]).toContain(plain.status);
+      const viaEmbed = await request(app).get(photo.thumbnail_url).set('Cookie', `gallery_token=${stale}`);
+      expect([401, 403, 500]).not.toContain(viaEmbed.status);
+      // A wrong embed token falls back to the ordinary check.
+      const wrong = await request(app).get(`/api/gallery/${SLUG}/thumbnail/${photo.id}?embed=${'f'.repeat(64)}`).set('Cookie', `gallery_token=${stale}`);
+      expect([401, 403]).toContain(wrong.status);
     });
 
     it('is a 404 with the embed flag off', async () => {

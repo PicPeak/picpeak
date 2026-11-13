@@ -5,6 +5,8 @@
     "empty": "Aucune photo pour l’instant.",
     "openPhoto": "Ouvrir la photo {{number}}",
     "loadMore": "Afficher plus",
+    "loadMoreFailed": "Impossible de charger plus de photos.",
+    "retry": "Réessayer",
     "close": "Fermer",
     "previous": "Photo précédente",
     "next": "Photo suivante",

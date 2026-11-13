@@ -99,6 +99,20 @@ async function verifyGalleryAccess(req, res, next) {
     // instead of falling through to a misleading guest-token error.
     if (req.adminPreviewDenied?.isOperational) throw req.adminPreviewDenied;
     const slug = req.params.slug || req.requestedSlug;
+    // Website embed (issue 1112): its images carry ?embed=<token> and are
+    // served as to any visitor of a public gallery. The embed mints no
+    // session, so a gallery cookie the browser holds for this site (another
+    // gallery's, or an expired one) must not decide over them: it would
+    // refuse every image of an embed that is otherwise eligible.
+    if (slug && typeof req.query?.embed === 'string') {
+      const embedEvent = await require('../services/galleryEmbed').resolveEmbed(slug, req.query.embed);
+      if (embedEvent) {
+        const embedGrant = access.grant(embedEvent, 'public', null);
+        await access.authorize(embedEvent, embedGrant);
+        attachAccess(req, embedEvent, embedGrant);
+        return next();
+      }
+    }
     const token = getGalleryTokenFromRequest(req, slug);
     const decoded = token ? decodeGalleryToken(token) : null;
     if (decoded && decoded.type !== 'gallery') {

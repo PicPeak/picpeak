@@ -5,6 +5,8 @@
     "empty": "Še ni fotografij.",
     "openPhoto": "Odpri fotografijo {{number}}",
     "loadMore": "Naloži več",
+    "loadMoreFailed": "Več fotografij ni bilo mogoče naložiti.",
+    "retry": "Poskusi znova",
     "close": "Zapri",
     "previous": "Prejšnja fotografija",
     "next": "Naslednja fotografija",

@@ -5,6 +5,8 @@
     "empty": "Nog geen foto’s.",
     "openPhoto": "Foto {{number}} openen",
     "loadMore": "Meer laden",
+    "loadMoreFailed": "Meer foto's konden niet worden geladen.",
+    "retry": "Opnieuw proberen",
     "close": "Sluiten",
     "previous": "Vorige foto",
     "next": "Volgende foto",

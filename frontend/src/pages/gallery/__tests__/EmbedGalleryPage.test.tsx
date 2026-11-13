@@ -83,6 +83,21 @@ describe('EmbedGalleryPage', () => {
     expect(screen.queryByRole('button', { name: /Load more/ })).not.toBeInTheDocument();
   });
 
+  it('keeps the next page reachable after a failed load and retries it', async () => {
+    getPhotos
+      .mockResolvedValueOnce({ pagination: { page: 1, limit: 1, total: 2, has_more: true }, photos: [photo(1)] })
+      .mockImplementationOnce(() => Promise.reject(Object.assign(new Error('Busy'), { response: { status: 503 } })))
+      .mockResolvedValueOnce({ pagination: { page: 2, limit: 1, total: 2, has_more: false }, photos: [photo(2)] });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Load more/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('More photos could not be loaded.');
+    fireEvent.click(screen.getByRole('button', { name: /Try again/ }));
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /Open photo/ })).toHaveLength(2));
+    expect(getPhotos).toHaveBeenLastCalledWith('demo', TOKEN, 2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Try again|Load more/ })).not.toBeInTheDocument();
+  });
+
   it('says the gallery is not available when the embed is refused', async () => {
     getInfo.mockRejectedValue(Object.assign(new Error('Not found'), { response: { status: 404 } }));
     getPhotos.mockRejectedValue(Object.assign(new Error('Not found'), { response: { status: 404 } }));

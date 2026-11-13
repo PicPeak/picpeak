@@ -37,8 +37,14 @@ router.get('/:slug/embed/:token', noStoreCache, handleAsync(async (req, res) => 
   });
 }));
 
+// The image URLs name the embed (?embed=<token>), so middleware/gallery.js
+// serves them as to a public visitor whatever gallery cookie the browser
+// sends along.
+const withEmbed = (url, token) => `${url}${url.includes('?') ? '&' : '?'}embed=${token}`;
+
 router.get('/:slug/embed/:token/photos', noStoreCache, handleAsync(async (req, res) => {
   const event = await eligible(req);
+  const { token } = req.params;
   const page = Math.max(1, Math.min(10000, parseInt(req.query.page, 10) || 1));
   const payload = await require('../../services/galleryQueryService').getGalleryPhotos({
     event,
@@ -63,8 +69,8 @@ router.get('/:slug/embed/:token/photos', noStoreCache, handleAsync(async (req, r
         id: photo.id,
         width: photo.width ?? null,
         height: photo.height ?? null,
-        thumbnail_url: photo.thumbnail_url || `/api/gallery/${event.slug}/thumbnail/${photo.id}`,
-        preview_url: photo.slideshow_url,
+        thumbnail_url: withEmbed(photo.thumbnail_url || `/api/gallery/${event.slug}/thumbnail/${photo.id}`, token),
+        preview_url: withEmbed(photo.slideshow_url, token),
       })),
   });
 }));
