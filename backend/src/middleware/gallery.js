@@ -137,9 +137,31 @@ function denySlideshowToken(req, res, next) {
   next();
 }
 
+/**
+ * Require the 'act' right of a customer-portal contact for a write that binds
+ * the customer (choosing an album, quoting or accepting a print order). A
+ * gallery token carries no rights, so they are re-read on every call; a
+ * view-only contact keeps reading the same offers but cannot change them.
+ * Sessions that are not portal contacts pass through unchanged.
+ */
+function requireContactAct(area) {
+  return async (req, res, next) => {
+    try {
+      const { sessionMayAct } = require('../services/customerContactsService');
+      if (req.viaCustomer && !(await sessionMayAct(req.galleryAccess?.session, area))) {
+        return res.status(403).json({ error: 'Your login may not do this', code: 'CUSTOMER_RIGHT_MISSING' });
+      }
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  };
+}
+
 module.exports = {
   verifyGalleryAccess,
   denySlideshowToken,
+  requireContactAct,
   isAdminPreview,
   verifyAdminPreview
 };
