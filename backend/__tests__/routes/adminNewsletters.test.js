@@ -256,6 +256,27 @@ describe('admin newsletters routes', () => {
     expect(res.body.html).toContain('Hi Robin');
   });
 
+  it('previews a named customer only for an admin who may view customers', async () => {
+    const [id] = await db('customer_accounts').insert({
+      email: 'private@example.com', first_name: 'Dora', is_active: 1,
+      marketing_opt_out: 1, created_at: new Date().toISOString(),
+    }).returning('id');
+    const customerId = typeof id === 'object' ? id.id : id;
+    const { body } = await createDraft();
+
+    // newsletters.view without customers.view
+    const named = await request(app)
+      .post(`${MOUNT}/${body.campaign.id}/preview`).set(auth(viewerToken))
+      .send({ customerId });
+    expect(named.status).toBe(403);
+    expect(JSON.stringify(named.body)).not.toContain('Dora');
+
+    const sample = await request(app)
+      .post(`${MOUNT}/${body.campaign.id}/preview`).set(auth(viewerToken)).send({});
+    expect(sample.status).toBe(200);
+    expect(sample.body.isSample).toBe(true);
+  });
+
   // ---- recipients listing ------------------------------------------------
 
   it('paginates the recipients list', async () => {

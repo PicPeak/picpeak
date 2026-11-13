@@ -19,7 +19,8 @@ const { body, param, query } = require('express-validator');
 
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
+const { AppError } = require('../utils/errors');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const {
   handleAsync, validateRequest, successResponse, getPagination, paginatedResponse,
@@ -231,6 +232,11 @@ router.post(
 
     let customer = null;
     if (req.body.customerId) {
+      // A real customer's data reaches only an admin who may see customers;
+      // newsletters.view alone previews with the sample recipient.
+      if (!(await userHasAnyPermission(req.admin?.id, ['customers.view']))) {
+        throw new AppError('You need permission to view customers for a preview with customer data', 403, 'FORBIDDEN');
+      }
       customer = await db('customer_accounts').where({ id: req.body.customerId }).first();
     }
     // Sample data when no real customer is named, so the variables render as
