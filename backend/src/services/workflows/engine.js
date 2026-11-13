@@ -107,13 +107,17 @@ async function recordStep(runId, node, status, result, error) {
   });
 }
 
+// A run cancelled while it was being advanced (customer erasure) stays
+// cancelled: the engine's own writes never overwrite that.
+const notCancelled = (runId) => db('workflow_runs').where({ id: runId }).whereNot('status', 'cancelled');
+
 async function failRun(runId, error) {
-  await db('workflow_runs').where({ id: runId }).update({ status: 'failed', error, finished_at: db.fn.now() });
+  await notCancelled(runId).update({ status: 'failed', error, finished_at: db.fn.now() });
   logger.error('[workflow] run failed', { runId, error });
 }
 
 async function finishRun(runId) {
-  await db('workflow_runs').where({ id: runId }).update({ status: 'done', finished_at: db.fn.now() });
+  await notCancelled(runId).update({ status: 'done', finished_at: db.fn.now() });
 }
 
 /**
@@ -194,8 +198,9 @@ async function advanceRun(runId) {
           break;
         }
         const wakeAt = computeWakeAt(node.config, context.vars);
-        await db('workflow_runs').where({ id: runId })
+        const paused = await notCancelled(runId)
           .update({ status: 'waiting', wake_at: wakeAt, current_node: currentKey, context: JSON.stringify(context) });
+        if (!paused) return; // cancelled meanwhile
         await recordStep(runId, node, 'waiting', { wake_at: wakeAt });
         return; // paused — scheduler resumes when wake_at passes
       }
@@ -208,8 +213,9 @@ async function advanceRun(runId) {
           await recordStep(runId, node, 'skipped', { dryRun: true, gateAutoConfirm: true });
           break;
         }
-        await db('workflow_runs').where({ id: runId })
+        const paused = await notCancelled(runId)
           .update({ status: 'waiting', wake_at: gateTimeout(node.config), current_node: currentKey, context: JSON.stringify(context) });
+        if (!paused) return; // cancelled meanwhile
         await recordStep(runId, node, 'waiting', { gate: true });
         // Optional setup hook (create approval + send admin email) — registered
         // by the approval phase. Engine still pauses cleanly without it.
@@ -243,7 +249,14 @@ async function advanceRun(runId) {
     }
 
     currentKey = nextKey;
-    await db('workflow_runs').where({ id: runId }).update({ current_node: currentKey || null, context: JSON.stringify(context), updated_at: db.fn.now() });
+    const stillRunning = await notCancelled(runId).update({ current_node: currentKey || null, context: JSON.stringify(context), updated_at: db.fn.now() });
+    if (!stillRunning) {
+      // Cancelled while this node ran (customer erasure): its step result
+      // was written after the erasure scrubbed the run.
+      await db('workflow_run_steps').where({ run_id: runId, node_key: node.node_key }).whereNotNull('result')
+        .update({ result: JSON.stringify({ redacted: true, reason: 'run_cancelled' }) });
+      return;
+    }
   }
 
   await finishRun(runId);
@@ -644,7 +657,103 @@ async function testRun(workflowId, {
   return row.id;
 }
 
+// Run variables that carry the customer's contact details.
+const CUSTOMER_CONTACT_VARS = ['customerEmail', 'recipientEmail', 'customerName', 'hostName', 'emailData'];
+
+/**
+ * Customer erasure (customerAccountsService.eraseCustomer, inside its
+ * transaction). A run belongs to the customer when it is about the customer
+ * account or carries its id; or, naming no other customer, carries one of
+ * its addresses (on a gallery run only when the gallery is assigned to it,
+ * and a former address only there). Runs not finished yet are cancelled
+ * with their open approvals (pending, or expired but still in the inbox);
+ * every such run, approval and step result loses the contact details it
+ * copied. Returns the ids of the runs touched.
+ */
+async function forgetCustomer(trx, customerId, {
+  email = null, contactEmails = [], formerEmails = [], eventIds = [],
+} = {}) {
+  if (!(await trx.schema.hasTable('workflow_runs'))) return [];
+  const id = Number(customerId);
+  const lower = (list) => list.filter(Boolean).map((e) => String(e).toLowerCase());
+  // Addresses that are this customer's now: the account's and its contacts'.
+  const own = new Set(lower([email, ...contactEmails]));
+  // Addresses it held before: only on its own galleries, another customer
+  // may hold them now.
+  const former = new Set(lower(formerEmails));
+  const events = new Set(eventIds.map(Number));
+  const addresses = [...new Set([...own, ...former])];
+  const hasApprovals = await trx.schema.hasTable('workflow_approvals');
+  const hasSteps = await trx.schema.hasTable('workflow_run_steps');
+  const mentions = (value) => {
+    const text = String(value || '').toLowerCase();
+    return addresses.some((address) => text.includes(address));
+  };
+  const scrub = (vars) => {
+    const kept = { ...(vars || {}) };
+    for (const key of CUSTOMER_CONTACT_VARS) delete kept[key];
+    return kept;
+  };
+
+  const touched = [];
+  let lastId = 0;
+  for (;;) {
+    // Rows that can be about the customer at all; the exact rule is below.
+    const runs = await trx('workflow_runs').where('id', '>', lastId)
+      .where((q) => {
+        q.where({ entity_type: 'customer', entity_id: id })
+          .orWhereRaw('CAST(context AS TEXT) LIKE ?', [`%"customerAccountId":${id}%`])
+          .orWhereRaw('CAST(context AS TEXT) LIKE ?', [`%"customerAccountId": ${id}%`]);
+        for (const address of addresses) q.orWhereRaw('LOWER(CAST(context AS TEXT)) LIKE ?', [`%${address}%`]);
+      })
+      .orderBy('id', 'asc').limit(500)
+      .select('id', 'status', 'context', 'entity_type', 'entity_id');
+    if (runs.length === 0) break;
+    lastId = runs[runs.length - 1].id;
+    for (const run of runs) {
+      const context = parseJson(run.context, {}) || {};
+      const vars = context.vars || {};
+      const runEmail = vars.customerEmail ? String(vars.customerEmail).toLowerCase() : null;
+      const otherCustomer = vars.customerAccountId != null && Number(vars.customerAccountId) !== id;
+      // A gallery run is the customer's only on a gallery assigned to them,
+      // the same rule that clears the gallery's own contact copy.
+      const onTheirGallery = run.entity_type !== 'event' || events.has(Number(run.entity_id));
+      const mine = (run.entity_type === 'customer' && Number(run.entity_id) === id)
+        || Number(vars.customerAccountId) === id
+        || (!otherCustomer && runEmail && onTheirGallery && own.has(runEmail))
+        || (!otherCustomer && runEmail && run.entity_type === 'event' && events.has(Number(run.entity_id)) && former.has(runEmail));
+      if (!mine) continue;
+      touched.push(run.id);
+      const patch = { context: JSON.stringify({ ...context, vars: scrub(vars) }), updated_at: trx.fn.now() };
+      if (['pending', 'running', 'waiting'].includes(run.status)) {
+        Object.assign(patch, { status: 'cancelled', wake_at: null, finished_at: trx.fn.now(), error: 'customer erased' });
+      }
+      await trx('workflow_runs').where({ id: run.id }).update(patch);
+      if (hasApprovals) {
+        await trx('workflow_approvals').where({ run_id: run.id }).whereIn('status', ['pending', 'expired'])
+          .update({ status: 'cancelled' });
+        for (const approval of await trx('workflow_approvals').where({ run_id: run.id }).select('id', 'payload')) {
+          const payload = parseJson(approval.payload, null);
+          if (!payload || typeof payload !== 'object') continue;
+          await trx('workflow_approvals').where({ id: approval.id })
+            .update({ payload: JSON.stringify({ ...payload, vars: scrub(payload.vars) }) });
+        }
+      }
+      if (hasSteps && addresses.length > 0) {
+        for (const step of await trx('workflow_run_steps').where({ run_id: run.id }).whereNotNull('result').select('id', 'result')) {
+          const text = typeof step.result === 'string' ? step.result : JSON.stringify(step.result);
+          if (!mentions(text)) continue;
+          await trx('workflow_run_steps').where({ id: step.id })
+            .update({ result: JSON.stringify({ redacted: true, reason: 'customer_erased' }) });
+        }
+      }
+    }
+  }
+  return touched;
+}
+
 module.exports = {
+  forgetCustomer,
   emitWorkflowEvent,
   isBuiltinFlowActive,
   backfillDunningRuns,

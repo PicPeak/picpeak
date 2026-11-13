@@ -1277,16 +1277,15 @@ function storedTimestamp(value) {
 }
 
 /**
- * Blank the customer's contact copy on the events assigned to them: the
- * customer_* columns where customer_email is one of their addresses, the
- * host_* columns where host_email is. A contact typed for someone else stays.
+ * Blank the customer's contact copy on the events assigned to them
+ * (`eventIds`): the customer_* columns where customer_email is one of their
+ * addresses, the host_* columns where host_email is. A contact typed for
+ * someone else stays.
  * Returns the ids of the events that changed.
  */
-async function forgetEventContacts(trx, customerId, emails) {
+async function forgetEventContacts(trx, eventIds, emails) {
   const addresses = [...new Set(emails.filter(Boolean).map((e) => String(e).toLowerCase()))];
-  if (addresses.length === 0 || !(await trx.schema.hasTable('event_customer_assignments'))) return [];
-  const eventIds = await trx('event_customer_assignments').where({ customer_account_id: customerId }).pluck('event_id');
-  if (eventIds.length === 0) return [];
+  if (addresses.length === 0 || eventIds.length === 0) return [];
   const columns = await trx('events').columnInfo();
   const inList = addresses.map(() => '?').join(', ');
   const changed = new Set();
@@ -1343,6 +1342,7 @@ async function eraseCustomer(id, erasedByAdminId) {
   // or on SQLite, deadlock on — the not-yet-committed rows).
   const touchedCampaignIds = new Set();
   let clearedEventContacts = [];
+  let forgottenWorkflowRuns = [];
 
   await db.transaction(async (trx) => {
     await customerContactsService.lockForErasure(trx, id);
@@ -1388,8 +1388,21 @@ async function eraseCustomer(id, erasedByAdminId) {
     // Galleries assigned to this customer carry a copy of their contact
     // details (quote/contract conversion writes them onto the event), and
     // the gallery mail jobs read their recipient from that copy.
-    clearedEventContacts = await forgetEventContacts(trx, id,
-      [customer.email, ...formerWindows.map((win) => win.email)]);
+    const assignedEventIds = await trx('event_customer_assignments')
+      .where({ customer_account_id: id }).pluck('event_id');
+    // Contact logins that end with this customer are erased with it.
+    const erasedContactEmails = await customerContactsService.contactEmailsForErasure(trx, id);
+    clearedEventContacts = await forgetEventContacts(trx, assignedEventIds,
+      [customer.email, ...erasedContactEmails, ...formerWindows.map((win) => win.email)]);
+
+    // Workflow runs keep a copy of the trigger's customer details, and a
+    // waiting run would mail them once it wakes.
+    forgottenWorkflowRuns = await require('./workflows/engine').forgetCustomer(trx, id, {
+      email: customer.email,
+      contactEmails: erasedContactEmails,
+      formerEmails: formerWindows.map((win) => win.email),
+      eventIds: assignedEventIds,
+    });
 
     const forCustomer = (q) => q.where((w) => {
       // Admin mail on the current address belongs to the admin account with
@@ -1589,6 +1602,7 @@ async function eraseCustomer(id, erasedByAdminId) {
       redactedContracts: erasedContracts.redacted,
       retainedContracts: erasedContracts.retained,
       clearedEventContacts,
+      workflowRuns: forgottenWorkflowRuns,
     },
     null,
     { type: 'admin', id: erasedByAdminId }

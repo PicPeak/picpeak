@@ -72,8 +72,23 @@ registry.registerAction('send_email', async (ctx) => {
   if (ctx.vars?.__dryRun) return { dryRun: true, would: 'send_email', recipientClass: cfg.recipientClass || cfg.recipient || 'customer', emailType: cfg.emailType || cfg.template };
   const recipientClass = cfg.recipientClass || cfg.recipient || 'customer';
   const isInternal = recipientClass === 'admin' || recipientClass === 'internal';
+  let customerEmail = ctx.vars.customerEmail;
+  if (!isInternal && !cfg.to && customerEmail) {
+    // The run's customer is read as it is now, not as the trigger saw it:
+    // a run can wait for days, and the account may since have changed its
+    // address, been deactivated or been erased. A trigger that gave no
+    // address (a customer it must not mail) still gives none.
+    const customerId = Number(ctx.vars.customerAccountId);
+    if (Number.isInteger(customerId) && customerId > 0) {
+      const account = await ctx.db('customer_accounts').where({ id: customerId }).first('email', 'is_active');
+      if (!account || ![true, 1, '1'].includes(account.is_active) || !account.email) {
+        return { skipped: true, reason: 'customer account inactive' };
+      }
+      customerEmail = account.email;
+    }
+  }
   const to = cfg.to
-    || ctx.vars[isInternal ? 'adminEmail' : 'customerEmail']
+    || (isInternal ? ctx.vars.adminEmail : customerEmail)
     || ctx.vars.recipientEmail;
   if (!to) return { skipped: true, reason: 'no recipient resolved' };
 
