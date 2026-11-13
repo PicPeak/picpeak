@@ -308,6 +308,24 @@
     "passwordHint": "Het wachtwoord is verstrekt door de organisator van het evenement. Neem contact op als u het niet heeft."
   },
   "gallery": {
+    "selfie": {
+      "open": "Mijn foto's vinden met een selfie",
+      "title": "Mijn foto's vinden",
+      "intro": "Kies een selfie en wij tonen de foto's in deze galerij waarop u staat.",
+      "fileLabel": "Uw selfie",
+      "consent": "Ik ga ermee akkoord dat mijn selfie wordt vergeleken met de gezichten in deze galerij om mijn foto's te vinden. Ik zoek alleen naar mezelf.",
+      "privacy": "Uw selfie wordt alleen voor deze ene zoekopdracht gebruikt en direct verwijderd. Er wordt niets opgeslagen. De resultaten kunnen foto's bevatten van mensen die op u lijken en kunnen enkele van uw foto's missen.",
+      "submit": "Mijn foto's vinden",
+      "searching": "Zoeken…",
+      "noMatches": "We hebben geen foto's van u gevonden. Probeer een andere selfie waarop uw gezicht goed zichtbaar is.",
+      "chip": "Uw selfie",
+      "errorNoFace": "Op deze foto is geen gezicht gevonden. Probeer een selfie waarop uw gezicht goed zichtbaar is.",
+      "errorInvalid": "Dit bestand kon niet worden gelezen. Kies een foto.",
+      "errorTooLarge": "Deze foto is te groot. Kies er een onder 15 MB.",
+      "errorRateLimited": "Te veel zoekopdrachten. Probeer het over een paar minuten opnieuw.",
+      "errorUnavailable": "Zoeken is nu niet beschikbaar. Probeer het later opnieuw.",
+      "errorGeneric": "Het zoeken is mislukt. Probeer het opnieuw."
+    },
     "backToAccount": "Terug naar uw account",
     "preparingHint": "De bestanden worden voorbereid — bij grote galerijen kan dit even duren.",
     "revealPendingTitle": "De foto's zijn nog een verrassing",

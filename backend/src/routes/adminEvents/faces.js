@@ -97,6 +97,8 @@ module.exports = (router) => {
         res.json({
           enabled: event.face_recognition_enabled === true || event.face_recognition_enabled === 1,
           visible_to_guests: faceSettings.areFacesVisibleToGuests(event),
+          // Guests may search with a selfie (issue 2355); per-event opt-in.
+          selfie_search: event.face_selfie_search_enabled === true || event.face_selfie_search_enabled === 1,
           last_scan_at: event.faces_last_scan_at || null,
           // What the automatic consolidation pass did when this event last
           // drained (#1107). Surfaced because merging biometric clusters
@@ -114,7 +116,7 @@ module.exports = (router) => {
     });
 
   /**
-   * Flip the two per-event toggles.
+   * Flip the per-event toggles.
    *
    * Enabling detection backfills existing photos. Disabling it stops there —
    * it does NOT delete anything, because "stop scanning" and "destroy the
@@ -129,6 +131,7 @@ module.exports = (router) => {
     [
       body('enabled').optional().isBoolean(),
       body('visible_to_guests').optional().isBoolean(),
+      body('selfie_search').optional().isBoolean(),
     ],
     async (req, res) => {
       const errors = validationResult(req);
@@ -148,6 +151,9 @@ module.exports = (router) => {
         }
         if (req.body.visible_to_guests !== undefined) {
           update.faces_visible_to_guests = parseBooleanInput(req.body.visible_to_guests, true);
+        }
+        if (req.body.selfie_search !== undefined) {
+          update.face_selfie_search_enabled = parseBooleanInput(req.body.selfie_search, false);
         }
         if (!Object.keys(update).length) {
           return res.status(400).json({ error: 'Nothing to update' });

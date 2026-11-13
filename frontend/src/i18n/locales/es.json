@@ -310,6 +310,24 @@
     "passwordHint": "La contraseña la proporcionó el organizador del evento. Contacta con ellos si no la tienes."
   },
   "gallery": {
+    "selfie": {
+      "open": "Encontrar mis fotos con un selfie",
+      "title": "Encontrar mis fotos",
+      "intro": "Elige un selfie y te mostramos las fotos de esta galería en las que apareces.",
+      "fileLabel": "Tu selfie",
+      "consent": "Acepto que mi selfie se compare con las caras de esta galería para encontrar mis fotos. Solo me busco a mí mismo.",
+      "privacy": "Tu selfie solo se usa para esta búsqueda y se elimina de inmediato. No se guarda nada. Los resultados pueden incluir fotos de personas que se parecen a ti y pueden omitir algunas de las tuyas.",
+      "submit": "Encontrar mis fotos",
+      "searching": "Buscando…",
+      "noMatches": "No encontramos fotos tuyas. Prueba con otro selfie en el que tu cara se vea bien.",
+      "chip": "Tu selfie",
+      "errorNoFace": "No se encontró ninguna cara en esta foto. Prueba con un selfie en el que tu cara se vea bien.",
+      "errorInvalid": "No se pudo leer este archivo. Elige una foto.",
+      "errorTooLarge": "Esta foto es demasiado grande. Elige una de menos de 15 MB.",
+      "errorRateLimited": "Demasiadas búsquedas. Inténtalo de nuevo en unos minutos.",
+      "errorUnavailable": "La búsqueda no está disponible ahora mismo. Inténtalo más tarde.",
+      "errorGeneric": "La búsqueda falló. Inténtalo de nuevo."
+    },
     "backToAccount": "Volver a su cuenta",
     "preparingHint": "Preparando los archivos — esto puede tardar un poco en galerías grandes.",
     "revealPendingTitle": "Las fotos siguen siendo una sorpresa",

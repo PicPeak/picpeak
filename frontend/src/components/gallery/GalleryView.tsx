@@ -80,6 +80,7 @@ import { isFilenameListFavourite, photosForFilenameList } from '../../utils/phot
 import { GuestNamePromptModal } from './GuestNamePromptModal';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { PeopleStrip } from './PeopleStrip';
+import { SelfieSearchDialog } from './SelfieSearchDialog';
 import { PeopleSheet } from './PeopleSheet';
 import { GuestIdentityProvider } from '../../contexts/GuestIdentityContext';
 import { SelectionSubmitBar, selectionStateKey, useSelectionPickRefresh } from './SelectionSubmitBar';
@@ -90,7 +91,7 @@ import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { beginPhotoDownload, endPhotoDownload, touchPhotoDownload, PHOTO_DOWNLOAD_STALE_MS } from '../../hooks/usePhotoDownloadPending';
-import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ClipboardList, AlertCircle } from 'lucide-react';
+import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ClipboardList, AlertCircle, Camera } from 'lucide-react';
 import { galleryService, splitIntoArchives } from '../../services/gallery.service';
 import { feedbackService, type ColorLabel } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
@@ -239,6 +240,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // person is picked, since the toggle is meaningless for one.
   const [selectedPersonIds, setSelectedPersonIds] = useState<number[]>([]);
   const [peopleMatchAny, setPeopleMatchAny] = useState(false);
+  // Selfie search (issue 2355): the photo ids the guest's selfie matched,
+  // shown as one more filter chip; null = no selfie filter.
+  const [selfiePhotoIds, setSelfiePhotoIds] = useState<number[] | null>(null);
+  const [showSelfieSearch, setShowSelfieSearch] = useState(false);
   // "By" filter (#1561): who took or uploaded the photo. null = everyone.
   const [selectedCreditKey, setSelectedCreditKey] = useState<string | null>(null);
   // Scene-tag filter (issue 1733). Multi-select; several tags are OR-combined.
@@ -481,6 +486,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // From the /photos payload, not the prop: the prop's event shape comes
   // from /info, which does not carry this flag.
   const peopleEnabled = data?.event?.people_enabled === true;
+  const selfieSearchEnabled = peopleEnabled && data?.event?.selfie_search_enabled === true;
+  // Only while the search is offered: a filter left over from before the host
+  // switched it off would empty the grid with no chip to clear it.
+  const activeSelfiePhotoIds = selfieSearchEnabled ? selfiePhotoIds : null;
   // Automatic scene tags (issue 1733), from the same payload.
   const tagsEnabled = data?.event?.tags_enabled === true;
   const { data: peopleData } = useQuery({
@@ -976,6 +985,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug,
     activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds,
     selectedPersonIds, peopleMatchAny,
+    selfiePhotoIds: activeSelfiePhotoIds,
     // Only while names are visible: a stale key must not keep filtering a
     // gallery whose host has just switched names off.
     selectedCreditKey: data?.event?.credits_visible ? selectedCreditKey : null,
@@ -1403,11 +1413,11 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // well as server-side, so the number on the button is the number the guest
   // actually receives rather than an optimistic one.
   const peopleDownloadableIds = useMemo(() => {
-    if (selectedPersonIds.length === 0) return [];
+    if (selectedPersonIds.length === 0 && !activeSelfiePhotoIds) return [];
     return filteredPhotos
       .filter((photo) => photo.category_allow_downloads !== false)
       .map((photo) => photo.id);
-  }, [filteredPhotos, selectedPersonIds]);
+  }, [filteredPhotos, selectedPersonIds, activeSelfiePhotoIds]);
 
   const handleDownloadPeopleFiltered = async () => {
     if (!allowDownloads || peopleDownloadableIds.length === 0) return;
@@ -2437,6 +2447,19 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             both decisions plus the global feature flag. */}
         {peopleEnabled && (
           <div className="mt-4">
+            {selfieSearchEnabled && (
+              <div className="flex justify-end pb-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSelfieSearch(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm hover:brightness-95"
+                  style={{ color: 'var(--color-text)', borderColor: 'var(--color-surface-border)' }}
+                >
+                  <Camera size={16} aria-hidden />
+                  {t('gallery.selfie.open', { defaultValue: 'Find my photos with a selfie' })}
+                </button>
+              </div>
+            )}
             <PeopleStrip
               people={people}
               photos={scopedPhotos}
@@ -2452,7 +2475,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             {/* Active people filter. The chip row is the single place the
                 current selection is stated, so "why am I seeing 97 photos"
                 is always answerable at a glance. */}
-            {selectedPersonIds.length > 0 && (
+            {(selectedPersonIds.length > 0 || activeSelfiePhotoIds) && (
               <div
                 className="flex flex-wrap items-center gap-2 py-2 border-t"
                 style={{ borderColor: 'var(--color-surface-border)' }}
@@ -2475,6 +2498,18 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                     </button>
                   );
                 })}
+
+                {activeSelfiePhotoIds && (
+                  <button
+                    type="button"
+                    onClick={() => setSelfiePhotoIds(null)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-soft text-theme text-sm hover:brightness-95"
+                  >
+                    <Camera size={14} aria-hidden />
+                    {t('gallery.selfie.chip', { defaultValue: 'Your selfie' })}
+                    <X size={14} />
+                  </button>
+                )}
 
                 {/* Only meaningful with two or more people picked. */}
                 {selectedPersonIds.length > 1 && (
@@ -2523,7 +2558,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
                 <button
                   type="button"
-                  onClick={() => { setSelectedPersonIds([]); setPeopleMatchAny(false); }}
+                  onClick={() => { setSelectedPersonIds([]); setPeopleMatchAny(false); setSelfiePhotoIds(null); }}
                   className="text-sm underline"
                   style={{ color: 'var(--color-muted-text)' }}
                 >
@@ -2666,6 +2701,14 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             slug={slug}
             selectedPersonIds={selectedPersonIds}
             onToggle={togglePerson}
+          />
+        )}
+        {selfieSearchEnabled && (
+          <SelfieSearchDialog
+            open={showSelfieSearch}
+            onClose={() => setShowSelfieSearch(false)}
+            slug={slug}
+            onResult={setSelfiePhotoIds}
           />
         )}
       </GalleryLayout>

@@ -315,6 +315,24 @@
     "passwordHint": "Le mot de passe a été fourni par l'organisateur de l'événement. Contactez-le si vous ne l'avez pas."
   },
   "gallery": {
+    "selfie": {
+      "open": "Trouver mes photos avec un selfie",
+      "title": "Trouver mes photos",
+      "intro": "Choisissez un selfie et nous vous montrons les photos de cette galerie sur lesquelles vous apparaissez.",
+      "fileLabel": "Votre selfie",
+      "consent": "J'accepte que mon selfie soit comparé aux visages de cette galerie pour trouver mes photos. Je ne recherche que moi-même.",
+      "privacy": "Votre selfie sert uniquement à cette recherche et est supprimé aussitôt. Rien n'est enregistré. Les résultats peuvent inclure des photos de personnes qui vous ressemblent et manquer certaines des vôtres.",
+      "submit": "Trouver mes photos",
+      "searching": "Recherche…",
+      "noMatches": "Nous n'avons trouvé aucune photo de vous. Essayez un autre selfie où votre visage est bien visible.",
+      "chip": "Votre selfie",
+      "errorNoFace": "Aucun visage n'a été trouvé sur cette photo. Essayez un selfie où votre visage est bien visible.",
+      "errorInvalid": "Ce fichier n'a pas pu être lu. Veuillez choisir une photo.",
+      "errorTooLarge": "Cette photo est trop volumineuse. Veuillez en choisir une de moins de 15 Mo.",
+      "errorRateLimited": "Trop de recherches. Veuillez réessayer dans quelques minutes.",
+      "errorUnavailable": "La recherche n'est pas disponible pour le moment. Veuillez réessayer plus tard.",
+      "errorGeneric": "La recherche a échoué. Veuillez réessayer."
+    },
     "backToAccount": "Retour à votre compte",
     "preparingHint": "Préparation des fichiers — cela peut prendre un moment pour les grandes galeries.",
     "revealPendingTitle": "Les photos sont encore une surprise",

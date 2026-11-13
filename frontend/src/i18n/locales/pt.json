@@ -367,6 +367,24 @@
     }
   },
   "gallery": {
+    "selfie": {
+      "open": "Encontrar as minhas fotos com uma selfie",
+      "title": "Encontrar as minhas fotos",
+      "intro": "Escolha uma selfie e mostramos as fotos desta galeria em que aparece.",
+      "fileLabel": "A sua selfie",
+      "consent": "Concordo que a minha selfie seja comparada com os rostos desta galeria para encontrar as minhas fotos. Procuro apenas por mim.",
+      "privacy": "A sua selfie é usada apenas para esta pesquisa e apagada de imediato. Nada é guardado. Os resultados podem incluir fotos de pessoas parecidas consigo e falhar algumas das suas.",
+      "submit": "Encontrar as minhas fotos",
+      "searching": "A pesquisar…",
+      "noMatches": "Não encontrámos fotos suas. Experimente outra selfie com o rosto bem visível.",
+      "chip": "A sua selfie",
+      "errorNoFace": "Não foi encontrado nenhum rosto nesta foto. Experimente uma selfie com o rosto bem visível.",
+      "errorInvalid": "Não foi possível ler este ficheiro. Escolha uma foto.",
+      "errorTooLarge": "Esta foto é demasiado grande. Escolha uma com menos de 15 MB.",
+      "errorRateLimited": "Demasiadas pesquisas. Tente novamente dentro de alguns minutos.",
+      "errorUnavailable": "A pesquisa não está disponível neste momento. Tente novamente mais tarde.",
+      "errorGeneric": "A pesquisa falhou. Tente novamente."
+    },
     "backToAccount": "Voltar à sua conta",
     "revealPendingTitle": "As fotos ainda são uma surpresa",
     "revealPendingMessage": "O anfitrião revelará a galeria mais tarde — volte em breve!",

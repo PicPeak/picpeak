@@ -1429,6 +1429,24 @@
     }
   },
   "gallery": {
+    "selfie": {
+      "open": "Find my photos with a selfie",
+      "title": "Find my photos",
+      "intro": "Choose a selfie and we show the photos in this gallery that you appear in.",
+      "fileLabel": "Your selfie",
+      "consent": "I agree that my selfie is compared with the faces in this gallery to find my photos. I only search for myself.",
+      "privacy": "Your selfie is used for this one search and deleted right away. Nothing is saved. Results can include photos of people who look like you and can miss some of yours.",
+      "submit": "Find my photos",
+      "searching": "Searching…",
+      "noMatches": "We found no photos of you. Try another selfie with your face clearly visible.",
+      "chip": "Your selfie",
+      "errorNoFace": "No face was found in this photo. Try a selfie with your face clearly visible.",
+      "errorInvalid": "This file could not be read. Please choose a photo.",
+      "errorTooLarge": "This photo is too large. Please choose one under 15 MB.",
+      "errorRateLimited": "Too many searches. Please try again in a few minutes.",
+      "errorUnavailable": "The search is not available right now. Please try again later.",
+      "errorGeneric": "The search failed. Please try again."
+    },
     "awaitingPayment": "Your gallery is almost ready.",
     "awaitingPaymentHelp": "It opens as soon as the invoice is paid. Your gallery link will stay the same.",
     "backToAccount": "Back to your account",
@@ -5707,6 +5725,8 @@
       "selectedCount_other": "{{count}} selected"
     },
     "faces": {
+      "selfieSearch": "Let guests find their photos with a selfie",
+      "selfieSearchHint": "Guests upload a selfie and see the photos they appear in. They must agree first. The selfie is only used for that search and is not stored.",
       "manage": "Manage people",
       "visibleToGuests": "({{count}} shown to guests)",
       "title": "People in this gallery",

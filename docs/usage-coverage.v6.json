@@ -1868,6 +1868,7 @@
         "GET /:slug/photos",
         "GET /:slug/photos/state",
         "GET /:slug/people",
+        "POST /:slug/face-search",
         "PATCH /:slug/photos/:photoId/visibility",
         "PATCH /:slug/photos/visibility/bulk"
       ]
