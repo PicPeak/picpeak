@@ -4,6 +4,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
 const { noStoreCache } = require('../../middleware/noStoreCache');
+const { blockHiddenGallery } = require('../../utils/revealMode');
 const { rateLimitKey } = require('../../utils/rateLimitKey');
 const { reserveCheckout } = require('../../modules/photoSales/checkoutReservation');
 const { checkoutSession, reconcileSession } = require('../../modules/photoSales/stripeCheckout');
@@ -46,10 +47,13 @@ function verificationHandler(action) {
     }
   };
 }
-router.post('/:slug/checkout/promo-verification', noStoreCache, verificationLimiter, verifyGalleryAccess, denySlideshowToken, verificationHandler('sendCode'));
-router.post('/:slug/checkout/promo-verification/confirm', noStoreCache, verificationLimiter, verifyGalleryAccess, denySlideshowToken, verificationHandler('confirmCode'));
+// A gallery hidden until its reveal sells nothing to the guests it is hidden
+// from, as print sales and album products already refuse.
+const checkoutGuards = [verifyGalleryAccess, denySlideshowToken, blockHiddenGallery];
+router.post('/:slug/checkout/promo-verification', noStoreCache, verificationLimiter, ...checkoutGuards, verificationHandler('sendCode'));
+router.post('/:slug/checkout/promo-verification/confirm', noStoreCache, verificationLimiter, ...checkoutGuards, verificationHandler('confirmCode'));
 
-router.post('/:slug/checkout', noStoreCache, checkoutLimiter, verifyGalleryAccess, denySlideshowToken, async (req, res) => {
+router.post('/:slug/checkout', noStoreCache, checkoutLimiter, ...checkoutGuards, async (req, res) => {
   try {
     // A preview session is an editing tool, never a buyer's payment flow.
     if (req.isAdminPreview) return res.status(403).json({ error: 'Purchases are unavailable in preview mode' });
