@@ -180,6 +180,14 @@ function stripDisallowedUrls(css) {
   let out = '';
   let blocked = 0;
   let i = 0;
+  // A bare string argument of image-set() IS a URL to a browser
+  // (`image-set("https://x/p.gif" 1x)`), so it is held to the same
+  // ALLOWED_URL_TARGET as url(). `parenDepth` counts open parentheses;
+  // `stringUrlDepths` holds the depth of each open image-set-like call, and a
+  // string directly at that depth is checked. Strings deeper down, such as
+  // the `"image/png"` in `type("image/png")`, are not URLs.
+  let parenDepth = 0;
+  const stringUrlDepths = [];
 
   while (i < input.length) {
     // --- CSS comment ---------------------------------------------------
@@ -223,6 +231,17 @@ function stripDisallowedUrls(css) {
         i += 1;
         continue;
       }
+      if (parenDepth > 0 && stringUrlDepths[stringUrlDepths.length - 1] === parenDepth) {
+        const target = decodeCssEscapes(input.slice(i + 1, j - 1)).trim();
+        if (!ALLOWED_URL_TARGET.test(target)) {
+          // `none` is not a valid image-set() argument, so the browser drops
+          // the whole declaration rather than requesting anything.
+          blocked += 1;
+          out += 'none';
+          i = j;
+          continue;
+        }
+      }
       out += input.slice(i, Math.min(j, input.length));
       i = Math.min(j, input.length);
       continue;
@@ -256,6 +275,38 @@ function stripDisallowedUrls(css) {
       continue;
     }
 
+    // --- var()/env()/attr() inside image-set() ------------------------------
+    // A custom property can hold the string (`--u:"https://x/p.gif"`) and
+    // var() substitutes it into image-set() at computed-value time, where
+    // the string check above never sees it. Inside an image-set-like call
+    // these are replaced with `none` (an invalid argument) whole.
+    if (ident.end > i && stringUrlDepths.length > 0
+      && SUBSTITUTION_FUNCTIONS.has(decodeCssEscapes(ident.raw).toLowerCase())) {
+      let j = ident.end;
+      while (j < input.length && CSS_WS.test(input[j])) j += 1;
+      if (input[j] === '(') {
+        const end = findCloseParen(input, j);
+        blocked += 1;
+        out += 'none';
+        i = end;
+        continue;
+      }
+    }
+
+    // --- image-set( and the other calls that take a bare string URL ---------
+    if (ident.end > i
+      && STRING_URL_FUNCTIONS.has(decodeCssEscapes(ident.raw).toLowerCase().replace(VENDOR_PREFIX, ''))) {
+      let j = ident.end;
+      while (j < input.length && CSS_WS.test(input[j])) j += 1;
+      if (input[j] === '(') {
+        out += input.slice(i, j + 1);
+        parenDepth += 1;
+        stringUrlDepths.push(parenDepth);
+        i = j + 1;
+        continue;
+      }
+    }
+
     // --- escape that does NOT begin an identifier -------------------------
     // Ordered AFTER readIdentifier deliberately. `\75` is the escape for
     // `u`, so `\75rl(...)` is url() to a browser — consuming the escape
@@ -269,12 +320,39 @@ function stripDisallowedUrls(css) {
       continue;
     }
 
+    if (input[i] === '(') parenDepth += 1;
+    if (input[i] === ')' && parenDepth > 0) {
+      if (stringUrlDepths[stringUrlDepths.length - 1] === parenDepth) stringUrlDepths.pop();
+      parenDepth -= 1;
+    }
     out += input[i];
     i += 1;
   }
 
   return { sanitized: out, blocked };
 }
+
+// Functions that substitute a value from elsewhere at computed-value time.
+const SUBSTITUTION_FUNCTIONS = new Set(['var', 'env', 'attr']);
+
+/** Index just past the `)` matching the `(` at `open` (strings/comments skipped); end of input if none. */
+function findCloseParen(input, open) {
+  let depth = 0;
+  let j = open;
+  while (j < input.length) {
+    const skipped = skipCommentOrString(input, j);
+    if (skipped !== j) { j = skipped; continue; }
+    if (input[j] === '\\') { j += 2; continue; }
+    if (input[j] === '(') depth += 1;
+    if (input[j] === ')') { depth -= 1; if (depth === 0) return j + 1; }
+    j += 1;
+  }
+  return input.length;
+}
+
+// Functions whose bare string arguments are image URLs (vendor prefix
+// removed before the lookup, so -webkit-image-set is covered).
+const STRING_URL_FUNCTIONS = new Set(['image-set', 'image', 'src']);
 
 /** A CSS escape sequence at `start`, or null. */
 function matchEscape(input, start) {
