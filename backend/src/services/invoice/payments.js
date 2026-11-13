@@ -105,6 +105,10 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
     if (trx.client.config.client === 'pg') invoiceQuery.forNoKeyUpdate();
     invoice = await invoiceQuery.first();
     if (!invoice) throw new AppError('Invoice not found', 404);
+    // A Storno cancels an invoice; nothing is owed on it.
+    if (invoice.kind === 'storno') {
+      throw new AppError('A Storno is not a payment instrument; record payments on the invoice instead.', 409, 'IS_STORNO');
+    }
     if (invoice.status === 'cancelled') {
       throw new AppError('Cannot mark a cancelled invoice as paid', 409);
     }
@@ -352,6 +356,7 @@ function queuePaymentCheckEmail(invoiceId, options = {}) {
 async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor = null } = {}) {
   const invoice = await db('invoices').where({ id: invoiceId }).first();
   if (!invoice) return { sent: false, reason: 'not_found' };
+  if (invoice.kind === 'storno') return { sent: false, reason: 'storno' };
   if (!['sent', 'overdue'].includes(invoice.status)) {
     return { sent: false, reason: `wrong_status_${invoice.status}` };
   }
@@ -521,7 +526,7 @@ async function getPaymentCheckByToken(token) {
   const invoice = await db('invoices').where({ id: row.invoice_id }).first();
   if (!invoice) throw new AppError('Invoice not found', 404);
   // The page offers the decisions, so it refuses what recording them would.
-  if (!PAYMENT_CHECK_STATUSES.includes(invoice.status)) {
+  if (invoice.kind === 'storno' || !PAYMENT_CHECK_STATUSES.includes(invoice.status)) {
     throw new AppError(
       `This invoice is no longer awaiting a payment check (status '${invoice.status}').`,
       409, 'INVOICE_NOT_ACTIONABLE',
@@ -650,7 +655,8 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
     if (trx.client.config.client === 'pg') invoiceQuery.forNoKeyUpdate();
     const locked = await invoiceQuery.first();
     if (!locked) throw new AppError('Invoice not found', 404);
-    if (!PAYMENT_CHECK_STATUSES.includes(locked.status)) {
+    // A Storno is never paid or dunned (see recordPayment / applyReminder).
+    if (locked.kind === 'storno' || !PAYMENT_CHECK_STATUSES.includes(locked.status)) {
       throw new AppError(
         `This invoice is no longer awaiting a payment check (status '${locked.status}').`,
         409, 'INVOICE_NOT_ACTIONABLE',

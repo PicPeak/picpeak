@@ -28,6 +28,7 @@ async function sendReminder(id, levelOverride, adminId) {
   const data = await getInvoiceById(id);
   if (!data) throw new AppError('Invoice not found', 404);
   const { invoice, lineItems } = data;
+  if (invoice.kind === 'storno') throw new AppError('Cannot remind on a Storno', 409, 'IS_STORNO');
   if (invoice.status !== 'sent' && invoice.status !== 'overdue') {
     throw new AppError(`Cannot remind on status '${invoice.status}'`, 409);
   }
@@ -75,6 +76,8 @@ async function resolvePerReminderFeeMinor(invoice) {
 
 // `actor` names who triggered the reminder in the accounting change history.
 async function applyReminder(invoice, lineItems, level, adminId, actor = adminId) {
+  // A Storno cancels an invoice; it is never dunned.
+  if (invoice.kind === 'storno') throw new AppError('Cannot remind on a Storno', 409, 'IS_STORNO');
   const customer = await db('customer_accounts').where({ id: invoice.customer_account_id }).first();
 
   // Per fee-bearing reminder (levels 2..level): 2nd = 1×, 3rd = 2×, computed
@@ -113,7 +116,7 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
   // checked that, but from a snapshot. A payment or a Storno landing in
   // between must not be overwritten with `overdue`, a fee and a Mahnung.
   const applied = await auditedUpdate(db, 'invoices',
-    (q) => q.where({ id: invoice.id }).whereIn('status', ['sent', 'overdue']),
+    (q) => q.where({ id: invoice.id }).whereNot('kind', 'storno').whereIn('status', ['sent', 'overdue']),
     update, { actor, source: 'invoice.reminder' });
   if (!applied) {
     throw new AppError('The invoice is no longer awaiting payment; no reminder was sent.', 409, 'INVOICE_NOT_ACTIONABLE');

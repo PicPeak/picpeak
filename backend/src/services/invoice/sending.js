@@ -338,6 +338,12 @@ async function createStorno(originalId, adminId, trx = db) {
   if (original.status === 'cancelled') {
     throw new AppError('Invoice already cancelled', 409, 'ALREADY_CANCELLED');
   }
+  // Read through trx: SQLite has one connection, and this transaction holds it.
+  const canceller = !original.created_by_admin_id && adminId
+    ? await trx('admin_users').leftJoin('roles', 'roles.id', 'admin_users.role_id')
+      .where('admin_users.id', adminId).first('roles.name as role_name')
+    : null;
+  const stornoOwnerForUnownedInvoice = canceller && canceller.role_name !== 'super_admin' ? adminId : null;
 
   // Generate the Storno's sequence number from the same gap-free
   // series as regular invoices (single sequence — decision locked
@@ -408,6 +414,11 @@ async function createStorno(originalId, adminId, trx = db) {
     // Migration 140 — Storno belongs to the same deal as the invoice
     // it cancels; both render together in the lineage view.
     deal_uuid: original.deal_uuid || crypto.randomUUID(),
+    // The Storno belongs to whoever owns the invoice it cancels, so it stays
+    // in that admin's deal. An invoice without an owner keeps its Storno
+    // without one too, unless the admin cancelling it may only insert rows
+    // as themselves (the row policy; a super admin is not bound by it).
+    created_by_admin_id: original.created_by_admin_id || stornoOwnerForUnownedInvoice,
     created_at: now,
     updated_at: now,
   }, { actor: adminId, source: 'invoice.storno.create' });
