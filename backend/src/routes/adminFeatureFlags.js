@@ -137,6 +137,10 @@ const KNOWN_FLAGS = [
   // while off, nothing is tested and the /admin/backup/verifications routes
   // answer 403.
   'backupRestoreTest',
+  // Website embed (migration 359, issue 1112). An <iframe> of a gallery
+  // without a password on another site. Strictly opt-in: while off, every
+  // embed link answers 404 and no page is frameable.
+  'embed',
 ];
 
 // Spec defaults for any flag missing from the DB (e.g. a row added by a
@@ -177,6 +181,7 @@ const DEFAULT_FLAGS = {
   documents: false,
   customerGifts: false,
   backupRestoreTest: false,
+  embed: false,
 };
 
 async function readAllFlags() {

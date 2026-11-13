@@ -1,4 +1,33 @@
 {
+  "embed": {
+    "unavailable": "Diese Galerie ist nicht verfügbar.",
+    "viewGallery": "Ganze Galerie ansehen",
+    "empty": "Noch keine Fotos.",
+    "openPhoto": "Foto {{number}} öffnen",
+    "loadMore": "Mehr laden",
+    "close": "Schließen",
+    "previous": "Vorheriges Foto",
+    "next": "Nächstes Foto",
+    "admin": {
+      "title": "Website-Einbettung",
+      "description": "Zeigen Sie diese Galerie als Fotoraster auf Ihrer eigenen Website. Besucher sehen die veröffentlichten Fotos und können sie größer öffnen, aber nichts herunterladen, kommentieren oder hochladen.",
+      "needsPublic": "Nur eine Galerie ohne Passwort lässt sich einbetten. Entfernen Sie zuerst das Passwort unter Zugang.",
+      "pausedByPassword": "Diese Galerie hat ein Passwort, deshalb zeigt die Einbettung nichts an. Entfernen Sie das Passwort unter Zugang, um sie wieder anzuzeigen.",
+      "create": "Einbettungscode erstellen",
+      "created": "Einbettungscode erstellt",
+      "codeLabel": "Einbettungscode",
+      "codeHint": "Fügen Sie diesen Code auf Ihrer Website dort ein, wo die Galerie erscheinen soll.",
+      "rotate": "Neuer Code",
+      "rotateConfirm": "Neuen Einbettungscode erstellen? Websites mit dem aktuellen Code zeigen die Galerie nicht mehr, bis Sie ihn dort ersetzen.",
+      "remove": "Entfernen",
+      "removeConfirm": "Einbettung entfernen? Websites, die diese Galerie zeigen, zeigen sie danach nicht mehr.",
+      "removed": "Einbettung entfernt",
+      "websitesLabel": "Erlaubte Websites",
+      "websitesHint": "Eine Adresse pro Zeile, z. B. https://example.com oder https://*.example.com für alle Subdomains. Leer lassen, um jede Website zu erlauben.",
+      "saveWebsites": "Websites speichern",
+      "websitesSaved": "Websites gespeichert"
+    }
+  },
   "externalSources": {
     "title": "Eigentümer externer Quellen",
     "info": "Nur der SuperAdmin kann einen Quellordner zuweisen oder übertragen. Unterordner gehören demselben Eigentümer; Quellordner dürfen sich nicht überschneiden.",
@@ -3146,6 +3175,7 @@
     },
     "settingsTab": {
       "about": {
+        "embed": "Zeigen Sie diese Galerie auf Ihrer eigenen Website.",
         "access": "Wer die Galerie öffnen kann, und bis wann.",
         "appearance": "Titelbild, Logo, Banner und das Aussehen der Galerie.",
         "danger": "Diese Galerie archivieren oder löschen.",
@@ -3208,6 +3238,8 @@
       "sourceManagedHelp": "Fotos werden im Tab Fotos hochgeladen und von PicPeak gespeichert.",
       "sourceReferenceHelp": "Fotos bleiben in deinem Ordner; PicPeak verlinkt sie.",
       "summary": {
+        "noEmbed": "Nicht eingebettet",
+        "embedActive": "Einbettung aktiv",
         "clientAccounts_one": "{{count}} Kundenkonto",
         "clientAccounts_other": "{{count}} Kundenkonten",
         "danger": "Diese Galerie archivieren oder löschen",
@@ -4125,6 +4157,10 @@
       "title": "Branding"
     },
     "features": {
+      "embed": {
+        "title": "Website-Einbettung",
+        "description": "Zeigen Sie eine Galerie ohne Passwort als Fotoraster in einem iframe auf Ihrer eigenen Website. Jede Galerie bekommt ihren eigenen Einbettungscode unter Einstellungen → Website-Einbettung, auf Wunsch nur für die Websites, die Sie angeben."
+      },
       "backupRestoreTest": {
         "title": "Wiederherstellungstest für Backups",
         "description": "Jedes Backup wird testweise in eine Wegwerf-Datenbank wiederhergestellt und geprüft: Signatur, Prüfsummen, Datei-Hashes, Zeilenzahlen und Migrationen. Aufbewahrte Backups werden wöchentlich erneut geprüft, und Sie erhalten eine E-Mail, wenn ein Test fehlschlägt."

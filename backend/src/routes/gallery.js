@@ -2,6 +2,7 @@ const router = require('express').Router();
 // Keep route order stable; each router owns one gallery responsibility.
 router.use(require('./gallery/metadata'));
 router.use(require('./gallery/slideshow'));
+router.use(require('./gallery/embed'));
 router.use(require('./gallery/photos'));
 router.use(require('./gallery/albumProducts'));
 router.use(require('./gallery/printSales'));

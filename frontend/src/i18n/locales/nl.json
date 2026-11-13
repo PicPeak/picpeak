@@ -1,4 +1,33 @@
 {
+  "embed": {
+    "unavailable": "Deze galerij is niet beschikbaar.",
+    "viewGallery": "Hele galerij bekijken",
+    "empty": "Nog geen foto’s.",
+    "openPhoto": "Foto {{number}} openen",
+    "loadMore": "Meer laden",
+    "close": "Sluiten",
+    "previous": "Vorige foto",
+    "next": "Volgende foto",
+    "admin": {
+      "title": "Website-insluiting",
+      "description": "Toon deze galerij als fotoraster op uw eigen website. Bezoekers zien de gepubliceerde foto’s en kunnen ze groter openen, maar kunnen niets downloaden, reageren of uploaden.",
+      "needsPublic": "Alleen een galerij zonder wachtwoord kan worden ingesloten. Verwijder eerst het wachtwoord onder Toegang.",
+      "pausedByPassword": "Deze galerij heeft een wachtwoord, dus de insluiting toont niets. Verwijder het wachtwoord onder Toegang om haar weer te tonen.",
+      "create": "Insluitcode maken",
+      "created": "Insluitcode gemaakt",
+      "codeLabel": "Insluitcode",
+      "codeHint": "Plak dit op uw website waar de galerij moet verschijnen.",
+      "rotate": "Nieuwe code",
+      "rotateConfirm": "Een nieuwe insluitcode maken? Websites met de huidige code tonen de galerij niet meer tot u hem daar vervangt.",
+      "remove": "Verwijderen",
+      "removeConfirm": "Insluiting verwijderen? Websites die deze galerij tonen, tonen haar dan niet meer.",
+      "removed": "Insluiting verwijderd",
+      "websitesLabel": "Toegestane websites",
+      "websitesHint": "Eén adres per regel, bijv. https://example.com of https://*.example.com voor alle subdomeinen. Laat leeg om elke website toe te staan.",
+      "saveWebsites": "Websites opslaan",
+      "websitesSaved": "Websites opgeslagen"
+    }
+  },
   "systemHealth": {
     "backupRestoreTest": {
       "title": "Hersteltest voor back-ups",
@@ -1072,10 +1101,13 @@
     "settingsTab": {
       "delivery": "Mappen en levering",
       "about": {
+        "embed": "Toon deze galerij op uw eigen website.",
         "delivery": "Geneste mappen uit uploads en een eerste selectie vóór de volledige galerie.",
         "tags": "Tag foto's op scène zodat gasten de galerij kunnen filteren."
       },
       "summary": {
+        "noEmbed": "Niet ingesloten",
+        "embedActive": "Insluiting actief",
         "folderStructureOn": "Mapstructuur aan",
         "folderStructureOff": "Uploads zonder mappen",
         "firstLookDue": "eerste selectie, volledige galerie uiterlijk {{date}}",
@@ -1650,6 +1682,10 @@
       "title": "Huisstijl"
     },
     "features": {
+      "embed": {
+        "title": "Website-insluiting",
+        "description": "Toon een galerij zonder wachtwoord als fotoraster in een iframe op uw eigen website. Elke galerij krijgt een eigen insluitcode onder Instellingen → Website-insluiting, desgewenst beperkt tot de websites die u opgeeft."
+      },
       "backupRestoreTest": {
         "title": "Hersteltest voor back-ups",
         "description": "Elke back-up wordt bij wijze van test teruggezet in een wegwerpdatabase en gecontroleerd: handtekening, controlesommen, bestandshashes, aantallen rijen en migraties. Bewaarde back-ups worden wekelijks opnieuw gecontroleerd, en u krijgt een e-mail als er een mislukt."

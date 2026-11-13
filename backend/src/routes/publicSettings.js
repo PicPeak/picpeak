@@ -15,6 +15,25 @@ router.get('/photo-sales-policy', require('../modules/photoSales/galleryCsp').ga
   res.status(204).end();
 });
 
+// Embed pages (issue 1112): nginx asks with the page URI in X-Original-URI
+// whether /gallery/:slug/embed/:token may be framed, and by whom. 204 with the
+// frame-ancestors source list, or 404, on which nginx serves the page with
+// the site's usual SAMEORIGIN headers.
+router.get('/embed-frame-policy', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const embed = require('../services/galleryEmbed');
+    const parts = embed.embedPathParts(req.get('X-Original-URI'));
+    const event = parts && await embed.resolveEmbed(decodeURIComponent(parts.slug), parts.token);
+    if (!event) return res.status(404).end();
+    res.set('X-PicPeak-Embed-Ancestors', embed.frameAncestors(event));
+    return res.status(204).end();
+  } catch (error) {
+    logger.warn('Embed frame policy lookup failed', { error: error.message });
+    return res.status(404).end();
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     // Fetch branding, theme, general, security, analytics, and event settings

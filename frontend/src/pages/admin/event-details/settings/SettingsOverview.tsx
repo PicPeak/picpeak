@@ -8,7 +8,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  AlertTriangle, Bell, ChevronRight, Download, FolderOpen, FolderTree, Lock, MonitorPlay,
+  AlertTriangle, Bell, ChevronRight, Code, Download, FolderOpen, FolderTree, Lock, MonitorPlay,
   Palette, ScanFace, SlidersHorizontal, Tags, Users, ShoppingCart, type LucideIcon,
 } from 'lucide-react';
 import type { Event } from '../../../../types';
@@ -25,6 +25,7 @@ export const SECTION_ICON: Record<SettingsSectionKey, LucideIcon> = {
   pricing: ShoppingCart,
   guests: Users,
   slideshow: MonitorPlay,
+  embed: Code,
   source: FolderOpen,
   delivery: FolderTree,
   reminder: Bell,
@@ -37,7 +38,7 @@ export const SECTION_ICON: Record<SettingsSectionKey, LucideIcon> = {
 export const SECTION_GROUPS: Array<{ key: string; label: string; sections: SettingsSectionKey[] }> = [
   { key: 'basics', label: 'Basics', sections: ['general', 'appearance'] },
   { key: 'access', label: 'Access & downloads', sections: ['access', 'downloads', 'pricing'] },
-  { key: 'guests', label: 'Guests', sections: ['guests', 'slideshow'] },
+  { key: 'guests', label: 'Guests', sections: ['guests', 'slideshow', 'embed'] },
   { key: 'photos', label: 'Photos & automation', sections: ['source', 'delivery', 'reminder', 'faces', 'tags'] },
 ];
 
@@ -133,6 +134,13 @@ export function useSectionSummaries(
           ? { text: s('linkActive', 'Link active'), tone: 'ok' }
           : { text: s('noLink', 'No link yet'), tone: 'off' },
         ...(draft.slideshow ? [{ text: s('interval', '{{seconds}} s per photo', { seconds: Math.round(draft.slideshow.interval_ms / 100) / 10 }) }] : []),
+      ],
+    },
+    embed: {
+      parts: [
+        event.embed_token
+          ? { text: s('embedActive', 'Embed active'), tone: 'ok' }
+          : { text: s('noEmbed', 'Not embedded'), tone: 'off' },
       ],
     },
     source: {

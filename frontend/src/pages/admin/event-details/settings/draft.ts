@@ -33,6 +33,7 @@ export type SettingsSectionKey =
   | 'delivery'
   | 'reminder'
   | 'slideshow'
+  | 'embed'
   | 'faces'
   | 'tags'
   | 'danger';

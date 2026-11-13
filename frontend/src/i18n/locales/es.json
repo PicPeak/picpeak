@@ -1,4 +1,33 @@
 {
+  "embed": {
+    "unavailable": "Esta galería no está disponible.",
+    "viewGallery": "Ver la galería completa",
+    "empty": "Todavía no hay fotos.",
+    "openPhoto": "Abrir la foto {{number}}",
+    "loadMore": "Cargar más",
+    "close": "Cerrar",
+    "previous": "Foto anterior",
+    "next": "Foto siguiente",
+    "admin": {
+      "title": "Inserción en sitio web",
+      "description": "Muestra esta galería en tu propio sitio web como cuadrícula de fotos. Los visitantes ven las fotos publicadas y pueden ampliarlas, pero no pueden descargar, comentar ni subir nada.",
+      "needsPublic": "Solo se puede insertar una galería sin contraseña. Quita primero la contraseña en Acceso.",
+      "pausedByPassword": "Esta galería tiene contraseña, así que la inserción no muestra nada. Quita la contraseña en Acceso para volver a mostrarla.",
+      "create": "Crear código de inserción",
+      "created": "Código de inserción creado",
+      "codeLabel": "Código de inserción",
+      "codeHint": "Pégalo en tu sitio web donde deba aparecer la galería.",
+      "rotate": "Código nuevo",
+      "rotateConfirm": "¿Crear un código de inserción nuevo? Los sitios que usan el código actual dejan de mostrar la galería hasta que lo sustituyas allí.",
+      "remove": "Quitar",
+      "removeConfirm": "¿Quitar la inserción? Los sitios que muestran esta galería dejarán de mostrarla.",
+      "removed": "Inserción quitada",
+      "websitesLabel": "Sitios web permitidos",
+      "websitesHint": "Una dirección por línea, p. ej. https://example.com o https://*.example.com para todos los subdominios. Déjalo vacío para permitir cualquier sitio.",
+      "saveWebsites": "Guardar sitios",
+      "websitesSaved": "Sitios guardados"
+    }
+  },
   "systemHealth": {
     "backupRestoreTest": {
       "title": "Prueba de restauración de copias de seguridad",
@@ -1094,10 +1123,13 @@
     "settingsTab": {
       "delivery": "Carpetas y entrega",
       "about": {
+        "embed": "Muestra esta galería en tu propio sitio web.",
         "delivery": "Carpetas anidadas de las subidas y una primera selección antes de la galería completa.",
         "tags": "Etiqueta las fotos por escena para que los invitados puedan filtrar la galería."
       },
       "summary": {
+        "noEmbed": "Sin insertar",
+        "embedActive": "Inserción activa",
         "folderStructureOn": "Estructura de carpetas activada",
         "folderStructureOff": "Subidas sin carpetas",
         "firstLookDue": "primera selección, galería completa para el {{date}}",
@@ -1673,6 +1705,10 @@
       "noResults": "Ningún ajuste coincide con «{{query}}»."
     },
     "features": {
+      "embed": {
+        "title": "Inserción en sitio web",
+        "description": "Muestra una galería sin contraseña en tu propio sitio web como cuadrícula de fotos en un iframe. Cada galería tiene su propio código de inserción en Ajustes → Inserción en sitio web, limitado si quieres a los sitios que indiques."
+      },
       "backupRestoreTest": {
         "title": "Prueba de restauración de copias de seguridad",
         "description": "Cada copia de seguridad se restaura de prueba en una base de datos desechable y se comprueba: firma, sumas de verificación, hashes de archivos, recuentos de filas y migraciones. Las copias conservadas se vuelven a comprobar cada semana y recibirá un correo si una falla."

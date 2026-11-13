@@ -1,4 +1,33 @@
 {
+  "embed": {
+    "unavailable": "Ta galerija ni na voljo.",
+    "viewGallery": "Ogled celotne galerije",
+    "empty": "Še ni fotografij.",
+    "openPhoto": "Odpri fotografijo {{number}}",
+    "loadMore": "Naloži več",
+    "close": "Zapri",
+    "previous": "Prejšnja fotografija",
+    "next": "Naslednja fotografija",
+    "admin": {
+      "title": "Vdelava na spletno stran",
+      "description": "Prikažite to galerijo na svoji spletni strani kot mrežo fotografij. Obiskovalci vidijo objavljene fotografije in jih lahko povečajo, ne morejo pa prenašati, komentirati ali nalagati.",
+      "needsPublic": "Vdelati je mogoče le galerijo brez gesla. Najprej odstranite geslo pod Dostop.",
+      "pausedByPassword": "Ta galerija ima geslo, zato vdelava ne prikaže ničesar. Odstranite geslo pod Dostop, da jo spet prikažete.",
+      "create": "Ustvari kodo za vdelavo",
+      "created": "Koda za vdelavo ustvarjena",
+      "codeLabel": "Koda za vdelavo",
+      "codeHint": "Prilepite jo na svojo spletno stran tja, kjer naj se prikaže galerija.",
+      "rotate": "Nova koda",
+      "rotateConfirm": "Ustvarim novo kodo za vdelavo? Strani s trenutno kodo galerije ne bodo več prikazovale, dokler je tam ne zamenjate.",
+      "remove": "Odstrani",
+      "removeConfirm": "Odstranim vdelavo? Strani, ki prikazujejo to galerijo, je ne bodo več prikazovale.",
+      "removed": "Vdelava odstranjena",
+      "websitesLabel": "Dovoljene spletne strani",
+      "websitesHint": "En naslov na vrstico, npr. https://example.com ali https://*.example.com za vse poddomene. Pustite prazno, da dovolite katero koli stran.",
+      "saveWebsites": "Shrani strani",
+      "websitesSaved": "Strani shranjene"
+    }
+  },
   "productUsagePrompt": {
     "title": "Pomagajte oblikovati PicPeak?",
     "intro": "Pomagajte oblikovati PicPeak z neobveznimi poročili o uporabi izdelka. Pred odločitvijo preglejte psevdonimizirane podatke, kdo jih lahko vidi in kam se pošiljajo."
@@ -2211,10 +2240,13 @@
     "settingsTab": {
       "delivery": "Mape in dostava",
       "about": {
+        "embed": "Prikažite to galerijo na svoji spletni strani.",
         "delivery": "Gnezdene mape iz nalaganj in prvi izbor pred celotno galerijo.",
         "tags": "Označite fotografije po prizorih, da lahko gostje filtrirajo galerijo."
       },
       "summary": {
+        "noEmbed": "Ni vdelana",
+        "embedActive": "Vdelava aktivna",
         "folderStructureOn": "Struktura map vklopljena",
         "folderStructureOff": "Nalaganja brez map",
         "firstLookDue": "prvi izbor, celotna galerija do {{date}}",
@@ -2961,6 +2993,10 @@
       "title": "Blagovna znamka"
     },
     "features": {
+      "embed": {
+        "title": "Vdelava na spletno stran",
+        "description": "Prikažite galerijo brez gesla na svoji spletni strani kot mrežo fotografij v iframe. Vsaka galerija dobi svojo kodo za vdelavo v Nastavitve → Vdelava na spletno stran, po želji omejeno na strani, ki jih navedete."
+      },
       "backupRestoreTest": {
         "title": "Preizkus obnovitve varnostnih kopij",
         "description": "Vsaka varnostna kopija se poskusno obnovi v začasno podatkovno bazo in preveri: podpis, kontrolne vsote, zgoščene vrednosti datotek, število vrstic in migracije. Shranjene kopije se tedensko ponovno preverijo, ob neuspehu pa prejmete e-pošto."
