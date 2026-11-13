@@ -169,6 +169,21 @@ describe('gallery selection and full link (issue 2356)', () => {
     });
   });
 
+  describe('hero', () => {
+    it('names a hero outside the selection to a full-link session only', async () => {
+      await db('events').where({ id: eventId }).update({ hero_photo_id: ids.original });
+      try {
+        const hero = async (token) => (await as(token)(request(app).get(`/api/gallery/${SLUG}/photos`))).body.event.hero_photo_id;
+        expect(await hero(await guestToken())).toBeNull();
+        expect(await hero(await fullToken())).toBe(ids.original);
+        await db('events').where({ id: eventId }).update({ hero_photo_id: ids.selected });
+        expect(await hero(await guestToken())).toBe(ids.selected);
+      } finally {
+        await db('events').where({ id: eventId }).update({ hero_photo_id: null });
+      }
+    });
+  });
+
   describe('people', () => {
     it('counts the photos outside the selection for a full-link session only', async () => {
       const faceSettings = require('../../src/services/faceSettings');

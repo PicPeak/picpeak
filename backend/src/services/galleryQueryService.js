@@ -638,6 +638,18 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   // decides, for every viewer of the guest gallery.
   const showExif = parseBooleanInput(event.show_exif_to_guests, false);
 
+  // A hero this viewer may not open (outside the curated selection, issue
+  // 2356, or hidden by the client) is not named: the hero route would refuse
+  // it, and the gallery falls back to its first photo as it does without one.
+  const heroIds = [event.hero_photo_id, ...categories.map((c) => c.hero_photo_id)]
+    .filter((heroId) => heroId != null);
+  const openHeroIds = heroIds.length === 0 ? new Set() : new Set((await applyPhotoVisibilityFilter(
+    livePhotos(db).where('photos.event_id', event.id).whereIn('photos.id', heroIds).select('photos.id'),
+    { accessLevel, fullView },
+  )).map((row) => Number(row.id)));
+  const openHero = (heroId) => (heroId != null && openHeroIds.has(Number(heroId)) ? heroId : null);
+  for (const category of categories) category.hero_photo_id = openHero(category.hero_photo_id);
+
   const theme = await publicThemeFields(event);
   const checkout = event.promo_code ? await paymentProviders() : null;
   return {
@@ -656,7 +668,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       welcome_message: event.welcome_message,
       color_theme: theme.color_theme,
       expires_at: event.expires_at,
-      hero_photo_id: event.hero_photo_id,
+      hero_photo_id: openHero(event.hero_photo_id),
       // Defaults match /info: downloads on unless explicitly disabled,
       // uploads off unless explicitly enabled (#1028).
       allow_downloads: parseBooleanInput(event.allow_downloads, true),

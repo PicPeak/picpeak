@@ -962,6 +962,9 @@ async function importExternalFolder({
     // on rendering. Rows now carry a root-relative path and this write cannot
     // reach them.
       await db('events').where('id', eventId).update({ source_mode: 'reference', external_path });
+      // The rows of the old folder answer to the new folder's selection
+      // (issue 2356) from now on, not only once this pass is through.
+      await externalSelection.recomputeSelection(eventId);
     }
 
     let imported = 0;
@@ -1432,8 +1435,9 @@ async function importExternalFolder({
       logger.warn(`Could not queue imported photos for tagging (event ${eventId}): ${err.message}`);
     }
 
-    // The selection as it is now (issue 2356): an admin may have changed it
-    // during the pass, and rows written before that carry the old answer.
+    // The selection over every row of the event (issue 2356), the ones this
+    // pass did not touch included. The selection itself cannot change while
+    // the pass holds its claim (routes/adminEvents/selection.js).
     try {
       await externalSelection.recomputeSelection(eventId);
     } catch (err) {
