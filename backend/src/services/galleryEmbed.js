@@ -20,6 +20,7 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { isGalleryAvailable, requiresGalleryPassword } = require('../utils/galleryLifecycle');
 const { isGalleryHidden } = require('../utils/revealMode');
 const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
+const { followSlugRedirect } = require('./slugRedirects');
 
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
 // events.slug is a 255-character column; creation does not shorten it.
@@ -35,15 +36,22 @@ async function resolveEmbed(slug, token) {
   if (typeof slug !== 'string' || !SLUG_PATTERN.test(slug)) return null;
   if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) return null;
   if (!(await isFeatureEnabled('embed'))) return null;
-  const event = await db('events')
+  const live = (where) => db('events')
     .where({
-      slug,
+      ...where,
       embed_token: token,
       is_active: formatBoolean(true),
       is_archived: formatBoolean(false),
       is_draft: formatBoolean(false),
     })
     .first();
+  let event = await live({ slug });
+  if (!event) {
+    // A renamed gallery's old slug keeps answering (slug_redirects), so an
+    // embed code published before the rename keeps working with its token.
+    const moved = await followSlugRedirect(slug);
+    if (moved) event = await live({ id: moved.id });
+  }
   if (!event || !isGalleryAvailable(event)) return null;
   if (requiresGalleryPassword(event) || isGalleryHidden(event)) return null;
   // A booking gallery waiting for payment is closed to guests (issue 2440):

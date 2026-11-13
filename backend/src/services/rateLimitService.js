@@ -173,6 +173,15 @@ const GALLERY_IMAGE_RE = /^\/api\/gallery\/([^/]+)\/(?:(?:thumbnail|preview|hero
  * 300-request budget bounded — a viewer can refetch a cached thumbnail 300
  * times too — so nothing is given up here that the budget actually held.
  */
+/**
+ * A GET of one of those image routes, whoever asks. Reads the full URL, so it
+ * answers the same inside the gallery router, where req.path is relative.
+ */
+function isGalleryImageRequest(req) {
+  const fullPath = String(req.originalUrl || req.url || '').split('?')[0];
+  return (!req.method || req.method === 'GET') && GALLERY_IMAGE_RE.test(fullPath);
+}
+
 function isOwnGalleryImageRequest(req) {
   if (req.method && req.method !== 'GET') return false;
   const match = (req.path || '').match(GALLERY_IMAGE_RE);
@@ -468,6 +477,7 @@ module.exports = {
   createAuthRateLimiter,
   isAuthenticated,
   isOwnGalleryImageRequest,
+  isGalleryImageRequest,
   isOwnGalleryViewerRequest,
   GALLERY_VIEWER_BUDGET_FACTOR,
   shouldSkipRateLimit,

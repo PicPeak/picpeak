@@ -111,6 +111,12 @@ async function verifyGalleryAccess(req, res, next) {
         await access.authorize(embedEvent, embedGrant);
         attachAccess(req, embedEvent, embedGrant);
         req.embedToken = embedEvent.embed_token;
+        // An embed visitor carries no gallery token the limiter could skip
+        // on, so each tile would spend the anonymous per-IP budget and a
+        // larger gallery would run out mid-scroll. Its image reads get their
+        // slot back once authorised here, as an adaptive-stream segment does.
+        const rateLimit = require('../services/rateLimitService');
+        if (rateLimit.isGalleryImageRequest(req)) rateLimit.refundRateLimit(req);
         return next();
       }
     }

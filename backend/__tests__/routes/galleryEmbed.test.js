@@ -24,6 +24,7 @@ const TOKEN = 'e'.repeat(64);
 
 describe('gallery embed (issue 1112)', () => {
   let db; let cleanup; let app; let eventId; let adminToken;
+  const refunds = [];
   const unwrap = (rows) => (typeof rows[0] === 'object' && rows[0] !== null ? rows[0].id : rows[0]);
   // Required lazily: db.js must not load before bootCrmDb points it at the
   // test database.
@@ -69,6 +70,8 @@ describe('gallery embed (issue 1112)', () => {
     app = express();
     app.use(express.json());
     app.use(cookieParser());
+    // Stands in for the general limiter: a counted request carries its refund.
+    app.use((req, res, next) => { req.rateLimitRefund = () => refunds.push(req.originalUrl); next(); });
     app.use('/api/gallery', require('../../src/routes/gallery'));
     app.use('/api/public/settings', require('../../src/routes/publicSettings'));
     app.use('/api/admin/events', require('../../src/routes/adminEvents'));
@@ -176,6 +179,33 @@ describe('gallery embed (issue 1112)', () => {
       // A wrong embed token falls back to the ordinary check.
       const wrong = await request(app).get(`/api/gallery/${SLUG}/thumbnail/${photo.id}?embed=${'f'.repeat(64)}`).set('Cookie', `gallery_token=${stale}`);
       expect([401, 403]).toContain(wrong.status);
+    });
+
+    it('gives an authorised embed image its rate-limit slot back, and nothing else', async () => {
+      const [photo] = (await photos()).body.photos;
+      refunds.length = 0;
+      await request(app).get(photo.thumbnail_url);
+      await request(app).get(`/api/gallery/${SLUG}/thumbnail/${photo.id}`);
+      await request(app).get(`/api/gallery/${SLUG}/thumbnail/${photo.id}?embed=${'f'.repeat(64)}`);
+      await request(app).get(`/api/gallery/${SLUG}/photos?embed=${TOKEN}`);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(refunds).toEqual([photo.thumbnail_url]);
+    });
+
+    it('keeps answering on the old slug after a rename', async () => {
+      await db('slug_redirects').insert({ old_slug: 'embed-gallery-old', new_slug: SLUG, event_id: eventId });
+      try {
+        const res = await request(app).get(`/api/gallery/embed-gallery-old/embed/${TOKEN}`);
+        expect(res.status).toBe(200);
+        expect(res.body.gallery_path).toBe(`/gallery/${SLUG}`);
+        const list = await request(app).get(`/api/gallery/embed-gallery-old/embed/${TOKEN}/photos`);
+        expect(list.body.photos[0].thumbnail_url).toMatch(new RegExp(`^/api/gallery/${SLUG}/`));
+        expect((await policy(`/gallery/embed-gallery-old/embed/${TOKEN}`)).status).toBe(204);
+        // The token still has to match.
+        expect((await request(app).get(`/api/gallery/embed-gallery-old/embed/${'f'.repeat(64)}`)).status).toBe(404);
+      } finally {
+        await db('slug_redirects').where({ old_slug: 'embed-gallery-old' }).del();
+      }
     });
 
     it('answers for a slug as long as gallery creation makes one', async () => {
