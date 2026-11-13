@@ -1080,12 +1080,14 @@ function orientedDimensions(metadata) {
  * mode the storage path is used directly (no copy); in S3 mode the object is
  * streamed to a tmp file which is removed afterwards.
  */
+const LOCAL_COPY_DIR_PREFIX = 'picpeak-src-';
+
 async function withLocalCopy(sourceKey, fn) {
   const storage = getStorage();
   if (storage.kind() === 'local') {
     return fn(storage.resolveLocalPath(sourceKey));
   }
-  const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-src-'));
+  const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), LOCAL_COPY_DIR_PREFIX));
   const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}_${path.basename(sourceKey)}`);
   try {
     await storage.getToFile(sourceKey, tmpPath);
@@ -1093,6 +1095,17 @@ async function withLocalCopy(sourceKey, fn) {
   } finally {
     await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/**
+ * True for a path withLocalCopy made: a one-shot copy under a random name
+ * that is removed once its callback returns, so nothing keyed on it can be
+ * found again.
+ */
+function isLocalCopyPath(filePath) {
+  if (typeof filePath !== 'string') return false;
+  const rel = path.relative(os.tmpdir(), filePath);
+  return !rel.startsWith('..') && !path.isAbsolute(rel) && rel.startsWith(LOCAL_COPY_DIR_PREFIX);
 }
 
 /**
@@ -2974,6 +2987,7 @@ module.exports = {
   extractCapture,
   captureWallColumn,
   withLocalCopy,
+  isLocalCopyPath,
   isRawFilename,
   originalNeedsPreview,
   extractRawPreview,
