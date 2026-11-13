@@ -1,10 +1,13 @@
 /**
  * Find a guest's photos from one selfie (issue 2355).
  *
- * The selfie lives in memory for the length of the request and nowhere else:
- * it is normalised with sharp, sent to the ML sidecar for its face signature,
- * compared against the signatures already stored for this event's photos,
- * and dropped. No row, file, log line or person is written for it.
+ * The selfie is kept for the length of the request and nowhere else: it is
+ * normalised, sent to the ML sidecar for its face signature, compared against
+ * the signatures already stored for this event's photos, and dropped. No row,
+ * log line or person is written for it. Decoding runs in the isolated image
+ * worker like every other image a visitor sends, so its limits, queue and
+ * deadline apply; the worker (and the HEIC decoder) read their input from a
+ * private temporary file that is removed as soon as the step ends.
  *
  * Matching is against single faces, not person clusters: a guest the
  * clustering never grouped (too few photos, a bad cluster) is still found.
@@ -12,24 +15,23 @@
  *
  * Only photos this viewer can already see are candidates: the gallery list
  * query (visibility, review, processing) bounds the set, and faces of a
- * person the photographer hid from guests are left out.
+ * person the photographer hid from guests or dismissed are left out.
  */
 
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
 const { db } = require('../database/db');
 const { detectFaces } = require('./faceClient');
 const { getThresholds } = require('./faceSettings');
 const { unpackEmbedding, normalize, dot } = require('./faceClustering');
+const { isResourceError } = require('./imageResourcePolicy');
 
 // A selfie needs no more than this for a face signature; it also bounds the
 // sidecar's work for a 50-megapixel phone photo.
 const MAX_EDGE_PX = 1280;
-const MAX_INPUT_PIXELS = 60_000_000;
 // The sidecar's multipart parser (Starlette) keeps an upload in memory up to
-// 1 MiB and spools anything larger to a temporary file. The selfie must not
-// touch a disk, so the JPEG sent there stays well below that: a busy 1280 px
-// photo can pass 1 MiB at quality 90, so the quality and then the size step
-// down until it fits.
+// 1 MiB and spools anything larger to a temporary file. The JPEG sent there
+// stays below that: a busy 1280 px photo can pass 1 MiB at quality 90, so the
+// quality and then the size step down until it fits.
 const MAX_SIDECAR_BYTES = 900 * 1024;
 const ENCODINGS = [
   { edge: MAX_EDGE_PX, quality: 85 },
@@ -45,21 +47,40 @@ class SelfieImageError extends Error {
   }
 }
 
+// The image worker's own refusals (too many pixels, busy, timed out) pass
+// through for the route to answer; anything else means the file is no image.
+const asSelfieError = (error) => (isResourceError(error)
+  ? error
+  : new SelfieImageError('The file is not an image that can be read'));
+
 async function normaliseSelfie(buffer, maxBytes = MAX_SIDECAR_BYTES) {
-  for (const { edge, quality } of ENCODINGS) {
-    let jpeg;
-    try {
-      jpeg = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
-        .rotate()
-        .resize({ width: edge, height: edge, fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality })
-        .toBuffer();
-    } catch {
-      throw new SelfieImageError('The file is not an image that can be read');
-    }
-    if (jpeg.length <= maxBytes) return jpeg;
+  // An iPhone HEIC is HEVC-coded, which sharp cannot decode: it goes through
+  // the same decoder as an uploaded HEIC photo.
+  let standIn = null;
+  try {
+    standIn = await require('./imageProcessor').heifStandIn(buffer);
+  } catch (error) {
+    throw asSelfieError(error);
   }
-  throw new SelfieImageError('The image is too detailed to search with');
+  try {
+    const input = standIn ? standIn.path : buffer;
+    for (const { edge, quality } of ENCODINGS) {
+      let jpeg;
+      try {
+        jpeg = await sharp(input, { interactive: true })
+          .rotate()
+          .resize({ width: edge, height: edge, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality })
+          .toBuffer();
+      } catch (error) {
+        throw asSelfieError(error);
+      }
+      if (jpeg.length <= maxBytes) return jpeg;
+    }
+    throw new SelfieImageError('The image is too detailed to search with');
+  } finally {
+    if (standIn) await standIn.cleanup();
+  }
 }
 
 // The face the selfie is of: the largest one, so a friend in the background

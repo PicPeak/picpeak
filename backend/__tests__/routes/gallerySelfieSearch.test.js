@@ -141,6 +141,41 @@ describe('selfie search (issue 2355)', () => {
     expect(Math.max(meta.width, meta.height)).toBe(1280);
   });
 
+  it('reads an iPhone HEIC selfie through the HEIC decoder', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const heic = fs.readFileSync(path.join(__dirname, '../fixtures/hevc-display-p3.heic'));
+    // CI's ffmpeg is too old to demux HEIC, as in uploadContentValidation.test.js.
+    const { width, height } = await sharp(heic).metadata();
+    const decoded = await sharp({ create: { width, height, channels: 3, background: '#c33' } }).jpeg().toBuffer();
+    const ffmpeg = jest.spyOn(require('../../src/services/mediaProcessService'), 'run').mockImplementation(async (_command, args) => {
+      fs.writeFileSync(args[args.length - 1], decoded);
+      return { stdout: Buffer.alloc(0) };
+    });
+    try {
+      const res = await search({ file: heic });
+      expect(res.status).toBe(200);
+      expect(ffmpeg).toHaveBeenCalled();
+      expect((await sharp(mockDetect.mock.calls[0][0]).metadata()).format).toBe('jpeg');
+    } finally {
+      ffmpeg.mockRestore();
+    }
+  });
+
+  it('holds the selfie to the image limits of every other upload', async () => {
+    const previous = process.env.IMAGE_MAX_PIXELS;
+    process.env.IMAGE_MAX_PIXELS = String(100 * 100);
+    try {
+      const res = await search({ file: await sharp({ create: { width: 400, height: 400, channels: 3, background: '#888' } }).jpeg().toBuffer() });
+      expect(res.status).toBe(413);
+      expect(res.body.code).toBe('SELFIE_TOO_LARGE');
+      expect(mockDetect).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.IMAGE_MAX_PIXELS;
+      else process.env.IMAGE_MAX_PIXELS = previous;
+    }
+  });
+
   it('keeps the JPEG for the sidecar under its 1 MiB in-memory limit', async () => {
     // Noise does not compress: at 1280 px and quality 90 this is well over
     // 1 MiB, which the sidecar's multipart parser would spool to disk.

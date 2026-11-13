@@ -234,8 +234,13 @@ router.post('/:slug/face-search', verifyGalleryAccess, denySlideshowToken, noSto
       if (error instanceof SelfieImageError || error?.name === 'SidecarRejectedError') {
         return res.status(400).json({ error: 'The selfie could not be read', code: 'SELFIE_INVALID' });
       }
-      if (error instanceof SidecarUnavailableError) {
+      const { isResourceError, isTransient } = require('../../services/imageResourcePolicy');
+      if (error instanceof SidecarUnavailableError || isTransient(error)) {
         return res.status(503).json({ error: 'Selfie search is unavailable right now', code: 'SELFIE_SEARCH_UNAVAILABLE' });
+      }
+      if (isResourceError(error)) {
+        // Over the image limits (IMAGE_MAX_PIXELS and the like).
+        return res.status(413).json({ error: 'The selfie is too large', code: 'SELFIE_TOO_LARGE' });
       }
       errorResponse(res, error, 500, 'Selfie search failed');
     } finally {

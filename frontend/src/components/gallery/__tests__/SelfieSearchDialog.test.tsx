@@ -40,6 +40,11 @@ describe('SelfieSearchDialog', () => {
     expect(screen.getByText(/deleted right away\. Nothing is saved\./)).toBeInTheDocument();
   });
 
+  it('sits above the Premium/Story control band and Story nav', () => {
+    setup();
+    expect(screen.getByRole('dialog').parentElement).toHaveClass('z-[70]');
+  });
+
   it('needs a selfie and consent before it searches', () => {
     const { submit, choose, agree } = setup();
     expect(submit).toBeDisabled();

@@ -79,8 +79,9 @@ export const SelfieSearchDialog: React.FC<SelfieSearchDialogProps> = ({ open, on
 
   const inputStyle = { color: 'var(--color-text)' };
 
+  // Above the band over the Premium/Story grids (z-60) and Story's fixed nav (z-50).
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center">
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center sm:justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={close} aria-hidden="true" />
       <div
         ref={panelRef}
