@@ -94,13 +94,22 @@ function describeError(error, fallback) {
 // does nothing until a restore is reserved or a fence marker appears in shared
 // storage: no directory, no lease, no control row and no database query. Only
 // then does it register, stop its services and acknowledge the fence.
+// The migrations/core files the ledger does not record, as the runners name
+// them (`migrations.filename`). Both runners apply every core file.
+async function pendingCoreMigrations(knex) {
+  const files = (await require('fs').promises.readdir(path.join(__dirname, '../../migrations/core')))
+    .filter(name => /^\d{3}_.*\.js$/.test(name));
+  if (!(await knex.schema.hasTable('migrations'))) return files;
+  const applied = new Set((await knex('migrations').select('filename')).map(item => item.filename));
+  return files.filter(name => !applied.has(name));
+}
 function createCoordinator({ database, work = applicationWork, leases, worker, ingress, stopServices, resumeServices, forceClose,
   capability = restoreCapability, fence = { read: restorePaths.readFence, write: restorePaths.writeFence },
   cleanup = { attempt: restorePaths.cleanAttempt, leftovers: restorePaths.reapLeftovers },
   getStorageIdentity = restorePaths.storageIdentity, now = () => Date.now(),
   pollInterval = 1000, markerInterval = 2000, settleMs,
   drainGraceMs = duration('PICPEAK_RESTORE_DRAIN_GRACE_MS', 60000), forceGraceMs = 10000,
-  offline = false, autoPoll = true } = {}) {
+  offline = false, autoPoll = true, pendingMigrations = pendingCoreMigrations } = {}) {
   let capabilityState = null;
   let activated = false;
   let registration = null;
@@ -126,6 +135,7 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
   let activeWatch = null;
   let workerRunning = null;
   let stopping = false;
+  let lastPendingReport = null;
   const hooks = { stopServices, resumeServices, forceClose };
   const settle = settleMs === undefined ? 2 * markerInterval + 1000 : settleMs;
   const db = () => database || require('../database/db').db;
@@ -404,6 +414,26 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     }
   }
   async function reconcileRestart(row) {
+    // The restore replaced the migration ledger with the archive's. Both
+    // images run the migrations in wait-for-db.sh before this process starts,
+    // which brings an older archive's data up to this code. A start that
+    // skipped them (node server.js by hand) would open on the archive's level
+    // with those repairs missing, so stay in maintenance until the ledger is
+    // complete (issue 2480). An offline restore never serves; it only opens
+    // the fence to run the next restore, which is followed by a restart again.
+    if (!offline) {
+      const pending = await control(() => pendingMigrations(db()));
+      if (pending.length > 0) {
+        if (lastPendingReport !== pending.length) {
+          lastPendingReport = pending.length;
+          logger.error(`A portable restore committed, but ${pending.length} migration(s) have not run on the restored database `
+            + `(first: ${pending[0]}). Run "node migrations/run-migrations-safe.js" or restart through wait-for-db.sh; `
+            + 'the instance stays in maintenance until then.');
+        }
+        return;
+      }
+      lastPendingReport = null;
+    }
     if ((await control(() => db()(INSTANCES).where({ instance_id: registration.instance_id })
       .update({ startup_ready_epoch: row.epoch }))) !== 1) throw failure('Runtime registration disappeared before startup ACK');
     registration.startup_ready_epoch = row.epoch;
@@ -814,4 +844,4 @@ async function restoreOffline({ archivePath, currentAdminId, options = {} }) {
   const offlineCoordinator = createCoordinator({ offline: true, work: applicationWork.createWorkRegistry(), stopServices: async () => {} });
   return offlineCoordinator.restoreOffline({ archivePath, operatorId: currentAdminId, options });
 }
-module.exports = { ...coordinator, restoreOffline, createCoordinator, HEARTBEAT_STALE_MS };
+module.exports = { ...coordinator, restoreOffline, createCoordinator, pendingCoreMigrations, HEARTBEAT_STALE_MS };
