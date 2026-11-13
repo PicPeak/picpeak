@@ -157,7 +157,22 @@ function isPrivateIPv6(ip) {
     return isPrivateIPv4(ipv4FromLow32(g6, g7));
   }
 
-  return false;
+  // fec0::/10 — deprecated site-local (RFC 3879). ipaddr.js still classifies
+  // it as plain unicast, so it is refused explicitly.
+  if (firstShort >= 0xfec0 && firstShort <= 0xfeff) return true;
+
+  // Everything else must be global unicast. ipaddr.js carries the IANA
+  // special-purpose table, so 6to4 (2002::/16), Teredo (2001::/32),
+  // IPv4-translated (::ffff:0:0:0/96), multicast, documentation, discard,
+  // benchmarking and ORCHID addresses are all refused here rather than
+  // listed one by one above.
+  let range;
+  try {
+    range = ipaddr.IPv6.parse(ip).range();
+  } catch {
+    return true;
+  }
+  return range !== 'unicast';
 }
 
 /**

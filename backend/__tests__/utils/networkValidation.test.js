@@ -67,6 +67,28 @@ describe('validateExternalUrl — NAT64 + embedded-IPv4 SSRF', () => {
     });
   });
 
+  describe('IPv6 outside global unicast is refused', () => {
+    test.each([
+      ['http://[2002:a9fe:a9fe::1]/', '6to4 embedding 169.254.169.254'],
+      ['http://[2002:7f00:1::1]/', '6to4 embedding 127.0.0.1'],
+      ['http://[2002:a00:1::1]/', '6to4 embedding 10.0.0.1'],
+      ['http://[2001:0::a9fe:a9fe]/', 'Teredo'],
+      ['http://[::ffff:0:a9fe:a9fe]/', 'IPv4-translated'],
+      ['http://[::ffff:0:7f00:1]/', 'IPv4-translated loopback'],
+      ['http://[fec0::1]/', 'site-local'],
+      ['http://[feff::1]/', 'top of site-local'],
+      ['http://[ff02::1]/', 'multicast'],
+      ['http://[ff0e::1]/', 'global-scope multicast'],
+      ['http://[2001:db8::1]/', 'documentation'],
+      ['http://[100::1]/', 'discard'],
+      ['http://[2001:10::1]/', 'ORCHID'],
+      ['http://[2001:20::1]/', 'ORCHIDv2'],
+      ['http://[2001:2::1]/', 'benchmarking'],
+    ])('blocks %s (%s)', (url) => {
+      expect(validateExternalUrl(url).valid).toBe(false);
+    });
+  });
+
   describe('public IPv6 hosts stay allowed', () => {
     test.each([
       'https://[2001:4860:4860::8888]/',
