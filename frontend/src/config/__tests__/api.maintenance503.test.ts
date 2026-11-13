@@ -35,6 +35,17 @@ describe('api 503 handling', () => {
     expect(onMaintenance).not.toHaveBeenCalled();
   });
 
+  it('leaves an unavailable selfie search to the gallery dialog', async () => {
+    const onMaintenance = vi.fn();
+    setMaintenanceModeCallback(onMaintenance);
+    answer(503, { error: 'The search is not available right now', code: 'SELFIE_SEARCH_UNAVAILABLE' });
+
+    await expect(api.post('/gallery/some-gallery/face-search')).rejects.toMatchObject({
+      response: { status: 503 },
+    });
+    expect(onMaintenance).not.toHaveBeenCalled();
+  });
+
   it('still switches to maintenance for a maintenance 503', async () => {
     const onMaintenance = vi.fn();
     setMaintenanceModeCallback(onMaintenance);

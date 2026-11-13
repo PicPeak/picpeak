@@ -134,13 +134,17 @@ api.interceptors.request.use(
   }
 );
 
+// 503 codes the requesting page explains itself (see the interceptor below).
+const PAGE_HANDLED_503_CODES = new Set(['EMAIL_UNAVAILABLE', 'SELFIE_SEARCH_UNAVAILABLE']);
+
 // Response interceptor to handle errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     // Handle maintenance mode (503). A 503 that names its own cause (the
-    // verification email could not be sent) is the asking page's to show,
-    // not a reason to swap the whole app for the maintenance screen.
+    // verification email could not be sent, the selfie search's ML service
+    // is down) is the asking page's to show, not a reason to swap the whole
+    // app for the maintenance screen.
     if (error.response?.status === 503 && error.response?.data?.code === 'CAPABILITY_UNAVAILABLE') {
       // One feature is paused, the app is not down. CapabilityNotice tells the visitor.
       if (typeof window !== 'undefined') {
@@ -148,7 +152,7 @@ api.interceptors.response.use(
           detail: error.response.data.capability,
         }));
       }
-    } else if (error.response?.status === 503 && error.response?.data?.code !== 'EMAIL_UNAVAILABLE') {
+    } else if (error.response?.status === 503 && !PAGE_HANDLED_503_CODES.has(error.response?.data?.code)) {
       const isAdminRoute = error.config?.url?.includes('/admin');
       
       // Only trigger maintenance mode for non-admin routes or unauthenticated admin routes

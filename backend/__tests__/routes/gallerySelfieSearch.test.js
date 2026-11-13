@@ -67,6 +67,7 @@ describe('selfie search (issue 2355)', () => {
 
     eventId = unwrap(await db('events').insert({ ...baseEvent(), created_by: adminId, created_at: new Date().toISOString() }).returning('id'));
     const hiddenPerson = unwrap(await db('event_people').insert({ event_id: eventId, is_hidden: true, face_count_total: 1 }).returning('id'));
+    const ignoredPerson = unwrap(await db('event_people').insert({ event_id: eventId, is_ignored: true, face_count_total: 1 }).returning('id'));
 
     // name → [photo fields, face embedding, face fields]
     const fixtures = {
@@ -76,6 +77,7 @@ describe('selfie search (issue 2355)', () => {
       stranger: [{}, vec({ 1: 1 })],
       hiddenPhoto: [{ visibility: 'hidden' }, vec({ 0: 1 })],
       hiddenPerson: [{}, vec({ 0: 1 }), { person_id: hiddenPerson }],
+      ignoredPerson: [{}, vec({ 0: 1 }), { person_id: ignoredPerson }],
       otherModel: [{}, vec({ 0: 1 }), { model_version: 'other@2' }],
     };
     for (const [name, [photo, embedding, extra = {}]] of Object.entries(fixtures)) {
@@ -137,6 +139,21 @@ describe('selfie search (issue 2355)', () => {
     const meta = await sharp(sent).metadata();
     expect(meta.format).toBe('jpeg');
     expect(Math.max(meta.width, meta.height)).toBe(1280);
+  });
+
+  it('keeps the JPEG for the sidecar under its 1 MiB in-memory limit', async () => {
+    // Noise does not compress: at 1280 px and quality 90 this is well over
+    // 1 MiB, which the sidecar's multipart parser would spool to disk.
+    const noise = require('crypto').randomBytes(1280 * 1280 * 3);
+    const busy = await sharp(noise, { raw: { width: 1280, height: 1280, channels: 3 } }).png().toBuffer();
+    const big = await sharp(busy).jpeg({ quality: 90 }).toBuffer();
+    expect(big.length).toBeGreaterThan(1024 * 1024);
+    const res = await search({ file: busy });
+    expect(res.status).toBe(200);
+    const [sent] = mockDetect.mock.calls[0];
+    const { MAX_SIDECAR_BYTES } = require('../../src/services/faceSearch');
+    expect(sent.length).toBeLessThanOrEqual(MAX_SIDECAR_BYTES);
+    expect((await sharp(sent).metadata()).format).toBe('jpeg');
   });
 
   it('searches with the largest face of the selfie', async () => {

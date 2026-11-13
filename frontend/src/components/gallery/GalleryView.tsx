@@ -1047,6 +1047,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       setPeopleMatchAny(false);
       setSelectedCreditKey(null);
       setSelectedTagKeys([]);
+      setSelfiePhotoIds(null);
     }
     setLinkedPhotoId(resolved.photo.id);
   }, [pendingPhotoLink, data?.photos, data?.categories, hiddenUntilReveal, viewAll, openFolderId, filteredPhotos, setSelectedPhotos]);
@@ -1850,6 +1851,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     feedbackSettings?.identity_mode === 'guest' ? 'guest' : 'simple';
 
   if (isFullPageLayout) {
+    // In Story the band above the grid starts below the fixed nav whenever it
+    // carries controls wider than the gap the nav leaves (the selection bar,
+    // the selfie launcher); otherwise the nav would cover them on a phone.
+    const storyBandBelowNav = theme.galleryLayout === 'gallery-story' && (selectionBarShown || selfieSearchEnabled);
     return withDownloadProviders(
       // The same identity flow as the standard layout below (issue 1733):
       // Premium and Story already ask for it (ensureIdentity) before a like,
@@ -1868,12 +1873,20 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             checkoutReady: photoSalesValue.checkoutReady,
           }}
         >
+        {selfieSearchEnabled && (
+          <SelfieSearchDialog
+            open={showSelfieSearch}
+            onClose={() => setShowSelfieSearch(false)}
+            slug={slug}
+            onResult={setSelfiePhotoIds}
+          />
+        )}
 
         {/* #1160: these layouts return early and render edge-to-edge, but they
             still get `filteredPhotos`, so without this the foldered photos
             would be hidden with no way in. Contained width so the folder strip
             reads as chrome against the full-bleed grid below it. */}
-        {(hasFolderNav || selectionBarShown || (copyFilenames.photos.length > 0 && theme.galleryLayout !== 'gallery-story')) && (
+        {(hasFolderNav || selectionBarShown || selfieSearchEnabled || (copyFilenames.photos.length > 0 && theme.galleryLayout !== 'gallery-story')) && (
           // Story's `.story-nav` is fixed across this same band at z-index 50.
           // Raising the strip above it is necessary for the chips to be
           // clickable at all, but the strip is mostly empty space — so the
@@ -1884,7 +1897,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // nav in Story: the bar is wider than the gap the nav leaves, and on
           // a phone it would cover the nav's logout and favourites.
           <div className={`relative z-[60] pointer-events-none max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap ${
-            selectionBarShown && theme.galleryLayout === 'gallery-story' ? 'pt-20' : ''
+            storyBandBelowNav ? 'pt-20' : ''
           }`}>
             {hasFolderNav && (
               <div className="pointer-events-auto flex items-center gap-3 flex-wrap">
@@ -1934,6 +1947,31 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenames.photos.length})
               </Button>
             )}
+            {/* Selfie search (issue 2355): these layouts have no people strip,
+                so the launcher and the active filter live in this band. */}
+            {selfieSearchEnabled && (
+              <div className="pointer-events-auto flex items-center gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSelfieSearch(true)}
+                  leftIcon={<Camera className="w-4 h-4" aria-hidden />}
+                >
+                  {t('gallery.selfie.open', { defaultValue: 'Find my photos with a selfie' })}
+                </Button>
+                {activeSelfiePhotoIds && (
+                  <button
+                    type="button"
+                    onClick={() => setSelfiePhotoIds(null)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-soft text-theme text-sm hover:brightness-95"
+                  >
+                    <Camera size={14} aria-hidden />
+                    {t('gallery.selfie.chip', { defaultValue: 'Your selfie' })}
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            )}
             {/* Counter and hand-over (issue 1733, A1): the same band, for the
                 reason given above. */}
             <SelectionSubmitBar
@@ -1953,7 +1991,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         {(isClient || viaCustomer) && (
           <GalleryProductPanel
             slug={slug}
-            className={theme.galleryLayout === 'gallery-story' && !selectionBarShown ? 'pt-20' : undefined}
+            className={theme.galleryLayout === 'gallery-story' && !storyBandBelowNav ? 'pt-20' : undefined}
           />
         )}
         <PhotoGridWithLayouts

@@ -25,6 +25,18 @@ const { unpackEmbedding, normalize, dot } = require('./faceClustering');
 // sidecar's work for a 50-megapixel phone photo.
 const MAX_EDGE_PX = 1280;
 const MAX_INPUT_PIXELS = 60_000_000;
+// The sidecar's multipart parser (Starlette) keeps an upload in memory up to
+// 1 MiB and spools anything larger to a temporary file. The selfie must not
+// touch a disk, so the JPEG sent there stays well below that: a busy 1280 px
+// photo can pass 1 MiB at quality 90, so the quality and then the size step
+// down until it fits.
+const MAX_SIDECAR_BYTES = 900 * 1024;
+const ENCODINGS = [
+  { edge: MAX_EDGE_PX, quality: 85 },
+  { edge: MAX_EDGE_PX, quality: 70 },
+  { edge: 1024, quality: 70 },
+  { edge: 800, quality: 60 },
+];
 
 class SelfieImageError extends Error {
   constructor(message) {
@@ -33,16 +45,21 @@ class SelfieImageError extends Error {
   }
 }
 
-async function normaliseSelfie(buffer) {
-  try {
-    return await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
-      .rotate()
-      .resize({ width: MAX_EDGE_PX, height: MAX_EDGE_PX, fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 90 })
-      .toBuffer();
-  } catch {
-    throw new SelfieImageError('The file is not an image that can be read');
+async function normaliseSelfie(buffer, maxBytes = MAX_SIDECAR_BYTES) {
+  for (const { edge, quality } of ENCODINGS) {
+    let jpeg;
+    try {
+      jpeg = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
+        .rotate()
+        .resize({ width: edge, height: edge, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality })
+        .toBuffer();
+    } catch {
+      throw new SelfieImageError('The file is not an image that can be read');
+    }
+    if (jpeg.length <= maxBytes) return jpeg;
   }
+  throw new SelfieImageError('The image is too detailed to search with');
 }
 
 // The face the selfie is of: the largest one, so a friend in the background
@@ -85,7 +102,11 @@ async function findPhotosBySelfie({ event, accessLevel, imageBuffer }) {
     .where('photo_faces.event_id', event.id)
     .whereIn('photo_faces.photo_id', visiblePhotoIds)
     .whereNotNull('photo_faces.embedding')
-    .where((q) => q.whereNull('photo_faces.person_id').orWhere('event_people.is_hidden', false))
+    // Faces of a person the photographer hid from guests or dismissed
+    // (ignored: a bystander, a false detection) are not candidates, as in
+    // the people strip (facePeopleService).
+    .where((q) => q.whereNull('photo_faces.person_id')
+      .orWhere((p) => p.where('event_people.is_hidden', false).where('event_people.is_ignored', false)))
     // A signature from another model version is not comparable.
     .modify((q) => {
       if (modelVersion) {
@@ -110,4 +131,4 @@ async function findPhotosBySelfie({ event, accessLevel, imageBuffer }) {
   return { faceFound: true, photoIds };
 }
 
-module.exports = { findPhotosBySelfie, SelfieImageError, largestFace };
+module.exports = { findPhotosBySelfie, SelfieImageError, largestFace, normaliseSelfie, MAX_SIDECAR_BYTES };
