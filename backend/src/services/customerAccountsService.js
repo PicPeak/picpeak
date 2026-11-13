@@ -1276,6 +1276,36 @@ function storedTimestamp(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+/**
+ * Blank the customer's contact copy on the events assigned to them: the
+ * customer_* columns where customer_email is one of their addresses, the
+ * host_* columns where host_email is. A contact typed for someone else stays.
+ * Returns the ids of the events that changed.
+ */
+async function forgetEventContacts(trx, customerId, emails) {
+  const addresses = [...new Set(emails.filter(Boolean).map((e) => String(e).toLowerCase()))];
+  if (addresses.length === 0 || !(await trx.schema.hasTable('event_customer_assignments'))) return [];
+  const eventIds = await trx('event_customer_assignments').where({ customer_account_id: customerId }).pluck('event_id');
+  if (eventIds.length === 0) return [];
+  const columns = await trx('events').columnInfo();
+  const inList = addresses.map(() => '?').join(', ');
+  const changed = new Set();
+  for (const [emailColumn, blank] of [
+    ['customer_email', ['customer_name', 'customer_email', 'customer_phone']],
+    ['host_email', ['host_name', 'host_email']],
+  ]) {
+    if (!columns[emailColumn]) continue;
+    const matching = () => trx('events').whereIn('id', eventIds)
+      .whereRaw(`LOWER(${emailColumn}) IN (${inList})`, addresses);
+    const ids = await matching().pluck('id');
+    if (ids.length === 0) continue;
+    await trx('events').whereIn('id', ids).update(Object.fromEntries(
+      blank.filter((column) => columns[column]).map((column) => [column, null])));
+    ids.forEach((eventId) => changed.add(Number(eventId)));
+  }
+  return [...changed];
+}
+
 async function eraseCustomer(id, erasedByAdminId) {
   let customer = await db('customer_accounts').where('id', id).first();
   if (!customer) {
@@ -1312,6 +1342,7 @@ async function eraseCustomer(id, erasedByAdminId) {
   // `db` connection, not `trx`, so calling it in here would read stale —
   // or on SQLite, deadlock on — the not-yet-committed rows).
   const touchedCampaignIds = new Set();
+  let clearedEventContacts = [];
 
   await db.transaction(async (trx) => {
     await customerContactsService.lockForErasure(trx, id);
@@ -1353,6 +1384,13 @@ async function eraseCustomer(id, erasedByAdminId) {
     // (formerAddressWindows).
     const currentSince = await currentAddressSince(trx, customer);
     const formerWindows = await formerAddressWindows(trx, customer);
+
+    // Galleries assigned to this customer carry a copy of their contact
+    // details (quote/contract conversion writes them onto the event), and
+    // the gallery mail jobs read their recipient from that copy.
+    clearedEventContacts = await forgetEventContacts(trx, id,
+      [customer.email, ...formerWindows.map((win) => win.email)]);
+
     const forCustomer = (q) => q.where((w) => {
       // Admin mail on the current address belongs to the admin account with
       // that address, not to the customer (ADMIN_ACCOUNT_MAIL).
@@ -1550,6 +1588,7 @@ async function eraseCustomer(id, erasedByAdminId) {
       cancelledContracts: erasedContracts.cancelled,
       redactedContracts: erasedContracts.redacted,
       retainedContracts: erasedContracts.retained,
+      clearedEventContacts,
     },
     null,
     { type: 'admin', id: erasedByAdminId }
