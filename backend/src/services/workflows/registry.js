@@ -47,7 +47,18 @@ registerAction('log', async (ctx) => {
   return { logged: true };
 });
 // Merge a static object into the run context (handy for tests + seeding flags).
-registerAction('set_context', async (ctx) => ({ set: ctx.node.config?.set || {} }));
+// Keys the engine and its actions own (prepared document ids, recipients, the
+// trigger's customer, mail data, internal __ flags) are not settable here:
+// those come from the trigger and from the actions that create them.
+const ENGINE_OWNED_VARS = new Set(['adminEmail', 'customerEmail', 'recipientEmail', 'customerAccountId', 'emailData']);
+function isEngineOwnedVar(key) {
+  return ENGINE_OWNED_VARS.has(key) || /^(prepared|__)/.test(key);
+}
+registerAction('set_context', async (ctx) => {
+  const set = ctx.node.config?.set;
+  if (!set || typeof set !== 'object' || Array.isArray(set)) return { set: {} };
+  return { set: Object.fromEntries(Object.entries(set).filter(([key]) => !isEngineOwnedVar(key))) };
+});
 
 module.exports = {
   registerCondition,

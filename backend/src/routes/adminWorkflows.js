@@ -21,7 +21,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAllPermissions } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const workflows = require('../services/workflows');
 const { hasColumnCached } = require('../utils/schemaCache');
@@ -82,6 +82,41 @@ function unimplementedActionsIn(nodes = []) {
     if (action && !workflows.registry.getAction(action)) found.add(action);
   }
   return [...found];
+}
+
+// Actions that create, send or mail CRM documents. A graph runs with its
+// author's CRM authority, so whoever saves one must hold the permission the
+// action needs — the same one the matching admin route requires.
+const DOCUMENT_ACTION_PERMISSIONS = {
+  send_document: (config) => [config?.document === 'contract' ? 'contracts.manage' : 'bills.manage'],
+  prepare_contract: () => ['contracts.manage'],
+  prepare_event: () => ['quotes.manage', 'bills.manage'],
+  prepare_gallery: () => ['quotes.manage', 'bills.manage'],
+  reserve_date: () => ['quotes.manage'],
+  prepare_quote: () => ['quotes.manage'],
+  prepare_invoice: () => ['bills.manage'],
+  prepare_contract_invoice: () => ['bills.manage'],
+  queue_payment_check: () => ['bills.manage'],
+  escalate_to_collections: () => ['bills.manage'],
+};
+
+function documentPermissionsFor(nodes = []) {
+  const needed = new Set();
+  for (const n of nodes) {
+    const action = n && n.type === 'action' && n.config && n.config.action;
+    const permissionsFor = action && DOCUMENT_ACTION_PERMISSIONS[action];
+    if (permissionsFor) for (const permission of permissionsFor(n.config)) needed.add(permission);
+  }
+  return [...needed];
+}
+
+/** The document permissions the graph needs that this admin lacks. */
+async function missingDocumentPermissions(adminId, nodes) {
+  const missing = [];
+  for (const permission of documentPermissionsFor(nodes)) {
+    if (!(await userHasAllPermissions(adminId, [permission]))) missing.push(permission);
+  }
+  return missing;
 }
 
 async function writeGraph(trx, workflowId, version, nodes = [], edges = []) {
@@ -230,6 +265,8 @@ router.post('/', requirePermission('workflows.manage'), async (req, res, next) =
     if (!b.name || !b.trigger_type) return res.status(400).json({ error: 'name and trigger_type are required' });
     const err = validateGraph(b);
     if (err) return res.status(400).json({ error: err });
+    const missing = await missingDocumentPermissions(req.admin.id, b.nodes);
+    if (missing.length) return res.status(403).json({ error: `Saving this flow requires: ${missing.join(', ')}.`, code: 'FORBIDDEN' });
     if (b.enabled) {
       const stubs = unimplementedActionsIn(b.nodes);
       if (stubs.length) return res.status(409).json({ error: `This flow can't be enabled yet — it uses actions that aren't implemented: ${stubs.join(', ')}.` });
@@ -275,6 +312,11 @@ router.put('/:id', requirePermission('workflows.manage'), async (req, res, next)
       || (b.trigger_config !== undefined && triggerConfig(b.trigger_config) !== triggerConfig(wf.trigger_config))
       || executableGraph(storedNodes.map((n) => ({ ...n, config: parseJson(n.config, {}) })), storedEdges)
         !== executableGraph(b.nodes || [], b.edges || []);
+    // A changed graph executes as its editor from now on (created_by below).
+    if (graphChanged) {
+      const missing = await missingDocumentPermissions(req.admin.id, b.nodes);
+      if (missing.length) return res.status(403).json({ error: `Saving this flow requires: ${missing.join(', ')}.`, code: 'FORBIDDEN' });
+    }
     await db.transaction(async (trx) => {
       const update = {
         name: b.name ?? wf.name,
