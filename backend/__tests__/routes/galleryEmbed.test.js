@@ -167,9 +167,30 @@ describe('gallery embed (issue 1112)', () => {
       expect([401, 403]).toContain(plain.status);
       const viaEmbed = await request(app).get(photo.thumbnail_url).set('Cookie', `gallery_token=${stale}`);
       expect([401, 403, 500]).not.toContain(viaEmbed.status);
+      // A preview that cannot be rendered falls back to the original, and the
+      // redirect keeps the embed, so the next request is not decided by the
+      // cookie either.
+      const preview = await request(app).get(photo.preview_url).set('Cookie', `gallery_token=${stale}`);
+      expect(preview.status).toBe(302);
+      expect(preview.headers.location).toBe(`/api/gallery/${SLUG}/photo/${photo.id}?embed=${TOKEN}`);
       // A wrong embed token falls back to the ordinary check.
       const wrong = await request(app).get(`/api/gallery/${SLUG}/thumbnail/${photo.id}?embed=${'f'.repeat(64)}`).set('Cookie', `gallery_token=${stale}`);
       expect([401, 403]).toContain(wrong.status);
+    });
+
+    it('answers for a slug as long as gallery creation makes one', async () => {
+      const slug = `wedding-${'a'.repeat(230)}`;
+      const other = 'd'.repeat(64);
+      const id = unwrap(await db('events').insert({
+        ...baseEvent(), slug, share_link: `/gallery/${slug}/share`, share_token: 'long-slug-share', embed_token: other,
+        created_at: new Date().toISOString(),
+      }).returning('id'));
+      try {
+        expect((await request(app).get(`/api/gallery/${slug}/embed/${other}`)).status).toBe(200);
+        expect((await policy(`/gallery/${slug}/embed/${other}`)).status).toBe(204);
+      } finally {
+        await db('events').where({ id }).del();
+      }
     });
 
     it('is a 404 with the embed flag off', async () => {

@@ -22,7 +22,8 @@ const { isGalleryHidden } = require('../utils/revealMode');
 const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
-const SLUG_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+// events.slug is a 255-character column; creation does not shorten it.
+const SLUG_PATTERN = /^[A-Za-z0-9_-]{1,255}$/;
 const MAX_ORIGINS = 20;
 // https://host[:port], or https://*.domain for every subdomain. Lowercase,
 // no path, no query, no credentials. http only for localhost (testing).

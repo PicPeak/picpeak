@@ -15,7 +15,7 @@ import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react';
 import { embedService, type EmbedInfo, type EmbedPhoto } from '../../services/embed.service';
-import { buildResourceUrl } from '../../utils/url';
+import { buildResourceUrl, buildShareLinkUrl } from '../../utils/url';
 
 type LoadState = 'loading' | 'ready' | 'unavailable';
 
@@ -97,7 +97,9 @@ export const EmbedGalleryPage: React.FC = () => {
     );
   }
 
-  const galleryHref = buildResourceUrl(info.gallery_path) || info.gallery_path;
+  // A page of the app, not an API resource: with the API on its own host,
+  // buildResourceUrl would send the visitor there.
+  const galleryHref = buildShareLinkUrl(info.gallery_path);
   const current = open !== null ? photos[open] : null;
 
   return (

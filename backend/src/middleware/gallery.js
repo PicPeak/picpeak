@@ -110,6 +110,7 @@ async function verifyGalleryAccess(req, res, next) {
         const embedGrant = access.grant(embedEvent, 'public', null);
         await access.authorize(embedEvent, embedGrant);
         attachAccess(req, embedEvent, embedGrant);
+        req.embedToken = embedEvent.embed_token;
         return next();
       }
     }

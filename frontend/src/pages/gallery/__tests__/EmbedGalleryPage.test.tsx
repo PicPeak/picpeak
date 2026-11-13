@@ -57,6 +57,18 @@ describe('EmbedGalleryPage', () => {
     expect(screen.queryByRole('button', { name: /Load more/ })).not.toBeInTheDocument();
   });
 
+  it('links the full gallery on the app origin when the API has its own host', async () => {
+    vi.stubEnv('VITE_API_URL', 'https://api.example.com/api');
+    try {
+      getPhotos.mockResolvedValue({ pagination: { page: 1, limit: 60, total: 1, has_more: false }, photos: [photo(1)] });
+      renderPage();
+      const link = await screen.findByRole('link', { name: /View full gallery/ });
+      expect(link.getAttribute('href')).toBe(`${window.location.origin}/gallery/demo`);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('opens a photo with its preview, steps through and closes', async () => {
     getPhotos.mockResolvedValue({ pagination: { page: 1, limit: 60, total: 2, has_more: false }, photos: [photo(1), photo(2)] });
     renderPage();
