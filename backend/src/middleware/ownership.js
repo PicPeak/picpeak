@@ -104,13 +104,23 @@ function requireEventOwner(req, res, next) {
 }
 
 function checkEvent(req, res, next, mayAct) {
+  const key = req.params.eventId !== undefined ? 'eventId' : 'id';
+  const raw = req.params[key];
+  if (raw === undefined || raw === '') {
+    return res.status(400).json({ error: 'Event ID is required' });
+  }
+  // Only a plain positive integer names an event. SQLite would match a form
+  // such as '1e1' to event 10 while a handler's parseInt reads 1, so the id
+  // goes back into req.params in canonical form: every handler after this
+  // acts on exactly the event checked here.
+  const eventId = Number(raw);
+  if (!/^\d+$/.test(String(raw)) || !Number.isSafeInteger(eventId) || eventId < 1) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+  req.params[key] = String(eventId);
+
   if (managesAllEvents(req.admin)) {
     return next();
-  }
-
-  const eventId = req.params.eventId || req.params.id;
-  if (!eventId) {
-    return res.status(400).json({ error: 'Event ID is required' });
   }
 
   db('events')
