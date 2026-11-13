@@ -12,6 +12,8 @@ const galleryLogout = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('../../../services/auth.service', () => ({ authService: { galleryLogout } }));
 const clearGalleryToken = vi.hoisted(() => vi.fn());
 vi.mock('../../../utils/galleryAuthStorage', () => ({ clearGalleryToken }));
+const sessionGet = vi.hoisted(() => vi.fn());
+vi.mock('../../../config/api', () => ({ api: { get: sessionGet } }));
 
 import { FullLinkPage } from '../FullLinkPage';
 import { getFullLinkToken } from '../../../utils/galleryFullLink';
@@ -34,6 +36,8 @@ describe('FullLinkPage', () => {
     sessionStorage.clear();
     galleryLogout.mockClear();
     clearGalleryToken.mockClear();
+    sessionGet.mockReset();
+    sessionGet.mockResolvedValue({ data: { valid: true, type: 'gallery', eventSlug: 'party' } });
   });
 
   it('keeps the token, ends the old session and opens the gallery', async () => {
@@ -52,5 +56,15 @@ describe('FullLinkPage', () => {
     renderAt('/gallery/party/full/not-a-token');
     await waitFor(() => expect(screen.getByText('gallery page')).toBeInTheDocument());
     expect(getFullLinkToken('party')).toBeNull();
+  });
+
+  // The logout route falls back to any gallery cookie: a session of another
+  // gallery must not be the one ended.
+  it('leaves the session of another gallery alone', async () => {
+    sessionGet.mockResolvedValue({ data: { valid: true, type: 'gallery', eventSlug: 'other-gallery' } });
+    renderAt(`/gallery/party/full/${TOKEN}`);
+    expect(await screen.findByText('gallery page')).toBeInTheDocument();
+    expect(galleryLogout).not.toHaveBeenCalled();
+    expect(getFullLinkToken('party')).toBe(TOKEN);
   });
 });

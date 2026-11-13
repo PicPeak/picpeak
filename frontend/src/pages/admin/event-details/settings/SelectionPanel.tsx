@@ -11,7 +11,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Copy, Link2, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Event } from '../../../../types';
 import { Button, Input, useConfirm } from '../../../../components/common';
 import { eventsService, type SelectionState } from '../../../../services/events.service';
@@ -21,21 +21,23 @@ export const SelectionPanel: React.FC<{ event: Event; canEdit: boolean }> = ({ e
   const { t } = useTranslation();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
-  const [state, setState] = useState<SelectionState | null>(null);
+  // Under the event's own key: an import (useExternalImport) invalidates
+  // ['admin-event', id], which refreshes the counts below with it.
+  const selectionKey = ['admin-event', String(event.id), 'selection'];
+  const { data: state = null } = useQuery({
+    queryKey: selectionKey,
+    queryFn: () => eventsService.getSelection(event.id),
+    // Older server or no permission: no panel.
+    retry: false,
+  });
   const [folder, setFolder] = useState('');
   const [busy, setBusy] = useState(false);
-
+  const savedFolder = state?.selection_path || '';
+  // The field follows the saved folder until the admin edits it.
+  const [editedFrom, setEditedFrom] = useState<string | null>(null);
   useEffect(() => {
-    let live = true;
-    eventsService.getSelection(event.id)
-      .then((next) => {
-        if (!live) return;
-        setState(next);
-        setFolder(next.selection_path || '');
-      })
-      .catch(() => { /* older server or no permission: no panel */ });
-    return () => { live = false; };
-  }, [event.id]);
+    if (editedFrom === null) setFolder(savedFolder);
+  }, [savedFolder, editedFrom]);
 
   if (!state || !state.available) return null;
 
@@ -43,11 +45,12 @@ export const SelectionPanel: React.FC<{ event: Event; canEdit: boolean }> = ({ e
     setBusy(true);
     try {
       const next = await action();
-      setState(next);
+      queryClient.setQueryData(selectionKey, next);
       setFolder(next.selection_path || '');
+      setEditedFrom(null);
       // The event (its selection_path drives the Photos tab filter) and the
       // photo list (each photo's flag) changed.
-      queryClient.invalidateQueries({ queryKey: ['admin-event'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-event', String(event.id)], exact: true });
       queryClient.invalidateQueries({ queryKey: ['admin-event-photos'] });
       toast.success(done);
     } catch (err: any) {
@@ -107,7 +110,7 @@ export const SelectionPanel: React.FC<{ event: Event; canEdit: boolean }> = ({ e
           <Input
             id="settings-selection-folder"
             value={folder}
-            onChange={(e) => setFolder(e.target.value)}
+            onChange={(e) => { setFolder(e.target.value); setEditedFrom(savedFolder); }}
             placeholder={t('events.selection.folderPlaceholder', 'No selection: guests see every photo') as string}
             disabled={!canEdit || busy}
           />

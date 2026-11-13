@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const api = vi.hoisted(() => ({
@@ -27,9 +27,11 @@ const state = (patch = {}) => ({
   available: true, selection_path: null, in_selection: 5, outside_selection: 0, full_link_url: null, ...patch,
 });
 
+let queryClient: QueryClient;
 function renderPanel(canEdit = true) {
+  queryClient = new QueryClient();
   return render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <SelectionPanel event={event} canEdit={canEdit} />
     </QueryClientProvider>,
   );
@@ -94,5 +96,16 @@ describe('SelectionPanel', () => {
     renderPanel(false);
     expect(await screen.findByDisplayValue('https://x/gallery/party/full/b')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /New link|Remove|Apply/ })).not.toBeInTheDocument();
+  });
+
+  // An import next to the panel invalidates the event (useExternalImport):
+  // the counts follow it instead of keeping their first answer.
+  it('refreshes the counts when the event is invalidated after an import', async () => {
+    api.getSelection.mockResolvedValue(state({ selection_path: 'gallery', in_selection: 0, outside_selection: 0 }));
+    renderPanel();
+    expect(await screen.findByRole('status')).toHaveTextContent('0 photos in the selection, 0 only in the full view');
+    api.getSelection.mockResolvedValue(state({ selection_path: 'gallery', in_selection: 4, outside_selection: 9 }));
+    await act(async () => { await queryClient.invalidateQueries({ queryKey: ['admin-event', '7'] }); });
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('4 photos in the selection, 9 only in the full view'));
   });
 });

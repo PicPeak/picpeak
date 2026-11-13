@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loading } from '../../components/common';
+import { api } from '../../config/api';
 import { authService } from '../../services/auth.service';
 import { clearGalleryToken } from '../../utils/galleryAuthStorage';
 import { setFullLinkToken } from '../../utils/galleryFullLink';
@@ -19,7 +20,14 @@ export function FullLinkPage() {
     let live = true;
     (async () => {
       if (/^[0-9a-f]{64}$/.test(token)) setFullLinkToken(slug, token);
-      await authService.galleryLogout(slug);
+      // Only a session of THIS gallery is ended: the logout route falls back
+      // to any gallery cookie, and another gallery's session must survive.
+      const session = await api.get<{ valid?: boolean; type?: string; eventSlug?: string }>(
+        '/auth/session', { params: { slug } },
+      ).catch(() => null);
+      if (session?.data?.valid && session.data.type === 'gallery' && session.data.eventSlug === slug) {
+        await authService.galleryLogout(slug);
+      }
       clearGalleryToken(slug);
       try {
         sessionStorage.removeItem(`gallery_event_${slug}`);
