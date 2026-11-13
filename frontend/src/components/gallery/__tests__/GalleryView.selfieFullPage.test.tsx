@@ -62,10 +62,11 @@ vi.mock('../GalleryLayout', () => ({
 }));
 vi.mock('../PhotoGridWithLayouts', () => ({
   PhotoGridWithLayouts: ({ photos: shown, openPhotoId, beforeGrid }: {
-    photos: Array<{ id: number }>; openPhotoId?: number | null; beforeGrid?: React.ReactNode;
+    photos: Array<{ id: number }>; openPhotoId?: number | null;
+    beforeGrid?: React.ReactNode | ((shown: number) => React.ReactNode);
   }) => (
     <div data-testid="photo-grid" data-ids={shown.map((p) => p.id).join(',')} data-open={openPhotoId ?? ''}>
-      <div data-testid="before-grid">{beforeGrid}</div>
+      <div data-testid="before-grid">{typeof beforeGrid === 'function' ? beforeGrid(shown.length) : beforeGrid}</div>
     </div>
   ),
 }));

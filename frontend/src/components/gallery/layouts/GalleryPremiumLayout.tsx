@@ -397,6 +397,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }, [photos, activeCategory]);
 
   const currentLightboxPhoto = lightboxIndex >= 0 ? filteredPhotos[lightboxIndex] : null;
+  // The row above the photos counts what the category tab leaves (issue 2355).
+  const toolbar = typeof beforeGrid === 'function' ? beforeGrid(filteredPhotos.length) : beforeGrid;
 
   // The photo the lightbox is on, by id: `lightboxIndex` is a position in
   // `filteredPhotos`, which a filter or category change can shift under it.
@@ -850,7 +852,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       <div className="text-center py-12">
         {/* A filter that left nothing keeps its own controls, so it can be
             cleared from here (issue 2355). */}
-        {beforeGrid && <div className="gallery-premium-toolbar gallery-premium-toolbar--empty">{beforeGrid}</div>}
+        {toolbar && <div className="gallery-premium-toolbar gallery-premium-toolbar--empty">{toolbar}</div>}
         {/* No nav in this branch, so the way back to the portal sits here. */}
         {showBackToAccount && (
           <div className="mb-4 flex justify-center">
@@ -1081,7 +1083,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
 
       {/* Main Gallery */}
       <main className="gallery-premium-main">
-        {beforeGrid && <div className="gallery-premium-toolbar">{beforeGrid}</div>}
+        {toolbar && <div className="gallery-premium-toolbar">{toolbar}</div>}
         {/* Download limit (issue 1560): the client's counter, or a guest's
             preview-size note. */}
         {allowDownloads && (downloadQuota.limited || downloadQuota.previewOnly) && (

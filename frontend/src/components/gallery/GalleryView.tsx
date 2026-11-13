@@ -1854,8 +1854,9 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // Selfie search (issue 2355): these layouts have no people strip, so the
     // launcher, the active filter and its count sit in the row above the
     // photos, below the hero (a band above the hero would sit under Story's
-    // nav and leave its light icons on a light background).
-    const selfieToolbar = selfieSearchEnabled ? (
+    // nav and leave its light icons on a light background). A function: the
+    // count is what the layout shows after its own category tab or search.
+    const selfieToolbar = selfieSearchEnabled ? (shown: number) => (
       <>
         <button
           type="button"
@@ -1879,9 +1880,9 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             {/* Colours come from the layout's stylesheet: Story is dark. */}
             <span className="gallery-toolbar-count text-sm" role="status">
               {t('gallery.people.matchCount', {
-                count: filteredPhotos.length,
+                count: shown,
                 total: scopedPhotos.length,
-                defaultValue: `${filteredPhotos.length} of ${scopedPhotos.length} photos`,
+                defaultValue: `${shown} of ${scopedPhotos.length} photos`,
               })}
             </span>
           </>

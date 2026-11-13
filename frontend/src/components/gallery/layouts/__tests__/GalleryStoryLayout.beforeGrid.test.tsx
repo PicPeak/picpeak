@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import { GalleryStoryLayout } from '../GalleryStoryLayout';
 import type { Photo } from '../../../../types';
@@ -95,6 +95,16 @@ describe('GalleryStoryLayout row above the scenes', () => {
   it('keeps it when the filter leaves no photos', () => {
     const { container } = render(<GalleryStoryLayout {...props} photos={[]} beforeGrid={row} />);
     expect(container.querySelector('.story-toolbar--empty')).not.toBeNull();
+  });
+
+  it('hands a row function the count the search leaves', () => {
+    const { container } = render(
+      <GalleryStoryLayout {...props} beforeGrid={(shown: number) => <span>shown {shown}</span>} />
+    );
+    expect(screen.getByText('shown 2')).toBeTruthy();
+    const search = container.querySelector('.story-nav-search input') as HTMLInputElement;
+    fireEvent.change(search, { target: { value: 'photo-1.' } });
+    expect(screen.getByText('shown 1')).toBeTruthy();
   });
 
   it('renders no row without one', () => {

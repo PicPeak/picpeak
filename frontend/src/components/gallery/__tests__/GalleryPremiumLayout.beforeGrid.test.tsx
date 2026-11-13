@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { Photo } from '../../../types';
 
 vi.mock('../../../hooks/usePublicSettings', () => ({ usePublicSettings: () => ({ data: undefined }) }));
@@ -63,6 +63,15 @@ describe('Gallery Premium row above the photos', () => {
     const { container } = mount({ photos: [], beforeGrid: row });
     expect(container.querySelector('.gallery-premium-toolbar--empty')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Find my photos with a selfie' })).toBeTruthy();
+  });
+
+  it('hands a row function the count the category tab leaves', () => {
+    const tagged = photos.map((p, i) => ({ ...p, category_name: i === 0 ? 'Ceremony' : 'Party' }));
+    const beforeGrid = vi.fn((shown: number) => <span>shown {shown}</span>);
+    const { container } = mount({ photos: tagged, beforeGrid });
+    expect(within(container.querySelector('.gallery-premium-toolbar') as HTMLElement).getByText('shown 2')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Ceremony' }));
+    expect(screen.getByText('shown 1')).toBeTruthy();
   });
 
   it('renders no row without one', () => {

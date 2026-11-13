@@ -87,9 +87,11 @@ export interface BaseGalleryLayoutProps {
   /**
    * Above the photos, below a full-page layout's hero and nav: the row that
    * states and controls what the grid shows (the selfie search, issue 2355).
-   * Only the full-page layouts read it.
+   * Only the full-page layouts read it. As a function it gets the number of
+   * photos the layout shows after its own filters (Premium's category tabs,
+   * Story's search), so a count in the row matches the grid.
    */
-  beforeGrid?: React.ReactNode;
+  beforeGrid?: React.ReactNode | ((shownCount: number) => React.ReactNode);
   // Copyable filename list (issue 1733, A3d), for layouts that own their
   // chrome: the selection, or the viewer's favourites. Hidden at zero.
   onCopyFilenames?: () => void;
