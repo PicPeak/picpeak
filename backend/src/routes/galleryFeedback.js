@@ -129,6 +129,10 @@ router.get('/:slug/feedback-settings',
 // Get feedback for a specific photo
 router.get('/:slug/photos/:photoId/feedback',
   verifyGalleryAccess,
+  // The Live Slideshow kiosk only lists and shows photos, which keep to a
+  // pinned category; it has no use for these feedback routes, so a show
+  // session reads nothing through them about photos outside its pin.
+  denySlideshowToken,
   // Reveal-gated (#838): sequential photo ids would let hidden-gallery
   // guests enumerate comments/stats.
   blockHiddenGallery,
@@ -654,6 +658,7 @@ router.post('/:slug/feedback/bulk',
 // Get feedback summary for entire gallery
 router.get('/:slug/feedback-summary',
   verifyGalleryAccess,
+  denySlideshowToken,
   async (req, res) => {
     try {
       const event = req.event;
@@ -719,6 +724,7 @@ router.get('/:slug/feedback-summary',
 // Get user's own feedback for all photos
 router.get('/:slug/my-feedback',
   verifyGalleryAccess,
+  denySlideshowToken,
   resolveGuest,
   scopeGuestToFeedback,
   async (req, res) => {
