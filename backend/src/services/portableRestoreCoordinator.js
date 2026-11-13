@@ -90,10 +90,6 @@ function describeError(error, fallback) {
 
 
 
-// Coordinated restore is a capability, never a startup requirement. A runtime
-// does nothing until a restore is reserved or a fence marker appears in shared
-// storage: no directory, no lease, no control row and no database query. Only
-// then does it register, stop its services and acknowledge the fence.
 // The migrations/core files the ledger does not record, as the runners name
 // them (`migrations.filename`). Both runners apply every core file.
 async function pendingCoreMigrations(knex) {
@@ -103,6 +99,28 @@ async function pendingCoreMigrations(knex) {
   const applied = new Set((await knex('migrations').select('filename')).map(item => item.filename));
   return files.filter(name => !applied.has(name));
 }
+// A server start on an instance that has been through a portable restore
+// (generation > 0: a restore committed, or a fence was cleared, here; a
+// native restore keeps the counter) refuses to run while the ledger misses a
+// core migration. The coordinator holds a committed restore in maintenance until
+// the ledger is complete, but an operator path can reopen the control row
+// without running them (a failed offline retry, the fence-clear script), and
+// a start without wait-for-db.sh would then serve the archive's schema level
+// (issue 2480). Both images run the migrations before this check is reached.
+async function assertRestoredLedgerComplete(knex, pendingMigrations = pendingCoreMigrations) {
+  if (!(await knex.schema.hasTable(CONTROL))) return;
+  const row = await knex(CONTROL).where({ id: 1 }).first('generation');
+  if (!row || !(Number(row.generation) > 0)) return;
+  const pending = await pendingMigrations(knex);
+  if (pending.length === 0) return;
+  throw Object.assign(new Error(`This instance has been through a portable restore and ${pending.length} migration(s) have not run on its database `
+    + `(first: ${pending[0]}). Run "node migrations/run-migrations-safe.js" (or start through wait-for-db.sh), then start the backend.`),
+  { code: 'RESTORE_MIGRATIONS_PENDING' });
+}
+// Coordinated restore is a capability, never a startup requirement. A runtime
+// does nothing until a restore is reserved or a fence marker appears in shared
+// storage: no directory, no lease, no control row and no database query. Only
+// then does it register, stop its services and acknowledge the fence.
 function createCoordinator({ database, work = applicationWork, leases, worker, ingress, stopServices, resumeServices, forceClose,
   capability = restoreCapability, fence = { read: restorePaths.readFence, write: restorePaths.writeFence },
   cleanup = { attempt: restorePaths.cleanAttempt, leftovers: restorePaths.reapLeftovers },
@@ -844,4 +862,4 @@ async function restoreOffline({ archivePath, currentAdminId, options = {} }) {
   const offlineCoordinator = createCoordinator({ offline: true, work: applicationWork.createWorkRegistry(), stopServices: async () => {} });
   return offlineCoordinator.restoreOffline({ archivePath, operatorId: currentAdminId, options });
 }
-module.exports = { ...coordinator, restoreOffline, createCoordinator, pendingCoreMigrations, HEARTBEAT_STALE_MS };
+module.exports = { ...coordinator, restoreOffline, createCoordinator, pendingCoreMigrations, assertRestoredLedgerComplete, HEARTBEAT_STALE_MS };

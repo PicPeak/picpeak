@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const knex = require('knex');
-const { createCoordinator, pendingCoreMigrations, HEARTBEAT_STALE_MS } = require('../../src/services/portableRestoreCoordinator');
+const { createCoordinator, pendingCoreMigrations, assertRestoredLedgerComplete, HEARTBEAT_STALE_MS } = require('../../src/services/portableRestoreCoordinator');
 const { createWorkRegistry } = require('../../src/services/activeApplicationWork');
 const { leaseProvable } = require('../../src/services/portableRestorePaths');
 const { fixtureIngress } = require('./helpers/restoreIngress');
@@ -26,6 +26,27 @@ test('a kernel lease is provable on the same boot, or on the same persisted host
   storage.identity.host = hash('persisted host id');
   expect(leaseProvable(storage, { ...row, host_id: storage.identity.host, boot_id: crypto.randomUUID() })).toBe(true);
   expect(leaseProvable(storage, { ...row, host_id: hash('another host'), boot_id: crypto.randomUUID() })).toBe(false);
+});
+
+test('a start on a restored database refuses to run while a core migration is missing (issue 2480)', async () => {
+  const scratch = knex({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+  try {
+    let pending = ['400_newer_than_the_archive.js'];
+    const check = () => assertRestoredLedgerComplete(scratch, async () => pending);
+    // No control table, or no restore has committed here: nothing to hold.
+    await expect(check()).resolves.toBeUndefined();
+    await scratch.schema.createTable('portable_restore_control', table => { table.integer('id'); table.integer('generation'); });
+    await expect(check()).resolves.toBeUndefined();
+    await scratch('portable_restore_control').insert({ id: 1, generation: 0 });
+    await expect(check()).resolves.toBeUndefined();
+    // A committed restore (whatever reopened the control row) with a gap.
+    await scratch('portable_restore_control').where({ id: 1 }).update({ generation: 1 });
+    await expect(check()).rejects.toMatchObject({ code: 'RESTORE_MIGRATIONS_PENDING' });
+    pending = [];
+    await expect(check()).resolves.toBeUndefined();
+  } finally {
+    await scratch.destroy();
+  }
 });
 
 describe.each(engines)('portable restore coordinator (%s)', client => {

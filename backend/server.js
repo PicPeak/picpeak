@@ -1258,6 +1258,7 @@ async function startServerInternal() {
 
     // Initialize database
     await initializeDatabase();
+    await restoreCoordinator.assertRestoredLedgerComplete(db);
     await require('./src/utils/authSecurity').assertAuthSecuritySchema();
 
     // Warm the public-origin cache so the SYNCHRONOUS resolver (CORS headers)
