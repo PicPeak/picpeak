@@ -317,6 +317,11 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
   if (targetIsSuperAdmin && !actorIsSuperAdmin) {
     throw new ForbiddenError('Only Super Admins can modify a Super Admin account');
   }
+  // Any change to an existing account, not only a new role, stays within
+  // the actor's own permissions: the account's current role must be one the
+  // actor could have granted.
+  await assertActorReachesRole(updatedById, user.role_id,
+    'You can only change accounts whose role is within your own permissions');
 
   if (updates.username !== undefined) {
     const existing = await db('admin_users')
@@ -463,8 +468,8 @@ async function isSuperAdminActor(actorId) {
 /**
  * A non-super actor only reaches roles whose permissions it holds itself —
  * the containment createInvitation / updateAdminUser apply when GRANTING a
- * role, applied here to the accounts and invitations that already carry it
- * (delete, cancel). super_admin bypasses; a super_admin role is out of reach
+ * role, applied here to the accounts, invitations and roles that already
+ * exist (edit, deactivate, activate, delete, cancel, role edit). super_admin bypasses; a super_admin role is out of reach
  * for everyone else.
  */
 async function assertActorReachesRole(actorId, roleId, message) {
@@ -515,6 +520,8 @@ async function deactivateAdminUser(id, deactivatedById) {
   // After the invariants above, which hold for every caller including a
   // super_admin, so their specific message survives.
   await assertMayManageSuperAdminTarget(user, deactivatedById);
+  await assertActorReachesRole(deactivatedById, user.role_id,
+    'You can only change accounts whose role is within your own permissions');
 
   await db('admin_users').where('id', id).update({
     is_active: formatBoolean(false),
@@ -548,6 +555,8 @@ async function activateAdminUser(id, activatedById) {
     throw new NotFoundError('Admin user', id);
   }
   await assertMayManageSuperAdminTarget(user, activatedById);
+  await assertActorReachesRole(activatedById, user.role_id,
+    'You can only change accounts whose role is within your own permissions');
 
   // No "last super admin" guard needed — activate only ever ADDS an
   // active super_admin, never removes one. No "can't activate
@@ -1025,6 +1034,13 @@ async function updateRole(id, { displayName, description, priority, permissions 
   const actorIsSuper = actor && actor.role_name === 'super_admin';
   if (!actorIsSuper && actor && actor.role_id === Number(id)) {
     throw new ForbiddenError('You cannot edit your own role.');
+  }
+  // The role as it stands must be within the actor's permissions too, not
+  // only the new list: otherwise a narrower role could strip a broader one
+  // for everyone who holds it.
+  if (!actorIsSuper) {
+    await assertActorReachesRole(updatedById, role.id,
+      'You can only edit roles within your own permissions');
   }
   if (permissions !== undefined) {
     await assertActorMayGrant(updatedById, permissions);
