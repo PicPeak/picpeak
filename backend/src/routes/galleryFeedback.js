@@ -389,6 +389,8 @@ router.post('/:slug/photos/:photoId/feedback',
         decision: req.body.decision,
         annotation,
         favorite_list_id: favoriteListId,
+        // The cap counts the picks this viewer can see (issue 2356).
+        viewer: viewerOf(req),
         ...feedbackAuthor(req, settings)
       };
       
@@ -582,6 +584,7 @@ router.post('/:slug/feedback/bulk',
       const feedbackData = {
         feedback_type: 'rating',
         rating: req.body.rating,
+        viewer: viewerOf(req),
         ...feedbackAuthor(req, settings)
       };
 

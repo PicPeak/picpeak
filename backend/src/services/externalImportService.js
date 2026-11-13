@@ -700,12 +700,9 @@ async function importExternalFolder({
   let access = await externalAccess.authorizeImport(eventId, externalPath, { actor, automatic });
   const external_path = access.relativePath;
   const mirrorFolders = parseBooleanInput(event.folder_structure, false);
-  // The curated selection (issue 2356): a row outside it is hidden from the
-  // ordinary link from the moment it is written. recomputeSelection() at the
-  // end of the pass catches a selection changed meanwhile. The prefix names
-  // the folder this pass imports (and saves), not the one stored before it:
-  // a manual import may rebind the event to another folder.
-  const selPrefix = externalSelection.selectionPrefix({ ...event, source_mode: 'reference', external_path });
+  // The curated selection (issue 2356): read once the claim below is held,
+  // see there.
+  let selPrefix = null;
   const selectionHidden = (relFromRoot) => externalSelection.selectionHiddenFor(selPrefix, relFromRoot);
   const firstLookKeywords = await folderTree.getFirstLookKeywords();
   const folderIdByPath = new Map();
@@ -720,6 +717,20 @@ async function importExternalFolder({
   await jobState.ensure(jobName);
   const token = await jobState.claim(jobName);
   if (!token) throw new ImportInProgressError(eventId);
+
+  // A row outside the curated selection (issue 2356) is hidden from the
+  // ordinary link from the moment it is written. The selection is read under
+  // the claim: changing it takes the same claim (routes/adminEvents/
+  // selection.js), so it cannot move while this pass writes rows. The prefix
+  // names the folder this pass imports (and saves), not the one stored
+  // before it: a manual import may rebind the event to another folder.
+  try {
+    const { selection_path: selectionPath } = await db('events').where('id', eventId).first('selection_path') || {};
+    selPrefix = externalSelection.selectionPrefix({ source_mode: 'reference', external_path, selection_path: selectionPath });
+  } catch (error) {
+    await jobState.release(jobName, token, null);
+    throw error;
+  }
 
   // Renew the lease on a clock for the WHOLE run, walk included. A large tree
   // on a slow mount can take longer than the stale window just to list, and

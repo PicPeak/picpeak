@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { clearFullLinkToken, getFullLinkToken, setFullLinkToken } from '../utils/galleryFullLink';
 
 /**
  * Follow a renamed gallery to its new slug.
@@ -62,11 +63,20 @@ export function useFollowGalleryRename(error: unknown, errorSlug: string | null 
 
   useEffect(() => {
     if (!target) return;
+    // A full link opened under the old slug (issue 2356) keeps its token for
+    // the gallery it now leads to.
+    if (errorSlug && newSlug) {
+      const fullToken = getFullLinkToken(errorSlug);
+      if (fullToken) {
+        setFullLinkToken(newSlug, fullToken);
+        clearFullLinkToken(errorSlug);
+      }
+    }
     navigate(
       { pathname: target, search: location.search, hash: location.hash },
       { replace: true, state: { ...(location.state as object | null), galleryRenameHops: hops + 1 } },
     );
-  }, [target, hops, navigate, location.search, location.hash, location.state]);
+  }, [target, hops, navigate, location.search, location.hash, location.state, errorSlug, newSlug]);
 
   return target !== null || arrived;
 }

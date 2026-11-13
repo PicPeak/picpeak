@@ -71,8 +71,25 @@ module.exports = (router) => {
         }
         throw error;
       }
-      // Saved and applied in one transaction (externalSelection.js).
-      await externalSelection.recomputeSelection(event.id, db, { selectionPath });
+      // Not while an import runs: it marks the rows it writes by the selection
+      // it read under the same claim (externalImportService.js).
+      const { jobNameFor } = require('../../services/externalImportService');
+      const jobState = require('../../services/maintenanceJobState');
+      const jobName = jobNameFor(event.id);
+      await jobState.ensure(jobName);
+      const claim = await jobState.claim(jobName);
+      if (!claim) {
+        return res.status(409).json({
+          error: 'Photos are being imported into this gallery. Try again when the import has finished.',
+          code: 'IMPORT_IN_PROGRESS',
+        });
+      }
+      try {
+        // Saved and applied in one transaction (externalSelection.js).
+        await externalSelection.recomputeSelection(event.id, db, { selectionPath });
+      } finally {
+        await jobState.release(jobName, claim, null);
+      }
       await logActivity('event_selection_updated', { selection_path: selectionPath }, event.id, actorOf(req));
       res.json(await selectionState({ ...event, selection_path: selectionPath }));
     } catch (error) {

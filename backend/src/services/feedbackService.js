@@ -260,7 +260,7 @@ class FeedbackService {
    * duplicate-check uses (guest_id when present, fall back to
    * guest_identifier). Used for the per-guest favorite/like caps (#655).
    */
-  async countGuestFeedback(eventId, feedbackType, guestId, guestIdentifier, executor = db) {
+  async countGuestFeedback(eventId, feedbackType, guestId, guestIdentifier, executor = db, viewer = null) {
     const query = executor('photo_feedback')
       // Nor do likes on photos in the trash: the guest cannot see or undo them.
       .modify(wherePhotoLive, 'photo_feedback.photo_id')
@@ -275,6 +275,15 @@ class FeedbackService {
       // them here would meet that fresh row with limit_reached and leave the
       // control dead until the guest un-likes something they can still see.
       .where({ event_id: eventId, feedback_type: feedbackType, is_hidden: false });
+    // Picks on photos this viewer can no longer see (a photo the client hid,
+    // one now outside the curated selection, issue 2356) are left out, as the
+    // selection counter and /my-feedback leave them out: the guest cannot see
+    // or undo them.
+    if (viewer) {
+      query.whereIn('photo_feedback.photo_id', applyPhotoVisibilityFilter(
+        livePhotos(executor).select('photos.id').where('photos.event_id', eventId), viewer,
+      ));
+    }
     if (guestId) {
       query.where('guest_id', guestId);
     } else {
@@ -816,7 +825,7 @@ class FeedbackService {
             .first('id');
         if (cap && cap > 0 && !pickedElsewhere) {
           const currentCount = await this.countGuestFeedback(
-            eventId, feedback_type, guest_id, guestIdentifier, executor,
+            eventId, feedback_type, guest_id, guestIdentifier, executor, feedbackData.viewer || null,
           );
           if (currentCount >= cap) {
             // Don't insert; surface a structured payload so the route layer

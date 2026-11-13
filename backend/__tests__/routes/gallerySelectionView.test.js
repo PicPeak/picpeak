@@ -210,6 +210,36 @@ describe('gallery selection and full link (issue 2356)', () => {
     });
   });
 
+  describe('feedback cap', () => {
+    it('does not count a like on a photo outside the selection against an ordinary guest', async () => {
+      const feedbackService = require('../../src/services/feedbackService');
+      const settings = jest.spyOn(feedbackService, 'getEventFeedbackSettings')
+        .mockResolvedValue({ feedback_enabled: true, allow_likes: true, max_likes_per_guest: 1 });
+      const ME = 'selection-cap-guest';
+      await db('photo_feedback').insert({
+        photo_id: ids.original, event_id: eventId, guest_identifier: ME, feedback_type: 'like',
+        is_approved: true, is_hidden: false, created_at: new Date().toISOString(),
+      });
+      try {
+        const count = (viewer) => feedbackService.countGuestFeedback(eventId, 'like', null, ME, db, viewer);
+        expect(await count({ accessLevel: 'guest', fullView: false })).toBe(0);
+        expect(await count({ accessLevel: 'guest', fullView: true })).toBe(1);
+        // The guest's like on the photo it can see goes through.
+        const result = await feedbackService.submitFeedback(ids.selected, eventId,
+          { feedback_type: 'like', viewer: { accessLevel: 'guest', fullView: false } }, ME);
+        expect(result.limit_reached).toBeUndefined();
+        // In the full view the hidden like takes the one slot.
+        await db('photo_feedback').where({ guest_identifier: ME, photo_id: ids.selected }).del();
+        const full = await feedbackService.submitFeedback(ids.selected, eventId,
+          { feedback_type: 'like', viewer: { accessLevel: 'guest', fullView: true } }, ME);
+        expect(full.limit_reached).toBe(true);
+      } finally {
+        settings.mockRestore();
+        await db('photo_feedback').where({ guest_identifier: ME }).del();
+      }
+    });
+  });
+
   describe('admin', () => {
     const auth = (req) => req.set('Authorization', `Bearer ${adminToken}`);
     it('filters the photo list by selection and marks each photo', async () => {

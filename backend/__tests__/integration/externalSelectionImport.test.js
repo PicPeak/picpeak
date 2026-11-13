@@ -282,6 +282,25 @@ describe('curated selection inside an external source (issue 2356)', () => {
     }
   });
 
+  it('does not change the selection while an import of the gallery runs', async () => {
+    const eventId = await seedEvent();
+    await writeJpeg('shoot/gallery/a.jpg');
+    await db('events').where({ id: eventId }).update({ external_path: 'shoot' });
+    const { jobNameFor } = require('../../src/services/externalImportService');
+    const jobState = require('../../src/services/maintenanceJobState');
+    await jobState.ensure(jobNameFor(eventId));
+    const held = await jobState.claim(jobNameFor(eventId));
+    try {
+      const res = await setSelection(eventId, 'gallery');
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('IMPORT_IN_PROGRESS');
+      expect((await db('events').where({ id: eventId }).first()).selection_path).toBeNull();
+    } finally {
+      await jobState.release(jobNameFor(eventId), held, null);
+    }
+    expect((await setSelection(eventId, 'gallery')).status).toBe(200);
+  });
+
   it('puts every photo back in the selection when the source is detached', async () => {
     const eventId = await seedEvent();
     await writeJpeg('shoot/gallery/a.jpg');

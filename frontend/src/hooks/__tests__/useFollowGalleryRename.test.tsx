@@ -8,12 +8,13 @@ import {
   renamedGallerySlug,
   useFollowGalleryRename,
 } from '../useFollowGalleryRename';
+import { getFullLinkToken, setFullLinkToken } from '../../utils/galleryFullLink';
 
 const renamed = (newSlug: unknown) => ({
   response: { status: 301, data: { redirect: true, newSlug, message: 'Gallery has been renamed' } },
 });
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); sessionStorage.clear(); });
 
 describe('renamedGallerySlug', () => {
   it('reads the new slug from a 301 rename answer', () => {
@@ -105,5 +106,16 @@ describe('useFollowGalleryRename', () => {
     renderAt('/gallery/b', { b: 'a', a: 'a' });
     await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/gallery/a'));
     await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('not-found'));
+  });
+
+  // Issue 2356: the full link opened under the old slug stores its token
+  // there; the gallery under the new slug must still send it.
+  it('carries a full-link token over to the new slug', async () => {
+    const full = 'b'.repeat(64);
+    setFullLinkToken('old-slug', full);
+    renderAt('/gallery/old-slug', { 'old-slug': 'new-slug' });
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/gallery/new-slug'));
+    expect(getFullLinkToken('new-slug')).toBe(full);
+    expect(getFullLinkToken('old-slug')).toBeNull();
   });
 });
