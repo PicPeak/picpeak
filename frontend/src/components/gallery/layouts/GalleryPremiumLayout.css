@@ -551,3 +551,28 @@
   padding: 6px 10px;
   backdrop-filter: blur(6px);
 }
+
+/* The row above the photos that states and controls what the grid shows
+   (selfie search, issue 2355). Inside .gallery-premium-main, so it shares the
+   grid's side padding. */
+.gallery-premium-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.gallery-premium-toolbar .gallery-toolbar-btn {
+  color: var(--color-text);
+  border-color: var(--color-surface-border);
+}
+
+.gallery-premium-toolbar .gallery-toolbar-count {
+  color: var(--color-muted-text);
+}
+
+.gallery-premium-toolbar--empty {
+  justify-content: center;
+  margin-bottom: 1rem;
+}

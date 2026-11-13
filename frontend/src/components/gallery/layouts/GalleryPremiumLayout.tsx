@@ -284,6 +284,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   suppressEmptyState = false,
   emptyIsFiltered = false,
   afterGrid,
+  beforeGrid,
   photos,
   slug,
   onPhotoClick: _onPhotoClick,
@@ -847,6 +848,9 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
+        {/* A filter that left nothing keeps its own controls, so it can be
+            cleared from here (issue 2355). */}
+        {beforeGrid && <div className="gallery-premium-toolbar gallery-premium-toolbar--empty">{beforeGrid}</div>}
         {/* No nav in this branch, so the way back to the portal sits here. */}
         {showBackToAccount && (
           <div className="mb-4 flex justify-center">
@@ -1077,6 +1081,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
 
       {/* Main Gallery */}
       <main className="gallery-premium-main">
+        {beforeGrid && <div className="gallery-premium-toolbar">{beforeGrid}</div>}
         {/* Download limit (issue 1560): the client's counter, or a guest's
             preview-size note. */}
         {allowDownloads && (downloadQuota.limited || downloadQuota.previewOnly) && (

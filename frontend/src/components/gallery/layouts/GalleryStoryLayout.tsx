@@ -95,6 +95,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   suppressEmptyState = false,
   emptyIsFiltered = false,
   afterGrid,
+  beforeGrid,
   eventPhotoCount,
   onDownloadEverything,
   onCopyFilenames,
@@ -504,6 +505,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
+        {/* A filter that left nothing keeps its own controls, so it can be
+            cleared from here (issue 2355). */}
+        {beforeGrid && <div className="story-toolbar story-toolbar--empty">{beforeGrid}</div>}
         {/* No nav in this branch, so the way back to the portal sits here. */}
         {showBackToAccount && (
           <div className="mb-4 flex justify-center">
@@ -760,6 +764,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         allowDownloads={allowDownloads}
         useEnhancedProtection={useEnhancedProtection}
       />
+
+      {/* Below the hero, so the fixed nav keeps the hero behind it (issue 2355). */}
+      {beforeGrid && <div className="story-toolbar">{beforeGrid}</div>}
 
       {/* Main Content - Scenes */}
       <main className="pb-32 space-y-0">

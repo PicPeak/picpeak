@@ -1,7 +1,8 @@
 /**
  * Selfie search (issue 2355) is offered in every layout. Premium and Story
- * return before the people strip, so their launcher sits in the band above
- * the grid; the dialog opens from there too.
+ * return before the people strip, so their launcher, the active filter and
+ * its count go to the layout as `beforeGrid`, the row above the photos
+ * (below the hero and nav); the dialog opens from there too.
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -60,8 +61,12 @@ vi.mock('../GalleryLayout', () => ({
   GalleryLayout: ({ children, headerExtra }: { children?: React.ReactNode; headerExtra?: React.ReactNode }) => <div>{headerExtra}{children}</div>,
 }));
 vi.mock('../PhotoGridWithLayouts', () => ({
-  PhotoGridWithLayouts: ({ photos: shown, openPhotoId }: { photos: Array<{ id: number }>; openPhotoId?: number | null }) => (
-    <div data-testid="photo-grid" data-ids={shown.map((p) => p.id).join(',')} data-open={openPhotoId ?? ''} />
+  PhotoGridWithLayouts: ({ photos: shown, openPhotoId, beforeGrid }: {
+    photos: Array<{ id: number }>; openPhotoId?: number | null; beforeGrid?: React.ReactNode;
+  }) => (
+    <div data-testid="photo-grid" data-ids={shown.map((p) => p.id).join(',')} data-open={openPhotoId ?? ''}>
+      <div data-testid="before-grid">{beforeGrid}</div>
+    </div>
   ),
 }));
 vi.mock('../SelfieSearchDialog', () => ({
@@ -73,7 +78,7 @@ vi.mock('../SelfieSearchDialog', () => ({
 }));
 
 
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, within } from '@testing-library/react';
 import { GalleryView } from '../GalleryView';
 
 const event = { id: 1, event_name: 'Hoa Wedding', event_type: 'wedding', event_date: '2026-09-19', expires_at: '2027-09-19T00:00:00Z' };
@@ -100,18 +105,36 @@ function show(selfie: boolean) {
 afterEach(cleanup);
 
 describe.each(['gallery-premium', 'gallery-story'])('selfie search on %s', (layout) => {
-  it('offers the launcher, which opens the dialog', () => {
+  it('offers the launcher in the row above the photos, which opens the dialog', () => {
     stable.theme.theme = { galleryLayout: layout };
     show(true);
+    const launcher = screen.getByRole('button', { name: 'gallery.selfie.open' });
+    // Handed to the layout, not put in the band above the hero.
+    expect(within(screen.getByTestId('before-grid')).getByRole('button', { name: 'gallery.selfie.open' })).toBe(launcher);
     expect(screen.queryByTestId('selfie-dialog')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'gallery.selfie.open' }));
+    fireEvent.click(launcher);
     expect(screen.getByTestId('selfie-dialog')).toBeInTheDocument();
+  });
+
+  it('states the active filter and its count there, and clears it from the chip', () => {
+    stable.theme.theme = { galleryLayout: layout };
+    show(true);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.selfie.open' }));
+    fireEvent.click(screen.getByRole('button', { name: 'match' }));
+    const row = within(screen.getByTestId('before-grid'));
+    expect(row.getByRole('status')).toHaveTextContent('gallery.people.matchCount');
+    expect(screen.getByTestId('photo-grid')).toHaveAttribute('data-ids', '7');
+    fireEvent.click(row.getByRole('button', { name: /gallery\.selfie\.chip/ }));
+    expect(screen.getByTestId('photo-grid')).toHaveAttribute('data-ids', '7,8');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('offers nothing while the search is off', () => {
     stable.theme.theme = { galleryLayout: layout };
     show(false);
     expect(screen.queryByRole('button', { name: 'gallery.selfie.open' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('before-grid')).toBeEmptyDOMElement();
   });
 });
 

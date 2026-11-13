@@ -1851,10 +1851,43 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     feedbackSettings?.identity_mode === 'guest' ? 'guest' : 'simple';
 
   if (isFullPageLayout) {
-    // In Story the band above the grid starts below the fixed nav whenever it
-    // carries controls wider than the gap the nav leaves (the selection bar,
-    // the selfie launcher); otherwise the nav would cover them on a phone.
-    const storyBandBelowNav = theme.galleryLayout === 'gallery-story' && (selectionBarShown || selfieSearchEnabled);
+    // Selfie search (issue 2355): these layouts have no people strip, so the
+    // launcher, the active filter and its count sit in the row above the
+    // photos, below the hero (a band above the hero would sit under Story's
+    // nav and leave its light icons on a light background).
+    const selfieToolbar = selfieSearchEnabled ? (
+      <>
+        <button
+          type="button"
+          onClick={() => setShowSelfieSearch(true)}
+          className="gallery-toolbar-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm hover:brightness-95"
+        >
+          <Camera size={16} aria-hidden />
+          {t('gallery.selfie.open', { defaultValue: 'Find my photos with a selfie' })}
+        </button>
+        {activeSelfiePhotoIds && (
+          <>
+            <button
+              type="button"
+              onClick={() => setSelfiePhotoIds(null)}
+              className="gallery-toolbar-chip inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-soft text-theme text-sm hover:brightness-95"
+            >
+              <Camera size={14} aria-hidden />
+              {t('gallery.selfie.chip', { defaultValue: 'Your selfie' })}
+              <X size={14} />
+            </button>
+            {/* Colours come from the layout's stylesheet: Story is dark. */}
+            <span className="gallery-toolbar-count text-sm" role="status">
+              {t('gallery.people.matchCount', {
+                count: filteredPhotos.length,
+                total: scopedPhotos.length,
+                defaultValue: `${filteredPhotos.length} of ${scopedPhotos.length} photos`,
+              })}
+            </span>
+          </>
+        )}
+      </>
+    ) : undefined;
     return withDownloadProviders(
       // The same identity flow as the standard layout below (issue 1733):
       // Premium and Story already ask for it (ensureIdentity) before a like,
@@ -1886,7 +1919,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             still get `filteredPhotos`, so without this the foldered photos
             would be hidden with no way in. Contained width so the folder strip
             reads as chrome against the full-bleed grid below it. */}
-        {(hasFolderNav || selectionBarShown || selfieSearchEnabled || (copyFilenames.photos.length > 0 && theme.galleryLayout !== 'gallery-story')) && (
+        {(hasFolderNav || selectionBarShown || (copyFilenames.photos.length > 0 && theme.galleryLayout !== 'gallery-story')) && (
           // Story's `.story-nav` is fixed across this same band at z-index 50.
           // Raising the strip above it is necessary for the chips to be
           // clickable at all, but the strip is mostly empty space — so the
@@ -1897,7 +1930,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // nav in Story: the bar is wider than the gap the nav leaves, and on
           // a phone it would cover the nav's logout and favourites.
           <div className={`relative z-[60] pointer-events-none max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap ${
-            storyBandBelowNav ? 'pt-20' : ''
+            selectionBarShown && theme.galleryLayout === 'gallery-story' ? 'pt-20' : ''
           }`}>
             {hasFolderNav && (
               <div className="pointer-events-auto flex items-center gap-3 flex-wrap">
@@ -1947,31 +1980,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenames.photos.length})
               </Button>
             )}
-            {/* Selfie search (issue 2355): these layouts have no people strip,
-                so the launcher and the active filter live in this band. */}
-            {selfieSearchEnabled && (
-              <div className="pointer-events-auto flex items-center gap-2 flex-wrap">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowSelfieSearch(true)}
-                  leftIcon={<Camera className="w-4 h-4" aria-hidden />}
-                >
-                  {t('gallery.selfie.open', { defaultValue: 'Find my photos with a selfie' })}
-                </Button>
-                {activeSelfiePhotoIds && (
-                  <button
-                    type="button"
-                    onClick={() => setSelfiePhotoIds(null)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-soft text-theme text-sm hover:brightness-95"
-                  >
-                    <Camera size={14} aria-hidden />
-                    {t('gallery.selfie.chip', { defaultValue: 'Your selfie' })}
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-            )}
             {/* Counter and hand-over (issue 1733, A1): the same band, for the
                 reason given above. */}
             <SelectionSubmitBar
@@ -1991,7 +1999,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         {(isClient || viaCustomer) && (
           <GalleryProductPanel
             slug={slug}
-            className={theme.galleryLayout === 'gallery-story' && !storyBandBelowNav ? 'pt-20' : undefined}
+            className={theme.galleryLayout === 'gallery-story' && !selectionBarShown ? 'pt-20' : undefined}
           />
         )}
         <PhotoGridWithLayouts
@@ -2004,6 +2012,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           videosFirst={videosFirst}
           openPhotoId={linkedPhotoId}
           onLightboxPhotoChange={handleLightboxPhotoChange}
+          beforeGrid={selfieToolbar}
           // Banner only: these layouts tile photos in their own geometry, which
           // a plain grid of placeholders would not match (issue 1562).
           afterGrid={showDeliveryBanner

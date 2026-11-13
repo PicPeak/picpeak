@@ -84,6 +84,12 @@ export interface BaseGalleryLayoutProps {
    * read it; for the others PhotoGridWithLayouts renders it after the layout.
    */
   afterGrid?: React.ReactNode;
+  /**
+   * Above the photos, below a full-page layout's hero and nav: the row that
+   * states and controls what the grid shows (the selfie search, issue 2355).
+   * Only the full-page layouts read it.
+   */
+  beforeGrid?: React.ReactNode;
   // Copyable filename list (issue 1733, A3d), for layouts that own their
   // chrome: the selection, or the viewer's favourites. Hidden at zero.
   onCopyFilenames?: () => void;

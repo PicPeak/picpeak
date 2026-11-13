@@ -848,3 +848,49 @@
   outline: 2px solid var(--story-primary);
   outline-offset: 3px;
 }
+
+/* The row above the scenes that states and controls what they show (selfie
+   search, issue 2355). Same width and side padding as .story-scene; the first
+   scene's own top padding gives the space below it. */
+.story-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 2rem 1rem 0;
+}
+
+@media (min-width: 768px) {
+  .story-toolbar {
+    padding: 2rem 2rem 0;
+  }
+}
+
+/* Story's own palette: the gallery theme's text colour is meant for a light
+   page and disappears on this dark one. */
+.story-toolbar .gallery-toolbar-btn {
+  color: var(--story-foreground);
+  /* As the nav's search field, a little stronger to read as a button. */
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.story-toolbar .gallery-toolbar-chip {
+  background-color: var(--story-primary);
+  color: var(--story-primary-foreground);
+}
+
+.story-toolbar .gallery-toolbar-count {
+  color: var(--story-muted-foreground);
+}
+
+.story-toolbar--empty {
+  justify-content: center;
+  padding: 0 0 1rem;
+}
+
+/* Directly below the row, the first scene needs less of its usual lead-in. */
+.story-toolbar + main > .story-scene:first-child {
+  padding-top: 3rem;
+}

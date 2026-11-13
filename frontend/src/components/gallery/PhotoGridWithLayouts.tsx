@@ -120,6 +120,8 @@ interface PhotoGridWithLayoutsProps {
   openPhotoId?: number | null;
   /** After the photos, before a full-page layout's footer (issue 1562). */
   afterGrid?: React.ReactNode;
+  /** Above the photos of a full-page layout (selfie search, issue 2355). */
+  beforeGrid?: React.ReactNode;
   onLightboxPhotoChange?: LightboxPhotoChangeHandler;
   /**
    * The container's event-wide id lookup, so the download limit prices the
@@ -146,6 +148,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   onLightboxPhotoChange,
   photosForIds,
   afterGrid,
+  beforeGrid,
   slug,
   categoryId,
   heroPhotoOverride,
@@ -469,6 +472,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     likedOnly,
     onToggleLikedOnly,
     afterGrid,
+    beforeGrid,
     slug,
     // Face data (#1074) must reach the full-page layouts too — they render
     // their OWN lightbox rather than the one below, so without this the
