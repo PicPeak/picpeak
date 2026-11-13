@@ -1376,6 +1376,16 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
     const { manifest } = await getBackupManifest(backupRun.id);
     const destinationType = manifest.metadata?.destination_type || config.backup_destination_type;
 
+    // A restore point that carries the database dump is database contents,
+    // which only a Super Admin may take out (the .picpeak export holds the
+    // same line). backup.view still downloads restore points without one.
+    if (manifest.database?.backup_file && !(await isSuperAdminUser(req.admin && req.admin.id))) {
+      return res.status(403).json({
+        error: 'Only a Super Admin can download a backup that contains the database',
+        code: 'SUPER_ADMIN_REQUIRED',
+      });
+    }
+
     // History belongs to the selected manifest, not the current destination.
     switch (destinationType) {
     case 'local': {
