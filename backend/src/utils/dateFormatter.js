@@ -9,8 +9,13 @@ const DEFAULT_FORMAT = {
   locale: 'en-GB'
 };
 
-// Format date based on system settings
-async function formatDate(date, language = 'en') {
+const LANGUAGE_LOCALES = { es: 'es-ES', fr: 'fr-FR', nl: 'nl-NL', ru: 'ru-RU', sl: 'sl-SI' };
+
+// Format date based on system settings. `monthNames: true` names the month
+// of a long date in every app language, not only de and pt (the link preview,
+// issue 2489). Emails leave it off: some reuse one formatted date for
+// recipients in another language.
+async function formatDate(date, language = 'en', { monthNames = false } = {}) {
   try {
     // Get date format setting from database
     const setting = await db('app_settings').where('setting_key', 'general_date_format').first();
@@ -51,11 +56,10 @@ async function formatDate(date, language = 'en') {
     // Format based on the configured format
     switch (dateConfig.format) {
     case 'MM/DD/YYYY':
-      return dateObj.toLocaleDateString(locale, {
-        month: '2-digit',
-        day: '2-digit',
-        year: 'numeric'
-      });
+      // Spelled out: a German or Portuguese locale would put the day first
+      // and turn 11/10 into 10.11 or 10/11, a different date for a reader of
+      // the configured order.
+      return `${String(dateObj.getMonth() + 1).padStart(2, '0')}/${String(dateObj.getDate()).padStart(2, '0')}/${dateObj.getFullYear()}`;
     case 'DD/MM/YYYY':
       return dateObj.toLocaleDateString(locale, {
         day: '2-digit',
@@ -76,8 +80,9 @@ async function formatDate(date, language = 'en') {
         year: 'numeric'
       });
     default:
-      // Use long format as fallback
-      return dateObj.toLocaleDateString(locale, {
+      // Use long format as fallback. Only here, because a locale also sets
+      // the field order of the numeric formats above.
+      return dateObj.toLocaleDateString((monthNames && LANGUAGE_LOCALES[language]) || locale, {
         year: 'numeric',
         month: 'long',
         day: 'numeric'

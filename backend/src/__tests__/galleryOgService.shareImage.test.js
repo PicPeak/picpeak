@@ -37,6 +37,13 @@ jest.mock('../utils/dateFormatter', () => ({
   formatDate: jest.fn().mockResolvedValue('12.06.2026'),
 }));
 
+// The preview language is one more app_settings read; English keeps the
+// queued db responses in the order this file pins.
+jest.mock('../services/ogText', () => ({
+  ...jest.requireActual('../services/ogText'),
+  previewLanguage: jest.fn().mockResolvedValue('en'),
+}));
+
 const { db } = require('../database/db');
 const { ensureThumbnail } = require('../services/imageProcessor');
 const { getStorage } = require('../services/storage');
