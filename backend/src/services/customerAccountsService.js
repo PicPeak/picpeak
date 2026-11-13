@@ -2150,10 +2150,18 @@ async function getEffectiveFeaturesForCustomer(customerOrId) {
   // reads as off.
   const documentsMaster = await db('feature_flags').where({ key: 'documents' }).first();
   const documentsEnabled = documentsMaster ? truthy(documentsMaster.value) : false;
+  // Quotes / Bills: the global feature_flags row (Settings → Features; a
+  // missing row reads as off) AND the older customer_surface switch AND the
+  // per-customer flag. The older switch stays as an extra gate so an
+  // install that had the portal tabs off keeps them off.
+  const quotesMaster = await db('feature_flags').where({ key: 'quotes' }).first();
+  const billsMaster = await db('feature_flags').where({ key: 'bills' }).first();
+  const quotesEnabled = (quotesMaster ? truthy(quotesMaster.value) : false) && globals.quotesEnabled;
+  const billsEnabled = (billsMaster ? truthy(billsMaster.value) : false) && globals.billsEnabled;
   return {
     calendar: globals.calendarEnabled && truthy(customer.feature_calendar),
-    quotes:   globals.quotesEnabled   && truthy(customer.feature_quotes),
-    bills:    globals.billsEnabled    && truthy(customer.feature_bills),
+    quotes:   quotesEnabled && truthy(customer.feature_quotes),
+    bills:    billsEnabled  && truthy(customer.feature_bills),
     hoursLogging: hoursLoggingMaster && truthy(customer.feature_hours_logging),
     contracts: contractsEnabled && truthy(customer.feature_contracts),
     documents: documentsEnabled && truthy(customer.feature_documents),

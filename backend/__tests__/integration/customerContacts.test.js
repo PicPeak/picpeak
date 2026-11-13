@@ -86,7 +86,7 @@ describe('customer contacts', () => {
       feature_quotes: true,
       feature_bills: true,
     });
-    for (const key of ['contracts', 'documents', 'customerPortal']) {
+    for (const key of ['contracts', 'documents', 'customerPortal', 'quotes', 'bills']) {
       const flag = await db('feature_flags').where({ key }).first();
       if (flag) await db('feature_flags').where({ key }).update({ value: true });
       else await db('feature_flags').insert({ key, value: true });

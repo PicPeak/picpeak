@@ -72,9 +72,11 @@ describe('customer portal contracts and quotes', () => {
     });
     await db('customer_accounts').whereIn('id', [customerId, otherCustomerId])
       .update({ feature_contracts: true, feature_quotes: true });
-    const flag = await db('feature_flags').where({ key: 'contracts' }).first();
-    if (flag) await db('feature_flags').where({ key: 'contracts' }).update({ value: true });
-    else await db('feature_flags').insert({ key: 'contracts', value: true });
+    for (const key of ['contracts', 'quotes']) {
+      const flag = await db('feature_flags').where({ key }).first();
+      if (flag) await db('feature_flags').where({ key }).update({ value: true });
+      else await db('feature_flags').insert({ key, value: true });
+    }
     // The global quotes switch for the customer surface is seeded off.
     const quotesSwitch = await db('app_settings').where({ setting_key: 'customer_feature_quotes_enabled' }).first();
     if (quotesSwitch) {
