@@ -711,6 +711,21 @@ describe('admin PDF repair actions under concurrent requests', () => {
     expect(await restampLogsFor(before.id)).toEqual([expect.objectContaining({ stampFailed: ['admin'] })]);
   });
 
+  it('keeps no customer image from a re-stamp whose admin image is refused', async () => {
+    const before = await fullySignedWithImages('Refused admin restamp');
+    const pngsBefore = signaturePngs().length;
+
+    await expect(contractService.restampSignatures(
+      before.id,
+      { customerSignatureDataUrl: SIGNATURE_DATA_URL, adminSignatureDataUrl: 'data:image/png;base64,YmFk' },
+      adminId,
+    )).rejects.toMatchObject({ statusCode: 400, code: 'BAD_SIGNATURE_FORMAT' });
+
+    expect(signaturePngs().length).toBe(pngsBefore);
+    const contract = await db('contracts').where({ id: before.id }).first();
+    expect(contract.signed_customer_signature_path).toBe(before.signed_customer_signature_path);
+  });
+
   it('refuses a re-send when a signature on record cannot be stamped, and mails nothing', async () => {
     const before = await fullySignedWithImages('Unstampable resend');
     fs.writeFileSync(onDisk(before.signed_admin_signature_path), 'not an image');
