@@ -22,7 +22,7 @@ const sharp = require('./isolatedSharp');
 const { db } = require('../database/db');
 const { detectFaces } = require('./faceClient');
 const { getThresholds } = require('./faceSettings');
-const { unpackEmbedding, normalize, dot } = require('./faceClustering');
+const { unpackEmbedding, normalize, dot, meetsQualityFloor } = require('./faceClustering');
 const { isResourceError } = require('./imageResourcePolicy');
 
 // A selfie needs no more than this for a face signature; it also bounds the
@@ -112,7 +112,8 @@ async function findPhotosBySelfie({ event, accessLevel, imageBuffer }) {
 
   const probe = normalize(Float32Array.from(face.embedding));
   const modelVersion = result?.model_version || null;
-  const { face_selfie_match_threshold: threshold } = await getThresholds();
+  const thresholds = await getThresholds();
+  const threshold = thresholds.face_selfie_match_threshold;
 
   const { galleryListQuery } = require('./galleryQueryService');
   const { photosQuery } = await galleryListQuery({ event, query: {}, identity: {}, accessLevel });
@@ -134,10 +135,17 @@ async function findPhotosBySelfie({ event, accessLevel, imageBuffer }) {
         q.where((w) => w.where('photo_faces.model_version', modelVersion).orWhereNull('photo_faces.model_version'));
       }
     })
-    .select('photo_faces.photo_id', 'photo_faces.embedding');
+    .select('photo_faces.photo_id', 'photo_faces.embedding', 'photo_faces.person_id',
+      'photo_faces.det_score', 'photo_faces.bbox_w', 'photo_faces.bbox_h');
 
   const bestByPhoto = new Map();
   for (const row of rows) {
+    // An unassigned face below the clustering quality floor is one no person
+    // holds, so a person's hidden or ignored flag cannot reach it: raising the
+    // floor and reclustering drops a suppressed person's small faces out of
+    // that person. Such a face is not a candidate, the same rule clustering
+    // applies before it assigns a face to anyone.
+    if (row.person_id == null && !meetsQualityFloor(row, thresholds)) continue;
     const vec = unpackEmbedding(row.embedding);
     if (!vec || vec.length !== probe.length) continue;
     const score = dot(probe, vec);

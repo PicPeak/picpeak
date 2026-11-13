@@ -78,6 +78,10 @@ describe('selfie search (issue 2355)', () => {
       hiddenPhoto: [{ visibility: 'hidden' }, vec({ 0: 1 })],
       hiddenPerson: [{}, vec({ 0: 1 }), { person_id: hiddenPerson }],
       ignoredPerson: [{}, vec({ 0: 1 }), { person_id: ignoredPerson }],
+      // A face below the quality floor that no person holds: what a hidden
+      // person's small face becomes after the floor is raised and the event
+      // reclustered.
+      belowFloor: [{}, vec({ 0: 1 }), { bbox_w: 20, bbox_h: 20 }],
       otherModel: [{}, vec({ 0: 1 }), { model_version: 'other@2' }],
     };
     for (const [name, [photo, embedding, extra = {}]] of Object.entries(fixtures)) {
