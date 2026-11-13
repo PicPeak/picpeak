@@ -26,15 +26,16 @@ const { joinLivePhotos, livePhotos, whereGuestVisible, whereInSelection } = requ
  * admin gets everything. Also excludes photos still being processed, which
  * are invisible in the gallery payload too.
  */
-function applyVisibilityScope(query, { isClient, forAdmin = false }) {
+function applyVisibilityScope(query, { isClient, forAdmin = false, fullView = false }) {
   query.where(function () {
     this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
   });
   // A file gone from the share (migration 312): in no gallery view.
   if (!forAdmin) query.whereNull('photos.unavailable_reason');
   if (!isClient) {
-    // A guest sees the selection only (issue 2356); counts and covers follow.
-    if (!forAdmin) whereInSelection(query);
+    // A guest sees the selection only (issue 2356), unless the session came
+    // from the full link; counts and covers follow the photo list.
+    if (!forAdmin && !fullView) whereInSelection(query);
     whereGuestVisible(query);
   } else if (!forAdmin) {
     query.whereNull('photos.moderation_status');
@@ -50,7 +51,7 @@ function applyVisibilityScope(query, { isClient, forAdmin = false }) {
  * are dropped — a person who appears in three hidden photos and one visible
  * one is not "in this gallery" from the guest's point of view.
  */
-async function listPeople(eventId, { isClient = false, forAdmin = false, minClusterSize = 3 } = {}) {
+async function listPeople(eventId, { isClient = false, forAdmin = false, fullView = false, minClusterSize = 3 } = {}) {
   const people = await db('event_people')
     .where({ event_id: eventId })
     .modify((q) => {
@@ -70,7 +71,7 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, minClus
       .modify(joinLivePhotos, 'photos.id', 'photo_faces.photo_id')
       .where('photo_faces.event_id', eventId)
       .whereNotNull('photo_faces.person_id'),
-    { isClient, forAdmin }
+    { isClient, forAdmin, fullView }
   )
     .groupBy('photo_faces.person_id')
     .select('photo_faces.person_id')
@@ -87,7 +88,7 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, minClus
       .modify(joinLivePhotos, 'photos.id', 'photo_faces.photo_id')
       .where('photo_faces.event_id', eventId)
       .whereNotNull('photo_faces.person_id'),
-    { isClient, forAdmin }
+    { isClient, forAdmin, fullView }
   )
     .orderBy('photo_faces.det_score', 'desc')
     .select(
@@ -214,7 +215,7 @@ async function getPersonIdsByPhoto(eventId, photoIds, { forAdmin = false } = {})
  * Scan progress for the admin status line and the gallery's "Finding
  * people… 240/1200" indicator.
  */
-async function getScanStatus(eventId, { isClient = true, forAdmin = true } = {}) {
+async function getScanStatus(eventId, { isClient = true, forAdmin = true, fullView = false } = {}) {
   // `isClient` defaults to TRUE (the admin/photographer view) because every
   // existing caller is an admin surface. A guest must pass isClient:false:
   // counting every photo with a face_status would otherwise tell them how
@@ -222,7 +223,7 @@ async function getScanStatus(eventId, { isClient = true, forAdmin = true } = {})
   // covers are already scoped against, arriving through the progress bar.
   const rows = await applyVisibilityScope(
     livePhotos(db).where({ event_id: eventId }).whereNotNull('face_status'),
-    { isClient, forAdmin }
+    { isClient, forAdmin, fullView }
   )
     .groupBy('face_status')
     .select('face_status')

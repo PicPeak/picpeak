@@ -44,11 +44,14 @@ function selectionHiddenFor(prefix, relpath) {
   return !String(relpath).split(path.sep).join('/').startsWith(prefix);
 }
 
-const escapeLike = (value) => value.replace(/[\\%_]/g, (c) => `\\${c}`);
-
 /**
  * Rewrite selection_hidden for every photo of the event from its path and the
  * event's current selection. Returns how many rows changed.
+ *
+ * The prefix is compared with substr(), not LIKE: SQLite's LIKE ignores ASCII
+ * case, so "shoot/Gallery/" would count as inside "shoot/gallery/" here while
+ * the importer (selectionHiddenFor, a case-sensitive startsWith) hides it.
+ * substr() counts characters on both engines, as [...prefix] does.
  */
 async function recomputeSelection(eventId, conn = db) {
   const event = await conn('events').where({ id: eventId })
@@ -60,14 +63,13 @@ async function recomputeSelection(eventId, conn = db) {
     return photos().where('selection_hidden', formatBoolean(true))
       .update({ selection_hidden: formatBoolean(false) });
   }
-  const like = `${escapeLike(prefix)}%`;
-  const inside = (q) => q.whereNotNull('external_relpath').whereRaw('external_relpath LIKE ? ESCAPE \'\\\'', [like]);
+  const startsWithPrefix = ['substr(external_relpath, 1, ?) = ?', [[...prefix].length, prefix]];
   let changed = await photos().where('selection_hidden', formatBoolean(true))
-    .where((q) => q.whereNull('external_relpath').orWhereRaw('external_relpath LIKE ? ESCAPE \'\\\'', [like]))
+    .where((q) => q.whereNull('external_relpath').orWhereRaw(...startsWithPrefix))
     .update({ selection_hidden: formatBoolean(false) });
   changed += await photos().where('selection_hidden', formatBoolean(false))
     .whereNotNull('external_relpath')
-    .whereNot((q) => inside(q))
+    .whereNot((q) => q.whereRaw(...startsWithPrefix))
     .update({ selection_hidden: formatBoolean(true) });
   return changed;
 }

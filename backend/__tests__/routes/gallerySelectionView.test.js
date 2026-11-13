@@ -169,6 +169,47 @@ describe('gallery selection and full link (issue 2356)', () => {
     });
   });
 
+  describe('people', () => {
+    it('counts the photos outside the selection for a full-link session only', async () => {
+      const faceSettings = require('../../src/services/faceSettings');
+      const enabled = jest.spyOn(faceSettings, 'isEnabledForEvent').mockResolvedValue(true);
+      const thresholds = jest.spyOn(faceSettings, 'getThresholds')
+        .mockResolvedValue({ ...faceSettings.DEFAULTS, face_min_cluster_size: 1 });
+      const now = new Date().toISOString();
+      const person = unwrap(await db('event_people').insert({
+        event_id: eventId, centroid: Buffer.alloc(8), face_count_total: 2, model_version: 'test-v1',
+        created_at: now, updated_at: now,
+      }).returning('id'));
+      // One face in the selection, one only in the full view, one person only there.
+      const onlyOutside = unwrap(await db('event_people').insert({
+        event_id: eventId, centroid: Buffer.alloc(8), face_count_total: 1, model_version: 'test-v1',
+        created_at: now, updated_at: now,
+      }).returning('id'));
+      const face = (photoId, personId) => db('photo_faces').insert({
+        photo_id: photoId, event_id: eventId, person_id: personId,
+        bbox_x: 0, bbox_y: 0, bbox_w: 200, bbox_h: 200, det_score: 0.99,
+        embedding: Buffer.alloc(8), model_version: 'test-v1', created_at: now,
+      });
+      await face(ids.selected, person);
+      await face(ids.original, person);
+      await face(ids.original, onlyOutside);
+      try {
+        const people = async (token) => {
+          const res = await as(token)(request(app).get(`/api/gallery/${SLUG}/people`));
+          expect(res.status).toBe(200);
+          return Object.fromEntries(res.body.people.map((p) => [p.id, p.face_count]));
+        };
+        expect(await people(await guestToken())).toEqual({ [person]: 1 });
+        expect(await people(await fullToken())).toEqual({ [person]: 2, [onlyOutside]: 1 });
+      } finally {
+        enabled.mockRestore();
+        thresholds.mockRestore();
+        await db('photo_faces').where({ event_id: eventId }).del();
+        await db('event_people').where({ event_id: eventId }).del();
+      }
+    });
+  });
+
   describe('admin', () => {
     const auth = (req) => req.set('Authorization', `Bearer ${adminToken}`);
     it('filters the photo list by selection and marks each photo', async () => {

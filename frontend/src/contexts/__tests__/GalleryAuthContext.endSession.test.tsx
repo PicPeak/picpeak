@@ -34,6 +34,7 @@ vi.mock('../../utils/cleanupGalleryAuth', () => ({ cleanupOldGalleryAuth: vi.fn(
 import { GalleryAuthProvider, useGalleryAuth } from '../GalleryAuthContext';
 import { storeGalleryToken } from '../../utils/galleryAuthStorage';
 import { getGuestIdentity, storeGuestIdentity } from '../../utils/guestIdentityStorage';
+import { getFullLinkToken, setFullLinkToken } from '../../utils/galleryFullLink';
 
 // Unsigned, but the client only reads `exp` to drop expired identities.
 const b64 = (value: object) => btoa(JSON.stringify(value)).replace(/=+$/, '');
@@ -74,5 +75,22 @@ describe('GalleryAuthProvider: ending a rejected session keeps the guest', () =>
     act(() => auth!.logout());
     await waitFor(() => expect(auth?.isAuthenticated).toBe(false));
     expect(getGuestIdentity(SLUG)).toBeNull();
+  });
+
+  // Issue 2356: the full-link token is a credential; the next login in this
+  // tab would send it along. A rejected session keeps it (a rotated link is
+  // forgotten when the login refuses it), the visitor's own logout drops it.
+  it('logout() forgets the full link, endSession() keeps it', async () => {
+    const full = 'a'.repeat(64);
+    setFullLinkToken(SLUG, full);
+    await mountAuthenticated();
+    act(() => auth!.endSession());
+    await waitFor(() => expect(auth?.isAuthenticated).toBe(false));
+    expect(getFullLinkToken(SLUG)).toBe(full);
+    cleanup();
+    await mountAuthenticated();
+    act(() => auth!.logout());
+    await waitFor(() => expect(auth?.isAuthenticated).toBe(false));
+    expect(getFullLinkToken(SLUG)).toBeNull();
   });
 });

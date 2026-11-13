@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, logActivity } = require('../../database/db');
-const { livePhotos } = require('../../utils/photoVisibility');
+const { livePhotos, seesWholeSource, viewerOf } = require('../../utils/photoVisibility');
 const router = express.Router();
 
 // A photoId that is not a plausible row id is refused here (issue 2078);
@@ -138,16 +138,20 @@ router.get('/:slug/people', verifyGalleryAccess, resolveGuest, noStoreCache, asy
     const { listPeople, getScanStatus } = require('../../services/facePeopleService');
     const thresholds = await getThresholds();
 
+    // A full-link session counts the photos outside the selection too (issue
+    // 2356), as its photo list does.
+    const fullView = seesWholeSource(viewerOf(req));
     const people = await listPeople(req.event.id, {
       isClient,
       forAdmin: false,
+      fullView,
       minClusterSize: thresholds.face_min_cluster_size,
     });
 
     // Drives the "Finding people… 240/1200" progress line during a backfill.
     // Scoped to what this viewer may see — an unscoped total would leak the
     // number of hidden photos through the progress bar.
-    const status = await getScanStatus(req.event.id, { isClient, forAdmin: false });
+    const status = await getScanStatus(req.event.id, { isClient, forAdmin: false, fullView });
 
     res.json({
       people,

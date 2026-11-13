@@ -13,6 +13,7 @@ import {
   storeGalleryToken,
 } from '../utils/galleryAuthStorage';
 import { clearGuestIdentity } from '../utils/guestIdentityStorage';
+import { clearFullLinkToken } from '../utils/galleryFullLink';
 import type { GalleryAccessLevel } from '../types';
 import { isShareToken } from '../utils/shareToken';
 import { isGalleryTemporarilyDisabled } from '../utils/galleryAvailability';
@@ -471,7 +472,12 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       // clearing it here left a returning guest unidentified, with their
       // single-use invite already spent (issue 2209). Closing the tab keeps
       // the identity too, so this is no weaker than that.
-      if (!keepGuestIdentity) clearGuestIdentity(currentSlug);
+      if (!keepGuestIdentity) {
+        clearGuestIdentity(currentSlug);
+        // The full link (issue 2356) is a credential too: the next login in
+        // this tab would send it along and see every photo.
+        clearFullLinkToken(currentSlug);
+      }
     }
     authService.galleryLogout(currentSlug || undefined);
     setIsAuthenticated(false);

@@ -217,6 +217,51 @@ describe('curated selection inside an external source (issue 2356)', () => {
     });
   });
 
+  it('compares the selection folder case-sensitively, like the importer', async () => {
+    const eventId = await seedEvent();
+    // SQLite's LIKE ignores ASCII case: "Gallery" would have counted as inside
+    // "gallery" here while the importer hides it. Non-ASCII names count by
+    // character on both engines.
+    await db('events').where({ id: eventId }).update({ external_path: 'shoot', selection_path: 'Ölbild' });
+    const insert = (rel, hidden) => db('photos').insert({
+      event_id: eventId, filename: path.basename(rel), path: rel, type: 'individual',
+      source_origin: 'external', external_relpath: rel, uploaded_at: new Date().toISOString(),
+      selection_hidden: hidden,
+    });
+    await insert('shoot/Ölbild/in.jpg', true);
+    await insert('shoot/ölbild/out.jpg', false);
+    await insert('shoot/ÖLBILD/out2.jpg', false);
+    await require('../../src/services/externalSelection').recomputeSelection(eventId);
+    expect(await flags(eventId)).toEqual({
+      'shoot/Ölbild/in.jpg': { hidden: false, gone: null },
+      'shoot/ölbild/out.jpg': { hidden: true, gone: null },
+      'shoot/ÖLBILD/out2.jpg': { hidden: true, gone: null },
+    });
+    await db('events').where({ id: eventId }).update({ selection_path: 'gallery' });
+    await db('photos').where({ event_id: eventId }).del();
+    await insert('shoot/Gallery/x.jpg', true);
+    await require('../../src/services/externalSelection').recomputeSelection(eventId);
+    expect((await flags(eventId))['shoot/Gallery/x.jpg'].hidden).toBe(true);
+  });
+
+  it('keys the selection by the folder an import rebinds the event to', async () => {
+    const eventId = await seedEvent();
+    await writeJpeg('first/gallery/a.jpg');
+    await writeJpeg('second/gallery/IMG_1.jpg');
+    await writeJpeg('second/Originale/IMG_1.jpg', { r: 200, g: 10, b: 10 });
+    await db('events').where({ id: eventId }).update({ external_path: 'first', selection_path: 'gallery' });
+    await scan(eventId, 'first');
+    await db('photos').where({ event_id: eventId }).del();
+
+    // Keyed by the old binding, both IMG_1.jpg looked like non-selection
+    // files of one name and only one was imported.
+    expect(await scan(eventId, 'second')).toMatchObject({ imported: 2 });
+    expect(await flags(eventId)).toEqual({
+      'second/gallery/IMG_1.jpg': { hidden: false, gone: null },
+      'second/Originale/IMG_1.jpg': { hidden: true, gone: null },
+    });
+  });
+
   it('manages the full link: needs a selection, rotates, removes', async () => {
     const eventId = await seedEvent();
     await writeJpeg('shoot/gallery/a.jpg');

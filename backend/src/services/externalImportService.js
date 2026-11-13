@@ -702,8 +702,10 @@ async function importExternalFolder({
   const mirrorFolders = parseBooleanInput(event.folder_structure, false);
   // The curated selection (issue 2356): a row outside it is hidden from the
   // ordinary link from the moment it is written. recomputeSelection() at the
-  // end of the pass catches a selection changed meanwhile.
-  const selPrefix = externalSelection.selectionPrefix(event);
+  // end of the pass catches a selection changed meanwhile. The prefix names
+  // the folder this pass imports (and saves), not the one stored before it:
+  // a manual import may rebind the event to another folder.
+  const selPrefix = externalSelection.selectionPrefix({ ...event, source_mode: 'reference', external_path });
   const selectionHidden = (relFromRoot) => externalSelection.selectionHiddenFor(selPrefix, relFromRoot);
   const firstLookKeywords = await folderTree.getFirstLookKeywords();
   const folderIdByPath = new Map();
