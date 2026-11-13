@@ -8,7 +8,7 @@
  * the selection into archiver's queue, and a response that writes nothing for
  * the idle timeout is ended, which gives its admission slot back.
  *
- * Bounded: 24 photos of 512 KiB rendered (random, so deflate cannot shrink
+ * Bounded: 24 photos of 2 MiB rendered (random, so deflate cannot shrink
  * them), real HTTP server on 127.0.0.1, raw socket that stops reading after
  * the response headers.
  */
@@ -22,7 +22,9 @@ process.env.ZIP_STREAM_IDLE_TIMEOUT_MS = '1500';
 
 const SLUG = 'archive-pacing';
 const PHOTO_COUNT = 24;
-const RENDER_BYTES = 512 * 1024;
+// Large enough that loopback socket buffers (several MiB on Linux) absorb
+// only a few entries.
+const RENDER_BYTES = 2 * 1024 * 1024;
 
 const mockStorage = {
   kind: () => 's3',
@@ -53,7 +55,7 @@ jest.mock('../../src/services/downloadRendition', () => {
       if (mockRenders.count === 1 && mockRenders.slowFirstMs) {
         await new Promise((r) => setTimeout(r, mockRenders.slowFirstMs));
       }
-      return nodeCrypto.randomBytes(512 * 1024);
+      return nodeCrypto.randomBytes(2 * 1024 * 1024);
     },
   };
 });
@@ -166,6 +168,9 @@ describe('gallery ZIP routes pace rendering by the reader', () => {
     expect(rendered).toBeGreaterThan(0);
     // Socket and stream buffers absorb a few entries; the rest must wait.
     expect(rendered).toBeLessThan(PHOTO_COUNT / 2);
+    // And it stays there: nothing more is rendered while the client is idle.
+    await wait(400);
+    expect(mockRenders.count).toBe(rendered);
     expect(stalled.isClosed()).toBe(false);
 
     // The idle timeout (1.5 s here) ends the stalled response on the server
