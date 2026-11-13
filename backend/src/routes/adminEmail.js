@@ -7,6 +7,9 @@ const { body, query, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
+const {
+  mayReachQueuedEmail, requireOwnedQueuedEmail, queuedEmailListScope, sentByColumns,
+} = require('../middleware/emailQueueOwnership');
 // Gate the NEW Messages routes on the `messaging` flag (per-route, NOT the whole
 // /email mount — the pre-existing config/queue/received endpoints stay ungated).
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
@@ -348,6 +351,10 @@ router.post('/item/:kind/:id/state', adminAuth, messagingGate, requirePermission
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
     const state = String(req.body?.state || '');
     if (!['active', 'archived', 'deleted'].includes(state)) return res.status(400).json({ error: 'Invalid state' });
+    // Sent mail follows its event's owner, like the project routes.
+    if (table === 'email_queue' && !(await mayReachQueuedEmail(req.admin, id))) {
+      return res.status(404).json({ error: 'Not found' });
+    }
     const n = await db(table).where({ id }).update({ mailbox_state: state });
     if (!n) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
@@ -363,6 +370,9 @@ router.delete('/item/:kind/:id', adminAuth, messagingGate, requirePermission('em
     if (!table) return res.status(400).json({ error: 'Invalid kind' });
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+    if (table === 'email_queue' && !(await mayReachQueuedEmail(req.admin, id))) {
+      return res.status(404).json({ error: 'Not found' });
+    }
     await db(table).where({ id }).del();
     res.json({ ok: true });
   } catch (error) {
@@ -731,7 +741,11 @@ router.get('/queue', adminAuth, requirePermission('email.view'), [
     const page = req.query.page ? parseInt(req.query.page, 10) : 1;
     const pageSize = req.query.pageSize ? parseInt(req.query.pageSize, 10) : 25;
 
+    // Only mail the caller may reach: its own messages and the mail of the
+    // galleries it may act on (all of it for a Super Admin).
+    const scope = await queuedEmailListScope(req.admin);
     const applyFilters = (qb) => {
+      scope(qb);
       if (req.query.status === 'pending') {
         qb.whereIn('email_queue.status', ['pending', PROTECTED_PENDING_STATUS]);
       } else if (req.query.status) qb.where('email_queue.status', req.query.status);
@@ -812,7 +826,7 @@ router.get('/queue', adminAuth, requirePermission('email.view'), [
 // 119); rows sent before that migration have none. Attachment disk paths in
 // `email_data` are never exposed — only the filenames, so the pane can list
 // attachments without leaking storage paths (same PII posture as the list).
-router.get('/queue/:id', adminAuth, messagingGate, requirePermission('email.view'), async (req, res) => {
+router.get('/queue/:id', adminAuth, messagingGate, requirePermission('email.view'), requireOwnedQueuedEmail('id'), async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -911,6 +925,8 @@ router.post('/send', adminAuth, messagingGate, requirePermission('email.send'), 
       }),
       status: 'sent',
       origin: 'manual',
+      // The sender keeps their message in Sent (migration 359).
+      ...(await sentByColumns(req.admin.id)),
       rendered_html: html,
       // Engine-shaped like queueEmail's rows, so the queue orders and filters
       // on one shape per engine (issue 1670). Already sent, so no schedule.

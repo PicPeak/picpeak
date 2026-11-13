@@ -16,6 +16,7 @@
 const { db, logActivity } = require('../database/db');
 const { AppError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
+const { reachesQueuedEmailRow, senderColumnReady, sentByColumns } = require('../middleware/emailQueueOwnership');
 const { auditedUpdate } = require('./accountingHistory');
 const { redactBearerLinks, hasMaskedRecoveryLink, parseEmailData, MASK } = require('../utils/emailSecretRedaction');
 const {
@@ -1229,9 +1230,9 @@ async function getProjectOverview(id, perms = {}, admin = null) {
   const events = eventRows.map(({ created_by: _ignored, ...e }) => e);
   const eventIds = events.map((e) => e.id);
 
-  // Which of this project's events would filterOwnedEventIds() let `admin`
-  // act on. Mirrors that predicate exactly (ownership.js): super_admin gets
-  // everything, otherwise created_by IS NULL OR created_by = admin.id.
+  // Which emails `admin` may preview and act on: the rule the email routes
+  // apply (middleware/emailQueueOwnership): super_admin gets everything, an
+  // admin its own messages and the mail of the galleries it may act on.
   //
   // Project ownership does NOT imply event ownership — ownedProjectsSubquery's
   // `projects.created_by = admin.id` branch places no constraint on who owns
@@ -1242,17 +1243,8 @@ async function getProjectOverview(id, perms = {}, admin = null) {
   // No admin context → nothing is actionable. Without this, an ownerless
   // (legacy/system) event would satisfy `created_by == null` and be marked
   // actionable for a caller we know nothing about.
-  const isSuperAdmin = admin?.roleName === 'super_admin';
-  let actionableEventIds = new Set();
-  if (isSuperAdmin) {
-    actionableEventIds = new Set(eventIds);
-  } else if (admin?.id != null) {
-    actionableEventIds = new Set(
-      eventRows
-        .filter((e) => e.created_by == null || Number(e.created_by) === Number(admin.id))
-        .map((e) => e.id),
-    );
-  }
+  const eventsById = new Map(eventRows.map((e) => [Number(e.id), e]));
+  const withSender = await senderColumnReady();
 
   // Whether new quotes, contracts and invoices may join this project: the
   // CRM write rule ties project_id to the project's creator (or a super
@@ -1322,6 +1314,7 @@ async function getProjectOverview(id, perms = {}, admin = null) {
   //      both scopes to the right customer and excludes system/admin alerts
   //      (backup_failed, …) sent to the same inbox.
   const selectCols = ['id', 'recipient_email', 'email_type', 'status', 'created_at', 'sent_at', 'error_message', 'event_id',
+    ...(withSender ? ['sent_by_admin_id'] : []),
     // Exact stored preview available? (CASE is cross-DB: SQLite→0/1, PG→int)
     db.raw('CASE WHEN rendered_html IS NOT NULL THEN 1 ELSE 0 END as has_rendered')];
   const mapEmail = (e) => ({
@@ -1333,7 +1326,7 @@ async function getProjectOverview(id, perms = {}, admin = null) {
     // on this row? Authoritative here because the client cannot derive it: CRM
     // document mail has no event to own, and event mail additionally requires
     // ownership of THAT event, which the response deliberately does not expose.
-    canAct: isSuperAdmin || (e.event_id != null && actionableEventIds.has(e.event_id)),
+    canAct: reachesQueuedEmailRow(admin, e, e.event_id != null ? eventsById.get(Number(e.event_id)) : null),
   });
 
   const emailRows = [];
@@ -1499,6 +1492,9 @@ async function resendEmail(emailId, adminId = null) {
     // attributes mail to an address holder by it, and the address may have
     // changed hands since. A copy of a copy keeps the first mail's time.
     original_created_at: row.original_created_at ?? row.created_at,
+    // Mail without a gallery: whoever resent it reaches the copy as its
+    // sender (migration 359). Gallery mail keeps following its gallery.
+    ...(row.event_id ? {} : await sentByColumns(adminId)),
     // Explicit NULL: the column default is text on SQLite and never comes
     // due (issue 1670) — see queueEmail.
     scheduled_at: null,
