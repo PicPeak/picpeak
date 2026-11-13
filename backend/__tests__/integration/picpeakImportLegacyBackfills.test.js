@@ -103,6 +103,18 @@ describe('portable import backfills of migrations 259 and 349 (issue 2481)', () 
     expect(await themeFlags()).toEqual({ 21: false, 22: true });
   });
 
+  it('handles an archive whose event rows carry the flag on some rows only', async () => {
+    await importArchive({
+      app_settings: archiveSettings(),
+      events: [
+        event(51, { custom_theme_enabled: 0 }),
+        event(52, { css_template_id: 1 }), // no flag: 259's rule applies
+        event(53), // no flag, no theme
+      ],
+    });
+    expect(await themeFlags()).toEqual({ 51: false, 52: true, 53: false });
+  });
+
   const focalFlags = async () => Array.from(await db('photos').orderBy('id').select('id', 'focal_checked'))
     .map((r) => [r.id, Number(r.focal_checked)]);
 

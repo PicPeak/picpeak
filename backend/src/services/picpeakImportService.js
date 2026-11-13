@@ -765,7 +765,14 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
           prepared = prepared.map((row) => (row.focal_checked === undefined ? { ...row, focal_checked: row.focal_source == null ? 0 : 1 } : row));
         }
         if (table === 'events' && markLegacyThemes) {
-          for (const row of prepared) if (row.custom_theme_enabled === undefined) legacyThemeEventIds.push(row.id);
+          // Off for now on every row without the flag (a multi-row insert
+          // writes NULL for a key only some rows carry); 259's rule turns it
+          // on below once Branding is loaded.
+          prepared = prepared.map((row) => {
+            if (row.custom_theme_enabled !== undefined) return row;
+            legacyThemeEventIds.push(row.id);
+            return { ...row, custom_theme_enabled: 0 };
+          });
         }
         await trx.batchInsert(table, prepared, prepared.length);
       }
