@@ -28,6 +28,7 @@ const quoteService = require('../services/quoteService');
 const publicDocumentViews = require('../services/publicDocumentViews');
 const verification = require('../services/publicDocumentVerificationService');
 const { clientIpForAudit } = require('../utils/clientIp');
+const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const { loadActionToken } = require('../utils/publicTokenGuards');
 const { mountVerification, sendVerificationRequired, tokenParam } = require('./publicDocumentVerification');
 
@@ -36,6 +37,9 @@ const TABLE = 'quote_action_tokens';
 
 const router = express.Router();
 router.use(require('../database/crmAccess').crmCapabilityRouter('public quote action-token capability'));
+// With quotes switched off, every route here (the code steps included) is
+// refused with the same code the admin routes use.
+router.use(requireFeatureFlag('quotes', 'QUOTES_DISABLED'));
 
 // Rate-limit: 30 token previews per IP per minute, 10 responses.
 const previewLimiter = rateLimit({
