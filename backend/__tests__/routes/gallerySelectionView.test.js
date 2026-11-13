@@ -210,6 +210,15 @@ describe('gallery selection and full link (issue 2356)', () => {
     });
   });
 
+  describe('download-ready mail', () => {
+    it('is not offered for an archive built for a full-link session', () => {
+      const { canMail } = require('../../src/services/downloadJobNotifier');
+      expect(canMail({ visibility_scope: 'public' })).toBe(true);
+      expect(canMail({ visibility_scope: 'full' })).toBe(false);
+      expect(canMail({ visibility_scope: 'hidden' })).toBe(false);
+    });
+  });
+
   describe('feedback cap', () => {
     it('does not count a like on a photo outside the selection against an ordinary guest', async () => {
       const feedbackService = require('../../src/services/feedbackService');
