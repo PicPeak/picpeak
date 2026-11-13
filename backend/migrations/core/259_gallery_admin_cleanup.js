@@ -214,12 +214,12 @@ async function markCustomThemes(knex, eventIds = null) {
     brandingTheme = parsed && typeof parsed === 'object' ? parsed : null;
   }
 
-  const rows = [];
   const columns = ['id', 'color_theme', 'css_template_id', 'header_style', 'hero_divider_style'];
-  if (eventIds === null) rows.push(...await knex('events').select(columns));
+  let rows = [];
+  if (eventIds === null) rows = Array.from(await knex('events').select(columns));
   else {
     for (let i = 0; i < eventIds.length; i += 200) {
-      rows.push(...await knex('events').whereIn('id', eventIds.slice(i, i + 200)).select(columns));
+      rows = rows.concat(Array.from(await knex('events').whereIn('id', eventIds.slice(i, i + 200)).select(columns)));
     }
   }
   const customIds = rows.filter((r) => storedThemeIsCustom(r, brandingTheme)).map((r) => r.id);
