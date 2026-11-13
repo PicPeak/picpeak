@@ -106,7 +106,9 @@ async function createInvitation({ email, roleId, invitedById, inviterRoleName })
 
   logger.info('Admin invitation created', { email, roleId, invitedById });
 
-  return { id, email, token, role: role.display_name, expiresAt };
+  // The token travels only in the mailed link: whoever accepts it has to
+  // read the invited mailbox, not the inviter's response.
+  return { id, email, role: role.display_name, expiresAt };
 }
 
 /**
@@ -142,6 +144,14 @@ async function acceptInvitation({ token, username, password }) {
   // Hash password
   const passwordHash = await bcrypt.hash(password, getBcryptRounds());
 
+  // The inviter chose the address, so accepting the invitation does not show
+  // that the new account's holder owns it. A first SSO login may link to the
+  // account by email only after a Super Admin confirms the address (migration
+  // 227, oidcService.resolveAdminFromClaims).
+  const linkEligibility = (await hasColumnCached('admin_users', 'email_link_eligible'))
+    ? { email_link_eligible: formatBoolean(false) }
+    : {};
+
   // Create user in transaction
   const result = await db.transaction(async (trx) => {
     // The inviter's account row before the invitation: the insert below takes
@@ -169,6 +179,7 @@ async function acceptInvitation({ token, username, password }) {
       is_active: formatBoolean(true),
       must_change_password: formatBoolean(false),
       invite_accepted_at: new Date(),
+      ...linkEligibility,
       created_at: new Date(),
       updated_at: new Date()
     }).returning('id');
