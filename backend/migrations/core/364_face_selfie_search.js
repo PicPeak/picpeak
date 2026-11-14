@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Migration 360: events.face_selfie_search_enabled (issue 2355).
+ * Migration 364: events.face_selfie_search_enabled (issue 2355).
  *
  * Per-event opt-in for "find my photos with a selfie": a guest uploads one
  * selfie, the server matches it against the gallery's stored face signatures

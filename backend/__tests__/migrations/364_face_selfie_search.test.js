@@ -1,12 +1,12 @@
 /**
- * Migration 360: events.face_selfie_search_enabled (issue 2355). Off for
+ * Migration 364: events.face_selfie_search_enabled (issue 2355). Off for
  * existing and new events, a second run is a no-op that keeps an event's
  * opt-in, and down() removes the column.
  */
 const knex = require('knex');
-const migration = require('../../migrations/core/360_face_selfie_search');
+const migration = require('../../migrations/core/364_face_selfie_search');
 
-describe('migration 360 on SQLite', () => {
+describe('migration 364 on SQLite', () => {
   let db;
 
   beforeEach(async () => {

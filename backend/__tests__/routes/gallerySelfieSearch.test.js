@@ -1,5 +1,5 @@
 /**
- * Selfie search (issue 2355, migration 360).
+ * Selfie search (issue 2355, migration 364).
  *
  * POST /api/gallery/:slug/face-search answers only while the event opted in
  * and the people feature is on for the viewer; the guest must consent, and
