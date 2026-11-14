@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.203.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.202.2-beta.0...v3.203.0-beta.0) (2026-11-14)
+
+
+### Features
+
+* **gallery:** embed a gallery without a password on another website ([#2500](https://github.com/PicPeak/picpeak/issues/2500)) ([36bbdaa](https://github.com/PicPeak/picpeak/commit/36bbdaa4a79aaae9140272116d43e7f4f04d8836))
+
+
+### Bug Fixes
+
+* harden authorization, record lifecycle and input bounds ([#2499](https://github.com/PicPeak/picpeak/issues/2499)) ([4c47f7d](https://github.com/PicPeak/picpeak/commit/4c47f7d3e21b333f8a88e09984137dce5e668c94))
+* **restore:** apply the 259 theme and 349 focal backfills to an older archive's rows ([#2496](https://github.com/PicPeak/picpeak/issues/2496)) ([c11d070](https://github.com/PicPeak/picpeak/commit/c11d070010485748170290bb9d65a87f56e69187))
+* **restore:** stay in maintenance until the restored ledger has every migration ([#2497](https://github.com/PicPeak/picpeak/issues/2497)) ([2a6a5d5](https://github.com/PicPeak/picpeak/commit/2a6a5d5041af68b11c215f2270cf1578b7935b26))
+
 ## [3.202.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.202.1-beta.0...v3.202.2-beta.0) (2026-11-13)
 
 
