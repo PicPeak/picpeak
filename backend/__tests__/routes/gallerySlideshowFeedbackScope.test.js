@@ -3,9 +3,10 @@
  *
  * The kiosk only lists and shows photos; a show can be pinned to one category,
  * and the list and media routes keep to it. Feedback, the feedback summary,
- * the viewer's own feedback and the people list are not part of the show, so
- * a slideshow session is refused there, while a guest of the same gallery
- * keeps reading them.
+ * the viewer's own feedback, the people list, the photo count, the selection
+ * state and the favorite lists are not part of the show, so a slideshow
+ * session is refused there, while a guest of the same gallery keeps reading
+ * them.
  */
 
 const request = require('supertest');
@@ -92,6 +93,8 @@ describe('slideshow session outside the photo list', () => {
       allow_likes: true,
       allow_comments: true,
       allow_ratings: true,
+      allow_favorites: true,
+      allow_favorite_lists: true,
       moderate_comments: false,
       show_feedback_to_guests: true,
     });
@@ -120,9 +123,13 @@ describe('slideshow session outside the photo list', () => {
     ['feedback summary', () => '/feedback-summary'],
     ['own feedback', () => '/my-feedback'],
     ['people', () => '/people'],
+    ['stats', () => '/stats'],
+    ['selection', () => '/selection'],
+    ['favorite lists', () => '/favorite-lists'],
   ])('refuses a slideshow session on the %s route', async (_name, url) => {
     const res = await get(url(), slideshowToken);
     expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Slideshow tokens are display-only');
     expect(JSON.stringify(res.body)).not.toContain('party-only');
     expect(JSON.stringify(res.body)).not.toContain('Comment on a party photo');
   });
@@ -134,5 +141,18 @@ describe('slideshow session outside the photo list', () => {
     expect((await get('/feedback-summary', guestToken())).status).toBe(200);
     expect((await get('/my-feedback', guestToken())).status).toBe(200);
     expect((await get('/people', guestToken())).status).toBe(200);
+    expect((await get('/stats', guestToken())).status).toBe(200);
+    expect((await get('/selection', guestToken())).status).toBe(200);
+    expect((await get('/favorite-lists', guestToken())).status).toBe(200);
+  });
+
+  it.each([
+    ['creating', (r) => r.post(`/api/gallery/${SLUG}/favorite-lists`).send({ name: 'Mine' })],
+    ['renaming', (r) => r.patch(`/api/gallery/${SLUG}/favorite-lists/1`).send({ name: 'Mine' })],
+    ['deleting', (r) => r.delete(`/api/gallery/${SLUG}/favorite-lists/1`)],
+  ])('refuses a slideshow session %s a favorite list', async (_name, call) => {
+    const res = await call(request(app)).set('Authorization', `Bearer ${slideshowToken}`);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Slideshow tokens are display-only');
   });
 });

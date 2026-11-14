@@ -231,7 +231,9 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
       {editing ? t('printSales.saveCrop', 'Update basket item') : t('printSales.addToBasket', 'Add to basket')}{!editing && drafts.length > 1 ? ` (${drafts.length})` : ''}
     </Button>
   </> : quoteId ? <>
-    <Button disabled={busy} variant="secondary" onClick={() => void discard()}>{t('printSales.editBasket', 'Return to basket')}</Button>
+    {/* Discarding is a write: a view-only contact holding a quote id from before
+        they lost the right would only get a 403. */}
+    {!readOnly && <Button disabled={busy} variant="secondary" onClick={() => void discard()}>{t('printSales.editBasket', 'Return to basket')}</Button>}
     <Button disabled={busy || readOnly || !approved || !ready} onClick={accept}>{t('printSales.confirmInvoice', 'Confirm order and request invoice')}</Button>
   </> : readOnly ? null : <Button disabled={busy || !!quoteId || !cart.length || invalidLines.size > 0 || stale} onClick={prepare}>{t('printSales.reviewOrder', 'Review selections and final total')}</Button>;
   return <PrintSalesContext.Provider value={{ available, readOnly: readOnly && !!offers?.variants.length, hasOrders: orders.some(o => !!o.acceptedAt), count: cart.length, openPhoto: id => start(id), openBulk: () => start(), openBasket: () => { setError(''); setView('basket'); } }}>

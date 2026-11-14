@@ -244,6 +244,16 @@ describe('gallery print order journey', () => {
     expect(screen.queryByRole('button', { name: 'Review selections and final total' })).not.toBeInTheDocument();
     expect(api.post).not.toHaveBeenCalled();
   });
+  it('offers a view-only contact no way back to the basket from a stored preparation', async () => {
+    sessionStorage.setItem('print-preparation:buyer-1', quotation.id);
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.endsWith('/orders') ? { orders: [] } : url.includes('/orders/') ? quotation
+      : { variants: [variant], countries: ['IE'], policy: 'Synthetic buyer policy', basketScope: 'buyer-1', readOnly: true } }) as any);
+    render(<GalleryPrintShop slug="fixture" photos={[photo]} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Prints & orders/ }));
+    expect(await screen.findByRole('button', { name: 'Confirm order and request invoice' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Return to basket' })).not.toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
   it('derives an aspect-correct centred crop and bounded zoom', () => {
     expect(centredCrop(2, 1)).toEqual({ x: .25, y: 0, width: .5, height: 1 });
     expect(centredCrop(.5, 1, 2)).toEqual({ x: .25, y: .375, width: .5, height: .25 });

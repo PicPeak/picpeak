@@ -163,10 +163,12 @@ const streamingArchiveAdmission = createArchiveAdmission();
 // archiver's queue. Two keeps archiver fed, like the read guard above.
 const ARCHIVE_MAX_PENDING_ENTRIES = 2;
 // A streamed archive response whose client stopped reading is ended after
-// this long, which also gives its admission slot back.
+// this long, which also gives its admission slot back. A paused browser
+// download, or a phone still showing its "Download?" prompt, reads nothing
+// either, so the default is generous enough to resume one.
 const ARCHIVE_WRITE_IDLE_MS = (() => {
   const n = Number.parseInt(process.env.ZIP_STREAM_IDLE_TIMEOUT_MS, 10);
-  return Number.isFinite(n) && n > 0 ? n : 2 * 60 * 1000;
+  return Number.isFinite(n) && n > 0 ? n : 10 * 60 * 1000;
 })();
 
 /**
