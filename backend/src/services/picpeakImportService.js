@@ -736,6 +736,14 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     // the renditions restored with them still carry the source's EXIF (issue
     // 2096). Such rows come back as 0, so the background refresh cleans them.
     const markLegacyRenditions = tables.includes('photos') && await trx.schema.hasColumn('photos', 'rendition_version');
+    // Migrations 349 and 259 return early when their column exists, so the
+    // ledger re-run skips their backfills for an older archive's rows (issue
+    // 2481). Photos without focal_checked and without a point come back as 0,
+    // as 349 sets them, so focalPointBackfill looks at them; events without
+    // custom_theme_enabled get 259's rule once Branding is loaded (below).
+    const markLegacyFocal = tables.includes('photos') && await trx.schema.hasColumn('photos', 'focal_checked');
+    const markLegacyThemes = tables.includes('events') && await trx.schema.hasColumn('events', 'custom_theme_enabled');
+    const legacyThemeEventIds = [];
 
     const dateColumnsByTable = await dateOnlyColumnsByTable(trx);
     for (const table of tables) {
@@ -750,6 +758,21 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
         assertContainedPaths(table, prepared);
         if (table === 'photos' && markLegacyRenditions) {
           prepared = prepared.map((row) => (row.rendition_version === undefined ? { ...row, rendition_version: 0 } : row));
+        }
+        if (table === 'photos' && markLegacyFocal) {
+          // Set on every row of the batch: a multi-row insert writes NULL, not
+          // the column default, for a key only some rows carry.
+          prepared = prepared.map((row) => (row.focal_checked === undefined ? { ...row, focal_checked: row.focal_source == null ? 0 : 1 } : row));
+        }
+        if (table === 'events' && markLegacyThemes) {
+          // Off for now on every row without the flag (a multi-row insert
+          // writes NULL for a key only some rows carry); 259's rule turns it
+          // on below once Branding is loaded.
+          prepared = prepared.map((row) => {
+            if (row.custom_theme_enabled !== undefined) return row;
+            legacyThemeEventIds.push(row.id);
+            return { ...row, custom_theme_enabled: 0 };
+          });
         }
         await trx.batchInsert(table, prepared, prepared.length);
       }
@@ -781,6 +804,12 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       if (table === 'invoices' && archivePredates(archiveLatestMigration, 358)) {
         await markHeldInvoices(trx, { actor: 'import' });
       }
+    }
+
+    // After every table, so the comparison runs against the restored Branding
+    // theme (app_settings), not the one this instance had.
+    if (legacyThemeEventIds.length > 0) {
+      await require('../../migrations/core/259_gallery_admin_cleanup').markCustomThemes(trx, legacyThemeEventIds);
     }
 
     // Rebuild only missing legacy accounting from the RESTORED rows in this

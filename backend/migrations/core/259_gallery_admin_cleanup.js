@@ -196,6 +196,17 @@ async function upTheme(knex) {
     table.boolean('custom_theme_enabled').notNullable().defaultTo(false);
   });
 
+  const { custom, total } = await markCustomThemes(knex);
+  console.log(`259: custom_theme_enabled on for ${custom} of ${total} galleries`);
+}
+
+/**
+ * Turn custom_theme_enabled on for the galleries whose stored theme differs
+ * from Branding. All galleries, or only `eventIds`: a portable restore of an
+ * archive made before this migration runs it for the restored rows, which the
+ * early return above would otherwise skip (issue 2481).
+ */
+async function markCustomThemes(knex, eventIds = null) {
   let brandingTheme = null;
   if (await knex.schema.hasTable('app_settings')) {
     const row = await knex('app_settings').where({ setting_key: 'theme_config' }).first('setting_value');
@@ -203,12 +214,19 @@ async function upTheme(knex) {
     brandingTheme = parsed && typeof parsed === 'object' ? parsed : null;
   }
 
-  const rows = await knex('events').select('id', 'color_theme', 'css_template_id', 'header_style', 'hero_divider_style');
+  const columns = ['id', 'color_theme', 'css_template_id', 'header_style', 'hero_divider_style'];
+  let rows = [];
+  if (eventIds === null) rows = Array.from(await knex('events').select(columns));
+  else {
+    for (let i = 0; i < eventIds.length; i += 200) {
+      rows = rows.concat(Array.from(await knex('events').whereIn('id', eventIds.slice(i, i + 200)).select(columns)));
+    }
+  }
   const customIds = rows.filter((r) => storedThemeIsCustom(r, brandingTheme)).map((r) => r.id);
   for (let i = 0; i < customIds.length; i += 200) {
     await knex('events').whereIn('id', customIds.slice(i, i + 200)).update({ custom_theme_enabled: formatBoolean(true) });
   }
-  console.log(`259: custom_theme_enabled on for ${customIds.length} of ${rows.length} galleries`);
+  return { custom: customIds.length, total: rows.length };
 }
 
 async function downTheme(knex) {
@@ -228,6 +246,7 @@ exports.down = async function (knex) {
 };
 
 exports.storedThemeIsCustom = storedThemeIsCustom;
+exports.markCustomThemes = markCustomThemes;
 
 exports.NEW_PERMISSIONS = NEW_PERMISSIONS;
 exports.CUSTOMER_SUPPORT = CUSTOMER_SUPPORT;
