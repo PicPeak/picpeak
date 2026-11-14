@@ -1,7 +1,7 @@
 const express = require('express');
 const { db } = require('../../database/db');
 const router = express.Router();
-const { verifyGalleryAccess } = require('../../middleware/gallery');
+const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const { blockHiddenGallery } = require('../../utils/revealMode');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed, viewerOf } = require('../../utils/photoVisibility');
@@ -11,8 +11,9 @@ const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed, viewerOf } 
 // list, it leaves out photos the worker has not finished. The event-wide view,
 // download and unique-visitor totals this route used to return are audience
 // analytics (admin dashboard, analytics.view); no gallery surface renders
-// them, so they are no longer sent to a gallery viewer.
-router.get('/:slug/stats', verifyGalleryAccess, blockHiddenGallery, noStoreCache, async (req, res) => {
+// them, so they are no longer sent to a gallery viewer. The Live Slideshow
+// kiosk does not read it, so a slideshow session is refused.
+router.get('/:slug/stats', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, noStoreCache, async (req, res) => {
   try {
     const totalPhotos = await applyPhotoVisibilityFilter(
       wherePhotoProcessed(livePhotos(db).where('photos.event_id', req.event.id)),

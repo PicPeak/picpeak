@@ -129,6 +129,10 @@ router.get('/:slug/feedback-settings',
 // Get feedback for a specific photo
 router.get('/:slug/photos/:photoId/feedback',
   verifyGalleryAccess,
+  // The Live Slideshow kiosk only lists and shows photos, which keep to a
+  // pinned category; it has no use for these feedback routes, so a show
+  // session reads nothing through them about photos outside its pin.
+  denySlideshowToken,
   // Reveal-gated (#838): sequential photo ids would let hidden-gallery
   // guests enumerate comments/stats.
   blockHiddenGallery,
@@ -657,6 +661,7 @@ router.post('/:slug/feedback/bulk',
 // Get feedback summary for entire gallery
 router.get('/:slug/feedback-summary',
   verifyGalleryAccess,
+  denySlideshowToken,
   async (req, res) => {
     try {
       const event = req.event;
@@ -722,6 +727,7 @@ router.get('/:slug/feedback-summary',
 // Get user's own feedback for all photos
 router.get('/:slug/my-feedback',
   verifyGalleryAccess,
+  denySlideshowToken,
   resolveGuest,
   scopeGuestToFeedback,
   async (req, res) => {
@@ -817,6 +823,7 @@ async function selectionViewer(req) {
 // state per kind, with the cap and how much of it is used.
 router.get('/:slug/selection',
   verifyGalleryAccess,
+  denySlideshowToken,
   resolveGuest,
   scopeGuestToFeedback,
   async (req, res) => {
@@ -980,8 +987,8 @@ function favoriteListWriteError(res, result) {
   return null;
 }
 
-const favoriteListGuards = [verifyGalleryAccess, blockHiddenGallery, resolveGuest, scopeGuestToFeedback];
-const favoriteListWriteGuards = [verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, scopeGuestToFeedback];
+// Reads and writes alike: the Live Slideshow kiosk shows no favorite lists.
+const favoriteListGuards = [verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, scopeGuestToFeedback];
 
 // The viewer's lists with the number of photos in each.
 router.get('/:slug/favorite-lists',
@@ -1005,7 +1012,7 @@ router.get('/:slug/favorite-lists',
 );
 
 router.post('/:slug/favorite-lists',
-  ...favoriteListWriteGuards,
+  ...favoriteListGuards,
   async (req, res) => {
     try {
       const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
@@ -1024,7 +1031,7 @@ router.post('/:slug/favorite-lists',
 );
 
 router.patch('/:slug/favorite-lists/:listId',
-  ...favoriteListWriteGuards,
+  ...favoriteListGuards,
   async (req, res) => {
     try {
       const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
@@ -1044,7 +1051,7 @@ router.patch('/:slug/favorite-lists/:listId',
 
 // Deletes the list and the favourites in it.
 router.delete('/:slug/favorite-lists/:listId',
-  ...favoriteListWriteGuards,
+  ...favoriteListGuards,
   async (req, res) => {
     try {
       const settings = await feedbackService.getEventFeedbackSettings(req.event.id);

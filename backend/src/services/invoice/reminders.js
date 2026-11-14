@@ -17,6 +17,7 @@ const { getInvoiceById } = require('./queries');
 const { buildInvoiceRenderContext } = require('./render');
 const { auditedUpdate, normalizeActor } = require('../accountingHistory');
 const { invoicePdfFile } = require('../../utils/storedDocumentPdf');
+const { formatBoolean } = require('../../utils/dbCompat');
 
 
 /**
@@ -28,6 +29,7 @@ async function sendReminder(id, levelOverride, adminId) {
   const data = await getInvoiceById(id);
   if (!data) throw new AppError('Invoice not found', 404);
   const { invoice, lineItems } = data;
+  if (invoice.kind === 'storno') throw new AppError('Cannot remind on a Storno', 409, 'IS_STORNO');
   if (invoice.status !== 'sent' && invoice.status !== 'overdue') {
     throw new AppError(`Cannot remind on status '${invoice.status}'`, 409);
   }
@@ -75,6 +77,8 @@ async function resolvePerReminderFeeMinor(invoice) {
 
 // `actor` names who triggered the reminder in the accounting change history.
 async function applyReminder(invoice, lineItems, level, adminId, actor = adminId) {
+  // A Storno cancels an invoice; it is never dunned.
+  if (invoice.kind === 'storno') throw new AppError('Cannot remind on a Storno', 409, 'IS_STORNO');
   const customer = await db('customer_accounts').where({ id: invoice.customer_account_id }).first();
 
   // Per fee-bearing reminder (levels 2..level): 2nd = 1×, 3rd = 2×, computed
@@ -113,7 +117,7 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
   // checked that, but from a snapshot. A payment or a Storno landing in
   // between must not be overwritten with `overdue`, a fee and a Mahnung.
   const applied = await auditedUpdate(db, 'invoices',
-    (q) => q.where({ id: invoice.id }).whereIn('status', ['sent', 'overdue']),
+    (q) => q.where({ id: invoice.id }).whereNot('kind', 'storno').whereIn('status', ['sent', 'overdue']),
     update, { actor, source: 'invoice.reminder' });
   if (!applied) {
     throw new AppError('The invoice is no longer awaiting payment; no reminder was sent.', 409, 'INVOICE_NOT_ACTIONABLE');
@@ -221,14 +225,6 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
 // ---------------------------------------------------------------------
 
 /**
- * Resolve the admin email address that should receive the payment-
- * check prompt. Priority:
- *   1. created_by_admin_id's email (the admin who issued the invoice)
- *   2. First admin user with bills.manage permission
- *   3. business_profile.email as a last resort
- * Returns null when nothing usable is found — caller logs + skips.
- */
-/**
  * Resolve the effective Skonto percentage for an invoice at the
  * current moment. Resolution chain (matches pdfService rendering):
  *   1. invoice.payment_term_snapshot.skonto_percent
@@ -277,15 +273,68 @@ async function resolveSkontoPercentForInvoice(invoice) {
   return Number.isFinite(defaultPct) && defaultPct > 0 ? defaultPct : null;
 }
 
+function loadAdminWithRole(conn = db) {
+  return conn('admin_users')
+    .leftJoin('roles', 'roles.id', 'admin_users.role_id')
+    .select('admin_users.id', 'admin_users.email', 'admin_users.username', 'admin_users.is_active',
+      'roles.name as role_name');
+}
+
+/**
+ * Whether an admin account may record payments on this invoice right now:
+ * active, and either a super admin or the invoice's own creator holding
+ * bills.manage (other admins only reach their own invoices).
+ */
+async function mayRecordPaymentsOn(admin, invoice) {
+  if (!admin) return false;
+  if (!(admin.is_active === true || admin.is_active === 1 || admin.is_active === '1')) return false;
+  if (admin.role_name === 'super_admin') return true;
+  if (Number(admin.id) !== Number(invoice.created_by_admin_id)) return false;
+  return require('../../middleware/permissions').roleHasPermission(admin.role_name, 'bills.manage');
+}
+
+/**
+ * Resolve who receives the payment-check prompt (a link that records a
+ * payment) and the payment notifications for an invoice. Priority:
+ *   1. the admin who issued the invoice, while they may record payments on it
+ *   2. business_profile.email — the business's own inbox, ahead of any
+ *      admin account (the lowest-id Super Admin can be a technical login)
+ *   3. the lowest-id active super admin, when the business has no address
+ * Returns { email, name, adminId } (adminId null for the business address,
+ * whose links name no admin and stay valid — see paymentCheckLinkStillValid),
+ * or null when nothing usable is found — caller logs + skips.
+ */
 async function resolveAdminEmailForInvoice(invoice) {
   if (invoice.created_by_admin_id) {
-    const admin = await db('admin_users').where({ id: invoice.created_by_admin_id }).first();
-    if (admin?.email) return { email: admin.email, name: admin.username || admin.email };
+    const creator = await loadAdminWithRole().where('admin_users.id', invoice.created_by_admin_id).first();
+    if (creator?.email && await mayRecordPaymentsOn(creator, invoice)) {
+      return { email: creator.email, name: creator.username || creator.email, adminId: creator.id };
+    }
   }
-  // Fallback: business_profile.email.
   const profile = await db('business_profile').where({ id: 1 }).first();
-  if (profile?.email) return { email: profile.email, name: profile.company_name || profile.email };
+  if (profile?.email) return { email: profile.email, name: profile.company_name || profile.email, adminId: null };
+  const superAdmin = await loadAdminWithRole()
+    .where('roles.name', 'super_admin')
+    .where('admin_users.is_active', formatBoolean(true))
+    .whereNotNull('admin_users.email')
+    .orderBy('admin_users.id')
+    .first();
+  if (superAdmin?.email) {
+    return { email: superAdmin.email, name: superAdmin.username || superAdmin.email, adminId: superAdmin.id };
+  }
   return null;
+}
+
+/**
+ * Whether an issued payment-check link may still be used: the admin it was
+ * mailed to (migration 360) must still be active and allowed to record
+ * payments on the invoice. A link to the business address, and one issued
+ * before links named their recipient, names no admin.
+ */
+async function paymentCheckLinkStillValid(tokenRow, invoice) {
+  if (tokenRow.recipient_admin_id == null) return true;
+  const recipient = await loadAdminWithRole().where('admin_users.id', tokenRow.recipient_admin_id).first();
+  return mayRecordPaymentsOn(recipient, invoice);
 }
 module.exports = {
   sendReminder,
@@ -295,4 +344,5 @@ module.exports = {
   applyReminder,
   resolveSkontoPercentForInvoice,
   resolveAdminEmailForInvoice,
+  paymentCheckLinkStillValid,
 };

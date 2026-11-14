@@ -17,6 +17,7 @@ import { RequireBookings } from './features/booking/RequireBookings';
 import { BookingStatusPage } from './pages/public/BookingStatusPage';
 import { BookingsPage } from './pages/admin/clients/BookingsPage';
 const SlideshowPage = lazy(() => import('./pages/gallery/SlideshowPage').then((m) => ({ default: m.SlideshowPage })));
+const EmbedGalleryPage = lazy(() => import('./pages/gallery/EmbedGalleryPage').then((m) => ({ default: m.EmbedGalleryPage })));
 const FullLinkPage = lazy(() => import('./pages/gallery/FullLinkPage').then((m) => ({ default: m.FullLinkPage })));
 import { LegalPage } from './pages/public/LegalPage';
 import {
@@ -220,6 +221,13 @@ const router = createBrowserRouter(
     <Route path="/gallery/:slug/show/:token" element={
       <Suspense fallback={<Loading />}>
         <SlideshowPage />
+      </Suspense>
+    } />
+    {/* Website embed (issue 1112): the page another site frames. No
+        GalleryAuthProvider: it reads the public gallery without a session. */}
+    <Route path="/gallery/:slug/embed/:token" element={
+      <Suspense fallback={<Loading />}>
+        <EmbedGalleryPage />
       </Suspense>
     } />
     {/* Full link of a gallery with a curated selection (issue 2356). */}

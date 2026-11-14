@@ -27,6 +27,14 @@ name: Cut Stable Release (daily batch)
 #   after the second attempt. A second attempt is rerun once more only when
 #   the media tools install was the one step that failed (3.135.3 hung on a
 #   flaky Jest run and then a trickling apt mirror), never for a test.
+# - Approval and merge are bound to the release token's own work: the PR must
+#   be opened by the token owner, every commit on it must be authored and
+#   committed by the token owner, and the review (commit_id) and the merge
+#   (--match-head-commit) name the head SHA that was checked. The hourly run
+#   re-verifies the current head before it re-approves; a head carrying any
+#   other commit gets no approval, its auto-merge is turned off, and the run
+#   fails so a maintainer looks at it. A PR that cannot be read is left as
+#   it is and only fails the run.
 
 on:
   schedule:
@@ -65,16 +73,54 @@ jobs:
           # base to stable AND require a same-repo head (isCrossRepository
           # == false); a fork PR is cross-repository, so it can never be
           # picked and auto-merged with the privileged PAT.
-          pr=$(gh pr list \
+          read -r count pr pr_author < <(gh pr list \
             --base stable \
             --head release-please--branches--stable \
             --state open \
-            --json number,isCrossRepository \
-            --jq '[.[] | select(.isCrossRepository == false)] | .[0].number // empty')
-          if [ -z "$pr" ]; then
+            --json number,isCrossRepository,author \
+            --jq '[.[] | select(.isCrossRepository == false)] | "\(length) \(.[0].number // "-") \(.[0].author.login // "-")"')
+          if [ "$count" -eq 0 ]; then
             echo "No open same-repo stable release PR — nothing to cut today."
             exit 0
           fi
+          if [ "$count" -ne 1 ]; then
+            echo "::error::Expected exactly one same-repo stable release PR, found $count — refusing to approve."
+            exit 1
+          fi
+          pat_login=$(GH_TOKEN="$RELEASE_PAT" gh api user --jq .login)
+          if [ -z "$pat_login" ] || [ "$pr_author" != "$pat_login" ]; then
+            echo "::error::Stable release PR #$pr was opened by '$pr_author', not by the release token owner — refusing to approve."
+            exit 1
+          fi
+          # Bind approval and merge to what the release token produced, not to
+          # the branch name: every commit on the PR must be authored AND
+          # committed by the token owner, and the review and the merge are tied
+          # to the head SHA verified here, so a later push is not covered.
+          # Returns 0 and prints the head SHA when it verifies, 1 when a commit
+          # is from anyone else, 2 when the head moved while it was being read
+          # (try again), 3 when the PR could not be read at all.
+          verify_release_head() {
+            local pr="$1" head commits count last foreign after
+            head=$(gh pr view "$pr" --json headRefOid --jq .headRefOid) || return 3
+            commits=$(gh api --paginate "repos/$GH_REPO/pulls/$pr/commits?per_page=100" \
+              --jq '.[] | "\(.sha) \(.author.login // "-") \(.committer.login // "-")"') || return 3
+            count=$(printf '%s\n' "$commits" | grep -c . || true)
+            last=$(printf '%s\n' "$commits" | tail -n 1 | cut -d' ' -f1)
+            foreign=$(printf '%s\n' "$commits" | awk -v login="$pat_login" 'NF && ($2 != login || $3 != login) { print $1 }')
+            [ "$count" -gt 0 ] || return 3
+            after=$(gh pr view "$pr" --json headRefOid --jq .headRefOid) || return 3
+            if [ "$after" != "$head" ] || [ "$last" != "$head" ]; then
+              return 2
+            fi
+            # The pulls commits endpoint stops at 250; a release PR has a handful.
+            if [ -z "$pat_login" ] || [ -z "$head" ] || [ "$count" -ge 250 ]; then
+              return 3
+            fi
+            if [ -n "$foreign" ]; then
+              return 1
+            fi
+            echo "$head"
+          }
           if [ "$EVENT_SCHEDULE" = "$REAPPROVE_SCHEDULE" ]; then
             # Hourly run: never starts a cut. Only a PR the daily run (or a
             # maintainer) set to auto-merge is touched: its dismissed
@@ -86,9 +132,27 @@ jobs:
               echo "Stable release PR #$pr is not set to auto-merge — no cut started, nothing to do."
               exit 0
             fi
+            # Only the head the release token produced is approved again or
+            # has its checks rerun.
+            verified=0
+            head=$(verify_release_head "$pr") || verified=$?
+            if [ "$verified" = 2 ]; then
+              echo "Stable release PR #$pr moved while it was being checked — trying again next hour."
+              exit 0
+            fi
+            if [ "$verified" = 3 ]; then
+              echo "::error::Could not read stable release PR #$pr — no re-approval this hour."
+              exit 1
+            fi
+            if [ "$verified" != 0 ]; then
+              GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --disable-auto || true
+              echo "::error::Stable release PR #$pr carries a commit not authored and committed by the release token owner — auto-merge turned off, no re-approval."
+              exit 1
+            fi
             if [ "$decision" != "APPROVED" ]; then
-              gh pr review "$pr" --approve --body "Automated re-approval — a push after the daily approval dismissed it."
-              echo "Re-approved stable release PR #$pr."
+              gh api "repos/$GH_REPO/pulls/$pr/reviews" -f commit_id="$head" -f event=APPROVE \
+                -f body="Automated re-approval — a push after the daily approval dismissed it." > /dev/null
+              echo "Re-approved stable release PR #$pr at $head."
             fi
             # First attempts, plus second attempts whose only failed step is
             # the media tools install (an apt mirror, not the code): a run
@@ -121,14 +185,34 @@ jobs:
             done <<< "$runs"
             exit "$failed"
           fi
+          # A head that moves mid-check (release-please pushing) is checked
+          # once more before giving up, so the day's cut is not lost to it.
+          verified=0
+          head=$(verify_release_head "$pr") || verified=$?
+          if [ "$verified" = 2 ]; then
+            sleep 30
+            verified=0
+            head=$(verify_release_head "$pr") || verified=$?
+          fi
+          if [ "$verified" = 2 ] || [ "$verified" = 3 ]; then
+            echo "::error::Could not verify stable release PR #$pr (it moved or could not be read) — run this workflow again."
+            exit 1
+          fi
+          if [ "$verified" != 0 ]; then
+            echo "::error::Stable release PR #$pr carries a commit not authored and committed by the release token owner — refusing to approve."
+            exit 1
+          fi
           # Approve is tolerant — a pre-existing approval already satisfies
-          # branch protection and re-approving can return non-zero.
-          gh pr review "$pr" --approve --body "Automated approval — daily stable release batch (release-please version bump + changelog)." || echo "::warning::approve returned non-zero (PR may already be approved)"
+          # branch protection and re-approving can return non-zero. The review
+          # names the verified head, so it does not cover a later push.
+          gh api "repos/$GH_REPO/pulls/$pr/reviews" -f commit_id="$head" -f event=APPROVE \
+            -f body="Automated approval — daily stable release batch (release-please version bump + changelog)." > /dev/null \
+            || echo "::warning::approve returned non-zero (PR may already be approved)"
           # But the auto-merge enable is the load-bearing step: this scheduled
           # job is the ONLY automatic stable cut, so DON'T swallow its failure
           # (review P2) — an expired/under-scoped PAT would otherwise stop
           # releases while the workflow stays green.
-          GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto
+          GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto --match-head-commit "$head"
           # `gh pr merge --auto` merges IMMEDIATELY when the required checks
           # are already green — the normal case at 18:00, since the fixes
           # merged hours earlier and CI passed. So success is EITHER the PR is

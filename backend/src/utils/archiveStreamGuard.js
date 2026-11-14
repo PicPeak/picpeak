@@ -20,6 +20,8 @@
  * this went unnoticed for so long.
  */
 
+const logger = require('./logger');
+
 // Two in flight: one being drained, one ready to go. Enough to keep archiver
 // fed, few enough that a build cannot monopolise the agent pool.
 const DEFAULT_MAX_IN_FLIGHT = 2;
@@ -155,6 +157,79 @@ function createArchiveAdmission({ maxActive = DEFAULT_MAX_ACTIVE, maxWaiting = D
 // One instance per process, shared by every synchronous archive route.
 const streamingArchiveAdmission = createArchiveAdmission();
 
+// Entries handed to archiver but not yet written into the zip, per archive.
+// Rendered photos are whole Buffers, so without a bound a client that stops
+// reading would leave a route rendering the rest of its photos into
+// archiver's queue. Two keeps archiver fed, like the read guard above.
+const ARCHIVE_MAX_PENDING_ENTRIES = 2;
+// A streamed archive response whose client stopped reading is ended after
+// this long, which also gives its admission slot back. A paused browser
+// download, or a phone still showing its "Download?" prompt, reads nothing
+// either, so the default is generous enough to resume one.
+const ARCHIVE_WRITE_IDLE_MS = (() => {
+  const n = Number.parseInt(process.env.ZIP_STREAM_IDLE_TIMEOUT_MS, 10);
+  return Number.isFinite(n) && n > 0 ? n : 10 * 60 * 1000;
+})();
+
+/**
+ * Paces a streamed archive by its consumer. Every entry goes in through
+ * append(), which counts it; archiver's 'entry' event counts it out once it
+ * is written. room() waits until fewer than ARCHIVE_MAX_PENDING_ENTRIES are
+ * outstanding and resolves false once the response or archive has ended, so
+ * the loop stops rendering. Also arms the response's idle timeout.
+ */
+function paceArchive(archive, res, { maxPending = ARCHIVE_MAX_PENDING_ENTRIES, idleMs = ARCHIVE_WRITE_IDLE_MS } = {}) {
+  let pending = 0;
+  let stopped = false;
+  let waiters = [];
+  const wake = () => {
+    const resume = waiters;
+    waiters = [];
+    resume.forEach((fn) => fn());
+  };
+  const stop = () => {
+    stopped = true;
+    wake();
+  };
+  archive.on('entry', () => {
+    pending = Math.max(0, pending - 1);
+    wake();
+  });
+  archive.once('error', stop);
+  res.once('close', stop);
+  // The socket goes idle when the client stops reading and the send buffers
+  // fill; destroying the response runs the route's 'close' cleanup. Idle with
+  // nothing waiting to be sent is the server's own work (a slow render
+  // queued behind other image jobs), not a stalled reader: leave that one,
+  // and the next write arms the timer again.
+  res.setTimeout(idleMs, () => {
+    if (!res.writableNeedDrain || res.destroyed) return;
+    logger.warn('Streamed archive response ended: client stopped reading', { idleMs });
+    res.destroy();
+  });
+  return {
+    async room() {
+      while (!stopped && pending >= maxPending) {
+        await new Promise((resolve) => { waiters.push(resolve); });
+      }
+      return !stopped;
+    },
+    append(source, data) {
+      pending += 1;
+      try {
+        archive.append(source, data);
+      } catch (err) {
+        pending -= 1;
+        throw err;
+      }
+    },
+    get pending() {
+      return pending;
+    },
+  };
+}
+
 module.exports = {
-  createArchiveStreamGuard, DEFAULT_MAX_IN_FLIGHT, createArchiveAdmission, streamingArchiveAdmission,
+  createArchiveStreamGuard, DEFAULT_MAX_IN_FLIGHT, createArchiveAdmission, streamingArchiveAdmission, paceArchive,
 };
+

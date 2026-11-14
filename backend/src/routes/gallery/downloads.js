@@ -58,7 +58,7 @@ const {
 } = require('../../services/downloadFilenameService');
 const { buildContentDisposition, uniquifyZipNames } = require('../../utils/filenameSanitizer');
 const { getStorage } = require('../../services/storage');
-const { createArchiveStreamGuard, streamingArchiveAdmission } = require('../../utils/archiveStreamGuard');
+const { createArchiveStreamGuard, streamingArchiveAdmission, paceArchive } = require('../../utils/archiveStreamGuard');
 const {
   downloadLimitOf, currentDownloadLimit, grantDownloads, checkDownloads, downloadLimitError,
   settleWhenDone, responseDelivered, refuseDownload, isPreviewOnly, clientOnlyError,
@@ -900,6 +900,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       }
     });
     releaseAll.track(archive);
+    const pacer = paceArchive(archive, res);
 
     archive.pipe(res);
 
@@ -928,6 +929,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     for (let i = 0; i < photos.length; i += 1) {
       // A cancelled download stops rendering; nothing appended now ships.
       if (cancelled) break;
+      // Render the next entry only once archiver has written the earlier ones.
+      if (!await pacer.room()) break;
       const photo = photos[i];
       const storageKey = resolvePhotoStorageKey(req.event, photo);
       const entryName = bulkEntryNames[i];
@@ -959,7 +962,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         if (previewOnly) {
           const preview = await renderPreviewForDownload(photo, effectiveSettings);
           if (!preview) throw new Error('No preview-size copy of this photo');
-          archive.append(preview.buffer, { name: bulkName(previewDownloadName(archiveName, preview.extension)), photoId: photo.id });
+          pacer.append(preview.buffer, { name: bulkName(previewDownloadName(archiveName, preview.extension)), photoId: photo.id });
           appendedIds.push(photo.id);
           continue;
         }
@@ -974,7 +977,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           const paidPreview = await renderPreviewForDownload(photo, photoSettings);
           // No preview means no photo: the original must never stand in.
           if (!paidPreview) throw new Error('No sales preview of this photo');
-          archive.append(paidPreview.buffer, {
+          pacer.append(paidPreview.buffer, {
             name: bulkName(previewDownloadName(archiveName, paidPreview.extension)),
             photoId: photo.id,
           });
@@ -992,16 +995,16 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         // photoId rides along to archiver's 'entry' event (releaseUnshipped).
         if (rendered) {
           // A capped HEIC/AVIF/RAW comes back as JPEG: name it so.
-          archive.append(rendered, { name: bulkName(renderedDownloadType(rendered, photo, archiveName).name), photoId: photo.id });
+          pacer.append(rendered, { name: bulkName(renderedDownloadType(rendered, photo, archiveName).name), photoId: photo.id });
         } else if (storageKey) {
           if (!await guard.acquire()) break;
           const stream = await storage.get(storageKey);
-          archive.append(guard.track(stream), { name: bulkName(archiveName), photoId: photo.id });
+          pacer.append(guard.track(stream), { name: bulkName(archiveName), photoId: photo.id });
         } else {
           // append, not file(): file() stats in parallel and can reorder
           // entries, and the limit's settlement relies on append order.
           if (!await guard.acquire()) break;
-          archive.append(guard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: bulkName(archiveName), photoId: photo.id });
+          pacer.append(guard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: bulkName(archiveName), photoId: photo.id });
         }
         appendedIds.push(photo.id);
         releaseAll.appended(photo.id);
@@ -1162,6 +1165,8 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       }
     });
     releaseSelected.track(archive);
+    // Same pacing and idle timeout as download-all.
+    const pacer = paceArchive(archive, res);
 
     archive.pipe(res);
 
@@ -1181,6 +1186,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     for (let i = 0; i < photos.length; i += 1) {
       // A cancelled download stops rendering; nothing appended now ships.
       if (selectedCancelled) break;
+      if (!await pacer.room()) break;
       const photo = photos[i];
       const name = selectedEntryNames[i] || `photo-${photo.id}.jpg`;
       const storageKey = resolveSelectedKey(req.event, photo);
@@ -1201,7 +1207,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         if (selectedPreviewOnly) {
           const preview = await renderPreviewForDownload(photo, effectiveSettings);
           if (!preview) throw new Error('No preview-size copy of this photo');
-          archive.append(preview.buffer, { name: selectedName(previewDownloadName(name, preview.extension)), photoId: photo.id });
+          pacer.append(preview.buffer, { name: selectedName(previewDownloadName(name, preview.extension)), photoId: photo.id });
           appendedIds.push(photo.id);
           continue;
         }
@@ -1215,7 +1221,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           const paidPreview = await renderPreviewForDownload(photo, selectedPhotoSettings);
           // No preview means no photo: the original must never stand in.
           if (!paidPreview) throw new Error('No sales preview of this photo');
-          archive.append(paidPreview.buffer, {
+          pacer.append(paidPreview.buffer, {
             name: selectedName(previewDownloadName(name, paidPreview.extension)),
             photoId: photo.id,
           });
@@ -1229,15 +1235,15 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         // storage rather than buffering the whole photo.
         const rendered = await renderPhotoForDownload(req.event, photo, selectedBox, selectedPhotoSettings);
         if (rendered) {
-          archive.append(rendered, { name: selectedName(renderedDownloadType(rendered, photo, name).name), photoId: photo.id });
+          pacer.append(rendered, { name: selectedName(renderedDownloadType(rendered, photo, name).name), photoId: photo.id });
         } else if (storageKey) {
           if (!await selectedGuard.acquire()) break;
           const stream = await selectedStorage.get(storageKey);
-          archive.append(selectedGuard.track(stream), { name: selectedName(name), photoId: photo.id });
+          pacer.append(selectedGuard.track(stream), { name: selectedName(name), photoId: photo.id });
         } else {
           // append, not file(): see download-all.
           if (!await selectedGuard.acquire()) break;
-          archive.append(selectedGuard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: selectedName(name), photoId: photo.id });
+          pacer.append(selectedGuard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: selectedName(name), photoId: photo.id });
         }
         appendedIds.push(photo.id);
         releaseSelected.appended(photo.id);

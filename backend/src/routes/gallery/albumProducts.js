@@ -5,6 +5,7 @@ const { body, param, query } = require('express-validator');
 const {
   verifyGalleryAccess,
   denySlideshowToken,
+  requireContactAct,
 } = require('../../middleware/gallery');
 const { blockHiddenGallery } = require('../../utils/revealMode');
 const { requireFeatureFlag } = require('../../middleware/requireFeatureFlag');
@@ -56,14 +57,8 @@ router.get(
 );
 router.put(
   '/:slug/album-products/:id',
-  handleAsync(async (req, res, next) => {
-    // An album choice binds the customer: a view-only contact looks, not decides.
-    if (req.viaCustomer
-      && !(await customerContactsService.sessionMayAct(req.galleryAccess?.session, 'galleries'))) {
-      throw new ForbiddenError('Your login may not do this');
-    }
-    next();
-  }),
+  // An album choice binds the customer: a view-only contact looks, not decides.
+  requireContactAct('galleries'),
   param('id').isUUID(),
   body('revision').isInt({ min: 1 }),
   body('mutationId').isUUID(),

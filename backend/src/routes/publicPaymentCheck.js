@@ -21,9 +21,13 @@ const rateLimit = require('express-rate-limit');
 const { rateLimitKey } = require('../utils/rateLimitKey');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const invoiceService = require('../services/invoiceService');
+const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 
 const router = express.Router();
 router.use(require('../database/crmAccess').crmCapabilityRouter('public payment-check capability'));
+// With bills switched off, a mailed link decides nothing either — same code
+// as the admin invoice routes.
+router.use(requireFeatureFlag('bills', 'BILLS_DISABLED'));
 
 // 30 reads / minute / IP; 10 records / minute / IP.
 const previewLimiter = rateLimit({

@@ -1,4 +1,35 @@
 {
+  "embed": {
+    "unavailable": "Cette galerie n’est pas disponible.",
+    "viewGallery": "Voir toute la galerie",
+    "empty": "Aucune photo pour l’instant.",
+    "openPhoto": "Ouvrir la photo {{number}}",
+    "loadMore": "Afficher plus",
+    "loadMoreFailed": "Impossible de charger plus de photos.",
+    "retry": "Réessayer",
+    "close": "Fermer",
+    "previous": "Photo précédente",
+    "next": "Photo suivante",
+    "admin": {
+      "title": "Intégration sur un site web",
+      "description": "Affichez cette galerie sur votre propre site sous forme de grille de photos. Les visiteurs voient les photos publiées et peuvent les agrandir, mais ne peuvent ni télécharger, ni commenter, ni envoyer de fichiers.",
+      "needsPublic": "Seule une galerie sans mot de passe peut être intégrée. Supprimez d’abord le mot de passe sous Accès.",
+      "pausedByPassword": "Cette galerie a un mot de passe, l’intégration n’affiche donc rien. Supprimez le mot de passe sous Accès pour l’afficher à nouveau.",
+      "create": "Créer le code d’intégration",
+      "created": "Code d’intégration créé",
+      "codeLabel": "Code d’intégration",
+      "codeHint": "Collez-le dans votre site là où la galerie doit apparaître.",
+      "rotate": "Nouveau code",
+      "rotateConfirm": "Créer un nouveau code d’intégration ? Les sites qui utilisent le code actuel n’affichent plus la galerie tant que vous ne l’y remplacez pas.",
+      "remove": "Supprimer",
+      "removeConfirm": "Supprimer l’intégration ? Les sites qui affichent cette galerie cesseront de l’afficher.",
+      "removed": "Intégration supprimée",
+      "websitesLabel": "Sites autorisés",
+      "websitesHint": "Une adresse par ligne, p. ex. https://example.com ou https://*.example.com pour tous les sous-domaines. Laissez vide pour autoriser tous les sites.",
+      "saveWebsites": "Enregistrer les sites",
+      "websitesSaved": "Sites enregistrés"
+    }
+  },
   "systemHealth": {
     "backupRestoreTest": {
       "title": "Test de restauration des sauvegardes",
@@ -1105,10 +1136,13 @@
     "settingsTab": {
       "delivery": "Dossiers et livraison",
       "about": {
+        "embed": "Affichez cette galerie sur votre propre site.",
         "delivery": "Dossiers imbriqués issus des envois, et une première sélection avant la galerie complète.",
         "tags": "Taguer les photos par scène pour que les invités puissent filtrer la galerie."
       },
       "summary": {
+        "noEmbed": "Non intégrée",
+        "embedActive": "Intégration active",
         "folderStructureOn": "Arborescence activée",
         "folderStructureOff": "Envois sans dossiers",
         "firstLookDue": "première sélection, galerie complète pour le {{date}}",
@@ -1697,6 +1731,10 @@
       "title": "Marque"
     },
     "features": {
+      "embed": {
+        "title": "Intégration sur un site web",
+        "description": "Affichez une galerie sans mot de passe sur votre propre site sous forme de grille de photos dans un iframe. Chaque galerie a son propre code d’intégration sous Paramètres → Intégration sur un site web, limité si vous le souhaitez aux sites que vous indiquez."
+      },
       "backupRestoreTest": {
         "title": "Test de restauration des sauvegardes",
         "description": "Chaque sauvegarde est restaurée à titre de test dans une base de données jetable puis vérifiée : signature, sommes de contrôle, empreintes des fichiers, nombres de lignes et migrations. Les sauvegardes conservées sont revérifiées chaque semaine, et vous recevez un e-mail en cas d'échec."

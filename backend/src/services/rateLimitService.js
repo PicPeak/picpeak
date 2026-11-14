@@ -173,6 +173,15 @@ const GALLERY_IMAGE_RE = /^\/api\/gallery\/([^/]+)\/(?:(?:thumbnail|preview|hero
  * 300-request budget bounded — a viewer can refetch a cached thumbnail 300
  * times too — so nothing is given up here that the budget actually held.
  */
+/**
+ * A GET of one of those image routes, whoever asks. Reads the full URL, so it
+ * answers the same inside the gallery router, where req.path is relative.
+ */
+function isGalleryImageRequest(req) {
+  const fullPath = String(req.originalUrl || req.url || '').split('?')[0];
+  return (!req.method || req.method === 'GET') && GALLERY_IMAGE_RE.test(fullPath);
+}
+
 function isOwnGalleryImageRequest(req) {
   if (req.method && req.method !== 'GET') return false;
   const match = (req.path || '').match(GALLERY_IMAGE_RE);
@@ -454,6 +463,18 @@ function refundRateLimit(req) {
   Promise.resolve().then(refund).catch((error) => logger.warn('Rate limit refund failed', { error: error.message }));
 }
 
+/**
+ * Refund a website-embed image read (issue 1112) that middleware/gallery.js
+ * has authorised by its embed token. The embed's counterpart of the image
+ * exemption, so it rides on the same switch: with skip_authenticated off,
+ * every image request counts, embed images included.
+ */
+async function refundEmbedImageRead(req) {
+  if (!req.rateLimitRefund || !isGalleryImageRequest(req)) return;
+  const config = await getRateLimitSettings();
+  if (config.skipAuthenticated) refundRateLimit(req);
+}
+
 const getGeneralLimiter = () => current.general;
 const getAuthLimiter = () => current.auth;
 
@@ -468,6 +489,8 @@ module.exports = {
   createAuthRateLimiter,
   isAuthenticated,
   isOwnGalleryImageRequest,
+  isGalleryImageRequest,
+  refundEmbedImageRead,
   isOwnGalleryViewerRequest,
   GALLERY_VIEWER_BUDGET_FACTOR,
   shouldSkipRateLimit,

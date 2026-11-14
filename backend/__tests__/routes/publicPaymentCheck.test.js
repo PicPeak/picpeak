@@ -22,16 +22,18 @@ fs.mkdirSync(process.env.STORAGE_PATH, { recursive: true });
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'crm-route-test-secret';
 
 const request = require('supertest');
-const { bootCrmDb, seedMinimal, buildRouteApp } = require('../integration/helpers/crmDb');
+const { bootCrmDb, seedMinimal, setFeatureFlags, buildRouteApp } = require('../integration/helpers/crmDb');
 
 describe('publicPaymentCheck routes', () => {
   let cleanup;
   let app;
+  let db;
+  let customerId;
 
   beforeAll(async () => {
-    let db;
     ({ db, cleanup } = await bootCrmDb());
-    await seedMinimal(db);
+    ({ customerId } = await seedMinimal(db));
+    await setFeatureFlags(db, { bills: true });
     app = buildRouteApp('/api/public/payment-check', require('../../src/routes/publicPaymentCheck'));
   }, 120000);
 
@@ -101,6 +103,34 @@ describe('publicPaymentCheck routes', () => {
         .post(`/api/public/payment-check/${validToken}`)
         .send({ action: 'partial', amountMinor: -100 });
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe('with the bills feature switched off', () => {
+    afterEach(() => setFeatureFlags(db, { bills: true }));
+
+    it('refuses the page and the decision, and the link stays unused', async () => {
+      const inserted = await db('invoices').insert({
+        invoice_number: 'PC-FLAG-1', customer_account_id: customerId, status: 'sent', currency: 'CHF',
+        issue_date: '2026-09-01', due_date: '2026-09-30', total_amount_minor: 10000,
+      }).returning('id');
+      const invoiceId = inserted[0]?.id ?? inserted[0];
+      const token = 'd'.repeat(64);
+      await db('invoice_payment_check_tokens').insert({
+        invoice_id: invoiceId, token,
+        expires_at: new Date(Date.now() + 3600000).toISOString(), created_at: new Date().toISOString(),
+      });
+      await setFeatureFlags(db, { bills: false });
+
+      for (const res of [
+        await request(app).get(`/api/public/payment-check/${token}`),
+        await request(app).post(`/api/public/payment-check/${token}`).send({ action: 'paid_full' }),
+      ]) {
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('BILLS_DISABLED');
+      }
+      expect((await db('invoice_payment_check_tokens').where({ token }).first()).used_at).toBeNull();
+      expect((await db('invoices').where({ id: invoiceId }).first()).status).toBe('sent');
     });
   });
 });

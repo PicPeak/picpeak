@@ -13,8 +13,11 @@ const { ensureInt } = require('../../utils/numericHelpers');
 const { toMillis } = require('../../utils/queueTimestamps');
 const { formatMajor } = require('./helpers');
 const { auditedInsert, auditedUpdate, normalizeActor } = require('../accountingHistory');
-const { applyReminder, resolveAdminEmailForInvoice, resolvePerReminderFeeMinor, resolveSkontoPercentForInvoice } = require('./reminders');
+const {
+  applyReminder, paymentCheckLinkStillValid, resolveAdminEmailForInvoice, resolvePerReminderFeeMinor, resolveSkontoPercentForInvoice,
+} = require('./reminders');
 const { toDateOnly } = require('../../utils/dateOnly');
+const { hasColumnCached } = require('../../utils/schemaCache');
 
 // Payment-check token lifetime (GHSA-wg94-f86h-vq68 hardening). This
 // unauthenticated magic link is the only gate on a write to the
@@ -65,6 +68,21 @@ async function revokePendingPaymentCheckTokens(conn, invoiceId, nowIso, reason) 
 }
 
 /**
+ * Refuse, and withdraw, a link that went to an admin who may no longer
+ * record payments on the invoice (see paymentCheckLinkStillValid). Read
+ * before any transaction: the permission lookup goes through the global
+ * connection.
+ */
+async function refuseLinkOfDisqualifiedRecipient(row, invoice) {
+  if (await paymentCheckLinkStillValid(row, invoice)) return;
+  await db('invoice_payment_check_tokens').where({ id: row.id }).whereNull('used_at')
+    .update({ used_at: new Date().toISOString(), used_action: 'revoked' });
+  const err = new AppError('This link has already been used', 410, 'TOKEN_ALREADY_USED');
+  err.usedAction = 'revoked';
+  throw err;
+}
+
+/**
  * Record a payment against an invoice. Supports partial payments
  * (multiple rows accumulate into `paid_amount_minor`). Status flips
  * to `paid` once the running total meets or exceeds total_amount_minor.
@@ -105,8 +123,17 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
     if (trx.client.config.client === 'pg') invoiceQuery.forNoKeyUpdate();
     invoice = await invoiceQuery.first();
     if (!invoice) throw new AppError('Invoice not found', 404);
+    // A Storno cancels an invoice; nothing is owed on it.
+    if (invoice.kind === 'storno') {
+      throw new AppError('A Storno is not a payment instrument; record payments on the invoice instead.', 409, 'IS_STORNO');
+    }
     if (invoice.status === 'cancelled') {
       throw new AppError('Cannot mark a cancelled invoice as paid', 409);
+    }
+    // A running monthly bill still collects items and has not been issued;
+    // it is paid once it went out.
+    if (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1) {
+      throw new AppError('This is the running monthly bill. Send it before recording a payment.', 409, 'MONTHLY_DRAFT_NOT_PAYABLE');
     }
     // Not issued yet, and a paid invoice can no longer be marked delivered,
     // so it would never reach the customer.
@@ -352,6 +379,7 @@ function queuePaymentCheckEmail(invoiceId, options = {}) {
 async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor = null } = {}) {
   const invoice = await db('invoices').where({ id: invoiceId }).first();
   if (!invoice) return { sent: false, reason: 'not_found' };
+  if (invoice.kind === 'storno') return { sent: false, reason: 'storno' };
   if (!['sent', 'overdue'].includes(invoice.status)) {
     return { sent: false, reason: `wrong_status_${invoice.status}` };
   }
@@ -396,6 +424,10 @@ async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
     // "[object Object]", which no reader can parse back into a time.
     expires_at: expiresAt.toISOString(),
     created_at: nowIso,
+    // Who the link goes to, so it stops working once they may no longer
+    // record payments here (migration 360; none for the business address).
+    ...(await hasColumnCached('invoice_payment_check_tokens', 'recipient_admin_id')
+      ? { recipient_admin_id: adminContact.adminId ?? null } : {}),
   });
   // ISO here too: the throttle above reads last_payment_check_at back, and a
   // bare Date is the one shape that can't be read (see the note there).
@@ -520,8 +552,9 @@ async function getPaymentCheckByToken(token) {
   assertNotExpired(row);
   const invoice = await db('invoices').where({ id: row.invoice_id }).first();
   if (!invoice) throw new AppError('Invoice not found', 404);
+  await refuseLinkOfDisqualifiedRecipient(row, invoice);
   // The page offers the decisions, so it refuses what recording them would.
-  if (!PAYMENT_CHECK_STATUSES.includes(invoice.status)) {
+  if (invoice.kind === 'storno' || !PAYMENT_CHECK_STATUSES.includes(invoice.status)) {
     throw new AppError(
       `This invoice is no longer awaiting a payment check (status '${invoice.status}').`,
       409, 'INVOICE_NOT_ACTIONABLE',
@@ -590,21 +623,26 @@ async function notifyAdminOfPaymentCheckAction({ invoice, action, amountMinor, i
   const locale = invoice.language || profile?.default_locale || 'de';
   const customer = await db('customer_accounts').where({ id: invoice.customer_account_id }).first();
 
-  await emailProcessor.queueEmail(invoice.event_id || null, adminContact.email,
-    'invoice_payment_check_action_recorded', {
-      invoice_number: invoice.invoice_number,
-      customer_name: customer?.company_name
-        || customer?.display_name
-        || [customer?.first_name, customer?.last_name].filter(Boolean).join(' ')
-        || customer?.email || '',
-      event_name: invoice.event_name || '',
-      __language: locale,
-      action,
-      amount: amountMinor ? formatMajor(ensureInt(amountMinor), invoice.currency, locale) : '',
-      has_amount: !!amountMinor,
-      ip: ip || 'unknown',
-      recorded_at: formatShortDate(new Date(), profile?.country_code),
-    });
+  const variables = {
+    invoice_number: invoice.invoice_number,
+    customer_name: customer?.company_name
+      || customer?.display_name
+      || [customer?.first_name, customer?.last_name].filter(Boolean).join(' ')
+      || customer?.email || '',
+    event_name: invoice.event_name || '',
+    __language: locale,
+    action,
+    amount: amountMinor ? formatMajor(ensureInt(amountMinor), invoice.currency, locale) : '',
+    has_amount: !!amountMinor,
+    ip: ip || 'unknown',
+    recorded_at: formatShortDate(new Date(), profile?.country_code),
+  };
+  // The business address hears of it too, not only the link's recipient.
+  const recipients = [adminContact.email];
+  if (profile?.email && profile.email.toLowerCase() !== adminContact.email.toLowerCase()) recipients.push(profile.email);
+  for (const recipient of recipients) {
+    await emailProcessor.queueEmail(invoice.event_id || null, recipient, 'invoice_payment_check_action_recorded', variables);
+  }
 }
 
 /**
@@ -630,6 +668,12 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
     throw new AppError('Invalid action', 400);
   }
 
+  // A link mailed to an admin who may no longer record payments here is
+  // refused before anything is claimed.
+  const pending = await db('invoice_payment_check_tokens').where({ token }).whereNull('used_at').first();
+  const pendingInvoice = pending && await db('invoices').where({ id: pending.invoice_id }).first();
+  if (pendingInvoice) await refuseLinkOfDisqualifiedRecipient(pending, pendingInvoice);
+
   // One transaction decides: the invoice row is locked (PostgreSQL; SQLite
   // serialises transactions), it must still be waiting on the customer, the
   // outstanding amount is read under that lock, this link is spent as a
@@ -650,7 +694,8 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
     if (trx.client.config.client === 'pg') invoiceQuery.forNoKeyUpdate();
     const locked = await invoiceQuery.first();
     if (!locked) throw new AppError('Invoice not found', 404);
-    if (!PAYMENT_CHECK_STATUSES.includes(locked.status)) {
+    // A Storno is never paid or dunned (see recordPayment / applyReminder).
+    if (locked.kind === 'storno' || !PAYMENT_CHECK_STATUSES.includes(locked.status)) {
       throw new AppError(
         `This invoice is no longer awaiting a payment check (status '${locked.status}').`,
         409, 'INVOICE_NOT_ACTIONABLE',

@@ -103,6 +103,27 @@ async function verifyGalleryAccess(req, res, next) {
     // instead of falling through to a misleading guest-token error.
     if (req.adminPreviewDenied?.isOperational) throw req.adminPreviewDenied;
     const slug = req.params.slug || req.requestedSlug;
+    // Website embed (issue 1112): its images carry ?embed=<token> and are
+    // served as to any visitor of a public gallery. The embed mints no
+    // session, so a gallery cookie the browser holds for this site (another
+    // gallery's, or an expired one) must not decide over them: it would
+    // refuse every image of an embed that is otherwise eligible.
+    if (slug && typeof req.query?.embed === 'string') {
+      const embedEvent = await require('../services/galleryEmbed').resolveEmbed(slug, req.query.embed);
+      if (embedEvent) {
+        const embedGrant = access.grant(embedEvent, 'public', null);
+        await access.authorize(embedEvent, embedGrant);
+        attachAccess(req, embedEvent, embedGrant);
+        req.embedToken = embedEvent.embed_token;
+        // An embed visitor carries no gallery token the limiter could skip
+        // on, so each tile would spend the anonymous per-IP budget and a
+        // larger gallery would run out mid-scroll. Its image reads get their
+        // slot back once authorised here, as an adaptive-stream segment does,
+        // unless the operator turned the image exemption off.
+        await require('../services/rateLimitService').refundEmbedImageRead(req);
+        return next();
+      }
+    }
     const token = getGalleryTokenFromRequest(req, slug);
     const decoded = token ? decodeGalleryToken(token) : null;
     if (decoded && decoded.type !== 'gallery') {
@@ -141,9 +162,31 @@ function denySlideshowToken(req, res, next) {
   next();
 }
 
+/**
+ * Require the 'act' right of a customer-portal contact for a write that binds
+ * the customer (choosing an album, quoting or accepting a print order). A
+ * gallery token carries no rights, so they are re-read on every call; a
+ * view-only contact keeps reading the same offers but cannot change them.
+ * Sessions that are not portal contacts pass through unchanged.
+ */
+function requireContactAct(area) {
+  return async (req, res, next) => {
+    try {
+      const { sessionMayAct } = require('../services/customerContactsService');
+      if (req.viaCustomer && !(await sessionMayAct(req.galleryAccess?.session, area))) {
+        return res.status(403).json({ error: 'Your login may not do this', code: 'CUSTOMER_RIGHT_MISSING' });
+      }
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  };
+}
+
 module.exports = {
   verifyGalleryAccess,
   denySlideshowToken,
+  requireContactAct,
   isAdminPreview,
   verifyAdminPreview
 };

@@ -136,6 +136,11 @@ function sanitizeCss(css) {
   // eslint-disable-next-line no-control-regex -- intentional: strips control chars from untrusted CSS
   sanitized = sanitized.replace(/[\u0000-\u001F\u007F]/g, '');
 
+  // The patterns above match only the literal spelling; `@\69mport` is the
+  // same at-rule to a browser. Decoded names are checked against the
+  // allow-list once the control-character strip can no longer join tokens.
+  sanitized = stripDisallowedAtRules(sanitized).sanitized;
+
   // After the control-character strip, so `<\u0000/style` cannot re-form a
   // `</style` once the NUL is gone. This value is served inside the public
   // site's <style> element; see escapeCssForStyleElement.
@@ -175,6 +180,21 @@ function stripDisallowedUrls(css) {
   let out = '';
   let blocked = 0;
   let i = 0;
+  // A bare string argument of image-set() IS a URL to a browser
+  // (`image-set("https://x/p.gif" 1x)`), so it is held to the same
+  // ALLOWED_URL_TARGET as url(). `parenDepth` counts open parentheses;
+  // `urlFrames` holds one entry per open image-set-like call ('url') and per
+  // type() opened inside one ('type'), each with the depth it opened at.
+  // A string is checked at ANY depth below an image-set-like call — not
+  // only directly at its depth — because a wrapping function such as if()
+  // (`image-set(if(media(width>0):"https://x/p.gif") 1x)`) resolves to that
+  // string at computed-value time. The one exception is a string whose
+  // innermost enclosing frame is type(): the `"image/png"` in
+  // `type("image/png")` is a MIME type, not a URL.
+  let parenDepth = 0;
+  const urlFrames = [];
+  const insideUrlCall = () => urlFrames.length > 0;
+  const stringIsUrl = () => urlFrames.length > 0 && urlFrames[urlFrames.length - 1].kind === 'url';
 
   while (i < input.length) {
     // --- CSS comment ---------------------------------------------------
@@ -218,6 +238,17 @@ function stripDisallowedUrls(css) {
         i += 1;
         continue;
       }
+      if (parenDepth > 0 && stringIsUrl()) {
+        const target = decodeCssEscapes(input.slice(i + 1, j - 1)).trim();
+        if (!ALLOWED_URL_TARGET.test(target)) {
+          // `none` is not a valid image-set() argument, so the browser drops
+          // the whole declaration rather than requesting anything.
+          blocked += 1;
+          out += 'none';
+          i = j;
+          continue;
+        }
+      }
       out += input.slice(i, Math.min(j, input.length));
       i = Math.min(j, input.length);
       continue;
@@ -251,6 +282,54 @@ function stripDisallowedUrls(css) {
       continue;
     }
 
+    // --- var()/env()/attr() inside image-set() ------------------------------
+    // A custom property can hold the string (`--u:"https://x/p.gif"`) and
+    // var() substitutes it into image-set() at computed-value time, where
+    // the string check above never sees it. Inside an image-set-like call
+    // these are replaced with `none` (an invalid argument) whole.
+    if (ident.end > i && insideUrlCall()
+      && SUBSTITUTION_FUNCTIONS.has(decodeCssEscapes(ident.raw).toLowerCase())) {
+      let j = ident.end;
+      while (j < input.length && CSS_WS.test(input[j])) j += 1;
+      if (input[j] === '(') {
+        const end = findCloseParen(input, j);
+        blocked += 1;
+        out += 'none';
+        i = end;
+        continue;
+      }
+    }
+
+    // --- image-set( and the other calls that take a bare string URL ---------
+    if (ident.end > i
+      && STRING_URL_FUNCTIONS.has(decodeCssEscapes(ident.raw).toLowerCase().replace(VENDOR_PREFIX, ''))) {
+      let j = ident.end;
+      while (j < input.length && CSS_WS.test(input[j])) j += 1;
+      if (input[j] === '(') {
+        out += input.slice(i, j + 1);
+        parenDepth += 1;
+        urlFrames.push({ depth: parenDepth, kind: 'url' });
+        i = j + 1;
+        continue;
+      }
+    }
+
+    // --- type() inside an image-set-like call: its string is a MIME type ---
+    // Only at the start of an identifier: the scanner otherwise also lands
+    // on the `type` inside `footype(`, which must not earn the exemption.
+    if (ident.end > i && insideUrlCall() && !/[A-Za-z0-9_\\-]/.test(input[i - 1] || '')
+      && decodeCssEscapes(ident.raw).toLowerCase() === 'type') {
+      let j = ident.end;
+      while (j < input.length && CSS_WS.test(input[j])) j += 1;
+      if (input[j] === '(') {
+        out += input.slice(i, j + 1);
+        parenDepth += 1;
+        urlFrames.push({ depth: parenDepth, kind: 'type' });
+        i = j + 1;
+        continue;
+      }
+    }
+
     // --- escape that does NOT begin an identifier -------------------------
     // Ordered AFTER readIdentifier deliberately. `\75` is the escape for
     // `u`, so `\75rl(...)` is url() to a browser — consuming the escape
@@ -264,12 +343,42 @@ function stripDisallowedUrls(css) {
       continue;
     }
 
+    if (input[i] === '(') parenDepth += 1;
+    if (input[i] === ')' && parenDepth > 0) {
+      if (urlFrames.length > 0 && urlFrames[urlFrames.length - 1].depth === parenDepth) urlFrames.pop();
+      parenDepth -= 1;
+    }
     out += input[i];
     i += 1;
   }
 
   return { sanitized: out, blocked };
 }
+
+// Functions that substitute a value from elsewhere at computed-value time.
+// if() is not listed: its branches are checked like any other string inside
+// an image-set-like call, and a var()/env()/attr() inside one is still
+// caught here because this check applies at any depth.
+const SUBSTITUTION_FUNCTIONS = new Set(['var', 'env', 'attr']);
+
+/** Index just past the `)` matching the `(` at `open` (strings/comments skipped); end of input if none. */
+function findCloseParen(input, open) {
+  let depth = 0;
+  let j = open;
+  while (j < input.length) {
+    const skipped = skipCommentOrString(input, j);
+    if (skipped !== j) { j = skipped; continue; }
+    if (input[j] === '\\') { j += 2; continue; }
+    if (input[j] === '(') depth += 1;
+    if (input[j] === ')') { depth -= 1; if (depth === 0) return j + 1; }
+    j += 1;
+  }
+  return input.length;
+}
+
+// Functions whose bare string arguments are image URLs (vendor prefix
+// removed before the lookup, so -webkit-image-set is covered).
+const STRING_URL_FUNCTIONS = new Set(['image-set', 'image', 'src']);
 
 /** A CSS escape sequence at `start`, or null. */
 function matchEscape(input, start) {
@@ -307,6 +416,163 @@ function readIdentifier(input, start) {
     break;
   }
   return { raw, end: j };
+}
+
+// At-rules a stylesheet may keep, compared against the DECODED name with any
+// vendor prefix removed. `@\69mport` and `@\import` are both `@import` to a
+// browser, so a literal pattern on the raw text is not enough: every
+// at-keyword is decoded first and anything not on this list is removed.
+// Notably absent: import (fetches another stylesheet), charset, namespace.
+const ALLOWED_AT_RULES = new Set([
+  'media', 'supports', 'keyframes', 'font-face', 'layer', 'container',
+  'page', 'property', 'counter-style', 'scope', 'starting-style', 'position-try',
+  'font-feature-values', 'font-palette-values', 'view-transition',
+  // @font-feature-values sub-rules
+  'swash', 'annotation', 'ornaments', 'stylistic', 'styleset', 'character-variant',
+  // @page margin boxes
+  'top-left-corner', 'top-left', 'top-center', 'top-right', 'top-right-corner',
+  'bottom-left-corner', 'bottom-left', 'bottom-center', 'bottom-right', 'bottom-right-corner',
+  'left-top', 'left-middle', 'left-bottom', 'right-top', 'right-middle', 'right-bottom',
+]);
+const VENDOR_PREFIX = /^-(?:webkit|moz|ms|o)-/;
+
+/** An at-keyword name (escapes and non-ASCII included) starting at `start`. */
+function readAtKeywordName(input, start) {
+  let j = start;
+  let raw = '';
+  while (j < input.length) {
+    const escape = matchEscape(input, j);
+    if (escape) { raw += escape; j += escape.length; continue; }
+    if (/[A-Za-z0-9_-]/.test(input[j]) || input.charCodeAt(j) >= 0x80) { raw += input[j]; j += 1; continue; }
+    break;
+  }
+  return { raw, end: j };
+}
+
+/**
+ * Skip a comment or a CLOSED string at `i`; returns the index after it, or
+ * `i` when there is neither. An unterminated quote is not a string here, for
+ * the same fail-closed reason as in stripDisallowedUrls.
+ */
+function skipCommentOrString(input, i) {
+  if (input[i] === '/' && input[i + 1] === '*') {
+    const close = input.indexOf('*/', i + 2);
+    return close === -1 ? input.length : close + 2;
+  }
+  if (input[i] === '"' || input[i] === '\'') {
+    const quote = input[i];
+    let j = i + 1;
+    while (j < input.length) {
+      if (input[j] === '\\') { j += 2; continue; }
+      if (input[j] === '\n' || input[j] === '\r' || input[j] === '\f') return i;
+      if (input[j] === quote) return j + 1;
+      j += 1;
+    }
+    return i;
+  }
+  return i;
+}
+
+/**
+ * End of the at-rule whose name ends at `start`: through its `;`, through its
+ * balanced `{…}` block, or up to (not including) the `}` that closes an
+ * enclosing block — the same places a CSS parser ends it.
+ */
+function findAtRuleEnd(input, start) {
+  let j = start;
+  let parens = 0;
+  while (j < input.length) {
+    const skipped = skipCommentOrString(input, j);
+    if (skipped !== j) { j = skipped; continue; }
+    const ch = input[j];
+    if (ch === '\\') { j += 2; continue; }
+    if (ch === '(' || ch === '[') parens += 1;
+    else if ((ch === ')' || ch === ']') && parens > 0) parens -= 1;
+    else if (parens === 0 && ch === ';') return j + 1;
+    else if (parens === 0 && ch === '}') return j;
+    else if (parens === 0 && ch === '{') {
+      let depth = 0;
+      while (j < input.length) {
+        const s = skipCommentOrString(input, j);
+        if (s !== j) { j = s; continue; }
+        if (input[j] === '\\') { j += 2; continue; }
+        if (input[j] === '{') depth += 1;
+        if (input[j] === '}') { depth -= 1; if (depth === 0) return j + 1; }
+        j += 1;
+      }
+      return input.length;
+    }
+    j += 1;
+  }
+  return input.length;
+}
+
+/**
+ * Remove every at-rule whose decoded name is not in ALLOWED_AT_RULES.
+ *
+ * Comments, strings, escapes and url() tokens are stepped over as a CSS
+ * tokenizer would, so an `@` inside `content: "a@b"` or an escaped `\@` is
+ * left alone, while `@\69mport "https://…";` outside them is removed whole.
+ *
+ * @param {string} css
+ * @returns {{ sanitized: string, blocked: number }}
+ */
+function stripDisallowedAtRules(css) {
+  const input = css == null ? '' : String(css);
+  let out = '';
+  let blocked = 0;
+  let i = 0;
+
+  while (i < input.length) {
+    const skipped = skipCommentOrString(input, i);
+    if (skipped !== i) { out += input.slice(i, skipped); i = skipped; continue; }
+
+    if (input[i] === '\\' && i + 1 < input.length) {
+      out += input.slice(i, i + 2);
+      i += 2;
+      continue;
+    }
+
+    const ident = readIdentifier(input, i);
+    if (ident.end > i) {
+      if (decodeCssEscapes(ident.raw).toLowerCase() === 'url') {
+        let j = ident.end;
+        while (j < input.length && CSS_WS.test(input[j])) j += 1;
+        const token = input[j] === '(' ? readUrlToken(input, j) : null;
+        if (token) {
+          // Copied, not judged: stripDisallowedUrls decides on url() targets.
+          out += input.slice(i, token.end);
+          i = token.end;
+          continue;
+        }
+      }
+      out += input.slice(i, ident.end);
+      i = ident.end;
+      continue;
+    }
+
+    if (input[i] === '@') {
+      const name = readAtKeywordName(input, i + 1);
+      const decoded = decodeCssEscapes(name.raw).toLowerCase();
+      // `@` followed by something that cannot start a name is a plain delim.
+      if (decoded && !/^-?[0-9]/.test(decoded) && decoded !== '-') {
+        if (!ALLOWED_AT_RULES.has(decoded.replace(VENDOR_PREFIX, ''))) {
+          blocked += 1;
+          out += '/* BLOCKED */';
+          i = findAtRuleEnd(input, name.end);
+          continue;
+        }
+        out += input.slice(i, name.end);
+        i = name.end;
+        continue;
+      }
+    }
+
+    out += input[i];
+    i += 1;
+  }
+
+  return { sanitized: out, blocked };
 }
 
 /**
@@ -403,6 +669,18 @@ function sanitizeCSS(cssContent) {
   // this line then removed the quotes that made it so.
   sanitized = sanitized.replace(/<[^>]*>/g, '/* BLOCKED TAG */');
 
+  // At-rules are compared by their DECODED name, after every pass that can
+  // join tokens. The literal /@import/ above never matches `@\69mport`.
+  // The removed span is replaced by a comment, which separates tokens rather
+  // than joining them, so the URL scan below still sees the final bytes.
+  const atPass = stripDisallowedAtRules(sanitized);
+  if (atPass.blocked > 0) {
+    warnings.push(
+      `Blocked ${atPass.blocked} disallowed at-rule${atPass.blocked === 1 ? '' : 's'}`
+    );
+    sanitized = atPass.sanitized;
+  }
+
   // URL validation runs LAST, deliberately. Every pass above rewrites the
   // text, and each one that did so after this point has produced a bypass:
   // the HTML-comment strip (#1290), the control-character strip, and the tag
@@ -469,6 +747,7 @@ module.exports = {
   sanitizeCssColor,
   escapeCssForStyleElement,
   stripDisallowedUrls,
+  stripDisallowedAtRules,
   validateCSS,
   scopeToGalleryPage,
   MAX_CSS_SIZE

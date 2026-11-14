@@ -84,7 +84,11 @@ The script refuses while a backend process still holds the fence (`--force`
 overrides). If the interrupted restore had not committed, its files are rolled
 back and the instance is what it was before; if it had, the restored data
 stays. The action is written to the log and to the activity log
-(`portable_restore_fence_cleared`). Start the backend afterwards.
+(`portable_restore_fence_cleared`). Start the backend afterwards. The images
+run the migrations before the server starts; a server started by hand on a
+restored database whose migrations have not run refuses to start
+(`RESTORE_MIGRATIONS_PENDING`) until `node migrations/run-migrations-safe.js`
+has run.
 
 ## Several backend processes
 

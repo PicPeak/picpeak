@@ -81,7 +81,7 @@ const { pickRawDownloadName } = require('../../services/downloadFilenameService'
 const { buildContentDisposition, sanitizeForZipEntry } = require('../../utils/filenameSanitizer');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
 const { pipeStreamToResponse } = require('../../utils/streamResponse');
-const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
+const { createArchiveStreamGuard, paceArchive } = require('../../utils/archiveStreamGuard');
 const { recordSingleDownload } = require('../../services/apiDownloadNotifications');
 const { parseResolution } = require('../../utils/downloadResolutions');
 const { renderPhotoForDownload, isVideo } = require('../../services/downloadRendition');
@@ -1780,11 +1780,15 @@ router.get(
           abortArchive(err, { level: 'warn', streamedBytes, maxBytes: zipLimits.maxBytes });
         }
       });
+      // At most two entries waiting in archiver before the next photo is
+      // rendered or opened, and a client that stops reading is dropped.
+      const pacer = paceArchive(archive, res);
       archive.pipe(res);
 
       const missingIds = [];
       let appended = 0;
       for (let i = 0; i < photos.length; i += 1) {
+        if (!await pacer.room()) break;
         if (!await guard.acquire()) break;
         // Rendered entries are buffers, appended whole — the same shape the
         // gallery's own cached zip builder uses. Only the stored-bytes path
@@ -1804,18 +1808,9 @@ router.get(
         }
         if (rendered) {
           // Tracked like a storage read, so destroyAll() reclaims it on an
-          // abort instead of leaving archiver holding the buffer.
-          //
-          // It is NOT the throttle for this path, and the earlier claim that
-          // it was does not survive measurement. acquire() gates on the number
-          // of OPEN sources; whether a buffer-backed source stays open depends
-          // on whether archiver is free to consume it, which depends on the
-          // response. What actually bounds this loop in practice is the cost
-          // of the render itself — a large source takes far longer to resize
-          // than archiver takes to write the result. See the PR for why the
-          // wall-clock test that appeared to prove a throttle was measuring
-          // sharp's speed rather than backpressure.
-          archive.append(guard.track(Readable.from([rendered])), { name: entryNames[i] });
+          // abort instead of leaving archiver holding the buffer. The pacer
+          // above, not the guard, is what keeps renders behind the client.
+          pacer.append(guard.track(Readable.from([rendered])), { name: entryNames[i] });
           appended += 1;
           continue;
         }
@@ -1825,13 +1820,13 @@ router.get(
           missingIds.push(photos[i].id);
           continue;
         }
-        archive.append(guard.track(source.stream), { name: entryNames[i] });
+        pacer.append(guard.track(source.stream), { name: entryNames[i] });
         appended += 1;
       }
       if (cancelled) return;
 
       if (missingIds.length) {
-        archive.append(
+        pacer.append(
           'These photo ids are not in this archive — their file was missing from '
           + `storage, or could not be prepared:\n${missingIds.join('\n')}\n`,
           { name: manifestName }

@@ -256,6 +256,27 @@ describe('admin newsletters routes', () => {
     expect(res.body.html).toContain('Hi Robin');
   });
 
+  it('previews a named customer only for an admin who may view customers', async () => {
+    const [id] = await db('customer_accounts').insert({
+      email: 'private@example.com', first_name: 'Dora', is_active: 1,
+      marketing_opt_out: 1, created_at: new Date().toISOString(),
+    }).returning('id');
+    const customerId = typeof id === 'object' ? id.id : id;
+    const { body } = await createDraft();
+
+    // newsletters.view without customers.view
+    const named = await request(app)
+      .post(`${MOUNT}/${body.campaign.id}/preview`).set(auth(viewerToken))
+      .send({ customerId });
+    expect(named.status).toBe(403);
+    expect(JSON.stringify(named.body)).not.toContain('Dora');
+
+    const sample = await request(app)
+      .post(`${MOUNT}/${body.campaign.id}/preview`).set(auth(viewerToken)).send({});
+    expect(sample.status).toBe(200);
+    expect(sample.body.isSample).toBe(true);
+  });
+
   // ---- recipients listing ------------------------------------------------
 
   it('paginates the recipients list', async () => {
@@ -275,6 +296,25 @@ describe('admin newsletters routes', () => {
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(2);
     expect(res.body.pagination.total).toBe(5);
+  });
+
+  it('lists recipients only for an admin who may view customers', async () => {
+    await db('customer_accounts').insert({
+      email: 'listed@example.com', is_active: 1, marketing_opt_out: 0,
+      created_at: new Date().toISOString(),
+    });
+    const { body } = await createDraft();
+    const id = body.campaign.id;
+    await request(app).post(`${MOUNT}/${id}/queue`).set(auth(superToken));
+
+    // newsletters.view without customers.view
+    const res = await request(app).get(`${MOUNT}/${id}/recipients`).set(auth(viewerToken));
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(res.body)).not.toContain('listed@example.com');
+
+    const allowed = await request(app).get(`${MOUNT}/${id}/recipients`).set(auth(superToken));
+    expect(allowed.status).toBe(200);
+    expect(allowed.body.data).toHaveLength(1);
   });
 
   it('filters the recipients list by status', async () => {

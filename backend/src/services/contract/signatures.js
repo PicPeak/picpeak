@@ -995,11 +995,26 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
   }
 
   const updates = { updated_at: new Date() };
+  let savedCustomerImage = null;
   if (customerSignatureDataUrl) {
-    updates.signed_customer_signature_path = toStoredPath(await persistSignatureImage(contract, 'customer', customerSignatureDataUrl));
+    savedCustomerImage = await persistSignatureImage(contract, 'customer', customerSignatureDataUrl);
+    updates.signed_customer_signature_path = toStoredPath(savedCustomerImage);
   }
   if (adminSignatureDataUrl) {
-    updates.signed_admin_signature_path = toStoredPath(await persistSignatureImage(contract, 'admin', adminSignatureDataUrl));
+    try {
+      updates.signed_admin_signature_path = toStoredPath(await persistSignatureImage(contract, 'admin', adminSignatureDataUrl));
+    } catch (err) {
+      // The admin image was refused: the customer image saved a moment ago
+      // belongs to a run that records nothing, so it goes too.
+      if (savedCustomerImage) {
+        try {
+          if (fs.existsSync(savedCustomerImage)) fs.unlinkSync(savedCustomerImage);
+        } catch (cleanupErr) {
+          logger.warn('Orphan re-stamp signature cleanup failed', { path: savedCustomerImage, message: cleanupErr.message });
+        }
+      }
+      throw err;
+    }
   }
   // Compare-and-set on the status, the PDF and the images this run read.
   // Two admins re-stamping at once, or a countersignature landing in

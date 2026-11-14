@@ -103,14 +103,34 @@ function requireEventOwner(req, res, next) {
   return checkEvent(req, res, next, ownsEvent);
 }
 
+/**
+ * The id as a number when `raw` is a plain positive integer, else null.
+ * SQLite would match a form such as '1e1' to row 10 while a handler's
+ * parseInt reads 1, so route guards accept only this canonical form.
+ */
+function canonicalId(raw) {
+  const id = Number(raw);
+  return /^\d+$/.test(String(raw)) && Number.isSafeInteger(id) && id >= 1 ? id : null;
+}
+
 function checkEvent(req, res, next, mayAct) {
+  const key = req.params.eventId !== undefined ? 'eventId' : 'id';
+  const raw = req.params[key];
+  if (raw === undefined || raw === '') {
+    return res.status(400).json({ error: 'Event ID is required' });
+  }
+  // Only a plain positive integer names an event. SQLite would match a form
+  // such as '1e1' to event 10 while a handler's parseInt reads 1, so the id
+  // goes back into req.params in canonical form: every handler after this
+  // acts on exactly the event checked here.
+  const eventId = canonicalId(raw);
+  if (eventId === null) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+  req.params[key] = String(eventId);
+
   if (managesAllEvents(req.admin)) {
     return next();
-  }
-
-  const eventId = req.params.eventId || req.params.id;
-  if (!eventId) {
-    return res.status(400).json({ error: 'Event ID is required' });
   }
 
   db('events')
@@ -169,8 +189,9 @@ function scopeEventsListQuery(query, admin, column = 'created_by') {
 
 // Columns of an events row that open the gallery on their own: the share link
 // embeds the share token, the client token unlocks client access, the show
-// token opens the slideshow.
-const EVENT_BEARER_SECRET_COLUMNS = ['share_token', 'share_link', 'client_share_token', 'show_share_token', 'full_share_token'];
+// token opens the slideshow, the embed token the website embed, the full
+// share token the full view of a curated selection.
+const EVENT_BEARER_SECRET_COLUMNS = ['share_token', 'share_link', 'client_share_token', 'show_share_token', 'embed_token', 'full_share_token'];
 
 /**
  * An event payload without its gallery links when the admin cannot act on the
@@ -318,6 +339,7 @@ function requireProjectOwnership(req, res, next) {
 }
 
 module.exports = {
+  canonicalId,
   canAccessEvent,
   ownsEvent,
   loadAssignedEventIds,

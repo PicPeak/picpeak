@@ -1127,6 +1127,23 @@ try {
     // Snipcart needs its SDK policy only when configured; Stripe-only stays strict.
     app.get('/gallery/:slug/:token?', ogIntercept, galleryPolicy, (req, res) => sendSpa(res));
     app.get('/gallery/:slug/show/:token', ogIntercept, galleryPolicy, (req, res) => sendSpa(res));
+    // Gallery embed (issue 1112): the only page another site may frame, and
+    // only while the embed is eligible. frame-ancestors names the allowed
+    // sites; an ineligible link keeps helmet's SAMEORIGIN like every page.
+    app.get('/gallery/:slug/embed/:token', async (req, res, next) => {
+      try {
+        const embed = require('./src/services/galleryEmbed');
+        const event = await embed.resolveEmbed(req.params.slug, req.params.token);
+        if (event) {
+          res.removeHeader('X-Frame-Options');
+          const csp = res.get('Content-Security-Policy');
+          res.set('Content-Security-Policy', `${csp ? `${csp}; ` : ''}frame-ancestors ${embed.frameAncestors(event)}`);
+        }
+      } catch (error) {
+        logger.warn('Embed frame policy lookup failed', { error: error.message });
+      }
+      next();
+    }, (req, res) => sendSpa(res));
     // PicTransfer links (single-container deploys without nginx).
     const transferOgIntercept = (kind) => {
       const handler = handleTransferOgRequest(kind);
@@ -1258,6 +1275,7 @@ async function startServerInternal() {
 
     // Initialize database
     await initializeDatabase();
+    await restoreCoordinator.assertRestoredLedgerComplete(db);
     await require('./src/utils/authSecurity').assertAuthSecuritySchema();
 
     // Warm the public-origin cache so the SYNCHRONOUS resolver (CORS headers)

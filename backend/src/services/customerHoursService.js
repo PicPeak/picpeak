@@ -109,7 +109,8 @@ async function getInstallDefaultRateMinor(trx) {
  *
  * Rules:
  *   - Unbilled entry (no invoice_id) → always editable.
- *   - Linked invoice is still a monthly draft → editable (period open).
+ *   - Linked invoice is still an open (scheduled) monthly draft → editable
+ *     (period open). A cancelled or paid draft is closed.
  *   - Linked invoice has no scheduled_send_at AND status='scheduled'
  *     → editable (standalone draft).
  *   - Linked invoice has scheduled_send_at > now AND status='scheduled'
@@ -119,8 +120,8 @@ async function getInstallDefaultRateMinor(trx) {
 function isEntryLocked(entry, invoice) {
   if (!entry.invoice_id) return false;
   if (!invoice) return false; // entry references a deleted invoice — treat as unbilled
-  if (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1) return false;
   if (invoice.status !== 'scheduled') return true;
+  if (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1) return false;
   if (!invoice.scheduled_send_at) return false;
   return new Date(invoice.scheduled_send_at).getTime() <= Date.now();
 }

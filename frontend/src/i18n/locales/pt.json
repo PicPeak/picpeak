@@ -1,4 +1,35 @@
 {
+  "embed": {
+    "unavailable": "Esta galeria não está disponível.",
+    "viewGallery": "Ver a galeria completa",
+    "empty": "Ainda não há fotos.",
+    "openPhoto": "Abrir a foto {{number}}",
+    "loadMore": "Carregar mais",
+    "loadMoreFailed": "Não foi possível carregar mais fotos.",
+    "retry": "Tentar novamente",
+    "close": "Fechar",
+    "previous": "Foto anterior",
+    "next": "Próxima foto",
+    "admin": {
+      "title": "Incorporação em site",
+      "description": "Mostre esta galeria no seu próprio site como grade de fotos. Os visitantes veem as fotos publicadas e podem ampliá-las, mas não podem baixar, comentar nem enviar arquivos.",
+      "needsPublic": "Só uma galeria sem senha pode ser incorporada. Remova primeiro a senha em Acesso.",
+      "pausedByPassword": "Esta galeria tem senha, por isso a incorporação não mostra nada. Remova a senha em Acesso para voltar a mostrá-la.",
+      "create": "Criar código de incorporação",
+      "created": "Código de incorporação criado",
+      "codeLabel": "Código de incorporação",
+      "codeHint": "Cole isto no seu site onde a galeria deve aparecer.",
+      "rotate": "Novo código",
+      "rotateConfirm": "Criar um novo código de incorporação? Os sites que usam o código atual deixam de mostrar a galeria até o substituir lá.",
+      "remove": "Remover",
+      "removeConfirm": "Remover a incorporação? Os sites que mostram esta galeria deixarão de mostrá-la.",
+      "removed": "Incorporação removida",
+      "websitesLabel": "Sites permitidos",
+      "websitesHint": "Um endereço por linha, p. ex. https://example.com ou https://*.example.com para todos os subdomínios. Deixe vazio para permitir qualquer site.",
+      "saveWebsites": "Salvar sites",
+      "websitesSaved": "Sites salvos"
+    }
+  },
   "systemHealth": {
     "backupRestoreTest": {
       "title": "Teste de restauração de backups",
@@ -1216,10 +1247,13 @@
     "settingsTab": {
       "delivery": "Pastas e entrega",
       "about": {
+        "embed": "Mostre esta galeria no seu próprio site.",
         "delivery": "Pastas aninhadas a partir dos envios e uma primeira seleção antes da galeria completa.",
         "tags": "Marque as fotos por cena para que os convidados possam filtrar a galeria."
       },
       "summary": {
+        "noEmbed": "Não incorporada",
+        "embedActive": "Incorporação ativa",
         "folderStructureOn": "Estrutura de pastas ativada",
         "folderStructureOff": "Envios sem pastas",
         "firstLookDue": "primeira seleção, galeria completa até {{date}}",
@@ -1797,6 +1831,10 @@
       "title": "Identidade Visual"
     },
     "features": {
+      "embed": {
+        "title": "Incorporação em site",
+        "description": "Mostre uma galeria sem senha no seu próprio site como grade de fotos num iframe. Cada galeria tem o seu próprio código de incorporação em Configurações → Incorporação em site, limitado, se quiser, aos sites que indicar."
+      },
       "backupRestoreTest": {
         "title": "Teste de restauração de backups",
         "description": "Cada backup é restaurado em teste num banco de dados descartável e verificado: assinatura, somas de verificação, hashes dos arquivos, contagens de linhas e migrações. Os backups retidos são verificados novamente toda semana, e você recebe um e-mail quando um falha."

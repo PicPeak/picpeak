@@ -32,6 +32,7 @@ describe('apiRateLimitGate — delegation', () => {
     app.get('/api/admin/events', (req, res) => res.json({ ok: true }));
     app.get('/api/public/transfer-upload/:token', (req, res) => res.json({ ok: true }));
     app.get('/api/public/settings/photo-sales-policy', (req, res) => res.sendStatus(204));
+    app.get('/api/public/settings/embed-frame-policy', (req, res) => res.sendStatus(204));
     app.post('/api/admin/auth/login', (req, res) => res.json({ ok: true }));
     app.get('/api/gallery/:slug/verify', (req, res) => res.json({ ok: true }));
     app.get('/photos/x.jpg', (req, res) => res.json({ ok: true }));
@@ -91,6 +92,14 @@ describe('apiRateLimitGate — delegation', () => {
     expect((await request(app).post('/api/public/settings/photo-sales-policy')).status).toBe(429);
     expect((await request(app).get('/api/public/settings/photo-sales-policy/other')).status).toBe(429);
     expect((await request(app).get('/api/public/settings')).status).toBe(429);
+  });
+
+  it('exempts GET/HEAD of the embed frame policy nginx asks on every embed load', async () => {
+    const app = buildApp();
+    expect((await request(app).get('/api/public/settings/embed-frame-policy')).status).toBe(204);
+    expect((await request(app).head('/api/public/settings/embed-frame-policy')).status).toBe(204);
+    expect(limiterCalls).toEqual([]);
+    expect((await request(app).post('/api/public/settings/embed-frame-policy')).status).toBe(429);
   });
 
   it('exempts login and gallery-verify, which would 429 on the shared bucket', async () => {

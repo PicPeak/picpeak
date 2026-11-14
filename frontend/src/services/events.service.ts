@@ -198,6 +198,12 @@ interface EventsListResponse {
 }
 
 /** Query options for the admin events list. */
+/** The website embed of a gallery (issue 1112), as the admin routes return it. */
+export interface EmbedState {
+  embed_token: string | null;
+  embed_allowed_origins: string[];
+}
+
 export interface EventsListParams {
   page?: number;
   limit?: number;
@@ -352,6 +358,24 @@ export const eventsService = {
   // Disable the slideshow link (null the token) (admin)
   async disableSlideshowLink(id: number): Promise<void> {
     await api.post(`/admin/events/${id}/slideshow/disable`);
+  },
+
+  // Website embed (issue 1112): create or rotate the embed link (admin)
+  async generateEmbedLink(id: number): Promise<EmbedState> {
+    const response = await api.post<EmbedState>(`/admin/events/${id}/embed/generate`);
+    return response.data;
+  },
+
+  // Remove the embed link (admin)
+  async disableEmbedLink(id: number): Promise<EmbedState> {
+    const response = await api.post<EmbedState>(`/admin/events/${id}/embed/disable`);
+    return response.data;
+  },
+
+  // The websites allowed to frame the embed; empty = any (admin)
+  async updateEmbedOrigins(id: number, allowedOrigins: string[]): Promise<EmbedState> {
+    const response = await api.patch<EmbedState>(`/admin/events/${id}/embed`, { allowed_origins: allowedOrigins });
+    return response.data;
   },
 
   // Update live slideshow settings (display time / transition / style) (admin)

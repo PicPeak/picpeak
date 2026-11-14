@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const knex = require('knex');
-const { createCoordinator, HEARTBEAT_STALE_MS } = require('../../src/services/portableRestoreCoordinator');
+const { createCoordinator, pendingCoreMigrations, assertRestoredLedgerComplete, HEARTBEAT_STALE_MS } = require('../../src/services/portableRestoreCoordinator');
 const { createWorkRegistry } = require('../../src/services/activeApplicationWork');
 const { leaseProvable } = require('../../src/services/portableRestorePaths');
 const { fixtureIngress } = require('./helpers/restoreIngress');
@@ -28,8 +28,29 @@ test('a kernel lease is provable on the same boot, or on the same persisted host
   expect(leaseProvable(storage, { ...row, host_id: hash('another host'), boot_id: crypto.randomUUID() })).toBe(false);
 });
 
+test('a start on a restored database refuses to run while a core migration is missing (issue 2480)', async () => {
+  const scratch = knex({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+  try {
+    let pending = ['400_newer_than_the_archive.js'];
+    const check = () => assertRestoredLedgerComplete(scratch, async () => pending);
+    // No control table, or no restore has committed here: nothing to hold.
+    await expect(check()).resolves.toBeUndefined();
+    await scratch.schema.createTable('portable_restore_control', table => { table.integer('id'); table.integer('generation'); });
+    await expect(check()).resolves.toBeUndefined();
+    await scratch('portable_restore_control').insert({ id: 1, generation: 0 });
+    await expect(check()).resolves.toBeUndefined();
+    // A committed restore (whatever reopened the control row) with a gap.
+    await scratch('portable_restore_control').where({ id: 1 }).update({ generation: 1 });
+    await expect(check()).rejects.toMatchObject({ code: 'RESTORE_MIGRATIONS_PENDING' });
+    pending = [];
+    await expect(check()).resolves.toBeUndefined();
+  } finally {
+    await scratch.destroy();
+  }
+});
+
 describe.each(engines)('portable restore coordinator (%s)', client => {
-  let db, directory, schema, storage, instances, native, worker, terminal, starts, recoveries, allGates, ingress, marker, cleaned;
+  let db, directory, schema, storage, instances, native, worker, terminal, starts, recoveries, allGates, ingress, marker, cleaned, pending;
   const row = () => db('portable_restore_control').where({ id: 1 }).first();
   const fence = { read: async () => marker, write: async value => { marker = { ...value, since: Date.now() }; } };
   const cleanup = { attempt: async (attemptId, options) => { cleaned.push({ attemptId, ...options }); }, leftovers: async () => 0 };
@@ -38,7 +59,7 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
     const hooks = { stopServices: jest.fn(async () => {}), resumeServices: jest.fn(async () => {}), forceClose: jest.fn(async () => {}) };
     const coordinator = createCoordinator({ database: db, work, leases: native, worker, ingress, capability, fence, cleanup,
       offline, getStorageIdentity: async () => identity, pollInterval: 5, settleMs: 0, drainGraceMs: 200, forceGraceMs: 50,
-      autoPoll: false, ...hooks, ...options });
+      autoPoll: false, pendingMigrations: async () => pending, ...hooks, ...options });
     const instance = { coordinator, work, ...hooks };
     instances.push(instance);
     return instance;
@@ -73,7 +94,7 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
   beforeEach(async () => {
     for (const table of ['portable_restore_commits', 'portable_restore_instances', 'portable_restore_control']) await db(table).delete();
     instances = []; starts = []; recoveries = []; allGates = []; terminal = gate(); allGates.push(terminal);
-    marker = null; cleaned = [];
+    marker = null; cleaned = []; pending = [];
     storage = { root: directory, privateRoot: path.join(directory, '.picpeak-maintenance'), storageId: crypto.randomUUID(),
       device: '1', filesystem: '61353', identity: { bootId: crypto.randomUUID(), host: hash('this host') } };
     await fs.mkdir(path.join(storage.privateRoot, 'runtime'), { recursive: true, mode: 0o700 });
@@ -211,6 +232,49 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       expect(marker).toMatchObject({ fenced: false, generation: 1 });
       expect(() => b.coordinator.admitRequest()).not.toThrow();
       expect((await db('portable_restore_instances')).map(item => item.instance_id)).toEqual([b.coordinator.instanceId()]);
+    });
+
+    it('stays in maintenance after the restart until the restored ledger has every migration (issue 2480)', async () => {
+      const a = create();
+      await a.coordinator.activate();
+      await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+      await drive('restoring', a);
+      terminal.resolve();
+      await drive('restart_required', a);
+
+      // Restarted without wait-for-db.sh: the archive's ledger is still there.
+      leaseOf(a).state = 'free';
+      pending = ['400_newer_than_the_archive.js'];
+      const b = create();
+      expect(await b.coordinator.pendingAtBoot()).toBe(true);
+      await b.coordinator.initialize();
+      for (let i = 0; i < 5; i++) await b.coordinator.tick();
+      expect((await row()).state).toBe('restart_required');
+      expect(marker).toMatchObject({ fenced: true });
+      expect(() => b.coordinator.admitRequest()).toThrow();
+      await expect(b.coordinator.waitForStartupAdmission({ timeoutMs: 50 })).rejects.toMatchObject({ code: 'RESTORE_CONFLICT' });
+
+      // The migrations ran (by hand): the next tick opens the instance.
+      pending = [];
+      await b.coordinator.waitForStartupAdmission();
+      expect((await row()).state).toBe('open');
+      expect(marker).toMatchObject({ fenced: false, generation: 1 });
+      expect(() => b.coordinator.admitRequest()).not.toThrow();
+    });
+
+    it('lists the core migration files the ledger does not record', async () => {
+      const files = (await fs.readdir(path.join(__dirname, '../../migrations/core'))).filter(name => /^\d{3}_.*\.js$/.test(name));
+      const scratch = knex({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+      try {
+        expect(await pendingCoreMigrations(scratch)).toEqual(files);
+        await scratch.schema.createTable('migrations', table => { table.increments('id'); table.string('filename'); });
+        await scratch('migrations').insert(files.slice(1).map(filename => ({ filename })));
+        expect(await pendingCoreMigrations(scratch)).toEqual([files[0]]);
+        await scratch('migrations').insert({ filename: files[0] });
+        expect(await pendingCoreMigrations(scratch)).toEqual([]);
+      } finally {
+        await scratch.destroy();
+      }
     });
 
     it('refuses a commit report that has no matching database marker', async () => {
@@ -499,6 +563,8 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       terminal.resolve();
       await first.coordinator.restoreOffline({ archivePath: await upload() });
       expect((await row()).state).toBe('restart_required');
+      // It never serves, so the migration guard does not hold it back.
+      pending = ['400_newer_than_the_archive.js'];
       const second = create({ offline: true });
       await expect(second.coordinator.restoreOffline({ archivePath: await upload() })).resolves.toMatchObject({ outcome: 'committed' });
       expect(starts).toHaveLength(2);

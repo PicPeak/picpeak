@@ -172,7 +172,7 @@ describe('customers', () => {
     await customerService.updateCustomer(customerId, { hourly_rate_minor: 5000 }, adminId);
     const [invoice] = await history.auditedInsert(db, 'invoices', {
       invoice_number: `CONFIG-HOURS-${customerId}`, customer_account_id: customerId,
-      issue_date: '2026-09-01', due_date: '2026-09-30', status: 'draft', is_monthly_draft: true,
+      issue_date: '2026-09-01', due_date: '2026-09-30', status: 'scheduled', is_monthly_draft: true,
     });
     const [line] = await history.auditedInsert(db, 'invoice_line_items', {
       invoice_id: invoice.id, description: 'Shoot', quantity: 1,

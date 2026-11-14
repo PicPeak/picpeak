@@ -1560,6 +1560,8 @@ module.exports = (router) => {
         'id', 'created_by', 'created_at', 'updated_at', 'slug',
         // Routing + share/client tokens (generated at create / internally)
         'share_link', 'share_token', 'client_share_token', 'show_share_token',
+        // Website embed (migration 363): set through /:id/embed, validated there.
+        'embed_token', 'embed_allowed_origins',
         // Secrets (set via the plaintext password/client_password inputs)
         'password_hash', 'client_password_hash',
         // #1271 — encrypted copies follow the hashes; a forged ciphertext

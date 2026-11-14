@@ -16,7 +16,15 @@ router.param('photoId', (req, res, next, value) => {
 const watermarkService = require('../../services/watermarkService');
 const watermarkGeneratorService = require('../../services/watermarkGeneratorService');
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
-const withPreview = (req, url) => (req.isAdminPreview ? `${url}${url.includes('?') ? '&' : '?'}admin_preview=1` : url);
+// A redirect keeps the selector the request was authorised by: the admin
+// preview, or the website embed's token (issue 1112, middleware/gallery.js),
+// so the follow-up request is not decided by a cookie instead.
+const withPreview = (req, url) => {
+  const join = (base, param) => `${base}${base.includes('?') ? '&' : '?'}${param}`;
+  if (req.isAdminPreview) return join(url, 'admin_preview=1');
+  if (req.embedToken) return join(url, `embed=${req.embedToken}`);
+  return url;
+};
 
 // Whether a video thumbnail request names another frame pick than the row
 // has (issue 2263, item 4): `poster` is the pick, absent for the default.

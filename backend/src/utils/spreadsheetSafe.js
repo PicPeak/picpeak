@@ -32,14 +32,23 @@ function neutralizeSpreadsheetFormula(value) {
   return FORMULA_START.test(s) ? `'${s}` : s;
 }
 
+// Characters that end a cell in SOME reader of a .csv file: the comma, the
+// semicolon (Excel's list separator in de/fr/it/nl and other locales, used
+// when the file is opened by double-click), the tab, and the line breaks —
+// plus the double quote, which must itself be escaped.
+const CSV_QUOTE_NEEDED = /[,;\t"\n\r]/;
+
 /**
  * One CSV cell: formula-neutralised, then RFC-4180 quoted when it holds a
- * comma, quote or line break. Callers that render some values differently
- * (booleans as yes/no, say) map them first and hand the rest here.
+ * separator (comma, semicolon or tab), a quote or a line break. Only the
+ * start of the value is checked for a formula trigger, so a value that a
+ * reader could split mid-way must be quoted: `a;=1+2` would otherwise open
+ * as two cells, the second one a formula. Callers that render some values
+ * differently (booleans as yes/no, say) map them first and hand the rest here.
  */
 function csvCell(value) {
   const s = neutralizeSpreadsheetFormula(value);
-  return /[,"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return CSV_QUOTE_NEEDED.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 /**
