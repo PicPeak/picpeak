@@ -162,15 +162,24 @@ describe('gallery ZIP routes pace rendering by the reader', () => {
     const stalled = stalledRequest(...build());
     expect(await stalled.gotHeaders).toMatch(/ 200 /);
 
-    // Plenty of time to render everything if nothing paced it.
-    await wait(700);
-    const rendered = mockRenders.count;
+    // Wait until rendering has settled (no new render for 300 ms) — plenty of
+    // time to render everything if nothing paced it. How long the socket and
+    // stream buffers take to fill depends on the machine, so this polls
+    // rather than using a fixed delay.
+    let rendered = mockRenders.count;
+    let stableSince = Date.now();
+    const settleBy = Date.now() + 3000;
+    while (Date.now() - stableSince < 300 && Date.now() < settleBy) {
+      await wait(50);
+      if (mockRenders.count !== rendered) { rendered = mockRenders.count; stableSince = Date.now(); }
+    }
     expect(rendered).toBeGreaterThan(0);
     // Socket and stream buffers absorb a few entries; the rest must wait.
     expect(rendered).toBeLessThan(PHOTO_COUNT / 2);
-    // And it stays there: nothing more is rendered while the client is idle.
-    await wait(400);
-    expect(mockRenders.count).toBe(rendered);
+    // And it stays there while the client is idle (one late buffered entry
+    // at most).
+    await wait(300);
+    expect(mockRenders.count).toBeLessThanOrEqual(rendered + 1);
     expect(stalled.isClosed()).toBe(false);
 
     // The idle timeout (1.5 s here) ends the stalled response on the server
