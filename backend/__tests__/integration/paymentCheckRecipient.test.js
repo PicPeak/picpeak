@@ -3,8 +3,9 @@
  * logging in) and the notifications about it.
  *
  * The invoice's creator gets them only while that account may record
- * payments on the invoice: active, and holding bills.manage. Otherwise an
- * active super admin does, else the business address. Each link names the
+ * payments on the invoice: active, and holding bills.manage. Otherwise the
+ * business address does, else the lowest-id active super admin (that account
+ * can be a technical login, so the business inbox comes first). Each link names the
  * admin it was mailed to and stops working once that admin may no longer
  * record payments here; a link to the business address keeps working. The
  * alert about a recorded action also goes to the business address.
@@ -122,35 +123,55 @@ test('deactivating the creator retires the link they were sent and moves the nex
   expect(untouched.status).toBe('sent');
   expect(Number(untouched.paid_amount_minor || 0)).toBe(0);
 
-  // A link issued after the deactivation goes to an admin who may act on
-  // the invoice, works, and the alerts reach that admin and the business.
+  // A link issued after the deactivation goes to the business address (it
+  // comes before any Super Admin), names no admin, works, and the alerts
+  // reach the business once and never the deactivated creator.
   await db('email_queue').del();
   const after = await payments.queuePaymentCheckEmail(invoiceId, { skipThrottle: true });
   expect(after.sent).toBe(true);
-  expect(await queuedTo('invoice_payment_check')).toEqual(['super@example.test']);
+  expect(await queuedTo('invoice_payment_check')).toEqual(['owner@example.test']);
+  expect((await db('invoice_payment_check_tokens').where({ token: after.token }).first()).recipient_admin_id)
+    .toBeNull();
   expect((await payments.getPaymentCheckByToken(after.token)).invoiceNumber).toMatch(/^PCR-/);
 
   await payments.recordPaymentCheckAction({ token: after.token, action: 'paid_full' });
   expect((await db('invoices').where({ id: invoiceId }).first()).status).toBe('paid');
-  expect(await queuedTo('invoice_payment_check_action_recorded')).toEqual(['super@example.test', 'owner@example.test']);
-  expect(await queuedTo('invoice_paid_admin_notification')).toEqual(['super@example.test']);
+  expect(await queuedTo('invoice_payment_check_action_recorded')).toEqual(['owner@example.test']);
+  expect(await queuedTo('invoice_paid_admin_notification')).toEqual(['owner@example.test']);
   expect(await queuedTo('invoice_paid_admin_notification')).not.toContain('staff@example.test');
+  expect(await queuedTo('invoice_paid_admin_notification')).not.toContain('super@example.test');
 });
 
-test('a link to the super admin stops working once they are deactivated; one to the business address keeps working', async () => {
-  // The creator is inactive since the test above: links go to the super admin.
+test('without a business address the lowest-id super admin gets the link, which stops working once they are deactivated', async () => {
+  // The creator is inactive since the test above, and the business has no
+  // address: links go to the super admin and name them.
+  await db('business_profile').where({ id: 1 }).update({ email: null });
   const superAdmin = await db('admin_users').where({ email: 'super@example.test' }).first();
   const toSuper = await payments.queuePaymentCheckEmail(await sentInvoice(), { skipThrottle: true });
   expect(await queuedTo('invoice_payment_check')).toEqual(['super@example.test']);
+  expect(Number((await db('invoice_payment_check_tokens').where({ token: toSuper.token }).first()).recipient_admin_id))
+    .toBe(Number(superAdmin.id));
+  expect((await payments.getPaymentCheckByToken(toSuper.token)).invoiceNumber).toMatch(/^PCR-/);
 
   await db('admin_users').where({ id: superAdmin.id }).update({ is_active: formatBoolean(false) });
   await expect(payments.getPaymentCheckByToken(toSuper.token)).rejects.toMatchObject({ statusCode: 410 });
 
-  // No admin qualifies now: the business address gets the link, and it works.
+  // No admin qualifies and no address: nothing is sent.
   await db('email_queue').del();
+  const none = await payments.queuePaymentCheckEmail(await sentInvoice(), { skipThrottle: true });
+  expect(none.sent).toBeFalsy();
+  expect(await queuedTo('invoice_payment_check')).toEqual([]);
+
+  await db('business_profile').where({ id: 1 }).update({ email: 'owner@example.test' });
+  await db('admin_users').where({ id: superAdmin.id }).update({ is_active: formatBoolean(true) });
+});
+
+test('a link to the business address keeps working while a super admin exists', async () => {
   const toBusiness = await payments.queuePaymentCheckEmail(await sentInvoice(), { skipThrottle: true });
   expect(await queuedTo('invoice_payment_check')).toEqual(['owner@example.test']);
   expect((await db('invoice_payment_check_tokens').where({ token: toBusiness.token }).first()).recipient_admin_id)
     .toBeNull();
+  // Deactivating the super admin does not touch a link that names no admin.
+  await db('admin_users').where({ email: 'super@example.test' }).update({ is_active: formatBoolean(false) });
   expect((await payments.getPaymentCheckByToken(toBusiness.token)).invoiceNumber).toMatch(/^PCR-/);
 });

@@ -297,9 +297,11 @@ async function mayRecordPaymentsOn(admin, invoice) {
  * Resolve who receives the payment-check prompt (a link that records a
  * payment) and the payment notifications for an invoice. Priority:
  *   1. the admin who issued the invoice, while they may record payments on it
- *   2. an active super admin, the one other kind of admin who may
- *   3. business_profile.email
- * Returns { email, name, adminId } (adminId null for the business address),
+ *   2. business_profile.email — the business's own inbox, ahead of any
+ *      admin account (the lowest-id Super Admin can be a technical login)
+ *   3. the lowest-id active super admin, when the business has no address
+ * Returns { email, name, adminId } (adminId null for the business address,
+ * whose links name no admin and stay valid — see paymentCheckLinkStillValid),
  * or null when nothing usable is found — caller logs + skips.
  */
 async function resolveAdminEmailForInvoice(invoice) {
@@ -309,6 +311,8 @@ async function resolveAdminEmailForInvoice(invoice) {
       return { email: creator.email, name: creator.username || creator.email, adminId: creator.id };
     }
   }
+  const profile = await db('business_profile').where({ id: 1 }).first();
+  if (profile?.email) return { email: profile.email, name: profile.company_name || profile.email, adminId: null };
   const superAdmin = await loadAdminWithRole()
     .where('roles.name', 'super_admin')
     .where('admin_users.is_active', formatBoolean(true))
@@ -318,8 +322,6 @@ async function resolveAdminEmailForInvoice(invoice) {
   if (superAdmin?.email) {
     return { email: superAdmin.email, name: superAdmin.username || superAdmin.email, adminId: superAdmin.id };
   }
-  const profile = await db('business_profile').where({ id: 1 }).first();
-  if (profile?.email) return { email: profile.email, name: profile.company_name || profile.email, adminId: null };
   return null;
 }
 

@@ -308,6 +308,25 @@ async function releaseRebillsForCancelledInvoice(conn, invoiceId, adminId) {
   }
 }
 
+/**
+ * When a draft is cancelled, return its hour entries to the unbilled pool.
+ * Entries linked to a draft that is no longer `scheduled` are locked
+ * (customerHoursService.isEntryLocked), so without this they could be
+ * neither edited nor billed again. Runs inside the caller's transaction;
+ * `hasHours` is the column check, resolved before it (hasColumnCached reads
+ * through the global db, which waits on the held connection on SQLite).
+ */
+async function releaseHoursForCancelledDraft(conn, invoiceId, adminId, hasHours) {
+  if (!hasHours) return;
+  await auditedUpdate(conn, 'customer_hour_entries', { invoice_id: invoiceId }, {
+    status: 'unbilled',
+    invoice_id: null,
+    invoice_line_item_id: null,
+    billed_at: null,
+    updated_at: new Date(),
+  }, { actor: adminId, source: 'invoice.cancel.releaseHours' });
+}
+
 /** The original row, locked for the rest of the transaction on PostgreSQL. */
 async function lockInvoiceRow(trx, id) {
   const query = trx('invoices').where({ id });
@@ -812,12 +831,20 @@ async function cancelInvoice(id, adminId) {
   if (isInvoiceEditable(invoice)) {
     // A cancelled monthly draft stops collecting items: the next one opens
     // a fresh draft.
-    const cancelled = await auditedUpdate(db, 'invoices', { id, status: invoice.status }, {
-      status: 'cancelled', is_monthly_draft: false, updated_at: new Date(),
-    }, { actor: adminId, source: 'invoice.cancel' });
+    const hasHours = await hasColumnCached('customer_hour_entries', 'invoice_id');
+    const cancelled = await db.transaction(async (trx) => {
+      const changed = await auditedUpdate(trx, 'invoices', { id, status: invoice.status }, {
+        status: 'cancelled', is_monthly_draft: false, updated_at: new Date(),
+      }, { actor: adminId, source: 'invoice.cancel' });
+      if (!changed) return changed;
+      // Free any re-billed supplier invoices so the cost isn't stranded (#866 review).
+      await releaseRebillsForCancelledInvoice(trx, id, adminId);
+      // Hours on a cancelled draft are locked with it; unlink them so they
+      // can be edited and billed again.
+      await releaseHoursForCancelledDraft(trx, id, adminId, hasHours);
+      return changed;
+    });
     if (!cancelled) throw new AppError('This invoice changed in the meantime. Reload it.', 409, 'INVOICE_STATUS_CHANGED');
-    // Free any re-billed supplier invoices so the cost isn't stranded (#866 review).
-    await releaseRebillsForCancelledInvoice(db, id, adminId);
     try {
       await logActivity('invoice_cancelled',
         { invoiceId: id, viaStorno: false },

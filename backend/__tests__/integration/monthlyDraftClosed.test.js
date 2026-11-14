@@ -27,7 +27,7 @@ let seq = 0;
 const prevCwd = process.cwd();
 const auth = () => ({ Authorization: `Bearer ${token}` });
 
-async function manualCustomer() {
+async function manualCustomer(cadence = 'manual') {
   seq += 1;
   const inserted = await db('customer_accounts').insert({
     email: `manual-${seq}@example.com`,
@@ -35,7 +35,7 @@ async function manualCustomer() {
     password_hash: 'unused',
     preferred_language: 'de',
     is_active: 1,
-    billing_cadence: 'manual',
+    billing_cadence: cadence,
     feature_hours_logging: formatBoolean(true),
     created_at: new Date().toISOString(),
   }).returning('id');
@@ -138,6 +138,49 @@ test('hour entries on a cancelled draft are locked', async () => {
   await expect(hours.updateEntry(entry.id, { endTime: '12:00' }, adminId))
     .rejects.toMatchObject({ code: 'ENTRY_LOCKED' });
   expect(Number((await row(draft.id)).total_amount_minor)).toBe(Number(draft.total_amount_minor));
+});
+
+test('cancelling a running draft returns its hour entries to unbilled, editable', async () => {
+  const customerId = await manualCustomer();
+  const entry = await hours.createEntry(customerId, {
+    entryDate: '2026-11-10', startTime: '09:00', endTime: '10:00', hourlyRateMinorOverride: 10000,
+  }, adminId);
+  const draftId = entry.invoiceId;
+  expect(draftId).toBeTruthy();
+
+  const cancel = await request(app).post(`/api/admin/invoices/${draftId}/cancel`).set(auth());
+  expect(cancel.status).toBe(200);
+
+  const released = await db('customer_hour_entries').where({ id: entry.id }).first();
+  expect(released.invoice_id).toBeNull();
+  expect(released.invoice_line_item_id).toBeNull();
+  expect(released.billed_at).toBeNull();
+  expect(released.status).toBe('unbilled');
+  // The cancelled draft keeps its record unchanged.
+  expect((await row(draftId)).status).toBe('cancelled');
+  expect(Number((await row(draftId)).total_amount_minor)).toBe(10000);
+
+  await hours.updateEntry(entry.id, { endTime: '12:00' }, adminId);
+  expect(Number((await db('customer_hour_entries').where({ id: entry.id }).first()).duration_minutes)).toBe(180);
+  expect(Number((await row(draftId)).total_amount_minor)).toBe(10000);
+});
+
+test('hours on a cancelled per-event draft can be billed again', async () => {
+  const customerId = await manualCustomer('per_event');
+  const entry = await hours.createEntry(customerId, {
+    entryDate: '2026-11-11', startTime: '09:00', endTime: '11:00', hourlyRateMinorOverride: 10000,
+  }, adminId);
+  const first = await hours.billUnbilledEntries(customerId, adminId);
+
+  const cancel = await request(app).post(`/api/admin/invoices/${first.invoiceId}/cancel`).set(auth());
+  expect(cancel.status).toBe(200);
+
+  const second = await hours.billUnbilledEntries(customerId, adminId);
+  expect(second.invoiceId).not.toBe(first.invoiceId);
+  expect(second.entriesBilled).toBe(1);
+  const rebilled = await db('customer_hour_entries').where({ id: entry.id }).first();
+  expect(rebilled.invoice_id).toBe(second.invoiceId);
+  expect(rebilled.status).toBe('billed');
 });
 
 test('a draft closed while still flagged is not shown as the running bill, and the scheduler releases it', async () => {
