@@ -48,9 +48,10 @@ registerAction('log', async (ctx) => {
 });
 // Merge a static object into the run context (handy for tests + seeding flags).
 // Keys the engine and its actions own (prepared document ids, recipients, the
-// trigger's customer, mail data, internal __ flags) are not settable here:
-// those come from the trigger and from the actions that create them.
-const ENGINE_OWNED_VARS = new Set(['adminEmail', 'customerEmail', 'recipientEmail', 'customerAccountId', 'emailData']);
+// trigger's customer and gallery, mail data, internal __ flags) are not
+// settable here: those come from the trigger and from the actions that create
+// them. eventId decides which gallery a queued mail is filed under.
+const ENGINE_OWNED_VARS = new Set(['adminEmail', 'customerEmail', 'recipientEmail', 'customerAccountId', 'eventId', 'emailData']);
 function isEngineOwnedVar(key) {
   return ENGINE_OWNED_VARS.has(key) || /^(prepared|__)/.test(key);
 }

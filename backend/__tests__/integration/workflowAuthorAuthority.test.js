@@ -114,7 +114,7 @@ test('set_context cannot write the variables the engine and its actions own', as
   const registry = require('../../src/services/workflows/registry');
   const result = await registry.getAction('set_context')({ node: { config: { set: {
     paid: true, adminEmail: 'x@example.test', customerEmail: 'y@example.test', recipientEmail: 'z@example.test',
-    customerAccountId: 9, emailData: { a: 1 }, preparedInvoiceIds: [1], preparedContractId: 2, __dryRun: false,
+    customerAccountId: 9, eventId: 3, emailData: { a: 1 }, preparedInvoiceIds: [1], preparedContractId: 2, __dryRun: false,
   } } } });
   expect(result).toEqual({ set: { paid: true } });
 });
@@ -130,6 +130,8 @@ describe('saving a graph with document actions needs the matching CRM permission
     [{ action: 'send_document', document: 'invoice' }],
     [{ action: 'escalate_to_collections' }],
     [{ action: 'send_document', document: 'contract' }],
+    [{ action: 'send_email', recipientClass: 'customer', to: 'someone@example.test' }],
+    [{ action: 'send_email', recipientClass: 'admin' }],
   ])('workflows.manage alone cannot create %j', async action => {
     const res = await request(app).post('/api/admin/workflows').set(as(workflowOnlyId)).send(graph(action));
     expect(res.status).toBe(403);
@@ -142,9 +144,17 @@ describe('saving a graph with document actions needs the matching CRM permission
       .send(graph({ action: 'send_document', document: 'contract' }))).status).toBe(403);
   });
 
-  test('flows without document actions still save with workflows.manage', async () => {
+  test('flows without document or mail actions still save with workflows.manage', async () => {
     expect((await request(app).post('/api/admin/workflows').set(as(workflowOnlyId))
-      .send(graph({ action: 'send_email', recipientClass: 'admin' }))).status).toBe(201);
+      .send(graph({ action: 'log', message: 'hello' }))).status).toBe(201);
+  });
+
+  test('a mail action saves for an author holding email.send', async () => {
+    const mailAuthorId = await adminWith('mail-author', await roleWith('wf_mail_fixture',
+      ['workflows.view', 'workflows.manage', 'email.send']));
+    require('../../src/middleware/permissions').clearPermissionCache();
+    expect((await request(app).post('/api/admin/workflows').set(as(mailAuthorId))
+      .send(graph({ action: 'send_email', recipientClass: 'customer' }))).status).toBe(201);
   });
 
   test('editing another author\'s flow into a document flow is refused; a rename is not', async () => {

@@ -98,6 +98,7 @@ const DOCUMENT_ACTION_PERMISSIONS = {
   prepare_contract_invoice: () => ['bills.manage'],
   queue_payment_check: () => ['bills.manage'],
   escalate_to_collections: () => ['bills.manage'],
+  send_email: () => ['email.send'],
 };
 
 function documentPermissionsFor(nodes = []) {

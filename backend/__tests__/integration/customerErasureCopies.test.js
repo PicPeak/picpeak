@@ -243,4 +243,37 @@ describe('workflow runs', () => {
     const step = await db('workflow_run_steps').where({ run_id: paused.runId, node_key: 'c' }).first();
     expect(json(step.result)).toEqual(expect.objectContaining({ skipped: true }));
   });
+
+  test('send_email keeps the run\'s address while it is still one of the account\'s own', async () => {
+    require('../../src/services/workflows'); // registers send_email
+    const mail = [['a', 'trigger', {}], ['b', 'action', { action: 'send_email', recipientClass: 'customer' }]];
+    const to = async address => db('email_queue').whereRaw('LOWER(recipient_email) = ?', [address]);
+    const sendTo = async (trigger, someone, customerEmail) => runOf(trigger, mail,
+      { entityType: 'invoice', entityId: 1, payload: { customerAccountId: someone.id, customerEmail } });
+
+    // The billing address an invoice trigger chose, in another case and padded.
+    const billed = await customer();
+    await db('customer_accounts').where({ id: billed.id }).update({ billing_email: 'wf-books@example.test' });
+    await sendTo('crm.billing.fixture', billed, '  WF-Books@Example.test ');
+    expect(await to('wf-books@example.test')).toHaveLength(1);
+    expect(await to(billed.email)).toHaveLength(0);
+
+    // An active contact's address stays; an inactive contact's falls back.
+    const withContacts = await customer();
+    await db('customer_contacts').insert([
+      { customer_account_id: withContacts.id, email: 'wf-contact@example.test', is_active: formatBoolean(true) },
+      { customer_account_id: withContacts.id, email: 'wf-gone-contact@example.test', is_active: formatBoolean(false) },
+    ]);
+    await sendTo('crm.contact.fixture', withContacts, 'wf-contact@example.test');
+    await sendTo('crm.gone-contact.fixture', withContacts, 'wf-gone-contact@example.test');
+    expect(await to('wf-contact@example.test')).toHaveLength(1);
+    expect(await to('wf-gone-contact@example.test')).toHaveLength(0);
+    expect(await to(withContacts.email)).toHaveLength(1);
+
+    // An address the account no longer has falls back to its primary one.
+    const changed = await customer();
+    await sendTo('crm.stale-billing.fixture', changed, 'wf-old-books@example.test');
+    expect(await to('wf-old-books@example.test')).toHaveLength(0);
+    expect(await to(changed.email)).toHaveLength(1);
+  });
 });

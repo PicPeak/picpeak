@@ -77,14 +77,22 @@ registry.registerAction('send_email', async (ctx) => {
     // The run's customer is read as it is now, not as the trigger saw it:
     // a run can wait for days, and the account may since have changed its
     // address, been deactivated or been erased. A trigger that gave no
-    // address (a customer it must not mail) still gives none.
+    // address (a customer it must not mail) still gives none. The run's
+    // address is kept while it is still one of the account's own (the
+    // billing address an invoice trigger chose, or an active contact's); an
+    // address the account no longer has falls back to its primary one.
     const customerId = Number(ctx.vars.customerAccountId);
     if (Number.isInteger(customerId) && customerId > 0) {
-      const account = await ctx.db('customer_accounts').where({ id: customerId }).first('email', 'is_active');
+      const account = await ctx.db('customer_accounts').where({ id: customerId }).first('email', 'billing_email', 'is_active');
       if (!account || ![true, 1, '1'].includes(account.is_active) || !account.email) {
         return { skipped: true, reason: 'customer account inactive' };
       }
-      customerEmail = account.email;
+      const norm = (value) => String(value || '').trim().toLowerCase();
+      const contactEmails = await ctx.db('customer_contacts')
+        .where({ customer_account_id: customerId, is_active: formatBoolean(true) })
+        .pluck('email');
+      const accountAddresses = new Set([account.email, account.billing_email, ...contactEmails].map(norm).filter(Boolean));
+      customerEmail = accountAddresses.has(norm(customerEmail)) ? String(customerEmail).trim() : account.email;
     }
   }
   const to = cfg.to

@@ -1,10 +1,9 @@
 /**
  * The workflows feature flag is a master kill-switch: no run is created or
- * resumed while it is off. The public approval link is mounted without the
- * flag so links in mail keep rendering, but acting on one used to record the
- * decision and resume the run regardless of the flag, and resumeRun() itself
- * never consulted it. Both now fail closed — the approval stays pending and
- * the run stays waiting until the flag is back on. Scanner finding c9dfda4a.
+ * resumed while it is off. The public approval routes are refused while it is
+ * off, like the other public document routes, and the engine holds the line
+ * too: actByToken() and resumeRun() fail closed — the approval stays pending
+ * and the run stays waiting until the flag is back on.
  */
 const crypto = require('crypto');
 const { bootCrmDb } = require('./helpers/crmDb');
@@ -112,6 +111,29 @@ describe('workflows kill-switch holds for pending approvals', () => {
     spy.mockRestore();
     await setFlag(true);
     expect(await engine.actByToken(raw, 'confirm')).toEqual({ ok: true, status: 'confirmed' });
+    expect(await state(runId, approval.id)).toEqual({ run: 'done', approval: 'confirmed' });
+  });
+
+  test('the public approval routes are refused while the flag is off', async () => {
+    const request = require('supertest');
+    const { buildRouteApp } = require('./helpers/crmDb');
+    const app = buildRouteApp('/api/public/workflow-approvals', require('../../src/routes/publicWorkflowApprovals'));
+    const { runId, approval, raw } = await pendingGate('kill.route');
+    await setFlag(false);
+
+    for (const res of [
+      await request(app).get(`/api/public/workflow-approvals/${raw}/confirm`),
+      await request(app).post(`/api/public/workflow-approvals/${raw}/confirm`),
+    ]) {
+      expect(res.status).toBe(403);
+      expect(res.text).toContain('Workflows are disabled');
+    }
+    expect(calls.confirm).toBe(0);
+    expect(await state(runId, approval.id)).toEqual({ run: 'waiting', approval: 'pending' });
+
+    await setFlag(true);
+    expect((await request(app).get(`/api/public/workflow-approvals/${raw}/confirm`)).status).toBe(200);
+    expect((await request(app).post(`/api/public/workflow-approvals/${raw}/confirm`)).status).toBe(200);
     expect(await state(runId, approval.id)).toEqual({ run: 'done', approval: 'confirmed' });
   });
 
