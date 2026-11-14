@@ -921,4 +921,5 @@ module.exports = {
   releaseForDelivery,
   cancelInvoice,
   triggerMonthlyBillNow,
+  releaseHoursForCancelledDraft,
 };

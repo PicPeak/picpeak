@@ -140,6 +140,36 @@ test('hour entries on a cancelled draft are locked', async () => {
   expect(Number((await row(draft.id)).total_amount_minor)).toBe(Number(draft.total_amount_minor));
 });
 
+test('the scheduler returns hours on a draft cancelled before this release to unbilled', async () => {
+  const customerId = await manualCustomer();
+  const entry = await hours.createEntry(customerId, {
+    entryDate: '2026-11-10', startTime: '09:00', endTime: '10:00', hourlyRateMinorOverride: 10000,
+  }, adminId);
+  // Cancelled the old way: status changed, draft flag and hour link kept.
+  await db('invoices').where({ id: entry.invoiceId }).update({ status: 'cancelled' });
+
+  await require('../../src/services/invoice/scheduler').runScheduledTasks();
+
+  const released = await db('customer_hour_entries').where({ id: entry.id }).first();
+  expect(released.invoice_id).toBeNull();
+  expect(released.status).toBe('unbilled');
+  expect(Boolean((await row(entry.invoiceId)).is_monthly_draft)).toBe(false);
+  await hours.updateEntry(entry.id, { endTime: '12:00' }, adminId);
+});
+
+test('the scheduler leaves hours on a paid draft billed', async () => {
+  const customerId = await manualCustomer();
+  const entry = await hours.createEntry(customerId, {
+    entryDate: '2026-11-10', startTime: '09:00', endTime: '10:00', hourlyRateMinorOverride: 10000,
+  }, adminId);
+  await db('invoices').where({ id: entry.invoiceId }).update({ status: 'paid' });
+
+  await require('../../src/services/invoice/scheduler').runScheduledTasks();
+
+  expect(Number((await db('customer_hour_entries').where({ id: entry.id }).first()).invoice_id))
+    .toBe(Number(entry.invoiceId));
+});
+
 test('cancelling a running draft returns its hour entries to unbilled, editable', async () => {
   const customerId = await manualCustomer();
   const entry = await hours.createEntry(customerId, {
