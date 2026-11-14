@@ -12,6 +12,8 @@
  */
 const express = require('express');
 
+const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
+
 const router = express.Router();
 const { actByToken, peekApproval } = require('../services/workflows');
 
@@ -22,6 +24,18 @@ function page(title, body) {
     + '<body style="font-family:system-ui,sans-serif;max-width:480px;margin:64px auto;padding:0 20px;text-align:center;color:#1f2937">'
     + `<h2 style="font-weight:600">${title}</h2><p style="color:#4b5563;line-height:1.6">${body}</p></body></html>`;
 }
+
+// With workflows switched off, every route here is refused before any token
+// lookup. The recipient opened a mailed link in a browser, so the refusal is a
+// page rather than JSON.
+router.use(async (req, res, next) => {
+  try {
+    if (await isFeatureEnabled('workflows')) return next();
+    return res.status(403).send(page('Workflows are disabled', 'Workflows are turned off in this installation, so this request was not recorded.'));
+  } catch (err) {
+    return next(err);
+  }
+});
 
 // Escape any prompt text we echo into the interstitial HTML.
 function esc(s) {

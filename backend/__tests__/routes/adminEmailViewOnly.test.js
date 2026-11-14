@@ -62,7 +62,15 @@ describe('email.view — read-only and password-free', () => {
       received_at: new Date().toISOString(), status: 'ingested', mailbox_state: 'active',
     }).returning('id');
     receivedId = r[0]?.id ?? r[0];
+    // Sent mail is reached through its event (middleware/emailQueueOwnership):
+    // an ownerless gallery, which every admin may act on.
+    const ev = await db('events').insert({
+      slug: 'view-only-gallery', event_name: 'View only gallery', event_type: 'wedding', event_date: '2026-06-01',
+      share_link: '/gallery/view-only-gallery', share_token: 'view-only-gallery-token-xxxxxxxx', password_hash: 'x',
+      expires_at: '2027-01-01', created_by: null, created_at: new Date().toISOString(),
+    }).returning('id');
     const q = await db('email_queue').insert({
+      event_id: ev[0]?.id ?? ev[0],
       recipient_email: 'client@example.com', email_type: 'gallery_created', status: 'sent',
       mailbox_state: 'active', created_at: new Date().toISOString(),
     }).returning('id');

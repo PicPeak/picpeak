@@ -204,7 +204,11 @@ class S3StorageBackend {
   async list(prefix) {
     this._assertIndexLoaded();
     const rootList = !prefix || prefix === '.';
-    const logicalPrefix = rootList ? '' : this._logical(prefix);
+    // A prefix names a directory, as on the local backend: listing
+    // 'events/active/x' returns keys under 'events/active/x/' only, never
+    // those of a sibling such as 'events/active/x-1/'.
+    const logicalDir = rootList ? '' : this._logical(prefix);
+    const logicalPrefix = !logicalDir || logicalDir.endsWith('/') ? logicalDir : `${logicalDir}/`;
     const fullPrefix = rootList ? (this.prefix ? `${this.prefix}/` : '') : this._physicalKey(logicalPrefix);
     const entries = await this._listPhysical(fullPrefix);
     const selected = key => rootList || key.startsWith(logicalPrefix);

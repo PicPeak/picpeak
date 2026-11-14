@@ -12,7 +12,7 @@ const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireFeatureFlag');
-const { filterOwnedEventIds } = require('../middleware/ownership');
+const { filterOwnedEventIds, seesAllEvents, canAccessEvent } = require('../middleware/ownership');
 const { db, logActivity } = require('../database/db');
 
 // Hour-entry routes are gated by the hoursLogging master so a direct API hit
@@ -583,6 +583,21 @@ router.get('/:id/history', [
   return successResponse(res, { entries });
 }));
 
+/**
+ * A customer record with its galleries as the events list shows them to the
+ * admin: all of them for roles that see every event, otherwise the ones the
+ * admin owns, is assigned to, or that have no owner. For every response that
+ * carries the record's `events`.
+ */
+async function withVisibleEvents(customer, admin) {
+  if (seesAllEvents(admin) || !Array.isArray(customer.events) || customer.events.length === 0) return customer;
+  const rows = await db('events')
+    .whereIn('id', customer.events.map((e) => e.id))
+    .select('id', 'created_by');
+  const visible = new Set(rows.filter((row) => canAccessEvent(admin, row)).map((row) => Number(row.id)));
+  return { ...customer, events: customer.events.filter((e) => visible.has(Number(e.id))) };
+}
+
 router.get('/:id', [
   adminAuth,
   requirePermission('customers.view'),
@@ -590,7 +605,7 @@ router.get('/:id', [
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   const id = parseInt(req.params.id, 10);
-  const customer = await customerAccountsService.getCustomerById(id);
+  const customer = await withVisibleEvents(await customerAccountsService.getCustomerById(id), req.admin);
   const groups = await customerGroupsService.groupsForCustomer(id);
   res.json({ customer: transformCustomer({ ...customer, groups }) });
 }));
@@ -658,11 +673,11 @@ router.put('/:id', [
   body('rebill_attach_proof').optional({ nullable: true }).isBoolean(),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
-  const customer = await customerAccountsService.updateCustomer(
+  const customer = await withVisibleEvents(await customerAccountsService.updateCustomer(
     parseInt(req.params.id, 10),
     req.body,
     req.admin.id
-  );
+  ), req.admin);
   res.json({ customer: transformCustomer(customer) });
 }));
 

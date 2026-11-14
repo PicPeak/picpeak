@@ -33,6 +33,9 @@ describe('PUT /api/admin/users/:id — super_admin targets', () => {
   let clerkId; let clerkTok;
   let removerTok;
   let otherId;
+  // The accounts the delegated managers act on: a role within both managers'
+  // permissions, since an account above them is out of their reach.
+  let peerRole;
 
   const auth = (req, tok) => req.set('Authorization', `Bearer ${tok}`);
   const row = (id) => db('admin_users').where({ id }).first();
@@ -65,7 +68,8 @@ describe('PUT /api/admin/users/:id — super_admin targets', () => {
     const removerId = await insertAdmin({ username: 'remover', email: 'remover@example.com', role_id: removerRole.id });
     removerTok = mintAdminToken(removerId);
 
-    const viewer = await db('roles').where({ name: 'viewer' }).first();
+    peerRole = await svc.createRole({ name: 'user_peer', permissions: ['users.view'] }, superId);
+    const viewer = peerRole;
     otherId = await insertAdmin({ username: 'other', email: 'other@example.com', role_id: viewer && viewer.id });
     clearPermissionCache();
 
@@ -122,7 +126,7 @@ describe('PUT /api/admin/users/:id — super_admin targets', () => {
   it('exposes the SSO eligibility on the list, and a super_admin confirmation flips it back', async () => {
     // What the Users page does: it reads the flag off the list and, on the
     // "Confirm email for SSO" action, PUTs the address back unchanged.
-    const viewer = await db('roles').where({ name: 'viewer' }).first();
+    const viewer = peerRole;
     const target = await insertAdmin({ username: 'sso-target', email: 'sso-target@example.com', role_id: viewer && viewer.id });
 
     await auth(request(app).put(`/api/admin/users/${target}`), clerkTok)
@@ -150,7 +154,7 @@ describe('PUT /api/admin/users/:id — super_admin targets', () => {
   it('leaves a non-eligible row alone when a users.edit holder re-saves the address', async () => {
     // The UI action rests on this: only a super_admin lifts the flag, and
     // re-saving the same address must not lift it for anyone else.
-    const viewer = await db('roles').where({ name: 'viewer' }).first();
+    const viewer = peerRole;
     const target = await insertAdmin({ username: 'stays-false', email: 'stays-false@example.com', role_id: viewer && viewer.id });
     await db('admin_users').where({ id: target }).update({ email_link_eligible: false });
 
@@ -162,7 +166,7 @@ describe('PUT /api/admin/users/:id — super_admin targets', () => {
 
   it('does not rewrite the stored address when it is only re-confirmed', async () => {
     // normalizeEmail lowercases; confirming must not edit a mixed-case address.
-    const viewer = await db('roles').where({ name: 'viewer' }).first();
+    const viewer = peerRole;
     const target = await insertAdmin({ username: 'mixed-case', email: 'Mixed.Case@Example.com', role_id: viewer && viewer.id });
     await db('admin_users').where({ id: target }).update({ email_link_eligible: false });
 
@@ -177,7 +181,7 @@ describe('PUT /api/admin/users/:id — super_admin targets', () => {
   it('refuses a second admin the same address in different case', async () => {
     // Same class as the OIDC lookup: two rows differing only in case would
     // both answer to one IdP claim.
-    const viewer = await db('roles').where({ name: 'viewer' }).first();
+    const viewer = peerRole;
     await insertAdmin({ username: 'case-owner', email: 'Case.Owner@Example.com', role_id: viewer && viewer.id });
     const other = await insertAdmin({ username: 'case-taker', email: 'case-taker@example.com', role_id: viewer && viewer.id });
 
@@ -192,7 +196,7 @@ describe('PUT /api/admin/users/:id — super_admin targets', () => {
     // updateAdminUser reads the row, then writes only the flag. If the target
     // changes their own email in between (PUT /admin/auth/profile, which sets
     // eligibility false), the confirmation must not land on that new address.
-    const viewer = await db('roles').where({ name: 'viewer' }).first();
+    const viewer = peerRole;
     const target = await insertAdmin({ username: 'racer', email: 'racer@example.com', role_id: viewer && viewer.id });
     await db('admin_users').where({ id: target }).update({ email_link_eligible: false });
 

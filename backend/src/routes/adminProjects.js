@@ -17,6 +17,7 @@ const projectService = require('../services/projectService');
 const customerGroupsService = require('../services/customerGroupsService');
 const { db } = require('../database/db');
 const { ownedProjectsSubquery, requireProjectOwnership, filterOwnedEventIds } = require('../middleware/ownership');
+const { requireOwnedQueuedEmail: requireOwnedQueuedEmailParam } = require('../middleware/emailQueueOwnership');
 const { ForbiddenError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { withTrustedCrmAccess } = require('../database/crmAccess');
@@ -383,34 +384,9 @@ router.get('/:id/overview', requirePermission('events.view'), requireProjectOwne
   return successResponse(res, overview);
 }));
 
-/**
- * These routes key on an `email_queue` id alone (GHSA-93x4) — nothing tied the
- * row to a project or event the caller can see, so any admin holding
- * `events.view` / `email.send` could preview, resend, cancel or retry ANY
- * queued mail on the instance by walking ids.
- *
- * Scoped via `email_queue.event_id` → the caller's owned events. `event_id` is
- * NULL for CRM document mail (quote/contract/invoice sends carry no event), and
- * those rows have no ownable parent here, so a scoped caller is denied them
- * rather than guessed into access. 404, not 403, so this isn't an id oracle.
- */
-async function requireOwnedQueuedEmail(req, res, next) {
-  try {
-    if (req.admin?.roleName === 'super_admin') return next();
-    const emailId = parseInt(req.params.emailId, 10);
-    const row = await db('email_queue').where({ id: emailId }).first('event_id');
-    if (!row || !row.event_id) {
-      return res.status(404).json({ error: 'Email not found' });
-    }
-    const { denied } = await filterOwnedEventIds(req.admin, [row.event_id]);
-    if (denied.length) {
-      return res.status(404).json({ error: 'Email not found' });
-    }
-    return next();
-  } catch (err) {
-    return next(err);
-  }
-}
+// These routes key on an `email_queue` id alone; the shared guard ties the
+// row to its sender or its gallery (middleware/emailQueueOwnership).
+const requireOwnedQueuedEmail = requireOwnedQueuedEmailParam('emailId');
 
 // Email preview — the ACTUAL sent HTML (or null for pre-rendered_html rows)
 router.get('/email/:emailId/preview', requirePermission('events.view'), [param('emailId').isInt({ min: 1 })], requireOwnedQueuedEmail, handleAsync(async (req, res) => {

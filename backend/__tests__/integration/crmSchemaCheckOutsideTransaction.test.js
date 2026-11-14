@@ -17,7 +17,7 @@
  * deadlock fails here instead of passing slowly.
  */
 
-const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
+const { bootCrmDb, seedMinimal, assignAdminRole } = require('./helpers/crmDb');
 
 const WITHIN = 15000;
 
@@ -33,6 +33,9 @@ describe('schema checks stay outside CRM transactions', () => {
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
     ({ adminId, customerId } = await seedMinimal(db));
+    // The paid notification goes to the creator only while they may record
+    // payments on the invoice.
+    await assignAdminRole(db, adminId, 'super_admin');
     // Hour logging needs both the per-customer flag and the master flag.
     await db('customer_accounts').where({ id: customerId }).update({ feature_hours_logging: true });
     const hoursFlag = await db('feature_flags').where({ key: 'hoursLogging' }).first();

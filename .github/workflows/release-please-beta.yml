@@ -75,14 +75,60 @@ jobs:
             echo "::error::Release PR #$pr was opened by '$pr_author', not by the release token owner — refusing to approve."
             exit 1
           fi
+          # Bind approval and merge to what the release token produced, not to
+          # the branch name: every commit on the PR must be authored AND
+          # committed by the token owner, and the review and the merge are tied
+          # to the head SHA verified here, so a later push is not covered.
+          # Returns 0 and prints the head SHA when it verifies, 1 when a commit
+          # is from anyone else, 2 when the head moved while it was being read
+          # (try again), 3 when the PR could not be read at all.
+          verify_release_head() {
+            local pr="$1" head commits count last foreign after
+            head=$(gh pr view "$pr" --json headRefOid --jq .headRefOid) || return 3
+            commits=$(gh api --paginate "repos/$GH_REPO/pulls/$pr/commits?per_page=100" \
+              --jq '.[] | "\(.sha) \(.author.login // "-") \(.committer.login // "-")"') || return 3
+            count=$(printf '%s\n' "$commits" | grep -c . || true)
+            last=$(printf '%s\n' "$commits" | tail -n 1 | cut -d' ' -f1)
+            foreign=$(printf '%s\n' "$commits" | awk -v login="$pat_login" 'NF && ($2 != login || $3 != login) { print $1 }')
+            [ "$count" -gt 0 ] || return 3
+            after=$(gh pr view "$pr" --json headRefOid --jq .headRefOid) || return 3
+            if [ "$after" != "$head" ] || [ "$last" != "$head" ]; then
+              return 2
+            fi
+            # The pulls commits endpoint stops at 250; a release PR has a handful.
+            if [ -z "$pat_login" ] || [ -z "$head" ] || [ "$count" -ge 250 ]; then
+              return 3
+            fi
+            if [ -n "$foreign" ]; then
+              return 1
+            fi
+            echo "$head"
+          }
+          verified=0
+          head=$(verify_release_head "$pr") || verified=$?
+          if [ "$verified" = 2 ]; then
+            echo "Release PR #$pr moved while it was being checked — the next push to main tries again."
+            exit 0
+          fi
+          if [ "$verified" = 3 ]; then
+            echo "::error::Could not read release PR #$pr — refusing to approve."
+            exit 1
+          fi
+          if [ "$verified" != 0 ]; then
+            GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --disable-auto || true
+            echo "::error::Release PR #$pr carries a commit not authored and committed by the release token owner — auto-merge turned off, refusing to approve."
+            exit 1
+          fi
           # Approve as github-actions[bot] (GITHUB_TOKEN) — a different identity
-          # than the PR author (the PAT) — so it counts as a valid review.
-          gh pr review "$pr" --approve --body "Automated approval — release-please version bump + changelog (#719)." || true
+          # than the PR author (the PAT) — so it counts as a valid review. The
+          # review names the verified head, so it does not cover a later push.
+          gh api "repos/$GH_REPO/pulls/$pr/reviews" -f commit_id="$head" -f event=APPROVE \
+            -f body="Automated approval — release-please version bump + changelog (#719)." > /dev/null || true
           # Enable auto-merge as the PAT so the eventual merge commit is
           # attributed to a real identity. If enabled via GITHUB_TOKEN the merge
           # push is suppressed by recursion prevention and the follow-up run that
           # cuts the tag/release never fires (#719).
-          GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto || true
+          GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto --match-head-commit "$head" || true
 
       - name: Output Release Info
         if: ${{ steps.release.outputs.release_created }}

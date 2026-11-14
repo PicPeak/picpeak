@@ -131,6 +131,20 @@ describe('getProjectOverview email canAct (#969)', () => {
     expect(byEvent(overview).get(ownerlessEventId).canAct).toBe(true);
   });
 
+  it('clears mail on a gallery the caller is assigned to, as the email routes do', async () => {
+    const overview = await projectService.getProjectOverview(
+      projectId, {}, { id: adminA, roleName: 'editor', assignedEventIds: [Number(foreignEventId)] },
+    );
+    expect(byEvent(overview).get(foreignEventId).canAct).toBe(true);
+  });
+
+  it('does not clear another owner\'s gallery mail for a role that only sees every gallery', async () => {
+    const overview = await projectService.getProjectOverview(
+      projectId, {}, { id: adminA, roleName: 'admin', eventScope: { viewAll: true, manageAll: false } },
+    );
+    expect(byEvent(overview).get(foreignEventId).canAct).toBe(false);
+  });
+
   it('denies everything when no admin context is supplied', async () => {
     // Including the ownerless event: `created_by == null` must not read as
     // "owned" when we do not know who is asking (codex review round 2).

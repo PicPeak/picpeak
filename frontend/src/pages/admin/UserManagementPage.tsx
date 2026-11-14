@@ -425,7 +425,7 @@ export const UserManagementPage: React.FC = () => {
     mutationFn: userManagementService.cancelInvitation,
     invalidateKeys: [['admin-invitations']],
     successMessage: t('userManagement.invitationCancelled'),
-    errorMessage: () => t('userManagement.cancelInvitationError'),
+    errorMessage: t('userManagement.cancelInvitationError'),
     onSuccess: () => {
       setConfirmDialog(null);
     },
@@ -436,7 +436,9 @@ export const UserManagementPage: React.FC = () => {
       userManagementService.updateUser(id, { roleId, creditName }),
     invalidateKeys: [['admin-users']],
     successMessage: t('userManagement.userUpdated'),
-    errorMessage: () => t('userManagement.updateUserError'),
+    // The string form shows the server's reason first (an account above the
+    // caller's own permissions is refused with one), this text otherwise.
+    errorMessage: t('userManagement.updateUserError'),
     onSuccess: () => {
       editUserModal.close();
       setSelectedUser(null);
@@ -447,7 +449,7 @@ export const UserManagementPage: React.FC = () => {
     mutationFn: userManagementService.deactivateUser,
     invalidateKeys: [['admin-users']],
     successMessage: t('userManagement.userDeactivated'),
-    errorMessage: () => t('userManagement.deactivateUserError'),
+    errorMessage: t('userManagement.deactivateUserError'),
     onSuccess: () => {
       setConfirmDialog(null);
     },
@@ -459,7 +461,7 @@ export const UserManagementPage: React.FC = () => {
     mutationFn: userManagementService.activateUser,
     invalidateKeys: [['admin-users']],
     successMessage: t('userManagement.userActivated', 'User reactivated successfully'),
-    errorMessage: () => t('userManagement.activateUserError', 'Failed to reactivate user'),
+    errorMessage: t('userManagement.activateUserError', 'Failed to reactivate user'),
     onSuccess: () => {
       setConfirmDialog(null);
     },
@@ -486,7 +488,7 @@ export const UserManagementPage: React.FC = () => {
     mutationFn: userManagementService.deleteUser,
     invalidateKeys: [['admin-users']],
     successMessage: t('userManagement.userDeleted', 'User deleted successfully'),
-    errorMessage: () => t('userManagement.deleteUserError', 'Failed to delete user'),
+    errorMessage: t('userManagement.deleteUserError', 'Failed to delete user'),
     onSuccess: () => {
       setConfirmDialog(null);
     },

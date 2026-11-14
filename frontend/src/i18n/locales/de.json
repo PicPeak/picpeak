@@ -12771,6 +12771,7 @@
     "entryHint": "Ihre Lieblingsfotos für Schreibtisch oder Wand. Wählen Sie zum Start ein Foto aus.",
     "choosePrints": "Abzüge auswählen",
     "basketShort": "Abzüge & Bestellungen",
+    "readOnlyHelp": "Mit Ihrem Login sehen Sie hier Abzüge und Bestellungen, können aber nicht bestellen.",
     "trimHint": "Die gestrichelte Linie zeigt den fertigen Rand. Der Bereich außerhalb wird abgeschnitten; halten Sie wichtige Details innerhalb der Linie.",
     "dragHint": "Ziehen Sie das Foto, um den Bildausschnitt anzupassen. Auch die Pfeiltasten verschieben es; Pos1 zentriert es.",
     "containHint": "Das gesamte Foto ist enthalten. Freie Flächen verwenden die vom Studio festgelegte Hintergrundfarbe.",

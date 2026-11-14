@@ -25,7 +25,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'crm-route-test-secret';
 
 const request = require('supertest');
 const bcrypt = require('bcrypt');
-const { bootCrmDb, seedMinimal, createPublicToken, buildRouteApp } = require('../integration/helpers/crmDb');
+const { bootCrmDb, seedMinimal, setFeatureFlags, createPublicToken, buildRouteApp } = require('../integration/helpers/crmDb');
 
 describe('public document verification under a burst of guesses', () => {
   let db;
@@ -38,6 +38,7 @@ describe('public document verification under a burst of guesses', () => {
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
     const { customerId } = await seedMinimal(db);
+    await setFeatureFlags(db, { quotes: true, contracts: true });
     const inserted = await db('contracts').insert({
       contract_number: 'K-BURST-0001',
       customer_account_id: customerId,

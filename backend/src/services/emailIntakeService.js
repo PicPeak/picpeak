@@ -372,7 +372,13 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
           const one = await client.fetchOne(String(cand.uid), { source: true }, { uid: true });
           if (!one || !one.source) throw new Error('Message source unavailable');
           if (one.source.length > MAX_MESSAGE_BYTES) throw new Error('Downloaded message exceeds the message-size limit');
-          const parsed = await simpleParser(one.source);
+          // keepCidLinks: leave `cid:` references as they are instead of
+          // inlining the matching attachment as a data: URI at every
+          // reference. Inlining multiplies one attachment by the number of
+          // references, so the parsed body would no longer be bounded by
+          // MAX_MESSAGE_BYTES. The sanitizer allows cid: and drops data:
+          // anyway, so the stored body is unchanged in meaning.
+          const parsed = await simpleParser(one.source, { keepCidLinks: true });
           messageId = boundedMessageId(parsed.messageId, cand.messageId);
           if (!(await mailRetention.rekey(claim, messageId))) {
             await client.messageFlagsAdd(cand.uid, ['\\Seen'], { uid: true });
