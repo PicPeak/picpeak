@@ -525,6 +525,8 @@ export interface GalleryData {
     // chose to keep the people strip to themselves. The whole face UI hangs
     // off this one boolean.
     people_enabled?: boolean;
+    // Guests may find their photos with a selfie (issue 2355).
+    selfie_search_enabled?: boolean;
     // Automatic scene tags (issue 1733): the feature flag and the gallery's
     // own switch are both on.
     tags_enabled?: boolean;

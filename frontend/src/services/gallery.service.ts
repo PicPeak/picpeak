@@ -520,4 +520,16 @@ export const galleryService = {
     const response = await api.get<GalleryPeopleResponse>(`/gallery/${slug}/people`);
     return response.data;
   },
+
+  /**
+   * Find my photos with a selfie (issue 2355). The server keeps nothing of
+   * the selfie; the answer is the ids of the photos it matched, best first.
+   */
+  async searchBySelfie(slug: string, selfie: File, consent: boolean): Promise<number[]> {
+    const form = new FormData();
+    form.append('consent', consent ? 'true' : 'false');
+    form.append('selfie', selfie);
+    const response = await api.post<{ photo_ids: number[] }>(`/gallery/${slug}/face-search`, form);
+    return response.data.photo_ids || [];
+  },
 };

@@ -59,6 +59,11 @@ const DEFAULTS = {
   face_quality_min_score: 0.7,
   face_quality_min_px: 40,
   face_auto_categorize_enabled: false,
+  // Selfie search (issue 2355): one guest selfie against single faces, not
+  // against a cluster centroid, so it gets its own, lower bar. A false
+  // positive costs a guest one photo of someone else that they could see
+  // in the gallery anyway; a miss costs them their own photo.
+  face_selfie_match_threshold: 0.50,
 };
 
 const SETTING_KEYS = Object.keys(DEFAULTS);
@@ -156,6 +161,18 @@ function areFacesVisibleToGuests(event) {
   return event.faces_visible_to_guests !== false && event.faces_visible_to_guests !== 0;
 }
 
+/**
+ * May a viewer of this event search it with a selfie (issue 2355)? Needs the
+ * people feature for this viewer (flag, per-event detection and, for a
+ * guest, the people bar left visible) plus the event's own opt-in.
+ */
+async function isSelfieSearchEnabled(event, { isClient = false } = {}) {
+  if (!event) return false;
+  if (event.face_selfie_search_enabled !== true && event.face_selfie_search_enabled !== 1) return false;
+  if (!isClient && !areFacesVisibleToGuests(event)) return false;
+  return isEnabledForEvent(event);
+}
+
 module.exports = {
   DEFAULTS,
   FLAG_KEY,
@@ -167,4 +184,5 @@ module.exports = {
   getThresholds,
   isEnabledForEvent,
   areFacesVisibleToGuests,
+  isSelfieSearchEnabled,
 };

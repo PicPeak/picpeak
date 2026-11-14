@@ -30,10 +30,12 @@ export interface GalleryFilterOptions {
   // Videos first (issue 2263): every video ahead of every photo, `sortBy`
   // within each group.
   videosFirst?: boolean;
+  // Selfie search (issue 2355): the photo ids the server matched; null = off.
+  selfiePhotoIds?: number[] | null;
 }
 export const resolveMediaType = (photo: Photo): 'photo' | 'video' =>
   photo.media_type === 'video' || photo.mime_type?.startsWith('video/') || photo.type === 'video' ? 'video' : 'photo';
-export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAll = false, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey = null, minRating = null, selectedTagKeys, likedIsOwn = false, favoritedIsOwn = isGuestIdentityMode, videosFirst = false }: GalleryFilterOptions) {
+export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAll = false, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey = null, minRating = null, selectedTagKeys, likedIsOwn = false, favoritedIsOwn = isGuestIdentityMode, videosFirst = false, selfiePhotoIds = null }: GalleryFilterOptions) {
   return useMemo(() => {
     if (!sourcePhotos) return [];
 
@@ -103,6 +105,13 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
           ? selectedPersonIds.some(id => ids.includes(id))
           : selectedPersonIds.every(id => ids.includes(id));
       });
+    }
+
+    // Selfie search (issue 2355): the photos the guest's selfie matched.
+    // Composes with (ANDs with) the people filter and every other filter.
+    if (selfiePhotoIds) {
+      const matched = new Set(selfiePhotoIds);
+      photos = photos.filter(photo => matched.has(photo.id));
     }
 
     // Apply the scene-tag filter (issue 1733). Several tags are OR-combined
@@ -183,5 +192,5 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
     }
     
     return photos;
-  }, [sourcePhotos, categories, folderId, viewAll, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey, minRating, selectedTagKeys, likedIsOwn, favoritedIsOwn, videosFirst]);
+  }, [sourcePhotos, categories, folderId, viewAll, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey, minRating, selectedTagKeys, likedIsOwn, favoritedIsOwn, videosFirst, selfiePhotoIds]);
 }

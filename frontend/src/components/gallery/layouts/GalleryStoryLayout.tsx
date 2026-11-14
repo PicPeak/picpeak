@@ -95,6 +95,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   suppressEmptyState = false,
   emptyIsFiltered = false,
   afterGrid,
+  beforeGrid,
   eventPhotoCount,
   onDownloadEverything,
   onCopyFilenames,
@@ -352,6 +353,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // category scenes applied. The lightbox steps through these, not `photos`,
   // or its arrows reach photos the search has hidden.
   const visiblePhotos = useMemo(() => scenes.flatMap((scene) => scene.photos), [scenes]);
+  // The row above the scenes counts what the search leaves (issue 2355).
+  const toolbar = typeof beforeGrid === 'function' ? beforeGrid(visiblePhotos.length) : beforeGrid;
 
   // In a large gallery a grid mounts only the rows near the viewport (issue
   // 2193). A small scene stays whole, for the reason a small Timeline group
@@ -504,6 +507,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
+        {/* A filter that left nothing keeps its own controls, so it can be
+            cleared from here (issue 2355). */}
+        {toolbar && <div className="story-toolbar story-toolbar--empty">{toolbar}</div>}
         {/* No nav in this branch, so the way back to the portal sits here. */}
         {showBackToAccount && (
           <div className="mb-4 flex justify-center">
@@ -760,6 +766,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         allowDownloads={allowDownloads}
         useEnhancedProtection={useEnhancedProtection}
       />
+
+      {/* Below the hero, so the fixed nav keeps the hero behind it (issue 2355). */}
+      {toolbar && <div className="story-toolbar">{toolbar}</div>}
 
       {/* Main Content - Scenes */}
       <main className="pb-32 space-y-0">

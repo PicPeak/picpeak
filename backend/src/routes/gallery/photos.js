@@ -1,4 +1,6 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../../utils/rateLimitKey');
 const { db, logActivity } = require('../../database/db');
 const { livePhotos } = require('../../utils/photoVisibility');
 const router = express.Router();
@@ -162,6 +164,92 @@ router.get('/:slug/people', verifyGalleryAccess, denySlideshowToken, resolveGues
     errorResponse(res, error, 500, 'Failed to fetch people');
   }
 });
+
+/**
+ * Find my photos with a selfie (issue 2355).
+ *
+ * Off unless the event opted in and the people feature is on for this viewer
+ * (faceSettings.isSelfieSearchEnabled); then 404, like every face surface
+ * that is switched off, and before the upload is read or the rate budget is
+ * spent. The guest must tick the consent box, and the server checks it: a
+ * face signature is biometric data, and the request is where it is made.
+ *
+ * The selfie is held in memory only (multer memoryStorage), never written to
+ * disk, the database or a log, and gone when the request ends. The answer is
+ * the matching photo ids, which the gallery applies as a filter.
+ */
+const selfieLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  keyGenerator: rateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many selfie searches. Please try again in a few minutes.', code: 'SELFIE_SEARCH_RATE_LIMITED' },
+});
+const SELFIE_MAX_BYTES = 15 * 1024 * 1024;
+
+async function requireSelfieSearch(req, res, next) {
+  try {
+    const { isSelfieSearchEnabled } = require('../../services/faceSettings');
+    const allowed = !guestBlockedByReveal(req)
+      && await isSelfieSearchEnabled(req.event, { isClient: req.accessLevel === 'client' });
+    if (!allowed) return res.status(404).json({ error: 'Selfie search is not available for this gallery' });
+    next();
+  } catch (error) { errorResponse(res, error, 500, 'Selfie search failed'); }
+}
+
+function readSelfie(req, res, next) {
+  const multer = require('multer');
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: SELFIE_MAX_BYTES, files: 1, fields: 4 },
+  }).single('selfie');
+  upload(req, res, (err) => {
+    if (!err) return next();
+    const tooLarge = err.code === 'LIMIT_FILE_SIZE';
+    return res.status(tooLarge ? 413 : 400).json({
+      error: tooLarge ? 'The selfie may be at most 15 MB' : 'The upload could not be read',
+      code: tooLarge ? 'SELFIE_TOO_LARGE' : 'SELFIE_INVALID',
+    });
+  });
+}
+
+router.post('/:slug/face-search', verifyGalleryAccess, denySlideshowToken, noStoreCache, requireSelfieSearch,
+  selfieLimiter, readSelfie, async (req, res) => {
+    if (!parseBooleanInput(req.body?.consent, false)) {
+      return res.status(400).json({ error: 'Consent is required to search with a selfie', code: 'SELFIE_CONSENT_REQUIRED' });
+    }
+    if (!req.file?.buffer?.length) {
+      return res.status(400).json({ error: 'No selfie was uploaded', code: 'SELFIE_INVALID' });
+    }
+    const { findPhotosBySelfie, SelfieImageError } = require('../../services/faceSearch');
+    const { SidecarUnavailableError } = require('../../services/faceClient');
+    try {
+      const result = await findPhotosBySelfie({
+        event: req.event, accessLevel: req.accessLevel, imageBuffer: req.file.buffer,
+      });
+      if (!result.faceFound) {
+        return res.status(422).json({ error: 'No face was found in the selfie', code: 'SELFIE_NO_FACE' });
+      }
+      res.json({ photo_ids: result.photoIds });
+    } catch (error) {
+      if (error instanceof SelfieImageError || error?.name === 'SidecarRejectedError') {
+        return res.status(400).json({ error: 'The selfie could not be read', code: 'SELFIE_INVALID' });
+      }
+      const { isResourceError, isTransient } = require('../../services/imageResourcePolicy');
+      if (error instanceof SidecarUnavailableError || isTransient(error)) {
+        return res.status(503).json({ error: 'Selfie search is unavailable right now', code: 'SELFIE_SEARCH_UNAVAILABLE' });
+      }
+      if (isResourceError(error)) {
+        // Over the image limits (IMAGE_MAX_PIXELS and the like).
+        return res.status(413).json({ error: 'The selfie is too large', code: 'SELFIE_TOO_LARGE' });
+      }
+      errorResponse(res, error, 500, 'Selfie search failed');
+    } finally {
+      // Nothing of the selfie outlives the request.
+      if (req.file) req.file.buffer = null;
+    }
+  });
 
 // Toggle photo visibility (client-only)
 router.patch('/:slug/photos/:photoId/visibility', verifyGalleryAccess, async (req, res) => {

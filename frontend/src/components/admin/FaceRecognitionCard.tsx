@@ -28,6 +28,8 @@ import { api } from '../../config/api';
 interface FacesPayload {
   enabled: boolean;
   visible_to_guests: boolean;
+  // Guests may find their photos with a selfie (issue 2355).
+  selfie_search?: boolean;
   last_scan_at: string | null;
   // What the automatic consolidation pass merged when this gallery last
   // finished scanning (#1107).
@@ -370,6 +372,30 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
             <span className="block text-xs text-muted">
               {t('admin.faces.visibleHint', {
                 defaultValue: 'Off means you get the grouping as a private tool and guests see an unchanged gallery.',
+              })}
+            </span>
+          </span>
+        </label>
+      )}
+
+      {/* Selfie search (issue 2355): only reachable while guests see the
+          people bar, which the server requires as well. */}
+      {data.enabled && data.visible_to_guests && (
+        <label className="flex items-start gap-3 py-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!data.selfie_search}
+            disabled={saving || isArchived}
+            onChange={(e) => patch({ selfie_search: e.target.checked })}
+            className="mt-1 rounded border-line-strong bg-inset text-accent focus:ring-accent"
+          />
+          <span>
+            <span className="block text-sm font-medium text-body">
+              {t('admin.faces.selfieSearch', { defaultValue: 'Let guests find their photos with a selfie' })}
+            </span>
+            <span className="block text-xs text-muted">
+              {t('admin.faces.selfieSearchHint', {
+                defaultValue: 'Guests upload a selfie and see the photos they appear in. They must agree first. The selfie is only used for that search and is not stored.',
               })}
             </span>
           </span>

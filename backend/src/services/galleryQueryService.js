@@ -422,12 +422,15 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   // `photos` is already visibility-filtered above, and this only ever asks
   // about ids in that set, so it cannot widen what the caller sees.
   let peopleEnabled = false;
+  let selfieSearchEnabled = false;
   let personIdsByPhoto = new Map();
   try {
-    const { isEnabledForEvent, areFacesVisibleToGuests } = require('./faceSettings');
+    const { isEnabledForEvent, areFacesVisibleToGuests, isSelfieSearchEnabled } = require('./faceSettings');
     if (photos.length > 0 && await isEnabledForEvent(event)) {
       peopleEnabled = isClient || areFacesVisibleToGuests(event);
       if (peopleEnabled) {
+        // Selfie search (issue 2355): the same answer POST /face-search gives.
+        selfieSearchEnabled = await isSelfieSearchEnabled(event, { isClient });
         const { getPersonIdsByPhoto } = require('./facePeopleService');
         personIdsByPhoto = await getPersonIdsByPhoto(
           event.id,
@@ -440,6 +443,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     // A face-feature failure must never take down the gallery payload.
     logger.warn(`gallery: person_ids lookup failed for event ${event.id}`, { error: err.message });
     peopleEnabled = false;
+    selfieSearchEnabled = false;
     personIdsByPhoto = new Map();
   }
 
@@ -755,6 +759,8 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // to keep the strip to themselves — the frontend renders no face UI
       // at all in that case.
       people_enabled: peopleEnabled,
+      // "Find my photos" with a selfie (issue 2355); never without people_enabled.
+      selfie_search_enabled: selfieSearchEnabled,
       // Scene tags (issue 1733): the filter chips hang off this flag.
       tags_enabled: tagsEnabled,
       ...protectionSettings
@@ -998,4 +1004,4 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     })
   };
 }
-module.exports = { getGalleryPhotos, getGalleryPhotoState, hasMediaProcessing };
+module.exports = { getGalleryPhotos, getGalleryPhotoState, hasMediaProcessing, galleryListQuery };

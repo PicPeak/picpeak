@@ -2144,6 +2144,24 @@
     }
   },
   "gallery": {
+    "selfie": {
+      "open": "Meine Fotos per Selfie finden",
+      "title": "Meine Fotos finden",
+      "intro": "Wählen Sie ein Selfie, und wir zeigen Ihnen die Fotos dieser Galerie, auf denen Sie zu sehen sind.",
+      "fileLabel": "Ihr Selfie",
+      "consent": "Ich bin einverstanden, dass mein Selfie mit den Gesichtern in dieser Galerie verglichen wird, um meine Fotos zu finden. Ich suche nur nach mir selbst.",
+      "privacy": "Ihr Selfie wird nur für diese eine Suche verwendet und sofort gelöscht. Es wird nichts gespeichert. Die Ergebnisse können Fotos von Personen enthalten, die Ihnen ähnlich sehen, und einige Ihrer Fotos übersehen.",
+      "submit": "Meine Fotos finden",
+      "searching": "Suche läuft…",
+      "noMatches": "Wir haben keine Fotos von Ihnen gefunden. Versuchen Sie ein anderes Selfie, auf dem Ihr Gesicht gut zu sehen ist.",
+      "chip": "Ihr Selfie",
+      "errorNoFace": "Auf diesem Foto wurde kein Gesicht gefunden. Versuchen Sie ein Selfie, auf dem Ihr Gesicht gut zu sehen ist.",
+      "errorInvalid": "Diese Datei konnte nicht gelesen werden. Bitte wählen Sie ein Foto.",
+      "errorTooLarge": "Dieses Foto ist zu groß. Bitte wählen Sie eines unter 15 MB.",
+      "errorRateLimited": "Zu viele Suchen. Bitte versuchen Sie es in ein paar Minuten erneut.",
+      "errorUnavailable": "Die Suche ist gerade nicht verfügbar. Bitte versuchen Sie es später erneut.",
+      "errorGeneric": "Die Suche ist fehlgeschlagen. Bitte versuchen Sie es erneut."
+    },
     "awaitingPayment": "Ihre Galerie ist fast bereit.",
     "awaitingPaymentHelp": "Sie öffnet sich, sobald die Rechnung bezahlt ist. Ihr Galerie-Link bleibt gleich.",
     "backToAccount": "Zurück zum Kundenkonto",
@@ -6356,6 +6374,8 @@
       "selectedCount_other": "{{count}} ausgewählt"
     },
     "faces": {
+      "selfieSearch": "Gäste können ihre Fotos per Selfie finden",
+      "selfieSearchHint": "Gäste laden ein Selfie hoch und sehen die Fotos, auf denen sie zu sehen sind. Vorher müssen sie zustimmen. Das Selfie wird nur für diese Suche verwendet und nicht gespeichert.",
       "manage": "Personen verwalten",
       "visibleToGuests": "({{count}} für Gäste sichtbar)",
       "title": "Personen in dieser Galerie",

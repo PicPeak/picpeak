@@ -1278,6 +1278,24 @@
     }
   },
   "gallery": {
+    "selfie": {
+      "open": "Poišči moje fotografije s selfijem",
+      "title": "Poišči moje fotografije",
+      "intro": "Izberite selfi in pokazali vam bomo fotografije v tej galeriji, na katerih ste.",
+      "fileLabel": "Vaš selfi",
+      "consent": "Strinjam se, da se moj selfi primerja z obrazi v tej galeriji, da se najdejo moje fotografije. Iščem samo sebe.",
+      "privacy": "Vaš selfi se uporabi samo za to iskanje in se takoj izbriše. Nič se ne shrani. Rezultati lahko vključujejo fotografije oseb, ki so vam podobne, in lahko izpustijo nekatere vaše.",
+      "submit": "Poišči moje fotografije",
+      "searching": "Iskanje…",
+      "noMatches": "Nismo našli vaših fotografij. Poskusite z drugim selfijem, na katerem je vaš obraz dobro viden.",
+      "chip": "Vaš selfi",
+      "errorNoFace": "Na tej fotografiji ni bil najden noben obraz. Poskusite s selfijem, na katerem je vaš obraz dobro viden.",
+      "errorInvalid": "Te datoteke ni bilo mogoče prebrati. Izberite fotografijo.",
+      "errorTooLarge": "Ta fotografija je prevelika. Izberite eno, manjšo od 15 MB.",
+      "errorRateLimited": "Preveč iskanj. Poskusite znova čez nekaj minut.",
+      "errorUnavailable": "Iskanje trenutno ni na voljo. Poskusite znova pozneje.",
+      "errorGeneric": "Iskanje ni uspelo. Poskusite znova."
+    },
     "backToAccount": "Nazaj na vaš račun",
     "revealPendingTitle": "Fotografije so še presenečenje",
     "revealPendingMessage": "Gostitelj bo galerijo razkril pozneje — kmalu preverite znova!",
@@ -4815,6 +4833,8 @@
       "selectedCount_other": "Izbrano: {{count}}"
     },
     "faces": {
+      "selfieSearch": "Gostom omogoči iskanje fotografij s selfijem",
+      "selfieSearchHint": "Gostje naložijo selfi in vidijo fotografije, na katerih so. Najprej se morajo strinjati. Selfi se uporabi samo za to iskanje in se ne shrani.",
       "manage": "Upravljaj osebe",
       "visibleToGuests": "({{count}} prikazanih gostom)",
       "title": "Osebe v tej galeriji",
