@@ -72,6 +72,8 @@ interface GallerySidebarProps {
   feedbackEnabled?: boolean;
   // Multi-select feedback filters (#889): empty array = "All".
   activeFilters?: FeedbackFilterType[];
+  /** The feedback filters the gallery's settings allow (issue 2505). */
+  feedbackFilters?: FeedbackFilterType[];
   onFilterChange?: (filter: FilterType) => void;
   likeCount?: number;
   favoriteCount?: number;
@@ -158,6 +160,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   onUploadClick,
   feedbackEnabled = false,
   activeFilters = [],
+  feedbackFilters,
   onFilterChange,
   likeCount = 0,
   favoriteCount = 0,
@@ -443,6 +446,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
             <div className="gallery-sidebar-section gallery-sidebar-feedback p-4 border-b border-border-token">
               <GalleryFilter
                 activeFilters={activeFilters}
+                available={feedbackFilters}
                 // Unlike the single-select category/sort buttons, feedback
                 // filters are multi-select toggles (#889) — keep the mobile
                 // sidebar open so several can be combined in one visit.

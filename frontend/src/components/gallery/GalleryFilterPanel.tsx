@@ -18,7 +18,9 @@ export interface GalleryFilterPanelProps {
   search?: { value: string; onChange: (term: string) => void };
   // Each group renders only when its slice is passed, so the container decides
   // what the gallery offers (feedback on, ratings on, videos present, ...).
-  feedback?: { activeFilters: FeedbackFilterType[]; onFilterChange: (filter: FilterType) => void };
+  // `available`: the filters the gallery's feedback settings allow (issue
+  // 2505); the group is left out when none is.
+  feedback?: { activeFilters: FeedbackFilterType[]; onFilterChange: (filter: FilterType) => void; available: FeedbackFilterType[] };
   colorLabels?: { activeColors: ColorLabel[]; onToggle: (color: ColorLabel) => void; counts: Partial<Record<ColorLabel, number>> };
   minRating?: { value: number | null; onChange: (minRating: number | null) => void; counts: Partial<Record<number, number>> };
   media?: { value: GalleryMediaFilter; onChange: (filter: GalleryMediaFilter) => void };
@@ -57,13 +59,15 @@ export const GalleryFilterPanel: React.FC<GalleryFilterPanelProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  const feedbackChips: Array<{ value: FilterType; label: string; icon: React.ReactNode }> = [
+  const allFeedbackChips: Array<{ value: FilterType; label: string; icon: React.ReactNode }> = [
     { value: 'all', label: t('gallery.all', 'All'), icon: <Grid className="w-3.5 h-3.5" /> },
     { value: 'liked', label: t('feedback.likes', 'Likes'), icon: <Heart className="w-3.5 h-3.5" /> },
     { value: 'favorited', label: t('gallery.favorited', 'Saved'), icon: <Bookmark className="w-3.5 h-3.5" /> },
     { value: 'rated', label: t('gallery.rated', 'Rated'), icon: <Star className="w-3.5 h-3.5" /> },
     { value: 'commented', label: t('gallery.commented', 'Commented'), icon: <MessageSquare className="w-3.5 h-3.5" /> },
   ];
+  const feedbackChips = allFeedbackChips.filter((chip) => chip.value === 'all'
+    || !!feedback?.available.includes(chip.value as FeedbackFilterType));
   const isFeedbackActive = (filter: FilterType) => !!feedback && (filter === 'all'
     ? feedback.activeFilters.length === 0
     : feedback.activeFilters.includes(filter as FeedbackFilterType));
@@ -93,7 +97,7 @@ export const GalleryFilterPanel: React.FC<GalleryFilterPanelProps> = ({
         />
       )}
 
-      {feedback && (
+      {feedback && feedback.available.length > 0 && (
         <div className="flex flex-col gap-2">
           <span className="text-sm text-muted-theme">{t('gallery.feedbackFilter', 'Feedback Filter')}</span>
           <div className="flex items-center gap-1.5 flex-wrap">

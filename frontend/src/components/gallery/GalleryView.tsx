@@ -1654,7 +1654,16 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const toolbarShown = !showSidebar
     && (filterBarShown || selectionAvailable || isSelectionMode || selectedPhotos.size > 0 || copyFilenames.photos.length > 0);
   const creditPanelShown = creditsVisible && creditGroups(scopedPhotos).length > 0;
-  const hasPanelFilters = feedbackEnabled || showMediaFilter || creditPanelShown || tagChips.length > 0;
+  // The feedback filters this gallery's settings allow (issue 2505): a
+  // "Rated" chip in a gallery without ratings could only ever show nothing.
+  const feedbackFilters: FeedbackFilterType[] = feedbackEnabled ? ([
+    ['liked', feedbackSettings?.allow_likes],
+    ['favorited', feedbackSettings?.allow_favorites],
+    ['rated', feedbackSettings?.allow_ratings],
+    ['commented', feedbackSettings?.allow_comments],
+  ] as Array<[FeedbackFilterType, boolean | undefined]>).filter(([, allowed]) => !!allowed).map(([filter]) => filter) : [];
+  const hasPanelFilters = feedbackFilters.length > 0
+    || (feedbackEnabled && !!feedbackSettings?.allow_color_labels) || showMediaFilter || creditPanelShown || tagChips.length > 0;
   // The viewer's saved tile size (issue 1733, E4) applies only where a
   // control puts the switch on screen to change it back: the toolbar or the
   // sidebar. A Carousel gets no switch, so its delivery placeholders keep the
@@ -2220,6 +2229,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onUploadClick={() => setShowUploadModal(true)}
           feedbackEnabled={feedbackEnabled}
           activeFilters={activeFilters}
+          feedbackFilters={feedbackFilters}
           onFilterChange={handleFilterChange}
           mediaFilter={mediaFilter}
           onMediaFilterChange={setMediaFilter}
@@ -2423,7 +2433,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               render: (close, withSearch) => (
                 <GalleryFilterPanel
                   search={withSearch ? { value: searchTerm, onChange: setSearchTerm } : undefined}
-                  feedback={feedbackEnabled ? { activeFilters, onFilterChange: handleFilterChange } : undefined}
+                  feedback={feedbackEnabled ? { activeFilters, onFilterChange: handleFilterChange, available: feedbackFilters } : undefined}
                   colorLabels={feedbackEnabled && feedbackSettings?.allow_color_labels ? {
                     activeColors: activeColorFilters,
                     onToggle: handleColorFilterToggle,
