@@ -96,6 +96,12 @@ interface PhotoGridWithLayoutsProps {
   /** #1160: event-wide count + whole-gallery download for layout chrome. */
   eventPhotoCount?: number;
   onDownloadEverything?: () => void;
+  /**
+   * Below the hero header and the welcome message, above the photos of the
+   * other layouts: the folder navigation (issue 2504), which would otherwise
+   * sit above the hero.
+   */
+  afterHero?: React.ReactNode;
 }
 
 export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
@@ -103,6 +109,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   suppressEmptyState = false,
   eventPhotoCount,
   onDownloadEverything,
+  afterHero,
   slug,
   categoryId,
   heroPhotoOverride,
@@ -422,6 +429,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           )}
         </div>
       )}
+
+      {!isFullPageLayout && afterHero}
 
       {/* Render the selected layout */}
       <LayoutComponent {...layoutProps} />

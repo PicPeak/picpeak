@@ -1575,7 +1575,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             `-mt-6` bleed leaves a visible gap instead of gluing the filter
             bar to the hero image (issue #624). */}
         <div className={filterBarShown && isHeroHeader ? "mt-12" : "mt-6"}>
-          {folderNav}
           {/* A gallery whose photos ALL live in folders has an empty root grid,
               and PhotoGridWithLayouts unconditionally renders "no photos found"
               — directly under the tiles that prove otherwise. Skip the grid when
@@ -1584,6 +1583,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             key={openFolder ? `folder-${openFolder.id}` : 'root'}
             photos={filteredPhotos}
             suppressEmptyState={rootIsFoldersOnly}
+            afterHero={folderNav}
             slug={slug}
             people={peopleEnabled ? people : undefined}
             onSelectPerson={togglePerson} 
