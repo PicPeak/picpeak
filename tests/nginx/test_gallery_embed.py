@@ -107,6 +107,7 @@ http {
                 time.sleep(0.2)
             finally:
                 connection.close()
+        raise AssertionError("unreachable: the last attempt re-raises")
 
     def wait_for_stub(self):
         for _ in range(60):
@@ -114,7 +115,7 @@ http {
             if "frame-ancestors https://example.com" in headers.get("content-security-policy", ""):
                 return status, headers
             time.sleep(0.2)
-        self.fail("embed policy never answered")
+        raise self.failureException("embed policy never answered")
 
     def assert_not_frameable(self, headers):
         csp = headers.get("content-security-policy", "")
