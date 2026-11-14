@@ -183,11 +183,18 @@ function stripDisallowedUrls(css) {
   // A bare string argument of image-set() IS a URL to a browser
   // (`image-set("https://x/p.gif" 1x)`), so it is held to the same
   // ALLOWED_URL_TARGET as url(). `parenDepth` counts open parentheses;
-  // `stringUrlDepths` holds the depth of each open image-set-like call, and a
-  // string directly at that depth is checked. Strings deeper down, such as
-  // the `"image/png"` in `type("image/png")`, are not URLs.
+  // `urlFrames` holds one entry per open image-set-like call ('url') and per
+  // type() opened inside one ('type'), each with the depth it opened at.
+  // A string is checked at ANY depth below an image-set-like call — not
+  // only directly at its depth — because a wrapping function such as if()
+  // (`image-set(if(media(width>0):"https://x/p.gif") 1x)`) resolves to that
+  // string at computed-value time. The one exception is a string whose
+  // innermost enclosing frame is type(): the `"image/png"` in
+  // `type("image/png")` is a MIME type, not a URL.
   let parenDepth = 0;
-  const stringUrlDepths = [];
+  const urlFrames = [];
+  const insideUrlCall = () => urlFrames.length > 0;
+  const stringIsUrl = () => urlFrames.length > 0 && urlFrames[urlFrames.length - 1].kind === 'url';
 
   while (i < input.length) {
     // --- CSS comment ---------------------------------------------------
@@ -231,7 +238,7 @@ function stripDisallowedUrls(css) {
         i += 1;
         continue;
       }
-      if (parenDepth > 0 && stringUrlDepths[stringUrlDepths.length - 1] === parenDepth) {
+      if (parenDepth > 0 && stringIsUrl()) {
         const target = decodeCssEscapes(input.slice(i + 1, j - 1)).trim();
         if (!ALLOWED_URL_TARGET.test(target)) {
           // `none` is not a valid image-set() argument, so the browser drops
@@ -280,7 +287,7 @@ function stripDisallowedUrls(css) {
     // var() substitutes it into image-set() at computed-value time, where
     // the string check above never sees it. Inside an image-set-like call
     // these are replaced with `none` (an invalid argument) whole.
-    if (ident.end > i && stringUrlDepths.length > 0
+    if (ident.end > i && insideUrlCall()
       && SUBSTITUTION_FUNCTIONS.has(decodeCssEscapes(ident.raw).toLowerCase())) {
       let j = ident.end;
       while (j < input.length && CSS_WS.test(input[j])) j += 1;
@@ -301,7 +308,23 @@ function stripDisallowedUrls(css) {
       if (input[j] === '(') {
         out += input.slice(i, j + 1);
         parenDepth += 1;
-        stringUrlDepths.push(parenDepth);
+        urlFrames.push({ depth: parenDepth, kind: 'url' });
+        i = j + 1;
+        continue;
+      }
+    }
+
+    // --- type() inside an image-set-like call: its string is a MIME type ---
+    // Only at the start of an identifier: the scanner otherwise also lands
+    // on the `type` inside `footype(`, which must not earn the exemption.
+    if (ident.end > i && insideUrlCall() && !/[A-Za-z0-9_\\-]/.test(input[i - 1] || '')
+      && decodeCssEscapes(ident.raw).toLowerCase() === 'type') {
+      let j = ident.end;
+      while (j < input.length && CSS_WS.test(input[j])) j += 1;
+      if (input[j] === '(') {
+        out += input.slice(i, j + 1);
+        parenDepth += 1;
+        urlFrames.push({ depth: parenDepth, kind: 'type' });
         i = j + 1;
         continue;
       }
@@ -322,7 +345,7 @@ function stripDisallowedUrls(css) {
 
     if (input[i] === '(') parenDepth += 1;
     if (input[i] === ')' && parenDepth > 0) {
-      if (stringUrlDepths[stringUrlDepths.length - 1] === parenDepth) stringUrlDepths.pop();
+      if (urlFrames.length > 0 && urlFrames[urlFrames.length - 1].depth === parenDepth) urlFrames.pop();
       parenDepth -= 1;
     }
     out += input[i];
@@ -333,6 +356,9 @@ function stripDisallowedUrls(css) {
 }
 
 // Functions that substitute a value from elsewhere at computed-value time.
+// if() is not listed: its branches are checked like any other string inside
+// an image-set-like call, and a var()/env()/attr() inside one is still
+// caught here because this check applies at any depth.
 const SUBSTITUTION_FUNCTIONS = new Set(['var', 'env', 'attr']);
 
 /** Index just past the `)` matching the `(` at `open` (strings/comments skipped); end of input if none. */

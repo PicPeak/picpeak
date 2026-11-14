@@ -42,6 +42,33 @@ describe('stripDisallowedUrls — image-set()', () => {
     expect(sanitized).toContain('image-set(none 1x)');
   });
 
+  it.each([
+    ['if()', '.a{background:image-set(if(media(width>0):"https://remote.example/p.gif") 1x)}'],
+    ['if() in -webkit-image-set', '.a{background:-webkit-image-set(if(media(width>0):"https://remote.example/p.gif") 1x)}'],
+    ['if() in image()', '.a{background:image(if(media(width>0):"https://remote.example/p.gif"))}'],
+    ['if() else branch', `.a{background:image-set(if(media(width>0):"${PNG}";else:"https://remote.example/p.gif") 1x)}`],
+    ['nested if()', '.a{background:image-set(if(media(width>0):if(supports(display:grid):"https://remote.example/p.gif")) 1x)}'],
+    ['string several calls deep', '.a{background:image-set(a(b(c("https://remote.example/p.gif"))) 1x)}'],
+    ['type() look-alike', '.a{background:image-set(footype("https://remote.example/p.gif") 1x)}'],
+    ['image-set inside type()', '.a{background:image-set(type(image-set("https://remote.example/p.gif")) 1x)}'],
+  ])('removes a string URL nested in %s', (_label, css) => {
+    const { sanitized, blocked } = stripDisallowedUrls(css);
+    expect(blocked).toBe(1);
+    expect(asParsed(sanitized)).not.toContain('remote.example');
+  });
+
+  it('removes var() nested inside if() inside image-set', () => {
+    const css = '.a{--u:"https://remote.example/p.gif";background:image-set(if(media(width>0):var(--u)) 1x)}';
+    const { sanitized, blocked } = stripDisallowedUrls(css);
+    expect(blocked).toBe(1);
+    expect(sanitized).toContain('image-set(if(media(width>0):none) 1x)');
+  });
+
+  it('keeps a data: image inside if() and its type() hint', () => {
+    const css = `.a{background:image-set(if(media(width>0):"${PNG}") type("image/png") 1x)}`;
+    expect(stripDisallowedUrls(css)).toEqual({ sanitized: css, blocked: 0 });
+  });
+
   it('leaves var() outside image-set alone', () => {
     const css = '.a{color:var(--brand, #fff);margin:var(--gap)}';
     expect(stripDisallowedUrls(css)).toEqual({ sanitized: css, blocked: 0 });
