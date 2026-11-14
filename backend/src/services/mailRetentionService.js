@@ -230,7 +230,10 @@ async function saveAttachment(att, claim) {
   if (owned) {
     try {
       const safe = assertPathInside(owned, [inboundRoot()]);
-      if (hash(await fsp.readFile(safe)) === sha) reuse = { stored: old.file_path, file: safe };
+      // Hand back the path under STORAGE_PATH, not its realpath: callers store
+      // it again (toStoredPath), and a realpath outside a symlinked
+      // STORAGE_PATH would be stored as a second, absolute ledger entry.
+      if (hash(await fsp.readFile(safe)) === sha) reuse = { stored: old.file_path, file: owned };
     } catch (e) { if (!['ENOENT', 'FILE_MISSING'].includes(e.code)) throw e; }
   }
   const prepared = await withClaim(claim, async (trx, row) => {
