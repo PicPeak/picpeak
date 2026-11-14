@@ -2633,7 +2633,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               <DownloadQuotaNotice />
             </div>
           )}
-          {folderNav}
           {/* Photo sales: one-time promo code for the first order's free photos. */}
           <PhotoSalesPromoBanner
             promoCode={(data?.event as { promo_code?: string | null } | undefined)?.promo_code}
@@ -2654,6 +2653,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onLightboxPhotoChange={handleLightboxPhotoChange}
             suppressEmptyState={rootIsFoldersOnly}
             emptyIsFiltered={emptyIsFiltered}
+            afterHero={folderNav}
             slug={slug}
             people={peopleEnabled ? people : undefined}
             onSelectPerson={togglePerson} 
