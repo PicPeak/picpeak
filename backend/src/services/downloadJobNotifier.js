@@ -51,9 +51,11 @@ const normalise = (email) => String(email || '').trim().toLowerCase();
 /**
  * Can a mail link lead back to this job? It opens the gallery through the
  * share link or the portal, which are guest level; a job built for a
- * PIN-client is refused there (the file route answers 404).
+ * PIN-client is refused there (the file route answers 404), and so is one
+ * built for a full-link session (issue 2356): the mailed link carries no
+ * full-link credential.
  */
-const canMail = (job) => job.visibility_scope !== 'hidden';
+const canMail = (job) => job.visibility_scope !== 'hidden' && job.visibility_scope !== 'full';
 
 /**
  * Who this requester is and the address they may be mailed at, or null.

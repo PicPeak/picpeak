@@ -11,7 +11,7 @@ const selectionSubmissions = require('../services/selectionSubmissions');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const {
-  isPhotoHiddenFromViewer, isPhotoProcessed, applyPhotoVisibilityFilter, joinLivePhotos, livePhotos, wherePhotoProcessed,
+  isPhotoHiddenFromViewer, isPhotoProcessed, applyPhotoVisibilityFilter, joinLivePhotos, livePhotos, wherePhotoProcessed, viewerOf,
 } = require('../utils/photoVisibility');
 const {
   validatePhotoId,
@@ -162,7 +162,7 @@ router.get('/:slug/photos/:photoId/feedback',
       // no reading its comments and counts, no adding to them. Nor does one
       // the worker has not finished or failed on: the gallery list leaves it
       // out (wherePhotoProcessed).
-      if (!photo || isPhotoHiddenFromViewer(photo, req.accessLevel) || !isPhotoProcessed(photo)) {
+      if (!photo || isPhotoHiddenFromViewer(photo, viewerOf(req)) || !isPhotoProcessed(photo)) {
         return res.status(404).json({ error: 'Photo not found' });
       }
       
@@ -359,7 +359,7 @@ router.post('/:slug/photos/:photoId/feedback',
       // no reading its comments and counts, no adding to them. Nor does one
       // the worker has not finished or failed on: the gallery list leaves it
       // out (wherePhotoProcessed).
-      if (!photo || isPhotoHiddenFromViewer(photo, req.accessLevel) || !isPhotoProcessed(photo)) {
+      if (!photo || isPhotoHiddenFromViewer(photo, viewerOf(req)) || !isPhotoProcessed(photo)) {
         return res.status(404).json({ error: 'Photo not found' });
       }
 
@@ -393,6 +393,8 @@ router.post('/:slug/photos/:photoId/feedback',
         decision: req.body.decision,
         annotation,
         favorite_list_id: favoriteListId,
+        // The cap counts the picks this viewer can see (issue 2356).
+        viewer: viewerOf(req),
         ...feedbackAuthor(req, settings)
       };
       
@@ -573,7 +575,7 @@ router.post('/:slug/feedback/bulk',
       // not hidden from this viewer, and its processing has finished.
       const rows = await livePhotos(db).whereIn('id', photoIds).where({ event_id: event.id });
       const rateable = new Set(rows
-        .filter(photo => !isPhotoHiddenFromViewer(photo, req.accessLevel) && isPhotoProcessed(photo))
+        .filter(photo => !isPhotoHiddenFromViewer(photo, viewerOf(req)) && isPhotoProcessed(photo))
         .map(photo => Number(photo.id)));
 
       // One unit per photo that will be rated, reserved before any write.
@@ -586,6 +588,7 @@ router.post('/:slug/feedback/bulk',
       const feedbackData = {
         feedback_type: 'rating',
         rating: req.body.rating,
+        viewer: viewerOf(req),
         ...feedbackAuthor(req, settings)
       };
 
@@ -681,7 +684,7 @@ router.get('/:slug/feedback-summary',
       
       // Totals scoped like the list below: feedback on photos this viewer
       // cannot see is not counted either.
-      const summary = await feedbackService.getEventFeedbackSummary(event.id, { viewerAccessLevel: req.accessLevel });
+      const summary = await feedbackService.getEventFeedbackSummary(event.id, { viewerAccessLevel: viewerOf(req) });
 
       // Filter data based on what guests should see
       const guestSummary = {
@@ -689,7 +692,7 @@ router.get('/:slug/feedback-summary',
         top_rated: summary.photos
           // No filenames or ratings of photos this viewer cannot see, nor of
           // photos the gallery list leaves out while they are processed.
-          .filter(p => !isPhotoHiddenFromViewer(p, req.accessLevel) && isPhotoProcessed(p))
+          .filter(p => !isPhotoHiddenFromViewer(p, viewerOf(req)) && isPhotoProcessed(p))
           .filter(p => p.average_rating > 0)
           .slice(0, 5)
           .map(p => ({
@@ -753,7 +756,7 @@ router.get('/:slug/my-feedback',
           .where('photo_feedback.is_hidden', false),
         // A photo the client has since hidden is gone for this viewer, its id
         // and filename included.
-        req.accessLevel
+        viewerOf(req)
       );
 
       // Prefer guest_id lookup when a verified guest token is present
@@ -812,6 +815,7 @@ async function selectionViewer(req) {
     guestId: req.guest?.id ?? null,
     guestIdentifier: await generateGuestIdentifier(req),
     accessLevel: req.accessLevel,
+    fullView: req.galleryFullView === true,
   };
 }
 

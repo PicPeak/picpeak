@@ -14,9 +14,10 @@ import { MemoryRouter } from 'react-router-dom';
 
 const SLUG = 'wedding';
 
+const { sessionExtra } = vi.hoisted(() => ({ sessionExtra: { current: {} as Record<string, unknown> } }));
 vi.mock('../../config/api', () => ({
   api: {
-    get: vi.fn(async () => ({ data: { valid: true, type: 'gallery', eventSlug: SLUG, accessLevel: 'guest' } })),
+    get: vi.fn(async () => ({ data: { valid: true, type: 'gallery', eventSlug: SLUG, accessLevel: 'guest', ...sessionExtra.current } })),
   },
 }));
 
@@ -34,6 +35,7 @@ vi.mock('../../utils/cleanupGalleryAuth', () => ({ cleanupOldGalleryAuth: vi.fn(
 import { GalleryAuthProvider, useGalleryAuth } from '../GalleryAuthContext';
 import { storeGalleryToken } from '../../utils/galleryAuthStorage';
 import { getGuestIdentity, storeGuestIdentity } from '../../utils/guestIdentityStorage';
+import { getFullLinkToken, setFullLinkToken } from '../../utils/galleryFullLink';
 
 // Unsigned, but the client only reads `exp` to drop expired identities.
 const b64 = (value: object) => btoa(JSON.stringify(value)).replace(/=+$/, '');
@@ -42,12 +44,14 @@ const guestToken = `${b64({ alg: 'none' })}.${b64({ type: 'guest', exp: Math.flo
 let auth: ReturnType<typeof useGalleryAuth> | null = null;
 const Probe: React.FC = () => { auth = useGalleryAuth(); return null; };
 
+let queryClient: QueryClient;
 const mountAuthenticated = async () => {
+  queryClient = new QueryClient();
   storeGalleryToken(SLUG, 'gallery-session');
   storeGuestIdentity(SLUG, { id: 5, name: 'Invited' } as never, guestToken);
   render(
     <MemoryRouter initialEntries={[`/gallery/${SLUG}`]}>
-      <QueryClientProvider client={new QueryClient()}><GalleryAuthProvider><Probe /></GalleryAuthProvider></QueryClientProvider>
+      <QueryClientProvider client={queryClient}><GalleryAuthProvider><Probe /></GalleryAuthProvider></QueryClientProvider>
     </MemoryRouter>,
   );
   await waitFor(() => expect(auth?.isAuthenticated).toBe(true));
@@ -58,6 +62,7 @@ afterEach(() => {
   sessionStorage.clear();
   localStorage.clear();
   galleryLogout.mockClear();
+  sessionExtra.current = {};
 });
 
 describe('GalleryAuthProvider: ending a rejected session keeps the guest', () => {
@@ -74,5 +79,35 @@ describe('GalleryAuthProvider: ending a rejected session keeps the guest', () =>
     act(() => auth!.logout());
     await waitFor(() => expect(auth?.isAuthenticated).toBe(false));
     expect(getGuestIdentity(SLUG)).toBeNull();
+  });
+
+  // Issue 2356: the full-link token is a credential; the next login in this
+  // tab would send it along. A rejected session keeps it (a rotated link is
+  // forgotten when the login refuses it), the visitor's own logout drops it.
+  it('logout() forgets the full link, endSession() keeps it', async () => {
+    const full = 'a'.repeat(64);
+    setFullLinkToken(SLUG, full);
+    await mountAuthenticated();
+    act(() => auth!.endSession());
+    await waitFor(() => expect(auth?.isAuthenticated).toBe(false));
+    expect(getFullLinkToken(SLUG)).toBe(full);
+    cleanup();
+    await mountAuthenticated();
+    act(() => auth!.logout());
+    await waitFor(() => expect(auth?.isAuthenticated).toBe(false));
+    expect(getFullLinkToken(SLUG)).toBeNull();
+  });
+
+  it('reports a full-link session, and logout drops it with its cached photo lists', async () => {
+    sessionExtra.current = { fullView: true };
+    await mountAuthenticated();
+    expect(auth!.fullView).toBe(true);
+    queryClient.setQueryData(['gallery-photos', SLUG, 'all', 'g1', 'full'], { photos: [{ id: 1 }] });
+    queryClient.setQueryData(['gallery-photos', 'other', 'all', 'g1', 'guest'], { photos: [] });
+    act(() => auth!.logout());
+    await waitFor(() => expect(auth?.isAuthenticated).toBe(false));
+    expect(auth!.fullView).toBe(false);
+    expect(queryClient.getQueryData(['gallery-photos', SLUG, 'all', 'g1', 'full'])).toBeUndefined();
+    expect(queryClient.getQueryData(['gallery-photos', 'other', 'all', 'g1', 'guest'])).toBeDefined();
   });
 });

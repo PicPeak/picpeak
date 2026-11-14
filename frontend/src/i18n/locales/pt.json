@@ -845,6 +845,24 @@
     "nestedFoldersHint": "Pastas dentro de pastas são gerenciadas na barra de pastas da aba Fotos."
   },
   "events": {
+    "selection": {
+      "title": "Seleção para os convidados",
+      "help": "Indique uma subpasta desta pasta, por exemplo \"gallery\". A ligação da galeria e o respetivo código QR mostram então apenas as fotos dessa subpasta. A ligação completa e o acesso de cliente mostram todas as fotos da pasta.",
+      "folder": "Subpasta da seleção",
+      "folderPlaceholder": "Sem seleção: os convidados veem todas as fotos",
+      "save": "Aplicar",
+      "saved": "Seleção atualizada",
+      "counts": "{{inside}} fotos na seleção, {{outside}} apenas na vista completa",
+      "fullLinkHelp": "A ligação completa abre esta galeria com todas as fotos. Partilhe-a apenas com quem deve ver todas.",
+      "fullLink": "Ligação completa",
+      "createLink": "Criar ligação completa",
+      "rotate": "Nova ligação",
+      "rotateConfirm": "Criar uma nova ligação completa? A atual deixa de funcionar e quem a abriu precisa da nova.",
+      "remove": "Remover",
+      "removeConfirm": "Remover a ligação completa? Quem a abriu volta a ver apenas a seleção.",
+      "linkCreated": "Ligação completa criada",
+      "linkRemoved": "Ligação completa removida"
+    },
     "revealMode": "Modo revelação (ocultar a galeria até a revelação)",
     "revealModeHelp": "Os convidados podem enviar fotos, mas não as veem até você revelar a galeria — manualmente ou no horário agendado. A apresentação de slides e o acesso do cliente continuam funcionando.",
     "liveRefresh": "Atualização ao vivo (avisar os convidados sobre novas fotos)",
@@ -2534,6 +2552,12 @@
     "noEventsExpiring": "Nenhum evento expira nos próximos 7 dias",
     "noRecentActivity": "Nenhuma atividade recente",
     "photos": {
+      "selection": {
+        "filterLabel": "Seleção",
+        "all": "Seleção e vista completa",
+        "in": "Na seleção",
+        "out": "Apenas na vista completa"
+      },
       "hidden": "Oculta",
       "hideSelected": "Ocultar",
       "showSelected": "Exibir",

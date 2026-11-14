@@ -282,6 +282,12 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           if (next === photoFilters.visibility) return;
           setPhotoFilters(prev => ({ ...prev, visibility: next }));
         }}
+        {...(event.selection_path ? {
+          selection: photoFilters.selection ?? 'all',
+          onSelectionChange: (selection: 'all' | 'in' | 'out') => setPhotoFilters(prev => ({
+            ...prev, selection: selection === 'all' ? undefined : selection,
+          })),
+        } : {})}
         credits={creditSummary?.credits}
         creditNoneCount={creditSummary?.none}
         creditNoneValue={CREDIT_FILTER_NONE}

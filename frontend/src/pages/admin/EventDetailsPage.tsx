@@ -245,6 +245,16 @@ export const EventDetailsPage: React.FC = () => {
     }
   }, [showMediaFilter, photoFilters.media_type]);
 
+  // The selection filter (issue 2356) is offered only while the event has a
+  // selection; a value left from before would keep the grid filtered with no
+  // control to undo it.
+  const hasSelection = Boolean(event?.selection_path);
+  useEffect(() => {
+    if (!hasSelection && photoFilters.selection) {
+      setPhotoFilters(prev => ({ ...prev, selection: undefined }));
+    }
+  }, [hasSelection, photoFilters.selection]);
+
   const { data: publicSettings } = usePublicSettings();
   const phoneFieldEnabled = publicSettings?.event_phone_field_enabled === true;
 

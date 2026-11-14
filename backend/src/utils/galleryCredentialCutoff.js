@@ -52,6 +52,14 @@ function slideshowLinkDigest(showShareToken) {
 }
 
 /**
+ * Claims for a session opened with the full link (issue 2356): the view, and
+ * a digest of the link, so rotating or removing the link ends the session.
+ */
+function fullLinkClaim(event) {
+  return { view: 'full', fullLink: slideshowLinkDigest(`full:${event.full_share_token}`) };
+}
+
+/**
  * Claim for a slideshow session JWT naming the link it was opened with. Not
  * the link itself: the JWT is sent on every image request.
  */
@@ -73,6 +81,12 @@ function assertGalleryCredentialCurrent(event, session) {
     throw new AppError('Gallery PIN entry session ended', 401, 'CLIENT_PIN_ENTRY_ENDED');
   // Portal guests use their account credential; an elevated portal client
   // additionally depends on the client PIN and must honor its cutoff.
+  // The full link (issue 2356) is checked for every session that carries it,
+  // ahead of the password cutoff below, which applies to it as well.
+  if (event && session?.fullLink !== undefined
+    && (!event.full_share_token || session.fullLink !== fullLinkClaim(event).fullLink)) {
+    throw new AppError('Full gallery link changed', 401, 'FULL_LINK_CHANGED');
+  }
   if (!event || !session || (session.via === 'customer' && session.accessLevel !== 'client')) return;
   if (session.accessLevel === 'slideshow') {
     // A session without the claim predates it. It lives 12 hours at most and
@@ -94,4 +108,7 @@ function assertGalleryCredentialCurrent(event, session) {
   }
 }
 
-module.exports = { credentialChangeColumns, sameAsStored, slideshowCredentialClaim, clientPinEntryClaim, assertGalleryCredentialCurrent };
+module.exports = {
+  credentialChangeColumns, sameAsStored, slideshowCredentialClaim, clientPinEntryClaim, fullLinkClaim,
+  assertGalleryCredentialCurrent,
+};

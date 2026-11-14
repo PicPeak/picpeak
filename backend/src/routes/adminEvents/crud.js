@@ -1579,6 +1579,9 @@ module.exports = (router) => {
         // Server-managed timestamps
         'download_zip_generated_at', 'archived_at', 'revealed_at', 'event_reminder_sent_at',
         'temporarily_disabled_at',
+        // The selection and its full link (issue 2356): set through
+        // /:id/selection, which checks the folder and re-marks the photos.
+        'selection_path', 'full_share_token',
         // Credential-change cutoffs: clearing one would revive the sessions
         // the password change ended.
         'gallery_password_changed_at', 'client_password_changed_at',
@@ -1755,6 +1758,8 @@ module.exports = (router) => {
       if (updates.source_mode === 'managed') {
         updates.external_path = null;
         updates.external_watch = formatBoolean(false);
+        // The curated selection (issue 2356) is a folder of the source.
+        updates.selection_path = null;
       }
 
       if (updates.source_mode === 'reference' && (updates.external_path === null || updates.external_path === undefined)) {
@@ -2242,6 +2247,12 @@ module.exports = (router) => {
         if (archiveLease) await archiveLease.release();
       }
       if (Object.keys(recoverable).length > 0) await dropCopiesIfStorageOff(id);
+      // A new or detached source re-marks the curated selection (issue 2356):
+      // without a source every photo is in it again, and another folder has
+      // its own paths.
+      if (['source_mode', 'external_path'].some((key) => Object.prototype.hasOwnProperty.call(updates, key))) {
+        await require('../../services/externalSelection').recomputeSelection(parseInt(id, 10));
+      }
 
       // Customer-account assignments (#354). Same skip semantics as POST:
       // ignore when the customer portal flag is off so stale tabs don't

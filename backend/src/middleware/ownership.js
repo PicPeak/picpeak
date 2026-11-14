@@ -189,8 +189,9 @@ function scopeEventsListQuery(query, admin, column = 'created_by') {
 
 // Columns of an events row that open the gallery on their own: the share link
 // embeds the share token, the client token unlocks client access, the show
-// token opens the slideshow, the embed token the website embed.
-const EVENT_BEARER_SECRET_COLUMNS = ['share_token', 'share_link', 'client_share_token', 'show_share_token', 'embed_token'];
+// token opens the slideshow, the embed token the website embed, the full
+// share token the full view of a curated selection.
+const EVENT_BEARER_SECRET_COLUMNS = ['share_token', 'share_link', 'client_share_token', 'show_share_token', 'embed_token', 'full_share_token'];
 
 /**
  * An event payload without its gallery links when the admin cannot act on the

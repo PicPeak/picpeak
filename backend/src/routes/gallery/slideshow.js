@@ -4,7 +4,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { db } = require('../../database/db');
-const { livePhotos, whereNotVideo } = require('../../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, livePhotos, whereNotVideo } = require('../../utils/photoVisibility');
 const { formatBoolean } = require('../../utils/dbCompat');
 
 const router = express.Router();
@@ -26,10 +26,9 @@ function slideshowPhotosQuery(eventId, categoryId = null) {
       this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
     })
     // A file gone from the share (migration 312) is in no gallery view.
-    .whereNull('photos.unavailable_reason')
-    .where(function() {
-      this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
-    });
+    .whereNull('photos.unavailable_reason');
+  // What an ordinary guest sees: the selection only (issue 2356).
+  applyPhotoVisibilityFilter(q, 'guest');
   // No videos, as the list the kiosk renders has none (issue 2285).
   whereNotVideo(q);
   // Category filter (#202) — keep the /session + /state count in sync with the

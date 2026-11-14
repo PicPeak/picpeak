@@ -215,6 +215,15 @@ export interface EventsListParams {
   sortOrder?: 'asc' | 'desc';
 }
 
+/** The curated selection of an external source (issue 2356). */
+export interface SelectionState {
+  available: boolean;
+  selection_path: string | null;
+  in_selection: number;
+  outside_selection: number;
+  full_link_url: string | null;
+}
+
 export const eventsService = {
   // Get all events (admin).
   //
@@ -317,6 +326,27 @@ export const eventsService = {
   // Delete/deactivate event (admin)
   async deleteEvent(id: number): Promise<void> {
     await api.delete(`/admin/events/${id}`);
+  },
+
+  // Curated selection inside an external source and its full link (issue 2356)
+  async getSelection(id: number): Promise<SelectionState> {
+    const response = await api.get<SelectionState>(`/admin/events/${id}/selection`);
+    return response.data;
+  },
+
+  async setSelection(id: number, selectionPath: string | null): Promise<SelectionState> {
+    const response = await api.put<SelectionState>(`/admin/events/${id}/selection`, { selection_path: selectionPath });
+    return response.data;
+  },
+
+  async createFullLink(id: number): Promise<SelectionState> {
+    const response = await api.post<SelectionState>(`/admin/events/${id}/selection/full-link`);
+    return response.data;
+  },
+
+  async removeFullLink(id: number): Promise<SelectionState> {
+    const response = await api.delete<SelectionState>(`/admin/events/${id}/selection/full-link`);
+    return response.data;
   },
 
   // Live Slideshow ("Diashow") — mint/rotate the share token (admin)

@@ -7,6 +7,8 @@
 const {
   canSeeHiddenPhotos,
   isPhotoHiddenFromViewer,
+  seesWholeSource,
+  viewerOf,
 } = require('../../src/utils/photoVisibility');
 
 describe('canSeeHiddenPhotos', () => {
@@ -29,9 +31,9 @@ describe('isPhotoHiddenFromViewer', () => {
   });
 
   it('treats visible and NULL visibility as viewable by everyone', () => {
-    expect(isPhotoHiddenFromViewer({ visibility: 'visible' }, 'guest')).toBe(false);
-    expect(isPhotoHiddenFromViewer({ visibility: null }, 'guest')).toBe(false);
-    expect(isPhotoHiddenFromViewer({}, 'guest')).toBe(false);
+    expect(isPhotoHiddenFromViewer({ visibility: 'visible', selection_hidden: false }, 'guest')).toBe(false);
+    expect(isPhotoHiddenFromViewer({ visibility: null, selection_hidden: false }, 'guest')).toBe(false);
+    expect(isPhotoHiddenFromViewer({ selection_hidden: 0 }, 'guest')).toBe(false);
   });
 
   it('is null-safe', () => {
@@ -44,5 +46,35 @@ describe('isPhotoHiddenFromViewer', () => {
       expect(isPhotoHiddenFromViewer({ visibility: 'hidden', moderation_status: status }, 'guest')).toBe(true);
     }
     expect(isPhotoHiddenFromViewer({ visibility: 'hidden', moderation_status: null }, 'client')).toBe(false);
+  });
+});
+
+describe('curated selection (issue 2356)', () => {
+  const outside = { visibility: 'visible', selection_hidden: true };
+  const full = { accessLevel: 'guest', fullView: true };
+
+  it('keeps a photo outside the selection from ordinary guests and the slideshow', () => {
+    expect(isPhotoHiddenFromViewer(outside, 'guest')).toBe(true);
+    expect(isPhotoHiddenFromViewer({ ...outside, selection_hidden: 1 }, 'guest')).toBe(true);
+    expect(isPhotoHiddenFromViewer(outside, { accessLevel: 'slideshow', fullView: true })).toBe(true);
+  });
+
+  it('shows it to the full link and the client, but not a hidden one to the full link', () => {
+    expect(isPhotoHiddenFromViewer(outside, full)).toBe(false);
+    expect(isPhotoHiddenFromViewer(outside, 'client')).toBe(false);
+    expect(isPhotoHiddenFromViewer({ ...outside, visibility: 'hidden' }, full)).toBe(true);
+  });
+
+  it('refuses a row read without the column rather than guessing', () => {
+    expect(isPhotoHiddenFromViewer({ visibility: 'visible' }, 'guest')).toBe(true);
+    expect(isPhotoHiddenFromViewer({ visibility: 'visible' }, full)).toBe(false);
+  });
+
+  it('reads the viewer off the request', () => {
+    expect(viewerOf({ accessLevel: 'guest', galleryFullView: true })).toEqual(full);
+    expect(viewerOf({ accessLevel: 'guest' })).toEqual({ accessLevel: 'guest', fullView: false });
+    expect(seesWholeSource('guest')).toBe(false);
+    expect(seesWholeSource(full)).toBe(true);
+    expect(seesWholeSource('client')).toBe(true);
   });
 });

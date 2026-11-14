@@ -729,6 +729,24 @@
     "nestedFoldersHint": "Mappen binnen mappen beheert u in de mappenbalk op het tabblad Foto's."
   },
   "events": {
+    "selection": {
+      "title": "Selectie voor gasten",
+      "help": "Geef een submap van deze map op, bijvoorbeeld \"gallery\". De galerijlink en de QR-code tonen dan alleen de foto's in die submap. De volledige link en de klanttoegang tonen alle foto's van de map.",
+      "folder": "Submap van de selectie",
+      "folderPlaceholder": "Geen selectie: gasten zien alle foto's",
+      "save": "Toepassen",
+      "saved": "Selectie bijgewerkt",
+      "counts": "{{inside}} foto's in de selectie, {{outside}} alleen in de volledige weergave",
+      "fullLinkHelp": "De volledige link opent deze galerij met alle foto's. Deel hem alleen met wie ze allemaal mag zien.",
+      "fullLink": "Volledige link",
+      "createLink": "Volledige link maken",
+      "rotate": "Nieuwe link",
+      "rotateConfirm": "Een nieuwe volledige link maken? De huidige werkt dan niet meer, en iedereen die hem opende, heeft de nieuwe nodig.",
+      "remove": "Verwijderen",
+      "removeConfirm": "De volledige link verwijderen? Iedereen die hem opende, ziet weer alleen de selectie.",
+      "linkCreated": "Volledige link gemaakt",
+      "linkRemoved": "Volledige link verwijderd"
+    },
     "revealMode": "Onthullingsmodus (galerij verbergen tot de onthulling)",
     "revealModeHelp": "Gasten kunnen uploaden maar zien geen foto's totdat je de galerij onthult — handmatig of op het geplande tijdstip. Diavoorstelling en klanttoegang blijven werken.",
     "liveRefresh": "Live verversen (gasten op nieuwe foto's wijzen)",
@@ -2399,6 +2417,12 @@
     "noEventsExpiring": "Geen evenementen verlopen in de komende 7 dagen",
     "noRecentActivity": "Geen recente activiteit",
     "photos": {
+      "selection": {
+        "filterLabel": "Selectie",
+        "all": "Selectie en volledige weergave",
+        "in": "In de selectie",
+        "out": "Alleen in de volledige weergave"
+      },
       "hidden": "Verborgen",
       "hideSelected": "Verbergen",
       "showSelected": "Tonen",

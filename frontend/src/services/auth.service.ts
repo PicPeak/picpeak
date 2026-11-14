@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import { clearFullLinkToken, getFullLinkToken } from '../utils/galleryFullLink';
 import type { LoginResponse, AdminLoginResponse, GalleryAuthResponse, AdminUser } from '../types';
 import { normalizeRequirePassword } from '../utils/accessControl';
 
@@ -58,11 +59,22 @@ export const authService = {
 
   // Gallery authentication
   async verifyGalleryPassword(slug: string, password?: string, recaptchaToken?: string | null): Promise<GalleryAuthResponse> {
-    const response = await api.post<GalleryAuthResponse>('/auth/gallery/verify', {
-      slug,
-      password,
-      recaptchaToken
-    });
+    // Opened with the full link (issue 2356): the session sees every photo.
+    const fullToken = getFullLinkToken(slug);
+    let response;
+    try {
+      response = await api.post<GalleryAuthResponse>('/auth/gallery/verify', {
+        slug,
+        password,
+        recaptchaToken,
+        ...(fullToken ? { full_token: fullToken } : {}),
+      });
+    } catch (err: any) {
+      // A rotated or removed full link: forget it, so the next try is an
+      // ordinary login rather than the same refusal.
+      if (err?.response?.data?.code === 'FULL_LINK_INVALID') clearFullLinkToken(slug);
+      throw err;
+    }
     
     // Token is now handled by GalleryAuthContext with slug-specific storage
     return normalizeGalleryResponse(response.data);

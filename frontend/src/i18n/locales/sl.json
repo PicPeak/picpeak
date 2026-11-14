@@ -1747,6 +1747,24 @@
     "nestedFoldersHint": "Mape znotraj map upravljate v vrstici map na zavihku Fotografije."
   },
   "events": {
+    "selection": {
+      "title": "Izbor za goste",
+      "help": "Navedite podmapo te mape, na primer »gallery«. Povezava do galerije in njena koda QR nato prikazujeta le fotografije v tej podmapi. Polna povezava in dostop za stranko prikazujeta vse fotografije mape.",
+      "folder": "Podmapa izbora",
+      "folderPlaceholder": "Brez izbora: gostje vidijo vse fotografije",
+      "save": "Uporabi",
+      "saved": "Izbor posodobljen",
+      "counts": "{{inside}} fotografij v izboru, {{outside}} samo v polnem pogledu",
+      "fullLinkHelp": "Polna povezava odpre to galerijo z vsemi fotografijami. Delite jo le s tistimi, ki naj jih vidijo vse.",
+      "fullLink": "Polna povezava",
+      "createLink": "Ustvari polno povezavo",
+      "rotate": "Nova povezava",
+      "rotateConfirm": "Ustvarim novo polno povezavo? Trenutna ne bo več delovala in vsi, ki so jo odprli, bodo potrebovali novo.",
+      "remove": "Odstrani",
+      "removeConfirm": "Odstranim polno povezavo? Vsi, ki so jo odprli, bodo spet videli samo izbor.",
+      "linkCreated": "Polna povezava ustvarjena",
+      "linkRemoved": "Polna povezava odstranjena"
+    },
     "revealMode": "Način razkritja (skrij galerijo do razkritja)",
     "revealModeHelp": "Gostje lahko nalagajo fotografije, vendar jih ne vidijo, dokler galerije ne razkrijete — ročno ali ob načrtovanem času. Diaprojekcija in dostop za stranke delujeta naprej.",
     "liveRefresh": "Sprotno osveževanje (goste opozori na nove fotografije)",
@@ -4282,6 +4300,12 @@
     "noEventsExpiring": "V naslednjih 7 dneh ne poteče noben dogodek",
     "noRecentActivity": "Ni nedavne aktivnosti",
     "photos": {
+      "selection": {
+        "filterLabel": "Izbor",
+        "all": "Izbor in poln pogled",
+        "in": "V izboru",
+        "out": "Samo v polnem pogledu"
+      },
       "hidden": "Skrito",
       "hiddenTooltip": "Skrito gostom — ta fotografija ni prikazana v galeriji stranke.",
       "hideSelected": "Skrij",

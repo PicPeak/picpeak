@@ -26,6 +26,7 @@ describe('admin photo list mapper', () => {
     'visibility',
     'view_count',
     'download_count',
+    'selection_hidden',
   ])('exposes %s so the admin grid can render it', (field) => {
     expect(LIST_MAPPER[1]).toContain(`${field}:`);
   });

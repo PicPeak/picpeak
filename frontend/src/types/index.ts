@@ -72,6 +72,8 @@ export interface Event {
   unique_visitors?: number;
   source_mode?: 'managed' | 'reference' | string;
   external_path?: string | null;
+  // Curated selection subfolder of external_path (issue 2356); null = none.
+  selection_path?: string | null;
   // Folder watcher opt-in (issue 1187). SQLite hands back 0/1, Postgres a boolean.
   external_watch?: boolean | number | null;
   // Mirror subfolders of uploads and imports as gallery folders (issue 1786).
@@ -633,6 +635,8 @@ export interface GalleryAuthResponse {
   accessLevel?: GalleryAccessLevel;
   viaCustomer?: boolean;
   viaClientPin?: boolean;
+  // Opened with the full link of a gallery with a curated selection (issue 2356).
+  full_view?: boolean;
 }
 
 // API Error type

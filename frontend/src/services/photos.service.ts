@@ -81,7 +81,10 @@ export interface AdminPhoto {
   moderation_status?: PhotoModerationStatus | null;
   // Why no gallery viewer sees the photo (issue 2121): 'source_missing' when
   // its file is gone from the external folder; null otherwise.
-  unavailable_reason?: 'source_missing' | null;
+  // 'selection_removed' (issue 2356): taken out of the selection folder.
+  unavailable_reason?: 'source_missing' | 'selection_removed' | null;
+  // Outside the curated selection (issue 2356): full link and client only.
+  selection_hidden?: boolean;
   // The admin account that ran the upload; null for imports and older rows.
   uploaded_by_admin?: { id: number; username: string | null } | null;
   // A video's length in seconds, rounded down; null when unknown.
@@ -241,6 +244,8 @@ export interface PhotoFilters {
   moderation?: PhotoModerationStatus;
   /** Only the photos whose file is gone from the external folder (issue 2121). */
   unavailable?: boolean;
+  /** In the curated selection, or only in the full view (issue 2356). */
+  selection?: 'in' | 'out';
   logic?: 'AND' | 'OR';
 }
 
@@ -331,6 +336,7 @@ class PhotosService {
       if (filters.credit) params.append('credit', filters.credit);
       if (filters.moderation) params.append('moderation', filters.moderation);
       if (filters.unavailable) params.append('unavailable', 'true');
+      if (filters.selection) params.append('selection', filters.selection);
       if (filters.logic) params.append('logic', filters.logic);
     }
     

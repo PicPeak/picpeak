@@ -742,6 +742,24 @@
     "nestedFoldersHint": "Les dossiers imbriqués se gèrent dans la barre des dossiers de l'onglet Photos."
   },
   "events": {
+    "selection": {
+      "title": "Sélection pour les invités",
+      "help": "Indiquez un sous-dossier de ce dossier, par exemple « gallery ». Le lien de la galerie et son QR code n'affichent alors que les photos de ce sous-dossier. Le lien complet et l'accès client affichent toutes les photos du dossier.",
+      "folder": "Sous-dossier de la sélection",
+      "folderPlaceholder": "Aucune sélection : les invités voient toutes les photos",
+      "save": "Appliquer",
+      "saved": "Sélection mise à jour",
+      "counts": "{{inside}} photos dans la sélection, {{outside}} uniquement dans la vue complète",
+      "fullLinkHelp": "Le lien complet ouvre cette galerie avec toutes les photos. Ne le partagez qu'avec les personnes qui doivent toutes les voir.",
+      "fullLink": "Lien complet",
+      "createLink": "Créer le lien complet",
+      "rotate": "Nouveau lien",
+      "rotateConfirm": "Créer un nouveau lien complet ? L'actuel ne fonctionnera plus et toutes les personnes qui l'ont ouvert devront utiliser le nouveau.",
+      "remove": "Supprimer",
+      "removeConfirm": "Supprimer le lien complet ? Toutes les personnes qui l'ont ouvert ne verront plus que la sélection.",
+      "linkCreated": "Lien complet créé",
+      "linkRemoved": "Lien complet supprimé"
+    },
     "revealMode": "Mode révélation (masquer la galerie jusqu'à la révélation)",
     "revealModeHelp": "Les invités peuvent téléverser mais ne voient aucune photo tant que vous ne révélez pas la galerie — manuellement ou à l'heure programmée. Le diaporama et l'accès client continuent de fonctionner.",
     "liveRefresh": "Actualisation en direct (signaler les nouvelles photos aux invités)",
@@ -2448,6 +2466,12 @@
     "noEventsExpiring": "Aucun événement n'expire dans les 7 prochains jours",
     "noRecentActivity": "Aucune activité récente",
     "photos": {
+      "selection": {
+        "filterLabel": "Sélection",
+        "all": "Sélection et vue complète",
+        "in": "Dans la sélection",
+        "out": "Uniquement dans la vue complète"
+      },
       "hidden": "Masquées",
       "hideSelected": "Masquer",
       "showSelected": "Afficher",

@@ -819,6 +819,17 @@
         "POST /:id/resend-email"
       ]
     },
+    "adminEvents/selection.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Excluded: the curated selection and its full link are per-gallery sharing settings. No folder names, tokens or photo counts.",
+      "route_signatures": [
+        "GET /:id/selection",
+        "PUT /:id/selection",
+        "POST /:id/selection/full-link",
+        "DELETE /:id/selection/full-link"
+      ]
+    },
     "adminEvents/slideshow.js": {
       "decision": "partial",
       "signals": [

@@ -2,7 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { rateLimitKey } = require('../../utils/rateLimitKey');
 const { db, logActivity } = require('../../database/db');
-const { livePhotos } = require('../../utils/photoVisibility');
+const { livePhotos, seesWholeSource, viewerOf } = require('../../utils/photoVisibility');
 const router = express.Router();
 
 // A photoId that is not a plausible row id is refused here (issue 2078);
@@ -53,6 +53,7 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, scopeGuestToFeedb
       event: req.event, slug: req.params.slug, query: req.query,
       identity: { guestId: req.guest?.id, guestIdentifier },
       accessLevel: req.accessLevel, viaCustomer: req.viaCustomer, adminPreview: req.isAdminPreview,
+      fullView: req.galleryFullView === true,
       hiddenForGuest: guestBlockedByReveal(req),
     });
     // Log view — but NOT for the Live Slideshow kiosk. A running projector
@@ -91,7 +92,7 @@ router.get('/:slug/photos/state', verifyGalleryAccess, resolveGuest, scopeGuestT
     const galleryQueryService = require('../../services/galleryQueryService');
     const hiddenForGuest = guestBlockedByReveal(req);
     const processing = await galleryQueryService.hasMediaProcessing({
-      event: req.event, accessLevel: req.accessLevel, hiddenForGuest,
+      event: req.event, accessLevel: req.accessLevel, hiddenForGuest, fullView: req.galleryFullView === true,
     });
     if (!processing && !parseBooleanInput(req.event.live_refresh, false)) {
       return res.status(404).json({ error: 'Live refresh is not enabled for this gallery' });
@@ -100,7 +101,7 @@ router.get('/:slug/photos/state', verifyGalleryAccess, resolveGuest, scopeGuestT
     res.json(await galleryQueryService.getGalleryPhotoState({
       event: req.event, query: req.query,
       identity: { guestId: req.guest?.id, guestIdentifier },
-      accessLevel: req.accessLevel, hiddenForGuest, processing,
+      accessLevel: req.accessLevel, hiddenForGuest, processing, fullView: req.galleryFullView === true,
     }));
   } catch (error) { errorResponse(res, error, 500, 'Failed to fetch photo state'); }
 });
@@ -141,16 +142,20 @@ router.get('/:slug/people', verifyGalleryAccess, denySlideshowToken, resolveGues
     const { listPeople, getScanStatus } = require('../../services/facePeopleService');
     const thresholds = await getThresholds();
 
+    // A full-link session counts the photos outside the selection too (issue
+    // 2356), as its photo list does.
+    const fullView = seesWholeSource(viewerOf(req));
     const people = await listPeople(req.event.id, {
       isClient,
       forAdmin: false,
+      fullView,
       minClusterSize: thresholds.face_min_cluster_size,
     });
 
     // Drives the "Finding people… 240/1200" progress line during a backfill.
     // Scoped to what this viewer may see — an unscoped total would leak the
     // number of hidden photos through the progress bar.
-    const status = await getScanStatus(req.event.id, { isClient, forAdmin: false });
+    const status = await getScanStatus(req.event.id, { isClient, forAdmin: false, fullView });
 
     res.json({
       people,

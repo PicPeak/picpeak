@@ -42,6 +42,7 @@ const { photoCapOf, insertPhotoWithinCap } = require('./photoCap');
 const jobState = require('./maintenanceJobState');
 const externalAccess = require('./externalMediaAccess');
 const folderTree = require('./folderTreeService');
+const externalSelection = require('./externalSelection');
 const { parseBooleanInput } = require('../utils/parsers');
 const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
 const { livePhotos } = require('../utils/photoVisibility');
@@ -146,6 +147,11 @@ const SERVED_ORIGINS = ['external', 'reference'];
 // photos.unavailable_reason (migration 312) of a photo whose file is gone from
 // the share: no gallery viewer sees it, the admin does.
 const SOURCE_MISSING = 'source_missing';
+// A file gone from the selection folder (issue 2356): the photographer took it
+// out of the selection, the original stays in the source. Out of every
+// gallery view like a missing file, but no missing file to clean up.
+const SELECTION_REMOVED = 'selection_removed';
+const GONE_REASONS = [SOURCE_MISSING, SELECTION_REMOVED];
 
 /**
  * The served rows of an event under the folder a pass walked, with what the
@@ -220,7 +226,7 @@ async function describesRow(row, f) {
  * Stops as soon as `isLost()` says the pass lost its claim or eligibility.
  * Returns the number of rows moved; `onMove` hears each one.
  */
-async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic, isLost, onMove }) {
+async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic, isLost, onMove, selectionHidden = () => false }) {
   const keyOf = (size, mtimeMs, name) => `${Number(size)}:${Math.floor(Number(mtimeMs))}:${path.extname(name).toLowerCase()}`;
   const group = (items, key) => {
     const map = new Map();
@@ -248,7 +254,7 @@ async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, full
     const newRel = toRootRelative(f.rel);
     if (automatic && await db('external_import_exclusions').where({ event_id: eventId, external_relpath: newRel }).first()) continue;
     const oldName = path.basename(row.external_relpath);
-    const updates = { external_relpath: newRel, unavailable_reason: null };
+    const updates = { external_relpath: newRel, unavailable_reason: null, selection_hidden: formatBoolean(selectionHidden(newRel)) };
     if (row.filename === oldName) updates.filename = f.name;
     if (row.source_filename === oldName) updates.source_filename = f.name;
     try {
@@ -694,6 +700,10 @@ async function importExternalFolder({
   let access = await externalAccess.authorizeImport(eventId, externalPath, { actor, automatic });
   const external_path = access.relativePath;
   const mirrorFolders = parseBooleanInput(event.folder_structure, false);
+  // The curated selection (issue 2356): read once the claim below is held,
+  // see there.
+  let selPrefix = null;
+  const selectionHidden = (relFromRoot) => externalSelection.selectionHiddenFor(selPrefix, relFromRoot);
   const firstLookKeywords = await folderTree.getFirstLookKeywords();
   const folderIdByPath = new Map();
   let firstLookImported = 0;
@@ -707,6 +717,20 @@ async function importExternalFolder({
   await jobState.ensure(jobName);
   const token = await jobState.claim(jobName);
   if (!token) throw new ImportInProgressError(eventId);
+
+  // A row outside the curated selection (issue 2356) is hidden from the
+  // ordinary link from the moment it is written. The selection is read under
+  // the claim: changing it takes the same claim (routes/adminEvents/
+  // selection.js), so it cannot move while this pass writes rows. The prefix
+  // names the folder this pass imports (and saves), not the one stored
+  // before it: a manual import may rebind the event to another folder.
+  try {
+    const { selection_path: selectionPath } = await db('events').where('id', eventId).first('selection_path') || {};
+    selPrefix = externalSelection.selectionPrefix({ source_mode: 'reference', external_path, selection_path: selectionPath });
+  } catch (error) {
+    await jobState.release(jobName, token, null);
+    throw error;
+  }
 
   // Renew the lease on a clock for the WHOLE run, walk included. A large tree
   // on a slow mount can take longer than the stale window just to list, and
@@ -827,9 +851,12 @@ async function importExternalFolder({
     // The first-look flag is part of the key in both modes: FirstLook/IMG_1.jpg
     // and the full set's IMG_1.jpg are two photos (issue 1562), and completing
     // the delivery is what pairs them up.
+    // So is the selection (issue 2356): gallery/IMG_1.jpg is the edit the
+    // guests get, Originale/IMG_1.jpg the original; both stay.
     const dedupeKeyOf = (file) => (mirrorFolders
       ? `${file.type}:${path.dirname(file.rel).toLowerCase()}:${path.basename(file.rel).toLowerCase()}`
-      : `${file.type}:${file.where && file.where.firstLook ? 'fl:' : ''}${path.basename(file.rel).toLowerCase()}`);
+      : `${file.type}:${file.where && file.where.firstLook ? 'fl:' : ''}`
+        + `${selPrefix && !selectionHidden(toRootRelative(file.rel)) ? 'sel:' : ''}${path.basename(file.rel).toLowerCase()}`);
     const dedupeMap = new Map();
     for (const file of preparedFiles) {
       const dedupeKey = dedupeKeyOf(file);
@@ -935,6 +962,9 @@ async function importExternalFolder({
     // on rendering. Rows now carry a root-relative path and this write cannot
     // reach them.
       await db('events').where('id', eventId).update({ source_mode: 'reference', external_path });
+      // The rows of the old folder answer to the new folder's selection
+      // (issue 2356) from now on, not only once this pass is through.
+      await externalSelection.recomputeSelection(eventId);
     }
 
     let imported = 0;
@@ -991,7 +1021,7 @@ async function importExternalFolder({
         if (newFiles.length) {
           moved = await moveRenamedRows({
             eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic, isLost: () => lost,
-            onMove: (entry) => pushCapped(announced.moved, entry),
+            onMove: (entry) => pushCapped(announced.moved, entry), selectionHidden,
           });
         }
       }
@@ -1051,8 +1081,8 @@ async function importExternalFolder({
           // The file is back on the share: the photo is again in the gallery
           // once the row describes it, as recorded or refreshed. A copy still
           // landing, or bytes that could not be read, keep it out.
-          if ((outcome === 'refreshed' || outcome === 'unchanged') && exists.unavailable_reason === SOURCE_MISSING) {
-            returned += await livePhotos(db).where({ id: exists.id, unavailable_reason: SOURCE_MISSING })
+          if ((outcome === 'refreshed' || outcome === 'unchanged') && GONE_REASONS.includes(exists.unavailable_reason)) {
+            returned += await livePhotos(db).where({ id: exists.id }).whereIn('unavailable_reason', GONE_REASONS)
               .update({ unavailable_reason: null });
           }
           continue;
@@ -1171,6 +1201,7 @@ async function importExternalFolder({
             height,
             source_origin: 'external',
             external_relpath: relFromRoot,
+            selection_hidden: formatBoolean(selectionHidden(relFromRoot)),
             folder_id: folderId,
             first_look: formatBoolean(where.firstLook),
             // .toISOString() rather than the Date: inside jest, Dates handed
@@ -1332,10 +1363,12 @@ async function importExternalFolder({
             .where({ id: row.id, external_relpath: row.external_relpath })
             .whereIn('source_origin', SERVED_ORIGINS)
             .whereNull('unavailable_reason')
-            .update({ unavailable_reason: SOURCE_MISSING });
+            // Inside the selection folder, the file left the selection; the
+            // photo is not missing from the source (issue 2356).
+            .update({ unavailable_reason: selPrefix && !selectionHidden(row.external_relpath) ? SELECTION_REMOVED : SOURCE_MISSING });
           missing += marked;
           if (marked) pushCapped(announced.missing, { photo_id: row.id, relpath: row.external_relpath });
-        } else if (state === 'present' && row.unavailable_reason === SOURCE_MISSING) {
+        } else if (state === 'present' && GONE_REASONS.includes(row.unavailable_reason)) {
           // Back at its path but not taken by the loop (a type no longer
           // imported, a file another of the same name shadows): restored
           // only as the very version the row recorded.
@@ -1343,7 +1376,7 @@ async function importExternalFolder({
           const recorded = st && row.size_bytes != null && row.source_mtime_ms != null
             && Number(row.size_bytes) === st.size && Number(row.source_mtime_ms) === Math.floor(st.mtimeMs);
           if (recorded) {
-            returned += await livePhotos(db).where({ id: row.id, unavailable_reason: SOURCE_MISSING })
+            returned += await livePhotos(db).where({ id: row.id }).whereIn('unavailable_reason', GONE_REASONS)
               .update({ unavailable_reason: null });
           }
         }
@@ -1400,6 +1433,15 @@ async function importExternalFolder({
       }
     } catch (err) {
       logger.warn(`Could not queue imported photos for tagging (event ${eventId}): ${err.message}`);
+    }
+
+    // The selection over every row of the event (issue 2356), the ones this
+    // pass did not touch included. The selection itself cannot change while
+    // the pass holds its claim (routes/adminEvents/selection.js).
+    try {
+      await externalSelection.recomputeSelection(eventId);
+    } catch (err) {
+      logger.warn(`Selection update failed for event ${eventId}: ${err.message}`);
     }
 
     const result = {

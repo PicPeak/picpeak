@@ -23,6 +23,17 @@
  * db('photos') is for code that must see trashed rows too (what owns a file,
  * hard deletes, storage, backups, erasure), and
  * __tests__/photoTrashReaders.test.js keeps the list of those.
+ *
+ * A curated selection (issue 2356, migration 361): an external source can
+ * name a selection folder, and every photo of the source outside it carries
+ * selection_hidden. The ordinary link, the QR code, the slideshow and every
+ * other guest path show the selection only; the full link (a session with
+ * fullView), the client login and the admin see everything. The viewer
+ * argument of the helpers below is either an accessLevel string or
+ * { accessLevel, fullView }; a plain string never sees past the selection,
+ * so a caller that does not pass fullView fails closed.
+ * __tests__/utils/photoSelectionReaders.test.js keeps hand-written visibility
+ * checks out of the code base.
  */
 
 /**
@@ -46,9 +57,40 @@ function leftJoinLivePhotos(query, left, right) {
   });
 }
 
+function viewerParts(viewer) {
+  if (viewer && typeof viewer === 'object') {
+    return { accessLevel: viewer.accessLevel, fullView: viewer.fullView === true };
+  }
+  return { accessLevel: viewer, fullView: false };
+}
+
 // PIN-clients see hidden photos; everyone else does not.
-function canSeeHiddenPhotos(accessLevel) {
-  return accessLevel === 'client';
+function canSeeHiddenPhotos(viewer) {
+  return viewerParts(viewer).accessLevel === 'client';
+}
+
+/**
+ * Does this viewer see photos outside the selection (issue 2356)? The client
+ * login and a full-link session do; everyone else sees the selection only.
+ */
+function seesWholeSource(viewer) {
+  const { accessLevel, fullView } = viewerParts(viewer);
+  return accessLevel === 'client' || (fullView && accessLevel !== 'slideshow');
+}
+
+/**
+ * The viewer of a gallery request, for the helpers here: its access level
+ * and whether its session came from the full link (middleware/gallery.js).
+ */
+function viewerOf(req) {
+  return { accessLevel: req?.accessLevel, fullView: req?.galleryFullView === true };
+}
+
+/** Leave out the photos outside the selection (issue 2356). */
+function whereInSelection(query, column = 'photos.selection_hidden') {
+  return query.where(function () {
+    this.where(column, false).orWhereNull(column);
+  });
 }
 
 /**
@@ -67,11 +109,21 @@ function wherePhotoLive(query, photoIdColumn) {
  * visibility is treated as visible (pre-migration default). The query must
  * reference the table as `photos` (all call sites do).
  */
-function applyPhotoVisibilityFilter(query, accessLevel) {
+function applyPhotoVisibilityFilter(query, viewer) {
   query.whereNull('photos.deleted_at');
-  if (canSeeHiddenPhotos(accessLevel)) return query.whereNull('photos.moderation_status');
+  if (canSeeHiddenPhotos(viewer)) return query.whereNull('photos.moderation_status');
+  if (!seesWholeSource(viewer)) whereInSelection(query);
+  return whereGuestVisible(query);
+}
+
+/**
+ * The photos a guest may see by their own visibility: 'visible', or NULL on a
+ * pre-migration row. Not the selection; applyPhotoVisibilityFilter is the
+ * whole rule.
+ */
+function whereGuestVisible(query, column = 'photos.visibility') {
   return query.where(function () {
-    this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
+    this.where(column, 'visible').orWhereNull(column);
   });
 }
 
@@ -134,10 +186,16 @@ function isPhotoProcessed(photo) {
  * Single-photo predicate: true when this photo must be blocked for a viewer
  * at the given access level. Mirrors the inline guards in gallery.js.
  */
-function isPhotoHiddenFromViewer(photo, accessLevel) {
+function isPhotoHiddenFromViewer(photo, viewer) {
   if (!photo) return false;
   if (photo.deleted_at != null || photo.moderation_status != null) return true;
-  return photo.visibility === 'hidden' && !canSeeHiddenPhotos(accessLevel);
+  if (!seesWholeSource(viewer)) {
+    // A row read without the column cannot be judged; refusing it keeps a
+    // narrowed select from showing a photo outside the selection.
+    if (!Object.prototype.hasOwnProperty.call(photo, 'selection_hidden')) return true;
+    if (photo.selection_hidden === true || photo.selection_hidden === 1) return true;
+  }
+  return photo.visibility === 'hidden' && !canSeeHiddenPhotos(viewer);
 }
 
 module.exports = {
@@ -146,6 +204,10 @@ module.exports = {
   leftJoinLivePhotos,
   wherePhotoLive,
   canSeeHiddenPhotos,
+  seesWholeSource,
+  viewerOf,
+  whereInSelection,
+  whereGuestVisible,
   applyPhotoVisibilityFilter,
   wherePhotoProcessed,
   wherePhotoProcessedById,

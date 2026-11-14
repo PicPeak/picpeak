@@ -49,7 +49,7 @@ const {
   parseResolution,
 } = require('../../utils/downloadResolutions');
 const {
-  applyPhotoVisibilityFilter, canSeeHiddenPhotos, isPhotoHiddenFromViewer, livePhotos, wherePhotoProcessed,
+  applyPhotoVisibilityFilter, canSeeHiddenPhotos, seesWholeSource, isPhotoHiddenFromViewer, livePhotos, wherePhotoProcessed, viewerOf,
 } = require('../../utils/photoVisibility');
 const {
   getUseOriginalFilenames,
@@ -190,7 +190,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     }
 
     // Block guest access to hidden photos
-    if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+    if (isPhotoHiddenFromViewer(photo, viewerOf(req))) {
       return res.status(403).json({ error: 'Photo not available' });
     }
 
@@ -712,7 +712,9 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // getZipInfo only checks the DB pointer + file stat, not freshness. When
     // hidden photos exist, guests fall through to the visibility-filtered
     // stream below. PIN-clients always stream a full archive.
-    const isClient = canSeeHiddenPhotos(req.accessLevel);
+    // A full-link guest (issue 2356) streams too: the prebuilt archive is
+    // the ordinary guests' one, the selection only.
+    const ownArchive = canSeeHiddenPhotos(req.accessLevel) || seesWholeSource(viewerOf(req));
     const eventHasHidden = await livePhotos(db)
       .where({ event_id: req.event.id, visibility: 'hidden' })
       .first()
@@ -721,7 +723,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // downloads off, and the stream below leaves those photos out. Guests get
     // the cache only when no photo sits in such a category; otherwise the
     // prebuilt zip would hand them exactly the photos they may not download.
-    const eventHasDownloadRestrictedPhotos = (isClient || eventHasHidden)
+    const eventHasDownloadRestrictedPhotos = (ownArchive || eventHasHidden)
       ? false
       : (await livePhotos(db)
         .join('photo_categories', 'photos.category_id', 'photo_categories.id')
@@ -736,7 +738,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // A photo still processing, or failed, is in no archive, but one built
     // before that rule (or before a complete photo was sent back to the
     // worker) may still hold it. Guests stream while the event has any.
-    const eventHasUnprocessed = !isClient && await livePhotos(db)
+    const eventHasUnprocessed = !ownArchive && await livePhotos(db)
       .where('event_id', req.event.id)
       .whereNotNull('processing_status')
       .whereNot('processing_status', 'complete')
@@ -745,7 +747,11 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // Photo sales: a priced gallery always streams, so the
     // per-photo preview gate below applies on every request instead of
     // trusting whatever a cached archive was built from.
-    const streamOnly = isClient || eventHasHidden || eventHasDownloadRestrictedPhotos || eventHasUnprocessed
+    // A gallery with a selection (issue 2356) always streams: the archive
+    // would have to be rebuilt every time a file enters or leaves the
+    // selection folder, and a stale one would hand out photos outside it.
+    const streamOnly = ownArchive || eventHasHidden || eventHasDownloadRestrictedPhotos || eventHasUnprocessed
+      || Boolean(req.event.selection_path)
       || isGalleryPriced(req.event)
       || !!(await currentDownloadLimit(req.event));
     let zipInfo = streamOnly
@@ -822,7 +828,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
             .orWhereNull('photo_categories.allow_downloads');
         })
         .where(folderTree.whereFolderAllowsDownload(blockedFolders)),
-      req.accessLevel
+      viewerOf(req)
     )
       .select('photos.*')
       .orderBy('photos.type', 'asc')
@@ -1098,7 +1104,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
             .orWhereNull('photo_categories.allow_downloads');
         })
         .where(folderTree.whereFolderAllowsDownload(blockedFolders)),
-      req.accessLevel
+      viewerOf(req)
     )
       .select('photos.*')
       .orderBy('photos.uploaded_at', 'desc');
@@ -1336,7 +1342,7 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
     const previewOnly = await isPreviewOnly(req);
     if (!previewOnly && downloadLimitOf(req.event) && !req.isAdminPreview) {
       const resolved = await downloadJobService
-        .photoQuery(req.event.id, photoIds, req.accessLevel, await folderTree.downloadBlockedFolderIds(req.event.id))
+        .photoQuery(req.event.id, photoIds, viewerOf(req), await folderTree.downloadBlockedFolderIds(req.event.id))
         .select('photos.id');
       const quota = await checkDownloads(req.event, resolved.map((r) => r.id));
       if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
@@ -1348,7 +1354,7 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
         event: req.event,
         resolution,
         photoIds,
-        accessLevel: req.accessLevel,
+        accessLevel: viewerOf(req),
         previewOnly,
         // A finished or running archive stays available: only a new build pauses.
         mayBuild: () => !refuseCapability(req, res, 'downloads.archive'),
@@ -1415,7 +1421,7 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
       !!(await originalAssetDenial(req))
       || !!job.preview_only !== previewOnly
       || new Date(job.expires_at).getTime() <= Date.now()
-      || !(await downloadJobService.isStillDeliverable(job, req.event, req.accessLevel))
+      || !(await downloadJobService.isStillDeliverable(job, req.event, viewerOf(req)))
     );
     if (job.status === 'ready' && !unavailable) {
       const stat = await downloadJobService.readyStat(job);
@@ -1446,7 +1452,7 @@ router.post('/:slug/download-jobs/:token/notify', verifyGalleryAccess, denySlide
   try {
     const job = await downloadJobService.getStatus(req.params.token);
     if (!job || job.event_id !== req.event.id
-        || job.visibility_scope !== downloadJobService.visibilityScopeFor(req.accessLevel)
+        || job.visibility_scope !== downloadJobService.visibilityScopeFor(viewerOf(req))
         || !!job.preview_only !== await isPreviewOnly(req)) {
       return res.status(404).json({ error: 'Download job not found' });
     }
@@ -1486,7 +1492,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     // The token alone never grants access: the archive was built under one
     // visibility scope, and only a requester still in that scope may take it.
     // Without this, a leaked client token would hand hidden photos to a guest.
-    if (job.visibility_scope !== downloadJobService.visibilityScopeFor(req.accessLevel)) {
+    if (job.visibility_scope !== downloadJobService.visibilityScopeFor(viewerOf(req))) {
       return res.status(404).json({ error: 'Download job not found' });
     }
     // A public-scope portal job can hold originals; a limited share-link
@@ -1502,7 +1508,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     // A photo hidden AFTER this archive was built is still inside it, and the
     // scope check above can't see that — both sides remain 'public'. Re-run
     // the visibility query over the packaged set before handing it over.
-    const deliveryPhotos = await downloadJobService.deliveryPhotos(job, req.event, req.accessLevel);
+    const deliveryPhotos = await downloadJobService.deliveryPhotos(job, req.event, viewerOf(req));
     if (!deliveryPhotos) {
       return res.status(409).json({
         error: 'This gallery changed since the download was prepared — please request it again',

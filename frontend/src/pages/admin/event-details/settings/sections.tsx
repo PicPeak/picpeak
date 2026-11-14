@@ -18,6 +18,7 @@ import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import type { FeedbackSettings as FeedbackSettingsType } from '../../../../services/feedback.service';
 import { ExternalFolderPicker } from '../ExternalFolderPicker';
+import { SelectionPanel } from './SelectionPanel';
 import { useExternalImport } from '../useExternalImport';
 import { emailNeedsPassword, GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, type EventFields } from './draft';
 import { radioGroupKeyDown } from '../../../../utils/ariaKeyboard';
@@ -642,6 +643,10 @@ export const SourceSection: React.FC<FieldsProps & { event: Event; canEdit?: boo
             unsaved={(event.source_mode === 'reference' ? 'reference' : 'managed') !== f.source_mode
               || (event.external_path || '') !== f.external_path.trim()}
           />
+          {/* The selection works on the saved folder (issue 2356). */}
+          {event.source_mode === 'reference' && (event.external_path || '') === f.external_path.trim() && (
+            <SelectionPanel event={event} canEdit={canEdit} />
+          )}
         </>
       )}
     </SectionCard>

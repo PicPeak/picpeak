@@ -1939,6 +1939,24 @@
     "nestedFoldersHint": "Folders inside folders are managed in the folder bar of the Photos tab."
   },
   "events": {
+    "selection": {
+      "title": "Selection for guests",
+      "help": "Name a subfolder of this folder, for example \"gallery\". The gallery link and its QR code then show only the photos in that subfolder. The full link and the client login show every photo of the folder.",
+      "folder": "Selection subfolder",
+      "folderPlaceholder": "No selection: guests see every photo",
+      "save": "Apply",
+      "saved": "Selection updated",
+      "counts": "{{inside}} photos in the selection, {{outside}} only in the full view",
+      "fullLinkHelp": "The full link opens this gallery with every photo. Share it only with the people who should see them all.",
+      "fullLink": "Full link",
+      "createLink": "Create full link",
+      "rotate": "New link",
+      "rotateConfirm": "Create a new full link? The current one stops working, and everyone who opened it has to use the new one.",
+      "remove": "Remove",
+      "removeConfirm": "Remove the full link? Everyone who opened it is back to the selection.",
+      "linkCreated": "Full link created",
+      "linkRemoved": "Full link removed"
+    },
     "disabled": "Disabled",
     "enableEvent": "Enable gallery",
     "disableEvent": "Disable gallery",
@@ -5174,6 +5192,12 @@
     "noEventsExpiring": "No galleries expiring in the next 7 days",
     "noRecentActivity": "No recent activity",
     "photos": {
+      "selection": {
+        "filterLabel": "Selection",
+        "all": "Selection and full view",
+        "in": "In the selection",
+        "out": "Only in the full view"
+      },
       "hidden": "Hidden",
       "hiddenTooltip": "Hidden from guests — this photo is not shown in the client gallery.",
       "hideSelected": "Hide",

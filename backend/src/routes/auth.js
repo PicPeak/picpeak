@@ -22,6 +22,7 @@ const {
 const { endSession } = require('../middleware/sessionTimeout');
 const { revokeToken } = require('../utils/tokenRevocation');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
+const { fullLinkClaim } = require('../utils/galleryCredentialCutoff');
 // Well-formed bcrypt hash that matches nothing; compared against when there is
 // no account so the unknown-user path costs the same as a wrong password.
 const DUMMY_BCRYPT_HASH = '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234';
@@ -635,7 +636,10 @@ router.post('/logout', async (req, res) => {
 // Gallery password verification with enhanced security
 router.post('/gallery/verify', [
   body('slug').isString().trim().notEmpty().isLength({ max: 255 }),
-  body('password').optional().isString().isLength({ max: MAX_PASSWORD_LENGTH })
+  body('password').optional().isString().isLength({ max: MAX_PASSWORD_LENGTH }),
+  // The full link (issue 2356): opens the session with every photo of the
+  // source, not just the selection. The password is checked as for anyone.
+  body('full_token').optional().isString().isLength({ max: 128 }),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -706,6 +710,14 @@ router.post('/gallery/verify', [
 
     }
     assertGalleryEnabled(event);
+    let fullView = {};
+    if (req.body.full_token !== undefined) {
+      if (!event.full_share_token || !timingSafeEqualStr(req.body.full_token, event.full_share_token)) {
+        await trackFailedAttempt(`gallery:${slug}:full`, ipAddress, userAgent);
+        return res.status(401).json({ error: 'This gallery link is no longer valid', code: 'FULL_LINK_INVALID' });
+      }
+      fullView = fullLinkClaim(event);
+    }
     if (!requiresPassword) logger.info('Public gallery access granted without password', { slug, ipAddress });
     await trackSuccessfulLogin(`gallery:${slug}`, ipAddress, userAgent);
     await db('access_logs').insert({
@@ -720,7 +732,8 @@ router.post('/gallery/verify', [
       // so one guest's logout would revoke every same-second login (#1357).
       jti: crypto.randomUUID(),
       ip: ipAddress,
-      loginTime: Date.now()
+      loginTime: Date.now(),
+      ...fullView,
     }, process.env.JWT_SECRET, { 
       expiresIn: '24h',
       issuer: 'picpeak-auth'
@@ -742,7 +755,8 @@ router.post('/gallery/verify', [
         upload_category_id: event.upload_category_id,
         require_password: requiresPassword,
         photo_cap: event.photo_cap
-      }
+      },
+      ...(fullView.view ? { full_view: true } : {}),
     });
   } catch (error) {
     if (GALLERY_CLOSED_CODES.has(error.code)) {
@@ -1062,6 +1076,8 @@ router.get('/session', async (req, res) => {
         accessLevel: decoded.type === 'gallery' ? (decoded.accessLevel || 'guest') : undefined,
         viaCustomer: decoded.type === 'gallery' ? decoded.via === 'customer' : undefined,
         viaClientPin: decoded.type === 'gallery' ? Boolean(decoded.clientPinEntry) : undefined,
+        // Opened with the full link (issue 2356): sees past the selection.
+        fullView: decoded.type === 'gallery' ? decoded.view === 'full' : undefined,
         // Full admin payload (or null) — lets the SPA hydrate its user
         // state after a redirect-established session (SSO, #798) where no
         // login JSON response ever reached it.

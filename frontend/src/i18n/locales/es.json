@@ -718,6 +718,24 @@
     "nestedFoldersHint": "Las carpetas dentro de carpetas se gestionan en la barra de carpetas de la pestaña Fotos."
   },
   "events": {
+    "selection": {
+      "title": "Selección para los invitados",
+      "help": "Indica una subcarpeta de esta carpeta, por ejemplo «gallery». El enlace de la galería y su código QR mostrarán solo las fotos de esa subcarpeta. El enlace completo y el acceso de cliente muestran todas las fotos de la carpeta.",
+      "folder": "Subcarpeta de la selección",
+      "folderPlaceholder": "Sin selección: los invitados ven todas las fotos",
+      "save": "Aplicar",
+      "saved": "Selección actualizada",
+      "counts": "{{inside}} fotos en la selección, {{outside}} solo en la vista completa",
+      "fullLinkHelp": "El enlace completo abre esta galería con todas las fotos. Compártelo solo con quienes deban verlas todas.",
+      "fullLink": "Enlace completo",
+      "createLink": "Crear enlace completo",
+      "rotate": "Nuevo enlace",
+      "rotateConfirm": "¿Crear un nuevo enlace completo? El actual dejará de funcionar y quienes lo abrieron necesitarán el nuevo.",
+      "remove": "Eliminar",
+      "removeConfirm": "¿Eliminar el enlace completo? Quienes lo abrieron volverán a ver solo la selección.",
+      "linkCreated": "Enlace completo creado",
+      "linkRemoved": "Enlace completo eliminado"
+    },
     "revealMode": "Modo revelación (ocultar la galería hasta revelarla)",
     "revealModeHelp": "Los invitados pueden subir fotos pero no verlas hasta que reveles la galería — manualmente o a la hora programada. La presentación y el acceso de clientes siguen funcionando.",
     "liveRefresh": "Actualización en vivo (avisar a los invitados de fotos nuevas)",
@@ -2371,6 +2389,12 @@
       "submit": "Crear cuenta"
     },
     "photos": {
+      "selection": {
+        "filterLabel": "Selección",
+        "all": "Selección y vista completa",
+        "in": "En la selección",
+        "out": "Solo en la vista completa"
+      },
       "hidden": "Ocultas",
       "webCopyFailed": "Sin copia web",
       "hideSelected": "Ocultar",
