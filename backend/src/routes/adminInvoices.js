@@ -754,6 +754,11 @@ router.put(
     const id = parseInt(req.params.id, 10);
     const existing = await db('invoices').where({ id }).first();
     if (!existing) return res.status(404).json({ error: 'Invoice not found' });
+    // A Storno mirrors the invoice it cancels and is never edited, also
+    // while it waits to be sent.
+    if (existing.kind === 'storno') {
+      return res.status(409).json({ error: 'A Storno cannot be edited.', code: 'IS_STORNO' });
+    }
     // Once an invoice has been sent to the customer it becomes a
     // legal record under CH/LI/DE/AT tax rules ("Rechnung ist
     // ausgestellt"). Modifying it in place would break the audit

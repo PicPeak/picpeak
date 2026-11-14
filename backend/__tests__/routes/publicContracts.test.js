@@ -28,7 +28,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'crm-route-test-secret';
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const request = require('supertest');
-const { bootCrmDb, seedMinimal, createPublicToken, buildRouteApp } = require('../integration/helpers/crmDb');
+const { bootCrmDb, seedMinimal, setFeatureFlags, createPublicToken, buildRouteApp } = require('../integration/helpers/crmDb');
 const tokenGuards = require('../../src/utils/publicTokenGuards');
 const { errorHandler } = require('../../src/middleware/errorHandler');
 
@@ -43,6 +43,7 @@ describe('publicContracts routes', () => {
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
     ({ customerId } = await seedMinimal(db));
+    await setFeatureFlags(db, { quotes: true, contracts: true });
     const inserted = await db('contracts').insert({
       contract_number: 'K-TEST-0001',
       customer_account_id: customerId,
@@ -205,6 +206,36 @@ describe('publicContracts routes', () => {
       const res = await request(app).get(`/api/public/contracts/${token}/pdf`);
       expect(res.status).toBe(410);
       expect(res.body.code).toBe('TOKEN_EXPIRED');
+    });
+  });
+
+  describe('with the contracts feature switched off', () => {
+    afterEach(() => setFeatureFlags(db, { contracts: true }));
+
+    it('refuses every route, the code steps included, and leaves the contract untouched', async () => {
+      const token = await createPublicToken(db, 'contract_action_tokens', { contract_id: contractId });
+      const verification = require('../../src/services/publicDocumentVerificationService');
+      const tokenRow = await db('contract_action_tokens').where({ token }).first();
+      const grant = verification.issueGrant('contract', tokenRow, token);
+      await setFeatureFlags(db, { contracts: false });
+
+      const calls = [
+        request(app).get(`/api/public/contracts/${token}`).set('X-Document-Access', grant),
+        request(app).post(`/api/public/contracts/${token}/verification`),
+        request(app).post(`/api/public/contracts/${token}/verification/confirm`).send({ code: '123456' }),
+        request(app).post(`/api/public/contracts/${token}/sign`).set('X-Document-Access', grant)
+          .send({ name: 'Dummy Signer', accepted: true }),
+        request(app).post(`/api/public/contracts/${token}/upload-signed-pdf`).set('X-Document-Access', grant)
+          .attach('file', Buffer.from('%PDF-1.4 fake'), 'signed.pdf'),
+        request(app).get(`/api/public/contracts/${token}/pdf`).set('X-Document-Access', grant),
+      ];
+      for (const call of calls) {
+        const res = await call;
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('CONTRACTS_DISABLED');
+      }
+      const contract = await db('contracts').where({ id: contractId }).first();
+      expect(contract.status).toBe('sent');
     });
   });
 });

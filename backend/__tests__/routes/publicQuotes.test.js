@@ -32,7 +32,7 @@ fs.mkdirSync(process.env.STORAGE_PATH, { recursive: true });
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'crm-route-test-secret';
 
 const request = require('supertest');
-const { bootCrmDb, seedMinimal, createPublicToken, buildRouteApp } = require('../integration/helpers/crmDb');
+const { bootCrmDb, seedMinimal, setFeatureFlags, createPublicToken, buildRouteApp } = require('../integration/helpers/crmDb');
 const tokenGuards = require('../../src/utils/publicTokenGuards');
 
 describe('publicQuotes routes', () => {
@@ -45,6 +45,7 @@ describe('publicQuotes routes', () => {
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
     ({ customerId } = await seedMinimal(db));
+    await setFeatureFlags(db, { quotes: true, contracts: true });
     const inserted = await db('quotes').insert({
       quote_number: 'Q-TEST-0001',
       customer_account_id: customerId,
@@ -180,6 +181,33 @@ describe('publicQuotes routes', () => {
         .post(`/api/public/quotes/${token}/respond`)
         .send({ action: 'accept' });
       expect(res.status).toBe(410);
+    });
+  });
+
+  describe('with the quotes feature switched off', () => {
+    afterEach(() => setFeatureFlags(db, { quotes: true }));
+
+    it('refuses every route, the code steps included, and leaves the quote untouched', async () => {
+      const token = await createPublicToken(db, 'quote_action_tokens', { quote_id: quoteId });
+      const verification = require('../../src/services/publicDocumentVerificationService');
+      const tokenRow = await db('quote_action_tokens').where({ token }).first();
+      const grant = verification.issueGrant('quote', tokenRow, token);
+      await setFeatureFlags(db, { quotes: false });
+
+      const calls = [
+        request(app).get(`/api/public/quotes/${token}`).set('X-Document-Access', grant),
+        request(app).post(`/api/public/quotes/${token}/verification`),
+        request(app).post(`/api/public/quotes/${token}/verification/confirm`).send({ code: '123456' }),
+        request(app).get(`/api/public/quotes/${token}/totals`).set('X-Document-Access', grant),
+        request(app).post(`/api/public/quotes/${token}/respond`).set('X-Document-Access', grant).send({ action: 'accept' }),
+      ];
+      for (const call of calls) {
+        const res = await call;
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('QUOTES_DISABLED');
+      }
+      const quote = await db('quotes').where({ id: quoteId }).first();
+      expect(quote.status).toBe('sent');
     });
   });
 });

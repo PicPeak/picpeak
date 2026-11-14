@@ -58,7 +58,7 @@ function pickChainFor(name) {
 
 const mockDbFn = jest.fn((name) => pickChainFor(name));
 mockDbFn.transaction = jest.fn(async (cb) => cb(mockDbFn));
-mockDbFn.schema = { hasTable: jest.fn(async () => false) };
+mockDbFn.schema = { hasTable: jest.fn(async () => false), hasColumn: jest.fn(async () => false) };
 
 jest.mock('../../src/database/db', () => ({
   db: mockDbFn,

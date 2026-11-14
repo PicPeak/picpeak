@@ -130,6 +130,74 @@ async function logArtifact(contract, stored, meta) {
 // authoritative guard.
 const MAX_SIGNATURE_BASE64_BYTES = 1024 * 1024; // 1 MB of base64 → ~750 KB decoded
 
+// Decoded raster ceiling. pdf-lib inflates a PNG to RGBA when it stamps the
+// signature, so a small, highly compressible file can still ask for
+// gigabytes. A signature canvas is a few hundred pixels tall; 4096 x 2048
+// leaves room for any retina export and keeps one decode in the low hundreds
+// of MB at worst (16-bit RGBA: ~67 MB inflated plus its RGBA copies). pdf-lib
+// embeds a JPEG without decoding it; the same limit applies to JPEGs so a
+// signature has one size rule whatever its format.
+const MAX_SIGNATURE_SIDE = 4096;
+const MAX_SIGNATURE_PIXELS = 4096 * 2048;
+
+// JPEG start-of-frame markers carry the frame size (C4, C8 and CC are not
+// frames: Huffman tables, reserved, arithmetic coding conditioning).
+const JPEG_SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/**
+ * Width and height from the image header, without decoding it. Null when the
+ * bytes are not a PNG / JPEG of the declared kind or carry no readable size.
+ */
+function signatureImageSize(bytes, kind) {
+  if (kind === 'png') {
+    if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) return null;
+    if (bytes.toString('latin1', 12, 16) !== 'IHDR') return null;
+    // An animated PNG is decoded frame by frame, each frame at a size of its
+    // own (fcTL) that the IHDR does not bound, and every frame is kept: a
+    // signature is a still image, so animation chunks are refused.
+    for (let offset = 8; offset + 8 <= bytes.length;) {
+      const type = bytes.toString('latin1', offset + 4, offset + 8);
+      if (type === 'acTL' || type === 'fcTL' || type === 'fdAT') return null;
+      if (type === 'IEND') break;
+      offset += 12 + bytes.readUInt32BE(offset);
+    }
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  }
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let offset = 2;
+  while (offset + 4 <= bytes.length) {
+    if (bytes[offset] !== 0xff) return null;
+    const marker = bytes[offset + 1];
+    // Fill bytes and standalone markers have no length field.
+    if (marker === 0xff) { offset += 1; continue; }
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { offset += 2; continue; }
+    if (marker === 0xd9 || marker === 0xda) return null;
+    const length = bytes.readUInt16BE(offset + 2);
+    if (length < 2) return null;
+    if (JPEG_SOF.has(marker)) {
+      if (offset + 9 > bytes.length) return null;
+      return { height: bytes.readUInt16BE(offset + 5), width: bytes.readUInt16BE(offset + 7) };
+    }
+    offset += 2 + length;
+  }
+  return null;
+}
+
+function assertSignatureDimensions(bytes, kind) {
+  const size = signatureImageSize(bytes, kind);
+  if (!size || !size.width || !size.height) {
+    throw new AppError('Signature must be a base64-encoded PNG or JPEG data URL', 400, 'BAD_SIGNATURE_FORMAT');
+  }
+  if (size.width > MAX_SIGNATURE_SIDE || size.height > MAX_SIGNATURE_SIDE
+    || size.width * size.height > MAX_SIGNATURE_PIXELS) {
+    throw new AppError(
+      `Signature image exceeds ${MAX_SIGNATURE_SIDE} pixels per side or ${MAX_SIGNATURE_PIXELS} pixels in total`,
+      413, 'SIGNATURE_TOO_LARGE',
+    );
+  }
+}
+
 async function persistSignatureImage(contract, role, dataUrl) {
   if (!dataUrl || typeof dataUrl !== 'string') return null;
   if (dataUrl.length > MAX_SIGNATURE_BASE64_BYTES + 100 /* prefix slack */) {
@@ -148,6 +216,8 @@ async function persistSignatureImage(contract, role, dataUrl) {
       413, 'SIGNATURE_TOO_LARGE',
     );
   }
+  const bytes = Buffer.from(match[2], 'base64');
+  assertSignatureDimensions(bytes, match[1]);
   const ext = match[1] === 'jpeg' ? 'jpg' : 'png';
   const root = path.join(
     getStoragePath(),
@@ -166,7 +236,7 @@ async function persistSignatureImage(contract, role, dataUrl) {
   // the compare-and-set then deleted the winner's signature image with its
   // own cleanup.
   const filePath = path.join(root, `${role}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`);
-  fs.writeFileSync(filePath, Buffer.from(match[2], 'base64'));
+  fs.writeFileSync(filePath, bytes);
   return filePath;
 }
 

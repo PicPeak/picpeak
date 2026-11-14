@@ -16,7 +16,7 @@ jest.mock('../../src/services/storage/s3Storage', () => class {
 });
 
 describe('selected backup-point download', () => {
-  let db; let cleanup; let root; let app; let token; let selectedManifest;
+  let db; let cleanup; let root; let app; let token; let adminRoleToken; let selectedManifest;
   const config = async settings => {
     for (const [key, value] of Object.entries(settings)) {
       await db('app_settings').insert({
@@ -37,6 +37,14 @@ describe('selected backup-point download', () => {
     const { adminId } = await seedMinimal(db);
     await assignAdminRole(db, adminId);
     token = mintAdminToken(adminId);
+    // The built-in admin role: backup.view and backup.create, not super_admin.
+    const [second] = await db('admin_users').insert({
+      username: 'backup-viewer', email: 'backup-viewer@example.com', password_hash: 'x',
+      must_change_password: false, is_active: true, created_at: new Date(),
+    }).returning('id');
+    const viewerId = second?.id ?? second;
+    await assignAdminRole(db, viewerId, 'admin');
+    adminRoleToken = mintAdminToken(viewerId);
     const service = require('../../src/services/backupService');
     jest.spyOn(service, 'getBackupManifest').mockImplementation(async () => ({ manifest: selectedManifest }));
     app = express();
@@ -164,6 +172,38 @@ describe('selected backup-point download', () => {
       ]);
     } finally { await zip.close(); }
   });
+  describe('a restore point that carries the database dump', () => {
+    const withDump = (destinationType) => {
+      selectedManifest.metadata.destination_type = destinationType;
+      selectedManifest.database = { backup_file: 'database/picpeak.db', checksum: 'a'.repeat(64), size: 1 };
+    };
+    const downloadAs = (id, bearer) => request(app).get('/backup/download/' + id).set('Authorization', 'Bearer ' + bearer);
+
+    it.each(['local', 's3'])('is refused to a backup.view holder that is not a Super Admin (%s)', async (destinationType) => {
+      withDump(destinationType);
+      mockList.mockResolvedValue({ Contents: [{ Key: 'points/selected/database/picpeak.db', Size: 1 }] });
+      const response = await downloadAs(await run('s3://bucket/points/selected/manifests/m.json'), adminRoleToken);
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe('SUPER_ADMIN_REQUIRED');
+      expect(mockSigned).not.toHaveBeenCalled();
+    });
+
+    it('still reaches a Super Admin', async () => {
+      withDump('s3');
+      mockList.mockResolvedValue({ Contents: [{ Key: 'points/selected/database/picpeak.db', Size: 1 }] });
+      const response = await downloadAs(await run('s3://bucket/points/selected/manifests/m.json'), token);
+      expect(response.status).toBe(200);
+      expect(response.body.files.map((file) => file.key)).toEqual(['points/selected/database/picpeak.db']);
+    });
+
+    it('leaves restore points without a dump to backup.view holders', async () => {
+      selectedManifest.database = { backup_file: null };
+      mockList.mockResolvedValue({ Contents: [{ Key: 'points/selected/a.jpg', Size: 1 }] });
+      const response = await downloadAs(await run('s3://bucket/points/selected/manifests/m.json'), adminRoleToken);
+      expect(response.status).toBe(200);
+    });
+  });
+
   it('refuses an out-of-root snapshot path in the selected manifest', async () => {
     selectedManifest.backup.path = '/not-an-operator-configured-root';
     selectedManifest.metadata.destination_type = 'local';

@@ -251,10 +251,24 @@ function buildRouteApp(mount, router) {
   return app;
 }
 
+/**
+ * Switch Settings → Features rows on or off for a suite, e.g.
+ * `await setFeatureFlags(db, { quotes: true, contracts: true })`. The public
+ * quote/contract routers refuse every request while their flag is off.
+ */
+async function setFeatureFlags(db, flags) {
+  for (const [key, value] of Object.entries(flags)) {
+    const updated = await db('feature_flags').where({ key }).update({ value });
+    if (!updated) await db('feature_flags').insert({ key, value });
+  }
+  require('../../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+}
+
 module.exports = {
   bootCrmDb,
   runCoreMigrations,
   seedMinimal,
+  setFeatureFlags,
   assignAdminRole,
   mintAdminToken,
   createPublicToken,

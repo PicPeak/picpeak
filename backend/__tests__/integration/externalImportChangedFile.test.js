@@ -256,8 +256,8 @@ describe('external re-scan of a file changed in place', () => {
     await importWithRenditions(eventId);
     const watermarkService = require('../../src/services/watermarkService');
     const source = path.join(mediaRoot, 'shoot/a.jpg');
-    watermarkService.cache.set(`${source}_{"enabled":true}_stripped`, { buffer: Buffer.from('old'), timestamp: Date.now() });
-    watermarkService.cache.set(`${source}-other_{"enabled":true}_stripped`, { buffer: Buffer.from('x'), timestamp: Date.now() });
+    watermarkService._cacheSet(`${source}_{"enabled":true}_stripped`, Buffer.from('old'));
+    watermarkService._cacheSet(`${source}-other_{"enabled":true}_stripped`, Buffer.from('x'));
 
     await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
     expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
@@ -274,7 +274,7 @@ describe('external re-scan of a file changed in place', () => {
     const tier = require('../../src/services/imageProcessor').previewTierKeys(photo)[0];
     const cached = [keys.thumbnail_path, keys.preview_path, keys.hero_path, tier]
       .map((key) => `${path.join(storageRoot, key)}_{"enabled":true}_stripped`);
-    for (const key of cached) watermarkService.cache.set(key, { buffer: Buffer.from('old'), timestamp: Date.now() });
+    for (const key of cached) watermarkService._cacheSet(key, Buffer.from('old'));
 
     await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
     expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);

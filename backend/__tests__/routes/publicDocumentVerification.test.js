@@ -30,7 +30,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'crm-route-test-secret';
 
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
-const { bootCrmDb, seedMinimal, createPublicToken, buildRouteApp } = require('../integration/helpers/crmDb');
+const { bootCrmDb, seedMinimal, setFeatureFlags, createPublicToken, buildRouteApp } = require('../integration/helpers/crmDb');
 const tokenGuards = require('../../src/utils/publicTokenGuards');
 
 const CUSTOMER_IP = '198.51.100.23';
@@ -55,6 +55,7 @@ describe('public document verification', () => {
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
     ({ customerId } = await seedMinimal(db));
+    await setFeatureFlags(db, { quotes: true, contracts: true });
     await db('customer_accounts').where({ id: customerId }).update({ display_name: 'Maria Meier' });
 
     const contract = await db('contracts').insert({

@@ -382,6 +382,12 @@ describe('named favourite lists (issue 2303)', () => {
       expect(pivot.body.find((r) => r.filename === 'p1.jpg').favorite_lists).toBe('Default; Print');
     });
 
+    it('quotes a list name holding a semicolon in the per-guest CSV', async () => {
+      await db('favorite_lists').where({ id: listId }).update({ name: 'Print;=1+2;' });
+      const csv = await admin('get', `/events/${eventId}/guests/${guests[0].id}/export?format=csv`);
+      expect(csv.text.split('\n')).toContain('p2.jpg,IMG_2.jpg,favorite,"Print;=1+2;"');
+    });
+
     it('shows each list in the guest detail', async () => {
       const detail = await admin('get', `/events/${eventId}/guests/${guests[0].id}`);
       expect(detail.body.favorite_lists).toMatchObject([

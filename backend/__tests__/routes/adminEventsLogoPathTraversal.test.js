@@ -91,8 +91,11 @@ describe('POST /api/admin/events/:id/logo — path traversal guard', () => {
       request(app).post(`/api/admin/events/${traversalId}/logo`)
     ).attach('logo', Buffer.from('fake image data'), 'logo.png');
 
+    // Refused before the upload either way: the event ownership check takes
+    // only a plain integer id, and the route's own filename check stays
+    // behind it as a second line.
     expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(res.body.error).toMatch(/invalid event id/i);
+    expect(res.body.error).toMatch(/invalid event id|event not found/i);
 
     // No file should have been written anywhere — the filename callback
     // must error out before multer opens a write stream.
