@@ -158,7 +158,7 @@ export interface Event {
   // link minted on demand; null token = disabled. Settings drive the running
   // projector and can be changed live.
   show_share_token?: string | null;
-  // Website embed (migration 359): the token in /gallery/:slug/embed/:token,
+  // Website embed (migration 363): the token in /gallery/:slug/embed/:token,
   // and the websites allowed to frame it as a JSON array (null = any).
   embed_token?: string | null;
   embed_allowed_origins?: string | null;

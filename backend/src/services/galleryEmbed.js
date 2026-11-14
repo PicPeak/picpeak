@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Gallery embed on another website (issue 1112, migration 359).
+ * Gallery embed on another website (issue 1112, migration 363).
  *
  * The embed is /gallery/:slug/embed/:token in an <iframe>. Only a gallery that
  * is already public can be embedded: no password, live (active, published,

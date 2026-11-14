@@ -1,5 +1,5 @@
 'use strict';
-// Website embed (issue 1112, migration 359): create, rotate and remove the
+// Website embed (issue 1112, migration 363): create, rotate and remove the
 // embed link of a gallery, and set the websites allowed to frame it. Modelled
 // on ./slideshow.js. The public side is routes/gallery/embed.js.
 

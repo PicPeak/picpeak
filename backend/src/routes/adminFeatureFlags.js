@@ -137,7 +137,7 @@ const KNOWN_FLAGS = [
   // while off, nothing is tested and the /admin/backup/verifications routes
   // answer 403.
   'backupRestoreTest',
-  // Website embed (migration 359, issue 1112). An <iframe> of a gallery
+  // Website embed (migration 363, issue 1112). An <iframe> of a gallery
   // without a password on another site. Strictly opt-in: while off, every
   // embed link answers 404 and no page is frameable.
   'embed',

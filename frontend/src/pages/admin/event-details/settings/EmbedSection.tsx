@@ -1,5 +1,5 @@
 /**
- * Website embed (issue 1112, migration 359). Like the slideshow link, every
+ * Website embed (issue 1112, migration 363). Like the slideshow link, every
  * control here acts at once: creating, rotating and removing the embed, and
  * saving the websites allowed to show it.
  */

@@ -108,7 +108,7 @@ export type FeatureKey =
   // weekly re-check of retained backups. Background only; the backend refuses
   // /admin/backup/verifications while off.
   | 'backupRestoreTest'
-  // Website embed (migration 359, issue 1112) - an <iframe> of a gallery
+  // Website embed (migration 363, issue 1112) - an <iframe> of a gallery
   // without a password on another site. Every embed link 404s while off.
   | 'embed';
 

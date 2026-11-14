@@ -1,13 +1,13 @@
 /**
- * Migration 359: the website embed columns and the `embed` feature flag
+ * Migration 363: the website embed columns and the `embed` feature flag
  * (issue 1112). Adds both columns and the flag off, keeps a second run a
  * no-op (an admin's flag value survives), enforces one gallery per token, and
  * down() removes all of it.
  */
 const knex = require('knex');
-const migration = require('../../migrations/core/359_event_embed');
+const migration = require('../../migrations/core/363_event_embed');
 
-describe('migration 359 on SQLite', () => {
+describe('migration 363 on SQLite', () => {
   let db;
 
   beforeEach(async () => {

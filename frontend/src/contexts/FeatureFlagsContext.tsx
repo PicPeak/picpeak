@@ -87,7 +87,7 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   // Backup restore test - verify + restore drill after every backup and
   // weekly. Off by default.
   backupRestoreTest: false,
-  // Website embed (migration 359, issue 1112) - opt-in; the backend 404s
+  // Website embed (migration 363, issue 1112) - opt-in; the backend 404s
   // every embed link while it is off.
   embed: false,
 };

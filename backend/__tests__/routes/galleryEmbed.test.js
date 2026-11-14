@@ -1,5 +1,5 @@
 /**
- * Website embed (issue 1112, migration 359).
+ * Website embed (issue 1112, migration 363).
  *
  * Public side: /api/gallery/:slug/embed/:token answers only for a gallery that
  * is already public (no password, live, not hidden until a reveal, not waiting

@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Migration 359: embed a gallery on another website (issue 1112).
+ * Migration 363: embed a gallery on another website (issue 1112).
  *
  *   events.embed_token            the token in the embed URL
  *                                 /gallery/:slug/embed/:token. NULL until the
