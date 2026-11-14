@@ -272,7 +272,7 @@ async function startRun(runId) {
   if (!entry) { await failRun(runId, 'no trigger node'); return; }
   // A run cancelled (customer erasure) since it was read above stays cancelled.
   const started = await notCancelled(runId).update({ status: 'running', current_node: entry.node_key, updated_at: db.fn.now() });
-  if (!started) return;
+  if (!started) return false; // cancelled since the read above
   await advanceRun(runId);
 }
 
@@ -454,7 +454,7 @@ async function recoverStaleRuns({ staleMs = RECOVERY_STALE_MS, limit = 50 } = {}
         }
         await db('workflow_runs').where({ id: run.id }).update({ attempts: attempts + 1, updated_at: db.fn.now() });
         if (!run.current_node) {
-          await startRun(run.id);
+          if ((await startRun(run.id)) === false) continue;
         } else {
           // Same as startRun: a run cancelled since the sweep read it is left alone.
           const resumed = await notCancelled(run.id).update({ status: 'running', updated_at: db.fn.now() });
