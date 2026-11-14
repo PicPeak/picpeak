@@ -34,6 +34,7 @@ const {
 } = require('../utils/emailQueueEncryption');
 const { parseEmailData } = require('../utils/emailSecretRedaction');
 const { db, logActivity } = require('../database/db');
+const { mayReachQueuedEmail, queuedEmailListScope } = require('../middleware/emailQueueOwnership');
 
 const router = express.Router();
 const PENDING_EMAIL_STATUSES = ['pending', PROTECTED_PENDING_STATUS];
@@ -289,7 +290,10 @@ router.get(
   '/failures',
   requirePermission(['settings.view', 'system.view']),
   handleAsync(async (req, res) => {
-    const stuckEmails = await db('email_queue')
+    // Only mail the caller may reach (middleware/emailQueueOwnership): the
+    // rows carry recipients, and the actions below are held to the same rule.
+    const scope = await queuedEmailListScope(req.admin);
+    const stuckEmails = await scope(db('email_queue'))
       .where(function () {
         this.where('status', 'failed')
           .orWhere(function () {
@@ -333,7 +337,7 @@ router.get(
     let scanned = 0;
     for (let offset = 0; offset < WAITING_SCAN_MAX; offset += WAITING_PAGE_SIZE) {
       // eslint-disable-next-line no-await-in-loop
-      const page = await db('email_queue')
+      const page = await scope(db('email_queue'))
         .whereIn('status', PENDING_EMAIL_STATUSES)
         .where('retry_count', '<', 3)
         .orderBy('id', 'asc')
@@ -462,6 +466,9 @@ router.post(
   handleAsync(async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+    // Same per-row rule as the Messages and project mail routes; 404 so the
+    // route does not tell which ids exist.
+    if (!(await mayReachQueuedEmail(req.admin, id))) return res.status(404).json({ error: 'Email not found' });
     const row = await db('email_queue').where({ id }).first('id', 'email_type', 'email_data', 'recipient_email', 'status');
     if (!row) return res.status(404).json({ error: 'Email not found' });
     // Same rule as the Messages retry: a mail held back for a customer who
@@ -497,6 +504,7 @@ router.delete(
   handleAsync(async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+    if (!(await mayReachQueuedEmail(req.admin, id))) return res.status(404).json({ error: 'Email not found' });
     await db('email_queue').where({ id }).del();
     return successResponse(res, { dismissed: true });
   }),

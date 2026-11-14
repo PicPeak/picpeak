@@ -1,5 +1,5 @@
 const { db } = require('../database/db');
-const { canAccessEvent, scopeEventsQuery } = require('./ownership');
+const { canAccessEvent, canonicalId, scopeEventsQuery } = require('./ownership');
 const { hasColumnCached } = require('../utils/schemaCache');
 
 /**
@@ -24,12 +24,6 @@ function seesEveryQueuedEmail(admin) {
   return admin?.roleName === 'super_admin';
 }
 
-/** The id as a number when it is a plain positive integer, else null. */
-function canonicalEmailId(raw) {
-  const id = Number(raw);
-  return /^\d+$/.test(String(raw)) && Number.isSafeInteger(id) && id >= 1 ? id : null;
-}
-
 async function senderColumnReady() {
   return hasColumnCached('email_queue', 'sent_by_admin_id');
 }
@@ -43,7 +37,7 @@ function reachesQueuedEmailRow(admin, row, event) {
 }
 
 async function mayReachQueuedEmail(admin, emailId) {
-  const id = canonicalEmailId(emailId);
+  const id = canonicalId(emailId);
   if (id === null || !admin) return false;
   if (seesEveryQueuedEmail(admin)) return true;
   const columns = ['event_id'];
@@ -64,7 +58,7 @@ function requireOwnedQueuedEmail(param = 'emailId') {
   return async (req, res, next) => {
     try {
       if (await mayReachQueuedEmail(req.admin, req.params[param])) {
-        req.params[param] = String(canonicalEmailId(req.params[param]));
+        req.params[param] = String(canonicalId(req.params[param]));
         return next();
       }
       return res.status(404).json({ error: 'Email not found' });

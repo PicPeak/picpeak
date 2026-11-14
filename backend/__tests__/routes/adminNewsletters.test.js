@@ -298,6 +298,25 @@ describe('admin newsletters routes', () => {
     expect(res.body.pagination.total).toBe(5);
   });
 
+  it('lists recipients only for an admin who may view customers', async () => {
+    await db('customer_accounts').insert({
+      email: 'listed@example.com', is_active: 1, marketing_opt_out: 0,
+      created_at: new Date().toISOString(),
+    });
+    const { body } = await createDraft();
+    const id = body.campaign.id;
+    await request(app).post(`${MOUNT}/${id}/queue`).set(auth(superToken));
+
+    // newsletters.view without customers.view
+    const res = await request(app).get(`${MOUNT}/${id}/recipients`).set(auth(viewerToken));
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(res.body)).not.toContain('listed@example.com');
+
+    const allowed = await request(app).get(`${MOUNT}/${id}/recipients`).set(auth(superToken));
+    expect(allowed.status).toBe(200);
+    expect(allowed.body.data).toHaveLength(1);
+  });
+
   it('filters the recipients list by status', async () => {
     await db('customer_accounts').insert({
       email: 'a@example.com', is_active: 1, marketing_opt_out: 0,

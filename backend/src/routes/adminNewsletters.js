@@ -140,6 +140,11 @@ router.get(
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
+    // Recipient rows carry customer emails and ids: like the preview with a
+    // real customer, they reach only an admin who may see customers.
+    if (!(await userHasAnyPermission(req.admin?.id, ['customers.view']))) {
+      throw new AppError('You need permission to view customers to see the recipients', 403, 'FORBIDDEN');
+    }
     await newsletterService.getCampaign(req.params.id); // 404s for an unknown id
     const { page, limit, offset } = getPagination(req, { limit: 50 });
 
