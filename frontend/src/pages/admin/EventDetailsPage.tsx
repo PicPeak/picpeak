@@ -31,7 +31,7 @@ import type { SettingsSectionKey } from './event-details/settings/draft';
 import { EventFeedbackPanel } from './EventFeedbackPage';
 
 const ALL_TAB_KEYS: EventDetailsTab[] = ['overview', 'photos', 'guests', 'orders', 'settings'];
-const SECTION_KEYS: SettingsSectionKey[] = ['general', 'access', 'downloads', 'pricing', 'guests', 'appearance', 'source', 'delivery', 'reminder', 'slideshow', 'faces', 'tags', 'danger'];
+const SECTION_KEYS: SettingsSectionKey[] = ['general', 'access', 'downloads', 'pricing', 'guests', 'appearance', 'source', 'delivery', 'reminder', 'slideshow', 'embed', 'faces', 'tags', 'danger'];
 
 function isValidTab(value: string | null): value is EventDetailsTab {
   return value !== null && (ALL_TAB_KEYS as string[]).includes(value);

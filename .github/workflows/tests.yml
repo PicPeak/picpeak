@@ -244,6 +244,11 @@ jobs:
           NGINX_TEST_IMAGE: ${{ matrix.image }}
         run: python3 tests/nginx/test_request_logging.py
 
+      - name: Verify gallery embed framing
+        env:
+          NGINX_TEST_IMAGE: ${{ matrix.image }}
+        run: python3 tests/nginx/test_gallery_embed.py
+
   # Optional face-detection sidecar (#1074). Runs on every PR regardless of
   # whether the feature is enabled anywhere — these tests need no model
   # weights (they stub the pipeline out) and cover the auth boundary, the

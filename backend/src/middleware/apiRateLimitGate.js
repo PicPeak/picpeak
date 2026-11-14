@@ -66,6 +66,10 @@ function createApiRateLimitGate(getLimiter) {
     // nginx asks for this static-shell policy on every gallery navigation.
     // It neither authenticates a viewer nor exposes protected gallery data.
     if (['GET', 'HEAD'].includes(req.method) && /^\/api\/public\/settings\/photo-sales-policy\/?$/.test(path)) return next();
+    // The same for the embed page's frame policy (issue 1112): asked on every
+    // load of an embedding website, and a 429 there would serve the embed
+    // with SAMEORIGIN, a blank frame on that site.
+    if (['GET', 'HEAD'].includes(req.method) && /^\/api\/public\/settings\/embed-frame-policy\/?$/.test(path)) return next();
     if (EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix))) return next();
     if (AUTH_ENDPOINT_RE.test(path)) return next();
 

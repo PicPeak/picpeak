@@ -37,6 +37,7 @@ export const FEATURE_STATUS: Record<FeatureKey | PortalFeatureKey, FeatureStatus
   faces: { maturity: 'beta' },
   autoTagging: { maturity: 'beta' },
   backupRestoreTest: { maturity: 'beta' },
+  embed: { maturity: 'beta' },
   // Automation
   workflows: { maturity: 'beta' },
   // CRM

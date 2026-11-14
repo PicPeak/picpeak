@@ -831,6 +831,16 @@
         "PATCH /:id/slideshow"
       ]
     },
+    "adminEvents/embed.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Admin create/rotate/remove of the website embed link and its allowed websites; no usage signal, no origins or counts reported.",
+      "route_signatures": [
+        "POST /:id/embed/generate",
+        "POST /:id/embed/disable",
+        "PATCH /:id/embed"
+      ]
+    },
     "adminEvents/tags.js": {
       "decision": "excluded",
       "signals": [],
@@ -1759,6 +1769,7 @@
       "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
       "route_signatures": [
         "GET /photo-sales-policy",
+        "GET /embed-frame-policy",
         "GET /"
       ]
     },
@@ -1879,6 +1890,15 @@
       "route_signatures": [
         "GET /:slug/show/:token/session",
         "GET /:slug/show/:token/state"
+      ]
+    },
+    "gallery/embed.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public website-embed surface read by visitors of third-party sites: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:slug/embed/:token",
+        "GET /:slug/embed/:token/photos"
       ]
     },
     "gallery/stats.js": {
@@ -2368,6 +2388,10 @@
     "backupRestoreTest": {
       "signals": [],
       "reason": "Excluded: backup restore tests are not reported as their own capability; no flag value, results, checks or schedules."
+    },
+    "embed": {
+      "signals": [],
+      "reason": "Excluded: the website embed is not reported as its own capability; no flag value, embedding websites or view counts."
     }
   },
   "excluded_runtime": [

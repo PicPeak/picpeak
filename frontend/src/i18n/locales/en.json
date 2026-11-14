@@ -1,4 +1,35 @@
 {
+  "embed": {
+    "unavailable": "This gallery is not available.",
+    "viewGallery": "View full gallery",
+    "empty": "No photos yet.",
+    "openPhoto": "Open photo {{number}}",
+    "loadMore": "Load more",
+    "loadMoreFailed": "More photos could not be loaded.",
+    "retry": "Try again",
+    "close": "Close",
+    "previous": "Previous photo",
+    "next": "Next photo",
+    "admin": {
+      "title": "Website embed",
+      "description": "Show this gallery on your own website as a photo grid. Visitors see the published photos and can open them larger, but cannot download, comment or upload.",
+      "needsPublic": "Only a gallery without a password can be embedded. Remove the password under Access first.",
+      "pausedByPassword": "This gallery has a password, so the embed shows nothing. Remove the password under Access to show it again.",
+      "create": "Create embed code",
+      "created": "Embed code created",
+      "codeLabel": "Embed code",
+      "codeHint": "Paste this into your website where the gallery should appear.",
+      "rotate": "New code",
+      "rotateConfirm": "Create a new embed code? Websites that use the current code stop showing the gallery until you replace it there.",
+      "remove": "Remove",
+      "removeConfirm": "Remove the embed? Websites that show this gallery stop showing it.",
+      "removed": "Embed removed",
+      "websitesLabel": "Allowed websites",
+      "websitesHint": "One address per line, e.g. https://example.com or https://*.example.com for all subdomains. Leave empty to allow any website.",
+      "saveWebsites": "Save websites",
+      "websitesSaved": "Websites saved"
+    }
+  },
   "externalSources": {
     "title": "External source owners",
     "info": "Only the SuperAdmin can assign or transfer a source folder. Subfolders belong to the same owner; source folders must not overlap.",
@@ -2462,6 +2493,7 @@
     },
     "settingsTab": {
       "about": {
+        "embed": "Show this gallery on your own website.",
         "access": "Who can open the gallery, and until when.",
         "appearance": "Hero photo, logo, banners and the look of the gallery.",
         "danger": "Archive or delete this gallery.",
@@ -2524,6 +2556,8 @@
       "sourceManagedHelp": "Photos are uploaded on the Photos tab and stored by PicPeak.",
       "sourceReferenceHelp": "Photos stay in your folder; PicPeak links to them.",
       "summary": {
+        "noEmbed": "Not embedded",
+        "embedActive": "Embed active",
         "clientAccounts_one": "{{count}} client account",
         "clientAccounts_other": "{{count}} client accounts",
         "danger": "Archive or delete this gallery",
@@ -3441,6 +3475,10 @@
       "title": "Branding"
     },
     "features": {
+      "embed": {
+        "title": "Website embed",
+        "description": "Show a gallery without a password on your own website as a photo grid in an iframe. Each gallery gets its own embed code under Settings → Website embed, optionally limited to the websites you name."
+      },
       "backupRestoreTest": {
         "title": "Backup restore test",
         "description": "Every backup is test-restored into a throwaway database and checked: signature, checksums, file hashes, row counts and migrations. Retained backups are re-checked weekly, and you are emailed when one fails."

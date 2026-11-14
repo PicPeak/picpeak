@@ -28,6 +28,7 @@ import {
   Tags,
   Gift,
   ShieldCheck,
+  Code,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -156,6 +157,23 @@ export const FeaturesTab: React.FC = () => {
             onToggle={(next) => setFlag('slideshow', next)}
             configureHref={settingsTabLink('slideshow', 'slideshow')}
             configureLabel={configureLabel}
+          />
+
+          {/* Website embed (issue 1112): each gallery without a password can
+              be shown on another website in an <iframe>, from the gallery's
+              Settings → Website embed. */}
+          <FeatureCard
+            icon={Code}
+            title={t('settings.features.embed.title', 'Website embed')}
+            description={t(
+              'settings.features.embed.description',
+              'Show a gallery without a password on your own website as a photo grid in an iframe. Each gallery gets its own embed code under Settings → Website embed, optionally limited to the websites you name.',
+            )}
+            feature="embed"
+            sidebarHidden
+            sidebarHiddenLabel={sidebarHiddenLabel}
+            enabled={staged.embed}
+            onToggle={(next) => setFlag('embed', next)}
           />
 
           <FeatureCard
