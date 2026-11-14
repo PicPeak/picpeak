@@ -227,6 +227,33 @@ describe('gallery print order journey', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Print viewed photo' })); fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
     expect(screen.getByLabelText('Crop zoom')).toHaveValue('2');
   });
+  it('shows a view-only contact the orders but no way to order', async () => {
+    const order = { ...quotation, status: 'accepted', acceptedAt: '2026-10-28', invoiceId: 42 } as Order;
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.endsWith('/orders') ? { orders: [order] }
+      : { variants: [variant], countries: ['IE'], policy: 'Synthetic buyer policy', basketScope: 'buyer-1', readOnly: true } }) as any);
+    function Opener() { const shop = usePrintSales(); return <button disabled={!shop?.available} onClick={() => shop?.openPhoto(1)}>Print viewed photo</button>; }
+    render(<PrintSalesProvider slug="fixture" photos={[photo]}><Opener /><PrintShopEntry /></PrintSalesProvider>);
+    expect(await screen.findByText('Your login can see prints and orders here, but cannot order.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Choose prints' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Print viewed photo' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Prints & orders/ }));
+    await screen.findByText(/Invoice.*#42/);
+    expect(screen.queryByText(/Confirm your selections here/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Your login can see prints and orders here, but cannot order.').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Add photographs' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Review selections and final total' })).not.toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+  it('offers a view-only contact no way back to the basket from a stored preparation', async () => {
+    sessionStorage.setItem('print-preparation:buyer-1', quotation.id);
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.endsWith('/orders') ? { orders: [] } : url.includes('/orders/') ? quotation
+      : { variants: [variant], countries: ['IE'], policy: 'Synthetic buyer policy', basketScope: 'buyer-1', readOnly: true } }) as any);
+    render(<GalleryPrintShop slug="fixture" photos={[photo]} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Prints & orders/ }));
+    expect(await screen.findByRole('button', { name: 'Confirm order and request invoice' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Return to basket' })).not.toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
   it('derives an aspect-correct centred crop and bounded zoom', () => {
     expect(centredCrop(2, 1)).toEqual({ x: .25, y: 0, width: .5, height: 1 });
     expect(centredCrop(.5, 1, 2)).toEqual({ x: .25, y: .375, width: .5, height: .25 });

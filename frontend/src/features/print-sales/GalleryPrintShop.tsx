@@ -19,7 +19,8 @@ import type { Variant, Delivery, Order, Quote } from './model';
 import { MAX_ITEMS, choices, dimensions, isPhotograph, newDraft, photoName, photoSource, readBasket, requestItem, type BasketLine, type Draft } from './shopping';
 import './print-shopping.css';
 
-type Offers = { variants: Variant[]; countries: string[]; policy: string; basketScope: string };
+// readOnly: a view-only contact of the customer sees offers and orders but cannot order.
+type Offers = { variants: Variant[]; countries: string[]; policy: string; basketScope: string; readOnly?: boolean };
 type View = 'photos' | 'editor' | 'basket';
 const addressLabels = { name: 'Recipient name', line1: 'Address line 1', line2: 'Address line 2 (optional)', city: 'City', region: 'Region (optional)', postalCode: 'Postal code' };
 export function PrintSalesProvider({ slug, photos, enabled = true, selectedPhotoIds, children }: {
@@ -140,7 +141,7 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
   const updateDraft = (patch: Partial<Draft>) => setDrafts(rows => rows.map((d, n) => n === active ? { ...d, ...patch } : d));
   const start = (id?: number) => {
     if (quoteId) { setView('basket'); return; }
-    if (!offers?.variants.length) return;
+    if (!offers?.variants.length || offers.readOnly) return;
     setError(''); setEditing(undefined); setValidDraft(true); setPreviewReady(false); setActive(0);
     if (id && photographs.some(p => p.id === id)) {
       const saved = draftCache.current.get(id), v = offers.variants.find(v => v.id === saved?.profileId) || offers.variants[0];
@@ -212,7 +213,7 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
     } catch (e) { if (scope.current === expectedScope) { setError(errorMessage(e)); void preparation.refetch(); } }
     finally { if (scope.current === expectedScope) setBusy(false); }
   };
-  const available = !!offers?.variants.length;
+  const readOnly = !!offers?.readOnly, available = !!offers?.variants.length && !readOnly;
   const estimates = new Map<string, number>();
   const estimatedItems = view === 'editor' ? drafts : cart;
   for (const item of estimatedItems) {
@@ -230,17 +231,19 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
       {editing ? t('printSales.saveCrop', 'Update basket item') : t('printSales.addToBasket', 'Add to basket')}{!editing && drafts.length > 1 ? ` (${drafts.length})` : ''}
     </Button>
   </> : quoteId ? <>
-    <Button disabled={busy} variant="secondary" onClick={() => void discard()}>{t('printSales.editBasket', 'Return to basket')}</Button>
-    <Button disabled={busy || !approved || !ready} onClick={accept}>{t('printSales.confirmInvoice', 'Confirm order and request invoice')}</Button>
-  </> : <Button disabled={busy || !!quoteId || !cart.length || invalidLines.size > 0 || stale} onClick={prepare}>{t('printSales.reviewOrder', 'Review selections and final total')}</Button>;
-  return <PrintSalesContext.Provider value={{ available, hasOrders: orders.some(o => !!o.acceptedAt), count: cart.length, openPhoto: id => start(id), openBulk: () => start(), openBasket: () => { setError(''); setView('basket'); } }}>
+    {/* Discarding is a write: a view-only contact holding a quote id from before
+        they lost the right would only get a 403. */}
+    {!readOnly && <Button disabled={busy} variant="secondary" onClick={() => void discard()}>{t('printSales.editBasket', 'Return to basket')}</Button>}
+    <Button disabled={busy || readOnly || !approved || !ready} onClick={accept}>{t('printSales.confirmInvoice', 'Confirm order and request invoice')}</Button>
+  </> : readOnly ? null : <Button disabled={busy || !!quoteId || !cart.length || invalidLines.size > 0 || stale} onClick={prepare}>{t('printSales.reviewOrder', 'Review selections and final total')}</Button>;
+  return <PrintSalesContext.Provider value={{ available, readOnly: readOnly && !!offers?.variants.length, hasOrders: orders.some(o => !!o.acceptedAt), count: cart.length, openPhoto: id => start(id), openBulk: () => start(), openBasket: () => { setError(''); setView('basket'); } }}>
     {children}
     {!!error && !view && <p role="alert" className="max-w-7xl mx-auto px-4">{error}</p>}
     <Modal open={!!view} onClose={() => { if (!busy) setView(undefined); }} size="xl" className="print-shop-dialog" footer={<>
       {!!estimateLabel && view !== 'photos' && !quoteId && <p className="print-estimate">{estimateLabel} <span className="text-xs text-muted">{t('printSales.estimateBeforeTax', 'before tax and delivery')}</span></p>}{footer}
     </>}
       title={view === 'photos' ? t('printSales.choosePhotos', 'Choose photographs to print') : view === 'editor' ? t('printSales.quickPrint', 'Make it a print') : quoteId ? t('printSales.orderReview', 'Review print order') : t('printSales.basket', 'Your prints & orders')}
-      description={view === 'editor' ? t('printSales.cropEach', 'Choose a size and check the crop of each photograph.') : t('printSales.invoiceJourney', 'Confirm your selections here. The studio will send an invoice and check the prepared files before ordering from the lab.')}>
+      description={view === 'editor' ? t('printSales.cropEach', 'Choose a size and check the crop of each photograph.') : readOnly ? t('printSales.readOnlyHelp', 'Your login can see prints and orders here, but cannot order.') : t('printSales.invoiceJourney', 'Confirm your selections here. The studio will send an invoice and check the prepared files before ordering from the lab.')}>
       <fieldset disabled={busy} className="min-w-0 space-y-5">
         {view === 'photos' && <PhotoPicker photos={photographs} slug={slug} selected={picked} limit={MAX_ITEMS - cart.length} onToggle={id => setPicked(ids => ids.includes(id) ? ids.filter(p => p !== id) : ids.length < MAX_ITEMS - cart.length ? [...ids, id] : ids)} />}
         {view === 'editor' && offers && <>
@@ -254,6 +257,7 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
           {drafts.some(d => !d.ready) && <p className="text-sm text-muted" role="status">{t('printSales.reviewEveryPhoto', 'Open each selected photograph to check its crop before adding the prints.')}</p>}
         </>}
         {view === 'basket' && !quoteId && <>
+          {!readOnly && <>
           {!cart.length && <p>{t('printSales.emptyBasket', 'Your basket is empty. Start with a favourite photograph.')}</p>}
           <button type="button" className="print-text-button" disabled={!available || cart.length >= MAX_ITEMS} onClick={() => start()}>{t('printSales.addPhotographs', 'Add photographs')}</button>
           {cart.map(item => {
@@ -278,6 +282,7 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
             <label className="block">{t('printSales.country', 'Country')}<select className="input w-full" value={delivery.country} onChange={e => { setDelivery({ ...delivery, country: e.target.value }); invalidate(); }}>
               {offers?.countries.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
           </section>}
+          </>}
           {orders.filter(o => o.acceptedAt).map(o => <article className="border border-border-token rounded-lg p-4" key={o.id}>
             <h3>{o.status === 'cancelled' ? t('printSales.orderCancelled', 'Order cancelled') : o.status === 'resolved' ? t('printSales.closedManually', 'Closed manually') : t('printSales.orderConfirmed', 'Order confirmed')} · {o.id.slice(0, 8)}</h3>
             <p>{formatMoneyMinor(o.totalMinor, o.currency)} · {t('printSales.invoiceNumber', 'Invoice')} #{o.invoiceId}</p>
@@ -306,10 +311,10 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
 }
 export function PrintShopEntry() {
   const shop = usePrintSales(), { t } = useTranslation();
-  if (!shop?.available && !shop?.hasOrders) return null;
+  if (!shop?.available && !shop?.hasOrders && !shop?.readOnly) return null;
   return <section className="print-shop-entry max-w-7xl mx-auto px-4 py-6">
-    <div><h2 className="text-lg font-semibold">{t('printSales.shop', 'Order photographic prints')}</h2><p className="text-sm text-muted">{t('printSales.entryHint', 'Your favourites, ready for a desk or a wall. Choose a photograph to get started.')}</p></div>
-    <div className="flex flex-wrap gap-3"><Button disabled={!shop.available} onClick={shop.openBulk}>{t('printSales.choosePrints', 'Choose prints')}</Button><Button variant="secondary" onClick={shop.openBasket}>{t('printSales.basketShort', 'Prints & orders')} ({shop.count})</Button></div>
+    <div><h2 className="text-lg font-semibold">{t('printSales.shop', 'Order photographic prints')}</h2><p className="text-sm text-muted">{shop.readOnly ? t('printSales.readOnlyHelp', 'Your login can see prints and orders here, but cannot order.') : t('printSales.entryHint', 'Your favourites, ready for a desk or a wall. Choose a photograph to get started.')}</p></div>
+    <div className="flex flex-wrap gap-3">{!shop.readOnly && <Button disabled={!shop.available} onClick={shop.openBulk}>{t('printSales.choosePrints', 'Choose prints')}</Button>}<Button variant="secondary" onClick={shop.openBasket}>{t('printSales.basketShort', 'Prints & orders')} ({shop.count})</Button></div>
   </section>;
 }
 export function GalleryPrintShop({ slug, photos }: { slug: string; photos: Photo[] }) {

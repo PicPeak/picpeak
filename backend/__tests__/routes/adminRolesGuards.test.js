@@ -72,10 +72,17 @@ describe('role editor — self-amplification guard', () => {
   });
 
   it('non-super cannot escalate another role beyond its own permissions', async () => {
+    const lite = await db('roles').where({ name: 'viewer_lite' }).first();
+    await expect(
+      svc.updateRole(lite.id, { permissions: ['settings.banking'] }, mgrId),
+    ).rejects.toThrow(/only grant permissions your own role/i);
+  });
+
+  it('non-super cannot edit a role holding permissions it lacks', async () => {
     const adminRole = await db('roles').where({ name: 'admin' }).first();
     await expect(
-      svc.updateRole(adminRole.id, { permissions: ['settings.banking'] }, mgrId),
-    ).rejects.toThrow(/only grant permissions your own role/i);
+      svc.updateRole(adminRole.id, { permissions: ['events.view'] }, mgrId),
+    ).rejects.toThrow(/edit roles within your own permissions/i);
   });
 
   it('the built-in team_photographer name is reserved', async () => {

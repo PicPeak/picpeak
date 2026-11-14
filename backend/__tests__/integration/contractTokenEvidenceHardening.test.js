@@ -46,6 +46,9 @@ jest.mock('../../src/services/contract/crud', () => {
 });
 
 // 1x1 transparent PNG — smallest valid signature pad output.
+// A readable 1x1 PNG header with no image data after it: passes the
+// signature checks on the way in, fails when pdf-lib embeds it.
+const UNSTAMPABLE_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAAAAAAAA';
 const SIGNATURE_DATA_URL = 'data:image/png;base64,'
   + 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 const HEX_TOKEN = /[a-f0-9]{64}/i;
@@ -450,9 +453,9 @@ describe('countersignature stamping', () => {
     });
     const customerStamped = (await db('contracts').where({ id }).first()).signed_pdf_path;
 
-    // Valid base64 in a PNG data URL, but not an image the PDF can embed.
+    // A PNG header with no image data: accepted, but not something the PDF can embed.
     await contractService.recordAdminCountersignature(
-      id, { name: 'Admin', ip: '203.0.113.31', signatureDataUrl: 'data:image/png;base64,YmFk' }, adminId,
+      id, { name: 'Admin', ip: '203.0.113.31', signatureDataUrl: UNSTAMPABLE_PNG }, adminId,
     );
 
     const contract = await db('contracts').where({ id }).first();
@@ -699,13 +702,28 @@ describe('admin PDF repair actions under concurrent requests', () => {
     const before = await fullySignedWithImages('Unstampable restamp');
 
     await expect(contractService.restampSignatures(
-      before.id, { adminSignatureDataUrl: 'data:image/png;base64,YmFk' }, adminId,
+      before.id, { adminSignatureDataUrl: UNSTAMPABLE_PNG }, adminId,
     )).rejects.toMatchObject({ statusCode: 422, code: 'SIGNATURE_STAMP_FAILED' });
 
     const contract = await db('contracts').where({ id: before.id }).first();
     expect(contract.signed_pdf_path).toBe(before.signed_pdf_path);
     expect(contract.signed_pdf_render_failed_at).toBeTruthy();
     expect(await restampLogsFor(before.id)).toEqual([expect.objectContaining({ stampFailed: ['admin'] })]);
+  });
+
+  it('keeps no customer image from a re-stamp whose admin image is refused', async () => {
+    const before = await fullySignedWithImages('Refused admin restamp');
+    const pngsBefore = signaturePngs().length;
+
+    await expect(contractService.restampSignatures(
+      before.id,
+      { customerSignatureDataUrl: SIGNATURE_DATA_URL, adminSignatureDataUrl: 'data:image/png;base64,YmFk' },
+      adminId,
+    )).rejects.toMatchObject({ statusCode: 400, code: 'BAD_SIGNATURE_FORMAT' });
+
+    expect(signaturePngs().length).toBe(pngsBefore);
+    const contract = await db('contracts').where({ id: before.id }).first();
+    expect(contract.signed_customer_signature_path).toBe(before.signed_customer_signature_path);
   });
 
   it('refuses a re-send when a signature on record cannot be stamped, and mails nothing', async () => {

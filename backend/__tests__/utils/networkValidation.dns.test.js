@@ -119,6 +119,34 @@ describe('validateExternalUrlAsync', () => {
     expect(r.reason).toBe('unresolved');
   });
 
+  it.each([
+    '2002:a9fe:a9fe::1',
+    '2001:0::a9fe:a9fe',
+    '::ffff:0:a9fe:a9fe',
+    'fec0::1',
+    'ff02::1',
+    '2001:db8::1',
+    '100::1',
+  ])('rejects a host whose AAAA answer is %s', async (address) => {
+    lookup.mockResolvedValue([{ address, family: 6 }]);
+    const r = await validateExternalUrlAsync('https://aaaa.example/hook');
+    expect(r.valid).toBe(false);
+    expect(r.reason).toBe('private');
+  });
+
+  it.each([
+    'http://[2002:a9fe:a9fe::1]/',
+    'http://[fec0::1]/',
+    'http://[ff02::1]/',
+  ])('rejects the literal %s without a lookup', async (url) => {
+    expect((await validateExternalUrlAsync(url)).valid).toBe(false);
+  });
+
+  it('still accepts a host whose AAAA answer is global unicast', async () => {
+    lookup.mockResolvedValue([{ address: '2606:4700:4700::1111', family: 6 }]);
+    expect((await validateExternalUrlAsync('https://v6.example/hook')).valid).toBe(true);
+  });
+
   it('reports reason=private for a resolved-private host (permanent)', async () => {
     lookup.mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
     const r = await validateExternalUrlAsync('https://rebind.example/hook');

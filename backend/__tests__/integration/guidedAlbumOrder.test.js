@@ -696,6 +696,30 @@ describe('guided album order', () => {
       expect(Number(history.customer_account_id)).toBe(anna);
     });
 
+    test('a view-only contact of the customer sees the offer read-only and cannot choose', async () => {
+      const gallery = await makeGallery();
+      const anna = await addCustomer(gallery);
+      const offer = await released(gallery, albumA, anna);
+      const contact = async (right) => {
+        const email = `${uuid()}@example.test`;
+        await db('customer_logins').insert({ email, password_hash: 'x' });
+        return idOf(await db('customer_contacts').insert({ customer_account_id: anna, email, right_galleries: right,
+          is_active: true, created_at: new Date(), updated_at: new Date() }).returning('id'));
+      };
+      const tokenFor = async (right) => jwt.sign(
+        { type: 'gallery', eventId: gallery.id, via: 'customer', customerId: anna, contactId: await contact(right), jti: uuid() },
+        process.env.JWT_SECRET, { issuer: 'picpeak-auth', expiresIn: '1h' },
+      );
+      const viewer = asClient(await tokenFor('view'));
+      const seen = await clientOffer(viewer, gallery, offer.id);
+      expect(seen.readOnly).toBe(true);
+      const refused = await viewer.put(gallery, seen, complete(gallery));
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe('CUSTOMER_RIGHT_MISSING');
+      const decider = asClient(await tokenFor('act'));
+      expect((await decider.put(gallery, await clientOffer(decider, gallery, offer.id), complete(gallery))).status).toBe(200);
+    });
+
     test('two customers hold their own offer for one album, with separate selections', async () => {
       const gallery = await makeGallery();
       const anna = await addCustomer(gallery);

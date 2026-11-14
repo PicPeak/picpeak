@@ -104,6 +104,16 @@ const stripReservedSettingKeys = (settings) => {
   }
   return settings;
 };
+// The branding logo URLs name a file the logo upload wrote, and the PDF logo
+// resolver reads branding_logo_url (utils/resolveLogoFile). Only the logo
+// upload routes and PUT /branding write them (PUT /branding checks logo_url);
+// the generic writers drop them. Writers only — the generic reads still
+// return these rows.
+const UPLOADED_LOGO_URL_KEYS = ['branding_logo_url', 'branding_logo_url_dark', 'branding_watermark_logo_url'];
+const stripUploadedLogoUrlKeys = (settings) => {
+  for (const key of UPLOADED_LOGO_URL_KEYS) delete settings[key];
+  return settings;
+};
 // Keys owned by a dedicated, separately permission-checked writer. Those
 // routes apply their own permission rules and validate the values; a generic
 // upsert would skip all of that. Writers only — the generic reads still
@@ -1341,6 +1351,18 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
       ? promo_alignment
       : 'center';
 
+    // logo_url names the uploaded logo (POST /logo writes it as
+    // /uploads/logos/<file>); the PDF logo resolver reads it. Anything else is
+    // refused unless it is the value already stored, so a save of the form
+    // as loaded still goes through.
+    if (logo_url !== undefined && logo_url !== null && logo_url !== ''
+        && !uploadedAssetPath(String(logo_url), 'logos', getStoragePath())) {
+      const stored = parseStoredSetting(await db('app_settings').where('setting_key', 'branding_logo_url').first());
+      if (logo_url !== stored) {
+        return res.status(400).json({ error: 'logo_url must be a logo uploaded through the logo upload' });
+      }
+    }
+
     // Normalize login_logo_size to the same token set as logo_size.
     // Anything else falls back to 'medium' on the next render.
     const allowedLoginLogoSizes = ['small', 'medium', 'large', 'xlarge'];
@@ -1787,7 +1809,7 @@ router.put('/theme', adminAuth, requirePermission('settings.edit'), async (req, 
 // Update general settings
 router.put('/general', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
-    const settings = stripReservedSettingKeys({ ...req.body });
+    const settings = stripUploadedLogoUrlKeys(stripReservedSettingKeys({ ...req.body }));
     if (rejectDedicatedRouteOwnedKeys(settings, res)) return;
     let uploadLimitTouched = false;
 
@@ -2131,7 +2153,7 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
 // Update security settings
 router.put('/security', adminAuth, requirePermission('settings.security'), async (req, res) => {
   try {
-    const settings = stripReservedSettingKeys({ ...req.body });
+    const settings = stripUploadedLogoUrlKeys(stripReservedSettingKeys({ ...req.body }));
     if (rejectDedicatedRouteOwnedKeys(settings, res)) return;
     // A settings.security holder still can't write domain/accounting keys here.
     if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
@@ -2185,7 +2207,7 @@ router.put('/security', adminAuth, requirePermission('settings.security'), async
 // Update analytics settings
 router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
-    const settings = stripReservedSettingKeys({ ...req.body });
+    const settings = stripUploadedLogoUrlKeys(stripReservedSettingKeys({ ...req.body }));
     if (rejectDedicatedRouteOwnedKeys(settings, res)) return;
     if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
 
@@ -2248,7 +2270,7 @@ router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (r
 // Update SEO settings
 router.put('/seo', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
-    const settings = stripReservedSettingKeys({ ...req.body });
+    const settings = stripUploadedLogoUrlKeys(stripReservedSettingKeys({ ...req.body }));
     if (rejectDedicatedRouteOwnedKeys(settings, res)) return;
     if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
 

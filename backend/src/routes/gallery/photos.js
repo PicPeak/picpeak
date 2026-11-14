@@ -11,7 +11,7 @@ router.param('photoId', (req, res, next, value) => {
   }
   next();
 });
-const { verifyGalleryAccess } = require('../../middleware/gallery');
+const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
 const { resolveGuest, scopeGuestToFeedback } = require('../../middleware/guestAuth');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const { generateGuestIdentifier } = require('../../middleware/feedbackRateLimit');
@@ -116,7 +116,9 @@ router.get('/:slug/photos/state', verifyGalleryAccess, resolveGuest, scopeGuestT
  */
 // no-store for the same reason as /photos: the people list and its scan
 // progress are scoped to what THIS viewer may see.
-router.get('/:slug/people', verifyGalleryAccess, resolveGuest, noStoreCache, async (req, res) => {
+// Not for the Live Slideshow kiosk: a show pinned to one category must not
+// learn about the people in the others.
+router.get('/:slug/people', verifyGalleryAccess, denySlideshowToken, resolveGuest, noStoreCache, async (req, res) => {
   try {
     const isClient = req.accessLevel === 'client';
     const { isEnabledForEvent, areFacesVisibleToGuests, getThresholds } =

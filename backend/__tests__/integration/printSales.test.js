@@ -945,6 +945,35 @@ test('status and discard routes enforce current customer assignment and do not e
   await db('event_customer_assignments').where({ event_id: event.id, customer_account_id: customerId }).del();
   expect((await request(galleryApp).get(root).set('Authorization', `Bearer ${galleryToken()}`)).status).toBe(403);
 });
+test('a view-only customer contact reads print offers and orders but cannot quote, accept or discard', async () => {
+  const contactOf = async (email, right) => {
+    await db('customer_logins').where({ email }).del();
+    await db('customer_logins').insert({ email, password_hash: 'x' });
+    const ids = await db('customer_contacts').insert({ customer_account_id: customerId, email, right_galleries: right,
+      is_active: true, created_at: new Date(), updated_at: new Date() }).returning('id');
+    return ids[0]?.id ?? ids[0];
+  };
+  await db('customer_contacts').whereIn('email', ['viewer@example.test', 'decider@example.test']).del();
+  const viewer = galleryToken({ contactId: await contactOf('viewer@example.test', 'view') });
+  const decider = galleryToken({ contactId: await contactOf('decider@example.test', 'act') });
+  const root = `/api/gallery/${event.slug}/print-sales`, as = token => ({ Authorization: `Bearer ${token}` });
+  const q = await quoted(), body = { snapshotHash: q.snapshotHash, acknowledgeSelection: true };
+  const invoiceCount = async () => Number((await db('invoices').where({ customer_account_id: customerId }).count({ n: '*' }).first()).n);
+  const before = await invoiceCount();
+  const offered = await request(galleryApp).get(root).set(as(viewer));
+  expect(offered.status).toBe(200); expect(offered.body.readOnly).toBe(true);
+  expect((await request(galleryApp).get(root).set(as(decider))).body.readOnly).toBe(false);
+  expect((await request(galleryApp).get(`${root}/orders`).set(as(viewer))).status).toBe(200);
+  expect((await request(galleryApp).get(`${root}/orders/${q.id}`).set(as(viewer))).status).toBe(200);
+  for (const [path, send] of [['quotes', payload()], [`orders/${q.id}/accept`, body], [`orders/${q.id}/discard`, {}]]) {
+    const refused = await request(galleryApp).post(`${root}/${path}`).set(as(viewer)).send(send);
+    expect(refused.status).toBe(403); expect(refused.body.code).toBe('CUSTOMER_RIGHT_MISSING');
+  }
+  expect(await invoiceCount()).toBe(before);
+  expect((await db('print_sales_orders').where({ id: q.id }).first()).accepted_at).toBeFalsy();
+  expect((await request(galleryApp).post(`${root}/orders/${q.id}/accept`).set(as(decider)).send(body)).status).toBe(200);
+  expect((await request(galleryApp).post(`${root}/quotes`).set(as(decider)).send(payload())).status).toBe(201);
+});
 test('expired preparations promptly reclaim files, and cannot report ready while waiting for cleanup', async () => {
   const q = await quoted();
   await db('print_sales_orders').where({ id: q.id }).update({ expires_at: new Date(Date.now() - 1000).toISOString() });

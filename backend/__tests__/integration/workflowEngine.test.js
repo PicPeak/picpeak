@@ -717,6 +717,64 @@ describe('workflow engine', () => {
     expect(run.status).toBe('failed');
   });
 
+  // Cancels the run the moment the engine issues the first query matching
+  // `match` — i.e. after the engine has read the run's status, before it
+  // writes 'running'. Stands in for a customer erasure committing there.
+  function cancelWhen(runId, match) {
+    let pending = null;
+    const listener = (q) => {
+      if (pending || !match(String(q.sql))) return;
+      pending = db('workflow_runs').where({ id: runId }).update({ status: 'cancelled' });
+      pending.then(() => {}, () => {});
+    };
+    db.on('query', listener);
+    return async () => {
+      db.removeListener('query', listener);
+      await pending;
+      return pending !== null;
+    };
+  }
+
+  test('startRun leaves a run cancelled between its status read and the start', async () => {
+    const wfId = await makeWorkflow({
+      trigger: 'cancel-start.event',
+      nodes: [{ key: 's1', type: 'trigger' }, { key: 's2', type: 'action', config: { action: 'noop' } }],
+      edges: [{ from: 's1', to: 's2' }],
+    });
+    await db('workflow_runs').insert({
+      workflow_id: wfId, version: 1, trigger_event: 'cancel-start.event', status: 'pending',
+      context: JSON.stringify({ vars: {} }), dedup_key: 'cancel-start-1',
+    });
+    const run0 = await db('workflow_runs').where({ dedup_key: 'cancel-start-1' }).first();
+    const fired = cancelWhen(run0.id, sql => /from [`"]?workflow_nodes/i.test(sql));
+    await engine.startRun(run0.id);
+    expect(await fired()).toBe(true);
+    const run = await db('workflow_runs').where({ id: run0.id }).first();
+    expect(run.status).toBe('cancelled');
+    expect(await db('workflow_run_steps').where({ run_id: run0.id })).toHaveLength(0);
+  });
+
+  test('recoverStaleRuns leaves a run cancelled after the sweep read it', async () => {
+    const wfId = await makeWorkflow({
+      trigger: 'cancel-recover.event',
+      nodes: [{ key: 'q1', type: 'trigger' }, { key: 'q2', type: 'action', config: { action: 'noop' } }],
+      edges: [{ from: 'q1', to: 'q2' }],
+    });
+    await db('workflow_runs').insert({
+      workflow_id: wfId, version: 1, trigger_event: 'cancel-recover.event', status: 'running', current_node: 'q2',
+      context: JSON.stringify({ vars: {} }), dedup_key: 'cancel-recover-1',
+      updated_at: new Date(Date.now() - 3600000).toISOString(),
+    });
+    const run0 = await db('workflow_runs').where({ dedup_key: 'cancel-recover-1' }).first();
+    // The sweep bumps `attempts` before it marks the run running again.
+    const fired = cancelWhen(run0.id, sql => /^update [`"]?workflow_runs[`"]? set [`"]?attempts/i.test(sql));
+    await engine.recoverStaleRuns({ staleMs: 1000 });
+    expect(await fired()).toBe(true);
+    const run = await db('workflow_runs').where({ id: run0.id }).first();
+    expect(run.status).toBe('cancelled');
+    expect(await db('workflow_run_steps').where({ run_id: run0.id, node_key: 'q2' })).toHaveLength(0);
+  });
+
   test('testRun dry-run walks the whole flow (waits skipped, gate auto-confirmed, actions mocked)', async () => {
     const wfId = await makeWorkflow({
       trigger: 'testfire.event',

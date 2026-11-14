@@ -12950,6 +12950,7 @@
     "entryHint": "Your favourites, ready for a desk or a wall. Choose a photograph to get started.",
     "choosePrints": "Choose prints",
     "basketShort": "Prints & orders",
+    "readOnlyHelp": "Your login can see prints and orders here, but cannot order.",
     "hideSpace": "Hide scale preview",
     "showSpace": "See it in a space",
     "scene": "Preview scene",

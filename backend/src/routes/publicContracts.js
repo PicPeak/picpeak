@@ -31,6 +31,7 @@ const contractService = require('../services/contractService');
 const publicDocumentViews = require('../services/publicDocumentViews');
 const verification = require('../services/publicDocumentVerificationService');
 const { clientIpForAudit } = require('../utils/clientIp');
+const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const { loadActionToken, preMulterTokenGuard } = require('../utils/publicTokenGuards');
 const {
   signedPdfSingle,
@@ -50,6 +51,9 @@ const TABLE = 'contract_action_tokens';
 
 const router = express.Router();
 router.use(require('../database/crmAccess').crmCapabilityRouter('public contract action-token capability'));
+// With contracts switched off, every route here (the code steps included) is
+// refused with the same code the admin routes use.
+router.use(requireFeatureFlag('contracts', 'CONTRACTS_DISABLED'));
 
 const previewLimiter = rateLimit({
   windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,

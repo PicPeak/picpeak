@@ -576,6 +576,19 @@ async function isShippedCrmGraph(workflow, graph) {
   return executableGraph([...graph.nodeByKey.values()], graph.edges) === executableGraph(shipped.nodes, shipped.edges);
 }
 
+/** The origin actor limited to what the graph's author may do itself. */
+// A super-admin origin reaches every record, so the run acts as the author
+// itself: the author's own records and permissions. Otherwise the origin
+// keeps the records it reaches, with the permissions both hold.
+function narrowToAuthor(origin, author) {
+  const superAdmin = actor => actor.roleName === 'super_admin';
+  if (superAdmin(origin) && superAdmin(author)) return origin;
+  if (superAdmin(origin)) return { ...author, originAdminId: origin.originAdminId };
+  const permissions = superAdmin(author) ? new Set(origin.permissions)
+    : new Set([...origin.permissions].filter(p => author.permissions.has(p)));
+  return { ...origin, permissions };
+}
+
 /** Rehydrate workflow authority independently of its editable graph/payload. */
 async function workflowCrmActor(run, workflow, initiatingAdminId, graph) {
   const { db } = require('./db');
@@ -589,9 +602,14 @@ async function workflowCrmActor(run, workflow, initiatingAdminId, graph) {
   const builtinKeys = new Set(['invoice_dunning', 'pre_event_email', 'booking_full', 'booking_simple', 'booking_invoice_only', 'contract_completed_invoice']);
   const builtin = [true, 1, '1'].includes(workflow?.is_builtin) && builtinKeys.has(workflow?.builtin_key)
     && await isShippedCrmGraph(workflow, graph);
+  const authorId = !builtin && workflow?.created_by ? Number(workflow.created_by) : null;
   let actor;
-  if (originId) actor = { ...(await loadCrmActor({ id: Number(originId) })), originAdminId: Number(originId) };
-  else if (!builtin && workflow?.created_by) actor = await loadCrmActor({ id: Number(workflow.created_by) });
+  if (originId) {
+    actor = { ...(await loadCrmActor({ id: Number(originId) })), originAdminId: Number(originId) };
+    // An editable graph never acts beyond its author (narrowToAuthor); the
+    // super-admin exception needs both.
+    if (authorId && authorId !== actor.id) actor = narrowToAuthor(actor, await loadCrmActor({ id: authorId }));
+  } else if (authorId) actor = await loadCrmActor({ id: authorId });
   else if (!builtin) throw new ForbiddenError('Workflow has no live CRM actor');
   // A globally editable graph cannot inherit a creator's super-admin
   // exception. Only a live/persisted authenticated origin may retain it.

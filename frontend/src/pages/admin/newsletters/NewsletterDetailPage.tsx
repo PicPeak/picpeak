@@ -37,10 +37,12 @@ export const NewsletterDetailPage: React.FC = () => {
   const campaignId = Number(id);
   const confirm = useConfirm();
   const queryClient = useQueryClient();
-  // Cancel stops a live send, so it is a `send` action. Progress and the
-  // recipient table stay visible to a view-only role (#1264 review).
+  // Cancel stops a live send, so it is a `send` action. Progress stays
+  // visible to a view-only role (#1264 review); the recipient table lists
+  // customer emails, so it needs customers.view like the API route.
   const { hasPermission } = usePermissions();
   const canSend = hasPermission('newsletters.send');
+  const canSeeRecipients = hasPermission('customers.view');
   const [statusFilter, setStatusFilter] = useState<RecipientStatus | ''>('');
   const [page, setPage] = useState(1);
 
@@ -61,7 +63,7 @@ export const NewsletterDetailPage: React.FC = () => {
     queryFn: () => newslettersService.recipients(campaignId, {
       page, limit: 25, status: statusFilter || undefined,
     }),
-    enabled: Number.isFinite(campaignId),
+    enabled: Number.isFinite(campaignId) && canSeeRecipients,
     // Poll alongside the summary while the campaign is draining — otherwise
     // every row sat at "queued" until the operator reloaded, while the
     // counters above them climbed.
@@ -157,6 +159,7 @@ export const NewsletterDetailPage: React.FC = () => {
         )}
       </Card>
 
+      {canSeeRecipients && (
       <Card padding="none">
         <div className="p-4 flex items-center justify-between gap-4 border-b border-line">
           <h3 className="font-semibold text-heading">
@@ -213,6 +216,7 @@ export const NewsletterDetailPage: React.FC = () => {
           </div>
         )}
       </Card>
+      )}
     </div>
   );
 };

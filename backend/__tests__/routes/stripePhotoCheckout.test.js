@@ -348,6 +348,30 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     expect((await post({ photoIds: [ids[0]], checkoutKey: crypto.randomUUID() }, token({ accessLevel: 'slideshow' }))).status).toBe(403);
   });
 
+  test('a gallery hidden until its reveal sells nothing to plain guests, while its client may still buy', async () => {
+    await offerPromo();
+    await db('events').where({ id: galleryId }).update({ reveal_mode: 1, reveal_at: null, revealed_at: null });
+    const refused = await create();
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('GALLERY_HIDDEN');
+    for (const action of ['send', 'confirm']) {
+      const res = await verification(action, { email: 'buyer@example.test', challenge: 'x', code: '000000' });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('GALLERY_HIDDEN');
+    }
+    expect(mockStripe.checkout.sessions.create).not.toHaveBeenCalled();
+    expect(await db('photo_purchase_orders').first()).toBeUndefined();
+
+    // The client sees the hidden gallery, may buy from it and keeps the link.
+    const bought = await post({ photoIds: [ids[0]], checkoutKey: crypto.randomUUID() }, token({ accessLevel: 'client' }));
+    expect(bought.status).toBe(200);
+    const order = await orderFor(bought);
+    expect((await webhook('checkout.session.completed', await pay(order))).status).toBe(200);
+    const { access_token: accessToken } = await readOrder(order);
+    const listing = await request(app).get(`/api/gallery/purchased-downloads/${accessToken}`);
+    expect(listing.body.photos.map((p) => p.id)).toEqual([ids[0]]);
+  });
+
   test.each([
     ['hidden', { visibility: 'hidden' }], ['moderated', { moderation_status: 'pending' }],
     ['video', { media_type: 'video' }], ['unprocessed', { processing_status: 'pending' }], ['trashed', { deleted_at: new Date().toISOString() }],

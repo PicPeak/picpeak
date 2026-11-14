@@ -70,6 +70,7 @@ function pickChainFor(name) {
 
 const mockDbFn = jest.fn((name) => pickChainFor(name));
 mockDbFn.client = { config: { client: 'sqlite3' } };
+mockDbFn.schema = { hasColumn: jest.fn(async () => true) };
 // db.transaction(cb) runs the callback with a "trx" — for our
 // purposes the same chain factory works as trx.
 mockDbFn.transaction = jest.fn(async (cb) => cb(mockDbFn));
@@ -351,7 +352,7 @@ describe('invoiceService.recordPaymentCheckAction', () => {
       customer_account_id: 7, created_by_admin_id: 42,
       currency: 'CHF', language: 'de', event_id: null,
     };
-    pickChainFor('admin_users')._firstValue = { id: 42, email: 'admin@example.com', username: 'admin' };
+    pickChainFor('admin_users')._firstValue = { id: 42, email: 'admin@example.com', username: 'admin', is_active: true, role_name: 'super_admin' };
     pickChainFor('business_profile')._firstValue = null;
     pickChainFor('customer_accounts')._firstValue = { id: 7, email: 'c@example.com', display_name: 'Test Customer' };
 
@@ -380,7 +381,7 @@ describe('invoiceService.recordPaymentCheckAction', () => {
       customer_account_id: 7, created_by_admin_id: 42,
       currency: 'CHF', language: 'de', event_id: null,
     };
-    pickChainFor('admin_users')._firstValue = { id: 42, email: 'admin@example.com', username: 'admin' };
+    pickChainFor('admin_users')._firstValue = { id: 42, email: 'admin@example.com', username: 'admin', is_active: true, role_name: 'super_admin' };
     pickChainFor('business_profile')._firstValue = null;
     pickChainFor('customer_accounts')._firstValue = { id: 7, email: 'c@example.com', display_name: 'Test Customer' };
     emailProcessor.queueEmail.mockRejectedValueOnce(new Error('smtp down'));
@@ -443,7 +444,7 @@ describe('invoiceService.queuePaymentCheckEmail', () => {
       last_payment_check_at: new Date(Date.now() - 3600 * 1000),
       event_id: null,
     };
-    pickChainFor('admin_users')._firstValue = { id: 42, email: 'admin@example.com', username: 'admin' };
+    pickChainFor('admin_users')._firstValue = { id: 42, email: 'admin@example.com', username: 'admin', is_active: true, role_name: 'super_admin' };
     pickChainFor('business_profile')._firstValue = null;
     pickChainFor('customer_accounts')._firstValue = { id: 5, email: 'c@example.com', display_name: 'Test' };
 
@@ -466,7 +467,7 @@ describe('invoiceService.queuePaymentCheckEmail', () => {
       last_payment_check_at: null,
       event_id: null,
     };
-    pickChainFor('admin_users')._firstValue = { id: 42, email: 'admin@example.com', username: 'admin' };
+    pickChainFor('admin_users')._firstValue = { id: 42, email: 'admin@example.com', username: 'admin', is_active: true, role_name: 'super_admin' };
     pickChainFor('business_profile')._firstValue = null;
     pickChainFor('customer_accounts')._firstValue = { id: 5, email: 'c@example.com', display_name: 'Test' };
 

@@ -23,7 +23,7 @@ fs.mkdirSync(process.env.STORAGE_PATH, { recursive: true });
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'crm-route-test-secret';
 
 const request = require('supertest');
-const { bootCrmDb, seedMinimal, createPublicToken, buildRouteApp } = require('../integration/helpers/crmDb');
+const { bootCrmDb, seedMinimal, setFeatureFlags, createPublicToken, buildRouteApp } = require('../integration/helpers/crmDb');
 
 describe('public document verification under a burst of send requests', () => {
   let db;
@@ -36,6 +36,7 @@ describe('public document verification under a burst of send requests', () => {
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
     const { customerId } = await seedMinimal(db);
+    await setFeatureFlags(db, { quotes: true, contracts: true });
     const inserted = await db('contracts').insert({
       contract_number: 'K-RESEND-0001',
       customer_account_id: customerId,

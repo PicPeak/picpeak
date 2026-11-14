@@ -1,6 +1,6 @@
 const sharp = require('./isolatedSharp');
 const { isResourceError } = require('./imageResourcePolicy');
-const { orientedDimensions, heifStandIn } = require('./imageProcessor');
+const { orientedDimensions, heifStandIn, isLocalCopyPath } = require('./imageProcessor');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs').promises;
@@ -33,10 +33,37 @@ const ATTEMPT_ID = /_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 // sales previews and cached URLs are re-rendered.
 const SALES_TILE_VERSION = 2;
 
+// Ceilings of the rendered-result cache, on top of the one-hour age limit.
+// The least recently used entries go first.
+const CACHE_MAX_ENTRIES = 256;
+const CACHE_MAX_BYTES = 256 * 1024 * 1024;
+
 class WatermarkService {
   constructor() {
+    // Insertion order is recency order: a hit moves its entry to the end.
     this.cache = new Map();
     this.cacheMaxAge = 3600000; // 1 hour in milliseconds
+    this.cacheMaxEntries = CACHE_MAX_ENTRIES;
+    this.cacheMaxBytes = CACHE_MAX_BYTES;
+    this.cacheBytes = 0;
+  }
+
+  _cacheDelete(key) {
+    const entry = this.cache.get(key);
+    if (!entry) return;
+    this.cache.delete(key);
+    this.cacheBytes -= entry.buffer.length;
+  }
+
+  _cacheSet(key, buffer) {
+    this._cacheDelete(key);
+    // A result larger than the whole budget would only evict everything else.
+    if (buffer.length > this.cacheMaxBytes) return;
+    this.cache.set(key, { buffer, timestamp: Date.now() });
+    this.cacheBytes += buffer.length;
+    while (this.cache.size > this.cacheMaxEntries || this.cacheBytes > this.cacheMaxBytes) {
+      this._cacheDelete(this.cache.keys().next().value);
+    }
   }
 
   /**
@@ -232,14 +259,18 @@ class WatermarkService {
       // a file on a reference share is edited in place under the same path,
       // and every process must stop serving the old picture as soon as it
       // reads the new one, not only the one whose import pass noticed.
+      // A copy withLocalCopy made (object storage) has a fresh random path
+      // on every call and is gone afterwards, so it is never cached either.
       let cacheKey = null;
-      if (!isBuffer) {
+      if (!isBuffer && !isLocalCopyPath(imagePath)) {
         const st = await fs.stat(imagePath).catch(() => null);
         if (st) cacheKey = `${imagePath}_${st.size}:${st.mtimeMs}_${JSON.stringify(settings)}_${keepMetadata ? 'meta' : 'stripped'}`;
       }
       if (cacheKey) {
         const cached = this.cache.get(cacheKey);
         if (cached && Date.now() - cached.timestamp < this.cacheMaxAge) {
+          this.cache.delete(cacheKey);
+          this.cache.set(cacheKey, cached);
           return cached.buffer;
         }
       }
@@ -413,10 +444,7 @@ class WatermarkService {
 
       // Cache the result (path inputs only — see cacheKey above)
       if (cacheKey) {
-        this.cache.set(cacheKey, {
-          buffer: watermarkedBuffer,
-          timestamp: Date.now()
-        });
+        this._cacheSet(cacheKey, watermarkedBuffer);
 
         // Clean old cache entries
         this.cleanCache();
@@ -442,7 +470,7 @@ class WatermarkService {
     const now = Date.now();
     for (const [key, value] of this.cache.entries()) {
       if (now - value.timestamp > this.cacheMaxAge) {
-        this.cache.delete(key);
+        this._cacheDelete(key);
       }
     }
   }
@@ -454,7 +482,7 @@ class WatermarkService {
   forgetSource(imagePath) {
     const prefix = `${imagePath}_`;
     for (const key of this.cache.keys()) {
-      if (key.startsWith(prefix)) this.cache.delete(key);
+      if (key.startsWith(prefix)) this._cacheDelete(key);
     }
   }
 
@@ -463,6 +491,7 @@ class WatermarkService {
    */
   clearCache() {
     this.cache.clear();
+    this.cacheBytes = 0;
   }
 
   /**

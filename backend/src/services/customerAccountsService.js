@@ -1276,6 +1276,35 @@ function storedTimestamp(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+/**
+ * Blank the customer's contact copy on the events assigned to them
+ * (`eventIds`): the customer_* columns where customer_email is one of their
+ * addresses, the host_* columns where host_email is. A contact typed for
+ * someone else stays.
+ * Returns the ids of the events that changed.
+ */
+async function forgetEventContacts(trx, eventIds, emails) {
+  const addresses = [...new Set(emails.filter(Boolean).map((e) => String(e).toLowerCase()))];
+  if (addresses.length === 0 || eventIds.length === 0) return [];
+  const columns = await trx('events').columnInfo();
+  const inList = addresses.map(() => '?').join(', ');
+  const changed = new Set();
+  for (const [emailColumn, blank] of [
+    ['customer_email', ['customer_name', 'customer_email', 'customer_phone']],
+    ['host_email', ['host_name', 'host_email']],
+  ]) {
+    if (!columns[emailColumn]) continue;
+    const matching = () => trx('events').whereIn('id', eventIds)
+      .whereRaw(`LOWER(${emailColumn}) IN (${inList})`, addresses);
+    const ids = await matching().pluck('id');
+    if (ids.length === 0) continue;
+    await trx('events').whereIn('id', ids).update(Object.fromEntries(
+      blank.filter((column) => columns[column]).map((column) => [column, null])));
+    ids.forEach((eventId) => changed.add(Number(eventId)));
+  }
+  return [...changed];
+}
+
 async function eraseCustomer(id, erasedByAdminId) {
   let customer = await db('customer_accounts').where('id', id).first();
   if (!customer) {
@@ -1312,6 +1341,8 @@ async function eraseCustomer(id, erasedByAdminId) {
   // `db` connection, not `trx`, so calling it in here would read stale —
   // or on SQLite, deadlock on — the not-yet-committed rows).
   const touchedCampaignIds = new Set();
+  let clearedEventContacts = [];
+  let forgottenWorkflowRuns = [];
 
   await db.transaction(async (trx) => {
     await customerContactsService.lockForErasure(trx, id);
@@ -1353,6 +1384,26 @@ async function eraseCustomer(id, erasedByAdminId) {
     // (formerAddressWindows).
     const currentSince = await currentAddressSince(trx, customer);
     const formerWindows = await formerAddressWindows(trx, customer);
+
+    // Galleries assigned to this customer carry a copy of their contact
+    // details (quote/contract conversion writes them onto the event), and
+    // the gallery mail jobs read their recipient from that copy.
+    const assignedEventIds = await trx('event_customer_assignments')
+      .where({ customer_account_id: id }).pluck('event_id');
+    // Contact logins that end with this customer are erased with it.
+    const erasedContactEmails = await customerContactsService.contactEmailsForErasure(trx, id);
+    clearedEventContacts = await forgetEventContacts(trx, assignedEventIds,
+      [customer.email, ...erasedContactEmails, ...formerWindows.map((win) => win.email)]);
+
+    // Workflow runs keep a copy of the trigger's customer details, and a
+    // waiting run would mail them once it wakes.
+    forgottenWorkflowRuns = await require('./workflows/engine').forgetCustomer(trx, id, {
+      email: customer.email,
+      contactEmails: erasedContactEmails,
+      formerEmails: formerWindows.map((win) => win.email),
+      eventIds: assignedEventIds,
+    });
+
     const forCustomer = (q) => q.where((w) => {
       // Admin mail on the current address belongs to the admin account with
       // that address, not to the customer (ADMIN_ACCOUNT_MAIL).
@@ -1550,6 +1601,8 @@ async function eraseCustomer(id, erasedByAdminId) {
       cancelledContracts: erasedContracts.cancelled,
       redactedContracts: erasedContracts.redacted,
       retainedContracts: erasedContracts.retained,
+      clearedEventContacts,
+      workflowRuns: forgottenWorkflowRuns,
     },
     null,
     { type: 'admin', id: erasedByAdminId }
@@ -2097,10 +2150,18 @@ async function getEffectiveFeaturesForCustomer(customerOrId) {
   // reads as off.
   const documentsMaster = await db('feature_flags').where({ key: 'documents' }).first();
   const documentsEnabled = documentsMaster ? truthy(documentsMaster.value) : false;
+  // Quotes / Bills: the global feature_flags row (Settings → Features; a
+  // missing row reads as off) AND the older customer_surface switch AND the
+  // per-customer flag. The older switch stays as an extra gate so an
+  // install that had the portal tabs off keeps them off.
+  const quotesMaster = await db('feature_flags').where({ key: 'quotes' }).first();
+  const billsMaster = await db('feature_flags').where({ key: 'bills' }).first();
+  const quotesEnabled = (quotesMaster ? truthy(quotesMaster.value) : false) && globals.quotesEnabled;
+  const billsEnabled = (billsMaster ? truthy(billsMaster.value) : false) && globals.billsEnabled;
   return {
     calendar: globals.calendarEnabled && truthy(customer.feature_calendar),
-    quotes:   globals.quotesEnabled   && truthy(customer.feature_quotes),
-    bills:    globals.billsEnabled    && truthy(customer.feature_bills),
+    quotes:   quotesEnabled && truthy(customer.feature_quotes),
+    bills:    billsEnabled  && truthy(customer.feature_bills),
     hoursLogging: hoursLoggingMaster && truthy(customer.feature_hours_logging),
     contracts: contractsEnabled && truthy(customer.feature_contracts),
     documents: documentsEnabled && truthy(customer.feature_documents),
