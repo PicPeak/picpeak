@@ -38,6 +38,11 @@ interface PhotoFilterBarProps {
   // clicking a filter toggles it in the parent's set.
   feedbackEnabled?: boolean;
   activeFilters?: FeedbackFilterType[];
+  /**
+   * The filters this gallery's feedback settings allow (issue 2505): no
+   * "Liked" without likes, and so on. Absent: all of them.
+   */
+  feedbackFilters?: FeedbackFilterType[];
   onFilterChange?: (filter: FilterType) => void;
   mediaFilter?: 'all' | 'photo' | 'video';
   onMediaFilterChange?: (filter: 'all' | 'photo' | 'video') => void;
@@ -64,6 +69,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
   photoCount,
   feedbackEnabled = false,
   activeFilters = [],
+  feedbackFilters,
   onFilterChange,
   mediaFilter = 'all',
   onMediaFilterChange,
@@ -77,6 +83,9 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
   const [showSortMenu, setShowSortMenu] = useState(false);
   const isActive = (filter: FilterType) =>
     filter === 'all' ? activeFilters.length === 0 : activeFilters.includes(filter as FeedbackFilterType);
+  const shows = (filter: FeedbackFilterType) => !feedbackFilters || feedbackFilters.includes(filter);
+  // Feedback chips only when at least one filter is allowed (issue 2505).
+  const feedbackFiltersShown = feedbackEnabled && !!onFilterChange && (!feedbackFilters || feedbackFilters.length > 0);
   return (
     <div className="space-y-4">
       {/* Search and Sort */}
@@ -212,7 +221,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
             (optional) categories existing, or category-less galleries show
             no feedback filter at all on desktop (#802 — the lg:hidden
             fallback block below only covers mobile/tablet). */}
-        {((categories && categories.length > 0) || (feedbackEnabled && !!onFilterChange)) && (
+        {((categories && categories.length > 0) || feedbackFiltersShown) && (
           <div className="flex items-start lg:items-center justify-between flex-col lg:flex-row gap-3">
             {/* Categories: keep in a horizontal scroll container */}
             {categories && categories.length > 0 && (
@@ -248,7 +257,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
             )}
 
             {/* Desktop: compact horizontal feedback filter with headline (icons only) */}
-            {feedbackEnabled && onFilterChange && (
+            {feedbackFiltersShown && onFilterChange && (
               <div className="hidden lg:flex items-center gap-2 mx-2 flex-shrink-0">
                 <span className="text-sm text-muted-theme whitespace-nowrap">
                   {t('gallery.feedbackFilter', 'Feedback Filter')}
@@ -263,42 +272,50 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                   >
                     <Grid className="w-3.5 h-3.5" />
                   </Button>
-                  <Button
-                    variant={isActive('liked') ? 'primary' : 'outline'}
-                    size="sm"
-                    onClick={() => onFilterChange('liked')}
-                    className="p-1 w-8 h-8 flex items-center justify-center"
-                    aria-label={t('feedback.likes', 'Likes')}
-                  >
-                    <Heart className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button
-                    variant={isActive('favorited') ? 'primary' : 'outline'}
-                    size="sm"
-                    onClick={() => onFilterChange('favorited')}
-                    className="p-1 w-8 h-8 flex items-center justify-center"
-                    aria-label={t('gallery.favorited', 'Saved')}
-                  >
-                    <Bookmark className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button
-                    variant={isActive('rated') ? 'primary' : 'outline'}
-                    size="sm"
-                    onClick={() => onFilterChange('rated')}
-                    className="p-1 w-8 h-8 flex items-center justify-center"
-                    aria-label={t('gallery.rated', 'Rated')}
-                  >
-                    <Star className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button
-                    variant={isActive('commented') ? 'primary' : 'outline'}
-                    size="sm"
-                    onClick={() => onFilterChange('commented')}
-                    className="p-1 w-8 h-8 flex items-center justify-center"
-                    aria-label={t('gallery.commented', 'Commented')}
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                  </Button>
+                  {shows('liked') && (
+                    <Button
+                      variant={isActive('liked') ? 'primary' : 'outline'}
+                      size="sm"
+                      onClick={() => onFilterChange('liked')}
+                      className="p-1 w-8 h-8 flex items-center justify-center"
+                      aria-label={t('feedback.likes', 'Likes')}
+                    >
+                      <Heart className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                  {shows('favorited') && (
+                    <Button
+                      variant={isActive('favorited') ? 'primary' : 'outline'}
+                      size="sm"
+                      onClick={() => onFilterChange('favorited')}
+                      className="p-1 w-8 h-8 flex items-center justify-center"
+                      aria-label={t('gallery.favorited', 'Saved')}
+                    >
+                      <Bookmark className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                  {shows('rated') && (
+                    <Button
+                      variant={isActive('rated') ? 'primary' : 'outline'}
+                      size="sm"
+                      onClick={() => onFilterChange('rated')}
+                      className="p-1 w-8 h-8 flex items-center justify-center"
+                      aria-label={t('gallery.rated', 'Rated')}
+                    >
+                      <Star className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                  {shows('commented') && (
+                    <Button
+                      variant={isActive('commented') ? 'primary' : 'outline'}
+                      size="sm"
+                      onClick={() => onFilterChange('commented')}
+                      className="p-1 w-8 h-8 flex items-center justify-center"
+                      aria-label={t('gallery.commented', 'Commented')}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
@@ -357,7 +374,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
         )}
         
         {/* Mobile/Tablet: compact horizontal icons with headline below categories */}
-        {feedbackEnabled && onFilterChange && (
+        {feedbackFiltersShown && onFilterChange && (
           <div className="flex lg:hidden items-center gap-2">
             <span className="text-xs text-muted-theme whitespace-nowrap">
               {t('gallery.feedbackFilter', 'Feedback Filter')}
@@ -372,42 +389,50 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
               >
                 <Grid className="w-3.5 h-3.5" />
               </Button>
-              <Button
-                variant={isActive('liked') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('liked')}
-                className="p-1 w-8 h-8 flex items-center justify-center"
-                aria-label={t('feedback.likes', 'Likes')}
-              >
-                <Heart className="w-3.5 h-3.5" />
-              </Button>
-              <Button
-                variant={isActive('favorited') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('favorited')}
-                className="p-1 w-8 h-8 flex items-center justify-center"
-                aria-label={t('gallery.favorited', 'Saved')}
-              >
-                <Bookmark className="w-3.5 h-3.5" />
-              </Button>
-              <Button
-                variant={isActive('rated') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('rated')}
-                className="p-1 w-8 h-8 flex items-center justify-center"
-                aria-label={t('gallery.rated', 'Rated')}
-              >
-                <Star className="w-3.5 h-3.5" />
-              </Button>
-              <Button
-                variant={isActive('commented') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('commented')}
-                className="p-1 w-8 h-8 flex items-center justify-center"
-                aria-label={t('gallery.commented', 'Commented')}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-              </Button>
+              {shows('liked') && (
+                <Button
+                  variant={isActive('liked') ? 'primary' : 'outline'}
+                  size="sm"
+                  onClick={() => onFilterChange('liked')}
+                  className="p-1 w-8 h-8 flex items-center justify-center"
+                  aria-label={t('feedback.likes', 'Likes')}
+                >
+                  <Heart className="w-3.5 h-3.5" />
+                </Button>
+              )}
+              {shows('favorited') && (
+                <Button
+                  variant={isActive('favorited') ? 'primary' : 'outline'}
+                  size="sm"
+                  onClick={() => onFilterChange('favorited')}
+                  className="p-1 w-8 h-8 flex items-center justify-center"
+                  aria-label={t('gallery.favorited', 'Saved')}
+                >
+                  <Bookmark className="w-3.5 h-3.5" />
+                </Button>
+              )}
+              {shows('rated') && (
+                <Button
+                  variant={isActive('rated') ? 'primary' : 'outline'}
+                  size="sm"
+                  onClick={() => onFilterChange('rated')}
+                  className="p-1 w-8 h-8 flex items-center justify-center"
+                  aria-label={t('gallery.rated', 'Rated')}
+                >
+                  <Star className="w-3.5 h-3.5" />
+                </Button>
+              )}
+              {shows('commented') && (
+                <Button
+                  variant={isActive('commented') ? 'primary' : 'outline'}
+                  size="sm"
+                  onClick={() => onFilterChange('commented')}
+                  className="p-1 w-8 h-8 flex items-center justify-center"
+                  aria-label={t('gallery.commented', 'Commented')}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                </Button>
+              )}
             </div>
           </div>
         )}

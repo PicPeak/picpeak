@@ -480,6 +480,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   }, [scopedPhotos]);
 
   const showMediaFilter = availableMediaTypes.has('photo') && availableMediaTypes.has('video');
+  // The feedback filters this gallery's settings allow (issue 2505): a
+  // "Rated" chip in a gallery without ratings could only ever show nothing.
+  const feedbackFilters: FeedbackFilterType[] = feedbackEnabled ? ([
+    ['liked', feedbackSettings?.allow_likes],
+    ['favorited', feedbackSettings?.allow_favorites],
+    ['rated', feedbackSettings?.allow_ratings],
+    ['commented', feedbackSettings?.allow_comments],
+  ] as Array<[FeedbackFilterType, boolean | undefined]>).filter(([, allowed]) => !!allowed).map(([filter]) => filter) : [];
 
   useEffect(() => {
     if (!showMediaFilter && mediaFilter !== 'all') {
@@ -1296,6 +1304,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onUploadClick={() => setShowUploadModal(true)}
           feedbackEnabled={feedbackEnabled}
           activeFilters={activeFilters}
+          feedbackFilters={feedbackFilters}
           onFilterChange={handleFilterChange}
           mediaFilter={mediaFilter}
           onMediaFilterChange={setMediaFilter}
@@ -1455,6 +1464,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             // Feedback filter props
             feedbackEnabled={feedbackEnabled}
             activeFilters={activeFilters}
+            feedbackFilters={feedbackFilters}
             onFilterChange={handleFilterChange}
             mediaFilter={mediaFilter}
             onMediaFilterChange={setMediaFilter}
