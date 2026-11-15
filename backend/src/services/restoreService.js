@@ -249,7 +249,7 @@ async function openRestoreSource(realBackupRoot, relPath, maxBytes) {
 // (see performDatabaseRestore), factored out so the containment rule can be
 // pinned directly in tests without exercising the surrounding DB-swap/spawn
 // side effects. `warn` is an optional `(msg, meta) => void` logger hook.
-async function resolveContainedDbBackupCandidates(backupPath, dbBackupFile, warn) {
+async function resolveContainedDbBackupCandidates(backupPath, dbBackupFile, warn, sourceFile) {
   const allowedRoots = await getConfiguredBackupRoots(backupPath);
   const rawCandidates = [
     // (1) Honour absolute paths recorded by the dumper.
@@ -259,6 +259,11 @@ async function resolveContainedDbBackupCandidates(backupPath, dbBackupFile, warn
     // (3) Legacy reconstruct. Inherently safe: path.basename() strips any
     // directory component, so this candidate can never escape backupPath.
     path.join(backupPath, 'database', path.basename(dbBackupFile)),
+    // (4) Where the dump was written on the host that made the backup
+    // (database.source_file, rsync manifests): the relative path above is
+    // where the copied-back mirror holds it. Same containment gate, and the
+    // caller still verifies the checksum.
+    typeof sourceFile === 'string' && path.isAbsolute(sourceFile) ? sourceFile : null,
   ].filter(Boolean);
 
   return rawCandidates.filter((candidate) => {
@@ -1436,7 +1441,7 @@ class RestoreService {
     // is always inside `backupPath`, which is itself always one of the
     // allowed roots below.
     let candidates = await resolveContainedDbBackupCandidates(
-      backupPath, dbBackupFile, (msg, meta) => this.log('warn', msg, meta)
+      backupPath, dbBackupFile, (msg, meta) => this.log('warn', msg, meta), manifest.database.source_file
     );
     // A downloaded S3 dump takes precedence over an old absolute filename
     // still present on this host. Never replay a different local artifact.

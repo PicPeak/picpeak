@@ -1171,8 +1171,9 @@ async function performRsyncBackup(config, files, sourceRoot, dumpRoot, dumpInfo)
     backedUpFiles,
     backupPath: `${config.backup_rsync_host}:${config.backup_rsync_path}`,
     // The dump as the mirror holds it, relative to the mirror root like the
-    // local and S3 restore points record it, not where it was dumped here.
-    ...(dumpKey ? { databaseInfo: { ...dumpInfo, backupFile: dumpKey } } : {}),
+    // local and S3 restore points record it; where it was dumped here stays
+    // a fallback for a restore on this host (database.source_file).
+    ...(dumpKey ? { databaseInfo: { ...dumpInfo, backupFile: dumpKey, sourceFile: dumpInfo.backupFile } } : {}),
     rsyncUpload: { connection: invocation.connection, remotePath: invocation.remotePath },
   };
 }
