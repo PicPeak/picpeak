@@ -118,7 +118,7 @@ describe('selected standalone restore-point boundary', () => {
   });
   it('takes a copied-back rsync mirror holding the selected manifest as its root, gated like any root', async () => {
     const rsyncRun = { backup: { type: 'incremental', path: 'backup.example.com:/home/picpeak' },
-      metadata: { destination_type: 'rsync' } };
+      metadata: { destination_type: 'rsync', rsync_manifest_layout: 'mirror-v1' } };
     const mirror = path.join(outside, 'picpeak');
     await fs.mkdir(path.join(mirror, 'manifests'), { recursive: true });
     const options = { source: 'local', manifestPath: path.join(mirror, 'manifests', 'backup-manifest-x.json') };
@@ -134,6 +134,19 @@ describe('selected standalone restore-point boundary', () => {
     // Other legacy runs keep the configured destination.
     expect(await resolveBackupPointLocation({ ...rsyncRun, metadata: { destination_type: 'local' } },
       { ...options, allowedRoots: [outside] }, config)).toBe(await fs.realpath(root));
+  });
+  it('keeps the configured root for an unmarked rsync manifest relocated beside its mirror', async () => {
+    // A rescue copy of an older run: shared /rescue/manifests next to the
+    // mirror in /rescue/picpeak, which is the configured destination.
+    const mirror = path.join(outside, 'picpeak');
+    await fs.mkdir(path.join(outside, 'manifests'), { recursive: true });
+    await fs.mkdir(mirror);
+    const legacy = { backup: { type: 'incremental', path: 'backup.example.com:/home/picpeak' },
+      metadata: { destination_type: 'rsync' } };
+    expect(await resolveBackupPointLocation(legacy, {
+      source: 'local', manifestPath: path.join(outside, 'manifests', 'backup-manifest-old.json'), allowedRoots: [outside],
+    }, { backup_destination_path: mirror, backup_manifest_path: path.join(root, 'manifests') }))
+      .toBe(await fs.realpath(mirror));
   });
   it('refuses symlink escapes and non-directories', async () => {
     const link = path.join(root, 'backup-link');
