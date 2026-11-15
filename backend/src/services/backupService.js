@@ -793,6 +793,50 @@ async function computePerPathStats(backedUpRelativePaths, allFiles) {
   return stats;
 }
 
+/**
+ * What the run's restore point holds, for the dashboard's "Backup coverage"
+ * card. Counts files present in the backup point, not files transferred:
+ * rsync only sends what changed, but `backedUpFiles` lists every file the
+ * mirror now holds, and local/S3 snapshots are complete copies.
+ *
+ *   database_backed_up  the run carried the database dump
+ *   photos_backed_up    photos of active galleries whose original is in it
+ *   total_photos        photos of active galleries stored by PicPeak
+ *                       (external/reference originals live elsewhere)
+ *   archives_backed_up  archive zips (events/archived) in it
+ *
+ * The photo pair is left out when the count fails, so the card shows it as
+ * unknown rather than as "0 of 0".
+ */
+async function computeCoverageStats(backedUpRelativePaths, perPath, databaseInfo) {
+  const coverage = {
+    database_backed_up: Boolean(databaseInfo?.backupFile),
+    archives_backed_up: perPath['events/archived']?.count || 0,
+  };
+  try {
+    const { resolvePhotoStorageKey } = require('./photoResolver');
+    const inBackup = new Set((backedUpRelativePaths || []).map((rel) => rel.split(path.sep).join('/')));
+    const rows = await db('photos as p')
+      .join('events as e', 'e.id', 'p.event_id')
+      .where((q) => q.where('e.is_archived', formatBoolean(false)).orWhereNull('e.is_archived'))
+      .select('p.id', 'p.path', 'p.source_origin', 'e.source_mode');
+    let total = 0;
+    let backedUp = 0;
+    for (const row of rows) {
+      let key;
+      try { key = resolvePhotoStorageKey({ source_mode: row.source_mode }, row); } catch { key = null; }
+      if (!key) continue;
+      total += 1;
+      if (inBackup.has(key)) backedUp += 1;
+    }
+    coverage.photos_backed_up = backedUp;
+    coverage.total_photos = total;
+  } catch (err) {
+    logger.warn(`Could not count backed-up photos for the coverage card: ${err.message}`);
+  }
+  return coverage;
+}
+
 async function getFilesToBackupInternal(configOrIncludeArchived = true) {
   const files = [];
   const storagePath = getStoragePath();
@@ -1052,6 +1096,18 @@ async function buildRsyncArgs(config, extraExcludes = [], sourceRoot = getStorag
   // destination tree as the storage root.
   args.push(source, ...(dumpRoot ? [`${dumpRoot}/`] : []), `${connection.rsyncTarget}:${remotePath}`);
   return args;
+}
+
+/**
+ * Whether the --exclude list buildRsyncArgs passes keeps the staged
+ * database/<dump> off the destination. Name-by-name, as the walker applies
+ * the same patterns to the files whose coverage is counted.
+ */
+function rsyncExcludesDump(config, dumpFile) {
+  if (!dumpFile) return true;
+  const patterns = [...DEFAULT_EXCLUDE_PATTERNS,
+    ...(Array.isArray(config.backup_exclude_patterns) ? config.backup_exclude_patterns : [])];
+  return ['database', path.basename(dumpFile)].some((name) => isExcludedName(name, patterns));
 }
 
 function parseRsyncStats(output) {
@@ -1626,6 +1682,12 @@ async function runBackupInternal(isManual = false) {
     // an empty map if backup_paths is missing (defense in depth — the
     // walker has the same fallback).
     const perPath = await computePerPathStats(result.backedUpFiles, files);
+    // rsync returns no databaseInfo. Its staged dump goes through the same
+    // --exclude list as the files, so a pattern such as '*.gz' keeps it off
+    // the destination although the local dump exists.
+    const coverage = await computeCoverageStats(result.backedUpFiles, perPath,
+      result.databaseInfo || (destinationType === 'rsync' && rsyncExcludesDump(config, verifiedDatabaseInfo.backupFile)
+        ? null : verifiedDatabaseInfo));
 
     await db('backup_runs')
       .where('id', runId)
@@ -1650,6 +1712,8 @@ async function runBackupInternal(isManual = false) {
           ...(destinationType === 'local' || destinationType === 's3' ? { snapshot_path: result.backupPath } : {}),
           // Per-Stage-B-path breakdown — { [pathKey]: { count, size } }
           per_path: perPath,
+          // Backup coverage card: what this restore point holds.
+          ...coverage,
           // Keep camelCase for backward compatibility
           totalFilesChecked: files.length,
           filesBackedUp: result.backedUpCount,
