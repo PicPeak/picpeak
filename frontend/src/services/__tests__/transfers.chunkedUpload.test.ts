@@ -127,6 +127,18 @@ describe('creating a send', () => {
     expect(body.recipientEmails).not.toContain('not-an-address');
   });
 
+  it('reports a delivery that reached only some recipients', async () => {
+    const base = post.getMockImplementation()!;
+    post.mockImplementation(async (url: string, body?: unknown) => (url.endsWith('/deliver')
+      ? { data: { transfer, sent: 1, already_delivered: false, partial: true } }
+      : base(url, body)));
+    const result = await transfersService.create({
+      title: 'Wedding', files: [bigFile('film.mp4', 120 * MB)], deliveryMethod: 'email', recipientEmails: ['a@example.com', 'b@example.com'],
+    });
+    expect(result.delivery_partial).toBe(true);
+    expect(result.delivery_held).toBe(false);
+  });
+
   it('reports a chunked file that failed and keeps the mail held', async () => {
     serve({ failChunk: 3 });
     const result = await transfersService.create({

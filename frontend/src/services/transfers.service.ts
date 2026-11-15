@@ -142,6 +142,8 @@ export interface UploadInfo {
 export interface TransferWriteResult extends Transfer {
   failed_files?: string[];
   delivery_held?: boolean;
+  /** The email went out, but not to every recipient; it is not sent again. */
+  delivery_partial?: boolean;
 }
 
 /** The most files one admin multipart request carries (ADMIN_MAX_FILES in adminTransfers.js). */
@@ -294,17 +296,19 @@ export const transfersService = {
       .map((e) => String(e || '').trim())
       .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))].slice(0, 100);
     let deliveryHeld = false;
+    let deliveryPartial = false;
     if (input.deliveryMethod === 'email' && recipients.length) {
       if (failed.length) deliveryHeld = true;
       else {
         await api.post(`/admin/transfers/${created.id}/deliver`, { recipientEmails: recipients })
+          .then((res) => { deliveryPartial = res?.data?.partial === true; })
           .catch(() => { deliveryHeld = true; });
       }
     }
     // The transfer exists now: a failed refresh must not turn that into an
     // error (the dialog would stay open and a retry create a second one).
     const fresh = await transfersService.get(created.id).catch(() => null);
-    return { ...(fresh || created), failed_files: failed, delivery_held: deliveryHeld };
+    return { ...(fresh || created), failed_files: failed, delivery_held: deliveryHeld, delivery_partial: deliveryPartial };
   },
   /**
    * Add deliverable files to an existing transfer: in one request when they

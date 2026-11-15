@@ -60,6 +60,12 @@ function warnWriteNotes(result: TransferWriteResult | undefined, t: TFunction) {
       'The email to the recipients was not sent. Add the missing files and share the link yourself.',
     ));
   }
+  if (result?.delivery_partial) {
+    toast.warn(t(
+      'transfers.deliveryPartial',
+      'Not every recipient got the email. Share the link with the others yourself.',
+    ));
+  }
 }
 
 export const TransfersPage: React.FC = () => {

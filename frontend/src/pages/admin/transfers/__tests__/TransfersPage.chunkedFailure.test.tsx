@@ -66,4 +66,22 @@ describe('create send with a large file', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('film.mp4')));
     expect(toast.warn).toHaveBeenCalledWith(expect.stringContaining('was not sent'));
   });
+
+  it('warns when not every recipient got the email', async () => {
+    vi.mocked(transfersService.create).mockResolvedValue({ id: 8, failed_files: [], delivery_partial: true } as never);
+    const user = userEvent.setup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfirmDialogProvider>
+          <TransfersPage />
+        </ConfirmDialogProvider>
+      </QueryClientProvider>,
+    );
+    await user.click(await screen.findByRole('button', { name: /new transfer/i }));
+    const input = document.body.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(input, { target: { files: [new File(['x'], 'film.mp4', { type: 'video/mp4' })] } });
+    await user.click(await screen.findByRole('button', { name: /create transfer/i }));
+    await waitFor(() => expect(toast.warn).toHaveBeenCalledWith(expect.stringContaining('Not every recipient')));
+  });
 });
