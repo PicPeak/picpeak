@@ -642,6 +642,26 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
   }, [feedbackSettings]);
 
+  // The feedback filters this gallery's settings allow (issue 2505): a
+  // "Rated" chip in a gallery without ratings could only ever show nothing.
+  const feedbackFilters: FeedbackFilterType[] = feedbackEnabled ? ([
+    ['liked', feedbackSettings?.allow_likes],
+    ['favorited', feedbackSettings?.allow_favorites],
+    ['rated', feedbackSettings?.allow_ratings],
+    ['commented', feedbackSettings?.allow_comments],
+  ] as Array<[FeedbackFilterType, boolean | undefined]>).filter(([, allowed]) => !!allowed).map(([filter]) => filter) : [];
+  // An admin can switch a feedback type off while a guest has its filter
+  // on; once the settings refetch, the chip is gone, so the filter goes too,
+  // instead of narrowing the photos with no control left to clear it.
+  const feedbackFiltersKey = feedbackFilters.join(',');
+  useEffect(() => {
+    const allowed = feedbackFiltersKey ? feedbackFiltersKey.split(',') : [];
+    setActiveFilters((current) => {
+      const kept = current.filter((filter) => allowed.includes(filter));
+      return kept.length === current.length ? current : kept;
+    });
+  }, [feedbackFiltersKey]);
+
   // In guest identity mode both the "Liked / Favorited / Rated /
   // Commented" filters AND the matching chip-count labels need to scope
   // to the *current guest's* interactions, not the global aggregates on
@@ -1654,14 +1674,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const toolbarShown = !showSidebar
     && (filterBarShown || selectionAvailable || isSelectionMode || selectedPhotos.size > 0 || copyFilenames.photos.length > 0);
   const creditPanelShown = creditsVisible && creditGroups(scopedPhotos).length > 0;
-  // The feedback filters this gallery's settings allow (issue 2505): a
-  // "Rated" chip in a gallery without ratings could only ever show nothing.
-  const feedbackFilters: FeedbackFilterType[] = feedbackEnabled ? ([
-    ['liked', feedbackSettings?.allow_likes],
-    ['favorited', feedbackSettings?.allow_favorites],
-    ['rated', feedbackSettings?.allow_ratings],
-    ['commented', feedbackSettings?.allow_comments],
-  ] as Array<[FeedbackFilterType, boolean | undefined]>).filter(([, allowed]) => !!allowed).map(([filter]) => filter) : [];
   const hasPanelFilters = feedbackFilters.length > 0
     || (feedbackEnabled && !!feedbackSettings?.allow_color_labels) || showMediaFilter || creditPanelShown || tagChips.length > 0;
   // The viewer's saved tile size (issue 1733, E4) applies only where a
