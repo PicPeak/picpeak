@@ -50,6 +50,18 @@ vi.mock('../../../services/analytics.service', () => ({
 vi.mock('../../../services/gallery.service', () => ({
   galleryService: { getPeople: vi.fn().mockResolvedValue({ people: [] }) },
 }));
+const filteringSpy = vi.hoisted(() => ({ calls: [] as Array<{ activeColorFilters?: string[] }> }));
+vi.mock('../hooks/useGalleryFiltering', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../hooks/useGalleryFiltering')>();
+  return {
+    ...actual,
+    useGalleryFiltering: (args: Parameters<typeof actual.useGalleryFiltering>[0]) => {
+      filteringSpy.calls.push(args as { activeColorFilters?: string[] });
+      return actual.useGalleryFiltering(args);
+    },
+  };
+});
+
 const settings = vi.hoisted(() => ({ current: { feedback_enabled: true, allow_likes: true } as Record<string, unknown> }));
 vi.mock('../../../services/feedback.service', () => ({
   feedbackService: {
@@ -64,6 +76,19 @@ vi.mock('../GalleryLayout', () => ({
 vi.mock('../PhotoGridWithLayouts', () => ({
   PhotoGridWithLayouts: ({ likedOnly, onToggleLikedOnly }: { likedOnly?: boolean; onToggleLikedOnly?: () => void }) => (
     <button type="button" data-testid="liked" aria-pressed={!!likedOnly} onClick={onToggleLikedOnly}>liked</button>
+  ),
+}));
+
+// The classic controls: the toolbar renders its filter panel at once, and the
+// panel exposes the colour toggle and the active colours.
+vi.mock('../GalleryToolbar', () => ({
+  GalleryToolbar: ({ filters }: { filters?: { render: (close: () => void, withSearch: boolean) => React.ReactNode } }) => (
+    <div data-testid="toolbar">{filters ? filters.render(() => {}, false) : <span data-testid="no-filters" />}</div>
+  ),
+}));
+vi.mock('../GalleryFilterPanel', () => ({
+  GalleryFilterPanel: ({ colorLabels }: { colorLabels?: { activeColors: string[]; onToggle: (c: string) => void } }) => (
+    colorLabels ? <button type="button" data-testid="red" onClick={() => colorLabels.onToggle('red')}>red</button> : null
   ),
 }));
 
@@ -100,5 +125,34 @@ describe('feedback filters after a settings change', () => {
     settings.current = { feedback_enabled: true, allow_likes: false };
     await act(async () => { await client.invalidateQueries(); });
     await waitFor(() => expect(screen.getByTestId('liked')).toHaveAttribute('aria-pressed', 'false'));
+  });
+
+  it('drops an active colour filter once colour labels are switched off', async () => {
+    stable.theme.theme = { galleryLayout: 'grid' };
+    settings.current = { feedback_enabled: true, allow_color_labels: true };
+    const seen: Array<{ activeColorFilters?: string[] }> = [];
+    filteringSpy.calls = seen;
+    photos = {
+      data: {
+        event,
+        categories: [],
+        photos: [7, 8].map((id) => ({ id, filename: `${id}.jpg`, url: `/${id}.jpg`, thumbnail_url: `/${id}-t.jpg`, type: 'photo', size: 1, uploaded_at: '2026-09-19T10:00:00Z' })),
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <GalleryView slug="wedding" event={event} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByTestId('red'));
+    await waitFor(() => expect(seen.at(-1)?.activeColorFilters).toEqual(['red']));
+
+    settings.current = { feedback_enabled: true, allow_color_labels: false };
+    await act(async () => { await client.invalidateQueries(); });
+    await waitFor(() => expect(seen.at(-1)?.activeColorFilters).toEqual([]));
   });
 });
