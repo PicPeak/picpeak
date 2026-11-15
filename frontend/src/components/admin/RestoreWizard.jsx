@@ -738,7 +738,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
                 <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-1">
                   {t('backup.restore.progress.migrationsPendingTitle', 'Database migrations pending')}
                 </h4>
-                <p className="text-sm text-amber-700 dark:text-amber-300 font-mono break-all">
+                <p className="text-sm text-amber-700 dark:text-amber-300 break-words">
                   {lastRunError || t('backup.restore.progress.errorUnknown', 'No error message recorded.')}
                 </p>
               </div>
