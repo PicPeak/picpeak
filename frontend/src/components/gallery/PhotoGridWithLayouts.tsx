@@ -452,10 +452,15 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     // Suppressed (#1160): a folder-only root has folder tiles above proving the
     // gallery isn't empty, so the message would contradict them.
     if (!suppressEmptyState) {
+      // The folder navigation stays (issue 2504): a search that matches no
+      // photo here must not take away the way into the other folders.
       return (
-        <div className="text-center py-12">
-          <GalleryEmptyMessage filtered={emptyIsFiltered} />
-        </div>
+        <>
+          {afterHero}
+          <div className="text-center py-12">
+            <GalleryEmptyMessage filtered={emptyIsFiltered} />
+          </div>
+        </>
       );
     }
   }
