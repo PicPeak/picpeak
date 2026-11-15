@@ -9,6 +9,7 @@ const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 const quota = require('./publicUploadQuota');
 const { createUploadFileGuard } = require('../utils/uploadAdmissionType');
+const { mergedUploadName } = require('../utils/mergedUploadName');
 
 const error = (message, statusCode, code = 'UPLOAD_STATE') => Object.assign(new Error(message), { statusCode, code });
 const cancelled = () => error('Upload cancelled', 400, 'UPLOAD_CANCELLED');
@@ -142,7 +143,7 @@ async function complete(meta) {
   return exclusive(meta, async signal => {
     meta.status = 'merging';
     const tempDir = path.join(meta.admission.dir, 'merged');
-    const mergedPath = path.join(tempDir, meta.mergeName || meta.filename);
+    const mergedPath = path.join(tempDir, meta.mergeName || mergedUploadName(meta.filename));
     try {
       await quota.recheckStaging(meta.admission);
       if (signal.aborted) throw cancelled();
