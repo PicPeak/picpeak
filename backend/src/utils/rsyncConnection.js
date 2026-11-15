@@ -137,7 +137,8 @@ async function resolveRsyncConnection({ host: value, user: username, sshKey: key
     ...trustOptions];
   if (key) sshArgs.push('-i', key);
   const rsyncHost = net.isIPv6(host) ? `[${host}]` : host;
-  return { host, port, address, addresses, target: user ? `${user}@${host}` : host,
+  return { host, port, address, addresses, keyPath: key, knownHostsPath: knownHostsPath(key),
+    target: user ? `${user}@${host}` : host,
     rsyncTarget: user ? `${user}@${rsyncHost}` : rsyncHost, sshArgs,
     rsyncShell: ['ssh', ...sshArgs].map(rsyncQuote).join(' ') };
 }
@@ -173,4 +174,112 @@ function missingKnownHostsWarning(config) {
     + `The entry must be named ${hostKeyAlias(host, port)} exactly (lower case, no trailing dot).`;
 }
 
-module.exports = { resolveRsyncConnection, isPublicAddress, hostKeyFailure, missingKnownHostsWarning };
+/** One rsync run, no shell; resolves with its outcome and never rejects. */
+function runRsync(args) {
+  return new Promise((resolve) => {
+    let settled = false; let timedOut = false; let timer;
+    const done = outcome => {
+      if (settled) return;
+      settled = true; clearTimeout(timer); resolve({ ...outcome, timedOut });
+    };
+    let child;
+    try {
+      child = require('child_process').spawn('rsync', args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (error) { done({ error, stderr: '' }); return; }
+    // Our own timer, not spawn's `timeout`: rsync traps SIGTERM and exits
+    // with code 20, so the close event alone cannot tell a timeout apart.
+    timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, module.exports.RSYNC_PROBE_TIMEOUT_MS);
+    let stderr = '';
+    child.stdout.on('data', () => {});
+    child.stderr.on('data', (data) => { if (stderr.length < 64 * 1024) stderr += data; });
+    child.on('error', error => done({ error, stderr }));
+    child.on('close', (code, signal) => done({ code, signal, stderr }));
+  });
+}
+
+// GNU rsync: `link_stat "/x" failed: No such file or directory (2)` (or
+// change_dir); openrsync (macOS): `error: /x: (l)stat: No such file or directory`.
+const PATH_NOT_FOUND = /(?:link_stat|change_dir)\b.*No such file or directory \(2\)|\(l\)stat: No such file or directory/;
+
+/**
+ * List the remote path with rsync itself, over the same -e transport a
+ * backup run uses. Restricted hosts (Hetzner Storage Box, rrsync, forced
+ * `command=` keys) accept that but refuse an arbitrary `ssh … echo`. A
+ * missing final directory passes when its parent exists: rsync creates it on
+ * the first backup, but not its parents.
+ */
+async function probeRsyncDestination(connection, remotePath) {
+  const list = target => runRsync(['--list-only', '-e', connection.rsyncShell, `${connection.rsyncTarget}:${target}`]);
+  const trimmed = remotePath.length > 1 ? remotePath.replace(/\/+$/, '') || '/' : remotePath;
+  const first = await list(trimmed);
+  if (first.code === 0) return { ok: true, exists: true };
+  const parent = require('path').posix.dirname(trimmed);
+  if (!PATH_NOT_FOUND.test(first.stderr) || parent === trimmed) return { ok: false, outcome: first };
+  const second = await list(parent);
+  if (second.code === 0) return { ok: true, exists: false };
+  return { ok: false, outcome: second, parent };
+}
+
+// Lines that never leave the server, and local paths shown as placeholders.
+function stderrExcerpt(stderr, connection) {
+  const known = [[connection.keyPath, '<ssh key>'], [connection.knownHostsPath, '<known_hosts>'],
+    [path.join(__dirname, 'rsyncProxy.js'), '<relay>'], [process.execPath, '<node>']]
+    .filter(([value]) => value);
+  let text = String(stderr || '').split(/\r?\n/)
+    .filter(line => line.trim() && !/PRIVATE KEY|^[A-Za-z0-9+/=]{40,}$/.test(line.trim()))
+    .join(' | ');
+  for (const [value, label] of known) text = text.split(value).join(label);
+  // eslint-disable-next-line no-control-regex
+  text = text.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  return text.length > 300 ? `…${text.slice(-300)}` : text;
+}
+
+/** A coded, actionable error for a failed rsync probe (see probeRsyncDestination). */
+function rsyncProbeFailure(outcome, connection, { remotePath, parent } = {}) {
+  const stderr = String(outcome.stderr || '');
+  const detail = stderrExcerpt(stderr, connection);
+  const fail = (code, message) => {
+    const error = new RsyncConnectionError(code, message);
+    error.detail = detail;
+    return error;
+  };
+  if (outcome.error) {
+    if (outcome.error.code === 'ENOENT') {
+      return fail('RSYNC_BINARY_MISSING', 'The rsync program is not installed in the backend container. The image must include rsync and an SSH client (openssh-client).');
+    }
+    return fail('RSYNC_CONNECTION_FAILED', `Rsync could not be started: ${outcome.error.message}`);
+  }
+  if (/Failed to exec ssh|ssh: not found/.test(stderr)) {
+    return fail('RSYNC_SSH_BINARY_MISSING', 'The ssh program is not installed in the backend container. rsync needs it to reach the destination; the image must include an SSH client (openssh-client).');
+  }
+  const hostKey = hostKeyFailure(stderr);
+  if (hostKey) { hostKey.detail = detail; return hostKey; }
+  if (/UNPROTECTED PRIVATE KEY FILE|Load key .*: (?:invalid format|bad permissions)/.test(stderr)) {
+    return fail('RSYNC_SSH_KEY_UNUSABLE', 'ssh refused to use the configured key file: its permissions are too open (use 600) or it is not a valid private key.');
+  }
+  if (/Permission denied \((?:publickey|password|keyboard-interactive|gssapi|hostbased)|Too many authentication failures/.test(stderr)) {
+    return fail('RSYNC_AUTH_FAILED', `The destination refused the SSH login${connection.target.includes('@') ? ` for ${connection.target.split('@')[0]}` : ''}. Check the user name and that the public half of the configured key is authorized on the destination.`);
+  }
+  if (/Connection refused/.test(stderr)) {
+    return fail('RSYNC_CONNECTION_REFUSED', `Nothing accepts SSH connections on ${connection.host} port ${connection.port}. Check the host and port (a Hetzner Storage Box uses port 23).`);
+  }
+  if (outcome.timedOut || outcome.signal || /timed out/i.test(stderr)) {
+    return fail('RSYNC_CONNECTION_TIMEOUT', `The connection to ${connection.host} port ${connection.port} timed out. Check the host, the port and any firewall in between.`);
+  }
+  if (/No route to host|Network is unreachable|No vetted SSH destination could be reached|Could not resolve hostname/.test(stderr)) {
+    return fail('RSYNC_HOST_UNREACHABLE', `${connection.host} port ${connection.port} cannot be reached from the backend.`);
+  }
+  if (PATH_NOT_FOUND.test(stderr)) {
+    return fail('RSYNC_REMOTE_PATH_NOT_FOUND', parent
+      ? `Neither ${remotePath} nor its parent ${parent} exists on the destination. rsync creates only the last directory of the remote path; create the parent first.`
+      : `The remote path ${remotePath} does not exist on the destination.`);
+  }
+  if (/failed: Permission denied \(13\)/.test(stderr)) {
+    return fail('RSYNC_REMOTE_PATH_DENIED', `The destination denies access to ${remotePath}. Check its permissions for the SSH user.`);
+  }
+  const exit = outcome.code == null ? 'without an exit code' : `with code ${outcome.code}`;
+  return fail('RSYNC_CONNECTION_FAILED', `Rsync connection failed (rsync exited ${exit})${detail ? `: ${detail}` : '.'}`);
+}
+
+module.exports = { resolveRsyncConnection, isPublicAddress, hostKeyFailure, missingKnownHostsWarning,
+  probeRsyncDestination, rsyncProbeFailure, RSYNC_PROBE_TIMEOUT_MS: 15000 };

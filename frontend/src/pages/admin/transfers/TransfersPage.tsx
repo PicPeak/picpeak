@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { toast } from 'react-toastify';
 import {
   Plus, Send, Link2, Download, Trash2, Upload, X, Copy, Image as ImageIcon,
@@ -19,7 +20,39 @@ import { AdminAuthenticatedImage } from '../../../components/admin/AdminAuthenti
 import { TransferPhotoPicker, type PickedPhoto } from '../../../components/admin/TransferPhotoPicker';
 import { useMutationWithToast } from '../../../hooks/useMutationWithToast';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
-import { transfersService } from '../../../services/transfers.service';
+import { transfersService, type TransferWriteResult } from '../../../services/transfers.service';
+
+/**
+ * Upload progress of a running request: the share of the body sent so far,
+ * then "processing" while the server stores what arrived.
+ */
+const UploadProgress: React.FC<{ percent: number | null }> = ({ percent }) => {
+  const { t } = useTranslation();
+  if (percent === null) return null;
+  const sent = percent >= 100;
+  return (
+    <div className="space-y-1">
+      <div
+        role="progressbar"
+        aria-label={t('transfers.uploadProgress', 'Upload progress')}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        className="h-2 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700"
+      >
+        <div
+          className={`h-full rounded-full bg-primary-600 transition-all${sent ? ' animate-pulse' : ''}`}
+          style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+        />
+      </div>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400" role="status" aria-live="polite">
+        {sent
+          ? t('transfers.uploadProcessing', 'Upload complete, saving the files…')
+          : t('transfers.uploadPercent', { defaultValue: 'Uploading… {{percent}}%', percent })}
+      </p>
+    </div>
+  );
+};
 
 function formatBytes(bytes: number | null | undefined): string {
   if (!bytes) return '0 B';
@@ -39,6 +72,33 @@ const STATUS_STYLES: Record<string, string> = {
   expired: 'bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300',
   deleted: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
 };
+
+/**
+ * Say what a write too large for one request did not land. The transfer
+ * exists without those files, and its email was not sent if one was due.
+ */
+function warnWriteNotes(result: TransferWriteResult | undefined, t: TFunction) {
+  const failed = result?.failed_files || [];
+  if (failed.length) {
+    toast.error(t(
+      'transfers.someFailed',
+      '{{count}} file(s) could not be uploaded and are not in the transfer: {{names}}',
+      { count: failed.length, names: failed.join(', ') },
+    ));
+  }
+  if (result?.delivery_held) {
+    toast.warn(t(
+      'transfers.deliveryHeld',
+      'The email to the recipients was not sent. Add the missing files and share the link yourself.',
+    ));
+  }
+  if (result?.delivery_partial) {
+    toast.warn(t(
+      'transfers.deliveryPartial',
+      'Not every recipient got the email. Share the link with the others yourself.',
+    ));
+  }
+}
 
 export const TransfersPage: React.FC = () => {
   const { t } = useTranslation();
@@ -172,21 +232,30 @@ const CreateTransferModal: React.FC<{ onClose: () => void; onCreated: () => void
     .map((e) => e.trim())
     .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
 
+  // Only while files are being sent; null hides the bar.
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const createMutation = useMutationWithToast({
-    mutationFn: () => transfersService.create({
-      title: title.trim(),
-      message: message.trim() || null,
-      expiresInDays: parseInt(expiresInDays, 10) || 14,
-      maxDownloads: maxDownloads ? parseInt(maxDownloads, 10) : null,
-      allowUploads,
-      photoIds: picked.map((p) => p.id),
-      files,
-      deliveryMethod,
-      recipientEmails: deliveryMethod === 'email' ? parsedEmails : [],
-    }),
+    mutationFn: () => {
+      const sendsFiles = files.length > 0;
+      if (sendsFiles) setUploadPercent(0);
+      return transfersService.create({
+        title: title.trim(),
+        message: message.trim() || null,
+        expiresInDays: parseInt(expiresInDays, 10) || 14,
+        maxDownloads: maxDownloads ? parseInt(maxDownloads, 10) : null,
+        allowUploads,
+        photoIds: picked.map((p) => p.id),
+        files,
+        deliveryMethod,
+        recipientEmails: deliveryMethod === 'email' ? parsedEmails : [],
+      }, sendsFiles ? setUploadPercent : undefined).finally(() => setUploadPercent(null));
+    },
     successMessage: t('transfers.created', 'Transfer created'),
     errorMessage: t('transfers.createFailed', 'Could not create transfer'),
-    onSuccess: onCreated,
+    onSuccess: (result) => {
+      warnWriteNotes(result, t);
+      onCreated();
+    },
   });
 
   const addFilesToList = (list: FileList | null) => {
@@ -349,6 +418,7 @@ const CreateTransferModal: React.FC<{ onClose: () => void; onCreated: () => void
               </div>
             )}
           </div>
+          <UploadProgress percent={uploadPercent} />
         </div>
 
         <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-3 dark:border-neutral-700">
@@ -434,10 +504,18 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
     successMessage: t('transfers.deleted', 'Transfer deleted'),
     onSuccess: onClose,
   });
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const uploadFilesMutation = useMutationWithToast({
-    mutationFn: (list: File[]) => transfersService.uploadFiles(transferId, list),
+    mutationFn: (list: File[]) => {
+      setUploadPercent(0);
+      return transfersService.uploadFiles(transferId, list, setUploadPercent)
+        .finally(() => setUploadPercent(null));
+    },
     successMessage: t('transfers.filesAdded', 'Files added'),
-    onSuccess: () => refetch(),
+    onSuccess: (result) => {
+      warnWriteNotes(result, t);
+      refetch();
+    },
   });
   const removeExtraFileMutation = useMutationWithToast({
     mutationFn: (extraId: number) => transfersService.removeExtraFile(transferId, extraId),
@@ -539,6 +617,7 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
                     type="file"
                     multiple
                     className="hidden"
+                    disabled={uploadFilesMutation.isPending}
                     onChange={(e) => {
                       if (e.target.files?.length) uploadFilesMutation.mutate(Array.from(e.target.files));
                       e.target.value = '';
@@ -546,6 +625,7 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
                   />
                 </label>
               </div>
+              <div className="mb-2"><UploadProgress percent={uploadPercent} /></div>
               {transfer.extra_files && transfer.extra_files.length > 0 ? (
                 <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
                   {transfer.extra_files.map((f) => (

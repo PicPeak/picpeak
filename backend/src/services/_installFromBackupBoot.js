@@ -24,7 +24,8 @@
  * the root of the `/backup` mount. Two payload variants:
  *
  *   1. EMPTY file (or pure whitespace) — auto-pick the newest
- *      `backup-manifest-*` from `/backup/manifests/` or a standalone
+ *      `backup-manifest-*` from `/backup/manifests/`, a copied-back rsync
+ *      mirror's `/backup/picpeak/manifests/`, or a standalone
  *      `/backup/backup-UUID/manifests/` point. Useful when
  *      the admin doesn't know or care which one is most recent.
  *
@@ -79,7 +80,11 @@ async function findTrigger(backupRoot, logger) {
         // written by backupService. Only inspect real UUID directories one
         // level deep, not arbitrary storage trees or symlinked snapshots.
         const manifestsDir = path.join(backupRoot, 'manifests');
-        const manifestDirs = fs.existsSync(manifestsDir) ? [manifestsDir] : [];
+        // <BACKUP_ROOT>/picpeak is the default backup_destination_path: an
+        // rsync mirror copied back there brings its manifest in manifests/.
+        const mirrorManifestsDir = path.join(backupRoot, 'picpeak', 'manifests');
+        const manifestDirs = [manifestsDir, mirrorManifestsDir]
+          .filter((dir) => fs.existsSync(dir) && fs.lstatSync(dir).isDirectory());
         for (const entry of fs.readdirSync(backupRoot, { withFileTypes: true })) {
           if (!entry.isDirectory() || !/^backup-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.name)) continue;
           const nestedDir = path.join(backupRoot, entry.name, 'manifests');
@@ -93,7 +98,7 @@ async function findTrigger(backupRoot, logger) {
           }))
           .sort((a, b) => b.mtime - a.mtime);
         if (entries.length === 0) {
-          logger.warn(`Install-from-backup: no manifests found in ${manifestsDir} or standalone points`);
+          logger.warn(`Install-from-backup: no manifests found in ${manifestsDir}, ${mirrorManifestsDir} or standalone points`);
           return null;
         }
         return { triggerPath, manifestPath: entries[0].full };

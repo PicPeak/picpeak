@@ -1251,6 +1251,11 @@
         "POST /:id/files",
         "DELETE /:id/files/:fileId",
         "POST /:id/upload-files",
+        "POST /:id/chunked-upload/init",
+        "POST /:id/chunked-upload/:uploadId/chunk/:chunkIndex",
+        "POST /:id/chunked-upload/:uploadId/complete",
+        "DELETE /:id/chunked-upload/:uploadId",
+        "POST /:id/deliver",
         "DELETE /:id/extra-files/:extraId",
         "GET /:id/extra-files/:extraId/download",
         "POST /:id/upload-link",
@@ -1559,7 +1564,11 @@
       "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
       "route_signatures": [
         "GET /:token",
-        "POST /:token"
+        "POST /:token",
+        "POST /:token/chunked-upload/init",
+        "POST /:token/chunked-upload/:uploadId/chunk/:chunkIndex",
+        "POST /:token/chunked-upload/:uploadId/complete",
+        "DELETE /:token/chunked-upload/:uploadId"
       ]
     },
     "publicWorkflowApprovals.js": {
