@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.204.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.204.1-beta.0...v3.204.2-beta.0) (2026-11-15)
+
+
+### Bug Fixes
+
+* **backup:** keep an rsync backup restorable from the remote alone ([#2534](https://github.com/PicPeak/picpeak/issues/2534)) ([d8c6c6d](https://github.com/PicPeak/picpeak/commit/d8c6c6d5509c92ef922d384edab3e61873284e6c))
+* **backup:** show what the last backup actually covered ([#2528](https://github.com/PicPeak/picpeak/issues/2528)) ([094721c](https://github.com/PicPeak/picpeak/commit/094721c0b125786752d86b820ba3b1a1bf8fdd19))
+* **backup:** test an rsync destination with rsync, not ssh echo ([#2527](https://github.com/PicPeak/picpeak/issues/2527)) ([b2f533e](https://github.com/PicPeak/picpeak/commit/b2f533e9b93425006209967d6db01eb847fd4ded))
+* **docker:** ship rsync and openssh-client in the runtime images ([#2525](https://github.com/PicPeak/picpeak/issues/2525)) ([506dff7](https://github.com/PicPeak/picpeak/commit/506dff7ce29b38d35aa2fbc866f7f823a2833a4c))
+* **restore:** show pre-flight warnings before the start, record blocked restores as unchanged ([#2529](https://github.com/PicPeak/picpeak/issues/2529)) ([f347fee](https://github.com/PicPeak/picpeak/commit/f347fee542f04314d1bf941c3e372a4c6dad07a8))
+* **transfers:** show upload progress when sending files ([#2523](https://github.com/PicPeak/picpeak/issues/2523)) ([5d955bb](https://github.com/PicPeak/picpeak/commit/5d955bbc7876b3c93f2a1783b013c3f711cc2a28))
+* **transfers:** upload large PicTransfer files in chunks ([#2533](https://github.com/PicPeak/picpeak/issues/2533)) ([550cd46](https://github.com/PicPeak/picpeak/commit/550cd46f188bfc656cf1ad02a6d90811ce334b7f))
+* **uploads:** merge a chunked upload under a short unique name ([#2537](https://github.com/PicPeak/picpeak/issues/2537)) ([bb40f39](https://github.com/PicPeak/picpeak/commit/bb40f3935711b47b49e567ae4842a46495f92444))
+
 ## [3.204.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.204.0-beta.0...v3.204.1-beta.0) (2026-11-15)
 
 
