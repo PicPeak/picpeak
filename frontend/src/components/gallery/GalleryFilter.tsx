@@ -14,6 +14,11 @@ interface GalleryFilterProps {
   // Clicking a filter toggles it in the parent's set; 'all' clears the set.
   onFilterChange: (filter: FilterType) => void;
   feedbackEnabled: boolean;
+  /**
+   * The filters this gallery's feedback settings allow (issue 2505): no
+   * "Liked" without likes, and so on. Absent: all of them.
+   */
+  available?: FeedbackFilterType[];
   likeCount?: number;
   favoriteCount?: number;
   ratedCount?: number;
@@ -26,6 +31,7 @@ export const GalleryFilter: React.FC<GalleryFilterProps> = ({
   activeFilters,
   onFilterChange,
   feedbackEnabled,
+  available,
   likeCount = 0,
   favoriteCount = 0,
   ratedCount = 0,
@@ -38,7 +44,9 @@ export const GalleryFilter: React.FC<GalleryFilterProps> = ({
   const isActive = (filter: FilterType) =>
     filter === 'all' ? activeFilters.length === 0 : activeFilters.includes(filter);
 
-  if (!feedbackEnabled) {
+  const shows = (filter: FeedbackFilterType) => !available || available.includes(filter);
+
+  if (!feedbackEnabled || (available && available.length === 0)) {
     return null;
   }
 
@@ -60,42 +68,50 @@ export const GalleryFilter: React.FC<GalleryFilterProps> = ({
             >
               <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-current"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 8v-8h8v8h-8z"/></svg>
             </Button>
-            <Button
-              variant={isActive('liked') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('liked')}
-              className="p-1 w-8 h-8 flex items-center justify-center"
-              aria-label={t('feedback.likes', 'Likes')}
-            >
-              <Heart className="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              variant={isActive('favorited') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('favorited')}
-              className="p-1 w-8 h-8 flex items-center justify-center"
-              aria-label={t('gallery.favorited', 'Saved')}
-            >
-              <Bookmark className="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              variant={isActive('rated') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('rated')}
-              className="p-1 w-8 h-8 flex items-center justify-center"
-              aria-label={t('gallery.rated', 'Rated')}
-            >
-              <Star className="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              variant={isActive('commented') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('commented')}
-              className="p-1 w-8 h-8 flex items-center justify-center"
-              aria-label={t('gallery.commented', 'Commented')}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-            </Button>
+            {shows('liked') && (
+              <Button
+                variant={isActive('liked') ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => onFilterChange('liked')}
+                className="p-1 w-8 h-8 flex items-center justify-center"
+                aria-label={t('feedback.likes', 'Likes')}
+              >
+                <Heart className="w-3.5 h-3.5" />
+              </Button>
+            )}
+            {shows('favorited') && (
+              <Button
+                variant={isActive('favorited') ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => onFilterChange('favorited')}
+                className="p-1 w-8 h-8 flex items-center justify-center"
+                aria-label={t('gallery.favorited', 'Saved')}
+              >
+                <Bookmark className="w-3.5 h-3.5" />
+              </Button>
+            )}
+            {shows('rated') && (
+              <Button
+                variant={isActive('rated') ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => onFilterChange('rated')}
+                className="p-1 w-8 h-8 flex items-center justify-center"
+                aria-label={t('gallery.rated', 'Rated')}
+              >
+                <Star className="w-3.5 h-3.5" />
+              </Button>
+            )}
+            {shows('commented') && (
+              <Button
+                variant={isActive('commented') ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => onFilterChange('commented')}
+                className="p-1 w-8 h-8 flex items-center justify-center"
+                aria-label={t('gallery.commented', 'Commented')}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+              </Button>
+            )}
           </div>
         </div>
         {/* Named lists (issue 2303); absent without them. */}
@@ -122,35 +138,41 @@ export const GalleryFilter: React.FC<GalleryFilterProps> = ({
               {t('gallery.all', 'All')}
             </Button>
             
-            <Button
-              variant={isActive('liked') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('liked')}
-              className="text-xs flex-1 min-w-[80px] flex items-center justify-center gap-1"
-            >
-              <Heart className="w-3 h-3" />
-              <span>{likeCount > 0 ? likeCount : t('gallery.liked', 'Liked')}</span>
-            </Button>
+            {shows('liked') && (
+              <Button
+                variant={isActive('liked') ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => onFilterChange('liked')}
+                className="text-xs flex-1 min-w-[80px] flex items-center justify-center gap-1"
+              >
+                <Heart className="w-3 h-3" />
+                <span>{likeCount > 0 ? likeCount : t('gallery.liked', 'Liked')}</span>
+              </Button>
+            )}
 
-            <Button
-              variant={isActive('favorited') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('favorited')}
-              className="text-xs flex-1 min-w-[80px] flex items-center justify-center gap-1"
-            >
-              <Bookmark className="w-3 h-3" />
-              <span>{favoriteCount > 0 ? favoriteCount : t('gallery.favorited', 'Saved')}</span>
-            </Button>
+            {shows('favorited') && (
+              <Button
+                variant={isActive('favorited') ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => onFilterChange('favorited')}
+                className="text-xs flex-1 min-w-[80px] flex items-center justify-center gap-1"
+              >
+                <Bookmark className="w-3 h-3" />
+                <span>{favoriteCount > 0 ? favoriteCount : t('gallery.favorited', 'Saved')}</span>
+              </Button>
+            )}
             
-            <Button
-              variant={isActive('rated') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('rated')}
-              className="text-xs flex-1 min-w-[80px] flex items-center justify-center gap-1"
-            >
-              <Star className="w-3 h-3" />
-              <span>{ratedCount > 0 ? ratedCount : t('gallery.rated', 'Rated')}</span>
-            </Button>
+            {shows('rated') && (
+              <Button
+                variant={isActive('rated') ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => onFilterChange('rated')}
+                className="text-xs flex-1 min-w-[80px] flex items-center justify-center gap-1"
+              >
+                <Star className="w-3 h-3" />
+                <span>{ratedCount > 0 ? ratedCount : t('gallery.rated', 'Rated')}</span>
+              </Button>
+            )}
           </div>
         </div>
       ) : (
@@ -169,60 +191,68 @@ export const GalleryFilter: React.FC<GalleryFilterProps> = ({
               {t('gallery.all', 'All')}
             </Button>
             
-            <Button
-              variant={isActive('liked') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('liked')}
-              className="text-xs sm:text-sm flex items-center gap-1"
-            >
-              <Heart className="w-3 h-3 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">{t('gallery.liked', 'Liked')}</span>
-              {likeCount > 0 && (
-                <span className="bg-accent-soft text-theme px-1.5 rounded">
-                  {likeCount}
-                </span>
-              )}
-            </Button>
+            {shows('liked') && (
+              <Button
+                variant={isActive('liked') ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => onFilterChange('liked')}
+                className="text-xs sm:text-sm flex items-center gap-1"
+              >
+                <Heart className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">{t('gallery.liked', 'Liked')}</span>
+                {likeCount > 0 && (
+                  <span className="bg-accent-soft text-theme px-1.5 rounded">
+                    {likeCount}
+                  </span>
+                )}
+              </Button>
+            )}
 
-            <Button
-              variant={isActive('favorited') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('favorited')}
-              className="text-xs sm:text-sm flex items-center gap-1"
-            >
-              <Bookmark className="w-3 h-3 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">{t('gallery.favorited', 'Saved')}</span>
-              {favoriteCount > 0 && (
-                <span className="bg-accent-soft text-theme px-1.5 rounded">
-                  {favoriteCount}
-                </span>
-              )}
-            </Button>
+            {shows('favorited') && (
+              <Button
+                variant={isActive('favorited') ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => onFilterChange('favorited')}
+                className="text-xs sm:text-sm flex items-center gap-1"
+              >
+                <Bookmark className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">{t('gallery.favorited', 'Saved')}</span>
+                {favoriteCount > 0 && (
+                  <span className="bg-accent-soft text-theme px-1.5 rounded">
+                    {favoriteCount}
+                  </span>
+                )}
+              </Button>
+            )}
             
-            <Button
-              variant={isActive('rated') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('rated')}
-              className="text-xs sm:text-sm flex items-center gap-1"
-            >
-              <Star className="w-3 h-3 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">{t('gallery.rated', 'Rated')}</span>
-              {ratedCount > 0 && (
-                <span className="bg-accent-soft text-theme px-1.5 rounded">
-                  {ratedCount}
-                </span>
-              )}
-            </Button>
+            {shows('rated') && (
+              <Button
+                variant={isActive('rated') ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => onFilterChange('rated')}
+                className="text-xs sm:text-sm flex items-center gap-1"
+              >
+                <Star className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">{t('gallery.rated', 'Rated')}</span>
+                {ratedCount > 0 && (
+                  <span className="bg-accent-soft text-theme px-1.5 rounded">
+                    {ratedCount}
+                  </span>
+                )}
+              </Button>
+            )}
 
-            <Button
-              variant={isActive('commented') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('commented')}
-              className="text-xs sm:text-sm flex items-center gap-1"
-            >
-              <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">{t('gallery.commented', 'Commented')}</span>
-            </Button>
+            {shows('commented') && (
+              <Button
+                variant={isActive('commented') ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => onFilterChange('commented')}
+                className="text-xs sm:text-sm flex items-center gap-1"
+              >
+                <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">{t('gallery.commented', 'Commented')}</span>
+              </Button>
+            )}
           </div>
         </div>
       )}

@@ -26,7 +26,8 @@ vi.mock('react-i18next', async () => {
   };
 });
 
-const feedback = { activeFilters: [], onFilterChange: vi.fn() };
+const ALL_FEEDBACK = ['liked', 'favorited', 'rated', 'commented'] as Array<'liked' | 'favorited' | 'rated' | 'commented'>;
+const feedback = { activeFilters: [], onFilterChange: vi.fn(), available: ALL_FEEDBACK };
 // One photo rated 4: thresholds 1..4 are reachable, 5 is not.
 const counts = { 1: 1, 2: 1, 3: 1, 4: 1 };
 
@@ -40,12 +41,28 @@ describe('GalleryFilterPanel', () => {
 
   it('toggles a feedback filter and marks the active one', () => {
     const onFilterChange = vi.fn();
-    render(<GalleryFilterPanel matchCount={3} feedback={{ activeFilters: ['liked'], onFilterChange }} />);
+    render(<GalleryFilterPanel matchCount={3} feedback={{ activeFilters: ['liked'], onFilterChange, available: ALL_FEEDBACK }} />);
     const likes = screen.getByRole('button', { name: 'Likes' });
     expect(likes).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(screen.getByRole('button', { name: 'Saved' }));
     expect(onFilterChange).toHaveBeenCalledWith('favorited');
+  });
+
+  // Issue 2505: a chip for feedback the gallery does not offer could only
+  // ever show nothing.
+  it('offers only the feedback filters the gallery allows', () => {
+    render(<GalleryFilterPanel matchCount={3} feedback={{ ...feedback, available: ['liked'] }} />);
+    expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Likes' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Saved' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Rated' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Commented' })).toBeNull();
+  });
+
+  it('leaves the feedback group out when the gallery allows none of its filters', () => {
+    render(<GalleryFilterPanel matchCount={3} feedback={{ ...feedback, available: [] }} />);
+    expect(screen.queryByText('Feedback Filter')).toBeNull();
   });
 
   it('ends in "Select these N photos" with the number the filters leave', () => {

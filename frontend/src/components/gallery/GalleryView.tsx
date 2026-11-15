@@ -642,6 +642,33 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
   }, [feedbackSettings]);
 
+  // The feedback filters this gallery's settings allow (issue 2505): a
+  // "Rated" chip in a gallery without ratings could only ever show nothing.
+  const feedbackFilters: FeedbackFilterType[] = feedbackEnabled ? ([
+    ['liked', feedbackSettings?.allow_likes],
+    ['favorited', feedbackSettings?.allow_favorites],
+    ['rated', feedbackSettings?.allow_ratings],
+    ['commented', feedbackSettings?.allow_comments],
+  ] as Array<[FeedbackFilterType, boolean | undefined]>).filter(([, allowed]) => !!allowed).map(([filter]) => filter) : [];
+  // An admin can switch a feedback type off while a guest has its filter
+  // on; once the settings refetch, the chip is gone, so the filter goes too,
+  // instead of narrowing the photos with no control left to clear it.
+  const feedbackFiltersKey = feedbackFilters.join(',');
+  useEffect(() => {
+    const allowed = feedbackFiltersKey ? feedbackFiltersKey.split(',') : [];
+    setActiveFilters((current) => {
+      const kept = current.filter((filter) => allowed.includes(filter));
+      return kept.length === current.length ? current : kept;
+    });
+  }, [feedbackFiltersKey]);
+  // The same for colour labels: with them off, an active colour filter would
+  // keep narrowing the photos after its chips (and maybe the whole Filters
+  // panel) are gone.
+  const colorLabelsAllowed = feedbackEnabled && !!feedbackSettings?.allow_color_labels;
+  useEffect(() => {
+    if (!colorLabelsAllowed) setActiveColorFilters((current) => (current.length === 0 ? current : []));
+  }, [colorLabelsAllowed]);
+
   // In guest identity mode both the "Liked / Favorited / Rated /
   // Commented" filters AND the matching chip-count labels need to scope
   // to the *current guest's* interactions, not the global aggregates on
@@ -1654,7 +1681,8 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const toolbarShown = !showSidebar
     && (filterBarShown || selectionAvailable || isSelectionMode || selectedPhotos.size > 0 || copyFilenames.photos.length > 0);
   const creditPanelShown = creditsVisible && creditGroups(scopedPhotos).length > 0;
-  const hasPanelFilters = feedbackEnabled || showMediaFilter || creditPanelShown || tagChips.length > 0;
+  const hasPanelFilters = feedbackFilters.length > 0
+    || (feedbackEnabled && !!feedbackSettings?.allow_color_labels) || showMediaFilter || creditPanelShown || tagChips.length > 0;
   // The viewer's saved tile size (issue 1733, E4) applies only where a
   // control puts the switch on screen to change it back: the toolbar or the
   // sidebar. A Carousel gets no switch, so its delivery placeholders keep the
@@ -2220,6 +2248,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onUploadClick={() => setShowUploadModal(true)}
           feedbackEnabled={feedbackEnabled}
           activeFilters={activeFilters}
+          feedbackFilters={feedbackFilters}
           onFilterChange={handleFilterChange}
           mediaFilter={mediaFilter}
           onMediaFilterChange={setMediaFilter}
@@ -2423,7 +2452,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               render: (close, withSearch) => (
                 <GalleryFilterPanel
                   search={withSearch ? { value: searchTerm, onChange: setSearchTerm } : undefined}
-                  feedback={feedbackEnabled ? { activeFilters, onFilterChange: handleFilterChange } : undefined}
+                  feedback={feedbackEnabled ? { activeFilters, onFilterChange: handleFilterChange, available: feedbackFilters } : undefined}
                   colorLabels={feedbackEnabled && feedbackSettings?.allow_color_labels ? {
                     activeColors: activeColorFilters,
                     onToggle: handleColorFilterToggle,
