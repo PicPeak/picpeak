@@ -69,4 +69,52 @@ describe('PhotoFilterBar feedback chips (#802)', () => {
     render(<PhotoFilterBar {...baseProps} />);
     expect(screen.queryByText('Feedback Filter')).toBeNull();
   });
+
+  // Issue 2505: only the filters the gallery's feedback settings allow.
+  it('offers only the allowed feedback filters in both groups', () => {
+    render(
+      <PhotoFilterBar
+        {...baseProps}
+        feedbackEnabled
+        activeFilters={[]}
+        feedbackFilters={['liked']}
+        onFilterChange={vi.fn()}
+      />
+    );
+    expect(screen.getAllByRole('button', { name: 'Likes' })).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Saved' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Rated' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Commented' })).toBeNull();
+  });
+
+  it('renders no feedback chips when no filter is allowed', () => {
+    render(
+      <PhotoFilterBar
+        {...baseProps}
+        feedbackEnabled
+        activeFilters={[]}
+        feedbackFilters={[]}
+        onFilterChange={vi.fn()}
+      />
+    );
+    expect(screen.queryByText('Feedback Filter')).toBeNull();
+  });
+
+  it('keeps the desktop colour chips when no feedback filter is allowed', () => {
+    const { container } = render(
+      <PhotoFilterBar
+        {...baseProps}
+        feedbackEnabled
+        activeFilters={[]}
+        feedbackFilters={[]}
+        onFilterChange={vi.fn()}
+        colorLabelsEnabled
+        activeColorFilters={[]}
+        onColorFilterChange={vi.fn()}
+        colorLabelCounts={{ red: 2 }}
+      />
+    );
+    // The desktop chips carry `hidden lg:flex`; the mobile ones `lg:hidden`.
+    expect(container.querySelector('.lg\\:flex')).not.toBeNull();
+  });
 });
