@@ -5,6 +5,18 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.204.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.204.0-beta.0...v3.204.1-beta.0) (2026-11-15)
+
+
+### Bug Fixes
+
+* **gallery:** folder navigation below the hero header ([#2511](https://github.com/PicPeak/picpeak/issues/2511)) ([87044d2](https://github.com/PicPeak/picpeak/commit/87044d2f62aff35016e452f3ad85266cfb3f448e))
+* **gallery:** offer only the feedback filters the gallery allows ([#2512](https://github.com/PicPeak/picpeak/issues/2512)) ([46f848d](https://github.com/PicPeak/picpeak/commit/46f848da417df7d2332039c8bca79767c817a9aa))
+* **mail-intake:** reuse a stored attachment by its path under STORAGE_PATH ([#2506](https://github.com/PicPeak/picpeak/issues/2506)) ([bb133be](https://github.com/PicPeak/picpeak/commit/bb133be0b9d27b747beaba10bc417e3a326dcefe))
+* **restore:** hold a native restore in maintenance while migrations are pending ([#2519](https://github.com/PicPeak/picpeak/issues/2519)) ([b31a55a](https://github.com/PicPeak/picpeak/commit/b31a55a88ba4a295952ce357ce1991fd50aaf5d5))
+* **restore:** show the migration hold in the restore progress instead of asking for a restart ([#2516](https://github.com/PicPeak/picpeak/issues/2516)) ([6b2461c](https://github.com/PicPeak/picpeak/commit/6b2461cd2a5c4c3d1e9d33b7d78ac2c632be6da1))
+* **selection:** keep the curated selection in counts, job status and archive restore ([#2518](https://github.com/PicPeak/picpeak/issues/2518)) ([0f51e59](https://github.com/PicPeak/picpeak/commit/0f51e591948c87d9de336f8192eef95df63f7f38))
+
 ## [3.204.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.203.0-beta.0...v3.204.0-beta.0) (2026-11-14)
 
 
