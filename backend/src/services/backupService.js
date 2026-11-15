@@ -23,7 +23,7 @@ const S3StorageAdapter = require('./storage/s3Storage');
 const recoveryFiles = require('./recoveryFiles');
 const { getStorage } = require('./storage');
 const { backupS3Access } = require('../utils/s3EndpointPolicy');
-const { standaloneSnapshotOfRun, removeLocalSnapshot, removeS3Snapshot } = require('../utils/backupRestorePoint');
+const { standaloneSnapshotOfRun, removeLocalSnapshot, removeS3Snapshot, RSYNC_MIRROR_LAYOUT } = require('../utils/backupRestorePoint');
 const packageJson = require('../../package.json');
 const { withTrustedCrmAccess } = require('../database/crmAccess');
 
@@ -1064,7 +1064,15 @@ function validateRsyncParam(value, label) {
   return value;
 }
 
-async function buildRsyncArgs(config, extraExcludes = [], sourceRoot = getStoragePath(), dumpRoot) {
+// The remote directory each rsync run's manifest is copied to. The mirror
+// itself is synced with --delete, so this directory is protected from it.
+const RSYNC_MANIFEST_DIR = 'manifests';
+
+async function buildRsyncArgs(config, extraExcludes = [], sourceRoot = getStoragePath(), dumpRoot, dumpKey) {
+  return (await buildRsyncInvocation(config, extraExcludes, sourceRoot, dumpRoot, dumpKey)).args;
+}
+
+async function buildRsyncInvocation(config, extraExcludes = [], sourceRoot = getStoragePath(), dumpRoot, dumpKey) {
   const storagePath = sourceRoot;
   const remotePath = validateRsyncParam(config.backup_rsync_path, 'remote path');
 
@@ -1073,6 +1081,20 @@ async function buildRsyncArgs(config, extraExcludes = [], sourceRoot = getStorag
   }
 
   const args = ['-avz', '--delete', '--stats'];
+
+  // The manifests the runs copied next to the mirror (uploadRsyncManifest)
+  // are not in the source, so --delete would take them away again.
+  args.push('--filter', `P /${RSYNC_MANIFEST_DIR}/`);
+
+  // The staged database dump is the restore point's database, not media:
+  // include it ahead of the exclude patterns (first match wins), so a
+  // pattern such as *.gz cannot drop it from the mirror. The risk rule keeps
+  // earlier runs' dumps open to --delete, which such a pattern would protect.
+  if (dumpKey) {
+    const dumpPath = `/${dumpKey.split(path.sep).join('/')}`;
+    const dumpDir = path.posix.dirname(dumpPath);
+    args.push('--include', `${dumpDir}/`, '--include', dumpPath, '--filter', `R ${dumpDir}/*`);
+  }
 
   // Same noise filters as the walker, plus the de-selected backup paths
   // (extraExcludes) — rsync syncs the whole storage root, so this is the
@@ -1095,7 +1117,27 @@ async function buildRsyncArgs(config, extraExcludes = [], sourceRoot = getStorag
   // `dumpRoot` holds only database/<dump>; rsync merges it into the same
   // destination tree as the storage root.
   args.push(source, ...(dumpRoot ? [`${dumpRoot}/`] : []), `${connection.rsyncTarget}:${remotePath}`);
-  return args;
+  return { args, connection, remotePath };
+}
+
+// Copy a run's signed manifest to <backup_rsync_path>/manifests/ over the
+// connection the mirror used, so a copy of the mirror alone is restorable.
+// The mirror holds one point in time (--delete, one dump), so the directory
+// keeps only the manifest that describes it: --delete-excluded removes the
+// manifests of earlier runs, whose dumps and files the mirror no longer has.
+async function uploadRsyncManifest(upload, manifestPath) {
+  const { spawnAsync } = require('../utils/safeExec');
+  const { connection, remotePath } = upload;
+  const remoteDir = `${remotePath.replace(/\/+$/, '')}/${RSYNC_MANIFEST_DIR}/`;
+  const args = ['-avz', '--delete', '--delete-excluded',
+    '--include', `/${path.basename(manifestPath)}`, '--exclude', '*',
+    '-e', connection.rsyncShell, `${path.dirname(manifestPath)}/`, `${connection.rsyncTarget}:${remoteDir}`];
+  await spawnAsync('rsync', args).catch((error) => {
+    const failure = require('../utils/rsyncConnection').hostKeyFailure(error.stderr || error.message) || error;
+    throw new Error(`The backup manifest could not be copied to the rsync destination (${remoteDir}); `
+      + `the mirror is not restorable without it: ${failure.message}`);
+  });
+  logger.info(`Backup manifest copied to ${connection.rsyncTarget}:${remoteDir}`);
 }
 
 /**
@@ -1126,7 +1168,7 @@ function parseRsyncStats(output) {
   return stats;
 }
 
-async function performRsyncBackup(config, files, sourceRoot, dumpRoot) {
+async function performRsyncBackup(config, files, sourceRoot, dumpRoot, dumpInfo) {
   const { spawnAsync } = require('../utils/safeExec');
   // Anchored excludes for the de-selected What-to-Backup paths; rsync
   // otherwise transfers the whole storage root regardless of the walker's
@@ -1140,8 +1182,10 @@ async function performRsyncBackup(config, files, sourceRoot, dumpRoot) {
     files = files.filter((file) => !file.legacyValues);
   }
   const excludedPaths = await resolveExcludedBackupPaths(config);
-  const rsyncArgs = await buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`), sourceRoot, dumpRoot);
-  const { stdout } = await spawnAsync('rsync', rsyncArgs).catch((error) => {
+  const dumpKey = dumpInfo && dumpInfo.backupFile
+    ? path.posix.join('database', path.basename(dumpInfo.backupFile)) : undefined;
+  const invocation = await buildRsyncInvocation(config, excludedPaths.map((row) => `/${row.path}/`), sourceRoot, dumpRoot, dumpKey);
+  const { stdout } = await spawnAsync('rsync', invocation.args).catch((error) => {
     // The run's error_message, failure email and System Health then name
     // the refused host key instead of a bare "rsync exited with code 255".
     throw require('../utils/rsyncConnection').hostKeyFailure(error.stderr || error.message) || error;
@@ -1174,7 +1218,12 @@ async function performRsyncBackup(config, files, sourceRoot, dumpRoot) {
     backedUpCount: typeof stats.filesTransferred === 'number' ? stats.filesTransferred : backedUpFiles.length,
     backedUpSize: totalSize,
     backedUpFiles,
-    backupPath: `${config.backup_rsync_host}:${config.backup_rsync_path}`
+    backupPath: `${config.backup_rsync_host}:${config.backup_rsync_path}`,
+    // The dump as the mirror holds it, relative to the mirror root like the
+    // local and S3 restore points record it; where it was dumped here stays
+    // a fallback for a restore on this host (database.source_file).
+    ...(dumpKey ? { databaseInfo: { ...dumpInfo, backupFile: dumpKey, sourceFile: dumpInfo.backupFile } } : {}),
+    rsyncUpload: { connection: invocation.connection, remotePath: invocation.remotePath },
   };
 }
 
@@ -1570,8 +1619,8 @@ async function runBackupInternal(isManual = false) {
       result = await performLocalBackup(config, files, verifiedDatabaseInfo);
     } else if (destinationType === 'rsync') {
       result = stagedFiles
-        ? await performRsyncBackup(config, files, recoveryStage)
-        : await performRsyncBackup(config, files, undefined, recoveryStage);
+        ? await performRsyncBackup(config, files, recoveryStage, undefined, verifiedDatabaseInfo)
+        : await performRsyncBackup(config, files, undefined, recoveryStage, verifiedDatabaseInfo);
     } else if (destinationType === 's3') {
       result = await performS3Backup(config, files, verifiedDatabaseInfo);
     } else {
@@ -1627,6 +1676,9 @@ async function runBackupInternal(isManual = false) {
             ? { restore_point: 'standalone-v1',
               restore_point_manifest_layout: destinationType === 'local' && config.backup_manifest_path
                 ? 'external' : 'nested' } : {}),
+          // This run's manifest is also copied into <mirror>/manifests
+          // (uploadRsyncManifest): a copy found there names its mirror.
+          ...(destinationType === 'rsync' ? { rsync_manifest_layout: RSYNC_MIRROR_LAYOUT } : {}),
           retentionDays: config.backup_retention_days || 30,
           ...(Object.keys(legacyMap).length
             ? { stored_path_map: legacyMap, stored_path_sha256: storedPathChecksums(legacyBacked) }
@@ -1650,6 +1702,7 @@ async function runBackupInternal(isManual = false) {
         const manifestConfig = destinationType === 'local'
           ? { ...config, backup_destination_path: result.backupPath } : config;
         manifestPath = await saveManifestToLocal(manifest, `backup-manifest-${manifest.backup.id}.${manifestOptions.format}`, manifestConfig);
+        if (result.rsyncUpload) await uploadRsyncManifest(result.rsyncUpload, manifestPath);
       }
 
       try {
