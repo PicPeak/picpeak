@@ -5,6 +5,21 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.15](https://github.com/PicPeak/picpeak/compare/v3.135.14...v3.135.15) (2026-11-15)
+
+
+### Bug Fixes
+
+* **backup:** keep an rsync backup restorable from the remote alone (stable) ([#2535](https://github.com/PicPeak/picpeak/issues/2535)) ([1ac5e8b](https://github.com/PicPeak/picpeak/commit/1ac5e8bbea5671e4dd67fd0122cc1d991168f1a4))
+* **backup:** test an rsync destination with rsync, not ssh echo (stable) ([#2530](https://github.com/PicPeak/picpeak/issues/2530)) ([4f71a61](https://github.com/PicPeak/picpeak/commit/4f71a61528f10150c392d992c92a6633244c2751))
+* **gallery:** folder navigation below the hero header (stable) ([#2513](https://github.com/PicPeak/picpeak/issues/2513)) ([203a8be](https://github.com/PicPeak/picpeak/commit/203a8be45f160806ccbffac272e63b36377287d8))
+* **gallery:** offer only the feedback filters the gallery allows (stable) ([#2514](https://github.com/PicPeak/picpeak/issues/2514)) ([db6bed1](https://github.com/PicPeak/picpeak/commit/db6bed192989d0f5ea65a04b04e1a3a52f47179a))
+* **restore:** hold a native restore in maintenance while migrations are pending (stable) ([#2520](https://github.com/PicPeak/picpeak/issues/2520)) ([99bc712](https://github.com/PicPeak/picpeak/commit/99bc712a79b4f07270a69d4798c615263d131ff8))
+* **restore:** show pre-flight warnings before the start, record blocked restores as unchanged (stable) ([#2532](https://github.com/PicPeak/picpeak/issues/2532)) ([ed4270f](https://github.com/PicPeak/picpeak/commit/ed4270f76342210e53536f3f109b62bee0d20ed7))
+* **restore:** show the migration hold in the restore progress instead of asking for a restart ([#2517](https://github.com/PicPeak/picpeak/issues/2517)) ([627fc8e](https://github.com/PicPeak/picpeak/commit/627fc8ece814cc06903298de3a9c83b44541f013))
+* **transfers:** show upload progress when sending files ([#2524](https://github.com/PicPeak/picpeak/issues/2524)) ([550828e](https://github.com/PicPeak/picpeak/commit/550828e1e10c68992d8dd6f7382728a89ee9c2b9))
+* **transfers:** upload large PicTransfer files in chunks (stable) ([#2536](https://github.com/PicPeak/picpeak/issues/2536)) ([5897b6c](https://github.com/PicPeak/picpeak/commit/5897b6c7e2386818ea6c9a3df3c5703d8d7533fa))
+
 ## [3.135.14](https://github.com/PicPeak/picpeak/compare/v3.135.13...v3.135.14) (2026-11-14)
 
 
