@@ -237,14 +237,17 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
     it('stays in maintenance after the restart until the restored ledger has every migration (issue 2480)', async () => {
       const a = create();
       await a.coordinator.activate();
-      await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+      const handle = await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
       await drive('restoring', a);
       terminal.resolve();
       await drive('restart_required', a);
+      // Before the restart the migrations are not what holds it.
+      pending = ['400_newer_than_the_archive.js'];
+      expect(await a.coordinator.progress(handle.attemptId, handle.progressToken))
+        .toMatchObject({ state: 'restart_required', restartRequired: true, migrationsPending: null });
 
       // Restarted without wait-for-db.sh: the archive's ledger is still there.
       leaseOf(a).state = 'free';
-      pending = ['400_newer_than_the_archive.js'];
       const b = create();
       expect(await b.coordinator.pendingAtBoot()).toBe(true);
       await b.coordinator.initialize();
@@ -253,6 +256,9 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       expect(marker).toMatchObject({ fenced: true });
       expect(() => b.coordinator.admitRequest()).toThrow();
       await expect(b.coordinator.waitForStartupAdmission({ timeoutMs: 50 })).rejects.toMatchObject({ code: 'RESTORE_CONFLICT' });
+      // The progress view says why, instead of asking for another restart.
+      expect(await b.coordinator.progress(handle.attemptId, handle.progressToken)).toMatchObject({ state: 'restart_required',
+        error: null, migrationsPending: { count: 1, first: '400_newer_than_the_archive.js' } });
 
       // The migrations ran (by hand): the next tick opens the instance.
       pending = [];

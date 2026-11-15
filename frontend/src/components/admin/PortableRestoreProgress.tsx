@@ -39,6 +39,8 @@ export function PortableRestoreProgress({ handle }: { handle: RestoreHandle }) {
   // After a rollback or an aborted restore the session is still valid.
   const resume = () => { clearRestoreHandle(); window.location.reload(); };
   const failed = progress?.outcome === 'rolled_back' || progress?.outcome === 'aborted';
+  // Already restarted, but held until the restored database is migrated.
+  const migrations = progress?.restartRequired ? progress.migrationsPending : null;
   const failure = progress?.error
     ? t(`backup.picpeak.restoreError.${progress.error.code}`, { defaultValue: progress.error.message })
     : null;
@@ -49,10 +51,12 @@ export function PortableRestoreProgress({ handle }: { handle: RestoreHandle }) {
       <p className="mt-2 text-sm text-body">{t('backup.picpeak.coordinatedIntro')}</p>
       {progress && <p className="mt-4 font-medium text-heading">{failed && progress.state === 'open'
         ? t('backup.picpeak.restoreNotApplied')
-        : t(`backup.picpeak.restoreState.${progress.state}`)}</p>}
+        : migrations ? t('backup.picpeak.restoreState.migrations_pending')
+          : t(`backup.picpeak.restoreState.${progress.state}`)}</p>}
       {!progress && !denied && <p className="mt-4 text-body">{t('backup.picpeak.awaitingProgress')}</p>}
       {unavailable && <p className="mt-4 text-soft">{t('backup.picpeak.progressUnavailable')}</p>}
-      {progress?.restartRequired && <p className="mt-4 text-body">{t('backup.picpeak.restartAllInstances')}</p>}
+      {migrations && <p className="mt-4 text-body">{t('backup.picpeak.migrationsPending', { count: migrations.count, first: migrations.first })}</p>}
+      {progress?.restartRequired && !migrations && <p className="mt-4 text-body">{t('backup.picpeak.restartAllInstances')}</p>}
       {progress?.outcome === 'committed' && <p className="mt-4 text-body">{t('backup.picpeak.restoreSummary', {
         tables: progress.summary.tables ?? 0, files: progress.summary.filesRestored ?? 0,
       })}</p>}

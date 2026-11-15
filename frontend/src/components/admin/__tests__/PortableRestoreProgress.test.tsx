@@ -34,6 +34,21 @@ describe('session-independent coordinated restore progress', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
     expect(portableBackupService.progress).toHaveBeenCalledTimes(2);
   });
+  it.each(['en', 'de'])('tells an operator who already restarted in %s that the migrations hold it, not to restart again', async language => {
+    state.language = language;
+    const locale = language === 'de' ? de : en;
+    vi.mocked(portableBackupService.progress).mockResolvedValue({ ...progress, error: null,
+      migrationsPending: { count: 2, first: '400_newer_than_the_archive.js' } });
+    render(<PortableRestoreProgress handle={handle} />);
+    await act(async () => {});
+    expect(screen.getByText(locale.backup.picpeak.restoreState.migrations_pending)).toBeInTheDocument();
+    expect(screen.getByText(/run-migrations-safe\.js/)).toHaveTextContent('400_newer_than_the_archive.js');
+    expect(screen.getByText(/run-migrations-safe\.js/)).toHaveTextContent('2');
+    expect(screen.queryByText(locale.backup.picpeak.restartAllInstances)).not.toBeInTheDocument();
+    expect(screen.queryByText(locale.backup.picpeak.restoreState.restart_required)).not.toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(portableBackupService.progress).toHaveBeenCalledTimes(2);
+  });
   it('retries network loss instead of presenting unproved completion or leaving the progress panel', async () => {
     vi.mocked(portableBackupService.progress).mockRejectedValueOnce(new Error('socket closed')).mockResolvedValue(progress);
     render(<PortableRestoreProgress handle={handle} />);
