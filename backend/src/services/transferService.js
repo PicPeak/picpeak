@@ -934,7 +934,9 @@ async function deliverTransferEmails(transferId, emails) {
     await release();
     return { ...result, failed: true };
   }
-  return result;
+  // Some addresses refused: the claim stays (no one is mailed twice) and the
+  // caller is told not everyone got it.
+  return result.sent < result.recipients.length ? { ...result, partial: true } : result;
 }
 
 async function sendTransferEmails(transferId, emails, { onSent } = {}) {

@@ -349,6 +349,18 @@ describe('creating a transfer whose files follow in chunks', () => {
     expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
   });
 
+  it('answers partial when SMTP refused some recipients', async () => {
+    const { id } = (await create({
+      pendingFiles: 1, deliveryMethod: 'email', recipientEmails: JSON.stringify(['a@example.com', 'b@example.com']), photoIds: '[]',
+    })).body.transfer;
+    mockSendTemplateEmail.mockResolvedValueOnce(true).mockRejectedValueOnce(new Error('mailbox refused'));
+    const res = await deliver(ownerToken, id, ['a@example.com', 'b@example.com']);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ sent: 1, partial: true });
+    expect((await deliver(ownerToken, id, ['a@example.com', 'b@example.com'])).body.already_delivered).toBe(true);
+    expect(mockSendTemplateEmail).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps deliver to the transfer owner and refuses bad input', async () => {
     const { id } = (await create({ pendingFiles: 1, deliveryMethod: 'email', recipientEmails: '[]', photoIds: '[]' })).body.transfer;
     expect((await deliver(otherToken, id, ['x@example.com'])).status).toBe(404);
