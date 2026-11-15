@@ -10,6 +10,7 @@ const admitted = () => require('./adminChunkedAdmission');
 
 // Get storage path from environment or default
 const { getStoragePath } = require('../config/storage');
+const { mergedUploadName } = require('../utils/mergedUploadName');
 const getChunksPath = () => path.join(getStoragePath(), 'chunks');
 
 // In-memory store for active uploads (in production, consider Redis)
@@ -210,7 +211,7 @@ async function initializeUpload(options) {
     // name as metadata only: a valid name can exceed the filesystem's
     // 255-byte limit (100 CJK characters do) and would fail the merge after
     // every chunk had arrived.
-    mergeName: opaque ? 'merged.bin' : safeFilename,
+    mergeName: opaque ? 'merged.bin' : mergedUploadName(safeFilename),
     expectedChunks,
     receivedChunks: new Set(),
     // Bytes per chunk index, so a re-sent chunk replaces rather than adds.
@@ -541,7 +542,7 @@ async function completeUpload(uploadId, { owner } = {}) {
     throw error;
   }
 
-  const mergedFilePath = path.join(tempDir, uploadMeta.mergeName);
+  const mergedFilePath = path.join(tempDir, uploadMeta.mergeName || mergedUploadName(uploadMeta.filename));
 
   try {
     // Merge chunks in order, each streamed onto the end of the merged file.
