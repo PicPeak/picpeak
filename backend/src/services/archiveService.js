@@ -406,6 +406,12 @@ async function buildArchive(event, lease) {
           // The frame an admin picked for a video's poster (issue 2263),
           // which the restored poster is rebuilt at.
           'photos.poster_offset_seconds',
+          // A managed replacement of an external photo keeps its source path
+          // (issue 2356): it decides whether the photo is in the curated
+          // selection, and a row rebuilt without it is an ordinary upload
+          // every guest sees.
+          'photos.external_relpath',
+          'photos.selection_hidden',
         );
       // The folder a photo lives in, as a path ("Saturday/Activity B"):
       // folder ids do not survive a restore into a fresh database, names do.

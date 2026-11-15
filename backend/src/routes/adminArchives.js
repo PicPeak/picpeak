@@ -29,6 +29,21 @@ const { pipeStreamToResponse, answerVanished } = require('../utils/streamRespons
 const { DEFAULT_STALE_MS } = require('../services/maintenanceJobState');
 const router = express.Router();
 
+// external_relpath and selection_hidden of a rebuilt photo row, from its
+// manifest entry (issue 2356). A path another row of the event holds already
+// is left off (the column is unique per event) and logged.
+function restoredSourceFields(manifestEntry, takenRelpaths) {
+  const relpath = typeof manifestEntry?.external_relpath === 'string' && manifestEntry.external_relpath
+    ? manifestEntry.external_relpath : null;
+  const hidden = manifestEntry?.selection_hidden === true || manifestEntry?.selection_hidden === 1;
+  if (relpath && takenRelpaths.has(relpath)) {
+    logger.warn(`Archive restore: ${relpath} is already held by another photo of the event; restoring ${manifestEntry.filename} without its source path`);
+    return { external_relpath: null, selection_hidden: formatBoolean(hidden) };
+  }
+  if (relpath) takenRelpaths.add(relpath);
+  return { external_relpath: relpath, selection_hidden: formatBoolean(hidden) };
+}
+
 /**
  * Which extracted files are media, for archives too old to carry a manifest.
  *
@@ -467,6 +482,12 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // Get list of extracted files to update database
       const extractedPhotos = [];
 
+      // Source paths already held by a row of the event: the column is unique
+      // per event, and a re-scan may have brought the external original back
+      // while the event was archived. Such a rebuilt row restores without it.
+      const takenRelpaths = new Set(await db('photos').where('event_id', archive.id)
+        .whereNotNull('external_relpath').pluck('external_relpath'));
+
       // Photo credits (#1561). A guest erased while the event was archived
       // had their name cleared from rows that no longer existed, so the
       // manifest still holds it; only a guest still on the event keeps theirs.
@@ -773,6 +794,11 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
           poster_offset_seconds: isVideoEntry && manifestEntry?.poster_offset_seconds != null
             && Number.isFinite(Number(manifestEntry.poster_offset_seconds)) && Number(manifestEntry.poster_offset_seconds) >= 0
             ? Number(manifestEntry.poster_offset_seconds) : null,
+          // A managed replacement of an external photo (issue 2356): its source
+          // path and the selection flag it was archived with, always written
+          // as above. recomputeSelection() below settles the flag against the
+          // event's current selection.
+          ...restoredSourceFields(manifestEntry, takenRelpaths),
         });
       }
 
@@ -826,6 +852,15 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         });
       await recordSupersededArchive(lease, archive.archive_path, trx);
     });
+
+    // Rebuilt rows carry the source path they were archived with, and the
+    // selection may have changed since (issue 2356). The gallery is restored
+    // by now; a failure leaves the archived flags, which is logged.
+    try {
+      await require('../services/externalSelection').recomputeSelection(archive.id);
+    } catch (err) {
+      logger.warn('Archive restore: recomputing the curated selection failed', { eventId: archive.id, error: err.message });
+    }
 
     // Browser-playable copies (issue 1430): archiving dropped them and reset
     // the rows (archiveService). With the setting on, the restored videos are

@@ -715,4 +715,46 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     const photo = await db('photos').where('event_id', eventId).first();
     expect(photo.uploaded_at).toBe(uploadedAt);
   });
+
+  // Issue 2356: a managed replacement of an external photo outside the
+  // curated selection must not come back as an ordinary upload every guest
+  // sees, and the flags follow the event's selection as it is now.
+  it('restores the source path and settles the selection flag against the current selection', async () => {
+    const archiveRelPath = await writeArchive('selection.zip', {
+      'individual/edit.jpg': BYTES,
+      'individual/pick.jpg': BYTES,
+      'individual/plain.jpg': BYTES,
+      'individual/dup.jpg': BYTES,
+      'photos_manifest.json': manifestOf([
+        { filename: 'edit.jpg', type: 'individual', external_relpath: 'shoot/raw/edit.jpg', selection_hidden: true },
+        // Archived under an older selection that left it out.
+        { filename: 'pick.jpg', type: 'individual', external_relpath: 'shoot/gallery/pick.jpg', selection_hidden: 1 },
+        { filename: 'plain.jpg', type: 'individual' },
+        { filename: 'dup.jpg', type: 'individual', external_relpath: 'shoot/raw/dup.jpg', selection_hidden: true },
+      ]),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'selection-event');
+    await db('events').where('id', eventId).update({
+      source_mode: 'reference', external_path: 'shoot', selection_path: 'gallery',
+    });
+    // The external original came back by a re-scan while the event was
+    // archived: its path is unique per event, so the restore must not fail.
+    await db('photos').insert({
+      event_id: eventId, filename: 'ext-dup.jpg', path: '', type: 'individual',
+      source_origin: 'external', external_relpath: 'shoot/raw/dup.jpg', selection_hidden: 1,
+    });
+
+    await restore(eventId);
+
+    const rows = Object.fromEntries((await db('photos').where('event_id', eventId)
+      .select('filename', 'external_relpath', 'selection_hidden')).map((p) => [p.filename, p]));
+    expect(rows['edit.jpg']).toMatchObject({ external_relpath: 'shoot/raw/edit.jpg' });
+    expect(Boolean(rows['edit.jpg'].selection_hidden)).toBe(true);
+    expect(rows['pick.jpg']).toMatchObject({ external_relpath: 'shoot/gallery/pick.jpg' });
+    expect(Boolean(rows['pick.jpg'].selection_hidden)).toBe(false);
+    expect(rows['plain.jpg'].external_relpath).toBeNull();
+    expect(Boolean(rows['plain.jpg'].selection_hidden)).toBe(false);
+    expect(rows['dup.jpg'].external_relpath).toBeNull();
+    expect(Boolean(rows['ext-dup.jpg'].selection_hidden)).toBe(true);
+  });
 });
