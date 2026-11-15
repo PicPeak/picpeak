@@ -322,6 +322,28 @@ test.each(['photos', 'events'])('actual admitted chunk JPEG through %s preserves
   expect(await db('public_upload_objects')).toHaveLength(0);
   expect(await db('public_upload_requests')).toHaveLength(1);
 });
+// A valid name above 255 bytes is no file name on most filesystems; the
+// merge used it on disk and failed only after every chunk had arrived.
+test('a chunked upload with a file name above 255 bytes merges and keeps the name', async () => {
+  const name = `${'婚'.repeat(100)}.jpg`;
+  expect(Buffer.byteLength(name)).toBeGreaterThan(255);
+  // The merge's on-disk name, whatever the host filesystem would accept.
+  const chunks = require('../../src/services/chunkedUploadService');
+  const original = chunks.completeUpload;
+  let merged;
+  const spy = jest.spyOn(chunks, 'completeUpload').mockImplementation(async (...args) => (merged = await original(...args)));
+  const init = await initChunk(jpeg.length, name);
+  expect(init.status).toBe(200);
+  expect((await sendChunk(init.body.uploadId, jpeg)).status).toBe(200);
+  const res = await completeChunk(init.body.uploadId);
+  spy.mockRestore();
+  expect(res.status).toBe(200); expect(res.body.uploaded).toBe(1);
+  expect(path.basename(merged.path)).toBe('merged.jpg');
+  expect(merged.filename).toBe(name);
+  await waitSettled();
+  const photo = await db('photos').where({ id: res.body.photos[0].id }).first();
+  expect(photo.original_filename).toBe(name);
+});
 test('chunk init keeps image and video ceilings distinct and shares admission with multipart', async () => {
   await setting('general_max_file_size_mb', 1); settings.clearMaxFileSizeCache();
   expect((await initChunk(2 * 1024 * 1024)).status).toBe(400);
