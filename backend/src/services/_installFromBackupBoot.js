@@ -224,12 +224,22 @@ async function tryInstallFromBackup(db, logger) {
       },
     });
 
-    if (result?.success === false) {
+    // The import committed but the migrations after it failed: the data is
+    // in place and maintenance mode is on (restoreService
+    // holdForPendingMigrations). The trigger goes as after a success, or a
+    // later boot would import the archive again over what changed since.
+    const migrationsPending = Boolean(result?.migrationsPending);
+    if (result?.success === false && !migrationsPending) {
       throw new Error(result?.error || 'Restore service reported failure');
     }
 
-    log.info(`Install-from-backup: restore completed successfully from ${trigger.manifestPath}`);
-    announce('restore completed successfully');
+    if (migrationsPending) {
+      log.error(`Install-from-backup: restored from ${trigger.manifestPath}, but migrations are pending — ${result.error}`);
+      announce(`restored, but migrations are pending. ${result.error}`);
+    } else {
+      log.info(`Install-from-backup: restore completed successfully from ${trigger.manifestPath}`);
+      announce('restore completed successfully');
+    }
 
     // Remove the trigger so the next boot doesn't redo it.
     try {
@@ -239,7 +249,9 @@ async function tryInstallFromBackup(db, logger) {
       log.warn(`Install-from-backup: could not remove trigger file (manual cleanup needed): ${unlinkErr.message}`);
     }
 
-    return { ran: true, manifestPath: trigger.manifestPath };
+    return migrationsPending
+      ? { ran: true, manifestPath: trigger.manifestPath, error: result.error }
+      : { ran: true, manifestPath: trigger.manifestPath };
   } catch (err) {
     log.error(`Install-from-backup: FAILED — ${err.message}`);
     log.warn('Trigger file left in place so you can fix the input and retry by restarting the container.');
