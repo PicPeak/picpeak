@@ -328,6 +328,27 @@ describe('creating a transfer whose files follow in chunks', () => {
     expect(mockSendTemplateEmail).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the claim when the delivery failed after a mail went out', async () => {
+    const { id } = (await create({
+      pendingFiles: 1, deliveryMethod: 'email', recipientEmails: JSON.stringify(['once@example.com']), photoIds: '[]',
+    })).body.transfer;
+    // The mail goes out, then recording the recipient fails.
+    mockSendTemplateEmail.mockImplementationOnce(async () => {
+      await db.raw('CREATE TRIGGER fail_recipient BEFORE INSERT ON transfer_recipients BEGIN SELECT RAISE(ABORT, \'disk gone\'); END');
+      return true;
+    });
+    let first;
+    try {
+      first = await deliver(ownerToken, id, ['once@example.com']);
+    } finally {
+      await db.raw('DROP TRIGGER IF EXISTS fail_recipient');
+    }
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ sent: 1, partial: true });
+    expect((await deliver(ownerToken, id, ['once@example.com'])).body.already_delivered).toBe(true);
+    expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps deliver to the transfer owner and refuses bad input', async () => {
     const { id } = (await create({ pendingFiles: 1, deliveryMethod: 'email', recipientEmails: '[]', photoIds: '[]' })).body.transfer;
     expect((await deliver(otherToken, id, ['x@example.com'])).status).toBe(404);

@@ -287,7 +287,12 @@ export const transfersService = {
     const created: Transfer = res.data.transfer;
 
     const { failed } = await uploadRemaining(created.id, rest, plan.chunked, progress);
-    const recipients = input.recipientEmails || [];
+    // The list the create kept (trimmed, at most 100) and the server would
+    // mail: deliver validates each address and refuses more than 100, so the
+    // raw list could fail it after every file had been uploaded.
+    const recipients = [...new Set((input.recipientEmails || [])
+      .map((e) => String(e || '').trim())
+      .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))].slice(0, 100);
     let deliveryHeld = false;
     if (input.deliveryMethod === 'email' && recipients.length) {
       if (failed.length) deliveryHeld = true;

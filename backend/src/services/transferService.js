@@ -905,7 +905,8 @@ async function removeExtraFiles(transferId) {
  * 'email' in one guarded UPDATE, so a concurrent or later call — a double
  * click, another replica — sends nothing. A delivery that sent no mail at all
  * (the database or every SMTP attempt failed) hands the claim back, so it can
- * be tried again; `failed` says so.
+ * be tried again; `failed` says so. One that failed after a mail went out
+ * keeps the claim and answers `partial`.
  */
 async function deliverTransferEmails(transferId, emails) {
   const claimed = await db('transfers')
@@ -915,11 +916,19 @@ async function deliverTransferEmails(transferId, emails) {
   const release = () => db('transfers').where({ id: transferId, delivery_method: 'email' })
     .update({ delivery_method: 'link' });
   let result;
+  let mailed = 0;
   try {
-    result = await sendTransferEmails(transferId, emails);
+    result = await sendTransferEmails(transferId, emails, { onSent: () => { mailed += 1; } });
   } catch (err) {
-    await release().catch(() => {});
-    throw err;
+    // A mail that went out keeps the claim: handing it back would let a
+    // retry mail the same people again. Only a delivery that sent nothing is
+    // open to another attempt.
+    if (mailed === 0) {
+      await release().catch(() => {});
+      throw err;
+    }
+    logger.warn('transferService: delivery failed after mail went out; not retried', { transferId, sent: mailed, error: err.message });
+    return { sent: mailed, recipients: [], partial: true };
   }
   if (result.sent === 0) {
     await release();
@@ -928,7 +937,7 @@ async function deliverTransferEmails(transferId, emails) {
   return result;
 }
 
-async function sendTransferEmails(transferId, emails) {
+async function sendTransferEmails(transferId, emails, { onSent } = {}) {
   const clean = [...new Set((emails || [])
     .map((e) => String(e || '').trim())
     .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
@@ -956,6 +965,7 @@ async function sendTransferEmails(transferId, emails) {
     try {
       await sendTemplateEmail(email, 'transfer_ready', vars);
       sent += 1;
+      onSent?.();
     } catch (err) {
       logger.warn('transferService: failed to send transfer_ready email', {
         transferId, email, error: err.message,

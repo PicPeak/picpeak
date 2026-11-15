@@ -115,6 +115,18 @@ describe('creating a send', () => {
     expect(progress.at(-1)).toBe(100);
   });
 
+  it('delivers to the list the create kept: valid, trimmed, at most 100', async () => {
+    const many = Array.from({ length: 120 }, (_, i) => `r${i}@example.com`);
+    await transfersService.create({
+      title: 'Wedding', files: [bigFile('film.mp4', 120 * MB)], deliveryMethod: 'email',
+      recipientEmails: [' r0@example.com ', 'not-an-address', ...many],
+    });
+    const body = post.mock.calls.find(([url]) => url === '/admin/transfers/7/deliver')![1] as { recipientEmails: string[] };
+    expect(body.recipientEmails).toHaveLength(100);
+    expect(body.recipientEmails[0]).toBe('r0@example.com');
+    expect(body.recipientEmails).not.toContain('not-an-address');
+  });
+
   it('reports a chunked file that failed and keeps the mail held', async () => {
     serve({ failChunk: 3 });
     const result = await transfersService.create({

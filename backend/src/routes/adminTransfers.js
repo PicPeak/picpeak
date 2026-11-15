@@ -557,7 +557,8 @@ router.post('/:id/deliver',
       return res.status(502).json({ error: 'The email could not be sent. Try again.', code: 'DELIVERY_FAILED' });
     }
     return successResponse(res, {
-      transfer: await transferService.getTransfer(id), sent: result.sent, already_delivered: !!result.alreadyDelivered,
+      transfer: await transferService.getTransfer(id), sent: result.sent,
+      already_delivered: !!result.alreadyDelivered, partial: !!result.partial,
     }, 200, result.alreadyDelivered ? 'Already sent' : 'Email sent');
   }),
 );
