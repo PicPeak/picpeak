@@ -201,7 +201,7 @@ describe('installFromBackupBoot', () => {
     const { resolveBackupPointLocation } = jest.requireActual('../../src/utils/backupRestorePoint');
     const config = await require('../../src/services/backupService').getBackupConfig();
     const manifest = { backup: { type: 'incremental', path: 'backup.example.com:/home/picpeak' },
-      metadata: { destination_type: 'rsync' } };
+      metadata: { destination_type: 'rsync', rsync_manifest_layout: 'mirror-v1' } };
     let root;
     mockRestore.mockImplementation(async (options) => {
       root = await resolveBackupPointLocation(manifest, options, config);

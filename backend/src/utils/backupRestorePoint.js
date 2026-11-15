@@ -4,6 +4,9 @@ const path = require('path');
 const { getStoragePath } = require('../config/storage');
 
 const STANDALONE_VERSION = 'standalone-v1';
+// Signed marker of an rsync manifest that the run also put in
+// <mirror>/manifests, beside the mirror it describes.
+const RSYNC_MIRROR_LAYOUT = 'mirror-v1';
 const STANDALONE_SNAPSHOT_RE = /^backup-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function hasControlCharacters(value) {
@@ -111,12 +114,14 @@ async function resolveBackupPointLocation(manifest, options, config) {
       ? assertLocalBackupRoot(typeof source === 'string' ? path.resolve(source) : source, config, extraRoots) : source;
   }
   if (!isStandaloneRestorePoint(manifest)) {
-    // An rsync run also copies its manifest to <mirror>/manifests, so a
+    // A marked rsync run also copied its manifest to <mirror>/manifests, so a
     // mirror copied back from the remote carries it: that mirror is the root.
-    // The local copy in backup_manifest_path keeps the configured destination.
+    // The local copy in backup_manifest_path, and every older rsync manifest
+    // (kept in a shared directory), keep the configured destination.
     const selectedDir = typeof options.manifestPath === 'string'
       ? path.dirname(path.resolve(options.manifestPath)) : null;
-    if (manifest?.metadata?.destination_type === 'rsync' && selectedDir
+    if (manifest?.metadata?.destination_type === 'rsync'
+        && manifest.metadata.rsync_manifest_layout === RSYNC_MIRROR_LAYOUT && selectedDir
         && path.basename(selectedDir) === 'manifests'
         && !(config?.backup_manifest_path && path.resolve(config.backup_manifest_path) === selectedDir)) {
       return assertLocalBackupRoot(path.dirname(selectedDir), config, extraRoots);
@@ -234,7 +239,7 @@ async function removeS3Snapshot(adapter, prefix) {
 }
 
 module.exports = {
-  STANDALONE_SNAPSHOT_RE,
+  STANDALONE_SNAPSHOT_RE, RSYNC_MIRROR_LAYOUT,
   isStandaloneRestorePoint, assertCompleteFileRestore,
   assertLocalBackupRoot, parseS3Location, resolveBackupPointLocation,
   standaloneSnapshotOfRun, removeLocalSnapshot, removeS3Snapshot,

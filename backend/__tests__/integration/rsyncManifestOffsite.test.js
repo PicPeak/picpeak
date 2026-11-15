@@ -131,6 +131,8 @@ it('never lets an exclude pattern drop the staged dump, and records the dump whe
   expect(latestDump).toMatch(/\.gz$/);
   const manifest = JSON.parse(await fs.readFile(run.manifest_path, 'utf8'));
   expect(manifest.database.backup_file).toBe(`database/${latestDump}`);
+  // The signed marker that lets a copy in <mirror>/manifests name its mirror.
+  expect(manifest.metadata.rsync_manifest_layout).toBe('mirror-v1');
 });
 
 it('fails the run visibly when the manifest cannot be copied to the remote', async () => {

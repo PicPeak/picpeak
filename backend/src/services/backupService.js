@@ -23,7 +23,7 @@ const S3StorageAdapter = require('./storage/s3Storage');
 const recoveryFiles = require('./recoveryFiles');
 const { getStorage } = require('./storage');
 const { backupS3Access } = require('../utils/s3EndpointPolicy');
-const { standaloneSnapshotOfRun, removeLocalSnapshot, removeS3Snapshot } = require('../utils/backupRestorePoint');
+const { standaloneSnapshotOfRun, removeLocalSnapshot, removeS3Snapshot, RSYNC_MIRROR_LAYOUT } = require('../utils/backupRestorePoint');
 const packageJson = require('../../package.json');
 const { withTrustedCrmAccess } = require('../database/crmAccess');
 
@@ -1619,6 +1619,9 @@ async function runBackupInternal(isManual = false) {
             ? { restore_point: 'standalone-v1',
               restore_point_manifest_layout: destinationType === 'local' && config.backup_manifest_path
                 ? 'external' : 'nested' } : {}),
+          // This run's manifest is also copied into <mirror>/manifests
+          // (uploadRsyncManifest): a copy found there names its mirror.
+          ...(destinationType === 'rsync' ? { rsync_manifest_layout: RSYNC_MIRROR_LAYOUT } : {}),
           retentionDays: config.backup_retention_days || 30,
           ...(Object.keys(legacyMap).length
             ? { stored_path_map: legacyMap, stored_path_sha256: storedPathChecksums(legacyBacked) }
