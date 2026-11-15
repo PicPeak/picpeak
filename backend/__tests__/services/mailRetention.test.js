@@ -408,3 +408,20 @@ test('reuse protects an old unreferenced hash while the new claim inspects and r
   const doc = await expense.recordInboundDocument({ source: 'email', filePath, originalFilename: 'scan.png', mimeType: 'image/png', mailClaim: current }, null);
   expect(doc.status).toBe('unsorted');
 });
+
+test('reuse through a symlinked STORAGE_PATH hands back the same path and keeps one ledger row', async () => {
+  const real = process.env.STORAGE_PATH;
+  const link = path.join(tmpDir, `storage-link-${++seq}`);
+  await fs.promises.symlink(fs.realpathSync(real), link);
+  process.env.STORAGE_PATH = link;
+  try {
+    const first = await mail.saveAttachment({ content: image }, await claim());
+    const second = await mail.saveAttachment({ content: image }, await claim());
+    expect(second).toBe(first);
+    expect(first.startsWith(link + path.sep)).toBe(true);
+    expect(await db('mail_intake_files')).toHaveLength(1);
+  } finally {
+    process.env.STORAGE_PATH = real;
+    await fs.promises.unlink(link);
+  }
+});
