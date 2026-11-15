@@ -13,6 +13,8 @@ const GUARDED = [
   ['adminPhotos.js', "router.post('/:eventId/chunked-upload/init'", 'requireEventOwnership'],
   ['publicTransferUpload.js', "router.post('/:token'", 'preUploadGuard'],
   ['adminTransfers.js', "router.post('/:id/upload-files'", "requirePermission('events.edit')"],
+  ['adminTransfers.js', "router.post('/:id/chunked-upload/init'", "requirePermission('events.edit')"],
+  ['publicTransferUpload.js', "router.post('/:token/chunked-upload/init'", 'chunkGuard()'],
   ['adminTransfers.js', "router.get('/:id/download'", "requirePermission('photos.download')"],
   ['adminTransfers.js', "router.get('/:id/uploads/download'", "requirePermission('photos.download')"],
   ['adminExternalMedia.js', "router.post('/events/:id/import-external'", 'requireEventOwnership'],
@@ -25,6 +27,10 @@ const NEVER_GUARDED = [
   ['gallery/uploads.js', "router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex'"],
   ['gallery/uploads.js', "router.post('/:eventId/chunked-upload/:uploadId/complete'"],
   ['adminPhotos.js', "router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex'"],
+  ['adminTransfers.js', "router.post('/:id/chunked-upload/:uploadId/chunk/:chunkIndex'"],
+  ['adminTransfers.js', "router.post('/:id/chunked-upload/:uploadId/complete'"],
+  ['publicTransferUpload.js', "router.post('/:token/chunked-upload/:uploadId/chunk/:chunkIndex'"],
+  ['publicTransferUpload.js', "router.post('/:token/chunked-upload/:uploadId/complete'"],
 ];
 
 function declaration(file, route) {

@@ -93,6 +93,22 @@ function warnWriteNotes(
       { count: dropped.length, names: dropped.join(', ') },
     ));
   }
+  // A write too large for one request goes up in several; one that failed
+  // leaves the transfer without those files.
+  const failed = result?.failed_files || [];
+  if (failed.length) {
+    toast.error(t(
+      'transfers.someFailed',
+      '{{count}} file(s) could not be uploaded and are not in the transfer: {{names}}',
+      { count: failed.length, names: failed.join(', ') },
+    ));
+  }
+  if (result?.delivery_held) {
+    toast.warn(t(
+      'transfers.deliveryHeld',
+      'The email to the recipients was not sent. Add the missing files, then use "Send again".',
+    ));
+  }
 }
 
 export const TransfersPage: React.FC = () => {

@@ -1347,6 +1347,30 @@ async function sendTransferEmails(transferId, emails) {
   return { sent, recipients: clean };
 }
 
+/**
+ * Record a send's recipients without mailing them yet: each row is held
+ * (last_sent_at NULL), exactly the state sendTransferEmails leaves a
+ * recipient in while nothing is downloadable. Used on create when the admin's
+ * own files are still to follow in chunks, so the ready mail does not go out
+ * before they have landed. sendTransferEmails (the resend route) or
+ * sendHeldReadyEmails claims and sends them later; the detail panel shows them
+ * as held meanwhile.
+ */
+async function holdTransferRecipients(transferId, emails) {
+  const clean = [...new Set((emails || [])
+    .map((e) => String(e || '').trim())
+    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
+  for (const email of clean) {
+    const existing = await db('transfer_recipients').where({ transfer_id: transferId, email }).first('id');
+    if (!existing) {
+      await db('transfer_recipients').insert({
+        transfer_id: transferId, email, created_at: new Date().toISOString(), last_sent_at: null,
+      });
+    }
+  }
+  return { held: clean.length, recipients: clean };
+}
+
 async function readyEmailVars(transfer, fileCount) {
   return {
     transfer_title: transfer.title || `Transfer #${transfer.id}`,
@@ -1700,6 +1724,7 @@ module.exports = {
   enableUploadCode,
   disableUploadCode,
   sendTransferEmails,
+  holdTransferRecipients,
   sendHeldReadyEmails,
   sendHeldReadyEmailsForPhotos,
   sendTransferRequestEmails,
