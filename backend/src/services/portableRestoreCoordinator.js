@@ -827,11 +827,19 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     if (row.attempt_id !== attemptId || (!authenticatedSuperAdmin && !matches)) throw failure('Restore attempt not found', 'RESTORE_NOT_FOUND', 404);
     const result = row.result_json ? parse(row.result_json) : null;
     const failed = ['rolled_back', 'aborted', 'recovery_required'].includes(result?.outcome);
+    // A runtime of the new generation has already been restarted; while
+    // reconcileRestart holds it for missing migrations, say that instead of
+    // asking for another restart (issue 2480).
+    let migrationsPending = null;
+    if (!offline && row.state === 'restart_required' && registration && registration.generation === row.generation) {
+      const pending = await control(() => pendingMigrations(db())).catch(() => []);
+      if (pending.length > 0) migrationsPending = { count: pending.length, first: pending[0] };
+    }
     return { attemptId, state: row.state, outcome: result?.outcome || null, summary: summary(result),
       // Why a restore did not go through; the instance itself is open again
       // after a rollback or an aborted drain.
       error: failed ? terminalError(result.error) : null,
-      restartRequired: row.state === 'restart_required', complete: row.state === 'open' && !!result };
+      restartRequired: row.state === 'restart_required', migrationsPending, complete: row.state === 'open' && !!result };
   }
   async function stop() {
     stopping = true;

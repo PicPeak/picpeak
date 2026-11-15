@@ -1162,6 +1162,7 @@
       "awaitingProgress": "Warten auf den Wiederherstellungskoordinator…",
       "progressUnavailable": "Der Koordinator ist vorübergehend nicht erreichbar. Erneuter Versuch; ein Abschluss wurde nicht bestätigt.",
       "restartAllInstances": "Die Wiederherstellung ist abgeschlossen. Starten Sie das Backend einmal neu (jeden Backend-Prozess, falls mehrere laufen), damit es die wiederhergestellten Daten ausliefert.",
+      "migrationsPending": "Das Backend wurde neu gestartet, aber {{count}} Datenbank-Migration(en) sind auf der wiederhergestellten Datenbank noch nicht gelaufen (erste: {{first}}). Die Instanz bleibt bis dahin im Wartungsmodus. Führen Sie im Backend \"node migrations/run-migrations-safe.js\" aus oder starten Sie es über den Einstiegspunkt des Images (wait-for-db.sh) neu, der sie ausführt.",
       "rollbackVerified": "Die Wiederherstellung ist fehlgeschlagen. Die vorherige Datenbank und die Dateien wurden zurückgesetzt und geprüft, die Instanz läuft wieder mit den bisherigen Daten. Ein Neustart ist nicht nötig.",
       "recoveryRequired": "Die Wiederherstellung wurde unterbrochen und wird zurückgesetzt. Die Anwendung bleibt bis dahin im Wartungsmodus. Falls sich das nicht ändert, hilft das Serverprotokoll weiter.",
       "progressDenied": "Diese Fortschrittsberechtigung ist nicht mehr gültig. Sie gewährt keinen Anwendungszugriff.",
@@ -1172,7 +1173,8 @@
         "draining": "Warten, bis laufende Vorgänge beendet sind",
         "restoring": "Wiederherstellung läuft",
         "recovery_required": "Unterbrochene Wiederherstellung wird zurückgesetzt",
-        "restart_required": "Wiederhergestellt; warten auf den Neustart des Backends"
+        "restart_required": "Wiederhergestellt; warten auf den Neustart des Backends",
+        "migrations_pending": "Wiederhergestellt; warten auf die Datenbank-Migrationen"
       },
       "externalPathsFailedDetail": "Die externen Fotopfade wurden nicht umgestellt, deshalb ist derzeit kein referenziertes Original erreichbar. Führen Sie die Wiederherstellung oder die ausstehenden Migrationen erneut aus, sobald die Ursache behoben ist.",
       "externalMediaNote": "Dieses Backup verweist auf eine externe Medienbibliothek. Stellen Sie sicher, dass das Routing für externe Medien auf dieser Instanz eingerichtet ist.",
