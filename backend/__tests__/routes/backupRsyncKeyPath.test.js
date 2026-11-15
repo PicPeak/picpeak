@@ -156,7 +156,9 @@ describe('rsync SSH key is a key file path', () => {
     });
     // A public IP literal: no DNS, and the key check answers before ssh runs.
     const testRsync = (body) => as(request(app).post('/api/admin/backup/test-connection'))
-      .send({ destination_type: 'rsync', host: '8.8.8.8', user: 'backup', ...body });
+      .send({ destination_type: 'rsync', host: '8.8.8.8', user: 'backup', path: '/srv/backups', ...body });
+    // The -e transport string rsync is handed, parsed back into its words.
+    const shellOf = args => args[args.indexOf('-e') + 1];
 
     it('refuses a pasted key instead of looking for a file named after it', async () => {
       const res = await testRsync({ ssh_key: PASTED_KEY });
@@ -185,8 +187,8 @@ describe('rsync SSH key is a key file path', () => {
         const res = await testRsync({ ssh_key: '' });
         expect(res.body.success).toBe(true);
         const [cmd, args] = spawn.mock.calls[0];
-        expect(cmd).toBe('ssh');
-        expect(args).not.toContain('-i');
+        expect(cmd).toBe('rsync');
+        expect(shellOf(args)).not.toContain('\'-i\'');
       } finally { spawn.mockRestore(); }
     });
 
@@ -212,11 +214,11 @@ describe('rsync SSH key is a key file path', () => {
         const res = await testRsync({ host: 'backup.example.com', ssh_key: '' });
         expect(res.body.success).toBe(true);
         const [cmd, args] = spawn.mock.calls[0];
-        expect(cmd).toBe('ssh');
-        expect(args).toContain('Hostname=8.8.8.8');
-        expect(args).toContain('HostKeyAlias=backup.example.com');
-        expect(args).toContain('StrictHostKeyChecking=yes');
-        expect(args).toContain('-F');
+        expect(cmd).toBe('rsync');
+        expect(shellOf(args)).toContain('\'Hostname=8.8.8.8\'');
+        expect(shellOf(args)).toContain('\'HostKeyAlias=backup.example.com\'');
+        expect(shellOf(args)).toContain('\'StrictHostKeyChecking=yes\'');
+        expect(shellOf(args)).toContain('\'-F\'');
         expect(lookup).toHaveBeenCalledTimes(1);
       } finally { lookup.mockRestore(); spawn.mockRestore(); }
     });
@@ -232,8 +234,8 @@ describe('rsync SSH key is a key file path', () => {
       try {
         const res = await testRsync({ ssh_key: '', port: 2222 });
         const [, args] = spawn.mock.calls[0];
-        expect(args[args.indexOf('-p') + 1]).toBe('2222');
-        expect(args).toContain('HostKeyAlias=[8.8.8.8]:2222');
+        expect(shellOf(args)).toContain('\'-p\' \'2222\'');
+        expect(shellOf(args)).toContain('\'HostKeyAlias=[8.8.8.8]:2222\'');
         expect(res.body).toMatchObject({ success: false, code: 'RSYNC_SSH_HOST_KEY_UNTRUSTED' });
         expect(res.body.message).toContain('unknown or changed');
         spawn.mockClear();
@@ -258,6 +260,185 @@ describe('rsync SSH key is a key file path', () => {
         }
         expect(spawn).not.toHaveBeenCalled();
       } finally { spawn.mockRestore(); }
+    });
+
+    describe('probes with rsync itself, as a backup run does', () => {
+      const { EventEmitter } = require('events');
+      // Stand in for the process table: `respond(cmd, args)` answers each
+      // spawn with { code, signal, stderr } or { error }.
+      const mockSpawn = (respond) => jest.spyOn(require('child_process'), 'spawn').mockImplementation((cmd, args) => {
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter(); proc.stderr = new EventEmitter();
+        const outcome = respond(cmd, args);
+        setImmediate(() => {
+          if (outcome.error) { proc.emit('error', outcome.error); proc.emit('close', -2, null); return; }
+          if (outcome.stderr) proc.stderr.emit('data', outcome.stderr);
+          proc.emit('close', outcome.code ?? null, outcome.signal ?? null);
+        });
+        return proc;
+      });
+      const failing = (stderr, code = 255) => mockSpawn(() => ({ code, stderr }));
+
+      it('lists the remote path over the backup transport, without a shell', async () => {
+        const keyPath = path.join(trustDir, 'id_ed25519');
+        fs.writeFileSync(keyPath, 'fixture', { mode: 0o600 });
+        const spawn = mockSpawn(() => ({ code: 0 }));
+        try {
+          const res = await testRsync({ ssh_key: keyPath, path: '/srv/backups/' });
+          expect(res.body).toEqual({ success: true, message: 'Rsync connection successful' });
+          expect(spawn).toHaveBeenCalledTimes(1);
+          const [cmd, args, options] = spawn.mock.calls[0];
+          expect(cmd).toBe('rsync');
+          expect(options).toMatchObject({ shell: false });
+          expect(require('../../src/utils/rsyncConnection').RSYNC_PROBE_TIMEOUT_MS).toBe(15000);
+          expect(args).toEqual(['--list-only', '-e', expect.any(String), 'backup@8.8.8.8:/srv/backups']);
+          const shell = shellOf(args);
+          expect(shell.startsWith('\'ssh\' \'-F\' \'/dev/null\'')).toBe(true);
+          for (const option of ['StrictHostKeyChecking=yes', 'BatchMode=yes', `UserKnownHostsFile=${process.env.BACKUP_SSH_KNOWN_HOSTS}`,
+            'GlobalKnownHostsFile=/dev/null', 'ProxyJump=none', 'ControlMaster=no']) {
+            expect(shell).toContain(`'${option}'`);
+          }
+          expect(shell).toContain(`'-i' '${keyPath}'`);
+          // The same transport string the backup run hands rsync.
+          const backupArgs = await require('../../src/services/backupService').buildRsyncArgs({
+            backup_rsync_host: '8.8.8.8', backup_rsync_user: 'backup', backup_rsync_ssh_key: keyPath, backup_rsync_path: '/srv/backups',
+          }, [], '/data');
+          expect(shellOf(backupArgs)).toBe(shell);
+        } finally { spawn.mockRestore(); }
+      });
+
+      it('succeeds on an rsync-only host that refuses `ssh … echo` (Hetzner Storage Box)', async () => {
+        const spawn = mockSpawn((cmd, args) => (cmd === 'rsync' && args[0] === '--list-only'
+          ? { code: 0 }
+          : { code: 1, stderr: 'Command not found. Use \'help\' to get a list of available commands.\n' }));
+        try {
+          const res = await testRsync({ ssh_key: '', port: 23 });
+          expect(res.body).toMatchObject({ success: true });
+          expect(spawn.mock.calls.every(([cmd]) => cmd === 'rsync')).toBe(true);
+        } finally { spawn.mockRestore(); }
+      });
+
+      it('passes when only the final directory is missing: the first backup creates it', async () => {
+        const spawn = mockSpawn((cmd, args) => (args[args.length - 1].endsWith(':/srv/backups')
+          ? { code: 23, stderr: 'rsync: [sender] link_stat "/srv/backups" failed: No such file or directory (2)\n' }
+          : { code: 0 }));
+        try {
+          const res = await testRsync({ ssh_key: '' });
+          expect(res.body.success).toBe(true);
+          expect(res.body.message).toContain('the first backup creates it');
+          expect(spawn.mock.calls.map(([, args]) => args[args.length - 1])).toEqual(['backup@8.8.8.8:/srv/backups', 'backup@8.8.8.8:/srv']);
+        } finally { spawn.mockRestore(); }
+      });
+
+      it('recognizes openrsync\'s missing-path wording for the parent fallback', async () => {
+        const spawn = mockSpawn((cmd, args) => (args[args.length - 1].endsWith(':/srv/backups')
+          ? { code: 23, stderr: 'rsync(25410): error: /srv/backups: (l)stat: No such file or directory\nrsync(25409): warning: receiver has empty file list: exiting\n' }
+          : { code: 0 }));
+        try {
+          const res = await testRsync({ ssh_key: '' });
+          expect(res.body.success).toBe(true);
+          expect(res.body.message).toContain('the first backup creates it');
+          expect(spawn).toHaveBeenCalledTimes(2);
+        } finally { spawn.mockRestore(); }
+      });
+
+      it('reports a timeout when rsync is stopped by the probe timer and exits 20, as real rsync does', async () => {
+        const rsyncConnection = require('../../src/utils/rsyncConnection');
+        const saved = rsyncConnection.RSYNC_PROBE_TIMEOUT_MS;
+        rsyncConnection.RSYNC_PROBE_TIMEOUT_MS = 20;
+        // Hangs until killed, then exits like rsync after trapping SIGTERM.
+        const spawn = jest.spyOn(require('child_process'), 'spawn').mockImplementation(() => {
+          const proc = new EventEmitter();
+          proc.stdout = new EventEmitter(); proc.stderr = new EventEmitter();
+          proc.kill = jest.fn(() => setImmediate(() => {
+            proc.stderr.emit('data', 'rsync error: received SIGINT, SIGTERM, or SIGHUP (code 20) at rsync.c(874) [Receiver=3.5.2]\n');
+            proc.emit('close', 20, null);
+          }));
+          return proc;
+        });
+        try {
+          const res = await testRsync({ ssh_key: '' });
+          expect(res.body).toMatchObject({ success: false, code: 'RSYNC_CONNECTION_TIMEOUT' });
+          expect(spawn.mock.results[0].value.kill).toHaveBeenCalledWith('SIGTERM');
+        } finally { rsyncConnection.RSYNC_PROBE_TIMEOUT_MS = saved; spawn.mockRestore(); }
+      });
+
+      it('fails when the parent is missing too', async () => {
+        const spawn = failing('rsync: change_dir "/srv" failed: No such file or directory (2)\n', 23);
+        try {
+          const res = await testRsync({ ssh_key: '', path: '/srv/backups' });
+          expect(res.body).toMatchObject({ success: false, code: 'RSYNC_REMOTE_PATH_NOT_FOUND' });
+          expect(res.body.message).toContain('/srv');
+        } finally { spawn.mockRestore(); }
+      });
+
+      it('requires a valid remote path and never spawns without one', async () => {
+        const spawn = mockSpawn(() => ({ code: 0 }));
+        try {
+          for (const body of [{ path: '' }, { path: '/srv/x;id' }, { path: '/srv/$(id)' }]) {
+            const res = await testRsync({ ssh_key: '', ...body });
+            expect(res.body).toMatchObject({ success: false, code: 'RSYNC_CONFIG_INVALID' });
+          }
+          expect(spawn).not.toHaveBeenCalled();
+        } finally { spawn.mockRestore(); }
+      });
+
+      it('names a missing rsync binary', async () => {
+        const spawn = mockSpawn(() => ({ error: Object.assign(new Error('spawn rsync ENOENT'), { code: 'ENOENT', path: 'rsync' }) }));
+        try {
+          const res = await testRsync({ ssh_key: '' });
+          expect(res.body).toMatchObject({ success: false, code: 'RSYNC_BINARY_MISSING' });
+          expect(res.body.message).toContain('rsync program is not installed');
+        } finally { spawn.mockRestore(); }
+      });
+
+      it('names a missing ssh binary', async () => {
+        const spawn = failing('rsync: [sender] Failed to exec ssh: No such file or directory (2)\nrsync error: error in IPC code (code 14)\n', 14);
+        try {
+          const res = await testRsync({ ssh_key: '' });
+          expect(res.body).toMatchObject({ success: false, code: 'RSYNC_SSH_BINARY_MISSING' });
+          expect(res.body.message).toContain('openssh-client');
+        } finally { spawn.mockRestore(); }
+      });
+
+      it.each([
+        ['backup@8.8.8.8: Permission denied (publickey,password).\r\nrsync: connection unexpectedly closed (0 bytes received so far) [Receiver]\n', 'RSYNC_AUTH_FAILED', undefined],
+        ['ssh: connect to host 8.8.8.8 port 22: Connection refused\r\n', 'RSYNC_CONNECTION_REFUSED', undefined],
+        ['ssh: connect to host 8.8.8.8 port 22: Connection timed out\r\n', 'RSYNC_CONNECTION_TIMEOUT', undefined],
+        ['ssh: connect to host 8.8.8.8 port 22: No route to host\r\n', 'RSYNC_HOST_UNREACHABLE', undefined],
+        ['rsync: [sender] link_stat "/srv/backups" failed: Permission denied (13)\n', 'RSYNC_REMOTE_PATH_DENIED', undefined],
+      ])('maps %j to %s', async (stderr, code, signal) => {
+        const spawn = mockSpawn(() => ({ code: signal ? null : 255, signal, stderr }));
+        try {
+          const res = await testRsync({ ssh_key: '' });
+          expect(res.body).toMatchObject({ success: false, code });
+          expect(res.body.message).not.toContain('Check server logs');
+        } finally { spawn.mockRestore(); }
+      });
+
+      it('answers anything else with a sanitized stderr excerpt and keeps the warn line', async () => {
+        const keyPath = path.join(trustDir, 'id_ed25519');
+        fs.writeFileSync(keyPath, 'fixture', { mode: 0o600 });
+        const logger = require('../../src/utils/logger');
+        const warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+        const spawn = failing([
+          `Warning: Identity file ${keyPath} not accessible: weird.`,
+          '-----BEGIN OPENSSH PRIVATE KEY-----',
+          'b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZWQyNTUx',
+          'protocol version mismatch -- is your shell clean?',
+        ].join('\n'), 2);
+        try {
+          const res = await testRsync({ ssh_key: keyPath });
+          expect(res.body).toMatchObject({ success: false, code: 'RSYNC_CONNECTION_FAILED' });
+          expect(res.body.message).toContain('protocol version mismatch');
+          expect(res.body.message).toContain('<ssh key>');
+          expect(res.body.message).not.toContain(keyPath);
+          expect(res.body.message).not.toMatch(/PRIVATE KEY|b3BlbnNzaC1rZXkt/);
+          expect(warn).toHaveBeenCalledWith('Rsync connection test failed', expect.objectContaining({
+            destination: '8.8.8.8', code: 'RSYNC_CONNECTION_FAILED',
+          }));
+        } finally { spawn.mockRestore(); warn.mockRestore(); }
+      });
     });
   });
 
