@@ -85,20 +85,20 @@ const adminInit = (token, id, body) => request(admin).post(`/api/admin/transfers
 const adminChunk = (token, id, uploadId, index, bytes) => request(admin)
   .post(`/api/admin/transfers/${id}/chunked-upload/${uploadId}/chunk/${index}`)
   .set('Authorization', `Bearer ${token}`).set('Content-Type', 'application/octet-stream').send(bytes);
-const adminComplete = (token, id, uploadId, query = '') => request(admin)
-  .post(`/api/admin/transfers/${id}/chunked-upload/${uploadId}/complete${query}`)
+const adminComplete = (token, id, uploadId) => request(admin)
+  .post(`/api/admin/transfers/${id}/chunked-upload/${uploadId}/complete`)
   .set('Authorization', `Bearer ${token}`).send({});
 const adminAbort = (token, id, uploadId) => request(admin)
   .delete(`/api/admin/transfers/${id}/chunked-upload/${uploadId}`).set('Authorization', `Bearer ${token}`);
 
-async function adminUpload(token, id, bytes, name = 'film.zip', query = '') {
+async function adminUpload(token, id, bytes, name = 'film.zip') {
   const init = await adminInit(token, id, { filename: name, fileSize: bytes.length, mimeType: 'application/zip' });
   expect(init.status).toBe(200);
   for (let i = 0; i < init.body.expectedChunks; i += 1) {
     const res = await adminChunk(token, id, init.body.uploadId, i, bytes.subarray(i * CHUNK, (i + 1) * CHUNK));
     expect(res.status).toBe(200);
   }
-  return adminComplete(token, id, init.body.uploadId, query);
+  return adminComplete(token, id, init.body.uploadId);
 }
 
 // --- public helpers ---
@@ -262,17 +262,53 @@ describe('creating a send whose files follow in chunks', () => {
     expect(mockSendTemplateEmail).not.toHaveBeenCalled();
     expect(res.body.transfer.recipients).toEqual([expect.objectContaining({ email: 'client@example.com', held: true })]);
 
-    // The file lands while the page holds delivery: still no mail.
-    const done = await adminUpload(ownerToken, id, Buffer.from('PK film'), 'film.zip', '?holdDelivery=1');
+    // The file lands: still no mail, and no automatic path (a photo of the
+    // send finishing processing ends up here) sends it either.
+    const done = await adminUpload(ownerToken, id, Buffer.from('PK film'), 'film.zip');
     expect(done.status).toBe(200);
+    const transferService = require('../../src/services/transferService');
+    expect((await transferService.sendHeldReadyEmails(id)).sent).toBe(0);
     expect(mockSendTemplateEmail).not.toHaveBeenCalled();
 
-    // The page sends it once everything is in.
+    // The page sends it once everything is in, exactly once.
     const resend = await request(admin).post(`/api/admin/transfers/${id}/resend`).set('Authorization', `Bearer ${ownerToken}`).send({});
     expect(resend.status).toBe(200);
     expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
     expect(mockSendTemplateEmail.mock.calls[0][0]).toBe('client@example.com');
     expect(mockSendTemplateEmail.mock.calls[0][2]).toMatchObject({ file_count: '1' });
+    await transferService.sendHeldReadyEmails(id);
+    expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
+    expect((await db('transfers').where({ id }).first()).delivery_held_until).toBeNull();
+  });
+
+  it('lets a hold the page never finished lapse, so the recipients are not stranded', async () => {
+    const res = await create({
+      pendingFiles: 1, deliveryMethod: 'email', recipientEmails: JSON.stringify(['stranded@example.com']), photoIds: '[]',
+    });
+    const { id } = res.body.transfer;
+    await adminUpload(ownerToken, id, Buffer.from('PK film'));
+    expect(mockSendTemplateEmail).not.toHaveBeenCalled();
+    await db('transfers').where({ id }).update({ delivery_held_until: Date.now() - 1000 });
+
+    expect((await require('../../src/services/transferService').sendHeldReadyEmails(id)).sent).toBe(1);
+    expect(mockSendTemplateEmail).toHaveBeenCalledWith('stranded@example.com', 'transfer_ready', expect.anything());
+  });
+
+  it('answers a multipart write only once its admission is released', async () => {
+    // The page sends the next request (a chunked file) on this answer; with
+    // one admission slot per admin it would otherwise be refused as busy.
+    const uploadQuota = require('../../src/services/publicUploadQuota');
+    const realFinish = uploadQuota.finish;
+    let released = false;
+    jest.spyOn(uploadQuota, 'finish').mockImplementation(async (session, options) => {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const result = await realFinish(session, options);
+      released = true;
+      return result;
+    });
+    const res = await create({ photoIds: '[]' }).attach('files', Buffer.from('PK small'), 'small.zip');
+    expect(res.status).toBe(201);
+    expect(released).toBe(true);
   });
 
   it('still refuses an empty send when nothing is pending', async () => {
@@ -281,11 +317,13 @@ describe('creating a send whose files follow in chunks', () => {
     expect(res.body.code).toBe('NOTHING_TO_SEND');
   });
 
-  it('sends a held mail when a chunked file lands without the hold', async () => {
-    const res = await create({
-      pendingFiles: 1, deliveryMethod: 'email', recipientEmails: JSON.stringify(['late@example.com']), photoIds: '[]',
-    });
-    const done = await adminUpload(ownerToken, res.body.transfer.id, Buffer.from('PK film'));
+  it('still sends a mail held for want of files when a chunked file lands', async () => {
+    // Held because nothing was downloadable (issue 2061), not by a pending
+    // upload: the first file that lands sends it, as upload-files does.
+    const send = await createTransfer('send', ownerId);
+    await require('../../src/services/transferService').sendTransferEmails(send.id, ['late@example.com']);
+    expect(mockSendTemplateEmail).not.toHaveBeenCalled();
+    const done = await adminUpload(ownerToken, send.id, Buffer.from('PK film'));
     expect(done.status).toBe(200);
     expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
     expect(done.body.transfer.recipients[0].held).toBe(false);
@@ -437,6 +475,27 @@ describe('public file-request upload in chunks', () => {
     expect(await activeAdmissions(req.id)).toBe(0);
     expect((await pubChunk(req.token, init.body.uploadId, 1, bytes.subarray(CHUNK))).status).toBe(404);
     expect((await pubAbort(req.token, init.body.uploadId)).status).toBe(404);
+  });
+});
+
+describe('chunk count ceiling', () => {
+  const chunkedUpload = require('../../src/services/chunkedUploadService');
+  const GiB = 1024 * 1024 * 1024;
+
+  it('follows a transfer cap above 10 GB, so an allowed 11 GB file fits', async () => {
+    const result = await chunkedUpload.initializeUpload({
+      filename: 'archive.zip', fileSize: 11 * GiB, transferId: 1, adminId: 1, maxFileSizeBytes: 12000 * 1024 * 1024,
+    });
+    expect(result.expectedChunks).toBe(Math.ceil((11 * GiB) / CHUNK));
+    await chunkedUpload.abortUpload(result.uploadId);
+  });
+
+  it('keeps the 10 GB chunk limit for a caller with a lower cap or none', async () => {
+    await expect(chunkedUpload.initializeUpload({ filename: 'a.mp4', fileSize: 11 * GiB, eventId: 1, adminId: 1 }))
+      .rejects.toMatchObject({ code: 'INVALID_CHUNK' });
+    await expect(chunkedUpload.initializeUpload({
+      filename: 'a.mp4', fileSize: 11 * GiB, eventId: 1, adminId: 1, maxFileSizeBytes: 10 * GiB,
+    })).rejects.toMatchObject({ code: 'INVALID_CHUNK' });
   });
 });
 

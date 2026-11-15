@@ -167,12 +167,20 @@ function withUploadAdmission(handler) {
       if (!req.readableEnded) res.set('Connection', 'close');
       return res.status(err.status).json({ error: err.message, code: err.code });
     }
+    // The answer waits for the admission to be released, as withPublicUpload
+    // does: the page sends the next request (more files, a chunked file) on
+    // it, and that request needs the slot.
+    const send = res.json;
+    let body;
+    res.json = (value) => { body = value; return res; };
     try {
       return await handler(req, res);
     } finally {
       await uploadQuota.finish(session).catch((err) => {
         logger.warn('transfer upload admission not released', { requestId: session.id, error: err.message });
       });
+      res.json = send;
+      if (body !== undefined && !res.headersSent && !res.destroyed) res.json(body);
     }
   };
 }
@@ -354,8 +362,8 @@ router.post('/',
       if (isRequest) {
         await transferService.sendTransferRequestEmails(transfer.id, recipientEmails);
       } else if (pendingFiles > 0) {
-        // Recorded as held, not mailed: the page sends it (the resend route)
-        // once every pending file has landed.
+        // Recorded as held, not mailed, and held from every automatic path:
+        // the page sends it (the resend route) once every file has landed.
         await transferService.holdTransferRecipients(transfer.id, recipientEmails);
       } else {
         await transferService.sendTransferEmails(transfer.id, recipientEmails);
@@ -518,8 +526,7 @@ router.post('/:id/upload-files',
     }
     await storeExtraFiles(id, req.files);
     // A ready mail held back while nothing was downloadable (issue 2061).
-    // Not while the page is still uploading the rest of a new send's files.
-    if (!holdsDelivery(req)) await transferService.sendHeldReadyEmails(id);
+    await transferService.sendHeldReadyEmails(id);
     const transfer = await transferService.getTransfer(id);
     return successResponse(
       res,
@@ -537,10 +544,6 @@ router.post('/:id/upload-files',
 // complete step stores it exactly as upload-files stores a multipart file:
 // the same type and size rules, the same storage write and row.
 const transferChunkOwner = (req) => ({ transferId: Number(req.params.id), adminId: req.admin.id });
-
-// The page asks for the ready mail to wait while it is still uploading the
-// rest of a new send's files; it sends it itself (the resend route) at the end.
-const holdsDelivery = (req) => req.query.holdDelivery === '1' || req.query.holdDelivery === 'true';
 
 // A tagged status is the client's or the admission's answer, not a fault.
 function chunkRefusal(req, res, error, fallback) {
@@ -676,8 +679,8 @@ router.post('/:id/chunked-upload/:uploadId/complete',
         return reply.status(500).json({ error: 'Could not store the uploaded file', code: 'STORE_FAILED', failed_files: failed });
       }
       // Same as upload-files: a ready mail held back while nothing was
-      // downloadable (issue 2061), unless the page is holding it.
-      if (!holdsDelivery(req)) await transferService.sendHeldReadyEmails(existing.id);
+      // downloadable (issue 2061). A send still being filled is held there.
+      await transferService.sendHeldReadyEmails(existing.id);
       const transfer = await transferService.getTransfer(existing.id);
       return successResponse(reply, { transfer, rejected_files: [] }, 200, 'Files added');
     } catch (error) {

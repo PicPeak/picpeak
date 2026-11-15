@@ -152,9 +152,19 @@ async function initializeUpload(options) {
   if (!Number.isSafeInteger(size) || size <= 0) {
     throw invalidChunkError('fileSize must be a positive integer');
   }
+  // The per-file cap is enforced on the BYTES ACTUALLY RECEIVED, not on the
+  // client-declared fileSize the init route checks: a client can declare
+  // `fileSize: 1` and then stream whatever it likes through the chunk route.
+  // Missing/invalid cap means "no cap" (callers outside the admin routes).
+  const cap = Number(maxFileSizeBytes);
+  const sizeCap = Number.isFinite(cap) && cap > 0 ? cap : Infinity;
+  // A cap above the gallery's 10 GB ceiling (PicTransfer allows up to
+  // 100000 MB) raises the chunk limit with it, so every allowed file fits.
+  const chunkLimit = Number.isFinite(sizeCap) ? Math.max(MAX_EXPECTED_CHUNKS, Math.ceil(sizeCap / CHUNK_SIZE)) : MAX_EXPECTED_CHUNKS;
+  if (options.admission && size > sizeCap) throw fileTooLargeError(sizeCap);
   const expectedChunks = Math.ceil(size / CHUNK_SIZE);
-  if (expectedChunks > MAX_EXPECTED_CHUNKS) {
-    throw invalidChunkError(`fileSize exceeds the ${MAX_EXPECTED_CHUNKS} chunk limit`);
+  if (expectedChunks > chunkLimit) {
+    throw invalidChunkError(`fileSize exceeds the ${chunkLimit} chunk limit`);
   }
   if (totalChunks !== undefined && totalChunks !== null && Number(totalChunks) !== expectedChunks) {
     throw invalidChunkError(`totalChunks must be ${expectedChunks} for a ${size} byte file in ${CHUNK_SIZE} byte chunks`);
@@ -166,7 +176,6 @@ async function initializeUpload(options) {
   // Create chunks directory for this upload
   let admission = null;
   if (options.admission) {
-    if (size > Number(maxFileSizeBytes)) throw fileTooLargeError(Number(maxFileSizeBytes));
     // `admission: true` is the admin's; an object is a gallery guest's public
     // admission (issue 2315), charged to the same gallery and guest allowances
     // as the single-request guest upload, with the declared size as its body.
@@ -183,13 +192,6 @@ async function initializeUpload(options) {
     if (admission) await quota().finish(admission);
     throw err;
   }
-
-  // The per-file cap is enforced on the BYTES ACTUALLY RECEIVED, not on the
-  // client-declared fileSize the init route checks: a client can declare
-  // `fileSize: 1` and then stream whatever it likes through the chunk route.
-  // Missing/invalid cap means "no cap" (callers outside the admin routes).
-  const cap = Number(maxFileSizeBytes);
-  const sizeCap = Number.isFinite(cap) && cap > 0 ? cap : Infinity;
 
   // Store upload metadata
   const uploadMeta = {

@@ -106,9 +106,7 @@ describe('creating a send', () => {
       expect((body as { size: number }).size).toBeLessThanOrEqual(CHUNK);
       expect((config as { headers: Record<string, string> }).headers['Content-Type']).toBe('application/octet-stream');
     }
-    // The mail waits for the file: complete holds it, resend comes last.
-    const complete = post.mock.calls.find(([url]) => (url as string).endsWith('/complete'))!;
-    expect((complete[2] as { params?: Record<string, string> }).params).toEqual({ holdDelivery: '1' });
+    // The mail waits for the file: the server holds it, resend comes last.
     expect(urls().at(-1)).toBe('/admin/transfers/7/resend');
     expect(result.failed_files).toEqual([]);
     expect(result.delivery_held).toBe(false);
@@ -135,11 +133,10 @@ describe('adding files to a transfer', () => {
     expect(urls()).toEqual(['/admin/transfers/7/upload-files']);
   });
 
-  it('sends a large file in chunks without holding the mail', async () => {
+  it('sends a large file in chunks', async () => {
     const result = await transfersService.uploadFiles(7, [bigFile('film.mp4', 150 * MB)]);
     expect(urls()[0]).toBe('/admin/transfers/7/chunked-upload/init');
-    const complete = post.mock.calls.find(([url]) => (url as string).endsWith('/complete'))!;
-    expect((complete[2] as { params?: unknown }).params).toBeUndefined();
+    expect(urls()).not.toContain('/admin/transfers/7/resend');
     expect(result.failed_files).toEqual([]);
   });
 

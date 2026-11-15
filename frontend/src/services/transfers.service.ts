@@ -223,20 +223,18 @@ function errorCode(error: unknown): { code?: string; rejected?: string[] } {
  * Upload `files` into an existing send after the first request: further
  * multipart batches, then each large file in chunks. Nothing here throws; a
  * file that does not land is named in `failed` (or `rejected`, refused on
- * type) and the rest go on. `holdDelivery` keeps the ready mail back while a
- * new send's files are still arriving.
+ * type) and the rest go on. A new send's ready mail is held server-side
+ * until the caller sends it (the resend route).
  */
 async function uploadRemaining(
   id: number,
   batches: File[][],
   chunked: File[],
   progress: ReturnType<typeof byteProgress>,
-  holdDelivery: boolean,
 ): Promise<{ rejected: string[]; failed: string[]; firstError: unknown }> {
   const rejected: string[] = [];
   const failed: string[] = [];
   let firstError: unknown = null;
-  const params = holdDelivery ? { holdDelivery: '1' } : undefined;
   const refused = (files: File[], error: unknown) => {
     firstError = firstError ?? error;
     const { code, rejected: names } = errorCode(error);
@@ -248,7 +246,6 @@ async function uploadRemaining(
     batch.forEach((f) => form.append('files', f));
     try {
       const res = await api.post(`/admin/transfers/${id}/upload-files`, form, {
-        params,
         onUploadProgress: (e) => progress.report(e.total ? (sizeOf(batch) * e.loaded) / e.total : 0),
       });
       rejected.push(...(res.data.rejected_files || []));
@@ -261,7 +258,6 @@ async function uploadRemaining(
     try {
       await uploadFileInChunks(`/admin/transfers/${id}`, file, {
         initFields: { mimeType: file.type },
-        completeParams: params,
         onBytes: (sent) => progress.report(sent),
       });
     } catch (error) {
@@ -363,7 +359,7 @@ export const transfersService = {
     const created = withWriteNotes(res.data);
 
     const mailing = input.deliveryMethod === 'email' && (input.recipientEmails || []).length > 0;
-    const { rejected, failed } = await uploadRemaining(created.id, rest, plan.chunked, progress, mailing);
+    const { rejected, failed } = await uploadRemaining(created.id, rest, plan.chunked, progress);
     let deliveryHeld = false;
     if (mailing) {
       if (failed.length) deliveryHeld = true;
@@ -386,7 +382,7 @@ export const transfersService = {
     const plan = planTransferFiles(files, ADMIN_MAX_FILES_PER_REQUEST);
     if (plan.chunked.length > 0 || plan.batches.length > 1) {
       const { rejected, failed, firstError } = await uploadRemaining(
-        id, plan.batches, plan.chunked, byteProgress(files, onProgress), false,
+        id, plan.batches, plan.chunked, byteProgress(files, onProgress),
       );
       if (firstError && rejected.length + failed.length === files.length) throw firstError;
       return { ...(await transfersService.get(id)), rejected_files: rejected, failed_files: failed };

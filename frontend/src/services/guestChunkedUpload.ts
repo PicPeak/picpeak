@@ -9,8 +9,8 @@ import { api } from '../config/api';
  * the whole file. A failure aborts the upload so its reservation is released
  * at once.
  *
- * `initFields` ride on the init body next to filename and fileSize,
- * `completeFields` are the complete body and `completeParams` its query.
+ * `initFields` ride on the init body next to filename and fileSize and
+ * `completeFields` are the complete body.
  * `onBytes` reports the bytes of this file sent so far, across chunks.
  */
 export async function uploadFileInChunks<T>(
@@ -20,13 +20,11 @@ export async function uploadFileInChunks<T>(
     headers = {},
     initFields = {},
     completeFields = {},
-    completeParams,
     onBytes,
   }: {
     headers?: Record<string, string>;
     initFields?: Record<string, unknown>;
     completeFields?: Record<string, unknown>;
-    completeParams?: Record<string, string>;
     onBytes?: (sentBytes: number) => void;
   } = {}
 ): Promise<AxiosResponse<T>> {
@@ -53,9 +51,7 @@ export async function uploadFileInChunks<T>(
       );
     }
     // Merging and the content check can take a while on a large file.
-    return await api.post<T>(`${basePath}/chunked-upload/${uploadId}/complete`, completeFields, {
-      headers, params: completeParams, timeout: 0,
-    });
+    return await api.post<T>(`${basePath}/chunked-upload/${uploadId}/complete`, completeFields, { headers, timeout: 0 });
   } catch (error) {
     await api.delete(`${basePath}/chunked-upload/${uploadId}`, { headers }).catch(() => {});
     throw error;

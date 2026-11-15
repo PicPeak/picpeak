@@ -54,6 +54,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // notifyFilesReceived — the upload route is unauthenticated, so this is what
 // stops a request link being turned into a mail cannon.
 const UPLOAD_NOTICE_COOLDOWN_MS = 15 * 60 * 1000;
+// How long a send's ready mail waits for files the page is still uploading
+// (transfers.delivery_held_until): as long as a chunked upload may live.
+const DELIVERY_HOLD_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Truncate to `max` UTF-16 units without splitting a surrogate pair.
@@ -1291,6 +1294,11 @@ async function sendTransferEmails(transferId, emails) {
 
   const transfer = await db('transfers').where({ id: transferId }).first();
   if (!transfer) return { sent: 0, recipients: [] };
+  // An explicit send ends a hold for files still arriving (the page calls
+  // this once they have, the admin's "Send again" any time).
+  if (transfer.delivery_held_until != null) {
+    await db('transfers').where({ id: transferId }).update({ delivery_held_until: null });
+  }
 
   // Read before the count: a held row that a finishing photo claims (and
   // mails) after the count must not be put back on hold below, or it is
@@ -1349,12 +1357,14 @@ async function sendTransferEmails(transferId, emails) {
 
 /**
  * Record a send's recipients without mailing them yet: each row is held
- * (last_sent_at NULL), exactly the state sendTransferEmails leaves a
- * recipient in while nothing is downloadable. Used on create when the admin's
- * own files are still to follow in chunks, so the ready mail does not go out
- * before they have landed. sendTransferEmails (the resend route) or
- * sendHeldReadyEmails claims and sends them later; the detail panel shows them
- * as held meanwhile.
+ * (last_sent_at NULL), as sendTransferEmails leaves a recipient while nothing
+ * is downloadable, and the transfer carries delivery_held_until so no
+ * automatic path (a photo finishing, files added) mails them meanwhile. Used
+ * on create when the admin's own files still follow in further requests or
+ * chunks. sendTransferEmails (the resend route) ends the hold and sends; a
+ * page that never gets there leaves the hold to lapse, after which the held
+ * recipients go out on the next automatic trigger. The detail panel shows
+ * them as held throughout, with "Send again".
  */
 async function holdTransferRecipients(transferId, emails) {
   const clean = [...new Set((emails || [])
@@ -1367,6 +1377,9 @@ async function holdTransferRecipients(transferId, emails) {
         transfer_id: transferId, email, created_at: new Date().toISOString(), last_sent_at: null,
       });
     }
+  }
+  if (clean.length) {
+    await db('transfers').where({ id: transferId }).update({ delivery_held_until: Date.now() + DELIVERY_HOLD_MS });
   }
   return { held: clean.length, recipients: clean };
 }
@@ -1406,6 +1419,8 @@ async function sendHeldReadyEmails(transferId) {
   // A link that was disabled or ran out meanwhile announces nothing; the admin
   // can still send again from the detail panel.
   if (!assertDownloadable(transfer).ok) return { sent: 0 };
+  // The page is still uploading this send's files; it sends the mail itself.
+  if (transfer.delivery_held_until != null && Number(transfer.delivery_held_until) > Date.now()) return { sent: 0 };
   const fileCount = await countRecipientFiles(transferId);
   if (fileCount === 0) return { sent: 0 };
   const held = await db('transfer_recipients')
