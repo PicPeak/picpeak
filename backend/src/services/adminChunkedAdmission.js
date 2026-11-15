@@ -142,7 +142,7 @@ async function complete(meta) {
   return exclusive(meta, async signal => {
     meta.status = 'merging';
     const tempDir = path.join(meta.admission.dir, 'merged');
-    const mergedPath = path.join(tempDir, meta.filename);
+    const mergedPath = path.join(tempDir, meta.mergeName || meta.filename);
     try {
       await quota.recheckStaging(meta.admission);
       if (signal.aborted) throw cancelled();
