@@ -251,6 +251,8 @@ async function uploadRemaining(
         onUploadProgress: (e) => progress.report(e.total ? (sizeOf(batch) * e.loaded) / e.total : 0),
       });
       rejected.push(...(res.data.rejected_files || []));
+      // Accepted but not stored: not uploaded, whatever the 200 says.
+      failed.push(...(res.data.failed_files || []));
       last = res.data.transfer ?? last;
     } catch (error) {
       refused(batch, error);
@@ -277,11 +279,13 @@ function withWriteNotes(data: {
   transfer: Transfer;
   rejected_files?: string[];
   dropped_files?: string[];
+  failed_files?: string[];
 }): TransferWriteResult {
   return {
     ...data.transfer,
     rejected_files: data.rejected_files || [],
     dropped_files: data.dropped_files || [],
+    failed_files: data.failed_files || [],
   };
 }
 
@@ -363,7 +367,10 @@ export const transfersService = {
     const created = withWriteNotes(res.data);
 
     const mailing = input.deliveryMethod === 'email' && (input.recipientEmails || []).length > 0;
-    const { rejected, failed } = await uploadRemaining(created.id, rest, plan.chunked, progress);
+    const remaining = await uploadRemaining(created.id, rest, plan.chunked, progress);
+    const { rejected } = remaining;
+    // Files of the create request that did not land count as failed too.
+    const failed = [...(created.failed_files || []), ...remaining.failed];
     let deliveryHeld = false;
     if (mailing) {
       if (failed.length) deliveryHeld = true;

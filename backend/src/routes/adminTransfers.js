@@ -372,12 +372,15 @@ router.post('/',
     // storage/temp/transfer-admin-uploads forever — nothing sweeps that
     // directory. The names are reported back so the drop is not silent.
     const droppedOnRequest = isRequest ? (req.files || []).map((f) => f.originalname) : [];
+    // Accepted but not stored (storage or database failure): reported, never
+    // counted as part of the transfer.
+    let failedToStore = [];
     if (isRequest) {
       for (const file of req.files || []) {
         try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
       }
     } else {
-      await storeExtraFiles(transfer.id, req.files);
+      ({ failed: failedToStore } = await storeExtraFiles(transfer.id, req.files));
     }
 
     if (deliveryMethod === 'email' && recipientEmails.length) {
@@ -399,9 +402,10 @@ router.post('/',
     if (droppedOnRequest.length) {
       notes.push(`${droppedOnRequest.length} attached file(s) were not kept — a file request only collects files`);
     }
+    if (failedToStore.length) notes.push(`${failedToStore.length} file(s) could not be stored`);
     return successResponse(
       res,
-      { transfer: fresh, rejected_files: rejected, dropped_files: droppedOnRequest },
+      { transfer: fresh, rejected_files: rejected, dropped_files: droppedOnRequest, failed_files: failedToStore },
       201,
       notes.length ? `${isRequest ? 'File request' : 'Transfer'} created — ${notes.join('; ')}` : 'Transfer created',
     );
@@ -546,15 +550,20 @@ router.post('/:id/upload-files',
         rejected_files: rejected,
       });
     }
-    await storeExtraFiles(id, req.files);
+    const { failed } = await storeExtraFiles(id, req.files);
+    if (failed.length === req.files.length) {
+      // Nothing landed: not a success, whatever the re-read would say.
+      return res.status(500).json({ error: 'Could not store the uploaded files', code: 'STORE_FAILED', failed_files: failed });
+    }
     // A ready mail held back while nothing was downloadable (issue 2061).
     await sendHeldAfterWrite(id);
     const transfer = await refreshAfterWrite(id);
     return successResponse(
       res,
-      { transfer, rejected_files: rejected },
+      { transfer, rejected_files: rejected, failed_files: failed },
       200,
-      rejected.length ? `Files added — ${rejected.length} were not an allowed type` : 'Files added',
+      rejected.length || failed.length
+        ? `Files added — ${rejected.length} were not an allowed type, ${failed.length} could not be stored` : 'Files added',
     );
   })),
 );

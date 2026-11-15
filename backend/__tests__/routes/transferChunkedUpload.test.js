@@ -221,6 +221,34 @@ describe('admin deliverable upload in chunks', () => {
     expect(await db('transfer_extra_files').where({ transfer_id: send.id })).toHaveLength(2);
   });
 
+  it('reports a multipart file whose row could not be written, and errors when none landed', async () => {
+    const transferService = require('../../src/services/transferService');
+    const real = transferService.addExtraFile;
+    jest.spyOn(transferService, 'addExtraFile').mockImplementation(async (id, file) => {
+      if (file.originalFilename === 'broken.pdf') throw new Error('database gone');
+      return real(id, file);
+    });
+    const send = await createTransfer('send', ownerId);
+    const upload = (...names) => {
+      let req = request(admin).post(`/api/admin/transfers/${send.id}/upload-files`).set('Authorization', `Bearer ${ownerToken}`);
+      for (const name of names) req = req.attach('files', Buffer.from('%PDF x'), name);
+      return req;
+    };
+    const some = await upload('fine.pdf', 'broken.pdf');
+    expect(some.status).toBe(200);
+    expect(some.body.failed_files).toEqual(['broken.pdf']);
+    const none = await upload('broken.pdf');
+    expect(none.status).toBe(500);
+    expect(none.body).toMatchObject({ code: 'STORE_FAILED', failed_files: ['broken.pdf'] });
+    expect(await db('transfer_extra_files').where({ transfer_id: send.id })).toHaveLength(1);
+
+    const created = await request(admin).post('/api/admin/transfers').set('Authorization', `Bearer ${ownerToken}`)
+      .field('title', 'Partly').field('photoIds', '[]').attach('files', Buffer.from('%PDF x'), 'fine.pdf')
+      .attach('files', Buffer.from('%PDF x'), 'broken.pdf');
+    expect(created.status).toBe(201);
+    expect(created.body.failed_files).toEqual(['broken.pdf']);
+  });
+
   it('answers 404 to another admin, another transfer and a public link', async () => {
     const send = await createTransfer('send', ownerId);
     const second = await createTransfer('send', ownerId);
