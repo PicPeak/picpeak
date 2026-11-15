@@ -144,6 +144,22 @@ describe('HEVC HEIC decoding', () => {
     expect(await heifStandIn('/gallery/a.jpg')).toBeNull();
   });
 
+  // A selfie (issue 2355) is decoded through here: a scratch copy that cannot
+  // be removed must show up in the log, not stay on disk unnoticed.
+  it('logs a scratch directory it cannot remove', async () => {
+    const logger = require('../../src/utils/logger');
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    const standIn = await heifStandIn(await fs.readFile(FIXTURE));
+    const scratch = path.dirname(standIn.path);
+    const realRm = fs.rm.bind(fs);
+    const rm = jest.spyOn(fs, 'rm').mockRejectedValue(Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' }));
+    await standIn.cleanup();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(scratch));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('EBUSY'));
+    rm.mockRestore();
+    await realRm(scratch, { recursive: true, force: true });
+  });
+
   it('marks the decoded photo, and refuses rather than ships an undecodable one', async () => {
     const settings = { enabled: true, type: 'text', text: 'proof', opacity: 50, position: 'center', size: 20 };
     const marked = await watermarkService.applyWatermark(FIXTURE, settings);

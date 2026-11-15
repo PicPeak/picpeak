@@ -6,6 +6,17 @@ const fsp = require('fs').promises;
 const os = require('os');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+
+// The scratch directories below hold decoded copies of a photo, or of a
+// guest's selfie (issue 2355). A failed removal is logged rather than
+// swallowed, so a copy left on disk does not go unnoticed.
+async function removeTempDir(dir) {
+  try {
+    await fsp.rm(dir, { recursive: true, force: true });
+  } catch (err) {
+    logger.warn(`Could not remove the temporary directory ${dir}: ${err.message}`);
+  }
+}
 const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
@@ -342,7 +353,7 @@ async function withRawContainerTags(rawPath, jpeg) {
     );
     return jpeg;
   } finally {
-    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+    await removeTempDir(dir);
   }
 }
 
@@ -360,7 +371,7 @@ async function extractRawPreview(rawPath, sourceName = rawPath) {
 async function extractRawPreviewSnapshot(rawPath) {
   const outDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-raw-'));
   const outPath = path.join(outDir, `${crypto.randomBytes(4).toString('hex')}.jpg`);
-  const cleanup = () => fsp.rm(outDir, { recursive: true, force: true }).catch(() => {});
+  const cleanup = () => removeTempDir(outDir);
   let lastErr;
   // Best result so far that did not clear the floor. Used only if nothing
   // better turns up: a soft photo beats a photo the client cannot see at all.
@@ -575,7 +586,7 @@ async function decodeHevcHeif(localPath, sourceName, metadata) {
   return mediaProcesses.withSnapshot(localPath, 'heif', async (snapshot, { policy, format }) => {
     const outDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-heif-'));
     const outPath = path.join(outDir, `${crypto.randomBytes(4).toString('hex')}.jpg`);
-    const cleanup = () => fsp.rm(outDir, { recursive: true, force: true }).catch(() => {});
+    const cleanup = () => removeTempDir(outDir);
     try {
       await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
         ...mediaProcesses.inputOptions(format, 1), '-c:v', 'hevc', '-i', snapshot,
@@ -627,7 +638,7 @@ async function heifStandIn(input) {
   }
   if (input.toString('latin1', 4, 8) !== 'ftyp' || !(await hevcHeifMetadata(input))) return null;
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-heif-'));
-  const removeDir = () => fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  const removeDir = () => removeTempDir(dir);
   try {
     const source = path.join(dir, 'source.heic');
     await fsp.writeFile(source, input);
@@ -1093,7 +1104,7 @@ async function withLocalCopy(sourceKey, fn) {
     await storage.getToFile(sourceKey, tmpPath);
     return await fn(tmpPath);
   } finally {
-    await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    await removeTempDir(tmpDir);
   }
 }
 
