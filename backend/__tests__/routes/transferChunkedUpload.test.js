@@ -281,6 +281,26 @@ describe('creating a send whose files follow in chunks', () => {
     expect((await db('transfers').where({ id }).first()).delivery_held_until).toBeNull();
   });
 
+  it('puts the hold on before any held recipient exists', async () => {
+    // A photo finishing between the two writes would find a held recipient
+    // without a hold and mail it ahead of the files.
+    const order = [];
+    const listener = (query) => {
+      if (/insert into .transfer_recipients./i.test(query.sql)) order.push('recipient');
+      if (/update .transfers. set .delivery_held_until./i.test(query.sql)) order.push('hold');
+    };
+    db.on('query', listener);
+    try {
+      const res = await create({
+        pendingFiles: 1, deliveryMethod: 'email', recipientEmails: JSON.stringify(['first@example.com']), photoIds: '[]',
+      });
+      expect(res.status).toBe(201);
+    } finally {
+      db.removeListener('query', listener);
+    }
+    expect(order).toEqual(['hold', 'recipient']);
+  });
+
   it('lets a hold the page never finished lapse, so the recipients are not stranded', async () => {
     const res = await create({
       pendingFiles: 1, deliveryMethod: 'email', recipientEmails: JSON.stringify(['stranded@example.com']), photoIds: '[]',

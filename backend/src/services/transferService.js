@@ -1370,6 +1370,12 @@ async function holdTransferRecipients(transferId, emails) {
   const clean = [...new Set((emails || [])
     .map((e) => String(e || '').trim())
     .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
+  // The hold goes on BEFORE the first held row exists: a photo of this send
+  // finishing in between would otherwise find a held recipient and no hold,
+  // and mail it ahead of the files (sendHeldReadyEmailsForPhotos).
+  if (clean.length) {
+    await db('transfers').where({ id: transferId }).update({ delivery_held_until: Date.now() + DELIVERY_HOLD_MS });
+  }
   for (const email of clean) {
     const existing = await db('transfer_recipients').where({ transfer_id: transferId, email }).first('id');
     if (!existing) {
@@ -1377,9 +1383,6 @@ async function holdTransferRecipients(transferId, emails) {
         transfer_id: transferId, email, created_at: new Date().toISOString(), last_sent_at: null,
       });
     }
-  }
-  if (clean.length) {
-    await db('transfers').where({ id: transferId }).update({ delivery_held_until: Date.now() + DELIVERY_HOLD_MS });
   }
   return { held: clean.length, recipients: clean };
 }

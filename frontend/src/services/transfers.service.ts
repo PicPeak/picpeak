@@ -365,8 +365,11 @@ export const transfersService = {
       if (failed.length) deliveryHeld = true;
       else await transfersService.resendEmail(created.id).catch(() => { deliveryHeld = true; });
     }
+    // The send exists now: a failed refresh must not turn that into an error
+    // (the dialog would stay open and a retry create a second send).
+    const fresh = await transfersService.get(created.id).catch(() => null);
     return {
-      ...(await transfersService.get(created.id)),
+      ...(fresh || created),
       rejected_files: [...(created.rejected_files || []), ...rejected],
       dropped_files: created.dropped_files || [],
       failed_files: failed,

@@ -127,6 +127,16 @@ describe('creating a send', () => {
   });
 });
 
+describe('creating a send when the connection drops at the end', () => {
+  it('still answers with the created send and what did not land', async () => {
+    serve({ failChunk: 1 });
+    vi.mocked(api.get).mockRejectedValue(new Error('Network Error'));
+    const result = await transfersService.create({ title: 'Wedding', photoIds: [1], files: [bigFile('film.mp4', 120 * MB)] });
+    expect(result.id).toBe(7);
+    expect(result.failed_files).toEqual(['film.mp4']);
+  });
+});
+
 describe('adding files to a transfer', () => {
   it('keeps one multipart request for files that fit', async () => {
     await transfersService.uploadFiles(7, [smallFile('a.pdf')]);
