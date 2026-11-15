@@ -41,6 +41,38 @@ import {
 // Mirrors MAX_FILES_CEILING in backend/src/services/transferUploadPolicy.js.
 const MAX_FILES_CEILING = 1000;
 
+/**
+ * Upload progress of a running request: the share of the body sent so far,
+ * then "processing" while the server stores what arrived.
+ */
+const UploadProgress: React.FC<{ percent: number | null }> = ({ percent }) => {
+  const { t } = useTranslation();
+  if (percent === null) return null;
+  const sent = percent >= 100;
+  return (
+    <div className="space-y-1">
+      <div
+        role="progressbar"
+        aria-label={t('transfers.uploadProgress', 'Upload progress')}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        className="h-2 w-full overflow-hidden rounded-full bg-inset"
+      >
+        <div
+          className={`h-full rounded-full bg-accent-strong transition-all${sent ? ' animate-pulse' : ''}`}
+          style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+        />
+      </div>
+      <p className="text-xs text-muted" role="status" aria-live="polite">
+        {sent
+          ? t('transfers.uploadProcessing', 'Upload complete, saving the files…')
+          : t('transfers.uploadPercent', { defaultValue: 'Uploading… {{percent}}%', percent })}
+      </p>
+    </div>
+  );
+};
+
 function formatBytes(bytes: number | null | undefined): string {
   if (!bytes) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -311,19 +343,25 @@ const CreateTransferModal: React.FC<{
     .map((e) => e.trim())
     .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
 
+  // Only while files are being sent; null hides the bar.
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const createMutation = useMutationWithToast({
-    mutationFn: () => transfersService.create({
-      kind,
-      title: title.trim(),
-      message: message.trim() || null,
-      expiresInDays: parseInt(expiresInDays, 10) || 14,
-      maxDownloads: !isRequest && maxDownloads ? parseInt(maxDownloads, 10) : null,
-      maxFilesPerUpload: isRequest ? ownLimit : null,
-      photoIds: isRequest ? [] : picked.map((p) => p.id),
-      files: isRequest ? [] : files,
-      deliveryMethod,
-      recipientEmails: deliveryMethod === 'email' ? parsedEmails : [],
-    }),
+    mutationFn: () => {
+      const sendsFiles = !isRequest && files.length > 0;
+      if (sendsFiles) setUploadPercent(0);
+      return transfersService.create({
+        kind,
+        title: title.trim(),
+        message: message.trim() || null,
+        expiresInDays: parseInt(expiresInDays, 10) || 14,
+        maxDownloads: !isRequest && maxDownloads ? parseInt(maxDownloads, 10) : null,
+        maxFilesPerUpload: isRequest ? ownLimit : null,
+        photoIds: isRequest ? [] : picked.map((p) => p.id),
+        files: isRequest ? [] : files,
+        deliveryMethod,
+        recipientEmails: deliveryMethod === 'email' ? parsedEmails : [],
+      }, sendsFiles ? setUploadPercent : undefined).finally(() => setUploadPercent(null));
+    },
     successMessage: isRequest
       ? t('transfers.requestCreated', 'File request created')
       : t('transfers.created', 'Transfer created'),
@@ -586,6 +624,7 @@ const CreateTransferModal: React.FC<{
               </div>
             )}
           </div>
+          <UploadProgress percent={uploadPercent} />
         </div>
 
       {showPicker && (
@@ -734,8 +773,13 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
     successMessage: t('transfers.deleted', 'Transfer deleted'),
     onSuccess: onClose,
   });
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const uploadFilesMutation = useMutationWithToast({
-    mutationFn: (list: File[]) => transfersService.uploadFiles(transferId, list),
+    mutationFn: (list: File[]) => {
+      setUploadPercent(0);
+      return transfersService.uploadFiles(transferId, list, setUploadPercent)
+        .finally(() => setUploadPercent(null));
+    },
     successMessage: t('transfers.filesAdded', 'Files added'),
     onSuccess: (updated) => {
       warnWriteNotes(updated, t);
@@ -878,6 +922,7 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
                           type="file"
                           multiple
                           className="hidden"
+                          disabled={uploadFilesMutation.isPending}
                           onChange={(e) => {
                             if (e.target.files?.length) uploadFilesMutation.mutate(Array.from(e.target.files));
                             e.target.value = '';
@@ -886,6 +931,7 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
                       </label>
                     )}
                   </div>
+                  <div className="mb-2"><UploadProgress percent={uploadPercent} /></div>
                   {transfer.extra_files && transfer.extra_files.length > 0 ? (
                     <ul className="divide-y divide-line-faint">
                       {transfer.extra_files.map((f) => (
