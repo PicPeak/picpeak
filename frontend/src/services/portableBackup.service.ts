@@ -7,6 +7,9 @@ export interface RestoreProgress {
   state: 'open' | 'draining' | 'restoring' | 'recovery_required' | 'restart_required';
   outcome: 'committed' | 'rolled_back' | 'aborted' | 'recovery_required' | null;
   restartRequired: boolean;
+  // Set once a restarted backend holds the instance because core migrations
+  // have not run on the restored database.
+  migrationsPending?: { count: number; first: string } | null;
   complete: boolean;
   // Why a restore did not go through; null while it runs and after a commit.
   error?: RestoreFailure | null;
