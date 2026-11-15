@@ -178,6 +178,21 @@ async function storeExtraFiles(transferId, files) {
   return { failed };
 }
 
+/**
+ * The transfer after a write that has already stored its files or sent its
+ * mail. Best effort: a failed read must not answer 500 for a write that
+ * landed — the page would report it missing and a retry would store or send
+ * it twice. null when it cannot be read; the page refreshes on its own.
+ */
+async function refreshAfterWrite(id) {
+  try {
+    return await transferService.getTransfer(id);
+  } catch (err) {
+    logger.warn('adminTransfers: transfer not re-read after a write', { transferId: id, error: err.message });
+    return null;
+  }
+}
+
 /** Parse a multipart field that carries a JSON array (photoIds, recipientEmails). */
 function parseJsonArrayField(value) {
   if (Array.isArray(value)) return value;
@@ -267,7 +282,7 @@ router.post('/',
       await transferService.sendTransferEmails(transfer.id, recipientEmails);
     }
 
-    const fresh = await transferService.getTransfer(transfer.id);
+    const fresh = (await refreshAfterWrite(transfer.id)) || transfer;
     return successResponse(res, { transfer: fresh }, 201, 'Transfer created');
   })),
 );
@@ -375,7 +390,7 @@ router.post('/:id/upload-files',
       return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });
     }
     await storeExtraFiles(id, req.files);
-    const transfer = await transferService.getTransfer(id);
+    const transfer = await refreshAfterWrite(id);
     return successResponse(res, { transfer }, 200, 'Files added');
   })),
 );
@@ -511,7 +526,7 @@ router.post('/:id/chunked-upload/:uploadId/complete',
       if (failed.length) {
         return reply.status(500).json({ error: 'Could not store the uploaded file', code: 'STORE_FAILED', failed_files: failed });
       }
-      const transfer = await transferService.getTransfer(existing.id);
+      const transfer = await refreshAfterWrite(existing.id);
       return successResponse(reply, { transfer }, 200, 'Files added');
     } catch (error) {
       return chunkRefusal(req, reply, error, 'Failed to complete upload');
@@ -557,7 +572,7 @@ router.post('/:id/deliver',
       return res.status(502).json({ error: 'The email could not be sent. Try again.', code: 'DELIVERY_FAILED' });
     }
     return successResponse(res, {
-      transfer: await transferService.getTransfer(id), sent: result.sent,
+      transfer: await refreshAfterWrite(id), sent: result.sent,
       already_delivered: !!result.alreadyDelivered, partial: !!result.partial,
     }, 200, result.alreadyDelivered ? 'Already sent' : 'Email sent');
   }),
