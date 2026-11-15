@@ -220,6 +220,32 @@ describe('folder ingest and two-stage delivery', () => {
       expect(again.status).toBe(409);
     });
 
+    // Issue 2356: the mail goes to the ordinary link's audience, which sees
+    // the curated selection only, so photos outside it are not counted.
+    it('counts only the curated selection in the gallery_completed mail', async () => {
+      const eventId = await seedEvent({ delivery_status: 'partial' });
+      const mk = async (filename, extra = {}) => idOf(await db('photos').insert({
+        event_id: eventId, filename, original_filename: filename, path: `x/${filename}`, type: 'individual', first_look: 0, ...extra,
+      }).returning('id'));
+      const shot = { captured_at: '2026-07-03T10:15:42.000Z' };
+      await mk('in-1.jpg');
+      await mk('in-2.jpg');
+      await mk('out-1.jpg', { selection_hidden: 1 });
+      await mk('out-2.jpg', { selection_hidden: 1 });
+      // A duplicate pair whose first-look copy is outside the selection takes
+      // nothing off the selection's count.
+      await mk('IMG_9.jpg', { ...shot, first_look: 1, selection_hidden: 1 });
+      await mk('img_9.JPG', { ...shot, selection_hidden: 1 });
+
+      const res = await request(app).post(`/api/admin/events/${eventId}/delivery/complete`).send({});
+      expect(res.status).toBe(200);
+      const mail = await db('email_queue').where({ event_id: eventId, email_type: 'gallery_completed' }).first();
+      const data = typeof mail.email_data === 'string' ? JSON.parse(mail.email_data) : mail.email_data;
+      expect(data.photo_count).toBe(2);
+      // The admin's own delivery state still counts every photo.
+      expect(res.body.state.delivered_count).toBe(6);
+    });
+
     // Review of PR 1826, blocker 1: camera names repeat across folders, and a
     // wrong pair deletes a unique photo.
     describe('duplicate pairing', () => {

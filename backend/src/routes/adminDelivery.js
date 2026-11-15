@@ -20,7 +20,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
-const { livePhotos } = require('../utils/photoVisibility');
+const { livePhotos, whereInSelection } = require('../utils/photoVisibility');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
@@ -37,10 +37,16 @@ const router = express.Router();
 // is not in that count, so its pair must not take the full-set photo off it
 // (issue 2086).
 // Reads the event's held ids rather than binding one parameter per pair.
-async function countedDuplicates(eventId, duplicates) {
+// With selectionOnly a first-look copy outside the curated selection is not
+// counted either (issue 2356).
+async function countedDuplicates(eventId, duplicates, { selectionOnly = false } = {}) {
   if (duplicates.length === 0) return 0;
   const held = new Set((await livePhotos(db).where('event_id', eventId)
-    .whereNotNull('moderation_status').pluck('id')).map(Number));
+    .where((q) => {
+      q.whereNotNull('moderation_status');
+      if (selectionOnly) q.orWhere('selection_hidden', true);
+    })
+    .pluck('id')).map(Number));
   return duplicates.filter((d) => !held.has(Number(d.first_look_id))).length;
 }
 
@@ -92,8 +98,12 @@ router.post('/events/:eventId/delivery/complete', adminAuth, requirePermission('
     const recipient = event.customer_email || event.host_email || null;
     const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
     // Held and rejected guest uploads are not part of the delivery (issue 2086).
-    const [{ total }] = await livePhotos(db).where('event_id', eventId).whereNull('moderation_status').count('id as total');
-    const photoCount = Math.max(0, (Number(total) || 0) - await countedDuplicates(eventId, result.duplicates));
+    // The mail and the workflow payload reach the customer and the ordinary
+    // link's audience, so the count is the curated selection's (issue 2356).
+    const [{ total }] = await livePhotos(db).where('event_id', eventId).whereNull('moderation_status')
+      .modify(whereInSelection).count('id as total');
+    const photoCount = Math.max(0, (Number(total) || 0)
+      - await countedDuplicates(eventId, result.duplicates, { selectionOnly: true }));
 
     // The inline address and every assigned customer account the gallery
     // was announced to (customers.events, as on every announcing route).
