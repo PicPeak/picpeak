@@ -552,6 +552,10 @@ router.post('/:id/deliver',
     const existing = await transferService.getTransfer(id);
     if (!existing || existing.deleted_at) return res.status(404).json({ error: 'Transfer not found' });
     const result = await transferService.deliverTransferEmails(id, req.body.recipientEmails);
+    if (result.failed) {
+      // Nothing went out; the transfer is open for another attempt.
+      return res.status(502).json({ error: 'The email could not be sent. Try again.', code: 'DELIVERY_FAILED' });
+    }
     return successResponse(res, {
       transfer: await transferService.getTransfer(id), sent: result.sent, already_delivered: !!result.alreadyDelivered,
     }, 200, result.alreadyDelivered ? 'Already sent' : 'Email sent');

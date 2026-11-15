@@ -902,15 +902,30 @@ async function removeExtraFiles(transferId) {
  * Mail a transfer's download link once, after the files the page uploaded in
  * further requests or chunks have landed (create with pending files records
  * delivery_method 'link' and mails nothing). Claimed by turning 'link' into
- * 'email' in one guarded UPDATE, so a second call — a double click, a retry,
- * another replica — sends nothing.
+ * 'email' in one guarded UPDATE, so a concurrent or later call — a double
+ * click, another replica — sends nothing. A delivery that sent no mail at all
+ * (the database or every SMTP attempt failed) hands the claim back, so it can
+ * be tried again; `failed` says so.
  */
 async function deliverTransferEmails(transferId, emails) {
   const claimed = await db('transfers')
     .where({ id: transferId, delivery_method: 'link' }).whereNull('deleted_at')
     .update({ delivery_method: 'email' });
   if (!claimed) return { sent: 0, recipients: [], alreadyDelivered: true };
-  return sendTransferEmails(transferId, emails);
+  const release = () => db('transfers').where({ id: transferId, delivery_method: 'email' })
+    .update({ delivery_method: 'link' });
+  let result;
+  try {
+    result = await sendTransferEmails(transferId, emails);
+  } catch (err) {
+    await release().catch(() => {});
+    throw err;
+  }
+  if (result.sent === 0) {
+    await release();
+    return { ...result, failed: true };
+  }
+  return result;
 }
 
 async function sendTransferEmails(transferId, emails) {

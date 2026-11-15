@@ -283,6 +283,22 @@ describe('creating a transfer whose files follow in chunks', () => {
     expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
   });
 
+  it('stays retryable when no mail could be sent', async () => {
+    const { id } = (await create({
+      pendingFiles: 1, deliveryMethod: 'email', recipientEmails: JSON.stringify(['retry@example.com']), photoIds: '[]',
+    })).body.transfer;
+    mockSendTemplateEmail.mockRejectedValueOnce(new Error('SMTP down'));
+    const failed = await deliver(ownerToken, id, ['retry@example.com']);
+    expect(failed.status).toBe(502);
+    expect(failed.body.code).toBe('DELIVERY_FAILED');
+
+    const again = await deliver(ownerToken, id, ['retry@example.com']);
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ sent: 1, already_delivered: false });
+    expect((await deliver(ownerToken, id, ['retry@example.com'])).body.already_delivered).toBe(true);
+    expect(mockSendTemplateEmail).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps deliver to the transfer owner and refuses bad input', async () => {
     const { id } = (await create({ pendingFiles: 1, deliveryMethod: 'email', recipientEmails: '[]', photoIds: '[]' })).body.transfer;
     expect((await deliver(otherToken, id, ['x@example.com'])).status).toBe(404);
