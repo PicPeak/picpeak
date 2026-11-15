@@ -125,6 +125,8 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
   const lastSuccessfulBackup = status?.lastSuccessfulBackup;   // status='completed' only
   const zombieRuns = status?.zombieRuns ?? [];
   const statistics = lastSuccessfulBackup?.statistics ?? lastBackup?.statistics ?? {};
+  const hasPhotoCoverage = typeof statistics.photos_backed_up === 'number' && typeof statistics.total_photos === 'number';
+  const hasArchiveCoverage = typeof statistics.archives_backed_up === 'number';
   const isConfigured = config && config.backup_destination_type;
   const isEnabled = config?.backup_enabled;
 
@@ -357,16 +359,22 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
       {/* Storage Status */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-heading mb-4">{t('backup.dashboard.coverage.title')}</h3>
+          <h3 className="text-lg font-semibold text-heading">{t('backup.dashboard.coverage.title')}</h3>
+          <p className="text-sm text-muted mb-4">{t('backup.dashboard.coverage.caption')}</p>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Database className="h-5 w-5 text-faint" />
-                <span className="text-body">Database</span>
+                <span className="text-body">{t('backup.configuration.whatToBackup.database')}</span>
               </div>
-              <Badge tone={statistics.database_backed_up ? 'success' : 'neutral'}>
-                {statistics.database_backed_up ? t('backup.dashboard.coverage.included') : t('backup.dashboard.coverage.excluded')}
-              </Badge>
+              {/* Runs recorded before these keys existed say nothing either way. */}
+              {typeof statistics.database_backed_up === 'boolean' ? (
+                <Badge tone={statistics.database_backed_up ? 'success' : 'neutral'}>
+                  {statistics.database_backed_up ? t('backup.dashboard.coverage.included') : t('backup.dashboard.coverage.excluded')}
+                </Badge>
+              ) : (
+                <span className="text-sm text-muted" title={t('backup.dashboard.coverage.unknown')}>—</span>
+              )}
             </div>
 
             <div className="flex items-center justify-between">
@@ -374,8 +382,10 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
                 <Image className="h-5 w-5 text-faint" />
                 <span className="text-body">{t('backup.configuration.whatToBackup.photos')}</span>
               </div>
-              <span className="text-sm text-muted">
-                {statistics.photos_backed_up || 0} {t('common.of')} {statistics.total_photos || 0}
+              <span className="text-sm text-muted" title={hasPhotoCoverage ? undefined : t('backup.dashboard.coverage.unknown')}>
+                {hasPhotoCoverage
+                  ? `${statistics.photos_backed_up} ${t('common.of')} ${statistics.total_photos}`
+                  : '—'}
               </span>
             </div>
 
@@ -384,8 +394,10 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
                 <FileArchive className="h-5 w-5 text-faint" />
                 <span className="text-body">{t('backup.configuration.whatToBackup.archives')}</span>
               </div>
-              <span className="text-sm text-muted">
-                {statistics.archives_backed_up || 0} {t('backup.dashboard.stats.files')}
+              <span className="text-sm text-muted" title={hasArchiveCoverage ? undefined : t('backup.dashboard.coverage.unknown')}>
+                {hasArchiveCoverage
+                  ? `${statistics.archives_backed_up} ${t('backup.dashboard.stats.files')}`
+                  : '—'}
               </span>
             </div>
           </div>
