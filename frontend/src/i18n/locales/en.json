@@ -6439,6 +6439,7 @@
       "awaitingProgress": "Waiting for the restore coordinator…",
       "progressUnavailable": "The coordinator is temporarily unreachable. Retrying; no completion has been confirmed.",
       "restartAllInstances": "The restore is complete. Restart the backend once (every backend process, if you run several) so it serves the restored data.",
+      "migrationsPending": "The backend was restarted, but {{count}} database migration(s) have not run on the restored database (first: {{first}}). The instance stays in maintenance until they have. Run \"node migrations/run-migrations-safe.js\" in the backend, or restart it through the image entrypoint (wait-for-db.sh), which runs them.",
       "rollbackVerified": "The restore failed. The previous database and files were restored and verified, and the instance is running again with its previous data. No restart is needed.",
       "recoveryRequired": "The restore was interrupted and is being recovered. The application stays in maintenance until that is done. If this does not change, see the server log.",
       "progressDenied": "This progress capability is no longer valid. It does not grant application access.",
@@ -6449,7 +6450,8 @@
         "draining": "Waiting for running work to finish",
         "restoring": "Restoring",
         "recovery_required": "Recovering an interrupted restore",
-        "restart_required": "Restored; waiting for the backend to be restarted"
+        "restart_required": "Restored; waiting for the backend to be restarted",
+        "migrations_pending": "Restored; waiting for the database migrations"
       },
       "externalPathsFailedDetail": "External photo paths were not converted, so every referenced original is currently unreachable. Re-run the restore or the pending migrations once the cause is resolved.",
       "externalMediaNote": "This backup references an external-media library. Make sure external-media routing is configured on this instance.",

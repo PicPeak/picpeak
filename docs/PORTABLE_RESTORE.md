@@ -59,6 +59,10 @@ itself**: services restart in the same process, no restart is needed, and the
 progress view shows the reason. After a **committed** restore every backend
 process must be restarted once, because its in-memory caches describe the
 replaced database; the admin interface says so. Old sessions are invalidated.
+A process restarted without running the migrations (started by hand, not
+through the image's `wait-for-db.sh`) keeps the instance in maintenance until
+`node migrations/run-migrations-safe.js` has run; the progress view then shows
+how many migrations are missing instead of asking for another restart.
 
 ## Crash, reboot, stuck fence
 
