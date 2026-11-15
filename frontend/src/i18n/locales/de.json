@@ -2041,6 +2041,8 @@
         "failedSubtitle": "Wiederherstellung fehlgeschlagen — siehe Fehler unten. Das Ziel wurde auf den Stand vor der Wiederherstellung zurückgesetzt.",
         "idle": "Derzeit läuft keine Wiederherstellung.",
         "errorTitle": "Wiederherstellung nicht abgeschlossen",
+        "migrationsPendingSubtitle": "Daten wiederhergestellt, aber Datenbank-Migrationen stehen noch aus. Die Website bleibt im Wartungsmodus — siehe unten.",
+        "migrationsPendingTitle": "Datenbank-Migrationen ausstehend",
         "errorUnknown": "Keine Fehlermeldung aufgezeichnet.",
         "rolledBack": "Das Sicherheits-Backup von vor der Wiederherstellung wurde für den Rollback verwendet. Das Ziel befindet sich im Zustand vor der Wiederherstellung — ein erneuter Versuch ist gefahrlos möglich, sobald das Problem oben behoben ist."
       },

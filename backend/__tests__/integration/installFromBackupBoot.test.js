@@ -235,6 +235,31 @@ describe('installFromBackupBoot', () => {
     expect(fs.existsSync(triggerPath)).toBe(false);
   });
 
+  it('deletes the trigger file when the import committed but migrations are pending', async () => {
+    // The data is in place: a later boot must not import the archive again.
+    mockRestore.mockResolvedValueOnce({ success: false, migrationsPending: ['363_x.js'], maintenance: true, error: 'migrations pending' });
+    const manifest = path.join(manifestsDir, 'backup-manifest-001.json');
+    fs.writeFileSync(manifest, '{}');
+    const triggerPath = path.join(backupRoot, 'RESTORE_ON_INSTALL');
+    fs.writeFileSync(triggerPath, '');
+
+    const result = await tryInstallFromBackup(db);
+    expect(result).toMatchObject({ ran: true, error: 'migrations pending' });
+    expect(fs.existsSync(triggerPath)).toBe(false);
+  });
+
+  it('leaves the trigger file in place when the restore reports a failure', async () => {
+    mockRestore.mockResolvedValueOnce({ success: false, error: 'verification failed' });
+    const manifest = path.join(manifestsDir, 'backup-manifest-001.json');
+    fs.writeFileSync(manifest, '{}');
+    const triggerPath = path.join(backupRoot, 'RESTORE_ON_INSTALL');
+    fs.writeFileSync(triggerPath, '');
+
+    const result = await tryInstallFromBackup(db);
+    expect(result).toMatchObject({ ran: false, error: 'verification failed' });
+    expect(fs.existsSync(triggerPath)).toBe(true);
+  });
+
   it('leaves the trigger file in place when restore throws', async () => {
     mockRestore.mockRejectedValueOnce(new Error('restore exploded'));
     const manifest = path.join(manifestsDir, 'backup-manifest-001.json');

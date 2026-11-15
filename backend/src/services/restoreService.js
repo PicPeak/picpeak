@@ -634,11 +634,11 @@ class RestoreService {
       // is untouched). Idempotent — migrations already applied are
       // tracked in the restored `migrations` table and get skipped.
       //
-      // Failure is non-fatal: the restore data itself is in place,
-      // and the next container restart's wait-for-db.sh will retry.
-      // Surfacing the error gives the operator a chance to investigate
-      // proactively rather than discovering it on the next 500 from
-      // a missing column.
+      // A failure does not roll the restore back: the restore data is in
+      // place and the next container restart's wait-for-db.sh retries. But
+      // when the ledger then still misses a core migration, the instance is
+      // held in maintenance mode and the restore is not reported as a
+      // success (step 7d, issue 2480).
       try {
         this.log('info', 'Applying post-restore migrations to restored database...');
         this.updateProgress('Applying any post-backup migrations...');
@@ -665,6 +665,9 @@ class RestoreService {
           'Post-restore migrate:safe failed — restore data is in place but the schema may lag the running image. ' +
           `A container restart will retry via wait-for-db.sh. Error: ${migErr.message}`);
       }
+
+      // Step 7d: see holdForPendingMigrations.
+      const migrationsPending = migrationsApplied ? null : await this.holdForPendingMigrations();
 
       // The restored rows may be at rendition_version 0 (a pre-311 database
       // the migration above just set back, or legacy rows the backup carried)
@@ -740,6 +743,38 @@ class RestoreService {
       // Calculate duration
       const endTime = new Date();
       const durationSeconds = Math.round((endTime - startTime) / 1000);
+
+      if (migrationsPending) {
+        const message = migrationsPending.length > 0
+          ? `The backup was restored, but ${migrationsPending.length} database migration(s) have not run on it `
+            + `(first: ${migrationsPending[0]}).`
+          : 'The backup was restored, but the post-restore migrations failed and the migration ledger could not be read.';
+        const error = `${message} Maintenance mode is on so visitors are not served a database that lags this version. `
+          + 'Run "node migrations/run-migrations-safe.js" or restart the container, then turn maintenance mode off.';
+        await persistRestoreRun(restoreRun, {
+          completed_at: endTime.toISOString(),
+          status: 'migrations_pending',
+          was_successful: false,
+          error_message: error,
+          duration_seconds: durationSeconds,
+          pre_restore_backup_path: this.preRestoreBackupPath,
+          statistics: JSON.stringify({ ...restoreResult, verification, authentication, migrationsPending,
+            log: this.restoreLog, durationSeconds })
+        });
+        await this.sendRestoreNotification('failed', { restoreType: options.restoreType, error });
+        this.log('error', error, { migrationsPending });
+        return {
+          success: false,
+          migrationsPending,
+          maintenance: true,
+          error,
+          duration: durationSeconds,
+          result: restoreResult,
+          verification,
+          preRestoreBackup: this.preRestoreBackupPath,
+          logs: this.restoreLog
+        };
+      }
 
       // Update restore run record
       await persistRestoreRun(restoreRun, {
@@ -1762,6 +1797,32 @@ END $$;`
       }
       await staged.cleanup();
     }
+  }
+
+  /**
+   * After the post-restore migrations failed: the core migrations the
+   * restored ledger does not record (the portable restore's check), or []
+   * when the ledger cannot be read. While any are missing the restored
+   * database lags the running code, so the site goes into maintenance mode
+   * (admins keep access) and stays there until an admin turns it off once
+   * the migrations have run (issue 2480). Returns null when nothing is
+   * missing: the failure then cost nothing.
+   */
+  async holdForPendingMigrations() {
+    let pending = [];
+    try {
+      pending = await require('./portableRestoreCoordinator').pendingCoreMigrations(db);
+      if (pending.length === 0) return null;
+    } catch (err) {
+      this.log('warn', `Could not read the migration ledger of the restored database: ${err.message}`);
+    }
+    const now = new Date().toISOString();
+    await db('app_settings')
+      .insert({ setting_key: 'general_maintenance_mode', setting_value: JSON.stringify(true), setting_type: 'general', updated_at: now })
+      .onConflict('setting_key')
+      .merge({ setting_value: JSON.stringify(true), updated_at: now });
+    require('../middleware/maintenance').clearMaintenanceCache();
+    return pending;
   }
 
   /**
