@@ -1430,11 +1430,20 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
       unavailable = !stat || (job.policy_version >= 2
         && (!Array.isArray(ids) || !readEntryManifest(job, ids, stat.size)));
     }
+    // A job still building for another scope (a client's, a full-link
+    // guest's) is not this visitor's either; the scope comparison costs no
+    // query on every poll. The ready check above re-runs the whole rule.
+    if (job.status === 'pending' || job.status === 'building') {
+      unavailable = job.visibility_scope !== downloadJobService.visibilityScopeFor(viewerOf(req))
+        || !!job.preview_only !== previewOnly;
+    }
     res.json({
       status: job.status,
       resolution: job.resolution,
-      photo_count: job.photo_count || 0,
-      size_bytes: job.size_bytes || null,
+      // The stored counts describe what the job's scope sees (issue 2356):
+      // not for a visitor it is unavailable to.
+      photo_count: unavailable ? 0 : (job.photo_count || 0),
+      size_bytes: unavailable ? null : (job.size_bytes || null),
       error: job.status === 'failed' ? (job.error || 'Preparation failed') : undefined,
       download_limit_reached: limitReached,
       notify,

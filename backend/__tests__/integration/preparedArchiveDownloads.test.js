@@ -501,6 +501,27 @@ describe('native prepared archive downloads (#1966)', () => {
     expect(await grants(event)).toHaveLength(3);
   });
 
+  // Issue 2356: a status poll from a visitor outside the job's scope must not
+  // learn how many photos (or bytes) that scope holds, ready or still building.
+  it('withholds the counts of a job the visitor cannot use, ready or building', async () => {
+    const { event } = await fixture();
+    const job = await prepare(event, {}, client);
+    const own = await api(event, 'get', `download-jobs/${job.token}`, client);
+    expect(own.body).toMatchObject({ photo_count: 3 });
+    expect(own.body.unavailable).toBeUndefined();
+
+    const ready = await api(event, 'get', `download-jobs/${job.token}`);
+    expect(ready.body).toMatchObject({ unavailable: true, photo_count: 0, size_bytes: null });
+
+    await db('download_jobs').where({ id: job.id }).update({ status: 'building', heartbeat_at: new Date().toISOString() });
+    const building = await api(event, 'get', `download-jobs/${job.token}`);
+    expect(building.body).toMatchObject({ status: 'building', unavailable: true, photo_count: 0, size_bytes: null });
+    const ownBuilding = await api(event, 'get', `download-jobs/${job.token}`, client);
+    expect(ownBuilding.body).toMatchObject({ status: 'building', photo_count: 3 });
+    expect(ownBuilding.body.unavailable).toBeUndefined();
+    await db('download_jobs').where({ id: job.id }).update({ status: 'ready' });
+  });
+
   it('reports a vanished archive before offering the native download', async () => {
     const { event } = await fixture();
     const job = await prepare(event);
