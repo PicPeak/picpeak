@@ -175,3 +175,31 @@ it('restores from a mirror copied back into backup_destination_path, manifest in
   expect(validated.body).toMatchObject({ success: true });
   expect(validated.status).toBe(200);
 });
+
+it('still finds the dump where this host wrote it for a restore from the local manifest', async () => {
+  // backup_destination_path=/backup with the dumps in /backup/dumps: the
+  // relative database/<file> is not there, the recorded source file is.
+  await settings({ backup_destination_path: tmpDir });
+  const { run } = await runWithRsync();
+  expect(run.status).toBe('completed');
+  const dump = await backup.getDatabaseBackupInfo();
+  const manifest = JSON.parse(await fs.readFile(run.manifest_path, 'utf8'));
+  expect(manifest.database.source_file).toBe(dump.backupFile);
+  const { _internal } = require('../../src/services/restoreService');
+  const candidates = await _internal.resolveContainedDbBackupCandidates(tmpDir, manifest.database.backup_file,
+    undefined, manifest.database.source_file);
+  const present = [];
+  for (const candidate of candidates) if (await fs.stat(candidate).catch(() => null)) present.push(candidate);
+  expect(present).toEqual([dump.backupFile]);
+});
+
+it('lists a backup found on disk once, with its history row', async () => {
+  const { run } = await runWithRsync();
+  expect(run.status).toBe('completed');
+  expect(run.files_backed_up).toBe(2);
+  const listed = await request(app).post('/api/admin/restore/list-backups')
+    .set('Authorization', `Bearer ${superToken}`).send({});
+  expect(listed.status).toBe(200);
+  expect(listed.body.data).toEqual([expect.objectContaining({ path: run.manifest_path, manifestId: run.manifest_id,
+    filesCount: 2, database_included: true })]);
+});
