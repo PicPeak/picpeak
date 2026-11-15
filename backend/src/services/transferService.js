@@ -1231,7 +1231,12 @@ async function addExtraFile(transferId, { originalFilename, storedPath, sizeByte
     sort_order: order,
     created_at: new Date(),
   }).returning('id');
-  await db('transfers').where({ id: transferId }).update({ updated_at: new Date() });
+  // The file is stored and recorded at this point. Failing it for a missed
+  // timestamp would report a landed file as lost, and a retry would store it
+  // twice.
+  await db('transfers').where({ id: transferId }).update({ updated_at: new Date() }).catch((err) => {
+    logger.warn('transferService: updated_at not bumped after adding a file', { transferId, error: err.message });
+  });
   return typeof id === 'object' && id !== null ? id.id : id;
 }
 

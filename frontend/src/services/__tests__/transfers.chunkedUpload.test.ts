@@ -166,6 +166,17 @@ describe('adding files to a transfer', () => {
     expect(result.failed_files).toEqual(['b.pdf']);
   });
 
+  it('succeeds with the id when the answers carried no transfer and the refresh fails', async () => {
+    const base = post.getMockImplementation()!;
+    post.mockImplementation(async (url: string, body?: unknown) => (url.endsWith('/complete') || url.endsWith('/upload-files')
+      ? { data: { transfer: null, failed_files: [] } }
+      : base(url, body)));
+    vi.mocked(api.get).mockRejectedValue(new Error('Network Error'));
+    const result = await transfersService.uploadFiles(7, [bigFile('film.mp4', 150 * MB), smallFile('a.pdf')]);
+    expect(result.id).toBe(7);
+    expect(result.failed_files).toEqual([]);
+  });
+
   it('throws when no file landed', async () => {
     serve({ failChunk: 0 });
     await expect(transfersService.uploadFiles(7, [bigFile('film.mp4', 150 * MB)])).rejects.toMatchObject({

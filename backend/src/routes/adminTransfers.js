@@ -265,9 +265,16 @@ router.use(requireFeatureFlag('transfers'));
  */
 async function requireTransferOwnership(req, res, next) {
   try {
+    // One spelling per transfer. parseInt and Number disagree on `800.1e1`
+    // (800 / 8001), `8e2` (8 / 800) and `800abc` (800 / NaN), and routes below
+    // read the id either way: authorising one transfer and acting on another.
+    // Only the canonical decimal form reaches any of them, for every role.
+    if (!/^[1-9]\d*$/.test(String(req.params.id)) || !Number.isSafeInteger(Number(req.params.id))) {
+      if (!req.readableEnded) res.set('Connection', 'close');
+      return res.status(404).json({ error: 'Transfer not found' });
+    }
     if (req.admin.roleName === 'super_admin') return next();
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id' });
+    const id = Number(req.params.id);
     const owner = await transferService.getTransferOwner(id);
     if (!owner) return res.status(404).json({ error: 'Transfer not found' });
     if (owner.created_by != null && owner.created_by !== req.admin.id) {

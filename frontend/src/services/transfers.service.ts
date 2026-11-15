@@ -401,11 +401,11 @@ export const transfersService = {
       if (firstError && rejected.length + failed.length === files.length) throw firstError;
       // Files are stored now: a failed refresh must not turn that into an
       // error (a retry would store them twice). Fall back to the last answer.
-      const fresh = await transfersService.get(id).catch((error) => {
-        if (!last) throw error;
-        return last;
-      });
-      return { ...fresh, rejected_files: rejected, failed_files: failed };
+      // Without any snapshot (the answers carried none and the read failed)
+      // it is still a success: the server acknowledged the writes. The page
+      // refreshes the transfer on its own.
+      const fresh = await transfersService.get(id).catch(() => last);
+      return { ...(fresh || ({ id } as Transfer)), rejected_files: rejected, failed_files: failed };
     }
     const form = new FormData();
     files.forEach((f) => form.append('files', f));
