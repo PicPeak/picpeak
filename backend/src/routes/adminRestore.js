@@ -411,9 +411,13 @@ router.get('/available-backups', requirePermission('backup.view'), async (req, r
 async function discoverAvailableBackups() {
   const backupConfig = await getBackupConfig();
   const backups = [];
-  const seenManifestIds = new Set();
+  // Disk entries by manifest id and by resolved manifest path. A run row
+  // stores manifest_id as the file name, backup-manifest-<backup.id>.
+  const diskEntries = new Map();
 
-  if (backupConfig.backup_destination_type === 'local') {
+  // An rsync mirror copied back into backup_destination_path brings its
+  // manifest along in <destination>/manifests (uploadRsyncManifest).
+  if (['local', 'rsync'].includes(backupConfig.backup_destination_type)) {
     const roots = new Set();
     if (backupConfig.backup_destination_path) roots.add(backupConfig.backup_destination_path);
     if (backupConfig.backup_manifest_path)    roots.add(backupConfig.backup_manifest_path);
@@ -424,7 +428,8 @@ async function discoverAvailableBackups() {
         for (const filePath of manifestPaths) {
           try {
             const parsed = await parseManifestMetadata(filePath);
-            if (parsed.manifestId) seenManifestIds.add(parsed.manifestId);
+            if (parsed.manifestId) diskEntries.set(`backup-manifest-${parsed.manifestId}`, parsed);
+            diskEntries.set(path.resolve(filePath), parsed);
             backups.push(parsed);
           } catch (err) {
             // Don't fail discovery because ONE manifest is corrupt —
@@ -461,7 +466,14 @@ async function discoverAvailableBackups() {
     .limit(50);
 
   for (const run of backupRuns) {
-    if (run.manifest_id && seenManifestIds.has(run.manifest_id)) continue;
+    const onDisk = (run.manifest_id && diskEntries.get(run.manifest_id))
+      || (!run.manifest_path.startsWith('s3://') && diskEntries.get(path.resolve(run.manifest_path)));
+    if (onDisk) {
+      // One entry per backup: the file found on disk, with the run's history.
+      Object.assign(onDisk, { manifestId: run.manifest_id || onDisk.manifestId, size: run.total_size_bytes,
+        filesCount: run.files_backed_up, duration: run.duration_seconds, completed: run.completed_at });
+      continue;
+    }
     backups.push({
       type: run.manifest_path.startsWith('s3://') ? 's3' : 'local',
       name: `Backup ${run.completed_at}`,

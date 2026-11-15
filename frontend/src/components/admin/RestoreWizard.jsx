@@ -31,6 +31,16 @@ import { Button, Card, Input, Loading } from '../common';
 import { api } from '../../config/api';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
+// restore_runs booleans arrive as true/false from PostgreSQL but as 1/0 from
+// SQLite; a bare `{row.flag && …}` renders the 0 as text.
+const dbFlag = (value) => value === true || value === 1 || value === '1' || value === 'true';
+const dbFlagFalse = (value) => value === false || value === 0 || value === '0' || value === 'false';
+
+// Warning codes the backend explains (performPreRestoreValidation); any other
+// warning is listed with its plain message only.
+const NOTICE_CODES = ['backup_age', 'version_newer', 'version_other_line', 'version_unknown',
+  'version_older', 'existing_events', 'active_admins'];
+
 export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
   const { t } = useTranslation();
   const { format: fmtDate, formatTime: fmtTime, formatDateTime: fmtDateTime } = useLocalizedDate();
@@ -124,6 +134,9 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     },
     onSuccess: (data) => {
       setValidationResult(data);
+      // The override is given for the warnings shown in this review, so a
+      // new validation asks for it again.
+      setRestoreData(prev => ({ ...prev, force: false }));
       setCurrentStep(3);
     },
     onError: (error) => {
@@ -171,6 +184,27 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     setCurrentStep(prev => Math.max(prev - 1, 0));
   };
 
+  // What the review step found. Warnings block the restore unless the admin
+  // overrides them there (force); older validation payloads only carry the
+  // plain warning strings.
+  const validation = validationResult?.validation;
+  const validationErrors = validation?.errors || [];
+  const notices = validation?.notices
+    || (validation?.warnings || []).map((message) => ({ severity: 'warning', code: null, message, params: {} }));
+  const warningNotices = notices.filter((notice) => notice.severity === 'warning');
+  const infoNotices = notices.filter((notice) => notice.severity !== 'warning');
+  const hasErrors = !!validation && (validation.isValid === false || validationErrors.length > 0);
+  const needsOverride = hasErrors || warningNotices.length > 0;
+  const noticeKnown = (notice) => NOTICE_CODES.includes(notice.code);
+  const noticeTitle = (notice) => (noticeKnown(notice)
+    ? t(`backup.restore.confirmation.notices.${notice.code}.title`, notice.params || {})
+    : notice.message);
+  const noticeHelp = (notice) => (noticeKnown(notice)
+    ? t(`backup.restore.confirmation.notices.${notice.code}.help`, notice.params || {})
+    : t('backup.restore.confirmation.notices.generic.help'));
+  // /admin/restore/start refuses force when the restore settings turn it off.
+  const forceAllowed = restoreStatus?.settings?.restore_allow_force !== false;
+
   const canProceed = () => {
     switch (currentStep) {
       case 0:
@@ -180,7 +214,8 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
       case 2:
         return !!restoreData.restoreType;
       case 3:
-        return !!validationResult && !validateMutation.isLoading;
+        return !!validationResult && !validateMutation.isLoading
+          && (!needsOverride || (restoreData.force && forceAllowed));
       default:
         return false;
     }
@@ -522,24 +557,6 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
             </p>
           </div>
         </label>
-
-        <label className="flex items-start space-x-3">
-          <input
-            type="checkbox"
-            checked={restoreData.force}
-            onChange={(e) => setRestoreData(prev => ({
-              ...prev,
-              force: e.target.checked
-            }))}
-            className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500 border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
-          />
-          <div>
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('backup.restore.options.additionalOptions.force')}</p>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {t('backup.restore.options.additionalOptions.forceHelp')}
-            </p>
-          </div>
-        </label>
       </Card>
     </div>
   );
@@ -555,34 +572,68 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
         <>
           {/* Validation Results */}
           <Card className={`p-4 ${
-            validationResult.validation?.isValid
-              ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800'
-              : 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800'
+            hasErrors
+              ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800'
+              : warningNotices.length > 0
+                ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-200 dark:border-amber-800'
+                : 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800'
           }`}>
             <div className="flex items-start space-x-3">
-              {validationResult.validation?.isValid ? (
-                <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
-              ) : (
+              {hasErrors ? (
                 <XCircle className="h-5 w-5 text-red-600 mt-0.5" />
+              ) : warningNotices.length > 0 ? (
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+              ) : (
+                <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
               )}
               <div className="flex-1">
                 <p className={`text-sm font-medium ${
-                  validationResult.validation?.isValid ? 'text-green-900 dark:text-green-200' : 'text-red-900 dark:text-red-200'
+                  hasErrors
+                    ? 'text-red-900 dark:text-red-200'
+                    : warningNotices.length > 0 ? 'text-amber-900 dark:text-amber-200' : 'text-green-900 dark:text-green-200'
                 }`}>
-                  {validationResult.validation?.isValid 
-                    ? t('backup.restore.confirmation.validation.passed') 
-                    : t('backup.restore.confirmation.validation.failed')}
+                  {hasErrors
+                    ? t('backup.restore.confirmation.validation.failed')
+                    : warningNotices.length > 0
+                      ? t('backup.restore.confirmation.validation.passedWithWarnings')
+                      : t('backup.restore.confirmation.validation.passed')}
                 </p>
-                {validationResult.validation?.errors?.length > 0 && (
+                {validationErrors.length > 0 && (
                   <ul className="mt-2 text-sm text-red-700 dark:text-red-300 list-disc list-inside">
-                    {validationResult.validation.errors.map((error, idx) => (
+                    {validationErrors.map((error, idx) => (
                       <li key={idx}>{error}</li>
+                    ))}
+                  </ul>
+                )}
+                {warningNotices.length > 0 && (
+                  <ul className="mt-3 space-y-3" aria-label={t('backup.restore.confirmation.notices.warningsLabel')}>
+                    {warningNotices.map((notice, idx) => (
+                      <li key={idx} className="text-sm text-amber-800 dark:text-amber-200">
+                        <p className="font-medium">{noticeTitle(notice)}</p>
+                        <p className="mt-0.5">{noticeHelp(notice)}</p>
+                      </li>
                     ))}
                   </ul>
                 )}
               </div>
             </div>
           </Card>
+
+          {infoNotices.length > 0 && (
+            <Card className="p-4">
+              <ul className="space-y-2">
+                {infoNotices.map((notice, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-sm text-neutral-600 dark:text-neutral-400">
+                    <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                    <span>
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">{noticeTitle(notice)}</span>{' '}
+                      {noticeHelp(notice)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
           {/* Space Check */}
           {validationResult.spaceCheck && (
@@ -651,6 +702,43 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
               </div>
             </div>
           </div>
+
+          {/* The one override control: force is only known to be needed
+              once validation has run, so it lives here and not in the
+              options step. */}
+          {needsOverride && (
+            <Card className="p-4">
+              <label className="flex items-start space-x-3">
+                <input
+                  type="checkbox"
+                  checked={restoreData.force}
+                  disabled={!forceAllowed}
+                  onChange={(e) => setRestoreData(prev => ({
+                    ...prev,
+                    force: e.target.checked
+                  }))}
+                  className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500 border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
+                />
+                <div>
+                  <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                    {hasErrors
+                      ? t('backup.restore.options.additionalOptions.force')
+                      : t('backup.restore.confirmation.acknowledge.label')}
+                  </p>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {hasErrors
+                      ? t('backup.restore.options.additionalOptions.forceHelp')
+                      : t('backup.restore.confirmation.acknowledge.help')}
+                  </p>
+                </div>
+              </label>
+              {!forceAllowed && (
+                <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                  {t('backup.restore.confirmation.acknowledge.forceDisabled')}
+                </p>
+              )}
+            </Card>
+          )}
         </>
       ) : (
         <div className="text-center py-8">
@@ -673,11 +761,15 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     // holds the site in maintenance mode instead of rolling back.
     const lastRunMigrationsPending =
       !isRunning && lastRun && lastRun.status === 'migrations_pending';
+    // Stopped by a pre-flight check (validation, warnings, disk space, the
+    // safety backup) before anything on this install was changed.
+    const lastRunBlocked =
+      !isRunning && lastRun && lastRun.status === 'blocked';
     const lastRunFailed =
-      !isRunning && lastRun && !lastRunMigrationsPending
-      && (lastRun.status === 'failed' || lastRun.was_successful === false);
+      !isRunning && lastRun && !lastRunMigrationsPending && !lastRunBlocked
+      && (lastRun.status === 'failed' || dbFlagFalse(lastRun.was_successful));
     const lastRunSucceeded =
-      !isRunning && lastRun && lastRun.status === 'completed' && lastRun.was_successful === true;
+      !isRunning && lastRun && lastRun.status === 'completed' && dbFlag(lastRun.was_successful);
     // Strip the noisy stack-trace tail from the error message so the
     // user sees the actionable line first.
     const lastRunError = lastRun?.error_message
@@ -685,13 +777,15 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
       : null;
     const subtitle = isRunning
       ? t('backup.restore.progress.inProgress')
-      : lastRunFailed
-        ? t('backup.restore.progress.failedSubtitle', 'Restore failed — see error below. Destination has been rolled back to its pre-restore state.')
-        : lastRunMigrationsPending
-          ? t('backup.restore.progress.migrationsPendingSubtitle', 'Data restored, but database migrations are still pending. The site stays in maintenance mode — see below.')
-          : lastRunSucceeded
-            ? t('backup.restore.progress.completed')
-            : t('backup.restore.progress.idle', 'No restore in progress.');
+      : lastRunBlocked
+        ? t('backup.restore.progress.blockedSubtitle')
+        : lastRunFailed
+          ? t('backup.restore.progress.failedSubtitle', 'Restore failed — see error below. Destination has been rolled back to its pre-restore state.')
+          : lastRunMigrationsPending
+            ? t('backup.restore.progress.migrationsPendingSubtitle', 'Data restored, but database migrations are still pending. The site stays in maintenance mode — see below.')
+            : lastRunSucceeded
+              ? t('backup.restore.progress.completed')
+              : t('backup.restore.progress.idle', 'No restore in progress.');
 
     return (
       <div className="space-y-6">
@@ -700,7 +794,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
           <p className={`text-sm ${
             lastRunFailed
               ? 'text-red-700 dark:text-red-300 font-medium'
-              : lastRunMigrationsPending
+              : lastRunMigrationsPending || lastRunBlocked
                 ? 'text-amber-700 dark:text-amber-300 font-medium'
                 : 'text-neutral-600 dark:text-neutral-400'
           }`}>
@@ -719,12 +813,28 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
                 <p className="text-sm text-red-700 dark:text-red-300 font-mono break-all">
                   {lastRunError || t('backup.restore.progress.errorUnknown', 'No error message recorded.')}
                 </p>
-                {lastRun.was_rollback_attempted && (
+                {dbFlag(lastRun.was_rollback_attempted) && (
                   <p className="mt-2 text-xs text-red-600 dark:text-red-400">
                     {t('backup.restore.progress.rolledBack',
                       'Pre-restore safety backup was used to roll back. Destination is in its pre-restore state — safe to retry once the issue above is resolved.')}
                   </p>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {lastRunBlocked && (
+          <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-1">
+                  {t('backup.restore.progress.blockedTitle')}
+                </h4>
+                <p className="text-sm text-amber-700 dark:text-amber-300 break-words">
+                  {lastRunError || t('backup.restore.progress.errorUnknown', 'No error message recorded.')}
+                </p>
               </div>
             </div>
           </div>

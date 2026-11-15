@@ -130,6 +130,7 @@ class BackupManifestGenerator {
       database: {
         type: databaseInfo.type || this.getDatabaseType(),
         backup_file: databaseInfo.backupFile,
+        ...(databaseInfo.sourceFile ? { source_file: databaseInfo.sourceFile } : {}),
         size: databaseInfo.size,
         checksum: databaseInfo.checksum,
         tables: databaseInfo.tables || {},
