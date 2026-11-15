@@ -413,7 +413,9 @@ async function discoverAvailableBackups() {
   const backups = [];
   const seenManifestIds = new Set();
 
-  if (backupConfig.backup_destination_type === 'local') {
+  // An rsync mirror copied back into backup_destination_path brings its
+  // manifest along in <destination>/manifests (uploadRsyncManifest).
+  if (['local', 'rsync'].includes(backupConfig.backup_destination_type)) {
     const roots = new Set();
     if (backupConfig.backup_destination_path) roots.add(backupConfig.backup_destination_path);
     if (backupConfig.backup_manifest_path)    roots.add(backupConfig.backup_manifest_path);

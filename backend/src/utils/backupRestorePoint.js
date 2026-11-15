@@ -111,6 +111,16 @@ async function resolveBackupPointLocation(manifest, options, config) {
       ? assertLocalBackupRoot(typeof source === 'string' ? path.resolve(source) : source, config, extraRoots) : source;
   }
   if (!isStandaloneRestorePoint(manifest)) {
+    // An rsync run also copies its manifest to <mirror>/manifests, so a
+    // mirror copied back from the remote carries it: that mirror is the root.
+    // The local copy in backup_manifest_path keeps the configured destination.
+    const selectedDir = typeof options.manifestPath === 'string'
+      ? path.dirname(path.resolve(options.manifestPath)) : null;
+    if (manifest?.metadata?.destination_type === 'rsync' && selectedDir
+        && path.basename(selectedDir) === 'manifests'
+        && !(config?.backup_manifest_path && path.resolve(config.backup_manifest_path) === selectedDir)) {
+      return assertLocalBackupRoot(path.dirname(selectedDir), config, extraRoots);
+    }
     const configuredRoot = config?.backup_destination_path;
     return assertLocalBackupRoot(typeof configuredRoot === 'string' ? path.resolve(configuredRoot) : configuredRoot, config, extraRoots);
   }

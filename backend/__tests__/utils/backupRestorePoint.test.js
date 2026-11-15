@@ -116,6 +116,25 @@ describe('selected standalone restore-point boundary', () => {
     await expect(resolveBackupPointLocation(manifest, { ...options, allowedRoots: outside }, config))
       .rejects.toThrow(/outside configured/);
   });
+  it('takes a copied-back rsync mirror holding the selected manifest as its root, gated like any root', async () => {
+    const rsyncRun = { backup: { type: 'incremental', path: 'backup.example.com:/home/picpeak' },
+      metadata: { destination_type: 'rsync' } };
+    const mirror = path.join(outside, 'picpeak');
+    await fs.mkdir(path.join(mirror, 'manifests'), { recursive: true });
+    const options = { source: 'local', manifestPath: path.join(mirror, 'manifests', 'backup-manifest-x.json') };
+    await expect(resolveBackupPointLocation(rsyncRun, options, config)).rejects.toThrow(/outside configured/);
+    expect(await resolveBackupPointLocation(rsyncRun, { ...options, allowedRoots: [outside] }, config))
+      .toBe(await fs.realpath(mirror));
+    // The run's own copy in backup_manifest_path still means the destination.
+    const manifestDir = path.join(outside, 'manifests');
+    await fs.mkdir(manifestDir);
+    expect(await resolveBackupPointLocation(rsyncRun, {
+      source: 'local', manifestPath: path.join(manifestDir, 'backup-manifest-x.json'), allowedRoots: [outside],
+    }, { ...config, backup_manifest_path: manifestDir })).toBe(await fs.realpath(root));
+    // Other legacy runs keep the configured destination.
+    expect(await resolveBackupPointLocation({ ...rsyncRun, metadata: { destination_type: 'local' } },
+      { ...options, allowedRoots: [outside] }, config)).toBe(await fs.realpath(root));
+  });
   it('refuses symlink escapes and non-directories', async () => {
     const link = path.join(root, 'backup-link');
     await fs.symlink(outside, link, 'dir');

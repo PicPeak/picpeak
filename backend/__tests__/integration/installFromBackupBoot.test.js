@@ -185,6 +185,32 @@ describe('installFromBackupBoot', () => {
       .rejects.toThrow(/outside configured/);
   });
 
+  it('empty trigger finds the manifest of an rsync mirror copied back to <BACKUP_ROOT>/picpeak', async () => {
+    const older = path.join(manifestsDir, 'backup-manifest-local-copy.json');
+    fs.writeFileSync(older, '{}');
+    const past = new Date(Date.now() - 60_000);
+    fs.utimesSync(older, past, past);
+    const mirrorManifests = path.join(backupRoot, 'picpeak', 'manifests');
+    standalonePoints.push(path.join(backupRoot, 'picpeak'));
+    fs.mkdirSync(mirrorManifests, { recursive: true });
+    const copied = path.join(mirrorManifests, 'backup-manifest-rsync.json');
+    fs.writeFileSync(copied, '{}');
+    fs.writeFileSync(path.join(backupRoot, 'RESTORE_ON_INSTALL'), '');
+    // The gate restore() runs first, fed the hook's options: the mirror is
+    // the root, admitted through BACKUP_ROOT.
+    const { resolveBackupPointLocation } = jest.requireActual('../../src/utils/backupRestorePoint');
+    const config = await require('../../src/services/backupService').getBackupConfig();
+    const manifest = { backup: { type: 'incremental', path: 'backup.example.com:/home/picpeak' },
+      metadata: { destination_type: 'rsync' } };
+    let root;
+    mockRestore.mockImplementation(async (options) => {
+      root = await resolveBackupPointLocation(manifest, options, config);
+      return { success: true };
+    });
+    expect(await tryInstallFromBackup(db)).toMatchObject({ ran: true, manifestPath: copied });
+    expect(root).toBe(fs.realpathSync(path.join(backupRoot, 'picpeak')));
+  });
+
   it('compares legacy and standalone manifests without preferring the legacy directory', async () => {
     const older = path.join(manifestsDir, 'backup-manifest-legacy.yaml');
     fs.writeFileSync(older, '{}');
