@@ -169,4 +169,25 @@ describe('gallery archive and the download-all cache', () => {
     ]);
     expect(await storage.list(`events/active/${slug}`)).toEqual([]);
   });
+
+  // Issue 2356: a managed replacement of an external photo outside the
+  // curated selection keeps its source path through archive and restore, so
+  // a rebuilt row stays out of the selection.
+  it('round-trips the source path and selection flag of a managed replacement', async () => {
+    const slug = 'selection-gallery';
+    const id = await makeEvent(slug, 1);
+    await db('events').where({ id }).update({ source_mode: 'reference', external_path: 'shoot', selection_path: 'gallery' });
+    await db('photos').where({ event_id: id }).update({ external_relpath: 'shoot/raw/photo-0.jpg', selection_hidden: 1 });
+
+    await archiveEvent(await db('events').where({ id }).first());
+    // The row is gone (restored into a database that lost it): the archive
+    // is all the restore has to rebuild it from.
+    await db('photos').where({ event_id: id }).del();
+    const res = await request(app).post(`/admin/archives/${id}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    const photo = await db('photos').where({ event_id: id }).first();
+    expect(photo.external_relpath).toBe('shoot/raw/photo-0.jpg');
+    expect(Boolean(photo.selection_hidden)).toBe(true);
+  });
 });

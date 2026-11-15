@@ -18,7 +18,7 @@ const SRC = path.join(__dirname, '../../src');
 
 // file: [bare references, why they see trashed rows too]
 const ALL_ROWS = {
-  'routes/adminArchives.js': [5, 'restoring an archive matches files to rows and inserts them; deleting one locks, then removes, every row and thumbnail'],
+  'routes/adminArchives.js': [6, 'restoring an archive matches files to rows and inserts them, and reads the source paths every row holds (unique per event, trashed rows included); deleting one locks, then removes, every row and thumbnail'],
   'routes/adminCategories.js': [4, 'folder/category restructuring keeps trashed photos consistent for a restore'],
   'routes/adminDashboard.js': [1, 'storage: trashed photos still take space'],
   'routes/adminEvents/crud.js': [1, 'storage: the gallery size counts trashed photos'],
