@@ -174,19 +174,21 @@ function missingKnownHostsWarning(config) {
     + `The entry must be named ${hostKeyAlias(host, port)} exactly (lower case, no trailing dot).`;
 }
 
-const RSYNC_PROBE_TIMEOUT_MS = 15000;
-
 /** One rsync run, no shell; resolves with its outcome and never rejects. */
 function runRsync(args) {
   return new Promise((resolve) => {
-    let settled = false;
-    const done = outcome => { if (!settled) { settled = true; resolve(outcome); } };
+    let settled = false; let timedOut = false; let timer;
+    const done = outcome => {
+      if (settled) return;
+      settled = true; clearTimeout(timer); resolve({ ...outcome, timedOut });
+    };
     let child;
     try {
-      child = require('child_process').spawn('rsync', args, {
-        shell: false, timeout: RSYNC_PROBE_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
-      });
+      child = require('child_process').spawn('rsync', args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (error) { done({ error, stderr: '' }); return; }
+    // Our own timer, not spawn's `timeout`: rsync traps SIGTERM and exits
+    // with code 20, so the close event alone cannot tell a timeout apart.
+    timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, module.exports.RSYNC_PROBE_TIMEOUT_MS);
     let stderr = '';
     child.stdout.on('data', () => {});
     child.stderr.on('data', (data) => { if (stderr.length < 64 * 1024) stderr += data; });
@@ -195,7 +197,9 @@ function runRsync(args) {
   });
 }
 
-const PATH_NOT_FOUND = /(?:link_stat|change_dir)\b.*No such file or directory \(2\)/;
+// GNU rsync: `link_stat "/x" failed: No such file or directory (2)` (or
+// change_dir); openrsync (macOS): `error: /x: (l)stat: No such file or directory`.
+const PATH_NOT_FOUND = /(?:link_stat|change_dir)\b.*No such file or directory \(2\)|\(l\)stat: No such file or directory/;
 
 /**
  * List the remote path with rsync itself, over the same -e transport a
@@ -259,7 +263,7 @@ function rsyncProbeFailure(outcome, connection, { remotePath, parent } = {}) {
   if (/Connection refused/.test(stderr)) {
     return fail('RSYNC_CONNECTION_REFUSED', `Nothing accepts SSH connections on ${connection.host} port ${connection.port}. Check the host and port (a Hetzner Storage Box uses port 23).`);
   }
-  if (outcome.signal || /timed out/i.test(stderr)) {
+  if (outcome.timedOut || outcome.signal || /timed out/i.test(stderr)) {
     return fail('RSYNC_CONNECTION_TIMEOUT', `The connection to ${connection.host} port ${connection.port} timed out. Check the host, the port and any firewall in between.`);
   }
   if (/No route to host|Network is unreachable|No vetted SSH destination could be reached|Could not resolve hostname/.test(stderr)) {
@@ -278,4 +282,4 @@ function rsyncProbeFailure(outcome, connection, { remotePath, parent } = {}) {
 }
 
 module.exports = { resolveRsyncConnection, isPublicAddress, hostKeyFailure, missingKnownHostsWarning,
-  probeRsyncDestination, rsyncProbeFailure };
+  probeRsyncDestination, rsyncProbeFailure, RSYNC_PROBE_TIMEOUT_MS: 15000 };
