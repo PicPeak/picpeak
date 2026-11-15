@@ -1294,11 +1294,6 @@ async function sendTransferEmails(transferId, emails) {
 
   const transfer = await db('transfers').where({ id: transferId }).first();
   if (!transfer) return { sent: 0, recipients: [] };
-  // An explicit send ends a hold for files still arriving (the page calls
-  // this once they have, the admin's "Send again" any time).
-  if (transfer.delivery_held_until != null) {
-    await db('transfers').where({ id: transferId }).update({ delivery_held_until: null });
-  }
 
   // Read before the count: a held row that a finishing photo claims (and
   // mails) after the count must not be put back on hold below, or it is
@@ -1306,6 +1301,14 @@ async function sendTransferEmails(transferId, emails) {
   const before = await db('transfer_recipients')
     .where({ transfer_id: transferId }).whereIn('email', clean)
     .select('id', 'email', 'last_sent_at');
+  // An explicit send ends a hold for files still arriving (the page calls
+  // this once they have, the admin's "Send again" any time). Only after the
+  // snapshot above: while the hold stands no automatic path claims a held
+  // row, so each one the snapshot shows held is claimed below by exactly one
+  // sender — this one or a photo finishing — and mailed once.
+  if (transfer.delivery_held_until != null) {
+    await db('transfers').where({ id: transferId }).update({ delivery_held_until: null });
+  }
   const fileCount = await countRecipientFiles(transferId);
 
   if (fileCount === 0) {

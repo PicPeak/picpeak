@@ -301,6 +301,28 @@ describe('creating a send whose files follow in chunks', () => {
     expect(order).toEqual(['hold', 'recipient']);
   });
 
+  it('reads the recipients before it lifts the hold on resend', async () => {
+    // Lifted first, a photo finishing in between could claim and mail a held
+    // recipient, which the snapshot then shows as sent and mails again.
+    const { id } = (await create({
+      pendingFiles: 1, deliveryMethod: 'email', recipientEmails: JSON.stringify(['order@example.com']), photoIds: '[]',
+    })).body.transfer;
+    await adminUpload(ownerToken, id, Buffer.from('PK film'));
+    const order = [];
+    const listener = (query) => {
+      if (/from .transfer_recipients. where .* .email. in/i.test(query.sql)) order.push('snapshot');
+      if (/update .transfers. set .delivery_held_until./i.test(query.sql)) order.push('lift');
+    };
+    db.on('query', listener);
+    try {
+      expect((await request(admin).post(`/api/admin/transfers/${id}/resend`).set('Authorization', `Bearer ${ownerToken}`).send({})).status).toBe(200);
+    } finally {
+      db.removeListener('query', listener);
+    }
+    expect(order.slice(0, 2)).toEqual(['snapshot', 'lift']);
+    expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
+  });
+
   it('lets a hold the page never finished lapse, so the recipients are not stranded', async () => {
     const res = await create({
       pendingFiles: 1, deliveryMethod: 'email', recipientEmails: JSON.stringify(['stranded@example.com']), photoIds: '[]',

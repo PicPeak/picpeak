@@ -231,10 +231,12 @@ async function uploadRemaining(
   batches: File[][],
   chunked: File[],
   progress: ReturnType<typeof byteProgress>,
-): Promise<{ rejected: string[]; failed: string[]; firstError: unknown }> {
+): Promise<{ rejected: string[]; failed: string[]; firstError: unknown; last: Transfer | null }> {
   const rejected: string[] = [];
   const failed: string[] = [];
   let firstError: unknown = null;
+  // The transfer as the last write that landed answered it.
+  let last: Transfer | null = null;
   const refused = (files: File[], error: unknown) => {
     firstError = firstError ?? error;
     const { code, rejected: names } = errorCode(error);
@@ -249,6 +251,7 @@ async function uploadRemaining(
         onUploadProgress: (e) => progress.report(e.total ? (sizeOf(batch) * e.loaded) / e.total : 0),
       });
       rejected.push(...(res.data.rejected_files || []));
+      last = res.data.transfer ?? last;
     } catch (error) {
       refused(batch, error);
     }
@@ -256,16 +259,17 @@ async function uploadRemaining(
   }
   for (const file of chunked) {
     try {
-      await uploadFileInChunks(`/admin/transfers/${id}`, file, {
+      const res = await uploadFileInChunks<{ transfer?: Transfer }>(`/admin/transfers/${id}`, file, {
         initFields: { mimeType: file.type },
         onBytes: (sent) => progress.report(sent),
       });
+      last = res.data.transfer ?? last;
     } catch (error) {
       refused([file], error);
     }
     progress.finish(file.size);
   }
-  return { rejected, failed, firstError };
+  return { rejected, failed, firstError, last };
 }
 
 /** Lift the sibling `rejected_files` / `dropped_files` onto the transfer. */
@@ -384,11 +388,17 @@ export const transfersService = {
   async uploadFiles(id: number, files: File[], onProgress?: (pct: number) => void): Promise<TransferWriteResult> {
     const plan = planTransferFiles(files, ADMIN_MAX_FILES_PER_REQUEST);
     if (plan.chunked.length > 0 || plan.batches.length > 1) {
-      const { rejected, failed, firstError } = await uploadRemaining(
+      const { rejected, failed, firstError, last } = await uploadRemaining(
         id, plan.batches, plan.chunked, byteProgress(files, onProgress),
       );
       if (firstError && rejected.length + failed.length === files.length) throw firstError;
-      return { ...(await transfersService.get(id)), rejected_files: rejected, failed_files: failed };
+      // Files are stored now: a failed refresh must not turn that into an
+      // error (a retry would store them twice). Fall back to the last answer.
+      const fresh = await transfersService.get(id).catch((error) => {
+        if (!last) throw error;
+        return last;
+      });
+      return { ...fresh, rejected_files: rejected, failed_files: failed };
     }
     const form = new FormData();
     files.forEach((f) => form.append('files', f));
