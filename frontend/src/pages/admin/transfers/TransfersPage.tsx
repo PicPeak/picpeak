@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { toast } from 'react-toastify';
 import {
   Plus, Send, Link2, Download, Trash2, Upload, X, Copy, Image as ImageIcon,
@@ -19,7 +20,7 @@ import { AdminAuthenticatedImage } from '../../../components/admin/AdminAuthenti
 import { TransferPhotoPicker, type PickedPhoto } from '../../../components/admin/TransferPhotoPicker';
 import { useMutationWithToast } from '../../../hooks/useMutationWithToast';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
-import { transfersService } from '../../../services/transfers.service';
+import { transfersService, type TransferWriteResult } from '../../../services/transfers.service';
 
 /**
  * Upload progress of a running request: the share of the body sent so far,
@@ -71,6 +72,33 @@ const STATUS_STYLES: Record<string, string> = {
   expired: 'bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300',
   deleted: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
 };
+
+/**
+ * Say what a write too large for one request did not land. The transfer
+ * exists without those files, and its email was not sent if one was due.
+ */
+function warnWriteNotes(result: TransferWriteResult | undefined, t: TFunction) {
+  const failed = result?.failed_files || [];
+  if (failed.length) {
+    toast.error(t(
+      'transfers.someFailed',
+      '{{count}} file(s) could not be uploaded and are not in the transfer: {{names}}',
+      { count: failed.length, names: failed.join(', ') },
+    ));
+  }
+  if (result?.delivery_held) {
+    toast.warn(t(
+      'transfers.deliveryHeld',
+      'The email to the recipients was not sent. Add the missing files and share the link yourself.',
+    ));
+  }
+  if (result?.delivery_partial) {
+    toast.warn(t(
+      'transfers.deliveryPartial',
+      'Not every recipient got the email. Share the link with the others yourself.',
+    ));
+  }
+}
 
 export const TransfersPage: React.FC = () => {
   const { t } = useTranslation();
@@ -224,7 +252,10 @@ const CreateTransferModal: React.FC<{ onClose: () => void; onCreated: () => void
     },
     successMessage: t('transfers.created', 'Transfer created'),
     errorMessage: t('transfers.createFailed', 'Could not create transfer'),
-    onSuccess: onCreated,
+    onSuccess: (result) => {
+      warnWriteNotes(result, t);
+      onCreated();
+    },
   });
 
   const addFilesToList = (list: FileList | null) => {
@@ -481,7 +512,10 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
         .finally(() => setUploadPercent(null));
     },
     successMessage: t('transfers.filesAdded', 'Files added'),
-    onSuccess: () => refetch(),
+    onSuccess: (result) => {
+      warnWriteNotes(result, t);
+      refetch();
+    },
   });
   const removeExtraFileMutation = useMutationWithToast({
     mutationFn: (extraId: number) => transfersService.removeExtraFile(transferId, extraId),

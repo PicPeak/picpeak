@@ -889,6 +889,9 @@
     "betaTag": "Beta"
   },
   "transfers": {
+    "someFailed": "{{count}} Datei(en) konnten nicht hochgeladen werden und fehlen im Transfer: {{names}}",
+    "deliveryHeld": "Die E-Mail an die Empfänger wurde nicht gesendet. Fügen Sie die fehlenden Dateien hinzu und teilen Sie den Link selbst.",
+    "deliveryPartial": "Nicht alle Empfänger haben die E-Mail erhalten. Teilen Sie den Link mit den übrigen selbst.",
     "title": "PicTransfer",
     "subtitle": "Originaldateien aus beliebigen Events als Download-Link versenden.",
     "new": "Neuer Transfer",

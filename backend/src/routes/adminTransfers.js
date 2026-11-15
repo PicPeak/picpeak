@@ -23,6 +23,8 @@ const { sanitizeFilename } = require('../utils/filenameSanitizer');
 const { getAppSetting } = require('../utils/appSettings');
 const { getStorage } = require('../services/storage');
 const transferService = require('../services/transferService');
+const chunkedUpload = require('../services/chunkedUploadService');
+const { deferredReply } = require('../utils/deferredReply');
 const uploadQuota = require('../services/publicUploadQuota');
 const logger = require('../utils/logger');
 const fs = require('fs');
@@ -50,10 +52,10 @@ const tempStorage = multer.diskStorage({
 
 // Text-field budgets per route. Busboy buffers every text part in memory
 // before the handler runs, so the parser has to be told how many fields the
-// handler reads and how large they can be. Create reads ten named fields;
+// handler reads and how large they can be. Create reads eleven named fields;
 // `photoIds` is a JSON array of up to 5000 ids, which is what sizes
 // `fieldSize`. Adding files to an existing transfer reads no text at all.
-const CREATE_FIELD_LIMITS = { fields: 10, fieldSize: 64 * 1024 };
+const CREATE_FIELD_LIMITS = { fields: 11, fieldSize: 64 * 1024 };
 const FILES_ONLY_FIELD_LIMITS = { fields: 0, fieldSize: 1 };
 
 function buildAdminUploader(maxSizeBytes, allowed, fieldLimits) {
@@ -81,10 +83,15 @@ function buildAdminUploader(maxSizeBytes, allowed, fieldLimits) {
  * Run multer for a transfer request, reading the size/type limits from settings.
  * Resolves { ok:true } or sends a 4xx and resolves { ok:false }.
  */
-async function runAdminUpload(req, res, fieldLimits) {
+/** The type and size rules of an admin transfer upload, from settings. */
+async function adminUploadRules() {
   const maxSizeMb = Number(await getAppSetting('transfer_max_upload_size_mb', 50)) || 50;
   const allowedSetting = await getAppSetting('transfer_upload_allowed_mime', DEFAULT_ALLOWED);
-  const allowed = Array.isArray(allowedSetting) ? allowedSetting : DEFAULT_ALLOWED;
+  return { maxSizeMb, allowed: Array.isArray(allowedSetting) ? allowedSetting : DEFAULT_ALLOWED };
+}
+
+async function runAdminUpload(req, res, fieldLimits) {
+  const { maxSizeMb, allowed } = await adminUploadRules();
   const uploader = buildAdminUploader(maxSizeMb * 1024 * 1024, allowed, fieldLimits);
   try {
     await new Promise((resolve, reject) => uploader(req, res, (err) => (err ? reject(err) : resolve())));
@@ -121,19 +128,32 @@ function withUploadAdmission(handler) {
       if (!req.readableEnded) res.set('Connection', 'close');
       return res.status(err.status).json({ error: err.message, code: err.code });
     }
+    // The answer waits for the admission to be released, as withPublicUpload
+    // does: the page sends the next request (more files, a chunked file) on
+    // it, and that request needs the slot.
+    const send = res.json;
+    let body;
+    res.json = (value) => { body = value; return res; };
     try {
       return await handler(req, res);
     } finally {
       await uploadQuota.finish(session).catch((err) => {
         logger.warn('transfer upload admission not released', { requestId: session.id, error: err.message });
       });
+      res.json = send;
+      if (body !== undefined && !res.headersSent && !res.destroyed) res.json(body);
     }
   };
 }
 
-/** Persist the uploaded temp files as the transfer's deliverable extra files. */
+/**
+ * Persist the uploaded temp files as the transfer's deliverable extra files.
+ * Resolves the names that did not land, so a caller that stores one file (the
+ * chunked complete) can say so instead of answering success.
+ */
 async function storeExtraFiles(transferId, files) {
-  if (!files || !files.length) return;
+  const failed = [];
+  if (!files || !files.length) return { failed };
   const storage = getStorage();
   let i = 0;
   for (const file of files) {
@@ -149,10 +169,27 @@ async function storeExtraFiles(transferId, files) {
         mimeType: file.mimetype,
       });
     } catch (err) {
+      failed.push(file.originalname);
       logger.error('adminTransfers: failed to store deliverable file', { transferId, error: err.message });
     } finally {
       try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
     }
+  }
+  return { failed };
+}
+
+/**
+ * The transfer after a write that has already stored its files or sent its
+ * mail. Best effort: a failed read must not answer 500 for a write that
+ * landed — the page would report it missing and a retry would store or send
+ * it twice. null when it cannot be read; the page refreshes on its own.
+ */
+async function refreshAfterWrite(id) {
+  try {
+    return await transferService.getTransfer(id);
+  } catch (err) {
+    logger.warn('adminTransfers: transfer not re-read after a write', { transferId: id, error: err.message });
+    return null;
   }
 }
 
@@ -183,9 +220,16 @@ router.use(requireFeatureFlag('transfers'));
  */
 async function requireTransferOwnership(req, res, next) {
   try {
+    // One spelling per transfer. parseInt and Number disagree on `800.1e1`
+    // (800 / 8001), `8e2` (8 / 800) and `800abc` (800 / NaN), and routes below
+    // read the id either way: authorising one transfer and acting on another.
+    // Only the canonical decimal form reaches any of them, for every role.
+    if (!/^[1-9]\d*$/.test(String(req.params.id)) || !Number.isSafeInteger(Number(req.params.id))) {
+      if (!req.readableEnded) res.set('Connection', 'close');
+      return res.status(404).json({ error: 'Transfer not found' });
+    }
     if (req.admin.roleName === 'super_admin') return next();
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id' });
+    const id = Number(req.params.id);
     const owner = await transferService.getTransferOwner(id);
     if (!owner) return res.status(404).json({ error: 'Transfer not found' });
     if (owner.created_by != null && owner.created_by !== req.admin.id) {
@@ -219,6 +263,13 @@ router.post('/',
     const recipientEmails = parseJsonArrayField(b.recipientEmails)
       .map((e) => String(e || '').trim()).filter(Boolean).slice(0, 100);
     const deliveryMethod = b.deliveryMethod === 'email' ? 'email' : 'link';
+    // How many of the admin's own files the page is still going to upload
+    // into this transfer, in chunks or further requests, because they do not
+    // fit this one request (a proxy's body limit, e.g. Cloudflare's 100 MB).
+    // Its mail waits for them: the page sends it (POST /:id/deliver) once they
+    // have all landed, so the transfer is recorded as 'link' until then.
+    const pendingFiles = Math.min(Math.max(parseInt(b.pendingFiles, 10) || 0, 0), 10000);
+    const deferDelivery = pendingFiles > 0 && deliveryMethod === 'email';
 
     const transfer = await transferService.createTransfer({
       title: b.title,
@@ -229,17 +280,20 @@ router.post('/',
       allowUploads: b.allowUploads === 'true' || b.allowUploads === true,
       uploadExpiresInDays: b.uploadExpiresInDays,
       photoIds,
-      deliveryMethod,
+      deliveryMethod: deferDelivery ? 'link' : deliveryMethod,
     }, req.admin);
 
-    await storeExtraFiles(transfer.id, req.files);
+    // Accepted but not stored (storage or database failure): reported, never
+    // counted as part of the transfer.
+    const { failed: failedToStore } = await storeExtraFiles(transfer.id, req.files);
 
-    if (deliveryMethod === 'email' && recipientEmails.length) {
+    if (!deferDelivery && deliveryMethod === 'email' && recipientEmails.length) {
       await transferService.sendTransferEmails(transfer.id, recipientEmails);
     }
 
-    const fresh = await transferService.getTransfer(transfer.id);
-    return successResponse(res, { transfer: fresh }, 201, 'Transfer created');
+    const fresh = (await refreshAfterWrite(transfer.id)) || transfer;
+    return successResponse(res, { transfer: fresh, failed_files: failedToStore }, 201,
+      failedToStore.length ? `Transfer created — ${failedToStore.length} file(s) could not be stored` : 'Transfer created');
   })),
 );
 
@@ -345,10 +399,198 @@ router.post('/:id/upload-files',
     if (!req.files || !req.files.length) {
       return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });
     }
-    await storeExtraFiles(id, req.files);
-    const transfer = await transferService.getTransfer(id);
-    return successResponse(res, { transfer }, 200, 'Files added');
+    const { failed } = await storeExtraFiles(id, req.files);
+    if (failed.length === req.files.length) {
+      // Nothing landed: not a success, whatever the re-read would say.
+      return res.status(500).json({ error: 'Could not store the uploaded files', code: 'STORE_FAILED', failed_files: failed });
+    }
+    const transfer = await refreshAfterWrite(id);
+    return successResponse(res, { transfer, failed_files: failed }, 200,
+      failed.length ? `Files added — ${failed.length} could not be stored` : 'Files added');
   })),
+);
+
+// --- Chunked deliverable upload ---------------------------------------------
+// A file above a proxy's per-request body limit (Cloudflare Free/Pro: 100 MB)
+// never arrives as one multipart request. It goes up in 10 MB chunks through
+// the shared chunk service, bound to this transfer and this admin, and the
+// complete step stores it exactly as upload-files stores a multipart file:
+// the same type and size rules, the same storage write and row.
+const transferChunkOwner = (req) => ({ transferId: Number(req.params.id), adminId: req.admin.id });
+
+// A tagged status is the client's or the admission's answer, not a fault.
+function chunkRefusal(req, res, error, fallback) {
+  uploadQuota.forAdmin(error);
+  if (error.statusCode || error.status) {
+    // Unread body bytes would hang the next request on a keep-alive socket.
+    if (!req.readableEnded) res.set('Connection', 'close');
+    return res.status(error.statusCode || error.status).json({ error: error.message, code: error.code });
+  }
+  logger.error(`${fallback}:`, { error: error.message });
+  return res.status(500).json({ error: fallback });
+}
+
+/** The live transfer behind `:id`, or a 4xx already sent. */
+async function loadChunkTarget(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id < 1) {
+    res.status(400).json({ error: 'Invalid id' });
+    return null;
+  }
+  const existing = await transferService.getTransfer(id);
+  if (!existing || existing.deleted_at) {
+    res.status(404).json({ error: 'Transfer not found' });
+    return null;
+  }
+  return existing;
+}
+
+router.post('/:id/chunked-upload/init',
+  requirePermission('events.edit'),
+  handleAsync(async (req, res) => {
+    try {
+      const existing = await loadChunkTarget(req, res);
+      if (!existing) return;
+      const { filename, fileSize, totalChunks, mimeType } = req.body || {};
+      if (!filename || !fileSize) {
+        return res.status(400).json({ error: 'Missing required fields: filename, fileSize' });
+      }
+      const name = String(filename);
+      // What multer records for a multipart part: the browser's type, or
+      // octet-stream when it has none. Checked like a multipart file.
+      const mime = typeof mimeType === 'string' && mimeType.trim() ? mimeType.trim().slice(0, 255) : 'application/octet-stream';
+      const { maxSizeMb, allowed } = await adminUploadRules();
+      if (!validateFileType(name, mime, allowed)) {
+        return res.status(400).json({ error: 'This file type is not allowed', code: 'UPLOAD_REJECTED' });
+      }
+      const result = await chunkedUpload.initializeUpload({
+        filename: name,
+        fileSize,
+        totalChunks,
+        mimeType: mime,
+        transferId: existing.id,
+        adminId: req.admin.id,
+        // Enforced again on the bytes received and merged.
+        maxFileSizeBytes: maxSizeMb * 1024 * 1024,
+        admission: true,
+        opaque: true,
+      });
+      return res.json(result);
+    } catch (error) {
+      return chunkRefusal(req, res, error, 'Failed to initialize upload');
+    }
+  }),
+);
+
+router.post('/:id/chunked-upload/:uploadId/chunk/:chunkIndex',
+  requirePermission('events.edit'),
+  handleAsync(async (req, res) => {
+    try {
+      // Streamed to the chunk file under a hard cap, never buffered; every
+      // check runs before a byte of the body is read (see adminPhotos).
+      const declaredBytes = Number(req.headers['content-length']);
+      const index = /^\d+$/.test(req.params.chunkIndex) ? Number(req.params.chunkIndex) : NaN;
+      const result = await chunkedUpload.uploadChunk(req.params.uploadId, index, req, {
+        declaredBytes: Number.isFinite(declaredBytes) ? declaredBytes : undefined,
+        owner: transferChunkOwner(req),
+      });
+      return res.json(result);
+    } catch (error) {
+      return chunkRefusal(req, res, error, 'Failed to upload chunk');
+    }
+  }),
+);
+
+router.post('/:id/chunked-upload/:uploadId/complete',
+  requirePermission('events.edit'),
+  handleAsync(async (req, res) => {
+    const owner = transferChunkOwner(req);
+    const { uploadId } = req.params;
+    let merged;
+    const cancel = () => {
+      if (req.aborted || !res.writableEnded) chunkedUpload.abortUpload(uploadId, { owner })
+        .catch((err) => logger.warn('Disconnected transfer chunk upload cleanup unavailable', { error: err.message }));
+    };
+    req.once('aborted', cancel);
+    res.once('close', cancel);
+    // Answered once the admission has settled, as a multipart upload is: the
+    // page starts the next file on this answer, and that file needs the slot.
+    const reply = deferredReply(res);
+    try {
+      const existing = await loadChunkTarget(req, reply);
+      if (!existing) {
+        await chunkedUpload.abortUpload(uploadId, { owner }).catch(() => {});
+        return;
+      }
+      merged = await chunkedUpload.completeUpload(uploadId, { owner });
+      const dropMerged = () => fs.promises.rm(merged.tempDir, { recursive: true, force: true }).catch(() => {});
+      // The rules as they are now: settings may have changed since init.
+      const { maxSizeMb, allowed } = await adminUploadRules();
+      if (!validateFileType(merged.filename, merged.mimeType, allowed)) {
+        await dropMerged();
+        return reply.status(400).json({ error: 'This file type is not allowed', code: 'UPLOAD_REJECTED' });
+      }
+      if (merged.size > maxSizeMb * 1024 * 1024) {
+        await dropMerged();
+        return reply.status(413).json({ error: `Each file must be ${maxSizeMb} MB or smaller`, code: 'FILE_TOO_LARGE' });
+      }
+      const { failed } = await storeExtraFiles(existing.id, [{
+        originalname: merged.filename, path: merged.path, size: merged.size, mimetype: merged.mimeType,
+      }]);
+      await dropMerged();
+      if (failed.length) {
+        return reply.status(500).json({ error: 'Could not store the uploaded file', code: 'STORE_FAILED', failed_files: failed });
+      }
+      const transfer = await refreshAfterWrite(existing.id);
+      return successResponse(reply, { transfer }, 200, 'Files added');
+    } catch (error) {
+      return chunkRefusal(req, reply, error, 'Failed to complete upload');
+    } finally {
+      req.removeListener('aborted', cancel);
+      res.removeListener('close', cancel);
+      if (merged?.uploadReservation) {
+        await chunkedUpload.finishUpload(uploadId, { owner })
+          .catch((err) => logger.warn('Transfer chunk upload cleanup unavailable; admission retained', { error: err.message }));
+      }
+      reply.flush();
+    }
+  }),
+);
+
+// Releases the caller's own unfinished upload: its staging and its admission.
+router.delete('/:id/chunked-upload/:uploadId',
+  requirePermission('events.edit'),
+  handleAsync(async (req, res) => {
+    const aborted = await chunkedUpload.abortUpload(req.params.uploadId, { owner: transferChunkOwner(req) });
+    if (!aborted) return res.status(404).json({ error: 'Upload not found or expired' });
+    return successResponse(res, { aborted: true }, 200, 'Upload aborted');
+  }),
+);
+
+// Mail the download link of a transfer created with files still to follow,
+// once they have landed. Once only: a second call sends nothing.
+router.post('/:id/deliver',
+  requirePermission('events.edit'),
+  [
+    param('id').isInt({ min: 1 }),
+    body('recipientEmails').isArray({ min: 1, max: 100 }),
+    body('recipientEmails.*').isEmail().withMessage('Not a valid email address'),
+  ],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const id = parseInt(req.params.id, 10);
+    const existing = await transferService.getTransfer(id);
+    if (!existing || existing.deleted_at) return res.status(404).json({ error: 'Transfer not found' });
+    const result = await transferService.deliverTransferEmails(id, req.body.recipientEmails);
+    if (result.failed) {
+      // Nothing went out; the transfer is open for another attempt.
+      return res.status(502).json({ error: 'The email could not be sent. Try again.', code: 'DELIVERY_FAILED' });
+    }
+    return successResponse(res, {
+      transfer: await refreshAfterWrite(id), sent: result.sent,
+      already_delivered: !!result.alreadyDelivered, partial: !!result.partial,
+    }, 200, result.alreadyDelivered ? 'Already sent' : 'Email sent');
+  }),
 );
 
 // Remove one admin-uploaded deliverable file from a transfer

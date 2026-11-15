@@ -19,7 +19,7 @@ import { UploadCloud, CheckCircle, AlertCircle, X, File as FileIcon } from 'luci
 import { Button, Loading } from '../../components/common';
 import { transfersService } from '../../services/transfers.service';
 import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
-import { batchFilesForUpload } from '../../utils/uploadBatches';
+import { planTransferFiles } from '../../utils/uploadBatches';
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '0 B';
@@ -91,8 +91,12 @@ export const TransferUploadPage: React.FC = () => {
     setUploading(true);
     setProgress(0);
     // One request may not carry more than the server's per-request byte
-    // budget, so a large selection goes up as several requests in order.
-    const batches = batchFilesForUpload(files, data.max_request_bytes || Infinity, data.max_files);
+    // budget, nor more than a proxy in front of it lets through (Cloudflare:
+    // 100 MB), so a large selection goes up as several requests in order, and
+    // a file larger than one request on its own, in chunks.
+    const plan = planTransferFiles(files, data.max_files, data.max_request_bytes);
+    const batches = [...plan.batches, ...plan.chunked.map((file) => [file])];
+    const chunked = new Set(plan.chunked);
     const totalBytes = files.reduce((sum, f) => sum + f.size, 0) || 1;
     let sentBytes = 0;
     // Files of the refused request and of every request after it.
@@ -101,9 +105,12 @@ export const TransferUploadPage: React.FC = () => {
       for (const [index, batch] of batches.entries()) {
         const batchBytes = batch.reduce((sum, f) => sum + f.size, 0);
         try {
-          await transfersService.upload(token as string, batch, (pct) => {
+          const onBatchProgress = (pct: number) => {
             setProgress(Math.round(((sentBytes + (batchBytes * pct) / 100) / totalBytes) * 100));
-          });
+          };
+          await (chunked.has(batch[0])
+            ? transfersService.uploadChunked(token as string, batch[0], onBatchProgress)
+            : transfersService.upload(token as string, batch, onBatchProgress));
           sentBytes += batchBytes;
         } catch (err) {
           const details = (err as { response?: { data?: { error?: string; code?: string } } })?.response?.data;
