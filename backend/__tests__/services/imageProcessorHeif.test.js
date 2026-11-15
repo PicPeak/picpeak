@@ -151,13 +151,17 @@ describe('HEVC HEIC decoding', () => {
     const warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
     const standIn = await heifStandIn(await fs.readFile(FIXTURE));
     const scratch = path.dirname(standIn.path);
-    const realRm = fs.rm.bind(fs);
     const rm = jest.spyOn(fs, 'rm').mockRejectedValue(Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' }));
-    await standIn.cleanup();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining(scratch));
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('EBUSY'));
-    rm.mockRestore();
-    await realRm(scratch, { recursive: true, force: true });
+    try {
+      await standIn.cleanup();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(scratch));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('EBUSY'));
+    } finally {
+      rm.mockRestore();
+      // Both directories: the decoded image's and the buffer's source copy.
+      await standIn.cleanup();
+    }
+    await expect(fs.stat(scratch)).rejects.toThrow();
   });
 
   it('marks the decoded photo, and refuses rather than ships an undecodable one', async () => {
