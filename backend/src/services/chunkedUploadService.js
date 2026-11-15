@@ -92,12 +92,19 @@ function findOwnedUpload(uploadId, owner) {
   const uploadMeta = activeUploads.get(uploadId);
   if (!uploadMeta) return null;
   if (owner) {
-    if (Number(owner.eventId) !== Number(uploadMeta.eventId)) return null;
+    // A PicTransfer upload is bound to its transfer instead of an event. An
+    // event owner never reaches a transfer's upload, nor the other way round.
+    if (owner.transferId !== undefined || uploadMeta.transferId !== undefined) {
+      if (owner.transferId === undefined || Number(owner.transferId) !== Number(uploadMeta.transferId)) return null;
+    } else if (Number(owner.eventId) !== Number(uploadMeta.eventId)) return null;
     // A gallery guest's upload is bound to its guest key instead (issue
-    // 2315). Either side carrying one means both must, and match: an admin
-    // owner never reaches a guest's upload, nor a guest an admin's.
-    if (owner.guestKey !== undefined || uploadMeta.guestKey !== undefined) {
-      if (owner.guestKey !== uploadMeta.guestKey) return null;
+    // 2315), a transfer client's to its upload link (`uploadKey`). Either
+    // side carrying one means both must, and match: an admin owner never
+    // reaches a public upload, nor a public caller an admin's.
+    const publicOwner = owner.guestKey !== undefined || owner.uploadKey !== undefined;
+    const publicUpload = uploadMeta.guestKey !== undefined || uploadMeta.uploadKey !== undefined;
+    if (publicOwner || publicUpload) {
+      if (owner.guestKey !== uploadMeta.guestKey || owner.uploadKey !== uploadMeta.uploadKey) return null;
     } else if (Number(owner.adminId) !== Number(uploadMeta.adminId)) return null;
   }
   return uploadMeta;
@@ -114,10 +121,15 @@ async function initializeUpload(options) {
     fileSize,
     mimeType,
     eventId,
+    transferId,
     adminId,
     guestKey,
+    uploadKey,
     totalChunks,
-    maxFileSizeBytes
+    maxFileSizeBytes,
+    // Bytes stored and handed back untouched (PicTransfer): no media content
+    // guard on the first chunk, as the multipart transfer routes have none.
+    opaque = false
   } = options;
 
   // Strip any directory components from the client-supplied filename. It is
@@ -140,9 +152,19 @@ async function initializeUpload(options) {
   if (!Number.isSafeInteger(size) || size <= 0) {
     throw invalidChunkError('fileSize must be a positive integer');
   }
+  // The per-file cap is enforced on the BYTES ACTUALLY RECEIVED, not on the
+  // client-declared fileSize the init route checks: a client can declare
+  // `fileSize: 1` and then stream whatever it likes through the chunk route.
+  // Missing/invalid cap means "no cap" (callers outside the admin routes).
+  const cap = Number(maxFileSizeBytes);
+  const sizeCap = Number.isFinite(cap) && cap > 0 ? cap : Infinity;
+  // A cap above the gallery's 10 GB ceiling (PicTransfer allows up to
+  // 100000 MB) raises the chunk limit with it, so every allowed file fits.
+  const chunkLimit = Number.isFinite(sizeCap) ? Math.max(MAX_EXPECTED_CHUNKS, Math.ceil(sizeCap / CHUNK_SIZE)) : MAX_EXPECTED_CHUNKS;
+  if (options.admission && size > sizeCap) throw fileTooLargeError(sizeCap);
   const expectedChunks = Math.ceil(size / CHUNK_SIZE);
-  if (expectedChunks > MAX_EXPECTED_CHUNKS) {
-    throw invalidChunkError(`fileSize exceeds the ${MAX_EXPECTED_CHUNKS} chunk limit`);
+  if (expectedChunks > chunkLimit) {
+    throw invalidChunkError(`fileSize exceeds the ${chunkLimit} chunk limit`);
   }
   if (totalChunks !== undefined && totalChunks !== null && Number(totalChunks) !== expectedChunks) {
     throw invalidChunkError(`totalChunks must be ${expectedChunks} for a ${size} byte file in ${CHUNK_SIZE} byte chunks`);
@@ -154,13 +176,14 @@ async function initializeUpload(options) {
   // Create chunks directory for this upload
   let admission = null;
   if (options.admission) {
-    if (size > Number(maxFileSizeBytes)) throw fileTooLargeError(Number(maxFileSizeBytes));
     // `admission: true` is the admin's; an object is a gallery guest's public
     // admission (issue 2315), charged to the same gallery and guest allowances
     // as the single-request guest upload, with the declared size as its body.
+    // A transfer upload is admitted against its transfer (`transferId`), the
+    // same target the multipart transfer routes charge.
     admission = await quota().begin(options.admission === true
-      ? { eventId, mode: 'admin', accountId: adminId, maxFiles: 1, requestedBytes: size, stagedCopies: 2 }
-      : { ...options.admission, eventId, maxFiles: 1, maxFileBytes: Number(maxFileSizeBytes), declaredBytes: size, stagedCopies: 2 });
+      ? { eventId, transferId, mode: 'admin', accountId: adminId, maxFiles: 1, requestedBytes: size, stagedCopies: 2 }
+      : { ...options.admission, eventId, transferId, maxFiles: 1, maxFileBytes: Number(maxFileSizeBytes), declaredBytes: size, stagedCopies: 2 });
   }
   const uploadDir = admission ? path.join(admission.dir, 'chunks') : path.join(getChunksPath(), uploadId);
   try {
@@ -170,13 +193,6 @@ async function initializeUpload(options) {
     throw err;
   }
 
-  // The per-file cap is enforced on the BYTES ACTUALLY RECEIVED, not on the
-  // client-declared fileSize the init route checks: a client can declare
-  // `fileSize: 1` and then stream whatever it likes through the chunk route.
-  // Missing/invalid cap means "no cap" (callers outside the admin routes).
-  const cap = Number(maxFileSizeBytes);
-  const sizeCap = Number.isFinite(cap) && cap > 0 ? cap : Infinity;
-
   // Store upload metadata
   const uploadMeta = {
     uploadId,
@@ -184,9 +200,12 @@ async function initializeUpload(options) {
     fileSize: size,
     mimeType,
     eventId,
+    transferId,
     // Who started it; see findOwnedUpload.
     adminId,
     guestKey,
+    uploadKey,
+    opaque: Boolean(opaque),
     expectedChunks,
     receivedChunks: new Set(),
     // Bytes per chunk index, so a re-sent chunk replaces rather than adds.
@@ -208,7 +227,8 @@ async function initializeUpload(options) {
     filename: safeFilename,
     fileSize: size,
     expectedChunks,
-    eventId
+    eventId,
+    transferId
   });
 
   return {

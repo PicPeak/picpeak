@@ -898,6 +898,21 @@ async function removeExtraFiles(transferId) {
  * best-effort per address (a bad SMTP config must not fail the whole create);
  * `sendTemplateEmail` is required lazily to avoid a service-load cycle.
  */
+/**
+ * Mail a transfer's download link once, after the files the page uploaded in
+ * further requests or chunks have landed (create with pending files records
+ * delivery_method 'link' and mails nothing). Claimed by turning 'link' into
+ * 'email' in one guarded UPDATE, so a second call — a double click, a retry,
+ * another replica — sends nothing.
+ */
+async function deliverTransferEmails(transferId, emails) {
+  const claimed = await db('transfers')
+    .where({ id: transferId, delivery_method: 'link' }).whereNull('deleted_at')
+    .update({ delivery_method: 'email' });
+  if (!claimed) return { sent: 0, recipients: [], alreadyDelivered: true };
+  return sendTransferEmails(transferId, emails);
+}
+
 async function sendTransferEmails(transferId, emails) {
   const clean = [...new Set((emails || [])
     .map((e) => String(e || '').trim())
@@ -1041,6 +1056,7 @@ module.exports = {
   enableUploads,
   disableUploads,
   sendTransferEmails,
+  deliverTransferEmails,
   // public
   getTransferByToken,
   getTransferByUploadToken,

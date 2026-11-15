@@ -889,6 +889,8 @@
     "betaTag": "Beta"
   },
   "transfers": {
+    "someFailed": "{{count}} file(s) could not be uploaded and are not in the transfer: {{names}}",
+    "deliveryHeld": "The email to the recipients was not sent. Add the missing files and share the link yourself.",
     "title": "PicTransfer",
     "subtitle": "Send original files from any event as a download link.",
     "new": "New transfer",
