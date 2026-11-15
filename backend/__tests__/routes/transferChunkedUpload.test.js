@@ -253,6 +253,42 @@ describe('admin deliverable upload in chunks', () => {
     expect(created.body.failed_files).toEqual(['broken.pdf']);
   });
 
+  it('takes a transfer id only in its canonical form, so it cannot authorise one and act on another', async () => {
+    // parseInt('800.1e1') is 800, Number('800.1e1') is 8001.
+    await createTransfer('send', ownerId, { id: 800 });
+    const otherAdmin = unwrap(await db('admin_users').where({ username: 'transfer-chunk-other' }).select('id'));
+    await createTransfer('send', otherAdmin, { id: 8001 });
+    for (const spelling of ['800.1e1', '0800', '800abc', '8e2', '80.01e1']) {
+      const init = await request(admin).post(`/api/admin/transfers/${spelling}/chunked-upload/init`)
+        .set('Authorization', `Bearer ${ownerToken}`).send({ filename: 'x.pdf', fileSize: 8, mimeType: 'application/pdf' });
+      expect(init.status).toBe(404);
+      expect((await request(admin).post(`/api/admin/transfers/${spelling}/chunked-upload/u/chunk/0`)
+        .set('Authorization', `Bearer ${ownerToken}`).set('Content-Type', 'application/octet-stream').send(Buffer.from('x'))).status).toBe(404);
+      expect((await request(admin).post(`/api/admin/transfers/${spelling}/chunked-upload/u/complete`)
+        .set('Authorization', `Bearer ${ownerToken}`).send({})).status).toBe(404);
+      expect((await request(admin).get(`/api/admin/transfers/${spelling}`).set('Authorization', `Bearer ${ownerToken}`)).status).toBe(404);
+    }
+    expect(await db('transfer_extra_files').whereIn('transfer_id', [800, 8001])).toHaveLength(0);
+    expect(await db('public_upload_requests').whereIn('transfer_id', [800, 8001])).toHaveLength(0);
+    // The canonical id still works for its owner.
+    expect((await adminInit(ownerToken, 800, { filename: 'x.pdf', fileSize: 8 })).status).toBe(200);
+  });
+
+  it('keeps a stored file when only the transfer timestamp could not be bumped', async () => {
+    const send = await createTransfer('send', ownerId);
+    await db.raw(`CREATE TRIGGER no_bump BEFORE UPDATE OF updated_at ON transfers WHEN OLD.id = ${Number(send.id)} BEGIN SELECT RAISE(ABORT, 'disk gone'); END`);
+    let res;
+    try {
+      res = await request(admin).post(`/api/admin/transfers/${send.id}/upload-files`)
+        .set('Authorization', `Bearer ${ownerToken}`).attach('files', Buffer.from('%PDF x'), 'kept.pdf');
+    } finally {
+      await db.raw('DROP TRIGGER IF EXISTS no_bump');
+    }
+    expect(res.status).toBe(200);
+    expect(res.body.failed_files).toEqual([]);
+    expect(await db('transfer_extra_files').where({ transfer_id: send.id })).toHaveLength(1);
+  });
+
   it('answers 404 to another admin, another transfer and a public link', async () => {
     const send = await createTransfer('send', ownerId);
     const second = await createTransfer('send', ownerId);
