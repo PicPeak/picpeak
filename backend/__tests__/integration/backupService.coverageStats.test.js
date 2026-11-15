@@ -182,7 +182,8 @@ describe('backupService — backup coverage statistics', () => {
       await backupService.runBackup(true);
       const stats = await statsOfLastRun();
 
-      expect(spawn).toHaveBeenCalledTimes(1);
+      // The mirror, then the manifest upload.
+      expect(spawn).toHaveBeenCalledTimes(2);
       expect(stats.files_processed).toBe(1);
       expect(stats.database_backed_up).toBe(true);
       expect(stats.photos_backed_up).toBe(2);
@@ -190,14 +191,16 @@ describe('backupService — backup coverage statistics', () => {
       expect(stats.archives_backed_up).toBe(1);
     });
 
-    it('records the database as left out when an exclude pattern keeps the dump off the destination', async () => {
+    it('records the database as included although an exclude pattern matches the dump', async () => {
       await setting('backup_exclude_patterns', ['*.gz']);
       await backupService.runBackup(true);
       const stats = await statsOfLastRun();
 
+      // The dump is included ahead of the excludes, so it reaches the mirror.
       const args = spawn.mock.calls[0][1];
-      expect(args[args.indexOf('*.gz') - 1]).toBe('--exclude');
-      expect(stats.database_backed_up).toBe(false);
+      expect(args.indexOf('/database/')).toBeGreaterThan(-1);
+      expect(args.indexOf('/database/')).toBeLessThan(args.indexOf('*.gz'));
+      expect(stats.database_backed_up).toBe(true);
       expect(stats.photos_backed_up).toBe(2);
       expect(stats.archives_backed_up).toBe(1);
     });
