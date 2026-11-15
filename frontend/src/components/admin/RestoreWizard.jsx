@@ -669,8 +669,13 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     // never-started. The history endpoint already returns rows newest
     // first.
     const lastRun = restoreStatus?.history?.[0];
+    // The data is in place, but its migrations did not run: the backend
+    // holds the site in maintenance mode instead of rolling back.
+    const lastRunMigrationsPending =
+      !isRunning && lastRun && lastRun.status === 'migrations_pending';
     const lastRunFailed =
-      !isRunning && lastRun && (lastRun.status === 'failed' || lastRun.was_successful === false);
+      !isRunning && lastRun && !lastRunMigrationsPending
+      && (lastRun.status === 'failed' || lastRun.was_successful === false);
     const lastRunSucceeded =
       !isRunning && lastRun && lastRun.status === 'completed' && lastRun.was_successful === true;
     // Strip the noisy stack-trace tail from the error message so the
@@ -682,9 +687,11 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
       ? t('backup.restore.progress.inProgress')
       : lastRunFailed
         ? t('backup.restore.progress.failedSubtitle', 'Restore failed — see error below. Destination has been rolled back to its pre-restore state.')
-        : lastRunSucceeded
-          ? t('backup.restore.progress.completed')
-          : t('backup.restore.progress.idle', 'No restore in progress.');
+        : lastRunMigrationsPending
+          ? t('backup.restore.progress.migrationsPendingSubtitle', 'Data restored, but database migrations are still pending. The site stays in maintenance mode — see below.')
+          : lastRunSucceeded
+            ? t('backup.restore.progress.completed')
+            : t('backup.restore.progress.idle', 'No restore in progress.');
 
     return (
       <div className="space-y-6">
@@ -693,7 +700,9 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
           <p className={`text-sm ${
             lastRunFailed
               ? 'text-red-700 dark:text-red-300 font-medium'
-              : 'text-neutral-600 dark:text-neutral-400'
+              : lastRunMigrationsPending
+                ? 'text-amber-700 dark:text-amber-300 font-medium'
+                : 'text-neutral-600 dark:text-neutral-400'
           }`}>
             {subtitle}
           </p>
@@ -716,6 +725,22 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
                       'Pre-restore safety backup was used to roll back. Destination is in its pre-restore state — safe to retry once the issue above is resolved.')}
                   </p>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {lastRunMigrationsPending && (
+          <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-1">
+                  {t('backup.restore.progress.migrationsPendingTitle', 'Database migrations pending')}
+                </h4>
+                <p className="text-sm text-amber-700 dark:text-amber-300 font-mono break-all">
+                  {lastRunError || t('backup.restore.progress.errorUnknown', 'No error message recorded.')}
+                </p>
               </div>
             </div>
           </div>

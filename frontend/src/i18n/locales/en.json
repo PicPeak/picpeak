@@ -4691,6 +4691,8 @@
         "failedSubtitle": "Restore failed — see error below. Destination has been rolled back to its pre-restore state.",
         "idle": "No restore in progress.",
         "errorTitle": "Restore did not complete",
+        "migrationsPendingSubtitle": "Data restored, but database migrations are still pending. The site stays in maintenance mode — see below.",
+        "migrationsPendingTitle": "Database migrations pending",
         "errorUnknown": "No error message recorded.",
         "rolledBack": "Pre-restore safety backup was used to roll back. Destination is in its pre-restore state — safe to retry once the issue above is resolved."
       },
