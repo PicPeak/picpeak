@@ -6636,7 +6636,9 @@
       "coverage": {
         "title": "Backup Coverage",
         "included": "Included",
-        "excluded": "Excluded"
+        "excluded": "Excluded",
+        "caption": "Contents of the last successful backup",
+        "unknown": "Unknown: recorded before this was tracked"
       },
       "storageDestination": "Storage Destination",
       "backupType": "{{type}} backup",
