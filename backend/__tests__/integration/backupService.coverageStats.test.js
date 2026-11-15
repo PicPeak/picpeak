@@ -142,6 +142,15 @@ describe('backupService — backup coverage statistics', () => {
     expect(stats.photos_backed_up).toBe(2);
   });
 
+  it('local: an exclude pattern does not drop the dump, and leaves matching photos out', async () => {
+    await setting('backup_exclude_patterns', ['*.gz', 'a.jpg']);
+    await backupService.runBackup(true);
+    const stats = await statsOfLastRun();
+
+    expect(stats.database_backed_up).toBe(true);
+    expect(stats.photos_backed_up).toBe(1);
+  });
+
   it('local: photos left out of the selection count as not backed up', async () => {
     await setting('backup_include_photos', false);
     await setting('backup_include_archived', false);
@@ -181,6 +190,29 @@ describe('backupService — backup coverage statistics', () => {
       expect(stats.photos_backed_up).toBe(2);
       expect(stats.total_photos).toBe(3);
       expect(stats.archives_backed_up).toBe(1);
+    });
+
+    it('records the database as left out when an exclude pattern keeps the dump off the destination', async () => {
+      await setting('backup_exclude_patterns', ['*.gz']);
+      await backupService.runBackup(true);
+      const stats = await statsOfLastRun();
+
+      const args = spawn.mock.calls[0][1];
+      expect(args[args.indexOf('*.gz') - 1]).toBe('--exclude');
+      expect(stats.database_backed_up).toBe(false);
+      expect(stats.photos_backed_up).toBe(2);
+      expect(stats.archives_backed_up).toBe(1);
+    });
+
+    it('counts photos an exclude pattern keeps out of the mirror as not backed up', async () => {
+      await setting('backup_exclude_patterns', ['*.jpg', '*.zip']);
+      await backupService.runBackup(true);
+      const stats = await statsOfLastRun();
+
+      expect(stats.database_backed_up).toBe(true);
+      expect(stats.photos_backed_up).toBe(0);
+      expect(stats.total_photos).toBe(3);
+      expect(stats.archives_backed_up).toBe(0);
     });
 
     it('surfaces the new keys through getBackupStatus', async () => {

@@ -1106,6 +1106,18 @@ async function buildRsyncArgs(config, extraExcludes = [], sourceRoot = getStorag
   return args;
 }
 
+/**
+ * Whether the --exclude list buildRsyncArgs passes keeps the staged
+ * database/<dump> off the destination. Name-by-name, as the walker applies
+ * the same patterns to the files whose coverage is counted.
+ */
+function rsyncExcludesDump(config, dumpFile) {
+  if (!dumpFile) return true;
+  const patterns = [...DEFAULT_EXCLUDE_PATTERNS,
+    ...(Array.isArray(config.backup_exclude_patterns) ? config.backup_exclude_patterns : [])];
+  return ['database', path.basename(dumpFile)].some((name) => isExcludedName(name, patterns));
+}
+
 function parseRsyncStats(output) {
   const stats = {};
 
@@ -1768,9 +1780,12 @@ async function runBackupInternal(isManual = false) {
     // an empty map if backup_paths is missing (defense in depth — the
     // walker has the same fallback).
     const perPath = await computePerPathStats(result.backedUpFiles, files);
-    // rsync returns no databaseInfo: its staged dump always goes along.
+    // rsync returns no databaseInfo. Its staged dump goes through the same
+    // --exclude list as the files, so a pattern such as '*.gz' keeps it off
+    // the destination although the local dump exists.
     const coverage = await computeCoverageStats(result.backedUpFiles, perPath,
-      result.databaseInfo || verifiedDatabaseInfo);
+      result.databaseInfo || (destinationType === 'rsync' && rsyncExcludesDump(config, verifiedDatabaseInfo.backupFile)
+        ? null : verifiedDatabaseInfo));
 
     await db('backup_runs')
       .where('id', runId)
