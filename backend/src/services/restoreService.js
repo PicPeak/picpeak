@@ -249,7 +249,7 @@ async function openRestoreSource(realBackupRoot, relPath, maxBytes) {
 // (see performDatabaseRestore), factored out so the containment rule can be
 // pinned directly in tests without exercising the surrounding DB-swap/spawn
 // side effects. `warn` is an optional `(msg, meta) => void` logger hook.
-async function resolveContainedDbBackupCandidates(backupPath, dbBackupFile, warn) {
+async function resolveContainedDbBackupCandidates(backupPath, dbBackupFile, warn, sourceFile) {
   const allowedRoots = await getConfiguredBackupRoots(backupPath);
   const rawCandidates = [
     // (1) Honour absolute paths recorded by the dumper.
@@ -259,6 +259,11 @@ async function resolveContainedDbBackupCandidates(backupPath, dbBackupFile, warn
     // (3) Legacy reconstruct. Inherently safe: path.basename() strips any
     // directory component, so this candidate can never escape backupPath.
     path.join(backupPath, 'database', path.basename(dbBackupFile)),
+    // (4) Where the dump was written on the host that made the backup
+    // (database.source_file, rsync manifests): the relative path above is
+    // where the copied-back mirror holds it. Same containment gate, and the
+    // caller still verifies the checksum.
+    typeof sourceFile === 'string' && path.isAbsolute(sourceFile) ? sourceFile : null,
   ].filter(Boolean);
 
   return rawCandidates.filter((candidate) => {
@@ -309,6 +314,79 @@ async function persistRestoreRun(run, completion) {
     const result = await db('restore_runs').insert({ ...run.record, ...completion }).returning('id');
     run.id = Array.isArray(result) ? (result[0]?.id || result[0]) : result;
   }
+}
+
+// "3.204.0-beta.0" → { core: [3, 204, 0], pre: ['beta', 0] }; null when the
+// string is not a semver version (a missing or hand-edited manifest field).
+function parseAppVersion(version) {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(String(version ?? '').trim());
+  if (!match) return null;
+  return {
+    core: match.slice(1, 4).map(Number),
+    pre: match[4] ? match[4].split('.').map((id) => (/^\d+$/.test(id) ? Number(id) : id)) : [],
+  };
+}
+
+// Semver precedence: a prerelease sorts below its release, numeric
+// identifiers numerically and below alphanumeric ones.
+function compareParsedVersions(a, b) {
+  for (let i = 0; i < 3; i += 1) {
+    if (a.core[i] !== b.core[i]) return a.core[i] < b.core[i] ? -1 : 1;
+  }
+  if (!a.pre.length && !b.pre.length) return 0;
+  if (!a.pre.length) return 1;
+  if (!b.pre.length) return -1;
+  for (let i = 0; i < Math.max(a.pre.length, b.pre.length); i += 1) {
+    const x = a.pre[i]; const y = b.pre[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    if (x === y) continue;
+    const xNum = typeof x === 'number'; const yNum = typeof y === 'number';
+    if (xNum !== yNum) return xNum ? -1 : 1;
+    return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
+/**
+ * What the backup's app version means for a restore into this app.
+ *
+ * - Same version: nothing to say.
+ * - Older backup, same release line: the normal case. The post-restore
+ *   migrations (step 7c) bring the restored database up to this version, so
+ *   it is an info line, not a warning.
+ * - Newer backup (a downgrade): this app's code does not know the schema the
+ *   backup's migrations left behind, so it warns.
+ * - Other release line: stable (3.135.x, no prerelease) and main (-beta.N)
+ *   number some migrations differently, and a restore puts the archive's
+ *   migration ledger in place, so the target's runner may re-run a migration
+ *   whose counterpart already ran under another name (issue 2480's open
+ *   cross-line part). Not a defined state, so it warns whatever the order.
+ * - Unparsable version on either side: the old mismatch warning.
+ */
+function assessBackupVersion(backupVersion, currentVersion) {
+  if (backupVersion === currentVersion) return null;
+  const params = { backupVersion, currentVersion };
+  const backup = parseAppVersion(backupVersion);
+  const current = parseAppVersion(currentVersion);
+  if (!backup || !current) {
+    return { severity: 'warning', code: 'version_unknown', params,
+      message: `Version mismatch: backup from v${backupVersion}, current v${currentVersion}` };
+  }
+  if ((backup.pre.length > 0) !== (current.pre.length > 0)) {
+    return { severity: 'warning', code: 'version_other_line', params,
+      message: `Backup from another release line: backup from v${backupVersion}, current v${currentVersion}` };
+  }
+  const order = compareParsedVersions(backup, current);
+  if (order > 0) {
+    return { severity: 'warning', code: 'version_newer', params,
+      message: `Backup is from a newer version: backup from v${backupVersion}, current v${currentVersion}` };
+  }
+  if (order < 0) {
+    return { severity: 'info', code: 'version_older', params,
+      message: `Backup from v${backupVersion} will be migrated to v${currentVersion} after the restore` };
+  }
+  return null;
 }
 
 const { formatBytes } = require('../utils/formatBytes');
@@ -404,6 +482,11 @@ class RestoreService {
     this.portableRuntimeSnapshot = null;
     const startTime = new Date();
     let restoreRun = null;
+    // Flipped right before step 6, the first step that writes to this
+    // install. Everything before it (validation, disk space, the safety
+    // backup, the S3 download) only reads the destination, so a failure
+    // there left it exactly as it was.
+    let destinationTouched = false;
 
     try {
       // Validate options
@@ -518,6 +601,7 @@ class RestoreService {
       }
 
       // Step 6: Perform the actual restore based on type
+      destinationTouched = true;
       let restoreResult;
       // Set by the full/database branches; acted on after step 7c so the
       // schema — and any data conversion those migrations perform — is in
@@ -836,7 +920,11 @@ class RestoreService {
       let rollbackAttempted = false;
       let rollbackSucceeded = false;
       let rollbackError = null;
-      if (this.preRestoreBackupPath) {
+      if (!destinationTouched) {
+        // Nothing to roll back: replaying the safety backup would only
+        // rewrite the install with the state it already has.
+        this.log('info', 'Restore stopped before any change to this install — nothing to roll back');
+      } else if (this.preRestoreBackupPath) {
         rollbackAttempted = true;
         try {
           this.log('info', 'Attempting rollback from pre-restore safety backup', {
@@ -861,15 +949,18 @@ class RestoreService {
       //   - rollback succeeded → destination is back to pre-restore state, safe to retry
       //   - rollback failed   → partial state, admin must inspect before next attempt
       //   - rollback skipped  → user opted out via skipPreBackup; same as above
+      //   - status 'blocked'  → stopped in pre-flight, nothing was changed
       if (restoreRun) {
-        const failureMessage = rollbackAttempted
-          ? (rollbackSucceeded
-            ? `${error.message} (rolled back successfully to pre-restore state)`
-            : `${error.message} | ROLLBACK ALSO FAILED: ${rollbackError} — destination is in a partial state, inspect before retrying`)
-          : `${error.message} (no pre-restore backup available — destination may be partial)`;
+        const failureMessage = !destinationTouched
+          ? `${error.message} (stopped before any change — this install was not modified)`
+          : rollbackAttempted
+            ? (rollbackSucceeded
+              ? `${error.message} (rolled back successfully to pre-restore state)`
+              : `${error.message} | ROLLBACK ALSO FAILED: ${rollbackError} — destination is in a partial state, inspect before retrying`)
+            : `${error.message} (no pre-restore backup available — destination may be partial)`;
         await persistRestoreRun(restoreRun, {
           completed_at: new Date().toISOString(),
-          status: 'failed',
+          status: destinationTouched ? 'failed' : 'blocked',
           error_message: failureMessage,
           was_rollback_attempted: rollbackAttempted,
           restore_log: JSON.stringify(this.restoreLog)
@@ -958,7 +1049,14 @@ class RestoreService {
     const validation = {
       isValid: true,
       errors: [],
-      warnings: []
+      warnings: [],
+      // The same warnings with a code and their values, plus info lines,
+      // so the wizard can explain each one before the restore is started.
+      notices: []
+    };
+    const warn = (code, message, params = {}) => {
+      validation.warnings.push(message);
+      validation.notices.push({ severity: 'warning', code, message, params });
     };
 
     try {
@@ -983,15 +1081,17 @@ class RestoreService {
       const backupAge = Date.now() - new Date(manifest.backup.timestamp).getTime();
       const ageInDays = backupAge / (1000 * 60 * 60 * 24);
       if (ageInDays > 30) {
-        validation.warnings.push(`Backup is ${Math.round(ageInDays)} days old`);
+        const days = Math.round(ageInDays);
+        warn('backup_age', `Backup is ${days} days old`, { days });
       }
 
-      // Check version compatibility
+      // Check version compatibility (see assessBackupVersion)
       const currentVersion = require('../../package.json').version;
-      if (manifest.application.version !== currentVersion) {
-        validation.warnings.push(
-          `Version mismatch: backup from v${manifest.application.version}, current v${currentVersion}`
-        );
+      const versionNotice = assessBackupVersion(manifest.application.version, currentVersion);
+      if (versionNotice && versionNotice.severity === 'warning') {
+        warn(versionNotice.code, versionNotice.message, versionNotice.params);
+      } else if (versionNotice) {
+        validation.notices.push(versionNotice);
       }
 
       // Check database compatibility
@@ -1019,7 +1119,7 @@ class RestoreService {
         const eventCount = await db('events').count('* as count').first();
         const eventCountN = Number(eventCount?.count || 0);
         if (eventCountN > 0) {
-          validation.warnings.push(`Database contains ${eventCountN} existing events that will be overwritten`);
+          warn('existing_events', `Database contains ${eventCountN} existing events that will be overwritten`, { count: eventCountN });
         }
       }
 
@@ -1030,7 +1130,7 @@ class RestoreService {
         .first();
       const activeUsersN = Number(activeUsers?.count || 0);
       if (activeUsersN > 0) {
-        validation.warnings.push(`There are ${activeUsersN} active admin users`);
+        warn('active_admins', `There are ${activeUsersN} active admin users`, { count: activeUsersN });
       }
 
     } catch (error) {
@@ -1436,7 +1536,7 @@ class RestoreService {
     // is always inside `backupPath`, which is itself always one of the
     // allowed roots below.
     let candidates = await resolveContainedDbBackupCandidates(
-      backupPath, dbBackupFile, (msg, meta) => this.log('warn', msg, meta)
+      backupPath, dbBackupFile, (msg, meta) => this.log('warn', msg, meta), manifest.database.source_file
     );
     // A downloaded S3 dump takes precedence over an old absolute filename
     // still present on this host. Never replay a different local artifact.
@@ -2562,6 +2662,7 @@ module.exports = {
     verifyDatabaseDumpChecksum,
     getRestoreMaxFileBytes,
     nextSessionCutoff,
+    assessBackupVersion,
     openRestoreSource,
     writeBounded,
     downloadS3ObjectBounded,

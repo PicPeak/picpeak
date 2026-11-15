@@ -12,6 +12,8 @@
  */
 import { api } from '../config/api';
 import { getApiBaseUrl } from '../utils/url';
+import { planTransferFiles } from '../utils/uploadBatches';
+import { uploadFileInChunks } from './guestChunkedUpload';
 
 export interface TransferFile {
   file_id: number;
@@ -123,6 +125,13 @@ export interface TransferWriteResult extends Transfer {
   rejected_files?: string[];
   /** Files it accepted but did not keep (attached to a request, which sends nothing). */
   dropped_files?: string[];
+  /**
+   * Files that did not land at all: a later request or chunked upload of a
+   * write too large for one request failed. The transfer exists without them.
+   */
+  failed_files?: string[];
+  /** The ready email was not sent because files failed; the recipients are held. */
+  delivery_held?: boolean;
 }
 
 export interface UpdateTransferInput {
@@ -183,16 +192,100 @@ export interface UploadResult {
   failed_files: string[];
 }
 
+/** The most files one admin multipart request carries (ADMIN_MAX_FILES in adminTransfers.js). */
+const ADMIN_MAX_FILES_PER_REQUEST = 50;
+
+/** Overall percentage over several requests, from the bytes each has sent. */
+function byteProgress(files: File[], onProgress?: (pct: number) => void) {
+  const total = files.reduce((sum, f) => sum + f.size, 0) || 1;
+  let done = 0;
+  return {
+    /** Report `sent` bytes of the request in flight on top of the finished ones. */
+    report(sent: number) {
+      onProgress?.(Math.min(100, Math.round(((done + sent) / total) * 100)));
+    },
+    /** A request settled (landed or not): its bytes count as handled. */
+    finish(bytes: number) {
+      done += bytes;
+      this.report(0);
+    },
+  };
+}
+
+const sizeOf = (files: File[]) => files.reduce((sum, f) => sum + f.size, 0);
+
+function errorCode(error: unknown): { code?: string; rejected?: string[] } {
+  const data = (error as { response?: { data?: { code?: string; rejected_files?: string[] } } })?.response?.data;
+  return { code: data?.code, rejected: data?.rejected_files };
+}
+
+/**
+ * Upload `files` into an existing send after the first request: further
+ * multipart batches, then each large file in chunks. Nothing here throws; a
+ * file that does not land is named in `failed` (or `rejected`, refused on
+ * type) and the rest go on. A new send's ready mail is held server-side
+ * until the caller sends it (the resend route).
+ */
+async function uploadRemaining(
+  id: number,
+  batches: File[][],
+  chunked: File[],
+  progress: ReturnType<typeof byteProgress>,
+): Promise<{ rejected: string[]; failed: string[]; firstError: unknown; last: Transfer | null }> {
+  const rejected: string[] = [];
+  const failed: string[] = [];
+  let firstError: unknown = null;
+  // The transfer as the last write that landed answered it.
+  let last: Transfer | null = null;
+  const refused = (files: File[], error: unknown) => {
+    firstError = firstError ?? error;
+    const { code, rejected: names } = errorCode(error);
+    if (code === 'TYPE_REJECTED' && names?.length) rejected.push(...names);
+    else failed.push(...files.map((f) => f.name));
+  };
+  for (const batch of batches) {
+    const form = new FormData();
+    batch.forEach((f) => form.append('files', f));
+    try {
+      const res = await api.post(`/admin/transfers/${id}/upload-files`, form, {
+        onUploadProgress: (e) => progress.report(e.total ? (sizeOf(batch) * e.loaded) / e.total : 0),
+      });
+      rejected.push(...(res.data.rejected_files || []));
+      // Accepted but not stored: not uploaded, whatever the 200 says.
+      failed.push(...(res.data.failed_files || []));
+      last = res.data.transfer ?? last;
+    } catch (error) {
+      refused(batch, error);
+    }
+    progress.finish(sizeOf(batch));
+  }
+  for (const file of chunked) {
+    try {
+      const res = await uploadFileInChunks<{ transfer?: Transfer }>(`/admin/transfers/${id}`, file, {
+        initFields: { mimeType: file.type },
+        onBytes: (sent) => progress.report(sent),
+      });
+      last = res.data.transfer ?? last;
+    } catch (error) {
+      refused([file], error);
+    }
+    progress.finish(file.size);
+  }
+  return { rejected, failed, firstError, last };
+}
+
 /** Lift the sibling `rejected_files` / `dropped_files` onto the transfer. */
 function withWriteNotes(data: {
   transfer: Transfer;
   rejected_files?: string[];
   dropped_files?: string[];
+  failed_files?: string[];
 }): TransferWriteResult {
   return {
     ...data.transfer,
     rejected_files: data.rejected_files || [],
     dropped_files: data.dropped_files || [],
+    failed_files: data.failed_files || [],
   };
 }
 
@@ -212,7 +305,14 @@ export const transfersService = {
     return res.data.transfer;
   },
   async create(input: CreateTransferInput, onProgress?: (pct: number) => void): Promise<TransferWriteResult> {
-    // multipart: the operator's own files ride along with the form fields.
+    // multipart: the operator's own files ride along with the form fields —
+    // all of them when they fit one request. Otherwise the first batch does,
+    // and the rest follow into the new send (see createWithLargeFiles).
+    const files = input.files || [];
+    const plan = planTransferFiles(files, ADMIN_MAX_FILES_PER_REQUEST);
+    if (input.kind !== 'request' && (plan.chunked.length > 0 || plan.batches.length > 1)) {
+      return transfersService.createWithLargeFiles(input, plan, onProgress);
+    }
     const form = new FormData();
     if (input.title != null) form.append('title', input.title);
     if (input.message != null) form.append('message', input.message);
@@ -224,7 +324,7 @@ export const transfersService = {
     form.append('photoIds', JSON.stringify(input.photoIds || []));
     form.append('deliveryMethod', input.deliveryMethod || 'link');
     form.append('recipientEmails', JSON.stringify(input.recipientEmails || []));
-    (input.files || []).forEach((f) => form.append('files', f));
+    files.forEach((f) => form.append('files', f));
     const res = await api.post('/admin/transfers', form, {
       onUploadProgress: (e) => {
         if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
@@ -232,8 +332,81 @@ export const transfersService = {
     });
     return withWriteNotes(res.data);
   },
-  /** Add deliverable files to an existing transfer. */
+  /**
+   * A send whose files do not fit one request. The send is created with the
+   * first batch and told how many files are still coming (`pendingFiles`), so
+   * it is not refused as empty and its ready mail is held rather than sent.
+   * The rest follow in further requests and chunks; only when every one has
+   * landed is the mail sent (the resend route). A file that fails leaves the
+   * send without it and the mail held, and both are reported back.
+   */
+  async createWithLargeFiles(
+    input: CreateTransferInput,
+    plan: { batches: File[][]; chunked: File[] },
+    onProgress?: (pct: number) => void,
+  ): Promise<TransferWriteResult> {
+    const files = input.files || [];
+    const [first = [], ...rest] = plan.batches;
+    const progress = byteProgress(files, onProgress);
+    const form = new FormData();
+    if (input.title != null) form.append('title', input.title);
+    if (input.message != null) form.append('message', input.message);
+    if (input.expiresInDays != null) form.append('expiresInDays', String(input.expiresInDays));
+    if (input.maxDownloads != null) form.append('maxDownloads', String(input.maxDownloads));
+    if (input.graceDays != null) form.append('graceDays', String(input.graceDays));
+    form.append('kind', 'send');
+    form.append('photoIds', JSON.stringify(input.photoIds || []));
+    form.append('deliveryMethod', input.deliveryMethod || 'link');
+    form.append('recipientEmails', JSON.stringify(input.recipientEmails || []));
+    form.append('pendingFiles', String(files.length - first.length));
+    first.forEach((f) => form.append('files', f));
+    const res = await api.post('/admin/transfers', form, {
+      onUploadProgress: (e) => progress.report(e.total ? (sizeOf(first) * e.loaded) / e.total : 0),
+    });
+    progress.finish(sizeOf(first));
+    const created = withWriteNotes(res.data);
+
+    const mailing = input.deliveryMethod === 'email' && (input.recipientEmails || []).length > 0;
+    const remaining = await uploadRemaining(created.id, rest, plan.chunked, progress);
+    const { rejected } = remaining;
+    // Files of the create request that did not land count as failed too.
+    const failed = [...(created.failed_files || []), ...remaining.failed];
+    let deliveryHeld = false;
+    if (mailing) {
+      if (failed.length) deliveryHeld = true;
+      else await transfersService.resendEmail(created.id).catch(() => { deliveryHeld = true; });
+    }
+    // The send exists now: a failed refresh must not turn that into an error
+    // (the dialog would stay open and a retry create a second send).
+    const fresh = await transfersService.get(created.id).catch(() => null);
+    return {
+      ...(fresh || created),
+      rejected_files: [...(created.rejected_files || []), ...rejected],
+      dropped_files: created.dropped_files || [],
+      failed_files: failed,
+      delivery_held: deliveryHeld,
+    };
+  },
+  /**
+   * Add deliverable files to an existing transfer: in one request when they
+   * fit, otherwise in several and large files in chunks. Throws only when no
+   * file landed; otherwise the ones that did not are in `failed_files`.
+   */
   async uploadFiles(id: number, files: File[], onProgress?: (pct: number) => void): Promise<TransferWriteResult> {
+    const plan = planTransferFiles(files, ADMIN_MAX_FILES_PER_REQUEST);
+    if (plan.chunked.length > 0 || plan.batches.length > 1) {
+      const { rejected, failed, firstError, last } = await uploadRemaining(
+        id, plan.batches, plan.chunked, byteProgress(files, onProgress),
+      );
+      if (firstError && rejected.length + failed.length === files.length) throw firstError;
+      // Files are stored now: a failed refresh must not turn that into an
+      // error (a retry would store them twice). Fall back to the last answer.
+      // Without any snapshot (the answers carried none and the read failed)
+      // it is still a success: the server acknowledged the writes. The page
+      // refreshes the transfer on its own.
+      const fresh = await transfersService.get(id).catch(() => last);
+      return { ...(fresh || ({ id } as Transfer)), rejected_files: rejected, failed_files: failed };
+    }
     const form = new FormData();
     files.forEach((f) => form.append('files', f));
     const res = await api.post(`/admin/transfers/${id}/upload-files`, form, {
@@ -308,6 +481,17 @@ export const transfersService = {
   async getUploadInfo(token: string): Promise<UploadInfo> {
     const res = await api.get(`/public/transfer-upload/${token}`);
     return res.data.transfer;
+  },
+  /**
+   * One file too large for an upload request, sent in chunks. Answers like
+   * `upload`; a refusal throws, as `upload` does.
+   */
+  async uploadChunked(token: string, file: File, onProgress?: (pct: number) => void): Promise<UploadResult> {
+    const res = await uploadFileInChunks<UploadResult>(`/public/transfer-upload/${token}`, file, {
+      initFields: { mimeType: file.type },
+      onBytes: (sent) => onProgress?.(file.size ? Math.round((sent / file.size) * 100) : 100),
+    });
+    return res.data;
   },
   async upload(token: string, files: File[], onProgress?: (pct: number) => void): Promise<UploadResult> {
     const form = new FormData();

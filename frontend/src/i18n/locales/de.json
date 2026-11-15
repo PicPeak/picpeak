@@ -1145,6 +1145,9 @@
     "noUploads": "Der Kunde hat noch keine Dateien hochgeladen.",
     "createAndSend": "Erstellen & senden",
     "uploadedFiles": "Hochgeladene Dateien",
+    "uploadProgress": "Upload-Fortschritt",
+    "uploadPercent": "Wird hochgeladen … {{percent}} %",
+    "uploadProcessing": "Hochgeladen, die Dateien werden gespeichert …",
     "addFiles": "Dateien hinzufügen",
     "noUploadedFiles": "Keine hochgeladenen Dateien. Fügen Sie Dateien von Ihrem Computer hinzu, um sie in den Download aufzunehmen.",
     "sentTo": "Per E-Mail an",
@@ -1280,6 +1283,8 @@
     },
     "emptyReadOnly": "Noch nichts vorhanden.",
     "someDropped": "{{count}} angehängte Datei(en) wurden nicht übernommen – eine Dateianfrage sammelt nur Dateien: {{names}}",
+    "someFailed": "{{count}} Datei(en) konnten nicht hochgeladen werden und fehlen im Transfer: {{names}}",
+    "deliveryHeld": "Die E-Mail an die Empfänger wurde nicht gesendet. Fügen Sie die fehlenden Dateien hinzu und nutzen Sie dann „Erneut senden“.",
     "deleteRequestAction": "Anfrage löschen",
     "deleteAction": "Transfer löschen",
     "loadFailed": "Die Transfers konnten nicht geladen werden",
@@ -2002,6 +2007,7 @@
         "subtitle": "Bitte überprüfen Sie Ihre Wiederherstellungskonfiguration",
         "validation": {
           "passed": "Validierung bestanden",
+          "passedWithWarnings": "Prüfung mit Warnungen bestanden — lesen Sie diese, bevor Sie die Wiederherstellung starten",
           "failed": "Validierung fehlgeschlagen",
           "checking": "Validiere Wiederherstellungskonfiguration..."
         },
@@ -2023,6 +2029,45 @@
         "warning": {
           "title": "Wichtiger Hinweis",
           "message": "Diese Wiederherstellungsoperation ersetzt vorhandene Daten. Stellen Sie sicher, dass Sie ein aktuelles Backup haben, bevor Sie fortfahren. Diese Aktion kann nicht rückgängig gemacht werden."
+        },
+        "notices": {
+          "warningsLabel": "Warnungen",
+          "generic": {
+            "help": "Um die Wiederherstellung zu starten, muss diese Warnung übergangen werden."
+          },
+          "backup_age": {
+            "title": "Das Backup ist {{days}} Tage alt",
+            "help": "Alles, was seitdem auf dieser Installation erstellt oder geändert wurde, geht verloren. Erwartet, wenn Sie bewusst zu einem älteren Stand zurückkehren."
+          },
+          "version_newer": {
+            "title": "Backup aus einer neueren Version (v{{backupVersion}}, diese App läuft mit v{{currentVersion}})",
+            "help": "Das ist ein Downgrade: Diese Version kennt die Datenbankänderungen der neueren nicht, Teile der App können fehlschlagen. Aktualisieren Sie diese Installation zuerst auf v{{backupVersion}} oder neuer und stellen Sie dann wieder her."
+          },
+          "version_other_line": {
+            "title": "Backup aus der anderen Release-Linie (v{{backupVersion}}, diese App läuft mit v{{currentVersion}})",
+            "help": "Stable und Beta nummerieren einige Datenbank-Migrationen unterschiedlich, daher passt die wiederhergestellte Datenbank womöglich nicht genau zu den Migrationen dieser Version. Verwenden Sie besser ein Backup derselben Linie (Stable oder Beta)."
+          },
+          "version_unknown": {
+            "title": "Backup-Version nicht vergleichbar (Backup v{{backupVersion}}, diese App läuft mit v{{currentVersion}})",
+            "help": "Die Version des Backups fehlt oder hat nicht das übliche Format, daher ist unklar, ob diese Version es lesen kann."
+          },
+          "version_older": {
+            "title": "Backup aus v{{backupVersion}}.",
+            "help": "Nach der Wiederherstellung wird die Datenbank auf die Version dieser App (v{{currentVersion}}) migriert. Das ist der Normalfall."
+          },
+          "existing_events": {
+            "title": "{{count}} vorhandene Events werden ersetzt",
+            "help": "Eine vollständige oder Datenbank-Wiederherstellung ersetzt den Inhalt dieser Installation durch den des Backups. Erwartet, wenn Sie auf eine bereits genutzte Installation wiederherstellen."
+          },
+          "active_admins": {
+            "title": "Diese Installation hat {{count}} aktive Admin-Konten",
+            "help": "Eine vollständige oder Datenbank-Wiederherstellung ersetzt auch die Admin-Konten: Alle werden abgemeldet, und Sie melden sich mit einem Konto aus dem Backup wieder an. Erwartet bei einer vollständigen Wiederherstellung."
+          }
+        },
+        "acknowledge": {
+          "label": "Ich habe die Warnungen gelesen und möchte trotzdem wiederherstellen",
+          "help": "Ohne dieses Häkchen bricht die Wiederherstellung bei der ersten Prüfung ab, bevor etwas geändert wird.",
+          "forceDisabled": "Das Übergehen von Warnungen ist auf diesem Server deaktiviert (Wiederherstellungs-Einstellung restore_allow_force), daher kann diese Wiederherstellung nicht gestartet werden."
         }
       },
       "progress": {
@@ -2039,6 +2084,8 @@
           "verifyIntegrity": "Dokumentintegrität jetzt prüfen"
         },
         "failedSubtitle": "Wiederherstellung fehlgeschlagen — siehe Fehler unten. Das Ziel wurde auf den Stand vor der Wiederherstellung zurückgesetzt.",
+        "blockedSubtitle": "Wiederherstellung nicht gestartet — eine Vorabprüfung hat sie gestoppt. Auf dieser Installation wurde nichts geändert.",
+        "blockedTitle": "Wiederherstellung vor jeder Änderung gestoppt",
         "idle": "Derzeit läuft keine Wiederherstellung.",
         "errorTitle": "Wiederherstellung nicht abgeschlossen",
         "migrationsPendingSubtitle": "Daten wiederhergestellt, aber Datenbank-Migrationen stehen noch aus. Die Website bleibt im Wartungsmodus — siehe unten.",
@@ -2068,6 +2115,15 @@
       "RSYNC_HOST_UNRESOLVED": "Der Hostname des Rsync-Ziels konnte nicht aufgelöst werden. Es wurde keine Verbindung gestartet.",
       "RSYNC_SSH_TRUST_REQUIRED": "Hinterlegen Sie den unabhängig geprüften Hostschlüssel des Ziels in einer lesbaren known_hosts-Datei und setzen Sie BACKUP_SSH_KNOWN_HOSTS, oder legen Sie die Datei neben dem konfigurierten SSH-Schlüssel ab. Schreibgeschützte Dateien werden unterstützt.",
       "RSYNC_SSH_HOST_KEY_UNTRUSTED": "Der Hostschlüssel des Ziels ist unbekannt oder wurde geändert. Prüfen Sie ihn unabhängig mit dem Serverbetreiber und hinterlegen Sie erst danach den freigegebenen known_hosts-Eintrag. Löschen Sie nicht einfach den alten Eintrag, um erneut zu verbinden.",
+      "RSYNC_BINARY_MISSING": "Im Backend-Container fehlt das Programm rsync. Verwenden Sie ein Image, das rsync und einen SSH-Client (openssh-client) enthält.",
+      "RSYNC_SSH_BINARY_MISSING": "Im Backend-Container fehlt das Programm ssh, das rsync für die Verbindung zum Ziel braucht. Verwenden Sie ein Image mit SSH-Client (openssh-client).",
+      "RSYNC_SSH_KEY_UNUSABLE": "ssh lehnt die konfigurierte Schlüsseldatei ab: Ihre Berechtigungen sind zu offen (600 verwenden) oder sie ist kein gültiger privater Schlüssel.",
+      "RSYNC_AUTH_FAILED": "Das Ziel hat die SSH-Anmeldung abgelehnt. Prüfen Sie den Benutzernamen und ob der öffentliche Teil des konfigurierten Schlüssels auf dem Ziel freigegeben ist.",
+      "RSYNC_CONNECTION_REFUSED": "Das Ziel hat die Verbindung abgelehnt: Auf diesem Host und Port nimmt nichts SSH-Verbindungen an. Prüfen Sie beides (eine Hetzner Storage Box verwendet Port 23).",
+      "RSYNC_CONNECTION_TIMEOUT": "Die Verbindung zum Ziel ist in eine Zeitüberschreitung gelaufen. Prüfen Sie Host, Port und eine dazwischenliegende Firewall.",
+      "RSYNC_HOST_UNREACHABLE": "Das Ziel ist vom Backend aus nicht erreichbar. Prüfen Sie Host, Port und das Netzwerk des Backends.",
+      "RSYNC_REMOTE_PATH_NOT_FOUND": "Der Zielpfad existiert auf dem Ziel nicht, sein übergeordnetes Verzeichnis ebenfalls nicht. rsync legt nur das letzte Verzeichnis des Pfads an; legen Sie das übergeordnete zuerst an.",
+      "RSYNC_REMOTE_PATH_DENIED": "Das Ziel verweigert dem SSH-Benutzer den Zugriff auf den Zielpfad. Prüfen Sie dessen Berechtigungen.",
       "S3_ENDPOINT_FORBIDDEN": "Der S3-Endpunkt zeigt auf eine Link-Local-, Cloud-Metadaten- oder reservierte Adresse. Solche Ziele können nie freigegeben werden.",
       "S3_ENDPOINT_UNRESOLVED": "Der Hostname des S3-Endpunkts konnte nicht aufgelöst werden.",
       "S3_ENDPOINT_INVALID": "Der S3-Endpunkt ist keine gültige URL.",

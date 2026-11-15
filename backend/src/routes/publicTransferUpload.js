@@ -19,9 +19,11 @@
  * Surface:
  *   GET  /:token   metadata (title, allowed types, size limit)
  *   POST /:token   multipart upload (field name: files)
+ *   POST /:token/chunked-upload/...   one large file in chunks (see below)
  */
 
 const express = require('express');
+const crypto = require('crypto');
 const fs = require('fs');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
@@ -44,6 +46,9 @@ const logger = require('../utils/logger');
 const { withPublicUpload } = require('../middleware/publicUploadStream');
 const uploadQuota = require('../services/publicUploadQuota');
 const { requireCapability } = require('../middleware/requireCapability');
+const chunkedUpload = require('../services/chunkedUploadService');
+const { deferredReply } = require('../utils/deferredReply');
+const { refundRateLimit } = require('../services/rateLimitService');
 
 const router = express.Router();
 
@@ -75,7 +80,7 @@ const SHORT_TOKEN_RE = /^[A-Za-z0-9]{10,16}$/;
 const LONG_TOKEN_RE = /^[a-f0-9]{64}$/;
 const TOKEN_RE = /^([A-Za-z0-9]{10,16}|[a-f0-9]{64})$/;
 
-async function loadUploadTransfer(req, res) {
+async function loadUploadTransfer(req, res, { requireOpen = true } = {}) {
   // Keyed like the limiters above: an IPv6 /64 counts as one client, so a
   // guesser rotating addresses inside one allocation does not reset the
   // count. The audit log keeps the full address (clientIpForAudit).
@@ -103,7 +108,9 @@ async function loadUploadTransfer(req, res) {
     res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
     return null;
   }
-  const gate = transferService.assertUploadable(transfer);
+  // Releasing one's own unfinished chunked upload needs the request, not an
+  // open one: a link that closed mid-file must still let go of it.
+  const gate = requireOpen ? transferService.assertUploadable(transfer) : { ok: true };
   if (!gate.ok) {
     res.status(gate.status).json({ error: 'This upload link is no longer available', code: gate.code });
     return null;
@@ -161,6 +168,54 @@ async function preUploadGuard(req, res, next) {
     logger.error('preUploadGuard error', { error: err.message });
     if (!res.headersSent) res.status(500).json({ error: 'Internal error' });
   }
+}
+
+/**
+ * Store staged files as the request's uploads: charged against the admission
+ * they arrived under, written to the storage backend, recorded as rows. Every
+ * temp copy is removed whatever happens. Shared by the multipart route and the
+ * chunked complete, so both accept a file in exactly the same way.
+ */
+async function storeRequestFiles(transfer, files, uploadReservation, ip) {
+  const storage = getStorage();
+  const saved = [];
+  // A file whose bytes or row fail to land is NOT a success. Without this the
+  // client sees "Uploaded 3 files" for a batch of 5 and has no reason to try
+  // again, while the admin's list quietly shows three.
+  const failed = [];
+  for (const file of files) {
+    // Opaque key — the client's extension is deliberately dropped so no stored
+    // object can end in .html/.svg/.js/.php on disk or in S3. The real name is
+    // kept on the row and is what the admin downloads it as.
+    const key = transferService.newUploadFileKey(transfer.id);
+    let charge;
+    let settled = false;
+    try {
+      charge = await uploadQuota.prepareObject(uploadReservation, key, file.size);
+      await storage.putFromFile(key, file.path, TRANSFER_OBJECT_OPTIONS);
+      settled = true;
+      await uploadQuota.commitObject(charge, 'transfer', conn => transferService.addUpload(transfer.id, {
+        originalFilename: file.originalname,
+        storedPath: key,
+        sizeBytes: file.size,
+        mimeType: file.mimetype,
+        ip,
+      }, conn));
+      saved.push({ filename: file.originalname, size_bytes: file.size });
+    } catch (err) {
+      if (charge) await uploadQuota.failedObject(charge, { storage, settled }).catch(cleanupError => {
+        logger.warn('Transfer object cleanup failed; quota remains charged', { error: cleanupError.message });
+      });
+      failed.push(file.originalname);
+      logger.error('transfer upload: failed to store file', {
+        transferId: transfer.id, filename: file.originalname, error: err.message,
+      });
+    } finally {
+      // Remove the temp copy regardless of outcome.
+      try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+    }
+  }
+  return { saved, failed };
 }
 
 function buildUploader(maxSizeBytes, policy, { storage, streamHandler, maxFiles }) {
@@ -238,45 +293,7 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
     }
     const transfer = current.transfer;
 
-    const storage = getStorage();
-    const ip = clientIpForAudit(req);
-    const saved = [];
-    // A file whose bytes or row fail to land is NOT a success. Without this the
-    // client sees "Uploaded 3 files" for a batch of 5 and has no reason to try
-    // again, while the admin's list quietly shows three.
-    const failed = [];
-    for (const file of req.files) {
-    // Opaque key — the client's extension is deliberately dropped so no stored
-    // object can end in .html/.svg/.js/.php on disk or in S3. The real name is
-    // kept on the row and is what the admin downloads it as.
-      const key = transferService.newUploadFileKey(transfer.id);
-      let charge;
-      let settled = false;
-      try {
-        charge = await uploadQuota.prepareObject(uploadReservation, key, file.size);
-        await storage.putFromFile(key, file.path, TRANSFER_OBJECT_OPTIONS);
-        settled = true;
-        await uploadQuota.commitObject(charge, 'transfer', conn => transferService.addUpload(transfer.id, {
-          originalFilename: file.originalname,
-          storedPath: key,
-          sizeBytes: file.size,
-          mimeType: file.mimetype,
-          ip,
-        }, conn));
-        saved.push({ filename: file.originalname, size_bytes: file.size });
-      } catch (err) {
-        if (charge) await uploadQuota.failedObject(charge, { storage, settled }).catch(cleanupError => {
-          logger.warn('Transfer object cleanup failed; quota remains charged', { error: cleanupError.message });
-        });
-        failed.push(file.originalname);
-        logger.error('transfer upload: failed to store file', {
-          transferId: transfer.id, filename: file.originalname, error: err.message,
-        });
-      } finally {
-      // Remove the temp copy regardless of outcome.
-        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
-      }
-    }
+    const { saved, failed } = await storeRequestFiles(transfer, req.files, uploadReservation, clientIpForAudit(req));
 
     if (!saved.length) {
       return res.status(500).json({ error: 'Could not store the uploaded files', code: 'STORE_FAILED' });
@@ -303,6 +320,177 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
       notes.length ? `Uploaded ${saved.length} file(s); ${notes.join('; ')}` : 'Files uploaded',
     );
   });
+}));
+
+// ============================================
+// CHUNKED UPLOAD
+// One file larger than a proxy lets through in one request (Cloudflare
+// Free/Pro: 100 MB per body) goes up in 10 MB chunks. The session holds one
+// public admission, charged to this request like a multipart upload of one
+// file, from init until the file is stored. Every call re-checks the link —
+// expiry, close, delete — exactly as the multipart route does, and the
+// upload is bound to the link it was started on: an upload id is a 404 from
+// any other request or link.
+// ============================================
+
+const chunkOwner = (req) => ({
+  transferId: req.transferRow.id,
+  uploadKey: crypto.createHash('sha256').update(String(req.params.token)).digest('hex'),
+});
+
+// The token check for a chunk route. A refusal leaves the chunk's body unread,
+// which would hang the next request on a keep-alive socket: retire it.
+function chunkGuard(options) {
+  return async (req, res, next) => {
+    try {
+      if (!req.readableEnded) res.set('Connection', 'close');
+      const transfer = await loadUploadTransfer(req, res, options);
+      if (!transfer) return;
+      res.removeHeader('Connection');
+      req.transferRow = transfer;
+      next();
+    } catch (err) {
+      logger.error('transfer chunk guard error', { error: err.message });
+      if (!res.headersSent) res.status(500).json({ error: 'Internal error' });
+    }
+  };
+}
+
+// A tagged status is the client's or the quota's answer, not a server fault.
+function chunkRefusal(req, res, error, fallback) {
+  if ((error.statusCode || error.status) && error.code) {
+    if (!req.readableEnded) res.set('Connection', 'close');
+    return res.status(error.statusCode || error.status).json({ error: error.message, code: error.code });
+  }
+  logger.error(`${fallback}:`, { error: error.message });
+  return res.status(500).json({ error: fallback });
+}
+
+router.post('/:token/chunked-upload/init', uploadLimiter, chunkGuard(), requireCapability('uploads.new'), handleAsync(async (req, res) => {
+  try {
+    const { filename, fileSize, totalChunks, mimeType } = req.body || {};
+    if (!filename || !fileSize) {
+      return res.status(400).json({ error: 'Missing required fields: filename, fileSize', code: 'BAD_REQUEST' });
+    }
+    const name = String(filename);
+    // What multer records for a multipart part: the browser's type, or
+    // octet-stream when it has none. Only the transfer policy reads it.
+    const mime = typeof mimeType === 'string' && mimeType.trim() ? mimeType.trim().slice(0, 255) : 'application/octet-stream';
+    const policy = await getTransferUploadPolicy();
+    if (!validateTransferFileType(name, mime, policy)) {
+      return res.status(400).json({ error: `Not an allowed file type: ${name}`, code: 'TYPE_REJECTED', rejected_files: [name] });
+    }
+    const result = await chunkedUpload.initializeUpload({
+      filename: name,
+      fileSize,
+      totalChunks,
+      mimeType: mime,
+      ...chunkOwner(req),
+      // Enforced again on the bytes received and merged.
+      maxFileSizeBytes: policy.maxSizeMb * 1024 * 1024,
+      // The same request, account and deployment allowances as the multipart
+      // route, with the declared size as the body.
+      admission: { clientKey: rateLimitKey(req) },
+      opaque: true,
+    });
+    return res.json(result);
+  } catch (error) {
+    return chunkRefusal(req, res, error, 'Failed to initialize upload');
+  }
+}));
+
+// Not capability-guarded: an upload admitted while healthy may finish.
+router.post('/:token/chunked-upload/:uploadId/chunk/:chunkIndex', chunkGuard(), handleAsync(async (req, res) => {
+  try {
+    const declaredBytes = Number(req.headers['content-length']);
+    const index = /^\d+$/.test(req.params.chunkIndex) ? Number(req.params.chunkIndex) : NaN;
+    const result = await chunkedUpload.uploadChunk(req.params.uploadId, index, req, {
+      declaredBytes: Number.isFinite(declaredBytes) ? declaredBytes : undefined,
+      owner: chunkOwner(req),
+    });
+    // One of many requests of a single upload, held to the session's
+    // admission: not charged to the address's API budget, or a large file
+    // runs into 429 halfway (as the gallery's guest chunks).
+    refundRateLimit(req);
+    return res.json(result);
+  } catch (error) {
+    return chunkRefusal(req, res, error, 'Failed to upload chunk');
+  }
+}));
+
+router.post('/:token/chunked-upload/:uploadId/complete', chunkGuard(), handleAsync(async (req, res) => {
+  const owner = chunkOwner(req);
+  const { uploadId } = req.params;
+  let merged;
+  const cancel = () => {
+    if (req.aborted || !res.writableEnded) chunkedUpload.abortUpload(uploadId, { owner })
+      .catch(err => logger.warn('Disconnected transfer chunk upload cleanup unavailable', { error: err.message }));
+  };
+  req.once('aborted', cancel);
+  res.once('close', cancel);
+  // Answered once the admission has settled, as the multipart route is.
+  const reply = deferredReply(res);
+  try {
+    merged = await chunkedUpload.completeUpload(uploadId, { owner });
+    const file = { originalname: merged.filename, path: merged.path, size: merged.size, mimetype: merged.mimeType };
+    const dropMerged = () => fs.promises.rm(merged.tempDir, { recursive: true, force: true }).catch(() => {});
+    // The rules as they are now, after the merge: settings may have changed
+    // since init, and the merge of a large file takes a while.
+    const policy = await getTransferUploadPolicy();
+    if (!validateTransferFileType(file.originalname, file.mimetype, policy)) {
+      await dropMerged();
+      return reply.status(400).json({
+        error: `Not an allowed file type: ${file.originalname}`, code: 'TYPE_REJECTED', rejected_files: [file.originalname],
+      });
+    }
+    if (file.size > policy.maxSizeMb * 1024 * 1024) {
+      await dropMerged();
+      return reply.status(413).json({ error: `Each file must be ${policy.maxSizeMb} MB or smaller`, code: 'FILE_TOO_LARGE' });
+    }
+    // Nothing becomes permanent on the strength of the check at the start of
+    // this request: re-read the row, as the multipart route does.
+    let current;
+    try {
+      current = await reloadUploadTransfer(req.params.token);
+    } catch (error) {
+      await dropMerged();
+      throw error;
+    }
+    if (!current.transfer) {
+      await dropMerged();
+      return reply.status(current.gate.status).json({ error: 'This upload link is no longer available', code: current.gate.code });
+    }
+    const transfer = current.transfer;
+    const { saved, failed } = await storeRequestFiles(transfer, [file], merged.uploadReservation, clientIpForAudit(req));
+    await dropMerged();
+    if (!saved.length) {
+      return reply.status(500).json({ error: 'Could not store the uploaded files', code: 'STORE_FAILED', failed_files: failed });
+    }
+    // Coalesced per request inside (one notice per cooldown), so a selection
+    // of several large files mails the admin no more often than the same
+    // selection sent as several multipart requests.
+    transferService.notifyFilesReceived(transfer.id, saved.length).catch(() => { /* logged inside */ });
+    return successResponse(reply, { uploaded: saved.length, files: saved, rejected_files: [], failed_files: [] }, 201, 'Files uploaded');
+  } catch (error) {
+    return chunkRefusal(req, reply, error, 'Failed to complete upload');
+  } finally {
+    req.removeListener('aborted', cancel);
+    res.removeListener('close', cancel);
+    if (merged?.uploadReservation) {
+      await chunkedUpload.finishUpload(uploadId, { owner })
+        .catch(err => logger.warn('Transfer chunk upload cleanup unavailable; admission retained', { error: err.message }));
+    }
+    reply.flush();
+  }
+}));
+
+// Releases the caller's own unfinished upload: its staging and its admission.
+// Works on a link that has closed meanwhile, so a client can always let go.
+router.delete('/:token/chunked-upload/:uploadId', chunkGuard({ requireOpen: false }), handleAsync(async (req, res) => {
+  const aborted = await chunkedUpload.abortUpload(req.params.uploadId, { owner: chunkOwner(req) });
+  if (!aborted) return res.status(404).json({ error: 'Upload not found or expired', code: 'NOT_FOUND' });
+  refundRateLimit(req);
+  return successResponse(res, { aborted: true }, 200, 'Upload aborted');
 }));
 
 module.exports = router;
