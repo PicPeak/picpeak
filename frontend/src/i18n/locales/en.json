@@ -6893,6 +6893,7 @@
         "subtitle": "Please review your restore configuration",
         "validation": {
           "passed": "Validation Passed",
+          "passedWithWarnings": "Checks passed with warnings — read them before you start the restore",
           "failed": "Validation Failed",
           "checking": "Validating restore configuration..."
         },
@@ -6914,6 +6915,45 @@
         "warning": {
           "title": "Important Notice",
           "message": "This restore operation will replace existing data. Make sure you have a current backup before proceeding. This action cannot be undone."
+        },
+        "notices": {
+          "warningsLabel": "Warnings",
+          "generic": {
+            "help": "Starting the restore requires overriding this warning."
+          },
+          "backup_age": {
+            "title": "The backup is {{days}} days old",
+            "help": "Everything created or changed on this install since then is lost. Expected when you deliberately go back to an older point."
+          },
+          "version_newer": {
+            "title": "Backup from a newer version (v{{backupVersion}}, this app runs v{{currentVersion}})",
+            "help": "This is a downgrade: this version does not know the database changes the newer one made, so parts of the app may fail. Update this install to v{{backupVersion}} or later first, then restore."
+          },
+          "version_other_line": {
+            "title": "Backup from the other release line (v{{backupVersion}}, this app runs v{{currentVersion}})",
+            "help": "Stable and beta number some database migrations differently, so the restored database may not line up with this version's migrations. Prefer a backup taken on the same line (stable or beta)."
+          },
+          "version_unknown": {
+            "title": "Backup version cannot be compared (backup v{{backupVersion}}, this app runs v{{currentVersion}})",
+            "help": "The backup's version is missing or not in the usual format, so it is unclear whether this version can read it."
+          },
+          "version_older": {
+            "title": "Backup from v{{backupVersion}}.",
+            "help": "After the restore the database is migrated to this app's version (v{{currentVersion}}). This is the normal case."
+          },
+          "existing_events": {
+            "title": "{{count}} existing events will be replaced",
+            "help": "A full or database restore replaces the content of this install with the backup's. Expected when you restore onto an install that is already in use."
+          },
+          "active_admins": {
+            "title": "This install has {{count}} active admin accounts",
+            "help": "A full or database restore also replaces the admin accounts: everyone is signed out, and you sign in again with an account from the backup. Expected for a full restore."
+          }
+        },
+        "acknowledge": {
+          "label": "I have read the warnings and want to restore anyway",
+          "help": "Without this tick the restore stops at its first check, before anything is changed.",
+          "forceDisabled": "Overriding warnings is turned off on this server (restore setting restore_allow_force), so this restore cannot be started."
         }
       },
       "progress": {
@@ -6930,6 +6970,8 @@
           "verifyIntegrity": "Verify document integrity now"
         },
         "failedSubtitle": "Restore failed — see error below. Destination has been rolled back to its pre-restore state.",
+        "blockedSubtitle": "Restore did not start — a pre-flight check stopped it. Nothing on this install was changed.",
+        "blockedTitle": "Restore stopped before any change",
         "idle": "No restore in progress.",
         "errorTitle": "Restore did not complete",
         "migrationsPendingSubtitle": "Data restored, but database migrations are still pending. The site stays in maintenance mode — see below.",

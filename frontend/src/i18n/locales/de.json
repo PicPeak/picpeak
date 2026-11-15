@@ -2005,6 +2005,7 @@
         "subtitle": "Bitte überprüfen Sie Ihre Wiederherstellungskonfiguration",
         "validation": {
           "passed": "Validierung bestanden",
+          "passedWithWarnings": "Prüfung mit Warnungen bestanden — lesen Sie diese, bevor Sie die Wiederherstellung starten",
           "failed": "Validierung fehlgeschlagen",
           "checking": "Validiere Wiederherstellungskonfiguration..."
         },
@@ -2026,6 +2027,45 @@
         "warning": {
           "title": "Wichtiger Hinweis",
           "message": "Diese Wiederherstellungsoperation ersetzt vorhandene Daten. Stellen Sie sicher, dass Sie ein aktuelles Backup haben, bevor Sie fortfahren. Diese Aktion kann nicht rückgängig gemacht werden."
+        },
+        "notices": {
+          "warningsLabel": "Warnungen",
+          "generic": {
+            "help": "Um die Wiederherstellung zu starten, muss diese Warnung übergangen werden."
+          },
+          "backup_age": {
+            "title": "Das Backup ist {{days}} Tage alt",
+            "help": "Alles, was seitdem auf dieser Installation erstellt oder geändert wurde, geht verloren. Erwartet, wenn Sie bewusst zu einem älteren Stand zurückkehren."
+          },
+          "version_newer": {
+            "title": "Backup aus einer neueren Version (v{{backupVersion}}, diese App läuft mit v{{currentVersion}})",
+            "help": "Das ist ein Downgrade: Diese Version kennt die Datenbankänderungen der neueren nicht, Teile der App können fehlschlagen. Aktualisieren Sie diese Installation zuerst auf v{{backupVersion}} oder neuer und stellen Sie dann wieder her."
+          },
+          "version_other_line": {
+            "title": "Backup aus der anderen Release-Linie (v{{backupVersion}}, diese App läuft mit v{{currentVersion}})",
+            "help": "Stable und Beta nummerieren einige Datenbank-Migrationen unterschiedlich, daher passt die wiederhergestellte Datenbank womöglich nicht genau zu den Migrationen dieser Version. Verwenden Sie besser ein Backup derselben Linie (Stable oder Beta)."
+          },
+          "version_unknown": {
+            "title": "Backup-Version nicht vergleichbar (Backup v{{backupVersion}}, diese App läuft mit v{{currentVersion}})",
+            "help": "Die Version des Backups fehlt oder hat nicht das übliche Format, daher ist unklar, ob diese Version es lesen kann."
+          },
+          "version_older": {
+            "title": "Backup aus v{{backupVersion}}.",
+            "help": "Nach der Wiederherstellung wird die Datenbank auf die Version dieser App (v{{currentVersion}}) migriert. Das ist der Normalfall."
+          },
+          "existing_events": {
+            "title": "{{count}} vorhandene Events werden ersetzt",
+            "help": "Eine vollständige oder Datenbank-Wiederherstellung ersetzt den Inhalt dieser Installation durch den des Backups. Erwartet, wenn Sie auf eine bereits genutzte Installation wiederherstellen."
+          },
+          "active_admins": {
+            "title": "Diese Installation hat {{count}} aktive Admin-Konten",
+            "help": "Eine vollständige oder Datenbank-Wiederherstellung ersetzt auch die Admin-Konten: Alle werden abgemeldet, und Sie melden sich mit einem Konto aus dem Backup wieder an. Erwartet bei einer vollständigen Wiederherstellung."
+          }
+        },
+        "acknowledge": {
+          "label": "Ich habe die Warnungen gelesen und möchte trotzdem wiederherstellen",
+          "help": "Ohne dieses Häkchen bricht die Wiederherstellung bei der ersten Prüfung ab, bevor etwas geändert wird.",
+          "forceDisabled": "Das Übergehen von Warnungen ist auf diesem Server deaktiviert (Wiederherstellungs-Einstellung restore_allow_force), daher kann diese Wiederherstellung nicht gestartet werden."
         }
       },
       "progress": {
@@ -2042,6 +2082,8 @@
           "verifyIntegrity": "Dokumentintegrität jetzt prüfen"
         },
         "failedSubtitle": "Wiederherstellung fehlgeschlagen — siehe Fehler unten. Das Ziel wurde auf den Stand vor der Wiederherstellung zurückgesetzt.",
+        "blockedSubtitle": "Wiederherstellung nicht gestartet — eine Vorabprüfung hat sie gestoppt. Auf dieser Installation wurde nichts geändert.",
+        "blockedTitle": "Wiederherstellung vor jeder Änderung gestoppt",
         "idle": "Derzeit läuft keine Wiederherstellung.",
         "errorTitle": "Wiederherstellung nicht abgeschlossen",
         "migrationsPendingSubtitle": "Daten wiederhergestellt, aber Datenbank-Migrationen stehen noch aus. Die Website bleibt im Wartungsmodus — siehe unten.",
