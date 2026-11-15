@@ -2183,6 +2183,7 @@ service.backupPathIncluded = backupPathIncluded;
 service.effectiveFlagValue = effectiveFlagValue;
 service.normalizeBoolean = normalizeBoolean;
 service.buildRsyncArgs = buildRsyncArgs;
+service.validateRsyncParam = validateRsyncParam;
 service.resolveScheduleCron = resolveScheduleCron;
 service.getNextScheduledRun = getNextScheduledRun;
 

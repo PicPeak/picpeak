@@ -513,9 +513,6 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
     }
 
     case 'rsync': {
-      // Test rsync connection using spawn with argument arrays to prevent command injection
-      const { spawn } = require('child_process');
-
       // The key file path from the form, or the saved one when the form
       // holds the mask or sends none. An explicit '' tests without a key, as
       // saving the emptied field would. A value that is not a path (a pasted
@@ -534,58 +531,49 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       }
       const sshKeyPath = keyCandidate || null;
 
+      // The remote path a backup would write to, validated as the run does.
+      let remotePath;
+      try {
+        remotePath = require('../services/backupService').validateRsyncParam(config.path, 'remote path');
+      } catch (pathError) {
+        res.json({ success: false, code: 'RSYNC_CONFIG_INVALID', message: pathError.message });
+        break;
+      }
+      if (!remotePath) {
+        res.json({ success: false, code: 'RSYNC_CONFIG_INVALID', message: 'Rsync test requires a remote path' });
+        break;
+      }
+
+      const rsyncConnection = require('../utils/rsyncConnection');
       let connection;
       try {
-        connection = await require('../utils/rsyncConnection').resolveRsyncConnection({
+        connection = await rsyncConnection.resolveRsyncConnection({
           host: config.host, user: config.user, sshKey: sshKeyPath, port: config.port
         });
       } catch (optionError) {
         res.json({ success: false, code: optionError.code, message: optionError.message });
         break;
       }
-      const sshArgs = [...connection.sshArgs, connection.target, 'echo', 'Connection successful'];
 
-      try {
-        await new Promise((resolve, reject) => {
-          const sshProcess = spawn('ssh', sshArgs, {
-            timeout: 15000,
-            stdio: ['ignore', 'pipe', 'pipe']
-          });
-
-          let stdout = '';
-          let stderr = '';
-
-          sshProcess.stdout.on('data', (data) => { stdout += data; });
-          sshProcess.stderr.on('data', (data) => { stderr += data; });
-
-          sshProcess.on('close', (code) => {
-            if (code === 0) {
-              resolve({ success: true, stdout });
-            } else {
-              reject(new Error(stderr || `SSH exited with code ${code}`));
-            }
-          });
-
-          sshProcess.on('error', (err) => {
-            reject(err);
-          });
-        });
-
-        res.json({ success: true, message: 'Rsync connection successful' });
-      } catch (error) {
-        logger.warn('Rsync connection test failed', {
-          destination: connection.host,
-          error: error.message
-        });
-        const hostKeyError = require('../utils/rsyncConnection').hostKeyFailure(error.message);
+      // rsync itself over the backup's -e transport, not `ssh … echo`:
+      // rsync-only hosts refuse arbitrary commands (Hetzner Storage Box).
+      const probe = await rsyncConnection.probeRsyncDestination(connection, remotePath);
+      if (probe.ok) {
         res.json({
-          success: false,
-          code: hostKeyError ? hostKeyError.code : undefined,
-          message: hostKeyError
-            ? hostKeyError.message
-            : 'Rsync connection failed. Check server logs for details.'
+          success: true,
+          message: probe.exists
+            ? 'Rsync connection successful'
+            : `Rsync connection successful. ${remotePath} does not exist yet; the first backup creates it.`
         });
+        break;
       }
+      const failure = rsyncConnection.rsyncProbeFailure(probe.outcome, connection, { remotePath, parent: probe.parent });
+      logger.warn('Rsync connection test failed', {
+        destination: connection.host,
+        code: failure.code,
+        error: failure.detail || failure.message
+      });
+      res.json({ success: false, code: failure.code, message: failure.message.replace(`${failure.code}: `, '') });
       break;
     }
 
