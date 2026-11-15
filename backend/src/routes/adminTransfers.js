@@ -216,6 +216,28 @@ async function storeExtraFiles(transferId, files) {
   return { failed };
 }
 
+/**
+ * The transfer after a write that has already stored its files or sent its
+ * mail. Best effort: a failed read must not answer 500 for a write that
+ * landed — the page would report it missing and a retry would store or send
+ * it twice. null when it cannot be read; the page refreshes on its own.
+ */
+async function refreshAfterWrite(id) {
+  try {
+    return await transferService.getTransfer(id);
+  } catch (err) {
+    logger.warn('adminTransfers: transfer not re-read after a write', { transferId: id, error: err.message });
+    return null;
+  }
+}
+
+/** A ready mail held back meanwhile (issue 2061), after files landed. Best effort for the same reason. */
+async function sendHeldAfterWrite(id) {
+  await transferService.sendHeldReadyEmails(id).catch((err) => {
+    logger.warn('adminTransfers: held ready mail not sent after a write', { transferId: id, error: err.message });
+  });
+}
+
 /** Parse a multipart field that carries a JSON array (photoIds, recipientEmails). */
 function parseJsonArrayField(value) {
   if (Array.isArray(value)) return value;
@@ -370,7 +392,7 @@ router.post('/',
       }
     }
 
-    const fresh = await transferService.getTransfer(transfer.id);
+    const fresh = (await refreshAfterWrite(transfer.id)) || transfer;
     const rejected = req.rejectedFiles || [];
     const notes = [];
     if (rejected.length) notes.push(`${rejected.length} file(s) were not an allowed type`);
@@ -526,8 +548,8 @@ router.post('/:id/upload-files',
     }
     await storeExtraFiles(id, req.files);
     // A ready mail held back while nothing was downloadable (issue 2061).
-    await transferService.sendHeldReadyEmails(id);
-    const transfer = await transferService.getTransfer(id);
+    await sendHeldAfterWrite(id);
+    const transfer = await refreshAfterWrite(id);
     return successResponse(
       res,
       { transfer, rejected_files: rejected },
@@ -680,8 +702,8 @@ router.post('/:id/chunked-upload/:uploadId/complete',
       }
       // Same as upload-files: a ready mail held back while nothing was
       // downloadable (issue 2061). A send still being filled is held there.
-      await transferService.sendHeldReadyEmails(existing.id);
-      const transfer = await transferService.getTransfer(existing.id);
+      await sendHeldAfterWrite(existing.id);
+      const transfer = await refreshAfterWrite(existing.id);
       return successResponse(reply, { transfer, rejected_files: [] }, 200, 'Files added');
     } catch (error) {
       return chunkRefusal(req, reply, error, 'Failed to complete upload');
@@ -804,7 +826,7 @@ router.post('/:id/resend',
       ? await transferService.sendTransferRequestEmails(id, emails)
       : await transferService.sendTransferEmails(id, emails);
     return successResponse(
-      res, { transfer: await transferService.getTransfer(id), sent: result.sent, held: !!result.held }, 200,
+      res, { transfer: await refreshAfterWrite(id), sent: result.sent, held: !!result.held }, 200,
       result.held ? 'Nothing is ready to download yet; the email goes out once a photo finishes processing' : 'Email sent',
     );
   }),

@@ -194,6 +194,33 @@ describe('admin deliverable upload in chunks', () => {
     expect((await db('transfer_uploads').where({ transfer_id: req.id }).first()).original_filename).toBe(name);
   });
 
+  it('answers success for a stored file when the transfer cannot be re-read', async () => {
+    // The page would otherwise report the file missing, and a re-upload
+    // would store it twice.
+    const transferService = require('../../src/services/transferService');
+    const real = transferService.getTransfer;
+    // The nth read is the one after the store (init and complete each read once before).
+    const failAfterStore = (nth) => {
+      let calls = 0;
+      jest.spyOn(transferService, 'getTransfer').mockImplementation(async (id) => {
+        calls += 1;
+        if (calls === nth) throw new Error('database gone');
+        return real(id);
+      });
+    };
+    const send = await createTransfer('send', ownerId);
+    failAfterStore(3);
+    const chunked = await adminUpload(ownerToken, send.id, Buffer.from('%PDF stored'), 'stored.pdf');
+    expect(chunked.status).toBe(200);
+    jest.restoreAllMocks();
+
+    failAfterStore(2);
+    const multipart = await request(admin).post(`/api/admin/transfers/${send.id}/upload-files`)
+      .set('Authorization', `Bearer ${ownerToken}`).attach('files', Buffer.from('%PDF small'), 'small.pdf');
+    expect(multipart.status).toBe(200);
+    expect(await db('transfer_extra_files').where({ transfer_id: send.id })).toHaveLength(2);
+  });
+
   it('answers 404 to another admin, another transfer and a public link', async () => {
     const send = await createTransfer('send', ownerId);
     const second = await createTransfer('send', ownerId);
