@@ -194,6 +194,8 @@ async function uploadRemaining(
       const res = await api.post(`/admin/transfers/${id}/upload-files`, form, {
         onUploadProgress: (e) => progress.report(e.total ? (sizeOf(batch) * e.loaded) / e.total : 0),
       });
+      // Accepted but not stored: not uploaded, whatever the 200 says.
+      failed.push(...(res.data.failed_files || []));
       last = res.data.transfer ?? last;
     } catch (error) {
       refused(batch, error);
@@ -251,7 +253,7 @@ export const transfersService = {
         if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
       },
     });
-    return res.data.transfer;
+    return { ...res.data.transfer, failed_files: res.data.failed_files || [] };
   },
   /**
    * A transfer whose files do not fit one request. It is created with the
@@ -288,7 +290,9 @@ export const transfersService = {
     progress.finish(sizeOf(first));
     const created: Transfer = res.data.transfer;
 
-    const { failed } = await uploadRemaining(created.id, rest, plan.chunked, progress);
+    const remaining = await uploadRemaining(created.id, rest, plan.chunked, progress);
+    // Files of the create request that did not land count as failed too.
+    const failed = [...(res.data.failed_files || []), ...remaining.failed];
     // The list the create kept (trimmed, at most 100) and the server would
     // mail: deliver validates each address and refuses more than 100, so the
     // raw list could fail it after every file had been uploaded.
@@ -335,7 +339,7 @@ export const transfersService = {
         if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
       },
     });
-    return res.data.transfer;
+    return { ...res.data.transfer, failed_files: res.data.failed_files || [] };
   },
   async removeExtraFile(id: number, extraId: number): Promise<Transfer> {
     const res = await api.delete(`/admin/transfers/${id}/extra-files/${extraId}`);

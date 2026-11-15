@@ -276,14 +276,17 @@ router.post('/',
       deliveryMethod: deferDelivery ? 'link' : deliveryMethod,
     }, req.admin);
 
-    await storeExtraFiles(transfer.id, req.files);
+    // Accepted but not stored (storage or database failure): reported, never
+    // counted as part of the transfer.
+    const { failed: failedToStore } = await storeExtraFiles(transfer.id, req.files);
 
     if (!deferDelivery && deliveryMethod === 'email' && recipientEmails.length) {
       await transferService.sendTransferEmails(transfer.id, recipientEmails);
     }
 
     const fresh = (await refreshAfterWrite(transfer.id)) || transfer;
-    return successResponse(res, { transfer: fresh }, 201, 'Transfer created');
+    return successResponse(res, { transfer: fresh, failed_files: failedToStore }, 201,
+      failedToStore.length ? `Transfer created — ${failedToStore.length} file(s) could not be stored` : 'Transfer created');
   })),
 );
 
@@ -389,9 +392,14 @@ router.post('/:id/upload-files',
     if (!req.files || !req.files.length) {
       return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });
     }
-    await storeExtraFiles(id, req.files);
+    const { failed } = await storeExtraFiles(id, req.files);
+    if (failed.length === req.files.length) {
+      // Nothing landed: not a success, whatever the re-read would say.
+      return res.status(500).json({ error: 'Could not store the uploaded files', code: 'STORE_FAILED', failed_files: failed });
+    }
     const transfer = await refreshAfterWrite(id);
-    return successResponse(res, { transfer }, 200, 'Files added');
+    return successResponse(res, { transfer, failed_files: failed }, 200,
+      failed.length ? `Files added — ${failed.length} could not be stored` : 'Files added');
   })),
 );
 

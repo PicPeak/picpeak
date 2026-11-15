@@ -183,6 +183,15 @@ describe('adding files to a transfer', () => {
     expect(result.failed_files).toEqual([]);
   });
 
+  it('does not count a batch file the server could not store as uploaded', async () => {
+    const base = post.getMockImplementation()!;
+    post.mockImplementation(async (url: string, body?: unknown) => (url.endsWith('/upload-files')
+      ? { data: { transfer, rejected_files: [], failed_files: ['b.pdf'] } }
+      : base(url, body)));
+    const result = await transfersService.uploadFiles(7, [bigFile('film.mp4', 150 * MB), smallFile('b.pdf')]);
+    expect(result.failed_files).toEqual(['b.pdf']);
+  });
+
   it('throws when no file landed', async () => {
     serve({ failChunk: 0 });
     await expect(transfersService.uploadFiles(7, [bigFile('film.mp4', 150 * MB)])).rejects.toMatchObject({
