@@ -99,4 +99,22 @@ describe('PhotoFilterBar feedback chips (#802)', () => {
     );
     expect(screen.queryByText('Feedback Filter')).toBeNull();
   });
+
+  it('keeps the desktop colour chips when no feedback filter is allowed', () => {
+    const { container } = render(
+      <PhotoFilterBar
+        {...baseProps}
+        feedbackEnabled
+        activeFilters={[]}
+        feedbackFilters={[]}
+        onFilterChange={vi.fn()}
+        colorLabelsEnabled
+        activeColorFilters={[]}
+        onColorFilterChange={vi.fn()}
+        colorLabelCounts={{ red: 2 }}
+      />
+    );
+    // The desktop chips carry `hidden lg:flex`; the mobile ones `lg:hidden`.
+    expect(container.querySelector('.lg\\:flex')).not.toBeNull();
+  });
 });

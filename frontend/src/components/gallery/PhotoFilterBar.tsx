@@ -221,7 +221,10 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
             (optional) categories existing, or category-less galleries show
             no feedback filter at all on desktop (#802 — the lg:hidden
             fallback block below only covers mobile/tablet). */}
-        {((categories && categories.length > 0) || feedbackFiltersShown) && (
+        {/* The desktop colour chips live in this row too: they keep it open
+            when no feedback filter is allowed (issue 2505). */}
+        {((categories && categories.length > 0) || feedbackFiltersShown
+          || (feedbackEnabled && colorLabelsEnabled && !!onColorFilterChange)) && (
           <div className="flex items-start lg:items-center justify-between flex-col lg:flex-row gap-3">
             {/* Categories: keep in a horizontal scroll container */}
             {categories && categories.length > 0 && (
