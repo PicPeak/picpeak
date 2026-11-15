@@ -169,6 +169,35 @@ describe('admin deliverable upload in chunks', () => {
     expect(await activeAdmissions(send.id)).toBe(0);
   });
 
+  it('merges under an opaque name, so a long valid name cannot fail the merge', async () => {
+    // 100 CJK characters are 300 UTF-8 bytes: over the 255-byte name limit of
+    // ext4 and most Linux filesystems, which only failed after the last chunk.
+    const chunkedUpload = require('../../src/services/chunkedUploadService');
+    const merged = [];
+    const real = chunkedUpload.completeUpload;
+    jest.spyOn(chunkedUpload, 'completeUpload').mockImplementation(async (...args) => {
+      const result = await real(...args);
+      merged.push(result.path);
+      return result;
+    });
+    const send = await createTransfer('send', ownerId);
+    const name = `${'婚'.repeat(100)}.pdf`;
+    expect(Buffer.byteLength(name)).toBeGreaterThan(255);
+    const res = await adminUpload(ownerToken, send.id, Buffer.from('%PDF long'), name);
+    expect(res.status).toBe(200);
+    expect(path.basename(merged[0])).toBe('merged.bin');
+    const [row] = await db('transfer_extra_files').where({ transfer_id: send.id });
+    expect(row.original_filename).toBe(name);
+
+    const req = await createTransfer('request', ownerId);
+    const bytes = Buffer.from('%PDF long');
+    const init = await pubInit(req.token, { filename: name, fileSize: bytes.length });
+    await pubChunk(req.token, init.body.uploadId, 0, bytes);
+    expect((await pubComplete(req.token, init.body.uploadId)).status).toBe(201);
+    expect(path.basename(merged[1])).toBe('merged.bin');
+    expect((await db('transfer_uploads').where({ transfer_id: req.id }).first()).original_filename).toBe(name);
+  });
+
   it('answers 404 to another admin, another transfer and a public link', async () => {
     const send = await createTransfer('send', ownerId);
     const second = await createTransfer('send', ownerId);

@@ -206,6 +206,11 @@ async function initializeUpload(options) {
     guestKey,
     uploadKey,
     opaque: Boolean(opaque),
+    // The merged file's name on disk. An opaque upload keeps the client's
+    // name as metadata only: a valid name can exceed the filesystem's
+    // 255-byte limit (100 CJK characters do) and would fail the merge after
+    // every chunk had arrived.
+    mergeName: opaque ? 'merged.bin' : safeFilename,
     expectedChunks,
     receivedChunks: new Set(),
     // Bytes per chunk index, so a re-sent chunk replaces rather than adds.
@@ -536,7 +541,7 @@ async function completeUpload(uploadId, { owner } = {}) {
     throw error;
   }
 
-  const mergedFilePath = path.join(tempDir, uploadMeta.filename);
+  const mergedFilePath = path.join(tempDir, uploadMeta.mergeName);
 
   try {
     // Merge chunks in order, each streamed onto the end of the merged file.
