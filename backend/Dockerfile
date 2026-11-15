@@ -82,8 +82,12 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 # exiftool extracts the embedded full-res JPEG preview from RAW/DNG uploads
 # (Apple ProRAW etc.) — sharp's libvips has no raw loader, so the pipeline
 # thumbnails/displays that preview while keeping the original for download.
+# rsync + openssh-client: the "Remote server (rsync)" backup destination and
+# its connection test spawn `rsync -e ssh` and `ssh`. Without them an rsync
+# backup fails with ENOENT, and operators had to build their own image, which
+# every update then replaced.
 RUN apk add --no-cache dumb-init postgresql-client ffmpeg su-exec \
-    fontconfig ttf-dejavu ttf-liberation poppler-utils exiftool && \
+    fontconfig ttf-dejavu ttf-liberation poppler-utils exiftool rsync openssh-client && \
     fc-cache -f
 
 # Create non-root user
