@@ -63,8 +63,14 @@ vi.mock('../GalleryLayout', () => ({
 }));
 vi.mock('../PhotoGridWithLayouts', () => ({ PhotoGridWithLayouts: () => null }));
 vi.mock('../PhotoFilterBar', () => ({
-  PhotoFilterBar: ({ activeFilters = [], onFilterChange }: { activeFilters?: string[]; onFilterChange?: (f: string) => void }) => (
-    <button type="button" data-testid="liked" aria-pressed={activeFilters.includes('liked')} onClick={() => onFilterChange?.('liked')}>liked</button>
+  PhotoFilterBar: ({ activeFilters = [], onFilterChange, activeColorFilters = [], onColorFilterChange }: {
+    activeFilters?: string[]; onFilterChange?: (f: string) => void;
+    activeColorFilters?: string[]; onColorFilterChange?: (c: string) => void;
+  }) => (
+    <>
+      <button type="button" data-testid="liked" aria-pressed={activeFilters.includes('liked')} onClick={() => onFilterChange?.('liked')}>liked</button>
+      <button type="button" data-testid="red" aria-pressed={activeColorFilters.includes('red')} onClick={() => onColorFilterChange?.('red')}>red</button>
+    </>
   ),
 }));
 
@@ -101,5 +107,22 @@ describe('feedback filters after a settings change', () => {
     settings.current = { feedback_enabled: true, allow_likes: false };
     await act(async () => { await client.invalidateQueries(); });
     await waitFor(() => expect(screen.getByTestId('liked')).toHaveAttribute('aria-pressed', 'false'));
+  });
+
+  it('drops an active colour filter once colour labels are switched off', async () => {
+    settings.current = { feedback_enabled: true, allow_color_labels: true };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <GalleryView slug="wedding" event={event} />
+      </QueryClientProvider>,
+    );
+    await act(async () => {});
+    fireEvent.click(await screen.findByTestId('red'));
+    await waitFor(() => expect(screen.getByTestId('red')).toHaveAttribute('aria-pressed', 'true'));
+
+    settings.current = { feedback_enabled: true, allow_color_labels: false };
+    await act(async () => { await client.invalidateQueries(); });
+    await waitFor(() => expect(screen.getByTestId('red')).toHaveAttribute('aria-pressed', 'false'));
   });
 });

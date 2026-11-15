@@ -410,6 +410,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       return kept.length === current.length ? current : kept;
     });
   }, [feedbackFiltersKey]);
+  // The same for colour labels: with them off, an active colour filter would
+  // keep narrowing the photos after its chips are gone.
+  const colorLabelsAllowed = feedbackEnabled && !!feedbackSettings?.allow_color_labels;
+  useEffect(() => {
+    if (!colorLabelsAllowed) setActiveColorFilters((current) => (current.length === 0 ? current : []));
+  }, [colorLabelsAllowed]);
 
   // In guest identity mode both the "Liked / Favorited / Rated /
   // Commented" filters AND the matching chip-count labels need to scope
