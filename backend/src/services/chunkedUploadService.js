@@ -10,6 +10,7 @@ const admitted = () => require('./adminChunkedAdmission');
 
 // Get storage path from environment or default
 const { getStoragePath } = require('../config/storage');
+const { mergedUploadName } = require('../utils/mergedUploadName');
 const getChunksPath = () => path.join(getStoragePath(), 'chunks');
 
 // In-memory store for active uploads (in production, consider Redis)
@@ -516,7 +517,7 @@ async function completeUpload(uploadId, { owner } = {}) {
     throw error;
   }
 
-  const mergedFilePath = path.join(tempDir, uploadMeta.filename);
+  const mergedFilePath = path.join(tempDir, mergedUploadName(uploadMeta.filename));
 
   try {
     // Merge chunks in order, each streamed onto the end of the merged file.
