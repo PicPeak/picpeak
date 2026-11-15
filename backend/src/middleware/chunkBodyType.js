@@ -10,8 +10,12 @@ const CHUNK_PATH = /^\/[^/]+\/chunked-upload\/[^/]+\/chunk\/[^/]+\/?$/;
 
 // adminPhotos is mounted twice: /api/admin/photos (server.js) and
 // /api/admin/events (routes/admin.js). The guard has to sit on both, and on
-// the gallery's guest chunk route (issue 2315).
-const CHUNK_ROUTE_PREFIXES = ['/api/admin/photos', '/api/admin/events', '/api/gallery'];
+// the gallery's guest chunk route (issue 2315), and on both PicTransfer chunk
+// routes: the admin deliverable upload and the public file-request upload.
+const CHUNK_ROUTE_PREFIXES = [
+  '/api/admin/photos', '/api/admin/events', '/api/gallery',
+  '/api/admin/transfers', '/api/public/transfer-upload',
+];
 
 function requireOctetStreamChunk(req, res, next) {
   if (req.method !== 'POST' || !CHUNK_PATH.test(req.path)) return next();

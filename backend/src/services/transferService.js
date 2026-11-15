@@ -54,6 +54,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // notifyFilesReceived — the upload route is unauthenticated, so this is what
 // stops a request link being turned into a mail cannon.
 const UPLOAD_NOTICE_COOLDOWN_MS = 15 * 60 * 1000;
+// How long a send's ready mail waits for files the page is still uploading
+// (transfers.delivery_held_until): as long as a chunked upload may live.
+const DELIVERY_HOLD_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Truncate to `max` UTF-16 units without splitting a surrogate pair.
@@ -1228,7 +1231,12 @@ async function addExtraFile(transferId, { originalFilename, storedPath, sizeByte
     sort_order: order,
     created_at: new Date(),
   }).returning('id');
-  await db('transfers').where({ id: transferId }).update({ updated_at: new Date() });
+  // The file is stored and recorded at this point. Failing it for a missed
+  // timestamp would report a landed file as lost, and a retry would store it
+  // twice.
+  await db('transfers').where({ id: transferId }).update({ updated_at: new Date() }).catch((err) => {
+    logger.warn('transferService: updated_at not bumped after adding a file', { transferId, error: err.message });
+  });
   return typeof id === 'object' && id !== null ? id.id : id;
 }
 
@@ -1298,6 +1306,14 @@ async function sendTransferEmails(transferId, emails) {
   const before = await db('transfer_recipients')
     .where({ transfer_id: transferId }).whereIn('email', clean)
     .select('id', 'email', 'last_sent_at');
+  // An explicit send ends a hold for files still arriving (the page calls
+  // this once they have, the admin's "Send again" any time). Only after the
+  // snapshot above: while the hold stands no automatic path claims a held
+  // row, so each one the snapshot shows held is claimed below by exactly one
+  // sender — this one or a photo finishing — and mailed once.
+  if (transfer.delivery_held_until != null) {
+    await db('transfers').where({ id: transferId }).update({ delivery_held_until: null });
+  }
   const fileCount = await countRecipientFiles(transferId);
 
   if (fileCount === 0) {
@@ -1347,6 +1363,38 @@ async function sendTransferEmails(transferId, emails) {
   return { sent, recipients: clean };
 }
 
+/**
+ * Record a send's recipients without mailing them yet: each row is held
+ * (last_sent_at NULL), as sendTransferEmails leaves a recipient while nothing
+ * is downloadable, and the transfer carries delivery_held_until so no
+ * automatic path (a photo finishing, files added) mails them meanwhile. Used
+ * on create when the admin's own files still follow in further requests or
+ * chunks. sendTransferEmails (the resend route) ends the hold and sends; a
+ * page that never gets there leaves the hold to lapse, after which the held
+ * recipients go out on the next automatic trigger. The detail panel shows
+ * them as held throughout, with "Send again".
+ */
+async function holdTransferRecipients(transferId, emails) {
+  const clean = [...new Set((emails || [])
+    .map((e) => String(e || '').trim())
+    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
+  // The hold goes on BEFORE the first held row exists: a photo of this send
+  // finishing in between would otherwise find a held recipient and no hold,
+  // and mail it ahead of the files (sendHeldReadyEmailsForPhotos).
+  if (clean.length) {
+    await db('transfers').where({ id: transferId }).update({ delivery_held_until: Date.now() + DELIVERY_HOLD_MS });
+  }
+  for (const email of clean) {
+    const existing = await db('transfer_recipients').where({ transfer_id: transferId, email }).first('id');
+    if (!existing) {
+      await db('transfer_recipients').insert({
+        transfer_id: transferId, email, created_at: new Date().toISOString(), last_sent_at: null,
+      });
+    }
+  }
+  return { held: clean.length, recipients: clean };
+}
+
 async function readyEmailVars(transfer, fileCount) {
   return {
     transfer_title: transfer.title || `Transfer #${transfer.id}`,
@@ -1382,6 +1430,8 @@ async function sendHeldReadyEmails(transferId) {
   // A link that was disabled or ran out meanwhile announces nothing; the admin
   // can still send again from the detail panel.
   if (!assertDownloadable(transfer).ok) return { sent: 0 };
+  // The page is still uploading this send's files; it sends the mail itself.
+  if (transfer.delivery_held_until != null && Number(transfer.delivery_held_until) > Date.now()) return { sent: 0 };
   const fileCount = await countRecipientFiles(transferId);
   if (fileCount === 0) return { sent: 0 };
   const held = await db('transfer_recipients')
@@ -1700,6 +1750,7 @@ module.exports = {
   enableUploadCode,
   disableUploadCode,
   sendTransferEmails,
+  holdTransferRecipients,
   sendHeldReadyEmails,
   sendHeldReadyEmailsForPhotos,
   sendTransferRequestEmails,

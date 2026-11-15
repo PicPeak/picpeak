@@ -1283,6 +1283,8 @@
     },
     "emptyReadOnly": "Noch nichts vorhanden.",
     "someDropped": "{{count}} angehängte Datei(en) wurden nicht übernommen – eine Dateianfrage sammelt nur Dateien: {{names}}",
+    "someFailed": "{{count}} Datei(en) konnten nicht hochgeladen werden und fehlen im Transfer: {{names}}",
+    "deliveryHeld": "Die E-Mail an die Empfänger wurde nicht gesendet. Fügen Sie die fehlenden Dateien hinzu und nutzen Sie dann „Erneut senden“.",
     "deleteRequestAction": "Anfrage löschen",
     "deleteAction": "Transfer löschen",
     "loadFailed": "Die Transfers konnten nicht geladen werden",

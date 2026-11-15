@@ -1283,6 +1283,8 @@
     },
     "emptyReadOnly": "Nothing here yet.",
     "someDropped": "{{count}} attached file(s) were not kept — a file request only collects files: {{names}}",
+    "someFailed": "{{count}} file(s) could not be uploaded and are not in the transfer: {{names}}",
+    "deliveryHeld": "The email to the recipients was not sent. Add the missing files, then use \"Send again\".",
     "deleteRequestAction": "Delete request",
     "deleteAction": "Delete transfer",
     "loadFailed": "Could not load the transfers",

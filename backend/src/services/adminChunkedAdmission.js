@@ -99,7 +99,7 @@ async function upload(meta, index, source, declaredBytes, chunkSize) {
   const expected = index < meta.expectedChunks - 1 ? chunkSize : meta.fileSize - index * chunkSize;
   if (Number.isFinite(declaredBytes) && declaredBytes !== expected) throw error(`Chunk ${index} must be ${expected} bytes`, 400, 'INVALID_CHUNK');
   if (Buffer.isBuffer(source) && source.length !== expected) throw error(`Chunk ${index} must be ${expected} bytes`, 400, 'INVALID_CHUNK');
-  const video = meta.mimeType.startsWith('video/');
+  const video = !meta.opaque && String(meta.mimeType || '').startsWith('video/');
   if (video && !meta.videoValidated && index !== 0) throw error('Upload video chunk 0 first', 409);
   return exclusive(meta, async signal => {
     await quota.recheckStaging(meta.admission);
@@ -142,7 +142,7 @@ async function complete(meta) {
   return exclusive(meta, async signal => {
     meta.status = 'merging';
     const tempDir = path.join(meta.admission.dir, 'merged');
-    const mergedPath = path.join(tempDir, meta.filename);
+    const mergedPath = path.join(tempDir, meta.mergeName || meta.filename);
     try {
       await quota.recheckStaging(meta.admission);
       if (signal.aborted) throw cancelled();
@@ -160,7 +160,7 @@ async function complete(meta) {
       meta.processing = deferred();
       meta.status = 'processing';
       return { path: mergedPath, filename: meta.filename, size: stats.size, mimeType: meta.mimeType,
-        eventId: meta.eventId, tempDir, uploadReservation: meta.admission };
+        eventId: meta.eventId, transferId: meta.transferId, tempDir, uploadReservation: meta.admission };
     } catch (err) {
       meta.status = 'failed';
       throw err;
