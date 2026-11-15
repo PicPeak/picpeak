@@ -620,7 +620,9 @@ describe('Enhanced Backup Service Tests', () => {
         }
       });
       spawnAsync.mockImplementation(async () => {
-        require('fs').unlinkSync('/storage/events/active/event1/gone.jpg');
+        // Called again for the manifest upload, by then the file is gone.
+        const gone = '/storage/events/active/event1/gone.jpg';
+        if (require('fs').existsSync(gone)) require('fs').unlinkSync(gone);
         return { stdout: 'Number of files transferred: 2\nTotal file size: 8 bytes' };
       });
 
