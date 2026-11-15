@@ -5,7 +5,7 @@
  * stay narrowed with no control left to clear it.
  */
 import React from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -81,19 +81,22 @@ const event = { id: 1, event_name: 'Hoa Wedding', event_type: 'wedding', event_d
 
 afterEach(cleanup);
 
+beforeEach(() => {
+  photos = {
+    data: {
+    event,
+    categories: [],
+    photos: [7, 8].map((id) => ({ id, filename: `${id}.jpg`, url: `/${id}.jpg`, thumbnail_url: `/${id}-t.jpg`, type: 'photo', size: 1, uploaded_at: '2026-09-19T10:00:00Z' })),
+    },
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  };
+});
+
 describe('feedback filters after a settings change', () => {
   it('drops an active filter whose feedback type was switched off', async () => {
     settings.current = { feedback_enabled: true, allow_likes: true };
-    photos = {
-      data: {
-        event,
-        categories: [],
-        photos: [7, 8].map((id) => ({ id, filename: `${id}.jpg`, url: `/${id}.jpg`, thumbnail_url: `/${id}-t.jpg`, type: 'photo', size: 1, uploaded_at: '2026-09-19T10:00:00Z' })),
-      },
-      isLoading: false,
-      error: null,
-      refetch: vi.fn(),
-    };
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
