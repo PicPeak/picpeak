@@ -122,6 +122,12 @@ interface PhotoGridWithLayoutsProps {
   afterGrid?: React.ReactNode;
   /** Above the photos of a full-page layout (selfie search, issue 2355). */
   beforeGrid?: React.ReactNode | ((shownCount: number) => React.ReactNode);
+  /**
+   * Below the hero header and the welcome message, above the photos of the
+   * other layouts: the folder navigation (issue 2504), which would otherwise
+   * sit above the hero.
+   */
+  afterHero?: React.ReactNode;
   onLightboxPhotoChange?: LightboxPhotoChangeHandler;
   /**
    * The container's event-wide id lookup, so the download limit prices the
@@ -149,6 +155,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   photosForIds,
   afterGrid,
   beforeGrid,
+  afterHero,
   slug,
   categoryId,
   heroPhotoOverride,
@@ -445,10 +452,15 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     // Suppressed (#1160): a folder-only root has folder tiles above proving the
     // gallery isn't empty, so the message would contradict them.
     if (!suppressEmptyState) {
+      // The folder navigation stays (issue 2504): a search that matches no
+      // photo here must not take away the way into the other folders.
       return (
-        <div className="text-center py-12">
-          <GalleryEmptyMessage filtered={emptyIsFiltered} />
-        </div>
+        <>
+          {afterHero}
+          <div className="text-center py-12">
+            <GalleryEmptyMessage filtered={emptyIsFiltered} />
+          </div>
+        </>
       );
     }
   }
@@ -594,6 +606,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           <p className="text-sm text-muted-theme whitespace-pre-line">{welcomeMessage}</p>
         </div>
       )}
+
+      {!isFullPageLayout && afterHero}
 
       {/* Render the selected layout, keyed by `layoutKey` (see above). */}
       <LayoutComponent key={layoutKey} {...layoutProps} />

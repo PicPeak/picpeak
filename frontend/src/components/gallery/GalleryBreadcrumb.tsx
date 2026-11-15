@@ -21,9 +21,21 @@ interface GalleryBreadcrumbProps {
   className?: string;
 }
 
+// The breadcrumb renders inside the grid below the hero (issue 2504), which is
+// keyed by the open folder, so stepping up with the Back button remounts it.
+// A keyboard press is kept here so the new Back button takes the focus again
+// and repeated presses keep walking up, as they did before the move.
+let pendingBackFocus = false;
+
 export const GalleryBreadcrumb: React.FC<GalleryBreadcrumbProps> = ({ trail, onNavigate, className = '' }) => {
   const { t } = useTranslation();
   const listRef = useRef<HTMLOListElement | null>(null);
+  const backRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (pendingBackFocus) backRef.current?.focus();
+    pendingBackFocus = false;
+  }, [trail]);
 
   // Keep the current folder in sight: on a narrow screen a deep trail
   // overflows to the right, which is exactly where the open folder sits.
@@ -40,7 +52,11 @@ export const GalleryBreadcrumb: React.FC<GalleryBreadcrumbProps> = ({ trail, onN
       {trail.length > 0 && (
         <button
           type="button"
-          onClick={() => onNavigate(parent ? folderKey(parent) : null)}
+          ref={backRef}
+          onClick={(e) => {
+            if (document.activeElement === e.currentTarget) pendingBackFocus = true;
+            onNavigate(parent ? folderKey(parent) : null);
+          }}
           aria-label={t('gallery.folderUp', 'Back to {{name}}', { name: parent ? parent.name : rootLabel })}
           className="sm:hidden shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg border border-border-token bg-surface focus:outline-none focus:ring-2 focus:ring-accent"
           style={{ color: 'var(--color-text)' }}

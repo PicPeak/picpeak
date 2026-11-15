@@ -59,4 +59,13 @@ describe('PhotoGridWithLayouts empty state — filename list', () => {
     renderGrid({ emptyIsFiltered: true });
     expect(screen.getByText('No photos match your search or filters.')).toBeInTheDocument();
   });
+
+  // Issue 2504: the folder navigation renders below the hero as afterHero; a
+  // search that leaves no photo must not take it away with the grid.
+  it('keeps the folder navigation above the empty message', () => {
+    renderGrid({ emptyIsFiltered: true, afterHero: <nav aria-label="folders">Ceremony</nav> });
+    const nav = screen.getByRole('navigation', { name: 'folders' });
+    const message = screen.getByText('No photos match your search or filters.');
+    expect(nav.compareDocumentPosition(message) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

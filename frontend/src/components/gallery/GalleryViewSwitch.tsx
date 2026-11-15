@@ -3,7 +3,7 @@
  * has folders: "All photos" turns containment off and lists everything in one
  * grid, which is the view issue 1786 asks for next to the folder navigation.
  */
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Folder, LayoutGrid } from 'lucide-react';
 
@@ -15,8 +15,20 @@ interface GalleryViewSwitchProps {
   className?: string;
 }
 
+// A switch press by keyboard remounts the switch with the grid below the
+// hero (issue 2504: it renders inside the grid, which is keyed by the view).
+// The pressed view is kept here so the new switch takes the focus back
+// instead of leaving it on <body>; a switch that stays mounted consumes it too.
+let pendingFocus: GalleryViewMode | null = null;
+
 export const GalleryViewSwitch: React.FC<GalleryViewSwitchProps> = ({ view, onChange, className = '' }) => {
   const { t } = useTranslation();
+  const buttons = useRef<Partial<Record<GalleryViewMode, HTMLButtonElement | null>>>({});
+
+  useEffect(() => {
+    if (pendingFocus === view) buttons.current[view]?.focus();
+    pendingFocus = null;
+  }, [view]);
 
   const options: Array<{ value: GalleryViewMode; label: string; Icon: typeof Folder }> = [
     { value: 'folders', label: t('gallery.folders', 'Folders'), Icon: Folder },
@@ -36,8 +48,13 @@ export const GalleryViewSwitch: React.FC<GalleryViewSwitchProps> = ({ view, onCh
           <button
             key={value}
             type="button"
+            ref={(el) => { buttons.current[value] = el; }}
             aria-pressed={active}
-            onClick={() => { if (!active) onChange(value); }}
+            onClick={(e) => {
+              if (active) return;
+              if (document.activeElement === e.currentTarget) pendingFocus = value;
+              onChange(value);
+            }}
             className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors focus:outline-none focus:ring-2 focus:ring-accent ${
               active ? 'bg-surface shadow-sm font-medium' : 'text-muted-theme hover:opacity-80'
             }`}
