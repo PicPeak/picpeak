@@ -1357,6 +1357,8 @@
       "coverage": {
         "included": "Enthalten",
         "excluded": "Ausgeschlossen",
+        "caption": "Inhalt des letzten erfolgreichen Backups",
+        "unknown": "Unbekannt: vor dieser Erfassung aufgezeichnet",
         "title": "Backup-Abdeckung"
       },
       "storageDestination": "Speicherziel",
