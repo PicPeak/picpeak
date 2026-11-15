@@ -387,11 +387,28 @@ test('a chunked upload with a file name above 255 bytes merges and keeps the nam
   const res = await completeChunk(init.body.uploadId);
   spy.mockRestore();
   expect(res.status).toBe(200); expect(res.body.uploaded).toBe(1);
-  expect(path.basename(merged.path)).toBe('merged.jpg');
+  expect(path.basename(merged.path)).toMatch(/^merged-[0-9a-f]{24}\.jpg$/);
   expect(merged.filename).toBe(name);
   await waitSettled();
   const photo = await db('photos').where({ id: res.body.photos[0].id }).first();
   expect(photo.original_filename).toBe(name);
+});
+// Without an output name the thumbnail is named after the merged file, so two
+// merges must not share a name.
+test('two chunked images get their own thumbnails', async () => {
+  const thumbs = [];
+  for (const [name, colour] of [['first.jpg', 'white'], ['second.jpg', 'black']]) {
+    const bytes = await require('sharp')({ create: { width: 16, height: 16, channels: 3, background: colour } }).jpeg().toBuffer();
+    const init = await initChunk(bytes.length, name);
+    expect(init.status).toBe(200);
+    expect((await sendChunk(init.body.uploadId, bytes)).status).toBe(200);
+    const res = await completeChunk(init.body.uploadId);
+    expect(res.status).toBe(200);
+    await waitSettled();
+    thumbs.push((await db('photos').where({ id: res.body.photos[0].id }).first()).thumbnail_path);
+  }
+  expect(thumbs[0]).toBeTruthy();
+  expect(thumbs[0]).not.toBe(thumbs[1]);
 });
 test('chunk init keeps image and video ceilings distinct and shares admission with multipart', async () => {
   await setting('general_max_file_size_mb', 1); settings.clearMaxFileSizeCache();
