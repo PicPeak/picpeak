@@ -246,6 +246,8 @@ it('the actual rsync invocation transfers the selected staged hybrid estate, not
     .mockResolvedValue({ rsyncShell: 'ssh', rsyncTarget: 'backup.example.com' });
   const spawn = jest.spyOn(require('../../src/utils/safeExec'), 'spawnAsync').mockImplementation(async (command, args) => {
     expect(command).toBe('rsync');
+    // The second call copies the run's manifest (rsyncManifestOffsite).
+    if (spawn.mock.calls.length > 1) return { stdout: '' };
     const source = args[args.length - 2];
     expect(source).not.toBe(`${process.env.STORAGE_PATH}/`);
     expect(await fs.readFile(path.join(source, original))).toEqual(objects.get(original).bytes);
@@ -256,7 +258,7 @@ it('the actual rsync invocation transfers the selected staged hybrid estate, not
   });
   try {
     await backup.runBackup(true);
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
     expect((await db('backup_runs').orderBy('id', 'desc').first()).status).toBe('completed');
   } finally { spawn.mockRestore(); network.mockRestore(); }
 });
@@ -547,6 +549,8 @@ it('local storage with an rsync destination reads the storage root in place and 
   const network = jest.spyOn(require('../../src/utils/rsyncConnection'), 'resolveRsyncConnection')
     .mockResolvedValue({ rsyncShell: 'ssh', rsyncTarget: 'backup.example.com' });
   const spawn = jest.spyOn(require('../../src/utils/safeExec'), 'spawnAsync').mockImplementation(async (command, args) => {
+    // The second call copies the run's manifest (rsyncManifestOffsite).
+    if (spawn.mock.calls.length > 1) return { stdout: '' };
     const [root, stage] = args.slice(-3);
     expect(root).toBe(`${process.env.STORAGE_PATH}/`);
     const dump = await backup.getDatabaseBackupInfo();
@@ -556,7 +560,7 @@ it('local storage with an rsync destination reads the storage root in place and 
   });
   try {
     await backup.runBackup(true);
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
     expect(materialize).not.toHaveBeenCalled();
     expect((await db('backup_runs').orderBy('id', 'desc').first()).status).toBe('completed');
     expect((await fs.stat(source)).mtime).toEqual(old);
