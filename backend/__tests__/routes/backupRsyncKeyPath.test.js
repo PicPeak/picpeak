@@ -289,7 +289,8 @@ describe('rsync SSH key is a key file path', () => {
           expect(spawn).toHaveBeenCalledTimes(1);
           const [cmd, args, options] = spawn.mock.calls[0];
           expect(cmd).toBe('rsync');
-          expect(options).toMatchObject({ shell: false, timeout: 15000 });
+          expect(options).toMatchObject({ shell: false });
+          expect(require('../../src/utils/rsyncConnection').RSYNC_PROBE_TIMEOUT_MS).toBe(15000);
           expect(args).toEqual(['--list-only', '-e', expect.any(String), 'backup@8.8.8.8:/srv/backups']);
           const shell = shellOf(args);
           expect(shell.startsWith('\'ssh\' \'-F\' \'/dev/null\'')).toBe(true);
@@ -327,6 +328,39 @@ describe('rsync SSH key is a key file path', () => {
           expect(res.body.message).toContain('the first backup creates it');
           expect(spawn.mock.calls.map(([, args]) => args[args.length - 1])).toEqual(['backup@8.8.8.8:/srv/backups', 'backup@8.8.8.8:/srv']);
         } finally { spawn.mockRestore(); }
+      });
+
+      it('recognizes openrsync\'s missing-path wording for the parent fallback', async () => {
+        const spawn = mockSpawn((cmd, args) => (args[args.length - 1].endsWith(':/srv/backups')
+          ? { code: 23, stderr: 'rsync(25410): error: /srv/backups: (l)stat: No such file or directory\nrsync(25409): warning: receiver has empty file list: exiting\n' }
+          : { code: 0 }));
+        try {
+          const res = await testRsync({ ssh_key: '' });
+          expect(res.body.success).toBe(true);
+          expect(res.body.message).toContain('the first backup creates it');
+          expect(spawn).toHaveBeenCalledTimes(2);
+        } finally { spawn.mockRestore(); }
+      });
+
+      it('reports a timeout when rsync is stopped by the probe timer and exits 20, as real rsync does', async () => {
+        const rsyncConnection = require('../../src/utils/rsyncConnection');
+        const saved = rsyncConnection.RSYNC_PROBE_TIMEOUT_MS;
+        rsyncConnection.RSYNC_PROBE_TIMEOUT_MS = 20;
+        // Hangs until killed, then exits like rsync after trapping SIGTERM.
+        const spawn = jest.spyOn(require('child_process'), 'spawn').mockImplementation(() => {
+          const proc = new EventEmitter();
+          proc.stdout = new EventEmitter(); proc.stderr = new EventEmitter();
+          proc.kill = jest.fn(() => setImmediate(() => {
+            proc.stderr.emit('data', 'rsync error: received SIGINT, SIGTERM, or SIGHUP (code 20) at rsync.c(874) [Receiver=3.5.2]\n');
+            proc.emit('close', 20, null);
+          }));
+          return proc;
+        });
+        try {
+          const res = await testRsync({ ssh_key: '' });
+          expect(res.body).toMatchObject({ success: false, code: 'RSYNC_CONNECTION_TIMEOUT' });
+          expect(spawn.mock.results[0].value.kill).toHaveBeenCalledWith('SIGTERM');
+        } finally { rsyncConnection.RSYNC_PROBE_TIMEOUT_MS = saved; spawn.mockRestore(); }
       });
 
       it('fails when the parent is missing too', async () => {
@@ -371,7 +405,6 @@ describe('rsync SSH key is a key file path', () => {
         ['backup@8.8.8.8: Permission denied (publickey,password).\r\nrsync: connection unexpectedly closed (0 bytes received so far) [Receiver]\n', 'RSYNC_AUTH_FAILED', undefined],
         ['ssh: connect to host 8.8.8.8 port 22: Connection refused\r\n', 'RSYNC_CONNECTION_REFUSED', undefined],
         ['ssh: connect to host 8.8.8.8 port 22: Connection timed out\r\n', 'RSYNC_CONNECTION_TIMEOUT', undefined],
-        ['', 'RSYNC_CONNECTION_TIMEOUT', 'SIGTERM'],
         ['ssh: connect to host 8.8.8.8 port 22: No route to host\r\n', 'RSYNC_HOST_UNREACHABLE', undefined],
         ['rsync: [sender] link_stat "/srv/backups" failed: Permission denied (13)\n', 'RSYNC_REMOTE_PATH_DENIED', undefined],
       ])('maps %j to %s', async (stderr, code, signal) => {
