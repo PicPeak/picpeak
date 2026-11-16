@@ -8,7 +8,7 @@
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const stable = vi.hoisted(() => ({
@@ -71,7 +71,7 @@ vi.mock('../../../services/gallery.service', () => ({
 vi.mock('../../../services/feedback.service', () => ({
   feedbackService: {
     getGalleryFeedbackSettings: vi.fn().mockResolvedValue({
-      feedback_enabled: true, allow_likes: true, identity_mode: 'simple',
+      feedback_enabled: true, allow_likes: true, allow_ratings: true, identity_mode: 'simple',
     }),
     getMyFeedback: vi.fn().mockResolvedValue([]),
   },
@@ -83,12 +83,13 @@ vi.mock('../PhotoGridWithLayouts', () => ({
     beforeGrid?: React.ReactNode | ((shown: Array<{ id: number }>) => React.ReactNode);
     selectedPhotos: Set<number>;
     isSelectionMode: boolean;
+    openPhotoId?: number | null;
   }) => {
     const { photos: shown, beforeGrid } = props;
     stable.grid = props;
     const visible = stable.tab ? shown.filter((p) => p.category_name === stable.tab) : shown;
     return (
-      <div data-testid="photo-grid" data-ids={shown.map((p) => p.id).join(',')}>
+      <div data-testid="photo-grid" data-ids={shown.map((p) => p.id).join(',')} data-open={props.openPhotoId ?? ''}>
         <div data-testid="before-grid">{typeof beforeGrid === 'function' ? beforeGrid(visible) : beforeGrid}</div>
       </div>
     );
@@ -104,6 +105,8 @@ const photo = (id: number, filename: string, personIds: number[], likes = 0) => 
   // These layouts' Liked filter keeps the viewer's own likes (is_liked).
   uploaded_at: `2026-09-19T1${id}:00:00Z`, like_count: likes, is_liked: likes > 0, person_ids: personIds,
   category_name: id <= 2 ? 'Ceremony' : 'Party',
+  // The viewer's own rating: only photo 1 is rated, five stars.
+  my_rating: id === 1 ? 5 : null,
 });
 
 function show(layout: string, { peopleEnabled = true, filterBar = true } = {}) {
@@ -230,5 +233,24 @@ describe('search by category name', () => {
     show('gallery-premium');
     fireEvent.change(row().getByRole('textbox', { name: 'gallery.searchPhotos' }), { target: { value: 'ceremony' } });
     expect(shownIds()).toBe('1');
+  });
+});
+
+describe('photo links and the rating filter', () => {
+  it('clears a minimum rating that hides the linked photo', async () => {
+    show('gallery-premium');
+    fireEvent.click(await row().findByRole('button', { name: 'gallery.filters' }));
+    const chips = await screen.findAllByRole('button', { name: 'gallery.filterByMinRating' });
+    fireEvent.click(chips[chips.length - 1]);
+    await waitFor(() => expect(shownIds()).toBe('1'));
+
+    // Forward to a photo opened before the filter.
+    act(() => {
+      window.history.pushState({}, '', '?photo=2');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await waitFor(() => expect(screen.getByTestId('photo-grid')).toHaveAttribute('data-open', '2'));
+    expect(shownIds()).toContain('2');
+    window.history.replaceState({}, '', '/');
   });
 });

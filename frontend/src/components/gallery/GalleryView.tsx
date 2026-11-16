@@ -1075,6 +1075,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       setSearchTerm('');
       setActiveFilters([]);
       setActiveColorFilters([]);
+      setMinRating(null);
       setMediaFilter('all');
       setSelectedPersonIds([]);
       setPeopleMatchAny(false);
