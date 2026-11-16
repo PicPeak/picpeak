@@ -340,8 +340,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // The photos the grid shows, in its order: the category scenes applied.
   // The lightbox steps through these, in the order the scenes show them.
   const visiblePhotos = useMemo(() => scenes.flatMap((scene) => scene.photos), [scenes]);
-  // The row above the scenes counts what they show (issue 2355).
-  const toolbar = typeof beforeGrid === 'function' ? beforeGrid(visiblePhotos.length) : beforeGrid;
+  // The row above the scenes acts on what they show (issues 2355, 2543).
+  const toolbar = typeof beforeGrid === 'function' ? beforeGrid(visiblePhotos) : beforeGrid;
 
   // In a large gallery a grid mounts only the rows near the viewport (issue
   // 2193). A small scene stays whole, for the reason a small Timeline group
@@ -488,8 +488,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
   // #1160: a folder-only root has no photos to show here, but the folder tiles
   // above prove the gallery isn't empty — render the shell (hero, logout,
-  // controls) without the contradictory message.
-  if (photos.length === 0 && !suppressEmptyState) {
+  // controls) without the contradictory message. A search or filter that
+  // left nothing keeps the shell too (issue 2543), so the toolbox that set it
+  // stays mounted, with the message in place of the scenes.
+  if (photos.length === 0 && !suppressEmptyState && !emptyIsFiltered) {
     return (
       <div className="text-center py-12">
         {/* A filter that left nothing keeps its own controls, so it can be
@@ -745,6 +747,13 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
       {/* Below the hero, so the fixed nav keeps the hero behind it (issue 2355). */}
       {toolbar && <div className="story-toolbar">{toolbar}</div>}
+      {photos.length === 0 && emptyIsFiltered && (
+        <div className="text-center py-24 px-4">
+          {likedOnly
+            ? <LikedOnlyEmptyMessage onShowAll={onToggleLikedOnly} />
+            : <GalleryEmptyMessage filtered />}
+        </div>
+      )}
 
       {/* Main Content - Scenes */}
       <main className="pb-32 space-y-0">
@@ -846,7 +855,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           comments, reactions and colour labels — the same way the Premium
           layout routes feedback through its own lightbox instead of a
           per-card affordance. */}
-      {lightboxIndex !== null && (
+      {/* Not over an emptied list: the container closes it a render later. */}
+      {lightboxIndex !== null && visiblePhotos.length > 0 && (
         <PhotoLightbox
           photos={visiblePhotos}
           initialIndex={lightboxIndex}

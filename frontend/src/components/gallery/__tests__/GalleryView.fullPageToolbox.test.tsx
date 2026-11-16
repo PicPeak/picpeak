@@ -23,6 +23,19 @@ const stable = vi.hoisted(() => ({
     return count === undefined ? key : `${key}:${count}`;
   },
   photos: null as unknown,
+  // Premium's own category tab, as the layout applies it before the row.
+  tab: null as string | null,
+  grid: null as unknown as { selectedPhotos: Set<number>; isSelectionMode: boolean },
+}));
+
+const archives = vi.hoisted(() => ({
+  downloadPhotosInParts: vi.fn().mockResolvedValue(true),
+  downloadSelectedPhotos: vi.fn().mockResolvedValue(true),
+}));
+vi.mock('../../../contexts/ArchiveDownloadContext', () => ({
+  ArchiveDownloadProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  ArchiveDownloadDialog: () => null,
+  useArchiveDownload: () => archives,
 }));
 
 const people = vi.hoisted(() => ({
@@ -65,14 +78,21 @@ vi.mock('../../../services/feedback.service', () => ({
 }));
 vi.mock('../../common/AuthenticatedImage', () => ({ AuthenticatedImage: () => null }));
 vi.mock('../PhotoGridWithLayouts', () => ({
-  PhotoGridWithLayouts: ({ photos: shown, beforeGrid }: {
-    photos: Array<{ id: number }>;
-    beforeGrid?: React.ReactNode | ((shown: number) => React.ReactNode);
-  }) => (
-    <div data-testid="photo-grid" data-ids={shown.map((p) => p.id).join(',')}>
-      <div data-testid="before-grid">{typeof beforeGrid === 'function' ? beforeGrid(shown.length) : beforeGrid}</div>
-    </div>
-  ),
+  PhotoGridWithLayouts: (props: {
+    photos: Array<{ id: number; category_name?: string }>;
+    beforeGrid?: React.ReactNode | ((shown: Array<{ id: number }>) => React.ReactNode);
+    selectedPhotos: Set<number>;
+    isSelectionMode: boolean;
+  }) => {
+    const { photos: shown, beforeGrid } = props;
+    stable.grid = props;
+    const visible = stable.tab ? shown.filter((p) => p.category_name === stable.tab) : shown;
+    return (
+      <div data-testid="photo-grid" data-ids={shown.map((p) => p.id).join(',')}>
+        <div data-testid="before-grid">{typeof beforeGrid === 'function' ? beforeGrid(visible) : beforeGrid}</div>
+      </div>
+    );
+  },
 }));
 
 import { GalleryView } from '../GalleryView';
@@ -83,6 +103,7 @@ const photo = (id: number, filename: string, personIds: number[], likes = 0) => 
   id, filename, url: `/${filename}`, thumbnail_url: `/t-${filename}`, type: 'photo', size: 1,
   // These layouts' Liked filter keeps the viewer's own likes (is_liked).
   uploaded_at: `2026-09-19T1${id}:00:00Z`, like_count: likes, is_liked: likes > 0, person_ids: personIds,
+  category_name: id <= 2 ? 'Ceremony' : 'Party',
 });
 
 function show(layout: string, { peopleEnabled = true, filterBar = true } = {}) {
@@ -114,7 +135,11 @@ function show(layout: string, { peopleEnabled = true, filterBar = true } = {}) {
 const row = () => within(screen.getByTestId('before-grid'));
 const shownIds = () => screen.getByTestId('photo-grid').getAttribute('data-ids');
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  stable.tab = null;
+  vi.clearAllMocks();
+});
 
 describe.each(['gallery-premium', 'gallery-story'])('feature toolbox on %s', (layout) => {
   it('puts search, sort, filters and the people row above the photos', async () => {
@@ -168,5 +193,42 @@ describe.each(['gallery-premium', 'gallery-story'])('feature toolbox on %s', (la
   it('renders no row at all with both off', () => {
     show(layout, { peopleEnabled: false, filterBar: false });
     expect(screen.getByTestId('before-grid')).toBeEmptyDOMElement();
+  });
+});
+
+describe('feature toolbox under a Premium category tab', () => {
+  it('"Select these N" picks the photos the tab shows, not the ones it hides', async () => {
+    stable.tab = 'Ceremony';
+    show('gallery-premium');
+    fireEvent.click(await row().findByRole('button', { name: 'gallery.filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.filterPanel.selectMatches:2' }));
+    expect(stable.grid.isSelectionMode).toBe(true);
+    expect([...stable.grid.selectedPhotos].sort()).toEqual([1, 2]);
+  });
+
+  it('"Download these N" covers only the photos the tab shows', async () => {
+    stable.tab = 'Ceremony';
+    show('gallery-premium');
+    const [hoa] = await row().findAllByRole('button', { name: 'gallery.people.filterBy' });
+    fireEvent.click(hoa);
+    // Hoa is in photos 1 and 3; the Ceremony tab shows only 1.
+    expect(shownIds()).toBe('3,1');
+    expect(row().getByRole('status')).toHaveTextContent('gallery.people.matchCount:1');
+    fireEvent.click(row().getByRole('button', { name: 'gallery.people.downloadThese:1' }));
+    await waitFor(() => expect(archives.downloadPhotosInParts).toHaveBeenCalledWith('wedding', [1]));
+  });
+});
+
+describe('search by category name', () => {
+  it('finds a Story scene by its name, as Story always did', () => {
+    show('gallery-story');
+    fireEvent.change(row().getByRole('textbox', { name: 'gallery.searchPhotos' }), { target: { value: 'ceremony' } });
+    expect(shownIds()).toBe('2,1');
+  });
+
+  it('stays a filename search in the other layouts', () => {
+    show('gallery-premium');
+    fireEvent.change(row().getByRole('textbox', { name: 'gallery.searchPhotos' }), { target: { value: 'ceremony' } });
+    expect(shownIds()).toBe('1');
   });
 });

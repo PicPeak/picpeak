@@ -32,10 +32,13 @@ export interface GalleryFilterOptions {
   videosFirst?: boolean;
   // Selfie search (issue 2355): the photo ids the server matched; null = off.
   selfiePhotoIds?: number[] | null;
+  // The search also matches the category name (issue 2543): Gallery Story,
+  // whose scenes are its categories and which has no category control.
+  searchCategoryNames?: boolean;
 }
 export const resolveMediaType = (photo: Photo): 'photo' | 'video' =>
   photo.media_type === 'video' || photo.mime_type?.startsWith('video/') || photo.type === 'video' ? 'video' : 'photo';
-export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAll = false, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey = null, minRating = null, selectedTagKeys, likedIsOwn = false, favoritedIsOwn = isGuestIdentityMode, videosFirst = false, selfiePhotoIds = null }: GalleryFilterOptions) {
+export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAll = false, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey = null, minRating = null, selectedTagKeys, likedIsOwn = false, favoritedIsOwn = isGuestIdentityMode, videosFirst = false, selfiePhotoIds = null, searchCategoryNames = false }: GalleryFilterOptions) {
   return useMemo(() => {
     if (!sourcePhotos) return [];
 
@@ -61,7 +64,9 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
 
     // Apply search filter
     if (searchTerm) {
-      photos = photos.filter(photo => photoMatchesFilenameSearch(photo, searchTerm));
+      const term = searchTerm.toLowerCase();
+      photos = photos.filter(photo => photoMatchesFilenameSearch(photo, searchTerm)
+        || (searchCategoryNames && !!photo.category_name && photo.category_name.toLowerCase().includes(term)));
     }
     
     // Apply feedback filters. Multi-select (#889): a photo matching ANY
@@ -192,5 +197,5 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
     }
     
     return photos;
-  }, [sourcePhotos, categories, folderId, viewAll, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey, minRating, selectedTagKeys, likedIsOwn, favoritedIsOwn, videosFirst, selfiePhotoIds]);
+  }, [sourcePhotos, categories, folderId, viewAll, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey, minRating, selectedTagKeys, likedIsOwn, favoritedIsOwn, videosFirst, selfiePhotoIds, searchCategoryNames]);
 }

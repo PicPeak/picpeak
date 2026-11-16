@@ -97,8 +97,8 @@ describe('GalleryStoryLayout row above the scenes', () => {
     expect(container.querySelector('.story-toolbar--empty')).not.toBeNull();
   });
 
-  it('hands a row function the count it shows', () => {
-    const row = (shown: number) => <span>shown {shown}</span>;
+  it('hands a row function the photos it shows', () => {
+    const row = (shown: Photo[]) => <span>shown {shown.length}</span>;
     const { rerender } = render(<GalleryStoryLayout {...props} beforeGrid={row} />);
     expect(screen.getByText('shown 2')).toBeTruthy();
     // The gallery's search narrows the list it hands over (issue 2543).

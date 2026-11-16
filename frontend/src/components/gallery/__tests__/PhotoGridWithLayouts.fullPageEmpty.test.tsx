@@ -9,6 +9,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { PhotoGridWithLayouts } from '../PhotoGridWithLayouts';
+import { GalleryToolbar } from '../GalleryToolbar';
 
 const theme = vi.hoisted(() => ({ galleryLayout: 'gallery-premium' }));
 
@@ -70,6 +71,31 @@ describe.each(['gallery-premium', 'gallery-story'])('PhotoGridWithLayouts empty 
     renderGrid({ onUploadClick });
     fireEvent.click(screen.getByRole('button', { name: /upload/i }));
     expect(onUploadClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the toolbox mounted when a filter leaves nothing: its panel stays open, focus stays (issue 2543)', () => {
+    const toolbox = () => (
+      <GalleryToolbar
+        search={{ value: '', onChange: () => {} }}
+        filters={{ activeCount: 1, render: () => <p>panel body</p> }}
+      />
+    );
+    const { rerenderWith } = renderGrid({ photos: [photo, { ...photo, id: 2 }], beforeGrid: toolbox });
+    const filtersButton = screen.getByRole('button', { name: /^Filters/ });
+    fireEvent.click(filtersButton);
+    filtersButton.focus();
+    expect(screen.getByText('panel body')).toBeInTheDocument();
+
+    // The filter just applied matches nothing.
+    rerenderWith({ photos: [], emptyIsFiltered: true, beforeGrid: toolbox });
+    expect(screen.getByText('panel body')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Filters/ })).toBe(filtersButton);
+    expect(document.activeElement).toBe(filtersButton);
+    expect(screen.getByText('No photos match your search or filters.')).toBeInTheDocument();
+
+    // And back.
+    rerenderWith({ photos: [photo, { ...photo, id: 2 }], beforeGrid: toolbox });
+    expect(screen.getByRole('button', { name: /^Filters/ })).toBe(filtersButton);
   });
 
   it('keeps the Copy filenames action when a filter leaves nothing', () => {
