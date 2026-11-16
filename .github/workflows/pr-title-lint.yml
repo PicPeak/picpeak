@@ -25,6 +25,7 @@ jobs:
           types: |
             feat
             fix
+            security
             perf
             revert
             docs
