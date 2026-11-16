@@ -40,6 +40,7 @@ import { archiveInProgressError } from '../../utils/archiveErrors';
 import { isGalleryPublic } from '../../utils/accessControl';
 import { mediaSplitLabel, splitMediaCount } from '../../utils/mediaCounts';
 import { buildShareLinkUrl } from '../../utils/url';
+import { useViewGalleryUrl } from '../../hooks/useViewGalleryUrl';
 import type { Event } from '../../types';
 import { useDeliveryDue, isAwaitingFullGallery } from './event-details/deliveryStatus';
 import { useTranslation } from 'react-i18next';
@@ -57,6 +58,7 @@ const MENU_SORT_KEYS: readonly EventSortBy[] = [
 
 export const EventsListPage: React.FC = () => {
   const { t } = useTranslation();
+  const viewGalleryUrl = useViewGalleryUrl();
   const { format, formatExpiry } = useLocalizedDate();
   const deliveryDue = useDeliveryDue();
   const navigate = useNavigate();
@@ -819,7 +821,7 @@ export const EventsListPage: React.FC = () => {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => window.open(buildShareLinkUrl(event.share_link), '_blank')}
+                            onClick={() => window.open(viewGalleryUrl(event.share_link), '_blank', 'noopener,noreferrer')}
                             title={t('events.viewGallery')}
                           >
                             <ExternalLink className="w-4 h-4" />
@@ -884,7 +886,7 @@ export const EventsListPage: React.FC = () => {
                               </button>
                               {event.share_link ? (
                                 <a
-                                  href={buildShareLinkUrl(event.share_link)}
+                                  href={viewGalleryUrl(event.share_link)}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="md:hidden w-full text-left px-4 py-2 text-sm text-body hover:bg-hover flex items-center gap-2"
