@@ -350,6 +350,44 @@ describe('GalleryStoryLayout selection mode (issue 1716)', () => {
     expect(heart?.classList.contains('favorite')).toBe(true);
   });
 
+  it('favourite selected acts on photos a search hides too (issue 2543)', async () => {
+    // The shared search narrows `photos` to photo 2; 3 and 1 stay selected.
+    // Photo 1 arrived liked, so only 2 and 3 are sent.
+    const h = handlers();
+    const { container } = render(
+      <GalleryStoryLayout
+        {...baseProps}
+        {...h}
+        photos={[photo(2)]}
+        isSelectionMode
+        selectedPhotos={new Set([1, 2, 3])}
+        selectionQuotaPhotos={[photo(1, { is_liked: true }), photo(2), photo(3)]}
+      />
+    );
+    fireEvent.click(within(bar(container) as HTMLElement).getByTestId('story-favorite-selected'));
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('gallery.favoritesAdded'));
+    expect(mocks.submitFeedback.mock.calls.map((call) => call[1]).sort()).toEqual(['2', '3']);
+  });
+
+  it('a hidden selection liked throughout is unliked as a whole', async () => {
+    const h = handlers();
+    const { container } = render(
+      <GalleryStoryLayout
+        {...baseProps}
+        {...h}
+        photos={[photo(2, { is_liked: true })]}
+        isSelectionMode
+        selectedPhotos={new Set([1, 2])}
+        selectionQuotaPhotos={[photo(1, { is_liked: true }), photo(2, { is_liked: true })]}
+      />
+    );
+    const button = within(bar(container) as HTMLElement).getByTestId('story-favorite-selected');
+    expect(button).toHaveTextContent('gallery.unfavoriteSelected');
+    fireEvent.click(button);
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('gallery.favoritesRemoved'));
+    expect(mocks.submitFeedback.mock.calls.map((call) => call[1]).sort()).toEqual(['1', '2']);
+  });
+
   it('a selection that is liked throughout is unliked by the same control', async () => {
     const h = handlers();
     const { container } = render(

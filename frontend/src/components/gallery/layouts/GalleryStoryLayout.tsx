@@ -413,14 +413,27 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // Likes not yet set on the selection are added; a selection that is already
   // liked throughout is unliked instead, so the same control never un-likes
   // half a selection by accident.
-  const selectionToLike = useMemo(
-    () => selectedPhotoList.filter((photo) => !favorites.has(photo.id)).map((photo) => photo.id),
-    [selectedPhotoList, favorites]
+  //
+  // The whole selection, photos the shared search hides included (issue
+  // 2543): the button counts all of it, so it must act on all of it.
+  // `favorites` only knows the photos on screen, so a hidden photo's like
+  // comes from its pending hold or its payload.
+  const selectionIds = useMemo(
+    () => (selectionQuotaPhotos ?? selectedPhotoList).map((photo) => photo.id),
+    [selectionQuotaPhotos, selectedPhotoList]
   );
-  const selectionUnlikes = selectedPhotoList.length > 0 && selectionToLike.length === 0;
+  const selectionToLike = useMemo(() => {
+    const visibleIds = new Set(photos.map((photo) => photo.id));
+    const hiddenById = new Map((selectionQuotaPhotos ?? []).map((photo) => [photo.id, photo as Partial<Photo>]));
+    const isLiked = (id: number) => (visibleIds.has(id)
+      ? favorites.has(id)
+      : likeHoldsRef.current.get(id)?.liked ?? !!hiddenById.get(id)?.is_liked);
+    return selectionIds.filter((id) => !isLiked(id));
+  }, [selectionIds, selectionQuotaPhotos, photos, favorites]);
+  const selectionUnlikes = selectionIds.length > 0 && selectionToLike.length === 0;
 
   const handleFavoriteSelected = useCallback(async () => {
-    const ids = selectionUnlikes ? selectedPhotoList.map((photo) => photo.id) : selectionToLike;
+    const ids = selectionUnlikes ? selectionIds : selectionToLike;
     if (ids.length === 0 || favoritingSelection) return;
     setFavoritingSelection(true);
     let outcome: 'done' | 'deferred' = 'done';
@@ -429,7 +442,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     } finally {
       if (outcome !== 'deferred') setFavoritingSelection(false);
     }
-  }, [selectionUnlikes, selectedPhotoList, selectionToLike, favoritingSelection, likeWithIdentity]);
+  }, [selectionUnlikes, selectionIds, selectionToLike, favoritingSelection, likeWithIdentity]);
 
   // The id fallback only runs when a category opts out of downloads (#640),
   // so it leaves those photos out, as the server would: a part made only of
