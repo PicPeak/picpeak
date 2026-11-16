@@ -1,7 +1,7 @@
 import { PhotoSalesCartButton } from '../../../features/photo-sales/PhotoSalesCartButton';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
-import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
+import { Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
 import { BackToAccountLink } from '../BackToAccountLink';
 import { useTranslation } from 'react-i18next';
 import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
@@ -35,7 +35,6 @@ import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { DownloadQuotaNotice } from '../DownloadQuotaNotice';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, showDownloadLimitReached } from '../../../utils/downloadLimit';
-import { photoMatchesFilenameSearch } from '../../../utils/photoFilename';
 import { useInputMode } from '../../../hooks/useInputMode';
 import { holdLike, likedFromPayload, markLikeSaved, type LikeHolds } from './optimisticLikes';
 
@@ -136,7 +135,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const archives = useArchiveDownload();
   const { t } = useTranslation();
   const [scrolled, setScrolled] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
@@ -196,20 +194,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const scenes = useMemo<CategoryScene[]>(() => {
     const photosByCategory: PhotosByCategory = {};
 
-    // Filter by search query. `original_filename` is in here because that is
-    // the camera name the guest actually sees on the card/lightbox — matching
-    // only the internal renamed `filename` gave "no results" for a substring
-    // the guest could read on screen (QA P4-B.02).
-    const filteredPhotos = searchQuery
-      ? photos.filter(p => {
-          const term = searchQuery.toLowerCase();
-          return photoMatchesFilenameSearch(p, searchQuery) ||
-            (p.category_name && p.category_name.toLowerCase().includes(term));
-        })
-      : photos;
-
+    // Search is the gallery's shared one (issue 2543): `photos` arrives
+    // already searched and filtered.
     // Group by category
-    filteredPhotos.forEach(photo => {
+    photos.forEach(photo => {
       const categoryName = photo.category_name || '';
       if (!photosByCategory[categoryName]) {
         photosByCategory[categoryName] = [];
@@ -226,7 +214,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       type: index % 2 === 0 ? 'grid' : 'carousel' as 'grid' | 'carousel',
       photos: categoryPhotos
     }));
-  }, [photos, searchQuery, t]);
+  }, [photos, t]);
 
   // #1160: on a folder-only root this component renders its shell with an empty
   // scope, so fall back to the event-wide count rather than announcing 0 Photos
@@ -349,11 +337,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     void likeWithIdentity([photoId], favorites.has(photoId), false);
   }, [favorites, likeWithIdentity]);
 
-  // The photos the grid shows, in its order: the search filter and the
-  // category scenes applied. The lightbox steps through these, not `photos`,
-  // or its arrows reach photos the search has hidden.
+  // The photos the grid shows, in its order: the category scenes applied.
+  // The lightbox steps through these, in the order the scenes show them.
   const visiblePhotos = useMemo(() => scenes.flatMap((scene) => scene.photos), [scenes]);
-  // The row above the scenes counts what the search leaves (issue 2355).
+  // The row above the scenes counts what they show (issue 2355).
   const toolbar = typeof beforeGrid === 'function' ? beforeGrid(visiblePhotos.length) : beforeGrid;
 
   // In a large gallery a grid mounts only the rows near the viewport (issue
@@ -373,9 +360,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }, [visiblePhotos, onLightboxPhotoChange]);
 
   // Link to a single photo (issue 1733): open on the photo the URL asks for,
-  // close on null. A photo this layout's own search hides (browser history
-  // back to it) clears the search first, so it opens in a list that holds
-  // it; an id not in `photos` at all opens nothing.
+  // close on null. A photo a search or filter hides is the container's to
+  // bring back (it clears them); an id not in `photos` opens nothing.
   useEffect(() => {
     if (openPhotoId === undefined) return;
     if (openPhotoId === null) {
@@ -384,8 +370,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     }
     const index = visiblePhotos.findIndex((photo) => photo.id === openPhotoId);
     if (index >= 0) setLightboxIndex(index);
-    else if (searchQuery && photos.some((photo) => photo.id === openPhotoId)) setSearchQuery('');
-  }, [openPhotoId, visiblePhotos, photos, searchQuery]);
+  }, [openPhotoId, visiblePhotos]);
 
   const downloadQuota = useDownloadQuota();
 
@@ -556,8 +541,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }
 
   return (
-    // Numbered against the list this layout's lightbox steps through, which
-    // its own search narrows (issue 1733, E6).
+    // Numbered against the list this layout's lightbox steps through, in
+    // scene order (issue 1733, E6).
     <PhotoLabelsProvider photos={visiblePhotos}>
     <div className="gallery-story-layout" data-input-mode={inputMode}>
       <StoryScrollToTop />
@@ -576,15 +561,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
         <div className="story-nav-actions">
           <PhotoSalesCartButton />
-          <div className="story-nav-search">
-            <Search size={14} className="text-muted-theme" />
-            <input
-              type="text"
-              placeholder={t('gallery.searchMemories', 'Search memories...')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
           {/* Issue 1710: the footer button was the only Download All in the
               layout, unreachable without scrolling through every scene. Same
               handler, same resolution / quota / whole-gallery flow. */}

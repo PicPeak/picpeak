@@ -328,6 +328,10 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
             value={search.value}
             onChange={(e) => search.onChange(e.target.value)}
             className="text-sm md:text-base"
+            // Premium and Story remount between their photos and their empty
+            // view, toolbox included (issue 2543): a search that empties the
+            // list keeps the field focused for the next keystroke.
+            data-gallery-focus="search"
           />
         </div>
       )}

@@ -285,12 +285,12 @@ describe('GalleryStoryLayout selection mode (issue 1716)', () => {
     }
   });
 
-  it('select all covers the photos the search shows, in one call; deselect all when they are all selected', () => {
+  it('select all covers the photos a search leaves, in one call; deselect all when they are all selected', () => {
     const h = handlers();
-    const { container } = render(<GalleryStoryLayout {...baseProps} {...h} isSelectionMode />);
-    fireEvent.change(screen.getByPlaceholderText('Search memories...'), { target: { value: 'photo-2' } });
+    // The gallery's search (issue 2543) hands over the narrowed list.
+    const { container } = render(<GalleryStoryLayout {...baseProps} {...h} photos={[photo(2), photo(3)]} isSelectionMode />);
     fireEvent.click(within(bar(container) as HTMLElement).getByRole('button', { name: 'Select All' }));
-    expect(h.onSelectMany).toHaveBeenCalledWith([2]);
+    expect(h.onSelectMany).toHaveBeenCalledWith([2, 3]);
     expect(h.onPhotoSelect).not.toHaveBeenCalled();
 
     const all = render(
