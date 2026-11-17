@@ -178,7 +178,8 @@ export const TransferUploadPage: React.FC = () => {
         const batchBytes = batch.reduce((sum, f) => sum + f.size, 0);
         try {
           const onBatchProgress = (pct: number) => {
-            setProgress(Math.round(((sentBytes + (batchBytes * pct) / 100) / totalBytes) * 100));
+            // Floored, so 100 (and "saving") only once the last byte is out.
+            setProgress(Math.floor(((sentBytes + (batchBytes * pct) / 100) / totalBytes) * 100));
           };
           const result = await sendPaced(() => (chunked.has(batch[0])
             ? transfersService.uploadChunked(token as string, batch[0], onBatchProgress)

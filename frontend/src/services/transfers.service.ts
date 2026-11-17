@@ -489,7 +489,8 @@ export const transfersService = {
   async uploadChunked(token: string, file: File, onProgress?: (pct: number) => void): Promise<UploadResult> {
     const res = await uploadFileInChunks<UploadResult>(`/public/transfer-upload/${token}`, file, {
       initFields: { mimeType: file.type },
-      onBytes: (sent) => onProgress?.(file.size ? Math.round((sent / file.size) * 100) : 100),
+      // Floored: 100 means every byte is out, not 99.5 % of a large file.
+      onBytes: (sent) => onProgress?.(file.size ? Math.floor((sent / file.size) * 100) : 100),
     });
     return res.data;
   },
@@ -498,7 +499,7 @@ export const transfersService = {
     files.forEach((f) => form.append('files', f));
     const res = await api.post(`/public/transfer-upload/${token}`, form, {
       onUploadProgress: (e) => {
-        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+        if (onProgress && e.total) onProgress(Math.floor((e.loaded / e.total) * 100));
       },
     });
     return res.data;
