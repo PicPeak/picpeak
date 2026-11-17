@@ -5,6 +5,16 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.16](https://github.com/PicPeak/picpeak/compare/v3.135.15...v3.135.16) (2026-11-15)
+
+
+### Bug Fixes
+
+* **admin:** use generated primary shades in the restore wizard and backup history ([#2539](https://github.com/PicPeak/picpeak/issues/2539)) ([22dded0](https://github.com/PicPeak/picpeak/commit/22dded0d699d2559d92bd3ce18d12108f0ffb43f))
+* **backup:** show what the last backup actually covered (stable) ([#2531](https://github.com/PicPeak/picpeak/issues/2531)) ([8131343](https://github.com/PicPeak/picpeak/commit/81313433a2171e2c13788cb56d6ae9858f80fdb6))
+* **docker:** ship rsync and openssh-client in the runtime images ([#2526](https://github.com/PicPeak/picpeak/issues/2526)) ([f1a83e8](https://github.com/PicPeak/picpeak/commit/f1a83e865b1a3742c9164f1e60555ec3e7decc2c))
+* **uploads:** merge a chunked upload under a short unique name (stable) ([#2538](https://github.com/PicPeak/picpeak/issues/2538)) ([b927ddc](https://github.com/PicPeak/picpeak/commit/b927ddc9b255776cb4850c6fa8602909c0415fa3))
+
 ## [3.135.15](https://github.com/PicPeak/picpeak/compare/v3.135.14...v3.135.15) (2026-11-15)
 
 
