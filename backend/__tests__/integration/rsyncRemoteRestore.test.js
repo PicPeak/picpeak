@@ -291,9 +291,9 @@ describe('listing restore points on the rsync destination', () => {
     expect(signal.aborted).toBe(true);
   });
 
-  it('marks a remote manifest that fails authentication and leaves out manifests of other layouts', async () => {
+  it.each([['not a date'], [{ toString: null }]])('marks a remote manifest that fails authentication (timestamp %p) and leaves out manifests of other layouts', async (timestamp) => {
     await backupToRemote();
-    await writeRemoteManifest({ ...manifest, backup: { ...manifest.backup, timestamp: 'not a date' }, files: { ...manifest.files, total_size: 1 } });
+    await writeRemoteManifest({ ...manifest, backup: { ...manifest.backup, timestamp }, files: { ...manifest.files, total_size: 1 } });
     const foreign = { ...manifest, metadata: { ...manifest.metadata, rsync_manifest_layout: undefined } };
     await fs.writeFile(path.join(remoteRoot, 'manifests', 'backup-manifest-other.json'), JSON.stringify(foreign));
     serveRemote([]);
@@ -616,6 +616,16 @@ describe('rsyncRestore helpers', () => {
     await expect(assertDecompressSpace(gz)).resolves.toBeUndefined();
     await fs.rm(dir, { recursive: true, force: true });
   });
+  it('keeps a size the manifest does not record as unknown, so the download is bounded by the size limit instead', () => {
+    const { rsyncDownloadPlan } = require('../../src/services/restoreService')._internal;
+    const plan = rsyncDownloadPlan({ files: { manifest: [
+      { path: 'events/a.jpg', size: null, checksum: 'a' },
+      { path: 'events/b.jpg', size: 7, checksum: 'b' },
+      { path: 'events/c.jpg', size: '', checksum: 'c' },
+    ] } }, { restoreType: 'files' }, 100);
+    expect(plan.files.map(file => file.size)).toEqual([null, 7, null]);
+  });
+
   it('runRsync stops the child when its signal aborts and reports it', async () => {
     const { EventEmitter } = require('events');
     const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(),

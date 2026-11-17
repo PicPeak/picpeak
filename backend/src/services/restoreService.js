@@ -145,7 +145,12 @@ function resolveRestoreFiles(manifest, options) {
 // database restore, the manifest's (or the selection's) files for a files
 // restore, both for a full one. Every path is checked before rsync sees it,
 // and a file recorded above restore_max_file_size_mb is refused up front.
-const recordedSize = value => (Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null);
+// A size the manifest does not record (null, as buildManifestFiles writes
+// it) stays unknown instead of becoming 0.
+const recordedSize = (value) => {
+  const size = typeof value === 'number' || (typeof value === 'string' && value.trim() !== '') ? Number(value) : NaN;
+  return Number.isFinite(size) && size >= 0 ? size : null;
+};
 function rsyncDownloadPlan(manifest, options, maxFileBytes) {
   let dump = null;
   if (options.restoreType === 'full' || options.restoreType === 'database') {
