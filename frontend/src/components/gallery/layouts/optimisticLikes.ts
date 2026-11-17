@@ -76,6 +76,9 @@ export function useViewerLikes(
   // Submits still running per photo: a quick like-unlike sends two, and the
   // first one finishing must not settle the hold of the second.
   const runningRef = useRef<Map<number, number>>(new Map());
+  // Photos where one of several overlapping submits failed: the held state
+  // assumed every click reached the server, so it cannot be trusted.
+  const failedRef = useRef<Set<number>>(new Set());
   const photosRef = useRef(photos);
   photosRef.current = photos;
   useEffect(() => {
@@ -90,6 +93,7 @@ export function useViewerLikes(
       if ((event as CustomEvent<{ slug?: string }>).detail?.slug !== slug) return;
       holdsRef.current.clear();
       runningRef.current.clear();
+      failedRef.current.clear();
       setLiked(likedFromPayload(photosRef.current, holdsRef.current));
     };
     window.addEventListener(LIKES_CLEARED_EVENT, onCleared);
@@ -114,7 +118,9 @@ export function useViewerLikes(
       if (running > 0) runningRef.current.set(photoId, running);
       else {
         runningRef.current.delete(photoId);
-        markLikeSaved(holdsRef.current, photoId);
+        // One of the overlapping submits failed: show the server's state.
+        if (failedRef.current.delete(photoId)) holdsRef.current.delete(photoId);
+        else markLikeSaved(holdsRef.current, photoId);
         // A refresh may have confirmed the like while it was running; an
         // identical later response can keep the same photos array, so look
         // at the current one now.
@@ -132,9 +138,11 @@ export function useViewerLikes(
     const running = Math.max(0, (runningRef.current.get(photoId) ?? 0) - 1);
     if (running > 0) {
       runningRef.current.set(photoId, running);
+      failedRef.current.add(photoId);
       return;
     }
     runningRef.current.delete(photoId);
+    failedRef.current.delete(photoId);
     holdsRef.current.delete(photoId);
     setLiked(likedFromPayload(photosRef.current, holdsRef.current));
     onFeedbackChange?.(photoId);

@@ -234,4 +234,22 @@ describe.each(layouts)('%s layout like state (issue 2561)', (_name, Layout, sele
     update(photoWith(false));
     expect(liked()).toBe(false);
   });
+  it('shows the server state when one of two overlapping clicks failed', async () => {
+    const calls: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = [];
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((resolve, reject) => { calls.push({ resolve, reject }); }) as never);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { heart, liked, update } = setup(photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(calls).toHaveLength(1));
+    fireEvent.click(heart());
+    await waitFor(() => expect(calls).toHaveLength(2));
+    // The like fails; the second click, sent as an unlike, toggles the
+    // server to liked instead.
+    await act(async () => { calls[0].reject(new Error('network')); });
+    update(photoWith(true));
+    await act(async () => { calls[1].resolve({ success: true }); });
+    expect(liked()).toBe(true);
+    update(photoWith(true));
+    expect(liked()).toBe(true);
+  });
 });

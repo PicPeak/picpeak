@@ -160,6 +160,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // Submits still running per photo: a quick like-unlike sends two, and the
   // first one finishing must not settle the hold of the second (issue 2561).
   const likeRunningRef = useRef<Map<number, number>>(new Map());
+  // Photos where one of several overlapping submits failed: their hold
+  // assumed every click reached the server.
+  const likeFailedRef = useRef<Set<number>>(new Set());
   const photosRef = useRef(photos);
   photosRef.current = photos;
   // A like made in the lightbox reaches this set only through the parent's
@@ -296,12 +299,20 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       else likeRunningRef.current.delete(id);
       return running === 0;
     };
+    failed.forEach((id) => likeFailedRef.current.add(id));
     done.filter(idle).forEach((id) => {
-      holdLike(likeHoldsRef.current, id, !unlike);
-      markLikeSaved(likeHoldsRef.current, id);
+      // One of the overlapping submits failed: show the server's state.
+      if (likeFailedRef.current.delete(id)) likeHoldsRef.current.delete(id);
+      else {
+        holdLike(likeHoldsRef.current, id, !unlike);
+        markLikeSaved(likeHoldsRef.current, id);
+      }
     });
     // Refused: the hold goes and the card shows the server's state.
-    failed.filter(idle).forEach((id) => likeHoldsRef.current.delete(id));
+    failed.filter(idle).forEach((id) => {
+      likeFailedRef.current.delete(id);
+      likeHoldsRef.current.delete(id);
+    });
     // A refresh may have confirmed these while they ran, and an identical
     // later response can keep the same photos array: look at the current one.
     setFavorites(likedFromPayload(photosRef.current, likeHoldsRef.current));
