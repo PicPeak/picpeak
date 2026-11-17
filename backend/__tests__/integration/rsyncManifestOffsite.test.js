@@ -80,6 +80,9 @@ beforeAll(async () => {
   app = express();
   app.use(express.json());
   app.use('/api/admin/restore', require('../../src/routes/adminRestore'));
+  // The routes use the singleton, whose temp dir is removed after every run:
+  // keep it away from the default one parallel suites share.
+  require('../../src/services/restoreService').restoreService.tempDir = path.join(tmpDir, 'restore-tmp');
 }, 120000);
 beforeEach(async () => {
   storageModule.setStorageForTesting({ kind: () => 'local' });
