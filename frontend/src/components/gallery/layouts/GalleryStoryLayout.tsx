@@ -157,6 +157,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // every payload, and a like the viewer just toggled holds its state until
   // a payload confirms it (optimisticLikes.ts).
   const likeHoldsRef = useRef<LikeHolds>(new Map());
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
   // A like made in the lightbox reaches this set only through the parent's
   // refetch. Until that payload lands, Favourite selected would decide from
   // a set that is known to be behind, so it waits; a short timeout covers a
@@ -287,6 +289,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     failed.forEach((id) => likeHoldsRef.current.delete(id));
     if (bulk) apply(done, unlike);
     else if (failed.length > 0) apply(failed, !unlike);
+    // A refresh may have confirmed these while they ran, and an identical
+    // later response can keep the same photos array: look at the current one.
+    if (done.length > 0) setFavorites(likedFromPayload(photosRef.current, likeHoldsRef.current));
     if (done.length > 0) {
       if (bulk) toast.success(t(unlike ? 'gallery.favoritesRemoved' : 'gallery.favoritesAdded', { count: done.length }));
       onFeedbackChange?.();

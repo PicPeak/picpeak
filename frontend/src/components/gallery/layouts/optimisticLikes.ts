@@ -115,6 +115,10 @@ export function useViewerLikes(
       else {
         runningRef.current.delete(photoId);
         markLikeSaved(holdsRef.current, photoId);
+        // A refresh may have confirmed the like while it was running; an
+        // identical later response can keep the same photos array, so look
+        // at the current one now.
+        setLiked(likedFromPayload(photosRef.current, holdsRef.current));
       }
     }
     onFeedbackChange?.(photoId);

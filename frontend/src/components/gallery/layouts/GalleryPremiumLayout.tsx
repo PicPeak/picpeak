@@ -362,6 +362,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   // follows each payload, and a like the viewer just toggled holds its state
   // until a payload confirms it (optimisticLikes.ts).
   const pendingLikesRef = useRef<LikeHolds>(new Map());
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
   useEffect(() => {
     setLikedPhotoIds(likedFromPayload(photos, pendingLikesRef.current));
   }, [photos]);
@@ -603,7 +605,12 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     return next;
   });
   // Saved: start the window in which the row refresh should confirm it.
-  const likeSaved = useCallback((photoId: number) => markLikeSaved(pendingLikesRef.current, photoId), []);
+  // A refresh may have confirmed it while the submit ran, and an identical
+  // later response can keep the same photos array: look at the current one.
+  const likeSaved = useCallback((photoId: number) => {
+    markLikeSaved(pendingLikesRef.current, photoId);
+    setLikedPhotoIds(likedFromPayload(photosRef.current, pendingLikesRef.current));
+  }, []);
   // Refused: the heart goes back and nothing is awaited.
   const rollBackLike = useCallback((photoId: number) => {
     pendingLikesRef.current.delete(photoId);
