@@ -143,28 +143,39 @@ function resolveRestoreFiles(manifest, options) {
 
 // What a restore from the rsync destination downloads: the dump for a
 // database restore, the manifest's (or the selection's) files for a files
-// restore, both for a full one. Every path is checked before rsync sees it.
-function rsyncDownloadPlan(manifest, options) {
-  const entries = [];
+// restore, both for a full one. Every path is checked before rsync sees it,
+// and a file recorded above restore_max_file_size_mb is refused up front.
+const recordedSize = value => (Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null);
+function rsyncDownloadPlan(manifest, options, maxFileBytes) {
+  let dump = null;
   if (options.restoreType === 'full' || options.restoreType === 'database') {
-    const dump = manifest.database?.backup_file;
-    if (!dump) throw new Error('No database backup file found in manifest');
-    entries.push({ path: rsyncRestore.assertMirrorRelativePath(dump, 'database dump path'), size: manifest.database.size });
+    const dumpPath = manifest.database?.backup_file;
+    if (!dumpPath) throw new Error('No database backup file found in manifest');
+    dump = { path: rsyncRestore.assertMirrorRelativePath(dumpPath, 'database dump path'), size: recordedSize(manifest.database.size) };
   }
+  const files = [];
   if (['full', 'files', 'selective'].includes(options.restoreType)) {
+    const seen = new Set();
     for (const file of resolveRestoreFiles(manifest, options)) {
-      entries.push({ path: rsyncRestore.assertMirrorRelativePath(file.path, 'manifest file path'), size: file.size });
+      const rel = rsyncRestore.assertMirrorRelativePath(file.path, 'manifest file path');
+      if (seen.has(rel)) continue;
+      seen.add(rel);
+      const size = recordedSize(file.size);
+      if (size !== null && size > maxFileBytes) {
+        throw new Error(`Refusing ${rel}: recorded at ${size} bytes, above the restore size limit of ${maxFileBytes} bytes`);
+      }
+      files.push({ path: rel, size, checksum: file.checksum });
     }
   }
-  const sizes = entries.map(entry => Number(entry.size));
-  const known = sizes.every(size => Number.isFinite(size) && size >= 0);
-  return {
-    paths: [...new Set(entries.map(entry => entry.path))],
-    bytes: sizes.reduce((sum, size) => sum + (Number.isFinite(size) && size > 0 ? size : 0), 0),
-    // rsync skips anything larger than the largest recorded entry.
-    maxSize: known && sizes.length > 0 ? Math.max(...sizes) : 0,
-  };
+  const sum = entries => entries.reduce((total, entry) => total + (entry.size || 0), 0);
+  const mediaBytes = sum(files);
+  return { dump, files, mediaBytes, bytes: mediaBytes + (dump?.size || 0) };
 }
+
+// A transfer may write what the manifest records plus a little slack (rsync's
+// temporary names, directory entries); null when a size is not recorded.
+const downloadBudget = entries => (entries.every(entry => entry.size !== null)
+  ? entries.reduce((total, entry) => total + entry.size, 0) * 1.01 + 1024 * 1024 : undefined);
 
 // `restore_max_file_size_mb` (restore settings, default from migration 032)
 // is the per-object ceiling for everything a restore copies or downloads. A
@@ -599,9 +610,12 @@ class RestoreService {
         throw new Error(`Insufficient disk space. Required: ${spaceCheck.requiredFormatted}, Available: ${spaceCheck.availableFormatted}`);
       }
       if (remoteStage) {
-        remoteStage.plan = rsyncDownloadPlan(manifest, options);
+        remoteStage.plan = rsyncDownloadPlan(manifest, options, await getRestoreMaxFileBytes());
         remoteStage.space = await rsyncRestore.assertStagingSpace(remoteStage.dir, remoteStage.plan.bytes,
-          bytes => this.formatBytes(bytes));
+          bytes => this.formatBytes(bytes), {
+            restoredBytes: remoteStage.plan.mediaBytes,
+            storagePath: process.env.STORAGE_PATH || path.join(__dirname, '../../../storage'),
+          });
       }
 
       // Dry run mode - stop here after validation
@@ -650,7 +664,7 @@ class RestoreService {
         this.updateProgress('Downloading backup from S3...');
         localBackupPath = await this.downloadFromS3(selectedBackup, manifest, options);
       } else if (remoteStage) {
-        await this.downloadFromRsync(rsyncConfig, remoteStage);
+        await this.downloadFromRsync(rsyncConfig, remoteStage, manifest);
       }
 
       // Step 6: Perform the actual restore based on type
@@ -1373,23 +1387,59 @@ class RestoreService {
   }
 
   // Pull what the restore type needs from the rsync destination into the
-  // staging root. The restore then reads it there like a local restore
-  // point, with the same containment and checksum checks.
-  async downloadFromRsync(rsyncConfig, remoteStage) {
-    const { paths, bytes, maxSize } = remoteStage.plan;
-    this.updateProgress(`Downloading ${paths.length} file(s) (${this.formatBytes(bytes)}) from the rsync destination...`);
-    this.log('info', 'Downloading the restore point from the rsync destination', { files: paths.length, bytes });
+  // staging root, then check every byte of it against the authenticated
+  // manifest, all before anything on this install changes (like the S3
+  // download): a corrupt file fails the run with the database untouched.
+  // The dump goes on its own, bounded by its recorded size; media by
+  // restore_max_file_size_mb and their largest recorded size; each transfer
+  // by the sum of what it should write.
+  async downloadFromRsync(rsyncConfig, remoteStage, manifest) {
+    const { dump, files, bytes } = remoteStage.plan;
+    const total = files.length + (dump ? 1 : 0);
+    this.updateProgress(`Downloading ${total} file(s) (${this.formatBytes(bytes)}) from the rsync destination...`);
+    this.log('info', 'Downloading the restore point from the rsync destination', { files: total, bytes });
     let lastUpdate = 0;
-    await rsyncRestore.fetchRemoteFiles(rsyncConfig, paths, remoteStage.root, {
-      maxSize,
-      onProgress: (done, total) => {
-        const now = Date.now();
-        if (done < total && now - lastUpdate < 1000) return;
-        lastUpdate = now;
-        this.updateProgress(`Downloading from the rsync destination: ${done}/${total} file(s)`);
-      },
-    });
-    this.log('info', 'Restore point downloaded from the rsync destination', { files: paths.length });
+    // Files finished by the transfers before the running one (dump first).
+    let earlier = 0;
+    const onProgress = (done) => {
+      const now = Date.now();
+      if (earlier + done < total && now - lastUpdate < 1000) return;
+      lastUpdate = now;
+      this.updateProgress(`Downloading from the rsync destination: ${earlier + done}/${total} file(s)`);
+    };
+    if (dump) {
+      await rsyncRestore.fetchRemoteFiles(rsyncConfig, [dump.path], remoteStage.root, {
+        maxSize: dump.size || 0, budgetBytes: downloadBudget([dump]), onProgress,
+      });
+      earlier = 1;
+    }
+    if (files.length > 0) {
+      const maxBytes = await getRestoreMaxFileBytes();
+      const sizes = files.map(file => file.size);
+      const largest = sizes.every(size => size !== null) ? Math.max(...sizes) : maxBytes;
+      await rsyncRestore.fetchRemoteFiles(rsyncConfig, files.map(file => file.path), remoteStage.root, {
+        maxSize: Math.max(1, Math.min(maxBytes, largest)), budgetBytes: downloadBudget(files), onProgress,
+      });
+    }
+    this.log('info', 'Restore point downloaded from the rsync destination', { files: total });
+
+    this.updateProgress('Verifying the downloaded files against the manifest...');
+    if (dump) {
+      await verifyDatabaseDumpChecksum(path.join(remoteStage.root, dump.path), manifest.database.checksum,
+        msg => this.log('warn', msg), { allowUnverified: allowsUnauthenticatedContent(manifest) });
+    }
+    const mismatched = [];
+    for (const file of files) {
+      const expected = requireContentChecksum(manifest, file.checksum, file.path);
+      if (!expected) continue;
+      if (await this.calculateChecksum(path.join(remoteStage.root, file.path)) !== expected) mismatched.push(file.path);
+    }
+    if (mismatched.length > 0) {
+      throw new rsyncRestore.RestoreRemoteError('RESTORE_REMOTE_CHECKSUM_MISMATCH',
+        `${mismatched.length} of ${files.length} file(s) downloaded from the rsync destination do not match the checksum `
+        + `recorded in the backup manifest; nothing was restored: ${mismatched.slice(0, 5).join(', ')}`);
+    }
+    this.log('info', 'Downloaded files match the manifest checksums', { files: total });
   }
 
   /**

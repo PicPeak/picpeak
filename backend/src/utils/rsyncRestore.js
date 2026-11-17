@@ -184,24 +184,64 @@ async function listRemoteManifests(config) {
  * Refuse a download that does not fit: the sum of the manifest sizes against
  * the free space of the staging volume.
  */
-async function assertStagingSpace(dir, requiredBytes, formatBytes = String) {
+async function assertStagingSpace(dir, requiredBytes, formatBytes = String, { restoredBytes = 0, storagePath } = {}) {
   const { bavail, bsize } = await fs.statfs(dir);
   const availableBytes = bavail * bsize;
-  if (requiredBytes > availableBytes) {
+  // Staging and the live storage on one volume: the downloaded copy and the
+  // restored copy exist side by side until staging is removed.
+  const shared = Boolean(storagePath) && restoredBytes > 0 && await sameDevice(dir, storagePath);
+  const needed = requiredBytes + (shared ? restoredBytes : 0);
+  if (needed > availableBytes) {
     throw new RestoreRemoteError('RESTORE_INSUFFICIENT_SPACE',
-      `Downloading this restore point from the rsync destination needs ${formatBytes(requiredBytes)} in ${dir}, `
+      `Downloading this restore point from the rsync destination needs ${formatBytes(needed)} in ${dir}`
+      + `${shared ? ` (the download plus the restored copy: the restore temp directory and ${storagePath} share one volume)` : ''}, `
       + `but only ${formatBytes(availableBytes)} are free there. Free up space on that volume (or point TMPDIR at a larger one) and retry.`);
   }
-  return { requiredBytes, availableBytes };
+  return { requiredBytes: needed, availableBytes, shared };
+}
+
+// The device of `target`, or of its nearest existing parent (the storage
+// root of a fresh install may not exist yet).
+async function deviceOf(target) {
+  let current = path.resolve(target);
+  for (;;) {
+    try {
+      return (await fs.stat(current)).dev;
+    } catch (error) {
+      const parent = path.dirname(current);
+      if (error.code !== 'ENOENT' || parent === current) throw error;
+      current = parent;
+    }
+  }
+}
+
+async function sameDevice(a, b) {
+  return (await deviceOf(a)) === (await deviceOf(b));
+}
+
+// Bytes under `dir` (rsync's temporary files included), never following links.
+async function stagedBytes(dir) {
+  let total = 0;
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) total += await stagedBytes(full);
+    else total += (await fs.lstat(full).catch(() => ({ size: 0 }))).size;
+  }
+  return total;
 }
 
 /**
  * Download `relPaths` (validated, relative to the mirror root) from the rsync
  * destination into `root`, keeping their relative layout (--files-from).
- * `maxSize` bounds what rsync accepts per file. Every listed file must have
- * arrived as a regular file; missing ones are named in the error.
+ * `maxSize` bounds what rsync accepts per file. `budgetBytes` bounds what the
+ * whole transfer may write: the staged bytes are watched while rsync runs,
+ * and the run is stopped the moment they exceed it, so a destination that
+ * sends more than the manifest records cannot fill the volume before any
+ * checksum is compared. Every listed file must have arrived as a regular
+ * file; missing ones are named in the error.
  */
-async function fetchRemoteFiles(config, relPaths, root, { maxSize, onProgress } = {}) {
+async function fetchRemoteFiles(config, relPaths, root, { maxSize, budgetBytes, onProgress } = {}) {
   relPaths.forEach(rel => assertMirrorRelativePath(rel, 'manifest path'));
   const remote = await connectRemote(config);
   const listFile = path.join(path.dirname(root), 'files-from');
@@ -211,9 +251,23 @@ async function fetchRemoteFiles(config, relPaths, root, { maxSize, onProgress } 
     ...(maxSize > 0 ? [`--max-size=${Math.ceil(maxSize)}`] : []), '--out-format=%n',
     `${remote.connection.rsyncTarget}:${remote.base}/`, `${root}/`];
   let outcome;
+  const controller = new AbortController();
+  const budgeted = Number.isFinite(budgetBytes) && budgetBytes >= 0;
+  const before = budgeted ? await stagedBytes(root) : 0;
+  let overBudget = false;
+  const overBy = async () => budgeted && (await stagedBytes(root)) - before > budgetBytes;
+  let polling = false;
+  const watcher = budgeted ? setInterval(async () => {
+    if (polling || overBudget) return;
+    polling = true;
+    try {
+      if (await overBy()) { overBudget = true; controller.abort(); }
+    } finally { polling = false; }
+  }, module.exports.BUDGET_POLL_MS) : null;
   try {
     outcome = await rsyncConnection.runRsync(args, {
       timeoutMs: 0,
+      signal: controller.signal,
       onStdoutLine: (line) => {
         if (!line || line.endsWith('/')) return;
         done += 1;
@@ -221,7 +275,12 @@ async function fetchRemoteFiles(config, relPaths, root, { maxSize, onProgress } 
       },
     });
   } finally {
+    if (watcher) clearInterval(watcher);
     await fs.rm(listFile, { force: true });
+  }
+  if (overBudget || await overBy()) {
+    throw new RestoreRemoteError('RESTORE_REMOTE_DOWNLOAD_TOO_LARGE',
+      `The rsync destination sent more than the ${budgetBytes} bytes this restore point records for these files; download stopped`);
   }
   // 23/24: some files were not transferred or vanished; the check below names them.
   if (outcome.code !== 0 && !(outcome.code === 23 || outcome.code === 24)) {
@@ -257,5 +316,7 @@ module.exports = {
   RestoreRemoteError, REMOTE_REF_PREFIX, MAX_MANIFEST_BYTES,
   isRemoteManifestRef, remoteManifestRef, parseRemoteManifestRef, isRemoteMirrorManifest,
   assertMirrorRelativePath, fetchRemoteManifests, listRemoteManifests, assertStagingSpace,
-  fetchRemoteFiles, rsyncConfigFromEnv,
+  fetchRemoteFiles, rsyncConfigFromEnv, sameDevice,
+  // How often a download's staged bytes are measured against its budget.
+  BUDGET_POLL_MS: 1000,
 };
