@@ -73,6 +73,14 @@ export const TransferPhotoPicker: React.FC<TransferPhotoPickerProps> = ({
     enabled: !!selectedEventId,
   });
 
+  const toPicked = (photo: AdminPhoto): PickedPhoto => ({
+    id: photo.id,
+    filename: photo.original_filename || photo.filename,
+    event_id: selectedEventId as number,
+    event_name: selectedEventName,
+    thumbnail_url: photo.thumbnail_url || '',
+  });
+
   const togglePhoto = (photo: AdminPhoto) => {
     if (excluded.has(photo.id)) return;
     setSelected((prev) => {
@@ -80,13 +88,23 @@ export const TransferPhotoPicker: React.FC<TransferPhotoPickerProps> = ({
       if (next.has(photo.id)) {
         next.delete(photo.id);
       } else {
-        next.set(photo.id, {
-          id: photo.id,
-          filename: photo.original_filename || photo.filename,
-          event_id: selectedEventId as number,
-          event_name: selectedEventName,
-          thumbnail_url: photo.thumbnail_url || '',
-        });
+        next.set(photo.id, toPicked(photo));
+      }
+      return next;
+    });
+  };
+
+  // Select all / deselect all act on the open event's photos only; picks
+  // from other events stay as they are.
+  const selectable = (photos || []).filter((photo) => !excluded.has(photo.id));
+  const selectedHere = selectable.filter((photo) => selected.has(photo.id)).length;
+  const allSelectedHere = selectable.length > 0 && selectedHere === selectable.length;
+  const toggleAllHere = () => {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      for (const photo of selectable) {
+        if (allSelectedHere) next.delete(photo.id);
+        else if (!next.has(photo.id)) next.set(photo.id, toPicked(photo));
       }
       return next;
     });
@@ -165,6 +183,21 @@ export const TransferPhotoPicker: React.FC<TransferPhotoPickerProps> = ({
 
         {/* Photo grid */}
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {selectedEventId !== null && !photosLoading && selectable.length > 0 && (
+            <div className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 flex items-center justify-between gap-3 border-b border-line bg-panel px-4 py-2">
+              <span className="text-sm text-soft">
+                {t('transfers.picker.eventSelected', '{{selected}} of {{total}} in this event selected', {
+                  selected: selectedHere,
+                  total: selectable.length,
+                })}
+              </span>
+              <Button size="sm" variant="outline" onClick={toggleAllHere}>
+                {allSelectedHere
+                  ? t('transfers.picker.deselectAll', 'Deselect all')
+                  : t('transfers.picker.selectAll', 'Select all ({{total}})', { total: selectable.length })}
+              </Button>
+            </div>
+          )}
           {!selectedEventId ? (
             <div className="flex h-full items-center justify-center text-faint">
               <div className="text-center">

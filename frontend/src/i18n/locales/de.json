@@ -1208,6 +1208,9 @@
       "selectedCount": "{{count}} ausgewählt",
       "addSelected": "Auswahl hinzufügen",
       "lightbox": "Lightbox",
+      "selectAll": "Alle auswählen ({{total}})",
+      "deselectAll": "Alle abwählen",
+      "eventSelected": "{{selected}} von {{total}} in diesem Event ausgewählt",
       "selectedCount_one": "{{count}} ausgewählt",
       "selectedCount_other": "{{count}} ausgewählt"
     },
