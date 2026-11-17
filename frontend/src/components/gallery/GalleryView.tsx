@@ -1133,6 +1133,19 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // The whole list, and /my-feedback, from the server either way.
     handleFeedbackChange();
   };
+  // Rendered by the toolbar/sidebar view and the full-page layouts alike, so
+  // the step works wherever the gallery offers it.
+  const clearLikesDialog = (
+    <GalleryConfirmDialog
+      open={confirmClearLikes}
+      variant="danger"
+      title={t('gallery.filterPanel.clearLikesTitle')}
+      message={t('gallery.filterPanel.clearLikesConfirm', { count: ownLikeCount })}
+      confirmLabel={t('gallery.filterPanel.clearLikesAction')}
+      onCancel={() => setConfirmClearLikes(false)}
+      onConfirm={clearOwnLikes}
+    />
+  );
 
   const favoriteCount = useMemo(() => {
     if (savedIsOwn) {
@@ -2160,6 +2173,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         />
 
         {clientAccessDialog}
+        {clearLikesDialog}
 
         {/* Upload Modal for full-page layouts */}
         {showUploadModal && allowUploads && (
@@ -2774,15 +2788,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
 
-        <GalleryConfirmDialog
-          open={confirmClearLikes}
-          variant="danger"
-          title={t('gallery.filterPanel.clearLikesTitle')}
-          message={t('gallery.filterPanel.clearLikesConfirm', { count: ownLikeCount })}
-          confirmLabel={t('gallery.filterPanel.clearLikesAction')}
-          onCancel={() => setConfirmClearLikes(false)}
-          onConfirm={clearOwnLikes}
-        />
+        {clearLikesDialog}
 
         {/* Upload Modal */}
         {showUploadModal && allowUploads && (
