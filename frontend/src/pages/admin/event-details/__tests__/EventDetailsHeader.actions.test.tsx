@@ -135,4 +135,17 @@ describe('EventDetailsHeader — actions', () => {
     expect(within(open()).queryByRole('menuitem', { name: /create invoice/i })).not.toBeInTheDocument();
     flagState.flags = {};
   });
+
+  // Admin preview (#868) only for an admin the backend grants it to
+  // (events.view + photos.view); anyone else gets the guest flow.
+  it('opens View Gallery as an admin preview only with events.view and photos.view', () => {
+    perms.granted = new Set(['events.view', 'photos.view']);
+    renderHeader();
+    expect(screen.getByRole('link', { name: 'events.viewGallery' }).getAttribute('href')).toMatch(/\/gallery\/g\/t\?admin_preview=1$/);
+    cleanup();
+
+    perms.granted = new Set(['events.view']);
+    renderHeader();
+    expect(screen.getByRole('link', { name: 'events.viewGallery' }).getAttribute('href')).toMatch(/\/gallery\/g\/t$/);
+  });
 });

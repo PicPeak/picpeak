@@ -24,7 +24,7 @@ import { useConfirm } from '../../../components/common/ConfirmDialog';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../../contexts/PermissionsContext';
-import { buildShareLinkUrl } from '../../../utils/url';
+import { useViewGalleryUrl } from '../../../hooks/useViewGalleryUrl';
 import { isGalleryPublic } from '../../../utils/accessControl';
 import { safeParseDate } from './utils';
 import { canSendGalleryEmail, useAccountReach } from './OverviewTab';
@@ -112,6 +112,7 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
   const { flags } = useFeatureFlags();
   const reach = useAccountReach();
   const { hasPermission, hasAnyPermission } = usePermissions();
+  const viewGalleryUrl = useViewGalleryUrl();
   const confirm = useConfirm();
   const archived = Boolean(event.is_archived);
   const canHelpClient = hasAnyPermission(['events.edit', 'events.support']) && !event.share_secrets_hidden;
@@ -246,9 +247,9 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
             <ActionMenu items={menuItems} align="right" size="icon-sm" label={t('events.header.moreActions', 'More actions')} className="hidden sm:block" />
             {event.share_link && (
               <a
-                // Admin preview (#868): an explicit intent flag, no token in the
-                // URL; the httpOnly admin cookie authenticates the API calls.
-                href={`${buildShareLinkUrl(event.share_link)}${buildShareLinkUrl(event.share_link).includes('?') ? '&' : '?'}admin_preview=1`}
+                // Admin preview (#868) when the admin may view the photos, else
+                // the plain share link (useViewGalleryUrl).
+                href={viewGalleryUrl(event.share_link)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-accent hover:opacity-80 border border-accent-dark rounded-lg hover:bg-accent-dark/15 transition-colors"
