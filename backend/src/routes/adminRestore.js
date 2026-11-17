@@ -518,23 +518,29 @@ async function discoverRemoteRsyncBackups(backupConfig) {
     logger.warn(`Could not list restore points on the rsync destination: ${error.message}`);
     return { backups: [], remoteError: { code: error.code || null, message: error.message } };
   }
-  const backups = listed.map(({ name, ref, manifest, mtime, error }) => ({
-    type: 'rsync',
-    restoreSource: 'rsync',
-    name,
-    path: ref,
-    manifestId: manifest?.backup?.id || null,
-    size: (Number(manifest?.files?.total_size) || 0) + (Number(manifest?.database?.size) || 0),
-    filesCount: manifest?.files?.count ?? null,
-    // The destination is untrusted until authenticated: an unparseable
-    // timestamp would break the wizard's date formatting, so fall back to the file's.
-    completed: typeof manifest?.backup?.timestamp === 'string' && !Number.isNaN(Date.parse(manifest.backup.timestamp))
-      ? manifest.backup.timestamp : mtime,
-    source: 'remote',
-    databaseIncluded: Boolean(manifest?.database?.backup_file),
-    schemaVersion: manifest?.manifest?.version || '1.0',
-    ...(error ? { corrupt: true, error } : {}),
-  }));
+  // A manifest that failed authentication lists by its name and file date
+  // only: its contents are whatever the destination wrote, and a malformed
+  // field must not break the listing (local restore points included).
+  const backups = listed.map(({ name, ref, manifest: listedManifest, mtime, error }) => {
+    const manifest = error ? null : listedManifest;
+    return {
+      type: 'rsync',
+      restoreSource: 'rsync',
+      name,
+      path: ref,
+      manifestId: manifest?.backup?.id || null,
+      size: (Number(manifest?.files?.total_size) || 0) + (Number(manifest?.database?.size) || 0),
+      filesCount: manifest?.files?.count ?? null,
+      // A recovery-digest manifest is host-approved, not signed: only a
+      // parseable timestamp string is shown, otherwise the file's date.
+      completed: typeof manifest?.backup?.timestamp === 'string' && !Number.isNaN(Date.parse(manifest.backup.timestamp))
+        ? manifest.backup.timestamp : mtime,
+      source: 'remote',
+      databaseIncluded: Boolean(manifest?.database?.backup_file),
+      schemaVersion: manifest?.manifest?.version || '1.0',
+      ...(error ? { corrupt: true, error } : {}),
+    };
+  });
   return { backups, remoteError: null };
 }
 
