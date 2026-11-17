@@ -93,7 +93,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const tileBadges = useGalleryTileBadges();
   // The like endpoint is a toggle (#590), and so is taking one back. The set
   // follows every payload's is_liked, toggles held until confirmed (issue 2561).
-  const [likedIds, toggleLiked] = useViewerLikes(photos);
+  const [likedIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange);
   const canQuickComment = Boolean(feedbackEnabled && feedbackOptions?.allowComments && onOpenPhotoWithFeedback);
   // Issue 2043: spins while the photo on screen is being prepared.
   const downloadPending = usePhotoDownloadPending(currentPhoto?.id);
@@ -231,9 +231,6 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       await feedbackService.submitFeedback(slug!, String(currentPhoto.id), {
                         feedback_type: 'like',
                       });
-                      // The "x selected" counter and the Liked filter read
-                      // /my-feedback, which this refreshes (issue 1733).
-                      onFeedbackChange?.(currentPhoto.id);
                     } catch (err) {
                       // Same rule as PhotoCard: a pick refused by a finished
                       // selection goes back; otherwise keep the optimistic
@@ -241,6 +238,10 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       if (feedbackLockKind(err)) toggleLiked(currentPhoto.id);
                       else console.warn('Like submit failed, keeping optimistic UI', err);
                     }
+                    // The "x selected" counter and the Liked filter read
+                    // /my-feedback, which this refreshes (issue 1733); the
+                    // held heart's confirmation window starts here.
+                    likeSettled(currentPhoto.id);
                     return;
                   }
                   if (feedbackOptions?.requireNameEmail && !savedIdentity) {
@@ -256,11 +257,11 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       guest_name: savedIdentity?.name,
                       guest_email: savedIdentity?.email,
                     });
-                    onFeedbackChange?.(currentPhoto.id);
                   } catch (err) {
                     if (feedbackLockKind(err)) toggleLiked(currentPhoto.id);
                     else console.warn('Like submit failed, keeping optimistic UI', err);
                   }
+                  likeSettled(currentPhoto.id);
                 }}
                 className={`bg-black/30 hover:bg-black/50 rounded-full border border-white/40 ${likedIds.has(currentPhoto.id) ? 'text-danger' : 'text-white'}`}
                 title={t('gallery.tile.likePhoto', 'Like photo')}

@@ -15,11 +15,14 @@ import { LIKES_CLEARED_EVENT } from '../../../utils/feedbackEvents';
 // The confirming refresh normally lands well inside this.
 export const LIKE_CONFIRM_WINDOW_MS = 5000;
 
-export type LikeHolds = Map<number, { liked: boolean; savedAt?: number }>;
+// A hold whose submit never reports back still lapses after this.
+export const LIKE_PENDING_MAX_MS = 60000;
+
+export type LikeHolds = Map<number, { liked: boolean; savedAt?: number; heldAt?: number }>;
 
 /** Hold `liked` for this photo until a payload confirms it. */
-export function holdLike(holds: LikeHolds, photoId: number, liked: boolean) {
-  holds.set(photoId, { liked });
+export function holdLike(holds: LikeHolds, photoId: number, liked: boolean, now = Date.now()) {
+  holds.set(photoId, { liked, heldAt: now });
 }
 
 /** The submit succeeded: start the confirmation window. */
@@ -36,6 +39,7 @@ export function markLikeSaved(holds: LikeHolds, photoId: number, now = Date.now(
 export function likedFromPayload(photos: Photo[], holds: LikeHolds, now = Date.now()): Set<number> {
   holds.forEach((hold, id) => {
     if (hold.savedAt !== undefined && now - hold.savedAt > LIKE_CONFIRM_WINDOW_MS) holds.delete(id);
+    else if (hold.savedAt === undefined && hold.heldAt !== undefined && now - hold.heldAt > LIKE_PENDING_MAX_MS) holds.delete(id);
   });
   photos.forEach((photo) => {
     if (holds.get(photo.id)?.liked === !!photo.is_liked) holds.delete(photo.id);
@@ -55,11 +59,14 @@ export function likedFromPayload(photos: Photo[], holds: LikeHolds, now = Date.n
  * then ignored every later one, so a like changed in the lightbox never
  * reached the tile: the heart showed the opposite of what the server held,
  * and the next click on it (a toggle) did the opposite of what the guest
- * meant. Here the set follows each payload, and a toggle holds its state for
- * the confirmation window from the click, as these tiles do not report when
- * their submit succeeded.
+ * meant. Here the set follows each payload, and a toggle holds its state
+ * while its submit runs and for the confirmation window after the tile
+ * reports it settled: pass the tiles `settled` as their onFeedbackChange.
  */
-export function useViewerLikes(photos: Photo[]): [Set<number>, (photoId: number) => void] {
+export function useViewerLikes(
+  photos: Photo[],
+  onFeedbackChange?: (photoId?: number) => void,
+): [Set<number>, (photoId: number) => void, (photoId?: number) => void] {
   const holdsRef = useRef<LikeHolds>(new Map());
   const [liked, setLiked] = useState<Set<number>>(() => likedFromPayload(photos, holdsRef.current));
   const photosRef = useRef(photos);
@@ -83,8 +90,13 @@ export function useViewerLikes(photos: Photo[]): [Set<number>, (photoId: number)
     if (nowLiked) next.add(photoId);
     else next.delete(photoId);
     holdLike(holdsRef.current, photoId, nowLiked);
-    markLikeSaved(holdsRef.current, photoId);
     return next;
   }), []);
-  return [liked, toggle];
+  // The tile's submit finished (or failed): start the confirmation window,
+  // then refresh the row as before.
+  const settled = useCallback((photoId?: number) => {
+    if (photoId !== undefined) markLikeSaved(holdsRef.current, photoId);
+    onFeedbackChange?.(photoId);
+  }, [onFeedbackChange]);
+  return [liked, toggle, settled];
 }

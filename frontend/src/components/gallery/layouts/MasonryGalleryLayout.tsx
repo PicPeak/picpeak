@@ -243,7 +243,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // Optimistic "I liked this" state — lifted here so it survives re-renders
   // of individual MasonryPhoto components during layout reflow/resize.
   // Follows every payload's is_liked, toggles held until confirmed (issue 2561).
-  const [likedPhotoIds, toggleLiked] = useViewerLikes(photos);
+  const [likedPhotoIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange);
   // Likewise the identity a viewer typed into one tile's modal (like or
   // rating, issue 1733): every other tile reuses it instead of asking again.
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
@@ -265,7 +265,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
       feedbackOptions: narrow && feedbackOptions ? { ...feedbackOptions, allowRatings: false } : feedbackOptions,
       slug,
       onQuickComment: () => onOpenPhotoWithFeedback && onOpenPhotoWithFeedback(index),
-      onFeedbackChange,
+      onFeedbackChange: likeSettled,
       liked: likedPhotoIds.has(photo.id),
       onLikeSuccess: () => toggleLiked(photo.id),
       identityMode: 'self' as const,
@@ -786,7 +786,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 slug={slug}
                 feedbackOptions={feedbackOptions}
                 onQuickComment={() => onOpenPhotoWithFeedback && onOpenPhotoWithFeedback(originalIndex)}
-                onFeedbackChange={onFeedbackChange}
+                onFeedbackChange={likeSettled}
                 columnWidth={columnWidth}
                 style={boxStyle(columnWindow.boxes?.get(photo.id))}
                 savedIdentity={savedIdentity}

@@ -66,7 +66,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const delta = densityColumnDelta(useGridDensity());
   const cols = (base: number) => Math.max(1, base + delta);
   // Follows every payload's is_liked, toggles held until confirmed (issue 2561).
-  const [likedIds, toggleLiked] = useViewerLikes(photos);
+  const [likedIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<null | { type: 'like'; photoId: number }>(null);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
@@ -206,7 +206,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                     liked={likedIds.has(photo.id)}
                     // Toggle — server /feedback like is a toggle (#590).
                     onLikeSuccess={() => toggleLiked(photo.id)}
-                    onFeedbackChange={onFeedbackChange}
+                    onFeedbackChange={likeSettled}
                     savedIdentity={savedIdentity}
                     onIdentitySaved={setSavedIdentity}
                     onRequireIdentity={(action, photoId) => {

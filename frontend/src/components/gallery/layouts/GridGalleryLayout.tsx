@@ -274,7 +274,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const [pendingAction, setPendingAction] = React.useState<null | { type: 'like'; photoId: number }>(null);
   // The server's is_liked from every payload, with the viewer's own toggles
   // held until a payload confirms them (issue 2561).
-  const [likedPhotoIds, toggleLiked] = useViewerLikes(photos);
+  const [likedPhotoIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange);
   const [savedIdentity, setSavedIdentity] = React.useState<{ name: string; email: string } | null>(null);
 
   const gridClass = `photo-grid ${gridGeometryClass(gallerySettings, density)}`;
@@ -309,7 +309,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 setShowIdentityModal(true);
               }}
               onQuickComment={() => onOpenPhotoWithFeedback && onOpenPhotoWithFeedback(index)}
-              onFeedbackChange={onFeedbackChange}
+              onFeedbackChange={likeSettled}
               liked={likedPhotoIds.has(photo.id)}
               // Toggle, not add — like endpoint toggles server-side,
               // so the optimistic UI has to follow suit on click 2 (#590).
@@ -339,7 +339,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
             // Immediately reflect like UI — toggle for consistency (#590).
             if (pendingAction.type === 'like') toggleLiked(pendingAction.photoId);
             // The row refresh confirms it, as after a tile like (issue 2561).
-            onFeedbackChange?.(pendingAction.photoId);
+            likeSettled(pendingAction.photoId);
             setPendingAction(null);
           }
         }}

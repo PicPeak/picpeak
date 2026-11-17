@@ -194,7 +194,7 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // follow-up). Here and not in the tile: a tile that leaves the window would
   // take its toggle with it. A toggle holds only until a payload confirms it,
   // so a like changed in the lightbox reaches the tile (issue 2561).
-  const [likedIds, toggleLiked] = useViewerLikes(photos);
+  const [likedIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange);
   const { theme } = useTheme();
   const scale = theme.gallerySettings?.thumbnailScale || 'md';
   const scaleOffsets: Record<string, number> = { xs: 3, sm: 1, md: 0, lg: -1, xl: -2 };
@@ -281,7 +281,7 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           liked={likedIds.has(photo.id)}
           // Toggle — server /feedback like is a toggle (#590).
           onLikeSuccess={() => toggleLiked(photo.id)}
-          onFeedbackChange={onFeedbackChange}
+          onFeedbackChange={likeSettled}
           box={tileWindow.boxes?.get(photo.id)}
           // The client's hide/show button and dimmed hidden photos, as in Grid (issue 1992).
           visibilityToggle={isClient && onToggleVisibility

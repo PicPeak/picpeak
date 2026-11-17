@@ -133,6 +133,28 @@ describe.each(layouts)('%s layout like state (issue 2561)', (_name, Layout) => {
     expect(heart()).toHaveAttribute('aria-pressed', 'false');
   });
 
+  it('holds a tile like while its submit is still running, past the confirmation window', async () => {
+    let finish: (value: unknown) => void = () => {};
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((resolve) => { finish = resolve; }) as never);
+    const start = Date.now();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      const update = mount(Layout as never, photoWith(false));
+      fireEvent.click(heart());
+      await waitFor(() => expect(heart()).toHaveAttribute('aria-pressed', 'true'));
+      // A slow POST: another row refresh lands long after the click.
+      now.mockReturnValue(start + 6000);
+      update(photoWith(false));
+      expect(heart()).toHaveAttribute('aria-pressed', 'true');
+      // Settled now; the confirming refresh carries the like.
+      await act(async () => { finish({ success: true }); });
+      update(photoWith(true));
+      expect(heart()).toHaveAttribute('aria-pressed', 'true');
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('drops a held tile like when all own likes are taken back', async () => {
     vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
     const update = mount(Layout as never, photoWith(false));
