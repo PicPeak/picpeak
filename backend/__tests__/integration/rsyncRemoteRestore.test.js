@@ -158,6 +158,9 @@ beforeAll(async () => {
   rsyncRestore = require('../../src/utils/rsyncRestore');
   backupManifest = require('../../src/services/backupManifest');
   ({ RestoreService, restoreService } = require('../../src/services/restoreService'));
+  // The routes use the singleton: keep its temp dir (removed after every run)
+  // away from the default one other suites share.
+  restoreService.tempDir = path.join(tmpDir, 'restore-tmp');
   const role = await db('roles').where({ name: 'super_admin' }).first();
   const [inserted] = await db('admin_users').insert({ username: 'root-admin', email: 'root-admin@example.com',
     password_hash: await bcrypt.hash('Passw0rd!', 4), role_id: role.id, is_active: 1,
