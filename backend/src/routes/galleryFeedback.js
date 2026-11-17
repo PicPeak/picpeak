@@ -529,4 +529,44 @@ router.get('/:slug/my-feedback',
   }
 );
 
+// Take back all of the viewer's own likes in this gallery at once (issue
+// 2561). Other guests' likes and every other feedback type stay as they are.
+router.delete('/:slug/my-feedback/likes',
+  verifyGalleryAccess,
+  denySlideshowToken,
+  blockHiddenGallery,
+  resolveGuest,
+  async (req, res) => {
+    try {
+      const event = req.event;
+      const settings = await feedbackService.getEventFeedbackSettings(event.id);
+
+      // The same gates as a like submitted on one photo.
+      if (!settings.feedback_enabled) {
+        return res.status(403).json({ error: 'Feedback is not enabled for this event' });
+      }
+      if (settings.identity_mode === 'guest' && (!req.guest || req.guest.eventId !== event.id)) {
+        return res.status(401).json({ error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' });
+      }
+      if (!settings.allow_likes) {
+        return res.status(403).json({ error: 'like feedback is not enabled' });
+      }
+
+      // One unit of the like budget for the whole request.
+      await feedbackRateLimit('like')(req, res, (err) => { if (err) throw err; });
+      if (res.headersSent) return;
+
+      const result = await feedbackService.clearOwnLikes(event.id, {
+        guestId: req.guest?.id ?? null,
+        guestIdentifier: await generateGuestIdentifier(req),
+        accessLevel: req.accessLevel,
+      });
+      res.json({ success: true, removed: result.removed, photo_ids: result.photo_ids });
+    } catch (error) {
+      logger.error('Error clearing own likes:', error);
+      res.status(500).json({ error: 'Failed to remove your likes' });
+    }
+  }
+);
+
 module.exports = router;

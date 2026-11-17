@@ -1172,6 +1172,17 @@
     "sortBySize": "Sort by Size",
     "allPhotos": "All Photos",
     "feedbackFilter": "Feedback Filter",
+    "filterPanel": {
+      "clearLikes_one": "Remove my like",
+      "clearLikes_other": "Remove my {{count}} likes",
+      "clearLikesTitle": "Remove your likes?",
+      "clearLikesConfirm_one": "Your like in this gallery will be removed. Likes from other guests stay.",
+      "clearLikesConfirm_other": "All {{count}} of your likes in this gallery will be removed. Likes from other guests stay.",
+      "clearLikesAction": "Remove likes",
+      "clearLikesDone_one": "Removed {{count}} like",
+      "clearLikesDone_other": "Removed {{count}} likes",
+      "clearLikesError": "Your likes could not be removed. Please try again."
+    },
     "all": "All",
     "liked": "Liked",
     "favorited": "Favorited",

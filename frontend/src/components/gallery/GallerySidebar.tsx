@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { X, Download, Filter, SortAsc, SortDesc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera } from 'lucide-react';
+import { X, Download, Filter, SortAsc, SortDesc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera, HeartOff } from 'lucide-react';
 import { Button } from '../common';
 import { PhotoCategory } from '../../types';
 import { useTranslation } from 'react-i18next';
@@ -47,6 +47,8 @@ interface GallerySidebarProps {
   feedbackFilters?: FeedbackFilterType[];
   onFilterChange?: (filter: FilterType) => void;
   likeCount?: number;
+  /** The viewer's own likes and the step that takes them all back (issue 2561). */
+  clearOwnLikes?: { count: number; onClick: () => void };
   favoriteCount?: number;
   ratedCount?: number;
   // Colour-label filters (#1044).
@@ -90,6 +92,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   feedbackFilters,
   onFilterChange,
   likeCount = 0,
+  clearOwnLikes,
   favoriteCount = 0,
   ratedCount = 0,
   colorLabelsEnabled = false,
@@ -264,6 +267,18 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                 className="w-full"
                 variant="compact"
               />
+              {/* Undo many likes at once (issue 2561); the container confirms. */}
+              {clearOwnLikes && clearOwnLikes.count > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  leftIcon={<HeartOff className="w-3.5 h-3.5" />}
+                  onClick={clearOwnLikes.onClick}
+                  className="mt-3 text-xs md:text-sm"
+                >
+                  {t('gallery.filterPanel.clearLikes', { count: clearOwnLikes.count })}
+                </Button>
+              )}
               {/* Colour filter (#1044) */}
               {colorLabelsEnabled && onColorFilterChange && (
                 <ColorLabelFilterChips

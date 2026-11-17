@@ -7,8 +7,10 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'react-toastify';
 
 import { Button } from '../common';
+import { useConfirmOptional } from '../common/ConfirmDialog';
 import { GallerySkeleton } from './GallerySkeleton';
 import { PasswordChangeRequiredNotice } from './PasswordChangeRequiredNotice';
 import { isAdminSessionExpired, isPasswordChangeRequired } from '../../utils/passwordChangeRequired';
@@ -705,6 +707,36 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     return scopedPhotos.filter(p => (p.like_count ?? 0) > 0).length;
   }, [scopedPhotos, isGuestIdentityMode, myFeedbackPhotoIds]);
 
+  // The viewer's own likes across the whole gallery (is_liked is per viewer in
+  // every identity mode), for "Remove my likes" (issue 2561). Not the chip's
+  // likeCount: in simple mode that counts every guest's likes in the scope.
+  const ownLikeCount = useMemo(
+    () => (data?.photos || []).filter((p) => p.is_liked).length,
+    [data?.photos],
+  );
+  const confirm = useConfirmOptional();
+  const clearOwnLikes = feedbackSettings?.allow_likes ? {
+    count: ownLikeCount,
+    onClick: async () => {
+      if (isMobile) setSidebarOpen(false);
+      const ok = await confirm({
+        variant: 'danger',
+        title: t('gallery.filterPanel.clearLikesTitle'),
+        message: t('gallery.filterPanel.clearLikesConfirm', { count: ownLikeCount }),
+        confirmLabel: t('gallery.filterPanel.clearLikesAction'),
+      });
+      if (!ok) return;
+      try {
+        const { removed } = await feedbackService.clearMyLikes(slug);
+        toast.success(t('gallery.filterPanel.clearLikesDone', { count: removed }));
+      } catch {
+        toast.error(t('gallery.filterPanel.clearLikesError'));
+      }
+      // The whole list, and /my-feedback, from the server either way.
+      handleFeedbackChange();
+    },
+  } : undefined;
+
   const favoriteCount = useMemo(() => {
     if (isGuestIdentityMode) {
       return scopedPhotos.filter(p => myFeedbackPhotoIds.favorited.has(p.id)).length;
@@ -1328,6 +1360,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onMediaFilterChange={setMediaFilter}
           showMediaFilter={showMediaFilter}
           likeCount={likeCount}
+          clearOwnLikes={clearOwnLikes}
           favoriteCount={favoriteCount}
           ratedCount={ratedCount}
           colorLabelsEnabled={!!feedbackSettings?.allow_color_labels}
@@ -1491,6 +1524,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             activeColorFilters={activeColorFilters}
             onColorFilterChange={handleColorFilterToggle}
             colorLabelCounts={colorLabelCounts}
+            clearOwnLikes={feedbackEnabled ? clearOwnLikes : undefined}
           />
         </div>
       ) : null}
