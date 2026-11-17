@@ -85,6 +85,17 @@ describe('TransferUploadPage: upload progress', () => {
     expect(bar).toHaveAttribute('aria-valuemax', '100');
   });
 
+  it('does not say "saving" while the last bytes are still on the way', async () => {
+    await startUpload([sized('film.mp4', 1700 * MB)]);
+    await waitFor(() => expect(transfersService.uploadChunked).toHaveBeenCalled());
+
+    // 99.6 % of 1.7 GB is ~7 MB still unsent.
+    report(99.6);
+    expect(await screen.findByText('Uploading… 99%')).toBeInTheDocument();
+    expect(screen.queryByText('Upload complete, saving the files…')).toBeNull();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '99');
+  });
+
   it('says the files are being saved once every byte is sent', async () => {
     await startUpload([sized('film.mp4', 1700 * MB)]);
     await waitFor(() => expect(transfersService.uploadChunked).toHaveBeenCalled());

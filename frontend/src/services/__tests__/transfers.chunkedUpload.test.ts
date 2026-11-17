@@ -212,6 +212,24 @@ describe('adding files to a transfer', () => {
 });
 
 describe('public file-request upload', () => {
+  it('reports 100 only once every byte of the file is sent', async () => {
+    post.mockImplementation(async (url: string, body?: unknown, config?: unknown) => {
+      if (url.endsWith('/init')) {
+        return { data: { uploadId: 'p1', chunkSize: CHUNK, expectedChunks: Math.ceil((body as { fileSize: number }).fileSize / CHUNK) } };
+      }
+      if (url.endsWith('/complete')) return { data: { uploaded: 1, files: [], rejected_files: [], failed_files: [] } };
+      const onUploadProgress = (config as { onUploadProgress?: (e: { loaded: number }) => void }).onUploadProgress;
+      // The last chunk short of its final 0.5 MB, then complete.
+      if (url.endsWith('/chunk/9')) onUploadProgress?.({ loaded: CHUNK - MB / 2 });
+      onUploadProgress?.({ loaded: CHUNK });
+      return { data: {} };
+    });
+    const seen: number[] = [];
+    await transfersService.uploadChunked('tok', bigFile('raw.zip', 100 * MB), (pct) => seen.push(pct));
+    expect(seen).toContain(99);
+    expect(seen.indexOf(100)).toBe(seen.length - 1);
+  });
+
   it('sends one large file in chunks on the request link', async () => {
     post.mockImplementation(async (url: string, body?: unknown) => {
       if (url.endsWith('/init')) {
