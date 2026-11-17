@@ -394,7 +394,9 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
         
         {/* Mobile/Tablet: compact horizontal icons with headline below categories */}
         {feedbackFiltersShown && onFilterChange && (
-          <div className="flex lg:hidden items-center gap-2">
+          // Wraps so "Remove my likes" (issue 2561) takes its own line on a
+          // phone instead of pushing the page sideways.
+          <div className="flex lg:hidden flex-wrap items-center gap-2">
             <span className="text-xs text-muted-theme whitespace-nowrap">
               {t('gallery.feedbackFilter', 'Feedback Filter')}
             </span>
