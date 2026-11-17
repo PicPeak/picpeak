@@ -178,19 +178,27 @@ function missingKnownHostsWarning(config) {
  * One rsync run, no shell; resolves with its outcome and never rejects.
  * `timeoutMs` 0 sets no wall-clock limit (a restore download: rsync's own
  * --timeout bounds a stalled transfer instead). `onStdoutLine` receives each
- * complete stdout line, for progress.
+ * complete stdout line, for progress. Aborting `signal` stops the run
+ * (SIGTERM); the outcome then carries `aborted: true`.
  */
-function runRsync(args, { timeoutMs = module.exports.RSYNC_PROBE_TIMEOUT_MS, onStdoutLine } = {}) {
+function runRsync(args, { timeoutMs = module.exports.RSYNC_PROBE_TIMEOUT_MS, onStdoutLine, signal } = {}) {
   return new Promise((resolve) => {
-    let settled = false; let timedOut = false; let timer;
+    let child;
+    let settled = false; let timedOut = false; let aborted = false; let timer;
+    const stop = () => { aborted = true; if (child) child.kill('SIGTERM'); };
     const done = outcome => {
       if (settled) return;
-      settled = true; clearTimeout(timer); resolve({ ...outcome, timedOut });
+      settled = true; clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', stop);
+      resolve({ ...outcome, timedOut, ...(aborted ? { aborted } : {}) });
     };
-    let child;
     try {
       child = require('child_process').spawn('rsync', args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (error) { done({ error, stderr: '' }); return; }
+    if (signal) {
+      if (signal.aborted) stop();
+      else signal.addEventListener('abort', stop);
+    }
     // Our own timer, not spawn's `timeout`: rsync traps SIGTERM and exits
     // with code 20, so the close event alone cannot tell a timeout apart.
     if (timeoutMs > 0) timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeoutMs);

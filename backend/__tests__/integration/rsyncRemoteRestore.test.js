@@ -59,7 +59,7 @@ function serveRemote(calls, { override } = {}) {
     const call = { args: [...args] };
     calls.push(call);
     if (override) {
-      const result = await override(args);
+      const result = await override(args, options);
       if (result) return result;
     }
     const dest = args[args.length - 1];
@@ -331,7 +331,7 @@ describe('restoring from the rsync destination', () => {
     const service = newService();
     service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
     await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true, skipPreBackup: true }))
-      .rejects.toThrow(new RegExp(`RESTORE_REMOTE_FILE_MISSING: 1 of 2 file\\(s\\).*${photo}`));
+      .rejects.toThrow(new RegExp(`RESTORE_REMOTE_FILE_MISSING: 1 of 1 file\\(s\\).*${photo}`));
     expect(await marker()).toBe('changed after the backup');
     expect((await db('restore_runs').orderBy('id', 'desc').first()).status).toBe('blocked');
     expect(await stagingLeft(service)).toEqual([]);
@@ -354,6 +354,90 @@ describe('restoring from the rsync destination', () => {
     await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'database', force: true, skipPreBackup: true }))
       .rejects.toThrow(/does not match the checksum recorded in the backup manifest/);
     expect(await stagingLeft(service)).toEqual([]);
+    expect(await marker()).toBe('changed after the backup');
+    expect((await db('restore_runs').orderBy('id', 'desc').first()).status).toBe('blocked');
+  });
+
+  it('verifies every downloaded media file before the database is replaced', async () => {
+    await backupToRemote();
+    // Same length, different bytes: only the checksum can tell.
+    await fs.writeFile(path.join(remoteRoot, photo), 'PHOTO BYTES');
+    serveRemote([]);
+    const service = newService();
+    service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
+    const replay = jest.spyOn(service, 'performFullRestore');
+    await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true, skipPreBackup: true }))
+      .rejects.toThrow(new RegExp(`RESTORE_REMOTE_CHECKSUM_MISMATCH: 1 of 1 file\\(s\\).*${photo}`));
+    expect(replay).not.toHaveBeenCalled();
+    expect(await marker()).toBe('changed after the backup');
+    await expect(fs.access(path.join(process.env.STORAGE_PATH, photo))).rejects.toThrow();
+    expect((await db('restore_runs').orderBy('id', 'desc').first()).status).toBe('blocked');
+    expect(await stagingLeft(service)).toEqual([]);
+  });
+
+  it('refuses a media file recorded above restore_max_file_size_mb before downloading anything', async () => {
+    await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    // About one byte; the photo is recorded at eleven.
+    await db('app_settings').insert({ setting_key: 'restore_max_file_size_mb', setting_value: '0.000001', setting_type: 'restore' })
+      .onConflict('setting_key').merge();
+    try {
+      await expect(newService().restore({ source: 'rsync', manifestPath: ref(), restoreType: 'files', force: true, skipPreBackup: true }))
+        .rejects.toThrow(/Refusing events\/active\/party\/individual\/photo\.jpg: recorded at 11 bytes, above the restore size limit/);
+    } finally {
+      await db('app_settings').where({ setting_key: 'restore_max_file_size_mb' }).update({ setting_value: '5000' });
+    }
+    expect(calls.some(call => call.list)).toBe(false);
+  });
+
+  it('stops a transfer that writes more than the manifest records, before any checksum runs', async () => {
+    await backupToRemote();
+    rsyncRestore.BUDGET_POLL_MS = 20;
+    let signal;
+    serveRemote([], { override: async (args, options) => {
+      const filesFrom = args.find(arg => arg.startsWith('--files-from='));
+      if (!filesFrom) return null;
+      const list = (await fs.readFile(filesFrom.slice('--files-from='.length), 'utf8')).split('\0');
+      if (!list.includes(photo)) return null;
+      // A sender ignoring --max-size: far more bytes than the eleven recorded.
+      signal = options.signal;
+      const dest = path.join(args[args.length - 1], photo);
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.writeFile(dest, Buffer.alloc(3 * 1024 * 1024));
+      await new Promise((resolve) => {
+        if (signal.aborted) resolve();
+        signal.addEventListener('abort', resolve);
+        setTimeout(resolve, 5000);
+      });
+      return { code: 20, stderr: 'rsync error: received SIGINT, SIGTERM, or SIGHUP (code 20)', aborted: signal.aborted };
+    } });
+    const service = newService();
+    service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
+    try {
+      await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true, skipPreBackup: true }))
+        .rejects.toThrow(/RESTORE_REMOTE_DOWNLOAD_TOO_LARGE/);
+    } finally { rsyncRestore.BUDGET_POLL_MS = 1000; }
+    expect(signal.aborted).toBe(true);
+    expect(await marker()).toBe('changed after the backup');
+    expect(await stagingLeft(service)).toEqual([]);
+  });
+
+  it('needs room for the download and the restored copy when staging and storage share a volume', async () => {
+    await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    const media = manifest.files.manifest.reduce((total, entry) => total + entry.size, 0);
+    // Enough for the download alone, not for the restored files beside it.
+    jest.spyOn(require('fs').promises, 'statfs').mockResolvedValue({ bavail: manifest.database.size + media + 1, bsize: 1 });
+    expect(await rsyncRestore.sameDevice(os.tmpdir(), process.env.STORAGE_PATH)).toBe(true);
+    const validated = await post('/validate', { source: 'rsync', manifestPath: ref(), restoreType: 'full' });
+    expect(validated.status).toBe(400);
+    expect(validated.body.error).toMatch(/^RESTORE_INSUFFICIENT_SPACE: .*the download plus the restored copy.*share one volume/);
+    // A database restore writes no files into storage: it fits.
+    const database = await post('/validate', { source: 'rsync', manifestPath: ref(), restoreType: 'database' });
+    expect(database.body).toMatchObject({ success: true });
+    expect(calls.some(call => call.list)).toBe(false);
   });
 
   it('keeps restoring from a complete local copy as before', async () => {
@@ -382,6 +466,17 @@ describe('rsyncRestore helpers', () => {
   it.each(['rsync:manifests/x.json', 'rsync:manifests/backup-manifest-../a.json', 'rsync:manifests/backup-manifest-a.json/b',
     'rsync:backup-manifest-a.json', 'rsync:manifests/backup-manifest-a.sh'])('refuses the reference %s', (value) => {
     expect(() => rsyncRestore.parseRemoteManifestRef(value)).toThrow(/RESTORE_REMOTE_MANIFEST_INVALID/);
+  });
+  it('runRsync stops the child when its signal aborts and reports it', async () => {
+    const { EventEmitter } = require('events');
+    const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(),
+      kill: jest.fn(() => setImmediate(() => child.emit('close', 20, null))) });
+    jest.spyOn(require('child_process'), 'spawn').mockReturnValue(child);
+    const controller = new AbortController();
+    const running = rsyncConnection.runRsync(['--version'], { timeoutMs: 0, signal: controller.signal });
+    controller.abort();
+    await expect(running).resolves.toMatchObject({ code: 20, aborted: true, timedOut: false });
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
   });
   it('reads rsync settings for a boot restore from the environment only when host and path are set', () => {
     expect(rsyncRestore.rsyncConfigFromEnv({ BACKUP_RSYNC_HOST: 'h.example.com' })).toBeNull();
@@ -477,11 +572,15 @@ describe('replaying a restore point pulled from the rsync destination', () => {
     const result = await service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full',
       force: true, skipPreBackup: true });
     expect(result.success).toBe(true);
-    const pull = calls.find(call => call.list);
-    expect(pull.list).toEqual([dumpRel, ...manifest.files.manifest.map(entry => entry.path)]);
-    expect(pull.list).toContain(photo);
-    const largest = Math.max(manifest.database.size, ...manifest.files.manifest.map(entry => entry.size));
-    expect(pull.args).toContain(`--max-size=${largest}`);
+    // The dump on its own, bounded by its recorded size; then the media,
+    // bounded by the largest recorded media size (under the restore limit).
+    const [dumpPull, mediaPull, ...rest] = calls.filter(call => call.list);
+    expect(rest).toEqual([]);
+    expect(dumpPull.list).toEqual([dumpRel]);
+    expect(dumpPull.args).toContain(`--max-size=${manifest.database.size}`);
+    expect(mediaPull.list).toEqual(manifest.files.manifest.map(entry => entry.path));
+    expect(mediaPull.list).toContain(photo);
+    expect(mediaPull.args).toContain(`--max-size=${Math.max(...manifest.files.manifest.map(entry => entry.size))}`);
     expect(await fs.readFile(path.join(process.env.STORAGE_PATH, photo), 'utf8')).toBe('photo bytes');
     expect(await marker()).toBe('backup');
     expect(await stagingLeft(service)).toEqual([]);
