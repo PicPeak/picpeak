@@ -1,0 +1,489 @@
+'use strict';
+
+// A backup made to an rsync destination restores from the destination
+// itself: the wizard lists the signed manifests in
+// <backup_rsync_path>/manifests/, and the restore downloads what its type
+// needs into a private staging directory, verifies it against the manifest
+// and removes it afterwards. The remote is a local directory here, served by
+// a stand-in for the rsync process that honours the arguments it is given.
+
+process.env.DATABASE_CLIENT = 'sqlite3';
+process.env.JWT_SECRET = 'rsync-remote-restore-test-secret';
+process.env.BACKUP_MANIFEST_KEY = '6b'.repeat(32);
+
+// The post-restore migrations run in a subprocess against the live file;
+// the restore under test is the download, not the migration runner.
+jest.mock('../../src/utils/safeExec', () => {
+  const actual = jest.requireActual('../../src/utils/safeExec');
+  return { ...actual, spawnAsync: (command, ...rest) => (command === 'node'
+    ? Promise.resolve({ stdout: '', stderr: '' }) : actual.spawnAsync(command, ...rest)) };
+});
+
+const fs = require('fs').promises;
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const request = require('supertest');
+const express = require('express');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const { bootCrmDb } = require('./helpers/crmDb');
+
+jest.setTimeout(120000);
+
+const photo = 'events/active/party/individual/photo.jpg';
+const remoteTarget = 'u1234.your-storagebox.de';
+const remoteBase = '/home/picpeak';
+const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+
+let db; let cleanup; let tmpDir; let backup; let storageModule; let app; let superToken;
+let rsyncConnection; let rsyncRestore; let backupManifest; let RestoreService; let restoreService;
+let remoteRoot; let manifestName; let manifest; let dumpRel;
+
+async function settings(values) {
+  for (const [key, value] of Object.entries(values)) {
+    await db('app_settings').insert({ setting_key: key, setting_value: JSON.stringify(value),
+      setting_type: key.startsWith('database_') ? 'database_backup' : 'backup' }).onConflict('setting_key').merge();
+  }
+}
+const marker = async () => JSON.parse((await db('app_settings').where({ setting_key: 'restore_marker' }).first()).setting_value);
+
+const connection = { rsyncShell: 'ssh -p 23', rsyncTarget: remoteTarget, target: remoteTarget, host: remoteTarget,
+  port: 23, keyPath: null, knownHostsPath: null };
+
+// rsync as seen from the client: the last two arguments are source and
+// destination, --files-from names what to pull, --max-size skips bigger
+// files, a missing source is exit 23 with rsync's own link_stat message.
+function serveRemote(calls, { override } = {}) {
+  return jest.spyOn(rsyncConnection, 'runRsync').mockImplementation(async (args, options = {}) => {
+    const call = { args: [...args] };
+    calls.push(call);
+    if (override) {
+      const result = await override(args);
+      if (result) return result;
+    }
+    const dest = args[args.length - 1];
+    const spec = args[args.length - 2];
+    expect(spec.startsWith(`${remoteTarget}:${remoteBase}/`)).toBe(true);
+    const remotePath = spec.slice(remoteTarget.length + 1);
+    const local = path.join(remoteRoot, path.relative(remoteBase, remotePath));
+    const maxArg = args.find(arg => arg.startsWith('--max-size='));
+    const max = maxArg ? Number(maxArg.split('=')[1]) : Infinity;
+    const missing = p => ({ code: 23, stderr: `rsync: [sender] link_stat "${p}" failed: No such file or directory (2)\n` });
+    const filesFrom = args.find(arg => arg.startsWith('--files-from='));
+    if (filesFrom) {
+      call.list = (await fs.readFile(filesFrom.slice('--files-from='.length), 'utf8')).split('\0');
+      let result = { code: 0, stderr: '' };
+      for (const rel of call.list) {
+        const stats = await fs.stat(path.join(local, rel)).catch(() => null);
+        if (!stats) { result = missing(path.posix.join(remotePath, rel)); continue; }
+        if (stats.size > max) continue;
+        await fs.mkdir(path.dirname(path.join(dest, rel)), { recursive: true });
+        await fs.copyFile(path.join(local, rel), path.join(dest, rel));
+        if (options.onStdoutLine) options.onStdoutLine(rel);
+      }
+      return result;
+    }
+    if (spec.endsWith('/')) {
+      const names = await fs.readdir(local).catch(() => null);
+      if (!names) return missing(remotePath.replace(/\/$/, ''));
+      for (const name of names) {
+        if (name.startsWith('backup-manifest-')) await fs.copyFile(path.join(local, name), path.join(dest, name));
+      }
+      return { code: 0, stderr: '' };
+    }
+    if (!(await fs.stat(local).catch(() => null))) return missing(remotePath);
+    await fs.copyFile(local, path.join(dest, path.basename(local)));
+    return { code: 0, stderr: '' };
+  });
+}
+
+// One real rsync backup run (its transfer mocked), then the destination as
+// the run left it: the mirror of the storage root, database/<dump>, and the
+// signed manifest in manifests/.
+async function backupToRemote() {
+  await settings({ restore_marker: 'backup' });
+  const safeExec = require('../../src/utils/safeExec');
+  const realSpawn = jest.requireActual('../../src/utils/safeExec').spawnAsync;
+  const spawn = jest.spyOn(safeExec, 'spawnAsync').mockImplementation(async (command, args, ...rest) => (command === 'rsync'
+    ? { stdout: 'Number of files transferred: 2\nTotal file size: 30 bytes', stderr: '' }
+    : realSpawn(command, args, ...rest)));
+  try {
+    await backup.runBackup(true);
+  } finally { spawn.mockRestore(); }
+  const run = await db('backup_runs').orderBy('id', 'desc').first();
+  expect(run.status).toBe('completed');
+  manifestName = path.basename(run.manifest_path);
+  manifest = JSON.parse(await fs.readFile(run.manifest_path, 'utf8'));
+  dumpRel = manifest.database.backup_file;
+  for (const entry of manifest.files.manifest) {
+    await fs.mkdir(path.dirname(path.join(remoteRoot, entry.path)), { recursive: true });
+    await fs.copyFile(path.join(process.env.STORAGE_PATH, entry.path), path.join(remoteRoot, entry.path));
+  }
+  await fs.mkdir(path.join(remoteRoot, 'database'), { recursive: true });
+  await fs.copyFile(manifest.database.source_file, path.join(remoteRoot, dumpRel));
+  await fs.mkdir(path.join(remoteRoot, 'manifests'), { recursive: true });
+  await fs.copyFile(run.manifest_path, path.join(remoteRoot, 'manifests', manifestName));
+  // The new host: no history, no local manifest, no dump, the photo gone.
+  await db('backup_runs').del();
+  for (const dir of ['manifests', 'dumps']) await fs.rm(path.join(tmpDir, dir), { recursive: true, force: true });
+  await fs.rm(path.join(process.env.STORAGE_PATH, photo), { force: true });
+  await settings({ restore_marker: 'changed after the backup' });
+}
+
+const ref = () => `rsync:manifests/${manifestName}`;
+const post = (url, body) => request(app).post(`/api/admin/restore${url}`).set('Authorization', `Bearer ${superToken}`).send(body);
+
+function newService() {
+  const service = new RestoreService();
+  service.sendRestoreNotification = jest.fn(async () => {});
+  return service;
+}
+
+async function stagingLeft(service) {
+  const names = await fs.readdir(service.tempDir).catch(() => []);
+  return names.filter(name => name.startsWith('rsync-remote-'));
+}
+
+async function writeRemoteManifest(value) {
+  await fs.writeFile(path.join(remoteRoot, 'manifests', manifestName), JSON.stringify(value));
+}
+
+beforeAll(async () => {
+  ({ db, cleanup, tmpDir } = await bootCrmDb());
+  storageModule = require('../../src/services/storage');
+  backup = require('../../src/services/backupService');
+  require('../../src/services/databaseBackup');
+  rsyncConnection = require('../../src/utils/rsyncConnection');
+  rsyncRestore = require('../../src/utils/rsyncRestore');
+  backupManifest = require('../../src/services/backupManifest');
+  ({ RestoreService, restoreService } = require('../../src/services/restoreService'));
+  const role = await db('roles').where({ name: 'super_admin' }).first();
+  const [inserted] = await db('admin_users').insert({ username: 'root-admin', email: 'root-admin@example.com',
+    password_hash: await bcrypt.hash('Passw0rd!', 4), role_id: role.id, is_active: 1,
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).returning('id');
+  superToken = jwt.sign({ id: inserted?.id ?? inserted, username: 'root-admin', type: 'admin', role: 'super_admin',
+    loginTime: Date.now() }, process.env.JWT_SECRET, { expiresIn: '1h', issuer: 'picpeak-auth' });
+  app = express();
+  app.use(express.json());
+  app.use('/api/admin/restore', require('../../src/routes/adminRestore'));
+}, 120000);
+
+beforeEach(async () => {
+  storageModule.setStorageForTesting({ kind: () => 'local' });
+  await db('backup_runs').del(); await db('backup_file_states').del(); await db('database_backup_runs').del();
+  remoteRoot = path.join(tmpDir, 'remote');
+  for (const dir of ['manifests', 'dumps', 'remote']) await fs.rm(path.join(tmpDir, dir), { recursive: true, force: true });
+  await fs.rm(process.env.STORAGE_PATH, { recursive: true, force: true });
+  await fs.mkdir(path.dirname(path.join(process.env.STORAGE_PATH, photo)), { recursive: true });
+  await fs.writeFile(path.join(process.env.STORAGE_PATH, photo), 'photo bytes');
+  await fs.mkdir(path.join(tmpDir, 'dumps'), { recursive: true });
+  await fs.mkdir(remoteRoot, { recursive: true });
+  await settings({ backup_enabled: true, backup_destination_type: 'rsync',
+    backup_destination_path: path.join(tmpDir, 'backups'), backup_manifest_path: path.join(tmpDir, 'manifests'),
+    backup_incremental: false, backup_database_inline_dump: true,
+    database_backup_destination_path: path.join(tmpDir, 'dumps'),
+    backup_email_on_success: false, backup_email_on_failure: false,
+    database_backup_email_on_success: false, database_backup_email_on_failure: false,
+    backup_rsync_host: remoteTarget, backup_rsync_path: remoteBase, backup_rsync_port: 23 });
+  jest.spyOn(rsyncConnection, 'resolveRsyncConnection').mockResolvedValue(connection);
+});
+afterEach(() => jest.restoreAllMocks());
+afterAll(async () => { storageModule.resetStorage(); await cleanup(); });
+
+describe('listing restore points on the rsync destination', () => {
+  it('lists the remote mirror manifest, downloaded without following links and bounded in size', async () => {
+    await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    const listed = await post('/list-backups', { source: 'local' });
+    expect(listed.status).toBe(200);
+    expect(listed.body.remoteError).toBeNull();
+    expect(listed.body.data).toEqual([expect.objectContaining({ id: ref(), type: 'rsync', restore_source: 'rsync',
+      path: ref(), manifest_path: ref(), manifestId: manifest.backup.id, database_included: true, corrupt: false,
+      filesCount: manifest.files.count })]);
+    expect(calls).toHaveLength(1);
+    const args = calls[0].args;
+    expect(args).toEqual(expect.arrayContaining(['--recursive', '--times', `--max-size=${16 * 1024 * 1024}`,
+      '--include', '/backup-manifest-*', '--exclude', '*']));
+    expect(args).not.toEqual(expect.arrayContaining(['-a']));
+    expect(args.some(arg => /^--links$|^-[a-z]*[al]/.test(arg))).toBe(false);
+    expect(args[args.indexOf('-e') + 1]).toBe('ssh -p 23');
+    expect(args[args.length - 2]).toBe(`${remoteTarget}:${remoteBase}/manifests/`);
+    // The listing directory is gone again.
+    expect(args[args.length - 1]).toMatch(/picpeak-rsync-manifests-/);
+    await expect(fs.access(args[args.length - 1])).rejects.toThrow();
+  });
+
+  it('marks a remote manifest that fails authentication and leaves out manifests of other layouts', async () => {
+    await backupToRemote();
+    await writeRemoteManifest({ ...manifest, files: { ...manifest.files, total_size: 1 } });
+    const foreign = { ...manifest, metadata: { ...manifest.metadata, rsync_manifest_layout: undefined } };
+    await fs.writeFile(path.join(remoteRoot, 'manifests', 'backup-manifest-other.json'), JSON.stringify(foreign));
+    serveRemote([]);
+    const listed = await post('/list-backups', { source: 'local' });
+    expect(listed.body.data).toEqual([expect.objectContaining({ path: ref(), corrupt: true,
+      error: expect.stringMatching(/checksum verification failed/) })]);
+  });
+
+  it('reports an unreachable or refusing destination with its rsync code and still lists local points', async () => {
+    serveRemote([], { override: async () => ({ code: 255, stderr: 'u1234@u1234.your-storagebox.de: Permission denied (publickey).\n' }) });
+    const listed = await post('/list-backups', { source: 'local' });
+    expect(listed.status).toBe(200);
+    expect(listed.body.data).toEqual([]);
+    expect(listed.body.remoteError).toMatchObject({ code: 'RSYNC_AUTH_FAILED' });
+  });
+
+  it('reports a destination without a manifests directory', async () => {
+    serveRemote([]);
+    const listed = await post('/list-backups', { source: 'local' });
+    expect(listed.body.remoteError).toMatchObject({ code: 'RESTORE_REMOTE_MANIFEST_NOT_FOUND' });
+  });
+});
+
+describe('restoring from the rsync destination', () => {
+  it('validates a remote point through the wizard route and refuses mixed source/manifest forms', async () => {
+    await backupToRemote();
+    serveRemote([]);
+    const validated = await post('/validate', { source: 'rsync', manifestPath: ref(), restoreType: 'database' });
+    expect(validated.body).toMatchObject({ success: true });
+    expect(validated.status).toBe(200);
+    const mixed = await post('/validate', { source: 'local', manifestPath: ref(), restoreType: 'database' });
+    expect(mixed.status).toBe(400);
+    const pathed = await post('/validate', { source: 'rsync', manifestPath: '/etc/passwd', restoreType: 'database' });
+    expect(pathed.status).toBe(400);
+    const traversal = await post('/validate', { source: 'rsync', manifestPath: 'rsync:manifests/../x.json', restoreType: 'database' });
+    expect(traversal.status).toBe(400);
+  });
+
+  it('refuses a tampered or unsigned remote manifest before anything is downloaded', async () => {
+    await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    await writeRemoteManifest({ ...manifest, database: { ...manifest.database, checksum: sha('other dump') } });
+    const service = newService();
+    service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
+    await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true, skipPreBackup: true }))
+      .rejects.toThrow(/checksum verification failed/);
+    const unsigned = JSON.parse(JSON.stringify(manifest));
+    delete unsigned.verification.total_checksum;
+    await writeRemoteManifest(unsigned);
+    await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true, skipPreBackup: true }))
+      .rejects.toThrow(/no checksum or an invalid signature/);
+    expect(calls.some(call => call.list)).toBe(false);
+    expect(await marker()).toBe('changed after the backup');
+    expect(await stagingLeft(service)).toEqual([]);
+  });
+
+  it('refuses a signed manifest that is not an rsync mirror manifest', async () => {
+    await backupToRemote();
+    serveRemote([]);
+    const other = JSON.parse(JSON.stringify(manifest));
+    delete other.metadata.rsync_manifest_layout;
+    delete other.verification.total_checksum;
+    await writeRemoteManifest(backupManifest.signManifest(other));
+    await expect(newService().restore({ source: 'rsync', manifestPath: ref(), restoreType: 'database', force: true, skipPreBackup: true }))
+      .rejects.toThrow(/RESTORE_REMOTE_MANIFEST_UNSUPPORTED/);
+  });
+
+  it.each([
+    ['a file path climbing out of the mirror', m => { m.files.manifest[0].path = '../../etc/cron.d/x'; }],
+    ['an absolute file path', m => { m.files.manifest[0].path = '/etc/passwd'; }],
+    ['a dump path climbing out of the mirror', m => { m.database.backup_file = 'database/../../secret.db'; }],
+    ['an absolute dump path', m => { m.database.backup_file = '/var/lib/picpeak/other.db'; }],
+  ])('refuses %s even in a correctly signed manifest', async (_label, mutate) => {
+    await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    const crafted = JSON.parse(JSON.stringify(manifest));
+    mutate(crafted);
+    delete crafted.verification.total_checksum;
+    await writeRemoteManifest(backupManifest.signManifest(crafted));
+    const service = newService();
+    service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
+    await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true, skipPreBackup: true }))
+      .rejects.toThrow(/RESTORE_REMOTE_PATH_UNSAFE/);
+    expect(calls.some(call => call.list)).toBe(false);
+    expect(await stagingLeft(service)).toEqual([]);
+  });
+
+  it('refuses a download larger than the free space of the staging volume', async () => {
+    await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    jest.spyOn(require('fs').promises, 'statfs').mockResolvedValue({ bavail: 4, bsize: 1 });
+    const validated = await post('/validate', { source: 'rsync', manifestPath: ref(), restoreType: 'full' });
+    expect(validated.status).toBe(400);
+    expect(validated.body.error).toMatch(/^RESTORE_INSUFFICIENT_SPACE: .*needs .* but only 4 Bytes are free/);
+    const service = newService();
+    service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
+    await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true, skipPreBackup: true }))
+      .rejects.toThrow(/RESTORE_INSUFFICIENT_SPACE/);
+    expect(calls.some(call => call.list)).toBe(false);
+    expect(await stagingLeft(service)).toEqual([]);
+    expect(await marker()).toBe('changed after the backup');
+  });
+
+  it('names the files missing on the destination, changes nothing and removes staging', async () => {
+    await backupToRemote();
+    await fs.rm(path.join(remoteRoot, photo));
+    serveRemote([]);
+    const service = newService();
+    service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
+    await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true, skipPreBackup: true }))
+      .rejects.toThrow(new RegExp(`RESTORE_REMOTE_FILE_MISSING: 1 of 2 file\\(s\\).*${photo}`));
+    expect(await marker()).toBe('changed after the backup');
+    expect((await db('restore_runs').orderBy('id', 'desc').first()).status).toBe('blocked');
+    expect(await stagingLeft(service)).toEqual([]);
+  });
+
+  it('reports a manifest that is no longer on the destination', async () => {
+    await backupToRemote();
+    await fs.rm(path.join(remoteRoot, 'manifests', manifestName));
+    serveRemote([]);
+    await expect(newService().restore({ source: 'rsync', manifestPath: ref(), restoreType: 'database', force: true, skipPreBackup: true }))
+      .rejects.toThrow(/RESTORE_REMOTE_MANIFEST_NOT_FOUND/);
+  });
+
+  it('refuses a dump swapped on the destination by its manifest checksum', async () => {
+    await backupToRemote();
+    await fs.writeFile(path.join(remoteRoot, dumpRel), 'not the dump');
+    serveRemote([]);
+    const service = newService();
+    service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
+    await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'database', force: true, skipPreBackup: true }))
+      .rejects.toThrow(/does not match the checksum recorded in the backup manifest/);
+    expect(await stagingLeft(service)).toEqual([]);
+  });
+
+  it('keeps restoring from a complete local copy as before', async () => {
+    await backupToRemote();
+    // The whole mirror copied back by hand into backup_destination_path.
+    const destination = path.join(tmpDir, 'backups');
+    await fs.rm(destination, { recursive: true, force: true });
+    await fs.cp(remoteRoot, destination, { recursive: true });
+    const calls = [];
+    serveRemote(calls);
+    const validated = await post('/validate', { source: 'local',
+      manifestPath: path.join(destination, 'manifests', manifestName), restoreType: 'full' });
+    expect(validated.body).toMatchObject({ success: true });
+    expect(calls).toEqual([]);
+    expect(restoreService.isRunning).toBe(false);
+  });
+});
+
+describe('rsyncRestore helpers', () => {
+  it.each(['events/a.jpg', 'database/picpeak-db.sqlite.gz', 'a b/ü.jpg'])('accepts the mirror path %s', (value) => {
+    expect(rsyncRestore.assertMirrorRelativePath(value, 'x')).toBe(value);
+  });
+  it.each(['', '/etc/passwd', '../x', 'a/../b', 'a//b', './a', 'a/', 'a\nb', 7, null])('refuses the mirror path %p', (value) => {
+    expect(() => rsyncRestore.assertMirrorRelativePath(value, 'x')).toThrow(/RESTORE_REMOTE_PATH_UNSAFE/);
+  });
+  it.each(['rsync:manifests/x.json', 'rsync:manifests/backup-manifest-../a.json', 'rsync:manifests/backup-manifest-a.json/b',
+    'rsync:backup-manifest-a.json', 'rsync:manifests/backup-manifest-a.sh'])('refuses the reference %s', (value) => {
+    expect(() => rsyncRestore.parseRemoteManifestRef(value)).toThrow(/RESTORE_REMOTE_MANIFEST_INVALID/);
+  });
+  it('reads rsync settings for a boot restore from the environment only when host and path are set', () => {
+    expect(rsyncRestore.rsyncConfigFromEnv({ BACKUP_RSYNC_HOST: 'h.example.com' })).toBeNull();
+    expect(rsyncRestore.rsyncConfigFromEnv({ BACKUP_RSYNC_HOST: 'h.example.com', BACKUP_RSYNC_PATH: '/p',
+      BACKUP_RSYNC_PORT: '23', BACKUP_RSYNC_USER: 'u1', BACKUP_RSYNC_SSH_KEY: '/keys/id' })).toEqual({
+      backup_rsync_host: 'h.example.com', backup_rsync_path: '/p', backup_rsync_port: '23',
+      backup_rsync_user: 'u1', backup_rsync_ssh_key: '/keys/id' });
+  });
+});
+
+describe('install-from-backup boot hook', () => {
+  let saved;
+  beforeEach(() => { saved = { ...process.env }; });
+  afterEach(() => { process.env = saved; });
+
+  async function trigger(payload) {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-boot-rsync-'));
+    await fs.writeFile(path.join(root, 'RESTORE_ON_INSTALL'), payload);
+    process.env.BACKUP_ROOT = root;
+    return root;
+  }
+
+  it('with an `rsync` trigger pulls the newest authenticated manifest from the destination named in the environment', async () => {
+    await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    const root = await trigger('rsync\n');
+    Object.assign(process.env, { BACKUP_RSYNC_HOST: remoteTarget, BACKUP_RSYNC_PATH: remoteBase, BACKUP_RSYNC_PORT: '23' });
+    process.env.INSTALL_FROM_BACKUP_FORCE = 'true';
+    const startup = jest.spyOn(restoreService, 'restoreDuringStartup').mockResolvedValue({ success: true });
+    const { tryInstallFromBackup } = require('../../src/services/_installFromBackupBoot');
+    const result = await tryInstallFromBackup(db);
+    expect(result).toEqual({ ran: true, manifestPath: ref() });
+    expect(startup).toHaveBeenCalledWith(expect.objectContaining({ source: 'rsync', manifestPath: ref(), restoreType: 'full',
+      rsyncConfig: expect.objectContaining({ backup_rsync_host: remoteTarget, backup_rsync_path: remoteBase, backup_rsync_port: '23' }) }));
+    await expect(fs.access(path.join(root, 'RESTORE_ON_INSTALL'))).rejects.toThrow();
+  });
+
+  it('keeps the trigger and restores nothing when the environment names no destination', async () => {
+    const root = await trigger('rsync');
+    delete process.env.BACKUP_RSYNC_HOST;
+    process.env.INSTALL_FROM_BACKUP_FORCE = 'true';
+    const startup = jest.spyOn(restoreService, 'restoreDuringStartup');
+    const { tryInstallFromBackup } = require('../../src/services/_installFromBackupBoot');
+    const result = await tryInstallFromBackup(db);
+    expect(result).toMatchObject({ ran: false, error: expect.stringMatching(/BACKUP_RSYNC_HOST/) });
+    expect(startup).not.toHaveBeenCalled();
+    await expect(fs.access(path.join(root, 'RESTORE_ON_INSTALL'))).resolves.toBeUndefined();
+  });
+});
+
+// A real restore replaces the database and invalidates every session issued
+// before it, so these run last.
+describe('replaying a restore point pulled from the rsync destination', () => {
+  it('database restore downloads only the dump into staging, verifies and replays it, then removes staging', async () => {
+    await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    const service = newService();
+    service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
+    const realTemp = await fs.realpath(service.tempDir);
+    const progress = [];
+    const update = service.updateProgress.bind(service);
+    service.updateProgress = (message, details) => { progress.push(message); update(message, details); };
+    let stagedRoot;
+    const original = service.performDatabaseRestore.bind(service);
+    service.performDatabaseRestore = async (backupPath, ...rest) => {
+      stagedRoot = backupPath;
+      expect(await fs.readFile(path.join(backupPath, dumpRel))).toBeTruthy();
+      return original(backupPath, ...rest);
+    };
+    const result = await service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'database',
+      force: true, skipPreBackup: true });
+    expect(result.success).toBe(true);
+    expect(await marker()).toBe('backup');
+    const pull = calls.find(call => call.list);
+    expect(pull.list).toEqual([dumpRel]);
+    expect(pull.args[pull.args.length - 2]).toBe(`${remoteTarget}:${remoteBase}/`);
+    expect(pull.args).toEqual(expect.arrayContaining(['--from0', '--times']));
+    expect(stagedRoot.startsWith(`${realTemp}${path.sep}rsync-remote-`)).toBe(true);
+    expect(progress).toEqual(expect.arrayContaining([expect.stringMatching(/Downloading 1 file\(s\).*from the rsync destination/),
+      'Downloading from the rsync destination: 1/1 file(s)']));
+    expect(await stagingLeft(service)).toEqual([]);
+    await expect(fs.access(stagedRoot)).rejects.toThrow();
+  });
+
+  it('full restore pulls the dump and the manifest files with one --files-from list and restores both', async () => {
+    await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    const service = newService();
+    service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
+    const result = await service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full',
+      force: true, skipPreBackup: true });
+    expect(result.success).toBe(true);
+    const pull = calls.find(call => call.list);
+    expect(pull.list).toEqual([dumpRel, ...manifest.files.manifest.map(entry => entry.path)]);
+    expect(pull.list).toContain(photo);
+    const largest = Math.max(manifest.database.size, ...manifest.files.manifest.map(entry => entry.size));
+    expect(pull.args).toContain(`--max-size=${largest}`);
+    expect(await fs.readFile(path.join(process.env.STORAGE_PATH, photo), 'utf8')).toBe('photo bytes');
+    expect(await marker()).toBe('backup');
+    expect(await stagingLeft(service)).toEqual([]);
+  });
+});

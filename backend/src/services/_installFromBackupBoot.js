@@ -33,6 +33,15 @@
  *      specific manifest. Trimmed; first line wins. Useful when the
  *      admin wants a specific older backup.
  *
+ *   3. `rsync` (or `rsync:manifests/<manifest file>`) — restore straight
+ *      from an rsync destination after the original host is gone. The new
+ *      database holds no rsync settings yet, so they come from the
+ *      environment: BACKUP_RSYNC_HOST and BACKUP_RSYNC_PATH (required),
+ *      BACKUP_RSYNC_USER, BACKUP_RSYNC_PORT, BACKUP_RSYNC_SSH_KEY, plus the
+ *      known_hosts file a backup run needs. `rsync` alone picks the newest
+ *      authenticated manifest in <BACKUP_RSYNC_PATH>/manifests/. Opt-in
+ *      only: an empty trigger never reaches out to the network.
+ *
  * After a successful restore the trigger file is DELETED so the next
  * boot doesn't re-trigger. On failure the file is preserved + the
  * error is logged, so the admin can fix the input and retry by just
@@ -105,7 +114,10 @@ async function findTrigger(backupRoot, logger) {
       }
 
       // Take the first non-empty line as the manifest path
-      const firstLine = payload.split(/\r?\n/).find((l) => l.trim()) || '';
+      const firstLine = (payload.split(/\r?\n/).find((l) => l.trim()) || '').trim();
+      if (firstLine === 'rsync' || firstLine.startsWith('rsync:')) {
+        return { triggerPath, remote: firstLine };
+      }
       const manifestPath = path.isAbsolute(firstLine)
         ? firstLine
         : path.join(backupRoot, firstLine);
@@ -191,8 +203,8 @@ async function tryInstallFromBackup(db, logger) {
     return { ran: false };
   }
 
-  log.info(`Install-from-backup: trigger file found at ${trigger.triggerPath}, target manifest ${trigger.manifestPath}`);
-  announce(`trigger file detected → ${trigger.manifestPath}`);
+  log.info(`Install-from-backup: trigger file found at ${trigger.triggerPath}, target manifest ${trigger.manifestPath || trigger.remote}`);
+  announce(`trigger file detected → ${trigger.manifestPath || trigger.remote}`);
 
   const forceOverride = process.env.INSTALL_FROM_BACKUP_FORCE === 'true';
   const isFresh = await isDatabaseFresh(db, log);
@@ -202,13 +214,42 @@ async function tryInstallFromBackup(db, logger) {
     return { ran: false, error: 'Database not empty' };
   }
 
+  let rsyncConfig = null;
+  if (trigger.remote) {
+    const rsyncRestore = require('../utils/rsyncRestore');
+    rsyncConfig = rsyncRestore.rsyncConfigFromEnv();
+    try {
+      if (!rsyncConfig) {
+        throw new Error('the trigger asks for the rsync destination, but BACKUP_RSYNC_HOST and BACKUP_RSYNC_PATH are not set');
+      }
+      if (trigger.remote === 'rsync') {
+        // Newest authenticated mirror manifest on the destination.
+        const newest = (await rsyncRestore.listRemoteManifests(rsyncConfig))
+          .filter((entry) => !entry.error)
+          .sort((a, b) => new Date(b.manifest.backup?.timestamp || b.mtime) - new Date(a.manifest.backup?.timestamp || a.mtime))[0];
+        if (!newest) throw new Error(`no authenticated rsync mirror manifest in ${rsyncConfig.backup_rsync_path}/manifests on the destination`);
+        trigger.manifestPath = newest.ref;
+      } else {
+        rsyncRestore.parseRemoteManifestRef(trigger.remote);
+        trigger.manifestPath = trigger.remote;
+      }
+    } catch (err) {
+      log.error(`Install-from-backup: FAILED — ${err.message}`);
+      announce(`FAILED — ${err.message}. Trigger file left in place for retry.`);
+      return { ran: false, error: err.message };
+    }
+  }
+
   log.info(`Install-from-backup: restoring from ${trigger.manifestPath}...`);
   announce(`starting restore from ${trigger.manifestPath}`);
 
   try {
     const { restoreService } = require('./restoreService');
     const result = await restoreService.restoreDuringStartup({
-      source: 'local',
+      ...(rsyncConfig
+        // Downloaded into the restore's own staging directory first.
+        ? { source: 'rsync', rsyncConfig }
+        : { source: 'local' }),
       manifestPath: trigger.manifestPath,
       // The points found above live under BACKUP_ROOT, which the settings
       // of a fresh install do not name as a backup location.
