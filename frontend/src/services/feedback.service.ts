@@ -1,6 +1,6 @@
 import { api } from '../config/api';
 import { explainFeedbackLock } from '../utils/feedbackLock';
-import { FEEDBACK_SUBMITTED_EVENT, namedIdentity } from '../utils/feedbackEvents';
+import { FEEDBACK_SUBMITTED_EVENT, LIKES_CLEARED_EVENT, namedIdentity } from '../utils/feedbackEvents';
 import type { FeedbackSubmittedDetail } from '../utils/feedbackEvents';
 import type { PhotoAnnotation } from '../utils/photoAnnotation';
 
@@ -460,6 +460,11 @@ class FeedbackService {
   // other guests' likes and the viewer's other feedback stay.
   async clearMyLikes(slug: string): Promise<{ success: boolean; removed: number; photo_ids: number[] }> {
     const response = await api.delete(`/gallery/${slug}/my-feedback/likes`);
+    window.dispatchEvent(new CustomEvent(LIKES_CLEARED_EVENT, { detail: { slug } }));
+    // The selection bar and its cached state follow like writes through this.
+    window.dispatchEvent(new CustomEvent<FeedbackSubmittedDetail>(FEEDBACK_SUBMITTED_EVENT, {
+      detail: { slug, feedback_type: 'like' },
+    }));
     return response.data;
   }
 

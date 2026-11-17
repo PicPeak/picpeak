@@ -12,7 +12,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { GridGalleryLayout } from '../GridGalleryLayout';
@@ -22,6 +22,7 @@ import { TimelineGalleryLayout } from '../TimelineGalleryLayout';
 import { CarouselGalleryLayout } from '../CarouselGalleryLayout';
 import { feedbackService } from '../../../../services/feedback.service';
 import type { Photo } from '../../../../types';
+import { LIKES_CLEARED_EVENT } from '../../../../utils/feedbackEvents';
 
 vi.mock('react-intersection-observer', () => ({ useInView: () => ({ ref: vi.fn(), inView: true }) }));
 vi.mock('../../../common', () => ({
@@ -128,6 +129,17 @@ describe.each(layouts)('%s layout like state (issue 2561)', (_name, Layout) => {
     expect(heart()).toHaveAttribute('aria-pressed', 'true');
     // ... and the one after the lightbox unlike takes it away again, so the
     // next click on this heart asks for a like rather than a removal.
+    update(photoWith(false));
+    expect(heart()).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('drops a held tile like when all own likes are taken back', async () => {
+    vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
+    const update = mount(Layout as never, photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(heart()).toHaveAttribute('aria-pressed', 'true'));
+    // "Remove my likes" before the refresh confirming the click arrived.
+    act(() => { window.dispatchEvent(new CustomEvent(LIKES_CLEARED_EVENT, { detail: { slug: 'x' } })); });
     update(photoWith(false));
     expect(heart()).toHaveAttribute('aria-pressed', 'false');
   });

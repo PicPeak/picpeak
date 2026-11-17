@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Photo } from '../../../types';
+import { LIKES_CLEARED_EVENT } from '../../../utils/feedbackEvents';
 
 // The confirming refresh normally lands well inside this.
 export const LIKE_CONFIRM_WINDOW_MS = 5000;
@@ -61,9 +62,21 @@ export function likedFromPayload(photos: Photo[], holds: LikeHolds, now = Date.n
 export function useViewerLikes(photos: Photo[]): [Set<number>, (photoId: number) => void] {
   const holdsRef = useRef<LikeHolds>(new Map());
   const [liked, setLiked] = useState<Set<number>>(() => likedFromPayload(photos, holdsRef.current));
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
   useEffect(() => {
     setLiked(likedFromPayload(photos, holdsRef.current));
   }, [photos]);
+  // All own likes were taken back: a held click is no longer what the server
+  // holds, and the refresh that follows must show through.
+  useEffect(() => {
+    const onCleared = () => {
+      holdsRef.current.clear();
+      setLiked(likedFromPayload(photosRef.current, holdsRef.current));
+    };
+    window.addEventListener(LIKES_CLEARED_EVENT, onCleared);
+    return () => window.removeEventListener(LIKES_CLEARED_EVENT, onCleared);
+  }, []);
   const toggle = useCallback((photoId: number) => setLiked((previous) => {
     const next = new Set(previous);
     const nowLiked = !next.has(photoId);
