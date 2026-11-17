@@ -293,13 +293,15 @@ describe('listing restore points on the rsync destination', () => {
 
   it('marks a remote manifest that fails authentication and leaves out manifests of other layouts', async () => {
     await backupToRemote();
-    await writeRemoteManifest({ ...manifest, files: { ...manifest.files, total_size: 1 } });
+    await writeRemoteManifest({ ...manifest, backup: { ...manifest.backup, timestamp: 'not a date' }, files: { ...manifest.files, total_size: 1 } });
     const foreign = { ...manifest, metadata: { ...manifest.metadata, rsync_manifest_layout: undefined } };
     await fs.writeFile(path.join(remoteRoot, 'manifests', 'backup-manifest-other.json'), JSON.stringify(foreign));
     serveRemote([]);
     const listed = await post('/list-backups', { source: 'local' });
     expect(listed.body.data).toEqual([expect.objectContaining({ path: ref(), corrupt: true,
       error: expect.stringMatching(/checksum verification failed/) })]);
+    // Its unparseable timestamp is replaced by the file's, so the wizard can format it.
+    expect(Number.isNaN(Date.parse(listed.body.data[0].created_at))).toBe(false);
   });
 
   it('reports an unreachable or refusing destination with its rsync code and still lists local points', async () => {
