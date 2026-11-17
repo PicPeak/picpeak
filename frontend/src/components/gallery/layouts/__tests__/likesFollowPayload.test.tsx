@@ -178,6 +178,20 @@ describe.each(layouts)('%s layout like state (issue 2561)', (_name, Layout) => {
     expect(heart()).toHaveAttribute('aria-pressed', 'false');
   });
 
+  it('lets a refresh that confirmed the like mid-submit release it once the submit settles', async () => {
+    let finish: (value: unknown) => void = () => {};
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((resolve) => { finish = resolve; }) as never);
+    const update = mount(Layout as never, photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(heart()).toHaveAttribute('aria-pressed', 'true'));
+    // The like is written and a refresh carries it before the POST returns.
+    update(photoWith(true));
+    await act(async () => { finish({ success: true }); });
+    // An unlike in the lightbox right after: the tile follows.
+    update(photoWith(false));
+    expect(heart()).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('keeps a held tile like when another gallery\'s likes are taken back', async () => {
     vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
     const update = mount(Layout as never, photoWith(false));
