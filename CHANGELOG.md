@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.204.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.204.2-beta.0...v3.204.3-beta.0) (2026-11-17)
+
+
+### Bug Fixes
+
+* **admin:** open View Gallery from the event list as an admin preview ([#2547](https://github.com/PicPeak/picpeak/issues/2547)) ([c36e8a4](https://github.com/PicPeak/picpeak/commit/c36e8a482b5a4ce1e290cfc30021792b4525e037))
+
 ## [3.204.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.204.1-beta.0...v3.204.2-beta.0) (2026-11-15)
 
 
