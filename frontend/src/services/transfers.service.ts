@@ -215,6 +215,17 @@ function byteProgress(files: File[], onProgress?: (pct: number) => void) {
 
 const sizeOf = (files: File[]) => files.reduce((sum, f) => sum + f.size, 0);
 
+/**
+ * The file bytes a multipart request has sent, from its body progress. A
+ * finished body counts as exactly `bytes`: scaling by loaded / total can land
+ * a hair below it in floating point, and the floored percentage would then
+ * never reach 100 (and the "saving" text) while the server works.
+ */
+export function sentBytes(bytes: number, loaded: number, total: number | undefined): number {
+  if (!total) return 0;
+  return loaded >= total ? bytes : bytes * (loaded / total);
+}
+
 function errorCode(error: unknown): { code?: string; rejected?: string[] } {
   const data = (error as { response?: { data?: { code?: string; rejected_files?: string[] } } })?.response?.data;
   return { code: data?.code, rejected: data?.rejected_files };
@@ -249,7 +260,7 @@ async function uploadRemaining(
     batch.forEach((f) => form.append('files', f));
     try {
       const res = await api.post(`/admin/transfers/${id}/upload-files`, form, {
-        onUploadProgress: (e) => progress.report(e.total ? (sizeOf(batch) * e.loaded) / e.total : 0),
+        onUploadProgress: (e) => progress.report(sentBytes(sizeOf(batch), e.loaded, e.total)),
       });
       rejected.push(...(res.data.rejected_files || []));
       // Accepted but not stored: not uploaded, whatever the 200 says.
@@ -362,7 +373,7 @@ export const transfersService = {
     form.append('pendingFiles', String(files.length - first.length));
     first.forEach((f) => form.append('files', f));
     const res = await api.post('/admin/transfers', form, {
-      onUploadProgress: (e) => progress.report(e.total ? (sizeOf(first) * e.loaded) / e.total : 0),
+      onUploadProgress: (e) => progress.report(sentBytes(sizeOf(first), e.loaded, e.total)),
     });
     progress.finish(sizeOf(first));
     const created = withWriteNotes(res.data);
