@@ -274,7 +274,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const [pendingAction, setPendingAction] = React.useState<null | { type: 'like'; photoId: number }>(null);
   // The server's is_liked from every payload, with the viewer's own toggles
   // held until a payload confirms them (issue 2561).
-  const [likedPhotoIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange);
+  const [likedPhotoIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
   const [savedIdentity, setSavedIdentity] = React.useState<{ name: string; email: string } | null>(null);
 
   const gridClass = `photo-grid ${gridGeometryClass(gallerySettings, density)}`;

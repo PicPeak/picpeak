@@ -177,6 +177,16 @@ describe.each(layouts)('%s layout like state (issue 2561)', (_name, Layout) => {
     expect(heart()).toHaveAttribute('aria-pressed', 'false');
   });
 
+  it('keeps a held tile like when another gallery\'s likes are taken back', async () => {
+    vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
+    const update = mount(Layout as never, photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(heart()).toHaveAttribute('aria-pressed', 'true'));
+    act(() => { window.dispatchEvent(new CustomEvent(LIKES_CLEARED_EVENT, { detail: { slug: 'another-gallery' } })); });
+    update(photoWith(false));
+    expect(heart()).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('drops a held tile like when all own likes are taken back', async () => {
     vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
     const update = mount(Layout as never, photoWith(false));

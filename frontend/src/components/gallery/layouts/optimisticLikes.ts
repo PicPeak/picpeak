@@ -69,6 +69,7 @@ export function likedFromPayload(photos: Photo[], holds: LikeHolds, now = Date.n
 export function useViewerLikes(
   photos: Photo[],
   onFeedbackChange?: (photoId?: number) => void,
+  slug?: string,
 ): [Set<number>, (photoId: number) => void, (photoId?: number) => void] {
   const holdsRef = useRef<LikeHolds>(new Map());
   const [liked, setLiked] = useState<Set<number>>(() => likedFromPayload(photos, holdsRef.current));
@@ -83,14 +84,17 @@ export function useViewerLikes(
   // All own likes were taken back: a held click is no longer what the server
   // holds, and the refresh that follows must show through.
   useEffect(() => {
-    const onCleared = () => {
+    const onCleared = (event: Event) => {
+      // Another gallery's removal (still finishing after a navigation) says
+      // nothing about the likes held here.
+      if ((event as CustomEvent<{ slug?: string }>).detail?.slug !== slug) return;
       holdsRef.current.clear();
       runningRef.current.clear();
       setLiked(likedFromPayload(photosRef.current, holdsRef.current));
     };
     window.addEventListener(LIKES_CLEARED_EVENT, onCleared);
     return () => window.removeEventListener(LIKES_CLEARED_EVENT, onCleared);
-  }, []);
+  }, [slug]);
   const toggle = useCallback((photoId: number) => {
     runningRef.current.set(photoId, (runningRef.current.get(photoId) ?? 0) + 1);
     setLiked((previous) => {

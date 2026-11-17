@@ -243,7 +243,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // Optimistic "I liked this" state — lifted here so it survives re-renders
   // of individual MasonryPhoto components during layout reflow/resize.
   // Follows every payload's is_liked, toggles held until confirmed (issue 2561).
-  const [likedPhotoIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange);
+  const [likedPhotoIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
   // Likewise the identity a viewer typed into one tile's modal (like or
   // rating, issue 1733): every other tile reuses it instead of asking again.
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);

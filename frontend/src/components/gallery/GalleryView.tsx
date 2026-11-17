@@ -2277,6 +2277,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onMediaFilterChange={setMediaFilter}
           showMediaFilter={showMediaFilter}
           likeCount={likeCount}
+          clearOwnLikes={feedbackSettings?.allow_likes ? {
+            count: ownLikeCount,
+            onClick: () => { if (isMobile) setSidebarOpen(false); setConfirmClearLikes(true); },
+          } : undefined}
           favoriteCount={favoriteCount}
           ratedCount={ratedCount}
           colorLabelsEnabled={!!feedbackSettings?.allow_color_labels}

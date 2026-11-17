@@ -93,7 +93,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const tileBadges = useGalleryTileBadges();
   // The like endpoint is a toggle (#590), and so is taking one back. The set
   // follows every payload's is_liked, toggles held until confirmed (issue 2561).
-  const [likedIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange);
+  const [likedIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
   const canQuickComment = Boolean(feedbackEnabled && feedbackOptions?.allowComments && onOpenPhotoWithFeedback);
   // Issue 2043: spins while the photo on screen is being prepared.
   const downloadPending = usePhotoDownloadPending(currentPhoto?.id);

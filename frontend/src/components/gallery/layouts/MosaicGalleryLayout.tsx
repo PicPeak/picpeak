@@ -194,7 +194,7 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // follow-up). Here and not in the tile: a tile that leaves the window would
   // take its toggle with it. A toggle holds only until a payload confirms it,
   // so a like changed in the lightbox reaches the tile (issue 2561).
-  const [likedIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange);
+  const [likedIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
   const { theme } = useTheme();
   const scale = theme.gallerySettings?.thumbnailScale || 'md';
   const scaleOffsets: Record<string, number> = { xs: 3, sm: 1, md: 0, lg: -1, xl: -2 };
