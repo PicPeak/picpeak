@@ -68,8 +68,14 @@ describe('uploadFileInChunks: resuming after a failed chunk', () => {
     expect(api.delete).not.toHaveBeenCalled();
   });
 
-  it.each([500, 502, 503, 408, 409])('retries a %s answer', async (status) => {
-    serve((index, call) => (index === 1 && call === 1 ? { response: { status, data: {} } } : null));
+  it.each([
+    ['500', { status: 500, data: {} }],
+    ['502', { status: 502, data: {} }],
+    ['504', { status: 504, data: {} }],
+    ['408', { status: 408, data: { code: 'UPLOAD_REQUEST_TIMEOUT' } }],
+    ['409 Upload is busy', { status: 409, data: { error: 'Upload is busy', code: 'UPLOAD_STATE' } }],
+  ])('retries a %s answer', async (_label, response) => {
+    serve((index, call) => (index === 1 && call === 1 ? { response } : null));
     const upload = uploadFileInChunks('/x', file);
     await vi.advanceTimersByTimeAsync(CHUNK_RETRY_DELAYS_MS[0]);
     await expect(upload).resolves.toBeTruthy();
@@ -92,6 +98,11 @@ describe('uploadFileInChunks: resuming after a failed chunk', () => {
     ['a size refusal', { response: { status: 413, data: { code: 'FILE_TOO_LARGE' } } }],
     ['an unknown upload', { response: { status: 404, data: {} } }],
     ['a quota 429', { response: { status: 429, data: { code: 'UPLOAD_QUOTA' } } }],
+    // The api interceptor has switched to the maintenance screen already.
+    ['a 503 (maintenance)', { response: { status: 503, data: {} } }],
+    ['a photo cap 409', { response: { status: 409, data: { error: 'Photo limit reached', code: 'PHOTO_CAP_REACHED' } } }],
+    ['a lost reservation 409', { response: { status: 409, data: { error: 'x', code: 'UPLOAD_RESERVATION_LOST' } } }],
+    ['an upload no longer in progress', { response: { status: 409, data: { error: 'Upload is failed', code: 'UPLOAD_STATE' } } }],
   ])('does not retry %s, and aborts', async (_label, failure) => {
     serve((index) => (index === 1 ? failure : null));
     await expect(uploadFileInChunks('/x', file)).rejects.toBe(failure);
@@ -100,7 +111,7 @@ describe('uploadFileInChunks: resuming after a failed chunk', () => {
   });
 
   it('gives up after the last retry, aborts and deletes the upload', async () => {
-    const failure = { response: { status: 503, data: {} } };
+    const failure = { response: { status: 502, data: {} } };
     serve((index) => (index === 1 ? failure : null));
     const upload = uploadFileInChunks('/x', file);
     const settled = upload.catch((error: unknown) => error);
@@ -130,6 +141,33 @@ describe('uploadFileInChunks: resuming after a failed chunk', () => {
     await expect(upload).resolves.toBeTruthy();
     expect(chunkCalls()).toEqual([0, 1, 1, 2, 3]);
     expect(isUploadInterrupted()).toBe(false);
+  });
+
+  it('does not cut a Retry-After short when the page comes back', async () => {
+    serve((index, call) => (index === 1 && call === 1
+      ? { response: { status: 429, data: {}, headers: { 'retry-after': '20' } } } : null));
+    const upload = uploadFileInChunks('/x', file);
+    await vi.advanceTimersByTimeAsync(1000);
+    setVisibility('hidden');
+    await vi.advanceTimersByTimeAsync(4000);
+    setVisibility('visible');
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(chunkCalls()).toEqual([0, 1]); // 15 s in: still waiting
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(upload).resolves.toBeTruthy();
+    expect(chunkCalls()).toEqual([0, 1, 1, 2, 3]);
+  });
+
+  it('waits for the page after the deadline when it is still hidden', async () => {
+    serve((index, call) => (index === 1 && call === 1 ? networkError() : null));
+    const upload = uploadFileInChunks('/x', file);
+    await vi.advanceTimersByTimeAsync(0);
+    setVisibility('hidden');
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(chunkCalls()).toEqual([0, 1]);
+    setVisibility('visible');
+    await expect(upload).resolves.toBeTruthy();
+    expect(chunkCalls()).toEqual([0, 1, 1, 2, 3]);
   });
 
   it('flags the upload as interrupted only while it waits to resume', async () => {

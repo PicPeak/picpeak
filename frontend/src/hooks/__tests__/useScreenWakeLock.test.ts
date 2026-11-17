@@ -44,6 +44,23 @@ describe('useScreenWakeLock', () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
+  it('does not stack requests while one is pending, and releases one granted after unmount', async () => {
+    const sentinel = { released: false, release: vi.fn(async () => { sentinel.released = true; }) };
+    let grant: (value: typeof sentinel) => void = () => {};
+    const request = vi.fn(() => new Promise<typeof sentinel>((resolve) => { grant = resolve; }));
+    Object.defineProperty(navigator, 'wakeLock', { value: { request }, configurable: true });
+
+    const { unmount } = renderHook(() => useScreenWakeLock(true));
+    document.dispatchEvent(new Event('visibilitychange'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(request).toHaveBeenCalledTimes(1);
+
+    unmount();
+    grant(sentinel);
+    await flush();
+    expect(sentinel.release).toHaveBeenCalled();
+  });
+
   it('goes on without a lock the browser refuses', async () => {
     Object.defineProperty(navigator, 'wakeLock', {
       value: { request: vi.fn(async () => { throw new Error('NotAllowedError'); }) }, configurable: true,
