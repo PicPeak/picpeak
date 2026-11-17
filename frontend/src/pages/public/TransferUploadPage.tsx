@@ -203,8 +203,28 @@ export const TransferUploadPage: React.FC = () => {
       )}
 
       {uploading && (
-        <div className="mt-4 h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: 'var(--color-surface-border)' }}>
-          <div className="h-full transition-all" style={{ width: `${progress}%`, backgroundColor: 'var(--color-accent-dark)' }} />
+        // The share of the bytes sent so far, then "saving" once the last byte
+        // is out and the server stores (or merges) what arrived.
+        <div className="mt-4 space-y-1">
+          <p className="text-sm" style={muted} role="status" aria-live="polite">
+            {progress >= 100
+              ? t('transfers.uploadProcessing', 'Upload complete, saving the files…')
+              : t('transfers.uploadPercent', { defaultValue: 'Uploading… {{percent}}%', percent: progress })}
+          </p>
+          <div
+            role="progressbar"
+            aria-label={t('transfers.uploadProgress', 'Upload progress')}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+            className="h-2 w-full overflow-hidden rounded-full"
+            style={{ backgroundColor: 'var(--color-surface-border)' }}
+          >
+            <div
+              className={`h-full transition-all${progress >= 100 ? ' animate-pulse' : ''}`}
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%`, backgroundColor: 'var(--color-accent-dark)' }}
+            />
+          </div>
         </div>
       )}
 
