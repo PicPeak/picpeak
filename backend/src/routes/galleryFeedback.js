@@ -807,6 +807,45 @@ router.get('/:slug/my-feedback',
   }
 );
 
+// Take back all of the viewer's own likes in this gallery at once (issue
+// 2561). Other guests' likes and every other feedback type stay as they are.
+router.delete('/:slug/my-feedback/likes',
+  verifyGalleryAccess,
+  denySlideshowToken,
+  blockHiddenGallery,
+  resolveGuest,
+  scopeGuestToFeedback,
+  async (req, res) => {
+    try {
+      const event = req.event;
+      const settings = await feedbackService.getEventFeedbackSettings(event.id);
+      const refusal = feedbackWriteRefusal(req, settings, 'like');
+      if (refusal) return res.status(refusal.status).json(refusal.body);
+
+      // One unit of the like budget for the whole request.
+      await feedbackRateLimit('like')(req, res, (err) => { if (err) throw err; });
+      if (res.headersSent) return;
+
+      const result = await feedbackService.clearOwnLikes(event.id, await selectionViewer(req));
+      if (result.guest_missing) {
+        return res.status(401).json({ error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' });
+      }
+      if (result.locked) {
+        return res.status(409).json({
+          error: 'The selection is finished; the picks are locked',
+          code: 'SELECTION_LOCKED',
+          kind: result.kind,
+          submitted_at: result.submitted_at,
+        });
+      }
+      res.json({ success: true, removed: result.removed, photo_ids: result.photo_ids });
+    } catch (error) {
+      logger.error('Error clearing own likes:', error);
+      res.status(500).json({ error: 'Failed to remove your likes' });
+    }
+  }
+);
+
 // The viewer of a selection route, by the rule that finds their feedback: the
 // registered guest, else the anonymous browser identity. The access level
 // keeps a pick on a photo this viewer can no longer see out of the counts.

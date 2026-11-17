@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Calendar, Heart } from 'lucide-react';
 import { format, startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { useTheme } from '../../../contexts/ThemeContext';
@@ -15,6 +15,7 @@ import { feedbackService } from '../../../services/feedback.service';
 import { toDisplayDate, useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { GRID_TILE_ATTR, TIMELINE_GROUP_WINDOW_MIN_PHOTOS, useGridWindow } from './gridWindow';
+import { useViewerLikes } from './optimisticLikes';
 
 const GRID_TILE_PROPS = { [GRID_TILE_ATTR]: '' } as React.HTMLAttributes<HTMLDivElement>;
 
@@ -53,6 +54,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   allowDownloads = true,
   feedbackEnabled = false,
   feedbackOptions,
+  onFeedbackChange,
   isClient = false,
   onToggleVisibility,
 }) => {
@@ -63,15 +65,8 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // 1733, E4). The grid-cols classes are safelisted in tailwind.config.
   const delta = densityColumnDelta(useGridDensity());
   const cols = (base: number) => Math.max(1, base + delta);
-  const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
-  // Seed from server is_liked on first non-empty payload (#590 follow-up).
-  // Mount-only so refetches don't clobber in-session optimistic toggles.
-  const likedSeededRef = useRef(false);
-  useEffect(() => {
-    if (likedSeededRef.current || photos.length === 0) return;
-    setLikedIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
-    likedSeededRef.current = true;
-  }, [photos]);
+  // Follows every payload's is_liked, toggles held until confirmed (issue 2561).
+  const [likedIds, toggleLiked] = useViewerLikes(photos);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<null | { type: 'like'; photoId: number }>(null);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
@@ -209,15 +204,9 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                     slug={slug}
                     onQuickComment={canQuickComment ? () => onOpenPhotoWithFeedback?.(actualIndex) : undefined}
                     liked={likedIds.has(photo.id)}
-                    onLikeSuccess={() => {
-                      // Toggle — server /feedback like is a toggle (#590).
-                      setLikedIds(prev => {
-                        const next = new Set(prev);
-                        if (next.has(photo.id)) next.delete(photo.id);
-                        else next.add(photo.id);
-                        return next;
-                      });
-                    }}
+                    // Toggle — server /feedback like is a toggle (#590).
+                    onLikeSuccess={() => toggleLiked(photo.id)}
+                    onFeedbackChange={onFeedbackChange}
                     savedIdentity={savedIdentity}
                     onIdentitySaved={setSavedIdentity}
                     onRequireIdentity={(action, photoId) => {
@@ -261,6 +250,8 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               guest_name: name,
               guest_email: email,
             });
+            // The row refresh brings the heart up to date (issue 2561).
+            onFeedbackChange?.(pendingAction.photoId);
             setPendingAction(null);
           }
         }}

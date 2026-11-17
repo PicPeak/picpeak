@@ -2611,6 +2611,15 @@
       "selected": "Ausgewähltes Foto {{position}} von {{total}}"
     },
     "filterPanel": {
+      "clearLikes_one": "Mein Like entfernen",
+      "clearLikes_other": "Meine {{count}} Likes entfernen",
+      "clearLikesTitle": "Ihre Likes entfernen?",
+      "clearLikesConfirm_one": "Ihr Like in dieser Galerie wird entfernt. Likes anderer Gäste bleiben erhalten.",
+      "clearLikesConfirm_other": "Alle {{count}} Ihrer Likes in dieser Galerie werden entfernt. Likes anderer Gäste bleiben erhalten.",
+      "clearLikesAction": "Likes entfernen",
+      "clearLikesDone_one": "{{count}} Like entfernt",
+      "clearLikesDone_other": "{{count}} Likes entfernt",
+      "clearLikesError": "Ihre Likes konnten nicht entfernt werden. Bitte versuchen Sie es erneut.",
       "selectMatches_one": "Dieses Foto auswählen",
       "selectMatches_other": "Diese {{count}} Fotos auswählen",
       "selectMatchesMedia_one": "Dieses Medium auswählen",

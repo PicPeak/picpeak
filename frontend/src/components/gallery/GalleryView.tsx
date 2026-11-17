@@ -94,6 +94,8 @@ import { beginPhotoDownload, endPhotoDownload, touchPhotoDownload, PHOTO_DOWNLOA
 import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ClipboardList, AlertCircle, Camera } from 'lucide-react';
 import { galleryService, splitIntoArchives } from '../../services/gallery.service';
 import { feedbackService, type ColorLabel } from '../../services/feedback.service';
+import { explainFeedbackLock } from '../../utils/feedbackLock';
+import { GalleryConfirmDialog } from './GalleryConfirmDialog';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
 import { useGalleryCustomCss } from '../../hooks/useGalleryCustomCss';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
@@ -200,6 +202,8 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const [showResolutionPicker, setShowResolutionPicker] = useState(false);
   // Filename list dialog (issue 1733, A3d).
   const [showCopyFilenames, setShowCopyFilenames] = useState(false);
+  // "Remove my likes" (issue 2561): asked before anything is removed.
+  const [confirmClearLikes, setConfirmClearLikes] = useState(false);
   const [resolutionPickerIds, setResolutionPickerIds] = useState<number[] | null>(null);
   // The picker was opened for the guest's selection (not a people filter or
   // a folder), so a download it hands over ends the selection, as the
@@ -1110,6 +1114,25 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
     return scopedPhotos.filter(p => (p.like_count ?? 0) > 0).length;
   }, [scopedPhotos, isGuestIdentityMode, myFeedbackPhotoIds]);
+
+  // The viewer's own likes across the whole gallery (is_liked is per viewer in
+  // every identity mode), for "Remove my likes" (issue 2561). Not the chip's
+  // likeCount: in simple mode that counts every guest's likes in the scope.
+  const ownLikeCount = useMemo(
+    () => (data?.photos || []).filter((p) => p.is_liked).length,
+    [data?.photos],
+  );
+  const clearOwnLikes = async () => {
+    setConfirmClearLikes(false);
+    try {
+      const { removed } = await feedbackService.clearMyLikes(slug);
+      toast.success(t('gallery.filterPanel.clearLikesDone', { count: removed }));
+    } catch (err) {
+      if (!explainFeedbackLock(err)) toast.error(t('gallery.filterPanel.clearLikesError'));
+    }
+    // The whole list, and /my-feedback, from the server either way.
+    handleFeedbackChange();
+  };
 
   const favoriteCount = useMemo(() => {
     if (savedIsOwn) {
@@ -2452,7 +2475,15 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               render: (close, withSearch) => (
                 <GalleryFilterPanel
                   search={withSearch ? { value: searchTerm, onChange: setSearchTerm } : undefined}
-                  feedback={feedbackEnabled ? { activeFilters, onFilterChange: handleFilterChange, available: feedbackFilters } : undefined}
+                  feedback={feedbackEnabled ? {
+                    activeFilters,
+                    onFilterChange: handleFilterChange,
+                    available: feedbackFilters,
+                    clearOwnLikes: feedbackSettings?.allow_likes ? {
+                      count: ownLikeCount,
+                      onClick: () => { close(); setConfirmClearLikes(true); },
+                    } : undefined,
+                  } : undefined}
                   colorLabels={feedbackEnabled && feedbackSettings?.allow_color_labels ? {
                     activeColors: activeColorFilters,
                     onToggle: handleColorFilterToggle,
@@ -2738,6 +2769,16 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onClose={() => setShowCopyFilenames(false)}
           />
         )}
+
+        <GalleryConfirmDialog
+          open={confirmClearLikes}
+          variant="danger"
+          title={t('gallery.filterPanel.clearLikesTitle')}
+          message={t('gallery.filterPanel.clearLikesConfirm', { count: ownLikeCount })}
+          confirmLabel={t('gallery.filterPanel.clearLikesAction')}
+          onCancel={() => setConfirmClearLikes(false)}
+          onConfirm={clearOwnLikes}
+        />
 
         {/* Upload Modal */}
         {showUploadModal && allowUploads && (

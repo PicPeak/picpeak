@@ -1676,6 +1676,7 @@
         "POST /:slug/feedback/bulk",
         "GET /:slug/feedback-summary",
         "GET /:slug/my-feedback",
+        "DELETE /:slug/my-feedback/likes",
         "GET /:slug/selection",
         "POST /:slug/selection/submit",
         "GET /:slug/favorite-lists",

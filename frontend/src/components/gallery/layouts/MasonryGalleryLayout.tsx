@@ -18,6 +18,7 @@ import { quiltedSpan, useQuiltedWindow } from './quiltedWindow';
 import { boxStyle, ghostBox, gridBoxStyle, useMeasuredWindow } from './measuredWindow';
 import { densityColumnDelta, densitySizeFactor, useGridDensity } from '../gridDensity';
 import { masonryModeOf } from './masonryMode';
+import { useViewerLikes } from './optimisticLikes';
 
 const NO_ITEMS: WindowItem[] = [];
 
@@ -241,30 +242,14 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const [containerWidth, setContainerWidth] = useState(0);
   // Optimistic "I liked this" state — lifted here so it survives re-renders
   // of individual MasonryPhoto components during layout reflow/resize.
-  const [likedPhotoIds, setLikedPhotoIds] = useState<Set<number>>(new Set());
+  // Follows every payload's is_liked, toggles held until confirmed (issue 2561).
+  const [likedPhotoIds, toggleLiked] = useViewerLikes(photos);
   // Likewise the identity a viewer typed into one tile's modal (like or
   // rating, issue 1733): every other tile reuses it instead of asking again.
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
-  // Seed from server is_liked on first non-empty photos payload (#590
-  // follow-up). Mount-only: subsequent refetches don't clobber in-session
-  // optimistic toggles, only the first arrival of photos initializes.
-  const likedSeededRef = useRef(false);
-  useEffect(() => {
-    if (likedSeededRef.current || photos.length === 0) return;
-    setLikedPhotoIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
-    likedSeededRef.current = true;
-  }, [photos]);
   // Toggle, not add — the /feedback like endpoint toggles server-side, so
   // click 2 on a liked photo unlikes it; the optimistic UI must follow suit
-  // (#590).
-  const toggleLiked = (photoId: number) => {
-    setLikedPhotoIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(photoId)) next.delete(photoId);
-      else next.add(photoId);
-      return next;
-    });
-  };
+  // (#590). useViewerLikes' toggle does exactly that.
   // The tile feedback wiring of columns mode (MasonryPhoto), for the PhotoCards
   // the rows, flickr and quilted modes render directly (issue 1733).
   // `tileWidth` is the layout's px width where it computes one: these modes

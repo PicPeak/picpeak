@@ -456,6 +456,13 @@ class FeedbackService {
     return response.data;
   }
 
+  // Takes back every like the viewer gave in this gallery (issue 2561);
+  // other guests' likes and the viewer's other feedback stay.
+  async clearMyLikes(slug: string): Promise<{ success: boolean; removed: number; photo_ids: number[] }> {
+    const response = await api.delete(`/gallery/${slug}/my-feedback/likes`);
+    return response.data;
+  }
+
   // Named favourite lists (issue 2303). The default list has no route.
   async getFavoriteLists(slug: string): Promise<FavoriteListsResponse> {
     const response = await api.get(`/gallery/${slug}/favorite-lists`);
