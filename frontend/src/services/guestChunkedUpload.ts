@@ -3,9 +3,12 @@ import { api } from '../config/api';
 
 /**
  * Waits before re-sending a chunk that failed on the way: a dropped
- * connection, a timeout, a 5xx, 408, 409 (the server still finishing the
- * previous attempt of that chunk) or a plain rate-limit 429. About three
- * minutes in all; a refusal (4xx) is never retried.
+ * connection, a timeout, a 500/502/504, 408, the 409 "Upload is busy" (the
+ * server still finishing the previous attempt of that chunk) or a plain
+ * rate-limit 429. About three minutes in all; a refusal (4xx) is never
+ * retried. Neither is a 503: the api interceptor has already switched the
+ * app to its maintenance screen, which unmounts the uploader, so going on
+ * would store files behind a page that can no longer say so.
  */
 export const CHUNK_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 30000, 30000, 30000, 30000, 30000];
 // A Retry-After longer than this is not sat through silently.
@@ -32,7 +35,14 @@ function chunkRetryFloorMs(error: unknown): number | null {
     if (!Number.isFinite(seconds) || seconds <= 0) return 0;
     return seconds * 1000 <= MAX_RETRY_AFTER_MS ? seconds * 1000 : null;
   }
-  return status >= 500 || status === 408 || status === 409 ? 0 : null;
+  // The only 409 worth repeating: a coded one (PHOTO_CAP_REACHED,
+  // UPLOAD_RESERVATION_LOST, an upload no longer in progress) is final.
+  if (status === 409) {
+    return response.data?.code === 'UPLOAD_STATE' && (response.data as { error?: string }).error === 'Upload is busy'
+      ? 0 : null;
+  }
+  if (status === 503) return null;
+  return status >= 500 || status === 408 ? 0 : null;
 }
 
 const pageHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
@@ -51,6 +61,20 @@ function whenVisible(): Promise<void> {
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
+
+/**
+ * Resolves once the page is visible and `deadline` (ms since epoch) has
+ * passed, whichever comes last: coming back to the page does not cut a
+ * backoff or a Retry-After short.
+ */
+async function resumeAt(deadline: number): Promise<void> {
+  for (;;) {
+    await whenVisible();
+    const left = deadline - Date.now();
+    if (left > 0) await sleep(left);
+    else if (!pageHidden()) return;
+  }
+}
 
 // How many uploads are waiting to resume after a failed chunk, for the
 // "connection interrupted" note (useUploadInterrupted).
@@ -139,15 +163,15 @@ export async function uploadFileInChunks<T>(
           const floor = chunkRetryFloorMs(error);
           if (floor === null) throw error;
           setInterrupted(true);
-          if (pageHidden()) {
-            // Not the connection's fault: wait for the user to come back.
-            await whenVisible();
-            continue;
+          let wait = floor;
+          // Failing while hidden is not the connection's fault: no attempt is
+          // spent, the retry just waits for the user to come back.
+          if (!pageHidden()) {
+            if (attempt >= CHUNK_RETRY_DELAYS_MS.length) throw error;
+            wait = Math.max(floor, CHUNK_RETRY_DELAYS_MS[attempt]);
+            attempt += 1;
           }
-          if (attempt >= CHUNK_RETRY_DELAYS_MS.length) throw error;
-          await sleep(Math.max(floor, CHUNK_RETRY_DELAYS_MS[attempt]));
-          attempt += 1;
-          await whenVisible();
+          await resumeAt(Date.now() + wait);
         }
       }
       setInterrupted(false);
