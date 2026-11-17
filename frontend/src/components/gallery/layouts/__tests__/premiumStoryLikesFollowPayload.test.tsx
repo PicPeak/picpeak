@@ -1,8 +1,9 @@
 /**
- * Issue 2561 for the Premium and Story layouts: a click holds its state until
- * its submit settled and a payload agrees. A refresh that confirmed the like
- * while the submit still ran must release the hold once it settles, even when
- * no newer photos array follows (an identical response keeps the old one).
+ * Issue 2561 for the Premium and Story layouts: their liked set followed only
+ * the first photo payload, so a like changed in the lightbox never reached
+ * the card heart (and the next click on it, a toggle, did the opposite of
+ * what the guest meant). The set now follows every payload; a click holds
+ * its state until its submit settled and a payload agrees.
  */
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -108,6 +109,119 @@ describe.each(layouts)('%s layout like state (issue 2561)', (_name, Layout, sele
     return { heart, liked, update };
   };
 
+  it('shows a like made elsewhere once the payload carries it', () => {
+    const { liked, update } = setup(photoWith(false));
+    expect(liked()).toBe(false);
+    update(photoWith(true));
+    expect(liked()).toBe(true);
+  });
+
+  it('drops a card like that was taken back in the lightbox', async () => {
+    vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
+    const { heart, liked, update } = setup(photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(true));
+    await act(async () => {});
+    update(photoWith(true));
+    expect(liked()).toBe(true);
+    update(photoWith(false));
+    expect(liked()).toBe(false);
+  });
+
+  it('keeps a fresh click over a payload that predates it', async () => {
+    vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
+    const { heart, liked, update } = setup(photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(true));
+    await act(async () => {});
+    update(photoWith(false));
+    expect(liked()).toBe(true);
+  });
+
+  it('holds a click while its submit is still running, past the confirmation window', async () => {
+    let finish: (value: unknown) => void = () => {};
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((resolve) => { finish = resolve; }) as never);
+    const start = Date.now();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      const { heart, liked, update } = setup(photoWith(false));
+      fireEvent.click(heart());
+      await waitFor(() => expect(liked()).toBe(true));
+      now.mockReturnValue(start + 6000);
+      update(photoWith(false));
+      expect(liked()).toBe(true);
+      await act(async () => { finish({ success: true }); });
+      update(photoWith(true));
+      expect(liked()).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('ends unliked when two overlapping clicks are both refused', async () => {
+    const refusals: Array<(error: unknown) => void> = [];
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((_resolve, reject) => { refusals.push(reject); }) as never);
+    const { heart, liked } = setup(photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(true));
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(false));
+    await waitFor(() => expect(refusals).toHaveLength(2));
+    // A 429 for each, in order: the server still holds no like.
+    await act(async () => { refusals[0](new Error('429')); });
+    await act(async () => { refusals[1](new Error('429')); });
+    expect(liked()).toBe(false);
+  });
+
+  it('shows the server state when two refused clicks straddle another refresh', async () => {
+    const refusals: Array<(error: unknown) => void> = [];
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((_resolve, reject) => { refusals.push(reject); }) as never);
+    const { heart, liked, update } = setup(photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(true));
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(false));
+    await waitFor(() => expect(refusals).toHaveLength(2));
+    await act(async () => { refusals[0](new Error('429')); });
+    // Another photo's refresh: a new payload, still without this like.
+    update(photoWith(false));
+    await act(async () => { refusals[1](new Error('429')); });
+    expect(liked()).toBe(false);
+  });
+
+  it('keeps the newest click while earlier overlapping submits finish', async () => {
+    const finishers: Array<(value: unknown) => void> = [];
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((resolve) => { finishers.push(resolve); }) as never);
+    const { heart, liked, update } = setup(photoWith(false));
+    // Like, unlike, like again, all before the first answer.
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(true));
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(true));
+    await waitFor(() => expect(finishers).toHaveLength(3));
+    // The like lands and its refresh carries it ...
+    await act(async () => { finishers[0]({ success: true }); });
+    update(photoWith(true));
+    // ... then the unlike lands and its refresh carries no like, while the
+    // final like is still on its way.
+    await act(async () => { finishers[1]({ success: true }); });
+    update(photoWith(false));
+    expect(liked()).toBe(true);
+    await act(async () => { finishers[2]({ success: true }); });
+    update(photoWith(true));
+    expect(liked()).toBe(true);
+  });
+
+  it('puts the heart back when the server refused the like', async () => {
+    vi.mocked(feedbackService.submitFeedback).mockRejectedValue(new Error('refused'));
+    const { heart, liked, update } = setup(photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(false));
+    update(photoWith(false));
+    expect(liked()).toBe(false);
+  });
   it('releases a like a refresh confirmed while its submit ran', async () => {
     let finish: (value: unknown) => void = () => {};
     vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((resolve) => { finish = resolve; }) as never);
