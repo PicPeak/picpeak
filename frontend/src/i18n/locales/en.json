@@ -925,6 +925,7 @@
     "uploadProgress": "Upload progress",
     "uploadPercent": "Uploading… {{percent}}%",
     "uploadProcessing": "Upload complete, saving the files…",
+    "uploadResuming": "Connection interrupted – resuming…",
     "addFiles": "Add files",
     "noUploadedFiles": "No uploaded files. Add files from your computer to include them in the download.",
     "sentTo": "Emailed to",
