@@ -202,7 +202,8 @@ function byteProgress(files: File[], onProgress?: (pct: number) => void) {
   return {
     /** Report `sent` bytes of the request in flight on top of the finished ones. */
     report(sent: number) {
-      onProgress?.(Math.min(100, Math.round(((done + sent) / total) * 100)));
+      // Floored: 100 (and the "saving" text) only once every byte is out.
+      onProgress?.(Math.min(100, Math.floor(((done + sent) / total) * 100)));
     },
     /** A request settled (landed or not): its bytes count as handled. */
     finish(bytes: number) {
@@ -327,7 +328,7 @@ export const transfersService = {
     files.forEach((f) => form.append('files', f));
     const res = await api.post('/admin/transfers', form, {
       onUploadProgress: (e) => {
-        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+        if (onProgress && e.total) onProgress(Math.floor((e.loaded / e.total) * 100));
       },
     });
     return withWriteNotes(res.data);
@@ -411,7 +412,7 @@ export const transfersService = {
     files.forEach((f) => form.append('files', f));
     const res = await api.post(`/admin/transfers/${id}/upload-files`, form, {
       onUploadProgress: (e) => {
-        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+        if (onProgress && e.total) onProgress(Math.floor((e.loaded / e.total) * 100));
       },
     });
     return withWriteNotes(res.data);
