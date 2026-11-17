@@ -463,6 +463,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                     guest_name: name,
                     guest_email: email,
                   });
+                  // The row refresh confirms the held heart (issue 2561).
+                  if (onFeedbackChange) onFeedbackChange(pendingAction.photoId);
                   setPendingAction(null);
                 }
               }}
