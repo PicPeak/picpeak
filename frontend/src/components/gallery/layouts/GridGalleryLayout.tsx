@@ -15,6 +15,7 @@ import { densityColumnDelta, useGridDensity, type GridDensity } from '../gridDen
 import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { GRID_TILE_ATTR, useGridWindow } from './gridWindow';
 import { useViewerLikes } from './optimisticLikes';
+import { feedbackLockKind } from '../../../utils/feedbackLock';
 
 interface GridPhotoProps {
   photo: Photo;
@@ -331,15 +332,24 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           setSavedIdentity({ name, email });
           setShowIdentityModal(false);
           if (pendingAction) {
-            await feedbackService.submitFeedback(slug, String(pendingAction.photoId), {
-              feedback_type: pendingAction.type,
-              guest_name: name,
-              guest_email: email,
-            });
-            // Immediately reflect like UI — toggle for consistency (#590).
-            if (pendingAction.type === 'like') toggleLiked(pendingAction.photoId);
-            // The row refresh confirms it, as after a tile like (issue 2561).
-            likeSettled(pendingAction.photoId);
+            const isLike = pendingAction.type === 'like';
+            // Toggle before the submit, as the tile does: toggling after it
+            // would flip a heart a refresh had already confirmed (issue 2561).
+            if (isLike) toggleLiked(pendingAction.photoId);
+            try {
+              await feedbackService.submitFeedback(slug, String(pendingAction.photoId), {
+                feedback_type: pendingAction.type,
+                guest_name: name,
+                guest_email: email,
+              });
+            } catch (err) {
+              // Refused by a finished selection: the heart goes back.
+              if (!isLike || !feedbackLockKind(err)) throw err;
+              toggleLiked(pendingAction.photoId);
+            } finally {
+              // The row refresh confirms it, as after a tile like.
+              if (isLike) likeSettled(pendingAction.photoId);
+            }
             setPendingAction(null);
           }
         }}

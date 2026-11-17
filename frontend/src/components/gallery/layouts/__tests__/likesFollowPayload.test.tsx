@@ -70,7 +70,7 @@ const layouts = [
   ['Carousel', CarouselGalleryLayout],
 ] as const;
 
-function mount(Layout: React.ComponentType<never>, photos: Photo[]) {
+function mount(Layout: React.ComponentType<never>, photos: Photo[], extra: Record<string, unknown> = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const props = (list: Photo[]) => ({
     photos: list,
@@ -83,6 +83,7 @@ function mount(Layout: React.ComponentType<never>, photos: Photo[]) {
     feedbackEnabled: true,
     feedbackOptions: { allowLikes: true },
     onFeedbackChange: vi.fn(),
+    ...extra,
   }) as never;
   const view = render(<QueryClientProvider client={queryClient}><Layout {...props(photos)} /></QueryClientProvider>);
   return (list: Photo[]) => view.rerender(
@@ -196,5 +197,27 @@ describe.each(layouts)('%s layout like state (issue 2561)', (_name, Layout) => {
     act(() => { window.dispatchEvent(new CustomEvent(LIKES_CLEARED_EVENT, { detail: { slug: 'x' } })); });
     update(photoWith(false));
     expect(heart()).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+describe('Grid layout like through the name-and-email form (issue 2561)', () => {
+  it('keeps the like when a refresh confirms it before the submit returns', async () => {
+    let finish: (value: unknown) => void = () => {};
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((resolve) => { finish = resolve; }) as never);
+    const update = mount(GridGalleryLayout as never, photoWith(false), {
+      feedbackOptions: { allowLikes: true, requireNameEmail: true },
+    });
+    fireEvent.click(heart());
+    fireEvent.change(screen.getByPlaceholderText('Enter your name'), { target: { value: 'Ann' } });
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'ann@example.com' } });
+    fireEvent.submit(screen.getByPlaceholderText('Enter your name').closest('form') as HTMLFormElement);
+    await waitFor(() => expect(feedbackService.submitFeedback).toHaveBeenCalled());
+    expect(heart()).toHaveAttribute('aria-pressed', 'true');
+    // The like is saved and a refresh carries it while the POST still runs.
+    update(photoWith(true));
+    await act(async () => { finish({ success: true }); });
+    expect(heart()).toHaveAttribute('aria-pressed', 'true');
+    update(photoWith(true));
+    expect(heart()).toHaveAttribute('aria-pressed', 'true');
   });
 });
