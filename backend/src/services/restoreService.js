@@ -169,7 +169,10 @@ function rsyncDownloadPlan(manifest, options, maxFileBytes) {
   }
   const sum = entries => entries.reduce((total, entry) => total + (entry.size || 0), 0);
   const mediaBytes = sum(files);
-  return { dump, files, mediaBytes, bytes: mediaBytes + (dump?.size || 0) };
+  // performFilesRestore checks one file at a time through a verified copy in
+  // the restore temp dir (the staging volume), removed after each file.
+  const largestMedia = files.reduce((max, entry) => Math.max(max, entry.size || 0), 0);
+  return { dump, files, mediaBytes, largestMedia, bytes: mediaBytes + (dump?.size || 0) };
 }
 
 // A transfer may write what the manifest records plus a little slack (rsync's
@@ -312,6 +315,24 @@ async function resolveContainedDbBackupCandidates(backupPath, dbBackupFile, warn
     }
     return contained;
   });
+}
+
+// A dump downloaded from the rsync destination already sits in this run's
+// private (0700) staging directory, written by nothing but the finished
+// rsync. Rename it there under a fixed safe name (same volume, no second
+// copy) and check it against the manifest once more before it is replayed.
+async function adoptDownloadedDump(source, stageDir, expectedChecksum, { allowUnverified = false, warn = () => {} } = {}) {
+  const linkStat = await fs.lstat(source);
+  if (!linkStat.isFile()) throw new Error('The downloaded database dump is not a regular file');
+  const dump = path.join(stageDir, source.endsWith('.gz') ? 'dump.gz' : 'dump.db');
+  await fs.rename(source, dump);
+  try {
+    await verifyDatabaseDumpChecksum(dump, expectedChecksum, warn, { allowUnverified });
+  } catch (error) {
+    await fs.rm(dump, { force: true });
+    throw error;
+  }
+  return { dump, cleanup: () => fs.rm(dump, { force: true }) };
 }
 
 async function stageDatabaseDump(source, expectedChecksum, tempDir, { allowUnverified = false, warn = () => {} } = {}) {
@@ -514,6 +535,7 @@ class RestoreService {
     this.isRunning = true;
     this.restoreLog = [];
     this.preservedMetaSnapshot = [];  // reset per run
+    this.remoteStageDir = null;
     this.preRestoreBackupPath = null;
     this.generationIndexSnapshot = null;
     this.portableRuntimeSnapshot = null;
@@ -558,6 +580,7 @@ class RestoreService {
         // routes never do, so the wizard always uses the configured ones.
         rsyncConfig = options.rsyncConfig || await require('./backupService').getBackupConfig();
         remoteStage = await this.createRemoteStage();
+        this.remoteStageDir = remoteStage.dir;
         this.updateProgress('Downloading the manifest from the rsync destination...');
         [{ path: manifestFile }] = await rsyncRestore.fetchRemoteManifests(rsyncConfig, remoteStage.manifestDir,
           { name: rsyncRestore.parseRemoteManifestRef(options.manifestPath) });
@@ -611,7 +634,10 @@ class RestoreService {
       }
       if (remoteStage) {
         remoteStage.plan = rsyncDownloadPlan(manifest, options, await getRestoreMaxFileBytes());
-        remoteStage.space = await rsyncRestore.assertStagingSpace(remoteStage.dir, remoteStage.plan.bytes,
+        // The download, plus the per-file verified copy of the largest file;
+        // the downloaded dump is replayed in place (adoptDownloadedDump).
+        remoteStage.space = await rsyncRestore.assertStagingSpace(remoteStage.dir,
+          remoteStage.plan.bytes + remoteStage.plan.largestMedia,
           bytes => this.formatBytes(bytes), {
             restoredBytes: remoteStage.plan.mediaBytes,
             storagePath: process.env.STORAGE_PATH || path.join(__dirname, '../../../storage'),
@@ -1019,6 +1045,7 @@ class RestoreService {
     } finally {
       this.isRunning = false;
       this.currentProgress = null;
+      this.remoteStageDir = null;
       if (remoteStage) {
         await fs.rm(remoteStage.dir, { recursive: true, force: true }).catch(err =>
           this.log('warn', 'Failed to remove the rsync download staging directory', { error: err.message }));
@@ -1698,9 +1725,10 @@ class RestoreService {
 
     // Before anything is decompressed or replayed: the dump must be the one
     // the manifest describes.
-    const staged = await stageDatabaseDump(dbBackupPath, manifest.database.checksum, this.tempDir, {
-      allowUnverified: allowsUnauthenticatedContent(manifest), warn: msg => this.log('warn', msg),
-    });
+    const dumpOptions = { allowUnverified: allowsUnauthenticatedContent(manifest), warn: msg => this.log('warn', msg) };
+    const staged = _options?.source === 'rsync' && this.remoteStageDir
+      ? await adoptDownloadedDump(dbBackupPath, this.remoteStageDir, manifest.database.checksum, dumpOptions)
+      : await stageDatabaseDump(dbBackupPath, manifest.database.checksum, this.tempDir, dumpOptions);
     dbBackupPath = staged.dump;
     this.log('info', 'Database dump checksum checked against the manifest');
 
