@@ -100,43 +100,83 @@ function failure(outcome, remote, notFound) {
 
 const transferArgs = remote => ['--times', `--timeout=${IO_TIMEOUT_SECONDS}`, '-e', remote.connection.rsyncShell];
 
+// A destination is untrusted: listing its manifests downloads at most this
+// many (the newest) and this many bytes in all, whatever it holds.
+const MAX_LISTED_MANIFESTS = 20;
+const MAX_LISTED_MANIFEST_BYTES = 64 * 1024 * 1024;
+// `rsync --list-only` line: mode, size (digit groups), date, time, name.
+const LIST_LINE_RE = /^([-dlcbps])[-rwxsStT]{9}\S*\s+([\d,.]+)\s+(\d{4}\/\d{2}\/\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(.+)$/;
+
+const manifestsNotFound = remoteDir => ({
+  code: 'RESTORE_REMOTE_MANIFEST_NOT_FOUND',
+  message: `The rsync destination has no ${remoteDir}/ directory. Backups made before the manifest was copied to the destination cannot be restored from it directly; copy the mirror back by hand.`,
+});
+
 /**
- * Download the manifest(s) in <backup_rsync_path>/manifests/ into `dir`: one
- * named manifest, or every backup-manifest-* file. No --links: a symlink on
- * the remote is skipped, never followed or recreated. Returns the regular
- * files that arrived, as `{ name, path }`.
+ * List <backup_rsync_path>/manifests/ without downloading anything and pick
+ * what may be fetched: regular files with a strict backup-manifest name of at
+ * most MAX_MANIFEST_BYTES, the newest MAX_LISTED_MANIFESTS of them, within
+ * MAX_LISTED_MANIFEST_BYTES together.
+ */
+async function selectRemoteManifests(remote) {
+  const remoteDir = `${remote.base}/${RSYNC_MANIFEST_DIR}`;
+  let newest = [];
+  const outcome = await rsyncConnection.runRsync(['--list-only', `--timeout=${IO_TIMEOUT_SECONDS}`,
+    '-e', remote.connection.rsyncShell, `${remote.connection.rsyncTarget}:${remoteDir}/`], {
+    timeoutMs: 0,
+    onStdoutLine: (line) => {
+      const match = LIST_LINE_RE.exec(line);
+      if (!match || match[1] !== '-' || !REMOTE_MANIFEST_NAME_RE.test(match[5])) return;
+      const size = Number(match[2].replace(/[,.]/g, ''));
+      if (!Number.isSafeInteger(size) || size > MAX_MANIFEST_BYTES) return;
+      newest.push({ name: match[5], size, stamp: `${match[3]} ${match[4]}` });
+      if (newest.length > MAX_LISTED_MANIFESTS * 2) {
+        newest = newest.sort(byNewest).slice(0, MAX_LISTED_MANIFESTS);
+      }
+    },
+  });
+  if (outcome.code !== 0) throw failure(outcome, remote, manifestsNotFound(remoteDir));
+  const selected = [];
+  let total = 0;
+  for (const entry of newest.sort(byNewest).slice(0, MAX_LISTED_MANIFESTS)) {
+    if (total + entry.size > MAX_LISTED_MANIFEST_BYTES) break;
+    total += entry.size;
+    selected.push(entry);
+  }
+  return selected;
+}
+
+const byNewest = (a, b) => (a.stamp === b.stamp ? b.name.localeCompare(a.name) : b.stamp.localeCompare(a.stamp));
+
+/**
+ * Download manifests from <backup_rsync_path>/manifests/ into `dir`: the one
+ * named, or the bounded selection of selectRemoteManifests. They go through
+ * fetchRemoteFiles, so each is size-capped, the transfer has a byte budget
+ * and no symlink is followed or recreated. Returns `{ name, path }` each.
  */
 async function fetchRemoteManifests(config, dir, { name } = {}) {
   if (name !== undefined) parseRemoteManifestRef(REMOTE_REF_PREFIX + name);
   const remote = await connectRemote(config);
   const remoteDir = `${remote.base}/${RSYNC_MANIFEST_DIR}`;
-  const args = name
-    ? [...transferArgs(remote), `--max-size=${MAX_MANIFEST_BYTES}`,
-      `${remote.connection.rsyncTarget}:${remoteDir}/${name}`, `${dir}/`]
-    : ['--recursive', ...transferArgs(remote), `--max-size=${MAX_MANIFEST_BYTES}`,
-      '--include', '/backup-manifest-*', '--exclude', '*',
-      `${remote.connection.rsyncTarget}:${remoteDir}/`, `${dir}/`];
-  const outcome = await rsyncConnection.runRsync(args, { timeoutMs: 0 });
-  if (outcome.code !== 0) {
-    throw failure(outcome, remote, {
-      code: 'RESTORE_REMOTE_MANIFEST_NOT_FOUND',
-      message: name
-        ? `The rsync destination holds no ${remoteDir}/${name}. Each backup run keeps only its own manifest there; list the restore points again.`
-        : `The rsync destination has no ${remoteDir}/ directory. Backups made before the manifest was copied to the destination cannot be restored from it directly; copy the mirror back by hand.`,
+  const entries = name ? [{ name, size: MAX_MANIFEST_BYTES }] : await selectRemoteManifests(remote);
+  if (entries.length === 0) return [];
+  const root = path.join(dir, 'fetched');
+  await fs.mkdir(root, { recursive: true, mode: 0o700 });
+  const rels = entries.map(entry => `${RSYNC_MANIFEST_DIR}/${entry.name}`);
+  try {
+    await module.exports.fetchRemoteFiles(config, rels, root, {
+      maxSize: MAX_MANIFEST_BYTES,
+      budgetBytes: entries.reduce((total, entry) => total + entry.size, 0) + 1024 * 1024,
     });
+  } catch (error) {
+    if (error.code === 'RESTORE_REMOTE_FILE_MISSING') {
+      throw new RestoreRemoteError('RESTORE_REMOTE_MANIFEST_NOT_FOUND', name
+        ? `The rsync destination holds no ${remoteDir}/${name} (or not as a regular manifest file of at most ${MAX_MANIFEST_BYTES} bytes). Each backup run keeps only its own manifest there; list the restore points again.`
+        : `Manifests listed in ${remoteDir}/ on the rsync destination disappeared while they were downloaded; list the restore points again.`);
+    }
+    throw error;
   }
-  const found = [];
-  for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-    if (!entry.isFile() || !REMOTE_MANIFEST_NAME_RE.test(entry.name)) continue;
-    if (name && entry.name !== name) continue;
-    const file = path.join(dir, entry.name);
-    if ((await fs.lstat(file)).size <= MAX_MANIFEST_BYTES) found.push({ name: entry.name, path: file });
-  }
-  if (name && found.length === 0) {
-    throw new RestoreRemoteError('RESTORE_REMOTE_MANIFEST_NOT_FOUND',
-      `${remoteDir}/${name} on the rsync destination is not a regular manifest file of at most ${MAX_MANIFEST_BYTES} bytes`);
-  }
-  return found;
+  return entries.map(entry => ({ name: entry.name, path: path.join(root, RSYNC_MANIFEST_DIR, entry.name) }));
 }
 
 function parseManifestFile(raw, file) {
@@ -189,7 +229,7 @@ async function assertStagingSpace(dir, requiredBytes, formatBytes = String, { re
   const availableBytes = bavail * bsize;
   // Staging and the live storage on one volume: the downloaded copy and the
   // restored copy exist side by side until staging is removed.
-  const shared = Boolean(storagePath) && restoredBytes > 0 && await sameDevice(dir, storagePath);
+  const shared = Boolean(storagePath) && restoredBytes > 0 && await module.exports.sameDevice(dir, storagePath);
   const needed = requiredBytes + (shared ? restoredBytes : 0);
   if (needed > availableBytes) {
     throw new RestoreRemoteError('RESTORE_INSUFFICIENT_SPACE',
@@ -316,7 +356,7 @@ module.exports = {
   RestoreRemoteError, REMOTE_REF_PREFIX, MAX_MANIFEST_BYTES,
   isRemoteManifestRef, remoteManifestRef, parseRemoteManifestRef, isRemoteMirrorManifest,
   assertMirrorRelativePath, fetchRemoteManifests, listRemoteManifests, assertStagingSpace,
-  fetchRemoteFiles, rsyncConfigFromEnv, sameDevice,
+  fetchRemoteFiles, rsyncConfigFromEnv, sameDevice, MAX_LISTED_MANIFESTS, MAX_LISTED_MANIFEST_BYTES,
   // How often a download's staged bytes are measured against its budget.
   BUDGET_POLL_MS: 1000,
 };

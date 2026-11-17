@@ -62,6 +62,22 @@ function serveRemote(calls, { override } = {}) {
       const result = await override(args, options);
       if (result) return result;
     }
+    if (args.includes('--list-only')) {
+      // GNU rsync's listing: mode, grouped size, date, time, name.
+      const spec = args[args.length - 1];
+      expect(spec).toBe(`${remoteTarget}:${remoteBase}/manifests/`);
+      const dir = path.join(remoteRoot, 'manifests');
+      const names = await fs.readdir(dir).catch(() => null);
+      if (!names) return { code: 23, stderr: `rsync: [sender] change_dir "${remoteBase}/manifests" failed: No such file or directory (2)\n` };
+      const stamp = date => date.toISOString().slice(0, 19).replace(/-/g, '/').replace('T', ' ');
+      options.onStdoutLine(`drwxr-xr-x          4,096 ${stamp(new Date())} .`);
+      for (const name of names) {
+        const stats = await fs.lstat(path.join(dir, name));
+        const mode = stats.isSymbolicLink() ? 'lrwxrwxrwx' : stats.isDirectory() ? 'drwxr-xr-x' : '-rw-r--r--';
+        options.onStdoutLine(`${mode} ${stats.size.toLocaleString('en-US').padStart(14)} ${stamp(stats.mtime)} ${name}`);
+      }
+      return { code: 0, stderr: '' };
+    }
     const dest = args[args.length - 1];
     const spec = args[args.length - 2];
     expect(spec.startsWith(`${remoteTarget}:${remoteBase}/`)).toBe(true);
@@ -132,6 +148,8 @@ async function backupToRemote() {
 }
 
 const ref = () => `rsync:manifests/${manifestName}`;
+// The --files-from downloads of restore data, not of manifests.
+const dataPulls = calls => calls.filter(call => call.list && !call.list.every(rel => rel.startsWith('manifests/')));
 const post = (url, body) => request(app).post(`/api/admin/restore${url}`).set('Authorization', `Bearer ${superToken}`).send(body);
 
 function newService() {
@@ -205,17 +223,72 @@ describe('listing restore points on the rsync destination', () => {
     expect(listed.body.data).toEqual([expect.objectContaining({ id: ref(), type: 'rsync', restore_source: 'rsync',
       path: ref(), manifest_path: ref(), manifestId: manifest.backup.id, database_included: true, corrupt: false,
       filesCount: manifest.files.count })]);
-    expect(calls).toHaveLength(1);
-    const args = calls[0].args;
-    expect(args).toEqual(expect.arrayContaining(['--recursive', '--times', `--max-size=${16 * 1024 * 1024}`,
-      '--include', '/backup-manifest-*', '--exclude', '*']));
+    // First a listing that downloads nothing, then only the selected names.
+    expect(calls).toHaveLength(2);
+    expect(calls[0].args).toEqual(expect.arrayContaining(['--list-only']));
+    expect(calls[0].args[calls[0].args.indexOf('-e') + 1]).toBe('ssh -p 23');
+    const args = calls[1].args;
+    expect(calls[1].list).toEqual([`manifests/${manifestName}`]);
+    expect(args).toEqual(expect.arrayContaining(['--times', `--max-size=${16 * 1024 * 1024}`]));
     expect(args).not.toEqual(expect.arrayContaining(['-a']));
     expect(args.some(arg => /^--links$|^-[a-z]*[al]/.test(arg))).toBe(false);
     expect(args[args.indexOf('-e') + 1]).toBe('ssh -p 23');
-    expect(args[args.length - 2]).toBe(`${remoteTarget}:${remoteBase}/manifests/`);
+    expect(args[args.length - 2]).toBe(`${remoteTarget}:${remoteBase}/`);
     // The listing directory is gone again.
     expect(args[args.length - 1]).toMatch(/picpeak-rsync-manifests-/);
-    await expect(fs.access(args[args.length - 1])).rejects.toThrow();
+    await expect(fs.access(path.dirname(args[args.length - 1]))).rejects.toThrow();
+  });
+
+  it('downloads at most the newest 20 manifest names within the byte cap, whatever the destination holds', async () => {
+    await backupToRemote();
+    const dir = path.join(remoteRoot, 'manifests');
+    const old = new Date(Date.now() - 86400000);
+    // 60 junk names, older than the real manifest, and two oversized ones.
+    for (let i = 0; i < 60; i += 1) {
+      const junk = path.join(dir, `backup-manifest-junk-${String(i).padStart(2, '0')}.json`);
+      await fs.writeFile(junk, '{"not":"a manifest"}');
+      await fs.utimes(junk, old, old);
+    }
+    for (const name of ['backup-manifest-huge-a.json', 'backup-manifest-huge-b.json']) {
+      const handle = await fs.open(path.join(dir, name), 'w');
+      await handle.truncate(17 * 1024 * 1024);
+      await handle.close();
+    }
+    await fs.writeFile(path.join(dir, 'not-a-manifest.json'), '{}');
+    await fs.symlink('/etc/passwd', path.join(dir, 'backup-manifest-link.json'));
+    const calls = [];
+    serveRemote(calls);
+    const listed = await post('/list-backups', { source: 'local' });
+    expect(listed.body.data).toEqual([expect.objectContaining({ path: ref() })]);
+    const fetched = calls.find(call => call.list).list;
+    expect(fetched).toHaveLength(rsyncRestore.MAX_LISTED_MANIFESTS);
+    expect(fetched).toContain(`manifests/${manifestName}`);
+    expect(fetched.filter(rel => /huge|link|not-a-manifest/.test(rel))).toEqual([]);
+    expect(calls.find(call => call.list).args).toContain(`--max-size=${16 * 1024 * 1024}`);
+  });
+
+  it('stops a manifest download that writes more than the listing announced', async () => {
+    await backupToRemote();
+    rsyncRestore.BUDGET_POLL_MS = 20;
+    let signal;
+    serveRemote([], { override: async (args, options) => {
+      if (!args.some(arg => arg.startsWith('--files-from='))) return null;
+      signal = options.signal;
+      const dest = path.join(args[args.length - 1], 'manifests', manifestName);
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.writeFile(dest, Buffer.alloc(3 * 1024 * 1024));
+      await new Promise((resolve) => {
+        if (signal.aborted) resolve();
+        signal.addEventListener('abort', resolve);
+        setTimeout(resolve, 5000);
+      });
+      return { code: 20, stderr: '', aborted: signal.aborted };
+    } });
+    try {
+      const listed = await post('/list-backups', { source: 'local' });
+      expect(listed.body.remoteError).toMatchObject({ code: 'RESTORE_REMOTE_DOWNLOAD_TOO_LARGE' });
+    } finally { rsyncRestore.BUDGET_POLL_MS = 1000; }
+    expect(signal.aborted).toBe(true);
   });
 
   it('marks a remote manifest that fails authentication and leaves out manifests of other layouts', async () => {
@@ -273,7 +346,7 @@ describe('restoring from the rsync destination', () => {
     await writeRemoteManifest(unsigned);
     await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true, skipPreBackup: true }))
       .rejects.toThrow(/no checksum or an invalid signature/);
-    expect(calls.some(call => call.list)).toBe(false);
+    expect(dataPulls(calls)).toEqual([]);
     expect(await marker()).toBe('changed after the backup');
     expect(await stagingLeft(service)).toEqual([]);
   });
@@ -306,7 +379,7 @@ describe('restoring from the rsync destination', () => {
     service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
     await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true, skipPreBackup: true }))
       .rejects.toThrow(/RESTORE_REMOTE_PATH_UNSAFE/);
-    expect(calls.some(call => call.list)).toBe(false);
+    expect(dataPulls(calls)).toEqual([]);
     expect(await stagingLeft(service)).toEqual([]);
   });
 
@@ -322,7 +395,7 @@ describe('restoring from the rsync destination', () => {
     service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
     await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true, skipPreBackup: true }))
       .rejects.toThrow(/RESTORE_INSUFFICIENT_SPACE/);
-    expect(calls.some(call => call.list)).toBe(false);
+    expect(dataPulls(calls)).toEqual([]);
     expect(await stagingLeft(service)).toEqual([]);
     expect(await marker()).toBe('changed after the backup');
   });
@@ -391,7 +464,7 @@ describe('restoring from the rsync destination', () => {
     } finally {
       await db('app_settings').where({ setting_key: 'restore_max_file_size_mb' }).update({ setting_value: '5000' });
     }
-    expect(calls.some(call => call.list)).toBe(false);
+    expect(dataPulls(calls)).toEqual([]);
   });
 
   it('stops a transfer that writes more than the manifest records, before any checksum runs', async () => {
@@ -426,6 +499,23 @@ describe('restoring from the rsync destination', () => {
     expect(await stagingLeft(service)).toEqual([]);
   });
 
+  it('reserves the per-file verified copy of the largest file, and only the dump for a database restore', async () => {
+    await backupToRemote();
+    serveRemote([]);
+    jest.spyOn(rsyncRestore, 'sameDevice').mockResolvedValue(false);
+    const sizes = manifest.files.manifest.map(entry => entry.size);
+    const download = manifest.database.size + sizes.reduce((a, b) => a + b, 0);
+    const statfs = jest.spyOn(require('fs').promises, 'statfs');
+    statfs.mockResolvedValue({ bavail: download + Math.max(...sizes) - 1, bsize: 1 });
+    const short = await post('/validate', { source: 'rsync', manifestPath: ref(), restoreType: 'full' });
+    expect(short.body.error).toMatch(/^RESTORE_INSUFFICIENT_SPACE/);
+    statfs.mockResolvedValue({ bavail: download + Math.max(...sizes), bsize: 1 });
+    expect((await post('/validate', { source: 'rsync', manifestPath: ref(), restoreType: 'full' })).body).toMatchObject({ success: true });
+    // The dump alone: replayed from the download, never copied a second time.
+    statfs.mockResolvedValue({ bavail: manifest.database.size, bsize: 1 });
+    expect((await post('/validate', { source: 'rsync', manifestPath: ref(), restoreType: 'database' })).body).toMatchObject({ success: true });
+  });
+
   it('needs room for the download and the restored copy when staging and storage share a volume', async () => {
     await backupToRemote();
     const calls = [];
@@ -440,7 +530,7 @@ describe('restoring from the rsync destination', () => {
     // A database restore writes no files into storage: it fits.
     const database = await post('/validate', { source: 'rsync', manifestPath: ref(), restoreType: 'database' });
     expect(database.body).toMatchObject({ success: true });
-    expect(calls.some(call => call.list)).toBe(false);
+    expect(dataPulls(calls)).toEqual([]);
   });
 
   it('keeps restoring from a complete local copy as before', async () => {
@@ -545,6 +635,7 @@ describe('replaying a restore point pulled from the rsync destination', () => {
     const update = service.updateProgress.bind(service);
     service.updateProgress = (message, details) => { progress.push(message); update(message, details); };
     let stagedRoot;
+    const mkdtemp = jest.spyOn(require('fs').promises, 'mkdtemp');
     const original = service.performDatabaseRestore.bind(service);
     service.performDatabaseRestore = async (backupPath, ...rest) => {
       stagedRoot = backupPath;
@@ -555,11 +646,13 @@ describe('replaying a restore point pulled from the rsync destination', () => {
       force: true, skipPreBackup: true });
     expect(result.success).toBe(true);
     expect(await marker()).toBe('backup');
-    const pull = calls.find(call => call.list);
+    const [pull] = dataPulls(calls);
     expect(pull.list).toEqual([dumpRel]);
     expect(pull.args[pull.args.length - 2]).toBe(`${remoteTarget}:${remoteBase}/`);
     expect(pull.args).toEqual(expect.arrayContaining(['--from0', '--times']));
     expect(stagedRoot.startsWith(`${realTemp}${path.sep}rsync-remote-`)).toBe(true);
+    // The verified download is replayed in place: no second copy of the dump.
+    expect(mkdtemp.mock.calls.map(([prefix]) => path.basename(prefix))).not.toContain('verified-dump-');
     expect(progress).toEqual(expect.arrayContaining([expect.stringMatching(/Downloading 1 file\(s\).*from the rsync destination/),
       'Downloading from the rsync destination: 1/1 file(s)']));
     expect(await stagingLeft(service)).toEqual([]);
@@ -577,7 +670,7 @@ describe('replaying a restore point pulled from the rsync destination', () => {
     expect(result.success).toBe(true);
     // The dump on its own, bounded by its recorded size; then the media,
     // bounded by the largest recorded media size (under the restore limit).
-    const [dumpPull, mediaPull, ...rest] = calls.filter(call => call.list);
+    const [dumpPull, mediaPull, ...rest] = dataPulls(calls);
     expect(rest).toEqual([]);
     expect(dumpPull.list).toEqual([dumpRel]);
     expect(dumpPull.args).toContain(`--max-size=${manifest.database.size}`);
