@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { MasonryPhotoAlbum } from 'react-photo-album';
 import 'react-photo-album/masonry.css';
@@ -35,7 +35,7 @@ import { toast } from 'react-toastify';
 import './GalleryPremiumLayout.css';
 import { lightboxImageUrl } from '../imageTiers';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
-import { holdLike, likedFromPayload, markLikeSaved, type LikeHolds } from './optimisticLikes';
+import { useViewerLikes } from './optimisticLikes';
 
 interface PhotoCardProps {
   photo: Photo;
@@ -234,15 +234,12 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     ));
   }, []);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  const [likedPhotoIds, setLikedPhotoIds] = useState<Set<number>>(new Set());
   // Per-viewer is_liked is the server's truth (#590 follow-up). Seeding it
   // once on mount left a like changed in the lightbox invisible here (issue
   // 2561), so the set follows each payload, and a like the viewer just
-  // toggled holds its state until a payload confirms it (optimisticLikes.ts).
-  const pendingLikesRef = useRef<LikeHolds>(new Map());
-  useEffect(() => {
-    setLikedPhotoIds(likedFromPayload(photos, pendingLikesRef.current));
-  }, [photos]);
+  // toggled holds its state until its submits settled and a payload confirms
+  // it (optimisticLikes.ts). Toggle — server /feedback like is a toggle (#590).
+  const [likedPhotoIds, toggleLikedOptimistically, likeSettled, likeFailed] = useViewerLikes(photos, onFeedbackChange, slug);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   // Emoji reactions (#839) inside the premium lightbox. This layout uses
   // yet-another-react-lightbox instead of the shared PhotoLightbox, so the
@@ -350,29 +347,6 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }));
   }, [filteredPhotos, allowDownloads, showOriginalFilename, imageDimensions]);
 
-  // Toggle — server /feedback like is a toggle (#590) — and remember the
-  // state asked for until a payload confirms it.
-  const toggleLikedOptimistically = useCallback((photoId: number) => setLikedPhotoIds(prev => {
-    const next = new Set(prev);
-    const liked = !next.has(photoId);
-    if (liked) next.add(photoId);
-    else next.delete(photoId);
-    holdLike(pendingLikesRef.current, photoId, liked);
-    return next;
-  }), []);
-  // Saved: start the window in which the row refresh should confirm it.
-  const likeSaved = useCallback((photoId: number) => markLikeSaved(pendingLikesRef.current, photoId), []);
-  // Refused: the heart goes back and nothing is awaited.
-  const rollBackLike = useCallback((photoId: number) => {
-    pendingLikesRef.current.delete(photoId);
-    setLikedPhotoIds(prev => {
-      const next = new Set(prev);
-      if (next.has(photoId)) next.delete(photoId);
-      else next.add(photoId);
-      return next;
-    });
-  }, []);
-
   const handleLike = useCallback(async (photo: Photo, e: React.MouseEvent) => {
     e.stopPropagation();
 
@@ -388,11 +362,13 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         await feedbackService.submitFeedback(slug, String(photo.id), {
           feedback_type: 'like',
         });
-        likeSaved(photo.id);
-        onFeedbackChange?.(photo.id);
+        // Refreshes the row; the confirmation window starts once no submit
+        // for this photo is left running.
+        likeSettled(photo.id);
       } catch (err) {
-        // Refused: the heart goes back to what the server holds.
-        rollBackLike(photo.id);
+        // Refused: once nothing else is running for this photo, the heart
+        // shows what the server holds.
+        likeFailed(photo.id);
         console.warn('Like submit failed', err);
       }
       return;
@@ -413,13 +389,12 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         guest_name: savedIdentity?.name,
         guest_email: savedIdentity?.email,
       });
-      likeSaved(photo.id);
-      onFeedbackChange?.(photo.id);
+      likeSettled(photo.id);
     } catch (err) {
-      rollBackLike(photo.id);
+      likeFailed(photo.id);
       console.warn('Like submit failed', err);
     }
-  }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity, toggleLikedOptimistically, rollBackLike, likeSaved]);
+  }, [slug, savedIdentity, feedbackOptions, guestIdentity, toggleLikedOptimistically, likeSettled, likeFailed]);
 
   const handleIdentitySubmit = useCallback(async (name: string, email: string) => {
     setSavedIdentity({ name, email });
@@ -438,15 +413,14 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           guest_name: name,
           guest_email: email,
         });
-        likeSaved(pendingLikePhotoId);
-        onFeedbackChange?.(pendingLikePhotoId);
+        likeSettled(pendingLikePhotoId);
       } catch (err) {
-        rollBackLike(pendingLikePhotoId);
+        likeFailed(pendingLikePhotoId);
         console.warn('Like submit failed', err);
       }
       setPendingLikePhotoId(null);
     }
-  }, [slug, pendingLikePhotoId, onFeedbackChange, toggleLikedOptimistically, rollBackLike, likeSaved]);
+  }, [slug, pendingLikePhotoId, toggleLikedOptimistically, likeSettled, likeFailed]);
 
   const handleSelectAll = useCallback(() => {
     if (selectedPhotos.size === filteredPhotos.length) {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Search, Heart, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -20,7 +20,7 @@ import { PhotoLightbox } from '../PhotoLightbox';
 import { photoMatchesFilenameSearch } from '../../../utils/photoFilename';
 
 import './GalleryStoryLayout.css';
-import { holdLike, likedFromPayload, markLikeSaved, type LikeHolds } from './optimisticLikes';
+import { useViewerLikes } from './optimisticLikes';
 
 interface PhotosByCategory {
   [categoryName: string]: Photo[];
@@ -79,7 +79,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const { t } = useTranslation();
   const [scrolled, setScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   // Track scroll for nav background
@@ -96,11 +95,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // on mount so a refetch could not clobber an in-session toggle, but that
   // left a like changed in the lightbox invisible here (issue 2561). So the
   // set follows every payload, and a like the viewer just toggled holds its
-  // state until a payload confirms it (optimisticLikes.ts).
-  const likeHoldsRef = useRef<LikeHolds>(new Map());
-  useEffect(() => {
-    setFavorites(likedFromPayload(photos, likeHoldsRef.current));
-  }, [photos]);
+  // state until its submits settled and a payload confirms it
+  // (optimisticLikes.ts).
+  const [favorites, toggleFavorite, likeSettled, likeFailed] = useViewerLikes(photos, onFeedbackChange, slug);
 
   // Get hero photo
   const heroPhoto = heroPhotoOverride || photos[0];
@@ -148,15 +145,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const stats = `${totalPhotos} ${t('gallery.photos', 'Photos')}`;
 
   const handleToggleFavorite = useCallback(async (photoId: number) => {
-    const liked = !favorites.has(photoId);
-    const flip = (to: boolean) => setFavorites((previous) => {
-      const next = new Set(previous);
-      if (to) next.add(photoId);
-      else next.delete(photoId);
-      return next;
-    });
-    flip(liked);
-    holdLike(likeHoldsRef.current, photoId, liked);
+    toggleFavorite(photoId);
 
     // The server /feedback like endpoint is a toggle (#590) — fire on
     // every click, not only when adding. The previous code skipped the
@@ -166,23 +155,16 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       await feedbackService.submitFeedback(slug, String(photoId), {
         feedback_type: 'like',
       });
-      markLikeSaved(likeHoldsRef.current, photoId);
-      onFeedbackChange?.(photoId);
+      // Refreshes the row; the confirmation window starts once no submit for
+      // this photo is left running.
+      likeSettled(photoId);
     } catch (err) {
-      // Refused: this click is undone and nothing is awaited. Flipped from
-      // the current state, not back to the value captured at the click, so
-      // two overlapping refused clicks cancel out instead of the second
-      // restoring what the first had already undone.
-      likeHoldsRef.current.delete(photoId);
-      setFavorites((previous) => {
-        const next = new Set(previous);
-        if (next.has(photoId)) next.delete(photoId);
-        else next.add(photoId);
-        return next;
-      });
+      // Refused: once nothing else is running for this photo, the heart shows
+      // what the server holds (the current payload), not an inverted click.
+      likeFailed(photoId);
       console.warn('Like submit failed', err);
     }
-  }, [favorites, slug, onFeedbackChange]);
+  }, [slug, toggleFavorite, likeSettled, likeFailed]);
 
   const handleOpenLightbox = useCallback((photo: Photo) => {
     const index = photos.findIndex(p => p.id === photo.id);
