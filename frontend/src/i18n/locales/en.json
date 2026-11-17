@@ -977,6 +977,9 @@
       "selectedCount": "{{count}} selected",
       "addSelected": "Add selected",
       "lightbox": "Lightbox",
+      "selectAll": "Select all ({{total}})",
+      "deselectAll": "Deselect all",
+      "eventSelected": "{{selected}} of {{total}} in this event selected",
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected"
     },
