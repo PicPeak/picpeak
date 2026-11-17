@@ -93,7 +93,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const tileBadges = useGalleryTileBadges();
   // The like endpoint is a toggle (#590), and so is taking one back. The set
   // follows every payload's is_liked, toggles held until confirmed (issue 2561).
-  const [likedIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
+  const [likedIds, toggleLiked, likeSettled, likeFailed] = useViewerLikes(photos, onFeedbackChange, slug);
   const canQuickComment = Boolean(feedbackEnabled && feedbackOptions?.allowComments && onOpenPhotoWithFeedback);
   // Issue 2043: spins while the photo on screen is being prepared.
   const downloadPending = usePhotoDownloadPending(currentPhoto?.id);
@@ -235,8 +235,11 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       // Same rule as PhotoCard: a pick refused by a finished
                       // selection goes back; otherwise keep the optimistic
                       // state, a refresh reconciles.
-                      if (feedbackLockKind(err)) toggleLiked(currentPhoto.id);
-                      else console.warn('Like submit failed, keeping optimistic UI', err);
+                      if (feedbackLockKind(err)) {
+                        likeFailed(currentPhoto.id);
+                        return;
+                      }
+                      console.warn('Like submit failed, keeping optimistic UI', err);
                     }
                     // The "x selected" counter and the Liked filter read
                     // /my-feedback, which this refreshes (issue 1733); the
@@ -258,8 +261,11 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       guest_email: savedIdentity?.email,
                     });
                   } catch (err) {
-                    if (feedbackLockKind(err)) toggleLiked(currentPhoto.id);
-                    else console.warn('Like submit failed, keeping optimistic UI', err);
+                    if (feedbackLockKind(err)) {
+                      likeFailed(currentPhoto.id);
+                      return;
+                    }
+                    console.warn('Like submit failed, keeping optimistic UI', err);
                   }
                   likeSettled(currentPhoto.id);
                 }}

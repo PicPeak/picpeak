@@ -112,6 +112,7 @@ interface MasonryPhotoProps {
   // Optimistic "I liked this" state + callback (lifted to parent)
   liked?: boolean;
   onLikeSuccess?: () => void;
+  onLikeRefused?: () => void;
   /** The client's hide/show button (issue 1992), when the viewer is the client. */
   visibilityToggle?: React.ReactNode;
   /** Dim the photo: the client hid it from guests. */
@@ -135,6 +136,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
   columnWidth = 300,
   liked = false,
   onLikeSuccess,
+  onLikeRefused,
   savedIdentity,
   onIdentitySaved,
   visibilityToggle,
@@ -198,6 +200,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
       onFeedbackChange={onFeedbackChange}
       liked={liked}
       onLikeSuccess={onLikeSuccess}
+      onLikeRefused={onLikeRefused}
       identityMode="self"
       savedIdentity={savedIdentity}
       onIdentitySaved={onIdentitySaved}
@@ -243,7 +246,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // Optimistic "I liked this" state — lifted here so it survives re-renders
   // of individual MasonryPhoto components during layout reflow/resize.
   // Follows every payload's is_liked, toggles held until confirmed (issue 2561).
-  const [likedPhotoIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
+  const [likedPhotoIds, toggleLiked, likeSettled, likeFailed] = useViewerLikes(photos, onFeedbackChange, slug);
   // Likewise the identity a viewer typed into one tile's modal (like or
   // rating, issue 1733): every other tile reuses it instead of asking again.
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
@@ -268,6 +271,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
       onFeedbackChange: likeSettled,
       liked: likedPhotoIds.has(photo.id),
       onLikeSuccess: () => toggleLiked(photo.id),
+      onLikeRefused: () => likeFailed(photo.id),
       identityMode: 'self' as const,
       savedIdentity,
       onIdentitySaved: setSavedIdentity,
@@ -793,6 +797,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 onIdentitySaved={setSavedIdentity}
                 liked={likedPhotoIds.has(photo.id)}
                 onLikeSuccess={() => toggleLiked(photo.id)}
+                onLikeRefused={() => likeFailed(photo.id)}
                 visibilityToggle={visibilityToggle(photo)}
                 dimmed={dimmed(photo)}
               />

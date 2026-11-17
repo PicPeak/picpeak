@@ -178,6 +178,23 @@ describe.each(layouts)('%s layout like state (issue 2561)', (_name, Layout) => {
     expect(heart()).toHaveAttribute('aria-pressed', 'false');
   });
 
+  it('lets a confirming payload through after a like a finished selection refused', async () => {
+    vi.mocked(feedbackService.submitFeedback)
+      .mockRejectedValueOnce({ response: { status: 409, data: { code: 'SELECTION_LOCKED' } } })
+      .mockResolvedValue({ success: true } as never);
+    const update = mount(Layout as never, photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(heart()).toHaveAttribute('aria-pressed', 'false'));
+    // The selection is reopened and the guest likes the photo again.
+    fireEvent.click(heart());
+    await waitFor(() => expect(heart()).toHaveAttribute('aria-pressed', 'true'));
+    await act(async () => {});
+    update(photoWith(true));
+    // Taken back in the lightbox: the tile follows.
+    update(photoWith(false));
+    expect(heart()).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('keeps a held tile like when another gallery\'s likes are taken back', async () => {
     vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
     const update = mount(Layout as never, photoWith(false));

@@ -43,6 +43,7 @@ interface GridPhotoProps {
   // Immediate UI like state and callback
   liked?: boolean;
   onLikeSuccess?: () => void;
+  onLikeRefused?: () => void;
   /** The client's hide/show button (#172), when the viewer is the client. */
   visibilityToggle?: React.ReactNode;
   /** Dim the photo: the client hid it from guests. */
@@ -68,6 +69,7 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
   onFeedbackChange,
   liked = false,
   onLikeSuccess,
+  onLikeRefused,
   visibilityToggle,
   dimmed = false,
 }) => {
@@ -179,6 +181,7 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
       onFeedbackChange={onFeedbackChange}
       liked={liked}
       onLikeSuccess={onLikeSuccess}
+      onLikeRefused={onLikeRefused}
       savedIdentity={savedIdentity}
       onRequireIdentity={onRequireIdentity}
       onIdentitySaved={onIdentitySaved}
@@ -275,7 +278,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const [pendingAction, setPendingAction] = React.useState<null | { type: 'like'; photoId: number }>(null);
   // The server's is_liked from every payload, with the viewer's own toggles
   // held until a payload confirms them (issue 2561).
-  const [likedPhotoIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
+  const [likedPhotoIds, toggleLiked, likeSettled, likeFailed] = useViewerLikes(photos, onFeedbackChange, slug);
   const [savedIdentity, setSavedIdentity] = React.useState<{ name: string; email: string } | null>(null);
 
   const gridClass = `photo-grid ${gridGeometryClass(gallerySettings, density)}`;
@@ -315,6 +318,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               // Toggle, not add — like endpoint toggles server-side,
               // so the optimistic UI has to follow suit on click 2 (#590).
               onLikeSuccess={() => toggleLiked(photo.id)}
+              onLikeRefused={() => likeFailed(photo.id)}
               // Client visibility toggle (#172) and the dimmed hidden photo.
               visibilityToggle={isClient && onToggleVisibility
                 ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
@@ -343,13 +347,17 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 guest_email: email,
               });
             } catch (err) {
-              // Refused by a finished selection: the heart goes back.
-              if (!isLike || !feedbackLockKind(err)) throw err;
-              toggleLiked(pendingAction.photoId);
-            } finally {
-              // The row refresh confirms it, as after a tile like.
-              if (isLike) likeSettled(pendingAction.photoId);
+              if (!isLike || !feedbackLockKind(err)) {
+                if (isLike) likeSettled(pendingAction.photoId);
+                throw err;
+              }
+              // Refused by a finished selection: the heart shows the server's state.
+              likeFailed(pendingAction.photoId);
+              setPendingAction(null);
+              return;
             }
+            // The row refresh confirms it, as after a tile like.
+            if (isLike) likeSettled(pendingAction.photoId);
             setPendingAction(null);
           }
         }}

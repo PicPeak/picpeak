@@ -70,7 +70,7 @@ export function useViewerLikes(
   photos: Photo[],
   onFeedbackChange?: (photoId?: number) => void,
   slug?: string,
-): [Set<number>, (photoId: number) => void, (photoId?: number) => void] {
+): [Set<number>, (photoId: number) => void, (photoId?: number) => void, (photoId: number) => void] {
   const holdsRef = useRef<LikeHolds>(new Map());
   const [liked, setLiked] = useState<Set<number>>(() => likedFromPayload(photos, holdsRef.current));
   // Submits still running per photo: a quick like-unlike sends two, and the
@@ -119,5 +119,21 @@ export function useViewerLikes(
     }
     onFeedbackChange?.(photoId);
   }, [onFeedbackChange]);
-  return [liked, toggle, settled];
+  // A submit was refused (a finished selection): it counts as no longer
+  // running, and once none is left for the photo the hold goes and the heart
+  // shows the current payload, the server's truth, rather than toggling back
+  // (a rollback toggle would count as one more submit that never settles).
+  // The row is refreshed so that payload is current.
+  const failed = useCallback((photoId: number) => {
+    const running = Math.max(0, (runningRef.current.get(photoId) ?? 0) - 1);
+    if (running > 0) {
+      runningRef.current.set(photoId, running);
+      return;
+    }
+    runningRef.current.delete(photoId);
+    holdsRef.current.delete(photoId);
+    setLiked(likedFromPayload(photosRef.current, holdsRef.current));
+    onFeedbackChange?.(photoId);
+  }, [onFeedbackChange]);
+  return [liked, toggle, settled, failed];
 }

@@ -59,6 +59,7 @@ interface MosaicPhotoProps {
   /** Held by the layout: a tile that scrolled out of the window goes with its state. */
   liked: boolean;
   onLikeSuccess: () => void;
+  onLikeRefused?: () => void;
   /** Refreshes the liked photo's row, which confirms the toggle (issue 2561). */
   onFeedbackChange?: (toggledPhotoId?: number) => void;
   /** The client's hide/show button (issue 1992), when the viewer is the client. */
@@ -86,6 +87,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
   onRequireIdentity,
   liked,
   onLikeSuccess,
+  onLikeRefused,
   onFeedbackChange,
   visibilityToggle,
   dimmed = false,
@@ -143,6 +145,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
       onQuickComment={onQuickComment}
       liked={liked}
       onLikeSuccess={onLikeSuccess}
+      onLikeRefused={onLikeRefused}
       onFeedbackChange={onFeedbackChange}
       savedIdentity={savedIdentity}
       onIdentitySaved={onIdentitySaved}
@@ -194,7 +197,7 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // follow-up). Here and not in the tile: a tile that leaves the window would
   // take its toggle with it. A toggle holds only until a payload confirms it,
   // so a like changed in the lightbox reaches the tile (issue 2561).
-  const [likedIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
+  const [likedIds, toggleLiked, likeSettled, likeFailed] = useViewerLikes(photos, onFeedbackChange, slug);
   const { theme } = useTheme();
   const scale = theme.gallerySettings?.thumbnailScale || 'md';
   const scaleOffsets: Record<string, number> = { xs: 3, sm: 1, md: 0, lg: -1, xl: -2 };
@@ -281,6 +284,7 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           liked={likedIds.has(photo.id)}
           // Toggle — server /feedback like is a toggle (#590).
           onLikeSuccess={() => toggleLiked(photo.id)}
+          onLikeRefused={() => likeFailed(photo.id)}
           onFeedbackChange={likeSettled}
           box={tileWindow.boxes?.get(photo.id)}
           // The client's hide/show button and dimmed hidden photos, as in Grid (issue 1992).
