@@ -220,4 +220,18 @@ describe('Grid layout like through the name-and-email form (issue 2561)', () => 
     update(photoWith(true));
     expect(heart()).toHaveAttribute('aria-pressed', 'true');
   });
+  it('shows the server state again when the submit fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(feedbackService.submitFeedback).mockRejectedValue(new Error('network'));
+    const update = mount(GridGalleryLayout as never, photoWith(false), {
+      feedbackOptions: { allowLikes: true, requireNameEmail: true },
+    });
+    fireEvent.click(heart());
+    fireEvent.change(screen.getByPlaceholderText('Enter your name'), { target: { value: 'Ann' } });
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'ann@example.com' } });
+    fireEvent.submit(screen.getByPlaceholderText('Enter your name').closest('form') as HTMLFormElement);
+    await waitFor(() => expect(heart()).toHaveAttribute('aria-pressed', 'false'));
+    update(photoWith(false));
+    expect(heart()).toHaveAttribute('aria-pressed', 'false');
+  });
 });

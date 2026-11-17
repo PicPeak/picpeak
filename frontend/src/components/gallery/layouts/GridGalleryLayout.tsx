@@ -217,7 +217,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const [pendingAction, setPendingAction] = React.useState<null | { type: 'like'; photoId: number }>(null);
   // The server's is_liked from every payload, with the viewer's own toggles
   // held until a payload confirms them (issue 2561).
-  const [likedPhotoIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
+  const [likedPhotoIds, toggleLiked, likeSettled, likeFailed] = useViewerLikes(photos, onFeedbackChange, slug);
   const [savedIdentity, setSavedIdentity] = React.useState<{ name: string; email: string } | null>(null);
 
   const spacingClass = spacing === 'tight' ? 'gap-2' : spacing === 'relaxed' ? 'gap-6' : 'gap-4';
@@ -296,10 +296,15 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 guest_name: name,
                 guest_email: email,
               });
-            } finally {
-              // The row refresh confirms it, as after a tile like.
-              if (isLike) likeSettled(pendingAction.photoId);
+            } catch (err) {
+              // Nothing was written: the heart shows the server's state again.
+              console.warn('Feedback submit failed', err);
+              if (isLike) likeFailed(pendingAction.photoId);
+              setPendingAction(null);
+              return;
             }
+            // The row refresh confirms it, as after a tile like.
+            if (isLike) likeSettled(pendingAction.photoId);
             setPendingAction(null);
           }
         }}
