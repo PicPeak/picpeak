@@ -338,6 +338,33 @@ async function adoptDownloadedDump(source, stageDir, expectedChecksum, { allowUn
   return { dump, cleanup: () => fs.rm(dump, { force: true }) };
 }
 
+// A .gz dump expands next to itself in the restore temp directory, after
+// the download or staging copy was sized. Its gzip trailer records the
+// expanded size modulo 2^32: a floor of what decompression writes, checked
+// against the free space there before it starts (and before the DROP).
+async function assertDecompressSpace(gzPath, formatBytes = String) {
+  const handle = await fs.open(gzPath, 'r');
+  let expanded = 0;
+  try {
+    const { size } = await handle.stat();
+    if (size >= 4) {
+      const trailer = Buffer.alloc(4);
+      await handle.read(trailer, 0, 4, size - 4);
+      expanded = trailer.readUInt32LE(0);
+    }
+  } finally {
+    await handle.close();
+  }
+  const dir = path.dirname(gzPath);
+  const { bavail, bsize } = await fs.statfs(dir);
+  const available = bavail * bsize;
+  if (expanded > available) {
+    throw new rsyncRestore.RestoreRemoteError('RESTORE_INSUFFICIENT_SPACE',
+      `Decompressing the database dump needs at least ${formatBytes(expanded)} in ${dir}, `
+      + `but only ${formatBytes(available)} are free there. Free up space on that volume (or point TMPDIR at a larger one) and retry.`);
+  }
+}
+
 async function stageDatabaseDump(source, expectedChecksum, tempDir, { allowUnverified = false, warn = () => {} } = {}) {
   await fs.mkdir(tempDir, { recursive: true });
   const dir = await fs.mkdtemp(path.join(tempDir, 'verified-dump-'));
@@ -1760,6 +1787,7 @@ class RestoreService {
       this.portableRuntimeSnapshot = targetRuntime;
       if (dbBackupPath.endsWith('.gz')) {
         this.log('info', 'Decompressing database backup...');
+        await assertDecompressSpace(dbBackupPath, bytes => this.formatBytes(bytes));
         const decompressedPath = dbBackupPath.slice(0, -3);
         await this.decompressFile(dbBackupPath, decompressedPath);
         restoreFile = decompressedPath;
@@ -2805,5 +2833,6 @@ module.exports = {
     downloadS3ObjectBounded,
     MAX_MANIFEST_BYTES,
     rsyncDownloadPlan,
+    assertDecompressSpace,
   },
 };

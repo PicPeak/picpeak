@@ -600,6 +600,20 @@ describe('rsyncRestore helpers', () => {
     'rsync:backup-manifest-a.json', 'rsync:manifests/backup-manifest-a.sh'])('refuses the reference %s', (value) => {
     expect(() => rsyncRestore.parseRemoteManifestRef(value)).toThrow(/RESTORE_REMOTE_MANIFEST_INVALID/);
   });
+  it('refuses to decompress a dump whose expanded size exceeds the free space of the temp volume', async () => {
+    const { assertDecompressSpace } = require('../../src/services/restoreService')._internal;
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-decompress-space-'));
+    const gz = path.join(dir, 'dump.gz');
+    await fs.writeFile(gz, require('zlib').gzipSync(Buffer.alloc(64 * 1024, 'a')));
+    const { size } = await fs.stat(gz);
+    const statfs = jest.spyOn(require('fs').promises, 'statfs');
+    // Room for the compressed file, not for what it expands to.
+    statfs.mockResolvedValue({ bavail: size * 2, bsize: 1 });
+    await expect(assertDecompressSpace(gz)).rejects.toThrow(/^RESTORE_INSUFFICIENT_SPACE: Decompressing the database dump needs at least 65536/);
+    statfs.mockResolvedValue({ bavail: 64 * 1024, bsize: 1 });
+    await expect(assertDecompressSpace(gz)).resolves.toBeUndefined();
+    await fs.rm(dir, { recursive: true, force: true });
+  });
   it('runRsync stops the child when its signal aborts and reports it', async () => {
     const { EventEmitter } = require('events');
     const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(),
