@@ -1007,6 +1007,14 @@ class FeedbackService {
       if (guestId) own.where('photo_feedback.guest_id', guestId);
       else own.where('photo_feedback.guest_identifier', guestIdentifier);
       const rows = Array.from(await own.select('photo_feedback.id', 'photo_feedback.photo_id'));
+      const photoIds = [...new Set(rows.map((row) => Number(row.photo_id)))].sort((a, b) => a - b);
+      // Lock the photos, in one order, before the recounts below: two viewers
+      // clearing on the same photo would otherwise each recount before the
+      // other's delete commits and leave a like counted that no row backs.
+      // SQLite ignores forUpdate but serialises writers anyway.
+      for (const photoId of photoIds) {
+        await trx('photos').where({ id: photoId }).forUpdate().first();
+      }
 
       // The visibility is asked again on delete, as the toggle-off does: an
       // admin may hide one of these likes meanwhile, and a hidden row stays as
@@ -1022,7 +1030,6 @@ class FeedbackService {
           .delete()) || 0;
       }
       // Recounted either way; a photo whose like stayed recounts unchanged.
-      const photoIds = [...new Set(rows.map((row) => Number(row.photo_id)))];
       for (const photoId of photoIds) {
         await this.updatePhotoFeedbackStats(photoId, trx);
       }

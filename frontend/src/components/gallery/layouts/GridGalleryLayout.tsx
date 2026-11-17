@@ -286,15 +286,20 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           setSavedIdentity({ name, email });
           setShowIdentityModal(false);
           if (pendingAction) {
-            await feedbackService.submitFeedback(slug, String(pendingAction.photoId), {
-              feedback_type: pendingAction.type,
-              guest_name: name,
-              guest_email: email,
-            });
-            // Immediately reflect like UI — toggle for consistency (#590).
-            if (pendingAction.type === 'like') toggleLiked(pendingAction.photoId);
-            // The row refresh confirms it, as after a tile like (issue 2561).
-            likeSettled(pendingAction.photoId);
+            const isLike = pendingAction.type === 'like';
+            // Toggle before the submit, as the tile does: toggling after it
+            // would flip a heart a refresh had already confirmed (issue 2561).
+            if (isLike) toggleLiked(pendingAction.photoId);
+            try {
+              await feedbackService.submitFeedback(slug, String(pendingAction.photoId), {
+                feedback_type: pendingAction.type,
+                guest_name: name,
+                guest_email: email,
+              });
+            } finally {
+              // The row refresh confirms it, as after a tile like.
+              if (isLike) likeSettled(pendingAction.photoId);
+            }
             setPendingAction(null);
           }
         }}
