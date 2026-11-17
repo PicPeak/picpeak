@@ -516,6 +516,46 @@ describe('restoring from the rsync destination', () => {
     expect((await post('/validate', { source: 'rsync', manifestPath: ref(), restoreType: 'database' })).body).toMatchObject({ success: true });
   });
 
+  it('measures the space again after the safety backup, before the download starts', async () => {
+    await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    const service = newService();
+    service.tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-restore-tmp-'));
+    let safetyWritten = false;
+    service.createPreRestoreBackup = jest.fn(async () => {
+      safetyWritten = true;
+      return fs.mkdtemp(path.join(service.tempDir, 'pre-restore-'));
+    });
+    // Plenty of room until the safety backup has taken it.
+    jest.spyOn(require('fs').promises, 'statfs').mockImplementation(async () => (safetyWritten
+      ? { bavail: 4, bsize: 1 } : { bavail: 1024 * 1024 * 1024, bsize: 1 }));
+    await expect(service.restore({ source: 'rsync', manifestPath: ref(), restoreType: 'full', force: true }))
+      .rejects.toThrow(/RESTORE_INSUFFICIENT_SPACE/);
+    expect(service.createPreRestoreBackup).toHaveBeenCalled();
+    expect(dataPulls(calls)).toEqual([]);
+    expect(await marker()).toBe('changed after the backup');
+    expect((await db('restore_runs').orderBy('id', 'desc').first()).status).toBe('blocked');
+    expect(await stagingLeft(service)).toEqual([]);
+  });
+
+  it('on an S3 primary reserves no local copy of files the adapter uploads', async () => {
+    await backupToRemote();
+    serveRemote([]);
+    const sizes = manifest.files.manifest.map(entry => entry.size);
+    const media = sizes.reduce((a, b) => a + b, 0);
+    // The download plus one per-file capture, but no room for a local copy.
+    jest.spyOn(require('fs').promises, 'statfs').mockResolvedValue({
+      bavail: manifest.database.size + media + Math.max(...sizes), bsize: 1 });
+    expect(await rsyncRestore.sameDevice(os.tmpdir(), process.env.STORAGE_PATH)).toBe(true);
+    const local = await post('/validate', { source: 'rsync', manifestPath: ref(), restoreType: 'full' });
+    expect(local.body.error).toMatch(/^RESTORE_INSUFFICIENT_SPACE: .*share one volume/);
+    storageModule.setStorageForTesting({ kind: () => 's3' });
+    expect(require('../../src/services/recoveryFiles').remoteDestination(photo)).toBe(true);
+    const s3 = await post('/validate', { source: 'rsync', manifestPath: ref(), restoreType: 'full' });
+    expect(s3.body).toMatchObject({ success: true });
+  });
+
   it('needs room for the download and the restored copy when staging and storage share a volume', async () => {
     await backupToRemote();
     const calls = [];

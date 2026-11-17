@@ -172,7 +172,10 @@ function rsyncDownloadPlan(manifest, options, maxFileBytes) {
   // performFilesRestore checks one file at a time through a verified copy in
   // the restore temp dir (the staging volume), removed after each file.
   const largestMedia = files.reduce((max, entry) => Math.max(max, entry.size || 0), 0);
-  return { dump, files, mediaBytes, largestMedia, bytes: mediaBytes + (dump?.size || 0) };
+  // What performFilesRestore writes to local disk; managed keys on an S3
+  // primary are uploaded through the adapter instead.
+  const localMediaBytes = sum(files.filter(entry => !recoveryFiles.remoteDestination(entry.path)));
+  return { dump, files, mediaBytes, localMediaBytes, largestMedia, bytes: mediaBytes + (dump?.size || 0) };
 }
 
 // A transfer may write what the manifest records plus a little slack (rsync's
@@ -634,14 +637,7 @@ class RestoreService {
       }
       if (remoteStage) {
         remoteStage.plan = rsyncDownloadPlan(manifest, options, await getRestoreMaxFileBytes());
-        // The download, plus the per-file verified copy of the largest file;
-        // the downloaded dump is replayed in place (adoptDownloadedDump).
-        remoteStage.space = await rsyncRestore.assertStagingSpace(remoteStage.dir,
-          remoteStage.plan.bytes + remoteStage.plan.largestMedia,
-          bytes => this.formatBytes(bytes), {
-            restoredBytes: remoteStage.plan.mediaBytes,
-            storagePath: process.env.STORAGE_PATH || path.join(__dirname, '../../../storage'),
-          });
+        await this.checkRemoteStagingSpace(remoteStage);
       }
 
       // Dry run mode - stop here after validation
@@ -690,6 +686,8 @@ class RestoreService {
         this.updateProgress('Downloading backup from S3...');
         localBackupPath = await this.downloadFromS3(selectedBackup, manifest, options);
       } else if (remoteStage) {
+        // Again, now that the safety backup sits in the same temp directory.
+        await this.checkRemoteStagingSpace(remoteStage);
         await this.downloadFromRsync(rsyncConfig, remoteStage, manifest);
       }
 
@@ -1411,6 +1409,20 @@ class RestoreService {
     await fs.mkdir(root, { mode: 0o700 });
     await fs.mkdir(manifestDir, { mode: 0o700 });
     return { dir, root: await fs.realpath(root), manifestDir };
+  }
+
+  // The download, plus the per-file verified (or captured) copy of the
+  // largest file; the downloaded dump is replayed in place
+  // (adoptDownloadedDump). Files restored to local disk count again when
+  // the temp directory shares their volume; adapter-bound (S3) files leave
+  // no local copy behind.
+  async checkRemoteStagingSpace(remoteStage) {
+    const { plan } = remoteStage;
+    remoteStage.space = await rsyncRestore.assertStagingSpace(remoteStage.dir, plan.bytes + plan.largestMedia,
+      bytes => this.formatBytes(bytes), {
+        restoredBytes: plan.localMediaBytes,
+        storagePath: process.env.STORAGE_PATH || path.join(__dirname, '../../../storage'),
+      });
   }
 
   // Pull what the restore type needs from the rsync destination into the
