@@ -20,6 +20,7 @@ import { PhotoLightbox } from '../PhotoLightbox';
 import { photoMatchesFilenameSearch } from '../../../utils/photoFilename';
 
 import './GalleryStoryLayout.css';
+import { holdLike, likedFromPayload, markLikeSaved, type LikeHolds } from './optimisticLikes';
 
 interface PhotosByCategory {
   [categoryName: string]: Photo[];
@@ -90,16 +91,15 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Seed favorites from per-viewer is_liked on first non-empty payload
-  // (#590 follow-up). The previous code seeded from like_count > 0 which
-  // marked every photo with ANY likes as "favorited" for the current
-  // viewer — wrong. Also gated by a mount-only ref so refetches don't
-  // clobber the user's in-session toggles.
-  const favoritesSeededRef = useRef(false);
+  // Per-viewer is_liked is the server's truth (#590 follow-up: like_count > 0
+  // marked every photo with ANY likes as favorited). It used to be read once
+  // on mount so a refetch could not clobber an in-session toggle, but that
+  // left a like changed in the lightbox invisible here (issue 2561). So the
+  // set follows every payload, and a like the viewer just toggled holds its
+  // state until a payload confirms it (optimisticLikes.ts).
+  const likeHoldsRef = useRef<LikeHolds>(new Map());
   useEffect(() => {
-    if (favoritesSeededRef.current || photos.length === 0) return;
-    setFavorites(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
-    favoritesSeededRef.current = true;
+    setFavorites(likedFromPayload(photos, likeHoldsRef.current));
   }, [photos]);
 
   // Get hero photo
@@ -148,10 +148,15 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const stats = `${totalPhotos} ${t('gallery.photos', 'Photos')}`;
 
   const handleToggleFavorite = useCallback(async (photoId: number) => {
-    const newFavorites = new Set(favorites);
-    if (newFavorites.has(photoId)) newFavorites.delete(photoId);
-    else newFavorites.add(photoId);
-    setFavorites(newFavorites);
+    const liked = !favorites.has(photoId);
+    const flip = (to: boolean) => setFavorites((previous) => {
+      const next = new Set(previous);
+      if (to) next.add(photoId);
+      else next.delete(photoId);
+      return next;
+    });
+    flip(liked);
+    holdLike(likeHoldsRef.current, photoId, liked);
 
     // The server /feedback like endpoint is a toggle (#590) — fire on
     // every click, not only when adding. The previous code skipped the
@@ -161,8 +166,12 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       await feedbackService.submitFeedback(slug, String(photoId), {
         feedback_type: 'like',
       });
+      markLikeSaved(likeHoldsRef.current, photoId);
       onFeedbackChange?.(photoId);
     } catch (err) {
+      // Refused: the heart goes back and nothing is awaited.
+      likeHoldsRef.current.delete(photoId);
+      flip(!liked);
       console.warn('Like submit failed', err);
     }
   }, [favorites, slug, onFeedbackChange]);
