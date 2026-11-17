@@ -526,7 +526,9 @@ async function discoverRemoteRsyncBackups(backupConfig) {
     manifestId: manifest?.backup?.id || null,
     size: (Number(manifest?.files?.total_size) || 0) + (Number(manifest?.database?.size) || 0),
     filesCount: manifest?.files?.count ?? null,
-    completed: manifest?.backup?.timestamp || mtime,
+    // The destination is untrusted until authenticated: an unparseable
+    // timestamp would break the wizard's date formatting, so fall back to the file's.
+    completed: Number.isNaN(Date.parse(manifest?.backup?.timestamp)) ? mtime : manifest.backup.timestamp,
     source: 'remote',
     databaseIncluded: Boolean(manifest?.database?.backup_file),
     schemaVersion: manifest?.manifest?.version || '1.0',
