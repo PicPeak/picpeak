@@ -988,39 +988,44 @@ class FeedbackService {
    * one by one either.
    */
   async clearOwnLikes(eventId, { guestId, guestIdentifier, accessLevel }) {
-    const own = applyPhotoVisibilityFilter(
-      db('photo_feedback')
-        .join('photos', 'photo_feedback.photo_id', 'photos.id')
-        .where('photo_feedback.event_id', eventId)
-        .where('photo_feedback.feedback_type', 'like')
-        .where('photo_feedback.is_hidden', formatBoolean(false))
-        // Photos still processing are not in the viewer's gallery either.
-        .where(function () {
-          this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
-        }),
-      accessLevel,
-    );
-    if (guestId) own.where('photo_feedback.guest_id', guestId);
-    else own.where('photo_feedback.guest_identifier', guestIdentifier);
-    const rows = Array.from(await own.select('photo_feedback.id', 'photo_feedback.photo_id'));
+    // One transaction for the deletes and the recounts: a failure halfway
+    // must not leave rows gone with their photos still counting them, which a
+    // retry could no longer repair (it would not find the rows).
+    return db.transaction(async (trx) => {
+      const own = applyPhotoVisibilityFilter(
+        trx('photo_feedback')
+          .join('photos', 'photo_feedback.photo_id', 'photos.id')
+          .where('photo_feedback.event_id', eventId)
+          .where('photo_feedback.feedback_type', 'like')
+          .where('photo_feedback.is_hidden', formatBoolean(false))
+          // Photos still processing are not in the viewer's gallery either.
+          .where(function () {
+            this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
+          }),
+        accessLevel,
+      );
+      if (guestId) own.where('photo_feedback.guest_id', guestId);
+      else own.where('photo_feedback.guest_identifier', guestIdentifier);
+      const rows = Array.from(await own.select('photo_feedback.id', 'photo_feedback.photo_id'));
 
-    // The visibility is asked again on delete, as the toggle-off does: an
-    // admin may hide one of these likes meanwhile, and a hidden row stays as
-    // the admin's record.
-    const ids = rows.map((row) => row.id);
-    let removed = 0;
-    for (let i = 0; i < ids.length; i += 500) {
-      removed += Number(await db('photo_feedback')
-        .whereIn('id', ids.slice(i, i + 500))
-        .where('is_hidden', formatBoolean(false))
-        .delete()) || 0;
-    }
-    // Recounted either way; a photo whose like stayed recounts unchanged.
-    const photoIds = [...new Set(rows.map((row) => Number(row.photo_id)))];
-    for (const photoId of photoIds) {
-      await this.updatePhotoFeedbackStats(photoId);
-    }
-    return { removed, photo_ids: photoIds };
+      // The visibility is asked again on delete, as the toggle-off does: an
+      // admin may hide one of these likes meanwhile, and a hidden row stays as
+      // the admin's record.
+      const ids = rows.map((row) => row.id);
+      let removed = 0;
+      for (let i = 0; i < ids.length; i += 500) {
+        removed += Number(await trx('photo_feedback')
+          .whereIn('id', ids.slice(i, i + 500))
+          .where('is_hidden', formatBoolean(false))
+          .delete()) || 0;
+      }
+      // Recounted either way; a photo whose like stayed recounts unchanged.
+      const photoIds = [...new Set(rows.map((row) => Number(row.photo_id)))];
+      for (const photoId of photoIds) {
+        await this.updatePhotoFeedbackStats(photoId, trx);
+      }
+      return { removed, photo_ids: photoIds };
+    });
   }
 
   /**

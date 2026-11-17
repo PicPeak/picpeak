@@ -169,9 +169,17 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       markLikeSaved(likeHoldsRef.current, photoId);
       onFeedbackChange?.(photoId);
     } catch (err) {
-      // Refused: the heart goes back and nothing is awaited.
+      // Refused: this click is undone and nothing is awaited. Flipped from
+      // the current state, not back to the value captured at the click, so
+      // two overlapping refused clicks cancel out instead of the second
+      // restoring what the first had already undone.
       likeHoldsRef.current.delete(photoId);
-      flip(!liked);
+      setFavorites((previous) => {
+        const next = new Set(previous);
+        if (next.has(photoId)) next.delete(photoId);
+        else next.add(photoId);
+        return next;
+      });
       console.warn('Like submit failed', err);
     }
   }, [favorites, slug, onFeedbackChange]);

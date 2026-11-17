@@ -157,6 +157,21 @@ describe.each(layouts)('%s layout like state (issue 2561)', (_name, Layout, sele
     }
   });
 
+  it('ends unliked when two overlapping clicks are both refused', async () => {
+    const refusals: Array<(error: unknown) => void> = [];
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((_resolve, reject) => { refusals.push(reject); }) as never);
+    const { heart, liked } = setup(photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(true));
+    fireEvent.click(heart());
+    await waitFor(() => expect(liked()).toBe(false));
+    await waitFor(() => expect(refusals).toHaveLength(2));
+    // A 429 for each, in order: the server still holds no like.
+    await act(async () => { refusals[0](new Error('429')); });
+    await act(async () => { refusals[1](new Error('429')); });
+    expect(liked()).toBe(false);
+  });
+
   it('puts the heart back when the server refused the like', async () => {
     vi.mocked(feedbackService.submitFeedback).mockRejectedValue(new Error('refused'));
     const { heart, liked, update } = setup(photoWith(false));

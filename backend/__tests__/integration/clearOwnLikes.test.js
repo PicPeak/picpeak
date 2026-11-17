@@ -166,6 +166,31 @@ describe('taking back likes (issue 2561)', () => {
     expect(Object.fromEntries(stored.map((p) => [p.id, Number(p.like_count)]))).toEqual(counts);
   });
 
+  it('removes nothing when a recount fails halfway, so a retry still finds every like', async () => {
+    for (const photoId of photoIds) expect((await toggleLike(photoId)).status).toBe(200);
+    const feedbackService = require('../../src/services/feedbackService');
+    const service = feedbackService.feedbackService || feedbackService;
+    const original = service.updatePhotoFeedbackStats.bind(service);
+    let calls = 0;
+    const spy = jest.spyOn(service, 'updatePhotoFeedbackStats').mockImplementation(async (...args) => {
+      calls += 1;
+      if (calls === 2) throw new Error('recount failed');
+      return original(...args);
+    });
+    try {
+      expect((await clearLikes()).status).toBe(500);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await likeRows({ guest_id: meId })).toHaveLength(3);
+    const stored = await db('photos').whereIn('id', photoIds).select('like_count');
+    expect(stored.map((p) => Number(p.like_count))).toEqual([1, 1, 1]);
+    // The retry finds them and leaves the counts right.
+    expect((await clearLikes()).body).toMatchObject({ removed: 3 });
+    const after = await db('photos').whereIn('id', photoIds).select('like_count');
+    expect(after.map((p) => Number(p.like_count))).toEqual([0, 0, 0]);
+  });
+
   it('leaves a like the admin hid as the admin\'s record', async () => {
     await toggleLike(photoIds[0]);
     await likeRows({ guest_id: meId }).update({ is_hidden: true });
