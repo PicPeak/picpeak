@@ -967,12 +967,20 @@ class FeedbackService {
       else own.where('photo_feedback.guest_identifier', guestIdentifier);
       const rows = Array.from(await own.select('photo_feedback.id', 'photo_feedback.photo_id'));
 
+      // The visibility is asked again on delete, as the toggle-off does: an
+      // admin may hide one of these likes meanwhile (moderation does not take
+      // the viewer lock), and a hidden row stays as the admin's record.
       const ids = rows.map((row) => row.id);
+      let removed = 0;
       for (let i = 0; i < ids.length; i += 500) {
-        await trx('photo_feedback').whereIn('id', ids.slice(i, i + 500)).delete();
+        removed += Number(await trx('photo_feedback')
+          .whereIn('id', ids.slice(i, i + 500))
+          .where('is_hidden', formatBoolean(false))
+          .delete()) || 0;
       }
       return {
-        removed: ids.length,
+        removed,
+        // Recounted either way; a photo whose like stayed recounts unchanged.
         photo_ids: [...new Set(rows.map((row) => Number(row.photo_id)))],
       };
     });

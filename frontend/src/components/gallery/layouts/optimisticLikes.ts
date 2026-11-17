@@ -41,8 +41,11 @@ export function likedFromPayload(photos: Photo[], holds: LikeHolds, now = Date.n
     if (hold.savedAt !== undefined && now - hold.savedAt > LIKE_CONFIRM_WINDOW_MS) holds.delete(id);
     else if (hold.savedAt === undefined && hold.heldAt !== undefined && now - hold.heldAt > LIKE_PENDING_MAX_MS) holds.delete(id);
   });
+  // Only a settled hold: a payload from before a write that is still running
+  // can agree with it by chance (like, then unlike before the first refresh).
   photos.forEach((photo) => {
-    if (holds.get(photo.id)?.liked === !!photo.is_liked) holds.delete(photo.id);
+    const hold = holds.get(photo.id);
+    if (hold?.savedAt !== undefined && hold.liked === !!photo.is_liked) holds.delete(photo.id);
   });
   const liked = new Set(photos.filter((photo) => photo.is_liked).map((photo) => photo.id));
   holds.forEach(({ liked: held }, id) => {
@@ -69,6 +72,9 @@ export function useViewerLikes(
 ): [Set<number>, (photoId: number) => void, (photoId?: number) => void] {
   const holdsRef = useRef<LikeHolds>(new Map());
   const [liked, setLiked] = useState<Set<number>>(() => likedFromPayload(photos, holdsRef.current));
+  // Submits still running per photo: a quick like-unlike sends two, and the
+  // first one finishing must not settle the hold of the second.
+  const runningRef = useRef<Map<number, number>>(new Map());
   const photosRef = useRef(photos);
   photosRef.current = photos;
   useEffect(() => {
@@ -79,23 +85,34 @@ export function useViewerLikes(
   useEffect(() => {
     const onCleared = () => {
       holdsRef.current.clear();
+      runningRef.current.clear();
       setLiked(likedFromPayload(photosRef.current, holdsRef.current));
     };
     window.addEventListener(LIKES_CLEARED_EVENT, onCleared);
     return () => window.removeEventListener(LIKES_CLEARED_EVENT, onCleared);
   }, []);
-  const toggle = useCallback((photoId: number) => setLiked((previous) => {
-    const next = new Set(previous);
-    const nowLiked = !next.has(photoId);
-    if (nowLiked) next.add(photoId);
-    else next.delete(photoId);
-    holdLike(holdsRef.current, photoId, nowLiked);
-    return next;
-  }), []);
-  // The tile's submit finished (or failed): start the confirmation window,
-  // then refresh the row as before.
+  const toggle = useCallback((photoId: number) => {
+    runningRef.current.set(photoId, (runningRef.current.get(photoId) ?? 0) + 1);
+    setLiked((previous) => {
+      const next = new Set(previous);
+      const nowLiked = !next.has(photoId);
+      if (nowLiked) next.add(photoId);
+      else next.delete(photoId);
+      holdLike(holdsRef.current, photoId, nowLiked);
+      return next;
+    });
+  }, []);
+  // The tile's submit finished (or failed): once none is left running, start
+  // the confirmation window; then refresh the row as before.
   const settled = useCallback((photoId?: number) => {
-    if (photoId !== undefined) markLikeSaved(holdsRef.current, photoId);
+    if (photoId !== undefined) {
+      const running = Math.max(0, (runningRef.current.get(photoId) ?? 0) - 1);
+      if (running > 0) runningRef.current.set(photoId, running);
+      else {
+        runningRef.current.delete(photoId);
+        markLikeSaved(holdsRef.current, photoId);
+      }
+    }
     onFeedbackChange?.(photoId);
   }, [onFeedbackChange]);
   return [liked, toggle, settled];

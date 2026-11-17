@@ -155,6 +155,28 @@ describe.each(layouts)('%s layout like state (issue 2561)', (_name, Layout) => {
     }
   });
 
+  it('keeps a quick unlike over the refresh confirming the like before it', async () => {
+    const finishers: Array<(value: unknown) => void> = [];
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((resolve) => { finishers.push(resolve); }) as never);
+    const update = mount(Layout as never, photoWith(false));
+    fireEvent.click(heart());
+    await waitFor(() => expect(heart()).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(finishers).toHaveLength(1));
+    fireEvent.click(heart());
+    await waitFor(() => expect(heart()).toHaveAttribute('aria-pressed', 'false'));
+    await waitFor(() => expect(finishers).toHaveLength(2));
+    // An unrelated refresh from before both writes agrees with the unlike ...
+    update(photoWith(false));
+    // ... then the like settles and its refresh still carries it.
+    await act(async () => { finishers[0]({ success: true }); });
+    update(photoWith(true));
+    expect(heart()).toHaveAttribute('aria-pressed', 'false');
+    // The unlike settles; its refresh confirms the empty heart.
+    await act(async () => { finishers[1]({ success: true }); });
+    update(photoWith(false));
+    expect(heart()).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('drops a held tile like when all own likes are taken back', async () => {
     vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
     const update = mount(Layout as never, photoWith(false));
