@@ -174,8 +174,13 @@ function missingKnownHostsWarning(config) {
     + `The entry must be named ${hostKeyAlias(host, port)} exactly (lower case, no trailing dot).`;
 }
 
-/** One rsync run, no shell; resolves with its outcome and never rejects. */
-function runRsync(args) {
+/**
+ * One rsync run, no shell; resolves with its outcome and never rejects.
+ * `timeoutMs` 0 sets no wall-clock limit (a restore download: rsync's own
+ * --timeout bounds a stalled transfer instead). `onStdoutLine` receives each
+ * complete stdout line, for progress.
+ */
+function runRsync(args, { timeoutMs = module.exports.RSYNC_PROBE_TIMEOUT_MS, onStdoutLine } = {}) {
   return new Promise((resolve) => {
     let settled = false; let timedOut = false; let timer;
     const done = outcome => {
@@ -188,9 +193,16 @@ function runRsync(args) {
     } catch (error) { done({ error, stderr: '' }); return; }
     // Our own timer, not spawn's `timeout`: rsync traps SIGTERM and exits
     // with code 20, so the close event alone cannot tell a timeout apart.
-    timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, module.exports.RSYNC_PROBE_TIMEOUT_MS);
+    if (timeoutMs > 0) timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeoutMs);
     let stderr = '';
-    child.stdout.on('data', () => {});
+    let pending = '';
+    child.stdout.on('data', (data) => {
+      if (!onStdoutLine) return;
+      const lines = (pending + data).split('\n');
+      pending = lines.pop();
+      if (pending.length > 64 * 1024) pending = '';
+      for (const line of lines) onStdoutLine(line);
+    });
     child.stderr.on('data', (data) => { if (stderr.length < 64 * 1024) stderr += data; });
     child.on('error', error => done({ error, stderr }));
     child.on('close', (code, signal) => done({ code, signal, stderr }));
@@ -282,4 +294,5 @@ function rsyncProbeFailure(outcome, connection, { remotePath, parent } = {}) {
 }
 
 module.exports = { resolveRsyncConnection, isPublicAddress, hostKeyFailure, missingKnownHostsWarning,
-  probeRsyncDestination, rsyncProbeFailure, RSYNC_PROBE_TIMEOUT_MS: 15000 };
+  probeRsyncDestination, rsyncProbeFailure, runRsync, PATH_NOT_FOUND, RsyncConnectionError,
+  RSYNC_PROBE_TIMEOUT_MS: 15000 };

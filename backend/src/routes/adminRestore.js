@@ -371,10 +371,11 @@ router.get('/run/:id/report', requirePermission('backup.view'), async (req, res)
  */
 router.get('/available-backups', requirePermission('backup.view'), async (req, res) => {
   try {
-    const backups = await discoverAvailableBackups();
+    const { backups, remoteError } = await discoverAllBackups();
     res.json({
       success: true,
-      data: backups
+      data: backups,
+      remoteError
     });
   } catch (error) {
     logger.error('Failed to list available backups:', error);
@@ -504,6 +505,56 @@ async function discoverAvailableBackups() {
 }
 
 /**
+ * Restore points on the rsync destination itself: the manifests each run
+ * copied to <backup_rsync_path>/manifests/ (uploadRsyncManifest), downloaded
+ * and authenticated by listRemoteManifests. A restore re-downloads the one
+ * it is given by name, so nothing fetched here is reused. An unreachable
+ * destination is reported, not thrown: the local restore points still list.
+ */
+async function discoverRemoteRsyncBackups(backupConfig) {
+  if (backupConfig.backup_destination_type !== 'rsync'
+      || !backupConfig.backup_rsync_host || !backupConfig.backup_rsync_path) {
+    return { backups: [], remoteError: null };
+  }
+  const rsyncRestore = require('../utils/rsyncRestore');
+  let listed;
+  try {
+    listed = await rsyncRestore.listRemoteManifests(backupConfig);
+  } catch (error) {
+    logger.warn(`Could not list restore points on the rsync destination: ${error.message}`);
+    return { backups: [], remoteError: { code: error.code || null, message: error.message } };
+  }
+  const backups = listed.map(({ name, ref, manifest, mtime, error }) => ({
+    type: 'rsync',
+    restoreSource: 'rsync',
+    name,
+    path: ref,
+    manifestId: manifest?.backup?.id || null,
+    size: (Number(manifest?.files?.total_size) || 0) + (Number(manifest?.database?.size) || 0),
+    filesCount: manifest?.files?.count ?? null,
+    completed: manifest?.backup?.timestamp || mtime,
+    source: 'remote',
+    databaseIncluded: Boolean(manifest?.database?.backup_file),
+    schemaVersion: manifest?.manifest?.version || '1.0',
+    ...(error ? { corrupt: true, error } : {}),
+  }));
+  return { backups, remoteError: null };
+}
+
+// The local/database discovery plus the rsync destination's own manifests.
+async function discoverAllBackups() {
+  const backups = await discoverAvailableBackups();
+  const remote = await discoverRemoteRsyncBackups(await getBackupConfig());
+  backups.push(...remote.backups);
+  backups.sort((a, b) => {
+    const aTime = a.completed ? new Date(a.completed).getTime() : 0;
+    const bTime = b.completed ? new Date(b.completed).getTime() : 0;
+    return bTime - aTime;
+  });
+  return { backups, remoteError: remote.remoteError };
+}
+
+/**
  * Recursive manifest finder. Depth-limited so we don't enumerate
  * thousands of photo files. Yields absolute paths.
  */
@@ -618,18 +669,27 @@ router.post('/list-backups', requirePermission('backup.view'), async (req, res) 
     // is "the DB is broken, rebuild it from disk" — a wizard that
     // only queries the DB shows "No backups found" exactly when it's
     // needed most. See discoverAvailableBackups for the full rationale.
-    const discovered = await discoverAvailableBackups();
+    // The rsync destination is the configured backup destination, so its
+    // restore points list with the local ones.
+    const includeRemote = !source || source === 'local' || source === 'rsync';
+    const { backups: discovered, remoteError } = includeRemote
+      ? await discoverAllBackups()
+      : { backups: await discoverAvailableBackups(), remoteError: null };
 
     const filtered = source
-      ? discovered.filter((b) => b.type === source)
+      ? discovered.filter((b) => b.type === source || (source === 'local' && b.type === 'rsync'))
       : discovered;
 
     // Shape for frontend compatibility — preserves every alias the
     // frontend was already reading (snake_case + camelCase), so the
     // UI rendering doesn't have to change.
     const backups = filtered.map((b) => ({
-      id: b.manifestId || null,
+      // A remote point can share its manifest id with the local copy.
+      id: b.type === 'rsync' ? b.path : (b.manifestId || null),
       type: b.type,
+      // The source the wizard posts for this entry ('rsync' for a restore
+      // point read from the rsync destination); null: the selected source.
+      restore_source: b.restoreSource || null,
       name: b.completed
         ? `Backup from ${new Date(b.completed).toLocaleString()}`
         : b.name,
@@ -656,6 +716,7 @@ router.post('/list-backups', requirePermission('backup.view'), async (req, res) 
       database_included: b.databaseIncluded,
       databaseIncluded: b.databaseIncluded,
       corrupt: b.corrupt || false,
+      error: b.corrupt ? b.error || null : undefined,
       // Provenance: 'disk' (manifest read from filesystem) vs 'db'
       // (backup_runs row that the disk didn't surface) — useful for
       // debugging which side is missing.
@@ -667,7 +728,8 @@ router.post('/list-backups', requirePermission('backup.view'), async (req, res) 
     res.json({
       success: true,
       data: backups,
-      source: source || 'all'
+      source: source || 'all',
+      remoteError
     });
   } catch (error) {
     logger.error('Failed to list backups for restore:', error);
@@ -814,12 +876,25 @@ async function getBackupConfig() {
 // `options.source === 'local'` branch). Treating them as paths resolved
 // 'local' to <cwd>/local, failed containment, and 400'd the entire normal
 // restore workflow — so type tokens are excluded from the path check.
-const SOURCE_TYPE_TOKENS = ['local', 's3', 'upload'];
+const SOURCE_TYPE_TOKENS = ['local', 's3', 'upload', 'rsync'];
 
 async function checkRestorePathsAllowed({ source, manifestPath }) {
   const isS3 = (v) => typeof v === 'string' && v.startsWith('s3://');
   const isTypeToken = (v) => typeof v === 'string'
     && SOURCE_TYPE_TOKENS.includes(v.trim().toLowerCase());
+  // A restore point on the rsync destination is named, not a path: the
+  // restore downloads it into its own staging directory. Only with the
+  // 'rsync' source, and only in the one accepted form.
+  const rsyncRestore = require('../utils/rsyncRestore');
+  if (source === 'rsync' || rsyncRestore.isRemoteManifestRef(manifestPath)) {
+    try {
+      if (source !== 'rsync') throw new Error('mismatch');
+      rsyncRestore.parseRemoteManifestRef(manifestPath);
+    } catch (_) {
+      return 'A restore from the rsync destination takes source "rsync" with a manifest named rsync:manifests/<file>';
+    }
+    return null;
+  }
   const candidates = [source, manifestPath]
     .filter((v) => v && !isS3(v) && !isTypeToken(v));
   if (candidates.length === 0) return null;

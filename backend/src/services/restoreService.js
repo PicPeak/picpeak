@@ -19,6 +19,7 @@ const { nextSessionCutoff, invalidateSessionsIssuedSoFar } = require('../utils/s
 const { assertCompleteFileRestore, resolveBackupPointLocation } = require('../utils/backupRestorePoint');
 const applicationWork = require('./activeApplicationWork');
 const portableRuntime = require('./portableRestoreRuntimeState');
+const rsyncRestore = require('../utils/rsyncRestore');
 
 // A manifest is attacker-influenceable (hand-crafted backup). Reject any
 // entry path that would resolve OUTSIDE its intended base directory
@@ -138,6 +139,31 @@ function resolveRestoreFiles(manifest, options) {
     // always come from the authenticated entry, never the request object.
     return entry;
   });
+}
+
+// What a restore from the rsync destination downloads: the dump for a
+// database restore, the manifest's (or the selection's) files for a files
+// restore, both for a full one. Every path is checked before rsync sees it.
+function rsyncDownloadPlan(manifest, options) {
+  const entries = [];
+  if (options.restoreType === 'full' || options.restoreType === 'database') {
+    const dump = manifest.database?.backup_file;
+    if (!dump) throw new Error('No database backup file found in manifest');
+    entries.push({ path: rsyncRestore.assertMirrorRelativePath(dump, 'database dump path'), size: manifest.database.size });
+  }
+  if (['full', 'files', 'selective'].includes(options.restoreType)) {
+    for (const file of resolveRestoreFiles(manifest, options)) {
+      entries.push({ path: rsyncRestore.assertMirrorRelativePath(file.path, 'manifest file path'), size: file.size });
+    }
+  }
+  const sizes = entries.map(entry => Number(entry.size));
+  const known = sizes.every(size => Number.isFinite(size) && size >= 0);
+  return {
+    paths: [...new Set(entries.map(entry => entry.path))],
+    bytes: sizes.reduce((sum, size) => sum + (Number.isFinite(size) && size > 0 ? size : 0), 0),
+    // rsync skips anything larger than the largest recorded entry.
+    maxSize: known && sizes.length > 0 ? Math.max(...sizes) : 0,
+  };
 }
 
 // `restore_max_file_size_mb` (restore settings, default from migration 032)
@@ -487,6 +513,9 @@ class RestoreService {
     // backup, the S3 download) only reads the destination, so a failure
     // there left it exactly as it was.
     let destinationTouched = false;
+    // A restore point read from the rsync destination: the private staging
+    // directory it is downloaded into, removed when the run ends.
+    let remoteStage = null;
 
     try {
       // Validate options
@@ -511,7 +540,24 @@ class RestoreService {
 
       // Step 1: Load and validate manifest
       this.updateProgress('Loading and validating manifest...');
-      const manifest = await this.loadAndValidateManifest(options.manifestPath, options.s3Config);
+      let manifestFile = options.manifestPath;
+      let rsyncConfig = null;
+      if (options.source === 'rsync') {
+        // The trusted boot hook passes settings from the environment; the
+        // routes never do, so the wizard always uses the configured ones.
+        rsyncConfig = options.rsyncConfig || await require('./backupService').getBackupConfig();
+        remoteStage = await this.createRemoteStage();
+        this.updateProgress('Downloading the manifest from the rsync destination...');
+        [{ path: manifestFile }] = await rsyncRestore.fetchRemoteManifests(rsyncConfig, remoteStage.manifestDir,
+          { name: rsyncRestore.parseRemoteManifestRef(options.manifestPath) });
+      }
+      // A remote manifest is untrusted input like any other: same signature
+      // check, same recovery-approval rule.
+      const manifest = await this.loadAndValidateManifest(manifestFile, options.s3Config);
+      if (remoteStage && !rsyncRestore.isRemoteMirrorManifest(manifest)) {
+        throw new rsyncRestore.RestoreRemoteError('RESTORE_REMOTE_MANIFEST_UNSUPPORTED',
+          'The manifest on the rsync destination does not describe an rsync mirror (mirror-v1); refusing to restore it from there');
+      }
       const authentication = backupManifest.getAuthentication(manifest);
       this.log(authentication.authenticated ? 'info' : 'warn', 'Backup manifest authentication outcome', authentication);
       // Mandatory before force/dry-run, safety backup, or any restore sink.
@@ -523,7 +569,7 @@ class RestoreService {
       }
       assertCompleteFileRestore(manifest, options);
       const backupConfig = await require('./backupService').getBackupConfig();
-      const selectedBackup = await resolveBackupPointLocation(manifest, options, backupConfig);
+      const selectedBackup = remoteStage ? remoteStage.root : await resolveBackupPointLocation(manifest, options, backupConfig);
       this.log('info', 'Manifest loaded and validated', {
         backupId: manifest.backup.id,
         backupType: manifest.backup.type,
@@ -551,6 +597,11 @@ class RestoreService {
       const spaceCheck = await this.checkDiskSpace(manifest, options);
       if (!spaceCheck.hasEnoughSpace) {
         throw new Error(`Insufficient disk space. Required: ${spaceCheck.requiredFormatted}, Available: ${spaceCheck.availableFormatted}`);
+      }
+      if (remoteStage) {
+        remoteStage.plan = rsyncDownloadPlan(manifest, options);
+        remoteStage.space = await rsyncRestore.assertStagingSpace(remoteStage.dir, remoteStage.plan.bytes,
+          bytes => this.formatBytes(bytes));
       }
 
       // Dry run mode - stop here after validation
@@ -598,6 +649,8 @@ class RestoreService {
       if (selectedBackup.startsWith('s3://')) {
         this.updateProgress('Downloading backup from S3...');
         localBackupPath = await this.downloadFromS3(selectedBackup, manifest, options);
+      } else if (remoteStage) {
+        await this.downloadFromRsync(rsyncConfig, remoteStage);
       }
 
       // Step 6: Perform the actual restore based on type
@@ -818,7 +871,7 @@ class RestoreService {
       }
 
       // Step 8: Clean up temporary files
-      if (localBackupPath !== options.source) {
+      if (localBackupPath !== options.source && !remoteStage) {
         await fs.unlink(localBackupPath).catch(err => 
           this.log('warn', 'Failed to clean up temporary backup file', { error: err.message })
         );
@@ -980,6 +1033,10 @@ class RestoreService {
     } finally {
       this.isRunning = false;
       this.currentProgress = null;
+      if (remoteStage) {
+        await fs.rm(remoteStage.dir, { recursive: true, force: true }).catch(err =>
+          this.log('warn', 'Failed to remove the rsync download staging directory', { error: err.message }));
+      }
       
       // Clean up temp directory
       try {
@@ -1018,6 +1075,12 @@ class RestoreService {
     if ((options.source === 's3' || options.source.startsWith('s3://')) && !options.s3Config) {
       throw new Error('S3 configuration is required for S3-based backups');
     }
+
+    // A restore point on the rsync destination is named, never a path.
+    if ((options.source === 'rsync') !== rsyncRestore.isRemoteManifestRef(options.manifestPath)) {
+      throw new Error('A restore from the rsync destination takes source "rsync" with a manifest named rsync:manifests/<file>');
+    }
+    if (options.source === 'rsync') rsyncRestore.parseRemoteManifestRef(options.manifestPath);
   }
 
   /**
@@ -1324,6 +1387,39 @@ class RestoreService {
     }
   }
 
+  // A private (0700) directory under the restore temp dir: manifest/ for the
+  // downloaded manifest, mirror/ as the restore root for its files.
+  async createRemoteStage() {
+    await fs.mkdir(this.tempDir, { recursive: true, mode: 0o700 });
+    const dir = await fs.mkdtemp(path.join(this.tempDir, 'rsync-remote-'));
+    await fs.chmod(dir, 0o700);
+    const root = path.join(dir, 'mirror');
+    const manifestDir = path.join(dir, 'manifest');
+    await fs.mkdir(root, { mode: 0o700 });
+    await fs.mkdir(manifestDir, { mode: 0o700 });
+    return { dir, root: await fs.realpath(root), manifestDir };
+  }
+
+  // Pull what the restore type needs from the rsync destination into the
+  // staging root. The restore then reads it there like a local restore
+  // point, with the same containment and checksum checks.
+  async downloadFromRsync(rsyncConfig, remoteStage) {
+    const { paths, bytes, maxSize } = remoteStage.plan;
+    this.updateProgress(`Downloading ${paths.length} file(s) (${this.formatBytes(bytes)}) from the rsync destination...`);
+    this.log('info', 'Downloading the restore point from the rsync destination', { files: paths.length, bytes });
+    let lastUpdate = 0;
+    await rsyncRestore.fetchRemoteFiles(rsyncConfig, paths, remoteStage.root, {
+      maxSize,
+      onProgress: (done, total) => {
+        const now = Date.now();
+        if (done < total && now - lastUpdate < 1000) return;
+        lastUpdate = now;
+        this.updateProgress(`Downloading from the rsync destination: ${done}/${total} file(s)`);
+      },
+    });
+    this.log('info', 'Restore point downloaded from the rsync destination', { files: paths.length });
+  }
+
   /**
    * Download backup from S3
    */
@@ -1542,6 +1638,11 @@ class RestoreService {
     // still present on this host. Never replay a different local artifact.
     if (_options?.source?.startsWith('s3://') || _options?.source === 's3') {
       const stagedCandidate = path.join(backupPath, 'database', path.basename(dbBackupFile));
+      candidates = candidates.filter(candidate => path.resolve(candidate) === path.resolve(stagedCandidate));
+    } else if (_options?.source === 'rsync') {
+      // Only the dump just downloaded from the rsync destination, never a
+      // file of that name still on this host (database.source_file).
+      const stagedCandidate = path.join(backupPath, rsyncRestore.assertMirrorRelativePath(dbBackupFile, 'database dump path'));
       candidates = candidates.filter(candidate => path.resolve(candidate) === path.resolve(stagedCandidate));
     }
 
@@ -2550,6 +2651,9 @@ END $$;`
    */
   sanitizeOptions(options) {
     const sanitized = { ...options };
+    if (sanitized.rsyncConfig) {
+      sanitized.rsyncConfig = { host: sanitized.rsyncConfig.backup_rsync_host, path: sanitized.rsyncConfig.backup_rsync_path };
+    }
     if (sanitized.s3Config) {
       sanitized.s3Config = {
         ...sanitized.s3Config,
@@ -2667,5 +2771,6 @@ module.exports = {
     writeBounded,
     downloadS3ObjectBounded,
     MAX_MANIFEST_BYTES,
+    rsyncDownloadPlan,
   },
 };

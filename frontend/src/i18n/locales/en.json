@@ -6814,7 +6814,7 @@
         "subtitle": "Choose where to restore the backup from",
         "local": {
           "name": "Local Backup",
-          "description": "Restore from local filesystem"
+          "description": "Restore from the local backup folder or the configured rsync destination"
         },
         "s3": {
           "name": "S3 Storage",
@@ -6854,6 +6854,12 @@
         "filesOnlyBadge": "No DB",
         "corruptHint": "The manifest file is unreadable — the backup may be incomplete or damaged.",
         "corruptBadge": "Corrupt",
+        "remoteBadge": "Rsync destination",
+        "remoteHint": "Stored on the rsync destination. The restore downloads what it needs into a private temporary directory first.",
+        "remoteUnavailable": {
+          "title": "The rsync destination could not be read",
+          "message": "Restore points stored only on the rsync destination are not listed. Check the connection under Backup settings, then reopen this step."
+        },
         "filesOnlyWarning": {
           "title": "Selected backup has no database dump",
           "message": "Restoring this backup will recover files (photos, PDFs) but the database — including admin users, customers, quotes, invoices, contracts, and settings — will NOT come back. Pick a different backup if you have one with a database dump, or proceed only if files-only is what you want."
@@ -7014,6 +7020,7 @@
       "RSYNC_HOST_UNREACHABLE": "The destination cannot be reached from the backend. Check the host, the port and the backend's network.",
       "RSYNC_REMOTE_PATH_NOT_FOUND": "The remote path does not exist on the destination, and neither does its parent. rsync creates only the last directory of the path; create the parent first.",
       "RSYNC_REMOTE_PATH_DENIED": "The destination denies the SSH user access to the remote path. Check its permissions.",
+      "RESTORE_REMOTE_MANIFEST_NOT_FOUND": "The rsync destination has no manifests directory (or no longer holds the selected manifest). Backups made before the manifest was copied to the destination cannot be restored from it directly: copy the mirror back by hand, or run a new backup.",
       "S3_ENDPOINT_FORBIDDEN": "The S3 endpoint points to a link-local, cloud-metadata or reserved address. Such destinations can never be approved.",
       "S3_ENDPOINT_UNRESOLVED": "The S3 endpoint hostname could not be resolved.",
       "S3_ENDPOINT_INVALID": "The S3 endpoint is not a valid URL.",
