@@ -1017,6 +1017,8 @@ class FeedbackService {
         removed += Number(await trx('photo_feedback')
           .whereIn('id', ids.slice(i, i + 500))
           .where('is_hidden', formatBoolean(false))
+          // Still this viewer's: a guest merge may have reassigned a row meanwhile.
+          .where(guestId ? { guest_id: guestId } : { guest_identifier: guestIdentifier })
           .delete()) || 0;
       }
       // Recounted either way; a photo whose like stayed recounts unchanged.
