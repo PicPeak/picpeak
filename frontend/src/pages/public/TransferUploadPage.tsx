@@ -24,6 +24,8 @@ import { UploadCloud, CheckCircle, AlertCircle, X, File as FileIcon } from 'luci
 import { Button, Loading } from '../../components/common';
 import { transfersService } from '../../services/transfers.service';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
+import { useUploadInterrupted } from '../../hooks/useUploadInterrupted';
+import { useScreenWakeLock } from '../../hooks/useScreenWakeLock';
 import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
 import { planTransferFiles, pacedRetryDelay, MAX_PACED_RETRIES } from '../../utils/uploadBatches';
 
@@ -69,6 +71,9 @@ export const TransferUploadPage: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [done, setDone] = useState(false);
+  const interrupted = useUploadInterrupted();
+  // Keep the phone from locking (and suspending the page) mid-upload.
+  useScreenWakeLock(uploading);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['transfer-upload-info', token],
@@ -323,6 +328,11 @@ export const TransferUploadPage: React.FC = () => {
       >
         {t('transfers.upload.send', 'Upload {{count}} files', { count: files.length })}
       </Button>
+      {uploading && interrupted && (
+        <p className="mt-3 text-center text-sm text-warning-text" role="status" aria-live="polite">
+          {t('transfers.uploadResuming', 'Connection interrupted – resuming…')}
+        </p>
+      )}
     </div>,
   );
 };
