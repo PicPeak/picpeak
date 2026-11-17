@@ -211,6 +211,24 @@ describe('adding files to a transfer', () => {
   });
 });
 
+describe('admin upload progress', () => {
+  it('reports 100 only once every byte of the last file is sent', async () => {
+    const base = post.getMockImplementation()!;
+    post.mockImplementation(async (url: string, body?: unknown, config?: unknown) => {
+      const onUploadProgress = (config as { onUploadProgress?: (e: { loaded: number }) => void } | undefined)?.onUploadProgress;
+      // The last chunk short of its final 0.5 MB, then complete.
+      if (url.endsWith('/chunk/9')) onUploadProgress?.({ loaded: CHUNK - MB / 2 });
+      if (url.includes('/chunk/')) onUploadProgress?.({ loaded: CHUNK });
+      return base(url, body);
+    });
+    const seen: number[] = [];
+    await transfersService.uploadFiles(7, [bigFile('film.mp4', 100 * MB)], (pct) => seen.push(pct));
+    expect(seen).toContain(99);
+    expect(seen.slice(seen.indexOf(100)).every((pct) => pct === 100)).toBe(true);
+    expect(seen.slice(0, seen.indexOf(100)).every((pct) => pct < 100)).toBe(true);
+  });
+});
+
 describe('public file-request upload', () => {
   it('reports 100 only once every byte of the file is sent', async () => {
     post.mockImplementation(async (url: string, body?: unknown, config?: unknown) => {
