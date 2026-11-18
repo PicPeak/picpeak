@@ -49,6 +49,22 @@ describe('GalleryFilterPanel', () => {
     expect(onFilterChange).toHaveBeenCalledWith('favorited');
   });
 
+  // Issue 2561: the viewer's own likes can be taken back in one step, offered
+  // only while they have any.
+  it('offers "Remove my likes" while the viewer has likes', () => {
+    const onClick = vi.fn();
+    const { rerender } = render(
+      <GalleryFilterPanel matchCount={3} feedback={{ ...feedback, clearOwnLikes: { count: 45, onClick } }} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.filterPanel.clearLikes:45' }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+
+    rerender(<GalleryFilterPanel matchCount={3} feedback={{ ...feedback, clearOwnLikes: { count: 0, onClick } }} />);
+    expect(screen.queryByRole('button', { name: /clearLikes/ })).toBeNull();
+    rerender(<GalleryFilterPanel matchCount={3} feedback={feedback} />);
+    expect(screen.queryByRole('button', { name: /clearLikes/ })).toBeNull();
+  });
+
   // Issue 2505: a chip for feedback the gallery does not offer could only
   // ever show nothing.
   it('offers only the feedback filters the gallery allows', () => {

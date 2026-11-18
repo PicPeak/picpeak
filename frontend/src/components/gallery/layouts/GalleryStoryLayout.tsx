@@ -155,6 +155,14 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // every payload, and a like the viewer just toggled holds its state until
   // a payload confirms it (optimisticLikes.ts).
   const likeHoldsRef = useRef<LikeHolds>(new Map());
+  // Submits still running per photo: a quick like-unlike sends two, and the
+  // first one finishing must not settle the hold of the second (issue 2561).
+  const likeRunningRef = useRef<Map<number, number>>(new Map());
+  // Photos where one of several overlapping submits failed: their hold
+  // assumed every click reached the server.
+  const likeFailedRef = useRef<Set<number>>(new Set());
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
   // A like made in the lightbox reaches this set only through the parent's
   // refetch. Until that payload lands, Favourite selected would decide from
   // a set that is known to be behind, so it waits; a short timeout covers a
@@ -253,7 +261,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     if (!bulk) apply(ids, unlike);
     // A single card shows its new state at once; a bulk batch keeps the old
     // one until it knows what succeeded.
-    ids.forEach((id) => holdLike(likeHoldsRef.current, id, bulk ? unlike : !unlike));
+    ids.forEach((id) => {
+      holdLike(likeHoldsRef.current, id, bulk ? unlike : !unlike);
+      likeRunningRef.current.set(id, (likeRunningRef.current.get(id) ?? 0) + 1);
+    });
     const done: number[] = [];
     // A finished selection (issue 1733): the feedback service has said so.
     let locked = false;
@@ -268,13 +279,31 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       });
     }
     const failed = ids.filter((id) => !done.includes(id));
-    done.forEach((id) => {
-      holdLike(likeHoldsRef.current, id, !unlike);
-      markLikeSaved(likeHoldsRef.current, id);
+    // Only a photo with no newer submit still running settles here; a newer
+    // click's hold stays until its own submit finishes.
+    const idle = (id: number) => {
+      const running = Math.max(0, (likeRunningRef.current.get(id) ?? 0) - 1);
+      if (running > 0) likeRunningRef.current.set(id, running);
+      else likeRunningRef.current.delete(id);
+      return running === 0;
+    };
+    failed.forEach((id) => likeFailedRef.current.add(id));
+    done.filter(idle).forEach((id) => {
+      // One of the overlapping submits failed: show the server's state.
+      if (likeFailedRef.current.delete(id)) likeHoldsRef.current.delete(id);
+      else {
+        holdLike(likeHoldsRef.current, id, !unlike);
+        markLikeSaved(likeHoldsRef.current, id);
+      }
     });
-    failed.forEach((id) => likeHoldsRef.current.delete(id));
-    if (bulk) apply(done, unlike);
-    else if (failed.length > 0) apply(failed, !unlike);
+    // Refused: the hold goes and the card shows the server's state.
+    failed.filter(idle).forEach((id) => {
+      likeFailedRef.current.delete(id);
+      likeHoldsRef.current.delete(id);
+    });
+    // A refresh may have confirmed these while they ran, and an identical
+    // later response can keep the same photos array: look at the current one.
+    setFavorites(likedFromPayload(photosRef.current, likeHoldsRef.current));
     if (done.length > 0) {
       if (bulk) toast.success(t(unlike ? 'gallery.favoritesRemoved' : 'gallery.favoritesAdded', { count: done.length }));
       onFeedbackChange?.();

@@ -14,6 +14,8 @@ import { useLazyBands } from './lazyBands';
 import { densityColumnDelta, useGridDensity, type GridDensity } from '../gridDensity';
 import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { GRID_TILE_ATTR, useGridWindow } from './gridWindow';
+import { useViewerLikes } from './optimisticLikes';
+import { feedbackLockKind } from '../../../utils/feedbackLock';
 
 interface GridPhotoProps {
   photo: Photo;
@@ -41,6 +43,7 @@ interface GridPhotoProps {
   // Immediate UI like state and callback
   liked?: boolean;
   onLikeSuccess?: () => void;
+  onLikeRefused?: () => void;
   /** The client's hide/show button (#172), when the viewer is the client. */
   visibilityToggle?: React.ReactNode;
   /** Dim the photo: the client hid it from guests. */
@@ -66,6 +69,7 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
   onFeedbackChange,
   liked = false,
   onLikeSuccess,
+  onLikeRefused,
   visibilityToggle,
   dimmed = false,
 }) => {
@@ -177,6 +181,7 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
       onFeedbackChange={onFeedbackChange}
       liked={liked}
       onLikeSuccess={onLikeSuccess}
+      onLikeRefused={onLikeRefused}
       savedIdentity={savedIdentity}
       onRequireIdentity={onRequireIdentity}
       onIdentitySaved={onIdentitySaved}
@@ -271,15 +276,9 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
 
   const [showIdentityModal, setShowIdentityModal] = React.useState(false);
   const [pendingAction, setPendingAction] = React.useState<null | { type: 'like'; photoId: number }>(null);
-  const [likedPhotoIds, setLikedPhotoIds] = React.useState<Set<number>>(new Set());
-  // Seed from server is_liked on first non-empty payload (#590 follow-up).
-  // Mount-only so refetches don't clobber in-session optimistic toggles.
-  const likedSeededRef = React.useRef(false);
-  React.useEffect(() => {
-    if (likedSeededRef.current || photos.length === 0) return;
-    setLikedPhotoIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
-    likedSeededRef.current = true;
-  }, [photos]);
+  // The server's is_liked from every payload, with the viewer's own toggles
+  // held until a payload confirms them (issue 2561).
+  const [likedPhotoIds, toggleLiked, likeSettled, likeFailed] = useViewerLikes(photos, onFeedbackChange, slug);
   const [savedIdentity, setSavedIdentity] = React.useState<{ name: string; email: string } | null>(null);
 
   const gridClass = `photo-grid ${gridGeometryClass(gallerySettings, density)}`;
@@ -314,18 +313,12 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 setShowIdentityModal(true);
               }}
               onQuickComment={() => onOpenPhotoWithFeedback && onOpenPhotoWithFeedback(index)}
-              onFeedbackChange={onFeedbackChange}
+              onFeedbackChange={likeSettled}
               liked={likedPhotoIds.has(photo.id)}
-              onLikeSuccess={() => {
-                // Toggle, not add — like endpoint toggles server-side,
-                // so the optimistic UI has to follow suit on click 2 (#590).
-                setLikedPhotoIds((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(photo.id)) next.delete(photo.id);
-                  else next.add(photo.id);
-                  return next;
-                });
-              }}
+              // Toggle, not add — like endpoint toggles server-side,
+              // so the optimistic UI has to follow suit on click 2 (#590).
+              onLikeSuccess={() => toggleLiked(photo.id)}
+              onLikeRefused={() => likeFailed(photo.id)}
               // Client visibility toggle (#172) and the dimmed hidden photo.
               visibilityToggle={isClient && onToggleVisibility
                 ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
@@ -343,20 +336,28 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           setSavedIdentity({ name, email });
           setShowIdentityModal(false);
           if (pendingAction) {
-            await feedbackService.submitFeedback(slug, String(pendingAction.photoId), {
-              feedback_type: pendingAction.type,
-              guest_name: name,
-              guest_email: email,
-            });
-            // Immediately reflect like UI — toggle for consistency (#590).
-            if (pendingAction.type === 'like') {
-              setLikedPhotoIds((prev) => {
-                const next = new Set(prev);
-                if (next.has(pendingAction.photoId)) next.delete(pendingAction.photoId);
-                else next.add(pendingAction.photoId);
-                return next;
+            const isLike = pendingAction.type === 'like';
+            // Toggle before the submit, as the tile does: toggling after it
+            // would flip a heart a refresh had already confirmed (issue 2561).
+            if (isLike) toggleLiked(pendingAction.photoId);
+            try {
+              await feedbackService.submitFeedback(slug, String(pendingAction.photoId), {
+                feedback_type: pendingAction.type,
+                guest_name: name,
+                guest_email: email,
               });
+            } catch (err) {
+              if (!isLike || !feedbackLockKind(err)) {
+                if (isLike) likeSettled(pendingAction.photoId);
+                throw err;
+              }
+              // Refused by a finished selection: the heart shows the server's state.
+              likeFailed(pendingAction.photoId);
+              setPendingAction(null);
+              return;
             }
+            // The row refresh confirms it, as after a tile like.
+            if (isLike) likeSettled(pendingAction.photoId);
             setPendingAction(null);
           }
         }}

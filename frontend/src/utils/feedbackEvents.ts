@@ -5,6 +5,13 @@
  */
 export const FEEDBACK_SUBMITTED_EVENT = 'picpeak:feedback-submitted';
 
+/**
+ * Fired on window after the viewer took back all their likes at once (issue
+ * 2561). Tiles holding a just-clicked like drop that hold, so the cleared
+ * state from the refresh that follows shows instead of the click.
+ */
+export const LIKES_CLEARED_EVENT = 'picpeak:likes-cleared';
+
 export interface FeedbackSubmittedDetail {
   slug: string;
   feedback_type: string;

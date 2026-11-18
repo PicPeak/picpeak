@@ -939,6 +939,62 @@ class FeedbackService {
   }
 
   /**
+   * Take back every like one viewer gave in one gallery (issue 2561): the
+   * per-photo toggle is the only other way, one photo at a time. The viewer is
+   * found by the rule submitFeedback uses (the registered guest, else the
+   * anonymous browser identity), so only their own rows are touched. Like the
+   * toggle-off, a row an admin hid stays as the admin's record, and so do
+   * likes on photos this viewer cannot see, which they could not take back
+   * one by one either. A finished selection freezes likes here as it does for
+   * the toggle.
+   */
+  async clearOwnLikes(eventId, { guestId, guestIdentifier, accessLevel, fullView }) {
+    const viewer = { guestId, guestIdentifier };
+    const result = await selectionSubmissions.withViewerLock(eventId, viewer, async (trx) => {
+      if (await selectionSubmissions.guestGone(trx, guestId)) return { guest_missing: true };
+      const lock = await selectionSubmissions.lockFor(eventId, 'like', viewer, trx);
+      if (lock) return { locked: true, kind: lock.kind, submitted_at: lock.submitted_at };
+
+      const own = applyPhotoVisibilityFilter(
+        wherePhotoProcessed(trx('photo_feedback'))
+          .modify(joinLivePhotos, 'photo_feedback.photo_id', 'photos.id')
+          .where('photo_feedback.event_id', eventId)
+          .where('photo_feedback.feedback_type', 'like')
+          .where('photo_feedback.is_hidden', formatBoolean(false)),
+        { accessLevel, fullView },
+      );
+      if (guestId) own.where('photo_feedback.guest_id', guestId);
+      else own.where('photo_feedback.guest_identifier', guestIdentifier);
+      const rows = Array.from(await own.select('photo_feedback.id', 'photo_feedback.photo_id'));
+
+      // The visibility is asked again on delete, as the toggle-off does: an
+      // admin may hide one of these likes meanwhile (moderation does not take
+      // the viewer lock), and a hidden row stays as the admin's record.
+      const ids = rows.map((row) => row.id);
+      let removed = 0;
+      for (let i = 0; i < ids.length; i += 500) {
+        removed += Number(await trx('photo_feedback')
+          .whereIn('id', ids.slice(i, i + 500))
+          .where('is_hidden', formatBoolean(false))
+          // Still this viewer's: a guest merge may have reassigned a row meanwhile.
+          .where(guestId ? { guest_id: guestId } : { guest_identifier: guestIdentifier })
+          .delete()) || 0;
+      }
+      return {
+        removed,
+        // Recounted either way; a photo whose like stayed recounts unchanged.
+        photo_ids: [...new Set(rows.map((row) => Number(row.photo_id)))],
+      };
+    });
+    // After the commit, as submitFeedback rebuilds them: inside the viewer's
+    // transaction another guest's uncommitted like would be missed.
+    for (const photoId of result.photo_ids || []) {
+      await this.updatePhotoFeedbackStats(photoId);
+    }
+    return result;
+  }
+
+  /**
    * Get feedback for a photo
    */
   async getPhotoFeedback(photoId, options = {}) {

@@ -20,6 +20,7 @@ import { downloadLimitReachedMessage } from '../../../utils/downloadLimit';
 import { usePhotoDownloadPending, preparingDownloadMessage } from '../../../hooks/usePhotoDownloadPending';
 import { withFocalPosition } from '../../../utils/focalPoint';
 import { lightboxImageUrl } from '../imageTiers';
+import { useViewerLikes } from './optimisticLikes';
 
 export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   photos,
@@ -90,22 +91,9 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // ride in the chip row next to the category: this layout's corners are
   // all taken (see the colour-label note below).
   const tileBadges = useGalleryTileBadges();
-  const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
-  // The like endpoint is a toggle (#590), and so is taking one back.
-  const toggleLiked = (photoId: number) => setLikedIds(prev => {
-    const next = new Set(prev);
-    if (next.has(photoId)) next.delete(photoId);
-    else next.add(photoId);
-    return next;
-  });
-  // Seed from server is_liked on first non-empty payload (#590 follow-up).
-  // Mount-only so refetches don't clobber in-session optimistic toggles.
-  const likedSeededRef = useRef(false);
-  useEffect(() => {
-    if (likedSeededRef.current || photos.length === 0) return;
-    setLikedIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
-    likedSeededRef.current = true;
-  }, [photos]);
+  // The like endpoint is a toggle (#590), and so is taking one back. The set
+  // follows every payload's is_liked, toggles held until confirmed (issue 2561).
+  const [likedIds, toggleLiked, likeSettled, likeFailed] = useViewerLikes(photos, onFeedbackChange, slug);
   const canQuickComment = Boolean(feedbackEnabled && feedbackOptions?.allowComments && onOpenPhotoWithFeedback);
   // Issue 2043: spins while the photo on screen is being prepared.
   const downloadPending = usePhotoDownloadPending(currentPhoto?.id);
@@ -238,26 +226,25 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       return;
                     }
                     // Toggle — server /feedback like is a toggle (#590).
-                    setLikedIds(prev => {
-                      const next = new Set(prev);
-                      if (next.has(currentPhoto.id)) next.delete(currentPhoto.id);
-                      else next.add(currentPhoto.id);
-                      return next;
-                    });
+                    toggleLiked(currentPhoto.id);
                     try {
                       await feedbackService.submitFeedback(slug!, String(currentPhoto.id), {
                         feedback_type: 'like',
                       });
-                      // The "x selected" counter and the Liked filter read
-                      // /my-feedback, which this refreshes (issue 1733).
-                      onFeedbackChange?.(currentPhoto.id);
                     } catch (err) {
                       // Same rule as PhotoCard: a pick refused by a finished
                       // selection goes back; otherwise keep the optimistic
                       // state, a refresh reconciles.
-                      if (feedbackLockKind(err)) toggleLiked(currentPhoto.id);
-                      else console.warn('Like submit failed, keeping optimistic UI', err);
+                      if (feedbackLockKind(err)) {
+                        likeFailed(currentPhoto.id);
+                        return;
+                      }
+                      console.warn('Like submit failed, keeping optimistic UI', err);
                     }
+                    // The "x selected" counter and the Liked filter read
+                    // /my-feedback, which this refreshes (issue 1733); the
+                    // held heart's confirmation window starts here.
+                    likeSettled(currentPhoto.id);
                     return;
                   }
                   if (feedbackOptions?.requireNameEmail && !savedIdentity) {
@@ -266,23 +253,21 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                     return;
                   }
                   // Toggle — server /feedback like is a toggle (#590).
-                  setLikedIds(prev => {
-                    const next = new Set(prev);
-                    if (next.has(currentPhoto.id)) next.delete(currentPhoto.id);
-                    else next.add(currentPhoto.id);
-                    return next;
-                  });
+                  toggleLiked(currentPhoto.id);
                   try {
                     await feedbackService.submitFeedback(slug!, String(currentPhoto.id), {
                       feedback_type: 'like',
                       guest_name: savedIdentity?.name,
                       guest_email: savedIdentity?.email,
                     });
-                    onFeedbackChange?.(currentPhoto.id);
                   } catch (err) {
-                    if (feedbackLockKind(err)) toggleLiked(currentPhoto.id);
-                    else console.warn('Like submit failed, keeping optimistic UI', err);
+                    if (feedbackLockKind(err)) {
+                      likeFailed(currentPhoto.id);
+                      return;
+                    }
+                    console.warn('Like submit failed, keeping optimistic UI', err);
                   }
+                  likeSettled(currentPhoto.id);
                 }}
                 className={`bg-black/30 hover:bg-black/50 rounded-full border border-white/40 ${likedIds.has(currentPhoto.id) ? 'text-danger' : 'text-white'}`}
                 title={t('gallery.tile.likePhoto', 'Like photo')}

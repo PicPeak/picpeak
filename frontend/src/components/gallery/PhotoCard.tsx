@@ -81,6 +81,8 @@ export interface PhotoCardProps {
   onFeedbackChange?: (toggledPhotoId?: number) => void;
   liked?: boolean;
   onLikeSuccess?: () => void;
+  /** A like refused by a finished selection; without it the heart toggles back. */
+  onLikeRefused?: () => void;
   /** 'self': card owns the identity modal; 'parent': delegate via onRequireIdentity. */
   identityMode?: 'self' | 'parent';
   savedIdentity?: { name: string; email: string } | null;
@@ -140,6 +142,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   onFeedbackChange,
   liked = false,
   onLikeSuccess,
+  onLikeRefused,
   identityMode = 'parent',
   savedIdentity,
   onRequireIdentity,
@@ -412,6 +415,11 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       } catch (err) {
         // Refused by a finished selection (issue 1733): nothing was written,
         // so the heart goes back. Any other failure keeps the optimistic UI.
+        if (feedbackLockKind(err) && onLikeRefused) {
+          onLikeRefused();
+          hideOverlay();
+          return;
+        }
         if (feedbackLockKind(err)) onLikeSuccess?.();
         else console.warn('Like submit failed, keeping optimistic UI', err);
       }
@@ -444,6 +452,11 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
     } catch (err) {
       // A locked pick goes back; otherwise keep the optimistic state, a
       // refresh will reconcile.
+      if (feedbackLockKind(err) && onLikeRefused) {
+        onLikeRefused();
+        hideOverlay();
+        return;
+      }
       if (feedbackLockKind(err)) onLikeSuccess?.();
       else console.warn('Like submit failed, keeping optimistic UI', err);
     }
@@ -671,6 +684,11 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                     } catch (err) {
                       // Refused by a finished selection: the heart goes back.
                       if (!feedbackLockKind(err)) throw err;
+                      if (pendingAction.type === 'like' && onLikeRefused) {
+                        onLikeRefused();
+                        setPendingAction(null);
+                        return;
+                      }
                       if (pendingAction.type === 'like') onLikeSuccess?.();
                     }
                     if (onFeedbackChange) onFeedbackChange(pendingAction.photoId);

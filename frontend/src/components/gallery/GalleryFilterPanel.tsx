@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bookmark, CheckSquare, Grid, Heart, MessageSquare, Search, Star } from 'lucide-react';
+import { Bookmark, CheckSquare, Grid, Heart, HeartOff, MessageSquare, Search, Star } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '../common';
 import type { Photo } from '../../types';
@@ -20,7 +20,14 @@ export interface GalleryFilterPanelProps {
   // what the gallery offers (feedback on, ratings on, videos present, ...).
   // `available`: the filters the gallery's feedback settings allow (issue
   // 2505); the group is left out when none is.
-  feedback?: { activeFilters: FeedbackFilterType[]; onFilterChange: (filter: FilterType) => void; available: FeedbackFilterType[] };
+  // `clearOwnLikes`: the viewer's own likes in this gallery and the step that
+  // takes them all back (issue 2561); offered while there is at least one.
+  feedback?: {
+    activeFilters: FeedbackFilterType[];
+    onFilterChange: (filter: FilterType) => void;
+    available: FeedbackFilterType[];
+    clearOwnLikes?: { count: number; onClick: () => void };
+  };
   colorLabels?: { activeColors: ColorLabel[]; onToggle: (color: ColorLabel) => void; counts: Partial<Record<ColorLabel, number>> };
   minRating?: { value: number | null; onChange: (minRating: number | null) => void; counts: Partial<Record<number, number>> };
   media?: { value: GalleryMediaFilter; onChange: (filter: GalleryMediaFilter) => void };
@@ -118,6 +125,18 @@ export const GalleryFilterPanel: React.FC<GalleryFilterPanelProps> = ({
           {/* Named lists (issue 2303): "Saved" shows the list picked here,
               the one the bookmark saves to. Absent without lists. */}
           <FavoriteListSwitcher className="self-start" />
+          {/* Undo many likes at once (issue 2561); the container confirms. */}
+          {feedback.clearOwnLikes && feedback.clearOwnLikes.count > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={<HeartOff className="w-3.5 h-3.5" />}
+              onClick={feedback.clearOwnLikes.onClick}
+              className="self-start text-xs md:text-sm"
+            >
+              {t('gallery.filterPanel.clearLikes', { count: feedback.clearOwnLikes.count })}
+            </Button>
+          )}
         </div>
       )}
 
