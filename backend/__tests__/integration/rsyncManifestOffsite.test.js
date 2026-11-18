@@ -19,7 +19,7 @@ const { bootCrmDb } = require('./helpers/crmDb');
 
 jest.setTimeout(120000);
 
-let db; let cleanup; let tmpDir; let backup; let storageModule; let app; let superToken;
+let db; let cleanup; let tmpDir; let backup; let storageModule; let app; let superToken; let remoteListing;
 const photo = 'events/active/party/individual/photo.jpg';
 const remoteTarget = 'backup.example.com';
 
@@ -80,6 +80,9 @@ beforeAll(async () => {
   app = express();
   app.use(express.json());
   app.use('/api/admin/restore', require('../../src/routes/adminRestore'));
+  // The routes use the singleton, whose temp dir is removed after every run:
+  // keep it away from the default one parallel suites share.
+  require('../../src/services/restoreService').restoreService.tempDir = path.join(tmpDir, 'restore-tmp');
 }, 120000);
 beforeEach(async () => {
   storageModule.setStorageForTesting({ kind: () => 'local' });
@@ -90,7 +93,11 @@ beforeEach(async () => {
   await fs.writeFile(path.join(process.env.STORAGE_PATH, photo), 'photo bytes');
   await fs.mkdir(path.join(tmpDir, 'dumps'), { recursive: true });
   await configureRsync();
+  // The wizard also lists the destination's own manifests
+  // (rsyncRemoteRestore.test.js); nothing here reaches a remote.
+  remoteListing = jest.spyOn(require('../../src/utils/rsyncRestore'), 'listRemoteManifests').mockResolvedValue([]);
 });
+afterEach(() => remoteListing.mockRestore());
 afterAll(async () => { storageModule.resetStorage(); await cleanup(); });
 
 it('copies the manifest to <backup_rsync_path>/manifests after the mirror, which --delete leaves alone', async () => {

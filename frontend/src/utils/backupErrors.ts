@@ -23,6 +23,7 @@ export const BACKUP_ERROR_CODES = [
   'RSYNC_HOST_UNREACHABLE',
   'RSYNC_REMOTE_PATH_NOT_FOUND',
   'RSYNC_REMOTE_PATH_DENIED',
+  'RESTORE_REMOTE_MANIFEST_NOT_FOUND',
 ] as const;
 
 export type BackupErrorCode = typeof BACKUP_ERROR_CODES[number];
@@ -36,7 +37,7 @@ const isBackupErrorCode = (value: unknown): value is BackupErrorCode =>
  */
 export function backupErrorCode(source: unknown): BackupErrorCode | null {
   if (typeof source === 'string') {
-    const match = source.match(/\b((?:S3|RSYNC)_[A-Z_]+):/);
+    const match = source.match(/\b((?:S3|RSYNC|RESTORE)_[A-Z_]+):/);
     return match && isBackupErrorCode(match[1]) ? match[1] : null;
   }
   const code = (source as { response?: { data?: { code?: unknown } }; code?: unknown } | null)?.response?.data?.code
