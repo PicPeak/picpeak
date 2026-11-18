@@ -45,7 +45,7 @@ const ALL_ROWS = {
   'services/faceProcessor.js': [4, 'guard of a scan claim in flight, queueing (the queue skips trashed rows), purge of face data'],
   'services/faceQueue.js': [3, 'state of a claimed scan and the stuck-scan janitor; the claim itself is live only'],
   'services/feedbackIntegrity.js': [2, 'migration 309 and the portable restore: the rating dedupe recomputes the average of a photo it removed a duplicate from, and the comment_count backfill recounts every row, trashed or not'],
-  'services/feedbackService.js': [5, 'row lock and per-photo counters by id, after the route checked the photo; recounts keep trashed rows consistent'],
+  'services/feedbackService.js': [6, 'row locks (shared colour label, every recount) and per-photo counters by id, after the route checked the photo; recounts keep trashed rows consistent'],
   'services/fileWatcher.js': [9, 'which file already belongs to a photo; insert; unlink removes the row whatever its state; start-up repair gives every row on a shared thumbnail, preview or hero its own, trashed rows included'],
   'services/focalPointBackfill.js': [2, 'marks a row it walked from a live-photo query by id; waits while the upload pipeline has rows in flight'],
   'services/folderRequestService.js': [4, 'settling a folder request moves trashed photos with the rest'],
