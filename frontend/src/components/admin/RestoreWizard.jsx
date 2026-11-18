@@ -30,6 +30,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button, Card, Input, Loading } from '../common';
 import { api } from '../../config/api';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
 
 // restore_runs booleans arrive as true/false from PostgreSQL but as 1/0 from
 // SQLite; a bare `{row.flag && …}` renders the 0 as text.
@@ -108,23 +109,31 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
   });
 
   // Fetch available backups
-  const { data: availableBackups, isLoading: loadingBackups } = useQuery({
+  const { data: backupListing, isLoading: loadingBackups } = useQuery({
     queryKey: ['available-backups', restoreData.source, restoreData.sourceConfig],
     queryFn: async () => {
       const response = await api.post('/admin/restore/list-backups', {
         source: restoreData.source,
         ...restoreData.sourceConfig
       });
-      return response.data.data;
+      // remoteError: the rsync destination could not be read; the local
+      // restore points are still listed.
+      return { backups: response.data.data, remoteError: response.data.remoteError || null };
     },
     enabled: currentStep === 1 && !!restoreData.source
   });
+
+  const availableBackups = backupListing?.backups;
+  const remoteErrorText = backupListing?.remoteError
+    ? backupErrorText(backupErrorCode({ code: backupListing.remoteError.code }), t) : null;
+  // A restore point on the rsync destination is restored with its own source.
+  const restoreSource = () => restoreData.selectedBackup?.restore_source || restoreData.source;
 
   // Validate restore
   const validateMutation = useMutation({
     mutationFn: async () => {
       const response = await api.post('/admin/restore/validate', {
-        source: restoreData.source,
+        source: restoreSource(),
         manifestPath: restoreData.selectedBackup.manifest_path,
         restoreType: restoreData.restoreType,
         selectedItems: restoreData.selectedItems,
@@ -148,7 +157,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
   const restoreMutation = useMutation({
     mutationFn: async () => {
       const response = await api.post('/admin/restore/start', {
-        source: restoreData.source,
+        source: restoreSource(),
         manifestPath: restoreData.selectedBackup.manifest_path,
         restoreType: restoreData.restoreType,
         selectedItems: restoreData.selectedItems,
@@ -371,6 +380,25 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
         <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('backup.restore.backup.subtitle')}</p>
       </div>
 
+      {backupListing?.remoteError && (
+        <Card className="p-4 bg-amber-50 dark:bg-amber-900/30 border-amber-200 dark:border-amber-800">
+          <div className="flex items-start space-x-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                {t('backup.restore.backup.remoteUnavailable.title', 'The rsync destination could not be read')}
+              </p>
+              <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                {t('backup.restore.backup.remoteUnavailable.message',
+                  'Restore points stored only on the rsync destination are not listed. Check the connection under Backup settings, then reopen this step.')}
+              </p>
+              {remoteErrorText && <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">{remoteErrorText}</p>}
+              <p className="mt-1 text-xs font-mono text-amber-700 dark:text-amber-300 break-words">{backupListing.remoteError.message}</p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {loadingBackups ? (
         <Loading />
       ) : availableBackups?.length === 0 ? (
@@ -411,6 +439,16 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
+                  {backup.restore_source === 'rsync' && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700"
+                      title={t('backup.restore.backup.remoteHint',
+                        'Stored on the rsync destination. The restore downloads what it needs into a private temporary directory first.')}
+                    >
+                      <Server className="h-3 w-3" />
+                      {t('backup.restore.backup.remoteBadge', 'Rsync destination')}
+                    </span>
+                  )}
                   {/* Files-only warning — backend's /list-backups now
                       returns `database_included: boolean` parsed from
                       the manifest's database.backup_file field. A row

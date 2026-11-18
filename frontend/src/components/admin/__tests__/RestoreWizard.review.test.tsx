@@ -257,3 +257,46 @@ describe('RestoreWizard result', () => {
     expect(screen.getByText(r.progress.success.title)).toBeTruthy();
   });
 });
+
+describe('RestoreWizard restore points on the rsync destination', () => {
+  beforeEach(() => {
+    get.mockReset();
+    post.mockReset();
+  });
+  afterEach(cleanup);
+
+  const remotePoint = { id: 'rsync:manifests/backup-manifest-b1.json', type: 'rsync', restore_source: 'rsync',
+    manifest_path: 'rsync:manifests/backup-manifest-b1.json', created_at: '2026-11-01T10:00:00Z',
+    backup_type: 'full', total_size: 2048, database_included: true };
+
+  it('marks a remote point and validates and starts it with the rsync source', async () => {
+    mockBackend({ validation: clean });
+    const fallback = post.getMockImplementation();
+    post.mockImplementation(async (url: string, body: unknown) => (url === '/admin/restore/list-backups'
+      ? { data: { data: [remotePoint], remoteError: null } } : fallback?.(url, body)));
+    const u = user();
+    renderWizard();
+    await goToReview(u);
+
+    expect(post).toHaveBeenCalledWith('/admin/restore/validate', expect.objectContaining({
+      source: 'rsync', manifestPath: remotePoint.manifest_path }));
+    await u.click(startButton());
+    expect(post).toHaveBeenCalledWith('/admin/restore/start', expect.objectContaining({
+      source: 'rsync', manifestPath: remotePoint.manifest_path }));
+  });
+
+  it('shows the remote badge, and says when the destination could not be read', async () => {
+    mockBackend({ validation: clean });
+    post.mockImplementation(async () => ({ data: { data: [remotePoint],
+      remoteError: { code: 'RSYNC_AUTH_FAILED', message: 'RSYNC_AUTH_FAILED: The destination refused the SSH login.' } } }));
+    const u = user();
+    renderWizard();
+    await u.click(screen.getByText(r.source.local.name));
+    await u.click(screen.getByRole('button', { name: new RegExp(r.actions.next) }));
+
+    expect(await screen.findByText(r.backup.remoteBadge)).toBeTruthy();
+    expect(screen.getByText(r.backup.remoteUnavailable.title)).toBeTruthy();
+    expect(screen.getByText(/RSYNC_AUTH_FAILED: The destination refused the SSH login\./)).toBeTruthy();
+    expect(screen.getByText(en.backup.errors.RSYNC_AUTH_FAILED)).toBeTruthy();
+  });
+});
