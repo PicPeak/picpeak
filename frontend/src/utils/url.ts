@@ -161,6 +161,24 @@ export const buildShareLinkUrl = (link: string | null | undefined): string => {
 };
 
 /**
+ * The admin's own "View gallery" link (#868): the share link plus the
+ * `admin_preview=1` intent flag, so the gallery lets a logged-in admin in
+ * through the httpOnly admin cookie instead of asking for the guest password.
+ * Never use it for a link that is copied, mailed or shown to a guest.
+ *
+ * @param link - The relative or absolute share link
+ * @returns The share link with `admin_preview=1`, or `'#'` if input is empty
+ */
+export const buildAdminPreviewUrl = (link: string | null | undefined): string => {
+  const url = buildShareLinkUrl(link);
+  if (url === '#') return url;
+  const hashAt = url.indexOf('#');
+  const base = hashAt === -1 ? url : url.slice(0, hashAt);
+  const hash = hashAt === -1 ? '' : url.slice(hashAt);
+  return `${base}${base.includes('?') ? '&' : '?'}admin_preview=1${hash}`;
+};
+
+/**
  * Is this an absolute http(s) origin the browser could actually navigate to?
  *
  * Used for the public address (`general_site_url`), which since #705 feeds the
