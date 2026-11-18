@@ -18,3 +18,19 @@ export async function passGalleryPasswordPrompt(page: Page, password: string): P
     await expect(prompt).toBeHidden({ timeout: 20_000 });
   }
 }
+
+/**
+ * Pick a feedback filter ("All", "Favorited", "Commented", ...). The filters
+ * sit in the toolbar's Filters popover, which is opened when needed and
+ * closed again afterwards so it does not cover the tiles.
+ */
+export async function chooseFeedbackFilter(page: Page, name: string | RegExp): Promise<void> {
+  // First: the feedback chips come before the media chips, which have an "All" too.
+  const filter = page.getByRole('button', { name, exact: typeof name === 'string' }).first();
+  if (!(await filter.isVisible())) {
+    await page.getByRole('toolbar', { name: /Gallery tools|Galeriewerkzeuge/i })
+      .getByRole('button', { name: /^(Filters|Filter)\b/i }).click();
+  }
+  await filter.click();
+  await page.keyboard.press('Escape');
+}

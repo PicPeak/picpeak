@@ -17,6 +17,14 @@ async function loginAndGoToSeoSettings(page) {
   await expect(page.getByRole('heading', { name: /Search Engine Indexing|Suchmaschinen-Indexierung/i })).toBeVisible({ timeout: 10000 });
 }
 
+// Settings save through the bar pinned to the window bottom, which shows
+// with "You have unsaved changes" until they are saved.
+async function saveSettings(page) {
+  const saveBar = page.getByRole('region', { name: /Save or discard changes|Änderungen speichern oder verwerfen/i });
+  await saveBar.getByRole('button', { name: /Save changes|Änderungen speichern/i }).click();
+  await expect(saveBar.getByText(/unsaved changes|ungespeicherte Änderungen/i)).toBeHidden({ timeout: 10000 });
+}
+
 test.describe('SEO Settings Tab', () => {
   test('SEO tab renders all sections correctly', async ({ page }, testInfo) => {
     if (testInfo.project.name === 'mobile-chrome') {
@@ -49,21 +57,15 @@ test.describe('SEO Settings Tab', () => {
     // Toggle the setting
     await indexingToggle.click();
 
-    // Save
-    const saveButton = page.getByRole('button', { name: /Save SEO Settings|SEO-Einstellungen speichern/i });
-    await saveButton.click();
+    await saveSettings(page);
 
-    // Wait for success toast
-    await expect(page.locator('.Toastify__toast--success')).toBeVisible({ timeout: 10000 });
-
-    // Verify toggle state changed
-    const newState = await indexingToggle.isChecked();
-    expect(newState).toBe(!initialState);
+    // The saved state survives a reload (the URL keeps ?tab=seo).
+    await page.reload();
+    await expect(indexingToggle).toBeChecked({ checked: !initialState, timeout: 10000 });
 
     // Revert to original state
     await indexingToggle.click();
-    await saveButton.click();
-    await expect(page.locator('.Toastify__toast--success')).toBeVisible({ timeout: 10000 });
+    await saveSettings(page);
   });
 
   test('robots.txt preview updates based on settings', async ({ page }, testInfo) => {
@@ -107,11 +109,7 @@ test.describe('SEO Settings Tab', () => {
     await expect(page.getByText(testAgent)).toBeVisible();
 
     // Save and verify it persists
-    const saveButton = page.getByRole('button', { name: /Save SEO Settings|SEO-Einstellungen speichern/i });
-    await saveButton.click();
-
-    // Wait for success toast
-    await expect(page.locator('.Toastify__toast--success')).toBeVisible({ timeout: 10000 });
+    await saveSettings(page);
 
     // Refresh and verify it's still there
     // The URL keeps ?tab=seo, so the reload lands on the same tab.

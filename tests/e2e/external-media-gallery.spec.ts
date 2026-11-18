@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { adminApiToken, publishEvent } from './_helpers/admin';
-import { passGalleryPasswordPrompt } from './_helpers/gallery';
+import { chooseFeedbackFilter, passGalleryPasswordPrompt } from './_helpers/gallery';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 const GALLERY_PASSWORD = process.env.GALLERY_PASSWORD || 'ExternalMediaPass!1';
@@ -161,7 +161,7 @@ test.describe('External media gallery behavior', () => {
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.waitForLoadState('networkidle');
 
-    await page.getByRole('button', { name: 'Favorited' }).click();
+    await chooseFeedbackFilter(page, 'Favorited');
     await expect(page.locator('.relative.group')).toHaveCount(1, { timeout: 15000 });
 
     await page.reload();
@@ -170,10 +170,10 @@ test.describe('External media gallery behavior', () => {
     await expect(page).toHaveURL(/\/gallery\//);
     await expect(page.locator('.relative.group').first()).toBeVisible();
 
-    await page.getByRole('button', { name: 'Favorited' }).click();
+    await chooseFeedbackFilter(page, 'Favorited');
     await expect(page.locator('.relative.group')).toHaveCount(1, { timeout: 15000 });
 
-    await page.getByRole('button', { name: 'All', exact: true }).click();
+    await chooseFeedbackFilter(page, 'All');
     await expect(page.locator('.relative.group')).toHaveCount(initialTileCount);
 
     const cookies = await context.cookies();

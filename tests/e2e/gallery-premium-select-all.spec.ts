@@ -29,7 +29,10 @@ async function createGalleryPremiumEvent(page: Page) {
       password: GALLERY_PASSWORD,
       expiration_days: 90,
       allow_downloads: true,
-      gallery_theme: 'gallery-premium',
+      // The layout lives in the event's own theme, which applies only with
+      // custom_theme_enabled; otherwise the global Branding theme decides.
+      custom_theme_enabled: true,
+      color_theme: JSON.stringify({ galleryLayout: 'gallery-premium' }),
     },
   });
   expect(createRes.ok()).toBeTruthy();
@@ -71,32 +74,23 @@ test.describe('Gallery-Premium Select All (#220)', () => {
 
     await passGalleryPasswordPrompt(page, GALLERY_PASSWORD);
 
-    // Wait for photos to render
-    await page.waitForTimeout(3000);
+    // Premium tiles carry a selection checkbox; the Select All control
+    // joins the nav once a photo is selected.
+    const checkboxes = page.locator('.gallery-premium-checkbox');
+    await expect(checkboxes).toHaveCount(3, { timeout: 20000 });
+    await checkboxes.first().click({ force: true });
 
-    // Look for download button to enter selection mode
-    const downloadBtn = page.getByRole('button', { name: /Download/i }).first();
-    await expect(downloadBtn).toBeVisible({ timeout: 15000 });
-    await downloadBtn.click();
-
-    // Now look for "Select All" button
-    const selectAllBtn = page.getByRole('button', { name: /Select All/i }).first();
+    const selectAllBtn = page.getByRole('button', { name: /^Select All$/i });
     await expect(selectAllBtn).toBeVisible({ timeout: 10000 });
 
-    // Click Select All once
+    // One click selects every photo.
     await selectAllBtn.click();
-    await page.waitForTimeout(500);
-
-    // Verify all photos are selected - check for checkmarks or selected state
-    // The selection count or "Deselect All" text should appear
-    const deselectAllBtn = page.getByRole('button', { name: /Deselect All/i }).first();
+    await expect(page.locator('.gallery-premium-checkbox.selected')).toHaveCount(3);
+    const deselectAllBtn = page.getByRole('button', { name: /^Deselect All$/i });
     await expect(deselectAllBtn).toBeVisible({ timeout: 5000 });
 
-    // Verify: clicking Deselect All should clear selection
+    // And Deselect All clears it.
     await deselectAllBtn.click();
-    await page.waitForTimeout(500);
-
-    // Select All should be visible again
-    await expect(selectAllBtn).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.gallery-premium-checkbox.selected')).toHaveCount(0);
   });
 });

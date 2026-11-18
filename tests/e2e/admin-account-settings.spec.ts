@@ -25,24 +25,24 @@ test('admin can update account email via settings page', async ({ page }, testIn
   const originalEmail = await emailInput.inputValue();
   const originalUsername = await usernameInput.inputValue();
 
-  const saveButton = page.getByRole('button', { name: /(Save account details|Kontodaten speichern)/i });
-
-  const revertChanges = async () => {
-    await emailInput.fill(originalEmail);
-    await usernameInput.fill(originalUsername);
-    await saveButton.click();
-    await expect(emailInput).toHaveValue(originalEmail, { timeout: 10000 });
-    await expect(page.locator('.Toastify__toast').filter({ hasText: /(Account details updated|Kontodaten aktualisiert)/i })).toBeVisible({ timeout: 10000 });
+  // Settings save through the bar pinned to the window bottom, which shows
+  // with "You have unsaved changes" until they are saved.
+  const saveBar = page.getByRole('region', { name: /Save or discard changes|Änderungen speichern oder verwerfen/i });
+  const save = async () => {
+    await saveBar.getByRole('button', { name: /Save changes|Änderungen speichern/i }).click();
+    await expect(saveBar.getByText(/unsaved changes|ungespeicherte Änderungen/i)).toBeHidden({ timeout: 10000 });
   };
 
   try {
     await emailInput.fill(newEmail);
-    await saveButton.click();
+    await save();
 
+    await page.reload();
     await expect(emailInput).toHaveValue(newEmail, { timeout: 10000 });
-    await expect(page.locator('.Toastify__toast').filter({ hasText: /(Account details updated|Kontodaten aktualisiert)/i })).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText(newEmail, { exact: false })).toBeVisible();
   } finally {
-    await revertChanges();
+    await emailInput.fill(originalEmail);
+    await usernameInput.fill(originalUsername);
+    // Unsaved changes only when the fields differ from what is saved.
+    if (await saveBar.getByText(/unsaved changes|ungespeicherte Änderungen/i).waitFor({ timeout: 3000 }).then(() => true, () => false)) await save();
   }
 });

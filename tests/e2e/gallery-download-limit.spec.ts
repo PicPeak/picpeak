@@ -55,7 +55,15 @@ async function createLimitedGallery(page: Page) {
     expect(upload.ok(), await upload.text()).toBeTruthy();
   }
   await waitForPhotosProcessed(page.request, token, event.id);
-  return event as { id: number; slug: string; share_link: string };
+  // The client's link carries a token of its own, made when client access is
+  // switched on; the PIN page refuses a sign-in without it.
+  const details = await page.request.get(`/api/admin/events/${event.id}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(details.ok(), await details.text()).toBeTruthy();
+  const { client_share_token: clientToken } = await details.json();
+  expect(clientToken).toBeTruthy();
+  return { ...event, clientToken } as { id: number; slug: string; share_link: string; clientToken: string };
 }
 
 test.describe('Gallery download limit (issue 1560)', () => {
@@ -69,7 +77,7 @@ test.describe('Gallery download limit (issue 1560)', () => {
     await expect(page.getByTestId('download-quota-counter')).toHaveCount(0);
 
     // The client logs in with the PIN.
-    await page.goto(`/gallery/${event.slug}/client-access`);
+    await page.goto(`/gallery/${event.slug}/client-access?token=${event.clientToken}`);
     await page.getByLabel(/Client PIN/i).fill(CLIENT_PIN);
     await page.getByRole('button', { name: /Access Gallery/i }).click();
 
@@ -80,7 +88,9 @@ test.describe('Gallery download limit (issue 1560)', () => {
     await expect(tiles).toHaveCount(2, { timeout: 20_000 });
 
     // Both photos selected with one download left: flagged before the click.
-    await page.getByRole('button', { name: /^Select All$/i }).first().click();
+    // Selection mode first; its Select All carries the count ("Select All (2)").
+    await page.getByRole('button', { name: /^Select Photos$/i }).first().click();
+    await page.getByRole('button', { name: /^Select All\b/i }).first().click();
     await expect(page.getByTestId('download-quota-selection').first())
       .toContainText('this selection needs 2 downloads, only 1 left');
     await page.getByRole('button', { name: /^Cancel Selection$/i }).first().click();
