@@ -27,7 +27,10 @@ concurrency:
 jobs:
   e2e:
     name: ${{ github.event_name == 'pull_request' && 'e2e-smoke' || 'e2e-full' }}
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.57 cannot
+    # install Chromium on ("does not support chromium on ubuntu26.04-x64").
+    # Back to ubuntu-latest once the Playwright version supports it.
+    runs-on: ubuntu-24.04
     # Image builds dominate; the full suite adds roughly as much again.
     timeout-minutes: 45
 
