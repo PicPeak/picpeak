@@ -552,9 +552,9 @@
   backdrop-filter: blur(6px);
 }
 
-/* The row above the photos that states and controls what the grid shows
-   (selfie search, issue 2355). Inside .gallery-premium-main, so it shares the
-   grid's side padding. */
+/* The row above the photos that states and controls what the grid shows:
+   the gallery's feature toolbox (issues 2355, 2543). Inside
+   .gallery-premium-main, so it shares the grid's side padding. */
 .gallery-premium-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -563,13 +563,21 @@
   margin-bottom: 1.5rem;
 }
 
-.gallery-premium-toolbar .gallery-toolbar-btn {
-  color: var(--color-text);
-  border-color: var(--color-surface-border);
+.gallery-premium-toolbar .gallery-toolbox {
+  width: 100%;
 }
 
-.gallery-premium-toolbar .gallery-toolbar-count {
-  color: var(--color-muted-text);
+/* Not sticky here: the nav above is this layout's sticky chrome, and the bar
+   would slide under it. No page-wide band either; the hairline under it
+   matches the nav's. */
+.gallery-premium-toolbar .gallery-toolbar {
+  position: relative;
+  top: auto !important;
+  margin: 0;
+  padding-left: 0;
+  padding-right: 0;
+  background: transparent;
+  border-bottom-color: var(--color-elevated);
 }
 
 .gallery-premium-toolbar--empty {

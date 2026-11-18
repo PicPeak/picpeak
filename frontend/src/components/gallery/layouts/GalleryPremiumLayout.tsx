@@ -393,8 +393,9 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }, [photos, activeCategory]);
 
   const currentLightboxPhoto = lightboxIndex >= 0 ? filteredPhotos[lightboxIndex] : null;
-  // The row above the photos counts what the category tab leaves (issue 2355).
-  const toolbar = typeof beforeGrid === 'function' ? beforeGrid(filteredPhotos.length) : beforeGrid;
+  // The row above the photos acts on what the category tab leaves (issues
+  // 2355, 2543).
+  const toolbar = typeof beforeGrid === 'function' ? beforeGrid(filteredPhotos) : beforeGrid;
 
   // The photo the lightbox is on, by id: `lightboxIndex` is a position in
   // `filteredPhotos`, which a filter or category change can shift under it.
@@ -814,10 +815,28 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     </div>
   );
 
+  // Event-wide like the nav button (issue 1733, A3d): a filter that leaves
+  // nothing on screen must not take the favourites' list with it.
+  const emptyCopyFilenames = onCopyFilenames && copyFilenamesCount > 0 ? (
+    <div className="mt-4 flex justify-center">
+      <Button
+        variant="outline"
+        size="sm"
+        leftIcon={<ClipboardList className="w-4 h-4" />}
+        onClick={onCopyFilenames}
+        className="text-xs sm:text-sm"
+      >
+        {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenamesCount})
+      </Button>
+    </div>
+  ) : null;
+
   // #1160: a folder-only root has no photos to show here, but the folder tiles
   // above prove the gallery isn't empty — render the shell (hero, logout,
-  // controls) without the contradictory message.
-  if (photos.length === 0 && !suppressEmptyState) {
+  // controls) without the contradictory message. A search or filter that
+  // left nothing keeps the shell too (issue 2543), so the toolbox that set it
+  // stays mounted, with the message in place of the photos.
+  if (photos.length === 0 && !suppressEmptyState && !emptyIsFiltered) {
     return (
       <div className="text-center py-12">
         {/* A filter that left nothing keeps its own controls, so it can be
@@ -849,21 +868,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
             {uploadLabel}
           </Button>
         )}
-        {/* Event-wide like the nav button (issue 1733, A3d): a filter that
-            leaves nothing on screen must not take the favourites' list with it. */}
-        {onCopyFilenames && copyFilenamesCount > 0 && (
-          <div className="mt-4 flex justify-center">
-            <Button
-              variant="outline"
-              size="sm"
-              leftIcon={<ClipboardList className="w-4 h-4" />}
-              onClick={onCopyFilenames}
-              className="text-xs sm:text-sm"
-            >
-              {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenamesCount})
-            </Button>
-          </div>
-        )}
+        {emptyCopyFilenames}
       </div>
     );
   }
@@ -1054,6 +1059,14 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       {/* Main Gallery */}
       <main className="gallery-premium-main">
         {toolbar && <div className="gallery-premium-toolbar">{toolbar}</div>}
+        {photos.length === 0 && emptyIsFiltered && (
+          <div className="text-center py-12">
+            {likedOnly
+              ? <LikedOnlyEmptyMessage onShowAll={onToggleLikedOnly} />
+              : <GalleryEmptyMessage filtered />}
+            {emptyCopyFilenames}
+          </div>
+        )}
         {/* Download limit (issue 1560): the client's counter, or a guest's
             preview-size note. */}
         {allowDownloads && (downloadQuota.limited || downloadQuota.previewOnly) && (

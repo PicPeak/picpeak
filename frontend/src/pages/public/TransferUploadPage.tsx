@@ -24,6 +24,8 @@ import { UploadCloud, CheckCircle, AlertCircle, X, File as FileIcon } from 'luci
 import { Button, Loading } from '../../components/common';
 import { transfersService } from '../../services/transfers.service';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
+import { useUploadInterrupted } from '../../hooks/useUploadInterrupted';
+import { useScreenWakeLock } from '../../hooks/useScreenWakeLock';
 import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
 import { planTransferFiles, pacedRetryDelay, MAX_PACED_RETRIES } from '../../utils/uploadBatches';
 
@@ -69,6 +71,9 @@ export const TransferUploadPage: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [done, setDone] = useState(false);
+  const interrupted = useUploadInterrupted();
+  // Keep the phone from locking (and suspending the page) mid-upload.
+  useScreenWakeLock(uploading);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['transfer-upload-info', token],
@@ -178,7 +183,8 @@ export const TransferUploadPage: React.FC = () => {
         const batchBytes = batch.reduce((sum, f) => sum + f.size, 0);
         try {
           const onBatchProgress = (pct: number) => {
-            setProgress(Math.round(((sentBytes + (batchBytes * pct) / 100) / totalBytes) * 100));
+            // Floored, so 100 (and "saving") only once the last byte is out.
+            setProgress(Math.floor(((sentBytes + (batchBytes * pct) / 100) / totalBytes) * 100));
           };
           const result = await sendPaced(() => (chunked.has(batch[0])
             ? transfersService.uploadChunked(token as string, batch[0], onBatchProgress)
@@ -308,8 +314,27 @@ export const TransferUploadPage: React.FC = () => {
       )}
 
       {uploading && (
-        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-border-token">
-          <div className="h-full transition-all bg-accent-strong" style={{ width: `${progress}%` }} />
+        // The share of the bytes sent so far, then "saving" once the last byte
+        // is out and the server stores (or merges) what arrived.
+        <div className="mt-4 space-y-1">
+          <p className="text-sm text-muted-theme" role="status" aria-live="polite">
+            {progress >= 100
+              ? t('transfers.uploadProcessing', 'Upload complete, saving the files…')
+              : t('transfers.uploadPercent', { defaultValue: 'Uploading… {{percent}}%', percent: progress })}
+          </p>
+          <div
+            role="progressbar"
+            aria-label={t('transfers.uploadProgress', 'Upload progress')}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+            className="h-2 w-full overflow-hidden rounded-full bg-border-token"
+          >
+            <div
+              className={`h-full transition-all bg-accent-strong${progress >= 100 ? ' animate-pulse' : ''}`}
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+            />
+          </div>
         </div>
       )}
 
@@ -323,6 +348,11 @@ export const TransferUploadPage: React.FC = () => {
       >
         {t('transfers.upload.send', 'Upload {{count}} files', { count: files.length })}
       </Button>
+      {uploading && interrupted && (
+        <p className="mt-3 text-center text-sm text-warning-text" role="status" aria-live="polite">
+          {t('transfers.uploadResuming', 'Connection interrupted – resuming…')}
+        </p>
+      )}
     </div>,
   );
 };

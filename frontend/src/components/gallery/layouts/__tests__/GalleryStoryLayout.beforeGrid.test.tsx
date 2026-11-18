@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 
 import { GalleryStoryLayout } from '../GalleryStoryLayout';
 import type { Photo } from '../../../../types';
@@ -97,14 +97,19 @@ describe('GalleryStoryLayout row above the scenes', () => {
     expect(container.querySelector('.story-toolbar--empty')).not.toBeNull();
   });
 
-  it('hands a row function the count the search leaves', () => {
-    const { container } = render(
-      <GalleryStoryLayout {...props} beforeGrid={(shown: number) => <span>shown {shown}</span>} />
-    );
+  it('hands a row function the photos it shows', () => {
+    const row = (shown: Photo[]) => <span>shown {shown.length}</span>;
+    const { rerender } = render(<GalleryStoryLayout {...props} beforeGrid={row} />);
     expect(screen.getByText('shown 2')).toBeTruthy();
-    const search = container.querySelector('.story-nav-search input') as HTMLInputElement;
-    fireEvent.change(search, { target: { value: 'photo-1.' } });
+    // The gallery's search narrows the list it hands over (issue 2543).
+    rerender(<GalleryStoryLayout {...(props as object)} photos={[photo(1)]} beforeGrid={row} />);
     expect(screen.getByText('shown 1')).toBeTruthy();
+  });
+
+  it('has no search box of its own: the toolbox in this row carries the gallery search', () => {
+    const { container } = render(<GalleryStoryLayout {...props} />);
+    expect(container.querySelector('nav input')).toBeNull();
+    expect(screen.queryByRole('textbox')).toBeNull();
   });
 
   it('renders no row without one', () => {

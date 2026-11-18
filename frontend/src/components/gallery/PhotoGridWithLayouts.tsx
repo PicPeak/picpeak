@@ -120,8 +120,8 @@ interface PhotoGridWithLayoutsProps {
   openPhotoId?: number | null;
   /** After the photos, before a full-page layout's footer (issue 1562). */
   afterGrid?: React.ReactNode;
-  /** Above the photos of a full-page layout (selfie search, issue 2355). */
-  beforeGrid?: React.ReactNode | ((shownCount: number) => React.ReactNode);
+  /** Above the photos of a full-page layout (feature toolbox, issues 2355 and 2543). */
+  beforeGrid?: React.ReactNode | ((shownPhotos: Photo[]) => React.ReactNode);
   /**
    * Below the hero header and the welcome message, above the photos of the
    * other layouts: the folder navigation (issue 2504), which would otherwise
@@ -256,7 +256,10 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   // Premium and Story render their own empty state; the key remounts them
   // when the list empties or fills, so their own lightbox state goes with it
   // as it did when this component returned its empty message instead.
-  const layoutKey = layoutOwnsLightbox && photos.length === 0 ? 'empty' : 'photos';
+  // Not for a search or filter that left nothing (issue 2543): those layouts
+  // keep their shell then, with the feature toolbox in it, so its open filter
+  // panel and its focus stay put while the guest changes the filter back.
+  const layoutKey = layoutOwnsLightbox && photos.length === 0 && !emptyIsFiltered ? 'empty' : 'photos';
   // The remount drops whatever had focus in the old layout: the empty
   // state's upload button once the first upload's refetch fills the gallery.
   // A control marked `data-gallery-focus="<role>"` hands focus to the new

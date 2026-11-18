@@ -8,6 +8,7 @@
   "prerelease": true,
   "prerelease-type": "beta",
   "changelog-sections": [
+    { "type": "security", "section": "Security", "hidden": false },
     { "type": "feat", "section": "Features", "hidden": false },
     { "type": "fix", "section": "Bug Fixes", "hidden": false },
     { "type": "perf", "section": "Performance Improvements", "hidden": false },

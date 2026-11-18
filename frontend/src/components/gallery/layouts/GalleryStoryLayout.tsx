@@ -1,7 +1,7 @@
 import { PhotoSalesCartButton } from '../../../features/photo-sales/PhotoSalesCartButton';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
-import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
+import { Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
 import { BackToAccountLink } from '../BackToAccountLink';
 import { useTranslation } from 'react-i18next';
 import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
@@ -35,7 +35,6 @@ import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { DownloadQuotaNotice } from '../DownloadQuotaNotice';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, showDownloadLimitReached } from '../../../utils/downloadLimit';
-import { photoMatchesFilenameSearch } from '../../../utils/photoFilename';
 import { useInputMode } from '../../../hooks/useInputMode';
 import { holdLike, likedFromPayload, markLikeSaved, type LikeHolds } from './optimisticLikes';
 
@@ -136,7 +135,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const archives = useArchiveDownload();
   const { t } = useTranslation();
   const [scrolled, setScrolled] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
@@ -204,20 +202,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const scenes = useMemo<CategoryScene[]>(() => {
     const photosByCategory: PhotosByCategory = {};
 
-    // Filter by search query. `original_filename` is in here because that is
-    // the camera name the guest actually sees on the card/lightbox — matching
-    // only the internal renamed `filename` gave "no results" for a substring
-    // the guest could read on screen (QA P4-B.02).
-    const filteredPhotos = searchQuery
-      ? photos.filter(p => {
-          const term = searchQuery.toLowerCase();
-          return photoMatchesFilenameSearch(p, searchQuery) ||
-            (p.category_name && p.category_name.toLowerCase().includes(term));
-        })
-      : photos;
-
+    // Search is the gallery's shared one (issue 2543): `photos` arrives
+    // already searched and filtered.
     // Group by category
-    filteredPhotos.forEach(photo => {
+    photos.forEach(photo => {
       const categoryName = photo.category_name || '';
       if (!photosByCategory[categoryName]) {
         photosByCategory[categoryName] = [];
@@ -234,7 +222,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       type: index % 2 === 0 ? 'grid' : 'carousel' as 'grid' | 'carousel',
       photos: categoryPhotos
     }));
-  }, [photos, searchQuery, t]);
+  }, [photos, t]);
 
   // #1160: on a folder-only root this component renders its shell with an empty
   // scope, so fall back to the event-wide count rather than announcing 0 Photos
@@ -378,12 +366,11 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     void likeWithIdentity([photoId], favorites.has(photoId), false);
   }, [favorites, likeWithIdentity]);
 
-  // The photos the grid shows, in its order: the search filter and the
-  // category scenes applied. The lightbox steps through these, not `photos`,
-  // or its arrows reach photos the search has hidden.
+  // The photos the grid shows, in its order: the category scenes applied.
+  // The lightbox steps through these, in the order the scenes show them.
   const visiblePhotos = useMemo(() => scenes.flatMap((scene) => scene.photos), [scenes]);
-  // The row above the scenes counts what the search leaves (issue 2355).
-  const toolbar = typeof beforeGrid === 'function' ? beforeGrid(visiblePhotos.length) : beforeGrid;
+  // The row above the scenes acts on what they show (issues 2355, 2543).
+  const toolbar = typeof beforeGrid === 'function' ? beforeGrid(visiblePhotos) : beforeGrid;
 
   // In a large gallery a grid mounts only the rows near the viewport (issue
   // 2193). A small scene stays whole, for the reason a small Timeline group
@@ -402,9 +389,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }, [visiblePhotos, onLightboxPhotoChange]);
 
   // Link to a single photo (issue 1733): open on the photo the URL asks for,
-  // close on null. A photo this layout's own search hides (browser history
-  // back to it) clears the search first, so it opens in a list that holds
-  // it; an id not in `photos` at all opens nothing.
+  // close on null. A photo a search or filter hides is the container's to
+  // bring back (it clears them); an id not in `photos` opens nothing.
   useEffect(() => {
     if (openPhotoId === undefined) return;
     if (openPhotoId === null) {
@@ -413,8 +399,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     }
     const index = visiblePhotos.findIndex((photo) => photo.id === openPhotoId);
     if (index >= 0) setLightboxIndex(index);
-    else if (searchQuery && photos.some((photo) => photo.id === openPhotoId)) setSearchQuery('');
-  }, [openPhotoId, visiblePhotos, photos, searchQuery]);
+  }, [openPhotoId, visiblePhotos]);
 
   const downloadQuota = useDownloadQuota();
 
@@ -457,14 +442,27 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // Likes not yet set on the selection are added; a selection that is already
   // liked throughout is unliked instead, so the same control never un-likes
   // half a selection by accident.
-  const selectionToLike = useMemo(
-    () => selectedPhotoList.filter((photo) => !favorites.has(photo.id)).map((photo) => photo.id),
-    [selectedPhotoList, favorites]
+  //
+  // The whole selection, photos the shared search hides included (issue
+  // 2543): the button counts all of it, so it must act on all of it.
+  // `favorites` only knows the photos on screen, so a hidden photo's like
+  // comes from its pending hold or its payload.
+  const selectionIds = useMemo(
+    () => (selectionQuotaPhotos ?? selectedPhotoList).map((photo) => photo.id),
+    [selectionQuotaPhotos, selectedPhotoList]
   );
-  const selectionUnlikes = selectedPhotoList.length > 0 && selectionToLike.length === 0;
+  const selectionToLike = useMemo(() => {
+    const visibleIds = new Set(photos.map((photo) => photo.id));
+    const hiddenById = new Map((selectionQuotaPhotos ?? []).map((photo) => [photo.id, photo as Partial<Photo>]));
+    const isLiked = (id: number) => (visibleIds.has(id)
+      ? favorites.has(id)
+      : likeHoldsRef.current.get(id)?.liked ?? !!hiddenById.get(id)?.is_liked);
+    return selectionIds.filter((id) => !isLiked(id));
+  }, [selectionIds, selectionQuotaPhotos, photos, favorites]);
+  const selectionUnlikes = selectionIds.length > 0 && selectionToLike.length === 0;
 
   const handleFavoriteSelected = useCallback(async () => {
-    const ids = selectionUnlikes ? selectedPhotoList.map((photo) => photo.id) : selectionToLike;
+    const ids = selectionUnlikes ? selectionIds : selectionToLike;
     if (ids.length === 0 || favoritingSelection) return;
     setFavoritingSelection(true);
     let outcome: 'done' | 'deferred' = 'done';
@@ -473,7 +471,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     } finally {
       if (outcome !== 'deferred') setFavoritingSelection(false);
     }
-  }, [selectionUnlikes, selectedPhotoList, selectionToLike, favoritingSelection, likeWithIdentity]);
+  }, [selectionUnlikes, selectionIds, selectionToLike, favoritingSelection, likeWithIdentity]);
 
   // The id fallback only runs when a category opts out of downloads (#640),
   // so it leaves those photos out, as the server would: a part made only of
@@ -532,8 +530,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
   // #1160: a folder-only root has no photos to show here, but the folder tiles
   // above prove the gallery isn't empty — render the shell (hero, logout,
-  // controls) without the contradictory message.
-  if (photos.length === 0 && !suppressEmptyState) {
+  // controls) without the contradictory message. A search or filter that
+  // left nothing keeps the shell too (issue 2543), so the toolbox that set it
+  // stays mounted, with the message in place of the scenes.
+  if (photos.length === 0 && !suppressEmptyState && !emptyIsFiltered) {
     return (
       <div className="text-center py-12">
         {/* A filter that left nothing keeps its own controls, so it can be
@@ -585,8 +585,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }
 
   return (
-    // Numbered against the list this layout's lightbox steps through, which
-    // its own search narrows (issue 1733, E6).
+    // Numbered against the list this layout's lightbox steps through, in
+    // scene order (issue 1733, E6).
     <PhotoLabelsProvider photos={visiblePhotos}>
     <div className="gallery-story-layout" data-input-mode={inputMode}>
       <StoryScrollToTop />
@@ -605,15 +605,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
         <div className="story-nav-actions">
           <PhotoSalesCartButton />
-          <div className="story-nav-search">
-            <Search size={14} className="text-muted-theme" />
-            <input
-              type="text"
-              placeholder={t('gallery.searchMemories', 'Search memories...')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
           {/* Issue 1710: the footer button was the only Download All in the
               layout, unreachable without scrolling through every scene. Same
               handler, same resolution / quota / whole-gallery flow. */}
@@ -798,6 +789,13 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
       {/* Below the hero, so the fixed nav keeps the hero behind it (issue 2355). */}
       {toolbar && <div className="story-toolbar">{toolbar}</div>}
+      {photos.length === 0 && emptyIsFiltered && (
+        <div className="text-center py-24 px-4">
+          {likedOnly
+            ? <LikedOnlyEmptyMessage onShowAll={onToggleLikedOnly} />
+            : <GalleryEmptyMessage filtered />}
+        </div>
+      )}
 
       {/* Main Content - Scenes */}
       <main className="pb-32 space-y-0">
@@ -899,7 +897,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           comments, reactions and colour labels — the same way the Premium
           layout routes feedback through its own lightbox instead of a
           per-card affordance. */}
-      {lightboxIndex !== null && (
+      {/* Not over an emptied list: the container closes it a render later. */}
+      {lightboxIndex !== null && visiblePhotos.length > 0 && (
         <PhotoLightbox
           photos={visiblePhotos}
           initialIndex={lightboxIndex}
