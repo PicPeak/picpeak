@@ -68,6 +68,21 @@ test('replaces an untouched seeded row with the corrected copy', async () => {
   expect(row.body_html).not.toMatch(/invitation_link|inviter_name/);
 });
 
+test('treats a seeded row that differs only in line endings or trailing whitespace as seeded', async () => {
+  const seeded = SEEDED_099.admin_invitation.pt;
+  await setTranslation('admin_invitation', 'pt', {
+    subject: `${seeded.subject} `,
+    body_html: `${seeded.body_html.replace(/\n/g, '\r\n')}\r\n`,
+    body_text: seeded.body_text.replace(/\n/g, ' \r\n'),
+  });
+
+  await migration.up(db);
+
+  const row = await translation('admin_invitation', 'pt');
+  expect(row.subject).toBe(migration.CORRECTED.admin_invitation.pt.subject);
+  expect(row.body_html).not.toMatch(/invitation_link|inviter_name/);
+});
+
 test('keeps an edited row\'s wording and renames only the placeholders with an equivalent', async () => {
   await setTranslation('admin_invitation', 'fr', {
     subject: 'Invitation maison',

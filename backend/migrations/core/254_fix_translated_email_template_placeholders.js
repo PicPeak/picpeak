@@ -421,11 +421,15 @@ function placeholdersIn(row) {
   return found;
 }
 
+// Line endings and trailing whitespace are not an edit: a row that differs
+// from the seed only there is still the broken seeded copy.
+const normalize = (text) => (typeof text === 'string'
+  ? text.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').trim()
+  : text);
+
 function matchesSeed(row, seed) {
   return Boolean(seed)
-    && row.subject === seed.subject
-    && row.body_html === seed.body_html
-    && row.body_text === seed.body_text;
+    && ['subject', 'body_html', 'body_text'].every((field) => normalize(row[field]) === normalize(seed[field]));
 }
 
 function renamePlaceholders(text) {
