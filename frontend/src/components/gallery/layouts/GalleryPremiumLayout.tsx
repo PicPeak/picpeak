@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { MasonryPhotoAlbum } from 'react-photo-album';
 import 'react-photo-album/masonry.css';
@@ -35,6 +35,7 @@ import { toast } from 'react-toastify';
 import './GalleryPremiumLayout.css';
 import { lightboxImageUrl } from '../imageTiers';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
+import { useViewerLikes } from './optimisticLikes';
 
 interface PhotoCardProps {
   photo: Photo;
@@ -233,15 +234,12 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     ));
   }, []);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  const [likedPhotoIds, setLikedPhotoIds] = useState<Set<number>>(new Set());
-  // Seed from server is_liked on first non-empty payload (#590 follow-up).
-  // Mount-only so refetches don't clobber in-session optimistic toggles.
-  const likedSeededRef = useRef(false);
-  useEffect(() => {
-    if (likedSeededRef.current || photos.length === 0) return;
-    setLikedPhotoIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
-    likedSeededRef.current = true;
-  }, [photos]);
+  // Per-viewer is_liked is the server's truth (#590 follow-up). Seeding it
+  // once on mount left a like changed in the lightbox invisible here (issue
+  // 2561), so the set follows each payload, and a like the viewer just
+  // toggled holds its state until its submits settled and a payload confirms
+  // it (optimisticLikes.ts). Toggle — server /feedback like is a toggle (#590).
+  const [likedPhotoIds, toggleLikedOptimistically, likeSettled, likeFailed] = useViewerLikes(photos, onFeedbackChange, slug);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   // Emoji reactions (#839) inside the premium lightbox. This layout uses
   // yet-another-react-lightbox instead of the shared PhotoLightbox, so the
@@ -359,18 +357,18 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         return;
       }
       // Toggle — server /feedback like is a toggle (#590).
-      setLikedPhotoIds(prev => {
-        const next = new Set(prev);
-        if (next.has(photo.id)) next.delete(photo.id);
-        else next.add(photo.id);
-        return next;
-      });
+      toggleLikedOptimistically(photo.id);
       try {
         await feedbackService.submitFeedback(slug, String(photo.id), {
           feedback_type: 'like',
         });
-        onFeedbackChange?.(photo.id);
+        // Refreshes the row; the confirmation window starts once no submit
+        // for this photo is left running.
+        likeSettled(photo.id);
       } catch (err) {
+        // Refused: once nothing else is running for this photo, the heart
+        // shows what the server holds.
+        likeFailed(photo.id);
         console.warn('Like submit failed', err);
       }
       return;
@@ -383,12 +381,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }
 
     // Optimistic update — toggle, not add (#590).
-    setLikedPhotoIds(prev => {
-      const next = new Set(prev);
-      if (next.has(photo.id)) next.delete(photo.id);
-      else next.add(photo.id);
-      return next;
-    });
+    toggleLikedOptimistically(photo.id);
 
     try {
       await feedbackService.submitFeedback(slug, String(photo.id), {
@@ -396,11 +389,12 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         guest_name: savedIdentity?.name,
         guest_email: savedIdentity?.email,
       });
-      onFeedbackChange?.(photo.id);
+      likeSettled(photo.id);
     } catch (err) {
+      likeFailed(photo.id);
       console.warn('Like submit failed', err);
     }
-  }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity]);
+  }, [slug, savedIdentity, feedbackOptions, guestIdentity, toggleLikedOptimistically, likeSettled, likeFailed]);
 
   const handleIdentitySubmit = useCallback(async (name: string, email: string) => {
     setSavedIdentity({ name, email });
@@ -411,12 +405,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       // modal only fires the first time per session, so the user is
       // intentionally liking a not-yet-liked photo here, but keep the
       // setter shape consistent with the other paths.
-      setLikedPhotoIds(prev => {
-        const next = new Set(prev);
-        if (next.has(pendingLikePhotoId)) next.delete(pendingLikePhotoId);
-        else next.add(pendingLikePhotoId);
-        return next;
-      });
+      toggleLikedOptimistically(pendingLikePhotoId);
 
       try {
         await feedbackService.submitFeedback(slug, String(pendingLikePhotoId), {
@@ -424,13 +413,14 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           guest_name: name,
           guest_email: email,
         });
-        onFeedbackChange?.(pendingLikePhotoId);
+        likeSettled(pendingLikePhotoId);
       } catch (err) {
+        likeFailed(pendingLikePhotoId);
         console.warn('Like submit failed', err);
       }
       setPendingLikePhotoId(null);
     }
-  }, [slug, pendingLikePhotoId, onFeedbackChange]);
+  }, [slug, pendingLikePhotoId, toggleLikedOptimistically, likeSettled, likeFailed]);
 
   const handleSelectAll = useCallback(() => {
     if (selectedPhotos.size === filteredPhotos.length) {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, SortAsc, SortDesc, Grid, Heart, Star, MessageSquare, Bookmark } from 'lucide-react';
+import { Search, SortAsc, SortDesc, Grid, Heart, HeartOff, Star, MessageSquare, Bookmark } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '../common';
 import type { FilterType, FeedbackFilterType } from './GalleryFilter';
@@ -53,6 +53,9 @@ interface PhotoFilterBarProps {
   activeColorFilters?: ColorLabel[];
   onColorFilterChange?: (color: ColorLabel) => void;
   colorLabelCounts?: Partial<Record<ColorLabel, number>>;
+  // The viewer's own likes and the step that takes them all back (issue
+  // 2561); offered next to the feedback filter while there is at least one.
+  clearOwnLikes?: { count: number; onClick: () => void };
 }
 
 export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
@@ -77,7 +80,8 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
   colorLabelsEnabled = false,
   activeColorFilters = [],
   onColorFilterChange,
-  colorLabelCounts = {}
+  colorLabelCounts = {},
+  clearOwnLikes,
 }) => {
   const { t } = useTranslation();
   const [showSortMenu, setShowSortMenu] = useState(false);
@@ -320,6 +324,18 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                     </Button>
                   )}
                 </div>
+                {/* Undo many likes at once (issue 2561); the container confirms. */}
+                {clearOwnLikes && clearOwnLikes.count > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    leftIcon={<HeartOff className="w-3.5 h-3.5" />}
+                    onClick={clearOwnLikes.onClick}
+                    className="text-xs md:text-sm whitespace-nowrap"
+                  >
+                    {t('gallery.filterPanel.clearLikes', { count: clearOwnLikes.count })}
+                  </Button>
+                )}
               </div>
             )}
 
@@ -378,7 +394,9 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
         
         {/* Mobile/Tablet: compact horizontal icons with headline below categories */}
         {feedbackFiltersShown && onFilterChange && (
-          <div className="flex lg:hidden items-center gap-2">
+          // Wraps so "Remove my likes" (issue 2561) takes its own line on a
+          // phone instead of pushing the page sideways.
+          <div className="flex lg:hidden flex-wrap items-center gap-2">
             <span className="text-xs text-muted-theme whitespace-nowrap">
               {t('gallery.feedbackFilter', 'Feedback Filter')}
             </span>
@@ -437,6 +455,18 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                 </Button>
               )}
             </div>
+            {/* Undo many likes at once (issue 2561); the container confirms. */}
+            {clearOwnLikes && clearOwnLikes.count > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                leftIcon={<HeartOff className="w-3.5 h-3.5" />}
+                onClick={clearOwnLikes.onClick}
+                className="text-xs md:text-sm whitespace-nowrap"
+              >
+                {t('gallery.filterPanel.clearLikes', { count: clearOwnLikes.count })}
+              </Button>
+            )}
           </div>
         )}
 

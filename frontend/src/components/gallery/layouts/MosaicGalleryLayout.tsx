@@ -6,6 +6,7 @@ import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
+import { useViewerLikes } from './optimisticLikes';
 
 /**
  * Mosaic Gallery Layout
@@ -35,6 +36,11 @@ interface MosaicPhotoProps {
     requireNameEmail?: boolean;
   };
   onQuickComment?: () => void;
+  /** Held by the layout, which follows every payload (issue 2561). */
+  liked: boolean;
+  onLikeSuccess: () => void;
+  /** Refreshes the liked photo's row, which confirms the toggle (issue 2561). */
+  onFeedbackChange?: (toggledPhotoId?: number) => void;
 }
 
 const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
@@ -48,14 +54,14 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
   slug,
   feedbackEnabled = false,
   feedbackOptions,
-  onQuickComment
+  onQuickComment,
+  liked,
+  onLikeSuccess,
+  onFeedbackChange,
 }) => {
   const [showIdentityModal, setShowIdentityModal] = React.useState(false);
   const [pendingAction, setPendingAction] = React.useState<null | { type: 'like'; photoId: number }>(null);
   const [savedIdentity, setSavedIdentity] = React.useState<{ name: string; email: string } | null>(null);
-  // Seed from server is_liked (#590 follow-up). useState's initializer
-  // fires once on mount, so subsequent prop updates don't reseed.
-  const [likedLocal, setLikedLocal] = React.useState(photo.is_liked ?? false);
 
   // Calculate aspect ratio from photo dimensions (fallback to 1 if unknown)
   const aspectRatio = (photo.width && photo.height) ? photo.width / photo.height : 1;
@@ -104,11 +110,10 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
         feedbackOptions={feedbackOptions}
         slug={slug}
         onQuickComment={onQuickComment}
-        liked={likedLocal}
-        onLikeSuccess={() => {
-          // Toggle — server /feedback like is a toggle (#590).
-          setLikedLocal(prev => !prev);
-        }}
+        liked={liked}
+        // Toggle — server /feedback like is a toggle (#590).
+        onLikeSuccess={onLikeSuccess}
+        onFeedbackChange={onFeedbackChange}
         savedIdentity={savedIdentity}
         onRequireIdentity={(action, photoId) => {
           setPendingAction({ type: action, photoId });
@@ -116,7 +121,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
         }}
         likeBeforeComment
         checkboxTestId
-        afterOverlay={((photo.like_count ?? 0) > 0 || likedLocal) ? (
+        afterOverlay={((photo.like_count ?? 0) > 0 || liked) ? (
           <div className={`absolute ${photo.type === 'collage' ? 'bottom-8' : 'bottom-2'} left-2 z-10`}>
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Liked">
               <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
@@ -144,6 +149,8 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
               guest_name: name,
               guest_email: email,
             });
+            // The row refresh brings the heart up to date (issue 2561).
+            onFeedbackChange?.(pendingAction.photoId);
             setPendingAction(null);
           }
         }}
@@ -158,6 +165,7 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   slug,
   onPhotoClick,
   onOpenPhotoWithFeedback,
+  onFeedbackChange,
   onDownload,
   selectedPhotos = new Set(),
   isSelectionMode = false,
@@ -167,6 +175,10 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   feedbackOptions
 }) => {
   const { theme } = useTheme();
+  // The viewer's likes, here and not in the tile so they follow every payload
+  // (issue 2561): the tile seeded once and kept its own toggles for good, so a
+  // like changed in the lightbox never reached it.
+  const [likedIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
   const scale = theme.gallerySettings?.thumbnailScale || 'md';
   const scaleOffsets: Record<string, number> = { xs: 3, sm: 1, md: 0, lg: -1, xl: -2 };
   const applyScale = (cols: number, min = 1) => Math.max(min, cols + (scaleOffsets[scale] ?? 0));
@@ -214,6 +226,9 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           slug={slug}
           feedbackEnabled={feedbackEnabled}
           feedbackOptions={feedbackOptions}
+          liked={likedIds.has(photo.id)}
+          onLikeSuccess={() => toggleLiked(photo.id)}
+          onFeedbackChange={likeSettled}
           onQuickComment={() => {
             if (typeof onOpenPhotoWithFeedback !== 'undefined' && onOpenPhotoWithFeedback) {
               onOpenPhotoWithFeedback(index);

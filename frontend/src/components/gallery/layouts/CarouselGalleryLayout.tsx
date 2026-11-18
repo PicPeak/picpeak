@@ -9,12 +9,14 @@ import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
+import { useViewerLikes } from './optimisticLikes';
 
 export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   photos,
   slug,
   onPhotoClick,
   onOpenPhotoWithFeedback,
+  onFeedbackChange,
   onDownload,
   allowDownloads = true,
   feedbackEnabled = false,
@@ -68,15 +70,9 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const [pendingAction, setPendingAction] = useState<null | { type: 'like'; photoId: number }>(null);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   const guestIdentity = useGuestIdentityOptional();
-  const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
-  // Seed from server is_liked on first non-empty payload (#590 follow-up).
-  // Mount-only so refetches don't clobber in-session optimistic toggles.
-  const likedSeededRef = useRef(false);
-  useEffect(() => {
-    if (likedSeededRef.current || photos.length === 0) return;
-    setLikedIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
-    likedSeededRef.current = true;
-  }, [photos]);
+  // The like endpoint is a toggle (#590). The set follows every payload's
+  // is_liked, toggles held until confirmed (issue 2561).
+  const [likedIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
   const canQuickComment = Boolean(feedbackEnabled && feedbackOptions?.allowComments && onOpenPhotoWithFeedback);
 
   if (!currentPhoto) return null;
@@ -180,17 +176,15 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       return;
                     }
                     // Toggle — server /feedback like is a toggle (#590).
-                    setLikedIds(prev => {
-                      const next = new Set(prev);
-                      if (next.has(currentPhoto.id)) next.delete(currentPhoto.id);
-                      else next.add(currentPhoto.id);
-                      return next;
-                    });
+                    toggleLiked(currentPhoto.id);
                     try {
                       await feedbackService.submitFeedback(slug!, String(currentPhoto.id), {
                         feedback_type: 'like',
                       });
                     } catch (_) {}
+                    // Refreshes the row; the held heart's confirmation
+                    // window starts here (issue 2561).
+                    likeSettled(currentPhoto.id);
                     return;
                   }
                   if (feedbackOptions?.requireNameEmail && !savedIdentity) {
@@ -199,12 +193,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                     return;
                   }
                   // Toggle — server /feedback like is a toggle (#590).
-                  setLikedIds(prev => {
-                    const next = new Set(prev);
-                    if (next.has(currentPhoto.id)) next.delete(currentPhoto.id);
-                    else next.add(currentPhoto.id);
-                    return next;
-                  });
+                  toggleLiked(currentPhoto.id);
                   try {
                     await feedbackService.submitFeedback(slug!, String(currentPhoto.id), {
                       feedback_type: 'like',
@@ -212,6 +201,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       guest_email: savedIdentity?.email,
                     });
                   } catch (_) {}
+                  likeSettled(currentPhoto.id);
                 }}
                 className={`bg-black/30 hover:bg-black/50 rounded-full border border-white/40 ${likedIds.has(currentPhoto.id) ? 'text-red-400' : 'text-white'}`}
                 title="Like photo"
@@ -298,6 +288,8 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               guest_name: name,
               guest_email: email,
             });
+            // The row refresh brings the heart up to date (issue 2561).
+            onFeedbackChange?.(pendingAction.photoId);
             setPendingAction(null);
           }
         }}

@@ -61,6 +61,16 @@ export const useConfirm = (): ((options: ConfirmOptions) => Promise<boolean>) =>
   return ctx.confirm;
 };
 
+/**
+ * useConfirm for components that may render outside the provider (a gallery
+ * rendered on its own in a test or preview): there it falls back to the
+ * browser's confirm.
+ */
+export const useConfirmOptional = (): ((options: ConfirmOptions) => Promise<boolean>) => {
+  const ctx = useContext(ConfirmContext);
+  return ctx?.confirm ?? ((options) => Promise.resolve(window.confirm(options.message)));
+};
+
 export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { t } = useTranslation();
   const [options, setOptions] = useState<ConfirmOptions | null>(null);

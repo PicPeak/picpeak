@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import { LIKES_CLEARED_EVENT } from '../utils/feedbackEvents';
 
 export type IdentityMode = 'simple' | 'guest' | 'shared';
 
@@ -283,6 +284,14 @@ class FeedbackService {
 
   async getMyFeedback(slug: string) {
     const response = await api.get(`/gallery/${slug}/my-feedback`);
+    return response.data;
+  }
+
+  // Takes back every like the viewer gave in this gallery (issue 2561);
+  // other guests' likes and the viewer's other feedback stay.
+  async clearMyLikes(slug: string): Promise<{ success: boolean; removed: number; photo_ids: number[] }> {
+    const response = await api.delete(`/gallery/${slug}/my-feedback/likes`);
+    window.dispatchEvent(new CustomEvent(LIKES_CLEARED_EVENT, { detail: { slug } }));
     return response.data;
   }
 }

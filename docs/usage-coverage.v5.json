@@ -1449,7 +1449,8 @@
         "GET /:slug/photos/:photoId/feedback",
         "POST /:slug/photos/:photoId/feedback",
         "GET /:slug/feedback-summary",
-        "GET /:slug/my-feedback"
+        "GET /:slug/my-feedback",
+        "DELETE /:slug/my-feedback/likes"
       ]
     },
     "galleryGuests.js": {

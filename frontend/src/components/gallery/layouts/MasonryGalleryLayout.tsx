@@ -10,6 +10,7 @@ import {
 // Flickr's justified-layout library
 import justifiedLayout from 'justified-layout';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
+import { useViewerLikes } from './optimisticLikes';
 import type { Photo } from '../../../types';
 import { masonryModeOf } from './masonryMode';
 
@@ -65,6 +66,8 @@ interface MasonryPhotoProps {
   // Optimistic "I liked this" state + callback (lifted to parent)
   liked?: boolean;
   onLikeSuccess?: () => void;
+  /** Refreshes the liked photo's row, which confirms the toggle (issue 2561). */
+  onFeedbackChange?: (toggledPhotoId?: number) => void;
 }
 
 const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
@@ -83,6 +86,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
   columnWidth = 300,
   liked = false,
   onLikeSuccess,
+  onFeedbackChange,
 }) => {
   // Calculate height based on actual photo aspect ratio
   // This preserves the photo's natural proportions in the masonry layout
@@ -130,6 +134,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
       onQuickComment={onQuickComment}
       liked={liked}
       onLikeSuccess={onLikeSuccess}
+      onFeedbackChange={onFeedbackChange}
       identityMode="self"
       likeToggleLabels
       checkboxTestId
@@ -151,6 +156,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   slug,
   onPhotoClick,
   onOpenPhotoWithFeedback,
+  onFeedbackChange,
   onDownload,
   selectedPhotos = new Set(),
   isSelectionMode = false,
@@ -165,16 +171,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const [containerWidth, setContainerWidth] = useState(0);
   // Optimistic "I liked this" state — lifted here so it survives re-renders
   // of individual MasonryPhoto components during layout reflow/resize.
-  const [likedPhotoIds, setLikedPhotoIds] = useState<Set<number>>(new Set());
-  // Seed from server is_liked on first non-empty photos payload (#590
-  // follow-up). Mount-only: subsequent refetches don't clobber in-session
-  // optimistic toggles, only the first arrival of photos initializes.
-  const likedSeededRef = useRef(false);
-  useEffect(() => {
-    if (likedSeededRef.current || photos.length === 0) return;
-    setLikedPhotoIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
-    likedSeededRef.current = true;
-  }, [photos]);
+  // Follows every payload's is_liked, toggles held until confirmed (issue 2561).
+  const [likedPhotoIds, toggleLiked, likeSettled] = useViewerLikes(photos, onFeedbackChange, slug);
   const gallerySettings = theme.gallerySettings || {};
   const gutter = gallerySettings.masonryGutter || 16;
   // 'justified' renders as rows, an unknown value as columns (masonryMode.ts).
@@ -563,17 +561,11 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 onQuickComment={() => onOpenPhotoWithFeedback && onOpenPhotoWithFeedback(originalIndex)}
                 columnWidth={columnWidth}
                 liked={likedPhotoIds.has(photo.id)}
-                onLikeSuccess={() => {
-                  // Toggle, not add — the /feedback like endpoint toggles
-                  // server-side, so click 2 on a liked photo unlikes it;
-                  // the optimistic UI must follow suit (#590).
-                  setLikedPhotoIds((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(photo.id)) next.delete(photo.id);
-                    else next.add(photo.id);
-                    return next;
-                  });
-                }}
+                // Toggle, not add — the /feedback like endpoint toggles
+                // server-side, so click 2 on a liked photo unlikes it;
+                // the optimistic UI must follow suit (#590).
+                onLikeSuccess={() => toggleLiked(photo.id)}
+                onFeedbackChange={likeSettled}
               />
             );
           })}
