@@ -919,9 +919,24 @@ class FeedbackService {
    * dedupe (#1162), which reparents feedback rows and must leave the
    * survivor's denormalized totals correct — can recompute on its own
    * connection.
+   *
+   * The photo row is locked before the aggregates are read (issue 2564).
+   * Without it two writers on one photo interleave on PostgreSQL: B reads
+   * while A's change is still uncommitted, B's UPDATE then waits for A and
+   * lands last with a count that misses A's change. A recount on the request
+   * path runs in its own transaction so the lock spans the read and the
+   * write; a caller passing a transaction holds the lock until it commits.
+   * FOR NO KEY UPDATE is what the UPDATE below takes anyway, so new feedback
+   * rows (a key-share lock through their foreign key) are not held up.
    */
   async updatePhotoFeedbackStats(photoId, trx = db) {
+    if (trx === db) {
+      return db.transaction((own) => this.updatePhotoFeedbackStats(photoId, own));
+    }
     try {
+      if (trx.isTransaction && trx.client.config.client === 'pg') {
+        await trx('photos').where({ id: photoId }).forNoKeyUpdate().first('id');
+      }
       // Which colour labels are live for this photo's event (#1197). The other
       // four counters are identity-agnostic; only the colour tag has two
       // possible sets sitting in the table at once.
@@ -1448,7 +1463,8 @@ class FeedbackService {
         const rows = await scope().select(
           'id', 'photo_id', 'guest_id', 'feedback_type', 'is_hidden', 'created_at', 'updated_at',
         );
-        const photoIds = [...new Set(rows.map((row) => row.photo_id))];
+        // In id order: each recount below locks its photo until the commit.
+        const photoIds = [...new Set(rows.map((row) => Number(row.photo_id)))].sort((a, b) => a - b);
         const sourceIds = new Set(sources.map(Number));
         const merged = rows.filter((row) => sourceIds.has(Number(row.guest_id))).length;
 
