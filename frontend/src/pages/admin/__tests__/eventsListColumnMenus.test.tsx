@@ -116,6 +116,7 @@ describe('events list column menus', () => {
   beforeEach(() => {
     updateEvent.mockClear();
     getEvents.mockReset();
+    localStorage.clear();
     getEvents.mockResolvedValue(listPage([event(1, 'Hochzeit Meier')], 40));
   });
 
@@ -254,6 +255,37 @@ describe('events list column menus', () => {
 
     await openMenu('Photos');
     expect(screen.getByRole('menuitemradio', { name: 'Fewest photos' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('reopens a bare list in the sort the admin last picked', async () => {
+    const first = renderPage();
+    await openMenu('events.event');
+    await userEvent.click(screen.getByRole('menuitemradio', { name: 'A – Z' }));
+    await waitFor(() => expect(getEvents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sortBy: 'event_name', sortOrder: 'asc' }),
+    ));
+    first.unmount();
+
+    // The sidebar link and the "back to galleries" buttons open /admin/events
+    // with no sort; the very first request already carries the remembered one.
+    getEvents.mockClear();
+    renderPage();
+    await waitFor(() => expect(getEvents).toHaveBeenCalled());
+    expect(getEvents).toHaveBeenCalledTimes(1);
+    expect(getEvents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sortBy: 'event_name', sortOrder: 'asc' }),
+    );
+    await openMenu('events.event');
+    expect(screen.getByRole('menuitemradio', { name: 'A – Z' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('lets a sort in the URL win over the remembered one, without replacing it', async () => {
+    localStorage.setItem('picpeak.eventsList.sort', 'event_name:asc');
+    renderPage('/admin/events?sort=photo_count&dir=desc');
+    await waitFor(() => expect(getEvents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sortBy: 'photo_count', sortOrder: 'desc' }),
+    ));
+    expect(localStorage.getItem('picpeak.eventsList.sort')).toBe('event_name:asc');
   });
 
   it('ignores half a sort pair rather than ordering by something no header shows', async () => {
