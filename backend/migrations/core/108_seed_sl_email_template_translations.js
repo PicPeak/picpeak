@@ -390,3 +390,6 @@ exports.down = async function(knex) {
   // after this migration ran, and we cannot reliably distinguish seeded rows
   // from edited rows. Remove them manually if rollback is truly required.
 };
+// Read by 366_fix_translated_email_template_placeholders to tell an untouched
+// seeded row from one an admin edited.
+exports.TRANSLATIONS = TRANSLATIONS;
