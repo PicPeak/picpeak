@@ -285,12 +285,12 @@ describe('GalleryStoryLayout selection mode (issue 1716)', () => {
     }
   });
 
-  it('select all covers the photos the search shows, in one call; deselect all when they are all selected', () => {
+  it('select all covers the photos a search leaves, in one call; deselect all when they are all selected', () => {
     const h = handlers();
-    const { container } = render(<GalleryStoryLayout {...baseProps} {...h} isSelectionMode />);
-    fireEvent.change(screen.getByPlaceholderText('Search memories...'), { target: { value: 'photo-2' } });
+    // The gallery's search (issue 2543) hands over the narrowed list.
+    const { container } = render(<GalleryStoryLayout {...baseProps} {...h} photos={[photo(2), photo(3)]} isSelectionMode />);
     fireEvent.click(within(bar(container) as HTMLElement).getByRole('button', { name: 'Select All' }));
-    expect(h.onSelectMany).toHaveBeenCalledWith([2]);
+    expect(h.onSelectMany).toHaveBeenCalledWith([2, 3]);
     expect(h.onPhotoSelect).not.toHaveBeenCalled();
 
     const all = render(
@@ -348,6 +348,44 @@ describe('GalleryStoryLayout selection mode (issue 1716)', () => {
     // The card hearts follow.
     const heart = cardLink(container, 2).closest('.story-photo-card')?.querySelector('.story-photo-card-btn');
     expect(heart?.classList.contains('favorite')).toBe(true);
+  });
+
+  it('favourite selected acts on photos a search hides too (issue 2543)', async () => {
+    // The shared search narrows `photos` to photo 2; 3 and 1 stay selected.
+    // Photo 1 arrived liked, so only 2 and 3 are sent.
+    const h = handlers();
+    const { container } = render(
+      <GalleryStoryLayout
+        {...baseProps}
+        {...h}
+        photos={[photo(2)]}
+        isSelectionMode
+        selectedPhotos={new Set([1, 2, 3])}
+        selectionQuotaPhotos={[photo(1, { is_liked: true }), photo(2), photo(3)]}
+      />
+    );
+    fireEvent.click(within(bar(container) as HTMLElement).getByTestId('story-favorite-selected'));
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('gallery.favoritesAdded'));
+    expect(mocks.submitFeedback.mock.calls.map((call) => call[1]).sort()).toEqual(['2', '3']);
+  });
+
+  it('a hidden selection liked throughout is unliked as a whole', async () => {
+    const h = handlers();
+    const { container } = render(
+      <GalleryStoryLayout
+        {...baseProps}
+        {...h}
+        photos={[photo(2, { is_liked: true })]}
+        isSelectionMode
+        selectedPhotos={new Set([1, 2])}
+        selectionQuotaPhotos={[photo(1, { is_liked: true }), photo(2, { is_liked: true })]}
+      />
+    );
+    const button = within(bar(container) as HTMLElement).getByTestId('story-favorite-selected');
+    expect(button).toHaveTextContent('gallery.unfavoriteSelected');
+    fireEvent.click(button);
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('gallery.favoritesRemoved'));
+    expect(mocks.submitFeedback.mock.calls.map((call) => call[1]).sort()).toEqual(['1', '2']);
   });
 
   it('a selection that is liked throughout is unliked by the same control', async () => {

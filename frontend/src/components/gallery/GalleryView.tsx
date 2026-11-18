@@ -1029,6 +1029,9 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     likedIsOwn: favouritesAreLikes,
     favoritedIsOwn: savedIsOwn,
     videosFirst,
+    // Story's scenes are its categories, and it has no category control: its
+    // search has always found a scene by name (issue 2543 kept that).
+    searchCategoryNames: theme.galleryLayout === 'gallery-story',
   });
   // `scopedPhotos` is the same scope with every search and filter off: tells
   // "nothing matches" from "nothing here yet" when the grid comes out empty.
@@ -1072,6 +1075,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       setSearchTerm('');
       setActiveFilters([]);
       setActiveColorFilters([]);
+      setMinRating(null);
       setMediaFilter('all');
       setSelectedPersonIds([]);
       setPeopleMatchAny(false);
@@ -1165,12 +1169,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const deselectAll = useCallback(() => {
     setSelectedPhotos(new Set());
   }, [setSelectedPhotos]);
-  // The filter panel's last step (issue 1733, E7): exactly what the filters
-  // leave on screen, with the toolbar switched to its batch actions.
-  const selectFiltered = useCallback(() => {
-    selectAllVisible();
-    setIsSelectionMode(true);
-  }, [selectAllVisible, setIsSelectionMode]);
   // The toolbar's X: selection mode off and the selection gone with it, or
   // the toolbar, which swaps on a non-empty selection, would stay swapped.
   const cancelSelection = useCallback(() => {
@@ -1443,14 +1441,17 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Photos in a category with downloads disabled (#640) are excluded HERE as
   // well as server-side, so the number on the button is the number the guest
   // actually receives rather than an optimistic one.
-  const peopleDownloadableIds = useMemo(() => {
+  //
+  // Of the photos the layout shows (issue 2543): Premium's own category tab
+  // narrows `filteredPhotos` further, and a download must not reach past it.
+  const peopleDownloadIdsOf = (shownPhotos: Photo[]) => {
     if (selectedPersonIds.length === 0 && !activeSelfiePhotoIds) return [];
-    return filteredPhotos
+    return shownPhotos
       .filter((photo) => photo.category_allow_downloads !== false)
       .map((photo) => photo.id);
-  }, [filteredPhotos, selectedPersonIds, activeSelfiePhotoIds]);
+  };
 
-  const handleDownloadPeopleFiltered = async () => {
+  const handleDownloadPeopleFiltered = async (peopleDownloadableIds: number[]) => {
     if (!allowDownloads || peopleDownloadableIds.length === 0) return;
     if (refuseOverQuota(photosForIds(peopleDownloadableIds))) return;
 
@@ -1668,12 +1669,14 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const headerStyle = data?.event?.header_style || theme.headerStyle || 'standard';
   const isHeroHeader = headerStyle === 'hero';
   const showSidebar = theme.controlsStyle === 'sidebar';
-  const filterBarShown = !showSidebar
-    && settingsData?.gallery_show_filter_bar !== false
+  // Search, sort and filters, in every layout (issue 2543); the full-page
+  // layouts never render the sidebar, so only this part applies to them.
+  const filterBarEnabled = settingsData?.gallery_show_filter_bar !== false
     // Scoped (#1160): on a folder-only root there is nothing for search, sort or
     // the feedback chips to act on, and showing them reintroduces exactly the
     // empty filter row discussion #317 complained about.
     && scopedPhotos.length > 0;
+  const filterBarShown = !showSidebar && filterBarEnabled;
   // Picking photos one by one (issue 1733, E8): not in a carousel, and not for
   // a single photo, as the grid's own toolbar had it.
   const selectionAvailable = filteredPhotos.length > 1 && theme.galleryLayout !== 'carousel';
@@ -1688,6 +1691,180 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // sidebar. A Carousel gets no switch, so its delivery placeholders keep the
   // theme size.
   const densityOffered = (toolbarShown || showSidebar) && layoutHasDensity(theme.galleryLayout);
+
+  // The feature toolbox (issue 2543): search, sort, the filter panel and the
+  // people row, built once here and mounted by every layout — the standard
+  // layouts' toolbar below, Premium and Story through their `beforeGrid` row.
+  // A feature added here reaches all of them; each layout only styles it.
+  const toolboxSearch = { value: searchTerm, onChange: setSearchTerm };
+  const toolboxSort = { sortBy, onSortChange: setSortBy, sortDesc, onSortDescChange: setSortDesc };
+  // `shownPhotos`: what the layout shows, which "Select these N" picks.
+  const buildToolboxFilters = (shownPhotos: Photo[]) => ({
+    activeCount: activePanelFilterCount,
+    render: (close: () => void, withSearch: boolean) => (
+      <GalleryFilterPanel
+        search={withSearch ? toolboxSearch : undefined}
+        feedback={feedbackEnabled ? { activeFilters, onFilterChange: handleFilterChange, available: feedbackFilters } : undefined}
+        colorLabels={feedbackEnabled && feedbackSettings?.allow_color_labels ? {
+          activeColors: activeColorFilters,
+          onToggle: handleColorFilterToggle,
+          counts: colorLabelCounts,
+        } : undefined}
+        minRating={feedbackEnabled && feedbackSettings?.allow_ratings ? {
+          value: minRating,
+          onChange: setMinRating,
+          counts: minRatingCounts,
+        } : undefined}
+        media={showMediaFilter ? { value: mediaFilter, onChange: setMediaFilter } : undefined}
+        // Scoped, so a chip can't advertise a count the grid won't produce.
+        credits={creditPanelShown ? { photos: scopedPhotos, selectedKey: selectedCreditKey, onChange: setSelectedCreditKey } : undefined}
+        tags={tagChips.length > 0 ? { tags: tagChips, selectedKeys: selectedTagKeys, onToggle: toggleTag } : undefined}
+        matchCount={shownPhotos.length}
+        hasVideos={hasVideoItems(shownPhotos)}
+        filtersActive={activePanelFilterCount > 0}
+        onClearFilters={clearPanelFilters}
+        onSelectMatches={selectionAvailable && shownPhotos.length > 1 ? () => {
+          setSelectedPhotos(new Set(shownPhotos.map((photo) => photo.id)));
+          setIsSelectionMode(true);
+          close();
+        } : undefined}
+      />
+    ),
+  });
+
+  // People in this gallery (#1074), with the selfie search (issue 2355).
+  // Renders nothing at all unless the photographer enabled detection AND left
+  // it visible to guests — people_enabled carries both decisions plus the
+  // global feature flag. `shownPhotos` is what the layout puts on screen:
+  // Premium's own category tab can narrow the list further.
+  const buildPeoplePanel = (shownPhotos: Photo[], className?: string) => {
+    if (!peopleEnabled) return null;
+    const shown = shownPhotos.length;
+    const peopleDownloadableIds = peopleDownloadIdsOf(shownPhotos);
+    return (
+      <div className={className}>
+        {selfieSearchEnabled && (
+          <div className="flex justify-end pb-2">
+            <button
+              type="button"
+              onClick={() => setShowSelfieSearch(true)}
+              className="gallery-toolbar-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm hover:brightness-95"
+              style={{ color: 'var(--color-text)', borderColor: 'var(--color-surface-border)' }}
+            >
+              <Camera size={16} aria-hidden />
+              {t('gallery.selfie.open', { defaultValue: 'Find my photos with a selfie' })}
+            </button>
+          </div>
+        )}
+        <PeopleStrip
+          people={people}
+          photos={scopedPhotos}
+          slug={slug}
+          selectedPersonIds={selectedPersonIds}
+          onToggle={togglePerson}
+          onShowAll={() => setShowPeopleSheet(true)}
+          scan={peopleData?.scan}
+          collapsed={peopleCollapsed}
+          onCollapsedChange={handlePeopleCollapsedChange}
+        />
+
+        {/* Active people filter. The chip row is the single place the
+            current selection is stated, so "why am I seeing 97 photos"
+            is always answerable at a glance. */}
+        {(selectedPersonIds.length > 0 || activeSelfiePhotoIds) && (
+          <div
+            className="flex flex-wrap items-center gap-2 py-2 border-t"
+            style={{ borderColor: 'var(--color-surface-border)' }}
+          >
+            {selectedPersonIds.map((id) => {
+              const person = people.find((p) => p.id === id);
+              if (!person) return null;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => togglePerson(id)}
+                  className="gallery-toolbar-chip inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-soft text-theme text-sm hover:brightness-95"
+                >
+                  {person.label || t('gallery.people.unnamedCount', {
+                    count: person.face_count,
+                    defaultValue: `${person.face_count} photos`,
+                  })}
+                  <X size={14} />
+                </button>
+              );
+            })}
+
+            {activeSelfiePhotoIds && (
+              <button
+                type="button"
+                onClick={() => setSelfiePhotoIds(null)}
+                className="gallery-toolbar-chip inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-soft text-theme text-sm hover:brightness-95"
+              >
+                <Camera size={14} aria-hidden />
+                {t('gallery.selfie.chip', { defaultValue: 'Your selfie' })}
+                <X size={14} />
+              </button>
+            )}
+
+            {/* Only meaningful with two or more people picked. */}
+            {selectedPersonIds.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setPeopleMatchAny((v) => !v)}
+                className="px-2.5 py-1 rounded-full border text-xs"
+                style={{
+                  color: 'var(--color-text)',
+                  borderColor: 'var(--color-surface-border)',
+                }}
+              >
+                {peopleMatchAny
+                  ? t('gallery.people.matchAny', { defaultValue: 'Either person' })
+                  : t('gallery.people.matchAll', { defaultValue: 'Both people' })}
+              </button>
+            )}
+
+            {/* ml-auto only once there's room for it — at 390px the count
+                and Clear were pushed against the right edge and clipped. */}
+            <span className="gallery-toolbar-count text-sm sm:ml-auto" style={{ color: 'var(--color-muted-text)' }} role="status">
+              {t('gallery.people.matchCount', {
+                count: shown,
+                // Scoped denominator (#1160): at a folder root this said
+                // "42 of 62" while only 42 exist in the view.
+                total: scopedPhotos.length,
+                defaultValue: `${shown} of ${scopedPhotos.length} photos`,
+              })}
+            </span>
+
+            {/* Hidden entirely when downloads are off for the gallery,
+                rather than shown-and-failing. */}
+            {allowDownloads && peopleDownloadableIds.length > 0 && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => { void handleDownloadPeopleFiltered(peopleDownloadableIds); }}
+                leftIcon={<Download className="w-4 h-4" />}
+              >
+                {t('gallery.people.downloadThese', {
+                  count: peopleDownloadableIds.length,
+                  defaultValue: `Download these ${peopleDownloadableIds.length}`,
+                })}
+              </Button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => { setSelectedPersonIds([]); setPeopleMatchAny(false); setSelfiePhotoIds(null); }}
+              className="text-sm underline"
+              style={{ color: 'var(--color-muted-text)' }}
+            >
+              {t('gallery.people.clear', { defaultValue: 'Clear' })}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Reveal mode (#838): the server returned the event shell with no photos —
   // render the upload-only view for EVERY layout. Enforcement is server-side
@@ -1884,44 +2061,27 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     feedbackSettings?.identity_mode === 'guest' ? 'guest' : 'simple';
 
   if (isFullPageLayout) {
-    // Selfie search (issue 2355): these layouts have no people strip, so the
-    // launcher, the active filter and its count sit in the row above the
-    // photos, below the hero (a band above the hero would sit under Story's
-    // nav and leave its light icons on a light background). A function: the
-    // count is what the layout shows after its own category tab or search.
-    const selfieToolbar = selfieSearchEnabled ? (shown: number) => (
-      <>
-        <button
-          type="button"
-          onClick={() => setShowSelfieSearch(true)}
-          className="gallery-toolbar-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm hover:brightness-95"
-        >
-          <Camera size={16} aria-hidden />
-          {t('gallery.selfie.open', { defaultValue: 'Find my photos with a selfie' })}
-        </button>
-        {activeSelfiePhotoIds && (
-          <>
-            <button
-              type="button"
-              onClick={() => setSelfiePhotoIds(null)}
-              className="gallery-toolbar-chip inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-soft text-theme text-sm hover:brightness-95"
-            >
-              <Camera size={14} aria-hidden />
-              {t('gallery.selfie.chip', { defaultValue: 'Your selfie' })}
-              <X size={14} />
-            </button>
-            {/* Colours come from the layout's stylesheet: Story is dark. */}
-            <span className="gallery-toolbar-count text-sm" role="status">
-              {t('gallery.people.matchCount', {
-                count: shown,
-                total: scopedPhotos.length,
-                defaultValue: `${shown} of ${scopedPhotos.length} photos`,
-              })}
-            </span>
-          </>
-        )}
-      </>
-    ) : undefined;
+    // The feature toolbox (issue 2543) in the row these layouts keep between
+    // their hero and their photos (`beforeGrid`): below the hero, so it never
+    // sits under Story's fixed nav (a band above the hero would, and would
+    // cover its logout and favourites on a phone). Each layout styles the row
+    // in its own stylesheet. A function of the photos the layout shows after
+    // its own category tab: the counts, "Select these N" and "Download these
+    // N" all follow that list. Not here, because the layout already has
+    // them in its nav: the selection actions (select all, rate, download),
+    // copy filenames, and the categories (Premium's tabs, Story's scenes).
+    const featureToolbox = (shownPhotos: Photo[]) => {
+      const toolbar = filterBarEnabled ? (
+        <GalleryToolbar
+          search={toolboxSearch}
+          sort={toolboxSort}
+          filters={hasPanelFilters ? buildToolboxFilters(shownPhotos) : undefined}
+          photoCount={shownPhotos.length}
+        />
+      ) : null;
+      const peoplePanel = buildPeoplePanel(shownPhotos, toolbar ? 'mt-3' : undefined);
+      return toolbar || peoplePanel ? <div className="gallery-toolbox">{toolbar}{peoplePanel}</div> : null;
+    };
     return withDownloadProviders(
       // The same identity flow as the standard layout below (issue 1733):
       // Premium and Story already ask for it (ensureIdentity) before a like,
@@ -1946,6 +2106,19 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onClose={() => setShowSelfieSearch(false)}
             slug={slug}
             onResult={setSelfiePhotoIds}
+          />
+        )}
+        {/* "Show all" people from the toolbox (issue 2543). Outside the
+            layout, so Story's dark row does not restyle it. */}
+        {peopleEnabled && (
+          <PeopleSheet
+            open={showPeopleSheet}
+            onClose={() => setShowPeopleSheet(false)}
+            people={people}
+            photos={scopedPhotos}
+            slug={slug}
+            selectedPersonIds={selectedPersonIds}
+            onToggle={togglePerson}
           />
         )}
 
@@ -2046,7 +2219,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           videosFirst={videosFirst}
           openPhotoId={linkedPhotoId}
           onLightboxPhotoChange={handleLightboxPhotoChange}
-          beforeGrid={selfieToolbar}
+          beforeGrid={featureToolbox}
           // Banner only: these layouts tile photos in their own geometry, which
           // a plain grid of placeholders would not match (issue 1562).
           afterGrid={showDeliveryBanner
@@ -2443,41 +2616,11 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         {toolbarShown ? (
           <GalleryToolbar
             className="mt-3"
-            search={filterBarShown ? { value: searchTerm, onChange: setSearchTerm } : undefined}
-            sort={filterBarShown ? { sortBy, onSortChange: setSortBy, sortDesc, onSortDescChange: setSortDesc } : undefined}
+            search={filterBarShown ? toolboxSearch : undefined}
+            sort={filterBarShown ? toolboxSort : undefined}
             // While selecting, the panel also carries the search box the bar
             // gives up, so it opens even where there is nothing else to filter.
-            filters={filterBarShown && (hasPanelFilters || isSelectionMode || selectedPhotos.size > 0) ? {
-              activeCount: activePanelFilterCount,
-              render: (close, withSearch) => (
-                <GalleryFilterPanel
-                  search={withSearch ? { value: searchTerm, onChange: setSearchTerm } : undefined}
-                  feedback={feedbackEnabled ? { activeFilters, onFilterChange: handleFilterChange, available: feedbackFilters } : undefined}
-                  colorLabels={feedbackEnabled && feedbackSettings?.allow_color_labels ? {
-                    activeColors: activeColorFilters,
-                    onToggle: handleColorFilterToggle,
-                    counts: colorLabelCounts,
-                  } : undefined}
-                  minRating={feedbackEnabled && feedbackSettings?.allow_ratings ? {
-                    value: minRating,
-                    onChange: setMinRating,
-                    counts: minRatingCounts,
-                  } : undefined}
-                  media={showMediaFilter ? { value: mediaFilter, onChange: setMediaFilter } : undefined}
-                  // Scoped, so a chip can't advertise a count the grid won't produce.
-                  credits={creditPanelShown ? { photos: scopedPhotos, selectedKey: selectedCreditKey, onChange: setSelectedCreditKey } : undefined}
-                  tags={tagChips.length > 0 ? { tags: tagChips, selectedKeys: selectedTagKeys, onToggle: toggleTag } : undefined}
-                  matchCount={filteredPhotos.length}
-                  hasVideos={hasVideoItems(filteredPhotos)}
-                  filtersActive={activePanelFilterCount > 0}
-                  onClearFilters={clearPanelFilters}
-                  onSelectMatches={selectionAvailable ? () => {
-                    selectFiltered();
-                    close();
-                  } : undefined}
-                />
-              ),
-            } : undefined}
+            filters={filterBarShown && (hasPanelFilters || isSelectionMode || selectedPhotos.size > 0) ? buildToolboxFilters(filteredPhotos) : undefined}
             viewControls={<GridDensityControl layout={theme.galleryLayout} />}
             photoCount={filterBarShown ? filteredPhotos.length : undefined}
             copyFilenames={{ count: copyFilenames.photos.length, onClick: () => setShowCopyFilenames(true) }}
@@ -2524,132 +2667,8 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
 
         {/* People in this gallery (#1074). Sits between the filter bar and
-            the grid. Renders nothing at all unless the photographer enabled
-            detection AND left it visible to guests — people_enabled carries
-            both decisions plus the global feature flag. */}
-        {peopleEnabled && (
-          <div className="mt-4">
-            {selfieSearchEnabled && (
-              <div className="flex justify-end pb-2">
-                <button
-                  type="button"
-                  onClick={() => setShowSelfieSearch(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm hover:brightness-95"
-                  style={{ color: 'var(--color-text)', borderColor: 'var(--color-surface-border)' }}
-                >
-                  <Camera size={16} aria-hidden />
-                  {t('gallery.selfie.open', { defaultValue: 'Find my photos with a selfie' })}
-                </button>
-              </div>
-            )}
-            <PeopleStrip
-              people={people}
-              photos={scopedPhotos}
-              slug={slug}
-              selectedPersonIds={selectedPersonIds}
-              onToggle={togglePerson}
-              onShowAll={() => setShowPeopleSheet(true)}
-              scan={peopleData?.scan}
-              collapsed={peopleCollapsed}
-              onCollapsedChange={handlePeopleCollapsedChange}
-            />
-
-            {/* Active people filter. The chip row is the single place the
-                current selection is stated, so "why am I seeing 97 photos"
-                is always answerable at a glance. */}
-            {(selectedPersonIds.length > 0 || activeSelfiePhotoIds) && (
-              <div
-                className="flex flex-wrap items-center gap-2 py-2 border-t"
-                style={{ borderColor: 'var(--color-surface-border)' }}
-              >
-                {selectedPersonIds.map((id) => {
-                  const person = people.find((p) => p.id === id);
-                  if (!person) return null;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => togglePerson(id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-soft text-theme text-sm hover:brightness-95"
-                    >
-                      {person.label || t('gallery.people.unnamedCount', {
-                        count: person.face_count,
-                        defaultValue: `${person.face_count} photos`,
-                      })}
-                      <X size={14} />
-                    </button>
-                  );
-                })}
-
-                {activeSelfiePhotoIds && (
-                  <button
-                    type="button"
-                    onClick={() => setSelfiePhotoIds(null)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-soft text-theme text-sm hover:brightness-95"
-                  >
-                    <Camera size={14} aria-hidden />
-                    {t('gallery.selfie.chip', { defaultValue: 'Your selfie' })}
-                    <X size={14} />
-                  </button>
-                )}
-
-                {/* Only meaningful with two or more people picked. */}
-                {selectedPersonIds.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setPeopleMatchAny((v) => !v)}
-                    className="px-2.5 py-1 rounded-full border text-xs"
-                    style={{
-                      color: 'var(--color-text)',
-                      borderColor: 'var(--color-surface-border)',
-                    }}
-                  >
-                    {peopleMatchAny
-                      ? t('gallery.people.matchAny', { defaultValue: 'Either person' })
-                      : t('gallery.people.matchAll', { defaultValue: 'Both people' })}
-                  </button>
-                )}
-
-                {/* ml-auto only once there's room for it — at 390px the count
-                    and Clear were pushed against the right edge and clipped. */}
-                <span className="text-sm sm:ml-auto" style={{ color: 'var(--color-muted-text)' }}>
-                  {t('gallery.people.matchCount', {
-                    count: filteredPhotos.length,
-                    // Scoped denominator (#1160): at a folder root this said
-                    // "42 of 62" while only 42 exist in the view.
-                    total: scopedPhotos.length,
-                    defaultValue: `${filteredPhotos.length} of ${scopedPhotos.length} photos`,
-                  })}
-                </span>
-
-                {/* Hidden entirely when downloads are off for the gallery,
-                    rather than shown-and-failing. */}
-                {allowDownloads && peopleDownloadableIds.length > 0 && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleDownloadPeopleFiltered}
-                    leftIcon={<Download className="w-4 h-4" />}
-                  >
-                    {t('gallery.people.downloadThese', {
-                      count: peopleDownloadableIds.length,
-                      defaultValue: `Download these ${peopleDownloadableIds.length}`,
-                    })}
-                  </Button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => { setSelectedPersonIds([]); setPeopleMatchAny(false); setSelfiePhotoIds(null); }}
-                  className="text-sm underline"
-                  style={{ color: 'var(--color-muted-text)' }}
-                >
-                  {t('gallery.people.clear', { defaultValue: 'Clear' })}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+            the grid. */}
+        {buildPeoplePanel(filteredPhotos, 'mt-4')}
 
         {/* Photo Grid — when the hero header sits directly under the filter
             bar, double the wrapper margin (mt-12) so the hero's decorative

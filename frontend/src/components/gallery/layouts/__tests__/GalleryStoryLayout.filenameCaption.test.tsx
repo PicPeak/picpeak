@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { render } from '@testing-library/react';
 
 import { GalleryStoryLayout } from '../GalleryStoryLayout';
 import { PhotoLabelsProvider } from '../../PhotoLabels';
@@ -141,13 +141,14 @@ describe('GalleryStoryLayout filename caption', () => {
     expect(container.innerHTML).not.toMatch(/DSC_|stored-/);
   });
 
-  it('numbers against the photos its search leaves (issue 1733, E6)', () => {
+  it('numbers against the photos a search leaves (issue 1733, E6)', () => {
+    // The gallery's search (issue 2543) hands over the narrowed list.
+    const party = photos.filter((p) => p.category_name === 'Party');
     const { container } = render(
       <PhotoLabelsProvider neutral photos={photos}>
-        <GalleryStoryLayout {...props} storyShowFilenames />
+        <GalleryStoryLayout {...(props as object)} photos={party} storyShowFilenames />
       </PhotoLabelsProvider>,
     );
-    fireEvent.change(container.querySelector('.story-nav-search input')!, { target: { value: 'Party' } });
     expect(captions(container)).toEqual(['Photo 1 of 2', 'Photo 2 of 2']);
   });
 

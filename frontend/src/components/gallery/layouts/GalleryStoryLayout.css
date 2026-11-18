@@ -94,43 +94,6 @@
   }
 }
 
-.story-nav-search {
-  display: none;
-  align-items: center;
-  gap: 0.5rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  border-radius: 9999px;
-  padding: 0.375rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-@media (min-width: 768px) {
-  .story-nav-search {
-    display: flex;
-  }
-}
-
-/* 13rem collapsed so the placeholder still fits in the longest locale —
-   "Rechercher des souvenirs..." (fr) measures ~11rem at 0.875rem, and the
-   old 8rem clipped even the German string. */
-.story-nav-search input {
-  background: transparent;
-  border: none;
-  outline: none;
-  font-size: 0.875rem;
-  width: 13rem;
-  color: var(--story-foreground);
-  transition: width 0.2s ease;
-}
-
-.story-nav-search input:focus {
-  width: 17rem;
-}
-
-.story-nav-search input::placeholder {
-  color: var(--story-muted-foreground);
-}
-
 .story-nav-btn {
   position: relative;
   padding: 0.5rem;
@@ -849,9 +812,10 @@
   outline-offset: 3px;
 }
 
-/* The row above the scenes that states and controls what they show (selfie
-   search, issue 2355). Same width and side padding as .story-scene; the first
-   scene's own top padding gives the space below it. */
+/* The row above the scenes that states and controls what they show: the
+   gallery's feature toolbox (issues 2355, 2543). Same width and side padding
+   as .story-scene; the first scene's own top padding gives the space below
+   it. */
 .story-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -868,21 +832,43 @@
   }
 }
 
-/* Story's own palette: the gallery theme's text colour is meant for a light
-   page and disappears on this dark one. */
-.story-toolbar .gallery-toolbar-btn {
-  color: var(--story-foreground);
-  /* As the nav's search field, a little stronger to read as a button. */
-  border-color: rgba(255, 255, 255, 0.25);
+/* Story's own palette: the gallery theme's colours are meant for a light
+   page and disappear on this dark one. The toolbox reads them from these
+   tokens, so they are redefined for the row and everything in it (its filter
+   panel and sort menu included). Only inside the layout: the empty-result
+   view renders the row on the gallery's own page. */
+.gallery-story-layout .story-toolbar {
+  --color-background: var(--story-background);
+  --color-surface: var(--story-muted);
+  --color-elevated: var(--story-border);
+  --color-text: var(--story-foreground);
+  --color-muted-text: var(--story-muted-foreground);
+  --color-surface-border: rgba(255, 255, 255, 0.25);
+  --color-accent: var(--story-primary);
+  --accent-text: var(--story-primary);
+  --ui-accent-strong: var(--story-primary);
+  --ui-accent-fg: var(--story-primary-foreground);
+  --ui-accent-soft: color-mix(in srgb, var(--story-primary) 25%, transparent);
 }
 
-.story-toolbar .gallery-toolbar-chip {
+.gallery-story-layout .story-toolbar .gallery-toolbar-chip {
   background-color: var(--story-primary);
   color: var(--story-primary-foreground);
 }
 
-.story-toolbar .gallery-toolbar-count {
-  color: var(--story-muted-foreground);
+/* The toolbox spans the row. Its bar is not sticky here: the fixed nav above
+   is this layout's sticky chrome, and the bar would slide under it. */
+.story-toolbar .gallery-toolbox {
+  width: 100%;
+}
+
+.story-toolbar .gallery-toolbar {
+  position: relative;
+  top: auto !important;
+  margin: 0;
+  padding-left: 0;
+  padding-right: 0;
+  background: transparent;
 }
 
 .story-toolbar--empty {

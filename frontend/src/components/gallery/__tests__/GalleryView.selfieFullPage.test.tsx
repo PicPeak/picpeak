@@ -1,8 +1,9 @@
 /**
  * Selfie search (issue 2355) is offered in every layout. Premium and Story
- * return before the people strip, so their launcher, the active filter and
- * its count go to the layout as `beforeGrid`, the row above the photos
- * (below the hero and nav); the dialog opens from there too.
+ * return before the standard people row, so their launcher, the active filter
+ * and its count go to the layout as `beforeGrid` with the rest of the feature
+ * toolbox (issue 2543), the row above the photos (below the hero and nav);
+ * the dialog opens from there too.
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -63,10 +64,10 @@ vi.mock('../GalleryLayout', () => ({
 vi.mock('../PhotoGridWithLayouts', () => ({
   PhotoGridWithLayouts: ({ photos: shown, openPhotoId, beforeGrid }: {
     photos: Array<{ id: number }>; openPhotoId?: number | null;
-    beforeGrid?: React.ReactNode | ((shown: number) => React.ReactNode);
+    beforeGrid?: React.ReactNode | ((shown: Array<{ id: number }>) => React.ReactNode);
   }) => (
     <div data-testid="photo-grid" data-ids={shown.map((p) => p.id).join(',')} data-open={openPhotoId ?? ''}>
-      <div data-testid="before-grid">{typeof beforeGrid === 'function' ? beforeGrid(shown.length) : beforeGrid}</div>
+      <div data-testid="before-grid">{typeof beforeGrid === 'function' ? beforeGrid(shown) : beforeGrid}</div>
     </div>
   ),
 }));
@@ -135,7 +136,7 @@ describe.each(['gallery-premium', 'gallery-story'])('selfie search on %s', (layo
     stable.theme.theme = { galleryLayout: layout };
     show(false);
     expect(screen.queryByRole('button', { name: 'gallery.selfie.open' })).not.toBeInTheDocument();
-    expect(screen.getByTestId('before-grid')).toBeEmptyDOMElement();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });
 

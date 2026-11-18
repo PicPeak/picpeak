@@ -65,13 +65,23 @@ describe('Gallery Premium row above the photos', () => {
     expect(screen.getByRole('button', { name: 'Find my photos with a selfie' })).toBeTruthy();
   });
 
-  it('hands a row function the count the category tab leaves', () => {
+  it('hands a row function the photos the category tab leaves (issue 2543)', () => {
     const tagged = photos.map((p, i) => ({ ...p, category_name: i === 0 ? 'Ceremony' : 'Party' }));
-    const beforeGrid = vi.fn((shown: number) => <span>shown {shown}</span>);
+    const beforeGrid = vi.fn((shown: Array<{ id: number }>) => <span>shown {shown.map((p) => p.id).join(',')}</span>);
     const { container } = mount({ photos: tagged, beforeGrid });
-    expect(within(container.querySelector('.gallery-premium-toolbar') as HTMLElement).getByText('shown 2')).toBeTruthy();
+    const ids = tagged.map((p) => p.id).join(',');
+    expect(within(container.querySelector('.gallery-premium-toolbar') as HTMLElement).getByText(`shown ${ids}`)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Ceremony' }));
-    expect(screen.getByText('shown 1')).toBeTruthy();
+    expect(screen.getByText(`shown ${tagged[0].id}`)).toBeTruthy();
+  });
+
+  it('keeps its shell, row included, when a filter leaves nothing (issue 2543)', () => {
+    const { container } = mount({ photos: [], emptyIsFiltered: true, beforeGrid: row });
+    // The row sits in the shell, not in the separate empty view, so it is the
+    // same element before and after: its open panel and focus survive.
+    expect(container.querySelector('.gallery-premium-layout .gallery-premium-toolbar')).not.toBeNull();
+    expect(container.querySelector('.gallery-premium-toolbar--empty')).toBeNull();
+    expect(screen.getByText('No photos match your search or filters.')).toBeTruthy();
   });
 
   it('renders no row without one', () => {
