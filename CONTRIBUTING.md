@@ -189,6 +189,7 @@ CI runs the `@smoke` subset on every pull request, and every spec on both projec
 * Use the present tense ("Add feature" not "Added feature")
 * Use the imperative mood ("Move cursor to..." not "Moves cursor to...")
 * Limit the first line to 72 characters or less
+* Start a security fix with `security:` instead of `fix:` (for example `security(gallery): ...`). It releases like a fix but gets its own **Security** section in the changelog and release notes, so operators can spot it
 * Reference issues and pull requests liberally after the first line
 * Consider starting the commit message with an applicable emoji:
   * 🎨 `:art:` when improving the format/structure of the code
