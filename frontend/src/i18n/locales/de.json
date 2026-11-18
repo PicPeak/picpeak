@@ -1148,6 +1148,7 @@
     "uploadProgress": "Upload-Fortschritt",
     "uploadPercent": "Wird hochgeladen … {{percent}} %",
     "uploadProcessing": "Hochgeladen, die Dateien werden gespeichert …",
+    "uploadResuming": "Verbindung unterbrochen – wird fortgesetzt …",
     "addFiles": "Dateien hinzufügen",
     "noUploadedFiles": "Keine hochgeladenen Dateien. Fügen Sie Dateien von Ihrem Computer hinzu, um sie in den Download aufzunehmen.",
     "sentTo": "Per E-Mail an",

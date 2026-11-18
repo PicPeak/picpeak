@@ -31,6 +31,8 @@ import { useMutationWithToast } from '../../../hooks/useMutationWithToast';
 import { usePermission } from '../../../hooks/usePermission';
 import { parseWholeNumber } from '../../../utils/wholeNumber';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
+import { useUploadInterrupted } from '../../../hooks/useUploadInterrupted';
+import { useScreenWakeLock } from '../../../hooks/useScreenWakeLock';
 import {
   transfersService,
   type Transfer,
@@ -47,6 +49,9 @@ const MAX_FILES_CEILING = 1000;
  */
 const UploadProgress: React.FC<{ percent: number | null }> = ({ percent }) => {
   const { t } = useTranslation();
+  const interrupted = useUploadInterrupted();
+  // Keep a phone or laptop from locking (and suspending the page) mid-upload.
+  useScreenWakeLock(percent !== null);
   if (percent === null) return null;
   const sent = percent >= 100;
   return (
@@ -69,6 +74,11 @@ const UploadProgress: React.FC<{ percent: number | null }> = ({ percent }) => {
           ? t('transfers.uploadProcessing', 'Upload complete, saving the files…')
           : t('transfers.uploadPercent', { defaultValue: 'Uploading… {{percent}}%', percent })}
       </p>
+      {interrupted && (
+        <p className="text-xs text-warning-text" role="status" aria-live="polite">
+          {t('transfers.uploadResuming', 'Connection interrupted – resuming…')}
+        </p>
+      )}
     </div>
   );
 };

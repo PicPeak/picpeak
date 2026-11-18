@@ -43,7 +43,9 @@ function serve({ failChunk = -1 }: { failChunk?: number } = {}) {
       return { data: { uploadId: 'u1', chunkSize: CHUNK, expectedChunks: Math.ceil(fileSize / CHUNK) } };
     }
     if (url.includes('/chunk/')) {
-      if (Number(url.split('/').pop()) === failChunk) throw { response: { status: 500, data: { error: 'boom' } } };
+      // A refusal: a transient failure (5xx, dropped connection) is retried
+      // first, see guestChunkedUpload.resume.test.ts.
+      if (Number(url.split('/').pop()) === failChunk) throw { response: { status: 400, data: { error: 'boom' } } };
       return { data: {} };
     }
     if (url.endsWith('/complete')) return { data: { transfer } };
@@ -180,7 +182,7 @@ describe('adding files to a transfer', () => {
   it('throws when no file landed', async () => {
     serve({ failChunk: 0 });
     await expect(transfersService.uploadFiles(7, [bigFile('film.mp4', 150 * MB)])).rejects.toMatchObject({
-      response: { status: 500 },
+      response: { status: 400 },
     });
   });
 });
