@@ -5,6 +5,23 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.205.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.204.3-beta.0...v3.205.0-beta.0) (2026-11-18)
+
+
+### Features
+
+* **gallery:** one feature toolbox for every layout, Premium and Story included ([#2546](https://github.com/PicPeak/picpeak/issues/2546)) ([518c596](https://github.com/PicPeak/picpeak/commit/518c5967d6264d24f446f266d3525cd59c5ef8d3))
+* **transfers:** select all photos of an event in the transfer picker ([#2555](https://github.com/PicPeak/picpeak/issues/2555)) ([0ab4397](https://github.com/PicPeak/picpeak/commit/0ab439734463a343e37907236867c1a2dcc76885))
+* **transfers:** show the upload percentage on the client upload page ([#2553](https://github.com/PicPeak/picpeak/issues/2553)) ([a4ec6ef](https://github.com/PicPeak/picpeak/commit/a4ec6ef4a20b0a8a27b748b46db769b5b4a49390))
+* **uploads:** resume chunked uploads after a dropped connection or backgrounded page ([#2557](https://github.com/PicPeak/picpeak/issues/2557)) ([856b7cb](https://github.com/PicPeak/picpeak/commit/856b7cbbb28515f8e3166e078805fc716335135e))
+
+
+### Bug Fixes
+
+* **backup:** restore an rsync backup straight from the destination ([#2559](https://github.com/PicPeak/picpeak/issues/2559)) ([f55a7b7](https://github.com/PicPeak/picpeak/commit/f55a7b7c27482088cb65330cd8e7ddebcd2a82b9))
+* **feedback:** lock the photo before recounting its feedback totals ([#2565](https://github.com/PicPeak/picpeak/issues/2565)) ([c6e53a2](https://github.com/PicPeak/picpeak/commit/c6e53a2b78dfb73ffd4d1ba32cd45148514ae82d))
+* **gallery:** keep tile hearts in step with the server, add Remove my likes ([#2562](https://github.com/PicPeak/picpeak/issues/2562)) ([9656854](https://github.com/PicPeak/picpeak/commit/9656854b61cca3d8351fa0e803a973ef08b6a6fd))
+
 ## [3.204.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.204.2-beta.0...v3.204.3-beta.0) (2026-11-17)
 
 
