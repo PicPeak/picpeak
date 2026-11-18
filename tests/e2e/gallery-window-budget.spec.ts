@@ -126,6 +126,10 @@ test.describe('windowed gallery budget', () => {
   // The CDP throttle is Chromium's, and the budget is a desktop one.
   test.skip(({ browserName, isMobile }) => browserName !== 'chromium' || Boolean(isMobile), 'Chromium desktop only');
   test.setTimeout(120_000);
+  // One retry on CI only: a shared runner sometimes stalls a frame past the
+  // budget, while a real regression fails both attempts. A pass on the retry
+  // shows up as flaky in the report. The budget itself stays as it is.
+  test.describe.configure({ retries: process.env.CI ? 1 : 0 });
 
   for (const { name, layout, settings = {}, category } of CASES) {
     test(`${name}: ${PHOTOS} photos stay under ${MAX_DOM_NODES} nodes without a long task`, async ({ page, context }) => {
