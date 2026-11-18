@@ -26,4 +26,19 @@ describe('GalleryCategoryChips', () => {
     expect(row).not.toHaveClass('min-w-max');
     expect(row.parentElement).not.toHaveClass('overflow-x-auto');
   });
+
+  it('lets a long category name wrap inside its own chip', () => {
+    const name = 'Getting ready – bride and bridesmaids at the hotel';
+    render(
+      <GalleryCategoryChips
+        categories={[{ id: 1, name, slug: 'getting-ready' }]}
+        photos={[{ category_id: 1 }]}
+        selectedCategoryId={null}
+        onCategoryChange={vi.fn()}
+      />
+    );
+    const chip = screen.getByRole('button', { name: `${name} (1)` });
+    expect(chip).toHaveClass('max-w-full', 'h-auto', 'whitespace-normal', 'break-words');
+    expect(chip).not.toHaveClass('whitespace-nowrap');
+  });
 });

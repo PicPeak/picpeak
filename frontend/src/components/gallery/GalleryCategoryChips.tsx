@@ -47,7 +47,7 @@ export const GalleryCategoryChips: React.FC<GalleryCategoryChipsProps> = ({
           size="sm"
           onClick={() => onCategoryChange(null)}
           leftIcon={<Grid className="w-3 h-3 md:w-4 md:h-4" />}
-          className="text-xs md:text-sm whitespace-nowrap flex-shrink-0"
+          className="text-xs md:text-sm whitespace-nowrap"
         >
           {hasVideos ? t('gallery.allMedia', 'All media') : t('gallery.allPhotos')} ({photos.length})
         </Button>
@@ -60,7 +60,10 @@ export const GalleryCategoryChips: React.FC<GalleryCategoryChipsProps> = ({
               variant={selectedCategoryId === category.id ? 'primary' : 'outline'}
               size="sm"
               onClick={() => onCategoryChange(category.id)}
-              className="text-xs md:text-sm whitespace-nowrap flex-shrink-0"
+              // Names have no length limit: a long one wraps inside its own
+              // chip instead of running past the edge of a phone screen, and
+              // the chip grows past btn-sm's fixed h-9 to hold the lines.
+              className="text-xs md:text-sm max-w-full h-auto min-h-9 py-1 whitespace-normal break-words text-left"
             >
               {category.name} ({categoryPhotoCount})
             </Button>
