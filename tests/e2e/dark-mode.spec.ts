@@ -268,9 +268,11 @@ test.describe('Force color mode (instance-wide lock)', () => {
       await expect(saveBar.getByText(/unsaved changes|ungespeicherte Änderungen/i)).toBeHidden({ timeout: 10000 });
     };
 
-    await saveForceMode(/Force dark|Dunkel erzwingen/i);
-
     try {
+      // Inside the try: a save that lands but fails a later check still
+      // gets the restore below.
+      await saveForceMode(/Force dark|Dunkel erzwingen/i);
+
       // Load a fresh page so the public-settings fetch picks up the new value.
       // The dashboard, not a reload of Branding: that page has color mode
       // buttons of its own that the toggle locator below would also match.
@@ -288,7 +290,7 @@ test.describe('Force color mode (instance-wide lock)', () => {
       // behind fails every later spec that expects the light default. Through
       // the page, not the API, because PUT /branding writes every branding key
       // and the page sends them all back.
-      await saveForceMode(/No force|Kein/i);
+      await saveForceMode(/^(No force|Kein Zwang)/i);
     }
   });
 });

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { adminApiToken } from './_helpers/admin';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin!234';
@@ -19,11 +20,17 @@ test('admin can update account email via settings page', async ({ page }, testIn
   // The settings page opens on the Features tab; the account card is on General.
   await page.goto('/admin/settings?tab=general');
   const emailInput = page.getByLabel(/Admin (Email|E-Mail)/i);
-  const usernameInput = page.getByLabel(/Admin (Username|Benutzername)/i);
 
   await expect(emailInput).toBeVisible();
-  const originalEmail = await emailInput.inputValue();
-  const originalUsername = await usernameInput.inputValue();
+
+  // The account as it is now, restored through the API at the end: every
+  // later spec signs in with ADMIN_EMAIL, so a changed email left behind
+  // fails them all. Token and profile are read before anything changes.
+  const token = await adminApiToken(page.request);
+  const headers = { Authorization: `Bearer ${token}` };
+  const profileResponse = await page.request.get('/api/admin/auth/profile', { headers });
+  expect(profileResponse.ok(), await profileResponse.text()).toBeTruthy();
+  const original = await profileResponse.json();
 
   // Settings save through the bar pinned to the window bottom, which shows
   // with "You have unsaved changes" until they are saved.
@@ -40,9 +47,10 @@ test('admin can update account email via settings page', async ({ page }, testIn
     await page.reload();
     await expect(emailInput).toHaveValue(newEmail, { timeout: 10000 });
   } finally {
-    await emailInput.fill(originalEmail);
-    await usernameInput.fill(originalUsername);
-    // Unsaved changes only when the fields differ from what is saved.
-    if (await saveBar.getByText(/unsaved changes|ungespeicherte Änderungen/i).waitFor({ timeout: 3000 }).then(() => true, () => false)) await save();
+    const restore = await page.request.put('/api/admin/auth/profile', {
+      headers,
+      data: { username: original.username, email: original.email, credit_name: original.creditName ?? null },
+    });
+    expect(restore.ok(), await restore.text()).toBeTruthy();
   }
 });
