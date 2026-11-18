@@ -106,7 +106,8 @@ test.describe('Admin Dark Mode Toggle', () => {
     }
 
     // Verify the main layout container has dark background
-    const mainContainer = page.locator('.h-screen.bg-neutral-50, .h-screen.dark\\:bg-neutral-950').first();
+    // The layout's background is the bg-canvas token, dark in dark mode.
+    const mainContainer = page.locator('.h-screen.bg-canvas').first();
     const bgColor = await mainContainer.evaluate(el => getComputedStyle(el).backgroundColor);
 
     // In dark mode, background should be very dark (close to black)
@@ -172,11 +173,12 @@ test.describe('Settings Page Dark Mode', () => {
 
     // Go to settings
     await page.goto('/admin/settings');
-    // level 1: the sidebar's "CRM-Settings" group heading matches the regex too.
-    await expect(page.getByRole('heading', { level: 1, name: /Settings|Einstellungen/i })).toBeVisible({ timeout: 10000 });
+    // The page opens on its first section (Features); its heading is the
+    // page's only level-1 heading.
+    const heading = page.locator('main').getByRole('heading', { level: 1 });
+    await expect(heading).toBeVisible({ timeout: 10000 });
 
-    // Verify settings heading has dark text style
-    const heading = page.getByRole('heading', { name: /Settings|Einstellungen/i }).first();
+    // Verify the heading has light text in dark mode
     const headingColor = await heading.evaluate(el => getComputedStyle(el).color);
 
     // In dark mode, text should be light (not dark)
@@ -184,10 +186,11 @@ test.describe('Settings Page Dark Mode', () => {
     const [r, g, b] = headingColor.match(/\d+/g).map(Number);
     expect(r + g + b).toBeGreaterThan(500); // Light colored text
 
-    // Verify tab buttons are visible (use exact: true to avoid matching save buttons)
-    await expect(page.getByRole('button', { name: 'General', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^SEO & Robots$|^SEO$/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Security', exact: true })).toBeVisible();
+    // The sections are links in the settings navigation.
+    const sections = page.getByRole('navigation', { name: /^(Settings|Einstellungen)$/ });
+    await expect(sections.getByRole('link', { name: /^(General|Allgemein)$/ })).toBeVisible();
+    await expect(sections.getByRole('link', { name: /^SEO/ })).toBeVisible();
+    await expect(sections.getByRole('link', { name: /^(Security|Sicherheit)$/ })).toBeVisible();
 
     // Clean up
     const toggleButton = page.getByRole('button', { name: /light mode|Hellmodus/i });
@@ -250,21 +253,26 @@ test.describe('Force color mode (instance-wide lock)', () => {
     let toggle = page.getByRole('button', { name: /dark mode|light mode|Dunkelmodus|Hellmodus/i });
     await expect(toggle).toBeVisible();
 
-    // Force color mode saves on click (BrandingPage handleForceColorModeChange).
-    // Wait for that save rather than also pressing Save: the bulk save is a
-    // second PUT that the reload below can cut off after it has overwritten
-    // the first.
+    // Force color mode is a draft like every branding setting: pick it, then
+    // save through the bar pinned to the window bottom. It reports unsaved
+    // changes only when the pick differs from what is saved.
     const saveForceMode = async (name: RegExp) => {
       await page.goto('/admin/branding');
+      await page.getByRole('button', { name }).click();
+      const saveBar = page.getByRole('region', { name: /Save or discard changes|Änderungen speichern oder verwerfen/i });
+      if (!(await saveBar.getByText(/unsaved changes|ungespeicherte Änderungen/i).waitFor({ timeout: 3000 }).then(() => true, () => false))) return;
       await Promise.all([
         page.waitForResponse((r) => r.url().includes('/api/admin/settings/branding') && r.request().method() === 'PUT' && r.ok()),
-        page.getByRole('button', { name }).click(),
+        saveBar.getByRole('button', { name: /Save changes|Änderungen speichern/i }).click(),
       ]);
+      await expect(saveBar.getByText(/unsaved changes|ungespeicherte Änderungen/i)).toBeHidden({ timeout: 10000 });
     };
 
-    await saveForceMode(/Force dark|Dunkel erzwingen/i);
-
     try {
+      // Inside the try: a save that lands but fails a later check still
+      // gets the restore below.
+      await saveForceMode(/Force dark|Dunkel erzwingen/i);
+
       // Load a fresh page so the public-settings fetch picks up the new value.
       // The dashboard, not a reload of Branding: that page has color mode
       // buttons of its own that the toggle locator below would also match.
@@ -282,7 +290,7 @@ test.describe('Force color mode (instance-wide lock)', () => {
       // behind fails every later spec that expects the light default. Through
       // the page, not the API, because PUT /branding writes every branding key
       // and the page sends them all back.
-      await saveForceMode(/No force|Kein/i);
+      await saveForceMode(/^(No force|Kein Zwang)/i);
     }
   });
 });

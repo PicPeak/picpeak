@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { adminApiToken, publishEvent, waitForPhotosProcessed } from './_helpers/admin';
-import { passGalleryPasswordPrompt } from './_helpers/gallery';
+import { chooseFeedbackFilter, passGalleryPasswordPrompt } from './_helpers/gallery';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 const GALLERY_PASSWORD = process.env.GALLERY_PASSWORD || 'PlaywrightGallery123!';
@@ -207,7 +207,7 @@ test.describe('Gallery feedback filter', () => {
     await expect(tiles.first()).toBeVisible({ timeout: 20000 });
     await expect(tiles).toHaveCount(allPhotosData.photos.length);
 
-    await page.getByRole('button', { name: /Commented/i }).click();
+    await chooseFeedbackFilter(page, /Commented/i);
 
     await expect(tiles).toHaveCount(approvedPhotos.length, { timeout: 20000 });
 

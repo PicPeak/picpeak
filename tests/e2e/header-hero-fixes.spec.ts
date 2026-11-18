@@ -39,6 +39,9 @@ async function createEventWithStyle(
       allow_user_uploads: false,
       allow_downloads: true,
       header_style: headerStyle,
+      // An event's own header style applies only with its own theme; without
+      // it the gallery follows the global Branding theme.
+      custom_theme_enabled: true,
       ...extra,
     },
   });

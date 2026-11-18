@@ -243,7 +243,8 @@ test.describe('Customer portal — login + gallery handoff', () => {
       // The portal switches to the customer's preferred language after login,
       // which a fresh invite can leave on German.
       await expect(page.getByRole('heading', { name: /Your galleries|Ihre Galerien/i })).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText(event.event_name, { exact: false })).toBeVisible({ timeout: 15000 });
+      // The card's heading: the recent-activity feed names the gallery too.
+      await expect(page.getByRole('heading', { name: event.event_name })).toBeVisible({ timeout: 15000 });
 
       // Click → gallery handoff. Watch for the URL change AND the absence
       // of the per-event password prompt. Either of those failing is the
