@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { getApiBaseUrl, buildResourceUrl } from '../url';
+import { getApiBaseUrl, buildResourceUrl, buildAdminPreviewUrl } from '../url';
 const originalLocation = window.location;
 
 const setLocation = (origin: string) => {
@@ -54,5 +54,24 @@ describe('url utilities', () => {
     setLocation('http://127.0.0.1:3000');
     expect(getApiBaseUrl()).toBe('http://127.0.0.1:3001/api');
     expect(buildResourceUrl('/api/gallery/test')).toBe('http://127.0.0.1:3001/api/gallery/test');
+  });
+
+  describe('buildAdminPreviewUrl', () => {
+    it('adds the admin preview flag to a slug share link', () => {
+      expect(buildAdminPreviewUrl('wedding-2026/abc123')).toBe('https://example.com/gallery/wedding-2026/abc123?admin_preview=1');
+    });
+
+    it('appends with & when the share link already has a query', () => {
+      expect(buildAdminPreviewUrl('/gallery/wed?token=abc')).toBe('https://example.com/gallery/wed?token=abc&admin_preview=1');
+    });
+
+    it('keeps a hash after the flag', () => {
+      expect(buildAdminPreviewUrl('https://example.com/gallery/wed#top')).toBe('https://example.com/gallery/wed?admin_preview=1#top');
+    });
+
+    it('returns # for a missing share link', () => {
+      expect(buildAdminPreviewUrl(null)).toBe('#');
+      expect(buildAdminPreviewUrl('')).toBe('#');
+    });
   });
 });
