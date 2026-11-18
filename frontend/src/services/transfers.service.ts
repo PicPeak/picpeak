@@ -156,7 +156,8 @@ function byteProgress(files: File[], onProgress?: (pct: number) => void) {
   return {
     /** Report `sent` bytes of the request in flight on top of the finished ones. */
     report(sent: number) {
-      onProgress?.(Math.min(100, Math.round(((done + sent) / total) * 100)));
+      // Floored: 100 (and the "saving" text) only once every byte is out.
+      onProgress?.(Math.min(100, Math.floor(((done + sent) / total) * 100)));
     },
     /** A request settled (landed or not): its bytes count as handled. */
     finish(bytes: number) {
@@ -167,6 +168,17 @@ function byteProgress(files: File[], onProgress?: (pct: number) => void) {
 }
 
 const sizeOf = (files: File[]) => files.reduce((sum, f) => sum + f.size, 0);
+
+/**
+ * The file bytes a multipart request has sent, from its body progress. A
+ * finished body counts as exactly `bytes`: scaling by loaded / total can land
+ * a hair below it in floating point, and the floored percentage would then
+ * never reach 100 (and the "saving" text) while the server works.
+ */
+export function sentBytes(bytes: number, loaded: number, total: number | undefined): number {
+  if (!total) return 0;
+  return loaded >= total ? bytes : bytes * (loaded / total);
+}
 
 /**
  * Upload `files` into an existing send after the first request: further
@@ -192,7 +204,7 @@ async function uploadRemaining(
     batch.forEach((f) => form.append('files', f));
     try {
       const res = await api.post(`/admin/transfers/${id}/upload-files`, form, {
-        onUploadProgress: (e) => progress.report(e.total ? (sizeOf(batch) * e.loaded) / e.total : 0),
+        onUploadProgress: (e) => progress.report(sentBytes(sizeOf(batch), e.loaded, e.total)),
       });
       // Accepted but not stored: not uploaded, whatever the 200 says.
       failed.push(...(res.data.failed_files || []));
@@ -250,7 +262,7 @@ export const transfersService = {
     files.forEach((f) => form.append('files', f));
     const res = await api.post('/admin/transfers', form, {
       onUploadProgress: (e) => {
-        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+        if (onProgress && e.total) onProgress(Math.floor((e.loaded / e.total) * 100));
       },
     });
     return { ...res.data.transfer, failed_files: res.data.failed_files || [] };
@@ -285,7 +297,7 @@ export const transfersService = {
     form.append('pendingFiles', String(files.length - first.length));
     first.forEach((f) => form.append('files', f));
     const res = await api.post('/admin/transfers', form, {
-      onUploadProgress: (e) => progress.report(e.total ? (sizeOf(first) * e.loaded) / e.total : 0),
+      onUploadProgress: (e) => progress.report(sentBytes(sizeOf(first), e.loaded, e.total)),
     });
     progress.finish(sizeOf(first));
     const created: Transfer = res.data.transfer;
@@ -336,7 +348,7 @@ export const transfersService = {
     files.forEach((f) => form.append('files', f));
     const res = await api.post(`/admin/transfers/${id}/upload-files`, form, {
       onUploadProgress: (e) => {
-        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+        if (onProgress && e.total) onProgress(Math.floor((e.loaded / e.total) * 100));
       },
     });
     return { ...res.data.transfer, failed_files: res.data.failed_files || [] };
@@ -400,7 +412,8 @@ export const transfersService = {
   async uploadChunked(token: string, file: File, onProgress?: (pct: number) => void): Promise<{ uploaded: number }> {
     const res = await uploadFileInChunks<{ uploaded: number }>(`/public/transfer-upload/${token}`, file, {
       initFields: { mimeType: file.type },
-      onBytes: (sent) => onProgress?.(file.size ? Math.round((sent / file.size) * 100) : 100),
+      // Floored: 100 means every byte is out, not 99.5 % of a large file.
+      onBytes: (sent) => onProgress?.(file.size ? Math.floor((sent / file.size) * 100) : 100),
     });
     return res.data;
   },
@@ -409,7 +422,7 @@ export const transfersService = {
     files.forEach((f) => form.append('files', f));
     const res = await api.post(`/public/transfer-upload/${token}`, form, {
       onUploadProgress: (e) => {
-        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+        if (onProgress && e.total) onProgress(Math.floor((e.loaded / e.total) * 100));
       },
     });
     return res.data;
