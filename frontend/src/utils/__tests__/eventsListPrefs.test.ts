@@ -4,8 +4,8 @@ import { getEventsListSort, parseEventsListSort, setEventsListSort } from '../ev
 describe('eventsListPrefs', () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => {
-    localStorage.clear();
     vi.restoreAllMocks();
+    localStorage.clear();
   });
 
   it('reads nothing when nothing is stored', () => {
@@ -35,6 +35,14 @@ describe('eventsListPrefs', () => {
       throw new Error('blocked');
     });
     expect(getEventsListSort()).toBeNull();
+  });
+
+  it('degrades quietly when the storage getter itself is denied', () => {
+    vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError');
+    });
+    expect(getEventsListSort()).toBeNull();
+    expect(() => setEventsListSort({ sortBy: 'event_name', sortOrder: 'asc' })).not.toThrow();
   });
 
   it('parses only complete pairs', () => {

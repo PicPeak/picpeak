@@ -34,8 +34,9 @@ export function parseEventsListSort(by: string | null, dir: string | null): Even
 }
 
 export function getEventsListSort(): EventsListSort | null {
-  if (typeof window === 'undefined' || !window.localStorage) return null;
+  if (typeof window === 'undefined') return null;
   try {
+    // The getter itself throws (SecurityError) when site data is blocked.
     const raw = window.localStorage.getItem(SORT_KEY);
     if (!raw) return null;
     const [by, dir] = raw.split(':');
@@ -46,7 +47,7 @@ export function getEventsListSort(): EventsListSort | null {
 }
 
 export function setEventsListSort(sort: EventsListSort): void {
-  if (typeof window === 'undefined' || !window.localStorage) return;
+  if (typeof window === 'undefined') return;
   if (!parseEventsListSort(sort.sortBy, sort.sortOrder)) return;
   try {
     window.localStorage.setItem(SORT_KEY, `${sort.sortBy}:${sort.sortOrder}`);
