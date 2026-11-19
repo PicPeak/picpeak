@@ -8,7 +8,7 @@ const { cityLine, domesticCountryFor, isUnitedKingdom } = require('../../utils/p
 const businessProfileService = require('../businessProfileService');
 const { buildIssuerBlock, buildRecipientBlock } = require('../_renderContext');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
-const { countedLineItems } = require('../../utils/lineItemTotals');
+const { countedLineItems, isOptionLine } = require('../../utils/lineItemTotals');
 const { SECTIONS_ORDER } = require('./helpers');
 const { canonicalSha256 } = require('../../utils/canonicalJson');
 const content = require('./content');
@@ -263,6 +263,9 @@ function snapshotLineItem(li) {
     is_optional: li.is_optional === true || li.is_optional === 1 || li.is_optional === '1',
     promotion_snapshot: li.promotion_snapshot == null ? null : String(li.promotion_snapshot),
     ...(li.configuration_snapshot ? { configuration_snapshot: typeof li.configuration_snapshot === 'string' ? li.configuration_snapshot : JSON.stringify(li.configuration_snapshot) } : {}),
+    // Migration 371 — an option sub-line. Written only when set, so a contract
+    // without options freezes, and hashes, exactly as before.
+    ...(isOptionLine(li) ? { adds_to_parent: true } : {}),
   };
 }
 

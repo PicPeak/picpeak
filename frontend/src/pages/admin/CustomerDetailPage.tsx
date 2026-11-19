@@ -39,6 +39,7 @@ import { CustomerDocumentsCard } from '../../components/admin/CustomerDocumentsC
 import { CustomerActivityCard } from '../../components/admin/CustomerActivityCard';
 import { PermissionGate } from '../../components/admin/PermissionGate';
 import { formatMoney } from '../../components/admin/LineItemsTable';
+import { formatMoneyMinor } from '../../utils/money';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast, useModal } from '../../hooks';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
@@ -984,7 +985,8 @@ export const CustomerDetailPage: React.FC = () => {
                         {formatMoney(li.unitPriceMinor / 100, monthlyDraft.currency)}
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
-                        {formatMoney(li.lineTotalMinor / 100, monthlyDraft.currency)}
+                        {/* An option is already in the main line's amount, as on the PDF. */}
+                        {li.parentPosition != null && li.addsToParent ? <span className="text-[10px] text-muted">{t('crm.lineItems.optionNote', "included in the main line's price")}</span> : formatMoneyMinor(li.lineTotalMinor, monthlyDraft.currency)}
                       </td>
                     </tr>
                   ))}

@@ -54,7 +54,7 @@ const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { getVatRegisteredSetting } = require('../utils/vatRegistration');
 const {
-  normalizeLineItems, countedLineItems, resolveDiscountLines, extendedLineColumns, parsePromotionSnapshot,
+  normalizeLineItems, countedLineItems, resolveDiscountLines, extendedLineColumns, parsePromotionSnapshot, resolvedParentTotal, isOptionLine,
   isTruthyFlag, isUnselectedOptional,
 } = require('../utils/lineItemTotals');
 const { prepareQuoteLineItems } = require('./quoteCatalogService');
@@ -172,18 +172,11 @@ function computeTotals(lineItems, vatRate, shippingAmountMinor = 0, options = {}
   for (const li of computed) {
     if (li.parent_position != null) continue; // skip sub-items
     const children = childrenByParent.get(ensureInt(li.position)) || [];
-    const pricedChildrenSum = children.reduce(
-      (s, c) => s + (ensureInt(c.unit_price_minor) > 0 ? ensureInt(c.line_total_minor) : 0),
-      0,
-    );
-    if (pricedChildrenSum > 0) {
-      // Override the parent's effective line total with the sum of
-      // its priced sub-items. The parent's own stored unit_price is
-      // intentionally ignored here (the editor disables the parent
-      // input when sub-items become priced — but the backend is the
-      // source of truth either way).
-      li.line_total_minor = pricedChildrenSum;
-    }
+    // Priced sub-items override the parent's own amount (the editor
+    // disables the parent input then — but the backend is the source of
+    // truth either way); priced option sub-items (migration 371) add to it.
+    const resolved = resolvedParentTotal(li, children);
+    if (resolved != null) li.line_total_minor = resolved;
   }
 
   // Phase 2b (#1451): discount lines take their amount from the regular
@@ -237,7 +230,8 @@ function computeTotals(lineItems, vatRate, shippingAmountMinor = 0, options = {}
  * raw qty × unit × discount product). After this call, top-level
  * items whose sub-items include at least one priced row will have
  * their line_total_minor overwritten with the sum of priced
- * sub-items' line_totals.
+ * sub-items' line_totals — or, for option sub-items (migration 371),
+ * their own amount plus the options (utils/lineItemTotals).
  */
 function resolveParentTotalsFromSubItems(items) {
   if (!Array.isArray(items) || items.length === 0) return;
@@ -252,11 +246,8 @@ function resolveParentTotalsFromSubItems(items) {
     const pp = li.parent_position == null || li.parent_position === '' ? null : ensureInt(li.parent_position);
     if (pp != null) continue;
     const children = childrenByParent.get(ensureInt(li.position)) || [];
-    const pricedSum = children.reduce(
-      (s, c) => s + (ensureInt(c.unit_price_minor) > 0 ? ensureInt(c.line_total_minor) : 0),
-      0,
-    );
-    if (pricedSum > 0) li.line_total_minor = pricedSum;
+    const resolved = resolvedParentTotal(li, children);
+    if (resolved != null) li.line_total_minor = resolved;
   }
 }
 
@@ -988,6 +979,8 @@ async function buildRenderContext(quote, lineItems) {
       parentLineItemId: li.parent_line_item_id || null,
       parentPosition: li.parent_position == null ? null : Number(li.parent_position),
       detailsText: li.details_text || null,
+      // Migration 371 — an option adds to its parent; its amount is not repeated.
+      addsToParent: isOptionLine(li),
       addOn: li.line_kind !== 'discount' && isTruthyFlag(li.is_optional)
         && li.parent_line_item_id == null && (li.parent_position == null || li.parent_position === '')
         ? (visibleLines.has(li) ? 'booked' : 'not_booked')
@@ -1104,6 +1097,7 @@ async function renderQuotePdfFromPayload(payload) {
     is_optional: li.is_optional,
     selected: li.selected,
     promotion_snapshot: li.promotion_snapshot || null,
+    adds_to_parent: li.adds_to_parent,
   })));
   return await pdfService.renderQuoteToBuffer(ctx);
 }
@@ -2774,6 +2768,133 @@ function presetCatalogueColumns(payload) {
   return out;
 }
 
+const MAX_SERVICE_OPTIONS = 20;
+
+const isActiveFlag = (value) => value === true || value === 1 || value === '1';
+const sameCurrency = (a, b) => String(a || '').toUpperCase() === String(b || '').toUpperCase();
+
+/**
+ * Migration 371 — whether catalogue service `option` can be an option of a
+ * service in `currency`: active, a plain fixed price, no album product and no
+ * pricing factors (a tick books it at its unit price, with no configuration
+ * or factor dialog), in the same currency.
+ */
+function optionFits(option, currency, factorCounts) {
+  return Boolean(option) && isActiveFlag(option.is_active)
+    && (option.price_mode || 'fixed') === 'fixed'
+    && !option.product_id
+    && !(factorCounts.get(ensureInt(option.id)) > 0)
+    && sameCurrency(option.currency, currency);
+}
+
+/** How many pricing factors each of these services has. */
+async function factorCountsFor(conn, ids) {
+  const counts = new Map();
+  if (!ids.length) return counts;
+  const rows = await conn('quote_preset_factors').whereIn('preset_id', ids).select('preset_id');
+  for (const row of rows) counts.set(ensureInt(row.preset_id), (counts.get(ensureInt(row.preset_id)) || 0) + 1);
+  return counts;
+}
+
+// pg_advisory_xact_lock class for catalogue writes that read or rewrite
+// option lists (migration 371). One key for the whole catalogue: these are
+// rare admin saves, and taking turns rules out every interleaving of a save,
+// an archive and two services listing each other.
+const CATALOGUE_OPTIONS_LOCK = 0x43617453; // CatS
+
+/** On PostgreSQL, take the catalogue's turn for this transaction; SQLite serialises writers already. */
+async function lockCatalogue(conn) {
+  if (conn.client?.config?.client === 'pg') await conn.raw('SELECT pg_advisory_xact_lock(?, 0)', [CATALOGUE_OPTIONS_LOCK]);
+}
+
+/** The option ids a payload asks for: unique, positive, never the service itself. */
+function requestedOptionIds(payload, selfId = null) {
+  const raw = Array.isArray(payload.option_preset_ids) ? payload.option_preset_ids : [];
+  return [...new Set(raw.map((v) => ensureInt(v)).filter((v) => v > 0 && v !== selfId))];
+}
+
+/**
+ * Migration 371 — the stored option list from a payload, checked against
+ * optionFits. Run inside the write's transaction after lockCatalogue. Returns
+ * undefined when the payload leaves the options as they are.
+ */
+async function presetOptionColumn(conn, payload, { selfId = null, currency, storedIds = null }) {
+  if (payload.option_preset_ids === undefined) return undefined;
+  // The list the form loaded, when it sends one: another admin changed the
+  // options since, and saving would write over that change.
+  if (Array.isArray(payload.expected_option_preset_ids) && storedIds) {
+    const expected = payload.expected_option_preset_ids.map((v) => ensureInt(v)).filter((v) => v > 0);
+    if (expected.length !== storedIds.length || expected.some((v, i) => v !== storedIds[i])) {
+      throw new AppError('The options of this service changed since you opened it. Reload and try again.', 409, 'PRESET_OPTIONS_CHANGED');
+    }
+  }
+  const ids = requestedOptionIds(payload, selfId);
+  if (ids.length > MAX_SERVICE_OPTIONS) {
+    throw new AppError(`At most ${MAX_SERVICE_OPTIONS} options`, 400, 'PRESET_OPTIONS_TOO_MANY');
+  }
+  if (ids.length === 0) return null;
+  const rows = await conn('quote_line_item_presets').whereIn('id', ids)
+    .select('id', 'name', 'currency', 'price_mode', 'is_active', 'product_id');
+  const counts = await factorCountsFor(conn, ids);
+  const usable = new Set(rows.filter((r) => optionFits(r, currency, counts)).map((r) => ensureInt(r.id)));
+  const bad = ids.find((id) => !usable.has(id));
+  if (bad != null) {
+    // Name the service: another admin may have changed it since the form loaded.
+    const name = rows.find((r) => ensureInt(r.id) === bad)?.name;
+    throw new AppError(
+      `${name ? `"${String(name).slice(0, 128)}"` : 'An option'} cannot be an option here: it must be an active fixed-price service in the same currency, without a product or pricing factors`,
+      400, 'PRESET_OPTION_INVALID',
+    );
+  }
+  return JSON.stringify(ids);
+}
+
+/**
+ * Take service `id` out of every option list it no longer fits (migration
+ * 371): archived, moved to another currency or a rate, linked to a product,
+ * given pricing factors. Inside the write's transaction, after lockCatalogue.
+ */
+async function pruneOptionReferences(conn, id) {
+  const option = await conn('quote_line_item_presets').where({ id }).first();
+  const counts = await factorCountsFor(conn, [ensureInt(id)]);
+  const parents = await conn('quote_line_item_presets').whereNotNull('option_preset_ids')
+    .select('id', 'currency', 'option_preset_ids');
+  for (const parent of parents) {
+    const ids = presetOptionIds(parent);
+    if (!ids.includes(ensureInt(id)) || optionFits(option, parent.currency, counts)) continue;
+    const kept = ids.filter((v) => v !== ensureInt(id));
+    await conn('quote_line_item_presets').where({ id: parent.id })
+      .update({ option_preset_ids: kept.length ? JSON.stringify(kept) : null });
+  }
+}
+
+/** Keep only the options of service `parentId` that still fit it (its currency changed). */
+async function pruneOwnOptions(conn, parentId) {
+  const parent = await conn('quote_line_item_presets').where({ id: parentId }).first();
+  const ids = presetOptionIds(parent);
+  if (ids.length === 0) return;
+  const rows = await conn('quote_line_item_presets').whereIn('id', ids)
+    .select('id', 'currency', 'price_mode', 'is_active', 'product_id');
+  const counts = await factorCountsFor(conn, ids);
+  const fitting = new Set(rows.filter((r) => optionFits(r, parent.currency, counts)).map((r) => ensureInt(r.id)));
+  const kept = ids.filter((v) => fitting.has(v));
+  if (kept.length === ids.length) return;
+  await conn('quote_line_item_presets').where({ id: parentId })
+    .update({ option_preset_ids: kept.length ? JSON.stringify(kept) : null });
+}
+
+/** Stored option ids (migration 371), tolerant of a missing or bad value. */
+function presetOptionIds(row) {
+  try {
+    const parsed = JSON.parse(row?.option_preset_ids || '[]');
+    if (Array.isArray(parsed)) return parsed.map((v) => ensureInt(v)).filter((v) => v > 0);
+  } catch (_) { /* reported below */ }
+  // Only a hand-edited or damaged value gets here. It reads as no options,
+  // and the service's next save replaces it, so say so.
+  logger.warn('Service option list is not a JSON array; treating it as empty', { presetId: row?.id });
+  return [];
+}
+
 async function createLineItemPreset(payload) {
   const row = {
     ...await require('./albumProducts/crm').presetColumns(db, payload),
@@ -2793,6 +2914,9 @@ async function createLineItemPreset(payload) {
   const factorIds = payload.factor_ids === undefined ? [] : await factors.validatePresetFactors(row, payload.factor_ids);
   await factors.assertDurationFactor(factorIds, row.booking_duration_factor_id);
   const id = await db.transaction(async (trx) => {
+    if (payload.option_preset_ids !== undefined) await lockCatalogue(trx);
+    const options = await presetOptionColumn(trx, payload, { currency: row.currency });
+    if (options !== undefined) row.option_preset_ids = options;
     const inserted = await trx('quote_line_item_presets').insert(row).returning('id');
     const newId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
     await factors.writePresetFactors(trx, newId, factorIds);
@@ -2827,16 +2951,35 @@ async function updateLineItemPreset(id, payload) {
   const validIds = existing ? await factors.validatePresetFactors(after, factorIds) : [];
   if (existing) await factors.assertDurationFactor(validIds, after.booking_duration_factor_id);
   await db.transaction(async (trx) => {
+    if (existing) {
+      await lockCatalogue(trx);
+      // The currency as this write will leave it, read inside the turn: a
+      // concurrent currency change has committed by now.
+      const current = await trx('quote_line_item_presets').where({ id }).first();
+      const currency = updates.currency !== undefined ? updates.currency : current?.currency;
+      const options = await presetOptionColumn(trx, payload, { selfId: ensureInt(id), currency, storedIds: presetOptionIds(current) });
+      if (options !== undefined) updates.option_preset_ids = options;
+    }
     await trx('quote_line_item_presets').where({ id }).update(updates);
     if (existing && payload.factor_ids !== undefined) await factors.writePresetFactors(trx, id, validIds);
+    // A service that stops fitting as an option (archived, another currency
+    // or price type, a product or factors attached) leaves the lists it was in.
+    if (existing) await pruneOptionReferences(trx, ensureInt(id));
+    // And its own options that no longer fit it leave its list.
+    if (existing && updates.option_preset_ids === undefined) await pruneOwnOptions(trx, ensureInt(id));
   });
   return await db('quote_line_item_presets').where({ id }).first();
 }
 
 async function deleteLineItemPreset(id) {
   // Soft delete via is_active = false to preserve historical references.
-  await db('quote_line_item_presets').where({ id })
-    .update({ is_active: formatBoolean(false), updated_at: new Date() });
+  await db.transaction(async (trx) => {
+    await lockCatalogue(trx);
+    await trx('quote_line_item_presets').where({ id })
+      .update({ is_active: formatBoolean(false), updated_at: new Date() });
+    // An archived service is no longer offered as anyone's option.
+    await pruneOptionReferences(trx, ensureInt(id));
+  });
   return { deleted: true };
 }
 
@@ -3109,6 +3252,7 @@ module.exports = {
 
   // Presets
   listLineItemPresets,
+  presetOptionIds,
   createLineItemPreset,
   updateLineItemPreset,
   deleteLineItemPreset,

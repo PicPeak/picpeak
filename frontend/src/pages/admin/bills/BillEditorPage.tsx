@@ -19,6 +19,9 @@ import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { useLeaveGuard } from '../../../contexts/UnsavedChangesContext';
 import { billsService, type InvoiceCreatePayload, type InvoiceQrFormat } from '../../../services/bills.service';
 import { quotesService } from '../../../services/quotes.service';
+import { quoteCatalogService } from '../../../services/quoteCatalog.service';
+import { useFeatureEnabled } from '../../../contexts/FeatureFlagsContext';
+import { usePermission } from '../../../hooks/usePermission';
 import { contractsService } from '../../../services/contracts.service';
 import { businessProfileService } from '../../../services/businessProfile.service';
 import { DecimalInput } from '../../../components/common/DecimalInput';
@@ -39,6 +42,15 @@ import { useAdminAuth } from '../../../contexts/AdminAuthContext';
 import { toast } from 'react-toastify';
 import { fromLocalDateTimeInput, todayIsoDate, toLocalDateTimeInput } from '../../../utils/localDate';
 import { useProjectPrefill } from '../projects/useProjectPrefill';
+
+// Only what an invoice can price on its own: it has no customer / default
+// rate chain, no pricing-factor dialog and no product configuration, so a
+// rate item needs its own pinned rate, and factor-priced and album-product
+// services stay on quotes.
+const invoicePriceable = (item: { priceMode?: string | null; pinnedRateMinor?: number | null }) =>
+  (item.priceMode || 'fixed') === 'fixed' || item.pinnedRateMinor != null;
+// One empty list for "no packages yet", so the memo below doesn't recompute.
+const NO_PACKAGES: never[] = [];
 
 function toMinor(amount: number) {
   return Math.round((Number(amount) || 0) * 100);
@@ -260,6 +272,31 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   // start at 0%. Skips edits and conversions (quote/contract bring their own
   // VAT), and never clobbers a value the admin already touched.
   const { data: acctSettings } = useQuery({ queryKey: ['accounting-settings'], queryFn: () => accountingService.getSettings() });
+  // The service catalogue (quotes feature, quotes.view): add services and
+  // packages from it, and tick a service's options. Same keys as the quote
+  // editor, so both read one cache.
+  const quotesOn = useFeatureEnabled('quotes');
+  const canViewCatalogue = usePermission('quotes.view');
+  const catalogueOn = quotesOn && canViewCatalogue;
+  const { data: liPresets } = useQuery({
+    queryKey: ['line-item-presets'],
+    queryFn: () => quotesService.listLineItemPresets(),
+    enabled: catalogueOn,
+  });
+  const { data: packages = NO_PACKAGES } = useQuery({
+    queryKey: ['quote-catalog', 'packages', 'active'],
+    queryFn: () => quoteCatalogService.listPackages({ activeOnly: true }),
+    enabled: catalogueOn,
+  });
+  const invoicePresets = useMemo(() => (liPresets?.presets || [])
+    .filter((p) => invoicePriceable(p) && !(p.factorIds?.length) && !p.productId), [liPresets]);
+  // A package item with pricing factors or an album product would come in at
+  // its bare base price, as such a service would: leave those packages on
+  // quotes too.
+  const invoicePackages = useMemo(() => packages.filter((pkg) => pkg.items.every((it) => {
+    const preset = (liPresets?.presets || []).find((p) => p.id === it.presetId);
+    return invoicePriceable(it) && !preset?.factorIds?.length && !preset?.productId;
+  })), [packages, liPresets]);
   const { data: outputVatCodes } = useQuery({ queryKey: ['vat-codes', 'output'], queryFn: () => vatCodesService.listOutput() });
   const didSeedVatRef = useRef(false);
   useEffect(() => {
@@ -748,7 +785,9 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
         <LineItemsTable items={lineItems} currency={currency} showDiscount={false}
           vatRate={vatRate / 100} shippingAmount={shipping}
           roundTotal={appSettings?.crm_invoice_round_total === true}
-          vatRoundDown={ukBusiness} onChange={setLineItems} />
+          vatRoundDown={ukBusiness} onChange={setLineItems}
+          presets={catalogueOn ? invoicePresets : []}
+          packages={catalogueOn ? invoicePackages : []} />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
           <VatRateSelect
             label={t('bills.field.vatRate', 'VAT rate %') as string}

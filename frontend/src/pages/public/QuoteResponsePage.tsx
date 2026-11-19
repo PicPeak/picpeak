@@ -632,7 +632,17 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
                         <td
                           className={`py-2 pl-2 sm:pl-4 text-right tabular-nums whitespace-nowrap ${isSub ? 'italic' : ''} ${dim}`}
                         >
-                          {priceless
+                          {/* An option is already in the main line's amount: no sum of its
+                              own, as on the PDF. The unit price column is hidden on a
+                              phone, so the price shows here with the note. */}
+                          {isSub && li.addsToParent
+                            ? (
+                              <span className="not-italic">
+                                <span className="sm:hidden">{formatMoneyMinor(lineTotalMinor, quote.currency)}</span>
+                                <span className="block text-[10px] text-muted-theme whitespace-normal">{t('crm.lineItems.optionNote', "included in the main line's price")}</span>
+                              </span>
+                            )
+                            : priceless
                             ? ''
                             : isSub
                               ? `(${formatMoneyMinor(lineTotalMinor, quote.currency)})`

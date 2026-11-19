@@ -34,7 +34,7 @@ const {
 const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
 const { parseCalendarDate } = require('../utils/dateNormalize');
 const { defaultDocumentDateFormat } = require('../utils/documentDateFormat');
-const { parsePromotionSnapshot } = require('../utils/lineItemTotals');
+const { parsePromotionSnapshot, isOptionLine } = require('../utils/lineItemTotals');
 const { parseInlineMarkdown } = require('../utils/placeholders');
 const pdfFonts = require('./pdf/fonts');
 const { BUILT_IN: THEME_BUILT_IN, builtInTheme } = require('./pdf/theme');
@@ -787,8 +787,10 @@ function drawTitle(doc, title, x, y) {
 function measureTableRow(doc, row, defaults) {
   // Mirrors the library for the row shapes this file builds. It does NOT read
   // `textOptions`, `minHeight`, `maxHeight`, `row.height` or a column without a
-  // width — none of which our rows set. Adding one of those to a row without
-  // teaching this function about it would drift the planner silently.
+  // width. The only textOptions our rows set are a link's `link` and
+  // `underline` (linkedCell), which do not change a row's height; adding any
+  // other of these without teaching this function about it would drift the
+  // planner silently.
   let tallest = 0;
   let padTop = 0;
   let padBottom = 0;
@@ -812,6 +814,47 @@ function measureTableRow(doc, row, defaults) {
  * the foot of the page. The table stops that far short, so the pinned blocks
  * never have to push themselves onto a page of their own.
  */
+// A web address in a line's text or notes (http/https only) is clickable on
+// the PDF. The table draws a cell as one text run, so the link covers the
+// whole cell; a cell that is only the address is also drawn as a link.
+const URL_IN_TEXT = /https?:\/\/[^\s<>"']+/i;
+
+function cellLink(text) {
+  const match = URL_IN_TEXT.exec(String(text || ''));
+  if (!match) return null;
+  // Sentence punctuation after an address is not part of it.
+  const candidate = match[0].replace(/[.,;:!?)\]]+$/, '');
+  try {
+    const url = new URL(candidate);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// A link reads as one in print too: the document's accent when the theme
+// sets one apart from the text colour (a brand colour), else a link blue
+// (7.4:1 on white).
+const LINK_BLUE = '#0b57d0';
+
+function linkColor(doc) {
+  const accent = themeColor(doc, 'accent');
+  return accent && String(accent).toLowerCase() !== String(themeColor(doc, 'text')).toLowerCase()
+    ? accent : LINK_BLUE;
+}
+
+/** Column fields that make a description / notes cell a link, if it has one. */
+function linkedCell(doc, text) {
+  const link = cellLink(text);
+  if (!link) return {};
+  // One word after the sub-item bullet: the cell is the address itself.
+  const onlyLink = !/\s/.test(String(text || '').trim().replace(/^\u2022\s*/, ''));
+  return {
+    textOptions: { link, ...(onlyLink ? { underline: true } : {}) },
+    ...(onlyLink ? { textColor: linkColor(doc) } : {}),
+  };
+}
+
 function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
   const { type, locale, lineItems, currency, intlLocale } = ctx;
   // On a Stornorechnung the line items were snapshotted from the
@@ -966,7 +1009,10 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
       : formatMinor(li.unitPriceMinor, currency, intlLocale);
     const qtyText = isDiscount ? '' : quantityText(li);
     const displayLineTotal = lineTotalSign * Number(li.lineTotalMinor || 0);
-    const lineTotalText = subItemPriceless
+    // An option (migration 371) is already in the main line's amount and
+    // its price stands in the unit column, so the sum cell stays empty.
+    const optionLine = isSubItem && li.addsToParent === true;
+    const lineTotalText = subItemPriceless || optionLine
       ? ''
       : isSubItem || li.excluded
         ? `(${formatMinor(displayLineTotal, currency, intlLocale)})`
@@ -990,7 +1036,7 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
       columns: withVatRateColumn(showDiscount
         ? [
           { text: posLabel,                                          width: widths[0], align: 'left'  },
-          { text: descText,                                          width: widths[1], align: 'left',  textColor: numericColor },
+          { text: descText,                                          width: widths[1], align: 'left',  textColor: numericColor, ...linkedCell(doc, descText) },
           { text: qtyText,                                           width: widths[2], align: 'right', textColor: numericColor },
           { text: subItemPriceless || isDiscount ? '' : `${stripTrailingZeros(li.discountPercent)}%`, width: widths[3], align: 'right', textColor: numericColor },
           { text: unitText,                                          width: widths[4], align: 'right', textColor: numericColor },
@@ -998,7 +1044,7 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
         ]
         : [
           { text: posLabel,                                          width: widths[0], align: 'left'  },
-          { text: descText,                                          width: widths[1], align: 'left',  textColor: numericColor },
+          { text: descText,                                          width: widths[1], align: 'left',  textColor: numericColor, ...linkedCell(doc, descText) },
           { text: qtyText,                                           width: widths[2], align: 'right', textColor: numericColor },
           { text: unitText,                                          width: widths[3], align: 'right', textColor: numericColor },
           { text: lineTotalText,                                     width: widths[4], align: 'right', textColor: numericColor },
@@ -1016,14 +1062,15 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
    * other cells stay empty. No bottom border so the row visually
    * belongs to the item above it.
    */
+  // An underlined link keeps clear of the divider below it.
   const buildDetailsRow = (text) => ({
-    padding: [0, 4, 3, 4],
+    padding: [0, 4, cellLink(text) ? 7 : 3, 4],
     fontSize: Math.max(6, ROW_FONT_SIZE - 1),
     borderWidth: [0, 0, 0, 0],
     columns: withVatRateColumn(showDiscount
       ? [
         { text: '',   width: widths[0], align: 'left' },
-        { text,       width: widths[1], align: 'left', textColor: themeColor(doc, 'muted'), fontName: italicFont },
+        { text,       width: widths[1], align: 'left', textColor: themeColor(doc, 'muted'), fontName: italicFont, ...linkedCell(doc, text) },
         { text: '',   width: widths[2], align: 'right' },
         { text: '',   width: widths[3], align: 'right' },
         { text: '',   width: widths[4], align: 'right' },
@@ -1031,7 +1078,7 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
       ]
       : [
         { text: '',   width: widths[0], align: 'left' },
-        { text,       width: widths[1], align: 'left', textColor: themeColor(doc, 'muted'), fontName: italicFont },
+        { text,       width: widths[1], align: 'left', textColor: themeColor(doc, 'muted'), fontName: italicFont, ...linkedCell(doc, text) },
         { text: '',   width: widths[2], align: 'right' },
         { text: '',   width: widths[3], align: 'right' },
         { text: '',   width: widths[4], align: 'right' },
@@ -1392,7 +1439,9 @@ function drawTotals(doc, ctx, x, y, width) {
   doc.moveTo(x, y).lineTo(right, y).strokeColor(themeColor(doc, 'text')).lineWidth(0.8).stroke();
   y += 6;
 
-  doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(size);
+  // The table leaves the fill colour of its last row behind; a muted sub-item
+  // last would otherwise grey out the whole totals block.
+  doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(size).fillColor(themeColor(doc, 'text'));
   doc.text(t(locale, 'totals_net'), labelX, y, { width: labelCol });
   doc.font(doc._fonts ? doc._fonts.body : FONT_BODY);
   doc.text(formatMinor(totals.netAmountMinor, currency, intlLocale), valueX, y, { width: valueCol, align: 'right' });
@@ -3064,6 +3113,7 @@ function renderContractInProcess(context) {
                   parentLineItemId: li.parent_line_item_id || null,
                   parentPosition: li.parent_position == null ? null : Number(li.parent_position),
                   detailsText: li.details_text || null,
+                  addsToParent: isOptionLine(li),
                   lineKind: li.line_kind || 'item',
                   unit: li.unit || null,
                   promotion: parsePromotionSnapshot(li.promotion_snapshot),

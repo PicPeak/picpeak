@@ -105,6 +105,10 @@ interface ServiceForm {
   detailsText: string;
   /** Pricing factors attached to the service (#2440). */
   factorIds: number[];
+  /** Services offered as options under this one (migration 371). */
+  optionPresetIds: number[];
+  /** The list as loaded: a save sends the options only when they changed. */
+  loadedOptionPresetIds?: number[];
   /** Client booking (#2440): on the public page, and the slot length. */
   bookable: boolean;
   bookingDurationMinutes: number;
@@ -118,7 +122,7 @@ interface ServiceForm {
 
 const emptyService: ServiceForm = {
   name: '', description: '', unitPrice: NaN, currency: 'CHF', quantityDefault: 1, unit: '', priceMode: 'fixed',
-  pinnedRate: NaN, category: '', detailsText: '', factorIds: [],
+  pinnedRate: NaN, category: '', detailsText: '', factorIds: [], optionPresetIds: [],
   bookable: false, bookingDurationMinutes: 60, bookingDurationFactorId: null,
   bookingDepositType: 'none', bookingDepositPercent: NaN, bookingDepositAmount: NaN, galleryUnlock: 'full_payment',
 };
@@ -155,6 +159,60 @@ const ServiceFactorPicker: React.FC<{
   );
 };
 
+/** A service offers at most this many options (backend quoteService MAX_SERVICE_OPTIONS). */
+const MAX_OPTIONS = 20;
+
+/**
+ * Which other services this one offers as options (migration 371): in the
+ * quote and invoice editor each becomes a checkbox on the line, and a tick
+ * adds it as a sub-line whose price adds to the line's own.
+ */
+const ServiceOptionPicker: React.FC<{
+  candidates: LineItemPreset[];
+  selected: number[];
+  /** Names of ticked options that no longer fit (archived, another currency, not a fixed price). */
+  dropped: string[];
+  onChange: (ids: number[]) => void;
+}> = ({ candidates, selected, dropped, onChange }) => {
+  const { t } = useTranslation();
+  return (
+    <fieldset className="md:col-span-2">
+      <legend className={labelCls}>{t('quotes.catalog.options.legend', 'Options')}</legend>
+      {candidates.length === 0 ? (
+        <p className="text-xs text-muted">
+          {t('quotes.catalog.options.none', 'No other fixed-price services in this currency yet.')}
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {candidates.map((p) => (
+            <label key={p.id} className="flex items-center gap-2 text-sm text-body">
+              <input type="checkbox" checked={selected.includes(p.id)}
+                // At most MAX_OPTIONS (the server's cap): further boxes wait until one is unticked.
+                disabled={!selected.includes(p.id) && selected.length >= MAX_OPTIONS}
+                onChange={(e) => onChange(e.target.checked ? [...selected, p.id] : selected.filter((id) => id !== p.id))} />
+              {p.name}
+              <span className="text-xs text-muted tabular-nums">{formatMoneyMinor(Number(p.unitPriceMinor || 0), p.currency)}</span>
+            </label>
+          ))}
+        </div>
+      )}
+      {dropped.length > 0 && (
+        <p className="mt-1 text-xs text-warning-text">
+          {t('quotes.catalog.options.dropped', {
+            count: dropped.length,
+            names: dropped.join(', '),
+            defaultValue: 'No longer fits as an option and is removed on save: {{names}}',
+            defaultValue_other: 'No longer fit as options and are removed on save: {{names}}',
+          })}
+        </p>
+      )}
+      <p className="mt-1 text-xs text-muted">
+        {t('quotes.catalog.options.hint', 'In the quote and invoice editor, each option is a checkbox on this service\'s line. Ticking it adds the option as a sub-line, and its price is added to the line\'s own price. Archiving a service, or changing its currency or price type, removes it from these lists; restoring it does not add it back. Services with an album product or pricing factors cannot be options. At most {{max}} options.', { max: MAX_OPTIONS })}
+      </p>
+    </fieldset>
+  );
+};
+
 const ServicesTab: React.FC = () => {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -182,6 +240,17 @@ const ServicesTab: React.FC = () => {
   }) : null;
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['line-item-presets'] });
+  const presets = data?.presets || [];
+  // Services that can be an option of the one being edited: another active
+  // fixed-price service in its currency. A ticked one that no longer is shows
+  // in the picker's warning and is left out on save, as the server would
+  // refuse it.
+  const fitsAsOption = (p: LineItemPreset, currency: string) => p.isActive
+    && (p.priceMode || 'fixed') === 'fixed'
+    && !p.productId
+    && !(p.factorIds?.length)
+    && String(p.currency || '').toUpperCase() === String(currency || '').toUpperCase();
+  const optionCandidates = form ? presets.filter((p) => p.id !== form.id && fitsAsOption(p, form.currency)) : [];
 
   const edit = (p: LineItemPreset) => setForm({
     id: p.id,
@@ -197,6 +266,8 @@ const ServicesTab: React.FC = () => {
     category: p.category || '',
     detailsText: p.detailsText || '',
     factorIds: p.factorIds || [],
+    optionPresetIds: p.optionPresetIds || [],
+    loadedOptionPresetIds: p.optionPresetIds || [],
     bookable: Boolean(p.bookable),
     bookingDurationMinutes: p.bookingDurationMinutes ?? 60,
     bookingDurationFactorId: p.bookingDurationFactorId ?? null,
@@ -208,6 +279,9 @@ const ServicesTab: React.FC = () => {
 
   const save = async () => {
     if (!form || !form.name.trim()) return;
+    const keptOptions = form.optionPresetIds.filter((id) => optionCandidates.some((p) => p.id === id));
+    const loaded = form.loadedOptionPresetIds;
+    const optionsChanged = !loaded || loaded.length !== keptOptions.length || loaded.some((id, i) => id !== keptOptions[i]);
     const rateBased = form.priceMode !== 'fixed';
     const payload = {
       productId: form.productId || null, productSurcharges: form.productSurcharges || [],
@@ -228,6 +302,13 @@ const ServicesTab: React.FC = () => {
         const factor = factors.find((f) => f.id === id);
         return !factor || factor.currency === form.currency;
       }),
+      // Options must be fitting services (the server checks it too); one that
+      // no longer fits is dropped, not sent. Sent only when the ticks changed
+      // or one is dropped, so an unrelated edit never writes over a list
+      // another admin changed since this form loaded.
+      // With the list it loaded, so the server refuses the save when another
+      // admin changed the options in between, instead of writing over them.
+      ...(optionsChanged ? { optionPresetIds: keptOptions, expectedOptionPresetIds: loaded || [] } : {}),
       ...(bookingOn ? {
         bookable: form.bookable,
         bookingDurationMinutes: form.bookingDurationMinutes || 60,
@@ -248,6 +329,12 @@ const ServicesTab: React.FC = () => {
       toast.success(t('quotes.catalog.savedToast', 'Saved.'));
     } catch (err) {
       toast.error(errorText(err));
+      // An option changed since this list loaded: reload it, so the form shows
+      // which option no longer fits instead of resending the same choice.
+      const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      if (code === 'PRESET_OPTION_INVALID') refresh();
+      // The options changed under this form: reload, and let the admin reopen it.
+      if (code === 'PRESET_OPTIONS_CHANGED') { setForm(null); refresh(); }
     }
   };
 
@@ -262,7 +349,6 @@ const ServicesTab: React.FC = () => {
   };
 
   if (isLoading) return <Loading />;
-  const presets = data?.presets || [];
 
   const priceLabel = (p: LineItemPreset) => {
     if (p.priceMode === 'hour' || p.priceMode === 'day') {
@@ -278,7 +364,7 @@ const ServicesTab: React.FC = () => {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <p className="text-sm text-soft">
-          {t('quotes.catalog.servicesIntro', 'Your services with a fixed price or priced by the hour / day. They appear in the quote editor\'s "Add from preset" list and in packages.')}
+          {t('quotes.catalog.servicesIntro', 'Your services with a fixed price or priced by the hour / day. They appear in the "Add from preset" list of the quote and invoice editor, and in packages.')}
         </p>
         <PermissionGate permission="quotes.manage">
           <Button onClick={() => setForm({ ...emptyService })}><Plus className="w-4 h-4 mr-1" />{t('quotes.catalog.newService', 'New service')}</Button>
@@ -429,6 +515,15 @@ const ServicesTab: React.FC = () => {
                 )}
               </fieldset>
             )}
+            <ServiceOptionPicker
+              candidates={optionCandidates}
+              selected={form.optionPresetIds}
+              dropped={form.optionPresetIds
+                .filter((id) => !optionCandidates.some((p) => p.id === id))
+                .map((id) => presets.find((p) => p.id === id)?.name
+                  || t('quotes.catalog.options.missing', 'Service #{{id}}', { id }))}
+              onChange={(optionPresetIds) => setForm({ ...form, optionPresetIds })}
+            />
             {!form.productId && (
               <ServiceFactorPicker
                 factors={factors.filter((f) => f.currency === form.currency && (f.isActive || form.factorIds.includes(f.id)))}
@@ -459,6 +554,19 @@ const ServicesTab: React.FC = () => {
                     {(p.factorIds?.length ?? 0) > 0 && (
                       <div className="text-xs text-muted">
                         {t('quotes.factors.attachedCount', '{{count}} pricing factors', { count: p.factorIds!.length })}
+                      </div>
+                    )}
+                    {(p.optionPresetIds?.length ?? 0) > 0 && (
+                      <div className="text-xs text-muted">
+                        {t('quotes.catalog.options.count', 'Options: {{names}}', {
+                          names: p.optionPresetIds!.map((id) => {
+                            const option = presets.find((o) => o.id === id);
+                            if (!option) return t('quotes.catalog.options.missing', 'Service #{{id}}', { id });
+                            return fitsAsOption(option, p.currency)
+                              ? option.name
+                              : t('quotes.catalog.options.noLongerFits', '{{name}} (no longer fits)', { name: option.name });
+                          }).join(', '),
+                        })}
                       </div>
                     )}
                   </td>

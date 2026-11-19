@@ -10,7 +10,7 @@
 
 const { db } = require('../database/db');
 const { getAppSetting } = require('../utils/appSettings');
-const { isTruthyFlag, isUnselectedOptional, parsePromotionSnapshot } = require('../utils/lineItemTotals');
+const { isTruthyFlag, isUnselectedOptional, isOptionLine, parsePromotionSnapshot } = require('../utils/lineItemTotals');
 const { toTimestamp } = require('../utils/dateNormalize');
 const { clauseTitle } = require('./contract/renderContext');
 const { toDateOnly } = require('../utils/dateOnly');
@@ -165,6 +165,8 @@ function publicQuoteView(quote, lineItems, customer, profile, tosRequired, tosTe
       parentLineItemId: li.parent_line_item_id || null,
       parentPosition: li.parent_position == null ? null : Number(li.parent_position),
       detailsText: li.details_text || null,
+      // Migration 371 — an option is in its parent's amount; no sum of its own.
+      addsToParent: isOptionLine(li),
       // Migration 220 — discount lines and units, as on the PDF, plus the
       // add-ons the customer books (#1451): an unbooked one stays out of the
       // totals, here as on the server.

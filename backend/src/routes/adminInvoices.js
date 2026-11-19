@@ -333,6 +333,8 @@ const INVOICE_BODY_VALIDATORS = [
   body('lineItems.*.promotionSnapshot').optional({ nullable: true }).isObject(),
   // Pricing-factor snapshot on a factor-priced service line (#2440).
   body('lineItems.*.pricingFactors').optional({ nullable: true }).isObject(),
+  // An option sub-line that adds to its parent's price (migration 371).
+  body('lineItems.*.addsToParent').optional({ nullable: true }).isBoolean(),
 ];
 
 function mapPayloadToService(body) {
@@ -976,6 +978,11 @@ router.put(
       let net = 0;
       for (const it of items) {
         if (it.parent_position == null) net += parseInt(it.line_total_minor, 10) || 0;
+      }
+      // Optional sub-cent reconciliation (crm_invoice_round_total), as on
+      // create: the editor shows it, so the saved net must follow it too.
+      if ((await require('../utils/appSettings').getAppSetting('crm_invoice_round_total', false)) === true) {
+        net = require('../utils/invoiceRounding').cleanNetMinor(items, { parentKey: 'parent_position', positionKey: 'position' });
       }
       const vatRate = Number(payload.vatRate ?? existing.vat_rate ?? 0);
       const vatAmount = vatMinorFor(net, vatRate, { roundDown: await roundsVatDown() });

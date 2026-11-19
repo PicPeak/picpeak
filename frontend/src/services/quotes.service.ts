@@ -60,6 +60,8 @@ export interface QuoteLineItem {
   promotionId?: number | null;
   /** Pricing-factor snapshot on a factor-priced service's parent line (#2440). */
   pricingFactors?: PricingFactorsSnapshot | null;
+  /** An option sub-line: adds its amount to the parent's own price (migration 371). */
+  addsToParent?: boolean;
 }
 
 export interface QuoteSummary {
@@ -261,6 +263,10 @@ export interface LineItemPreset {
   bookingDepositPercent?: number | null;
   bookingDepositMinor?: number | null;
   galleryUnlock?: 'full_payment' | 'deposit' | 'off';
+  /** Services offered as options under this one (migration 371). */
+  optionPresetIds?: number[];
+  /** Write-only: the option list the form loaded; the save is refused if it changed since. */
+  expectedOptionPresetIds?: number[];
 }
 
 export interface QuoteCreatePayload {
@@ -525,6 +531,8 @@ export interface PublicQuoteView {
     lineKind?: LineKind;
     unit?: LineUnit | null;
     promotionName?: string | null;
+    /** An option sub-line (migration 371): in its parent's amount, no sum of its own. */
+    addsToParent?: boolean;
     /** #1451 phase 2 — an optional add-on and whether it's selected. */
     isOptional?: boolean;
     selected?: boolean;

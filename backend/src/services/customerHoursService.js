@@ -368,12 +368,8 @@ async function updateEntry(entryId, payload, adminId) {
         line_total_minor: newLineItem.line_total_minor,
         updated_at: new Date(),
       }, audit);
-      // Recompute invoice totals — same shape as appendToMonthlyDraft.
-      const allItems = await trx('invoice_line_items').where({ invoice_id: entry.invoice_id });
-      let netMinor = 0;
-      for (const li of allItems) {
-        if (li.parent_line_item_id == null) netMinor += Number(li.line_total_minor || 0);
-      }
+      // Recompute invoice totals by the same rule as appendToMonthlyDraft.
+      const { netMinor } = await require('./invoice/drafts').resolveUnissuedInvoiceNet(trx, entry.invoice_id, audit);
       const vatRate = Number(invoice.vat_rate || 0);
       const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: await roundsVatDown(trx) });
       const shippingMinor = Number(invoice.shipping_amount_minor || 0);
@@ -429,11 +425,8 @@ async function deleteEntry(entryId, adminId) {
       await auditedDelete(trx, 'invoice_line_items', { id: entry.invoice_line_item_id }, audit);
     }
     if (entry.invoice_id) {
-      const allItems = await trx('invoice_line_items').where({ invoice_id: entry.invoice_id });
-      let netMinor = 0;
-      for (const li of allItems) {
-        if (li.parent_line_item_id == null) netMinor += Number(li.line_total_minor || 0);
-      }
+      // Same rule as appendToMonthlyDraft (parents resolved, round-total).
+      const { netMinor } = await require('./invoice/drafts').resolveUnissuedInvoiceNet(trx, entry.invoice_id, audit);
       const vatRate = Number(invoice.vat_rate || 0);
       const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: await roundsVatDown(trx) });
       const shippingMinor = Number(invoice.shipping_amount_minor || 0);

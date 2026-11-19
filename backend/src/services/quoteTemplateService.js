@@ -33,7 +33,7 @@ const { AppError } = require('../utils/errors');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { ensureInt, ensureNumber } = require('../utils/numericHelpers');
 const {
-  isTruthyFlag, parsePromotionSnapshot, UNITS, PRICE_MODES, BOUND_TO,
+  isTruthyFlag, isOptionLine, parsePromotionSnapshot, UNITS, PRICE_MODES, BOUND_TO,
 } = require('../utils/lineItemTotals');
 const { unknownPlaceholders, renderPlaceholders, hasConditional } = require('../utils/placeholders');
 const { formatShortDate } = require('../utils/dateFormatter');
@@ -119,6 +119,16 @@ function sanitizeLine(raw) {
     // 'auto' = take the customer's / default rate when the quote is created.
     rateSource: rateBased ? oneOf(line.rateSource, ['auto', 'item', 'manual']) : null,
     detailsText: optionalText(line.detailsText, 2000),
+    // Migration 371 — a sub-item that adds to its parent (a service option),
+    // and the catalogue service a written line came from, so a quote made from
+    // the template offers that service's options again. Its own key, not
+    // cataloguePresetId: publishing re-prices lines with that one. On the
+    // quote it becomes the line's catalogue_preset_id (toServiceLine), which
+    // is safe there: toServiceLine also sets configuration_definition, so the
+    // album-product step never re-prices a written line.
+    addsToParent: line.addsToParent === true,
+    optionsFromPresetId: Number.isSafeInteger(Number(line.optionsFromPresetId)) && Number(line.optionsFromPresetId) > 0
+      ? Number(line.optionsFromPresetId) : null,
   };
 }
 
@@ -475,7 +485,7 @@ function toServiceLine(line, { position, parentPosition = null }) {
     parent_position: parentPosition,
     quantity: line.quantity ?? 1,
     description: line.description,
-    catalogue_preset_id: line.cataloguePresetId || null,
+    catalogue_preset_id: line.cataloguePresetId || line.optionsFromPresetId || null,
     // A published plain line freezes that absence; only republishing consults
     // today's catalogue to introduce a product definition and its current price.
     configuration_definition: line.configurationDefinition || null,
@@ -491,6 +501,7 @@ function toServiceLine(line, { position, parentPosition = null }) {
     price_mode: line.priceMode || null,
     rate_source: line.rateSource || null,
     bound_to: line.boundTo || null,
+    adds_to_parent: !isTopLevel && line.addsToParent === true,
   };
 }
 
@@ -608,6 +619,17 @@ async function createQuoteFromTemplate(templateId, payload, adminId) {
     ? quoteCatalogService.dateOnly(new Date(Date.now() + snapshot.validityDays * 24 * 60 * 60 * 1000))
     : undefined;
 
+  // A written line's service link (optionsFromPresetId) comes from the saved
+  // draft as sent: keep it only where the service exists, so the new quote
+  // never points at a catalogue row that isn't there.
+  const linked = [...new Set(lineItems.map((li) => li.catalogue_preset_id).filter(Boolean).map(Number))];
+  if (linked.length) {
+    const known = new Set((await db('quote_line_item_presets').whereIn('id', linked).pluck('id')).map(Number));
+    for (const li of lineItems) {
+      if (li.catalogue_preset_id && !known.has(Number(li.catalogue_preset_id))) li.catalogue_preset_id = null;
+    }
+  }
+
   const quoteId = await quoteService().createQuote({
     customerAccountId: customer.id,
     currency,
@@ -651,6 +673,8 @@ function quoteLineToDraft(li) {
     boundTo: li.bound_to || null,
     rateSource: fromChain ? 'auto' : (li.rate_source || null),
     detailsText: li.details_text || null,
+    addsToParent: li.parent_line_item_id != null && isOptionLine(li),
+    optionsFromPresetId: li.catalogue_preset_id || null,
   };
 }
 

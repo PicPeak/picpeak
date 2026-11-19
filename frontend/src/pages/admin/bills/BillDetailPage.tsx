@@ -104,7 +104,10 @@ export const BillDetailPage: React.FC = () => {
             {priceless || isDiscount ? '' : formatMoneyMinor(Number(li.unitPriceMinor || 0), currency)}
           </td>
           <td className={`py-2 text-right tabular-nums ${isSub ? 'italic' : ''}`}>
-            {priceless
+            {/* An option is already in the main line's amount, as on the PDF. */}
+            {isSub && li.addsToParent
+              ? <span className="text-[10px] text-muted not-italic">{t('crm.lineItems.optionNote', "included in the main line's price")}</span>
+              : priceless
               ? ''
               : isSub
                 ? `(${formatMoney(Number(li.lineTotalMinor || 0) / 100, currency)})`

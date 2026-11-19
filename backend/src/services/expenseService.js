@@ -416,12 +416,12 @@ async function unwindBilledLine(trx, doc, adminId) {
       await auditedDelete(trx, 'invoices', { id: invoice.id }, audit);
       return;
     }
-    let netMinor = 0;
-    for (const li of allItems) {
-      if (li.parent_line_item_id == null) netMinor += Number(li.line_total_minor || 0);
-    }
+    // Same rule as appendToMonthlyDraft (parents resolved, round-total).
+    const { netMinor } = await require('./invoice/drafts').resolveUnissuedInvoiceNet(trx, invoice.id, audit);
     const vatRate = Number(invoice.vat_rate || 0);
-    const vatMinor = Math.round(netMinor * vatRate / 100);
+    // The same VAT step as the other draft paths (a UK business rounds down).
+    const { vatMinorFor, roundsVatDown } = require('../utils/vatAmount');
+    const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: await roundsVatDown(trx) });
     const shippingMinor = Number(invoice.shipping_amount_minor || 0);
     await auditedUpdate(trx, 'invoices', { id: invoice.id }, {
       net_amount_minor: netMinor,
