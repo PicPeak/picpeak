@@ -7,7 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../services/guests.service', () => ({
   guestsService: { getDownloadTicket: vi.fn(async () => 'ticket-1') },
 }));
+vi.mock('../../services/feedback.service', () => ({
+  feedbackService: { getGalleryFeedbackSettings: vi.fn(async () => ({ require_guest_for_download: false })) },
+}));
 import { guestsService } from '../../services/guests.service';
+import { feedbackService } from '../../services/feedback.service';
 import {
   GUEST_IDENTITY_REQUIRED_CODE, isDownloadIdentityCancelled, setDownloadIdentityGate,
   withDownloadIdentity, withGuestTicket,
@@ -81,8 +85,40 @@ describe('withDownloadIdentity', () => {
 });
 
 describe('withGuestTicket', () => {
-  it('leaves the URL alone when the gallery does not ask', async () => {
+  it('leaves the URL alone outside guest identity mode', async () => {
     expect(await withGuestTicket('party', '/api/gallery/party/download-all')).toBe('/api/gallery/party/download-all');
+    expect(guestsService.getDownloadTicket).not.toHaveBeenCalled();
+    expect(feedbackService.getGalleryFeedbackSettings).not.toHaveBeenCalled();
+  });
+
+  it('leaves the URL alone when the gallery, read again, still does not ask', async () => {
+    const gate = { required: false, ensure: vi.fn(async () => undefined), forget: vi.fn() };
+    setDownloadIdentityGate('party', gate);
+    expect(await withGuestTicket('party', '/api/gallery/party/download-all')).toBe('/api/gallery/party/download-all');
+    vi.mocked(feedbackService.getGalleryFeedbackSettings).mockRejectedValueOnce(new Error('offline'));
+    expect(await withGuestTicket('party', '/api/gallery/party/download-all')).toBe('/api/gallery/party/download-all');
+    expect(gate.ensure).not.toHaveBeenCalled();
+    expect(guestsService.getDownloadTicket).not.toHaveBeenCalled();
+  });
+
+  it('asks and adds a ticket when the setting was switched on after the page loaded', async () => {
+    const gate = { required: false, ensure: vi.fn(async () => undefined), forget: vi.fn() };
+    setDownloadIdentityGate('party', gate);
+    vi.mocked(feedbackService.getGalleryFeedbackSettings).mockResolvedValueOnce({ require_guest_for_download: true });
+    expect(await withGuestTicket('party', '/api/gallery/party/download-all'))
+      .toBe('/api/gallery/party/download-all?guest_ticket=ticket-1');
+    expect(gate.ensure).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts no navigated download when the guest cancels that prompt', async () => {
+    setDownloadIdentityGate('party', {
+      required: false,
+      ensure: vi.fn(async () => { throw new Error('user_cancelled'); }),
+      forget: vi.fn(),
+    });
+    vi.mocked(feedbackService.getGalleryFeedbackSettings).mockResolvedValueOnce({ require_guest_for_download: true });
+    const error = await withGuestTicket('party', '/api/gallery/party/download-all').catch((e) => e);
+    expect(isDownloadIdentityCancelled(error)).toBe(true);
     expect(guestsService.getDownloadTicket).not.toHaveBeenCalled();
   });
 

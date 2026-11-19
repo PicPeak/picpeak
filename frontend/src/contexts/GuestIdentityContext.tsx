@@ -83,6 +83,11 @@ interface GuestIdentityProviderProps {
    * Only takes effect in guest identity mode.
    */
   requireForDownload?: boolean;
+  /**
+   * A customer (portal, or client link / PIN): never asked before a download,
+   * as the server never asks them.
+   */
+  downloadExempt?: boolean;
   children: React.ReactNode;
 }
 
@@ -90,6 +95,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   slug,
   identityMode,
   requireForDownload = false,
+  downloadExempt = false,
   children,
 }) => {
   const queryClient = useQueryClient();
@@ -428,13 +434,15 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
 
   // Downloads ask through utils/downloadIdentity (issue 2503): the download
   // transports sit outside this provider. Registered in guest identity mode
-  // only; the admin preview is never asked, as the server never asks it.
+  // only, and not for the admin preview or a customer, whom the server never
+  // asks.
   useEffect(() => {
-    if (identityMode !== 'guest') return undefined;
+    if (identityMode !== 'guest' || downloadExempt) return undefined;
     const adminPreview = typeof window !== 'undefined'
       && new URLSearchParams(window.location.search).get('admin_preview') === '1';
+    if (adminPreview) return undefined;
     setDownloadIdentityGate(slug, {
-      required: requireForDownload && !adminPreview,
+      required: requireForDownload,
       ensure: async () => { await ensureIdentity('download'); },
       forget: () => {
         clearGuestIdentity(slug);
@@ -443,7 +451,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       },
     });
     return () => setDownloadIdentityGate(slug, null);
-  }, [slug, identityMode, requireForDownload, ensureIdentity]);
+  }, [slug, identityMode, requireForDownload, downloadExempt, ensureIdentity]);
 
   const isRequired = identityMode === 'guest' && !identity;
 

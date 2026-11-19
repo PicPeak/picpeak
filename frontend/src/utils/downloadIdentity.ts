@@ -1,4 +1,5 @@
 import { guestsService } from '../services/guests.service';
+import { feedbackService } from '../services/feedback.service';
 import { DownloadIdentityCancelledError, readErrorBody } from './downloadLimit';
 
 // Guest identity before downloading (issue 2503). A gallery in guest identity
@@ -87,9 +88,21 @@ export async function withDownloadIdentity<T>(slug: string, run: () => Promise<T
  * A download URL the browser navigates to, with a download ticket naming the
  * guest when the gallery asks for one. Such a navigation carries the gallery
  * cookie but not the guest token header.
+ *
+ * Where the page's copy of the setting says the gallery does not ask, the
+ * setting is read again first: the admin may have switched it on since the
+ * page loaded, and a navigated download the server refuses lands on a bare
+ * 403 page instead of the prompt. Only in guest identity mode (a gate is
+ * registered); a failed read keeps the page's copy.
  */
 export async function withGuestTicket(slug: string, url: string): Promise<string> {
-  if (!isDownloadIdentityRequired(slug)) return url;
+  const gate = gates.get(slug);
+  if (!gate) return url;
+  if (!gate.required) {
+    const settings = await feedbackService.getGalleryFeedbackSettings(slug).catch(() => null);
+    if (!settings?.require_guest_for_download) return url;
+    await ensureOrCancel(gate);
+  }
   let ticket: string;
   try {
     ticket = await guestsService.getDownloadTicket(slug);

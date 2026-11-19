@@ -430,15 +430,19 @@ export const galleryService = {
   // Native browser download so the archive streams with Content-Length
   // (real progress bar, no in-memory blob for a multi-GB gallery).
   // A gallery that asks for the guest's name (issue 2503) gets a ticket on
-  // the link: the job was started by an identified guest.
+  // the link: the job was started by an identified guest. Through the prompt
+  // and retry the other downloads use, for an identity the ticket route no
+  // longer accepts (another device, the guest removed meanwhile).
   async downloadJobFile(slug: string, token: string, part?: { index: number; total: number }, selected = false): Promise<void> {
-    const link = document.createElement('a');
     const query = part ? `?part=${part.index}&parts=${part.total}` : selected ? '?selected=1' : '';
-    link.href = await withGuestTicket(slug, withAdminPreview(`/api/gallery/${slug}/download-jobs/${token}/file${query}`));
-    link.setAttribute('download', '');
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    await withDownloadIdentity(slug, async () => {
+      const link = document.createElement('a');
+      link.href = await withGuestTicket(slug, withAdminPreview(`/api/gallery/${slug}/download-jobs/${token}/file${query}`));
+      link.setAttribute('download', '');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    });
     // The server grants the photos once it starts sending; re-read the quota
     // after that rather than racing it.
     if (isGalleryLimited(slug)) window.setTimeout(() => notifyDownloadQuotaChanged(slug), 2000);

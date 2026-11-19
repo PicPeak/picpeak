@@ -266,6 +266,23 @@ describe('guest identity before downloading (issue 2503)', () => {
       expect(res.body.code).toBe(CODE);
     });
 
+    it('does not ask a customer signed in by client link / PIN', async () => {
+      const galleryToken = (extra) => jwt.sign(
+        { eventId, eventSlug: SLUG, type: 'gallery', ...extra },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h', issuer: 'picpeak-auth' },
+      );
+      const res = await request(app).get(`/api/gallery/${SLUG}/download/${photoId}`)
+        .set('Authorization', `Bearer ${galleryToken({ accessLevel: 'client' })}`);
+      expect(res.status).toBe(200);
+      expect((await lastLog('download')).guest_id).toBeNull();
+      // A plain guest session is still asked.
+      const guest = await request(app).get(`/api/gallery/${SLUG}/download/${photoId}`)
+        .set('Authorization', `Bearer ${galleryToken({})}`);
+      expect(guest.status).toBe(403);
+      expect(guest.body.code).toBe(CODE);
+    });
+
     it('issues no ticket without a guest identity', async () => {
       const res = await request(app).post(`/api/gallery/${SLUG}/guest/download-ticket`);
       expect(res.status).toBe(401);

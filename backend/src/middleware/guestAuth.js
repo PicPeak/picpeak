@@ -223,12 +223,13 @@ async function guestFromDownloadTicket(req) {
  * prompt. Otherwise req.downloadGuestId is the guest the download is logged
  * under. With the setting off it stays null and nothing changes: downloads
  * are counted anonymously, as before. Admin preview is never asked, and
- * neither is a customer signed in through the portal: their account already
- * says who they are, and the customer dashboard has no guest prompt.
+ * neither is a customer: signed in through the portal (viaCustomer) or by
+ * client link / PIN (accessLevel 'client'), as galleryActor counts them.
+ * They are not guests, and their gallery shows no guest prompt for downloads.
  */
 async function guestDownloadGate(req, res, next) {
   req.downloadGuestId = null;
-  if (!req.event?.id || req.isAdminPreview || req.viaCustomer) return next();
+  if (!req.event?.id || req.isAdminPreview || req.viaCustomer || req.accessLevel === 'client') return next();
   try {
     // Required lazily: feedbackService is heavy and unrelated to token checks.
     const feedbackService = require('../services/feedbackService');
