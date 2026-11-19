@@ -872,7 +872,12 @@
       "regenerateTitle": "Gerar um novo código?",
       "regenerateConfirm": "O código atual para de funcionar imediatamente, inclusive nos cartões já impressos.",
       "generate": "Gerar código",
-      "edit": "Escolher código"
+      "edit": "Escolher código",
+      "disabled": "Os códigos de evento estão desativados. Ative-os em Configurações do Sistema → Geral.",
+      "remove": "Remover código",
+      "removeTitle": "Remover o código de evento?",
+      "removeConfirm": "O código para de funcionar imediatamente, inclusive em cartões já impressos. O link de compartilhamento continua funcionando.",
+      "removed": "Código de evento removido"
     },
     "selection": {
       "title": "Seleção para os convidados",
@@ -1445,8 +1450,11 @@
       "enableRegistration": "Permitir auto-registro para admins",
       "enableShortGalleryUrls": "Usar URLs curtas para galerias",
       "enableShortGalleryUrlsHelp": "Remove o slug do evento de novos links, mantendo os antigos funcionando.",
+      "eventCodesEnabled": "Códigos de evento",
+      "eventCodesEnabledHelp": "Os convidados abrem uma galeria digitando o código curto em /code. Desativado por padrão. Enquanto estiver ativado, galerias novas recebem um código; uma galeria existente recebe um pela sua página. Uma galeria sem senha pode então ser aberta por qualquer pessoa que adivinhe o código, sem conhecer o link de compartilhamento longo.",
       "rootEventCodePage": "Abrir a página do código do evento na raiz do site",
       "rootEventCodePageHelp": "Quem acessa o endereço sem caminho chega a /code, onde os convidados digitam o código do evento, em vez do login do administrador. Uma página inicial pública ativada continua tendo prioridade.",
+      "rootEventCodePageNeedsCodes": "Requer que os códigos de evento estejam ativados.",
       "maintenanceMode": "Ativar modo de manutenção",
       "language": "Idioma",
       "defaultLanguageHelp": "Idioma exibido aos convidados antes do login",

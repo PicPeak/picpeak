@@ -327,8 +327,11 @@ router.get('/', async (req, res) => {
       seo_meta_noindex: settingsObject.seo_meta_noindex === true,
       seo_meta_nofollow: settingsObject.seo_meta_nofollow === true,
       seo_meta_noai: settingsObject.seo_meta_noai === true,
-      // Root of the site leads to the event-code page /code (issue 2495).
-      general_root_event_code_page: settingsObject.general_root_event_code_page === true,
+      // Event codes (issue 2495): opt-in; the root leads to /code only while
+      // they are on.
+      general_event_codes_enabled: settingsObject.general_event_codes_enabled === true,
+      general_root_event_code_page: settingsObject.general_event_codes_enabled === true
+        && settingsObject.general_root_event_code_page === true,
       // Public integration capabilities only; secret credentials stay server-side.
       photo_sales_checkout_configured: checkout.available.length > 0,
       photo_sales_providers: checkout.available,

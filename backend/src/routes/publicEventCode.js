@@ -6,11 +6,16 @@
  *   GET /:code   200 { path }  |  404 for every miss  |  429 when limited
  *
  * The code is a lookup, not a credential (see services/eventAccessCode.js).
- * A malformed, unknown, expired, archived, draft, paused or deleted code all
- * answer the same 404, so the endpoint tells a guesser nothing. Only misses
- * count against the per-IP budget: a venue's guests behind one address who
- * type valid codes never lock each other out, while guessing stops after a
- * handful of tries.
+ * With event codes switched off (general_event_codes_enabled), and for a
+ * malformed, unknown, expired, archived, draft, paused or deleted code, the
+ * answer is the same 404, so the endpoint tells a guesser nothing.
+ *
+ * Rate limit: only misses count against the per-IP budget, so guests behind
+ * one venue address who type valid codes do not use it up. Once an address
+ * has 20 misses in the window, though, EVERY lookup from it gets 429 until
+ * the window ends, valid codes included. That is deliberate: letting hits
+ * through past the limit would leave guessing unbounded, since a guesser
+ * needs only one hit.
  */
 const express = require('express');
 const rateLimit = require('express-rate-limit');
@@ -21,10 +26,11 @@ const { resolveAccessCode } = require('../services/eventAccessCode');
 
 const router = express.Router();
 
-// 10 misses per 15 minutes per IP (per /64 on IPv6).
+// 20 misses per 15 minutes per IP (per /64 on IPv6); after that the whole
+// address is blocked for the rest of the window (see above).
 const lookupLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 20,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,

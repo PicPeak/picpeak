@@ -1984,7 +1984,12 @@
       "regenerateTitle": "Generate a new code?",
       "regenerateConfirm": "The current code stops working at once, also on cards that are already printed.",
       "generate": "Generate code",
-      "edit": "Choose code"
+      "edit": "Choose code",
+      "disabled": "Event codes are switched off. Turn them on under System Settings → General.",
+      "remove": "Remove code",
+      "removeTitle": "Remove the event code?",
+      "removeConfirm": "The code stops working at once, also on cards that are already printed. The share link keeps working.",
+      "removed": "Event code removed"
     },
     "selection": {
       "title": "Selection for guests",
@@ -2966,8 +2971,11 @@
       "enableRegistration": "Allow self-registration for admins",
       "enableShortGalleryUrls": "Use short gallery URLs",
       "enableShortGalleryUrlsHelp": "Removes the event slug from new share links while keeping existing links working.",
+      "eventCodesEnabled": "Event codes",
+      "eventCodesEnabledHelp": "Guests can open a gallery by typing its short code on /code. Off by default. New galleries get a code while this is on; an existing gallery gets one from its page. A gallery without a password can then be opened by anyone who guesses its code instead of its long share link.",
       "rootEventCodePage": "Open the event-code page at the site root",
       "rootEventCodePageHelp": "Visitors to the bare address land on /code, where guests enter their event code, instead of the admin login. A public landing page, when switched on, still takes precedence.",
+      "rootEventCodePageNeedsCodes": "Needs event codes to be switched on.",
       "useOriginalFilenames": "Use original filenames on download",
       "useOriginalFilenamesHelp": "When on, single-photo and ZIP downloads use the original camera filename (e.g. DSC_1234.jpg) instead of the sanitized name. Storage is unchanged; duplicates in the same event get a numeric suffix.",
       "maintenanceMode": "Enable maintenance mode",

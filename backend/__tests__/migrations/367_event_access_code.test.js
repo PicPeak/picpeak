@@ -1,12 +1,10 @@
 /**
  * Migration 367: events.access_code (issue 2495). Adds the column with a
- * unique index, backfills a distinct code for every gallery that is not
- * archived, keeps codes on a second run, and down() removes it.
+ * unique index and backfills nothing (event codes are opt-in), is safe to run
+ * twice, and down() removes it.
  */
 const knex = require('knex');
 const migration = require('../../migrations/core/367_event_access_code');
-
-const CODE_RE = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
 
 describe('migration 367 on SQLite', () => {
   let db;
@@ -28,35 +26,28 @@ describe('migration 367 on SQLite', () => {
 
   afterEach(async () => { await db.destroy(); });
 
-  it('backfills distinct codes for galleries that are not archived', async () => {
+  it('adds the column without giving any gallery a code', async () => {
     await migration.up(db);
-    const rows = await db('events').orderBy('id');
-    const bySlug = Object.fromEntries(rows.map((r) => [r.slug, r.access_code]));
-    expect(bySlug['live-a']).toMatch(CODE_RE);
-    expect(bySlug['live-b']).toMatch(CODE_RE);
-    expect(bySlug['legacy-null']).toMatch(CODE_RE);
-    expect(bySlug['live-a']).not.toBe(bySlug['live-b']);
-    expect(bySlug.archived).toBeNull();
+    expect(await db.schema.hasColumn('events', 'access_code')).toBe(true);
+    const rows = await db('events');
+    expect(rows).toHaveLength(4);
+    for (const row of rows) expect(row.access_code).toBeNull();
   });
 
-  it('keeps existing codes on a second run and fills only the gaps', async () => {
+  it('is safe to run twice and keeps codes set in between', async () => {
     await migration.up(db);
-    const before = await db('events').orderBy('id');
-    await db('events').insert({ slug: 'new', is_archived: false });
+    await db('events').where({ slug: 'live-a' }).update({ access_code: 'K7M4QX' });
     await migration.up(db);
-    const after = await db('events').orderBy('id');
-    for (const row of before) {
-      expect(after.find((r) => r.id === row.id).access_code).toBe(row.access_code);
-    }
-    expect(after.find((r) => r.slug === 'new').access_code).toMatch(CODE_RE);
+    expect((await db('events').where({ slug: 'live-a' }).first()).access_code).toBe('K7M4QX');
+    expect((await db('events').whereNull('access_code')).length).toBe(3);
   });
 
   it('allows one gallery per code, and many without one', async () => {
     await migration.up(db);
-    const { access_code: taken } = await db('events').where({ slug: 'live-a' }).first();
-    await expect(db('events').where({ slug: 'live-b' }).update({ access_code: taken })).rejects.toThrow(/UNIQUE/);
+    await db('events').where({ slug: 'live-a' }).update({ access_code: 'K7M4QX' });
+    await expect(db('events').where({ slug: 'live-b' }).update({ access_code: 'K7M4QX' })).rejects.toThrow(/UNIQUE/);
     await db('events').insert([{ slug: 'x', is_archived: true }, { slug: 'y', is_archived: true }]);
-    expect((await db('events').whereNull('access_code')).length).toBe(3);
+    expect((await db('events').whereNull('access_code')).length).toBe(5);
   });
 
   it('down() removes the column', async () => {

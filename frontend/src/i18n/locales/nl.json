@@ -756,7 +756,12 @@
       "regenerateTitle": "Nieuwe code aanmaken?",
       "regenerateConfirm": "De huidige code werkt meteen niet meer, ook niet op kaarten die al gedrukt zijn.",
       "generate": "Code aanmaken",
-      "edit": "Code kiezen"
+      "edit": "Code kiezen",
+      "disabled": "Evenementcodes zijn uitgeschakeld. Schakel ze in onder Systeeminstellingen → Algemeen.",
+      "remove": "Code verwijderen",
+      "removeTitle": "Evenementcode verwijderen?",
+      "removeConfirm": "De code werkt meteen niet meer, ook niet op al gedrukte kaarten. De deellink blijft werken.",
+      "removed": "Evenementcode verwijderd"
     },
     "selection": {
       "title": "Selectie voor gasten",
@@ -1317,8 +1322,11 @@
       "enableRegistration": "Zelfregistratie voor beheerders toestaan",
       "enableShortGalleryUrls": "Korte galerij-URL's gebruiken",
       "enableShortGalleryUrlsHelp": "Verwijdert de evenement-slug uit nieuwe deellinks terwijl bestaande links blijven werken.",
+      "eventCodesEnabled": "Evenementcodes",
+      "eventCodesEnabledHelp": "Gasten openen een galerij door de korte code op /code in te voeren. Standaard uit. Zolang dit aan staat, krijgen nieuwe galerijen een code; een bestaande galerij krijgt er een via haar pagina. Een galerij zonder wachtwoord kan dan worden geopend door iedereen die de code raadt, zonder de lange deellink te kennen.",
       "rootEventCodePage": "Evenementcodepagina openen op het hoofdadres",
       "rootEventCodePageHelp": "Bezoekers van het kale adres komen op /code, waar gasten hun evenementcode invoeren, in plaats van op de beheerdersaanmelding. Een ingeschakelde openbare startpagina gaat nog steeds voor.",
+      "rootEventCodePageNeedsCodes": "Vereist dat evenementcodes zijn ingeschakeld.",
       "maintenanceMode": "Onderhoudsmodus inschakelen",
       "language": "Taal",
       "defaultLanguageHelp": "Taal die aan gasten wordt getoond voor het inloggen",

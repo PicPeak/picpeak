@@ -8,25 +8,13 @@
  *                        chose). Stored uppercase. NULL: no code.
  *
  * UNIQUE, so one code never opens two galleries; NULLs do not collide on
- * either engine. Backfills a code for every gallery that is not archived. The
- * alphabet is repeated from services/eventAccessCode.js on purpose: a
- * migration must not change when the service does.
+ * either engine. No backfill: event codes are opt-in
+ * (general_event_codes_enabled, default off), and a code on a gallery without
+ * a password would make it reachable by guessing six characters instead of
+ * its long share token. With the setting on, new galleries get a code and
+ * the admin generates one for an existing gallery.
  */
-const crypto = require('crypto');
-
-const ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const INDEX_NAME = 'events_access_code_unique';
-
-function generate(taken) {
-  for (;;) {
-    let code = '';
-    for (let i = 0; i < 6; i += 1) code += ALPHABET[crypto.randomInt(ALPHABET.length)];
-    if (!taken.has(code)) {
-      taken.add(code);
-      return code;
-    }
-  }
-}
 
 exports.up = async function up(knex) {
   if (!(await knex.schema.hasTable('events'))) return;
@@ -38,19 +26,6 @@ exports.up = async function up(knex) {
     await knex.schema.alterTable('events', (table) => {
       table.unique(['access_code'], { indexName: INDEX_NAME });
     });
-  }
-
-  // Backfill. A re-run only fills rows still without a code. is_archived is a
-  // boolean on PostgreSQL and 0/1 on SQLite; `false` binds as either.
-  const taken = new Set(
-    (await knex('events').whereNotNull('access_code').select('access_code')).map((row) => row.access_code)
-  );
-  const rows = await knex('events')
-    .whereNull('access_code')
-    .where((q) => q.where('is_archived', false).orWhereNull('is_archived'))
-    .select('id');
-  for (const { id } of rows) {
-    await knex('events').where({ id }).whereNull('access_code').update({ access_code: generate(taken) });
   }
 };
 

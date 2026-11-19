@@ -1,6 +1,7 @@
 'use strict';
-// Event codes (issue 2495, migration 367): generate a new code, or set one the
-// admin chose. Gated like the embed link (./embed.js). The public side is
+// Event codes (issue 2495, migration 367): generate a new code, set one the
+// admin chose, or remove it. Codes only resolve while the setting
+// general_event_codes_enabled is on; removing works either way. Gated like the embed link (./embed.js). The public side is
 // routes/publicEventCode.js.
 
 const { db, logActivity } = require('../../database/db');
@@ -9,7 +10,7 @@ const { requirePermission } = require('../../middleware/permissions');
 const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
 const { errorResponse } = require('../../utils/routeHelpers');
 const {
-  normalizeAccessCode, isValidAccessCode, formatAccessCode, assignGeneratedAccessCode, setAccessCode,
+  normalizeAccessCode, isValidAccessCode, formatAccessCode, assignGeneratedAccessCode, setAccessCode, clearAccessCode,
 } = require('../../services/eventAccessCode');
 
 async function loadOwnedEvent(req) {
@@ -60,6 +61,21 @@ module.exports = (router) => {
       res.json(codeState(code));
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to save the event code');
+    }
+  });
+
+  // Remove the code: it stops working at once and the gallery has none.
+  router.delete('/:id/access-code', adminAuth, requirePermission('events.edit'), requireEventOwnership, async (req, res) => {
+    try {
+      const event = await loadOwnedEvent(req);
+      if (!event) return res.status(404).json({ error: 'Event not found' });
+      if (event.access_code) {
+        await clearAccessCode(event.id);
+        await logActivity('event_code_changed', { eventName: event.event_name, removed: true }, event.id, actor(req));
+      }
+      res.json(codeState(null));
+    } catch (error) {
+      errorResponse(res, error, 500, 'Failed to remove the event code');
     }
   });
 };

@@ -1774,7 +1774,12 @@
       "regenerateTitle": "Ustvarim novo kodo?",
       "regenerateConfirm": "Trenutna koda takoj preneha delovati, tudi na že natisnjenih karticah.",
       "generate": "Ustvari kodo",
-      "edit": "Izberi kodo"
+      "edit": "Izberi kodo",
+      "disabled": "Kode dogodkov so izklopljene. Vklopite jih v Sistemske nastavitve → Splošno.",
+      "remove": "Odstrani kodo",
+      "removeTitle": "Odstranim kodo dogodka?",
+      "removeConfirm": "Koda takoj preneha delovati, tudi na že natisnjenih karticah. Povezava za deljenje deluje naprej.",
+      "removed": "Koda dogodka odstranjena"
     },
     "selection": {
       "title": "Izbor za goste",
@@ -2485,8 +2490,11 @@
       "enableRegistration": "Dovoli samoregistracijo administratorjev",
       "enableShortGalleryUrls": "Uporabi kratke URL-je galerij",
       "enableShortGalleryUrlsHelp": "Odstrani slug dogodka iz novih povezav za deljenje, obstoječe povezave pa še naprej delujejo.",
+      "eventCodesEnabled": "Kode dogodkov",
+      "eventCodesEnabledHelp": "Gostje odprejo galerijo tako, da na /code vnesejo njeno kratko kodo. Privzeto izklopljeno. Dokler je vklopljeno, nove galerije dobijo kodo; obstoječa galerija jo dobi na svoji strani. Galerijo brez gesla lahko nato odpre vsak, ki ugane njeno kodo, ne da bi poznal dolgo povezavo za deljenje.",
       "rootEventCodePage": "Na korenskem naslovu odpri stran s kodo dogodka",
       "rootEventCodePageHelp": "Obiskovalci golega naslova pridejo na /code, kjer gostje vnesejo kodo dogodka, namesto na prijavo za skrbnike. Vklopljena javna začetna stran ima še vedno prednost.",
+      "rootEventCodePageNeedsCodes": "Zahteva vklopljene kode dogodkov.",
       "useOriginalFilenames": "Pri prenosu uporabi izvirna imena datotek",
       "useOriginalFilenamesHelp": "Ko je vklopljeno, prenosi posameznih fotografij in ZIP arhivov uporabijo izvirno ime datoteke iz fotoaparata (npr. DSC_1234.jpg) namesto očiščenega imena. Shramba se ne spremeni; dvojniki v istem dogodku dobijo številčno pripono.",
       "maintenanceMode": "Omogoči vzdrževalni način",

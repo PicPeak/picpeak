@@ -1,7 +1,8 @@
 /**
  * The event code card (issue 2495): shows the grouped code, saves a chosen
- * code (409 = taken, said in the field), and stays away from an admin who may
- * not hand out the gallery's links.
+ * code (409 = taken, said in the field), removes a code, stays away from an
+ * admin who may not hand out the gallery's links, and only says that codes
+ * are off while the setting is off.
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -10,8 +11,14 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { EventCodeCard } from '../EventCodeCard';
 import type { Event } from '../../../../types';
 
-const service = vi.hoisted(() => ({ regenerateAccessCode: vi.fn(), setAccessCode: vi.fn() }));
+const service = vi.hoisted(() => ({ regenerateAccessCode: vi.fn(), setAccessCode: vi.fn(), removeAccessCode: vi.fn() }));
 const perms = vi.hoisted(() => ({ edit: true }));
+const publicSettings = vi.hoisted(() => ({ enabled: true }));
+const confirmMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../../hooks/usePublicSettings', () => ({
+  usePublicSettings: () => ({ data: { general_event_codes_enabled: publicSettings.enabled }, isLoading: false }),
+}));
+vi.mock('../../../../components/common/ConfirmDialog', () => ({ useConfirm: () => confirmMock }));
 vi.mock('../../../../services/events.service', () => ({ eventsService: service }));
 vi.mock('../../../../hooks/usePermission', () => ({ usePermission: () => perms.edit }));
 vi.mock('react-i18next', () => ({
@@ -24,7 +31,42 @@ const baseEvent = { id: 9, slug: 'wedding', require_password: true, is_archived:
 const renderCard = (over: Partial<Event> = {}) => render(<EventCodeCard event={{ ...baseEvent, ...over } as Event} />);
 
 describe('EventCodeCard', () => {
-  beforeEach(() => { service.regenerateAccessCode.mockReset(); service.setAccessCode.mockReset(); perms.edit = true; });
+  beforeEach(() => {
+    service.regenerateAccessCode.mockReset();
+    service.setAccessCode.mockReset();
+    service.removeAccessCode.mockReset();
+    confirmMock.mockReset();
+    perms.edit = true;
+    publicSettings.enabled = true;
+  });
+
+  it('only says that codes are off while the setting is off', () => {
+    publicSettings.enabled = false;
+    renderCard();
+    expect(screen.getByTestId('event-code-disabled')).toHaveTextContent('events.eventCode.disabled');
+    expect(screen.queryByTestId('event-code-value')).toBeNull();
+    expect(screen.queryByText('events.eventCode.regenerate')).toBeNull();
+    expect(screen.queryByText('events.eventCode.remove')).toBeNull();
+  });
+
+  it('removes the code after confirmation', async () => {
+    confirmMock.mockResolvedValue(true);
+    service.removeAccessCode.mockResolvedValue({ access_code: null, access_code_display: null });
+    renderCard();
+    fireEvent.click(screen.getByText('events.eventCode.remove'));
+    expect(await screen.findByText('events.eventCode.none')).toBeInTheDocument();
+    expect(service.removeAccessCode).toHaveBeenCalledWith(9);
+    expect(screen.getByText('events.eventCode.generate')).toBeInTheDocument();
+  });
+
+  it('keeps the code when removal is not confirmed', async () => {
+    confirmMock.mockResolvedValue(false);
+    renderCard();
+    fireEvent.click(screen.getByText('events.eventCode.remove'));
+    await Promise.resolve();
+    expect(service.removeAccessCode).not.toHaveBeenCalled();
+    expect(screen.getByTestId('event-code-value')).toHaveTextContent('K7M-4QX');
+  });
 
   it('shows the code grouped', () => {
     renderCard();

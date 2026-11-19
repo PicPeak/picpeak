@@ -855,10 +855,11 @@
     "adminEvents/accessCode.js": {
       "decision": "excluded",
       "signals": [],
-      "reason": "Admin regenerate or set of a gallery's event code for the /code entry page; no usage signal, no codes or counts reported.",
+      "reason": "Admin regenerate, set or removal of a gallery's event code for the /code entry page; no usage signal, no codes or counts reported.",
       "route_signatures": [
         "POST /:id/access-code/regenerate",
-        "PUT /:id/access-code"
+        "PUT /:id/access-code",
+        "DELETE /:id/access-code"
       ]
     },
     "adminEvents/tags.js": {

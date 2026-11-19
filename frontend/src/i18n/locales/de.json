@@ -2732,7 +2732,12 @@
       "regenerateTitle": "Neuen Code erzeugen?",
       "regenerateConfirm": "Der bisherige Code funktioniert sofort nicht mehr, auch auf bereits gedruckten Karten.",
       "generate": "Code erzeugen",
-      "edit": "Code wählen"
+      "edit": "Code wählen",
+      "disabled": "Event-Codes sind ausgeschaltet. Einschalten unter Systemeinstellungen → Allgemein.",
+      "remove": "Code entfernen",
+      "removeTitle": "Event-Code entfernen?",
+      "removeConfirm": "Der Code funktioniert sofort nicht mehr, auch auf bereits gedruckten Karten. Der Freigabelink funktioniert weiter.",
+      "removed": "Event-Code entfernt"
     },
     "selection": {
       "title": "Auswahl für Gäste",
@@ -3714,8 +3719,11 @@
       "enableRegistration": "Selbstregistrierung für Admins erlauben",
       "enableShortGalleryUrls": "Kurze Galerie-Links verwenden",
       "enableShortGalleryUrlsHelp": "Entfernt den Veranstaltungs-Slug aus neuen Freigabelinks und lässt bestehende Links weiterhin funktionieren.",
+      "eventCodesEnabled": "Event-Codes",
+      "eventCodesEnabledHelp": "Gäste öffnen eine Galerie, indem sie ihren kurzen Code auf /code eingeben. Standardmäßig aus. Solange eingeschaltet, erhalten neue Galerien einen Code; eine bestehende Galerie erhält ihn auf ihrer Seite. Eine Galerie ohne Passwort kann dann jeder öffnen, der ihren Code errät, statt den langen Freigabelink zu kennen.",
       "rootEventCodePage": "Startadresse öffnet die Event-Code-Seite",
       "rootEventCodePageHelp": "Wer die reine Adresse aufruft, landet auf /code, wo Gäste ihren Event-Code eingeben, statt auf der Admin-Anmeldung. Eine eingeschaltete öffentliche Startseite hat weiterhin Vorrang.",
+      "rootEventCodePageNeedsCodes": "Setzt eingeschaltete Event-Codes voraus.",
       "useOriginalFilenames": "Originale Dateinamen beim Download verwenden",
       "useOriginalFilenamesHelp": "Wenn aktiviert, verwenden Einzel- und ZIP-Downloads den Original-Dateinamen der Kamera (z. B. DSC_1234.jpg) statt des umbenannten Namens. Der Speicher bleibt unverändert; Duplikate innerhalb einer Veranstaltung erhalten ein numerisches Suffix.",
       "maintenanceMode": "Wartungsmodus aktivieren",

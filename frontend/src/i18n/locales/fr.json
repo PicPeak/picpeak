@@ -769,7 +769,12 @@
       "regenerateTitle": "Générer un nouveau code ?",
       "regenerateConfirm": "Le code actuel cesse immédiatement de fonctionner, y compris sur les cartes déjà imprimées.",
       "generate": "Générer un code",
-      "edit": "Choisir le code"
+      "edit": "Choisir le code",
+      "disabled": "Les codes d’événement sont désactivés. Activez-les sous Paramètres système → Général.",
+      "remove": "Supprimer le code",
+      "removeTitle": "Supprimer le code d’événement ?",
+      "removeConfirm": "Le code cesse immédiatement de fonctionner, y compris sur les cartes déjà imprimées. Le lien de partage continue de fonctionner.",
+      "removed": "Code d’événement supprimé"
     },
     "selection": {
       "title": "Sélection pour les invités",
@@ -1336,8 +1341,11 @@
       "enableRegistration": "Autoriser l'auto-inscription pour les administrateurs",
       "enableShortGalleryUrls": "Utiliser des URL de galerie courtes",
       "enableShortGalleryUrlsHelp": "Supprime le slug de l'événement des nouveaux liens partagés tout en gardant les liens existants fonctionnels.",
+      "eventCodesEnabled": "Codes d’événement",
+      "eventCodesEnabledHelp": "Les invités ouvrent une galerie en saisissant son code court sur /code. Désactivé par défaut. Tant que l’option est active, les nouvelles galeries reçoivent un code ; une galerie existante en reçoit un depuis sa page. Une galerie sans mot de passe peut alors être ouverte par quiconque devine son code, sans connaître le long lien de partage.",
       "rootEventCodePage": "Ouvrir la page du code d’événement à la racine du site",
       "rootEventCodePageHelp": "Les visiteurs de l’adresse nue arrivent sur /code, où les invités saisissent leur code d’événement, au lieu de la connexion administrateur. Une page d’accueil publique activée reste prioritaire.",
+      "rootEventCodePageNeedsCodes": "Nécessite que les codes d’événement soient activés.",
       "useOriginalFilenames": "Utiliser les noms de fichiers originaux lors du téléchargement",
       "useOriginalFilenamesHelp": "Lorsque cette option est activée, les téléchargements de photos uniques et de ZIP utilisent le nom de fichier original de l'appareil photo (ex. : DSC_1234.jpg) au lieu du nom nettoyé. Le stockage reste inchangé ; les doublons dans le même événement reçoivent un suffixe numérique.",
       "maintenanceMode": "Activer le mode maintenance",

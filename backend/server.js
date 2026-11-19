@@ -476,9 +476,10 @@ async function handlePublicSiteRequest(req, res, next) {
       // The root is crawlable (robotsTxtService), so say it here too.
       res.setHeader('X-Robots-Tag', 'noindex');
       // Opt-in (issue 2495): the root leads guests to the event-code entry
-      // page instead of the admin login.
+      // page instead of the admin login, only while event codes are on.
       const { getAppSetting } = require('./src/utils/appSettings');
-      const toCodePage = (await getAppSetting('general_root_event_code_page', false)) === true;
+      const toCodePage = (await getAppSetting('general_event_codes_enabled', false)) === true
+        && (await getAppSetting('general_root_event_code_page', false)) === true;
       res.redirect(302, toCodePage ? '/code' : '/admin/login');
       return;
     }

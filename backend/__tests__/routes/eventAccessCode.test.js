@@ -3,10 +3,13 @@
  *
  * Public: GET /api/public/event-code/:code answers the share link's path for a
  * live gallery and one generic 404 for everything else (unknown, malformed,
- * expired, archived, draft, paused), and stops a guesser after ten misses.
- * Admin: regenerate, set a chosen code (400 invalid, 409 taken), and the code
- * is hidden from an admin who may not hand out the gallery's links.
- * Creation: ensureAccessCode gives a gallery one code and retries a collision.
+ * expired, archived, draft, paused, or event codes switched off), and stops
+ * a guesser after twenty misses.
+ * Admin: regenerate, set a chosen code (400 invalid, 409 taken), remove it,
+ * and the code is hidden from an admin who may not hand out the gallery's
+ * links.
+ * Creation: ensureAccessCode gives a gallery one code only while event codes
+ * are on, and retries a collision.
  */
 const crypto = require('crypto');
 const request = require('supertest');
@@ -26,6 +29,17 @@ describe('event codes (issue 2495)', () => {
   // Each test its own client address, so the miss budget of one test does
   // not leak into the next.
   const freshIp = () => { ipCounter += 1; return `198.51.100.${ipCounter}`; };
+
+  // Event codes are opt-in (general_event_codes_enabled, default off).
+  async function setCodesEnabled(on) {
+    await db('app_settings').where({ setting_key: 'general_event_codes_enabled' }).del();
+    if (on !== undefined) {
+      await db('app_settings').insert({
+        setting_key: 'general_event_codes_enabled', setting_value: JSON.stringify(on),
+        setting_type: 'general', updated_at: new Date().toISOString(),
+      });
+    }
+  }
 
   async function insertEvent(over = {}) {
     const slug = `code-${Math.random().toString(16).slice(2)}`;
@@ -47,6 +61,7 @@ describe('event codes (issue 2495)', () => {
     ({ adminId } = await seedMinimal(db));
     await assignAdminRole(db, adminId, 'super_admin');
     adminToken = mintAdminToken(adminId);
+    await setCodesEnabled(true);
 
     app = express();
     app.set('trust proxy', true);
@@ -112,16 +127,32 @@ describe('event codes (issue 2495)', () => {
       }
     });
 
-    it('stops a client after ten misses, and hits do not count', async () => {
+    it('stops a client after twenty misses, hits do not count, and then valid codes are blocked too', async () => {
       await insertEvent({ access_code: 'HXTS22' });
       const ip = freshIp();
       for (let i = 0; i < 5; i += 1) expect((await lookup('HXTS22', ip)).status).toBe(200);
-      for (let i = 0; i < 10; i += 1) expect((await lookup('NXPE22', ip)).status).toBe(404);
+      for (let i = 0; i < 20; i += 1) expect((await lookup('NXPE22', ip)).status).toBe(404);
       const limited = await lookup('HXTS22', ip);
       expect(limited.status).toBe(429);
       expect(limited.body.code).toBe('EVENT_CODE_RATE_LIMITED');
       // Another client is unaffected.
       expect((await lookup('HXTS22')).status).toBe(200);
+    });
+
+    describe('with event codes switched off', () => {
+      afterEach(() => setCodesEnabled(true));
+
+      it.each([
+        ['never set', undefined, 'QFFC22'],
+        ['off', false, 'QFFC23'],
+      ])('answers the generic 404 for a valid code (setting %s)', async (_label, value, code) => {
+        await insertEvent({ access_code: code });
+        expect((await lookup(code)).status).toBe(200);
+        await setCodesEnabled(value);
+        const res = await lookup(code);
+        expect(res.status).toBe(404);
+        expect(res.body).toEqual({ error: 'Code not found', code: 'EVENT_CODE_NOT_FOUND' });
+      });
     });
   });
 
@@ -167,10 +198,24 @@ describe('event codes (issue 2495)', () => {
       expect(same.status).toBe(200);
     });
 
+    it('removes a code, and it stops resolving', async () => {
+      const id = await insertEvent({ access_code: 'RMVE22' });
+      expect((await lookup('RMVE22')).status).toBe(200);
+      const res = await admin(request(app).delete(`/api/admin/events/${id}/access-code`));
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ access_code: null, access_code_display: null });
+      expect((await db('events').where({ id }).first()).access_code).toBeNull();
+      expect((await lookup('RMVE22')).status).toBe(404);
+      // Removing again is a no-op.
+      expect((await admin(request(app).delete(`/api/admin/events/${id}/access-code`))).status).toBe(200);
+    });
+
     it('requires an admin', async () => {
       const id = await insertEvent({ access_code: 'AUTH22' });
       expect((await request(app).post(`/api/admin/events/${id}/access-code/regenerate`)).status).toBe(401);
       expect((await request(app).put(`/api/admin/events/${id}/access-code`).send({ code: 'ABCD' })).status).toBe(401);
+      expect((await request(app).delete(`/api/admin/events/${id}/access-code`)).status).toBe(401);
+      expect((await db('events').where({ id }).first()).access_code).toBe('AUTH22');
     });
 
     it('treats the code as a gallery link: hidden from an admin who may not hand out the links', () => {
@@ -196,7 +241,17 @@ describe('event codes (issue 2495)', () => {
     // test database.
     const ensureAccessCode = (id) => require('../../src/services/eventAccessCode').ensureAccessCode(id);
 
-    afterEach(() => jest.restoreAllMocks());
+    afterEach(async () => {
+      jest.restoreAllMocks();
+      await setCodesEnabled(true);
+    });
+
+    it('gives a new gallery no code while event codes are off', async () => {
+      await setCodesEnabled(false);
+      const id = await insertEvent({ access_code: null });
+      expect(await ensureAccessCode(id)).toBeNull();
+      expect((await db('events').where({ id }).first()).access_code).toBeNull();
+    });
 
     it('gives a gallery without a code one, and leaves an existing code alone', async () => {
       const id = await insertEvent({ access_code: null });

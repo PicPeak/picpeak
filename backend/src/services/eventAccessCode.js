@@ -11,6 +11,11 @@
  * deactivated, paused or deleted); the row keeps its code, so an expired
  * gallery's code is not handed to a new one while that gallery exists.
  *
+ * Opt-in: nothing resolves and no new gallery gets a code unless the setting
+ * general_event_codes_enabled is on (default off). A gallery without a
+ * password is otherwise protected only by its long share token, and the code
+ * leads to that token.
+ *
  * Uniqueness is the database's: events.access_code has a UNIQUE index and a
  * writer that loses a race retries with a fresh code, which holds across
  * replicas. Writes go through the global `db` outside any transaction, since a
@@ -20,6 +25,7 @@ const crypto = require('crypto');
 const { db } = require('../database/db');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { isGalleryAvailable } = require('../utils/galleryLifecycle');
+const { getAppSetting } = require('../utils/appSettings');
 const { buildShareLinkVariants, getEventShareToken } = require('./shareLinkService');
 const logger = require('../utils/logger');
 
@@ -30,6 +36,12 @@ const MIN_LENGTH = 6;
 const MAX_LENGTH = 12;
 const MAX_ATTEMPTS = 8;
 const CODE_RE = new RegExp(`^[${ALPHABET}]{${MIN_LENGTH},${MAX_LENGTH}}$`);
+const ENABLED_SETTING = 'general_event_codes_enabled';
+
+/** Whether event codes are switched on for this install (default off). */
+async function eventCodesEnabled() {
+  return (await getAppSetting(ENABLED_SETTING, false)) === true;
+}
 
 function generateAccessCode(length = GENERATED_LENGTH) {
   let code = '';
@@ -84,11 +96,13 @@ async function assignGeneratedAccessCode(eventId, { onlyIfMissing = false } = {}
 }
 
 /**
- * Creation hook: give a new gallery its code. Best effort: a gallery without
- * a code still works through its share link, and the admin can generate one.
+ * Creation hook: give a new gallery its code when event codes are on (null
+ * otherwise). Best effort: a gallery without a code still works through its
+ * share link, and the admin can generate one.
  */
 async function ensureAccessCode(eventId) {
   try {
+    if (!(await eventCodesEnabled())) return null;
     return await assignGeneratedAccessCode(eventId, { onlyIfMissing: true });
   } catch (error) {
     logger.warn('Failed to assign an event code', { eventId, error: error.message });
@@ -107,15 +121,21 @@ async function setAccessCode(eventId, code) {
   }
 }
 
+/** Remove the gallery's code; it stops resolving at once. */
+async function clearAccessCode(eventId) {
+  await db('events').where({ id: eventId }).update({ access_code: null });
+}
+
 /**
  * The gallery path a code opens, or null for anything that should read as
- * "not found": a malformed code, an unknown one, or a gallery that is not
- * live. The path is the share link's, so the redirect carries exactly what
+ * "not found": event codes switched off, a malformed code, an unknown one,
+ * or a gallery that is not live. The path is the share link's, so the redirect carries exactly what
  * the share link carries.
  */
 async function resolveAccessCode(input) {
   const code = normalizeAccessCode(input);
   if (!isValidAccessCode(code)) return null;
+  if (!(await eventCodesEnabled())) return null;
   const event = await db('events')
     .where({ access_code: code })
     .first('id', 'slug', 'share_link', 'share_token', 'expires_at', 'is_active', 'is_archived', 'is_draft', 'temporarily_disabled');
@@ -140,6 +160,8 @@ module.exports = {
   ALPHABET,
   MIN_LENGTH,
   MAX_LENGTH,
+  ENABLED_SETTING,
+  eventCodesEnabled,
   generateAccessCode,
   normalizeAccessCode,
   isValidAccessCode,
@@ -147,5 +169,6 @@ module.exports = {
   assignGeneratedAccessCode,
   ensureAccessCode,
   setAccessCode,
+  clearAccessCode,
   resolveAccessCode,
 };

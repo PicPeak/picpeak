@@ -390,6 +390,12 @@ export const eventsService = {
     return response.data;
   },
 
+  // Remove the event code; it stops working at once (admin)
+  async removeAccessCode(id: number): Promise<AccessCodeState> {
+    const response = await api.delete<AccessCodeState>(`/admin/events/${id}/access-code`);
+    return response.data;
+  },
+
   // The websites allowed to frame the embed; empty = any (admin)
   async updateEmbedOrigins(id: number, allowedOrigins: string[]): Promise<EmbedState> {
     const response = await api.patch<EmbedState>(`/admin/events/${id}/embed`, { allowed_origins: allowedOrigins });
