@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.205.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.205.1-beta.0...v3.205.2-beta.0) (2026-11-19)
+
+
+### Bug Fixes
+
+* **gallery:** wrap the category chips instead of a scroll row ([#2577](https://github.com/PicPeak/picpeak/issues/2577)) ([f8f7dca](https://github.com/PicPeak/picpeak/commit/f8f7dca2fdf0e5fae7dc22791361560f414bbce8))
+
 ## [3.205.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.205.0-beta.0...v3.205.1-beta.0) (2026-11-19)
 
 
