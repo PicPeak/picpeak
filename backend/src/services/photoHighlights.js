@@ -30,6 +30,42 @@ const DEFAULT_THRESHOLD = 4;
 /** At most one automatic highlight per this many photos of a category. */
 const PHOTOS_PER_HIGHLIGHT = 8;
 
+/**
+ * The computed set per gallery and viewer kind, so paging through a large
+ * gallery does not rescan (and in 'rating' mode re-aggregate) every photo on
+ * each page request. Keyed by event id + mode + threshold + the visibility
+ * inputs; the entry holds the promise, so concurrent page requests share one
+ * query. Cleared for the event when a pin, an admin rating or the gallery's
+ * highlight settings change on this process. Another replica keeps its entry
+ * until the TTL runs out, so a change there shows up within the TTL: fine
+ * for a tile size. Uploads, deletes and visibility changes ride the TTL too.
+ */
+const CACHE_TTL_MS = 60_000;
+const CACHE_MAX_ENTRIES = 1000;
+const highlightCache = new Map();
+
+function cacheKey(eventId, { mode, threshold }, accessLevel, fullView) {
+  return `${eventId}:${mode}:${threshold}:${accessLevel || ''}:${fullView ? 1 : 0}`;
+}
+
+/** Drop every cached highlight set of this event (all modes and viewers). */
+function invalidateHighlightCache(eventId) {
+  const prefix = `${Number(eventId)}:`;
+  for (const key of highlightCache.keys()) {
+    if (key.startsWith(prefix)) highlightCache.delete(key);
+  }
+}
+
+function pruneHighlightCache(now) {
+  for (const [key, entry] of highlightCache) {
+    if (entry.expiresAt <= now) highlightCache.delete(key);
+  }
+  // Still full of live entries: drop the oldest (Map keeps insertion order).
+  while (highlightCache.size >= CACHE_MAX_ENTRIES) {
+    highlightCache.delete(highlightCache.keys().next().value);
+  }
+}
+
 function highlightSettingsOf(event) {
   const mode = HIGHLIGHT_MODES.includes(event?.highlights_mode) ? event.highlights_mode : 'off';
   const raw = Number(event?.highlights_threshold);
@@ -88,12 +124,30 @@ function selectHighlights(rows, { mode, threshold }) {
 
 /**
  * The highlighted photo ids of a gallery for one viewer. Empty while the
- * gallery's mode is off and for the slideshow, which draws no tiles.
+ * gallery's mode is off and for the slideshow, which draws no tiles. Served
+ * from the cache above when fresh; the returned Set is shared, read it only.
  */
 async function highlightIdsForEvent(event, { accessLevel, fullView = false } = {}) {
   const settings = highlightSettingsOf(event);
   if (settings.mode === 'off' || accessLevel === 'slideshow') return new Set();
 
+  const key = cacheKey(Number(event.id), settings, accessLevel, fullView);
+  const now = Date.now();
+  const cached = highlightCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.promise;
+
+  if (highlightCache.size >= CACHE_MAX_ENTRIES) pruneHighlightCache(now);
+  const promise = computeHighlightIds(event, settings, { accessLevel, fullView });
+  const entry = { promise, expiresAt: now + CACHE_TTL_MS };
+  highlightCache.set(key, entry);
+  // A failed lookup is not cached; the next request tries again.
+  promise.catch(() => {
+    if (highlightCache.get(key) === entry) highlightCache.delete(key);
+  });
+  return promise;
+}
+
+async function computeHighlightIds(event, settings, { accessLevel, fullView }) {
   let query = wherePhotoProcessed(livePhotos(db).where('photos.event_id', event.id));
   query = applyPhotoVisibilityFilter(query, { accessLevel, fullView });
   const columns = ['photos.id', 'photos.folder_id', 'photos.category_id', 'photos.highlight_pin'];
@@ -120,6 +174,7 @@ module.exports = {
   PHOTOS_PER_HIGHLIGHT,
   highlightSettingsOf,
   highlightIdsForEvent,
+  invalidateHighlightCache,
   pinOf,
   selectHighlights,
 };

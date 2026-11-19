@@ -8,6 +8,7 @@
  *    counted against it, highest rating then lowest id; deterministic
  *  - the public payload carries only is_highlight, never an admin rating
  *  - PUT /api/admin/photos/:eventId/photos/:photoId/highlight sets the pin
+ *  - the pick is cached per gallery; a pin, rating or settings change clears it
  */
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'photo-highlights-secret-at-least-32-characters';
@@ -241,6 +242,47 @@ describe('highlights in the gallery and the admin (issue 2549)', () => {
     // A photo of another gallery cannot be pinned through this one.
     expect((await admin(request(app).put(url(other.photoIds[0]))).send({ highlight: true })).status).toBe(404);
     expect((await request(app).put(url(event.photoIds[0])).send({ highlight: true })).status).toBe(401);
+  });
+
+  it('caches the pick across page requests; a pin, a rating or a settings change clears it', async () => {
+    const event = await makeEvent({ highlights_mode: 'rating' });
+    const [rated, plain] = [event.photoIds[0], event.photoIds[5]];
+    await rate(event, rated, 5);
+    // The highlight scan is the only query that aliases the rating aggregate.
+    let scans = 0;
+    const onQuery = (q) => { if (String(q.sql).includes('highlight_ratings')) scans += 1; };
+    const dbModule = require('../../src/database/db').db;
+    dbModule.on('query', onQuery);
+    try {
+      const page = (n) => list(event, { sort: 'filename', order: 'asc', limit: 4, page: n });
+      expect(highlighted(await page(1))).toEqual([rated]);
+      expect(scans).toBe(1);
+      await page(2);
+      await page(3);
+      expect(scans).toBe(1);
+
+      // A pin through the route is visible on the very next request.
+      const on = await admin(request(app).put(`/api/admin/photos/${event.id}/photos/${plain}/highlight`)).send({ highlight: true });
+      expect(on.status).toBe(200);
+      expect(highlighted(await list(event))).toEqual([rated, plain].sort((x, y) => x - y));
+      expect(scans).toBe(2);
+      await list(event);
+      expect(scans).toBe(2);
+
+      // So is an admin star rating through the mark route.
+      const mark = await admin(request(app).put(`/api/admin/photos/${event.id}/photos/${rated}/mark`)).send({ rating: 2 });
+      expect(mark.status).toBe(200);
+      expect(highlighted(await list(event))).toEqual([plain]);
+      expect(scans).toBe(3);
+
+      // And a new threshold through the event update.
+      const put = await admin(request(app).put(`/api/admin/events/${event.id}`)).send({ highlights_threshold: 2 });
+      expect(put.status).toBe(200);
+      expect(highlighted(await list(event))).toEqual([rated, plain].sort((x, y) => x - y));
+      expect(scans).toBe(4);
+    } finally {
+      dbModule.removeListener('query', onQuery);
+    }
   });
 
   it('manual mode shows only the pins', async () => {

@@ -2264,6 +2264,11 @@ module.exports = (router) => {
       if (['source_mode', 'external_path'].some((key) => Object.prototype.hasOwnProperty.call(updates, key))) {
         await require('../../services/externalSelection').recomputeSelection(parseInt(id, 10));
       }
+      // The highlight pick (issue 2549) is cached per gallery; a new mode or
+      // threshold shows at once rather than after the cache's TTL.
+      if (['highlights_mode', 'highlights_threshold'].some((key) => Object.prototype.hasOwnProperty.call(updates, key))) {
+        require('../../services/photoHighlights').invalidateHighlightCache(id);
+      }
 
       // Customer-account assignments (#354). Same skip semantics as POST:
       // ignore when the customer portal flag is off so stale tabs don't

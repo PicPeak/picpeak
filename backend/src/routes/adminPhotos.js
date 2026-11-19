@@ -22,7 +22,7 @@ const {
 } = require('../utils/photoFilterBuilder');
 const feedbackService = require('../services/feedbackService');
 const photoAdminMarksService = require('../services/photoAdminMarksService');
-const { pinOf } = require('../services/photoHighlights');
+const { pinOf, invalidateHighlightCache } = require('../services/photoHighlights');
 const { formatBoolean } = require('../utils/dbCompat');
 const { validateUploadedFiles } = require('../middleware/uploadValidation');
 const {
@@ -918,6 +918,8 @@ router.put('/:eventId/photos/:photoId/mark', adminAuth, requirePermission('photo
     const result = await photoAdminMarksService.setMark(
       parseInt(eventId, 10), photoId, req.admin.id, mark,
     );
+    // A rating can make or unmake an automatic highlight (issue 2549).
+    if (Object.prototype.hasOwnProperty.call(mark, 'rating')) invalidateHighlightCache(eventId);
 
     capabilityEvidence(res, 'photo_admin_marks');
     res.json({ success: true, mark: result });
@@ -954,6 +956,7 @@ router.put('/:eventId/photos/:photoId/highlight', adminAuth, requirePermission('
     if (!updated) {
       return res.status(404).json({ error: 'Photo not found' });
     }
+    invalidateHighlightCache(eventId);
     res.json({ success: true, highlight_pin: value });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to save highlight');
