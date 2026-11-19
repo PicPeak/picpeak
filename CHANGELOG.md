@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.205.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.205.0-beta.0...v3.205.1-beta.0) (2026-11-19)
+
+
+### Bug Fixes
+
+* **email-templates:** repair translated templates whose placeholders are never filled ([#2575](https://github.com/PicPeak/picpeak/issues/2575)) ([7c706af](https://github.com/PicPeak/picpeak/commit/7c706af9705c45c6cc64f1061e32af393f800215))
+* **events:** keep the galleries list sort when it is opened without one ([#2574](https://github.com/PicPeak/picpeak/issues/2574)) ([f0f5b6a](https://github.com/PicPeak/picpeak/commit/f0f5b6ab0a5a838d562cf241026223606e59ce7e))
+
 ## [3.205.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.204.3-beta.0...v3.205.0-beta.0) (2026-11-18)
 
 
