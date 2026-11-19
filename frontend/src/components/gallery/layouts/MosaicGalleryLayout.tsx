@@ -13,6 +13,7 @@ import { densityColumnDelta, useGridDensity } from '../gridDensity';
 import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { boxStyle, ghostBox, gridBoxStyle, useMeasuredWindow, type TileBox } from './measuredWindow';
 import { useViewerLikes } from './optimisticLikes';
+import { premiumTileSize } from './premiumGeometry';
 
 /**
  * Mosaic Gallery Layout
@@ -36,14 +37,15 @@ const MOSAIC_TILE_CLASS = 'photo-card relative group cursor-pointer overflow-hid
 const mosaicAspectRatio = (photo: Photo) => ((photo.width && photo.height) ? photo.width / photo.height : 1);
 
 /**
- * The tile's own style. A highlight (issue 2549) takes a full row across the
- * columns, cropped around its focal point to at most half as tall as wide, so
- * a portrait does not fill the screen. Columns cannot be widened one by one,
- * so a full row is the larger tile this layout has.
+ * The tile's own style. A highlight (issue 2549) is taller in its own column,
+ * as in Premium, cropped around its focal point: a tile spanning the columns
+ * would leave holes where the columns above it end unevenly.
  */
-export const mosaicTileStyle = (photo: Photo): React.CSSProperties => (photo.is_highlight
-  ? { breakInside: 'avoid', columnSpan: 'all', aspectRatio: Math.max(mosaicAspectRatio(photo), 2).toString() }
-  : { breakInside: 'avoid', aspectRatio: mosaicAspectRatio(photo).toString() });
+export const mosaicTileStyle = (photo: Photo): React.CSSProperties => {
+  if (!photo.is_highlight) return { breakInside: 'avoid', aspectRatio: mosaicAspectRatio(photo).toString() };
+  const { width, height } = premiumTileSize({ width: photo.width || 1, height: photo.height || 1, is_highlight: true });
+  return { breakInside: 'avoid', aspectRatio: (width / height).toString() };
+};
 
 interface MosaicPhotoProps {
   photo: Photo;

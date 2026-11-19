@@ -100,10 +100,11 @@ describe('Mosaic tiles', () => {
     expect(tile(2000, 3000, false)).toEqual({ breakInside: 'avoid', aspectRatio: String(2000 / 3000) });
   });
 
-  it('give a highlight a full row, at most half as tall as wide', () => {
-    expect(tile(4000, 3000, true)).toEqual({ breakInside: 'avoid', columnSpan: 'all', aspectRatio: '2' });
-    expect(tile(2000, 3000, true).aspectRatio).toBe('2');
-    expect(tile(3000, 1000, true).aspectRatio).toBe('3');
+  it('make a highlight half as tall again in its own column, never narrower than 1:2', () => {
+    expect(tile(3000, 2000, true)).toEqual({ breakInside: 'avoid', aspectRatio: '1' });
+    expect(tile(2000, 3000, true)).toEqual({ breakInside: 'avoid', aspectRatio: '0.5' });
+    expect(tile(3000, 1000, true).aspectRatio).toBe('2');
+    expect(tile(3000, 1000, true)).not.toHaveProperty('columnSpan');
   });
 });
 
