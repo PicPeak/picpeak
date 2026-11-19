@@ -8,7 +8,7 @@ import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
 import { Button } from '../../common';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
-import type { Photo } from '../../../types';
+import type { ChapterMarkerStyle, Photo, PhotoCategory } from '../../../types';
 import { STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { feedbackService } from '../../../services/feedback.service';
 import { BulkRatingPopover } from '../BulkRatingPopover';
@@ -23,7 +23,8 @@ import {
   StoryCarousel,
   StoryFixedGrid,
   StoryJustifiedGrid,
-  StoryScrollToTop
+  StoryScrollToTop,
+  StoryChapterMarker
 } from './story';
 import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { TIMELINE_GROUP_WINDOW_MIN_PHOTOS } from './gridWindow';
@@ -51,6 +52,7 @@ interface PhotosByCategory {
 
 interface CategoryScene {
   id: string;
+  categoryId?: number | string | null;
   title: string;
   subtitle?: string;
   type: 'grid' | 'carousel';
@@ -67,6 +69,9 @@ interface GalleryStoryLayoutProps extends BaseGalleryLayoutProps {
   /** Footer title and text from the theme; empty keeps the defaults. */
   storyFooterTitle?: string;
   storyFooterText?: string;
+  /** Chapter markers (issue 2548): the gallery's categories and how to show their markers. */
+  categories?: PhotoCategory[];
+  chapterMarkerStyle?: ChapterMarkerStyle;
 }
 
 /** A theme string as plain text: trimmed and clamped, '' when unusable. */
@@ -114,6 +119,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   storyShowFilenames = false,
   storyFooterTitle,
   storyFooterText,
+  categories,
+  chapterMarkerStyle = 'off',
   onLogout,
   showBackToAccount = false,
   onManageGallery,
@@ -216,6 +223,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     // Convert to scenes with alternating types
     return Object.entries(photosByCategory).map(([categoryName, categoryPhotos], index) => ({
       id: `scene-${index}`,
+      categoryId: categoryName ? categoryPhotos[0].category_id : null,
       title: categoryName,
       subtitle: `${categoryPhotos.length} ${t('gallery.photos', 'photos')}`,
       // Alternate between grid and carousel
@@ -223,6 +231,26 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       photos: categoryPhotos
     }));
   }, [photos, t]);
+
+  // Chapter markers (issue 2548): the server only attaches `chapter` to a
+  // category that is part of the storyline while the gallery shows them.
+  const chapterMarkerFor = (scene: CategoryScene): React.ReactNode => {
+    if (chapterMarkerStyle === 'off' || scene.categoryId == null) return undefined;
+    const category = categories?.find((c) => String(c.id) === String(scene.categoryId));
+    if (!category?.chapter) return undefined;
+    const heroPhoto = category.hero_photo_id != null
+      ? photos.find((p) => p.id === category.hero_photo_id) || null
+      : null;
+    return (
+      <StoryChapterMarker
+        category={category}
+        chapter={category.chapter}
+        variant={chapterMarkerStyle}
+        heroPhoto={heroPhoto}
+        slug={slug}
+      />
+    );
+  };
 
   // #1160: on a folder-only root this component renders its shell with an empty
   // scope, so fall back to the event-wide count rather than announcing 0 Photos
@@ -808,6 +836,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               title={scene.title}
               subtitle={scene.subtitle}
               fullWidth={scene.type === 'carousel'}
+              header={chapterMarkerFor(scene)}
             >
               {scene.type === 'carousel' ? (
                 <StoryCarousel

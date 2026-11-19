@@ -206,6 +206,8 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     download_limit: event.download_limit || 0,
     default_photo_sort: event.default_photo_sort || 'upload_date_desc',
     videos_first: truthy(event.videos_first),
+    chapter_marker_style: event.chapter_marker_style === 'divider' || event.chapter_marker_style === 'hero'
+      ? event.chapter_marker_style : 'off',
     // Photo sales pricing for paid galleries.
     is_priced: truthy(event.is_priced),
     free_photo_count: Number(event.free_photo_count ?? 0),
@@ -296,6 +298,7 @@ export const SECTION_OF_FIELD: Record<keyof EventFields, SettingsSectionKey> = {
   hero_photo_id: 'appearance',
   og_image_share_enabled: 'appearance',
   hero_image_anchor: 'appearance',
+  chapter_marker_style: 'appearance',
   hero_logo_visible: 'appearance',
   hero_logo_size: 'appearance',
   hero_logo_position: 'appearance',
@@ -457,6 +460,7 @@ function requestFields(f: EventFields): Record<string, unknown> {
     hero_photo_id: f.hero_photo_id,
     og_image_share_enabled: f.og_image_share_enabled,
     hero_image_anchor: f.hero_image_anchor,
+    chapter_marker_style: f.chapter_marker_style,
     hero_logo_visible: f.hero_logo_visible,
     hero_logo_size: f.hero_logo_size,
     hero_logo_position: f.hero_logo_position,

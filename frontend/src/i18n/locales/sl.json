@@ -1705,6 +1705,18 @@
     }
   },
   "categories": {
+    "chapter": {
+      "edit": "Oznaka poglavja",
+      "saved": "Oznaka poglavja shranjena",
+      "saveFailed": "Oznake poglavja ni bilo mogoče shraniti",
+      "heading": "Naslov",
+      "time": "Čas",
+      "location": "Kraj",
+      "subheading": "Podnaslov",
+      "useSuggestion": "Uporabi {{time}} (prva fotografija)",
+      "hint": "Prikazano nad to kategorijo, ko galerija prikazuje oznake poglavij (Nastavitve → Videz). Samo v tej galeriji.",
+      "clear": "Odstrani oznako"
+    },
     "title": "Kategorije fotografij",
     "addCategory": "Dodaj kategorijo",
     "eventSpecificCategories": "Kategorije za dogodek",
@@ -1746,6 +1758,13 @@
     "nestedFoldersHint": "Mape znotraj map upravljate v vrstici map na zavihku Fotografije."
   },
   "events": {
+    "chapterMarkers": {
+      "label": "Oznake poglavij",
+      "off": "Izklopljeno",
+      "divider": "Ločilna črta",
+      "hero": "Pasica s sliko kategorije",
+      "help": "V postavitvi Story nad vsako kategorijo prikaže naslov, čas, kraj in podnaslov. Vnesete jih za vsako kategorijo pod Fotografije → Kategorije. Pasica brez slike kategorije se prikaže kot ločilna črta."
+    },
     "selection": {
       "title": "Izbor za goste",
       "help": "Navedite podmapo te mape, na primer »gallery«. Povezava do galerije in njena koda QR nato prikazujeta le fotografije v tej podmapi. Polna povezava in dostop za stranko prikazujeta vse fotografije mape.",

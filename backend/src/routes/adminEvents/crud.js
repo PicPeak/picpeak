@@ -1346,6 +1346,8 @@ module.exports = (router) => {
     ]),
     // Videos ahead of photos in the guest gallery (issue 2263).
     body('videos_first').optional().isBoolean(),
+    // Chapter markers above the categories (issue 2548).
+    body('chapter_marker_style').optional().isIn(['off', 'divider', 'hero']),
     // Per-event promotional override (#440). Three-way mode:
     //   inherit → fall back to global branding_promo_markdown
     //   custom  → render this event's promo_markdown verbatim

@@ -479,6 +479,107 @@
   letter-spacing: 0.05em;
 }
 
+/* Chapter markers (issue 2548): heading, "time · location", subheading. */
+.story-chapter {
+  margin-bottom: 3rem;
+}
+
+.story-chapter-heading {
+  /* Clears the fixed nav when a #chapter-… link jumps here. */
+  scroll-margin-top: 6rem;
+  font-size: 2.25rem;
+  line-height: 1.15;
+  color: var(--story-primary);
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 768px) {
+  .story-chapter-heading {
+    font-size: 3rem;
+  }
+}
+
+.story-chapter-meta {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--story-foreground);
+  overflow-wrap: anywhere;
+}
+
+.story-chapter-subheading {
+  margin-top: 0.5rem;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-style: italic;
+  font-size: 1.125rem;
+  color: var(--story-muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.story-chapter-divider {
+  padding: 1.5rem 0;
+  border-top: 1px solid var(--story-border);
+  border-bottom: 1px solid var(--story-border);
+}
+
+/* A carousel scene is full-bleed; keep its marker on the page gutter. */
+.story-scene.full-width .story-chapter-divider {
+  margin-left: 1rem;
+  margin-right: 1rem;
+}
+
+@media (min-width: 768px) {
+  .story-scene.full-width .story-chapter-divider {
+    margin-left: 2rem;
+    margin-right: 2rem;
+  }
+}
+
+.story-chapter-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 22rem;
+  overflow: hidden;
+  background-color: var(--story-muted);
+}
+
+@media (min-width: 768px) {
+  .story-chapter-hero {
+    min-height: 28rem;
+  }
+}
+
+.story-chapter-bg {
+  position: absolute;
+  inset: 0;
+}
+
+.story-chapter-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.75));
+}
+
+.story-chapter-hero .story-chapter-text {
+  position: relative;
+  padding: 2rem 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .story-chapter-hero .story-chapter-text {
+    padding: 3rem;
+  }
+}
+
+.story-chapter-hero .story-chapter-heading,
+.story-chapter-hero .story-chapter-meta,
+.story-chapter-hero .story-chapter-subheading {
+  color: #ffffff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+
 /* Gallery Grid */
 .story-gallery-grid {
   display: grid;

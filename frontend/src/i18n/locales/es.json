@@ -690,6 +690,18 @@
     }
   },
   "categories": {
+    "chapter": {
+      "edit": "Marcador de capítulo",
+      "saved": "Marcador de capítulo guardado",
+      "saveFailed": "No se pudo guardar el marcador de capítulo",
+      "heading": "Título",
+      "time": "Hora",
+      "location": "Lugar",
+      "subheading": "Subtítulo",
+      "useSuggestion": "Usar {{time}} (primera foto)",
+      "hint": "Se muestra sobre esta categoría cuando la galería muestra marcadores de capítulo (Ajustes → Apariencia). Solo en esta galería.",
+      "clear": "Quitar marcador"
+    },
     "title": "Categorías de fotos",
     "global": "Categorías globales",
     "eventSpecific": "Categorías específicas del evento",
@@ -717,6 +729,13 @@
     "nestedFoldersHint": "Las carpetas dentro de carpetas se gestionan en la barra de carpetas de la pestaña Fotos."
   },
   "events": {
+    "chapterMarkers": {
+      "label": "Marcadores de capítulo",
+      "off": "Desactivado",
+      "divider": "Separador",
+      "hero": "Banner con imagen de la categoría",
+      "help": "Muestra un título, hora, lugar y subtítulo sobre cada categoría en el diseño Story. Escríbelos por categoría en Fotos → Categorías. Un banner sin imagen de categoría se muestra como separador."
+    },
     "selection": {
       "title": "Selección para los invitados",
       "help": "Indica una subcarpeta de esta carpeta, por ejemplo «gallery». El enlace de la galería y su código QR mostrarán solo las fotos de esa subcarpeta. El enlace completo y el acceso de cliente muestran todas las fotos de la carpeta.",

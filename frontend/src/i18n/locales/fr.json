@@ -719,6 +719,18 @@
     }
   },
   "categories": {
+    "chapter": {
+      "edit": "Marqueur de chapitre",
+      "saved": "Marqueur de chapitre enregistré",
+      "saveFailed": "Impossible d’enregistrer le marqueur de chapitre",
+      "heading": "Titre",
+      "time": "Heure",
+      "location": "Lieu",
+      "subheading": "Sous-titre",
+      "useSuggestion": "Utiliser {{time}} (première photo)",
+      "hint": "Affiché au-dessus de cette catégorie lorsque la galerie montre les marqueurs de chapitre (Paramètres → Apparence). Uniquement dans cette galerie.",
+      "clear": "Supprimer le marqueur"
+    },
     "title": "Catégories de photos",
     "addCategory": "Ajouter une catégorie",
     "eventSpecificCategories": "Catégories spécifiques à l'événement",
@@ -741,6 +753,13 @@
     "nestedFoldersHint": "Les dossiers imbriqués se gèrent dans la barre des dossiers de l'onglet Photos."
   },
   "events": {
+    "chapterMarkers": {
+      "label": "Marqueurs de chapitre",
+      "off": "Désactivé",
+      "divider": "Séparateur",
+      "hero": "Bannière avec l’image de la catégorie",
+      "help": "Affiche un titre, une heure, un lieu et un sous-titre au-dessus de chaque catégorie dans la mise en page Story. Rédigez-les par catégorie sous Photos → Catégories. Une bannière sans image de catégorie s’affiche comme séparateur."
+    },
     "selection": {
       "title": "Sélection pour les invités",
       "help": "Indiquez un sous-dossier de ce dossier, par exemple « gallery ». Le lien de la galerie et son QR code n'affichent alors que les photos de ce sous-dossier. Le lien complet et l'accès client affichent toutes les photos du dossier.",

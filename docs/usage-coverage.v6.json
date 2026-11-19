@@ -420,6 +420,7 @@
         "POST /",
         "PUT /:id",
         "PUT /:id/hero",
+        "PUT /event/:eventId/:id/chapter",
         "DELETE /:id",
         "POST /reorder",
         "DELETE /reorder/:eventId",

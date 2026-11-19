@@ -706,6 +706,18 @@
     }
   },
   "categories": {
+    "chapter": {
+      "edit": "Hoofdstukmarkering",
+      "saved": "Hoofdstukmarkering opgeslagen",
+      "saveFailed": "Hoofdstukmarkering kon niet worden opgeslagen",
+      "heading": "Kop",
+      "time": "Tijd",
+      "location": "Locatie",
+      "subheading": "Ondertitel",
+      "useSuggestion": "{{time}} gebruiken (eerste foto)",
+      "hint": "Wordt boven deze categorie getoond als de galerij hoofdstukmarkeringen toont (Instellingen → Weergave). Alleen in deze galerij.",
+      "clear": "Markering verwijderen"
+    },
     "title": "Fotocategorieen",
     "addCategory": "Categorie toevoegen",
     "eventSpecificCategories": "Evenement-specifieke categorieen",
@@ -728,6 +740,13 @@
     "nestedFoldersHint": "Mappen binnen mappen beheert u in de mappenbalk op het tabblad Foto's."
   },
   "events": {
+    "chapterMarkers": {
+      "label": "Hoofdstukmarkeringen",
+      "off": "Uit",
+      "divider": "Scheidingslijn",
+      "hero": "Banner met categorieafbeelding",
+      "help": "Toont in de Story-lay-out boven elke categorie een kop, tijd, locatie en ondertitel. Schrijf ze per categorie onder Foto’s → Categorieën. Een banner zonder categorieafbeelding wordt als scheidingslijn getoond."
+    },
     "selection": {
       "title": "Selectie voor gasten",
       "help": "Geef een submap van deze map op, bijvoorbeeld \"gallery\". De galerijlink en de QR-code tonen dan alleen de foto's in die submap. De volledige link en de klanttoegang tonen alle foto's van de map.",

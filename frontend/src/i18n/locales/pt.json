@@ -822,6 +822,18 @@
     }
   },
   "categories": {
+    "chapter": {
+      "edit": "Marcador de capítulo",
+      "saved": "Marcador de capítulo guardado",
+      "saveFailed": "Não foi possível guardar o marcador de capítulo",
+      "heading": "Título",
+      "time": "Hora",
+      "location": "Local",
+      "subheading": "Subtítulo",
+      "useSuggestion": "Usar {{time}} (primeira foto)",
+      "hint": "Mostrado acima desta categoria quando a galeria mostra marcadores de capítulo (Definições → Aparência). Apenas nesta galeria.",
+      "clear": "Remover marcador"
+    },
     "title": "Categorias de Fotos",
     "addCategory": "Adicionar Categoria",
     "eventSpecificCategories": "Categorias Específicas do Evento",
@@ -844,6 +856,13 @@
     "nestedFoldersHint": "Pastas dentro de pastas são gerenciadas na barra de pastas da aba Fotos."
   },
   "events": {
+    "chapterMarkers": {
+      "label": "Marcadores de capítulo",
+      "off": "Desligado",
+      "divider": "Divisor",
+      "hero": "Banner com imagem da categoria",
+      "help": "Mostra um título, hora, local e subtítulo acima de cada categoria no layout Story. Escreva-os por categoria em Fotos → Categorias. Um banner sem imagem de categoria é mostrado como divisor."
+    },
     "selection": {
       "title": "Seleção para os convidados",
       "help": "Indique uma subpasta desta pasta, por exemplo \"gallery\". A ligação da galeria e o respetivo código QR mostram então apenas as fotos dessa subpasta. A ligação completa e o acesso de cliente mostram todas as fotos da pasta.",

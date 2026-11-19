@@ -123,6 +123,8 @@ export interface Event {
   hero_divider_style?: 'wave' | 'straight' | 'angle' | 'curve' | 'none';
   // Hero image anchor position (#162) – keyword or "X% Y%" focal point
   hero_image_anchor?: string;
+  // Chapter markers above the categories (issue 2548). 'off' by default.
+  chapter_marker_style?: ChapterMarkerStyle;
   // CSS Template
   css_template_id?: number | null;
   // Off = the gallery renders the global Branding theme; on = its own
@@ -432,6 +434,20 @@ export interface PhotoCategory {
   // Nesting (issue 1786): the parent folder, null = top level. Only folders
   // nest, at most three levels deep.
   parent_id?: number | null;
+  // Chapter marker (issue 2548). Present only while the gallery shows
+  // markers and the category is part of the storyline; plain text, the
+  // heading falls back to the category name.
+  chapter?: ChapterMarkerText;
+}
+
+export type ChapterMarkerStyle = 'off' | 'divider' | 'hero';
+
+export interface ChapterMarkerText {
+  heading: string | null;
+  subheading: string | null;
+  // Wall-clock time of day, 'HH:MM' (24 h).
+  time: string | null;
+  location: string | null;
 }
 
 // Two-stage delivery (issue 1562) as the guest payload carries it. Absent or
@@ -507,6 +523,8 @@ export interface GalleryData {
     hero_divider_style?: 'wave' | 'straight' | 'angle' | 'curve' | 'none';
     // Hero image anchor position (#162) – keyword or "X% Y%" focal point
     hero_image_anchor?: string;
+    // Chapter markers above the categories (issue 2548).
+    chapter_marker_style?: ChapterMarkerStyle;
     // Default photo sort order
     default_photo_sort?: string;
     // Live refresh (issue 1733, C5): poll /photos/state for new photos.

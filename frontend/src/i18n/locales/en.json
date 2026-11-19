@@ -1915,6 +1915,18 @@
     }
   },
   "categories": {
+    "chapter": {
+      "edit": "Chapter marker",
+      "saved": "Chapter marker saved",
+      "saveFailed": "Failed to save the chapter marker",
+      "heading": "Heading",
+      "time": "Time",
+      "location": "Location",
+      "subheading": "Subheading",
+      "useSuggestion": "Use {{time}} (first photo)",
+      "hint": "Shown above this category when the gallery shows chapter markers (Settings → Appearance). Only in this gallery.",
+      "clear": "Remove marker"
+    },
     "title": "Photo Categories",
     "addCategory": "Add Category",
     "eventSpecificCategories": "Event-Specific Categories",
@@ -1956,6 +1968,13 @@
     "nestedFoldersHint": "Folders inside folders are managed in the folder bar of the Photos tab."
   },
   "events": {
+    "chapterMarkers": {
+      "label": "Chapter markers",
+      "off": "Off",
+      "divider": "Divider",
+      "hero": "Banner with category image",
+      "help": "Shows a heading, time, location and subheading above each category in the Story layout. Write them per category under Photos → Categories. A banner without a category image is shown as a divider."
+    },
     "selection": {
       "title": "Selection for guests",
       "help": "Name a subfolder of this folder, for example \"gallery\". The gallery link and its QR code then show only the photos in that subfolder. The full link and the client login show every photo of the folder.",

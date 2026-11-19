@@ -2663,6 +2663,18 @@
     }
   },
   "categories": {
+    "chapter": {
+      "edit": "Kapitelmarke",
+      "saved": "Kapitelmarke gespeichert",
+      "saveFailed": "Kapitelmarke konnte nicht gespeichert werden",
+      "heading": "Überschrift",
+      "time": "Uhrzeit",
+      "location": "Ort",
+      "subheading": "Unterzeile",
+      "useSuggestion": "{{time}} übernehmen (erstes Foto)",
+      "hint": "Erscheint über dieser Kategorie, wenn die Galerie Kapitelmarken zeigt (Einstellungen → Erscheinungsbild). Gilt nur für diese Galerie.",
+      "clear": "Marke entfernen"
+    },
     "title": "Fotokategorien",
     "eventSpecificCategories": "Veranstaltungsspezifische Kategorien",
     "noEventSpecificCategories": "Keine veranstaltungsspezifischen Kategorien. Globale Kategorien sind standardmäßig verfügbar.",
@@ -2704,6 +2716,13 @@
     "nestedFoldersHint": "Ordner in Ordnern verwalten Sie in der Ordnerleiste im Fotos-Tab."
   },
   "events": {
+    "chapterMarkers": {
+      "label": "Kapitelmarken",
+      "off": "Aus",
+      "divider": "Trennlinie",
+      "hero": "Banner mit Kategoriebild",
+      "help": "Zeigt im Story-Layout über jeder Kategorie eine Überschrift, Uhrzeit, Ort und Unterzeile. Die Texte legen Sie pro Kategorie unter Fotos → Kategorien fest. Ein Banner ohne Kategoriebild wird als Trennlinie gezeigt."
+    },
     "selection": {
       "title": "Auswahl für Gäste",
       "help": "Geben Sie einen Unterordner dieses Ordners an, zum Beispiel „gallery“. Der Galerie-Link und sein QR-Code zeigen dann nur die Fotos in diesem Unterordner. Der Vollzugriffs-Link und der Kundenzugang zeigen alle Fotos des Ordners.",
