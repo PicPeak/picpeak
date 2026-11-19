@@ -727,7 +727,37 @@
     "categoryHeroHint": "Als er geen omslagfoto is ingesteld voor een categorie, wordt de standaard hero-foto gebruikt.",
     "nestedFoldersHint": "Mappen binnen mappen beheert u in de mappenbalk op het tabblad Foto's."
   },
+  "eventCode": {
+    "title": "Vind je galerij",
+    "subtitle": "Voer de evenementcode van je kaart of uitnodiging in.",
+    "label": "Evenementcode",
+    "placeholder": "bijv. K7M-4QX",
+    "submit": "Galerij openen",
+    "required": "Voer je evenementcode in.",
+    "notFound": "We hebben geen galerij met deze code gevonden. Controleer de code en probeer het opnieuw.",
+    "tooManyAttempts": "Te veel pogingen. Wacht een paar minuten en probeer het opnieuw.",
+    "failed": "Er is iets misgegaan. Probeer het opnieuw.",
+    "hint": "Hoofdletters of kleine letters maken niet uit. Heeft de galerij een wachtwoord, dan wordt daar in de volgende stap om gevraagd."
+  },
   "events": {
+    "eventCode": {
+      "title": "Evenementcode",
+      "hint": "Gasten voeren deze code in op {{url}} om de galerij te vinden.",
+      "customLabel": "Eigen code",
+      "invalid": "Gebruik 4 tot 12 letters en cijfers, zonder 0, O, 1, I of L.",
+      "taken": "Een andere galerij gebruikt deze code al.",
+      "failed": "De evenementcode kon niet worden opgeslagen",
+      "saved": "Evenementcode opgeslagen",
+      "copyLink": "Link met ingevulde code kopiëren",
+      "archived": "Een gearchiveerde galerij opent niet met haar code.",
+      "publicWarning": "Deze galerij heeft geen wachtwoord, dus iedereen die de code kent kan haar openen.",
+      "none": "Deze galerij heeft nog geen code.",
+      "regenerate": "Nieuwe code",
+      "regenerateTitle": "Nieuwe code aanmaken?",
+      "regenerateConfirm": "De huidige code werkt meteen niet meer, ook niet op kaarten die al gedrukt zijn.",
+      "generate": "Code aanmaken",
+      "edit": "Code kiezen"
+    },
     "selection": {
       "title": "Selectie voor gasten",
       "help": "Geef een submap van deze map op, bijvoorbeeld \"gallery\". De galerijlink en de QR-code tonen dan alleen de foto's in die submap. De volledige link en de klanttoegang tonen alle foto's van de map.",
@@ -1287,6 +1317,8 @@
       "enableRegistration": "Zelfregistratie voor beheerders toestaan",
       "enableShortGalleryUrls": "Korte galerij-URL's gebruiken",
       "enableShortGalleryUrlsHelp": "Verwijdert de evenement-slug uit nieuwe deellinks terwijl bestaande links blijven werken.",
+      "rootEventCodePage": "Evenementcodepagina openen op het hoofdadres",
+      "rootEventCodePageHelp": "Bezoekers van het kale adres komen op /code, waar gasten hun evenementcode invoeren, in plaats van op de beheerdersaanmelding. Een ingeschakelde openbare startpagina gaat nog steeds voor.",
       "maintenanceMode": "Onderhoudsmodus inschakelen",
       "language": "Taal",
       "defaultLanguageHelp": "Taal die aan gasten wordt getoond voor het inloggen",

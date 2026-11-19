@@ -29,6 +29,7 @@ const base: GeneralSettings = {
   enable_registration: false,
   maintenance_mode: false,
   short_gallery_urls: false,
+  root_event_code_page: false,
   use_original_filenames_for_downloads: false,
   default_language: 'en',
   date_format: { format: 'dd/MM/yyyy', locale: 'en-GB' },

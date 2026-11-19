@@ -41,6 +41,8 @@ const { claimPromotion } = require('../../services/watchFolderClaims');
 const { requirePermission } = require('../../middleware/permissions');
 
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
+const { formatAccessCode } = require('../../services/eventAccessCode');
+const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const {
   generateThumbnail,
   withProcessableImage,
@@ -231,7 +233,7 @@ router.post(
       const created = await require('../../services/eventCreationService').createEvent(req.body, {
         actor: req.admin, source: 'v1',
       });
-      res.status(201).json({ id: created.id, slug: created.slug, share_url: created.share_link, share_token: created.share_token, is_draft: created.is_draft });
+      res.status(201).json({ id: created.id, slug: created.slug, share_url: created.share_link, share_token: created.share_token, access_code: created.access_code ?? null, is_draft: created.is_draft });
     } catch (error) {
       if (error.isOperational) return res.status(error.statusCode).json(error.responseBody || { error: error.message, code: error.code });
       logger.error('v1 POST /events failed', { error: error.message, stack: error.stack });
@@ -896,6 +898,12 @@ async function handleV1PhotoUpload(req, res) {
  *                 slug: { type: string }
  *                 share_token: { type: string }
  *                 share_url: { type: string, format: uri }
+ *                 access_code:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Event code a guest types on the entry page /code (stored form, e.g. K7M4QX). Only a lookup for share_url, not a credential.
+ *                 access_code_display: { type: string, nullable: true, description: "The code as shown to guests, e.g. K7M-4QX." }
+ *                 access_code_url: { type: string, nullable: true, description: "Entry page URL that opens the gallery with the code filled in." }
  *       404: { description: Not found }
  */
 router.get('/events/:id/share-link', apiTokenAuth, requireApiScope('read'), requirePermission('events.view'), requireEventOwnership, async (req, res) => {
@@ -903,7 +911,17 @@ router.get('/events/:id/share-link', apiTokenAuth, requireApiScope('read'), requ
     const event = await db('events').where({ id: req.params.id }).first();
     if (!event) return res.status(404).json({ error: 'Event not found' });
     const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
-    res.json({ slug: event.slug, share_token: event.share_token, share_url: shareUrl });
+    // Event code (issue 2495), for photo booth screens.
+    const accessCode = event.access_code || null;
+    const frontendBase = accessCode ? await getFrontendBaseUrl() : '';
+    res.json({
+      slug: event.slug,
+      share_token: event.share_token,
+      share_url: shareUrl,
+      access_code: accessCode,
+      access_code_display: formatAccessCode(accessCode),
+      access_code_url: accessCode ? `${frontendBase || ''}/code/${accessCode}` : null,
+    });
   } catch (error) {
     logger.error('v1 GET /events/:id/share-link failed', { error: error.message });
     res.status(500).json({ error: 'Failed to build share link' });

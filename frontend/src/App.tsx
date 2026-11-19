@@ -78,6 +78,7 @@ import { BlockLibraryPage } from './pages/admin/contracts/BlockLibraryPage';
 import { ContractTemplatesPage } from './pages/admin/contracts/ContractTemplatesPage';
 import { ContractAttachmentsPage } from './pages/admin/contracts/ContractAttachmentsPage';
 import { PaymentCheckPage } from './pages/public/PaymentCheckPage';
+import { EventCodePage } from './pages/public/EventCodePage';
 import { AcceptInvitePage } from './pages/public/AcceptInvitePage';
 import { TransfersPage } from './pages/admin/transfers/TransfersPage';
 import { AutomationLayout } from './components/admin/AutomationLayout';
@@ -172,6 +173,17 @@ function SettingsRoute() {
     return <Navigate to="/admin/automation/reminder-templates" replace />;
   }
   return <SettingsPage />;
+}
+
+/**
+ * The site root. The server answers `/` itself (public landing page, else a
+ * redirect); this covers navigation inside the app. With the event-code
+ * setting on (issue 2495), guests land on /code instead of the admin login.
+ */
+function RootRedirect() {
+  const { data: settings, isLoading } = usePublicSettings();
+  if (isLoading) return <Loading />;
+  return <Navigate to={settings?.general_root_event_code_page === true ? '/code' : '/admin/login'} replace />;
 }
 
 function RedirectWorkflowEditor() {
@@ -524,6 +536,11 @@ const router = createBrowserRouter(
         check email. */}
     <Route path="/payment-check/:token" element={<PaymentCheckPage />} />
 
+    {/* Fixed guest entry page (issue 2495): the event code leads to the
+        gallery's share link. Public, no auth. */}
+    <Route path="/code" element={<EventCodePage />} />
+    <Route path="/code/:code" element={<EventCodePage />} />
+
     {/* PicTransfer (#997) — recipient download + client upload,
         token-only, no auth. */}
     <Route path="/transfer/:token" element={<TransferDownloadPage />} />
@@ -587,7 +604,7 @@ const router = createBrowserRouter(
     <Route path="/:slug" element={<LegalPage />} />
 
     {/* Default redirect */}
-    <Route path="/" element={<Navigate to="/admin/login" replace />} />
+    <Route path="/" element={<RootRedirect />} />
 
     {/* Customisable 404 (#324) — caught here for any path that
         didn't match. Top-level `/:slug` is consumed above by

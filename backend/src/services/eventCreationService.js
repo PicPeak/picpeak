@@ -12,6 +12,7 @@ const { slugify } = require('../utils/slug');
 const { findSlugHolder } = require('./slugRedirects');
 const { validatePasswordInContext, getBcryptRounds } = require('../utils/passwordValidation');
 const { buildShareLinkVariants } = require('./shareLinkService');
+const { ensureAccessCode } = require('./eventAccessCode');
 const { parseBooleanInput } = require('../utils/parsers');
 const { normaliseEventTimeTriple } = require('./eventService');
 const { hasColumnCached } = require('../utils/schemaCache');
@@ -596,6 +597,9 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   });
   // #1271 — the setting was read before the hashes; re-check after the write
   await dropCopiesIfStorageOff(eventId);
+  // The event code (issue 2495), after the commit: a collision retry needs a
+  // statement outside the transaction.
+  const accessCode = await ensureAccessCode(eventId);
 
   // Apply customer-account assignments (#354); null while the portal is off.
   if (customerAccountIds) {
@@ -775,6 +779,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     is_draft: isDraft,
     share_link: shareUrl,
     share_token: shareToken,
+    access_code: accessCode,
     expires_at: expires_at ? expires_at.toISOString() : null,
     created_at: new Date().toISOString(),
     source_mode: photoSource.source_mode,

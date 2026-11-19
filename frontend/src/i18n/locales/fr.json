@@ -740,7 +740,37 @@
     "categoryHeroHint": "Si aucune photo de couverture n'est définie pour une catégorie, la photo par défaut sera utilisée.",
     "nestedFoldersHint": "Les dossiers imbriqués se gèrent dans la barre des dossiers de l'onglet Photos."
   },
+  "eventCode": {
+    "title": "Trouver votre galerie",
+    "subtitle": "Saisissez le code de l’événement figurant sur votre carte ou votre invitation.",
+    "label": "Code de l’événement",
+    "placeholder": "p. ex. K7M-4QX",
+    "submit": "Ouvrir la galerie",
+    "required": "Veuillez saisir le code de votre événement.",
+    "notFound": "Aucune galerie ne correspond à ce code. Vérifiez-le et réessayez.",
+    "tooManyAttempts": "Trop de tentatives. Patientez quelques minutes puis réessayez.",
+    "failed": "Une erreur s’est produite. Veuillez réessayer.",
+    "hint": "Majuscules ou minuscules, peu importe. Si la galerie est protégée par un mot de passe, il vous sera demandé à l’étape suivante."
+  },
   "events": {
+    "eventCode": {
+      "title": "Code de l’événement",
+      "hint": "Les invités saisissent ce code sur {{url}} pour trouver la galerie.",
+      "customLabel": "Votre propre code",
+      "invalid": "De 4 à 12 lettres et chiffres, sans 0, O, 1, I ni L.",
+      "taken": "Une autre galerie utilise déjà ce code.",
+      "failed": "Impossible d’enregistrer le code de l’événement",
+      "saved": "Code de l’événement enregistré",
+      "copyLink": "Copier le lien avec le code prérempli",
+      "archived": "Une galerie archivée ne s’ouvre pas avec son code.",
+      "publicWarning": "Cette galerie n’a pas de mot de passe : toute personne connaissant le code peut l’ouvrir.",
+      "none": "Cette galerie n’a pas encore de code.",
+      "regenerate": "Nouveau code",
+      "regenerateTitle": "Générer un nouveau code ?",
+      "regenerateConfirm": "Le code actuel cesse immédiatement de fonctionner, y compris sur les cartes déjà imprimées.",
+      "generate": "Générer un code",
+      "edit": "Choisir le code"
+    },
     "selection": {
       "title": "Sélection pour les invités",
       "help": "Indiquez un sous-dossier de ce dossier, par exemple « gallery ». Le lien de la galerie et son QR code n'affichent alors que les photos de ce sous-dossier. Le lien complet et l'accès client affichent toutes les photos du dossier.",
@@ -1306,6 +1336,8 @@
       "enableRegistration": "Autoriser l'auto-inscription pour les administrateurs",
       "enableShortGalleryUrls": "Utiliser des URL de galerie courtes",
       "enableShortGalleryUrlsHelp": "Supprime le slug de l'événement des nouveaux liens partagés tout en gardant les liens existants fonctionnels.",
+      "rootEventCodePage": "Ouvrir la page du code d’événement à la racine du site",
+      "rootEventCodePageHelp": "Les visiteurs de l’adresse nue arrivent sur /code, où les invités saisissent leur code d’événement, au lieu de la connexion administrateur. Une page d’accueil publique activée reste prioritaire.",
       "useOriginalFilenames": "Utiliser les noms de fichiers originaux lors du téléchargement",
       "useOriginalFilenamesHelp": "Lorsque cette option est activée, les téléchargements de photos uniques et de ZIP utilisent le nom de fichier original de l'appareil photo (ex. : DSC_1234.jpg) au lieu du nom nettoyé. Le stockage reste inchangé ; les doublons dans le même événement reçoivent un suffixe numérique.",
       "maintenanceMode": "Activer le mode maintenance",

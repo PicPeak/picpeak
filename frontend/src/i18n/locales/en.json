@@ -1955,7 +1955,37 @@
     "enableFolderTitle": "Filter: these photos stay in the main grid. Click to turn it into a folder — hides them from the grid, does NOT restrict access.",
     "nestedFoldersHint": "Folders inside folders are managed in the folder bar of the Photos tab."
   },
+  "eventCode": {
+    "title": "Find your gallery",
+    "subtitle": "Enter the event code from your card or invitation.",
+    "label": "Event code",
+    "placeholder": "e.g. K7M-4QX",
+    "submit": "Open gallery",
+    "required": "Please enter your event code.",
+    "notFound": "We could not find a gallery for this code. Please check it and try again.",
+    "tooManyAttempts": "Too many attempts. Please wait a few minutes and try again.",
+    "failed": "Something went wrong. Please try again.",
+    "hint": "Upper or lower case does not matter. If the gallery has a password, you will be asked for it next."
+  },
   "events": {
+    "eventCode": {
+      "title": "Event code",
+      "hint": "Guests enter this code at {{url}} to find the gallery.",
+      "customLabel": "Your own code",
+      "invalid": "Use 4 to 12 letters and digits, without 0, O, 1, I or L.",
+      "taken": "Another gallery already uses this code.",
+      "failed": "Could not save the event code",
+      "saved": "Event code saved",
+      "copyLink": "Copy link with the code filled in",
+      "archived": "An archived gallery does not open with its code.",
+      "publicWarning": "This gallery has no password, so anyone who knows the code can open it.",
+      "none": "This gallery has no code yet.",
+      "regenerate": "New code",
+      "regenerateTitle": "Generate a new code?",
+      "regenerateConfirm": "The current code stops working at once, also on cards that are already printed.",
+      "generate": "Generate code",
+      "edit": "Choose code"
+    },
     "selection": {
       "title": "Selection for guests",
       "help": "Name a subfolder of this folder, for example \"gallery\". The gallery link and its QR code then show only the photos in that subfolder. The full link and the client login show every photo of the folder.",
@@ -2936,6 +2966,8 @@
       "enableRegistration": "Allow self-registration for admins",
       "enableShortGalleryUrls": "Use short gallery URLs",
       "enableShortGalleryUrlsHelp": "Removes the event slug from new share links while keeping existing links working.",
+      "rootEventCodePage": "Open the event-code page at the site root",
+      "rootEventCodePageHelp": "Visitors to the bare address land on /code, where guests enter their event code, instead of the admin login. A public landing page, when switched on, still takes precedence.",
       "useOriginalFilenames": "Use original filenames on download",
       "useOriginalFilenamesHelp": "When on, single-photo and ZIP downloads use the original camera filename (e.g. DSC_1234.jpg) instead of the sanitized name. Storage is unchanged; duplicates in the same event get a numeric suffix.",
       "maintenanceMode": "Enable maintenance mode",

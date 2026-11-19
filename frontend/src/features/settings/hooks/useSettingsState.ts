@@ -50,6 +50,8 @@ export interface GeneralSettings {
   enable_registration: boolean;
   maintenance_mode: boolean;
   short_gallery_urls: boolean;
+  // The site root leads to the event-code page /code (issue 2495).
+  root_event_code_page: boolean;
   use_original_filenames_for_downloads: boolean;
   default_language: string;
   date_format: { format: string; locale: string };
@@ -207,6 +209,7 @@ export function useSettingsState() {
     enable_registration: false,
     maintenance_mode: false,
     short_gallery_urls: false,
+    root_event_code_page: false,
     use_original_filenames_for_downloads: false,
     default_language: 'en',
     date_format: { format: 'dd/MM/yyyy', locale: 'en-GB' },
@@ -363,6 +366,7 @@ export function useSettingsState() {
         enable_registration: toBoolean(settings.general_enable_registration, false),
         maintenance_mode: toBoolean(settings.general_maintenance_mode, false),
         short_gallery_urls: toBoolean(settings.general_short_gallery_urls, false),
+        root_event_code_page: toBoolean(settings.general_root_event_code_page, false),
         use_original_filenames_for_downloads: toBoolean(
           settings.general_use_original_filenames_for_downloads,
           false

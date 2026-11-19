@@ -716,7 +716,37 @@
     "categoryHeroHint": "Si no se establece una foto de portada para una categoría, se usará la foto hero por defecto.",
     "nestedFoldersHint": "Las carpetas dentro de carpetas se gestionan en la barra de carpetas de la pestaña Fotos."
   },
+  "eventCode": {
+    "title": "Encuentra tu galería",
+    "subtitle": "Introduce el código del evento que aparece en tu tarjeta o invitación.",
+    "label": "Código del evento",
+    "placeholder": "p. ej. K7M-4QX",
+    "submit": "Abrir galería",
+    "required": "Introduce el código de tu evento.",
+    "notFound": "No hemos encontrado ninguna galería con este código. Compruébalo e inténtalo de nuevo.",
+    "tooManyAttempts": "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
+    "failed": "Algo ha salido mal. Inténtalo de nuevo.",
+    "hint": "Da igual si usas mayúsculas o minúsculas. Si la galería tiene contraseña, te la pediremos a continuación."
+  },
   "events": {
+    "eventCode": {
+      "title": "Código del evento",
+      "hint": "Los invitados introducen este código en {{url}} para encontrar la galería.",
+      "customLabel": "Tu propio código",
+      "invalid": "Usa de 4 a 12 letras y cifras, sin 0, O, 1, I ni L.",
+      "taken": "Otra galería ya usa este código.",
+      "failed": "No se ha podido guardar el código del evento",
+      "saved": "Código del evento guardado",
+      "copyLink": "Copiar enlace con el código incluido",
+      "archived": "Una galería archivada no se abre con su código.",
+      "publicWarning": "Esta galería no tiene contraseña, así que cualquiera que conozca el código puede abrirla.",
+      "none": "Esta galería aún no tiene código.",
+      "regenerate": "Nuevo código",
+      "regenerateTitle": "¿Generar un código nuevo?",
+      "regenerateConfirm": "El código actual deja de funcionar al instante, también en las tarjetas ya impresas.",
+      "generate": "Generar código",
+      "edit": "Elegir código"
+    },
     "selection": {
       "title": "Selección para los invitados",
       "help": "Indica una subcarpeta de esta carpeta, por ejemplo «gallery». El enlace de la galería y su código QR mostrarán solo las fotos de esa subcarpeta. El enlace completo y el acceso de cliente muestran todas las fotos de la carpeta.",
@@ -1312,6 +1342,8 @@
       "enableRegistration": "Permitir auto-registro de administradores",
       "enableShortGalleryUrls": "Usar URLs cortas para galerías",
       "enableShortGalleryUrlsHelp": "Elimina el slug del evento en los nuevos enlaces, manteniendo los enlaces existentes.",
+      "rootEventCodePage": "Abrir la página del código de evento en la raíz del sitio",
+      "rootEventCodePageHelp": "Quien visite la dirección sin ruta llega a /code, donde los invitados introducen su código de evento, en lugar del inicio de sesión de administración. Si la página de inicio pública está activada, sigue teniendo prioridad.",
       "maintenanceMode": "Habilitar modo mantenimiento",
       "language": "Idioma",
       "defaultLanguage": "Idioma por defecto",

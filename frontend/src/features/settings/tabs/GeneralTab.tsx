@@ -399,6 +399,21 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
             <label className="flex items-center">
               <input
                 type="checkbox"
+                checked={generalSettings.root_event_code_page}
+                onChange={(e) => setGeneralSettings(prev => ({ ...prev, root_event_code_page: e.target.checked }))}
+                className="w-4 h-4 text-accent rounded focus:ring-accent"
+              />
+              <span className="ml-2 text-sm text-body">{t('settings.general.rootEventCodePage')}</span>
+            </label>
+            <p className="text-xs text-muted ml-6 mt-1">
+              {t('settings.general.rootEventCodePageHelp')}
+            </p>
+          </div>
+
+          <div>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
                 checked={generalSettings.use_original_filenames_for_downloads}
                 onChange={(e) => setGeneralSettings(prev => ({ ...prev, use_original_filenames_for_downloads: e.target.checked }))}
                 className="w-4 h-4 text-accent rounded focus:ring-accent"
