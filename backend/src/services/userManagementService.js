@@ -754,10 +754,13 @@ async function resetAdminPassword(id, resetById) {
   // The account's passkeys are removed in the same transaction.
   const passkeysRemoved = await require('./adminPasswordReset').setAdminPasswordForReset(id, passwordHash);
 
-  // Queue password reset email
+  // Queue password reset email. Every locale's template has a "Log in"
+  // button on {{admin_login_url}}; without it the button pointed nowhere.
+  const frontendUrl = await getAbsoluteFrontendUrl(null, { override: process.env.ADMIN_URL });
   await queueEmail(null, user.email, 'admin_password_reset', {
     username: user.username,
-    new_password: newPassword
+    new_password: newPassword,
+    admin_login_url: `${frontendUrl}/admin/login`
   });
 
   await logActivity('admin_password_reset',

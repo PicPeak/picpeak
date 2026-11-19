@@ -795,3 +795,7 @@ exports.down = async function(knex) {
   // dropping every nl/pt/ru/fr row would wipe content the admin may
   // have edited in the UI. Rollback by hand if you really need to.
 };
+
+// Read by 366_fix_translated_email_template_placeholders to tell an untouched
+// seeded row from one an admin edited.
+exports.TRANSLATIONS = TRANSLATIONS;
