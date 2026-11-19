@@ -7,6 +7,8 @@ import { useGalleryDialog } from './hooks/useGalleryDialog';
 
 interface GuestNamePromptModalProps {
   requireEmail?: boolean;
+  /** The photographer's note on why the name is asked (issue 2503). Plain text. */
+  privacyText?: string | null;
   allowCancel?: boolean;
   onCancel?: () => void;
 }
@@ -21,11 +23,12 @@ interface GuestNamePromptModalProps {
  */
 export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
   requireEmail = false,
+  privacyText = null,
   allowCancel = true,
   onCancel,
 }) => {
   const { t } = useTranslation();
-  const { promptOpen, closePrompt, register, openRecovery } = useGuestIdentity();
+  const { promptOpen, promptReason, closePrompt, register, openRecovery } = useGuestIdentity();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -77,7 +80,9 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    // Above the download dialog (z-[10000]): a download can ask for the name
+    // while it is open (issue 2503).
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/50" onClick={allowCancel ? handleClose : undefined} />
       <div
         ref={panelRef}
@@ -101,11 +106,21 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
           {t('gallery.guestPrompt.title', "Welcome — what's your name?")}
         </h2>
         <p className="text-sm text-muted-theme mb-4">
-          {t(
-            'gallery.guestPrompt.description',
-            'Your picks will be saved under this name so the photographer knows which photos you love.'
-          )}
+          {promptReason === 'download'
+            ? t(
+              'gallery.guestPrompt.downloadDescription',
+              'Please tell the photographer who you are before downloading. Your downloads are saved under this name.'
+            )
+            : t(
+              'gallery.guestPrompt.description',
+              'Your picks will be saved under this name so the photographer knows which photos you love.'
+            )}
         </p>
+        {privacyText && (
+          <p data-testid="guest-prompt-privacy" className="text-xs text-muted-theme mb-4 whitespace-pre-line">
+            {privacyText}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input

@@ -42,7 +42,7 @@ const {
 const downloadJobService = require('../../services/downloadJobService');
 const { readEntryManifest, trackPreparedDelivery } = require('../../services/downloadJobDelivery');
 const downloadJobNotifier = require('../../services/downloadJobNotifier');
-const { resolveGuest } = require('../../middleware/guestAuth');
+const { resolveGuest, guestDownloadGate } = require('../../middleware/guestAuth');
 const {
   resolveEventDownloadPolicy,
   pickRequestedResolution,
@@ -151,6 +151,13 @@ function galleryActor(req) {
   const isCustomer = !!(req && (req.viaCustomer || req.accessLevel === 'client'));
   return { type: isCustomer ? 'customer' : 'guest' };
 }
+// The guest a download is logged under (issue 2503): set by guestDownloadGate
+// only while the gallery asks for the guest's identity before downloading.
+// Spread into each access_logs row, so with the setting off the row is
+// written exactly as before.
+function downloadGuestColumn(req) {
+  return req.downloadGuestId ? { guest_id: req.downloadGuestId } : {};
+}
 // Download count + access log of one single-photo download.
 async function recordSingleDownload(req, photoId) {
   await livePhotos(db).where('id', photoId).increment('download_count', 1);
@@ -159,7 +166,8 @@ async function recordSingleDownload(req, photoId) {
     ip_address: req.ip,
     user_agent: req.headers['user-agent'],
     action: 'download',
-    photo_id: photoId
+    photo_id: photoId,
+    ...downloadGuestColumn(req),
   });
 }
 const SINGLE_DOWNLOAD_DEBOUNCE_MS = 60 * 60 * 1000;
@@ -172,7 +180,7 @@ function notifySinglePhotoDownload(event, req) {
   logActivity('gallery_downloaded', { scope: 'single' }, event.id, galleryActor(req));
 }
 
-router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
+router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, guestDownloadGate, async (req, res) => {
   try {
     const { photoId } = req.params;
 
@@ -691,7 +699,7 @@ async function bumpEventDownloadCounts(eventId) {
   await livePhotos(db).where('event_id', eventId).increment('download_count', 1);
 }
 
-router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
+router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, guestDownloadGate, async (req, res) => {
   // Hoisted so the catch can reclaim reads opened before the failure.
   let guard = null;
   let admission = null;
@@ -786,7 +794,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           event_id: req.event.id,
           ip_address: req.ip,
           user_agent: req.headers['user-agent'],
-          action: 'download_all'
+          action: 'download_all',
+          ...downloadGuestColumn(req),
         }).catch(statsWriteFailed('access log, download_all'));
         bumpEventDownloadCounts(req.event.id).catch(statsWriteFailed('event download counts'));
         // Surface in the admin notification bell (#746) — only once the
@@ -1038,7 +1047,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         event_id: req.event.id,
         ip_address: req.ip,
         user_agent: req.headers['user-agent'],
-        action: 'download_all'
+        action: 'download_all',
+        ...downloadGuestColumn(req),
       })
         // The archive is complete by now; a failed log write must not reach
         // the catch below, which would destroy a response still draining.
@@ -1067,7 +1077,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
 });
 
 // Download selected photos as ZIP
-router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
+router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, guestDownloadGate, async (req, res) => {
   // Hoisted so the catch can reclaim reads opened before the failure.
   let selectedGuard = null;
   let selectedCancelled = false;
@@ -1273,7 +1283,8 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         event_id: req.event.id,
         ip_address: req.ip,
         user_agent: req.headers['user-agent'],
-        action: 'download_selected'
+        action: 'download_selected',
+        ...downloadGuestColumn(req),
       })
         // The archive is complete by now; a failed log write must not reach
         // the catch below, which would destroy a response still draining.
@@ -1310,7 +1321,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
 // ──────────────────────────────────────────────────────────────────────────
 
 // Kick off (or join) a build. Returns the polling token.
-router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
+router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, guestDownloadGate, async (req, res) => {
   try {
     const denial = await originalAssetDenial(req);
     if (denial) return res.status(403).json(denial);
@@ -1487,7 +1498,7 @@ router.post('/:slug/download-jobs/:token/notify', verifyGalleryAccess, denySlide
 });
 
 // Deliver the finished archive.
-router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
+router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, guestDownloadGate, async (req, res) => {
   try {
     // Downloads can be switched off after a job was created — every other
     // download route re-checks this per request, so this one must too.
@@ -1615,6 +1626,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
         user_agent: req.headers['user-agent'],
         action: 'download',
         photo_id: null,
+        ...downloadGuestColumn(req),
       }).catch(statsWriteFailed('access log, download job'));
       logActivity('gallery_downloaded', { scope: 'all', resolution: job.resolution },
         req.event.id, galleryActor(req));

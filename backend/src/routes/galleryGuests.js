@@ -5,7 +5,9 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { rateLimitKey } = require('../utils/rateLimitKey');
 const { verifyGalleryAccess, denySlideshowToken } = require('../middleware/gallery');
-const { resolveGuest, requireGuest, signGuestToken } = require('../middleware/guestAuth');
+const {
+  resolveGuest, requireGuest, signGuestToken, signGuestDownloadTicket,
+} = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
 const selectionSubmissions = require('../services/selectionSubmissions');
 const guestRecovery = require('../services/guestRecoveryService');
@@ -230,6 +232,21 @@ router.delete('/:slug/guest/me', verifyGalleryAccess, resolveGuest, requireGuest
     logger.error('Guest forget-me failed', { error: error.message });
     return res.status(500).json({ error: 'Failed to forget guest' });
   }
+});
+
+/**
+ * POST /gallery/:slug/guest/download-ticket
+ *
+ * A short-lived ticket naming this guest to the download routes (issue 2503).
+ * A gallery that asks for the guest's identity before downloading needs it on
+ * downloads the browser navigates to (archives, direct photo downloads),
+ * which carry no x-guest-token header. See signGuestDownloadTicket.
+ */
+router.post('/:slug/guest/download-ticket', verifyGalleryAccess, denySlideshowToken, resolveGuest, requireGuest, (req, res) => {
+  if (req.guest.eventId !== req.event.id) {
+    return res.status(403).json({ error: 'Guest token does not match gallery' });
+  }
+  return res.json({ ticket: signGuestDownloadTicket({ guestId: req.guest.id, eventId: req.event.id }) });
 });
 
 // ---------------------------------------------------------------------------

@@ -490,7 +490,8 @@
       "emailPlaceholder": "vous@example.com",
       "submit": "Continuer",
       "returningHint": "Déjà venu ? Vos choix précédents sont toujours enregistrés.",
-      "recoverPicks": "Les récupérer"
+      "recoverPicks": "Les récupérer",
+      "downloadDescription": "Veuillez indiquer au photographe qui vous êtes avant de télécharger. Vos téléchargements sont enregistrés sous ce nom."
     },
     "footer": {
       "forgetMeConfirm": "Votre nom et vos sélections seront supprimés de cette galerie.",
@@ -2654,7 +2655,9 @@
         "ratings": "Notes",
         "reactions": "Réactions",
         "lastSeen": "Dernière visite",
-        "colorLabels": "Étiquettes de couleur"
+        "colorLabels": "Étiquettes de couleur",
+        "views": "Visites",
+        "downloads": "Téléchargements"
       },
       "view": "Voir les détails",
       "export": "Exporter",
@@ -2678,7 +2681,17 @@
         "showInPhotos": "Voir dans les photos",
         "clearListFilter": "Afficher toutes les photos",
         "listFilterNamed": "Photos de {{name}}.",
-        "listFilter": "Photos d’une liste de favoris."
+        "listFilter": "Photos d’une liste de favoris.",
+        "downloads": "Téléchargements",
+        "noDownloads": "Aucun téléchargement enregistré. Les téléchargements sont enregistrés par invité lorsque « Exiger l'identité de l'invité pour télécharger » est activé.",
+        "deletedPhoto": "Photo supprimée",
+        "views": "Visites : {{count}}",
+        "downloadSummary": "Photos téléchargées : {{photos}} · Téléchargements ZIP : {{zips}}",
+        "zip": {
+          "all": "Galerie complète (ZIP)",
+          "selected": "Sélection (ZIP)",
+          "archive": "Téléchargement préparé (ZIP)"
+        }
       },
       "inviteStatus": {
         "pending": "En attente",
@@ -2693,7 +2706,8 @@
       "mergePickKeepHint": "Choisir l'entrée à conserver",
       "mergeKeepColumn": "Conserver",
       "mergeKeepRow": "Conserver {{name}}",
-      "mergeInclude": "Inclure {{name}} dans la fusion"
+      "mergeInclude": "Inclure {{name}} dans la fusion",
+      "zipCount": "+{{count}} ZIP"
     },
     "analytics": "Analytique",
     "activities": {
@@ -3675,7 +3689,12 @@
       "selectionSubmit": "Terminer la sélection",
       "selectionSubmitDesc": "Les invités remettent leurs « j’aime » ou favoris lorsqu’ils ont terminé. Leur sélection est alors verrouillée jusqu’à ce que vous la rouvriez, et vous êtes averti",
       "annotations": "Dessin sur les photos",
-      "annotationsDesc": "Les invités peuvent dessiner sur une photo et joindre le dessin à leur commentaire. Nécessite les commentaires"
+      "annotationsDesc": "Les invités peuvent dessiner sur une photo et joindre le dessin à leur commentaire. Nécessite les commentaires",
+      "requireGuestForDownload": "Exiger l'identité de l'invité pour télécharger",
+      "requireGuestForDownloadDesc": "Les invités saisissent leur nom avant tout téléchargement. Les visites et téléchargements s'affichent alors par invité sous Invités.",
+      "guestPrivacyText": "Note de confidentialité dans la demande de nom",
+      "guestPrivacyTextPlaceholder": "p. ex. Nous utilisons votre nom uniquement pour savoir qui a téléchargé quelles photos. Vous pouvez demander sa suppression à tout moment.",
+      "guestPrivacyTextHint": "Facultatif. Affiché aux invités lorsqu'on leur demande leur nom."
     },
     "settingsUpdated": "Paramètres de commentaires mis à jour",
     "settingsUpdateError": "Échec de la mise à jour des paramètres",

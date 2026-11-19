@@ -603,7 +603,8 @@
       "emailPlaceholder": "voce@exemplo.com.br",
       "submit": "Continuar",
       "returningHint": "Já esteve aqui? Suas escolhas anteriores continuam salvas.",
-      "recoverPicks": "Recuperá-las"
+      "recoverPicks": "Recuperá-las",
+      "downloadDescription": "Diga ao fotógrafo quem você é antes de baixar. Seus downloads ficam salvos com este nome."
     },
     "footer": {
       "forgetMeConfirm": "Seu nome e suas seleções serão removidos desta galeria.",
@@ -2744,7 +2745,9 @@
         "ratings": "Avaliações",
         "reactions": "Reações",
         "lastSeen": "Última visita",
-        "colorLabels": "Etiquetas de cor"
+        "colorLabels": "Etiquetas de cor",
+        "views": "Visualizações",
+        "downloads": "Downloads"
       },
       "view": "Ver detalhes",
       "export": "Exportar",
@@ -2768,7 +2771,17 @@
         "showInPhotos": "Mostrar nas fotos",
         "clearListFilter": "Mostrar todas as fotos",
         "listFilterNamed": "Mostrando as fotos de {{name}}.",
-        "listFilter": "Mostrando as fotos de uma lista de favoritos."
+        "listFilter": "Mostrando as fotos de uma lista de favoritos.",
+        "downloads": "Downloads",
+        "noDownloads": "Nenhum download registrado. Os downloads são registrados por convidado enquanto \"Exigir identidade do convidado para baixar\" estiver ativado.",
+        "deletedPhoto": "Foto excluída",
+        "views": "Visualizações: {{count}}",
+        "downloadSummary": "Fotos baixadas: {{photos}} · Downloads ZIP: {{zips}}",
+        "zip": {
+          "all": "Galeria completa (ZIP)",
+          "selected": "Seleção (ZIP)",
+          "archive": "Download preparado (ZIP)"
+        }
       },
       "inviteStatus": {
         "pending": "Pendente",
@@ -2783,7 +2796,8 @@
       "mergePickKeepHint": "Escolha a entrada a manter",
       "mergeKeepColumn": "Manter",
       "mergeKeepRow": "Manter {{name}}",
-      "mergeInclude": "Incluir {{name}} na junção"
+      "mergeInclude": "Incluir {{name}} na junção",
+      "zipCount": "+{{count}} ZIP"
     },
     "analytics": "Análise",
     "activities": {
@@ -3775,7 +3789,12 @@
       "selectionSubmit": "Concluir seleção",
       "selectionSubmitDesc": "Os convidados entregam suas curtidas ou favoritos quando terminam. A seleção fica bloqueada até você reabri-la, e você é avisado",
       "annotations": "Desenhar nas fotos",
-      "annotationsDesc": "Os convidados podem desenhar numa foto e anexar o desenho ao comentário. Requer comentários"
+      "annotationsDesc": "Os convidados podem desenhar numa foto e anexar o desenho ao comentário. Requer comentários",
+      "requireGuestForDownload": "Exigir identidade do convidado para baixar",
+      "requireGuestForDownloadDesc": "Os convidados informam o nome antes de qualquer download. Visualizações e downloads aparecem então por convidado em Convidados.",
+      "guestPrivacyText": "Aviso de privacidade no pedido de nome",
+      "guestPrivacyTextPlaceholder": "ex.: Usamos seu nome apenas para ver quem baixou quais fotos. Peça a remoção a qualquer momento.",
+      "guestPrivacyTextHint": "Opcional. Exibido aos convidados quando o nome é solicitado."
     },
     "settingsUpdated": "Configurações de feedback atualizadas",
     "settingsUpdateError": "Falha ao atualizar as configurações",

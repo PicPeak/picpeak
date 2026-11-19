@@ -1693,6 +1693,7 @@
         "POST /:slug/guest",
         "GET /:slug/guest/me",
         "DELETE /:slug/guest/me",
+        "POST /:slug/guest/download-ticket",
         "POST /:slug/guest/recover",
         "POST /:slug/guest/verify",
         "POST /:slug/guest/redeem"

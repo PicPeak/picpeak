@@ -91,7 +91,8 @@ export const GuestRecoveryModal: React.FC = () => {
   if (!recoveryOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    // Above the download dialog, as the name prompt it is reached from (issue 2503).
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/50" onClick={handleClose} />
       <div
         ref={panelRef}

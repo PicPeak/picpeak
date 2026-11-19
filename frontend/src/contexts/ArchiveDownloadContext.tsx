@@ -85,7 +85,7 @@ export const ArchiveDownloadProvider: React.FC<{ children: React.ReactNode; scop
   const downloadAllPhotos = useCallback(async (slug: string, zipReady?: boolean) => {
     if (pending.current || sharing.current) return false;
     if (zipReady && !isGalleryLimited(slug)) {
-      galleryService.downloadCachedArchive(slug);
+      await galleryService.downloadCachedArchive(slug);
       return true;
     }
     return prepare(slug);

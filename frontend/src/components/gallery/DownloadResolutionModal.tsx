@@ -16,6 +16,7 @@ import {
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import type { StartedArchive } from '../../contexts/ArchiveDownloadContext';
 import { useGalleryDialog } from './hooks/useGalleryDialog';
+import { isDownloadIdentityCancelled } from '../../utils/downloadIdentity';
 
 /**
  * Resolution picker for gallery downloads (#858).
@@ -112,7 +113,16 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
   const generation = useRef(0);
   useEffect(() => () => { generation.current += 1; }, []);
 
+  // Read through a ref: reportError feeds the polling effects, which must not
+  // restart whenever the parent hands in a new onClose.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   const reportError = useCallback((err: unknown) => {
+    // The guest closed the name prompt (issue 2503): nothing to report.
+    if (isDownloadIdentityCancelled(err)) {
+      closeRef.current();
+      return;
+    }
     setError(isSelectionTooLargeError(err)
       ? selectionTooLargeMessage(err.info.limit)
       : isDownloadLimitError(err)
@@ -159,7 +169,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
     // re-resizing and re-packaging the entire gallery for the same bytes.
     if (!photoIds && zipReady && !isGalleryLimited(slug) && selected === standardResolution) {
       try {
-        galleryService.downloadCachedArchive(slug);
+        await galleryService.downloadCachedArchive(slug);
         onDownloaded?.();
       } catch (err) {
         // The limit refusal already told the guest why (issue 1560).
@@ -250,8 +260,8 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
         setPhase('error');
         return;
       }
-      if (photoIds) galleryService.downloadJobFile(slug, token, part, true);
-      else galleryService.downloadJobFile(slug, token, part);
+      if (photoIds) await galleryService.downloadJobFile(slug, token, part, true);
+      else await galleryService.downloadJobFile(slug, token, part);
       onDownloaded?.();
       onClose();
     } catch (err) {

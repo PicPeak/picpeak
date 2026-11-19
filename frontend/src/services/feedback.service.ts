@@ -96,6 +96,14 @@ export interface FeedbackSettings {
   // `'LIKE_LIMIT_REACHED'`, surfaced to the guest as a modal.
   max_favorites_per_guest?: number | null;
   max_likes_per_guest?: number | null;
+  /**
+   * Guest identity before downloading (issue 2503): in guest identity mode a
+   * download asks for the guest's name first. Off unless switched on. The
+   * gallery payload says whether it is in force (guest mode included).
+   */
+  require_guest_for_download?: boolean;
+  /** Short plain-text note in the guest prompt, e.g. why the name is asked. */
+  guest_privacy_text?: string | null;
 }
 
 export interface PhotoFeedback {

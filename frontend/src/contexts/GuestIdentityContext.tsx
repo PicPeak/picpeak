@@ -7,6 +7,7 @@ import {
   getGuestIdentity,
   storeGuestIdentity,
 } from '../utils/guestIdentityStorage';
+import { setDownloadIdentityGate } from '../utils/downloadIdentity';
 
 type IdentityMode = 'simple' | 'guest';
 
@@ -16,6 +17,11 @@ interface GuestIdentityContextValue {
   identityMode: IdentityMode;
   isRequired: boolean;            // true when mode='guest' AND no identity yet
   promptOpen: boolean;
+  /**
+   * Why the prompt is open: 'download' when a download asked for the guest's
+   * name (issue 2503), so the prompt can say so. null otherwise.
+   */
+  promptReason: 'download' | null;
   recoveryOpen: boolean;
   /**
    * Why recovery opened on its own: 'spent-invite' when the visitor came
@@ -46,7 +52,7 @@ interface GuestIdentityContextValue {
    * prompt and waits until the user registers (or cancels, in which case it
    * throws a "user_cancelled" error).
    */
-  ensureIdentity: () => Promise<GuestIdentity>;
+  ensureIdentity: (reason?: 'download') => Promise<GuestIdentity>;
 }
 
 const GuestIdentityContext = createContext<GuestIdentityContextValue | null>(null);
@@ -72,17 +78,28 @@ function writePendingInvite(slug: string, token: string | null): void {
 interface GuestIdentityProviderProps {
   slug: string;
   identityMode: IdentityMode;
+  /**
+   * The gallery asks for the guest's name before any download (issue 2503).
+   * Only takes effect in guest identity mode.
+   */
+  requireForDownload?: boolean;
   children: React.ReactNode;
 }
 
 export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   slug,
   identityMode,
+  requireForDownload = false,
   children,
 }) => {
   const queryClient = useQueryClient();
   const [identity, setIdentity] = useState<GuestIdentity | null>(() => getGuestIdentity(slug));
   const [promptOpen, setPromptOpen] = useState(false);
+  const [promptReason, setPromptReason] = useState<'download' | null>(null);
+  // The identity as of now, for the download gate below: dropping a stale
+  // identity and asking again happen in one task, before a re-render.
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryReason, setRecoveryReason] = useState<'spent-invite' | null>(null);
 
@@ -293,7 +310,10 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     })();
   }, [slug, identityMode]);
 
-  const openPrompt = useCallback(() => setPromptOpen(true), []);
+  const openPrompt = useCallback(() => {
+    setPromptReason(null);
+    setPromptOpen(true);
+  }, []);
   const closePrompt = useCallback(() => {
     setPromptOpen(false);
     // Reject any pending ensureIdentity() promises.
@@ -373,7 +393,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     setIdentity(null);
   }, [slug]);
 
-  const ensureIdentity = useCallback(async (): Promise<GuestIdentity> => {
+  const ensureIdentity = useCallback(async (reason?: 'download'): Promise<GuestIdentity> => {
     if (identityMode !== 'guest') {
       // In simple mode, there is no per-person identity. Return a synthetic
       // "null" identity that callers will ignore.
@@ -396,14 +416,34 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       if (redeemed) return redeemed;
     }
 
-    if (identity) return identity;
+    if (identityRef.current) return identityRef.current;
 
     return new Promise((resolve, reject) => {
       pendingResolvers.current.push(resolve);
       pendingRejecters.current.push(reject);
+      setPromptReason(reason ?? null);
       setPromptOpen(true);
     });
-  }, [identityMode, identity, slug]);
+  }, [identityMode, slug]);
+
+  // Downloads ask through utils/downloadIdentity (issue 2503): the download
+  // transports sit outside this provider. Registered in guest identity mode
+  // only; the admin preview is never asked, as the server never asks it.
+  useEffect(() => {
+    if (identityMode !== 'guest') return undefined;
+    const adminPreview = typeof window !== 'undefined'
+      && new URLSearchParams(window.location.search).get('admin_preview') === '1';
+    setDownloadIdentityGate(slug, {
+      required: requireForDownload && !adminPreview,
+      ensure: async () => { await ensureIdentity('download'); },
+      forget: () => {
+        clearGuestIdentity(slug);
+        identityRef.current = null;
+        setIdentity(null);
+      },
+    });
+    return () => setDownloadIdentityGate(slug, null);
+  }, [slug, identityMode, requireForDownload, ensureIdentity]);
 
   const isRequired = identityMode === 'guest' && !identity;
 
@@ -414,6 +454,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       identityMode,
       isRequired,
       promptOpen,
+      promptReason,
       recoveryOpen,
       recoveryReason,
       openPrompt,
@@ -433,6 +474,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       identityMode,
       isRequired,
       promptOpen,
+      promptReason,
       recoveryOpen,
       recoveryReason,
       openPrompt,

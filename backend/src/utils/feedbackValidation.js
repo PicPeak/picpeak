@@ -238,6 +238,9 @@ const validateFeedbackSubmission = [
 /**
  * Validation for feedback settings
  */
+// The guest prompt's privacy note (issue 2503): a sentence or two.
+const GUEST_PRIVACY_TEXT_MAX = 1000;
+
 const validateFeedbackSettings = [
   body('feedback_enabled').optional().isBoolean(),
   body('allow_ratings').optional().isBoolean(),
@@ -272,6 +275,15 @@ const validateFeedbackSettings = [
     .optional({ nullable: true })
     .custom((v) => v === null || (Number.isInteger(v) && v >= 0 && v <= 10000))
     .withMessage('max_likes_per_guest must be null or an integer between 0 and 10000'),
+  // Guest identity before downloading (issue 2503).
+  body('require_guest_for_download').optional().isBoolean(),
+  // Plain text shown in the guest prompt; rendered as text, never as HTML.
+  // Blank is no text.
+  body('guest_privacy_text')
+    .optional({ nullable: true })
+    .custom((v) => v === null || (typeof v === 'string' && v.trim().length <= GUEST_PRIVACY_TEXT_MAX))
+    .withMessage(`guest_privacy_text must be at most ${GUEST_PRIVACY_TEXT_MAX} characters`)
+    .customSanitizer((v) => (typeof v === 'string' ? v.trim() || null : v)),
 ];
 
 /**

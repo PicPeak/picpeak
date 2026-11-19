@@ -1422,7 +1422,8 @@
       "emailPlaceholder": "vi@example.com",
       "submit": "Nadaljuj",
       "returningHint": "Ste že bili tukaj? Vaša prejšnja izbira je še shranjena.",
-      "recoverPicks": "Prikliči izbiro"
+      "recoverPicks": "Prikliči izbiro",
+      "downloadDescription": "Preden prenesete, povejte fotografu, kdo ste. Vaši prenosi se shranijo pod tem imenom."
     },
     "footer": {
       "forgetMeConfirm": "Vaše ime in izbire bodo odstranjeni iz te galerije.",
@@ -4529,7 +4530,9 @@
         "ratings": "Ocene",
         "reactions": "Odzivi",
         "lastSeen": "Nazadnje viden",
-        "colorLabels": "Barvne oznake"
+        "colorLabels": "Barvne oznake",
+        "views": "Ogledi",
+        "downloads": "Prenosi"
       },
       "view": "Ogled podrobnosti",
       "export": "Izvozi",
@@ -4555,7 +4558,17 @@
         "showInPhotos": "Prikaži med fotografijami",
         "clearListFilter": "Prikaži vse fotografije",
         "listFilterNamed": "Prikazane so fotografije s seznama {{name}}.",
-        "listFilter": "Prikazane so fotografije z enega seznama priljubljenih."
+        "listFilter": "Prikazane so fotografije z enega seznama priljubljenih.",
+        "downloads": "Prenosi",
+        "noDownloads": "Ni zabeleženih prenosov. Prenosi se beležijo po gostih, dokler je vklopljeno »Za prenos zahtevaj identiteto gosta«.",
+        "deletedPhoto": "Izbrisana fotografija",
+        "views": "Ogledi: {{count}}",
+        "downloadSummary": "Prenesene fotografije: {{photos}} · Prenosi ZIP: {{zips}}",
+        "zip": {
+          "all": "Celotna galerija (ZIP)",
+          "selected": "Izbor (ZIP)",
+          "archive": "Pripravljen prenos (ZIP)"
+        }
       },
       "inviteStatus": {
         "pending": "Čaka",
@@ -4570,7 +4583,8 @@
       "mergePickKeepHint": "Izberite vnos za ohranitev",
       "mergeKeepColumn": "Ohrani",
       "mergeKeepRow": "Ohrani {{name}}",
-      "mergeInclude": "Vključi {{name}} v združitev"
+      "mergeInclude": "Vključi {{name}} v združitev",
+      "zipCount": "+{{count}} ZIP"
     },
     "analytics": "Analitika",
     "activities": {
@@ -6086,7 +6100,12 @@
       "selectionSubmit": "Zaključek izbora",
       "selectionSubmitDesc": "Gostje oddajo svoje všečke ali priljubljene, ko končajo. Njihov izbor je nato zaklenjen, dokler ga znova ne odprete, vi pa prejmete obvestilo",
       "annotations": "Risanje na fotografije",
-      "annotationsDesc": "Gostje lahko rišejo na fotografijo in risbo priložijo komentarju. Potrebni so komentarji"
+      "annotationsDesc": "Gostje lahko rišejo na fotografijo in risbo priložijo komentarju. Potrebni so komentarji",
+      "requireGuestForDownload": "Za prenos zahtevaj identiteto gosta",
+      "requireGuestForDownloadDesc": "Gostje pred vsakim prenosom vnesejo svoje ime. Ogledi in prenosi so nato prikazani po gostih pod Gostje.",
+      "guestPrivacyText": "Obvestilo o zasebnosti v pozivu za ime",
+      "guestPrivacyTextPlaceholder": "npr. Vaše ime uporabljamo samo zato, da vidimo, kdo je prenesel katere fotografije. Kadar koli lahko zahtevate izbris.",
+      "guestPrivacyTextHint": "Neobvezno. Prikaže se gostom, ko jih vprašamo za ime."
     },
     "settingsUpdated": "Nastavitve povratnih informacij posodobljene",
     "settingsUpdateError": "Nastavitev ni bilo mogoče posodobiti",
