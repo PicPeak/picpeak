@@ -30,8 +30,10 @@ describe('event code helpers', () => {
     expect(normalizeAccessCode(123)).toBe('');
   });
 
-  it('accepts 4 to 12 characters of the alphabet only', () => {
-    expect(isValidAccessCode('ABCD')).toBe(true);
+  it('accepts 6 to 12 characters of the alphabet only', () => {
+    expect(isValidAccessCode('ABCDEF')).toBe(true);
+    expect(isValidAccessCode('ABCDE')).toBe(false);
+    expect(isValidAccessCode('ABCD')).toBe(false);
     expect(isValidAccessCode('MUEPPER2525')).toBe(true);
     expect(isValidAccessCode('ABC')).toBe(false);
     expect(isValidAccessCode('ABCDEFGHJKMNP')).toBe(false);

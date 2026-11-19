@@ -744,7 +744,7 @@
       "title": "Evenementcode",
       "hint": "Gasten voeren deze code in op {{url}} om de galerij te vinden.",
       "customLabel": "Eigen code",
-      "invalid": "Gebruik 4 tot 12 letters en cijfers, zonder 0, O, 1, I of L.",
+      "invalid": "Gebruik 6 tot 12 letters en cijfers, zonder 0, O, 1, I of L.",
       "taken": "Een andere galerij gebruikt deze code al.",
       "failed": "De evenementcode kon niet worden opgeslagen",
       "saved": "Evenementcode opgeslagen",

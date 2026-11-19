@@ -1972,7 +1972,7 @@
       "title": "Event code",
       "hint": "Guests enter this code at {{url}} to find the gallery.",
       "customLabel": "Your own code",
-      "invalid": "Use 4 to 12 letters and digits, without 0, O, 1, I or L.",
+      "invalid": "Use 6 to 12 letters and digits, without 0, O, 1, I or L.",
       "taken": "Another gallery already uses this code.",
       "failed": "Could not save the event code",
       "saved": "Event code saved",

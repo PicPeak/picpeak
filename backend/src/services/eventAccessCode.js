@@ -26,7 +26,7 @@ const logger = require('../utils/logger');
 // No 0/O, 1/I/L: nothing a guest can misread off a printed card.
 const ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const GENERATED_LENGTH = 6;
-const MIN_LENGTH = 4;
+const MIN_LENGTH = 6;
 const MAX_LENGTH = 12;
 const MAX_ATTEMPTS = 8;
 const CODE_RE = new RegExp(`^[${ALPHABET}]{${MIN_LENGTH},${MAX_LENGTH}}$`);
@@ -43,7 +43,7 @@ function normalizeAccessCode(input) {
   return input.replace(/[\s-]+/g, '').toUpperCase();
 }
 
-/** A normalized code is valid when it uses only the alphabet and has 4 to 12 characters. */
+/** A normalized code is valid when it uses only the alphabet and has 6 to 12 characters. */
 function isValidAccessCode(code) {
   return typeof code === 'string' && CODE_RE.test(code);
 }

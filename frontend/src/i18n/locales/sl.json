@@ -1762,7 +1762,7 @@
       "title": "Koda dogodka",
       "hint": "Gostje to kodo vnesejo na {{url}}, da najdejo galerijo.",
       "customLabel": "Lastna koda",
-      "invalid": "Uporabite 4 do 12 črk in številk, brez 0, O, 1, I ali L.",
+      "invalid": "Uporabite 6 do 12 črk in številk, brez 0, O, 1, I ali L.",
       "taken": "To kodo že uporablja druga galerija.",
       "failed": "Kode dogodka ni bilo mogoče shraniti",
       "saved": "Koda dogodka shranjena",

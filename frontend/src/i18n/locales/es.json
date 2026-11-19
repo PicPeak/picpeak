@@ -733,7 +733,7 @@
       "title": "Código del evento",
       "hint": "Los invitados introducen este código en {{url}} para encontrar la galería.",
       "customLabel": "Tu propio código",
-      "invalid": "Usa de 4 a 12 letras y cifras, sin 0, O, 1, I ni L.",
+      "invalid": "Usa de 6 a 12 letras y cifras, sin 0, O, 1, I ni L.",
       "taken": "Otra galería ya usa este código.",
       "failed": "No se ha podido guardar el código del evento",
       "saved": "Código del evento guardado",

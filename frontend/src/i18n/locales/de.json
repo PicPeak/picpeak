@@ -2720,7 +2720,7 @@
       "title": "Event-Code",
       "hint": "Gäste geben diesen Code unter {{url}} ein, um die Galerie zu finden.",
       "customLabel": "Eigener Code",
-      "invalid": "4 bis 12 Buchstaben und Ziffern, ohne 0, O, 1, I oder L.",
+      "invalid": "6 bis 12 Buchstaben und Ziffern, ohne 0, O, 1, I oder L.",
       "taken": "Diesen Code verwendet bereits eine andere Galerie.",
       "failed": "Der Event-Code konnte nicht gespeichert werden",
       "saved": "Event-Code gespeichert",

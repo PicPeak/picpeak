@@ -35,7 +35,7 @@ module.exports = (router) => {
     }
   });
 
-  // A code the admin chose: 4-12 characters of the code alphabet, `-` and
+  // A code the admin chose: 6-12 characters of the code alphabet, `-` and
   // spaces ignored, stored uppercase. 409 when another gallery holds it.
   router.put('/:id/access-code', adminAuth, requirePermission('events.edit'), requireEventOwnership, async (req, res) => {
     try {
@@ -44,7 +44,7 @@ module.exports = (router) => {
       const code = normalizeAccessCode(req.body?.code);
       if (!isValidAccessCode(code)) {
         return res.status(400).json({
-          error: 'The code must have 4 to 12 letters and digits, without 0, O, 1, I or L',
+          error: 'The code must have 6 to 12 letters and digits, without 0, O, 1, I or L',
           code: 'INVALID_ACCESS_CODE',
         });
       }

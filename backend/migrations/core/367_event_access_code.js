@@ -4,7 +4,7 @@
  *
  *   events.access_code   short code a guest types on /code to reach the
  *                        gallery (6 characters from an alphabet without
- *                        0/O/1/I/L, or a 4-12 character code the admin
+ *                        0/O/1/I/L, or a 6-12 character code the admin
  *                        chose). Stored uppercase. NULL: no code.
  *
  * UNIQUE, so one code never opens two galleries; NULLs do not collide on

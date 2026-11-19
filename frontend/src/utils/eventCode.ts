@@ -6,7 +6,7 @@ import { buildShareLinkUrl } from './url';
 
 // No 0/O, 1/I/L: nothing a guest can misread off a printed card.
 export const EVENT_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
-export const EVENT_CODE_MIN_LENGTH = 4;
+export const EVENT_CODE_MIN_LENGTH = 6;
 export const EVENT_CODE_MAX_LENGTH = 12;
 
 const CODE_RE = new RegExp(`^[${EVENT_CODE_ALPHABET}]{${EVENT_CODE_MIN_LENGTH},${EVENT_CODE_MAX_LENGTH}}$`);

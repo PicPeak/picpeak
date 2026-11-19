@@ -95,7 +95,7 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
     e.preventDefault();
     const normalized = normalizeEventCode(draft);
     if (!isValidEventCode(normalized)) {
-      setError(t('events.eventCode.invalid', 'Use 4 to 12 letters and digits, without 0, O, 1, I or L.'));
+      setError(t('events.eventCode.invalid', 'Use 6 to 12 letters and digits, without 0, O, 1, I or L.'));
       return;
     }
     setBusy(true);
@@ -109,7 +109,7 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 409) setError(t('events.eventCode.taken', 'Another gallery already uses this code.'));
-      else if (status === 400) setError(t('events.eventCode.invalid', 'Use 4 to 12 letters and digits, without 0, O, 1, I or L.'));
+      else if (status === 400) setError(t('events.eventCode.invalid', 'Use 6 to 12 letters and digits, without 0, O, 1, I or L.'));
       else setError(t('events.eventCode.failed', 'Could not save the event code'));
     } finally {
       setBusy(false);
@@ -133,7 +133,7 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
             value={draft}
             onChange={(e) => setDraft(e.target.value.toUpperCase())}
             error={error || undefined}
-            helperText={error ? undefined : t('events.eventCode.invalid', 'Use 4 to 12 letters and digits, without 0, O, 1, I or L.')}
+            helperText={error ? undefined : t('events.eventCode.invalid', 'Use 6 to 12 letters and digits, without 0, O, 1, I or L.')}
             autoFocus
             autoCapitalize="characters"
             autoCorrect="off"
