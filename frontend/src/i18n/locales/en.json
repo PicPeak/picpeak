@@ -7751,6 +7751,22 @@
     "videosFirst": "Show videos first",
     "videosFirstHelp": "Lists every video ahead of the photos. The sort above still applies within the videos and within the photos."
   },
+  "highlights": {
+    "mode": "Highlights",
+    "modeOff": "Off",
+    "modeManual": "Pinned photos only",
+    "modeRating": "Pinned photos and your star rating",
+    "threshold": "Minimum stars",
+    "help": "Highlights get a larger tile in the Masonry (quilted), Mosaic, Premium and Story layouts; the photo order stays the same. Pin or unpin a photo in its detail view. With your star rating, at most one in eight photos per category becomes a highlight automatically. Guests never see ratings.",
+    "pinLabel": "Highlight",
+    "pinAuto": "Automatic",
+    "pinOn": "Always",
+    "pinOff": "Never",
+    "pinHelp": "Always and Never override the gallery's highlights setting. Automatic follows it.",
+    "pinError": "Failed to save the highlight",
+    "pinnedOn": "Always a highlight",
+    "pinnedOff": "Never a highlight"
+  },
   "photoSales": {
     "purchaseConfirmed": "Your purchase was successful",
     "galleryExpiresOn": "Gallery expiry: {{date}}",

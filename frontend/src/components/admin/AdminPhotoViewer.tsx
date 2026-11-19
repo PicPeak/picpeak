@@ -1,6 +1,6 @@
 import { usePhotoSelection } from '../../hooks/usePhotoSelection';
 import React, { useEffect, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, Euro, ThumbsUp, ThumbsDown, Pencil, Image as ImageIcon, Crosshair } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, Euro, ThumbsUp, ThumbsDown, Pencil, Image as ImageIcon, Crosshair, Sparkles } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -264,6 +264,24 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
     color_label: (photo.my_color_label as ColorLabel) ?? null,
   };
   const currentMark = markFor(currentPhoto);
+
+  // Highlight pin (issue 2549): local edits over the loaded rows, like the marks.
+  const [highlightPins, setHighlightPins] = useState<Record<number, boolean | null>>({});
+  const currentPin = Object.prototype.hasOwnProperty.call(highlightPins, currentPhoto.id)
+    ? highlightPins[currentPhoto.id]
+    : (currentPhoto.highlight_pin ?? null);
+  const saveHighlightPin = async (next: boolean | null) => {
+    const photoId = currentPhoto.id;
+    const previous = currentPin;
+    setHighlightPins((prev) => ({ ...prev, [photoId]: next }));
+    try {
+      await photosService.setPhotoHighlight(eventId, photoId, next);
+      queryClient.invalidateQueries({ queryKey: ['admin-event-photos', String(eventId)] });
+    } catch {
+      setHighlightPins((prev) => ({ ...prev, [photoId]: previous }));
+      toast.error(t('highlights.pinError', 'Failed to save the highlight'));
+    }
+  };
 
   const saveMark = async (patch: { rating?: number | null; color_label?: ColorLabel | null }) => {
     const photoId = currentPhoto.id;
@@ -700,6 +718,39 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
               )}
             </div>
           )}
+
+          {/* Highlight pin (issue 2549): Automatic follows the gallery's
+              highlights setting, Always and Never override it. */}
+          <div className="mb-6" data-testid="admin-viewer-highlight">
+            <span className="text-neutral-400 text-sm flex items-center gap-1 mb-2">
+              <Sparkles className="w-4 h-4" />
+              {t('highlights.pinLabel', 'Highlight')}
+            </span>
+            <div className="flex gap-1" role="radiogroup" aria-label={t('highlights.pinLabel', 'Highlight')}>
+              {([
+                [null, t('highlights.pinAuto', 'Automatic')],
+                [true, t('highlights.pinOn', 'Always')],
+                [false, t('highlights.pinOff', 'Never')],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={String(value)}
+                  type="button"
+                  role="radio"
+                  aria-checked={currentPin === value}
+                  disabled={!canEditPhotos}
+                  onClick={() => { if (currentPin !== value) void saveHighlightPin(value); }}
+                  className={`px-2.5 py-1 rounded text-xs transition-colors disabled:opacity-50 ${
+                    currentPin === value ? 'bg-white/15 ring-1 ring-white/60 text-white' : 'bg-white/5 hover:bg-white/10 text-neutral-300'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-neutral-500 mt-2">
+              {t('highlights.pinHelp', 'Always and Never override the gallery\'s highlights setting. Automatic follows it.')}
+            </p>
+          </div>
 
           {/* Metadata */}
           <div className="space-y-4 text-sm">

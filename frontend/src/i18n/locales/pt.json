@@ -4142,6 +4142,22 @@
     "filenameZA": "Nome do arquivo (Z-A)",
     "dateTaken": "Data da captura"
   },
+  "highlights": {
+    "mode": "Destaques",
+    "modeOff": "Desligado",
+    "modeManual": "Apenas fotos fixadas",
+    "modeRating": "Fotos fixadas e a sua classificação por estrelas",
+    "threshold": "Mínimo de estrelas",
+    "help": "Os destaques recebem um mosaico maior nos layouts Masonry (quilted), Mosaic, Premium e Story; a ordem das fotos mantém-se. Fixe ou desafixe uma foto na sua vista de detalhe. Com a sua classificação por estrelas, no máximo uma em cada oito fotos por categoria torna-se destaque automaticamente. Os convidados nunca veem classificações.",
+    "pinLabel": "Destaque",
+    "pinAuto": "Automático",
+    "pinOn": "Sempre",
+    "pinOff": "Nunca",
+    "pinHelp": "Sempre e Nunca prevalecem sobre a definição de destaques da galeria. Automático segue-a.",
+    "pinError": "Não foi possível guardar o destaque",
+    "pinnedOn": "Sempre um destaque",
+    "pinnedOff": "Nunca um destaque"
+  },
   "photos": {
     "moveToCategory_many": "Mover {{count}} fotos para categoria",
     "moveToCategory_one": "Mover {{count}} foto para categoria",

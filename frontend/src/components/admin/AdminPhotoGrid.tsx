@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { radioGroupKeyDown } from '../../utils/ariaKeyboard';
-import { Check, ClipboardCheck, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, FolderInput, Cog, AlertTriangle, RefreshCw, FileX, LayoutGrid, List, UserRound, X, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Check, ClipboardCheck, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, FolderInput, Cog, AlertTriangle, RefreshCw, FileX, LayoutGrid, List, UserRound, X, ThumbsUp, ThumbsDown, Sparkles } from 'lucide-react';
 import { COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.service';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
@@ -763,6 +763,20 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                     </span>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Highlight pin (issue 2549), left of the selection checkbox. */}
+            {photo.highlight_pin != null && (
+              <div className="absolute top-2 right-10 z-10 pointer-events-none" data-testid={`admin-photo-highlight-${photo.id}`}>
+                <span
+                  className={`flex items-center justify-center w-6 h-6 rounded-full bg-white/90 ${photo.highlight_pin ? 'text-accent' : 'text-faint'}`}
+                  role="img"
+                  aria-label={photo.highlight_pin ? t('highlights.pinnedOn', 'Always a highlight') : t('highlights.pinnedOff', 'Never a highlight')}
+                  title={photo.highlight_pin ? t('highlights.pinnedOn', 'Always a highlight') : t('highlights.pinnedOff', 'Never a highlight')}
+                >
+                  <Sparkles className={`w-3.5 h-3.5${photo.highlight_pin ? '' : ' opacity-50'}`} />
+                </span>
               </div>
             )}
 

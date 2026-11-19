@@ -665,6 +665,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     // Determine grid span based on aspect ratio
     const getSpanClasses = (photo: Photo): string => {
       const span = quiltedSpan(photo);
+      if (span.columns === 2 && span.rows === 2) return 'col-span-2 row-span-2';
       if (span.columns === 2) return 'col-span-2';
       if (span.rows === 2) return 'row-span-2';
       return '';

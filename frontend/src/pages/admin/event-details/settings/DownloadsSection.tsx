@@ -112,6 +112,40 @@ export const DownloadsSection: React.FC<FieldsProps & {
             <p className="text-xs text-muted mt-1 ml-6">{t('photoSort.videosFirstHelp', 'Lists every video ahead of the photos. The sort above still applies within the videos and within the photos.')}</p>
           </div>
         </div>
+
+        {/* Which photos get the larger tiles (issue 2549). Only tile sizes
+            change, never the order. */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-line">
+          <div>
+            <label className={labelClass} htmlFor="event-highlights-mode">{t('highlights.mode', 'Highlights')}</label>
+            <select
+              id="event-highlights-mode"
+              value={f.highlights_mode}
+              onChange={(e) => set({ highlights_mode: e.target.value as typeof f.highlights_mode })}
+              className={inputClass}
+            >
+              <option value="off">{t('highlights.modeOff', 'Off')}</option>
+              <option value="manual">{t('highlights.modeManual', 'Pinned photos only')}</option>
+              <option value="rating">{t('highlights.modeRating', 'Pinned photos and your star rating')}</option>
+            </select>
+          </div>
+          {f.highlights_mode === 'rating' && (
+            <div>
+              <label className={labelClass} htmlFor="event-highlights-threshold">{t('highlights.threshold', 'Minimum stars')}</label>
+              <select
+                id="event-highlights-threshold"
+                value={f.highlights_threshold}
+                onChange={(e) => set({ highlights_threshold: Number(e.target.value) })}
+                className={inputClass}
+              >
+                {[1, 2, 3, 4, 5].map((stars) => (
+                  <option key={stars} value={stars}>{'★'.repeat(stars)}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <p className="text-xs text-muted md:col-span-3">{t('highlights.help', 'Highlights get a larger tile in the Masonry (quilted), Mosaic, Premium and Story layouts; the photo order stays the same. Pin or unpin a photo in its detail view. With your star rating, at most one in eight photos per category becomes a highlight automatically. Guests never see ratings.')}</p>
+        </div>
       </SectionCard>
 
       {/* Per-gallery download resolution override (#858). Every field is

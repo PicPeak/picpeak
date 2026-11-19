@@ -22,6 +22,8 @@ const {
 } = require('../utils/photoFilterBuilder');
 const feedbackService = require('../services/feedbackService');
 const photoAdminMarksService = require('../services/photoAdminMarksService');
+const { pinOf } = require('../services/photoHighlights');
+const { formatBoolean } = require('../utils/dbCompat');
 const { validateUploadedFiles } = require('../middleware/uploadValidation');
 const {
   getMaxFilesPerUpload,
@@ -927,6 +929,34 @@ router.put('/:eventId/photos/:photoId/mark', adminAuth, requirePermission('photo
       return res.status(400).json({ error: error.message });
     }
     errorResponse(res, error, 500, 'Failed to save mark');
+  }
+});
+
+// The photographer's highlight pin (issue 2549): `highlight` true always
+// draws the photo as a larger tile, false never does, null leaves it to the
+// gallery's highlights mode. Its own route rather than the PATCH above, which
+// also resets the automatic-category flag.
+router.put('/:eventId/photos/:photoId/highlight', adminAuth, requirePermission('photos.edit'), requireEventOwnership, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const photoId = parseInt(req.params.photoId, 10);
+    if (!Number.isInteger(photoId) || photoId < 1) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    const value = req.body ? req.body.highlight : undefined;
+    if (value !== true && value !== false && value !== null) {
+      return res.status(400).json({ error: 'highlight must be true, false or null' });
+    }
+
+    const updated = await livePhotos(db)
+      .where({ id: photoId, event_id: eventId })
+      .update({ highlight_pin: value === null ? null : formatBoolean(value) });
+    if (!updated) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    res.json({ success: true, highlight_pin: value });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to save highlight');
   }
 });
 
@@ -2226,6 +2256,8 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         folder_id: photo.folder_id || null,
         pending_folder_request_id: photo.pending_folder_request_id || null,
         first_look: parseBooleanInput(photo.first_look, false),
+        // Highlight pin (issue 2549): true, false or null (no choice).
+        highlight_pin: pinOf(photo.highlight_pin),
         media_type: photo.media_type || 'image',
         mime_type: photo.mime_type || null,
         // Browser-playable copy (issue 1430, item 8): null until the setting

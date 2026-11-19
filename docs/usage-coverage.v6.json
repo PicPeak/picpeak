@@ -1168,6 +1168,7 @@
         "POST /photos/:photoId/retry",
         "DELETE /:eventId/photos/:photoId",
         "PUT /:eventId/photos/:photoId/mark",
+        "PUT /:eventId/photos/:photoId/highlight",
         "PATCH /:eventId/photos/:photoId",
         "POST /:eventId/photos/bulk-delete",
         "POST /:eventId/photos/bulk-update",

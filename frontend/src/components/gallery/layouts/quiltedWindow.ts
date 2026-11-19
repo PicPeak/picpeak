@@ -34,8 +34,10 @@ export interface QuiltedLayout {
   rowCount: number;
 }
 
-// Landscape photos span 2 columns, portrait photos span 2 rows.
-export function quiltedSpan(photo: { width?: number | null; height?: number | null }): QuiltedSpan {
+// Landscape photos span 2 columns, portrait photos span 2 rows. A highlight
+// (issue 2549) spans both; without highlights the spans are the shapes alone.
+export function quiltedSpan(photo: { width?: number | null; height?: number | null; is_highlight?: boolean }): QuiltedSpan {
+  if (photo.is_highlight) return { columns: 2, rows: 2 };
   const ratio = (photo.width || 800) / (photo.height || 600);
   // Very wide landscape (panoramic) - span 2 columns
   if (ratio > 1.5) return { columns: 2, rows: 1 };

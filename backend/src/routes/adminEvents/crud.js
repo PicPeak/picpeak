@@ -1092,6 +1092,10 @@ module.exports = (router) => {
         default_photo_sort: source.default_photo_sort || 'upload_date_desc',
         // Part of the gallery's order, like the sort above (issue 2263).
         videos_first: formatBoolean(parseBooleanInput(source.videos_first, false)),
+        // Highlights (issue 2549) are part of how the gallery draws; the pins
+        // belong to the source gallery's photos.
+        highlights_mode: source.highlights_mode || 'off',
+        highlights_threshold: source.highlights_threshold || 4,
         // Client-access secrets and the OG-share opt-in deliberately do NOT
         // carry over — admin re-decides per gallery.
         client_access_enabled: formatBoolean(false),
@@ -1346,6 +1350,10 @@ module.exports = (router) => {
     ]),
     // Videos ahead of photos in the guest gallery (issue 2263).
     body('videos_first').optional().isBoolean(),
+    // Which photos get the larger tiles (issue 2549), and the admin star
+    // rating that makes one in 'rating' mode.
+    body('highlights_mode').optional().isIn(['off', 'manual', 'rating']),
+    body('highlights_threshold').optional().isInt({ min: 1, max: 5 }),
     // Per-event promotional override (#440). Three-way mode:
     //   inherit → fall back to global branding_promo_markdown
     //   custom  → render this event's promo_markdown verbatim
@@ -2097,6 +2105,9 @@ module.exports = (router) => {
       }
       if (Object.prototype.hasOwnProperty.call(updates, 'videos_first')) {
         updates.videos_first = formatBoolean(parseBooleanInput(updates.videos_first, false));
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'highlights_threshold')) {
+        updates.highlights_threshold = parseInt(updates.highlights_threshold, 10);
       }
 
       // Reveal mode (#838). Turning the toggle ON from off clears

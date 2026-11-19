@@ -35,6 +35,16 @@ const MOSAIC_TILE_CLASS = 'photo-card relative group cursor-pointer overflow-hid
 // From the stored dimensions (fallback to 1 if unknown).
 const mosaicAspectRatio = (photo: Photo) => ((photo.width && photo.height) ? photo.width / photo.height : 1);
 
+/**
+ * The tile's own style. A highlight (issue 2549) takes a full row across the
+ * columns, cropped around its focal point to at most half as tall as wide, so
+ * a portrait does not fill the screen. Columns cannot be widened one by one,
+ * so a full row is the larger tile this layout has.
+ */
+export const mosaicTileStyle = (photo: Photo): React.CSSProperties => (photo.is_highlight
+  ? { breakInside: 'avoid', columnSpan: 'all', aspectRatio: Math.max(mosaicAspectRatio(photo), 2).toString() }
+  : { breakInside: 'avoid', aspectRatio: mosaicAspectRatio(photo).toString() });
+
 interface MosaicPhotoProps {
   photo: Photo;
   isSelected: boolean;
@@ -112,8 +122,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
       onToggleSelect={onToggleSelect}
       className={MOSAIC_TILE_CLASS}
       style={{
-        breakInside: 'avoid',
-        aspectRatio: mosaicAspectRatio(photo).toString(),
+        ...mosaicTileStyle(photo),
         ...boxStyle(box),
       }}
       /*
@@ -215,7 +224,7 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const photoIds = React.useMemo(() => photos.map((photo) => photo.id), [photos]);
   // A like changes `photos`, not the shapes in it.
   const shapes = React.useMemo(
-    () => photos.map((photo) => `${photo.id}:${mosaicAspectRatio(photo)}`).join(),
+    () => photos.map((photo) => `${photo.id}:${mosaicAspectRatio(photo)}${photo.is_highlight ? ':h' : ''}`).join(),
     [photos],
   );
   const tileWindow = useMeasuredWindow(
@@ -223,10 +232,7 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     photoIds,
     `${shapes}|${desktop},${xlDown},${lgDown},${mobile}`,
     (root) => new Map(photos.map((photo) => {
-      const tile = ghostBox(root, MOSAIC_TILE_CLASS, {
-        breakInside: 'avoid',
-        aspectRatio: mosaicAspectRatio(photo).toString(),
-      });
+      const tile = ghostBox(root, MOSAIC_TILE_CLASS, mosaicTileStyle(photo) as Partial<CSSStyleDeclaration>);
       // WebKit balances columns differently around a box with nothing in it:
       // a tile went to the next column, as far off as a whole column's height.
       ghostBox(tile, 'w-full h-full', {});

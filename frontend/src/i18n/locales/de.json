@@ -7716,6 +7716,22 @@
     "videosFirst": "Videos zuerst anzeigen",
     "videosFirstHelp": "Listet alle Videos vor den Fotos. Die Sortierung oben gilt weiterhin innerhalb der Videos und innerhalb der Fotos."
   },
+  "highlights": {
+    "mode": "Highlights",
+    "modeOff": "Aus",
+    "modeManual": "Nur angeheftete Fotos",
+    "modeRating": "Angeheftete Fotos und deine Sternebewertung",
+    "threshold": "Mindestens Sterne",
+    "help": "Highlights bekommen in den Layouts Masonry (Quilted), Mosaic, Premium und Story eine größere Kachel; die Reihenfolge der Fotos bleibt gleich. Ein Foto heftest du in seiner Detailansicht an oder ab. Mit deiner Sternebewertung wird höchstens eins von acht Fotos pro Kategorie automatisch zum Highlight. Gäste sehen nie Bewertungen.",
+    "pinLabel": "Highlight",
+    "pinAuto": "Automatisch",
+    "pinOn": "Immer",
+    "pinOff": "Nie",
+    "pinHelp": "Immer und Nie haben Vorrang vor der Highlight-Einstellung der Galerie. Automatisch folgt ihr.",
+    "pinError": "Highlight konnte nicht gespeichert werden",
+    "pinnedOn": "Immer ein Highlight",
+    "pinnedOff": "Nie ein Highlight"
+  },
   "photoSales": {
     "purchaseConfirmed": "Ihr Kauf war erfolgreich",
     "galleryExpiresOn": "Ablauf der Galerie: {{date}}",

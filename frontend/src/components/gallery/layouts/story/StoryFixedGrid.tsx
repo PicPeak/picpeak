@@ -6,6 +6,14 @@ import type { Photo } from '../../../../types';
 
 const NO_ITEMS: WindowItem[] = [];
 
+/**
+ * A card two columns and two rows large where the grid has the room: the first
+ * of a grid of more than four, and every highlight (issue 2549).
+ */
+export const storyFeatured = (photo: Pick<Photo, 'is_highlight'>, index: number, firstFeatured: boolean): boolean => (
+  Boolean(photo.is_highlight) || (firstFeatured && index === 0)
+);
+
 interface StoryGrid {
   columns: number;
   /** The fixed height of a row, in px. */
@@ -116,8 +124,8 @@ export const StoryFixedGrid: React.FC<StoryFixedGridProps> = ({
   }, []);
 
   const layout = useMemo(() => (grid
-    ? layoutQuilted(photos, grid.columns, grid.cell, grid.gap, (_photo, index) => {
-      const size = featured && index === 0 && grid.columns > 1 ? 2 : 1;
+    ? layoutQuilted(photos, grid.columns, grid.cell, grid.gap, (photo, index) => {
+      const size = storyFeatured(photo, index, featured) && grid.columns > 1 ? 2 : 1;
       return { columns: size, rows: size };
     })
     : null), [grid, photos, featured]);
@@ -159,8 +167,8 @@ export const StoryFixedGrid: React.FC<StoryFixedGridProps> = ({
             galleryId={id}
             allowDownloads={allowDownloads}
             useEnhancedProtection={useEnhancedProtection}
-            // Mark first photo in each grid as featured
-            featured={index === 0 && featured}
+            // Mark first photo in each grid as featured, and every highlight (issue 2549)
+            featured={storyFeatured(photo, index, featured)}
             isSelectionMode={isSelectionMode}
             isSelected={selectedPhotos.has(photo.id)}
             onSelect={onPhotoSelect}

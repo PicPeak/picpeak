@@ -91,7 +91,7 @@ const CHILD_REFERENCES = {
   'services/faceProcessor.js': 7, 'services/favoriteLists.js': 4, 'services/feedbackIntegrity.js': 8,
   'services/feedbackModeration.js': 2, 'services/feedbackService.js': 44,
   'services/galleryPhotoQuery.js': 1, 'services/galleryQueryService.js': 6,
-  'services/photoAdminMarksService.js': 8, 'services/picpeakImportService.js': 2,
+  'services/photoAdminMarksService.js': 8, 'services/photoHighlights.js': 1, 'services/picpeakImportService.js': 2,
   'services/selectionSubmissions.js': 2, 'services/transferCleanupService.js': 1, 'services/transferService.js': 12,
   'utils/anonymousFeedbackIdentity.js': 3, 'utils/photoFilterBuilder.js': 6,
 };

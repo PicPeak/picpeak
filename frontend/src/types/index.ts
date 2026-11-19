@@ -179,6 +179,10 @@ export interface Event {
   default_photo_sort?: string;
   // Videos ahead of photos in the guest gallery (issue 2263).
   videos_first?: boolean | number;
+  // Which photos get the larger tiles (issue 2549), and the admin star rating
+  // that makes one in 'rating' mode.
+  highlights_mode?: HighlightsMode;
+  highlights_threshold?: number;
   // Pre-event reminder override (migration 143)
   event_reminder_disabled?: boolean;
   event_reminder_offset_days?: number | null;
@@ -187,6 +191,9 @@ export interface Event {
 }
 
 export type GalleryAccessLevel = 'guest' | 'client';
+
+/** Which photos get the larger tiles (issue 2549). */
+export type HighlightsMode = 'off' | 'manual' | 'rating';
 
 export interface GalleryInfo {
   event_name: string;
@@ -302,6 +309,8 @@ export interface Photo {
   // Delivered as part of a first look (issue 1562). The badge stays after the
   // full gallery lands.
   first_look?: boolean;
+  // Drawn as a larger tile where the layout can (issue 2549).
+  is_highlight?: boolean;
   // Per-category download permission (#640). Defaults true for uncategorised
   // photos and for categories that pre-date migration 135. The frontend hides
   // the lightbox download button when this is false (event-level allow_downloads

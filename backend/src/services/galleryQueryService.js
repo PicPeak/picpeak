@@ -469,6 +469,19 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     tagsEnabled = false;
   }
 
+  // Highlights (issue 2549): which photos the layouts draw larger. Over
+  // every photo this viewer may see, not just this page, so the pick does not
+  // change with paging or a filter. Only the boolean reaches the viewer.
+  let highlightIds = new Set();
+  if (!hiddenForGuest) {
+    try {
+      highlightIds = await require('./photoHighlights').highlightIdsForEvent(event, { accessLevel, fullView });
+    } catch (err) {
+      // A highlight failure must never take down the gallery payload.
+      logger.warn(`gallery: highlight lookup failed for event ${event.id}`, { error: err.message });
+    }
+  }
+
   // Get actual categories used by photos in this event
   // This includes both global categories and event-specific ones. Only
   // photos this viewer may see count, as for the folders below: a category
@@ -914,6 +927,8 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         folder_id: folderIdOf(photo),
         // Delivered as part of a first look (issue 1562); the badge stays.
         first_look: parseBooleanInput(photo.first_look, false),
+        // Drawn as a larger tile (issue 2549); never the rating behind it.
+        is_highlight: highlightIds.has(Number(photo.id)),
         category_slug: filterCategoryIdOf(photo) && categoryMap[photo.category_id] ? categoryMap[photo.category_id].slug : null,
         // Download limit (issue 1560): already granted, so downloading it
         // again costs nothing.

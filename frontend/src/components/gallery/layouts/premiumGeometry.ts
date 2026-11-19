@@ -44,3 +44,21 @@ export const columnsForWidth = (columns: PremiumColumns) => (containerWidth: num
   if (containerWidth < 1024) return columns.tablet;
   return columns.desktop;
 };
+
+/** Highlights (issue 2549) are this much taller than their own shape. */
+export const PREMIUM_HIGHLIGHT_STRETCH = 1.5;
+/** ...but never narrower than 1:2. */
+const PREMIUM_HIGHLIGHT_MIN_RATIO = 0.5;
+
+/**
+ * The shape the album lays a photo out in. The masonry columns are all one
+ * width, so a highlight's larger tile is a taller one, its image cropped
+ * around the focal point. Without highlights, the photo's own shape.
+ */
+export function premiumTileSize(photo: { width?: number | null; height?: number | null; is_highlight?: boolean }) {
+  const width = photo.width || 1200;
+  const height = photo.height || 800;
+  if (!photo.is_highlight) return { width, height };
+  const ratio = Math.max(width / height / PREMIUM_HIGHLIGHT_STRETCH, PREMIUM_HIGHLIGHT_MIN_RATIO);
+  return { width, height: Math.round(width / ratio) };
+}

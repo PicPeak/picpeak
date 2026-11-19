@@ -53,7 +53,7 @@ import { exifLine } from '../../../utils/photoExif';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
 import { PremiumLightboxDownloadButton } from './PremiumLightboxDownloadButton';
 import { PremiumWindowedAlbum } from './PremiumWindowedAlbum';
-import { columnsForWidth, premiumColumns, premiumGap } from './premiumGeometry';
+import { columnsForWidth, premiumColumns, premiumGap, premiumTileSize } from './premiumGeometry';
 import { heroImageUrl } from '../heroImage';
 import { useOptionalTheme } from '../../../contexts/ThemeContext';
 import { boxStyle, type TileBox } from './measuredWindow';
@@ -487,8 +487,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   const albumPhotos = useMemo(() => {
     return filteredPhotos.map(photo => ({
       src: photo.thumbnail_url || photo.url,
-      width: photo.width || 1200,
-      height: photo.height || 800,
+      // A highlight's tile is taller (issue 2549).
+      ...premiumTileSize(photo),
       key: String(photo.id),
       // Keep original photo data
       _photo: photo
