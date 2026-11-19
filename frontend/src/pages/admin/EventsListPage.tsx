@@ -33,7 +33,7 @@ import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 import { BulkArchiveModal, BulkDeleteModal } from '../../components/admin';
 import { PermissionGate } from '../../components/admin/PermissionGate';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { eventsService, type EventStatusFilter, type EventSortBy } from '../../services/events.service';
+import { eventsService, type EventStatusFilter } from '../../services/events.service';
 import { eventTypesService } from '../../services/eventTypes.service';
 import { adminService } from '../../services/admin.service';
 import { archiveInProgressError } from '../../utils/archiveErrors';
@@ -43,18 +43,10 @@ import { buildShareLinkUrl } from '../../utils/url';
 import { useViewGalleryUrl } from '../../hooks/useViewGalleryUrl';
 import type { Event } from '../../types';
 import { useDeliveryDue, isAwaitingFullGallery } from './event-details/deliveryStatus';
+import { getEventsListSort, parseEventsListSort, setEventsListSort } from '../../utils/eventsListPrefs';
 import { useTranslation } from 'react-i18next';
 
 const PAGE_SIZE = 20;
-
-/**
- * The sort keys the column menus below can produce. A URL carrying anything
- * else is dropped rather than forwarded: the server would discard it and fall
- * back to created_at desc, leaving the table in an order no header reflects.
- */
-const MENU_SORT_KEYS: readonly EventSortBy[] = [
-  'event_name', 'event_date', 'created_at', 'photo_count', 'status', 'expires_at',
-];
 
 export const EventsListPage: React.FC = () => {
   const { t } = useTranslation();
@@ -127,13 +119,15 @@ export const EventsListPage: React.FC = () => {
   // its `&dir=`, a hand-edited key the menus never produce — would sort the
   // table by something while every header still rendered the faint "unsorted"
   // hint and no menu item showed a check.
-  const sortParam = searchParams.get('sort');
-  const dirParam = searchParams.get('dir');
-  const urlSortOrder = dirParam === 'asc' || dirParam === 'desc' ? dirParam : undefined;
-  const sortBy = urlSortOrder && MENU_SORT_KEYS.includes(sortParam as EventSortBy)
-    ? (sortParam as EventSortBy)
-    : undefined;
-  const sortOrder = sortBy ? urlSortOrder : undefined;
+  //
+  // A URL without a sort — the sidebar link, the "back to galleries" buttons,
+  // a new tab — takes the last sort the admin picked in this browser, and the
+  // effect below writes it into the URL so links and Back see it too.
+  const urlSort = parseEventsListSort(searchParams.get('sort'), searchParams.get('dir'));
+  const hasUrlSort = searchParams.has('sort') || searchParams.has('dir');
+  const activeSort = urlSort ?? (hasUrlSort ? null : getEventsListSort());
+  const sortBy = activeSort?.sortBy;
+  const sortOrder = activeSort?.sortOrder;
   const typeFilter = searchParams.get('type') || '';
 
   // Preserves the params it is not changing: picking a status must not throw
@@ -154,6 +148,14 @@ export const EventsListPage: React.FC = () => {
     setPage(1);
     setSearchParams(next);
   };
+
+  useEffect(() => {
+    if (hasUrlSort || !sortBy || !sortOrder) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('sort', sortBy);
+    next.set('dir', sortOrder);
+    setSearchParams(next, { replace: true });
+  }, [hasUrlSort, sortBy, sortOrder, searchParams, setSearchParams]);
 
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
@@ -305,6 +307,8 @@ export const EventsListPage: React.FC = () => {
 
   const applySort = (value: string) => {
     const [by, dir] = value.split(':');
+    const picked = parseEventsListSort(by, dir);
+    if (picked) setEventsListSort(picked);
     patchParams({ sort: by, dir });
   };
 
