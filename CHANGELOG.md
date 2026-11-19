@@ -5,6 +5,23 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.136.0](https://github.com/PicPeak/picpeak/compare/v3.135.16...v3.136.0) (2026-11-19)
+
+
+### Features
+
+* **transfers:** select all photos of an event in the transfer picker ([#2556](https://github.com/PicPeak/picpeak/issues/2556)) ([561bd98](https://github.com/PicPeak/picpeak/commit/561bd980793f0798e2852ba880f5fbe0729b99ec))
+* **transfers:** show the upload percentage on the client upload page (stable) ([#2554](https://github.com/PicPeak/picpeak/issues/2554)) ([6ff8b35](https://github.com/PicPeak/picpeak/commit/6ff8b35a57fb11c11a372d41f2dff63c7e4f8fe1))
+* **uploads:** resume chunked uploads after a dropped connection or backgrounded page (stable) ([#2558](https://github.com/PicPeak/picpeak/issues/2558)) ([f9860e0](https://github.com/PicPeak/picpeak/commit/f9860e0a800b9c9c5326891b7bfe9dec4b2c3d97))
+
+
+### Bug Fixes
+
+* **backup:** restore an rsync backup straight from the destination (stable) ([#2560](https://github.com/PicPeak/picpeak/issues/2560)) ([0b612c0](https://github.com/PicPeak/picpeak/commit/0b612c0a04c595b88e203e817f877ac6f462f87e))
+* **email-templates:** repair translated templates whose placeholders are never filled (stable) ([#2576](https://github.com/PicPeak/picpeak/issues/2576)) ([952dd3b](https://github.com/PicPeak/picpeak/commit/952dd3b2ed83e30ca94bf319f533d7ee06d13a8a))
+* **feedback:** lock the photo before recounting its feedback totals (stable) ([#2566](https://github.com/PicPeak/picpeak/issues/2566)) ([a67202f](https://github.com/PicPeak/picpeak/commit/a67202fab10db6bdd9645f12fcda7d4344b89913))
+* **gallery:** keep like hearts in step with the server, add Remove my likes (stable) ([#2563](https://github.com/PicPeak/picpeak/issues/2563)) ([cbad83a](https://github.com/PicPeak/picpeak/commit/cbad83ab93a430a03db42fe569aaf23fcdb77d12))
+
 ## [3.135.16](https://github.com/PicPeak/picpeak/compare/v3.135.15...v3.135.16) (2026-11-15)
 
 
