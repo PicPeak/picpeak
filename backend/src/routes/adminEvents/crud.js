@@ -34,6 +34,7 @@ const { requireEventOwnership, requireEventOwner, scopeEventsListQuery, withoutF
 const eventAdminAssignments = require('../../services/eventAdminAssignmentsService');
 const { mayReviewUploads, holdsForReview } = require('../../services/uploadReviewService');
 const { applyEventListSort } = require('./listSort');
+const { chapterStyleOf, chapterRowsForEvent, chapterFieldsOf } = require('../../services/categoryChapters');
 const { VIDEO_COUNT_SQL, VIDEO_DURATION_SQL } = require('../../utils/mediaTypeSql');
 
 const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../../utils/galleryPasswordVault');
@@ -1098,6 +1099,8 @@ module.exports = (router) => {
         client_pin_entry_enabled: formatBoolean(false),
         og_image_share_enabled: formatBoolean(false),
         ...slideshowStyle,
+        // Chapter markers are part of the gallery's look (issue 2548).
+        ...(eventColumns.has('chapter_marker_style') ? { chapter_marker_style: chapterStyleOf(source) } : {}),
       }).returning('id');
 
       const newEventId = insertResult[0]?.id || insertResult[0];
@@ -1185,6 +1188,20 @@ module.exports = (router) => {
       }
       if (Object.values(categoryFields).some((value) => value !== null)) {
         await db('events').where({ id: newEventId }).update(categoryFields);
+      }
+
+      // Chapter markers (issue 2548) follow their category the same way; a
+      // marker whose category did not come along stays behind.
+      const sourceChapters = await chapterRowsForEvent(id);
+      for (const [categoryId, row] of sourceChapters) {
+        const newCategoryId = await copiedCategoryId(categoryId);
+        if (newCategoryId === null) continue;
+        await db('event_category_chapters').insert({
+          event_id: newEventId,
+          category_id: newCategoryId,
+          ...chapterFieldsOf(row),
+          updated_at: new Date().toISOString(),
+        });
       }
 
       await logActivity('event_duplicated',

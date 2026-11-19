@@ -83,25 +83,22 @@ function wallTimeOf(value) {
 
 /**
  * Suggested chapter time per category: the earliest captured_at among the
- * event's live photos in it (filter category or folder). Map id -> 'HH:MM'.
+ * event's live photos filed in it. Map category id -> 'HH:MM'.
  */
 async function suggestedChapterTimes(eventId) {
-  const earliest = new Map();
-  for (const column of ['category_id', 'folder_id']) {
-    const rows = await livePhotos(db)
-      .where('event_id', Number(eventId))
-      .whereNotNull(column)
-      .whereNotNull('captured_at')
-      .groupBy(column)
-      .select(`${column} as id`)
-      .min('captured_at as first');
-    for (const row of rows) {
-      const date = storedDate(row.first);
-      const id = Number(row.id);
-      if (date && (!earliest.has(id) || date < earliest.get(id))) earliest.set(id, date);
-    }
+  const rows = await livePhotos(db)
+    .where('event_id', Number(eventId))
+    .whereNotNull('category_id')
+    .whereNotNull('captured_at')
+    .groupBy('category_id')
+    .select('category_id as id')
+    .min('captured_at as first');
+  const times = new Map();
+  for (const row of rows) {
+    const time = wallTimeOf(row.first);
+    if (time) times.set(Number(row.id), time);
   }
-  return new Map([...earliest].map(([id, date]) => [id, wallTimeOf(date)]));
+  return times;
 }
 
 /**

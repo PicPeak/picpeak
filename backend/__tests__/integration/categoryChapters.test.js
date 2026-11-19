@@ -214,6 +214,35 @@ describe('category chapter markers (issue 2548)', () => {
     expect(body.categories.find((c) => c.id === uploads).chapter).toBeUndefined();
   });
 
+  it('duplicating an event copies the style and the markers onto the copied categories', async () => {
+    const event = await makeEvent({ chapter_marker_style: 'divider' });
+    const own = await makeCategory('Trauung', event.id);
+    const shared = await makeCategory('Feier');
+    const foreignEvent = await makeEvent();
+    const foreign = await makeCategory('Fremd', foreignEvent.id);
+    await putChapter(event.id, own, { chapter_heading: 'Ja', chapter_time: '12:00' }).expect(200);
+    await putChapter(event.id, shared, { chapter_location: 'Scheune' }).expect(200);
+    // A stray row pointing at another event's category does not come along.
+    await db('event_category_chapters').insert({
+      event_id: event.id, category_id: foreign, chapter_heading: 'Stray', updated_at: new Date().toISOString(),
+    });
+
+    const res = await admin(request(app).post(`/api/admin/events/${event.id}/duplicate`)).send({ event_name: 'Copy' });
+    expect(res.status).toBe(200);
+    const copyId = Number(res.body.id);
+
+    expect((await db('events').where({ id: copyId }).first()).chapter_marker_style).toBe('divider');
+    const ownCopy = await db('photo_categories').where({ event_id: copyId, name: 'Trauung' }).first();
+    expect(Number(ownCopy.id)).not.toBe(own);
+    const rows = await db('event_category_chapters').where({ event_id: copyId });
+    const byCategory = new Map(rows.map((r) => [Number(r.category_id), r]));
+    expect(byCategory.size).toBe(2);
+    expect(byCategory.get(Number(ownCopy.id))).toMatchObject({ chapter_heading: 'Ja', chapter_time: '12:00' });
+    expect(byCategory.get(shared)).toMatchObject({ chapter_location: 'Scheune', chapter_heading: null });
+    // The source keeps its own rows.
+    expect(await db('event_category_chapters').where({ event_id: event.id })).toHaveLength(3);
+  });
+
   it('migration 369 is idempotent and reversible', async () => {
     const migration = require('../../migrations/core/369_category_chapter_markers');
     await migration.up(db);
