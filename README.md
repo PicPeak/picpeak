@@ -10,6 +10,8 @@
   [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-theluap-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/theluap)
 
   [Homepage](https://www.picpeak.app) · [Live Demo](https://demo.picpeak.app) · [Documentation](https://docs.picpeak.app) · [Support ☕](https://buymeacoffee.com/theluap)
+
+  <a href="https://www.picpeak.app/en/#video"><img src="docs/picpeak-intro-poster.jpg" alt="Play the 90-second PicPeak intro video: upload, password and expiry, the client gallery on desktop and phone, favourites and ZIP download, analytics, your own branding" width="720" /></a>
 </div>
 
 ---
