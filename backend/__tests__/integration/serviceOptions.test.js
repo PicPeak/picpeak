@@ -386,6 +386,16 @@ describe('service options', () => {
     }).returning('id');
     await expect(db.transaction((trx) => resolveUnissuedInvoiceNet(trx, invoiceRow?.id ?? invoiceRow, {})))
       .rejects.toMatchObject({ statusCode: 409 });
+    // A send time that can't be read counts as armed too. Only SQLite can
+    // hold one; PostgreSQL's timestamptz refuses it at insert.
+    if (db.client.config.client !== 'pg') {
+      const [garbled] = await db('invoices').insert({
+        invoice_number: `OPT-GARBLED-${Date.now()}`, customer_account_id: customerId, currency: 'CHF',
+        issue_date: '2026-09-01', due_date: '2026-09-30', status: 'scheduled', scheduled_send_at: 'not a date',
+      }).returning('id');
+      await expect(db.transaction((trx) => resolveUnissuedInvoiceNet(trx, garbled?.id ?? garbled, {})))
+        .rejects.toMatchObject({ statusCode: 409 });
+    }
   });
 
   it('a new instalment sibling keeps option sub-lines under their main line', async () => {

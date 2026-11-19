@@ -10,6 +10,7 @@ const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { renumberLineItemPositions } = require('../../utils/lineItemPositions');
 const { extendedLineColumns, lineItemFieldsToApi, resolvedParentTotal, ownLineMinor } = require('../../utils/lineItemTotals');
 const { cleanNetMinor } = require('../../utils/invoiceRounding');
+const { toMillis } = require('../../utils/queueTimestamps');
 const { getAppSetting } = require('../../utils/appSettings');
 const { computeMonthlyCadenceDate, getHierarchyHelpers, nextInvoiceNumber } = require('./helpers');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
@@ -379,8 +380,11 @@ async function resolveUnissuedInvoiceNet(trx, invoiceId, audit = {}) {
   const invoice = await trx('invoices').where({ id: invoiceId })
     .first('status', 'kind', 'is_monthly_draft', 'scheduled_send_at');
   const monthlyDraft = invoice && (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1);
-  const armed = invoice && !monthlyDraft && invoice.scheduled_send_at
-    && new Date(invoice.scheduled_send_at).getTime() <= Date.now();
+  // A send time that can't be read counts as armed: refuse rather than
+  // rewrite lines on an invoice that may already be going out.
+  const sendAt = invoice && !monthlyDraft && invoice.scheduled_send_at != null && invoice.scheduled_send_at !== ''
+    ? toMillis(invoice.scheduled_send_at) : undefined;
+  const armed = sendAt !== undefined && (sendAt == null || sendAt <= Date.now());
   if (!invoice || invoice.status !== 'scheduled' || invoice.kind === 'storno' || armed) {
     throw new AppError('This invoice has already been issued — Storno it to change it.', 409, 'INVOICE_LOCKED');
   }
