@@ -530,6 +530,10 @@ router.delete('/:id', adminAuth, requirePermission('settings.edit'), async (req,
     
     // Only photos in the trash are left in it: they come back uncategorised.
     await db('photos').where('category_id', id).update({ category_id: null });
+    // Chapter markers in every event (migration 369): SQLite leaves the FK cascade inert.
+    if (await db.schema.hasTable('event_category_chapters')) {
+      await db('event_category_chapters').where('category_id', id).del();
+    }
     await db('photo_categories').where('id', id).delete();
     
     // Log activity

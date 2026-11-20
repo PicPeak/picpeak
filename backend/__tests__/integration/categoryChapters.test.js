@@ -85,6 +85,7 @@ describe('category chapter markers (issue 2548)', () => {
     app.use('/api/gallery', require('../../src/routes/gallery'));
     app.use('/api/admin/events', require('../../src/routes/adminEvents'));
     app.use('/api/admin/categories', require('../../src/routes/adminCategories'));
+    app.use('/api/admin/archives', require('../../src/routes/adminArchives'));
   }, 180000);
 
   afterAll(async () => {
@@ -201,6 +202,69 @@ describe('category chapter markers (issue 2548)', () => {
     const list = (await admin(request(app).get(`/api/admin/categories/event/${event.id}`)).expect(200)).body;
     expect(list.find((c) => c.id === cat).chapter_time_suggestion).toBe('02:30');
     expect(list.find((c) => c.id === legacy).chapter_time_suggestion).toBe('16:40');
+  });
+
+  it('suggests from the photos a guest sees, not from hidden or unfinished ones', async () => {
+    const event = await makeEvent();
+    const cat = await makeCategory('Visible', event.id);
+    const at = (h) => new Date(2026, 7, 1, h, 0).toISOString();
+    await addPhoto(event.id, cat, 'hidden.jpg', at(6), { visibility: 'hidden' });
+    await addPhoto(event.id, cat, 'review.jpg', at(7), { visibility: 'hidden', moderation_status: 'pending' });
+    await addPhoto(event.id, cat, 'processing.jpg', at(8), { processing_status: 'pending' });
+    await addPhoto(event.id, cat, 'outside.jpg', at(9), { selection_hidden: true });
+    await addPhoto(event.id, cat, 'gone.jpg', at(10), { unavailable_reason: 'missing' });
+    await addPhoto(event.id, cat, 'trashed.jpg', at(11), { deleted_at: at(20) });
+    await addPhoto(event.id, cat, 'shown.jpg', at(12));
+    const list = (await admin(request(app).get(`/api/admin/categories/event/${event.id}`)).expect(200)).body;
+    expect(list.find((c) => c.id === cat).chapter_time_suggestion).toBe('12:00');
+  });
+
+  describe('deleting leaves no chapter rows behind (SQLite FK cascades are inert)', () => {
+    const chapterRow = (eventId, categoryId) => db('event_category_chapters').insert({
+      event_id: eventId, category_id: categoryId, chapter_heading: 'x', updated_at: new Date().toISOString(),
+    });
+    const rowsFor = (where) => db('event_category_chapters').where(where);
+
+    it('a category, in every event that marked it', async () => {
+      const a = await makeEvent();
+      const b = await makeEvent();
+      const shared = await makeCategory('SharedGone');
+      const own = await makeCategory('OwnGone', a.id);
+      await chapterRow(a.id, shared);
+      await chapterRow(b.id, shared);
+      await chapterRow(a.id, own);
+      await admin(request(app).delete(`/api/admin/categories/${shared}`)).expect(200);
+      await admin(request(app).delete(`/api/admin/categories/${own}`)).expect(200);
+      expect(await rowsFor({ category_id: shared })).toHaveLength(0);
+      expect(await rowsFor({ category_id: own })).toHaveLength(0);
+    });
+
+    it('a folder', async () => {
+      const event = await makeEvent();
+      const folder = await makeCategory('FolderGone', event.id);
+      await db('photo_categories').where({ id: folder }).update({ is_folder: true });
+      await chapterRow(event.id, folder);
+      await require('../../src/services/folderTreeService').deleteFolder(event.id, folder);
+      expect(await db('photo_categories').where({ id: folder }).first()).toBeUndefined();
+      expect(await rowsFor({ category_id: folder })).toHaveLength(0);
+    });
+
+    it('an event', async () => {
+      const event = await makeEvent();
+      const shared = await makeCategory('EventGone');
+      await chapterRow(event.id, shared);
+      await admin(request(app).delete(`/api/admin/events/${event.id}`)).expect(200);
+      expect(await rowsFor({ event_id: event.id })).toHaveLength(0);
+    });
+
+    it('an archive, deleted for good', async () => {
+      const event = await makeEvent({ is_archived: 1, is_active: 0, archived_at: new Date().toISOString() });
+      const shared = await makeCategory('ArchiveGone');
+      await chapterRow(event.id, shared);
+      await admin(request(app).delete(`/api/admin/archives/${event.id}`)).expect(200);
+      expect(await db('events').where({ id: event.id }).first()).toBeUndefined();
+      expect(await rowsFor({ event_id: event.id })).toHaveLength(0);
+    });
   });
 
   it('serves no markers while the gallery shows none (the default)', async () => {

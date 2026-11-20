@@ -248,6 +248,10 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
     if (await trx.schema.hasTable('event_admin_assignments')) {
       await trx('event_admin_assignments').where('event_id', eventId).del();
     }
+    // Chapter markers (migration 369): the same inert-cascade reason.
+    if (await trx.schema.hasTable('event_category_chapters')) {
+      await trx('event_category_chapters').where('event_id', eventId).del();
+    }
     // "Mail me when the download is ready" requests (migration 293) hold
     // addresses and hang off download_jobs: the same inert-cascade reason.
     if (await trx.schema.hasTable('download_job_recipients')) {

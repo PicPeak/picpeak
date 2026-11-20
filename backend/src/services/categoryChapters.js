@@ -9,7 +9,7 @@
  */
 const { db } = require('../database/db');
 const { hasColumnCached } = require('../utils/schemaCache');
-const { livePhotos } = require('../utils/photoVisibility');
+const { livePhotos, wherePhotoProcessed, applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
 const { cameraWallClock, toServerWallClock } = require('../utils/dateNormalize');
 
@@ -83,13 +83,16 @@ function wallTimeOf(capturedAt, capturedAtWall) {
 
 /**
  * Suggested chapter time per category: the time of the earliest capture
- * among the event's live photos filed in it. Map category id -> 'HH:MM'.
+ * among the event's photos filed in it that an ordinary guest sees (processed,
+ * visible, published, in the selection): the marker is public, so it must not
+ * carry the time of a photo the gallery does not show. Map category id -> 'HH:MM'.
  * Earliest by the normalised capture date: on SQLite captured_at holds epoch
  * ms integers and ISO text side by side, and a plain MIN puts every integer
  * before every text value (captureDateSql.js).
  */
 async function suggestedChapterTimes(eventId) {
-  const ranked = livePhotos(db)
+  const visible = applyPhotoVisibilityFilter(wherePhotoProcessed(livePhotos(db)), 'guest');
+  const ranked = visible
     .where('event_id', Number(eventId))
     .whereNotNull('category_id')
     .whereNotNull('captured_at')

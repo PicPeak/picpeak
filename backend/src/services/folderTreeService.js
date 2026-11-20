@@ -571,6 +571,10 @@ async function deleteFolder(eventId, folderId, conn = db) {
     await trx('photo_categories').where({ event_id: eventId, parent_id: folder.id }).update({ parent_id: parentId });
     await trx('folder_requests').where({ event_id: eventId, fallback_folder_id: folder.id }).update({ fallback_folder_id: parentId });
     await trx('event_category_order').where({ category_id: folder.id }).del();
+    // Chapter markers (migration 369): SQLite leaves the FK cascade inert.
+    if (await trx.schema.hasTable('event_category_chapters')) {
+      await trx('event_category_chapters').where({ category_id: folder.id }).del();
+    }
     await trx('photo_categories').where('id', folder.id).del();
     return moved;
   };
