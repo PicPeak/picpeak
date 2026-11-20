@@ -29,6 +29,8 @@ const { withTrustedCrmAccess } = require('../database/crmAccess');
 const service = {};
 let backupJob = null;
 let isRunning = false;
+// The backup_runs row the run in this process is writing (interruptedRuns.js).
+let currentRunId = null;
 
 function ensureMockableExec() {
   const current = childProcess.exec;
@@ -1644,6 +1646,7 @@ async function runBackupInternal(isManual = false) {
       db_schema_version: schemaVersion
     }).returning('id');
     runId = insertResult[0]?.id || insertResult[0];
+    currentRunId = runId;
 
     // A destination that is itself a backed-up folder nests one more copy
     // of the tree per run (issue 1780). Before the dump, which is written
@@ -1907,6 +1910,7 @@ async function runBackupInternal(isManual = false) {
   } finally {
     if (recoveryStage) await fs.rm(recoveryStage, { recursive: true, force: true }).catch(error => logger.warn(`Could not remove recovery staging: ${error.message}`));
     isRunning = false;
+    currentRunId = null;
   }
   // The restore test runs on its own after the run is final; its outcome is
   // its own row and never changes this run's status.
@@ -2483,6 +2487,7 @@ service.stopBackupService = stopBackupService;
 service.triggerManualBackup = triggerManualBackup;
 service.getBackupStatus = getBackupStatus;
 service.isBackupRunning = () => isRunning;
+service.currentRunId = () => currentRunId;
 service.cleanupOldBackupRuns = cleanupOldBackupRuns;
 service.getCurrentSchemaVersion = getCurrentSchemaVersion;
 service.getBackupManifest = getBackupManifest;
