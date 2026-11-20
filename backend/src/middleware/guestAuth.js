@@ -237,6 +237,9 @@ async function guestDownloadGate(req, res, next) {
     if (!downloadIdentityRequired(settings)) return next();
     const guest = req.guest || await guestFromDownloadTicket(req);
     if (!guest) {
+      // Also as a header: the HEAD preflight of a direct download gets no
+      // body, and the gallery must still recognise the refusal.
+      res.set('X-Error-Code', GUEST_IDENTITY_REQUIRED);
       return res.status(403).json({
         error: 'Please enter your name before downloading',
         code: GUEST_IDENTITY_REQUIRED,
@@ -248,6 +251,47 @@ async function guestDownloadGate(req, res, next) {
     logger.error('guestDownloadGate failed', { error: error.message });
     return res.status(500).json({ error: 'Failed to check download permission' });
   }
+}
+
+/**
+ * The guest a download is logged under at the time the row is written. An
+ * archive is logged once its transfer finished, and the guest the request
+ * named may have been removed or merged by then. A live guest stays; a merged
+ * one becomes the guest it was merged into, which the merge records in its
+ * guest_merged activity entry (adminGuests.js); a removed one, or one whose
+ * merge left no record, becomes null. The common case is one primary-key read.
+ */
+async function loggedGuestId(guestId, eventId) {
+  const guest = await db('gallery_guests').where({ id: guestId, event_id: eventId }).first('id', 'is_deleted');
+  if (!guest) return null;
+  if (!guest.is_deleted) return guest.id;
+  const merges = await db('activity_logs')
+    .where({ event_id: eventId, activity_type: 'guest_merged' })
+    .select('metadata');
+  const mergedInto = new Map();
+  for (const { metadata } of merges) {
+    let meta;
+    try {
+      meta = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+    } catch {
+      continue;
+    }
+    for (const id of Array.isArray(meta?.merged_ids) ? meta.merged_ids : []) {
+      mergedInto.set(Number(id), Number(meta.keep_id));
+    }
+  }
+  // The survivor may itself have been merged since.
+  const seen = new Set();
+  let current = Number(guestId);
+  while (mergedInto.has(current) && !seen.has(current)) {
+    seen.add(current);
+    current = mergedInto.get(current);
+  }
+  if (current === Number(guestId)) return null;
+  const survivor = await db('gallery_guests')
+    .where({ id: current, event_id: eventId, is_deleted: false })
+    .first('id');
+  return survivor ? survivor.id : null;
 }
 
 /**
@@ -271,5 +315,6 @@ module.exports = {
   downloadIdentityRequired,
   signGuestDownloadTicket,
   guestDownloadGate,
+  loggedGuestId,
   viewGuestId,
 };

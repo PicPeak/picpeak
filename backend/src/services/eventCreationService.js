@@ -584,6 +584,10 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
         identity_mode: ['simple', 'guest', 'shared'].includes(identityModeInput)
           ? identityModeInput
           : 'simple',
+        // Guest identity before downloading and the prompt's privacy note
+        // (issue 2503); validateCreationInput has checked and trimmed both.
+        require_guest_for_download: formatBoolean(input.require_guest_for_download === true),
+        guest_privacy_text: input.guest_privacy_text || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });

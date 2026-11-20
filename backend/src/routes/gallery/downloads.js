@@ -42,7 +42,7 @@ const {
 const downloadJobService = require('../../services/downloadJobService');
 const { readEntryManifest, trackPreparedDelivery } = require('../../services/downloadJobDelivery');
 const downloadJobNotifier = require('../../services/downloadJobNotifier');
-const { resolveGuest, guestDownloadGate } = require('../../middleware/guestAuth');
+const { resolveGuest, guestDownloadGate, loggedGuestId } = require('../../middleware/guestAuth');
 const {
   resolveEventDownloadPolicy,
   pickRequestedResolution,
@@ -154,9 +154,17 @@ function galleryActor(req) {
 // The guest a download is logged under (issue 2503): set by guestDownloadGate
 // only while the gallery asks for the guest's identity before downloading.
 // Spread into each access_logs row, so with the setting off the row is
-// written exactly as before.
-function downloadGuestColumn(req) {
-  return req.downloadGuestId ? { guest_id: req.downloadGuestId } : {};
+// written exactly as before. Resolved again when the row is written: an
+// archive logs on completion, and the guest may have been removed or merged
+// meanwhile (loggedGuestId). Never rejects: a failed lookup logs no guest.
+async function downloadGuestColumn(req) {
+  if (!req.downloadGuestId) return {};
+  try {
+    return { guest_id: await loggedGuestId(req.downloadGuestId, req.event.id) };
+  } catch (err) {
+    logger.warn('Download guest lookup failed', { eventId: req.event.id, error: err?.message });
+    return { guest_id: null };
+  }
 }
 // Download count + access log of one single-photo download.
 async function recordSingleDownload(req, photoId) {
@@ -167,7 +175,7 @@ async function recordSingleDownload(req, photoId) {
     user_agent: req.headers['user-agent'],
     action: 'download',
     photo_id: photoId,
-    ...downloadGuestColumn(req),
+    ...(await downloadGuestColumn(req)),
   });
 }
 const SINGLE_DOWNLOAD_DEBOUNCE_MS = 60 * 60 * 1000;
@@ -795,7 +803,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           ip_address: req.ip,
           user_agent: req.headers['user-agent'],
           action: 'download_all',
-          ...downloadGuestColumn(req),
+          ...(await downloadGuestColumn(req)),
         }).catch(statsWriteFailed('access log, download_all'));
         bumpEventDownloadCounts(req.event.id).catch(statsWriteFailed('event download counts'));
         // Surface in the admin notification bell (#746) — only once the
@@ -1048,7 +1056,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         ip_address: req.ip,
         user_agent: req.headers['user-agent'],
         action: 'download_all',
-        ...downloadGuestColumn(req),
+        ...(await downloadGuestColumn(req)),
       })
         // The archive is complete by now; a failed log write must not reach
         // the catch below, which would destroy a response still draining.
@@ -1284,7 +1292,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         ip_address: req.ip,
         user_agent: req.headers['user-agent'],
         action: 'download_selected',
-        ...downloadGuestColumn(req),
+        ...(await downloadGuestColumn(req)),
       })
         // The archive is complete by now; a failed log write must not reach
         // the catch below, which would destroy a response still draining.
@@ -1614,7 +1622,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
 
     // Stats parity with the other bulk paths (#895): only count once the
     // response actually completed, and keep admin previews out of guest stats.
-    res.on('finish', () => {
+    res.on('finish', async () => {
       if (res.statusCode >= 400 || req.isAdminPreview) return;
       const ids = Array.isArray(deliveredIds) ? deliveredIds : [];
       if (ids.length > 0) {
@@ -1626,7 +1634,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
         user_agent: req.headers['user-agent'],
         action: 'download',
         photo_id: null,
-        ...downloadGuestColumn(req),
+        ...(await downloadGuestColumn(req)),
       }).catch(statsWriteFailed('access log, download job'));
       logActivity('gallery_downloaded', { scope: 'all', resolution: job.resolution },
         req.event.id, galleryActor(req));

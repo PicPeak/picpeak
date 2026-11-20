@@ -43,8 +43,11 @@ class StaleGuestIdentityError extends Error {}
 
 async function isIdentityRefusal(error: unknown): Promise<boolean> {
   if (error instanceof StaleGuestIdentityError) return true;
-  const response = (error as { response?: { status?: number; data?: unknown } })?.response;
+  const response = (error as { response?: { status?: number; data?: unknown; headers?: Record<string, unknown> } })?.response;
   if (!response || response.status !== 403) return false;
+  // The HEAD preflight of a direct download gets no body; the server names
+  // the refusal in a header as well.
+  if (response.headers?.['x-error-code'] === GUEST_IDENTITY_REQUIRED_CODE) return true;
   const body = await readErrorBody(response.data);
   return body?.code === GUEST_IDENTITY_REQUIRED_CODE;
 }

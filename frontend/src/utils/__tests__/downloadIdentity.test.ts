@@ -75,6 +75,22 @@ describe('withDownloadIdentity', () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
+  it('recognises a refusal of the bodiless HEAD preflight by its header', async () => {
+    const gate = { required: true, ensure: vi.fn(async () => undefined), forget: vi.fn() };
+    setDownloadIdentityGate('party', gate);
+    const headRefusal = Object.assign(new Error('refused'), {
+      response: { status: 403, data: '', headers: { 'x-error-code': GUEST_IDENTITY_REQUIRED_CODE } },
+    });
+    const run = vi.fn()
+      .mockRejectedValueOnce(headRefusal)
+      .mockResolvedValueOnce('done');
+    expect(await withDownloadIdentity('party', run)).toBe('done');
+    // The stale identity is dropped and the guest asked again.
+    expect(gate.forget).toHaveBeenCalledTimes(1);
+    expect(gate.ensure).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
   it('passes any other failure through untouched', async () => {
     const gate = { required: true, ensure: vi.fn(async () => undefined), forget: vi.fn() };
     setDownloadIdentityGate('party', gate);

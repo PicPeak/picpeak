@@ -208,6 +208,14 @@ describe('guest identity before downloading (issue 2503)', () => {
     it('refuses the HEAD preflight of a direct download too', async () => {
       const res = await request(app).head(`/api/gallery/${SLUG}/download/${photoId}`);
       expect(res.status).toBe(403);
+      // A HEAD answer has no body: the header is what the gallery reads.
+      expect(res.headers['x-error-code']).toBe(CODE);
+    });
+
+    it('names the refusal in a header the browser may read cross-origin', () => {
+      const source = fs.readFileSync(path.join(__dirname, '../../server.js'), 'utf8');
+      const exposed = source.match(/exposedHeaders:\s*\[([^\]]*)\]/);
+      expect(exposed && exposed[1]).toContain('X-Error-Code');
     });
 
     it('downloads for an identified guest and logs the guest', async () => {
@@ -222,7 +230,14 @@ describe('guest identity before downloading (issue 2503)', () => {
       const res = await request(app).get(`/api/gallery/${SLUG}/download-all`).set('x-guest-token', guestToken)
         .buffer(true).parse((r, cb) => { r.on('data', () => {}); r.on('end', () => cb(null, null)); });
       expect(res.status).toBe(200);
-      expect(Number((await lastLog('download_all')).guest_id)).toBe(Number(guestId));
+      // Written once the archive finished, after the guest is looked up
+      // again (loggedGuestId), so it may land just after the response.
+      let log;
+      for (let i = 0; i < 50 && !log; i += 1) {
+        log = await lastLog('download_all');
+        if (!log) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(Number(log.guest_id)).toBe(Number(guestId));
     });
 
     it('logs a gallery view under the guest', async () => {
@@ -316,6 +331,48 @@ describe('guest identity before downloading (issue 2503)', () => {
     expect(await db('access_logs').where({ guest_id: forgetter })).toHaveLength(0);
     // The gallery's totals stay as they were.
     expect(await db('access_logs').where({ event_id: eventId })).toHaveLength(2);
+  });
+
+  describe('the guest an archive is logged under once it finished', () => {
+    // An archive logs on completion; the guest the request named may have
+    // been removed or merged while it streamed.
+    // Required lazily: db.js binds its file on first load, after bootCrmDb.
+    const loggedGuestId = (...args) => require('../../src/middleware/guestAuth').loggedGuestId(...args);
+    const recordMerge = (keepId, mergedIds) => db('activity_logs').insert({
+      activity_type: 'guest_merged',
+      actor_type: 'admin',
+      metadata: JSON.stringify({ event_id: String(eventId), keep_id: keepId, merged_ids: mergedIds }),
+      event_id: eventId,
+    });
+    const softDelete = (id) => db('gallery_guests').where({ id }).update({ is_deleted: true });
+
+    it('keeps a guest that is still there', async () => {
+      expect(Number(await loggedGuestId(guestId, eventId))).toBe(Number(guestId));
+    });
+
+    it('logs no guest for a removed one, nor for one of another gallery', async () => {
+      const removed = await addGuest(eventId, 'Dora');
+      await softDelete(removed);
+      expect(await loggedGuestId(removed, eventId)).toBeNull();
+      expect(await loggedGuestId(guestId, otherEventId)).toBeNull();
+    });
+
+    it('follows a merge, and a merge of the survivor, to the guest that is left', async () => {
+      const first = await addGuest(eventId, 'Emil');
+      const second = await addGuest(eventId, 'Fritz');
+      const third = await addGuest(eventId, 'Greta');
+      await recordMerge(second, [first]);
+      await softDelete(first);
+      expect(Number(await loggedGuestId(first, eventId))).toBe(Number(second));
+
+      await recordMerge(third, [second]);
+      await softDelete(second);
+      expect(Number(await loggedGuestId(first, eventId))).toBe(Number(third));
+
+      // A survivor removed since names nobody.
+      await softDelete(third);
+      expect(await loggedGuestId(first, eventId)).toBeNull();
+    });
   });
 
   it('stores the guest prompt\'s privacy note as plain trimmed text and hands it to the gallery', async () => {

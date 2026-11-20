@@ -111,6 +111,9 @@ interface FormData {
     moderate_comments: boolean;
     show_feedback_to_guests: boolean;
     identity_mode?: 'simple' | 'guest' | 'shared';
+    // Guest identity before downloading (issue 2503).
+    require_guest_for_download?: boolean;
+    guest_privacy_text?: string | null;
   };
   // Client access (#172)
   client_access_enabled: boolean;
@@ -688,6 +691,12 @@ export const CreateEventPage: React.FC = () => {
       // The chooser has always been on this form; the value was never sent, so
       // the gallery came out in the default mode whatever was picked (#1197).
       identity_mode: feedbackSettings.identity_mode,
+      // Guest identity before downloading (issue 2503). The editor offers it
+      // in guest identity mode only, so only that mode sends it.
+      ...(feedbackSettings.identity_mode === 'guest' ? {
+        require_guest_for_download: !!feedbackSettings.require_guest_for_download,
+        guest_privacy_text: feedbackSettings.guest_privacy_text || null,
+      } : {}),
       // Client access (#172)
       client_access_enabled: formData.client_access_enabled,
       client_password: formData.client_access_enabled ? formData.client_password : undefined,
