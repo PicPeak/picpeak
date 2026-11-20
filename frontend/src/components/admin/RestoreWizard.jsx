@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PicpeakRestoreCard } from './PicpeakBackupCard';
 import {
@@ -26,11 +26,14 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Input, Loading } from '../common';
 import { api } from '../../config/api';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
+import {
+  clearRestoreRun, isRunOf, readRestoreRun, rearmRestoreRedirect, rememberRestoreRun, RESTORE_RUN_GRACE_MS,
+} from '../../utils/restoreRelogin';
 
 // restore_runs booleans arrive as true/false from PostgreSQL but as 1/0 from
 // SQLite; a bare `{row.flag && …}` renders the 0 as text.
@@ -45,7 +48,11 @@ const NOTICE_CODES = ['backup_age', 'version_newer', 'version_other_line', 'vers
 export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
   const { t } = useTranslation();
   const { format: fmtDate, formatTime: fmtTime, formatDateTime: fmtDateTime } = useLocalizedDate();
-  const [currentStep, setCurrentStep] = useState(0);
+  const queryClient = useQueryClient();
+  // The run this wizard started (restoreRelogin.ts). Read from sessionStorage
+  // on mount, so a restore that signed the admin out reopens on its result.
+  const [trackedRun, setTrackedRun] = useState(readRestoreRun);
+  const [currentStep, setCurrentStep] = useState(() => (trackedRun ? 4 : 0));
   
   const steps = [
     { id: 'source', title: t('backup.restore.steps.selectSource') },
@@ -99,7 +106,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
   const [validationResult, setValidationResult] = useState(null);
 
   // Fetch restore status
-  const { data: restoreStatus } = useQuery({
+  const { data: restoreStatus, error: restoreStatusError } = useQuery({
     queryKey: ['restore-status'],
     queryFn: async () => {
       const response = await api.get('/admin/restore/status');
@@ -107,6 +114,39 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     },
     refetchInterval: currentStep === 4 ? 2000 : false // Poll during restore
   });
+
+  // The admin reached the tracked run, so a later sign-out may bring them
+  // back here (the login page follows the marker only once otherwise).
+  useEffect(() => {
+    if (trackedRun) rearmRestoreRedirect();
+  }, []);
+
+  const trackedRow = trackedRun ? restoreStatus?.history?.find((row) => isRunOf(row, trackedRun)) : undefined;
+  // Once the tracked run has an outcome, it is on screen: drop the marker so
+  // the next sign-in in this tab goes to the dashboard again. Same when this
+  // admin may not read the restore status at all.
+  const trackedRunFinished = !!trackedRow && restoreStatus?.isRunning === false && trackedRow.status !== 'running';
+  const statusForbidden = restoreStatusError?.response?.status === 403;
+  useEffect(() => {
+    if (trackedRunFinished || statusForbidden) clearRestoreRun();
+  }, [trackedRunFinished, statusForbidden]);
+
+  // Nothing is running and the run has no row: it may still be about to
+  // start. After the grace period it did not start (or its row cannot be
+  // read), so stop waiting and say so instead of "Starting..." forever.
+  const [trackedRunMissing, setTrackedRunMissing] = useState(false);
+  const awaitingTrackedRow = !!trackedRun && restoreStatus?.isRunning === false && !trackedRow;
+  useEffect(() => {
+    if (!awaitingTrackedRow) {
+      setTrackedRunMissing(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      setTrackedRunMissing(true);
+      clearRestoreRun();
+    }, Math.max(0, trackedRun.since + RESTORE_RUN_GRACE_MS - Date.now()));
+    return () => clearTimeout(timer);
+  }, [awaitingTrackedRow, trackedRun]);
 
   // Fetch available backups
   const { data: backupListing, isLoading: loadingBackups } = useQuery({
@@ -168,7 +208,13 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
       });
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Only a restore_runs row started at or after this instant is this
+      // run's result; the cached status still names the previous run.
+      const marker = { startedAfter: data?.startedAfter || new Date().toISOString(), since: Date.now() };
+      rememberRestoreRun(marker);
+      setTrackedRun(marker);
+      queryClient.invalidateQueries({ queryKey: ['restore-status'] });
       setCurrentStep(4);
       toast.success('Restore started successfully');
     },
@@ -791,8 +837,11 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     // Pull the most recent restore_runs row from history so we can
     // tell whether the "not running" state means success, failure, or
     // never-started. The history endpoint already returns rows newest
-    // first.
-    const lastRun = restoreStatus?.history?.[0];
+    // first. Once this wizard started a run, only that run counts: until its
+    // row shows up the newest row is an earlier run, which must not read as
+    // this result.
+    const lastRun = trackedRun ? trackedRow : restoreStatus?.history?.[0];
+    const waitingForRun = !!trackedRun && !isRunning && !lastRun;
     // The data is in place, but its migrations did not run: the backend
     // holds the site in maintenance mode instead of rolling back.
     const lastRunMigrationsPending =
@@ -813,6 +862,8 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
       : null;
     const subtitle = isRunning
       ? t('backup.restore.progress.inProgress')
+      : waitingForRun
+        ? (trackedRunMissing ? t('backup.restore.progress.notStarted') : t('backup.restore.progress.starting'))
       : lastRunBlocked
         ? t('backup.restore.progress.blockedSubtitle')
         : lastRunFailed
@@ -837,6 +888,15 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
             {subtitle}
           </p>
         </div>
+
+        {trackedRun?.signedOut && (
+          <div className="bg-info-soft border border-info-line rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <Info className="h-5 w-5 text-info flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-info-text">{t('backup.restore.progress.signedOutNote')}</p>
+            </div>
+          </div>
+        )}
 
         {lastRunFailed && (
           <div className="bg-danger-soft border border-danger-line rounded-lg p-4">
@@ -1113,6 +1173,9 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
         {currentStep === 4 && !restoreStatus?.isRunning && (
           <Button
             onClick={() => {
+              clearRestoreRun();
+              setTrackedRun(null);
+              setTrackedRunMissing(false);
               setCurrentStep(0);
               setRestoreData({
                 source: null,

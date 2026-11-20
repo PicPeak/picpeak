@@ -3393,7 +3393,10 @@
         "success": {
           "title": "Restauración completada con éxito",
           "message": "Tus datos han sido restaurados. Verifica que todo funcione correctamente."
-        }
+        },
+        "starting": "Iniciando la restauración…",
+        "signedOutNote": "Se cerró tu sesión porque la restauración reemplazó la base de datos. Era de esperar que tuvieras que volver a iniciar sesión. Abajo está la restauración que iniciaste.",
+        "notStarted": "La restauración no se inició o no se pudo leer su resultado: revisa el historial de restauraciones."
       },
       "actions": {
         "back": "Atrás",

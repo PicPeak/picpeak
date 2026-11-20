@@ -7,6 +7,7 @@ import {
 } from '../utils/galleryAuthStorage';
 import { clearGuestIdentity, getGuestToken } from '../utils/guestIdentityStorage';
 import { getApiBaseUrl } from '../utils/url';
+import { noteRestoreSignOut } from '../utils/restoreRelogin';
 
 // Maintenance mode callback
 let maintenanceModeCallback: ((enabled: boolean) => void) | null = null;
@@ -169,6 +170,9 @@ api.interceptors.response.use(
       const currentPath = window.location.pathname;
 
       if (isAdminRoute) {
+        // A restore the wizard started replaced the database and signed this
+        // session out; the login page sends the admin back to its result.
+        noteRestoreSignOut();
         // Only redirect if we're not already on the admin login page.
         // `window.location.href = …` is async — `pathname` doesn't change
         // synchronously — so a fan-out of 401s (the dashboard fires 7 admin

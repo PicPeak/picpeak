@@ -214,6 +214,11 @@ router.post('/start', requireSuperAdmin(), [
     // Transform S3 config from frontend format
     const s3Config = transformS3Config(req.body);
 
+    // Taken before the run starts, so its restore_runs row has
+    // started_at >= this: the wizard waits for that row instead of reading
+    // the previous run, and finds it again after the restore signs it out.
+    const startedAfter = new Date().toISOString();
+
     // Start restore in background
     restoreService.restore({
       source: req.body.source,
@@ -235,7 +240,8 @@ router.post('/start', requireSuperAdmin(), [
 
     res.json({
       success: true,
-      message: 'Restore operation started'
+      message: 'Restore operation started',
+      startedAfter
     });
   } catch (error) {
     logger.error('Failed to start restore:', error);
