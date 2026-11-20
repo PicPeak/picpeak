@@ -2754,7 +2754,9 @@
       "remove": "Code entfernen",
       "removeTitle": "Event-Code entfernen?",
       "removeConfirm": "Der Code funktioniert sofort nicht mehr, auch auf bereits gedruckten Karten. Der Freigabelink funktioniert weiter.",
-      "removed": "Event-Code entfernt"
+      "removed": "Event-Code entfernt",
+      "printTitle": "Mit Code drucken",
+      "printHint": "Der QR-Code öffnet {{url}} und ist für jede Galerie gleich. Der Code steht darunter."
     },
     "selection": {
       "title": "Auswahl für Gäste",
