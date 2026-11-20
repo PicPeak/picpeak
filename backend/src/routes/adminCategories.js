@@ -14,6 +14,7 @@ const { requireEventOwnership, canAccessEvent } = require('../middleware/ownersh
 const { getEventCategoriesOrdered } = require('../utils/categoryOrder');
 const logger = require('../utils/logger');
 const { isUniqueViolation } = require('../utils/dbErrors');
+const chapters = require('../services/categoryChapters');
 const router = express.Router();
 
 /**
@@ -112,7 +113,19 @@ router.get('/global', adminAuth, requirePermission('settings.view'), async (req,
 router.get('/event/:eventId', adminAuth, requirePermission('settings.view'), requireEventOwnership, async (req, res) => {
   try {
     const categories = await getEventCategoriesOrdered(req.params.eventId);
-    res.json(categories);
+    // Chapter markers (issue 2548): this event's text, the time suggested
+    // from the earliest capture in the category, and whether the category
+    // may carry one (the guest-upload category is not part of the story).
+    const event = await db('events').where('id', req.params.eventId).first('upload_category_id');
+    const rows = await chapters.chapterRowsForEvent(req.params.eventId);
+    const suggested = await chapters.suggestedChapterTimes(req.params.eventId);
+    res.json(categories.map((category) => ({
+      ...category,
+      ...chapters.chapterFieldsOf(rows.get(Number(category.id))),
+      chapter_time_suggestion: suggested.get(Number(category.id)) || null,
+      chapter_available: !(event && event.upload_category_id != null
+        && Number(event.upload_category_id) === Number(category.id)),
+    })));
   } catch (error) {
     logger.error('Error fetching event categories:', error);
     res.status(500).json({ error: 'Failed to fetch categories' });
@@ -427,6 +440,63 @@ router.put('/:id/hero', adminAuth, requirePermission('settings.edit'), [
   }
 });
 
+// Chapter marker of a category in one gallery (issue 2548). Plain text,
+// capped server-side; an all-empty marker removes the row.
+router.put('/event/:eventId/:id/chapter', adminAuth, requirePermission('settings.edit'), requireEventOwnership, [
+  ...Object.entries(chapters.CHAPTER_TEXT_LIMITS).map(([field, max]) => body(field).optional({ nullable: true })
+    .isString().withMessage(`${field} must be text`)
+    .isLength({ max }).withMessage(`${field} must be at most ${max} characters`)),
+  body('chapter_time').optional({ nullable: true }).custom((value) => value === ''
+    || (typeof value === 'string' && chapters.CHAPTER_TIME_PATTERN.test(value)))
+    .withMessage('chapter_time must be HH:MM')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
+    }
+    const eventId = Number(req.params.eventId);
+    const categoryId = Number(req.params.id);
+    if (!Number.isSafeInteger(categoryId) || categoryId < 1) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    const category = await db('photo_categories').where('id', categoryId).first();
+    // A shared global or one of this event's own categories; nothing else.
+    if (!category || !(parseBooleanInput(category.is_global, false) || Number(category.event_id) === eventId)) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    const event = await db('events').where('id', eventId).first('upload_category_id');
+    if (event.upload_category_id != null && Number(event.upload_category_id) === categoryId) {
+      return res.status(400).json({ error: 'Guest uploads are not part of the storyline; this category has no chapter marker' });
+    }
+
+    const before = (await chapters.chapterRowsForEvent(eventId)).get(categoryId);
+    const next = { ...chapters.chapterFieldsOf(before), ...chapters.chapterUpdateFrom(req.body) };
+    const empty = chapters.CHAPTER_FIELDS.every((field) => next[field] === null);
+    if (empty) {
+      await db('event_category_chapters').where({ event_id: eventId, category_id: categoryId }).del();
+    } else {
+      await db('event_category_chapters')
+        .insert({ event_id: eventId, category_id: categoryId, ...next, updated_at: new Date().toISOString() })
+        .onConflict(['event_id', 'category_id'])
+        .merge();
+    }
+
+    // Logged as a category edit: the activity feed already labels it.
+    await logActivity('category_updated',
+      { categoryName: category.name, chapter: true },
+      eventId,
+      { type: 'admin', id: req.admin.id, name: req.admin.username }
+    );
+
+    changedEvidence(res, 'category_editing', chapters.chapterFieldsOf(before), next, chapters.CHAPTER_FIELDS);
+    res.json({ category_id: categoryId, ...next });
+  } catch (error) {
+    logger.error('Error updating category chapter:', error);
+    res.status(500).json({ error: 'Failed to update chapter marker' });
+  }
+});
+
 // Delete a category
 router.delete('/:id', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
@@ -460,6 +530,10 @@ router.delete('/:id', adminAuth, requirePermission('settings.edit'), async (req,
     
     // Only photos in the trash are left in it: they come back uncategorised.
     await db('photos').where('category_id', id).update({ category_id: null });
+    // Chapter markers in every event (migration 369): SQLite leaves the FK cascade inert.
+    if (await db.schema.hasTable('event_category_chapters')) {
+      await db('event_category_chapters').where('category_id', id).del();
+    }
     await db('photo_categories').where('id', id).delete();
     
     // Log activity

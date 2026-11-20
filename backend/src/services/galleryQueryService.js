@@ -11,6 +11,7 @@ const { SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const watermarkService = require('./watermarkService');
 const logger = require('../utils/logger');
 const { getEventCategoriesOrdered } = require('../utils/categoryOrder');
+const { chapterStyleOf, chapterRowsForEvent, publicChapterOf } = require('./categoryChapters');
 const folderTree = require('./folderTreeService');
 const { guestDeliveryPayload } = require('./deliveryService');
 const { getUseOriginalFilenames } = require('./downloadFilenameService');
@@ -541,6 +542,18 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     }));
   }
 
+  // Chapter markers (issue 2548): text only, and only when the gallery
+  // shows them. Read after the visibility filter above, so a category the
+  // viewer cannot see never ships its marker either.
+  const chapterStyle = chapterStyleOf(event);
+  if (chapterStyle !== 'off' && categories.length > 0) {
+    const chapterRows = await chapterRowsForEvent(event.id);
+    for (const category of categories) {
+      const chapter = publicChapterOf(category, chapterRows.get(Number(category.id)), event);
+      if (chapter) category.chapter = chapter;
+    }
+  }
+
   // Build a map for quick category lookup
   const categoryMap = {};
   categories.forEach(cat => {
@@ -730,6 +743,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       header_style: theme.header_style,
       hero_divider_style: theme.hero_divider_style,
       hero_image_anchor: event.hero_image_anchor || 'center',
+      chapter_marker_style: chapterStyle,
       default_photo_sort: event.default_photo_sort || 'upload_date_desc',
       // Photo sales: priced-gallery settings drive the
       // purchase buttons and the free quota in the gallery UI.

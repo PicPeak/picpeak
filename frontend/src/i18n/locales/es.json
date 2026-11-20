@@ -717,7 +717,19 @@
     "coverPhotoRemoved": "Foto de portada eliminada",
     "failedToSetCoverPhoto": "Error al establecer la foto de portada",
     "categoryHeroHint": "Si no se establece una foto de portada para una categoría, se usará la foto hero por defecto.",
-    "nestedFoldersHint": "Las carpetas dentro de carpetas se gestionan en la barra de carpetas de la pestaña Fotos."
+    "nestedFoldersHint": "Las carpetas dentro de carpetas se gestionan en la barra de carpetas de la pestaña Fotos.",
+    "chapter": {
+      "edit": "Marcador de capítulo",
+      "saved": "Marcador de capítulo guardado",
+      "saveFailed": "No se pudo guardar el marcador de capítulo",
+      "heading": "Título",
+      "time": "Hora",
+      "location": "Lugar",
+      "subheading": "Subtítulo",
+      "useSuggestion": "Usar {{time}} (primera foto)",
+      "hint": "Se muestra sobre esta categoría cuando la galería muestra marcadores de capítulo (Ajustes → Apariencia). Solo en esta galería.",
+      "clear": "Quitar marcador"
+    }
   },
   "eventCode": {
     "title": "Encuentra tu galería",
@@ -1320,6 +1332,13 @@
       "lineBreaksPreserved": "Los saltos de línea se conservan en los correos",
       "tip": "Consejo: pulsa Intro para crear una nueva línea. Cada línea aparecerá como un párrafo independiente en los correos.",
       "preview": "Vista previa:"
+    },
+    "chapterMarkers": {
+      "label": "Marcadores de capítulo",
+      "off": "Desactivado",
+      "divider": "Separador",
+      "hero": "Banner con imagen de la categoría",
+      "help": "Muestra un título, hora, lugar y subtítulo sobre cada categoría en el diseño Story. Escríbelos por categoría en Fotos → Categorías. Un banner sin imagen de categoría se muestra como separador."
     }
   },
   "settings": {
@@ -3936,11 +3955,10 @@
       "add": "Añadir paquete",
       "added": "Paquete registrado.",
       "addedMailed": "Paquete registrado. Correo de envío en cola para {{email}}.",
-      "mailFailed": "Paquete registrado, pero el correo de envío no se pudo poner en cola.",
+      "mailFailed": "Error al enviar el correo",
       "mailed": "Correo enviado",
       "notMailed": "Sin aviso",
       "mailQueued": "Correo programado",
-      "mailFailed": "Error al enviar el correo",
       "deleteTitle": "¿Eliminar este paquete?",
       "deleteMessage": "El paquete {{number}} desaparece del panel de administración y del portal del cliente. Un correo ya enviado sigue enviado.",
       "delete": "Eliminar paquete",

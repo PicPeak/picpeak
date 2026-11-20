@@ -1744,7 +1744,19 @@
     "failedToToggleFolder": "Nastavitve mape ni bilo mogoče posodobiti",
     "disableFolderTitle": "Mapa: te fotografije so skrite iz glavne mreže in prikazane samo v mapi. Kliknite, da jo znova spremenite v filter.",
     "enableFolderTitle": "Filter: te fotografije ostanejo v glavni mreži. Kliknite, da ga spremenite v mapo — fotografije se skrijejo iz mreže, dostop pa NI omejen.",
-    "nestedFoldersHint": "Mape znotraj map upravljate v vrstici map na zavihku Fotografije."
+    "nestedFoldersHint": "Mape znotraj map upravljate v vrstici map na zavihku Fotografije.",
+    "chapter": {
+      "edit": "Oznaka poglavja",
+      "saved": "Oznaka poglavja shranjena",
+      "saveFailed": "Oznake poglavja ni bilo mogoče shraniti",
+      "heading": "Naslov",
+      "time": "Čas",
+      "location": "Kraj",
+      "subheading": "Podnaslov",
+      "useSuggestion": "Uporabi {{time}} (prva fotografija)",
+      "hint": "Prikazano nad to kategorijo, ko galerija prikazuje oznake poglavij (Nastavitve → Videz). Samo v tej galeriji.",
+      "clear": "Odstrani oznako"
+    }
   },
   "eventCode": {
     "title": "Poiščite svojo galerijo",
@@ -2458,6 +2470,13 @@
       "lineBreaksPreserved": "Prelomi vrstic se ohranijo v e-poštnih sporočilih",
       "tip": "Namig: pritisnite Enter za novo vrstico. Vsaka vrstica bo v e-poštnih sporočilih ločen odstavek.",
       "preview": "Predogled:"
+    },
+    "chapterMarkers": {
+      "label": "Oznake poglavij",
+      "off": "Izklopljeno",
+      "divider": "Ločilna črta",
+      "hero": "Pasica s sliko kategorije",
+      "help": "V postavitvi Story nad vsako kategorijo prikaže naslov, čas, kraj in podnaslov. Vnesete jih za vsako kategorijo pod Fotografije → Kategorije. Pasica brez slike kategorije se prikaže kot ločilna črta."
     }
   },
   "settings": {
@@ -10691,11 +10710,10 @@
       "add": "Dodaj paket",
       "added": "Paket zabeležen.",
       "addedMailed": "Paket zabeležen. E-pošta o pošiljki je v čakalni vrsti za {{email}}.",
-      "mailFailed": "Paket zabeležen, vendar e-pošte o pošiljki ni bilo mogoče postaviti v čakalno vrsto.",
+      "mailFailed": "Pošiljanje e-pošte ni uspelo",
       "mailed": "E-pošta poslana",
       "notMailed": "Brez obvestila",
       "mailQueued": "E-pošta načrtovana",
-      "mailFailed": "Pošiljanje e-pošte ni uspelo",
       "deleteTitle": "Izbrišem ta paket?",
       "deleteMessage": "Paket {{number}} izgine iz skrbništva in iz portala za stranke. Že poslana e-pošta ostane poslana.",
       "delete": "Izbriši paket",

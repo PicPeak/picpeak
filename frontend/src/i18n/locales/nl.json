@@ -726,7 +726,19 @@
     "coverPhotoRemoved": "Omslagfoto verwijderd",
     "failedToSetCoverPhoto": "Kan omslagfoto niet instellen",
     "categoryHeroHint": "Als er geen omslagfoto is ingesteld voor een categorie, wordt de standaard hero-foto gebruikt.",
-    "nestedFoldersHint": "Mappen binnen mappen beheert u in de mappenbalk op het tabblad Foto's."
+    "nestedFoldersHint": "Mappen binnen mappen beheert u in de mappenbalk op het tabblad Foto's.",
+    "chapter": {
+      "edit": "Hoofdstukmarkering",
+      "saved": "Hoofdstukmarkering opgeslagen",
+      "saveFailed": "Hoofdstukmarkering kon niet worden opgeslagen",
+      "heading": "Kop",
+      "time": "Tijd",
+      "location": "Locatie",
+      "subheading": "Ondertitel",
+      "useSuggestion": "{{time}} gebruiken (eerste foto)",
+      "hint": "Wordt boven deze categorie getoond als de galerij hoofdstukmarkeringen toont (Instellingen → Weergave). Alleen in deze galerij.",
+      "clear": "Markering verwijderen"
+    }
   },
   "eventCode": {
     "title": "Vind je galerij",
@@ -1295,6 +1307,13 @@
       "lineBreaksPreserved": "Regeleinden blijven behouden in e-mails",
       "tip": "Tip: druk op Enter voor een nieuwe regel. Elke regel verschijnt in e-mails als een aparte alinea.",
       "preview": "Voorbeeld:"
+    },
+    "chapterMarkers": {
+      "label": "Hoofdstukmarkeringen",
+      "off": "Uit",
+      "divider": "Scheidingslijn",
+      "hero": "Banner met categorieafbeelding",
+      "help": "Toont in de Story-lay-out boven elke categorie een kop, tijd, locatie en ondertitel. Schrijf ze per categorie onder Foto’s → Categorieën. Een banner zonder categorieafbeelding wordt als scheidingslijn getoond."
     }
   },
   "settings": {
@@ -4513,11 +4532,10 @@
       "add": "Pakket toevoegen",
       "added": "Pakket vastgelegd.",
       "addedMailed": "Pakket vastgelegd. Verzend-e-mail aan {{email}} in de wachtrij gezet.",
-      "mailFailed": "Pakket vastgelegd, maar de verzend-e-mail kon niet in de wachtrij worden gezet.",
+      "mailFailed": "E-mail mislukt",
       "mailed": "E-mail verzonden",
       "notMailed": "Niet op de hoogte gebracht",
       "mailQueued": "E-mail gepland",
-      "mailFailed": "E-mail mislukt",
       "deleteTitle": "Dit pakket verwijderen?",
       "deleteMessage": "Pakket {{number}} verdwijnt uit de beheeromgeving en uit het klantenportaal. Een al verzonden e-mail blijft verzonden.",
       "delete": "Pakket verwijderen",

@@ -739,7 +739,19 @@
     "coverPhotoRemoved": "Photo de couverture retirée",
     "failedToSetCoverPhoto": "Échec de la définition de la photo de couverture",
     "categoryHeroHint": "Si aucune photo de couverture n'est définie pour une catégorie, la photo par défaut sera utilisée.",
-    "nestedFoldersHint": "Les dossiers imbriqués se gèrent dans la barre des dossiers de l'onglet Photos."
+    "nestedFoldersHint": "Les dossiers imbriqués se gèrent dans la barre des dossiers de l'onglet Photos.",
+    "chapter": {
+      "edit": "Marqueur de chapitre",
+      "saved": "Marqueur de chapitre enregistré",
+      "saveFailed": "Impossible d’enregistrer le marqueur de chapitre",
+      "heading": "Titre",
+      "time": "Heure",
+      "location": "Lieu",
+      "subheading": "Sous-titre",
+      "useSuggestion": "Utiliser {{time}} (première photo)",
+      "hint": "Affiché au-dessus de cette catégorie lorsque la galerie montre les marqueurs de chapitre (Paramètres → Apparence). Uniquement dans cette galerie.",
+      "clear": "Supprimer le marqueur"
+    }
   },
   "eventCode": {
     "title": "Trouver votre galerie",
@@ -1312,6 +1324,13 @@
       "lineBreaksPreserved": "Les sauts de ligne sont conservés dans les e-mails",
       "tip": "Astuce : appuyez sur Entrée pour créer une nouvelle ligne. Chaque ligne apparaîtra comme un paragraphe distinct dans les e-mails.",
       "preview": "Aperçu :"
+    },
+    "chapterMarkers": {
+      "label": "Marqueurs de chapitre",
+      "off": "Désactivé",
+      "divider": "Séparateur",
+      "hero": "Bannière avec l’image de la catégorie",
+      "help": "Affiche un titre, une heure, un lieu et un sous-titre au-dessus de chaque catégorie dans la mise en page Story. Rédigez-les par catégorie sous Photos → Catégories. Une bannière sans image de catégorie s’affiche comme séparateur."
     }
   },
   "settings": {
@@ -4586,11 +4605,10 @@
       "add": "Ajouter un colis",
       "added": "Colis enregistré.",
       "addedMailed": "Colis enregistré. E-mail d’expédition mis en file d’attente pour {{email}}.",
-      "mailFailed": "Colis enregistré, mais l’e-mail d’expédition n’a pas pu être mis en file d’attente.",
+      "mailFailed": "Échec de l'e-mail",
       "mailed": "E-mail envoyé",
       "notMailed": "Non prévenu",
       "mailQueued": "E-mail programmé",
-      "mailFailed": "Échec de l'e-mail",
       "deleteTitle": "Supprimer ce colis ?",
       "deleteMessage": "Le colis {{number}} disparaît de l’administration et du portail client. Un e-mail déjà envoyé reste envoyé.",
       "delete": "Supprimer le colis",

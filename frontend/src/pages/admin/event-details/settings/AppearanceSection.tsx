@@ -339,6 +339,24 @@ export const AppearanceSection: React.FC<FieldsProps & {
         </div>
         {f.hero_logo_visible !== false && <EventLogoUpload event={event} disabled={readOnly} />}
 
+        {/* Chapter markers (issue 2548): per gallery, off keeps it unchanged. */}
+        <div className="pt-4 border-t border-line">
+          <label htmlFor="chapter-marker-style" className={labelClass}>{t('events.chapterMarkers.label', 'Chapter markers')}</label>
+          <select
+            id="chapter-marker-style"
+            value={f.chapter_marker_style}
+            onChange={(e) => set({ chapter_marker_style: e.target.value as 'off' | 'divider' | 'hero' })}
+            className={selectClass}
+          >
+            <option value="off">{t('events.chapterMarkers.off', 'Off')}</option>
+            <option value="divider">{t('events.chapterMarkers.divider', 'Divider')}</option>
+            <option value="hero">{t('events.chapterMarkers.hero', 'Banner with category image')}</option>
+          </select>
+          <p className="text-xs text-muted mt-1">
+            {t('events.chapterMarkers.help', 'Shows a heading, time, location and subheading above each category in the Story layout. Write them per category under Photos → Categories. A banner without a category image is shown as a divider.')}
+          </p>
+        </div>
+
         <BannerOverride f={f} set={set} kind="info" />
         <BannerOverride f={f} set={set} kind="promo" />
       </SectionCard>

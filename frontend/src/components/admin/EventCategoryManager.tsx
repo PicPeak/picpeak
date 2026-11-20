@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, X, Loader2, Image as ImageIcon, Check, Download, DownloadCloud, ArrowUp, ArrowDown, RotateCcw, Folder, FolderOpen } from 'lucide-react';
-import { categoriesService, type PhotoCategory } from '../../services/categories.service';
+import { Plus, X, Loader2, Image as ImageIcon, Check, Download, DownloadCloud, ArrowUp, ArrowDown, RotateCcw, Folder, FolderOpen, BookOpen } from 'lucide-react';
+import { categoriesService, type CategoryChapterData, type PhotoCategory } from '../../services/categories.service';
 import { photosService } from '../../services/photos.service';
 import { folderQueryKey } from '../../services/folders.service';
 import { Button, Card, AuthenticatedImage, useConfirm } from '../common';
@@ -14,6 +14,97 @@ interface EventCategoryManagerProps {
   eventId: number;
 }
 
+const EMPTY_CHAPTER: CategoryChapterData = {
+  chapter_heading: null,
+  chapter_subheading: null,
+  chapter_time: null,
+  chapter_location: null,
+};
+
+const hasChapter = (category: PhotoCategory) => Boolean(
+  category.chapter_heading || category.chapter_subheading || category.chapter_time || category.chapter_location
+);
+
+const chapterInputClass = 'w-full px-3 py-1.5 text-sm border border-line-strong rounded-md bg-panel text-heading focus:ring-2 focus:ring-accent';
+
+interface ChapterEditorProps {
+  category: PhotoCategory;
+  draft: CategoryChapterData;
+  onChange: (draft: CategoryChapterData) => void;
+  onSave: () => void;
+  onClear: () => void;
+  onCancel: () => void;
+  saving: boolean;
+}
+
+/** Heading, time, location and subheading of one category's chapter marker (issue 2548). */
+const ChapterEditor: React.FC<ChapterEditorProps> = ({ category, draft, onChange, onSave, onClear, onCancel, saving }) => {
+  const { t } = useTranslation();
+  const field = (key: keyof CategoryChapterData) => ({
+    id: `chapter-${category.id}-${key}`,
+    value: draft[key] ?? '',
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...draft, [key]: e.target.value }),
+    className: chapterInputClass,
+  });
+  const labelClass = 'block text-xs font-medium text-soft mb-1';
+  const suggestion = category.chapter_time_suggestion;
+  return (
+    <div className="basis-full mt-2 pt-1 space-y-3 border-t border-line">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+        <div className="sm:col-span-2">
+          <label htmlFor={`chapter-${category.id}-chapter_heading`} className={labelClass}>
+            {t('categories.chapter.heading', 'Heading')}
+          </label>
+          <input type="text" maxLength={100} placeholder={category.name} {...field('chapter_heading')} />
+        </div>
+        <div>
+          <label htmlFor={`chapter-${category.id}-chapter_time`} className={labelClass}>
+            {t('categories.chapter.time', 'Time')}
+          </label>
+          <input type="time" {...field('chapter_time')} />
+          {suggestion && suggestion !== draft.chapter_time && (
+            <button
+              type="button"
+              onClick={() => onChange({ ...draft, chapter_time: suggestion })}
+              className="mt-1 text-xs text-accent hover:text-accent-dark"
+            >
+              {t('categories.chapter.useSuggestion', 'Use {{time}} (first photo)', { time: suggestion })}
+            </button>
+          )}
+        </div>
+        <div>
+          <label htmlFor={`chapter-${category.id}-chapter_location`} className={labelClass}>
+            {t('categories.chapter.location', 'Location')}
+          </label>
+          <input type="text" maxLength={120} {...field('chapter_location')} />
+        </div>
+        <div className="sm:col-span-2">
+          <label htmlFor={`chapter-${category.id}-chapter_subheading`} className={labelClass}>
+            {t('categories.chapter.subheading', 'Subheading')}
+          </label>
+          <input type="text" maxLength={200} {...field('chapter_subheading')} />
+        </div>
+      </div>
+      <p className="text-xs text-muted italic">
+        {t('categories.chapter.hint', 'Shown above this category when the gallery shows chapter markers (Settings → Appearance). Only in this gallery.')}
+      </p>
+      <div className="flex flex-wrap gap-2 justify-end">
+        {hasChapter(category) && (
+          <Button variant="outline" size="sm" onClick={onClear} disabled={saving}>
+            {t('categories.chapter.clear', 'Remove marker')}
+          </Button>
+        )}
+        <Button variant="outline" size="sm" onClick={onCancel}>
+          {t('common.cancel')}
+        </Button>
+        <Button variant="primary" size="sm" onClick={onSave} disabled={saving}>
+          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : t('common.save')}
+        </Button>
+      </div>
+    </div>
+  );
+};
+
 export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ eventId }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
@@ -21,6 +112,10 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
   const [newCategoryName, setNewCategoryName] = useState('');
   const [heroPickerCategoryId, setHeroPickerCategoryId] = useState<number | null>(null);
   useEscapeClose(heroPickerCategoryId !== null, () => setHeroPickerCategoryId(null));
+
+  // Chapter marker editor (issue 2548): one category at a time.
+  const [chapterEditId, setChapterEditId] = useState<number | null>(null);
+  const [chapterDraft, setChapterDraft] = useState<CategoryChapterData>(EMPTY_CHAPTER);
 
   // Fetch this event's categories (globals + event-specific), already resolved
   // to the event's effective order by the backend (#782).
@@ -140,6 +235,45 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
     successMessage: t('categories.orderReset', 'Reverted to the default order'),
     errorMessage: t('categories.failedToReorder', 'Failed to update category order'),
   });
+
+  // Chapter marker (issue 2548), stored per event: a shared category can
+  // carry a different time and place in every gallery.
+  const chapterMutation = useMutationWithToast({
+    mutationFn: ({ categoryId, data }: { categoryId: number; data: CategoryChapterData }) =>
+      categoriesService.updateChapter(eventId, categoryId, data),
+    invalidateKeys: [['event-categories', eventId]],
+    successMessage: t('categories.chapter.saved', 'Chapter marker saved'),
+    onSuccess: () => setChapterEditId(null),
+    errorMessage: t('categories.chapter.saveFailed', 'Failed to save the chapter marker'),
+  });
+
+  const openChapterEditor = (category: PhotoCategory) => {
+    if (chapterEditId === category.id) {
+      setChapterEditId(null);
+      return;
+    }
+    setChapterDraft({
+      chapter_heading: category.chapter_heading ?? '',
+      chapter_subheading: category.chapter_subheading ?? '',
+      // A new marker starts from the first photo's capture time.
+      chapter_time: hasChapter(category) ? category.chapter_time ?? '' : category.chapter_time_suggestion ?? '',
+      chapter_location: category.chapter_location ?? '',
+    });
+    setChapterEditId(category.id);
+  };
+
+  const saveChapter = (categoryId: number, data: CategoryChapterData) => {
+    const trimmed = (v: string | null) => (v && v.trim() ? v.trim() : null);
+    chapterMutation.mutate({
+      categoryId,
+      data: {
+        chapter_heading: trimmed(data.chapter_heading),
+        chapter_subheading: trimmed(data.chapter_subheading),
+        chapter_time: trimmed(data.chapter_time),
+        chapter_location: trimmed(data.chapter_location),
+      },
+    });
+  };
 
   const handleMove = (index: number, dir: -1 | 1) => {
     const target = index + dir;
@@ -271,7 +405,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
             return (
               <div
                 key={category.id}
-                className="flex items-center justify-between px-3 py-2 bg-subtle rounded-md"
+                className="flex flex-wrap items-center justify-between px-3 py-2 bg-subtle rounded-md"
               >
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   {/* Reorder controls (#782). The gallery renders categories in
@@ -323,6 +457,21 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                   )}
                 </div>
                 <div className="flex items-center gap-1">
+                  {/* Chapter marker (issue 2548): any category in the story,
+                      shared ones too; not folders, not guest uploads. */}
+                  {!category.is_folder && category.chapter_available !== false && (
+                    <button
+                      onClick={() => openChapterEditor(category)}
+                      className={`p-1 transition-colors ${
+                        hasChapter(category) ? 'text-accent hover:text-faint' : 'text-faint hover:text-accent'
+                      }`}
+                      title={t('categories.chapter.edit', 'Chapter marker')}
+                      aria-label={t('categories.chapter.edit', 'Chapter marker')}
+                      aria-expanded={chapterEditId === category.id}
+                    >
+                      <BookOpen className="w-3 h-3" />
+                    </button>
+                  )}
                   {/* Download toggle + delete apply to event-specific categories
                       only. Global categories are managed in Settings. */}
                   {!category.is_global && (
@@ -392,6 +541,17 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                     </>
                   )}
                 </div>
+                {chapterEditId === category.id && (
+                  <ChapterEditor
+                    category={category}
+                    draft={chapterDraft}
+                    onChange={setChapterDraft}
+                    onSave={() => saveChapter(category.id, chapterDraft)}
+                    onClear={() => saveChapter(category.id, EMPTY_CHAPTER)}
+                    onCancel={() => setChapterEditId(null)}
+                    saving={chapterMutation.isPending}
+                  />
+                )}
               </div>
             );
           })}

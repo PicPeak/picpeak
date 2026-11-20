@@ -23,7 +23,24 @@ export interface PhotoCategory {
   // Nesting (issue 1786): the parent folder, null = top level. Only folders
   // nest; nested ones are managed in the Photos tab's folder bar.
   parent_id?: number | null;
+  // Chapter marker of this category in the event (issue 2548), on the
+  // /event/:id response only. Plain text; time is 'HH:MM'.
+  chapter_heading?: string | null;
+  chapter_subheading?: string | null;
+  chapter_time?: string | null;
+  chapter_location?: string | null;
+  // Earliest capture time among the category's photos, 'HH:MM'.
+  chapter_time_suggestion?: string | null;
+  // false for the guest-upload category: not part of the storyline.
+  chapter_available?: boolean;
   created_at: string;
+}
+
+export interface CategoryChapterData {
+  chapter_heading: string | null;
+  chapter_subheading: string | null;
+  chapter_time: string | null;
+  chapter_location: string | null;
 }
 
 export interface CreateCategoryData {
@@ -69,6 +86,13 @@ export const categoriesService = {
   // Set category hero photo (#163)
   async setCategoryHeroPhoto(id: number, heroPhotoId: number | null): Promise<PhotoCategory> {
     const response = await api.put<PhotoCategory>(`/admin/categories/${id}/hero`, { hero_photo_id: heroPhotoId });
+    return response.data;
+  },
+
+  // Chapter marker of a category in one gallery (issue 2548). An all-empty
+  // marker removes it.
+  async updateChapter(eventId: number, categoryId: number, data: CategoryChapterData): Promise<CategoryChapterData> {
+    const response = await api.put<CategoryChapterData>(`/admin/categories/event/${eventId}/${categoryId}/chapter`, data);
     return response.data;
   },
 

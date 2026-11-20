@@ -61,6 +61,8 @@ export type EditFormState = {
   default_photo_sort: string;
   // Videos ahead of photos in the guest gallery (issue 2263).
   videos_first: boolean;
+  // Chapter markers above the categories (issue 2548).
+  chapter_marker_style: 'off' | 'divider' | 'hero';
   // Photo sales pricing for paid galleries.
   is_priced: boolean;
   free_photo_count: number;
