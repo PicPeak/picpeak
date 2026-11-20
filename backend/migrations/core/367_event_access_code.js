@@ -16,6 +16,21 @@
  */
 const INDEX_NAME = 'events_access_code_unique';
 
+// Column and index are guarded separately: SQLite migrations run without a
+// transaction, so an interrupted run can leave the column without its index,
+// and a rerun must still add the index.
+async function hasIndex(knex, name) {
+  if (knex.client.config.client === 'pg') {
+    const result = await knex.raw(
+      'SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = ?',
+      ['events', name],
+    );
+    return result.rows.length > 0;
+  }
+  const rows = await knex.raw('SELECT 1 FROM sqlite_master WHERE type = \'index\' AND name = ?', [name]);
+  return rows.length > 0;
+}
+
 exports.up = async function up(knex) {
   if (!(await knex.schema.hasTable('events'))) return;
 
@@ -23,6 +38,8 @@ exports.up = async function up(knex) {
     await knex.schema.alterTable('events', (table) => {
       table.string('access_code', 12).nullable();
     });
+  }
+  if (!(await hasIndex(knex, INDEX_NAME))) {
     await knex.schema.alterTable('events', (table) => {
       table.unique(['access_code'], { indexName: INDEX_NAME });
     });
@@ -32,9 +49,11 @@ exports.up = async function up(knex) {
 exports.down = async function down(knex) {
   if (!(await knex.schema.hasTable('events'))) return;
   if (!(await knex.schema.hasColumn('events', 'access_code'))) return;
-  await knex.schema.alterTable('events', (table) => {
-    table.dropUnique(['access_code'], INDEX_NAME);
-  });
+  if (await hasIndex(knex, INDEX_NAME)) {
+    await knex.schema.alterTable('events', (table) => {
+      table.dropUnique(['access_code'], INDEX_NAME);
+    });
+  }
   await knex.schema.alterTable('events', (table) => {
     table.dropColumn('access_code');
   });

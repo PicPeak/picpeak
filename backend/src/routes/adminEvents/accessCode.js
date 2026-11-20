@@ -1,7 +1,8 @@
 'use strict';
 // Event codes (issue 2495, migration 367): generate a new code, set one the
 // admin chose, or remove it. Codes only resolve while the setting
-// general_event_codes_enabled is on; removing works either way. Gated like the embed link (./embed.js). The public side is
+// general_event_codes_enabled is on; generating and setting answer 409
+// EVENT_CODES_DISABLED while it is off, removing works either way. Gated like the embed link (./embed.js). The public side is
 // routes/publicEventCode.js.
 
 const { db, logActivity } = require('../../database/db');
@@ -11,6 +12,7 @@ const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ow
 const { errorResponse } = require('../../utils/routeHelpers');
 const {
   normalizeAccessCode, isValidAccessCode, formatAccessCode, assignGeneratedAccessCode, setAccessCode, clearAccessCode,
+  eventCodesEnabled,
 } = require('../../services/eventAccessCode');
 
 async function loadOwnedEvent(req) {
@@ -20,6 +22,9 @@ async function loadOwnedEvent(req) {
 }
 
 const codeState = (code) => ({ access_code: code || null, access_code_display: formatAccessCode(code) });
+const codesDisabled = (res) => res.status(409).json({
+  error: 'Event codes are switched off', code: 'EVENT_CODES_DISABLED',
+});
 const actor = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
 
 module.exports = (router) => {
@@ -28,6 +33,7 @@ module.exports = (router) => {
     try {
       const event = await loadOwnedEvent(req);
       if (!event) return res.status(404).json({ error: 'Event not found' });
+      if (!(await eventCodesEnabled())) return codesDisabled(res);
       const code = await assignGeneratedAccessCode(event.id);
       await logActivity('event_code_changed', { eventName: event.event_name, generated: true }, event.id, actor(req));
       res.json(codeState(code));
@@ -42,6 +48,7 @@ module.exports = (router) => {
     try {
       const event = await loadOwnedEvent(req);
       if (!event) return res.status(404).json({ error: 'Event not found' });
+      if (!(await eventCodesEnabled())) return codesDisabled(res);
       const code = normalizeAccessCode(req.body?.code);
       if (!isValidAccessCode(code)) {
         return res.status(400).json({

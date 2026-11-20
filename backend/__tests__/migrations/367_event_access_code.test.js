@@ -56,4 +56,17 @@ describe('migration 367 on SQLite', () => {
     expect(await db.schema.hasColumn('events', 'access_code')).toBe(false);
     await migration.down(db);
   });
+
+  it('adds the index on a rerun after a run that stopped after the column', async () => {
+    await db.schema.alterTable('events', (t) => { t.string('access_code', 12).nullable(); });
+    await migration.up(db);
+    await db('events').where({ slug: 'live-a' }).update({ access_code: 'K7M4QX' });
+    await expect(db('events').where({ slug: 'live-b' }).update({ access_code: 'K7M4QX' })).rejects.toThrow(/UNIQUE/);
+  });
+
+  it('down() removes the column when the index is missing', async () => {
+    await db.schema.alterTable('events', (t) => { t.string('access_code', 12).nullable(); });
+    await migration.down(db);
+    expect(await db.schema.hasColumn('events', 'access_code')).toBe(false);
+  });
 });

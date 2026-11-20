@@ -90,7 +90,12 @@ router.get('/', async (req, res) => {
               // the "Sign in with SSO" button (and its label). Only these
               // two oidc_* keys are public; issuer/client stay admin-only.
               'oidc_enabled',
-              'oidc_button_label'
+              'oidc_button_label',
+              // Event codes (issue 2495), by key like the backend resolver:
+              // a generic settings writer may have stored them under
+              // another setting_type.
+              'general_event_codes_enabled',
+              'general_root_event_code_page'
             ]);
         })
         .select('setting_key', 'setting_value');

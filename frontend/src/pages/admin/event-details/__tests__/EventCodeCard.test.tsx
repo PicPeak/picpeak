@@ -8,6 +8,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
+import { toast } from 'react-toastify';
 import { EventCodeCard } from '../EventCodeCard';
 import type { Event } from '../../../../types';
 
@@ -36,6 +37,7 @@ describe('EventCodeCard', () => {
     service.setAccessCode.mockReset();
     service.removeAccessCode.mockReset();
     confirmMock.mockReset();
+    vi.mocked(toast.error).mockClear();
     perms.edit = true;
     publicSettings.enabled = true;
   });
@@ -111,5 +113,24 @@ describe('EventCodeCard', () => {
     fireEvent.click(screen.getByText('common.save'));
     expect(screen.getByText('events.eventCode.invalid')).toBeInTheDocument();
     expect(service.setAccessCode).not.toHaveBeenCalled();
+  });
+
+  it('says that codes are off when the server refuses a chosen code for that reason', async () => {
+    service.setAccessCode.mockRejectedValue(Object.assign(new Error('off'), { response: { status: 409, data: { code: 'EVENT_CODES_DISABLED' } } }));
+    renderCard();
+    fireEvent.click(screen.getByText('events.eventCode.edit'));
+    fireEvent.change(screen.getByLabelText('events.eventCode.customLabel'), { target: { value: 'NEWC22' } });
+    fireEvent.click(screen.getByText('common.save'));
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith('events.eventCode.disabled'));
+    expect(screen.queryByText('events.eventCode.taken')).toBeNull();
+  });
+
+  it('says that codes are off when the server refuses a new code for that reason', async () => {
+    confirmMock.mockResolvedValue(true);
+    service.regenerateAccessCode.mockRejectedValue(Object.assign(new Error('off'), { response: { status: 409, data: { code: 'EVENT_CODES_DISABLED' } } }));
+    renderCard();
+    fireEvent.click(screen.getByText('events.eventCode.regenerate'));
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith('events.eventCode.disabled'));
+    expect(screen.getByTestId('event-code-value')).toHaveTextContent('K7M-4QX');
   });
 });

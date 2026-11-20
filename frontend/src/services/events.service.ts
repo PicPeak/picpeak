@@ -378,13 +378,13 @@ export const eventsService = {
     return response.data;
   },
 
-  // Event code (issue 2495): a new generated code (admin)
+  // Event code (issue 2495): a new generated code; 409 EVENT_CODES_DISABLED while the setting is off (admin)
   async regenerateAccessCode(id: number): Promise<AccessCodeState> {
     const response = await api.post<AccessCodeState>(`/admin/events/${id}/access-code/regenerate`);
     return response.data;
   },
 
-  // A code the admin chose; 400 INVALID_ACCESS_CODE, 409 ACCESS_CODE_TAKEN (admin)
+  // A code the admin chose; 400 INVALID_ACCESS_CODE, 409 ACCESS_CODE_TAKEN or EVENT_CODES_DISABLED (admin)
   async setAccessCode(id: number, code: string): Promise<AccessCodeState> {
     const response = await api.put<AccessCodeState>(`/admin/events/${id}/access-code`, { code });
     return response.data;

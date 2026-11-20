@@ -69,6 +69,8 @@ describe('event codes (issue 2495)', () => {
     app.use(cookieParser());
     app.use('/api/public/event-code', require('../../src/routes/publicEventCode'));
     app.use('/api/admin/events', require('../../src/routes/adminEvents'));
+    app.use('/api/v1', require('../../src/routes/v1/events'));
+    app.use('/api/public/settings', require('../../src/routes/publicSettings'));
     // eslint-disable-next-line no-unused-vars
     app.use((err, req, res, next) => {
       res.status(err.statusCode || err.status || 500).json({ error: err.message, code: err.code });
@@ -228,6 +230,25 @@ describe('event codes (issue 2495)', () => {
       expect(stripped.share_secrets_hidden).toBe(true);
     });
 
+    describe('with event codes switched off', () => {
+      beforeEach(() => setCodesEnabled(false));
+      afterEach(() => setCodesEnabled(true));
+
+      it('refuses to generate or set a code, and still removes one', async () => {
+        const id = await insertEvent({ access_code: 'OFFC22' });
+        const regen = await admin(request(app).post(`/api/admin/events/${id}/access-code/regenerate`));
+        expect(regen.status).toBe(409);
+        expect(regen.body.code).toBe('EVENT_CODES_DISABLED');
+        const set = await admin(request(app).put(`/api/admin/events/${id}/access-code`).send({ code: 'NEWC22' }));
+        expect(set.status).toBe(409);
+        expect(set.body.code).toBe('EVENT_CODES_DISABLED');
+        expect((await db('events').where({ id }).first()).access_code).toBe('OFFC22');
+        const del = await admin(request(app).delete(`/api/admin/events/${id}/access-code`));
+        expect(del.status).toBe(200);
+        expect((await db('events').where({ id }).first()).access_code).toBeNull();
+      });
+    });
+
     it('does not let the generic event update write the code', async () => {
       const id = await insertEvent({ access_code: 'KEEP22' });
       const res = await admin(request(app).put(`/api/admin/events/${id}`).send({ access_code: 'HACK22', event_name: 'Renamed' }));
@@ -275,6 +296,58 @@ describe('event codes (issue 2495)', () => {
       expect(calls).toBeGreaterThan(6);
       expect(code).not.toBe('222222');
       expect((await db('events').where({ id }).first()).access_code).toBe(code);
+    });
+  });
+
+  describe('v1 share link', () => {
+    let apiToken;
+    beforeAll(async () => {
+      const { generateApiToken } = require('../../src/middleware/apiTokenAuth');
+      const { plaintext, hashed } = generateApiToken();
+      await db('api_tokens').insert({
+        name: 'event-code-v1', hashed_token: hashed, scopes: 'admin',
+        created_by: adminId, created_at: new Date().toISOString(),
+      });
+      apiToken = plaintext;
+    });
+    afterEach(() => setCodesEnabled(true));
+
+    const shareLink = (id) => request(app).get(`/api/v1/events/${id}/share-link`).set('Authorization', `Bearer ${apiToken}`);
+
+    it('advertises the code while event codes are on', async () => {
+      const id = await insertEvent({ access_code: 'SHRE22' });
+      const res = await shareLink(id);
+      expect(res.status).toBe(200);
+      expect(res.body.access_code).toBe('SHRE22');
+      expect(res.body.access_code_display).toBe('SHR-E22');
+      expect(res.body.access_code_url).toMatch(/\/code\/SHRE22$/);
+    });
+
+    it('answers null for the code fields while event codes are off', async () => {
+      const id = await insertEvent({ access_code: 'SHRF22' });
+      await setCodesEnabled(false);
+      const res = await shareLink(id);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ access_code: null, access_code_display: null, access_code_url: null });
+      expect(res.body.share_token).toBeTruthy();
+    });
+  });
+
+  describe('public settings', () => {
+    afterEach(async () => {
+      await db('app_settings').where({ setting_key: 'general_root_event_code_page' }).del();
+      await setCodesEnabled(true);
+    });
+
+    it('reports both settings whatever setting_type a generic writer stored them under', async () => {
+      await db('app_settings').whereIn('setting_key', ['general_event_codes_enabled', 'general_root_event_code_page']).del();
+      await db('app_settings').insert(['general_event_codes_enabled', 'general_root_event_code_page'].map((key) => ({
+        setting_key: key, setting_value: JSON.stringify(true), setting_type: 'seo', updated_at: new Date().toISOString(),
+      })));
+      const res = await request(app).get('/api/public/settings');
+      expect(res.status).toBe(200);
+      expect(res.body.general_event_codes_enabled).toBe(true);
+      expect(res.body.general_root_event_code_page).toBe(true);
     });
   });
 });

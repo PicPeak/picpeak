@@ -40,6 +40,11 @@ const copyText = async (text: string) => {
   if (!ok) throw new Error('Copy failed');
 };
 
+// 409 EVENT_CODES_DISABLED: the setting was switched off after this page
+// loaded its public settings.
+const codesDisabledError = (err: unknown) =>
+  (err as { response?: { data?: { code?: string } } })?.response?.data?.code === 'EVENT_CODES_DISABLED';
+
 export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEvent }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
@@ -88,8 +93,9 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
       setCode(result.access_code);
       toast.success(t('events.eventCode.saved', 'Event code saved'));
       refetchEvent?.();
-    } catch {
-      toast.error(t('events.eventCode.failed', 'Could not save the event code'));
+    } catch (err) {
+      if (codesDisabledError(err)) toast.error(t('events.eventCode.disabled', 'Event codes are switched off. Turn them on under Settings → General.'));
+      else toast.error(t('events.eventCode.failed', 'Could not save the event code'));
     } finally {
       setBusy(false);
     }
@@ -133,7 +139,10 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
       refetchEvent?.();
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status === 409) setError(t('events.eventCode.taken', 'Another gallery already uses this code.'));
+      if (codesDisabledError(err)) {
+        setEditing(false);
+        toast.error(t('events.eventCode.disabled', 'Event codes are switched off. Turn them on under Settings → General.'));
+      } else if (status === 409) setError(t('events.eventCode.taken', 'Another gallery already uses this code.'));
       else if (status === 400) setError(t('events.eventCode.invalid', 'Use 6 to 12 letters and digits, without 0, O, 1, I or L.'));
       else setError(t('events.eventCode.failed', 'Could not save the event code'));
     } finally {

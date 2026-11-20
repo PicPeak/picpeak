@@ -41,7 +41,7 @@ const { claimPromotion } = require('../../services/watchFolderClaims');
 const { requirePermission } = require('../../middleware/permissions');
 
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
-const { formatAccessCode } = require('../../services/eventAccessCode');
+const { formatAccessCode, eventCodesEnabled } = require('../../services/eventAccessCode');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const {
   generateThumbnail,
@@ -901,7 +901,7 @@ async function handleV1PhotoUpload(req, res) {
  *                 access_code:
  *                   type: string
  *                   nullable: true
- *                   description: Event code a guest types on the entry page /code (stored form, e.g. K7M4QX). Only a lookup for share_url, not a credential.
+ *                   description: Event code a guest types on the entry page /code (stored form, e.g. K7M4QX). Only a lookup for share_url, not a credential. Null while event codes are switched off.
  *                 access_code_display: { type: string, nullable: true, description: "The code as shown to guests, e.g. K7M-4QX." }
  *                 access_code_url: { type: string, nullable: true, description: "Entry page URL that opens the gallery with the code filled in." }
  *       404: { description: Not found }
@@ -911,8 +911,9 @@ router.get('/events/:id/share-link', apiTokenAuth, requireApiScope('read'), requ
     const event = await db('events').where({ id: req.params.id }).first();
     if (!event) return res.status(404).json({ error: 'Event not found' });
     const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
-    // Event code (issue 2495), for photo booth screens.
-    const accessCode = event.access_code || null;
+    // Event code (issue 2495), for photo booth screens. Not advertised while
+    // event codes are switched off: the code would not resolve.
+    const accessCode = (event.access_code && await eventCodesEnabled()) ? event.access_code : null;
     const frontendBase = accessCode ? await getFrontendBaseUrl() : '';
     res.json({
       slug: event.slug,
