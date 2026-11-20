@@ -42,6 +42,7 @@ function readGrid(container: HTMLElement): StoryGrid | null {
   parent.appendChild(copy);
   const style = getComputedStyle(copy);
   const display = style.display;
+  const autoFlow = style.gridAutoFlow || '';
   const tracks = (style.gridTemplateColumns || '').split(/\s+/).filter(Boolean).map(parseFloat);
   const cell = parseFloat(style.gridAutoRows);
   const forcedRow = parseFloat(style.gridTemplateRows);
@@ -49,6 +50,8 @@ function readGrid(container: HTMLElement): StoryGrid | null {
   const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
   copy.remove();
   if (display !== 'grid' || (tracks.length !== 1 && tracks.length !== 3)) return null;
+  // Laid out `sparse`, as the stylesheet places the cards.
+  if (autoFlow.includes('dense')) return null;
   if (tracks.some((track) => !(Math.abs(track - tracks[0]) < 0.5)) || !(cell > 0)) return null;
   if (forcedRow && Math.abs(forcedRow - cell) >= 0.5) return null;
   return { columns: tracks.length, cell, gap, width: container.clientWidth - padding };
@@ -127,7 +130,7 @@ export const StoryFixedGrid: React.FC<StoryFixedGridProps> = ({
     ? layoutQuilted(photos, grid.columns, grid.cell, grid.gap, (photo, index) => {
       const size = storyFeatured(photo, index, featured) && grid.columns > 1 ? 2 : 1;
       return { columns: size, rows: size };
-    })
+    }, 'sparse')
     : null), [grid, photos, featured]);
   const windowed = requested && layout !== null;
   // Not this grid, every card is mounted: a later template that makes it one

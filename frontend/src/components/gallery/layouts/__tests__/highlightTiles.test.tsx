@@ -55,8 +55,24 @@ describe('quiltedSpan with highlights', () => {
     expect(layout.items.map((item) => item.listIndex)).toEqual([0, 1, 2, 3]);
   });
 
-  it('cannot place a highlight in one column, like any wide tile', () => {
-    expect(layoutQuilted([photo(1, 4000, 3000, true)], 1, 200, 16)).toBeNull();
+  it('spans only the rows in a one-column grid, so the layout (and the window) holds', () => {
+    expect(quiltedSpan(photo(1, 4000, 3000, true), 1)).toEqual({ columns: 1, rows: 2 });
+    expect(quiltedSpan(photo(1, 4000, 3000, true), 3)).toEqual({ columns: 2, rows: 2 });
+    const layout = layoutQuilted([photo(1, 4000, 3000), photo(2, 4000, 3000, true), photo(3, 4000, 3000)], 1, 200, 16)!;
+    expect(layout).not.toBeNull();
+    expect(layout.placements.get(2)).toEqual({ gridColumn: '1 / span 1', gridRow: '2 / span 2' });
+    expect(layout.rowCount).toBe(4);
+  });
+
+  it('places Story\'s grid sparse, as its stylesheet does: no backfilling ahead of list order', () => {
+    // Three columns: 1 and 2 on row 1, the 2x2 highlight 3 does not fit beside
+    // them and goes to row 2. Dense would backfill 4 into row 1, sparse not.
+    const photos = [photo(1, 4000, 3000), photo(2, 4000, 3000), photo(3, 4000, 3000, true), photo(4, 4000, 3000)];
+    const story = (p: { is_highlight?: boolean }) => (p.is_highlight ? { columns: 2, rows: 2 } : { columns: 1, rows: 1 });
+    expect(layoutQuilted(photos, 3, 400, 16, story)!.placements.get(4))
+      .toEqual({ gridColumn: '3 / span 1', gridRow: '1 / span 1' });
+    expect(layoutQuilted(photos, 3, 400, 16, story, 'sparse')!.placements.get(4))
+      .toEqual({ gridColumn: '3 / span 1', gridRow: '2 / span 1' });
   });
 });
 
@@ -90,6 +106,12 @@ describe('Masonry quilted tiles', () => {
     render(<MasonryGalleryLayout {...props(photos([undefined, true, false]))} />);
     expect(tileClasses()).toEqual(['', 'col-span-2 row-span-2', '']);
   });
+
+  it('gives a highlight only the rows in a one-column grid', () => {
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => 300 });
+    render(<MasonryGalleryLayout {...props(photos([undefined, true, false]))} />);
+    expect(tileClasses()).toEqual(['', 'row-span-2', '']);
+  });
 });
 
 describe('Mosaic tiles', () => {
@@ -118,6 +140,13 @@ describe('Premium tiles', () => {
   it('make a highlight half as tall again, never narrower than 1:2', () => {
     expect(premiumTileSize({ width: 3000, height: 2000, is_highlight: true })).toEqual({ width: 3000, height: 3000 });
     expect(premiumTileSize({ width: 2000, height: 3000, is_highlight: true })).toEqual({ width: 2000, height: 4000 });
+  });
+
+  it('never makes a photo taller than 1:2 shorter by highlighting it', () => {
+    expect(premiumTileSize({ width: 1000, height: 3000, is_highlight: true })).toEqual({ width: 1000, height: 3000 });
+    expect(premiumTileSize({ width: 1200, height: 2000, is_highlight: true })).toEqual({ width: 1200, height: 2400 });
+    expect(mosaicTileStyle({ id: 1, width: 1000, height: 3000, is_highlight: true } as Photo).aspectRatio)
+      .toBe(String(1000 / 3000));
   });
 });
 

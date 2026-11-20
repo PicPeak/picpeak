@@ -35,9 +35,14 @@ export interface QuiltedLayout {
 }
 
 // Landscape photos span 2 columns, portrait photos span 2 rows. A highlight
-// (issue 2549) spans both; without highlights the spans are the shapes alone.
-export function quiltedSpan(photo: { width?: number | null; height?: number | null; is_highlight?: boolean }): QuiltedSpan {
-  if (photo.is_highlight) return { columns: 2, rows: 2 };
+// (issue 2549) spans both, or only the rows in a one-column grid, where a
+// second column would be an implicit one; without highlights the spans are
+// the shapes alone.
+export function quiltedSpan(
+  photo: { width?: number | null; height?: number | null; is_highlight?: boolean },
+  columns?: number,
+): QuiltedSpan {
+  if (photo.is_highlight) return { columns: columns === 1 ? 1 : 2, rows: 2 };
   const ratio = (photo.width || 800) / (photo.height || 600);
   // Very wide landscape (panoramic) - span 2 columns
   if (ratio > 1.5) return { columns: 2, rows: 1 };
@@ -56,14 +61,17 @@ export function quiltedColumnCount(width: number, cell: number, gutter: number):
  * `dense` row-first placement: each tile takes the first cell, from the top
  * left, where it fits. Null when a span does not fit the columns. The grid
  * then adds an implicit column whose width comes from the images in it, which
- * no calculation can give. Story's grid is the same thing with other spans.
+ * no calculation can give. Story's grid is the same thing with other spans,
+ * but placed `sparse` (the CSS default): a tile never goes before the one
+ * ahead of it in the list, so a hole stays a hole.
  */
 export function layoutQuilted<P extends { id: number; width?: number | null; height?: number | null }>(
   photos: P[],
   columns: number,
   cell: number,
   gutter: number,
-  spanOf: (photo: P, index: number) => QuiltedSpan = quiltedSpan,
+  spanOf: (photo: P, index: number) => QuiltedSpan = (photo) => quiltedSpan(photo, columns),
+  flow: 'dense' | 'sparse' = 'dense',
 ): QuiltedLayout | null {
   const spans = photos.map((photo, index) => spanOf(photo, index));
   if (spans.some((span) => span.columns > columns)) return null;
@@ -80,6 +88,7 @@ export function layoutQuilted<P extends { id: number; width?: number | null; hei
   };
   // Where each shape last fitted. Cells only ever fill up, so a shape never
   // fits before that, and a run of wide photos does not rescan the album.
+  // Sparse has one cursor for every shape: where the previous tile went.
   const cursors = new Map<string, number>();
 
   const pitch = cell + gutter;
@@ -88,7 +97,7 @@ export function layoutQuilted<P extends { id: number; width?: number | null; hei
   let rowCount = 0;
   photos.forEach((photo, listIndex) => {
     const span = spans[listIndex];
-    const shape = `${span.columns}x${span.rows}`;
+    const shape = flow === 'sparse' ? 'any' : `${span.columns}x${span.rows}`;
     let at = cursors.get(shape) ?? 0;
     while ((at % columns) + span.columns > columns || !fits(at, span)) at++;
     cursors.set(shape, at);
@@ -114,6 +123,8 @@ export interface QuiltedWindow {
   windowed: boolean;
   /** Too early to say: mount nothing yet rather than every tile. */
   pending: boolean;
+  /** The grid's columns, once its width is known: a highlight's span depends on them. */
+  columns?: number;
 }
 
 export function useQuiltedWindow<P extends { id: number; width?: number | null; height?: number | null }>(
@@ -161,5 +172,10 @@ export function useQuiltedWindow<P extends { id: number; width?: number | null; 
     ) setUnsupported(true);
   }, [containerRef, windowed, containerWidth, columns, cell, gutter, styles]);
 
-  return { layout, windowed, pending: requested && !unsupported && containerWidth <= 0 };
+  return {
+    layout,
+    windowed,
+    pending: requested && !unsupported && containerWidth <= 0,
+    columns: containerWidth > 0 ? columns : undefined,
+  };
 }

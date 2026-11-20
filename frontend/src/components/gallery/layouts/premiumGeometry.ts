@@ -47,7 +47,7 @@ export const columnsForWidth = (columns: PremiumColumns) => (containerWidth: num
 
 /** Highlights (issue 2549) are this much taller than their own shape. */
 export const PREMIUM_HIGHLIGHT_STRETCH = 1.5;
-/** ...but never narrower than 1:2. */
+/** ...but never narrower than 1:2, unless the photo itself is. */
 const PREMIUM_HIGHLIGHT_MIN_RATIO = 0.5;
 
 /**
@@ -59,6 +59,7 @@ export function premiumTileSize(photo: { width?: number | null; height?: number 
   const width = photo.width || 1200;
   const height = photo.height || 800;
   if (!photo.is_highlight) return { width, height };
-  const ratio = Math.max(width / height / PREMIUM_HIGHLIGHT_STRETCH, PREMIUM_HIGHLIGHT_MIN_RATIO);
+  // The cap never makes a highlight shorter than the photo's own tile.
+  const ratio = Math.min(width / height, Math.max(width / height / PREMIUM_HIGHLIGHT_STRETCH, PREMIUM_HIGHLIGHT_MIN_RATIO));
   return { width, height: Math.round(width / ratio) };
 }
