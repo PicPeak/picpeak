@@ -32,6 +32,11 @@ type AdminFeedbackResponse = {
   summary?: FeedbackSummary;
 };
 
+/** A key pressed on a custom radio (`role="radio"`), such as the highlight pin. */
+const isRadioTarget = (target: EventTarget | null): boolean => (
+  target instanceof Element && target.closest('[role="radio"]') !== null
+);
+
 interface AdminPhotoViewerProps {
   photos: AdminPhoto[];
   initialIndex: number;
@@ -341,12 +346,13 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
           if (!isImeComposing(e)) onClose();
           break;
         // Not while typing: the arrows move the caret in the credit field,
-        // and switching photos would drop the unsaved edit.
+        // and switching photos would drop the unsaved edit. Nor on the
+        // highlight radios, whose next press would pin another photo.
         case 'ArrowLeft':
-          if (!isTypingTarget(e.target)) goToPrevious();
+          if (!isTypingTarget(e.target) && !isRadioTarget(e.target)) goToPrevious();
           break;
         case 'ArrowRight':
-          if (!isTypingTarget(e.target)) goToNext();
+          if (!isTypingTarget(e.target) && !isRadioTarget(e.target)) goToNext();
           break;
         default: {
           // Proofing shortcuts for the photographer's own marks (#1044
