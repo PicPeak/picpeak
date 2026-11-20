@@ -164,6 +164,8 @@ export interface Event {
   // and the websites allowed to frame it as a JSON array (null = any).
   embed_token?: string | null;
   embed_allowed_origins?: string | null;
+  // Event code for the guest entry page /code (migration 367); null = none.
+  access_code?: string | null;
   show_interval_ms?: number;
   show_transition?: 'crossfade' | 'cut' | 'slide' | 'kenburns' | 'dipwhite' | 'dipblack';
   show_transition_ms?: number;
