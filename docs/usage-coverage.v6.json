@@ -852,6 +852,16 @@
         "PATCH /:id/embed"
       ]
     },
+    "adminEvents/accessCode.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Admin regenerate, set or removal of a gallery's event code for the /code entry page; no usage signal, no codes or counts reported.",
+      "route_signatures": [
+        "POST /:id/access-code/regenerate",
+        "PUT /:id/access-code",
+        "DELETE /:id/access-code"
+      ]
+    },
     "adminEvents/tags.js": {
       "decision": "excluded",
       "signals": [],
@@ -1766,6 +1776,14 @@
       "route_signatures": [
         "GET /:token",
         "POST /:token"
+      ]
+    },
+    "publicEventCode.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:code"
       ]
     },
     "publicQuotes.js": {

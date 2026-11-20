@@ -399,6 +399,39 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
             <label className="flex items-center">
               <input
                 type="checkbox"
+                checked={generalSettings.event_codes_enabled}
+                onChange={(e) => setGeneralSettings(prev => ({ ...prev, event_codes_enabled: e.target.checked }))}
+                className="w-4 h-4 text-accent rounded focus:ring-accent"
+              />
+              <span className="ml-2 text-sm text-body">{t('settings.general.eventCodesEnabled')}</span>
+            </label>
+            <p className="text-xs text-muted ml-6 mt-1">
+              {t('settings.general.eventCodesEnabledHelp')}
+            </p>
+          </div>
+
+          <div className="ml-6">
+            <label className={`flex items-center ${generalSettings.event_codes_enabled ? '' : 'opacity-60'}`}>
+              <input
+                type="checkbox"
+                checked={generalSettings.event_codes_enabled && generalSettings.root_event_code_page}
+                disabled={!generalSettings.event_codes_enabled}
+                onChange={(e) => setGeneralSettings(prev => ({ ...prev, root_event_code_page: e.target.checked }))}
+                className="w-4 h-4 text-accent rounded focus:ring-accent"
+              />
+              <span className="ml-2 text-sm text-body">{t('settings.general.rootEventCodePage')}</span>
+            </label>
+            <p className="text-xs text-muted ml-6 mt-1">
+              {generalSettings.event_codes_enabled
+                ? t('settings.general.rootEventCodePageHelp')
+                : t('settings.general.rootEventCodePageNeedsCodes')}
+            </p>
+          </div>
+
+          <div>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
                 checked={generalSettings.use_original_filenames_for_downloads}
                 onChange={(e) => setGeneralSettings(prev => ({ ...prev, use_original_filenames_for_downloads: e.target.checked }))}
                 className="w-4 h-4 text-accent rounded focus:ring-accent"

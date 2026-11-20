@@ -24,6 +24,7 @@ const { sanitizeForLog, sanitizeValidationErrors } = require('../../utils/saniti
 const { errorResponse, safeValidationErrors } = require('../../utils/routeHelpers');
 const { isUniqueViolation } = require('../../utils/dbErrors');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
+const { ensureAccessCode } = require('../../services/eventAccessCode');
 const { parseBooleanInput } = require('../../utils/parsers');
 const externalAccess = require('../../services/externalMediaAccess');
 const eventTypeService = require('../../services/eventTypeService');
@@ -1101,6 +1102,8 @@ module.exports = (router) => {
       }).returning('id');
 
       const newEventId = insertResult[0]?.id || insertResult[0];
+      // A copy gets its own event code (issue 2495).
+      await ensureAccessCode(newEventId);
 
       // Copy event_feedback_settings if the source had a row (only present when
       // feedback_enabled was true on the source event).
@@ -1566,6 +1569,8 @@ module.exports = (router) => {
         'share_link', 'share_token', 'client_share_token', 'show_share_token',
         // Website embed (migration 363): set through /:id/embed, validated there.
         'embed_token', 'embed_allowed_origins',
+        // Event code (migration 367): set through /:id/access-code, validated there.
+        'access_code',
         // Secrets (set via the plaintext password/client_password inputs)
         'password_hash', 'client_password_hash',
         // #1271 — encrypted copies follow the hashes; a forged ciphertext
