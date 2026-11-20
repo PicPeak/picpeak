@@ -1,6 +1,6 @@
 import { usePhotoSelection } from '../../hooks/usePhotoSelection';
 import React, { useEffect, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, Euro, ThumbsUp, ThumbsDown, Pencil, Image as ImageIcon, Crosshair } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, Euro, ThumbsUp, ThumbsDown, Pencil, Image as ImageIcon, Crosshair, Sparkles } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -18,6 +18,7 @@ import { parseAnnotation } from '../../utils/photoAnnotation';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { COLOR_LABELS, COLOR_LABEL_SWATCHES, type ColorLabel, type KeybindMode } from '../../services/feedback.service';
 import { resolveFeedbackKey, colorShortcutHints, isTypingTarget } from '../../utils/feedbackKeybinds';
+import { radioGroupKeyDown } from '../../utils/ariaKeyboard';
 import { useTranslation } from 'react-i18next';
 import { defaultCategoryLabel } from '../../utils/mediaCounts';
 import { exifLine } from '../../utils/photoExif';
@@ -31,6 +32,11 @@ type AdminFeedbackResponse = {
   feedback: PhotoFeedback[];
   summary?: FeedbackSummary;
 };
+
+/** A key pressed on a custom radio (`role="radio"`), such as the highlight pin. */
+const isRadioTarget = (target: EventTarget | null): boolean => (
+  target instanceof Element && target.closest('[role="radio"]') !== null
+);
 
 interface AdminPhotoViewerProps {
   photos: AdminPhoto[];
@@ -265,6 +271,34 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   };
   const currentMark = markFor(currentPhoto);
 
+  // Highlight pin (issue 2549): local edits over the loaded rows, like the marks.
+  const [highlightPins, setHighlightPins] = useState<Record<number, boolean | null>>({});
+  const currentPin = Object.prototype.hasOwnProperty.call(highlightPins, currentPhoto.id)
+    ? highlightPins[currentPhoto.id]
+    : (currentPhoto.highlight_pin ?? null);
+  // Saves run one after another per photo, so the server ends on the last
+  // choice; only the newest choice rolls back on failure, and to the last
+  // value the server confirmed, not to an optimistic one still in flight.
+  const pinSaves = React.useRef<Record<number, { seq: number; chain: Promise<void>; confirmed: boolean | null }>>({});
+  const saveHighlightPin = (next: boolean | null) => {
+    const photoId = currentPhoto.id;
+    const entry = pinSaves.current[photoId]
+      ?? (pinSaves.current[photoId] = { seq: 0, chain: Promise.resolve(), confirmed: currentPin });
+    const seq = ++entry.seq;
+    setHighlightPins((prev) => ({ ...prev, [photoId]: next }));
+    entry.chain = entry.chain.then(async () => {
+      try {
+        await photosService.setPhotoHighlight(eventId, photoId, next);
+        entry.confirmed = next;
+        queryClient.invalidateQueries({ queryKey: ['admin-event-photos', String(eventId)] });
+      } catch {
+        if (seq === entry.seq) setHighlightPins((prev) => ({ ...prev, [photoId]: entry.confirmed }));
+        toast.error(t('highlights.pinError', 'Failed to save the highlight'));
+      }
+    });
+    return entry.chain;
+  };
+
   const saveMark = async (patch: { rating?: number | null; color_label?: ColorLabel | null }) => {
     const photoId = currentPhoto.id;
     const previous = markFor(currentPhoto);
@@ -323,12 +357,13 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
           if (!isImeComposing(e)) onClose();
           break;
         // Not while typing: the arrows move the caret in the credit field,
-        // and switching photos would drop the unsaved edit.
+        // and switching photos would drop the unsaved edit. Nor on the
+        // highlight radios, whose next press would pin another photo.
         case 'ArrowLeft':
-          if (!isTypingTarget(e.target)) goToPrevious();
+          if (!isTypingTarget(e.target) && !isRadioTarget(e.target)) goToPrevious();
           break;
         case 'ArrowRight':
-          if (!isTypingTarget(e.target)) goToNext();
+          if (!isTypingTarget(e.target) && !isRadioTarget(e.target)) goToNext();
           break;
         default: {
           // Proofing shortcuts for the photographer's own marks (#1044
@@ -700,6 +735,40 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
               )}
             </div>
           )}
+
+          {/* Highlight pin (issue 2549): Automatic follows the gallery's
+              highlights setting, Always and Never override it. */}
+          <div className="mb-6" data-testid="admin-viewer-highlight">
+            <span className="text-neutral-400 text-sm flex items-center gap-1 mb-2">
+              <Sparkles className="w-4 h-4" />
+              {t('highlights.pinLabel', 'Highlight')}
+            </span>
+            <div className="flex gap-1" role="radiogroup" aria-label={t('highlights.pinLabel', 'Highlight')} onKeyDown={radioGroupKeyDown}>
+              {([
+                [null, t('highlights.pinAuto', 'Automatic')],
+                [true, t('highlights.pinOn', 'Always')],
+                [false, t('highlights.pinOff', 'Never')],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={String(value)}
+                  type="button"
+                  role="radio"
+                  aria-checked={currentPin === value}
+                  tabIndex={currentPin === value ? 0 : -1}
+                  disabled={!canEditPhotos}
+                  onClick={() => { if (currentPin !== value) void saveHighlightPin(value); }}
+                  className={`px-2.5 py-1 rounded text-xs transition-colors disabled:opacity-50 ${
+                    currentPin === value ? 'bg-white/15 ring-1 ring-white/60 text-white' : 'bg-white/5 hover:bg-white/10 text-neutral-300'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-neutral-500 mt-2">
+              {t('highlights.pinHelp', 'Always and Never override the gallery\'s highlights setting. Automatic follows it.')}
+            </p>
+          </div>
 
           {/* Metadata */}
           <div className="space-y-4 text-sm">

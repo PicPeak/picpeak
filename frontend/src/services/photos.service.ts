@@ -77,6 +77,8 @@ export interface AdminPhoto {
   pending_folder_request_id?: number | null;
   // Delivered as part of a first look (issue 1562).
   first_look?: boolean;
+  // Highlight pin (issue 2549): true always, false never, null: the gallery's mode decides.
+  highlight_pin?: boolean | null;
   // Review of team members' uploads (issue 743): null = published as usual.
   moderation_status?: PhotoModerationStatus | null;
   // Why no gallery viewer sees the photo (issue 2121): 'source_missing' when
@@ -300,6 +302,12 @@ class PhotosService {
   ): Promise<{ rating: number | null; color_label: string | null } | null> {
     const response = await api.put(`/admin/photos/${eventId}/photos/${photoId}/mark`, mark);
     return response.data.mark;
+  }
+
+  /** Pin a photo as a highlight (issue 2549): true, false, or null to clear the pin. */
+  async setPhotoHighlight(eventId: number, photoId: number, highlight: boolean | null): Promise<boolean | null> {
+    const response = await api.put(`/admin/photos/${eventId}/photos/${photoId}/highlight`, { highlight });
+    return response.data.highlight_pin;
   }
 
   async getEventPhotos(eventId: number, filters?: PhotoFilters): Promise<AdminPhoto[]> {

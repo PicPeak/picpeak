@@ -4013,6 +4013,22 @@
     "filenameZA": "Nom de fichier (Z-A)",
     "dateTaken": "Date de prise de vue"
   },
+  "highlights": {
+    "mode": "Mises en avant",
+    "modeOff": "Désactivé",
+    "modeManual": "Photos épinglées uniquement",
+    "modeRating": "Photos épinglées et votre note en étoiles",
+    "threshold": "Étoiles minimum",
+    "help": "Les photos mises en avant reçoivent une vignette plus grande dans les mises en page Masonry (quilted), Mosaic, Premium et Story ; l’ordre des photos ne change pas. Épinglez ou désépinglez une photo dans sa vue détaillée. Avec votre note en étoiles, au plus une photo sur huit par catégorie est mise en avant automatiquement. Les invités ne voient jamais les notes.",
+    "pinLabel": "Mise en avant",
+    "pinAuto": "Automatique",
+    "pinOn": "Toujours",
+    "pinOff": "Jamais",
+    "pinHelp": "Toujours et Jamais priment sur le réglage de mise en avant de la galerie. Automatique le suit.",
+    "pinError": "Impossible d’enregistrer la mise en avant",
+    "pinnedOn": "Toujours mise en avant",
+    "pinnedOff": "Jamais mise en avant"
+  },
   "photos": {
     "moveToCategory_one": "Déplacer {{count}} photo vers la catégorie",
     "moveToCategory_other": "Déplacer {{count}} photos vers la catégorie",

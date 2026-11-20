@@ -3951,6 +3951,22 @@
     "filenameZA": "Bestandsnaam (Z-A)",
     "dateTaken": "Opnamedatum"
   },
+  "highlights": {
+    "mode": "Uitgelichte foto's",
+    "modeOff": "Uit",
+    "modeManual": "Alleen vastgezette foto's",
+    "modeRating": "Vastgezette foto's en je sterrenbeoordeling",
+    "threshold": "Minimaal aantal sterren",
+    "help": "Uitgelichte foto's krijgen een grotere tegel in de lay-outs Masonry (quilted), Mosaic, Premium en Story; de volgorde van de foto's blijft gelijk. Zet een foto vast of maak hem los in de detailweergave. Met je sterrenbeoordeling wordt hoogstens één op de acht foto's per categorie automatisch uitgelicht. Gasten zien nooit beoordelingen.",
+    "pinLabel": "Uitgelicht",
+    "pinAuto": "Automatisch",
+    "pinOn": "Altijd",
+    "pinOff": "Nooit",
+    "pinHelp": "Altijd en Nooit gaan voor de instelling voor uitgelichte foto's van de galerij. Automatisch volgt die.",
+    "pinError": "Uitlichten kon niet worden opgeslagen",
+    "pinnedOn": "Altijd uitgelicht",
+    "pinnedOff": "Nooit uitgelicht"
+  },
   "photos": {
     "moveToCategory_one": "{{count}} foto naar categorie verplaatsen",
     "moveToCategory_other": "{{count}} foto's naar categorie verplaatsen",

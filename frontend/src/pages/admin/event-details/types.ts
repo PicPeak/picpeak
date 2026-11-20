@@ -1,4 +1,4 @@
-import type { GuestNameMode } from '../../../types';
+import type { GuestNameMode, HighlightsMode } from '../../../types';
 
 // 'guests' is "Guests & Feedback". Categories live in the Photos tab; an old
 // ?tab=categories link opens Photos with the categories panel. 'orders' is
@@ -63,6 +63,9 @@ export type EditFormState = {
   videos_first: boolean;
   // Chapter markers above the categories (issue 2548).
   chapter_marker_style: 'off' | 'divider' | 'hero';
+  // Which photos get the larger tiles (issue 2549).
+  highlights_mode: HighlightsMode;
+  highlights_threshold: number;
   // Photo sales pricing for paid galleries.
   is_priced: boolean;
   free_photo_count: number;

@@ -111,6 +111,8 @@ interface UpdateEventData {
   purchase_access_days?: number;
   default_photo_sort?: string;
   videos_first?: boolean;
+  highlights_mode?: 'off' | 'manual' | 'rating';
+  highlights_threshold?: number;
   // Per-event opt-in for hero photo as social-share preview (#474).
   og_image_share_enabled?: boolean;
   // Customer accounts (#354). Same semantics as on CreateEventData;

@@ -13,6 +13,7 @@ import { densityColumnDelta, useGridDensity } from '../gridDensity';
 import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { boxStyle, ghostBox, gridBoxStyle, useMeasuredWindow, type TileBox } from './measuredWindow';
 import { useViewerLikes } from './optimisticLikes';
+import { premiumTileSize } from './premiumGeometry';
 
 /**
  * Mosaic Gallery Layout
@@ -34,6 +35,17 @@ const MOSAIC_TILE_CLASS = 'photo-card relative group cursor-pointer overflow-hid
 
 // From the stored dimensions (fallback to 1 if unknown).
 const mosaicAspectRatio = (photo: Photo) => ((photo.width && photo.height) ? photo.width / photo.height : 1);
+
+/**
+ * The tile's own style. A highlight (issue 2549) is taller in its own column,
+ * as in Premium, cropped around its focal point: a tile spanning the columns
+ * would leave holes where the columns above it end unevenly.
+ */
+export const mosaicTileStyle = (photo: Photo): React.CSSProperties => {
+  if (!photo.is_highlight) return { breakInside: 'avoid', aspectRatio: mosaicAspectRatio(photo).toString() };
+  const { width, height } = premiumTileSize({ width: photo.width || 1, height: photo.height || 1, is_highlight: true });
+  return { breakInside: 'avoid', aspectRatio: (width / height).toString() };
+};
 
 interface MosaicPhotoProps {
   photo: Photo;
@@ -112,8 +124,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
       onToggleSelect={onToggleSelect}
       className={MOSAIC_TILE_CLASS}
       style={{
-        breakInside: 'avoid',
-        aspectRatio: mosaicAspectRatio(photo).toString(),
+        ...mosaicTileStyle(photo),
         ...boxStyle(box),
       }}
       /*
@@ -215,7 +226,7 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const photoIds = React.useMemo(() => photos.map((photo) => photo.id), [photos]);
   // A like changes `photos`, not the shapes in it.
   const shapes = React.useMemo(
-    () => photos.map((photo) => `${photo.id}:${mosaicAspectRatio(photo)}`).join(),
+    () => photos.map((photo) => `${photo.id}:${mosaicAspectRatio(photo)}${photo.is_highlight ? ':h' : ''}`).join(),
     [photos],
   );
   const tileWindow = useMeasuredWindow(
@@ -223,10 +234,7 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     photoIds,
     `${shapes}|${desktop},${xlDown},${lgDown},${mobile}`,
     (root) => new Map(photos.map((photo) => {
-      const tile = ghostBox(root, MOSAIC_TILE_CLASS, {
-        breakInside: 'avoid',
-        aspectRatio: mosaicAspectRatio(photo).toString(),
-      });
+      const tile = ghostBox(root, MOSAIC_TILE_CLASS, mosaicTileStyle(photo) as Partial<CSSStyleDeclaration>);
       // WebKit balances columns differently around a box with nothing in it:
       // a tile went to the next column, as far off as a whole column's height.
       ghostBox(tile, 'w-full h-full', {});

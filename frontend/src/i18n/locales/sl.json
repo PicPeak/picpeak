@@ -6685,6 +6685,22 @@
     "filenameZA": "Ime datoteke (Z-A)",
     "dateTaken": "Datum zajema"
   },
+  "highlights": {
+    "mode": "Izpostavljene fotografije",
+    "modeOff": "Izklopljeno",
+    "modeManual": "Samo pripete fotografije",
+    "modeRating": "Pripete fotografije in vaša ocena z zvezdicami",
+    "threshold": "Najmanj zvezdic",
+    "help": "Izpostavljene fotografije dobijo večjo ploščico v postavitvah Masonry (quilted), Mosaic, Premium in Story; vrstni red fotografij ostane enak. Fotografijo pripnete ali odpnete v njenem podrobnem pogledu. Z oceno z zvezdicami se samodejno izpostavi največ ena od osmih fotografij na kategorijo. Gostje ocen nikoli ne vidijo.",
+    "pinLabel": "Izpostavljena",
+    "pinAuto": "Samodejno",
+    "pinOn": "Vedno",
+    "pinOff": "Nikoli",
+    "pinHelp": "Vedno in Nikoli imata prednost pred nastavitvijo izpostavljanja v galeriji. Samodejno ji sledi.",
+    "pinError": "Izpostavitve ni bilo mogoče shraniti",
+    "pinnedOn": "Vedno izpostavljena",
+    "pinnedOff": "Nikoli izpostavljena"
+  },
   "photos": {
     "moveToCategory_one": "Premakni {{count}} fotografijo v kategorijo",
     "moveToCategory_other": "Premakni {{count}} fotografij v kategorijo",

@@ -3769,6 +3769,22 @@
     "filenameZA": "Nombre de archivo (Z-A)",
     "dateTaken": "Fecha de captura"
   },
+  "highlights": {
+    "mode": "Destacadas",
+    "modeOff": "Desactivado",
+    "modeManual": "Solo fotos fijadas",
+    "modeRating": "Fotos fijadas y tu valoración con estrellas",
+    "threshold": "Estrellas mínimas",
+    "help": "Las fotos destacadas reciben un mosaico más grande en los diseños Masonry (quilted), Mosaic, Premium y Story; el orden de las fotos no cambia. Fija o quita una foto en su vista de detalle. Con tu valoración con estrellas, como máximo una de cada ocho fotos por categoría se destaca automáticamente. Los invitados nunca ven las valoraciones.",
+    "pinLabel": "Destacada",
+    "pinAuto": "Automático",
+    "pinOn": "Siempre",
+    "pinOff": "Nunca",
+    "pinHelp": "Siempre y Nunca tienen prioridad sobre el ajuste de destacadas de la galería. Automático lo sigue.",
+    "pinError": "No se pudo guardar la foto destacada",
+    "pinnedOn": "Siempre destacada",
+    "pinnedOff": "Nunca destacada"
+  },
   "search": {
     "groups": {
       "pages": "Páginas"
