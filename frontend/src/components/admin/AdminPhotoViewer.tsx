@@ -18,6 +18,7 @@ import { parseAnnotation } from '../../utils/photoAnnotation';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { COLOR_LABELS, COLOR_LABEL_SWATCHES, type ColorLabel, type KeybindMode } from '../../services/feedback.service';
 import { resolveFeedbackKey, colorShortcutHints, isTypingTarget } from '../../utils/feedbackKeybinds';
+import { radioGroupKeyDown } from '../../utils/ariaKeyboard';
 import { useTranslation } from 'react-i18next';
 import { defaultCategoryLabel } from '../../utils/mediaCounts';
 import { exifLine } from '../../utils/photoExif';
@@ -732,7 +733,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
               <Sparkles className="w-4 h-4" />
               {t('highlights.pinLabel', 'Highlight')}
             </span>
-            <div className="flex gap-1" role="radiogroup" aria-label={t('highlights.pinLabel', 'Highlight')}>
+            <div className="flex gap-1" role="radiogroup" aria-label={t('highlights.pinLabel', 'Highlight')} onKeyDown={radioGroupKeyDown}>
               {([
                 [null, t('highlights.pinAuto', 'Automatic')],
                 [true, t('highlights.pinOn', 'Always')],
@@ -743,6 +744,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                   type="button"
                   role="radio"
                   aria-checked={currentPin === value}
+                  tabIndex={currentPin === value ? 0 : -1}
                   disabled={!canEditPhotos}
                   onClick={() => { if (currentPin !== value) void saveHighlightPin(value); }}
                   className={`px-2.5 py-1 rounded text-xs transition-colors disabled:opacity-50 ${

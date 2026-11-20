@@ -3,13 +3,13 @@
  * highlight radio (issue 2549) the arrows must not page: the photo would
  * change under the focused control and its next press pin another photo.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { AdminPhotoViewer } from '../AdminPhotoViewer';
 import { ConfirmDialogProvider } from '../../common/ConfirmDialog';
-import type { AdminPhoto } from '../../../services/photos.service';
+import { photosService, type AdminPhoto } from '../../../services/photos.service';
 
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock('../../../hooks/usePermission', () => ({ usePermission: () => true }));
@@ -28,7 +28,11 @@ vi.mock('../AdminAuthenticatedImage', () => ({
 }));
 vi.mock('../AdminAuthenticatedVideo', () => ({ AdminAuthenticatedVideo: () => null }));
 vi.mock('../../../services/photos.service', () => ({
-  photosService: { formatBytes: (n: number) => `${n} B`, deletePhoto: vi.fn() },
+  photosService: {
+    formatBytes: (n: number) => `${n} B`,
+    deletePhoto: vi.fn(),
+    setPhotoHighlight: vi.fn((_event: number, _photo: number, highlight: boolean | null) => Promise.resolve(highlight)),
+  },
 }));
 vi.mock('../../../services/feedback.service', async () => {
   const actual = await vi.importActual<typeof import('../../../services/feedback.service')>('../../../services/feedback.service');
@@ -57,6 +61,29 @@ describe('AdminPhotoViewer arrows on the highlight radios', () => {
     fireEvent.keyDown(radio, { key: 'ArrowRight' });
     expect(screen.queryAllByText('b.jpg')).toHaveLength(0);
     expect(screen.getAllByText('a.jpg').length).toBeGreaterThan(0);
+  });
+
+  it('move the pin like a radio group: one tab stop, arrows pick the next option and wrap', async () => {
+    renderViewer();
+    const auto = screen.getByRole('radio', { name: 'Automatic' });
+    const always = screen.getByRole('radio', { name: 'Always' });
+    const never = screen.getByRole('radio', { name: 'Never' });
+    expect([auto.tabIndex, always.tabIndex, never.tabIndex]).toEqual([0, -1, -1]);
+
+    auto.focus();
+    fireEvent.keyDown(auto, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(always);
+    await waitFor(() => expect(always).toHaveAttribute('aria-checked', 'true'));
+    expect(photosService.setPhotoHighlight).toHaveBeenLastCalledWith(1, 1, true);
+    expect([auto.tabIndex, always.tabIndex, never.tabIndex]).toEqual([-1, 0, -1]);
+
+    fireEvent.keyDown(always, { key: 'ArrowLeft' });
+    fireEvent.keyDown(auto, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(never);
+    await waitFor(() => expect(never).toHaveAttribute('aria-checked', 'true'));
+    expect(photosService.setPhotoHighlight).toHaveBeenLastCalledWith(1, 1, false);
+    // Still the first photo: the viewer did not page.
+    expect(screen.queryAllByText('b.jpg')).toHaveLength(0);
   });
 
   it('still page from anywhere else', () => {
