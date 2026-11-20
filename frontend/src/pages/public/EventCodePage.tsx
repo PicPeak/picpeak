@@ -8,18 +8,17 @@
  * password page (GalleryPage) so the guest sees one flow.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Input, Button, PoweredBy } from '../../components/common';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useShowAgbLink } from '../../hooks/useShowAgbLink';
 import { eventCodeService } from '../../services/eventCode.service';
 import { buildResourceUrl } from '../../utils/url';
-import { formatEventCode, isValidEventCode, normalizeEventCode } from '../../utils/eventCode';
+import { formatEventCode, isValidEventCode, normalizeEventCode, openGalleryDocument } from '../../utils/eventCode';
 
 export const EventCodePage: React.FC = () => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const { code: pathCode } = useParams<{ code?: string }>();
   const [searchParams] = useSearchParams();
   const initialCode = pathCode || searchParams.get('code') || '';
@@ -47,7 +46,11 @@ export const EventCodePage: React.FC = () => {
       const { path } = await eventCodeService.lookup(code);
       // Only ever a gallery on this site.
       if (typeof path === 'string' && path.startsWith('/gallery/')) {
-        navigate(path, { replace: true });
+        // A full document load, not a client-side route change: the gallery
+        // document carries its own headers (nginx adds the payment
+        // providers to the CSP only for /gallery/...), which a SPA
+        // navigation from /code would never pick up.
+        openGalleryDocument(path);
         return;
       }
       setError(t('eventCode.notFound', 'We could not find a gallery for this code. Please check it and try again.'));
@@ -63,7 +66,7 @@ export const EventCodePage: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [navigate, t]);
+  }, [t]);
 
   useEffect(() => {
     if (autoSubmitted.current || !initialCode) return;

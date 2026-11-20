@@ -30,3 +30,8 @@ export function formatEventCode(code: string | null | undefined): string {
 export function eventCodeUrl(code: string): string {
   return buildShareLinkUrl(`/code/${code}`);
 }
+
+/** Leaves the entry page for a gallery with a full document load (see EventCodePage). */
+export function openGalleryDocument(path: string): void {
+  window.location.replace(path);
+}
