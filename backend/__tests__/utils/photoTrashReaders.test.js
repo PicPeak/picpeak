@@ -24,6 +24,7 @@ const ALL_ROWS = {
   'routes/adminEvents/crud.js': [1, 'storage: the gallery size counts trashed photos'],
   'routes/adminEvents/helpers.js': [4, 'gallery deletion locks, then removes, every row and file, trashed ones included'],
   'routes/adminFolders.js': [2, 'folder structure is applied to trashed photos too, so a restore lands in the right folder'],
+  'routes/adminGuests.js': [1, 'per-guest download history is an audit trail and keeps the file names of trashed photos'],
   'routes/adminImageSecurity.js': [1, 'access log listing is an audit trail and keeps the entries of trashed photos'],
   'routes/adminPhotoDimensions.js': [25, 'repair backfills (dimensions, capture date and camera clock, EXIF, orientation including videos, credits, tile placeholders) and their progress counts run over every row'],
   'routes/adminPhotos.js': [2, 'filename counter for new uploads; filenames of the photos a restore request names'],

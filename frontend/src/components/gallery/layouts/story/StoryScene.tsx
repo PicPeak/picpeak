@@ -7,6 +7,8 @@ interface StorySceneProps {
   children: React.ReactNode;
   className?: string;
   fullWidth?: boolean;
+  /** Replaces the title header, e.g. with a chapter marker (issue 2548). */
+  header?: React.ReactNode;
 }
 
 export const StoryScene: React.FC<StorySceneProps> = ({
@@ -14,11 +16,12 @@ export const StoryScene: React.FC<StorySceneProps> = ({
   subtitle,
   children,
   className = '',
-  fullWidth = false
+  fullWidth = false,
+  header
 }) => {
   return (
     <section className={`story-scene ${fullWidth ? 'full-width' : ''} ${className}`}>
-      {title && (
+      {header ?? (title && (
         <div className="story-scene-header">
           <motion.h2
             initial={{ opacity: 0, x: -20 }}
@@ -40,7 +43,7 @@ export const StoryScene: React.FC<StorySceneProps> = ({
             </motion.p>
           )}
         </div>
-      )}
+      ))}
       {children}
     </section>
   );

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Star, Heart, Bookmark, Shield, Eye, User, Users, Smile, Palette, Keyboard, Tag, ThumbsUp, CheckCircle, Pencil, ListPlus } from 'lucide-react';
+import { MessageSquare, Star, Heart, Bookmark, Shield, Eye, User, Users, Smile, Palette, Keyboard, Tag, ThumbsUp, CheckCircle, Pencil, ListPlus, Download } from 'lucide-react';
 import { Card } from '../common';
 import { useTranslation } from 'react-i18next';
 import { COLOR_LABELS, COLOR_LABEL_SWATCHES, KEYBIND_SCHEMES, type KeybindMode } from '../../services/feedback.service';
@@ -34,7 +34,14 @@ interface FeedbackSettings {
   // Per-guest caps (#655). null/0 = unlimited.
   max_favorites_per_guest?: number | null;
   max_likes_per_guest?: number | null;
+  // Guest identity before downloading, and the prompt's privacy note
+  // (issue 2503). Optional, as above.
+  require_guest_for_download?: boolean;
+  guest_privacy_text?: string | null;
 }
+
+// Mirrors the server's limit (backend utils/feedbackValidation.js).
+const GUEST_PRIVACY_TEXT_MAX = 1000;
 
 export const FeedbackSettings: React.FC<FeedbackSettingsProps> = ({
   settings,
@@ -543,6 +550,55 @@ export const FeedbackSettings: React.FC<FeedbackSettingsProps> = ({
                     </div>
                   </div>
                 </label>
+
+                {/* Guest identity before downloading (issue 2503). A guest
+                    identity exists in per-guest mode only, so that is the
+                    only mode that offers it. */}
+                {settings.identity_mode === 'guest' && (
+                  <>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!settings.require_guest_for_download}
+                        onChange={() => handleToggle('require_guest_for_download')}
+                        className="w-4 h-4 text-accent bg-inset border-line-strong rounded focus:ring-accent"
+                      />
+                      <Download className="w-5 h-5 text-soft" />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-heading">
+                          {t('feedback.settings.requireGuestForDownload', 'Require guest identity to download')}
+                        </div>
+                        <div className="text-xs text-muted">
+                          {t(
+                            'feedback.settings.requireGuestForDownloadDesc',
+                            'Guests enter their name before any download. Views and downloads then show per guest under Guests.'
+                          )}
+                        </div>
+                      </div>
+                    </label>
+
+                    <div>
+                      <label htmlFor="guest-privacy-text" className="block text-sm font-medium text-heading">
+                        {t('feedback.settings.guestPrivacyText', 'Privacy note in the guest prompt')}
+                      </label>
+                      <textarea
+                        id="guest-privacy-text"
+                        rows={2}
+                        maxLength={GUEST_PRIVACY_TEXT_MAX}
+                        value={settings.guest_privacy_text ?? ''}
+                        onChange={(e) => onChange({ ...settings, guest_privacy_text: e.target.value })}
+                        placeholder={t(
+                          'feedback.settings.guestPrivacyTextPlaceholder',
+                          'e.g. We use your name only to see who downloaded which photos. Ask us any time to remove it.'
+                        )}
+                        className="mt-1 w-full px-2 py-1 text-sm border border-line-strong rounded bg-shell text-heading"
+                      />
+                      <p className="mt-1 text-xs text-muted">
+                        {t('feedback.settings.guestPrivacyTextHint', 'Optional. Shown to guests when they are asked for their name.')}
+                      </p>
+                    </div>
+                  </>
+                )}
 
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input

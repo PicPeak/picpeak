@@ -4,7 +4,7 @@ import { toast as toastify } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 import { useArchiveDownload } from '../../contexts/ArchiveDownloadContext';
 
-import type { Photo, DownloadResolutionChoice, GalleryPerson } from '../../types';
+import type { Photo, DownloadResolutionChoice, GalleryPerson, PhotoCategory, ChapterMarkerStyle } from '../../types';
 import { useDownloadPhoto } from '../../hooks/useGallery';
 import { isPhotoDownloadPending } from '../../hooks/usePhotoDownloadPending';
 import { PhotoLightbox } from './PhotoLightbox';
@@ -37,6 +37,10 @@ interface PhotoGridWithLayoutsProps {
   // When provided, the hero layout will use this photo
   // instead of deriving from the filtered photo list.
   heroPhotoOverride?: Photo | null;
+  // Chapter markers (issue 2548); only the Story layout renders them.
+  categories?: PhotoCategory[];
+  chapterMarkerStyle?: ChapterMarkerStyle;
+  chapterHeroPhotos?: Photo[];
   isSelectionMode?: boolean;
   selectedPhotos?: Set<number>;
   onSelectionChange?: (photos: Set<number>) => void;
@@ -159,6 +163,9 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   slug,
   categoryId,
   heroPhotoOverride,
+  categories,
+  chapterMarkerStyle,
+  chapterHeroPhotos,
   isSelectionMode: parentSelectionMode,
   selectedPhotos: parentSelectedPhotos,
   feedbackEnabled,
@@ -515,6 +522,9 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     storyShowFilenames: theme.gallerySettings?.storyShowFilenames === true,
     storyFooterTitle: theme.gallerySettings?.storyFooterTitle,
     storyFooterText: theme.gallerySettings?.storyFooterText,
+    categories,
+    chapterMarkerStyle,
+    chapterHeroPhotos,
     selectedPhotos,
     allowDownloads,
     protectionLevel,

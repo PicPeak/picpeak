@@ -29,6 +29,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../../../hooks/useLocalizedDate', () => ({ useLocalizedDate: () => ({ format: () => 'a date' }) }));
 // The cards around the Details card fetch on their own; not under test here.
 vi.mock('../ShareLinkCard', () => ({ ShareLinkCard: () => null }));
+vi.mock('../EventCodeCard', () => ({ EventCodeCard: () => null }));
 vi.mock('../ClientAccessCard', () => ({ ClientAccessCard: () => null }));
 vi.mock('../PhotoStatisticsCard', () => ({ PhotoStatisticsCard: () => null }));
 vi.mock('../ArchiveStatusCard', () => ({ ArchiveStatusCard: () => null }));

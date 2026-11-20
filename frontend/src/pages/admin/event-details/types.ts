@@ -61,6 +61,8 @@ export type EditFormState = {
   default_photo_sort: string;
   // Videos ahead of photos in the guest gallery (issue 2263).
   videos_first: boolean;
+  // Chapter markers above the categories (issue 2548).
+  chapter_marker_style: 'off' | 'divider' | 'hero';
   // Which photos get the larger tiles (issue 2549).
   highlights_mode: HighlightsMode;
   highlights_threshold: number;

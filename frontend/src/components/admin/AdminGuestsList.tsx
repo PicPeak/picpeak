@@ -11,8 +11,17 @@ import { AdminGuestDetail } from './AdminGuestDetail';
 import { GuestSelectionsAggregate } from './GuestSelectionsAggregate';
 import { GuestInviteDialog } from './GuestInviteDialog';
 import { toast } from 'react-toastify';
-import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { toDisplayDate, useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast, useModal } from '../../hooks';
+
+// The later of the guest's last profile fetch and their last logged view or
+// download (issue 2503): either can be the more recent.
+function lastActive(guest: AdminGuest): string {
+  const activity = guest.last_activity_at;
+  if (!activity) return guest.last_seen_at;
+  if (!guest.last_seen_at) return activity;
+  return toDisplayDate(activity).getTime() > toDisplayDate(guest.last_seen_at).getTime() ? activity : guest.last_seen_at;
+}
 
 interface AdminGuestsListProps {
   eventId: number;
@@ -318,6 +327,12 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                     {t('admin.guests.columns.email', 'Email')}
                   </TableHeaderCell>
                   <TableHeaderCell align="right">
+                    {t('admin.guests.columns.views', 'Views')}
+                  </TableHeaderCell>
+                  <TableHeaderCell align="right">
+                    {t('admin.guests.columns.downloads', 'Downloads')}
+                  </TableHeaderCell>
+                  <TableHeaderCell align="right">
                     {t('admin.guests.columns.likes', 'Likes')}
                   </TableHeaderCell>
                   <TableHeaderCell align="right">
@@ -389,6 +404,17 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                       )}
                     </TableCell>
                     <TableCell align="right" className="text-heading">
+                      {guest.stats.views ?? 0}
+                    </TableCell>
+                    <TableCell align="right" className="text-heading whitespace-nowrap">
+                      {guest.stats.downloads ?? 0}
+                      {(guest.stats.zip_downloads ?? 0) > 0 && (
+                        <span className="ml-1 text-xs text-muted">
+                          {t('admin.guests.zipCount', { count: guest.stats.zip_downloads, defaultValue: '+{{count}} ZIP' })}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell align="right" className="text-heading">
                       {guest.stats.likes}
                     </TableCell>
                     <TableCell align="right" className="text-heading">
@@ -407,7 +433,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                       {guest.stats.color_labels ?? 0}
                     </TableCell>
                     <TableCell className="text-soft">
-                      {fmtDate(guest.last_seen_at)}
+                      {fmtDate(lastActive(guest))}
                     </TableCell>
                     <TableCell align="right">
                       <div className="flex items-center justify-end gap-1">

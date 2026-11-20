@@ -420,6 +420,7 @@
         "POST /",
         "PUT /:id",
         "PUT /:id/hero",
+        "PUT /event/:eventId/:id/chapter",
         "DELETE /:id",
         "POST /reorder",
         "DELETE /reorder/:eventId",
@@ -850,6 +851,16 @@
         "POST /:id/embed/generate",
         "POST /:id/embed/disable",
         "PATCH /:id/embed"
+      ]
+    },
+    "adminEvents/accessCode.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Admin regenerate, set or removal of a gallery's event code for the /code entry page; no usage signal, no codes or counts reported.",
+      "route_signatures": [
+        "POST /:id/access-code/regenerate",
+        "PUT /:id/access-code",
+        "DELETE /:id/access-code"
       ]
     },
     "adminEvents/tags.js": {
@@ -1694,6 +1705,7 @@
         "POST /:slug/guest",
         "GET /:slug/guest/me",
         "DELETE /:slug/guest/me",
+        "POST /:slug/guest/download-ticket",
         "POST /:slug/guest/recover",
         "POST /:slug/guest/verify",
         "POST /:slug/guest/redeem"
@@ -1766,6 +1778,14 @@
       "route_signatures": [
         "GET /:token",
         "POST /:token"
+      ]
+    },
+    "publicEventCode.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:code"
       ]
     },
     "publicQuotes.js": {

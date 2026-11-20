@@ -603,7 +603,8 @@
       "emailPlaceholder": "voce@exemplo.com.br",
       "submit": "Continuar",
       "returningHint": "Já esteve aqui? Suas escolhas anteriores continuam salvas.",
-      "recoverPicks": "Recuperá-las"
+      "recoverPicks": "Recuperá-las",
+      "downloadDescription": "Diga ao fotógrafo quem você é antes de baixar. Seus downloads ficam salvos com este nome."
     },
     "footer": {
       "forgetMeConfirm": "Seu nome e suas seleções serão removidos desta galeria.",
@@ -841,9 +842,56 @@
     "coverPhotoRemoved": "Foto de capa removida",
     "failedToSetCoverPhoto": "Falha ao definir foto de capa",
     "categoryHeroHint": "Se nenhuma foto de capa for definida, a foto de destaque padrão será usada.",
-    "nestedFoldersHint": "Pastas dentro de pastas são gerenciadas na barra de pastas da aba Fotos."
+    "nestedFoldersHint": "Pastas dentro de pastas são gerenciadas na barra de pastas da aba Fotos.",
+    "chapter": {
+      "edit": "Marcador de capítulo",
+      "saved": "Marcador de capítulo guardado",
+      "saveFailed": "Não foi possível guardar o marcador de capítulo",
+      "heading": "Título",
+      "time": "Hora",
+      "location": "Local",
+      "subheading": "Subtítulo",
+      "useSuggestion": "Usar {{time}} (primeira foto)",
+      "hint": "Mostrado acima desta categoria quando a galeria mostra marcadores de capítulo (Definições → Aparência). Apenas nesta galeria.",
+      "clear": "Remover marcador"
+    }
+  },
+  "eventCode": {
+    "title": "Encontre sua galeria",
+    "subtitle": "Digite o código do evento do seu cartão ou convite.",
+    "label": "Código do evento",
+    "placeholder": "ex.: K7M-4QX",
+    "submit": "Abrir galeria",
+    "required": "Digite o código do seu evento.",
+    "notFound": "Não encontramos nenhuma galeria com este código. Verifique-o e tente novamente.",
+    "tooManyAttempts": "Tentativas demais. Aguarde alguns minutos e tente novamente.",
+    "failed": "Algo deu errado. Tente novamente.",
+    "hint": "Tanto faz maiúsculas ou minúsculas. Se a galeria tiver senha, ela será pedida no próximo passo."
   },
   "events": {
+    "eventCode": {
+      "title": "Código do evento",
+      "hint": "Os convidados digitam este código em {{url}} para encontrar a galeria.",
+      "customLabel": "Seu próprio código",
+      "invalid": "Use de 6 a 12 letras e números, sem 0, O, 1, I ou L.",
+      "taken": "Outra galeria já usa este código.",
+      "failed": "Não foi possível salvar o código do evento",
+      "saved": "Código do evento salvo",
+      "copyLink": "Copiar link com o código preenchido",
+      "archived": "Uma galeria arquivada não abre com o seu código.",
+      "publicWarning": "Esta galeria não tem senha, então qualquer pessoa que saiba o código pode abri-la.",
+      "none": "Esta galeria ainda não tem código.",
+      "regenerate": "Novo código",
+      "regenerateTitle": "Gerar um novo código?",
+      "regenerateConfirm": "O código atual para de funcionar imediatamente, inclusive nos cartões já impressos.",
+      "generate": "Gerar código",
+      "edit": "Escolher código",
+      "disabled": "Os códigos de evento estão desativados. Ative-os em Configurações do Sistema → Geral.",
+      "remove": "Remover código",
+      "removeTitle": "Remover o código de evento?",
+      "removeConfirm": "O código para de funcionar imediatamente, inclusive em cartões já impressos. O link de compartilhamento continua funcionando.",
+      "removed": "Código de evento removido"
+    },
     "selection": {
       "title": "Seleção para os convidados",
       "help": "Indique uma subpasta desta pasta, por exemplo \"gallery\". A ligação da galeria e o respetivo código QR mostram então apenas as fotos dessa subpasta. A ligação completa e o acesso de cliente mostram todas as fotos da pasta.",
@@ -1387,6 +1435,13 @@
       "lineBreaksPreserved": "As quebras de linha são mantidas nos e-mails",
       "tip": "Dica: prima Enter para criar uma nova linha. Cada linha aparecerá como um parágrafo separado nos e-mails.",
       "preview": "Pré-visualização:"
+    },
+    "chapterMarkers": {
+      "label": "Marcadores de capítulo",
+      "off": "Desligado",
+      "divider": "Divisor",
+      "hero": "Banner com imagem da categoria",
+      "help": "Mostra um título, hora, local e subtítulo acima de cada categoria no layout Story. Escreva-os por categoria em Fotos → Categorias. Um banner sem imagem de categoria é mostrado como divisor."
     }
   },
   "settings": {
@@ -1415,6 +1470,11 @@
       "enableRegistration": "Permitir auto-registro para admins",
       "enableShortGalleryUrls": "Usar URLs curtas para galerias",
       "enableShortGalleryUrlsHelp": "Remove o slug do evento de novos links, mantendo os antigos funcionando.",
+      "eventCodesEnabled": "Códigos de evento",
+      "eventCodesEnabledHelp": "Os convidados abrem uma galeria digitando o código curto em /code. Desativado por padrão. Enquanto estiver ativado, galerias novas recebem um código; uma galeria existente recebe um pela sua página. Uma galeria sem senha pode então ser aberta por qualquer pessoa que adivinhe o código, sem conhecer o link de compartilhamento longo.",
+      "rootEventCodePage": "Abrir a página do código do evento na raiz do site",
+      "rootEventCodePageHelp": "Quem acessa o endereço sem caminho chega a /code, onde os convidados digitam o código do evento, em vez do login do administrador. Uma página inicial pública ativada continua tendo prioridade.",
+      "rootEventCodePageNeedsCodes": "Requer que os códigos de evento estejam ativados.",
       "maintenanceMode": "Ativar modo de manutenção",
       "language": "Idioma",
       "defaultLanguageHelp": "Idioma exibido aos convidados antes do login",
@@ -2744,7 +2804,9 @@
         "ratings": "Avaliações",
         "reactions": "Reações",
         "lastSeen": "Última visita",
-        "colorLabels": "Etiquetas de cor"
+        "colorLabels": "Etiquetas de cor",
+        "views": "Visualizações",
+        "downloads": "Downloads"
       },
       "view": "Ver detalhes",
       "export": "Exportar",
@@ -2768,7 +2830,17 @@
         "showInPhotos": "Mostrar nas fotos",
         "clearListFilter": "Mostrar todas as fotos",
         "listFilterNamed": "Mostrando as fotos de {{name}}.",
-        "listFilter": "Mostrando as fotos de uma lista de favoritos."
+        "listFilter": "Mostrando as fotos de uma lista de favoritos.",
+        "downloads": "Downloads",
+        "noDownloads": "Nenhum download registrado. Os downloads são registrados por convidado enquanto \"Exigir identidade do convidado para baixar\" estiver ativado.",
+        "deletedPhoto": "Foto excluída",
+        "views": "Visualizações: {{count}}",
+        "downloadSummary": "Fotos baixadas: {{photos}} · Downloads ZIP: {{zips}}",
+        "zip": {
+          "all": "Galeria completa (ZIP)",
+          "selected": "Seleção (ZIP)",
+          "archive": "Download preparado (ZIP)"
+        }
       },
       "inviteStatus": {
         "pending": "Pendente",
@@ -2783,7 +2855,8 @@
       "mergePickKeepHint": "Escolha a entrada a manter",
       "mergeKeepColumn": "Manter",
       "mergeKeepRow": "Manter {{name}}",
-      "mergeInclude": "Incluir {{name}} na junção"
+      "mergeInclude": "Incluir {{name}} na junção",
+      "zipCount": "+{{count}} ZIP"
     },
     "analytics": "Análise",
     "activities": {
@@ -3775,7 +3848,12 @@
       "selectionSubmit": "Concluir seleção",
       "selectionSubmitDesc": "Os convidados entregam suas curtidas ou favoritos quando terminam. A seleção fica bloqueada até você reabri-la, e você é avisado",
       "annotations": "Desenhar nas fotos",
-      "annotationsDesc": "Os convidados podem desenhar numa foto e anexar o desenho ao comentário. Requer comentários"
+      "annotationsDesc": "Os convidados podem desenhar numa foto e anexar o desenho ao comentário. Requer comentários",
+      "requireGuestForDownload": "Exigir identidade do convidado para baixar",
+      "requireGuestForDownloadDesc": "Os convidados informam o nome antes de qualquer download. Visualizações e downloads aparecem então por convidado em Convidados.",
+      "guestPrivacyText": "Aviso de privacidade no pedido de nome",
+      "guestPrivacyTextPlaceholder": "ex.: Usamos seu nome apenas para ver quem baixou quais fotos. Peça a remoção a qualquer momento.",
+      "guestPrivacyTextHint": "Opcional. Exibido aos convidados quando o nome é solicitado."
     },
     "settingsUpdated": "Configurações de feedback atualizadas",
     "settingsUpdateError": "Falha ao atualizar as configurações",
@@ -4752,11 +4830,10 @@
       "add": "Adicionar encomenda",
       "added": "Encomenda registada.",
       "addedMailed": "Encomenda registada. E-mail de envio em fila para {{email}}.",
-      "mailFailed": "Encomenda registada, mas não foi possível pôr o e-mail de envio em fila.",
+      "mailFailed": "Falha no e-mail",
       "mailed": "E-mail enviado",
       "notMailed": "Não avisado",
       "mailQueued": "E-mail agendado",
-      "mailFailed": "Falha no e-mail",
       "deleteTitle": "Eliminar esta encomenda?",
       "deleteMessage": "A encomenda {{number}} desaparece da administração e do portal do cliente. Um e-mail já enviado continua enviado.",
       "delete": "Eliminar encomenda",

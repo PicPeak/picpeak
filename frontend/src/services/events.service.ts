@@ -206,6 +206,12 @@ export interface EmbedState {
   embed_allowed_origins: string[];
 }
 
+/** The event code of a gallery (issue 2495), as the admin routes return it. */
+export interface AccessCodeState {
+  access_code: string | null;
+  access_code_display: string | null;
+}
+
 export interface EventsListParams {
   page?: number;
   limit?: number;
@@ -371,6 +377,24 @@ export const eventsService = {
   // Remove the embed link (admin)
   async disableEmbedLink(id: number): Promise<EmbedState> {
     const response = await api.post<EmbedState>(`/admin/events/${id}/embed/disable`);
+    return response.data;
+  },
+
+  // Event code (issue 2495): a new generated code; 409 EVENT_CODES_DISABLED while the setting is off (admin)
+  async regenerateAccessCode(id: number): Promise<AccessCodeState> {
+    const response = await api.post<AccessCodeState>(`/admin/events/${id}/access-code/regenerate`);
+    return response.data;
+  },
+
+  // A code the admin chose; 400 INVALID_ACCESS_CODE, 409 ACCESS_CODE_TAKEN or EVENT_CODES_DISABLED (admin)
+  async setAccessCode(id: number, code: string): Promise<AccessCodeState> {
+    const response = await api.put<AccessCodeState>(`/admin/events/${id}/access-code`, { code });
+    return response.data;
+  },
+
+  // Remove the event code; it stops working at once (admin)
+  async removeAccessCode(id: number): Promise<AccessCodeState> {
+    const response = await api.delete<AccessCodeState>(`/admin/events/${id}/access-code`);
     return response.data;
   },
 

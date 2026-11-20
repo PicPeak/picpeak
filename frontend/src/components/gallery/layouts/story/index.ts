@@ -5,3 +5,4 @@ export { StoryCarousel } from './StoryCarousel';
 export { StoryFixedGrid } from './StoryFixedGrid';
 export { StoryJustifiedGrid } from './StoryJustifiedGrid';
 export { StoryScrollToTop } from './StoryScrollToTop';
+export { StoryChapterMarker, chapterAnchorId, formatChapterTime } from './StoryChapterMarker';

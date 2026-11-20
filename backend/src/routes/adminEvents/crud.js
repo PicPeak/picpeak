@@ -24,6 +24,7 @@ const { sanitizeForLog, sanitizeValidationErrors } = require('../../utils/saniti
 const { errorResponse, safeValidationErrors } = require('../../utils/routeHelpers');
 const { isUniqueViolation } = require('../../utils/dbErrors');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
+const { ensureAccessCode } = require('../../services/eventAccessCode');
 const { parseBooleanInput } = require('../../utils/parsers');
 const externalAccess = require('../../services/externalMediaAccess');
 const eventTypeService = require('../../services/eventTypeService');
@@ -34,6 +35,7 @@ const { requireEventOwnership, requireEventOwner, scopeEventsListQuery, withoutF
 const eventAdminAssignments = require('../../services/eventAdminAssignmentsService');
 const { mayReviewUploads, holdsForReview } = require('../../services/uploadReviewService');
 const { applyEventListSort } = require('./listSort');
+const { chapterStyleOf, chapterRowsForEvent, chapterFieldsOf } = require('../../services/categoryChapters');
 const { VIDEO_COUNT_SQL, VIDEO_DURATION_SQL } = require('../../utils/mediaTypeSql');
 
 const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../../utils/galleryPasswordVault');
@@ -1102,9 +1104,13 @@ module.exports = (router) => {
         client_pin_entry_enabled: formatBoolean(false),
         og_image_share_enabled: formatBoolean(false),
         ...slideshowStyle,
+        // Chapter markers are part of the gallery's look (issue 2548).
+        ...(eventColumns.has('chapter_marker_style') ? { chapter_marker_style: chapterStyleOf(source) } : {}),
       }).returning('id');
 
       const newEventId = insertResult[0]?.id || insertResult[0];
+      // A copy gets its own event code (issue 2495).
+      await ensureAccessCode(newEventId);
 
       // Copy event_feedback_settings if the source had a row (only present when
       // feedback_enabled was true on the source event).
@@ -1133,6 +1139,10 @@ module.exports = (router) => {
           // back in 'simple' would drop the shared tag on a gallery duplicated
           // precisely to reuse its proofing setup.
           identity_mode: sourceFeedback.identity_mode || 'simple',
+          // Guest identity before downloading and the prompt's privacy note
+          // (issue 2503): a clone that dropped them would download anonymously.
+          require_guest_for_download: sourceFeedback.require_guest_for_download ?? false,
+          guest_privacy_text: sourceFeedback.guest_privacy_text ?? null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
@@ -1189,6 +1199,20 @@ module.exports = (router) => {
       }
       if (Object.values(categoryFields).some((value) => value !== null)) {
         await db('events').where({ id: newEventId }).update(categoryFields);
+      }
+
+      // Chapter markers (issue 2548) follow their category the same way; a
+      // marker whose category did not come along stays behind.
+      const sourceChapters = await chapterRowsForEvent(id);
+      for (const [categoryId, row] of sourceChapters) {
+        const newCategoryId = await copiedCategoryId(categoryId);
+        if (newCategoryId === null) continue;
+        await db('event_category_chapters').insert({
+          event_id: newEventId,
+          category_id: newCategoryId,
+          ...chapterFieldsOf(row),
+          updated_at: new Date().toISOString(),
+        });
       }
 
       await logActivity('event_duplicated',
@@ -1350,6 +1374,8 @@ module.exports = (router) => {
     ]),
     // Videos ahead of photos in the guest gallery (issue 2263).
     body('videos_first').optional().isBoolean(),
+    // Chapter markers above the categories (issue 2548).
+    body('chapter_marker_style').optional().isIn(['off', 'divider', 'hero']),
     // Which photos get the larger tiles (issue 2549), and the admin star
     // rating that makes one in 'rating' mode.
     body('highlights_mode').optional().isIn(['off', 'manual', 'rating']),
@@ -1570,6 +1596,8 @@ module.exports = (router) => {
         'share_link', 'share_token', 'client_share_token', 'show_share_token',
         // Website embed (migration 363): set through /:id/embed, validated there.
         'embed_token', 'embed_allowed_origins',
+        // Event code (migration 367): set through /:id/access-code, validated there.
+        'access_code',
         // Secrets (set via the plaintext password/client_password inputs)
         'password_hash', 'client_password_hash',
         // #1271 — encrypted copies follow the hashes; a forged ciphertext

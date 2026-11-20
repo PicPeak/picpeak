@@ -124,6 +124,10 @@ export interface PublicSettings {
   seo_meta_noindex?: boolean;
   seo_meta_nofollow?: boolean;
   seo_meta_noai?: boolean;
+  /** Event codes are switched on (issue 2495; opt-in, default off). */
+  general_event_codes_enabled?: boolean;
+  /** The site root leads to the event-code page /code (issue 2495); only true while event codes are on. */
+  general_root_event_code_page?: boolean;
   // OIDC SSO (#798) — drives the "Sign in with SSO" button on /admin/login.
   oidc_enabled?: boolean;
   oidc_button_label?: string;

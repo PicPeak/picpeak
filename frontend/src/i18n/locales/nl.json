@@ -487,7 +487,8 @@
       "emailPlaceholder": "u@voorbeeld.nl",
       "submit": "Doorgaan",
       "returningHint": "Al eerder hier geweest? Uw eerdere keuzes zijn nog bewaard.",
-      "recoverPicks": "Keuzes terughalen"
+      "recoverPicks": "Keuzes terughalen",
+      "downloadDescription": "Laat de fotograaf weten wie u bent voordat u downloadt. Uw downloads worden onder deze naam opgeslagen."
     },
     "footer": {
       "forgetMeConfirm": "Uw naam en selecties worden verwijderd uit deze galerij.",
@@ -725,9 +726,56 @@
     "coverPhotoRemoved": "Omslagfoto verwijderd",
     "failedToSetCoverPhoto": "Kan omslagfoto niet instellen",
     "categoryHeroHint": "Als er geen omslagfoto is ingesteld voor een categorie, wordt de standaard hero-foto gebruikt.",
-    "nestedFoldersHint": "Mappen binnen mappen beheert u in de mappenbalk op het tabblad Foto's."
+    "nestedFoldersHint": "Mappen binnen mappen beheert u in de mappenbalk op het tabblad Foto's.",
+    "chapter": {
+      "edit": "Hoofdstukmarkering",
+      "saved": "Hoofdstukmarkering opgeslagen",
+      "saveFailed": "Hoofdstukmarkering kon niet worden opgeslagen",
+      "heading": "Kop",
+      "time": "Tijd",
+      "location": "Locatie",
+      "subheading": "Ondertitel",
+      "useSuggestion": "{{time}} gebruiken (eerste foto)",
+      "hint": "Wordt boven deze categorie getoond als de galerij hoofdstukmarkeringen toont (Instellingen → Weergave). Alleen in deze galerij.",
+      "clear": "Markering verwijderen"
+    }
+  },
+  "eventCode": {
+    "title": "Vind je galerij",
+    "subtitle": "Voer de evenementcode van je kaart of uitnodiging in.",
+    "label": "Evenementcode",
+    "placeholder": "bijv. K7M-4QX",
+    "submit": "Galerij openen",
+    "required": "Voer je evenementcode in.",
+    "notFound": "We hebben geen galerij met deze code gevonden. Controleer de code en probeer het opnieuw.",
+    "tooManyAttempts": "Te veel pogingen. Wacht een paar minuten en probeer het opnieuw.",
+    "failed": "Er is iets misgegaan. Probeer het opnieuw.",
+    "hint": "Hoofdletters of kleine letters maken niet uit. Heeft de galerij een wachtwoord, dan wordt daar in de volgende stap om gevraagd."
   },
   "events": {
+    "eventCode": {
+      "title": "Evenementcode",
+      "hint": "Gasten voeren deze code in op {{url}} om de galerij te vinden.",
+      "customLabel": "Eigen code",
+      "invalid": "Gebruik 6 tot 12 letters en cijfers, zonder 0, O, 1, I of L.",
+      "taken": "Een andere galerij gebruikt deze code al.",
+      "failed": "De evenementcode kon niet worden opgeslagen",
+      "saved": "Evenementcode opgeslagen",
+      "copyLink": "Link met ingevulde code kopiëren",
+      "archived": "Een gearchiveerde galerij opent niet met haar code.",
+      "publicWarning": "Deze galerij heeft geen wachtwoord, dus iedereen die de code kent kan haar openen.",
+      "none": "Deze galerij heeft nog geen code.",
+      "regenerate": "Nieuwe code",
+      "regenerateTitle": "Nieuwe code aanmaken?",
+      "regenerateConfirm": "De huidige code werkt meteen niet meer, ook niet op kaarten die al gedrukt zijn.",
+      "generate": "Code aanmaken",
+      "edit": "Code kiezen",
+      "disabled": "Evenementcodes zijn uitgeschakeld. Schakel ze in onder Systeeminstellingen → Algemeen.",
+      "remove": "Code verwijderen",
+      "removeTitle": "Evenementcode verwijderen?",
+      "removeConfirm": "De code werkt meteen niet meer, ook niet op al gedrukte kaarten. De deellink blijft werken.",
+      "removed": "Evenementcode verwijderd"
+    },
     "selection": {
       "title": "Selectie voor gasten",
       "help": "Geef een submap van deze map op, bijvoorbeeld \"gallery\". De galerijlink en de QR-code tonen dan alleen de foto's in die submap. De volledige link en de klanttoegang tonen alle foto's van de map.",
@@ -1259,6 +1307,13 @@
       "lineBreaksPreserved": "Regeleinden blijven behouden in e-mails",
       "tip": "Tip: druk op Enter voor een nieuwe regel. Elke regel verschijnt in e-mails als een aparte alinea.",
       "preview": "Voorbeeld:"
+    },
+    "chapterMarkers": {
+      "label": "Hoofdstukmarkeringen",
+      "off": "Uit",
+      "divider": "Scheidingslijn",
+      "hero": "Banner met categorieafbeelding",
+      "help": "Toont in de Story-lay-out boven elke categorie een kop, tijd, locatie en ondertitel. Schrijf ze per categorie onder Foto’s → Categorieën. Een banner zonder categorieafbeelding wordt als scheidingslijn getoond."
     }
   },
   "settings": {
@@ -1287,6 +1342,11 @@
       "enableRegistration": "Zelfregistratie voor beheerders toestaan",
       "enableShortGalleryUrls": "Korte galerij-URL's gebruiken",
       "enableShortGalleryUrlsHelp": "Verwijdert de evenement-slug uit nieuwe deellinks terwijl bestaande links blijven werken.",
+      "eventCodesEnabled": "Evenementcodes",
+      "eventCodesEnabledHelp": "Gasten openen een galerij door de korte code op /code in te voeren. Standaard uit. Zolang dit aan staat, krijgen nieuwe galerijen een code; een bestaande galerij krijgt er een via haar pagina. Een galerij zonder wachtwoord kan dan worden geopend door iedereen die de code raadt, zonder de lange deellink te kennen.",
+      "rootEventCodePage": "Evenementcodepagina openen op het hoofdadres",
+      "rootEventCodePageHelp": "Bezoekers van het kale adres komen op /code, waar gasten hun evenementcode invoeren, in plaats van op de beheerdersaanmelding. Een ingeschakelde openbare startpagina gaat nog steeds voor.",
+      "rootEventCodePageNeedsCodes": "Vereist dat evenementcodes zijn ingeschakeld.",
       "maintenanceMode": "Onderhoudsmodus inschakelen",
       "language": "Taal",
       "defaultLanguageHelp": "Taal die aan gasten wordt getoond voor het inloggen",
@@ -2594,7 +2654,9 @@
         "ratings": "Beoordelingen",
         "reactions": "Reacties",
         "lastSeen": "Laatste bezoek",
-        "colorLabels": "Kleurlabels"
+        "colorLabels": "Kleurlabels",
+        "views": "Weergaven",
+        "downloads": "Downloads"
       },
       "view": "Details bekijken",
       "export": "Exporteren",
@@ -2618,7 +2680,17 @@
         "showInPhotos": "Tonen bij foto’s",
         "clearListFilter": "Alle foto’s tonen",
         "listFilterNamed": "De foto’s in {{name}} worden getoond.",
-        "listFilter": "De foto’s in één favorietenlijst worden getoond."
+        "listFilter": "De foto’s in één favorietenlijst worden getoond.",
+        "downloads": "Downloads",
+        "noDownloads": "Geen downloads geregistreerd. Downloads worden per gast geregistreerd zolang \"Gastidentiteit vereisen om te downloaden\" aan staat.",
+        "deletedPhoto": "Verwijderde foto",
+        "views": "Weergaven: {{count}}",
+        "downloadSummary": "Gedownloade foto's: {{photos}} · ZIP-downloads: {{zips}}",
+        "zip": {
+          "all": "Hele galerij (ZIP)",
+          "selected": "Selectie (ZIP)",
+          "archive": "Voorbereide download (ZIP)"
+        }
       },
       "inviteStatus": {
         "pending": "In behandeling",
@@ -2633,7 +2705,8 @@
       "mergePickKeepHint": "Kies het item om te behouden",
       "mergeKeepColumn": "Behouden",
       "mergeKeepRow": "{{name}} behouden",
-      "mergeInclude": "{{name}} in de samenvoeging opnemen"
+      "mergeInclude": "{{name}} in de samenvoeging opnemen",
+      "zipCount": "+{{count}} ZIP"
     },
     "analytics": "Analyse",
     "activities": {
@@ -3615,7 +3688,12 @@
       "selectionSubmit": "Selectie afronden",
       "selectionSubmitDesc": "Gasten leveren hun likes of favorieten in wanneer ze klaar zijn. Hun selectie is dan vergrendeld tot je haar heropent, en je krijgt een melding",
       "annotations": "Tekenen op foto's",
-      "annotationsDesc": "Gasten kunnen op een foto tekenen en de tekening aan hun opmerking toevoegen. Vereist opmerkingen"
+      "annotationsDesc": "Gasten kunnen op een foto tekenen en de tekening aan hun opmerking toevoegen. Vereist opmerkingen",
+      "requireGuestForDownload": "Gastidentiteit vereisen om te downloaden",
+      "requireGuestForDownloadDesc": "Gasten vullen hun naam in vóór elke download. Weergaven en downloads verschijnen dan per gast onder Gasten.",
+      "guestPrivacyText": "Privacyverklaring in de naamvraag",
+      "guestPrivacyTextPlaceholder": "bijv. We gebruiken uw naam alleen om te zien wie welke foto's heeft gedownload. U kunt ons altijd vragen deze te verwijderen.",
+      "guestPrivacyTextHint": "Optioneel. Wordt aan gasten getoond wanneer om hun naam wordt gevraagd."
     },
     "settingsUpdated": "Feedbackinstellingen bijgewerkt",
     "settingsUpdateError": "Bijwerken instellingen mislukt",
@@ -4470,11 +4548,10 @@
       "add": "Pakket toevoegen",
       "added": "Pakket vastgelegd.",
       "addedMailed": "Pakket vastgelegd. Verzend-e-mail aan {{email}} in de wachtrij gezet.",
-      "mailFailed": "Pakket vastgelegd, maar de verzend-e-mail kon niet in de wachtrij worden gezet.",
+      "mailFailed": "E-mail mislukt",
       "mailed": "E-mail verzonden",
       "notMailed": "Niet op de hoogte gebracht",
       "mailQueued": "E-mail gepland",
-      "mailFailed": "E-mail mislukt",
       "deleteTitle": "Dit pakket verwijderen?",
       "deleteMessage": "Pakket {{number}} verdwijnt uit de beheeromgeving en uit het klantenportaal. Een al verzonden e-mail blijft verzonden.",
       "delete": "Pakket verwijderen",
