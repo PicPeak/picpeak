@@ -111,8 +111,12 @@ describe('StoryChapterMarker', () => {
     const { container } = render(
       <StoryChapterMarker category={category} chapter={full} variant="divider" slug="x" />
     );
-    expect(container.querySelector('h2')?.id).toBe('chapter-ceremony');
+    expect(container.querySelector('h2')?.id).toBe('chapter-7-ceremony');
     expect(chapterAnchorId({ id: 12, slug: '' })).toBe('chapter-12');
+  });
+
+  it('keeps anchors apart for two categories sharing a slug', () => {
+    expect(chapterAnchorId({ id: 3, slug: 'ceremony' })).not.toBe(chapterAnchorId({ id: 9, slug: 'ceremony' }));
   });
 
   it('falls back to the category name and leaves out empty lines', () => {
@@ -214,7 +218,43 @@ describe('GalleryStoryLayout chapter markers', () => {
     const markers = container.querySelectorAll('.story-chapter');
     expect(markers).toHaveLength(1);
     expect((markers[0] as HTMLElement).dataset.chapterStyle).toBe('hero');
-    expect(markers[0].querySelector('h2')?.id).toBe('chapter-ceremony');
+    expect(markers[0].querySelector('h2')?.id).toBe('chapter-7-ceremony');
     expect([...container.querySelectorAll('.story-scene-title')].map((el) => el.textContent)).toEqual(['Party']);
+  });
+
+  // A global and an event category with the same name.
+  const twins = [photo(1, 7, 'Trauung'), photo(4, 9, 'Trauung'), photo(2, 7, 'Trauung')];
+  const twinCategories: PhotoCategory[] = [
+    { id: 7, slug: 'ceremony', name: 'Trauung', is_global: false, chapter: full },
+    { id: 9, slug: 'ceremony', name: 'Trauung', is_global: true, chapter: { ...full, heading: 'Kirche' } },
+  ];
+
+  it('gives each category its own chapter when two share a name', () => {
+    const { container } = render(
+      <GalleryStoryLayout {...props} photos={twins} categories={twinCategories} chapterMarkerStyle="divider" />
+    );
+    const headings = [...container.querySelectorAll('.story-chapter h2')];
+    expect(headings.map((el) => el.textContent)).toEqual(['Die Trauung', 'Kirche']);
+    expect(headings.map((el) => el.id)).toEqual(['chapter-7-ceremony', 'chapter-9-ceremony']);
+  });
+
+  it('keeps same-name categories in one scene while markers are off', () => {
+    const { container } = render(<GalleryStoryLayout {...props} photos={twins} categories={twinCategories} />);
+    expect([...container.querySelectorAll('.story-scene-title')].map((el) => el.textContent)).toEqual(['Trauung']);
+  });
+
+  it('finds the hero photo in the unfiltered photos when a filter hides it', () => {
+    // Photo 2, the hero, is filtered out of `photos`.
+    const { container } = render(
+      <GalleryStoryLayout
+        {...props}
+        photos={[photo(1, 7, 'Trauung'), photo(3, 8, 'Party')]}
+        chapterHeroPhotos={photos}
+        chapterMarkerStyle="hero"
+      />
+    );
+    const marker = container.querySelector('.story-chapter') as HTMLElement;
+    expect(marker.dataset.chapterStyle).toBe('hero');
+    expect(marker.querySelector('.story-chapter-bg img')?.getAttribute('src')).toBe('/api/gallery/x/hero/2');
   });
 });

@@ -56,11 +56,12 @@ describe('category chapter markers (issue 2548)', () => {
     }).returning('id'));
   }
 
-  async function addPhoto(eventId, categoryId, filename, capturedAt) {
+  async function addPhoto(eventId, categoryId, filename, capturedAt, extra = {}) {
     await db('photos').insert({
       event_id: eventId, path: `chapters/${eventId}/${filename}`, filename, original_filename: filename,
       type: 'individual', processing_status: 'complete', media_type: 'image', mime_type: 'image/jpeg',
       category_id: categoryId, uploaded_at: '2026-08-01T20:00:00.000Z', captured_at: capturedAt,
+      ...extra,
     });
   }
 
@@ -173,6 +174,33 @@ describe('category chapter markers (issue 2548)', () => {
     const list = (await admin(request(app).get(`/api/admin/categories/event/${event.id}`)).expect(200)).body;
     expect(list.find((c) => c.id === cat).chapter_time_suggestion).toBe('09:05');
     expect(list.find((c) => c.id === empty).chapter_time_suggestion).toBeNull();
+  });
+
+  it('finds the earliest capture across epoch-ms and ISO-text rows', async () => {
+    // SQLite keeps managed uploads as epoch ms and imports as ISO text; a
+    // plain MIN ranks every integer before every text value.
+    const event = await makeEvent();
+    const cat = await makeCategory('Mixed', event.id);
+    await addPhoto(event.id, cat, 'late.jpg', new Date(2026, 7, 1, 14, 0).getTime());
+    await addPhoto(event.id, cat, 'early.jpg', new Date(2026, 7, 1, 8, 15).toISOString());
+    const list = (await admin(request(app).get(`/api/admin/categories/event/${event.id}`)).expect(200)).body;
+    expect(list.find((c) => c.id === cat).chapter_time_suggestion).toBe('08:15');
+  });
+
+  it('suggests the camera clock from captured_at_wall, the server zone only without it', async () => {
+    const event = await makeEvent();
+    const cat = await makeCategory('Wall', event.id);
+    // The earliest photo's camera clock wins, whatever the server zone makes of the instant.
+    await addPhoto(event.id, cat, 'w1.jpg', new Date(2026, 7, 1, 9, 5).toISOString(),
+      { captured_at_wall: '2026-08-01T02:30:00+02:00' });
+    await addPhoto(event.id, cat, 'w2.jpg', new Date(2026, 7, 1, 11, 0).toISOString(),
+      { captured_at_wall: '2026-08-01T01:00:00' });
+    // '' = read, no EXIF time: the legacy server-zone reading.
+    const legacy = await makeCategory('Legacy', event.id);
+    await addPhoto(event.id, legacy, 'l.jpg', new Date(2026, 7, 1, 16, 40).toISOString(), { captured_at_wall: '' });
+    const list = (await admin(request(app).get(`/api/admin/categories/event/${event.id}`)).expect(200)).body;
+    expect(list.find((c) => c.id === cat).chapter_time_suggestion).toBe('02:30');
+    expect(list.find((c) => c.id === legacy).chapter_time_suggestion).toBe('16:40');
   });
 
   it('serves no markers while the gallery shows none (the default)', async () => {

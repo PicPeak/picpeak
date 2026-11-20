@@ -2333,6 +2333,8 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // Chapter markers (issue 2548): Story's scenes are its categories.
           categories={data?.categories}
           chapterMarkerStyle={data?.event?.chapter_marker_style || 'off'}
+          // The hero photo of a chapter stays when a filter or search hides it.
+          chapterHeroPhotos={data?.photos}
           welcomeMessage={event.welcome_message}
           // Same gate as the standard layout below (#1149). These layouts
           // render the button on the callback being present rather than on a

@@ -40,6 +40,7 @@ interface PhotoGridWithLayoutsProps {
   // Chapter markers (issue 2548); only the Story layout renders them.
   categories?: PhotoCategory[];
   chapterMarkerStyle?: ChapterMarkerStyle;
+  chapterHeroPhotos?: Photo[];
   isSelectionMode?: boolean;
   selectedPhotos?: Set<number>;
   onSelectionChange?: (photos: Set<number>) => void;
@@ -164,6 +165,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   heroPhotoOverride,
   categories,
   chapterMarkerStyle,
+  chapterHeroPhotos,
   isSelectionMode: parentSelectionMode,
   selectedPhotos: parentSelectedPhotos,
   feedbackEnabled,
@@ -522,6 +524,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     storyFooterText: theme.gallerySettings?.storyFooterText,
     categories,
     chapterMarkerStyle,
+    chapterHeroPhotos,
     selectedPhotos,
     allowDownloads,
     protectionLevel,

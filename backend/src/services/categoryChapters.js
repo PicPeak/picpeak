@@ -10,6 +10,8 @@
 const { db } = require('../database/db');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { livePhotos } = require('../utils/photoVisibility');
+const { captureDateOrderSql } = require('../utils/captureDateSql');
+const { cameraWallClock, toServerWallClock } = require('../utils/dateNormalize');
 
 const CHAPTER_STYLES = ['off', 'divider', 'hero'];
 
@@ -67,36 +69,40 @@ async function chapterRowsForEvent(eventId, conn = db) {
   return new Map(rows.map((row) => [Number(row.category_id), row]));
 }
 
-/** A stored captured_at as a Date: pg gives a Date, SQLite ms (number or digit string) or ISO text. */
-function storedDate(value) {
-  if (value === null || value === undefined || value === '') return null;
-  const date = value instanceof Date ? value : new Date(/^\d+$/.test(String(value)) ? Number(value) : value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-/** 'HH:MM' of a stored captured_at: the camera clock as read in the server's zone (issue 2305). */
-function wallTimeOf(value) {
-  const date = storedDate(value);
-  if (!date) return null;
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+/**
+ * 'HH:MM' of a photo's capture: the camera clock as the EXIF wrote it
+ * (captured_at_wall, issue 2305), else, for photos read before that column,
+ * the stored instant formatted in the server's zone, as the admin photo list
+ * does. The server-zone reading moves a time in a spring-forward gap and
+ * every time after a TZ change, so it is only the legacy fallback.
+ */
+function wallTimeOf(capturedAt, capturedAtWall) {
+  const wall = cameraWallClock(capturedAtWall) || toServerWallClock(capturedAt);
+  return wall ? wall.slice(11, 16) : null;
 }
 
 /**
- * Suggested chapter time per category: the earliest captured_at among the
- * event's live photos filed in it. Map category id -> 'HH:MM'.
+ * Suggested chapter time per category: the time of the earliest capture
+ * among the event's live photos filed in it. Map category id -> 'HH:MM'.
+ * Earliest by the normalised capture date: on SQLite captured_at holds epoch
+ * ms integers and ISO text side by side, and a plain MIN puts every integer
+ * before every text value (captureDateSql.js).
  */
 async function suggestedChapterTimes(eventId) {
-  const rows = await livePhotos(db)
+  const ranked = livePhotos(db)
     .where('event_id', Number(eventId))
     .whereNotNull('category_id')
     .whereNotNull('captured_at')
-    .groupBy('category_id')
-    .select('category_id as id')
-    .min('captured_at as first');
+    .select(
+      'category_id', 'captured_at', 'captured_at_wall',
+      db.raw(`ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY ${captureDateOrderSql(db.client.config.client)}, id) as rn`)
+    )
+    .as('ranked');
+  const rows = await db.from(ranked).where('rn', 1).select('category_id', 'captured_at', 'captured_at_wall');
   const times = new Map();
   for (const row of rows) {
-    const time = wallTimeOf(row.first);
-    if (time) times.set(Number(row.id), time);
+    const time = wallTimeOf(row.captured_at, row.captured_at_wall);
+    if (time) times.set(Number(row.category_id), time);
   }
   return times;
 }

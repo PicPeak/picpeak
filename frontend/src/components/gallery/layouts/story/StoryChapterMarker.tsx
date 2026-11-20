@@ -3,9 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { AuthenticatedImage } from '../../../common';
 import type { ChapterMarkerText, Photo, PhotoCategory } from '../../../../types';
 
-/** The anchor a link such as `#chapter-ceremony` jumps to (issue 2548). */
+/**
+ * The anchor a link such as `#chapter-12-ceremony` jumps to (issue 2548).
+ * The id keeps it unique: a global and an event category can share a slug.
+ */
 export const chapterAnchorId = (category: Pick<PhotoCategory, 'id' | 'slug'>): string =>
-  `chapter-${category.slug || category.id}`;
+  `chapter-${category.id}${category.slug ? `-${category.slug}` : ''}`;
 
 /**
  * A stored 'HH:MM' time of day in the viewer's locale ("12:00" / "12:00 PM").
