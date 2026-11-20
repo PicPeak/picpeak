@@ -17,6 +17,7 @@ import { useAdminDarkMode } from '../../contexts/AdminDarkModeContext';
 import { resolveLoginLogoClasses } from '../../utils/loginLogoSize';
 import { buildResourceUrl } from '../../utils/url';
 import { api } from '../../config/api';
+import { readRestoreRun, RESTORE_RESULT_PATH } from '../../utils/restoreRelogin';
 
 export const AdminLoginPage: React.FC = () => {
   const { t } = useTranslation();
@@ -96,9 +97,10 @@ export const AdminLoginPage: React.FC = () => {
     return <Navigate to="/setup" replace />;
   }
 
-  // Redirect if already authenticated or login successful
+  // Redirect if already authenticated or login successful. A restore started
+  // in this tab signed the admin out; take them back to its result.
   if (isAuthenticated || loginSuccess) {
-    return <Navigate to="/admin/dashboard" replace />;
+    return <Navigate to={readRestoreRun() ? RESTORE_RESULT_PATH : '/admin/dashboard'} replace />;
   }
 
   const validateForm = (): boolean => {

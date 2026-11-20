@@ -5975,7 +5975,9 @@
         "idle": "Obnova trenutno ne poteka.",
         "errorTitle": "Obnova se ni zaključila",
         "errorUnknown": "Sporočilo o napaki ni zabeleženo.",
-        "rolledBack": "Za povrnitev je bila uporabljena varnostna kopija pred obnovo. Cilj je v stanju pred obnovo — po odpravi zgornje težave lahko varno poskusite znova."
+        "rolledBack": "Za povrnitev je bila uporabljena varnostna kopija pred obnovo. Cilj je v stanju pred obnovo — po odpravi zgornje težave lahko varno poskusite znova.",
+        "starting": "Zaganjanje obnovitve…",
+        "signedOutNote": "Odjavljeni ste bili, ker je obnovitev zamenjala podatkovno bazo. Ponovna prijava je bila pričakovana. Spodaj je obnovitev, ki ste jo zagnali."
       },
       "actions": {
         "back": "Nazaj",
