@@ -2109,7 +2109,8 @@
         "errorUnknown": "Keine Fehlermeldung aufgezeichnet.",
         "rolledBack": "Das Sicherheits-Backup von vor der Wiederherstellung wurde für den Rollback verwendet. Das Ziel befindet sich im Zustand vor der Wiederherstellung — ein erneuter Versuch ist gefahrlos möglich, sobald das Problem oben behoben ist.",
         "starting": "Wiederherstellung wird gestartet…",
-        "signedOutNote": "Sie wurden abgemeldet, weil die Wiederherstellung die Datenbank ersetzt hat. Die erneute Anmeldung war zu erwarten. Unten sehen Sie die von Ihnen gestartete Wiederherstellung."
+        "signedOutNote": "Sie wurden abgemeldet, weil die Wiederherstellung die Datenbank ersetzt hat. Die erneute Anmeldung war zu erwarten. Unten sehen Sie die von Ihnen gestartete Wiederherstellung.",
+        "notStarted": "Die Wiederherstellung wurde nicht gestartet oder ihr Ergebnis konnte nicht gelesen werden — prüfen Sie den Wiederherstellungsverlauf."
       },
       "actions": {
         "back": "Zurück",

@@ -6,9 +6,18 @@
  * (same tab, survives the reload) when it starts a restore; after sign-in the
  * login page sends the admin back to the restore tab, and the wizard shows the
  * outcome of that run before clearing the marker.
+ *
+ * The marker must not outlive its use: it expires RESTORE_RUN_TTL_MS after
+ * the start, and the login page follows it once. The wizard re-arms the
+ * redirect when it opens on the run, so only an admin who can see the
+ * restore tab is sent back there after a later sign-out.
  */
 
 const KEY = 'picpeak_restore_run';
+
+export const RESTORE_RUN_TTL_MS = 2 * 60 * 60 * 1000;
+/** How long the wizard waits for a run that is neither running nor recorded. */
+export const RESTORE_RUN_GRACE_MS = 30 * 1000;
 
 /** Where the login page sends the admin while a marker is present. */
 export const RESTORE_RESULT_PATH = '/admin/settings?tab=backup&backupTab=restore';
@@ -16,8 +25,12 @@ export const RESTORE_RESULT_PATH = '/admin/settings?tab=backup&backupTab=restore
 export interface RestoreRunMarker {
   /** Server time just before the run started; its restore_runs row starts at or after it. */
   startedAfter: string;
+  /** Browser clock (ms) at the start; TTL and grace periods use it, not server time. */
+  since: number;
   /** Set when an admin request got a 401 while the marker was present. */
   signedOut?: boolean;
+  /** Set when the login page has followed the marker; the wizard clears it again. */
+  redirected?: boolean;
 }
 
 export function readRestoreRun(): RestoreRunMarker | null {
@@ -25,7 +38,15 @@ export function readRestoreRun(): RestoreRunMarker | null {
     const raw = sessionStorage.getItem(KEY);
     if (!raw) return null;
     const marker = JSON.parse(raw);
-    return marker && typeof marker.startedAfter === 'string' ? marker : null;
+    if (!marker || typeof marker.startedAfter !== 'string' || !Number.isFinite(marker.since)) {
+      sessionStorage.removeItem(KEY);
+      return null;
+    }
+    if (Date.now() - marker.since > RESTORE_RUN_TTL_MS) {
+      sessionStorage.removeItem(KEY);
+      return null;
+    }
+    return marker;
   } catch {
     return null;
   }
@@ -51,6 +72,23 @@ export function clearRestoreRun(): void {
 export function noteRestoreSignOut(): void {
   const marker = readRestoreRun();
   if (marker && !marker.signedOut) rememberRestoreRun({ ...marker, signedOut: true });
+}
+
+/**
+ * Login page: true (once) when a tracked restore should be shown after this
+ * sign-in. Later sign-ins go to the dashboard unless the wizard re-armed it.
+ */
+export function takeRestoreRedirect(): boolean {
+  const marker = readRestoreRun();
+  if (!marker || marker.redirected) return false;
+  rememberRestoreRun({ ...marker, redirected: true });
+  return true;
+}
+
+/** Wizard: the admin reached the run, so a later sign-out may bring them back. */
+export function rearmRestoreRedirect(): void {
+  const marker = readRestoreRun();
+  if (marker?.redirected) rememberRestoreRun({ ...marker, redirected: false });
 }
 
 const toMs = (value: unknown): number => {

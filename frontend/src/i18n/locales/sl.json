@@ -5977,7 +5977,8 @@
         "errorUnknown": "Sporočilo o napaki ni zabeleženo.",
         "rolledBack": "Za povrnitev je bila uporabljena varnostna kopija pred obnovo. Cilj je v stanju pred obnovo — po odpravi zgornje težave lahko varno poskusite znova.",
         "starting": "Zaganjanje obnovitve…",
-        "signedOutNote": "Odjavljeni ste bili, ker je obnovitev zamenjala podatkovno bazo. Ponovna prijava je bila pričakovana. Spodaj je obnovitev, ki ste jo zagnali."
+        "signedOutNote": "Odjavljeni ste bili, ker je obnovitev zamenjala podatkovno bazo. Ponovna prijava je bila pričakovana. Spodaj je obnovitev, ki ste jo zagnali.",
+        "notStarted": "Obnovitev se ni zagnala ali njenega rezultata ni bilo mogoče prebrati — preverite zgodovino obnovitev."
       },
       "actions": {
         "back": "Nazaj",

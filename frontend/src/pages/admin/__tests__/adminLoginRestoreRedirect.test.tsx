@@ -51,10 +51,30 @@ describe('AdminLoginPage after a restore sign-out', () => {
     expect(screen.getByText('at /admin/dashboard')).toBeTruthy();
   });
 
+  const track = (extra: Record<string, unknown> = {}) => sessionStorage.setItem('picpeak_restore_run',
+    JSON.stringify({ startedAfter: '2026-11-20T10:00:00.000Z', since: Date.now(), signedOut: true, ...extra }));
+
   it('goes back to the restore tab while a restore is tracked', () => {
-    sessionStorage.setItem('picpeak_restore_run',
-      JSON.stringify({ startedAfter: '2026-11-20T10:00:00.000Z', signedOut: true }));
+    track();
     renderLogin();
     expect(screen.getByText('at /admin/settings?tab=backup&backupTab=restore')).toBeTruthy();
+  });
+
+  it('follows the marker once: the next sign-in goes to the dashboard', () => {
+    // E.g. the restored account may not open the restore tab, so nothing
+    // there re-arms the redirect.
+    track();
+    renderLogin();
+    expect(screen.getByText('at /admin/settings?tab=backup&backupTab=restore')).toBeTruthy();
+    cleanup();
+    renderLogin();
+    expect(screen.getByText('at /admin/dashboard')).toBeTruthy();
+  });
+
+  it('ignores a marker older than two hours', () => {
+    track({ since: Date.now() - 2 * 60 * 60 * 1000 - 1000 });
+    renderLogin();
+    expect(screen.getByText('at /admin/dashboard')).toBeTruthy();
+    expect(sessionStorage.getItem('picpeak_restore_run')).toBeNull();
   });
 });

@@ -3671,7 +3671,8 @@
           "message": "Seus dados foram restaurados. Verifique se tudo está funcionando corretamente."
         },
         "starting": "Iniciando a restauração…",
-        "signedOutNote": "Sua sessão foi encerrada porque a restauração substituiu o banco de dados. Era esperado ter que entrar novamente. Abaixo está a restauração que você iniciou."
+        "signedOutNote": "Sua sessão foi encerrada porque a restauração substituiu o banco de dados. Era esperado ter que entrar novamente. Abaixo está a restauração que você iniciou.",
+        "notStarted": "A restauração não foi iniciada ou o resultado não pôde ser lido — verifique o histórico de restaurações."
       },
       "actions": {
         "back": "Voltar",

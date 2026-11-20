@@ -3521,7 +3521,8 @@
           "message": "Uw gegevens zijn hersteld. Controleer of alles correct werkt."
         },
         "starting": "Herstel wordt gestart…",
-        "signedOutNote": "U bent afgemeld omdat het herstel de database heeft vervangen. Opnieuw aanmelden was te verwachten. Hieronder ziet u het herstel dat u hebt gestart."
+        "signedOutNote": "U bent afgemeld omdat het herstel de database heeft vervangen. Opnieuw aanmelden was te verwachten. Hieronder ziet u het herstel dat u hebt gestart.",
+        "notStarted": "Het herstel is niet gestart of het resultaat kon niet worden gelezen — controleer de herstelgeschiedenis."
       },
       "actions": {
         "back": "Terug",

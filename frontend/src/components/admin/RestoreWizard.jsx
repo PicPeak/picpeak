@@ -31,7 +31,9 @@ import { Button, Card, Input, Loading } from '../common';
 import { api } from '../../config/api';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
-import { clearRestoreRun, isRunOf, readRestoreRun, rememberRestoreRun } from '../../utils/restoreRelogin';
+import {
+  clearRestoreRun, isRunOf, readRestoreRun, rearmRestoreRedirect, rememberRestoreRun, RESTORE_RUN_GRACE_MS,
+} from '../../utils/restoreRelogin';
 
 // restore_runs booleans arrive as true/false from PostgreSQL but as 1/0 from
 // SQLite; a bare `{row.flag && …}` renders the 0 as text.
@@ -104,7 +106,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
   const [validationResult, setValidationResult] = useState(null);
 
   // Fetch restore status
-  const { data: restoreStatus } = useQuery({
+  const { data: restoreStatus, error: restoreStatusError } = useQuery({
     queryKey: ['restore-status'],
     queryFn: async () => {
       const response = await api.get('/admin/restore/status');
@@ -113,13 +115,38 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     refetchInterval: currentStep === 4 ? 2000 : false // Poll during restore
   });
 
-  // Once the tracked run has an outcome, it is on screen: drop the marker so
-  // the next sign-in in this tab goes to the dashboard again.
-  const trackedRunFinished = !!trackedRun && restoreStatus?.isRunning === false
-    && !!restoreStatus.history?.some((row) => isRunOf(row, trackedRun) && row.status !== 'running');
+  // The admin reached the tracked run, so a later sign-out may bring them
+  // back here (the login page follows the marker only once otherwise).
   useEffect(() => {
-    if (trackedRunFinished) clearRestoreRun();
-  }, [trackedRunFinished]);
+    if (trackedRun) rearmRestoreRedirect();
+  }, []);
+
+  const trackedRow = trackedRun ? restoreStatus?.history?.find((row) => isRunOf(row, trackedRun)) : undefined;
+  // Once the tracked run has an outcome, it is on screen: drop the marker so
+  // the next sign-in in this tab goes to the dashboard again. Same when this
+  // admin may not read the restore status at all.
+  const trackedRunFinished = !!trackedRow && restoreStatus?.isRunning === false && trackedRow.status !== 'running';
+  const statusForbidden = restoreStatusError?.response?.status === 403;
+  useEffect(() => {
+    if (trackedRunFinished || statusForbidden) clearRestoreRun();
+  }, [trackedRunFinished, statusForbidden]);
+
+  // Nothing is running and the run has no row: it may still be about to
+  // start. After the grace period it did not start (or its row cannot be
+  // read), so stop waiting and say so instead of "Starting..." forever.
+  const [trackedRunMissing, setTrackedRunMissing] = useState(false);
+  const awaitingTrackedRow = !!trackedRun && restoreStatus?.isRunning === false && !trackedRow;
+  useEffect(() => {
+    if (!awaitingTrackedRow) {
+      setTrackedRunMissing(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      setTrackedRunMissing(true);
+      clearRestoreRun();
+    }, Math.max(0, trackedRun.since + RESTORE_RUN_GRACE_MS - Date.now()));
+    return () => clearTimeout(timer);
+  }, [awaitingTrackedRow, trackedRun]);
 
   // Fetch available backups
   const { data: backupListing, isLoading: loadingBackups } = useQuery({
@@ -184,7 +211,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     onSuccess: (data) => {
       // Only a restore_runs row started at or after this instant is this
       // run's result; the cached status still names the previous run.
-      const marker = { startedAfter: data?.startedAfter || new Date().toISOString() };
+      const marker = { startedAfter: data?.startedAfter || new Date().toISOString(), since: Date.now() };
       rememberRestoreRun(marker);
       setTrackedRun(marker);
       queryClient.invalidateQueries({ queryKey: ['restore-status'] });
@@ -813,9 +840,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     // first. Once this wizard started a run, only that run counts: until its
     // row shows up the newest row is an earlier run, which must not read as
     // this result.
-    const lastRun = trackedRun
-      ? restoreStatus?.history?.find((row) => isRunOf(row, trackedRun))
-      : restoreStatus?.history?.[0];
+    const lastRun = trackedRun ? trackedRow : restoreStatus?.history?.[0];
     const waitingForRun = !!trackedRun && !isRunning && !lastRun;
     // The data is in place, but its migrations did not run: the backend
     // holds the site in maintenance mode instead of rolling back.
@@ -838,7 +863,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     const subtitle = isRunning
       ? t('backup.restore.progress.inProgress')
       : waitingForRun
-        ? t('backup.restore.progress.starting')
+        ? (trackedRunMissing ? t('backup.restore.progress.notStarted') : t('backup.restore.progress.starting'))
       : lastRunBlocked
         ? t('backup.restore.progress.blockedSubtitle')
         : lastRunFailed
@@ -1150,6 +1175,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
             onClick={() => {
               clearRestoreRun();
               setTrackedRun(null);
+              setTrackedRunMissing(false);
               setCurrentStep(0);
               setRestoreData({
                 source: null,

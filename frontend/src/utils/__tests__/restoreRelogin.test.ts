@@ -3,20 +3,25 @@
  * signs the admin out (it replaced admin_users) reopens on its result after
  * the next sign-in.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios';
 import { api } from '../../config/api';
-import { clearRestoreRun, isRunOf, noteRestoreSignOut, readRestoreRun, rememberRestoreRun } from '../restoreRelogin';
+import {
+  clearRestoreRun, isRunOf, noteRestoreSignOut, readRestoreRun, rearmRestoreRedirect, rememberRestoreRun,
+  RESTORE_RUN_TTL_MS, takeRestoreRedirect,
+} from '../restoreRelogin';
 
 const startedAfter = '2026-11-20T10:00:00.000Z';
+const fresh = () => ({ startedAfter, since: Date.now() });
 
 describe('restore run marker', () => {
   beforeEach(() => sessionStorage.clear());
 
   it('round-trips and clears', () => {
     expect(readRestoreRun()).toBeNull();
-    rememberRestoreRun({ startedAfter });
-    expect(readRestoreRun()).toEqual({ startedAfter });
+    const marker = fresh();
+    rememberRestoreRun(marker);
+    expect(readRestoreRun()).toEqual(marker);
     clearRestoreRun();
     expect(readRestoreRun()).toBeNull();
   });
@@ -26,18 +31,48 @@ describe('restore run marker', () => {
     expect(readRestoreRun()).toBeNull();
     sessionStorage.setItem('picpeak_restore_run', '{"startedAfter":5}');
     expect(readRestoreRun()).toBeNull();
+    // Without the browser-clock start it cannot expire, so it is dropped.
+    sessionStorage.setItem('picpeak_restore_run', JSON.stringify({ startedAfter }));
+    expect(readRestoreRun()).toBeNull();
+    expect(sessionStorage.getItem('picpeak_restore_run')).toBeNull();
   });
 
   it('notes a sign-out only while a restore is tracked', () => {
     noteRestoreSignOut();
     expect(readRestoreRun()).toBeNull();
-    rememberRestoreRun({ startedAfter });
+    const marker = fresh();
+    rememberRestoreRun(marker);
     noteRestoreSignOut();
-    expect(readRestoreRun()).toEqual({ startedAfter, signedOut: true });
+    expect(readRestoreRun()).toEqual({ ...marker, signedOut: true });
+  });
+
+  it('expires two hours after the start', () => {
+    const now = Date.now();
+    rememberRestoreRun({ startedAfter, since: now - RESTORE_RUN_TTL_MS + 1000 });
+    expect(readRestoreRun()).not.toBeNull();
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(now + 2000);
+    try {
+      expect(readRestoreRun()).toBeNull();
+      expect(sessionStorage.getItem('picpeak_restore_run')).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('hands the post-login redirect out once, until the wizard re-arms it', () => {
+    expect(takeRestoreRedirect()).toBe(false);
+    rememberRestoreRun(fresh());
+    expect(takeRestoreRedirect()).toBe(true);
+    expect(takeRestoreRedirect()).toBe(false);
+    // A later sign-out alone does not re-arm it.
+    noteRestoreSignOut();
+    expect(takeRestoreRedirect()).toBe(false);
+    rearmRestoreRedirect();
+    expect(takeRestoreRedirect()).toBe(true);
   });
 
   it('matches only rows started at or after the marker, in every timestamp shape', () => {
-    const marker = { startedAfter };
+    const marker = fresh();
     expect(isRunOf({ started_at: '2026-11-20T10:00:00.000Z' }, marker)).toBe(true);
     expect(isRunOf({ started_at: '2026-11-20T10:00:00.250Z' }, marker)).toBe(true);
     // SQLite rows restored from a dump can carry epoch milliseconds.
@@ -65,10 +100,11 @@ describe('api 401 during a tracked restore', () => {
   };
 
   it('marks the tracked restore as having signed the admin out', async () => {
-    rememberRestoreRun({ startedAfter });
+    const marker = fresh();
+    rememberRestoreRun(marker);
     answer401('SESSION_INVALIDATED');
     await expect(api.get('/admin/restore/status')).rejects.toMatchObject({ response: { status: 401 } });
-    expect(readRestoreRun()).toEqual({ startedAfter, signedOut: true });
+    expect(readRestoreRun()).toEqual({ ...marker, signedOut: true });
   });
 
   it('leaves no marker behind when no restore is tracked', async () => {

@@ -49,6 +49,7 @@ vi.mock('react-i18next', async () => {
 });
 
 import { RestoreWizard } from '../RestoreWizard';
+import { RESTORE_RUN_GRACE_MS } from '../../../utils/restoreRelogin';
 
 const r = en.backup.restore;
 const notices = r.confirmation.notices;
@@ -353,7 +354,8 @@ describe('RestoreWizard across the restore sign-out', () => {
     expect(screen.getByText(r.progress.starting)).toBeTruthy();
     expect(screen.queryByText(r.progress.failedSubtitle)).toBeNull();
     expect(screen.queryByText('pg_restore exploded yesterday')).toBeNull();
-    expect(JSON.parse(sessionStorage.getItem(MARKER_KEY) as string)).toEqual({ startedAfter: STARTED_AFTER });
+    expect(JSON.parse(sessionStorage.getItem(MARKER_KEY) as string)).toEqual({
+      startedAfter: STARTED_AFTER, since: expect.any(Number) });
 
     // This run's row shows up on a later poll.
     status = { isRunning: false, history: [thisRunCompleted, previousFailed] };
@@ -364,7 +366,7 @@ describe('RestoreWizard across the restore sign-out', () => {
   });
 
   it('after signing in again, opens on the result of the run that signed the admin out', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, signedOut: true }));
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(), signedOut: true }));
     status = { isRunning: false, history: [thisRunCompleted, previousFailed] };
     renderWizard();
 
@@ -378,7 +380,7 @@ describe('RestoreWizard across the restore sign-out', () => {
   });
 
   it('shows a failed result of this run, read back with SQLite epoch-ms timestamps', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, signedOut: true }));
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(), signedOut: true }));
     status = { isRunning: false, history: [
       { ...thisRunCompleted, started_at: Date.parse(THIS_RUN_STARTED), status: 'migrations_pending',
         was_successful: 0, error_message: '2 database migration(s) have not run' },
@@ -392,7 +394,7 @@ describe('RestoreWizard across the restore sign-out', () => {
   });
 
   it('keeps the marker while the run is still going after the re-login', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, signedOut: true }));
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(), signedOut: true }));
     status = { isRunning: true, history: [{ ...thisRunCompleted, status: 'running', was_successful: 0 }, previousFailed] };
     renderWizard();
 
@@ -401,8 +403,54 @@ describe('RestoreWizard across the restore sign-out', () => {
     expect(sessionStorage.getItem(MARKER_KEY)).not.toBeNull();
   });
 
+  it('re-arms the post-login redirect once the admin is back on the run', async () => {
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(),
+      signedOut: true, redirected: true }));
+    status = { isRunning: true, history: [{ ...thisRunCompleted, status: 'running', was_successful: 0 }] };
+    renderWizard();
+
+    await screen.findByText(r.progress.inProgress);
+    expect(JSON.parse(sessionStorage.getItem(MARKER_KEY) as string).redirected).toBe(false);
+  });
+
+  it('stops waiting for a run that never started once the grace period is over', async () => {
+    // Nothing running and no row of this run, 31 s after the start.
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER,
+      since: Date.now() - RESTORE_RUN_GRACE_MS - 1000, signedOut: true }));
+    renderWizard();
+
+    expect(await screen.findByText(r.progress.notStarted)).toBeTruthy();
+    expect(screen.queryByText(r.progress.starting)).toBeNull();
+    expect(screen.queryByText(r.progress.failedSubtitle)).toBeNull();
+    expect(screen.queryByText('pg_restore exploded yesterday')).toBeNull();
+    expect(sessionStorage.getItem(MARKER_KEY)).toBeNull();
+  });
+
+  it('keeps waiting within the grace period, then gives up', async () => {
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER,
+      since: Date.now() - RESTORE_RUN_GRACE_MS + 1500 }));
+    renderWizard();
+
+    expect(await screen.findByText(r.progress.starting)).toBeTruthy();
+    expect(sessionStorage.getItem(MARKER_KEY)).not.toBeNull();
+    expect(await screen.findByText(r.progress.notStarted, undefined, { timeout: 4000 })).toBeTruthy();
+    expect(sessionStorage.getItem(MARKER_KEY)).toBeNull();
+  });
+
+  it('does not give up while the restore is running', async () => {
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER,
+      since: Date.now() - RESTORE_RUN_GRACE_MS - 1000 }));
+    // The DB swap replaced this run's row; it is written again at the end.
+    status = { isRunning: true, history: [previousFailed] };
+    renderWizard();
+
+    expect(await screen.findByText(r.progress.inProgress)).toBeTruthy();
+    expect(screen.queryByText(r.progress.notStarted)).toBeNull();
+    expect(sessionStorage.getItem(MARKER_KEY)).not.toBeNull();
+  });
+
   it('starting a new restore drops the marker and the note', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, signedOut: true }));
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(), signedOut: true }));
     status = { isRunning: false, history: [thisRunCompleted] };
     const u = user();
     renderWizard();

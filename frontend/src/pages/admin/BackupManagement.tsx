@@ -34,6 +34,7 @@ import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { api } from '../../config/api';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
+import { clearRestoreRun } from '../../utils/restoreRelogin';
 
 type TabId = 'dashboard' | 'configuration' | 'history' | 'restore' | 'integrity' | 'coverage';
 const TAB_IDS: TabId[] = ['dashboard', 'configuration', 'history', 'restore', 'integrity', 'coverage'];
@@ -66,6 +67,12 @@ export const BackupManagement: React.FC = () => {
   // restores are super_admin-only too.
   const { user } = useAdminAuth();
   const isSuperAdmin = user?.role?.name === 'super_admin';
+  // A restore started in this tab replaced the admin accounts; when the
+  // account signed in now cannot run restores it cannot see that result
+  // either, so the marker that would send it back here goes.
+  useEffect(() => {
+    if (user && !isSuperAdmin) clearRestoreRun();
+  }, [user, isSuperAdmin]);
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   // Set when a save is refused because the S3 endpoint is private, so the
   // configuration form can offer the Super Admin approval (issue 1641).
