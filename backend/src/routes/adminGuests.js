@@ -822,6 +822,11 @@ router.delete(
         email: null,
         last_seen_at: db.fn.now(),
       });
+      // Their views and downloads once more, now that the guest is marked
+      // removed (issue 2503): a row written while the anonymisation above
+      // ran still named the guest. A row written after this sees the mark
+      // (guestAuth.settleLoggedGuest).
+      await db('access_logs').where('guest_id', guestId).update({ guest_id: null });
       // Their "mail me when the download is ready" requests (issue 1733).
       await require('../services/downloadJobNotifier').forgetGuest(guest);
       // The denormalised uploader name must not outlive the guest (#1561).
