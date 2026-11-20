@@ -3348,7 +3348,8 @@
         "destination": "Destino do backup"
       },
       "skipReasons": {
-        "not_verifiable_rsync": "Backups enviados por rsync não podem ser trazidos de volta para teste, por isso não são verificados. Use um destino local ou S3 para ter testes de restauração.",
+        "not_verifiable_rsync": "Este backup rsync não pode ser trazido de volta para teste: foi feito antes de os backups copiarem o manifesto para o destino rsync, ou já não há nenhum destino rsync configurado. Backups rsync mais recentes são testados.",
+        "rsync_superseded": "Apenas o backup rsync mais recente pode ser testado: o destino é um espelho e agora contém um backup mais recente.",
         "insufficient_space": "Não havia espaço livre suficiente para restaurar uma cópia de teste. Libere espaço no servidor e execute o teste novamente.",
         "busy": "Havia um backup, uma restauração ou outro teste em andamento naquele momento, por isso este teste foi ignorado.",
         "no_backup": "Não havia nenhum backup bem-sucedido para testar.",
@@ -3366,7 +3367,9 @@
         "verified": "Verificado",
         "failed": "Teste falhou",
         "skipped": "Não testável",
-        "notVerified": "Não verificado"
+        "notVerified": "Não verificado",
+        "superseded": "Substituído",
+        "supersededHint": "Apenas o backup rsync mais recente pode ser testado: o destino é um espelho e agora contém um backup mais recente."
       },
       "config": {
         "title": "Teste de restauração",

@@ -23,6 +23,7 @@ export type VerificationStatus = 'running' | 'passed' | 'warning' | 'failed' | '
 
 export type VerificationSkipReason =
   | 'not_verifiable_rsync'
+  | 'rsync_superseded'
   | 'insufficient_space'
   | 'busy'
   | 'no_backup'
@@ -66,6 +67,8 @@ export interface VerificationsResponse {
   running: boolean;
   /** Latest status per backup_runs.id. */
   byBackupRun: Record<string, VerificationRunStatus>;
+  /** Why a run's status in byBackupRun is `skipped`, e.g. `rsync_superseded`. */
+  skipReasonByBackupRun?: Record<string, string>;
   settings: { enabled: boolean; cron: string; samplePercent: number };
 }
 

@@ -66,9 +66,10 @@ export const CheckResultIcon: React.FC<{ result: VerificationCheckResult; classN
 
 /**
  * Backup → History row badge: whether the restore test of this backup run
- * passed. `undefined` means no test has looked at this run.
+ * passed. `undefined` means no test has looked at this run. `skipReason`
+ * names why a skipped run was not tested (an older rsync run: superseded).
  */
-export const RestoreTestRunBadge: React.FC<{ status?: VerificationRunStatus }> = ({ status }) => {
+export const RestoreTestRunBadge: React.FC<{ status?: VerificationRunStatus; skipReason?: string }> = ({ status, skipReason }) => {
   const { t } = useTranslation();
   const hint = t(
     'backup.restoreTest.badge.hint',
@@ -98,6 +99,21 @@ export const RestoreTestRunBadge: React.FC<{ status?: VerificationRunStatus }> =
     return (
       <Badge tone="danger" icon={<XCircle />} title={hint}>
         {t('backup.restoreTest.badge.failed', 'Test failed')}
+      </Badge>
+    );
+  }
+  if (status === 'skipped' && skipReason === 'rsync_superseded') {
+    return (
+      <Badge
+        tone="neutral"
+        appearance="outline"
+        icon={<MinusCircle />}
+        title={t(
+          'backup.restoreTest.badge.supersededHint',
+          'Only the newest rsync backup can be tested: the destination is a mirror and now holds a newer backup.',
+        )}
+      >
+        {t('backup.restoreTest.badge.superseded', 'Superseded')}
       </Badge>
     );
   }

@@ -46,7 +46,11 @@ const CHECK_LABELS: Record<string, [string, string]> = {
 const SKIP_REASONS: Record<string, [string, string]> = {
   not_verifiable_rsync: [
     'backup.restoreTest.skipReasons.not_verifiable_rsync',
-    "Backups sent over rsync can't be fetched back for testing, so they aren't verified. Use a local or S3 destination to get restore tests.",
+    "This rsync backup can't be fetched back for a test: it was made before backups copied their manifest to the rsync destination, or no rsync destination is configured any more. Newer rsync backups are tested.",
+  ],
+  rsync_superseded: [
+    'backup.restoreTest.skipReasons.rsync_superseded',
+    'Only the newest rsync backup can be tested: the destination is a mirror and now holds a newer backup.',
   ],
   insufficient_space: [
     'backup.restoreTest.skipReasons.insufficient_space',

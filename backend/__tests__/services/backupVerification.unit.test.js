@@ -77,6 +77,23 @@ describe('file selection', () => {
   });
 });
 
+describe('rsync download batches', () => {
+  const { _internal: { rsyncBatches } } = require('../../src/services/backupVerificationService');
+  const MiB = 1024 * 1024;
+
+  it('stages at most 256 MiB or 1000 files at a time, a larger single file on its own', () => {
+    const batches = rsyncBatches([
+      { path: 'a', size: 200 * MiB }, { path: 'b', size: 100 * MiB }, { path: 'c', size: 600 * MiB }, { path: 'd', size: 1 },
+    ]);
+    expect(batches.map((b) => b.files.map((f) => f.path))).toEqual([['a'], ['b'], ['c'], ['d']]);
+    expect(batches.map((b) => b.largest)).toEqual([200 * MiB, 100 * MiB, 600 * MiB, 1]);
+
+    const many = rsyncBatches(Array.from({ length: 2500 }, (_, i) => ({ path: `f${i}`, size: 10 })));
+    expect(many.map((b) => b.files.length)).toEqual([1000, 1000, 500]);
+    expect(many[0].bytes).toBe(10000);
+  });
+});
+
 describe('tiered retention selection', () => {
   const { selectRetainedRuns } = require('../../src/services/backupService');
   // Daily runs, newest first, ids counting up with time.
