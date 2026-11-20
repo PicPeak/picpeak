@@ -459,6 +459,8 @@ const QUOTE_LINE_VALIDATORS = [
   body('lineItems.*.pricingFactors').optional({ nullable: true }).isObject(),
   // An option sub-line that adds to its parent's price (migration 371).
   body('lineItems.*.addsToParent').optional({ nullable: true }).isBoolean(),
+  // The catalogue service a line came from (an integer column).
+  body('lineItems.*.cataloguePresetId').optional({ nullable: true }).isInt({ min: 1, max: 2147483647 }),
   body('hours').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0, max: 9999 }),
   body('days').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0, max: 999 }),
 ];

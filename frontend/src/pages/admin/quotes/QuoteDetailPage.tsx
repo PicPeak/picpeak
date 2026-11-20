@@ -446,8 +446,7 @@ export const QuoteDetailPage: React.FC = () => {
                             )}
                           </td>
                           <td className="py-2 text-right tabular-nums">{isDiscountLine ? '' : formatMoneyMinor(Number(li.unitPriceMinor || 0), q.currency)}</td>
-                          {/* An option is already in the main line's amount, as on the PDF. */}
-                          <td className="py-2 text-right tabular-nums">{isSubItem && li.addsToParent ? <span className="text-[10px] text-muted">{t('crm.lineItems.optionNote', "included in the main line's price")}</span> : formatMoneyMinor(Number(li.lineTotalMinor || 0), q.currency)}</td>
+                          <td className="py-2 text-right tabular-nums">{formatMoneyMinor(Number(li.lineTotalMinor || 0), q.currency)}</td>
                         </tr>
                       );
                     });

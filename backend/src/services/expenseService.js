@@ -23,6 +23,7 @@ const { toStoredPath } = require('../utils/storedPath');
 const { validatePdf } = require('../utils/pdfValidation');
 const invoiceService = require('./invoiceService');
 const { auditedInsert, auditedUpdate, auditedDelete } = require('./accountingHistory');
+const { isArmed } = require('./invoice/drafts');
 // Tri-state proof-attach resolver — single source of truth lives with the
 // send-time attachment logic (no require cycle: rebillProofs never imports us).
 const { resolveDefaultAttach } = require('./invoice/rebillProofs');
@@ -376,14 +377,15 @@ const BOOKING_DISPOSITIONS = ['rebill', 'durchlaufend'];
  */
 function isInvoiceMutable(invoice) {
   if (!invoice) return true; // referenced invoice gone — treat as not billed
-  if (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1) return true;
   // NB: invoices have no 'draft' status (only quotes do). The editable,
   // not-yet-sent invoice state IS 'scheduled' with no scheduled_send_at (or a
   // future one), handled below — so there is no plain-'draft' case to slot in
-  // here (PR #636 review #6).
+  // here (PR #636 review #6). The status comes first: a draft that was paid or
+  // cancelled keeps its monthly flag until the scheduler's next pass, and is
+  // closed all the same (isEntryLocked has the same order).
   if (invoice.status !== 'scheduled') return false;
-  if (!invoice.scheduled_send_at) return true;
-  return new Date(invoice.scheduled_send_at).getTime() > Date.now();
+  if (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1) return true;
+  return !isArmed(invoice.scheduled_send_at);
 }
 
 /**

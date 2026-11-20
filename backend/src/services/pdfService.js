@@ -34,7 +34,7 @@ const {
 const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
 const { parseCalendarDate } = require('../utils/dateNormalize');
 const { defaultDocumentDateFormat } = require('../utils/documentDateFormat');
-const { parsePromotionSnapshot, isOptionLine } = require('../utils/lineItemTotals');
+const { parsePromotionSnapshot } = require('../utils/lineItemTotals');
 const { parseInlineMarkdown } = require('../utils/placeholders');
 const pdfFonts = require('./pdf/fonts');
 const { BUILT_IN: THEME_BUILT_IN, builtInTheme } = require('./pdf/theme');
@@ -832,16 +832,9 @@ function cellLink(text) {
   }
 }
 
-// A link reads as one in print too: the document's accent when the theme
-// sets one apart from the text colour (a brand colour), else a link blue
-// (7.4:1 on white).
+// A link reads as one in print too: always a link blue (7.4:1 on white), not
+// the theme accent, which a light brand colour can make too pale to read.
 const LINK_BLUE = '#0b57d0';
-
-function linkColor(doc) {
-  const accent = themeColor(doc, 'accent');
-  return accent && String(accent).toLowerCase() !== String(themeColor(doc, 'text')).toLowerCase()
-    ? accent : LINK_BLUE;
-}
 
 /** Column fields that make a description / notes cell a link, if it has one. */
 function linkedCell(doc, text) {
@@ -851,7 +844,7 @@ function linkedCell(doc, text) {
   const onlyLink = !/\s/.test(String(text || '').trim().replace(/^\u2022\s*/, ''));
   return {
     textOptions: { link, ...(onlyLink ? { underline: true } : {}) },
-    ...(onlyLink ? { textColor: linkColor(doc) } : {}),
+    ...(onlyLink ? { textColor: LINK_BLUE } : {}),
   };
 }
 
@@ -1009,10 +1002,7 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
       : formatMinor(li.unitPriceMinor, currency, intlLocale);
     const qtyText = isDiscount ? '' : quantityText(li);
     const displayLineTotal = lineTotalSign * Number(li.lineTotalMinor || 0);
-    // An option (migration 371) is already in the main line's amount and
-    // its price stands in the unit column, so the sum cell stays empty.
-    const optionLine = isSubItem && li.addsToParent === true;
-    const lineTotalText = subItemPriceless || optionLine
+    const lineTotalText = subItemPriceless
       ? ''
       : isSubItem || li.excluded
         ? `(${formatMinor(displayLineTotal, currency, intlLocale)})`
@@ -3113,7 +3103,6 @@ function renderContractInProcess(context) {
                   parentLineItemId: li.parent_line_item_id || null,
                   parentPosition: li.parent_position == null ? null : Number(li.parent_position),
                   detailsText: li.details_text || null,
-                  addsToParent: isOptionLine(li),
                   lineKind: li.line_kind || 'item',
                   unit: li.unit || null,
                   promotion: parsePromotionSnapshot(li.promotion_snapshot),

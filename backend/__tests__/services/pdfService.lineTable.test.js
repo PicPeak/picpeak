@@ -154,19 +154,3 @@ describe('contracts', () => {
     expect(header.columns).toHaveLength(6);
   });
 });
-
-describe('service options (migration 371)', () => {
-  it('leaves an option line\'s sum cell empty and keeps its unit price', () => {
-    const { data, cellTexts } = draw([
-      item({ position: 1, description: 'Next-Step B', unitPriceMinor: 18000, lineTotalMinor: 21000 }),
-      item({ position: 2, parentPosition: 1, description: 'Online Galerie', unitPriceMinor: 3000, lineTotalMinor: 3000, addsToParent: true }),
-      item({ position: 3, parentPosition: 1, description: 'Prints', unitPriceMinor: 1000, lineTotalMinor: 1000 }),
-    ]);
-    const [parent, option, regularSub] = data.map(cellTexts);
-    expect(parent[parent.length - 1]).toMatch(/210/);
-    expect(option[option.length - 2]).toMatch(/30/);
-    expect(option[option.length - 1]).toBe('');
-    // A regular priced sub-item keeps its bracketed amount.
-    expect(regularSub[regularSub.length - 1]).toMatch(/^\(.*10.*\)$/);
-  });
-});

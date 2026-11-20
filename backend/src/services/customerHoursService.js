@@ -29,6 +29,7 @@ const { hasColumnCached } = require('../utils/schemaCache');
 const { vatMinorFor, roundsVatDown } = require('../utils/vatAmount');
 const invoiceService = require('./invoiceService');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('./accountingHistory');
+const { isArmed } = require('./invoice/drafts');
 
 // ---------------------------------------------------------------------
 // Pure helpers — exported under `_internal` for direct unit testing.
@@ -122,8 +123,7 @@ function isEntryLocked(entry, invoice) {
   if (!invoice) return false; // entry references a deleted invoice — treat as unbilled
   if (invoice.status !== 'scheduled') return true;
   if (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1) return false;
-  if (!invoice.scheduled_send_at) return false;
-  return new Date(invoice.scheduled_send_at).getTime() <= Date.now();
+  return isArmed(invoice.scheduled_send_at);
 }
 
 /**
@@ -424,7 +424,8 @@ async function deleteEntry(entryId, adminId) {
     if (entry.invoice_line_item_id) {
       await auditedDelete(trx, 'invoice_line_items', { id: entry.invoice_line_item_id }, audit);
     }
-    if (entry.invoice_id) {
+    // An entry whose invoice no longer exists has no totals to recompute.
+    if (entry.invoice_id && invoice) {
       // Same rule as appendToMonthlyDraft (parents resolved, round-total).
       const { netMinor } = await require('./invoice/drafts').resolveUnissuedInvoiceNet(trx, entry.invoice_id, audit);
       const vatRate = Number(invoice.vat_rate || 0);

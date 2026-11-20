@@ -112,17 +112,7 @@ const ContractPrice: React.FC<{ commercial: PublicContractView['commercial'] }> 
                     <td className="py-1.5 pr-3 text-right tabular-nums whitespace-nowrap">
                       {li.quantity}{li.unit ? ` ${t(`publicContract.price.unit.${li.unit}`, li.unit)}` : ''}
                     </td>
-                    <td className="py-1.5 text-right tabular-nums whitespace-nowrap">
-                      {money(li.lineTotalMinor)}
-                      {/* This table has no unit price column: an option keeps its
-                          amount, marked as part of the main line's (as on the PDF,
-                          where it stands under Einzelpreis). */}
-                      {li.parentPosition != null && li.addsToParent && (
-                        <span className="block text-xs text-neutral-500 dark:text-neutral-400">
-                          {t('crm.lineItems.optionNote', "included in the main line's price")}
-                        </span>
-                      )}
-                    </td>
+                    <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{money(li.lineTotalMinor)}</td>
                   </tr>
                 ))}
               </tbody>

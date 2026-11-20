@@ -1067,10 +1067,8 @@ export const LineItemsTable: React.FC<Props> = ({
                         ? 'text-muted italic'
                         : 'font-medium'
                     }`}>
-                      {/* An option has no sum of its own: it is in the main line's
-                          amount. Same rendering on every surface (PDF included). */}
                       {sub
-                        ? li.unitPrice > 0 && !li.addsToParent
+                        ? li.unitPrice > 0
                           ? `(${formatMoney(lineTotal(li), currency)})`
                           : ''
                         : formatMoney(lineTotal(li), currency)}
@@ -1080,7 +1078,7 @@ export const LineItemsTable: React.FC<Props> = ({
                         </div>
                       )}
                       {sub && li.addsToParent && li.unitPrice > 0 && (
-                        <div className="text-[10px] font-normal text-muted not-italic">
+                        <div className="text-[10px] font-normal text-muted italic mt-0.5">
                           {t('crm.lineItems.optionNote', "included in the main line's price")}
                         </div>
                       )}

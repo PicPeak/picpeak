@@ -531,8 +531,6 @@ export interface PublicQuoteView {
     lineKind?: LineKind;
     unit?: LineUnit | null;
     promotionName?: string | null;
-    /** An option sub-line (migration 371): in its parent's amount, no sum of its own. */
-    addsToParent?: boolean;
     /** #1451 phase 2 — an optional add-on and whether it's selected. */
     isOptional?: boolean;
     selected?: boolean;

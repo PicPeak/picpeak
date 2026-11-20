@@ -18,8 +18,8 @@ import { DocumentHeader } from '../../../components/admin/DocumentHeader';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { useLeaveGuard } from '../../../contexts/UnsavedChangesContext';
 import { billsService, type InvoiceCreatePayload, type InvoiceQrFormat } from '../../../services/bills.service';
-import { quotesService } from '../../../services/quotes.service';
-import { quoteCatalogService } from '../../../services/quoteCatalog.service';
+import { quotesService, type LineItemPreset } from '../../../services/quotes.service';
+import { quoteCatalogService, type QuotePackage } from '../../../services/quoteCatalog.service';
 import { useFeatureEnabled } from '../../../contexts/FeatureFlagsContext';
 import { usePermission } from '../../../hooks/usePermission';
 import { contractsService } from '../../../services/contracts.service';
@@ -49,6 +49,28 @@ import { useProjectPrefill } from '../projects/useProjectPrefill';
 // services stay on quotes.
 const invoicePriceable = (item: { priceMode?: string | null; pinnedRateMinor?: number | null }) =>
   (item.priceMode || 'fixed') === 'fixed' || item.pinnedRateMinor != null;
+// A catalogue entry with no currency fits any; otherwise it must match.
+const inCurrency = (value: string | null | undefined, currency: string) => !value
+  || value.toUpperCase() === String(currency || '').toUpperCase();
+
+/**
+ * The catalogue an invoice in `currency` offers: services it can price on its
+ * own (see invoicePriceable; no pricing factors, no album product), in its
+ * currency, since a price carries no conversion, and the packages made only
+ * of such items.
+ */
+export function invoiceCatalogue(
+  presets: LineItemPreset[],
+  packages: QuotePackage[],
+  currency: string,
+): { presets: LineItemPreset[]; packages: QuotePackage[] } {
+  const usable = (p: LineItemPreset | undefined) => !p?.factorIds?.length && !p?.productId;
+  return {
+    presets: presets.filter((p) => invoicePriceable(p) && usable(p) && inCurrency(p.currency, currency)),
+    packages: packages.filter((pkg) => inCurrency(pkg.currency, currency)
+      && pkg.items.every((it) => invoicePriceable(it) && usable(presets.find((p) => p.id === it.presetId)))),
+  };
+}
 // One empty list for "no packages yet", so the memo below doesn't recompute.
 const NO_PACKAGES: never[] = [];
 
@@ -288,15 +310,10 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     queryFn: () => quoteCatalogService.listPackages({ activeOnly: true }),
     enabled: catalogueOn,
   });
-  const invoicePresets = useMemo(() => (liPresets?.presets || [])
-    .filter((p) => invoicePriceable(p) && !(p.factorIds?.length) && !p.productId), [liPresets]);
-  // A package item with pricing factors or an album product would come in at
-  // its bare base price, as such a service would: leave those packages on
-  // quotes too.
-  const invoicePackages = useMemo(() => packages.filter((pkg) => pkg.items.every((it) => {
-    const preset = (liPresets?.presets || []).find((p) => p.id === it.presetId);
-    return invoicePriceable(it) && !preset?.factorIds?.length && !preset?.productId;
-  })), [packages, liPresets]);
+  const { presets: invoicePresets, packages: invoicePackages } = useMemo(
+    () => invoiceCatalogue(liPresets?.presets || [], packages, currency),
+    [liPresets, packages, currency],
+  );
   const { data: outputVatCodes } = useQuery({ queryKey: ['vat-codes', 'output'], queryFn: () => vatCodesService.listOutput() });
   const didSeedVatRef = useRef(false);
   useEffect(() => {

@@ -54,7 +54,7 @@ const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { getVatRegisteredSetting } = require('../utils/vatRegistration');
 const {
-  normalizeLineItems, countedLineItems, resolveDiscountLines, extendedLineColumns, parsePromotionSnapshot, resolvedParentTotal, isOptionLine,
+  normalizeLineItems, countedLineItems, resolveDiscountLines, extendedLineColumns, parsePromotionSnapshot, resolvedParentTotal,
   isTruthyFlag, isUnselectedOptional,
 } = require('../utils/lineItemTotals');
 const { prepareQuoteLineItems } = require('./quoteCatalogService');
@@ -979,8 +979,6 @@ async function buildRenderContext(quote, lineItems) {
       parentLineItemId: li.parent_line_item_id || null,
       parentPosition: li.parent_position == null ? null : Number(li.parent_position),
       detailsText: li.details_text || null,
-      // Migration 371 — an option adds to its parent; its amount is not repeated.
-      addsToParent: isOptionLine(li),
       addOn: li.line_kind !== 'discount' && isTruthyFlag(li.is_optional)
         && li.parent_line_item_id == null && (li.parent_position == null || li.parent_position === '')
         ? (visibleLines.has(li) ? 'booked' : 'not_booked')
@@ -1097,7 +1095,6 @@ async function renderQuotePdfFromPayload(payload) {
     is_optional: li.is_optional,
     selected: li.selected,
     promotion_snapshot: li.promotion_snapshot || null,
-    adds_to_parent: li.adds_to_parent,
   })));
   return await pdfService.renderQuoteToBuffer(ctx);
 }

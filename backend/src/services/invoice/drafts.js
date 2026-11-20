@@ -371,6 +371,19 @@ async function getMonthlyDraft(customerId) {
  *     rounded once (utils/invoiceRounding).
  * Callers keep their own VAT step. Returns the net and the lines read.
  */
+/**
+ * Whether an invoice's scheduled send time has come (it is armed for sending,
+ * so issued). No send time: not armed. A send time that can't be read counts
+ * as armed, so an edit is refused rather than landing on an invoice that may
+ * already be going out. Read through toMillis (a zone-less SQLite time is
+ * UTC), shared by every check that decides whether an invoice can change.
+ */
+function isArmed(scheduledSendAt) {
+  if (scheduledSendAt == null || scheduledSendAt === '') return false;
+  const at = toMillis(scheduledSendAt);
+  return at == null || at <= Date.now();
+}
+
 async function resolveUnissuedInvoiceNet(trx, invoiceId, audit = {}) {
   // Every caller checks first; this holds the line for a future one. An
   // invoice that left 'scheduled' (armed, sent, paid, cancelled) is issued or
@@ -380,11 +393,7 @@ async function resolveUnissuedInvoiceNet(trx, invoiceId, audit = {}) {
   const invoice = await trx('invoices').where({ id: invoiceId })
     .first('status', 'kind', 'is_monthly_draft', 'scheduled_send_at');
   const monthlyDraft = invoice && (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1);
-  // A send time that can't be read counts as armed: refuse rather than
-  // rewrite lines on an invoice that may already be going out.
-  const sendAt = invoice && !monthlyDraft && invoice.scheduled_send_at != null && invoice.scheduled_send_at !== ''
-    ? toMillis(invoice.scheduled_send_at) : undefined;
-  const armed = sendAt !== undefined && (sendAt == null || sendAt <= Date.now());
+  const armed = invoice && !monthlyDraft && isArmed(invoice.scheduled_send_at);
   if (!invoice || invoice.status !== 'scheduled' || invoice.kind === 'storno' || armed) {
     throw new AppError('This invoice has already been issued — Storno it to change it.', 409, 'INVOICE_LOCKED');
   }
@@ -416,6 +425,7 @@ async function resolveUnissuedInvoiceNet(trx, invoiceId, audit = {}) {
 }
 
 module.exports = {
+  isArmed,
   resolveUnissuedInvoiceNet,
   getOrCreateMonthlyDraft,
   appendToMonthlyDraft,

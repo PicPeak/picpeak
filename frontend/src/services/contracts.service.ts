@@ -785,8 +785,6 @@ export interface PublicContractView {
       unitPriceMinor: number;
       discountPercent: number;
       lineTotalMinor: number;
-      /** An option sub-line (migration 371): in its parent's amount. */
-      addsToParent?: boolean;
     }>;
     totals: {
       netMinor: number;

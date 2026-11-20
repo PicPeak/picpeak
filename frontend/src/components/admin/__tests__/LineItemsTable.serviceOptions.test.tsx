@@ -160,14 +160,14 @@ test('re-pricing a factor service never takes its ticked options', () => {
   expect([...generatedSubLines(items, 1)]).toEqual([2]);
 });
 
-test('the option row shows no sum of its own, and the preview rounds in Rappen like the server', () => {
+test('the option row shows its amount in brackets like any sub-line, and the preview rounds in Rappen like the server', () => {
   const items: EditableLineItem[] = [
     { ...typeBLine, unitPrice: 0.35, quantity: 1.5 },
     { position: 2, quantity: 1.5, description: 'Online Galerie', unitPrice: 0.35, discountPercent: 0, parentPosition: 1, cataloguePresetId: 9, addsToParent: true },
   ];
   render(<LineItemsTable currency="CHF" showDiscount={false} mode="invoice" presets={[typeB, gallery]} items={items} onChange={() => {}} />);
   const optionRow = screen.getByDisplayValue('Online Galerie').closest('tr') as HTMLElement;
-  expect(optionRow.textContent).not.toMatch(/\(CHF/);
+  expect(optionRow.textContent).toMatch(/\(CHF.0\.53\)/);
   // 1.5 × 35 Rappen = 52.5 → 53, twice: 1.06 (a float product of francs gives 1.04).
   const parentRow = screen.getByDisplayValue('28.09.2024: 10. Next-Step B').closest('tr') as HTMLElement;
   expect(parentRow.textContent).toMatch(/1\.06/);

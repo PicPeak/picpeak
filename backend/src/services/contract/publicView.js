@@ -12,7 +12,6 @@ const { db } = require('../../database/db');
 const { AppError } = require('../../utils/errors');
 const { getAppSetting } = require('../../utils/appSettings');
 const { markdownToPlain } = require('../../utils/placeholders');
-const { isOptionLine } = require('../../utils/lineItemTotals');
 
 // Normalise a Settings → Branding logo value (absolute URL, /-rooted path,
 // or bare `uploads/...` filename) into a URL the public page can load.
@@ -128,8 +127,6 @@ function commercialView(quote) {
       unitPriceMinor: li.unit_price_minor,
       discountPercent: li.discount_percent,
       lineTotalMinor: li.line_total_minor,
-      // Migration 371 — an option is in its parent's amount, as on the PDF.
-      addsToParent: isOptionLine(li),
     })),
     totals: quote.totals,
   };

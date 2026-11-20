@@ -333,8 +333,17 @@ const ServicesTab: React.FC = () => {
       // which option no longer fits instead of resending the same choice.
       const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code;
       if (code === 'PRESET_OPTION_INVALID') refresh();
-      // The options changed under this form: reload, and let the admin reopen it.
-      if (code === 'PRESET_OPTIONS_CHANGED') { setForm(null); refresh(); }
+      // Another admin changed the options since this form loaded: take the
+      // current list into the form (the server's toast says so) and keep
+      // every other field as typed, so the admin checks the ticks and saves.
+      if (code === 'PRESET_OPTIONS_CHANGED' && form.id) {
+        try {
+          const latest = (await quotesService.listLineItemPresets({ includeInactive: true })).presets
+            .find((p) => p.id === form.id)?.optionPresetIds || [];
+          setForm((f) => (f ? { ...f, optionPresetIds: latest, loadedOptionPresetIds: latest } : f));
+        } catch { /* the list reload below shows the current state either way */ }
+        refresh();
+      }
     }
   };
 

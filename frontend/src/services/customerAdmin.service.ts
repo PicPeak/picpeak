@@ -683,8 +683,6 @@ export interface MonthlyDraftLineItem {
   lineTotalMinor: number;
   parentPosition: number | null;
   detailsText: string;
-  /** An option sub-line (migration 371): in its main line's price. */
-  addsToParent?: boolean;
 }
 
 // -------------------------------------------------------------------

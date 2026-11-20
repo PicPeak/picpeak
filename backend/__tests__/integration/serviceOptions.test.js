@@ -436,6 +436,43 @@ describe('service options', () => {
     expect(Boolean(Number(option.adds_to_parent))).toBe(true);
   });
 
+  it('an option survives quote → invoice, and a reissue (Storno + replacement) of that invoice', async () => {
+    const { quoteId } = await (async () => {
+      const id = await quoteService.createQuote({
+        customerAccountId: customerId, currency: 'CHF', vatRate: 0,
+        lineItems: [
+          { position: 1, quantity: 1, description: 'Next-Step B', unit_price_minor: 18000, discount_percent: 0 },
+          { position: 2, quantity: 1, description: 'Online Galerie', unit_price_minor: 3000, discount_percent: 0, parent_position: 1, adds_to_parent: true },
+        ],
+      }, adminId);
+      return { quoteId: typeof id === 'object' ? (id.id ?? id.quoteId) : id };
+    })();
+    await db('quotes').where({ id: quoteId }).update({ status: 'accepted' });
+    await db('customer_accounts').where({ id: customerId }).update({ feature_bills: formatBoolean(true) }).catch(() => {});
+    await quoteService.convertToInvoiceOnly(quoteId, adminId);
+    const invoice = await db('invoices').where({ source_quote_id: quoteId }).first();
+    expect(Number(invoice.net_amount_minor)).toBe(21000);
+    const lines = async (id) => db('invoice_line_items').where({ invoice_id: id }).orderBy('position');
+    const optionOf = (rows) => rows.find((l) => l.description === 'Online Galerie');
+    expect(Boolean(Number(optionOf(await lines(invoice.id)).adds_to_parent))).toBe(true);
+
+    // Issued, then reissued: a Storno that is its exact negative, and a replacement.
+    await db('invoices').where({ id: invoice.id }).update({ status: 'sent' });
+    const { replacementId } = await (async () => {
+      const result = await invoiceService.reissueInvoice(invoice.id, adminId);
+      return { replacementId: result.replacementId ?? result.id ?? result.invoiceId };
+    })();
+    const storno = await db('invoices').where({ cancels_invoice_id: invoice.id }).first();
+    expect(Number(storno.net_amount_minor)).toBe(-21000);
+    expect(Boolean(Number(optionOf(await lines(storno.id)).adds_to_parent))).toBe(true);
+    const replacement = await db('invoices').where({ replaces_invoice_id: invoice.id }).first();
+    expect(replacement.id).toBe(replacementId ?? replacement.id);
+    expect(Number(replacement.net_amount_minor)).toBe(21000);
+    const replacementOption = optionOf(await lines(replacement.id));
+    expect(Boolean(Number(replacementOption.adds_to_parent))).toBe(true);
+    expect(replacementOption.parent_line_item_id).not.toBeNull();
+  });
+
   it('an invoice with a ticked option totals parent + option', async () => {
     const { invoiceIds } = await invoiceService.createInvoice({
       customerAccountId: customerId,

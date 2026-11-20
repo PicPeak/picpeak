@@ -76,3 +76,22 @@ test('ticking another option sends the new list', async () => {
   // With the list it loaded, for the server's check against a concurrent edit.
   expect(update.mock.calls[0][1]).toMatchObject({ optionPresetIds: [9, 10], expectedOptionPresetIds: [9] });
 });
+
+test('a save refused because the options changed keeps the other fields and takes the current list', async () => {
+  const { quotesService } = await import('../../../../../services/quotes.service');
+  renderPage();
+  await openTypeB();
+  const name = screen.getByDisplayValue('Typ B');
+  await userEvent.clear(name);
+  await userEvent.type(name, 'Typ B neu');
+  await userEvent.click(screen.getByRole('checkbox', { name: /Album/ }));
+  update.mockRejectedValueOnce({ response: { data: { code: 'PRESET_OPTIONS_CHANGED', error: 'The options changed' } } });
+  vi.mocked(quotesService.listLineItemPresets).mockResolvedValueOnce({
+    presets: [preset({ id: 1, name: 'Typ B', optionPresetIds: [9, 10] }), preset({ id: 9, name: 'Online Galerie' }), preset({ id: 10, name: 'Album' })],
+  } as never);
+  await userEvent.click(screen.getByRole('button', { name: /save/i }));
+  // Still open, the typed name kept, the ticks now the stored list.
+  expect(await screen.findByDisplayValue('Typ B neu')).toBeTruthy();
+  expect((screen.getByRole('checkbox', { name: /Album/ }) as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByRole('checkbox', { name: /Online Galerie/ }) as HTMLInputElement).checked).toBe(true);
+});
