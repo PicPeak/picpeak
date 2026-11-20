@@ -29,6 +29,8 @@ vi.mock('../DownloadQuotaNotice', () => ({ DownloadQuotaNotice: () => null }));
 
 import { galleryService } from '../../../services/gallery.service';
 import { DownloadResolutionModal } from '../DownloadResolutionModal';
+import { DownloadIdentityCancelledError } from '../../../utils/downloadLimit';
+import { isGalleryMountHeld } from '../../../utils/downloadIdentity';
 
 const TOKEN = 'b'.repeat(64);
 const choices = [{ id: '1500x1000', label: 'Medium', width: 1500, height: 1000 }];
@@ -73,5 +75,49 @@ describe('DownloadResolutionModal: onDownloaded', () => {
     await user.click(closes[closes.length - 1]);
     expect(onClose).toHaveBeenCalled();
     expect(onDownloaded).not.toHaveBeenCalled();
+  });
+
+  // The pre-built whole-gallery archive (issue 2503): its download ticket can
+  // fail before the browser takes over, inside the click handler.
+  const renderCached = (onClose: () => void, onDownloaded: () => void) => render(
+    <DownloadResolutionModal
+      slug="party" choices={choices} standardResolution="1500x1000" zipReady
+      onClose={onClose} onDownloaded={onDownloaded}
+    />,
+  );
+
+  it('shows a failed cached-archive download instead of throwing from the click', async () => {
+    vi.mocked(galleryService.downloadCachedArchive).mockRejectedValue(new Error('Network Error'));
+    const onClose = vi.fn();
+    const onDownloaded = vi.fn();
+    const user = userEvent.setup();
+    renderCached(onClose, onDownloaded);
+    await user.click(screen.getByRole('button', { name: 'Prepare download' }));
+    expect(await screen.findByText('Preparation failed')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onDownloaded).not.toHaveBeenCalled();
+  });
+
+  it('closes quietly when the guest closes the name prompt', async () => {
+    vi.mocked(galleryService.downloadCachedArchive).mockRejectedValue(new DownloadIdentityCancelledError());
+    const onClose = vi.fn();
+    const onDownloaded = vi.fn();
+    const user = userEvent.setup();
+    renderCached(onClose, onDownloaded);
+    await user.click(screen.getByRole('button', { name: 'Prepare download' }));
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.queryByText('Preparation failed')).toBeNull();
+    expect(onDownloaded).not.toHaveBeenCalled();
+  });
+
+  it('holds the gallery mounted while open (issue 2503)', () => {
+    // A guest identity replaced meanwhile rebuilds the gallery only after it
+    // closes, so the dialog keeps its job.
+    const { unmount } = render(
+      <DownloadResolutionModal slug="party" choices={choices} photoIds={[1, 2]} onClose={vi.fn()} />,
+    );
+    expect(isGalleryMountHeld('party')).toBe(true);
+    unmount();
+    expect(isGalleryMountHeld('party')).toBe(false);
   });
 });

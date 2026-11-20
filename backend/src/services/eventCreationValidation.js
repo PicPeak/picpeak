@@ -36,8 +36,10 @@ const schema = Joi.object({
     'feedback_enabled', 'allow_ratings', 'allow_likes', 'allow_comments', 'allow_favorites',
     'allow_reactions', 'allow_color_labels', 'allow_decisions', 'allow_favorite_lists', 'allow_selection_submit', 'allow_annotations', 'require_name_email', 'moderate_comments',
     'show_feedback_to_guests', 'client_access_enabled', 'client_pin_entry_enabled', 'og_image_share_enabled', 'show_credits_to_guests',
-    'custom_theme_enabled', 'external_watch', 'import_now', 'review_contributor_uploads']
+    'custom_theme_enabled', 'external_watch', 'import_now', 'review_contributor_uploads', 'require_guest_for_download']
     .map(key => [key, Joi.boolean().truthy(1, '1').falsy(0, '0')])),
+  // The guest prompt's privacy note (issue 2503), as feedback settings take it.
+  guest_privacy_text: Joi.string().trim().max(1000).allow('', null),
   hero_logo_visible: Joi.boolean().truthy(1, '1').falsy(0, '0').allow(null),
 }).unknown(true);
 

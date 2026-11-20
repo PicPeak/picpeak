@@ -4,7 +4,7 @@ const router = express.Router();
 const { verifyGalleryAccess, denySlideshowToken } = require('../middleware/gallery');
 const { guestBlockedByReveal, blockHiddenGallery } = require('../utils/revealMode');
 const { feedbackRateLimit, generateGuestIdentifier } = require('../middleware/feedbackRateLimit');
-const { resolveGuest, scopeGuestToFeedback } = require('../middleware/guestAuth');
+const { resolveGuest, scopeGuestToFeedback, downloadIdentityRequired } = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
 const feedbackModeration = require('../services/feedbackModeration');
 const selectionSubmissions = require('../services/selectionSubmissions');
@@ -116,6 +116,10 @@ router.get('/:slug/feedback-settings',
         // cap; positive integer = enforced.
         max_favorites_per_guest: settings.max_favorites_per_guest || null,
         max_likes_per_guest: settings.max_likes_per_guest || null,
+        // Guest identity before downloading, and the guest prompt's privacy
+        // note (issue 2503). The downloads themselves enforce the former.
+        require_guest_for_download: downloadIdentityRequired(settings),
+        guest_privacy_text: settings.guest_privacy_text || null,
       };
 
       res.json(guestSettings);

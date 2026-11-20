@@ -344,6 +344,9 @@ async function convertToEvent(contractId, adminId) {
     );
   }
 
+  // The event code (issue 2495), after the commit.
+  await require('../eventAccessCode').ensureAccessCode(eventId);
+
   try {
     await logActivity('contract_converted_to_empty_event',
       { contractId, eventId }, eventId, await adminActor(adminId));

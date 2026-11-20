@@ -22,6 +22,7 @@ import type { EventDetailsTab } from './types';
 import type { SettingsSectionKey } from './settings/draft';
 import { usesCustomTheme } from './settings/draft';
 import { ShareLinkCard } from './ShareLinkCard';
+import { EventCodeCard } from './EventCodeCard';
 import { ClientAccessCard } from './ClientAccessCard';
 import { PhotoStatisticsCard } from './PhotoStatisticsCard';
 import { ArchiveStatusCard } from './ArchiveStatusCard';
@@ -202,6 +203,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       <div className="space-y-6 min-w-0">
         <DraftChecklistCard event={event} setActiveTab={setActiveTab} openSettings={openSettings} onPublish={canPublish ? onPublish : undefined} />
         <ShareLinkCard event={event} setShowPasswordReset={setShowPasswordReset} passwordVersion={passwordVersion} />
+        <EventCodeCard event={event} refetchEvent={refetchEvent} />
         <ShortUrlsCard eventId={event.id} />
 
         {!archived && canHelpClient && (

@@ -1422,7 +1422,8 @@
       "emailPlaceholder": "vi@example.com",
       "submit": "Nadaljuj",
       "returningHint": "Ste že bili tukaj? Vaša prejšnja izbira je še shranjena.",
-      "recoverPicks": "Prikliči izbiro"
+      "recoverPicks": "Prikliči izbiro",
+      "downloadDescription": "Preden prenesete, povejte fotografu, kdo ste. Vaši prenosi se shranijo pod tem imenom."
     },
     "footer": {
       "forgetMeConfirm": "Vaše ime in izbire bodo odstranjeni iz te galerije.",
@@ -1705,18 +1706,6 @@
     }
   },
   "categories": {
-    "chapter": {
-      "edit": "Oznaka poglavja",
-      "saved": "Oznaka poglavja shranjena",
-      "saveFailed": "Oznake poglavja ni bilo mogoče shraniti",
-      "heading": "Naslov",
-      "time": "Čas",
-      "location": "Kraj",
-      "subheading": "Podnaslov",
-      "useSuggestion": "Uporabi {{time}} (prva fotografija)",
-      "hint": "Prikazano nad to kategorijo, ko galerija prikazuje oznake poglavij (Nastavitve → Videz). Samo v tej galeriji.",
-      "clear": "Odstrani oznako"
-    },
     "title": "Kategorije fotografij",
     "addCategory": "Dodaj kategorijo",
     "eventSpecificCategories": "Kategorije za dogodek",
@@ -1755,15 +1744,55 @@
     "failedToToggleFolder": "Nastavitve mape ni bilo mogoče posodobiti",
     "disableFolderTitle": "Mapa: te fotografije so skrite iz glavne mreže in prikazane samo v mapi. Kliknite, da jo znova spremenite v filter.",
     "enableFolderTitle": "Filter: te fotografije ostanejo v glavni mreži. Kliknite, da ga spremenite v mapo — fotografije se skrijejo iz mreže, dostop pa NI omejen.",
-    "nestedFoldersHint": "Mape znotraj map upravljate v vrstici map na zavihku Fotografije."
+    "nestedFoldersHint": "Mape znotraj map upravljate v vrstici map na zavihku Fotografije.",
+    "chapter": {
+      "edit": "Oznaka poglavja",
+      "saved": "Oznaka poglavja shranjena",
+      "saveFailed": "Oznake poglavja ni bilo mogoče shraniti",
+      "heading": "Naslov",
+      "time": "Čas",
+      "location": "Kraj",
+      "subheading": "Podnaslov",
+      "useSuggestion": "Uporabi {{time}} (prva fotografija)",
+      "hint": "Prikazano nad to kategorijo, ko galerija prikazuje oznake poglavij (Nastavitve → Videz). Samo v tej galeriji.",
+      "clear": "Odstrani oznako"
+    }
+  },
+  "eventCode": {
+    "title": "Poiščite svojo galerijo",
+    "subtitle": "Vnesite kodo dogodka s kartice ali vabila.",
+    "label": "Koda dogodka",
+    "placeholder": "npr. K7M-4QX",
+    "submit": "Odpri galerijo",
+    "required": "Vnesite kodo svojega dogodka.",
+    "notFound": "Za to kodo nismo našli galerije. Preverite kodo in poskusite znova.",
+    "tooManyAttempts": "Preveč poskusov. Počakajte nekaj minut in poskusite znova.",
+    "failed": "Prišlo je do napake. Poskusite znova.",
+    "hint": "Velike ali male črke niso pomembne. Če ima galerija geslo, ga boste vnesli v naslednjem koraku."
   },
   "events": {
-    "chapterMarkers": {
-      "label": "Oznake poglavij",
-      "off": "Izklopljeno",
-      "divider": "Ločilna črta",
-      "hero": "Pasica s sliko kategorije",
-      "help": "V postavitvi Story nad vsako kategorijo prikaže naslov, čas, kraj in podnaslov. Vnesete jih za vsako kategorijo pod Fotografije → Kategorije. Pasica brez slike kategorije se prikaže kot ločilna črta."
+    "eventCode": {
+      "title": "Koda dogodka",
+      "hint": "Gostje to kodo vnesejo na {{url}}, da najdejo galerijo.",
+      "customLabel": "Lastna koda",
+      "invalid": "Uporabite 6 do 12 črk in številk, brez 0, O, 1, I ali L.",
+      "taken": "To kodo že uporablja druga galerija.",
+      "failed": "Kode dogodka ni bilo mogoče shraniti",
+      "saved": "Koda dogodka shranjena",
+      "copyLink": "Kopiraj povezavo z vneseno kodo",
+      "archived": "Arhivirana galerija se s kodo ne odpre.",
+      "publicWarning": "Ta galerija nima gesla, zato jo lahko odpre vsak, ki pozna kodo.",
+      "none": "Ta galerija še nima kode.",
+      "regenerate": "Nova koda",
+      "regenerateTitle": "Ustvarim novo kodo?",
+      "regenerateConfirm": "Trenutna koda takoj preneha delovati, tudi na že natisnjenih karticah.",
+      "generate": "Ustvari kodo",
+      "edit": "Izberi kodo",
+      "disabled": "Kode dogodkov so izklopljene. Vklopite jih v Sistemske nastavitve → Splošno.",
+      "remove": "Odstrani kodo",
+      "removeTitle": "Odstranim kodo dogodka?",
+      "removeConfirm": "Koda takoj preneha delovati, tudi na že natisnjenih karticah. Povezava za deljenje deluje naprej.",
+      "removed": "Koda dogodka odstranjena"
     },
     "selection": {
       "title": "Izbor za goste",
@@ -2441,6 +2470,13 @@
       "lineBreaksPreserved": "Prelomi vrstic se ohranijo v e-poštnih sporočilih",
       "tip": "Namig: pritisnite Enter za novo vrstico. Vsaka vrstica bo v e-poštnih sporočilih ločen odstavek.",
       "preview": "Predogled:"
+    },
+    "chapterMarkers": {
+      "label": "Oznake poglavij",
+      "off": "Izklopljeno",
+      "divider": "Ločilna črta",
+      "hero": "Pasica s sliko kategorije",
+      "help": "V postavitvi Story nad vsako kategorijo prikaže naslov, čas, kraj in podnaslov. Vnesete jih za vsako kategorijo pod Fotografije → Kategorije. Pasica brez slike kategorije se prikaže kot ločilna črta."
     }
   },
   "settings": {
@@ -2474,6 +2510,11 @@
       "enableRegistration": "Dovoli samoregistracijo administratorjev",
       "enableShortGalleryUrls": "Uporabi kratke URL-je galerij",
       "enableShortGalleryUrlsHelp": "Odstrani slug dogodka iz novih povezav za deljenje, obstoječe povezave pa še naprej delujejo.",
+      "eventCodesEnabled": "Kode dogodkov",
+      "eventCodesEnabledHelp": "Gostje odprejo galerijo tako, da na /code vnesejo njeno kratko kodo. Privzeto izklopljeno. Dokler je vklopljeno, nove galerije dobijo kodo; obstoječa galerija jo dobi na svoji strani. Galerijo brez gesla lahko nato odpre vsak, ki ugane njeno kodo, ne da bi poznal dolgo povezavo za deljenje.",
+      "rootEventCodePage": "Na korenskem naslovu odpri stran s kodo dogodka",
+      "rootEventCodePageHelp": "Obiskovalci golega naslova pridejo na /code, kjer gostje vnesejo kodo dogodka, namesto na prijavo za skrbnike. Vklopljena javna začetna stran ima še vedno prednost.",
+      "rootEventCodePageNeedsCodes": "Zahteva vklopljene kode dogodkov.",
       "useOriginalFilenames": "Pri prenosu uporabi izvirna imena datotek",
       "useOriginalFilenamesHelp": "Ko je vklopljeno, prenosi posameznih fotografij in ZIP arhivov uporabijo izvirno ime datoteke iz fotoaparata (npr. DSC_1234.jpg) namesto očiščenega imena. Shramba se ne spremeni; dvojniki v istem dogodku dobijo številčno pripono.",
       "maintenanceMode": "Omogoči vzdrževalni način",
@@ -4548,7 +4589,9 @@
         "ratings": "Ocene",
         "reactions": "Odzivi",
         "lastSeen": "Nazadnje viden",
-        "colorLabels": "Barvne oznake"
+        "colorLabels": "Barvne oznake",
+        "views": "Ogledi",
+        "downloads": "Prenosi"
       },
       "view": "Ogled podrobnosti",
       "export": "Izvozi",
@@ -4574,7 +4617,17 @@
         "showInPhotos": "Prikaži med fotografijami",
         "clearListFilter": "Prikaži vse fotografije",
         "listFilterNamed": "Prikazane so fotografije s seznama {{name}}.",
-        "listFilter": "Prikazane so fotografije z enega seznama priljubljenih."
+        "listFilter": "Prikazane so fotografije z enega seznama priljubljenih.",
+        "downloads": "Prenosi",
+        "noDownloads": "Ni zabeleženih prenosov. Prenosi se beležijo po gostih, dokler je vklopljeno »Za prenos zahtevaj identiteto gosta«.",
+        "deletedPhoto": "Izbrisana fotografija",
+        "views": "Ogledi: {{count}}",
+        "downloadSummary": "Prenesene fotografije: {{photos}} · Prenosi ZIP: {{zips}}",
+        "zip": {
+          "all": "Celotna galerija (ZIP)",
+          "selected": "Izbor (ZIP)",
+          "archive": "Pripravljen prenos (ZIP)"
+        }
       },
       "inviteStatus": {
         "pending": "Čaka",
@@ -4589,7 +4642,8 @@
       "mergePickKeepHint": "Izberite vnos za ohranitev",
       "mergeKeepColumn": "Ohrani",
       "mergeKeepRow": "Ohrani {{name}}",
-      "mergeInclude": "Vključi {{name}} v združitev"
+      "mergeInclude": "Vključi {{name}} v združitev",
+      "zipCount": "+{{count}} ZIP"
     },
     "analytics": "Analitika",
     "activities": {
@@ -6105,7 +6159,12 @@
       "selectionSubmit": "Zaključek izbora",
       "selectionSubmitDesc": "Gostje oddajo svoje všečke ali priljubljene, ko končajo. Njihov izbor je nato zaklenjen, dokler ga znova ne odprete, vi pa prejmete obvestilo",
       "annotations": "Risanje na fotografije",
-      "annotationsDesc": "Gostje lahko rišejo na fotografijo in risbo priložijo komentarju. Potrebni so komentarji"
+      "annotationsDesc": "Gostje lahko rišejo na fotografijo in risbo priložijo komentarju. Potrebni so komentarji",
+      "requireGuestForDownload": "Za prenos zahtevaj identiteto gosta",
+      "requireGuestForDownloadDesc": "Gostje pred vsakim prenosom vnesejo svoje ime. Ogledi in prenosi so nato prikazani po gostih pod Gostje.",
+      "guestPrivacyText": "Obvestilo o zasebnosti v pozivu za ime",
+      "guestPrivacyTextPlaceholder": "npr. Vaše ime uporabljamo samo zato, da vidimo, kdo je prenesel katere fotografije. Kadar koli lahko zahtevate izbris.",
+      "guestPrivacyTextHint": "Neobvezno. Prikaže se gostom, ko jih vprašamo za ime."
     },
     "settingsUpdated": "Nastavitve povratnih informacij posodobljene",
     "settingsUpdateError": "Nastavitev ni bilo mogoče posodobiti",
@@ -10651,11 +10710,10 @@
       "add": "Dodaj paket",
       "added": "Paket zabeležen.",
       "addedMailed": "Paket zabeležen. E-pošta o pošiljki je v čakalni vrsti za {{email}}.",
-      "mailFailed": "Paket zabeležen, vendar e-pošte o pošiljki ni bilo mogoče postaviti v čakalno vrsto.",
+      "mailFailed": "Pošiljanje e-pošte ni uspelo",
       "mailed": "E-pošta poslana",
       "notMailed": "Brez obvestila",
       "mailQueued": "E-pošta načrtovana",
-      "mailFailed": "Pošiljanje e-pošte ni uspelo",
       "deleteTitle": "Izbrišem ta paket?",
       "deleteMessage": "Paket {{number}} izgine iz skrbništva in iz portala za stranke. Že poslana e-pošta ostane poslana.",
       "delete": "Izbriši paket",

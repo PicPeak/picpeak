@@ -5,7 +5,9 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { rateLimitKey } = require('../utils/rateLimitKey');
 const { verifyGalleryAccess, denySlideshowToken } = require('../middleware/gallery');
-const { resolveGuest, requireGuest, signGuestToken } = require('../middleware/guestAuth');
+const {
+  resolveGuest, requireGuest, signGuestToken, signGuestDownloadTicket, GUEST_IDENTITY_REQUIRED,
+} = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
 const selectionSubmissions = require('../services/selectionSubmissions');
 const guestRecovery = require('../services/guestRecoveryService');
@@ -230,6 +232,26 @@ router.delete('/:slug/guest/me', verifyGalleryAccess, resolveGuest, requireGuest
     logger.error('Guest forget-me failed', { error: error.message });
     return res.status(500).json({ error: 'Failed to forget guest' });
   }
+});
+
+/**
+ * POST /gallery/:slug/guest/download-ticket
+ *
+ * A short-lived ticket naming this guest to the download routes (issue 2503).
+ * A gallery that asks for the guest's identity before downloading needs it on
+ * downloads the browser navigates to (archives, direct photo downloads),
+ * which carry no x-guest-token header. See signGuestDownloadTicket.
+ */
+router.post('/:slug/guest/download-ticket', verifyGalleryAccess, denySlideshowToken, resolveGuest, (req, res) => {
+  // No guest (or one removed or merged since), or one of another gallery:
+  // 403 with the download gate's code, so the gallery drops that identity and
+  // asks again. Not requireGuest's 401: a 401 here would read the same as an
+  // expired gallery session from verifyGalleryAccess, which must not cost the
+  // guest a still-valid identity.
+  if (!req.guest || req.guest.eventId !== req.event.id) {
+    return res.status(403).json({ error: 'Guest identity required', code: GUEST_IDENTITY_REQUIRED });
+  }
+  return res.json({ ticket: signGuestDownloadTicket({ guestId: req.guest.id, eventId: req.event.id }) });
 });
 
 // ---------------------------------------------------------------------------

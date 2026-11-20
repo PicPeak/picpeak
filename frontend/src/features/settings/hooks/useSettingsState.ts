@@ -50,6 +50,11 @@ export interface GeneralSettings {
   enable_registration: boolean;
   maintenance_mode: boolean;
   short_gallery_urls: boolean;
+  // Event codes (issue 2495): opt-in, default off.
+  event_codes_enabled: boolean;
+  // The site root leads to the event-code page /code (issue 2495); only
+  // while event codes are on.
+  root_event_code_page: boolean;
   use_original_filenames_for_downloads: boolean;
   default_language: string;
   date_format: { format: string; locale: string };
@@ -207,6 +212,8 @@ export function useSettingsState() {
     enable_registration: false,
     maintenance_mode: false,
     short_gallery_urls: false,
+    event_codes_enabled: false,
+    root_event_code_page: false,
     use_original_filenames_for_downloads: false,
     default_language: 'en',
     date_format: { format: 'dd/MM/yyyy', locale: 'en-GB' },
@@ -363,6 +370,8 @@ export function useSettingsState() {
         enable_registration: toBoolean(settings.general_enable_registration, false),
         maintenance_mode: toBoolean(settings.general_maintenance_mode, false),
         short_gallery_urls: toBoolean(settings.general_short_gallery_urls, false),
+        event_codes_enabled: toBoolean(settings.general_event_codes_enabled, false),
+        root_event_code_page: toBoolean(settings.general_root_event_code_page, false),
         use_original_filenames_for_downloads: toBoolean(
           settings.general_use_original_filenames_for_downloads,
           false
@@ -545,6 +554,8 @@ export function useSettingsState() {
       queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
       // Passkeys are bound to the site URL saved here.
       queryClient.invalidateQueries({ queryKey: ['admin-passkeys'] });
+      // The event-code switch (issue 2495) is read through the public settings.
+      queryClient.invalidateQueries({ queryKey: ['public-settings'] });
     },
     onError: () => {
       toast.error(t('toast.saveError'));

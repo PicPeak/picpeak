@@ -19,7 +19,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { GuestNamePromptModal } from '../GuestNamePromptModal';
 
 const closePrompt = vi.fn();
-const openRecovery = vi.fn();
+const switchToRecovery = vi.fn();
 const register = vi.fn();
 
 vi.mock('react-i18next', async () => {
@@ -38,14 +38,14 @@ vi.mock('../../../contexts/GuestIdentityContext', () => ({
     promptOpen: true,
     closePrompt,
     register,
-    openRecovery,
+    switchToRecovery,
   }),
 }));
 
 describe('returning-guest nudge (#1210)', () => {
   beforeEach(() => {
     closePrompt.mockReset();
-    openRecovery.mockReset();
+    switchToRecovery.mockReset();
     register.mockReset();
   });
 
@@ -61,7 +61,7 @@ describe('returning-guest nudge (#1210)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /get them back/i }));
 
-    expect(openRecovery).toHaveBeenCalledTimes(1);
+    expect(switchToRecovery).toHaveBeenCalledTimes(1);
     expect(register).not.toHaveBeenCalled();
   });
 
@@ -74,6 +74,6 @@ describe('returning-guest nudge (#1210)', () => {
     // A first-time guest still just registers — the nudge is an offer beside
     // the form, not a step in front of it.
     expect(register).toHaveBeenCalled();
-    expect(openRecovery).not.toHaveBeenCalled();
+    expect(switchToRecovery).not.toHaveBeenCalled();
   });
 });

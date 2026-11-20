@@ -11,6 +11,7 @@ import {
   readDownloadLimitError, withDownloadLimit,
 } from '../utils/downloadLimit';
 import { SELECTED_DOWNLOAD_LIMIT } from '../components/gallery/folders';
+import { ensureDownloadIdentity, withDownloadIdentity, withGuestTicket } from '../utils/downloadIdentity';
 
 // Gallery pages beyond the first are fetched this many at a time (#1357).
 const PAGE_FETCH_CONCURRENCY = 4;
@@ -231,14 +232,17 @@ export const galleryService = {
   // user-gesture window had usually expired, so Safari fell back to its
   // "Download / View" sheet anyway. The direct download lands it in Files.
   // A limited gallery still fetches, for the reason above.
+  //
+  // A gallery that asks for the guest's name before downloading (issue 2503)
+  // opens the guest prompt first.
   async savePhotoToDevice(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string, isVideo = false): Promise<void> {
-    return withDownloadLimit(slug, () => this.savePhotoToDeviceUnchecked(slug, photoId, filename, onProgress, resolution, isVideo));
+    return withDownloadIdentity(slug, () => withDownloadLimit(slug, () => this.savePhotoToDeviceUnchecked(slug, photoId, filename, onProgress, resolution, isVideo)));
   },
 
   async savePhotoToDeviceUnchecked(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string, isVideo = false): Promise<void> {
     if ((!isIOS() || isVideo) && !isGalleryLimited(slug)) {
       await preflightDirectDownload(slug, photoId, resolution);
-      this.triggerDirectDownload(directDownloadUrl(slug, photoId, resolution), filename);
+      this.triggerDirectDownload(await withGuestTicket(slug, directDownloadUrl(slug, photoId, resolution)), filename);
       return;
     }
     if (!isIOS()) {
@@ -356,15 +360,15 @@ export const galleryService = {
   // straight at the download URL, so the bytes stream and the tile's spinner
   // clears at once instead of after the whole file is in memory.
   async downloadPhoto(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string, isVideo = false): Promise<void> {
-    return withDownloadLimit(slug, async () => {
+    return withDownloadIdentity(slug, () => withDownloadLimit(slug, async () => {
       if (isVideo && !isGalleryLimited(slug)) {
         await preflightDirectDownload(slug, photoId, resolution);
-        this.triggerDirectDownload(directDownloadUrl(slug, photoId, resolution), filename);
+        this.triggerDirectDownload(await withGuestTicket(slug, directDownloadUrl(slug, photoId, resolution)), filename);
         return;
       }
       const fetched = await this.fetchPhotoBlob(slug, photoId, onProgress, resolution);
       this.triggerBrowserDownload(fetched.blob, fetched.serverFilename || filename);
-    });
+    }));
   },
 
   // Per-photo view beacon (#895). Fired by the lightbox when a photo
@@ -377,17 +381,21 @@ export const galleryService = {
   },
 
   // Only use after the gallery payload confirms an eligible ready cache.
-  downloadCachedArchive(slug: string): void {
-    const link = document.createElement('a');
-    link.href = withAdminPreview(`/api/gallery/${slug}/download-all`);
-    link.setAttribute('download', `${slug}.zip`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+  async downloadCachedArchive(slug: string): Promise<void> {
+    await withDownloadIdentity(slug, async () => {
+      const link = document.createElement('a');
+      link.href = await withGuestTicket(slug, withAdminPreview(`/api/gallery/${slug}/download-all`));
+      link.setAttribute('download', `${slug}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    });
   },
 
   async trySaveSelectedToDevice(slug: string, photoIds: number[]): Promise<'shared' | 'dismissed' | 'fallback'> {
     if (!isIOS() || isGalleryLimited(slug) || photoIds.length === 0 || photoIds.length > MAX_WEB_SHARE_FILES) return 'fallback';
+    // Asked here, not by the fetches below: a refused fetch only falls back.
+    await ensureDownloadIdentity(slug);
     return this.trySaveMultipleToDevice(slug, photoIds);
   },
 
@@ -404,7 +412,7 @@ export const galleryService = {
   ): Promise<{ token: string; status: DownloadJobStatus; resolution: string }> {
     const body: Record<string, unknown> = resolution ? { resolution } : {};
     if (photoIds !== undefined) body.photo_ids = photoIds;
-    const response = await withDownloadLimit(slug, () => api.post(`/gallery/${slug}/download-jobs`, body));
+    const response = await withDownloadIdentity(slug, () => withDownloadLimit(slug, () => api.post(`/gallery/${slug}/download-jobs`, body)));
     return response.data;
   },
 
@@ -421,14 +429,20 @@ export const galleryService = {
 
   // Native browser download so the archive streams with Content-Length
   // (real progress bar, no in-memory blob for a multi-GB gallery).
-  downloadJobFile(slug: string, token: string, part?: { index: number; total: number }, selected = false): void {
-    const link = document.createElement('a');
+  // A gallery that asks for the guest's name (issue 2503) gets a ticket on
+  // the link: the job was started by an identified guest. Through the prompt
+  // and retry the other downloads use, for an identity the ticket route no
+  // longer accepts (another device, the guest removed meanwhile).
+  async downloadJobFile(slug: string, token: string, part?: { index: number; total: number }, selected = false): Promise<void> {
     const query = part ? `?part=${part.index}&parts=${part.total}` : selected ? '?selected=1' : '';
-    link.href = withAdminPreview(`/api/gallery/${slug}/download-jobs/${token}/file${query}`);
-    link.setAttribute('download', '');
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    await withDownloadIdentity(slug, async () => {
+      const link = document.createElement('a');
+      link.href = await withGuestTicket(slug, withAdminPreview(`/api/gallery/${slug}/download-jobs/${token}/file${query}`));
+      link.setAttribute('download', '');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    });
     // The server grants the photos once it starts sending; re-read the quota
     // after that rather than racing it.
     if (isGalleryLimited(slug)) window.setTimeout(() => notifyDownloadQuotaChanged(slug), 2000);

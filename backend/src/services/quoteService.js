@@ -2618,6 +2618,9 @@ async function convertToEvent(quoteId, adminId, options = {}) {
     throw new AppError(`Cannot convert a quote with status '${current?.status}'`, 409);
   }
 
+  // The event code (issue 2495), after the commit like the log below.
+  await require('./eventAccessCode').ensureAccessCode(result.eventId);
+
   // Audit log AFTER commit — logActivity writes via the global `db`, which
   // deadlocks the single-connection SQLite pool if issued inside the trx
   // (prepare_event runs this unattended from the booking flow).

@@ -15,7 +15,7 @@ const { errorResponse } = require('../utils/routeHelpers');
 const { ValidationError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
-const { toTimestamp } = require('../utils/dateNormalize');
+const { toTimestamp, toStoredTimestamp } = require('../utils/dateNormalize');
 const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
 const favoriteLists = require('../services/favoriteLists');
 
@@ -87,6 +87,154 @@ function selectionsTxt(selections) {
   return [...new Set(selections.map((s) => s.original_filename || s.filename))].join('\n');
 }
 
+/**
+ * Views and downloads per guest (issue 2503), from the access_logs rows that
+ * carry a guest_id: only galleries that ask guests who they are before
+ * downloading write one. A photo download counts its photo once however
+ * often it was fetched; every archive (whole gallery, selection, prepared
+ * download) counts as one zip. Map of guest id -> stats; `guestId` narrows it
+ * to one guest.
+ */
+const ZIP_DOWNLOAD_SQL = 'access_logs.action IN (\'download_all\', \'download_selected\') '
+  + 'OR (access_logs.action = \'download\' AND access_logs.photo_id IS NULL)';
+
+async function guestActivityStats(eventId, guestId = null) {
+  const rows = await db('access_logs')
+    .where('access_logs.event_id', eventId)
+    .whereNotNull('access_logs.guest_id')
+    .modify((q) => { if (guestId != null) q.where('access_logs.guest_id', guestId); })
+    .groupBy('access_logs.guest_id')
+    .select(
+      'access_logs.guest_id',
+      db.raw('COUNT(CASE WHEN access_logs.action = \'view\' THEN 1 END) AS views'),
+      db.raw('COUNT(DISTINCT CASE WHEN access_logs.action = \'download\' AND access_logs.photo_id IS NOT NULL '
+        + 'THEN access_logs.photo_id END) AS photo_downloads'),
+      db.raw(`COUNT(CASE WHEN ${ZIP_DOWNLOAD_SQL} THEN 1 END) AS zip_downloads`),
+      db.raw('MAX(??) AS last_activity_at', ['access_logs.timestamp'])
+    );
+  const byGuest = new Map();
+  for (const r of rows) {
+    // COUNT comes back as a string on PostgreSQL.
+    byGuest.set(Number(r.guest_id), {
+      views: Number(r.views) || 0,
+      photo_downloads: Number(r.photo_downloads) || 0,
+      zip_downloads: Number(r.zip_downloads) || 0,
+      last_activity_at: toStoredTimestamp(r.last_activity_at),
+    });
+  }
+  return byGuest;
+}
+
+const NO_ACTIVITY = { views: 0, photo_downloads: 0, zip_downloads: 0, last_activity_at: null };
+
+/**
+ * One guest's downloads, newest first (issue 2503): each photo with its file
+ * name, each archive as one entry. Capped; the counts above stay exact.
+ */
+const GUEST_DOWNLOADS_SHOWN = 500;
+const ZIP_KIND = { download_all: 'all', download_selected: 'selected', download: 'archive' };
+
+async function guestDownloads(eventId, guestId) {
+  const rows = await db('access_logs')
+    .where({ event_id: eventId, guest_id: guestId })
+    .whereIn('action', ['download', 'download_all', 'download_selected'])
+    .orderBy('timestamp', 'desc')
+    .orderBy('id', 'desc')
+    .limit(GUEST_DOWNLOADS_SHOWN)
+    .select('action', 'photo_id', 'timestamp');
+  // access_logs.photo_id is text; joined in JS so PostgreSQL never compares
+  // it to the integer photos.id.
+  const photoIds = [...new Set(rows.map((r) => Number(r.photo_id)).filter((id) => Number.isInteger(id) && id > 0))];
+  const photos = new Map();
+  for (let i = 0; i < photoIds.length; i += 500) {
+    const found = await db('photos')
+      .whereIn('id', photoIds.slice(i, i + 500))
+      .where('event_id', eventId)
+      .select('id', 'filename', 'original_filename');
+    for (const p of found) photos.set(Number(p.id), p);
+  }
+  return rows.map((r) => {
+    const at = toStoredTimestamp(r.timestamp);
+    if (r.action === 'download' && r.photo_id != null) {
+      const photo = photos.get(Number(r.photo_id));
+      return {
+        kind: 'photo',
+        photo_id: Number(r.photo_id),
+        // A photo deleted since keeps its entry, without a name.
+        filename: photo ? (photo.original_filename || photo.filename) : null,
+        at,
+      };
+    }
+    return { kind: ZIP_KIND[r.action], photo_id: null, filename: null, at };
+  });
+}
+
+/** The later of two instants, either of which may be missing. */
+function latestOf(a, b) {
+  const ta = toTimestamp(a);
+  const tb = toTimestamp(b);
+  if (!Number.isFinite(ta)) return Number.isFinite(tb) ? b : null;
+  if (!Number.isFinite(tb)) return a;
+  return tb > ta ? b : a;
+}
+
+/**
+ * The guests of an event with their feedback counts, newest first. Shared by
+ * the list and the activity summary in the export.
+ */
+function loadGuestRows(eventId) {
+  return db('gallery_guests')
+    .leftJoin('photo_feedback', function () {
+      // Feedback on photos in the trash is not counted, as in the guest's
+      // own list and exports below; the guest stays listed with zeros.
+      this.on('photo_feedback.guest_id', '=', 'gallery_guests.id')
+        .andOn(db.raw('NOT EXISTS (SELECT 1 FROM photos WHERE photos.id = photo_feedback.photo_id AND photos.deleted_at IS NOT NULL)'));
+    })
+    .where('gallery_guests.event_id', eventId)
+    .where('gallery_guests.is_deleted', false)
+    .groupBy('gallery_guests.id')
+    .select(
+      'gallery_guests.id',
+      'gallery_guests.name',
+      'gallery_guests.email',
+      'gallery_guests.created_at',
+      'gallery_guests.last_seen_at',
+      'gallery_guests.email_verified_at',
+      db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'like\' THEN 1 END) AS likes'),
+      // Photos, not rows: one photo may sit in several of the guest's
+      // favourite lists (issue 2303).
+      db.raw('COUNT(DISTINCT CASE WHEN photo_feedback.feedback_type = \'favorite\' THEN photo_feedback.photo_id END) AS favorites'),
+      db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'comment\' THEN 1 END) AS comments'),
+      db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'rating\' THEN 1 END) AS ratings'),
+      db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'reaction\' THEN 1 END) AS reactions'),
+      db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'color_label\' THEN 1 END) AS color_labels'),
+      db.raw('COUNT(DISTINCT photo_feedback.photo_id) AS distinct_photos')
+    )
+    .orderBy('gallery_guests.created_at', 'desc');
+}
+
+/** One row per guest: who they are, what they viewed, downloaded and picked. */
+// The dot keeps it apart from the guests' own files: their names keep only
+// letters, digits, _ and - before the extension.
+const GUEST_ACTIVITY_CSV = 'guest-activity.summary.csv';
+function activitySummaryCsv(rows, activity) {
+  const header = 'name,email,views,photo_downloads,zip_downloads,likes,favorites,last_active';
+  const lines = rows.map((r) => {
+    const a = activity.get(Number(r.id)) || NO_ACTIVITY;
+    return [
+      escapeCsvCell(r.name),
+      escapeCsvCell(r.email || ''),
+      a.views,
+      a.photo_downloads,
+      a.zip_downloads,
+      parseInt(r.likes, 10) || 0,
+      parseInt(r.favorites, 10) || 0,
+      escapeCsvCell(toStoredTimestamp(latestOf(r.last_seen_at, a.last_activity_at)) || ''),
+    ].join(',');
+  });
+  return [header, ...lines].join('\n');
+}
+
 // ----------------------------------------------------------------------------
 // GET /admin/events/:eventId/guests — list guests with aggregated counts
 // ----------------------------------------------------------------------------
@@ -100,34 +248,8 @@ router.get(
     try {
       const { eventId } = req.params;
 
-      const rows = await db('gallery_guests')
-        .leftJoin('photo_feedback', function () {
-          // Feedback on photos in the trash is not counted, as in the guest's
-          // own list and exports below; the guest stays listed with zeros.
-          this.on('photo_feedback.guest_id', '=', 'gallery_guests.id')
-            .andOn(db.raw('NOT EXISTS (SELECT 1 FROM photos WHERE photos.id = photo_feedback.photo_id AND photos.deleted_at IS NOT NULL)'));
-        })
-        .where('gallery_guests.event_id', eventId)
-        .where('gallery_guests.is_deleted', false)
-        .groupBy('gallery_guests.id')
-        .select(
-          'gallery_guests.id',
-          'gallery_guests.name',
-          'gallery_guests.email',
-          'gallery_guests.created_at',
-          'gallery_guests.last_seen_at',
-          'gallery_guests.email_verified_at',
-          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'like\' THEN 1 END) AS likes'),
-          // Photos, not rows: one photo may sit in several of the guest's
-          // favourite lists (issue 2303).
-          db.raw('COUNT(DISTINCT CASE WHEN photo_feedback.feedback_type = \'favorite\' THEN photo_feedback.photo_id END) AS favorites'),
-          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'comment\' THEN 1 END) AS comments'),
-          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'rating\' THEN 1 END) AS ratings'),
-          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'reaction\' THEN 1 END) AS reactions'),
-          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'color_label\' THEN 1 END) AS color_labels'),
-          db.raw('COUNT(DISTINCT photo_feedback.photo_id) AS distinct_photos')
-        )
-        .orderBy('gallery_guests.created_at', 'desc');
+      const rows = await loadGuestRows(eventId);
+      const activity = await guestActivityStats(eventId);
 
       // Which rows are the same person registered more than once (#1210).
       //
@@ -153,6 +275,7 @@ router.get(
       }
 
       const guests = rows.map((r) => {
+        const seen = activity.get(Number(r.id)) || NO_ACTIVITY;
         const key = (r.email || '').trim().toLowerCase();
         const sharing = key ? byEmail.get(key) || [] : [];
         return {
@@ -172,7 +295,13 @@ router.get(
             ratings: parseInt(r.ratings, 10) || 0,
             reactions: parseInt(r.reactions, 10) || 0,
             distinct_photos: parseInt(r.distinct_photos, 10) || 0,
+            // Views and downloads (issue 2503); zero for a gallery that does
+            // not ask guests who they are before downloading.
+            views: seen.views,
+            downloads: seen.photo_downloads,
+            zip_downloads: seen.zip_downloads,
           },
+          last_activity_at: seen.last_activity_at,
         };
       });
 
@@ -439,6 +568,7 @@ router.get(
       archive.pipe(res);
 
       const listNames = await favoriteLists.namesForEvent(eventId);
+      const activity = await guestActivityStats(eventId);
       for (const g of guests) {
         const selections = await guestSelectionsForExport(eventId, g.id, listNames);
 
@@ -447,7 +577,14 @@ router.get(
 
         let body;
         if (format === 'json') {
-          body = JSON.stringify({ guest: g, selections }, null, 2);
+          body = JSON.stringify({
+            guest: g,
+            selections,
+            activity: {
+              ...activity.get(Number(g.id)) || NO_ACTIVITY,
+              downloads: await guestDownloads(eventId, g.id),
+            },
+          }, null, 2);
         } else if (format === 'csv') {
           body = selectionsCsv(selections);
         } else {
@@ -455,6 +592,11 @@ router.get(
           body = selectionsTxt(selections);
         }
         archive.append(body, { name: filename });
+      }
+      // One row per guest with views, downloads, likes and favourites
+      // (issue 2503), next to the per-guest selection files.
+      if (format === 'csv') {
+        archive.append(activitySummaryCsv(await loadGuestRows(eventId), activity), { name: GUEST_ACTIVITY_CSV });
       }
 
       await archive.finalize();
@@ -595,6 +737,11 @@ router.get(
         },
         selections,
         favorite_lists: favoriteListSummaries,
+        // What the guest viewed and downloaded (issue 2503).
+        activity: {
+          ...(await guestActivityStats(eventId, guestId)).get(Number(guestId)) || NO_ACTIVITY,
+          downloads: await guestDownloads(eventId, guestId),
+        },
       });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to fetch guest detail');
@@ -627,7 +774,15 @@ router.get(
       if (format === 'json') {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        return res.send(JSON.stringify({ guest: serializeGuest(guest), selections }, null, 2));
+        return res.send(JSON.stringify({
+          guest: serializeGuest(guest),
+          selections,
+          // What the guest viewed and downloaded (issue 2503).
+          activity: {
+            ...(await guestActivityStats(eventId, guestId)).get(Number(guestId)) || NO_ACTIVITY,
+            downloads: await guestDownloads(eventId, guestId),
+          },
+        }, null, 2));
       }
       if (format === 'csv') {
         res.setHeader('Content-Type', 'text/csv');
@@ -754,6 +909,8 @@ router.post(
         const merged = await feedbackService.mergeGuestFeedback(keepId, mergeIds, trx);
         // Uploads follow the merge, under the survivor's name (#1561).
         await reassignGuestCredits(mergeIds, all.find((g) => Number(g.id) === keepId), trx);
+        // So do their views and downloads (issue 2503).
+        await trx('access_logs').whereIn('guest_id', mergeIds).update({ guest_id: keepId });
 
         // Canonicalise the survivor's address (#1210 review). Rows are grouped
         // for review with the case and whitespace folded out, so a merge can be

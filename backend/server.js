@@ -254,7 +254,10 @@ const corsOptions = {
   //
   // X-Request-Id carries the correlation id (middleware/requestId.js) that an
   // admin can quote from an error message.
-  exposedHeaders: ['Content-Disposition', 'Retry-After', 'X-Request-Id', 'X-Poster-Pending'],
+  //
+  // X-Error-Code names a download refused for a missing guest identity
+  // (issue 2503), where the HEAD preflight of a direct download has no body.
+  exposedHeaders: ['Content-Disposition', 'Retry-After', 'X-Request-Id', 'X-Poster-Pending', 'X-Error-Code'],
 };
 
 // Only attach CORS to API endpoints, not static assets
@@ -475,7 +478,12 @@ async function handlePublicSiteRequest(req, res, next) {
     if (!payload.enabled) {
       // The root is crawlable (robotsTxtService), so say it here too.
       res.setHeader('X-Robots-Tag', 'noindex');
-      res.redirect(302, '/admin/login');
+      // Opt-in (issue 2495): the root leads guests to the event-code entry
+      // page instead of the admin login, only while event codes are on.
+      const { getAppSetting } = require('./src/utils/appSettings');
+      const toCodePage = (await getAppSetting('general_event_codes_enabled', false)) === true
+        && (await getAppSetting('general_root_event_code_page', false)) === true;
+      res.redirect(302, toCodePage ? '/code' : '/admin/login');
       return;
     }
 
@@ -1012,6 +1020,8 @@ app.use('/api/public/contract-signing', require('./src/routes/publicContractSign
 app.use('/api/public/transfer', require('./src/routes/publicTransfer'));
 app.use('/api/public/transfer-upload', require('./src/routes/publicTransferUpload'));
 app.use('/api/public/payment-check', require('./src/routes/publicPaymentCheck'));
+// Event code lookup for the fixed guest entry page /code (issue 2495).
+app.use('/api/public/event-code', require('./src/routes/publicEventCode'));
 // Newsletter unsubscribe (#1264). Deliberately NOT flag-gated: turning the
 // feature off must not break the links in mail that already went out.
 app.use('/api/public/newsletter', require('./src/routes/publicNewsletter'));

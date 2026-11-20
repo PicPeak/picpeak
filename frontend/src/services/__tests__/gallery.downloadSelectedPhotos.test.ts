@@ -4,6 +4,7 @@ vi.mock('../../config/api', () => ({ api: { post: vi.fn(), get: vi.fn() } }));
 import { api } from '../../config/api';
 import { galleryService } from '../gallery.service';
 import { markGalleryLimited } from '../../utils/downloadLimit';
+import { setDownloadIdentityGate } from '../../utils/downloadIdentity';
 
 const ios = (enabled = true, ipad = false) => Object.defineProperties(navigator, {
   userAgent: { configurable: true, value: enabled && !ipad ? 'iPhone' : 'Macintosh' },
@@ -66,13 +67,13 @@ describe('native archive transport', () => {
     await galleryService.startDownloadJob('party', undefined, []);
     expect(api.post).toHaveBeenCalledWith('/gallery/party/download-jobs', { photo_ids: [] });
   });
-  it('passes gallery authentication through native URLs, including admin preview', () => {
+  it('passes gallery authentication through native URLs, including admin preview', async () => {
     const links: string[] = [];
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () { links.push(this.href); });
     window.history.replaceState({}, '', '/gallery/party?admin_preview=1');
-    galleryService.downloadCachedArchive('party');
-    galleryService.downloadJobFile('party', 'job', { index: 1, total: 2 });
-    galleryService.downloadJobFile('party', 'selected-job', undefined, true);
+    await galleryService.downloadCachedArchive('party');
+    await galleryService.downloadJobFile('party', 'job', { index: 1, total: 2 });
+    await galleryService.downloadJobFile('party', 'selected-job', undefined, true);
     expect(links.map((href) => new URL(href).pathname + new URL(href).search)).toEqual([
       '/api/gallery/party/download-all?admin_preview=1',
       '/api/gallery/party/download-jobs/job/file?part=1&parts=2&admin_preview=1',
@@ -80,5 +81,26 @@ describe('native archive transport', () => {
     ]);
     expect(api.get).not.toHaveBeenCalled();
     window.history.replaceState({}, '', '/');
+  });
+  it('asks again and retries an archive file whose guest identity the ticket route no longer accepts', async () => {
+    const links: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () { links.push(this.href); });
+    const gate = { required: true, ensure: vi.fn(async () => undefined), forget: vi.fn() };
+    setDownloadIdentityGate('party', gate);
+    try {
+      // The email link opened on another device: the stored guest token is refused.
+      vi.mocked(api.post)
+        .mockRejectedValueOnce(Object.assign(new Error('refused'), {
+          response: { status: 403, data: { code: 'GUEST_IDENTITY_REQUIRED' } },
+        }))
+        .mockResolvedValueOnce({ data: { ticket: 'fresh' } });
+      await galleryService.downloadJobFile('party', 'job');
+      expect(gate.forget).toHaveBeenCalledTimes(1);
+      expect(gate.ensure).toHaveBeenCalledTimes(2);
+      expect(links.map((href) => new URL(href).pathname + new URL(href).search))
+        .toEqual(['/api/gallery/party/download-jobs/job/file?guest_ticket=fresh']);
+    } finally {
+      setDownloadIdentityGate('party', null);
+    }
   });
 });

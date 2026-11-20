@@ -158,9 +158,163 @@ function signGuestToken({ guestId, eventId, identifier, name, scope }, expiresIn
   );
 }
 
+// ---------------------------------------------------------------------------
+// Guest identity before downloading (issue 2503)
+// ---------------------------------------------------------------------------
+
+/** The code a download refused for a missing guest identity answers with. */
+const GUEST_IDENTITY_REQUIRED = 'GUEST_IDENTITY_REQUIRED';
+
+/**
+ * Whether this gallery asks for the guest's identity before a download. Only
+ * in guest identity mode: that is the mode whose guest prompt the gallery
+ * shows, and the only one whose guests register under their own name.
+ */
+function downloadIdentityRequired(settings) {
+  return !!settings
+    && !!settings.feedback_enabled
+    && settings.identity_mode === 'guest'
+    && !!settings.require_guest_for_download;
+}
+
+// Short: it rides in a download URL, where the browser keeps it in its
+// download history. The page asks for a new one per download.
+const DOWNLOAD_TICKET_TTL = '5m';
+
+/**
+ * A download ticket: the guest identity for one browser-navigated download.
+ *
+ * Archives and direct photo downloads are plain navigations, which carry the
+ * gallery cookie but not the x-guest-token header. The guest token itself
+ * does not go into a URL: it lasts 30 days and reads the guest's profile.
+ * A ticket only names the guest to the download routes, for a few minutes.
+ */
+function signGuestDownloadTicket({ guestId, eventId }) {
+  return jwt.sign(
+    { type: 'guest_download', guestId, eventId },
+    process.env.JWT_SECRET,
+    { issuer: 'picpeak-auth', expiresIn: DOWNLOAD_TICKET_TTL },
+  );
+}
+
+async function guestFromDownloadTicket(req) {
+  const ticket = typeof req.query?.guest_ticket === 'string' ? req.query.guest_ticket : null;
+  if (!ticket) return null;
+  let decoded;
+  try {
+    decoded = jwt.verify(ticket, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'picpeak-auth' });
+  } catch (err) {
+    logger.debug('Invalid guest download ticket', { reason: err.message });
+    return null;
+  }
+  if (decoded.type !== 'guest_download' || Number(decoded.eventId) !== Number(req.event.id)) return null;
+  const guest = await db('gallery_guests')
+    .where({ id: decoded.guestId, event_id: req.event.id, is_deleted: false })
+    .first('id');
+  return guest ? { id: guest.id } : null;
+}
+
+/**
+ * Mount after verifyGalleryAccess and resolveGuest on every download route.
+ *
+ * When the gallery asks for the guest's identity before downloading, a
+ * request without one (no guest token, no download ticket) is refused with
+ * 403 GUEST_IDENTITY_REQUIRED, which the gallery answers by opening the guest
+ * prompt. Otherwise req.downloadGuestId is the guest the download is logged
+ * under. With the setting off it stays null and nothing changes: downloads
+ * are counted anonymously, as before. Admin preview is never asked, and
+ * neither is a customer: signed in through the portal (viaCustomer) or by
+ * client link / PIN (accessLevel 'client'), as galleryActor counts them.
+ * They are not guests, and their gallery shows no guest prompt for downloads.
+ */
+async function guestDownloadGate(req, res, next) {
+  req.downloadGuestId = null;
+  if (!req.event?.id || req.isAdminPreview || req.viaCustomer || req.accessLevel === 'client') return next();
+  try {
+    // Required lazily: feedbackService is heavy and unrelated to token checks.
+    const feedbackService = require('../services/feedbackService');
+    const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
+    if (!downloadIdentityRequired(settings)) return next();
+    const guest = req.guest || await guestFromDownloadTicket(req);
+    if (!guest) {
+      // Also as a header: the HEAD preflight of a direct download gets no
+      // body, and the gallery must still recognise the refusal.
+      res.set('X-Error-Code', GUEST_IDENTITY_REQUIRED);
+      return res.status(403).json({
+        error: 'Please enter your name before downloading',
+        code: GUEST_IDENTITY_REQUIRED,
+      });
+    }
+    req.downloadGuestId = guest.id;
+    return next();
+  } catch (error) {
+    logger.error('guestDownloadGate failed', { error: error.message });
+    return res.status(500).json({ error: 'Failed to check download permission' });
+  }
+}
+
+/**
+ * The guest a download is logged under at the time the row is written. An
+ * archive is logged once its transfer finished, and the guest the request
+ * named may have been removed or merged by then. A live guest stays; a merged
+ * one becomes the guest it was merged into, which the merge records in its
+ * guest_merged activity entry (adminGuests.js); a removed one, or one whose
+ * merge left no record, becomes null. The common case is one primary-key read.
+ */
+async function loggedGuestId(guestId, eventId) {
+  const guest = await db('gallery_guests').where({ id: guestId, event_id: eventId }).first('id', 'is_deleted');
+  if (!guest) return null;
+  if (!guest.is_deleted) return guest.id;
+  const merges = await db('activity_logs')
+    .where({ event_id: eventId, activity_type: 'guest_merged' })
+    .select('metadata');
+  const mergedInto = new Map();
+  for (const { metadata } of merges) {
+    let meta;
+    try {
+      meta = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+    } catch {
+      continue;
+    }
+    for (const id of Array.isArray(meta?.merged_ids) ? meta.merged_ids : []) {
+      mergedInto.set(Number(id), Number(meta.keep_id));
+    }
+  }
+  // The survivor may itself have been merged since.
+  const seen = new Set();
+  let current = Number(guestId);
+  while (mergedInto.has(current) && !seen.has(current)) {
+    seen.add(current);
+    current = mergedInto.get(current);
+  }
+  if (current === Number(guestId)) return null;
+  const survivor = await db('gallery_guests')
+    .where({ id: current, event_id: eventId, is_deleted: false })
+    .first('id');
+  return survivor ? survivor.id : null;
+}
+
+/**
+ * The guest a gallery view is logged under: the identified guest, and only
+ * while the gallery asks for identity before downloading (issue 2503). With
+ * the setting off a view stays anonymous, as before.
+ */
+async function viewGuestId(req) {
+  if (!req.guest?.id || !req.event?.id) return null;
+  const feedbackService = require('../services/feedbackService');
+  const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
+  return downloadIdentityRequired(settings) ? req.guest.id : null;
+}
+
 module.exports = {
   resolveGuest,
   requireGuest,
   scopeGuestToFeedback,
   signGuestToken,
+  GUEST_IDENTITY_REQUIRED,
+  downloadIdentityRequired,
+  signGuestDownloadTicket,
+  guestDownloadGate,
+  loggedGuestId,
+  viewGuestId,
 };
