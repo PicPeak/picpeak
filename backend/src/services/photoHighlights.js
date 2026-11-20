@@ -79,16 +79,23 @@ function pinOf(value) {
   return value === true || value === 1 || value === '1' || value === 'true';
 }
 
-/** The category a photo is shown in: its folder, else its filter category, else the root. */
+/**
+ * The category a photo is shown in: its folder, else its filter category, else
+ * the root. A row from before migration 265 (or restored from an older backup)
+ * can carry its folder in category_id; the gallery shows it in that folder
+ * (galleryQueryService's legacyFolderId), so it counts against that folder.
+ */
 function groupOf(row) {
   if (row.folder_id) return `f${row.folder_id}`;
+  if (row.category_id && pinOf(row.category_is_folder) === true) return `f${row.category_id}`;
   if (row.category_id) return `c${row.category_id}`;
   return 'root';
 }
 
 /**
  * The highlighted photo ids among `rows` ({ id, folder_id, category_id,
- * highlight_pin, rating }). Pure, so the tests can run it without a database.
+ * category_is_folder, highlight_pin, rating }). Pure, so the tests can run it
+ * without a database.
  */
 function selectHighlights(rows, { mode, threshold }) {
   const ids = new Set();
@@ -150,7 +157,12 @@ async function highlightIdsForEvent(event, { accessLevel, fullView = false } = {
 async function computeHighlightIds(event, settings, { accessLevel, fullView }) {
   let query = wherePhotoProcessed(livePhotos(db).where('photos.event_id', event.id));
   query = applyPhotoVisibilityFilter(query, { accessLevel, fullView });
-  const columns = ['photos.id', 'photos.folder_id', 'photos.category_id', 'photos.highlight_pin'];
+  // Whether category_id names a folder: a legacy row's folder (see groupOf).
+  query = query.leftJoin('photo_categories as highlight_category', 'highlight_category.id', 'photos.category_id');
+  const columns = [
+    'photos.id', 'photos.folder_id', 'photos.category_id', 'photos.highlight_pin',
+    'highlight_category.is_folder as category_is_folder',
+  ];
   if (settings.mode === 'rating') {
     // MAX over admins: PG answers it as a string for some drivers, hence
     // Number() in selectHighlights.

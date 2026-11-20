@@ -98,6 +98,19 @@ describe('selectHighlights (issue 2549)', () => {
     expect(forward).toHaveLength(3);
   });
 
+  it('counts a legacy row with its folder in category_id against that folder', () => {
+    // Folder 10: eight rated photos in folder_id, one legacy pin in category_id.
+    // One folder of nine: budget 1, taken by the pin.
+    const photos = [
+      ...rows(8, () => ({ folder_id: 10, rating: 5 })),
+      { id: 9, folder_id: null, category_id: 10, category_is_folder: 1, highlight_pin: 1, rating: null },
+    ];
+    expect(ids(selectHighlights(photos, { mode: 'rating', threshold: 4 }))).toEqual([9]);
+    // A filter category (not a folder) still counts apart.
+    photos[8].category_is_folder = 0;
+    expect(ids(selectHighlights(photos, { mode: 'rating', threshold: 4 }))).toEqual([1, 9]);
+  });
+
   it('reads ratings that arrive as strings (PostgreSQL aggregates)', () => {
     const photos = rows(8, (id) => ({ rating: id === 4 ? '5' : null }));
     expect(ids(selectHighlights(photos, { mode: 'rating', threshold: 4 }))).toEqual([4]);
@@ -190,6 +203,18 @@ describe('highlights in the gallery and the admin (issue 2549)', () => {
       paged.push(...highlighted(await list(event, { sort: 'filename', order: 'asc', limit: 4, page })));
     }
     expect(paged.sort((x, y) => x - y)).toEqual([b, c]);
+  });
+
+  it('counts a legacy pinned photo (folder in category_id) against its folder\'s budget', async () => {
+    const event = await makeEvent({ highlights_mode: 'rating' }, 9);
+    const folderId = idOf(await db('photo_categories').insert({
+      name: 'Ceremony', slug: `ceremony-${event.id}`, is_global: false, event_id: event.id, is_folder: true, display_order: 0,
+    }).returning('id'));
+    const legacy = event.photoIds[8];
+    await db('photos').whereIn('id', event.photoIds.slice(0, 8)).update({ folder_id: folderId });
+    await db('photos').where({ id: legacy }).update({ category_id: folderId, highlight_pin: 1 });
+    for (const photoId of event.photoIds.slice(0, 8)) await rate(event, photoId, 5);
+    expect(highlighted(await list(event))).toEqual([legacy]);
   });
 
   it('never sends an admin rating or a count to the guest', async () => {
