@@ -1511,7 +1511,8 @@
         "destination": "Backup-Ziel"
       },
       "skipReasons": {
-        "not_verifiable_rsync": "Über rsync gesendete Backups können für den Test nicht zurückgeholt werden und werden daher nicht geprüft. Verwenden Sie ein lokales Ziel oder S3, um Wiederherstellungstests zu erhalten.",
+        "not_verifiable_rsync": "Dieses rsync-Backup kann für den Test nicht zurückgeholt werden: Es wurde erstellt, bevor Backups ihr Manifest auf das rsync-Ziel kopierten, oder es ist kein rsync-Ziel mehr konfiguriert. Neuere rsync-Backups werden getestet.",
+        "rsync_superseded": "Nur das neueste rsync-Backup kann getestet werden: Das Ziel ist ein Spiegel und enthält inzwischen ein neueres Backup.",
         "insufficient_space": "Es war nicht genug freier Speicherplatz vorhanden, um eine Testkopie wiederherzustellen. Schaffen Sie Platz auf dem Server und starten Sie den Test erneut.",
         "busy": "Zu diesem Zeitpunkt lief ein Backup, eine Wiederherstellung oder ein anderer Test, daher wurde dieser Test übersprungen.",
         "no_backup": "Es gab kein erfolgreiches Backup, das getestet werden konnte.",
@@ -1529,7 +1530,9 @@
         "verified": "Geprüft",
         "failed": "Test fehlgeschlagen",
         "skipped": "Nicht testbar",
-        "notVerified": "Nicht geprüft"
+        "notVerified": "Nicht geprüft",
+        "superseded": "Abgelöst",
+        "supersededHint": "Nur das neueste rsync-Backup kann getestet werden: Das Ziel ist ein Spiegel und enthält inzwischen ein neueres Backup."
       },
       "config": {
         "title": "Wiederherstellungstest",

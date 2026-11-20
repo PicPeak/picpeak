@@ -2977,7 +2977,8 @@
         "destination": "Destino de la copia de seguridad"
       },
       "skipReasons": {
-        "not_verifiable_rsync": "Las copias enviadas por rsync no se pueden recuperar para probarlas, así que no se verifican. Use un destino local o S3 para obtener pruebas de restauración.",
+        "not_verifiable_rsync": "Esta copia rsync no se puede recuperar para probarla: se hizo antes de que las copias guardaran su manifiesto en el destino rsync, o ya no hay ningún destino rsync configurado. Las copias rsync más recientes sí se prueban.",
+        "rsync_superseded": "Solo se puede probar la copia rsync más reciente: el destino es un espejo y ahora contiene una copia más reciente.",
         "insufficient_space": "No había espacio libre suficiente para restaurar una copia de prueba. Libere espacio en el servidor y vuelva a ejecutar la prueba.",
         "busy": "En ese momento había una copia de seguridad, restauración u otra prueba en curso, así que esta prueba se omitió.",
         "no_backup": "No había ninguna copia de seguridad correcta que probar.",
@@ -2995,7 +2996,9 @@
         "verified": "Verificada",
         "failed": "Prueba fallida",
         "skipped": "No comprobable",
-        "notVerified": "Sin verificar"
+        "notVerified": "Sin verificar",
+        "superseded": "Reemplazada",
+        "supersededHint": "Solo se puede probar la copia rsync más reciente: el destino es un espejo y ahora contiene una copia más reciente."
       },
       "config": {
         "title": "Prueba de restauración",

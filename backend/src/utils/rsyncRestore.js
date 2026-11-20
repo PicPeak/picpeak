@@ -279,9 +279,10 @@ async function stagedBytes(dir) {
  * and the run is stopped the moment they exceed it, so a destination that
  * sends more than the manifest records cannot fill the volume before any
  * checksum is compared. Every listed file must have arrived as a regular
- * file; missing ones are named in the error.
+ * file; missing ones are named in the error. `signal` stops the transfer
+ * from outside (a restore test yielding to a backup).
  */
-async function fetchRemoteFiles(config, relPaths, root, { maxSize, budgetBytes, onProgress } = {}) {
+async function fetchRemoteFiles(config, relPaths, root, { maxSize, budgetBytes, onProgress, signal } = {}) {
   relPaths.forEach(rel => assertMirrorRelativePath(rel, 'manifest path'));
   const remote = await connectRemote(config);
   const listFile = path.join(path.dirname(root), 'files-from');
@@ -292,6 +293,11 @@ async function fetchRemoteFiles(config, relPaths, root, { maxSize, budgetBytes, 
     `${remote.connection.rsyncTarget}:${remote.base}/`, `${root}/`];
   let outcome;
   const controller = new AbortController();
+  const stopFromOutside = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', stopFromOutside, { once: true });
+  }
   const budgeted = Number.isFinite(budgetBytes) && budgetBytes >= 0;
   const before = budgeted ? await stagedBytes(root) : 0;
   let overBudget = false;
@@ -316,6 +322,7 @@ async function fetchRemoteFiles(config, relPaths, root, { maxSize, budgetBytes, 
     });
   } finally {
     if (watcher) clearInterval(watcher);
+    if (signal) signal.removeEventListener('abort', stopFromOutside);
     await fs.rm(listFile, { force: true });
   }
   if (overBudget || await overBy()) {

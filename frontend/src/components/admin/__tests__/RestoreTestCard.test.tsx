@@ -46,6 +46,7 @@ vi.mock('react-i18next', async () => {
 });
 
 import { RestoreTestCard } from '../RestoreTestCard';
+import { RestoreTestRunBadge } from '../RestoreTestStatus';
 
 const rt = en.backup.restoreTest;
 
@@ -135,6 +136,30 @@ describe('RestoreTestCard', () => {
     expect(await screen.findByText(rt.status.skipped)).toBeInTheDocument();
     expect(screen.getByText(rt.skipReasons.not_verifiable_rsync)).toBeInTheDocument();
     expect(screen.queryByText('not_verifiable_rsync')).not.toBeInTheDocument();
+  });
+
+  it('explains an older rsync backup is superseded by the mirror, not that it is untestable', async () => {
+    renderCard(response(verification({
+      status: 'skipped', level: 'deep', skip_reason: 'rsync_superseded',
+    })));
+
+    expect(await screen.findByText(rt.skipReasons.rsync_superseded)).toBeInTheDocument();
+    expect(screen.queryByText(rt.skipReasons.not_verifiable_rsync)).not.toBeInTheDocument();
+    expect(screen.queryByText('rsync_superseded')).not.toBeInTheDocument();
+  });
+
+  it('labels a superseded run in the history as superseded, other skips as not testable', () => {
+    const { unmount } = render(<RestoreTestRunBadge status="skipped" skipReason="rsync_superseded" />);
+    const badge = screen.getByText(rt.badge.superseded);
+    expect(badge.closest('[title]')).toHaveAttribute('title', rt.badge.supersededHint);
+    expect(screen.queryByText(rt.badge.skipped)).not.toBeInTheDocument();
+    unmount();
+
+    render(<RestoreTestRunBadge status="skipped" skipReason="not_verifiable_rsync" />);
+    expect(screen.getByText(rt.badge.skipped)).toBeInTheDocument();
+    cleanup();
+    render(<RestoreTestRunBadge status="passed" />);
+    expect(screen.getByText(rt.badge.verified)).toBeInTheDocument();
   });
 
   it('warns when no test passed within the stale window', async () => {
