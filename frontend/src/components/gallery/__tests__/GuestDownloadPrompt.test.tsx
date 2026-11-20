@@ -31,6 +31,10 @@ vi.mock('../../../services/guests.service', () => ({
       guest: { id: 7, name: data.name, email: null, identifier: 'id-7' }, token: 'guest-token',
     })),
     getDownloadTicket: vi.fn(async () => 'ticket-1'),
+    requestRecoveryCode: vi.fn(async () => undefined),
+    verifyRecoveryCode: vi.fn(async () => ({
+      guest: { id: 9, name: 'Back', email: 'back@example.com', identifier: 'id-9' }, token: 'recovered-token',
+    })),
   },
 }));
 
@@ -39,6 +43,7 @@ import { guestsService } from '../../../services/guests.service';
 import { galleryService } from '../../../services/gallery.service';
 import { GuestIdentityProvider } from '../../../contexts/GuestIdentityContext';
 import { GuestNamePromptModal } from '../GuestNamePromptModal';
+import { GuestRecoveryModal } from '../GuestRecoveryModal';
 import { holdGalleryMount, isDownloadIdentityCancelled } from '../../../utils/downloadIdentity';
 import { clearGuestIdentity, storeGuestIdentity } from '../../../utils/guestIdentityStorage';
 
@@ -63,6 +68,7 @@ const renderGallery = (requireForDownload: boolean) => render(
   <QueryClientProvider client={new QueryClient()}>
     <GuestIdentityProvider slug={SLUG} identityMode="guest" requireForDownload={requireForDownload}>
       <GuestNamePromptModal privacyText="We only use your name for the album." />
+      <GuestRecoveryModal />
       <DownloadButton />
     </GuestIdentityProvider>
   </QueryClientProvider>,
@@ -111,6 +117,39 @@ describe('guest name before downloading (issue 2503)', () => {
     await user.click(screen.getByRole('button', { name: 'Download' }));
     await screen.findByRole('dialog');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(outcome).toBe('cancelled'));
+    expect(downloadCalls()).toHaveLength(0);
+  });
+
+  it('downloads once a returning guest recovered their identity from the prompt', async () => {
+    const user = userEvent.setup();
+    renderGallery(true);
+
+    await user.click(screen.getByRole('button', { name: 'Download' }));
+    await screen.findByRole('dialog');
+    await user.click(screen.getByRole('button', { name: 'Get them back' }));
+    await user.type(await screen.findByLabelText(/^Email/), 'back@example.com');
+    await user.click(screen.getByRole('button', { name: 'Send code' }));
+    await user.type(await screen.findByLabelText(/Verification code/), '123456');
+    expect(outcome).toBe('pending');
+    await user.click(screen.getByRole('button', { name: 'Verify and continue' }));
+
+    await waitFor(() => expect(outcome).toBe('done'));
+    expect(guestsService.registerGuest).not.toHaveBeenCalled();
+    expect(downloadCalls()).toHaveLength(1);
+  });
+
+  it('starts no download when the guest leaves recovery without signing in', async () => {
+    const user = userEvent.setup();
+    renderGallery(true);
+
+    await user.click(screen.getByRole('button', { name: 'Download' }));
+    await screen.findByRole('dialog');
+    await user.click(screen.getByRole('button', { name: 'Get them back' }));
+    await screen.findByLabelText(/^Email/);
+    expect(outcome).toBe('pending');
+    await user.click(screen.getByRole('button', { name: 'Close' }));
 
     await waitFor(() => expect(outcome).toBe('cancelled'));
     expect(downloadCalls()).toHaveLength(0);
@@ -187,6 +226,24 @@ describe('guest name before downloading (issue 2503)', () => {
     it('rebuilds the gallery for the new guest once the download finished', async () => {
       await replaceIdentity(false);
       // Likes, favourites and labels held in local state are the new guest's.
+      await waitFor(() => expect(mounts).toBe(2));
+    });
+
+    it('rebuilds the gallery when the guest cancels the replacement prompt', async () => {
+      storeGuestIdentity(SLUG, { id: 5, name: 'Old', email: null, identifier: 'id-5' }, 'stale-token');
+      mounts = 0;
+      vi.mocked(api.get).mockRejectedValueOnce(Object.assign(new Error('refused'), {
+        response: { status: 403, data: '', headers: { 'x-error-code': 'GUEST_IDENTITY_REQUIRED' } },
+      }));
+      const user = userEvent.setup();
+      render(<Host withDialog={false} />);
+
+      await user.click(screen.getByRole('button', { name: 'Download' }));
+      await screen.findByRole('dialog');
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() => expect(outcome).toBe('cancelled'));
+      // The removed guest's likes and favourites leave the screen all the same.
       await waitFor(() => expect(mounts).toBe(2));
     });
 

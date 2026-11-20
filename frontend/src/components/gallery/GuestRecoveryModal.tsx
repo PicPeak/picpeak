@@ -17,7 +17,7 @@ import { useGalleryDialog } from './hooks/useGalleryDialog';
  */
 export const GuestRecoveryModal: React.FC = () => {
   const { t } = useTranslation();
-  const { recoveryOpen, recoveryReason, closeRecovery, recoverRequest, recoverVerify, openPrompt } =
+  const { recoveryOpen, recoveryReason, closeRecovery, recoverRequest, recoverVerify, switchToPrompt } =
     useGuestIdentity();
 
   const [step, setStep] = useState<'email' | 'code'>('email');
@@ -46,8 +46,7 @@ export const GuestRecoveryModal: React.FC = () => {
 
   const backToPrompt = () => {
     reset();
-    closeRecovery();
-    openPrompt();
+    switchToPrompt();
   };
 
   const handleRequestCode = async (e: React.FormEvent) => {

@@ -31,6 +31,8 @@ vi.mock('../../../contexts/GuestIdentityContext', () => ({
     closeRecovery: vi.fn(),
     register: vi.fn(),
     openRecovery: vi.fn(),
+    switchToRecovery: vi.fn(),
+    switchToPrompt: vi.fn(),
     openPrompt: vi.fn(),
     recoverRequest: vi.fn(),
     recoverVerify: vi.fn(),

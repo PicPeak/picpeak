@@ -33,6 +33,13 @@ interface GuestIdentityContextValue {
   closePrompt: () => void;
   openRecovery: () => void;
   closeRecovery: () => void;
+  /**
+   * Move between the name prompt and recovery without cancelling a caller
+   * waiting on ensureIdentity() (issue 2503: a download asking for the
+   * guest's name resumes once recovery succeeds).
+   */
+  switchToRecovery: () => void;
+  switchToPrompt: () => void;
   register: (name: string, email?: string) => Promise<GuestIdentity>;
   recoverRequest: (email: string) => Promise<void>;
   recoverVerify: (email: string, code: string) => Promise<GuestIdentity>;
@@ -187,8 +194,11 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   // and discard the retried job, so the re-key waits until a guest is
   // identified again and no download holds the gallery (holdGalleryMount).
   const remountPendingRef = useRef(false);
+  // Waits while the prompt is still asking (a caller is parked on it); once
+  // the visitor answered or cancelled, the rebuild goes ahead, with or without
+  // a new identity: the previous guest's feedback must not stay on screen.
   const remountIfPending = useCallback(() => {
-    if (!remountPendingRef.current || !identityRef.current || isGalleryMountHeld(slug)) return;
+    if (!remountPendingRef.current || pendingResolvers.current.length > 0 || isGalleryMountHeld(slug)) return;
     remountPendingRef.current = false;
     setIdentityGeneration((g) => g + 1);
   }, [slug]);
@@ -350,6 +360,21 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   const closeRecovery = useCallback(() => {
     setRecoveryOpen(false);
     setRecoveryReason(null);
+    // A caller that came here from the name prompt is still waiting: closing
+    // recovery without signing in cancels it, as closing the prompt would.
+    pendingRejecters.current.forEach((r) => r(new Error('user_cancelled')));
+    pendingResolvers.current = [];
+    pendingRejecters.current = [];
+  }, []);
+  const switchToRecovery = useCallback(() => {
+    setPromptOpen(false);
+    setRecoveryReason(null);
+    setRecoveryOpen(true);
+  }, []);
+  const switchToPrompt = useCallback(() => {
+    setRecoveryOpen(false);
+    setRecoveryReason(null);
+    setPromptOpen(true);
   }, []);
 
   const register = useCallback(
@@ -486,6 +511,8 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       closePrompt,
       openRecovery,
       closeRecovery,
+      switchToRecovery,
+      switchToPrompt,
       register,
       recoverRequest,
       recoverVerify,
@@ -506,6 +533,8 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       closePrompt,
       openRecovery,
       closeRecovery,
+      switchToRecovery,
+      switchToPrompt,
       register,
       recoverRequest,
       recoverVerify,

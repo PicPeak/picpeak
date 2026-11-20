@@ -28,7 +28,7 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
   onCancel,
 }) => {
   const { t } = useTranslation();
-  const { promptOpen, promptReason, closePrompt, register, openRecovery } = useGuestIdentity();
+  const { promptOpen, promptReason, closePrompt, register, switchToRecovery } = useGuestIdentity();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -195,10 +195,7 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
             </p>
             <button
               type="button"
-              onClick={() => {
-                closePrompt();
-                openRecovery();
-              }}
+              onClick={switchToRecovery}
               className="mt-1 text-sm font-medium text-accent hover:underline"
             >
               {t('gallery.guestPrompt.recoverPicks', 'Get them back')}
