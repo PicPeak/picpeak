@@ -181,6 +181,11 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   // previous guest's hearts on screen. Bumping this generation re-keys the
   // subtree so every such consumer is rebuilt.
   const [identityGeneration, setIdentityGeneration] = useState(0);
+  // Set by the download gate's forget() (issue 2503): a stale identity the
+  // server refused is dropped in the middle of a download, which then asks
+  // again and retries. Re-keying there would unmount the download's dialog
+  // and discard the retried job, so that one clear does not re-key.
+  const keepSubtreeOnClearRef = useRef(false);
   useEffect(() => {
     const currentId = identity?.id ?? null;
     const previousId = previousIdentityId.current;
@@ -202,7 +207,9 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     // first time (null -> A) must not remount, or registering from the prompt
     // would tear down the gallery under the very click that triggered it and
     // drop the pending action.
-    if (previousId !== null) setIdentityGeneration((g) => g + 1);
+    const keepSubtree = keepSubtreeOnClearRef.current && currentId === null;
+    keepSubtreeOnClearRef.current = false;
+    if (previousId !== null && !keepSubtree) setIdentityGeneration((g) => g + 1);
   }, [identity, slug, queryClient]);
 
   // When an invite token is present on the URL (?invite=xxx), redeem it once
@@ -446,6 +453,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       ensure: async () => { await ensureIdentity('download'); },
       forget: () => {
         clearGuestIdentity(slug);
+        if (identityRef.current) keepSubtreeOnClearRef.current = true;
         identityRef.current = null;
         setIdentity(null);
       },

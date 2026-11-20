@@ -240,6 +240,33 @@ describe('guest identity before downloading (issue 2503)', () => {
       expect(Number(log.guest_id)).toBe(Number(guestId));
     });
 
+    it('reports a pre-built archive to the admin even when it finishes before the guest lookup', async () => {
+      // The cached archive streams before its access log row looks the guest
+      // up again; a small one can finish first, and its completion listener
+      // must already be in place.
+      const { Readable } = require('stream');
+      const downloadZipService = require('../../src/services/downloadZipService');
+      const body = Buffer.from('cached-zip-bytes');
+      const zipInfo = jest.spyOn(downloadZipService, 'getZipInfo').mockResolvedValue({ key: 'cached.zip', size: body.length });
+      mockStorage.get.mockImplementation(async () => Readable.from([body]));
+      await db('activity_logs').where({ event_id: eventId, activity_type: 'gallery_downloaded' }).del();
+      try {
+        const res = await request(app).get(`/api/gallery/${SLUG}/download-all`).set('x-guest-token', guestToken);
+        expect(res.status).toBe(200);
+        let reported; let log;
+        for (let i = 0; i < 50 && !(reported && log); i += 1) {
+          reported = await db('activity_logs').where({ event_id: eventId, activity_type: 'gallery_downloaded' }).first();
+          log = await lastLog('download_all');
+          if (!(reported && log)) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(reported).toBeTruthy();
+        expect(Number(log.guest_id)).toBe(Number(guestId));
+      } finally {
+        zipInfo.mockRestore();
+        mockStorage.get.mockReset();
+      }
+    });
+
     it('logs a gallery view under the guest', async () => {
       const res = await request(app).get(`/api/gallery/${SLUG}/photos`).set('x-guest-token', guestToken);
       expect(res.status).toBe(200);

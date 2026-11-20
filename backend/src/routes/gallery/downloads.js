@@ -798,6 +798,15 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
 
       // Log bulk download (admin preview #868 excluded — stats stay client-only).
       if (!req.isAdminPreview) {
+        // Surface in the admin notification bell (#746) — only once the
+        // stream actually finished; logging at pipe-time would report
+        // downloads that then broke mid-transfer (codex review of #849).
+        // Registered before the guest lookup below: the archive is already
+        // streaming, and a small one can finish while that lookup runs.
+        res.on('finish', () => {
+          if (res.statusCode < 400) logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, galleryActor(req));
+        });
+        bumpEventDownloadCounts(req.event.id).catch(statsWriteFailed('event download counts'));
         db('access_logs').insert({
           event_id: req.event.id,
           ip_address: req.ip,
@@ -805,13 +814,6 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           action: 'download_all',
           ...(await downloadGuestColumn(req)),
         }).catch(statsWriteFailed('access log, download_all'));
-        bumpEventDownloadCounts(req.event.id).catch(statsWriteFailed('event download counts'));
-        // Surface in the admin notification bell (#746) — only once the
-        // stream actually finished; logging at pipe-time would report
-        // downloads that then broke mid-transfer (codex review of #849).
-        res.on('finish', () => {
-          if (res.statusCode < 400) logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, galleryActor(req));
-        });
       }
       return;
     }

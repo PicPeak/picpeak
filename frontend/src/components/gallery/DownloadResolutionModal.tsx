@@ -172,8 +172,13 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
         await galleryService.downloadCachedArchive(slug);
         onDownloaded?.();
       } catch (err) {
-        // The limit refusal already told the guest why (issue 1560).
-        if (!isDownloadLimitError(err)) throw err;
+        // The limit refusal already told the guest why (issue 1560), and a
+        // closed name prompt needs no message. Anything else (the download
+        // ticket failing, issue 2503) shows here: this is a click handler.
+        if (!isDownloadLimitError(err)) {
+          reportError(err);
+          return;
+        }
       }
       onClose();
       return;
