@@ -276,17 +276,27 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   const currentPin = Object.prototype.hasOwnProperty.call(highlightPins, currentPhoto.id)
     ? highlightPins[currentPhoto.id]
     : (currentPhoto.highlight_pin ?? null);
-  const saveHighlightPin = async (next: boolean | null) => {
+  // Saves run one after another per photo, so the server ends on the last
+  // choice; only the newest choice rolls back on failure, and to the last
+  // value the server confirmed, not to an optimistic one still in flight.
+  const pinSaves = React.useRef<Record<number, { seq: number; chain: Promise<void>; confirmed: boolean | null }>>({});
+  const saveHighlightPin = (next: boolean | null) => {
     const photoId = currentPhoto.id;
-    const previous = currentPin;
+    const entry = pinSaves.current[photoId]
+      ?? (pinSaves.current[photoId] = { seq: 0, chain: Promise.resolve(), confirmed: currentPin });
+    const seq = ++entry.seq;
     setHighlightPins((prev) => ({ ...prev, [photoId]: next }));
-    try {
-      await photosService.setPhotoHighlight(eventId, photoId, next);
-      queryClient.invalidateQueries({ queryKey: ['admin-event-photos', String(eventId)] });
-    } catch {
-      setHighlightPins((prev) => ({ ...prev, [photoId]: previous }));
-      toast.error(t('highlights.pinError', 'Failed to save the highlight'));
-    }
+    entry.chain = entry.chain.then(async () => {
+      try {
+        await photosService.setPhotoHighlight(eventId, photoId, next);
+        entry.confirmed = next;
+        queryClient.invalidateQueries({ queryKey: ['admin-event-photos', String(eventId)] });
+      } catch {
+        if (seq === entry.seq) setHighlightPins((prev) => ({ ...prev, [photoId]: entry.confirmed }));
+        toast.error(t('highlights.pinError', 'Failed to save the highlight'));
+      }
+    });
+    return entry.chain;
   };
 
   const saveMark = async (patch: { rating?: number | null; color_label?: ColorLabel | null }) => {

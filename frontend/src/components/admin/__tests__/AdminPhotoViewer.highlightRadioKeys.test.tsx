@@ -91,4 +91,35 @@ describe('AdminPhotoViewer arrows on the highlight radios', () => {
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     expect(screen.getAllByText('b.jpg').length).toBeGreaterThan(0);
   });
+
+  it('keeps a newer saved choice when an older save fails, and saves one at a time', async () => {
+    const set = vi.mocked(photosService.setPhotoHighlight);
+    let failFirst!: (e: Error) => void;
+    set.mockReset();
+    set.mockImplementationOnce(() => new Promise((_, reject) => { failFirst = reject; }));
+    set.mockImplementationOnce((_e, _p, h) => Promise.resolve(h));
+    renderViewer();
+    fireEvent.click(screen.getByRole('radio', { name: 'Always' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Never' }));
+    // The second save waits for the first, so the server ends on the last choice.
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(set).toHaveBeenCalledTimes(1);
+    failFirst(new Error('network'));
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(2));
+    expect(set).toHaveBeenLastCalledWith(1, 1, false);
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Never' })).toHaveAttribute('aria-checked', 'true'));
+  });
+
+  it('rolls the newest failed choice back to the last saved value', async () => {
+    const set = vi.mocked(photosService.setPhotoHighlight);
+    set.mockReset();
+    set.mockImplementationOnce((_e, _p, h) => Promise.resolve(h));
+    set.mockImplementationOnce(() => Promise.reject(new Error('network')));
+    renderViewer();
+    fireEvent.click(screen.getByRole('radio', { name: 'Always' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Never' }));
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Always' })).toHaveAttribute('aria-checked', 'true'));
+  });
 });
