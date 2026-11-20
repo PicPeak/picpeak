@@ -20,6 +20,30 @@ export interface AdminGuestStats {
   reactions: number;
   color_labels: number;
   distinct_photos: number;
+  // Views and downloads (issue 2503), counted while the gallery asks guests
+  // who they are before downloading. Optional: older backends omit them.
+  views?: number;
+  /** Distinct photos downloaded one by one. */
+  downloads?: number;
+  /** Archives: the whole gallery, a selection or a prepared download. */
+  zip_downloads?: number;
+}
+
+/** One download of a guest (issue 2503); `at` is an ISO instant. */
+export interface AdminGuestDownload {
+  kind: 'photo' | 'all' | 'selected' | 'archive';
+  photo_id: number | null;
+  /** null for an archive, or a photo deleted since. */
+  filename: string | null;
+  at: string | null;
+}
+
+export interface AdminGuestActivity {
+  views: number;
+  photo_downloads: number;
+  zip_downloads: number;
+  last_activity_at: string | null;
+  downloads: AdminGuestDownload[];
 }
 
 export interface AdminGuest {
@@ -36,6 +60,8 @@ export interface AdminGuest {
   // grouping key; null for everyone else.
   duplicate_group?: string | null;
   stats: AdminGuestStats;
+  /** The guest's last logged view or download (issue 2503). */
+  last_activity_at?: string | null;
 }
 
 export interface AdminGuestPhoto {
@@ -69,6 +95,7 @@ export interface AdminGuestDetail {
   guest: AdminGuest;
   selections: AdminGuestSelections;
   favorite_lists?: AdminGuestFavoriteList[];
+  activity?: AdminGuestActivity;
 }
 
 export interface AggregatePhoto extends AdminGuestPhoto {
@@ -99,6 +126,13 @@ class GuestsService {
   async getGuestMe(slug: string): Promise<{ guest: GuestIdentity }> {
     const response = await api.get(`/gallery/${slug}/guest/me`);
     return response.data;
+  }
+
+  // A short-lived ticket naming this guest on a download the browser
+  // navigates to (issue 2503): such a request carries no x-guest-token.
+  async getDownloadTicket(slug: string): Promise<string> {
+    const response = await api.post(`/gallery/${slug}/guest/download-ticket`);
+    return response.data.ticket;
   }
 
   async forgetMe(slug: string): Promise<{ success: boolean }> {

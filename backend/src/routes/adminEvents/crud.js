@@ -1132,6 +1132,10 @@ module.exports = (router) => {
           // back in 'simple' would drop the shared tag on a gallery duplicated
           // precisely to reuse its proofing setup.
           identity_mode: sourceFeedback.identity_mode || 'simple',
+          // Guest identity before downloading and the prompt's privacy note
+          // (issue 2503): a clone that dropped them would download anonymously.
+          require_guest_for_download: sourceFeedback.require_guest_for_download ?? false,
+          guest_privacy_text: sourceFeedback.guest_privacy_text ?? null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });

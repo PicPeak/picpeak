@@ -254,7 +254,10 @@ const corsOptions = {
   //
   // X-Request-Id carries the correlation id (middleware/requestId.js) that an
   // admin can quote from an error message.
-  exposedHeaders: ['Content-Disposition', 'Retry-After', 'X-Request-Id', 'X-Poster-Pending'],
+  //
+  // X-Error-Code names a download refused for a missing guest identity
+  // (issue 2503), where the HEAD preflight of a direct download has no body.
+  exposedHeaders: ['Content-Disposition', 'Retry-After', 'X-Request-Id', 'X-Poster-Pending', 'X-Error-Code'],
 };
 
 // Only attach CORS to API endpoints, not static assets

@@ -17,7 +17,7 @@ import { useGalleryDialog } from './hooks/useGalleryDialog';
  */
 export const GuestRecoveryModal: React.FC = () => {
   const { t } = useTranslation();
-  const { recoveryOpen, recoveryReason, closeRecovery, recoverRequest, recoverVerify, openPrompt } =
+  const { recoveryOpen, recoveryReason, closeRecovery, recoverRequest, recoverVerify, switchToPrompt } =
     useGuestIdentity();
 
   const [step, setStep] = useState<'email' | 'code'>('email');
@@ -46,8 +46,7 @@ export const GuestRecoveryModal: React.FC = () => {
 
   const backToPrompt = () => {
     reset();
-    closeRecovery();
-    openPrompt();
+    switchToPrompt();
   };
 
   const handleRequestCode = async (e: React.FormEvent) => {
@@ -91,7 +90,8 @@ export const GuestRecoveryModal: React.FC = () => {
   if (!recoveryOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    // Above the download dialog, as the name prompt it is reached from (issue 2503).
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/50" onClick={handleClose} />
       <div
         ref={panelRef}

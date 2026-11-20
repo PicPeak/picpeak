@@ -687,6 +687,9 @@
       "nameTaken": "Ya tienes una lista con este nombre.",
       "limitReached": "Puedes tener hasta {{count}} listas.",
       "saveError": "No se pudo guardar la lista."
+    },
+    "guestPrompt": {
+      "downloadDescription": "Antes de descargar, indique al fotógrafo quién es. Sus descargas se guardan con este nombre."
     }
   },
   "categories": {
@@ -2561,7 +2564,9 @@
     },
     "guests": {
       "columns": {
-        "colorLabels": "Etiquetas de color"
+        "colorLabels": "Etiquetas de color",
+        "views": "Visitas",
+        "downloads": "Descargas"
       },
       "detail": {
         "labeled": "Etiquetas de color",
@@ -2573,8 +2578,19 @@
         "showInPhotos": "Ver en fotos",
         "clearListFilter": "Mostrar todas las fotos",
         "listFilterNamed": "Se muestran las fotos de {{name}}.",
-        "listFilter": "Se muestran las fotos de una lista de favoritos."
-      }
+        "listFilter": "Se muestran las fotos de una lista de favoritos.",
+        "downloads": "Descargas",
+        "noDownloads": "No hay descargas registradas. Las descargas se registran por invitado mientras «Exigir la identidad del invitado para descargar» está activado.",
+        "deletedPhoto": "Foto eliminada",
+        "views": "Visitas: {{count}}",
+        "downloadSummary": "Fotos descargadas: {{photos}} · Descargas ZIP: {{zips}}",
+        "zip": {
+          "all": "Galería completa (ZIP)",
+          "selected": "Selección (ZIP)",
+          "archive": "Descarga preparada (ZIP)"
+        }
+      },
+      "zipCount": "+{{count}} ZIP"
     },
     "catalogedMedia": "{{size}} catalogados",
     "storageUnavailable": "no disponible",
@@ -3555,7 +3571,12 @@
       "selectionSubmit": "Finalizar selección",
       "selectionSubmitDesc": "Los invitados entregan sus me gusta o favoritos cuando terminan. Su selección queda bloqueada hasta que la reabras, y recibes un aviso",
       "annotations": "Dibujar en las fotos",
-      "annotationsDesc": "Los invitados pueden dibujar en una foto y adjuntar el dibujo a su comentario. Requiere comentarios"
+      "annotationsDesc": "Los invitados pueden dibujar en una foto y adjuntar el dibujo a su comentario. Requiere comentarios",
+      "requireGuestForDownload": "Exigir la identidad del invitado para descargar",
+      "requireGuestForDownloadDesc": "Los invitados introducen su nombre antes de cualquier descarga. Las visitas y descargas se muestran entonces por invitado en Invitados.",
+      "guestPrivacyText": "Aviso de privacidad en la solicitud de nombre",
+      "guestPrivacyTextPlaceholder": "p. ej. Solo usamos su nombre para saber quién descargó qué fotos. Puede pedirnos que lo eliminemos en cualquier momento.",
+      "guestPrivacyTextHint": "Opcional. Se muestra a los invitados cuando se les pide su nombre."
     },
     "colorLabels": {
       "red": "Rojo",

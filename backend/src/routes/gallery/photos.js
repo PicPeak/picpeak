@@ -14,7 +14,7 @@ router.param('photoId', (req, res, next, value) => {
   next();
 });
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
-const { resolveGuest, scopeGuestToFeedback } = require('../../middleware/guestAuth');
+const { resolveGuest, scopeGuestToFeedback, viewGuestId } = require('../../middleware/guestAuth');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const { generateGuestIdentifier } = require('../../middleware/feedbackRateLimit');
 const { errorResponse } = require('../../utils/routeHelpers');
@@ -63,11 +63,15 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, scopeGuestToFeedb
     // Admin preview (#868) is excluded from guest analytics + the "gallery
     // opened" bell — it's the photographer looking at their own gallery.
     if (req.accessLevel !== 'slideshow' && !req.isAdminPreview && !(Number(req.query.page) > 1)) {
+      // Under the guest's id only while the gallery asks guests who they are
+      // before downloading (issue 2503); anonymous otherwise, as before.
+      const guestId = await viewGuestId(req);
       await db('access_logs').insert({
         event_id: req.event.id,
         ip_address: req.ip,
         user_agent: req.headers['user-agent'],
-        action: 'view'
+        action: 'view',
+        ...(guestId ? { guest_id: guestId } : {}),
       });
       notifyGalleryOpened(req.event, req);
     }

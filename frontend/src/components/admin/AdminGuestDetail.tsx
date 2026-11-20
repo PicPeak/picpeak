@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Heart, Bookmark, Star, MessageCircle, Smile, Palette, ExternalLink } from 'lucide-react';
+import { Heart, Bookmark, Star, MessageCircle, Smile, Palette, ExternalLink, Eye, Download } from 'lucide-react';
 import { Loading, Modal } from '../common';
-import { guestsService, AdminGuest, type AdminGuestFavoriteList } from '../../services/guests.service';
+import { guestsService, AdminGuest, type AdminGuestFavoriteList, type AdminGuestDownload } from '../../services/guests.service';
 import { AuthenticatedImage } from '../common/AuthenticatedImage';
 import { buildResourceUrl } from '../../utils/url';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -15,7 +15,7 @@ interface AdminGuestDetailProps {
   onClose: () => void;
 }
 
-type Tab = 'all' | 'liked' | 'favorited' | 'rated' | 'commented' | 'reacted' | 'labeled';
+type Tab = 'all' | 'liked' | 'favorited' | 'rated' | 'commented' | 'reacted' | 'labeled' | 'downloads';
 
 export const AdminGuestDetail: React.FC<AdminGuestDetailProps> = ({ eventId, guest, onClose }) => {
   const { t } = useTranslation();
@@ -39,6 +39,12 @@ export const AdminGuestDetail: React.FC<AdminGuestDetailProps> = ({ eventId, gue
   const commented = selections?.commented || [];
   const reacted = selections?.reacted || [];
   const labeled = selections?.labeled || [];
+  // Views and downloads (issue 2503).
+  const activity = data?.activity;
+  const downloads = activity?.downloads || [];
+  const downloadLabel = (d: AdminGuestDownload) => (d.kind === 'photo'
+    ? d.filename ?? t('admin.guests.detail.deletedPhoto', 'Deleted photo')
+    : t(`admin.guests.detail.zip.${d.kind}`, d.kind));
   // Named favourite lists (issue 2303). A photo in two lists is one favourite
   // in the count, and shows under each list in the Favorites tab.
   const favoriteLists = data?.favorite_lists || [];
@@ -165,9 +171,27 @@ export const AdminGuestDetail: React.FC<AdminGuestDetailProps> = ({ eventId, gue
             </div>
           </div>
 
+          {/* Views and downloads (issue 2503) */}
+          {activity && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mb-4 text-sm text-body">
+              <span className="inline-flex items-center gap-1">
+                <Eye className="w-4 h-4 text-muted" />
+                {t('admin.guests.detail.views', { count: activity.views, defaultValue: 'Views: {{count}}' })}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Download className="w-4 h-4 text-muted" />
+                {t('admin.guests.detail.downloadSummary', {
+                  photos: activity.photo_downloads,
+                  zips: activity.zip_downloads,
+                  defaultValue: 'Downloaded photos: {{photos}} · ZIP downloads: {{zips}}',
+                })}
+              </span>
+            </div>
+          )}
+
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-line mb-4">
-            {(['all', 'liked', 'favorited', 'rated', 'commented', 'reacted', 'labeled'] as const).map((k) => (
+          <div className="flex flex-wrap gap-1 border-b border-line mb-4">
+            {(['all', 'liked', 'favorited', 'rated', 'commented', 'reacted', 'labeled', 'downloads'] as const).map((k) => (
               <button
                 key={k}
                 type="button"
@@ -218,7 +242,23 @@ export const AdminGuestDetail: React.FC<AdminGuestDetailProps> = ({ eventId, gue
           )}
 
           {/* Content */}
-          {tab === 'favorited' && hasNamedLists ? (
+          {tab === 'downloads' ? (
+            downloads.length === 0 ? (
+              <div className="text-sm text-muted text-center py-8">
+                {t('admin.guests.detail.noDownloads', 'No downloads recorded. Downloads are recorded per guest while "Require guest identity to download" is on.')}
+              </div>
+            ) : (
+              <ul className="divide-y divide-line border border-line rounded">
+                {downloads.map((d, idx) => (
+                  <li key={idx} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                    <Download className="w-4 h-4 text-muted shrink-0" />
+                    <span className="font-medium text-heading min-w-0 truncate">{downloadLabel(d)}</span>
+                    {d.at && <span className="ml-auto text-muted">{fmtDateTime(d.at)}</span>}
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : tab === 'favorited' && hasNamedLists ? (
             <div className="space-y-4">
               {favoriteLists.filter((list) => list.count > 0).map((list) => (
                 <div key={list.id ?? 'default'}>

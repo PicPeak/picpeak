@@ -56,6 +56,19 @@ export class SelectionTooLargeError extends DownloadLimitError {
 export const isSelectionTooLargeError = (error: unknown): error is SelectionTooLargeError =>
   error instanceof SelectionTooLargeError;
 
+// The guest closed the name prompt a download opened (issue 2503,
+// utils/downloadIdentity.ts). A DownloadLimitError too, for the same reason:
+// there is nothing to report, so callers skip their generic "download failed".
+export class DownloadIdentityCancelledError extends DownloadLimitError {
+  constructor() {
+    super({});
+    this.name = 'DownloadIdentityCancelledError';
+  }
+}
+
+export const isDownloadIdentityCancelled = (error: unknown): error is DownloadIdentityCancelledError =>
+  error instanceof DownloadIdentityCancelledError;
+
 export function selectionTooLargeMessage(limit?: number): string {
   const fallback = 'You can download up to {{limit}} photos at once. Please select fewer.';
   return i18n.t('gallery.downloadSelectionTooLarge', { limit: limit ?? 500, defaultValue: fallback })
@@ -85,7 +98,7 @@ function blobText(blob: Blob): Promise<string> {
   });
 }
 
-async function readErrorBody(data: unknown): Promise<Record<string, unknown> | null> {
+export async function readErrorBody(data: unknown): Promise<Record<string, unknown> | null> {
   if (!data) return null;
   // Downloads request `responseType: 'blob'`, so the JSON error arrives as one.
   if (typeof Blob !== 'undefined' && data instanceof Blob) {

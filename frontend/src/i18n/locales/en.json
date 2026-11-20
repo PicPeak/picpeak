@@ -1622,7 +1622,8 @@
       "emailPlaceholder": "you@example.com",
       "submit": "Continue",
       "returningHint": "Been here before? Your earlier picks are still saved.",
-      "recoverPicks": "Get them back"
+      "recoverPicks": "Get them back",
+      "downloadDescription": "Please tell the photographer who you are before downloading. Your downloads are saved under this name."
     },
     "footer": {
       "forgetMeConfirm": "Your name and selections will be removed from this gallery.",
@@ -5508,7 +5509,9 @@
         "ratings": "Ratings",
         "reactions": "Reactions",
         "lastSeen": "Last seen",
-        "colorLabels": "Color labels"
+        "colorLabels": "Color labels",
+        "views": "Views",
+        "downloads": "Downloads"
       },
       "view": "View details",
       "export": "Export",
@@ -5532,7 +5535,17 @@
         "showInPhotos": "Show in photos",
         "clearListFilter": "Show all photos",
         "listFilterNamed": "Showing the photos in {{name}}.",
-        "listFilter": "Showing the photos in one favorite list."
+        "listFilter": "Showing the photos in one favorite list.",
+        "downloads": "Downloads",
+        "noDownloads": "No downloads recorded. Downloads are recorded per guest while \"Require guest identity to download\" is on.",
+        "deletedPhoto": "Deleted photo",
+        "views": "Views: {{count}}",
+        "downloadSummary": "Downloaded photos: {{photos}} · ZIP downloads: {{zips}}",
+        "zip": {
+          "all": "Whole gallery (ZIP)",
+          "selected": "Selection (ZIP)",
+          "archive": "Prepared download (ZIP)"
+        }
       },
       "inviteStatus": {
         "pending": "Pending",
@@ -5547,7 +5560,8 @@
       "mergePickKeepHint": "Pick the entry to keep",
       "mergeKeepColumn": "Keep",
       "mergeKeepRow": "Keep {{name}}",
-      "mergeInclude": "Include {{name}} in the merge"
+      "mergeInclude": "Include {{name}} in the merge",
+      "zipCount": "+{{count}} ZIP"
     },
     "analytics": "Analytics",
     "activities": {
@@ -7242,7 +7256,12 @@
       "selectionSubmit": "Finish selection",
       "selectionSubmitDesc": "Guests hand in their likes or favorites when they are done. Their picks are then locked until you reopen them, and you are notified",
       "annotations": "Drawing on photos",
-      "annotationsDesc": "Guests can draw on a photo and attach the drawing to their comment. Needs comments"
+      "annotationsDesc": "Guests can draw on a photo and attach the drawing to their comment. Needs comments",
+      "requireGuestForDownload": "Require guest identity to download",
+      "requireGuestForDownloadDesc": "Guests enter their name before any download. Views and downloads then show per guest under Guests.",
+      "guestPrivacyText": "Privacy note in the guest prompt",
+      "guestPrivacyTextPlaceholder": "e.g. We use your name only to see who downloaded which photos. Ask us any time to remove it.",
+      "guestPrivacyTextHint": "Optional. Shown to guests when they are asked for their name."
     },
     "moderated": "Feedback moderated",
     "deleted": "Feedback deleted",

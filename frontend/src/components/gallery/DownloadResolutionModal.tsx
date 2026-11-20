@@ -16,6 +16,7 @@ import {
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import type { StartedArchive } from '../../contexts/ArchiveDownloadContext';
 import { useGalleryDialog } from './hooks/useGalleryDialog';
+import { holdGalleryMount, isDownloadIdentityCancelled } from '../../utils/downloadIdentity';
 
 /**
  * Resolution picker for gallery downloads (#858).
@@ -111,8 +112,20 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
   // invalidates all replies and polling loops belonging to the old one.
   const generation = useRef(0);
   useEffect(() => () => { generation.current += 1; }, []);
+  // A guest identity replaced while this dialog is open (issue 2503) rebuilds
+  // the gallery only once it closes: the rebuild would unmount it mid-job.
+  useEffect(() => holdGalleryMount(slug), [slug]);
 
+  // Read through a ref: reportError feeds the polling effects, which must not
+  // restart whenever the parent hands in a new onClose.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   const reportError = useCallback((err: unknown) => {
+    // The guest closed the name prompt (issue 2503): nothing to report.
+    if (isDownloadIdentityCancelled(err)) {
+      closeRef.current();
+      return;
+    }
     setError(isSelectionTooLargeError(err)
       ? selectionTooLargeMessage(err.info.limit)
       : isDownloadLimitError(err)
@@ -159,11 +172,16 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
     // re-resizing and re-packaging the entire gallery for the same bytes.
     if (!photoIds && zipReady && !isGalleryLimited(slug) && selected === standardResolution) {
       try {
-        galleryService.downloadCachedArchive(slug);
+        await galleryService.downloadCachedArchive(slug);
         onDownloaded?.();
       } catch (err) {
-        // The limit refusal already told the guest why (issue 1560).
-        if (!isDownloadLimitError(err)) throw err;
+        // The limit refusal already told the guest why (issue 1560), and a
+        // closed name prompt needs no message. Anything else (the download
+        // ticket failing, issue 2503) shows here: this is a click handler.
+        if (!isDownloadLimitError(err)) {
+          reportError(err);
+          return;
+        }
       }
       onClose();
       return;
@@ -250,8 +268,8 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
         setPhase('error');
         return;
       }
-      if (photoIds) galleryService.downloadJobFile(slug, token, part, true);
-      else galleryService.downloadJobFile(slug, token, part);
+      if (photoIds) await galleryService.downloadJobFile(slug, token, part, true);
+      else await galleryService.downloadJobFile(slug, token, part);
       onDownloaded?.();
       onClose();
     } catch (err) {

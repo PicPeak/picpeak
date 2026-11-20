@@ -61,7 +61,10 @@ const FEEDBACK_SETTINGS_COLUMNS = [
   'show_feedback_to_guests',
   'identity_mode',
   'max_favorites_per_guest',
-  'max_likes_per_guest'
+  'max_likes_per_guest',
+  // Who viewed and downloaded what (issue 2503, migration 368).
+  'require_guest_for_download',
+  'guest_privacy_text'
 ];
 
 /**
@@ -177,6 +180,8 @@ class FeedbackService {
           identity_mode: 'simple',
           max_favorites_per_guest: null,
           max_likes_per_guest: null,
+          require_guest_for_download: false,
+          guest_privacy_text: null,
         };
       }
 
@@ -1795,6 +1800,9 @@ class FeedbackService {
         // Their favourite lists (issue 2303) go the same way as the
         // favourites in them: kept, detached from the person.
         await favoriteLists.anonymizeGuest(guestId, trx);
+        // Their views and downloads (issue 2503) the same way: the rows stay,
+        // so the gallery's totals do not drop, but no longer name the guest.
+        await trx('access_logs').where('guest_id', guestId).update({ guest_id: null });
       });
 
       for (const pid of photoIds) {

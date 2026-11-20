@@ -2132,10 +2132,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       // and finishing a selection needs it too. Without the provider a guest
       // in guest identity mode was never asked for a name and got a 401.
       <PrintSalesProvider slug={slug} enabled={viaCustomer} photos={data?.photos || []} selectedPhotoIds={selectedPhotos}>
-      <GuestIdentityProvider slug={slug} identityMode={identityMode}>
+      <GuestIdentityProvider slug={slug} identityMode={identityMode} requireForDownload={!!feedbackSettings?.require_guest_for_download} downloadExempt={viaCustomer || isClient}>
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
-        <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
+        <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} privacyText={feedbackSettings?.guest_privacy_text} />
         <GuestRecoveryModal />
         <PhotoSalesProvider
           photos={data?.photos}
@@ -2410,7 +2410,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   return withDownloadProviders(
     <PrintSalesProvider slug={slug} enabled={viaCustomer} photos={data?.photos || []} selectedPhotoIds={selectedPhotos}>
-    <GuestIdentityProvider slug={slug} identityMode={identityMode}>
+    <GuestIdentityProvider slug={slug} identityMode={identityMode} requireForDownload={!!feedbackSettings?.require_guest_for_download} downloadExempt={viaCustomer || isClient}>
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GridDensityOffered.Provider value={densityOffered}>
@@ -2422,7 +2422,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         }}
       >
 
-      <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
+      <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} privacyText={feedbackSettings?.guest_privacy_text} />
       <GuestRecoveryModal />
       {/* Sidebar for non-grid layouts */}
       {showSidebar ? (

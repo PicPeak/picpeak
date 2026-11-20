@@ -487,7 +487,8 @@
       "emailPlaceholder": "u@voorbeeld.nl",
       "submit": "Doorgaan",
       "returningHint": "Al eerder hier geweest? Uw eerdere keuzes zijn nog bewaard.",
-      "recoverPicks": "Keuzes terughalen"
+      "recoverPicks": "Keuzes terughalen",
+      "downloadDescription": "Laat de fotograaf weten wie u bent voordat u downloadt. Uw downloads worden onder deze naam opgeslagen."
     },
     "footer": {
       "forgetMeConfirm": "Uw naam en selecties worden verwijderd uit deze galerij.",
@@ -2634,7 +2635,9 @@
         "ratings": "Beoordelingen",
         "reactions": "Reacties",
         "lastSeen": "Laatste bezoek",
-        "colorLabels": "Kleurlabels"
+        "colorLabels": "Kleurlabels",
+        "views": "Weergaven",
+        "downloads": "Downloads"
       },
       "view": "Details bekijken",
       "export": "Exporteren",
@@ -2658,7 +2661,17 @@
         "showInPhotos": "Tonen bij foto’s",
         "clearListFilter": "Alle foto’s tonen",
         "listFilterNamed": "De foto’s in {{name}} worden getoond.",
-        "listFilter": "De foto’s in één favorietenlijst worden getoond."
+        "listFilter": "De foto’s in één favorietenlijst worden getoond.",
+        "downloads": "Downloads",
+        "noDownloads": "Geen downloads geregistreerd. Downloads worden per gast geregistreerd zolang \"Gastidentiteit vereisen om te downloaden\" aan staat.",
+        "deletedPhoto": "Verwijderde foto",
+        "views": "Weergaven: {{count}}",
+        "downloadSummary": "Gedownloade foto's: {{photos}} · ZIP-downloads: {{zips}}",
+        "zip": {
+          "all": "Hele galerij (ZIP)",
+          "selected": "Selectie (ZIP)",
+          "archive": "Voorbereide download (ZIP)"
+        }
       },
       "inviteStatus": {
         "pending": "In behandeling",
@@ -2673,7 +2686,8 @@
       "mergePickKeepHint": "Kies het item om te behouden",
       "mergeKeepColumn": "Behouden",
       "mergeKeepRow": "{{name}} behouden",
-      "mergeInclude": "{{name}} in de samenvoeging opnemen"
+      "mergeInclude": "{{name}} in de samenvoeging opnemen",
+      "zipCount": "+{{count}} ZIP"
     },
     "analytics": "Analyse",
     "activities": {
@@ -3655,7 +3669,12 @@
       "selectionSubmit": "Selectie afronden",
       "selectionSubmitDesc": "Gasten leveren hun likes of favorieten in wanneer ze klaar zijn. Hun selectie is dan vergrendeld tot je haar heropent, en je krijgt een melding",
       "annotations": "Tekenen op foto's",
-      "annotationsDesc": "Gasten kunnen op een foto tekenen en de tekening aan hun opmerking toevoegen. Vereist opmerkingen"
+      "annotationsDesc": "Gasten kunnen op een foto tekenen en de tekening aan hun opmerking toevoegen. Vereist opmerkingen",
+      "requireGuestForDownload": "Gastidentiteit vereisen om te downloaden",
+      "requireGuestForDownloadDesc": "Gasten vullen hun naam in vóór elke download. Weergaven en downloads verschijnen dan per gast onder Gasten.",
+      "guestPrivacyText": "Privacyverklaring in de naamvraag",
+      "guestPrivacyTextPlaceholder": "bijv. We gebruiken uw naam alleen om te zien wie welke foto's heeft gedownload. U kunt ons altijd vragen deze te verwijderen.",
+      "guestPrivacyTextHint": "Optioneel. Wordt aan gasten getoond wanneer om hun naam wordt gevraagd."
     },
     "settingsUpdated": "Feedbackinstellingen bijgewerkt",
     "settingsUpdateError": "Bijwerken instellingen mislukt",

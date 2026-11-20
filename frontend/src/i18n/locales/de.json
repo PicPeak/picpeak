@@ -2383,7 +2383,8 @@
       "emailPlaceholder": "Sie@beispiel.de",
       "submit": "Weiter",
       "returningHint": "Schon einmal hier gewesen? Ihre bisherige Auswahl ist noch gespeichert.",
-      "recoverPicks": "Auswahl zurückholen"
+      "recoverPicks": "Auswahl zurückholen",
+      "downloadDescription": "Bitte sagen Sie dem Fotografen vor dem Herunterladen, wer Sie sind. Ihre Downloads werden unter diesem Namen gespeichert."
     },
     "footer": {
       "forgetMeConfirm": "Ihr Name und Ihre Auswahl werden aus dieser Galerie entfernt.",
@@ -6183,7 +6184,9 @@
         "ratings": "Bewertungen",
         "reactions": "Reaktionen",
         "lastSeen": "Zuletzt gesehen",
-        "colorLabels": "Farbmarkierungen"
+        "colorLabels": "Farbmarkierungen",
+        "views": "Aufrufe",
+        "downloads": "Downloads"
       },
       "view": "Details anzeigen",
       "export": "Exportieren",
@@ -6207,7 +6210,17 @@
         "showInPhotos": "In Fotos zeigen",
         "clearListFilter": "Alle Fotos zeigen",
         "listFilterNamed": "Angezeigt werden die Fotos in {{name}}.",
-        "listFilter": "Angezeigt werden die Fotos einer Favoritenliste."
+        "listFilter": "Angezeigt werden die Fotos einer Favoritenliste.",
+        "downloads": "Downloads",
+        "noDownloads": "Keine Downloads erfasst. Downloads werden pro Gast erfasst, solange „Gast-Identität zum Herunterladen verlangen“ aktiv ist.",
+        "deletedPhoto": "Gelöschtes Foto",
+        "views": "Aufrufe: {{count}}",
+        "downloadSummary": "Heruntergeladene Fotos: {{photos}} · ZIP-Downloads: {{zips}}",
+        "zip": {
+          "all": "Ganze Galerie (ZIP)",
+          "selected": "Auswahl (ZIP)",
+          "archive": "Vorbereiteter Download (ZIP)"
+        }
       },
       "inviteStatus": {
         "pending": "Ausstehend",
@@ -6222,7 +6235,8 @@
       "mergePickKeepHint": "Eintrag zum Behalten wählen",
       "mergeKeepColumn": "Behalten",
       "mergeKeepRow": "{{name}} behalten",
-      "mergeInclude": "{{name}} in die Zusammenführung einbeziehen"
+      "mergeInclude": "{{name}} in die Zusammenführung einbeziehen",
+      "zipCount": "+{{count}} ZIP"
     },
     "analytics": "Analytik",
     "activities": {
@@ -7187,7 +7201,12 @@
       "selectionSubmit": "Auswahl abschließen",
       "selectionSubmitDesc": "Gäste reichen ihre Likes oder Favoriten ein, wenn sie fertig sind. Ihre Auswahl ist dann gesperrt, bis du sie wieder öffnest, und du wirst benachrichtigt",
       "annotations": "Zeichnen auf Fotos",
-      "annotationsDesc": "Gäste können auf ein Foto zeichnen und die Zeichnung an ihren Kommentar anhängen. Benötigt Kommentare"
+      "annotationsDesc": "Gäste können auf ein Foto zeichnen und die Zeichnung an ihren Kommentar anhängen. Benötigt Kommentare",
+      "requireGuestForDownload": "Gast-Identität zum Herunterladen verlangen",
+      "requireGuestForDownloadDesc": "Gäste geben vor jedem Download ihren Namen ein. Aufrufe und Downloads erscheinen dann pro Gast unter Gäste.",
+      "guestPrivacyText": "Datenschutzhinweis in der Gastabfrage",
+      "guestPrivacyTextPlaceholder": "z. B. Wir nutzen Ihren Namen nur, um zu sehen, wer welche Fotos heruntergeladen hat. Sie können die Löschung jederzeit verlangen.",
+      "guestPrivacyTextHint": "Optional. Wird Gästen angezeigt, wenn sie nach ihrem Namen gefragt werden."
     },
     "moderated": "Feedback moderiert",
     "deleted": "Feedback gelöscht",
