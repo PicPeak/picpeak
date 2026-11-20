@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.207.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.206.0-beta.0...v3.207.0-beta.0) (2026-11-20)
+
+
+### Features
+
+* **feedback:** optionally require guest identity before downloading, with views and downloads per guest ([#2581](https://github.com/PicPeak/picpeak/issues/2581)) ([621bbe6](https://github.com/PicPeak/picpeak/commit/621bbe690c3c0d1e9f23a1ed216e5910ba579b39))
+* **gallery:** chapter markers for categories ([#2582](https://github.com/PicPeak/picpeak/issues/2582)) ([98df1c6](https://github.com/PicPeak/picpeak/commit/98df1c62fb0de64c39c700faaf24702332f1219e))
+* **gallery:** highlights decide which photos get the larger tiles ([#2583](https://github.com/PicPeak/picpeak/issues/2583)) ([3377ee9](https://github.com/PicPeak/picpeak/commit/3377ee9c87c8af992a000607a42d0abd7a6b0bbc))
+
 ## [3.206.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.205.2-beta.0...v3.206.0-beta.0) (2026-11-20)
 
 
