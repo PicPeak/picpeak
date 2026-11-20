@@ -8,13 +8,14 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
+import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle, Copy, Hash, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, Card, Input } from '../../../components/common';
 import { useConfirm } from '../../../components/common/ConfirmDialog';
 import { eventsService } from '../../../services/events.service';
 import { usePermission } from '../../../hooks/usePermission';
-import { usePublicSettings } from '../../../hooks/usePublicSettings';
+import { PUBLIC_SETTINGS_QUERY_KEY, usePublicSettings } from '../../../hooks/usePublicSettings';
 import { isGalleryPublic } from '../../../utils/accessControl';
 import { buildShareLinkUrl } from '../../../utils/url';
 import { eventCodeUrl, formatEventCode, isValidEventCode, normalizeEventCode } from '../../../utils/eventCode';
@@ -49,6 +50,7 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
   const { t } = useTranslation();
   const confirm = useConfirm();
   const canEdit = usePermission('events.edit');
+  const queryClient = useQueryClient();
   const { data: publicSettings, isLoading: settingsLoading } = usePublicSettings();
   const [code, setCode] = useState<string | null>(event.access_code ?? null);
   const [editing, setEditing] = useState(false);
@@ -65,6 +67,13 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
   const codesEnabled = publicSettings?.general_event_codes_enabled === true;
 
   const archived = Boolean(event.is_archived);
+
+  // Codes were switched off elsewhere: say so and reload the settings, so the
+  // card turns into its disabled state.
+  const handleCodesDisabled = () => {
+    toast.error(t('events.eventCode.disabled', 'Event codes are switched off. Turn them on under Settings → General.'));
+    queryClient.invalidateQueries({ queryKey: PUBLIC_SETTINGS_QUERY_KEY });
+  };
 
   const handleCopy = async (kind: 'code' | 'link') => {
     if (!code) return;
@@ -94,7 +103,7 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
       toast.success(t('events.eventCode.saved', 'Event code saved'));
       refetchEvent?.();
     } catch (err) {
-      if (codesDisabledError(err)) toast.error(t('events.eventCode.disabled', 'Event codes are switched off. Turn them on under Settings → General.'));
+      if (codesDisabledError(err)) handleCodesDisabled();
       else toast.error(t('events.eventCode.failed', 'Could not save the event code'));
     } finally {
       setBusy(false);
@@ -141,7 +150,7 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (codesDisabledError(err)) {
         setEditing(false);
-        toast.error(t('events.eventCode.disabled', 'Event codes are switched off. Turn them on under Settings → General.'));
+        handleCodesDisabled();
       } else if (status === 409) setError(t('events.eventCode.taken', 'Another gallery already uses this code.'));
       else if (status === 400) setError(t('events.eventCode.invalid', 'Use 6 to 12 letters and digits, without 0, O, 1, I or L.'));
       else setError(t('events.eventCode.failed', 'Could not save the event code'));

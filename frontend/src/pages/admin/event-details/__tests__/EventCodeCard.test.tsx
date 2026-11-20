@@ -7,6 +7,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { toast } from 'react-toastify';
 import { EventCodeCard } from '../EventCodeCard';
@@ -16,9 +17,19 @@ const service = vi.hoisted(() => ({ regenerateAccessCode: vi.fn(), setAccessCode
 const perms = vi.hoisted(() => ({ edit: true }));
 const publicSettings = vi.hoisted(() => ({ enabled: true }));
 const confirmMock = vi.hoisted(() => vi.fn());
-vi.mock('../../../../hooks/usePublicSettings', () => ({
-  usePublicSettings: () => ({ data: { general_event_codes_enabled: publicSettings.enabled }, isLoading: false }),
-}));
+// A real query, so invalidating the public settings refetches them.
+vi.mock('../../../../hooks/usePublicSettings', async () => {
+  const { useQuery } = await import('@tanstack/react-query');
+  const PUBLIC_SETTINGS_QUERY_KEY = ['public-settings'] as const;
+  return {
+    PUBLIC_SETTINGS_QUERY_KEY,
+    usePublicSettings: () => useQuery({
+      queryKey: PUBLIC_SETTINGS_QUERY_KEY,
+      queryFn: async () => ({ general_event_codes_enabled: publicSettings.enabled }),
+      staleTime: Infinity,
+    }),
+  };
+});
 vi.mock('../../../../components/common/ConfirmDialog', () => ({ useConfirm: () => confirmMock }));
 vi.mock('../../../../services/events.service', () => ({ eventsService: service }));
 vi.mock('../../../../hooks/usePermission', () => ({ usePermission: () => perms.edit }));
@@ -29,7 +40,15 @@ vi.mock('react-i18next', () => ({
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const baseEvent = { id: 9, slug: 'wedding', require_password: true, is_archived: false, access_code: 'K7M4QX' } as unknown as Event;
-const renderCard = (over: Partial<Event> = {}) => render(<EventCodeCard event={{ ...baseEvent, ...over } as Event} />);
+const renderCard = (over: Partial<Event> = {}) => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData(['public-settings'], { general_event_codes_enabled: publicSettings.enabled });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <EventCodeCard event={{ ...baseEvent, ...over } as Event} />
+    </QueryClientProvider>,
+  );
+};
 
 describe('EventCodeCard', () => {
   beforeEach(() => {
@@ -118,19 +137,27 @@ describe('EventCodeCard', () => {
   it('says that codes are off when the server refuses a chosen code for that reason', async () => {
     service.setAccessCode.mockRejectedValue(Object.assign(new Error('off'), { response: { status: 409, data: { code: 'EVENT_CODES_DISABLED' } } }));
     renderCard();
+    publicSettings.enabled = false; // switched off in another session
     fireEvent.click(screen.getByText('events.eventCode.edit'));
     fireEvent.change(screen.getByLabelText('events.eventCode.customLabel'), { target: { value: 'NEWC22' } });
     fireEvent.click(screen.getByText('common.save'));
     await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith('events.eventCode.disabled'));
     expect(screen.queryByText('events.eventCode.taken')).toBeNull();
+    // The settings are refetched and the card turns into its disabled state.
+    expect(await screen.findByTestId('event-code-disabled')).toBeInTheDocument();
+    expect(screen.queryByTestId('event-code-value')).toBeNull();
+    expect(screen.queryByText('events.eventCode.edit')).toBeNull();
   });
 
   it('says that codes are off when the server refuses a new code for that reason', async () => {
     confirmMock.mockResolvedValue(true);
     service.regenerateAccessCode.mockRejectedValue(Object.assign(new Error('off'), { response: { status: 409, data: { code: 'EVENT_CODES_DISABLED' } } }));
     renderCard();
+    publicSettings.enabled = false; // switched off in another session
     fireEvent.click(screen.getByText('events.eventCode.regenerate'));
     await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith('events.eventCode.disabled'));
-    expect(screen.getByTestId('event-code-value')).toHaveTextContent('K7M-4QX');
+    expect(await screen.findByTestId('event-code-disabled')).toBeInTheDocument();
+    expect(screen.queryByTestId('event-code-value')).toBeNull();
+    expect(screen.queryByText('events.eventCode.copyLink')).toBeNull();
   });
 });
