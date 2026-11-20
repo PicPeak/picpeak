@@ -2,7 +2,8 @@
  * The event code card (issue 2495): shows the grouped code, saves a chosen
  * code (409 = taken, said in the field), removes a code, stays away from an
  * admin who may not hand out the gallery's links, and only says that codes
- * are off while the setting is off.
+ * are off while the setting is off. The print buttons download the /code
+ * table card and poster only while there is a code.
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -13,7 +14,9 @@ import { toast } from 'react-toastify';
 import { EventCodeCard } from '../EventCodeCard';
 import type { Event } from '../../../../types';
 
-const service = vi.hoisted(() => ({ regenerateAccessCode: vi.fn(), setAccessCode: vi.fn(), removeAccessCode: vi.fn() }));
+const service = vi.hoisted(() => ({
+  regenerateAccessCode: vi.fn(), setAccessCode: vi.fn(), removeAccessCode: vi.fn(), getQrPrintBlob: vi.fn(),
+}));
 const perms = vi.hoisted(() => ({ edit: true }));
 const publicSettings = vi.hoisted(() => ({ enabled: true }));
 const confirmMock = vi.hoisted(() => vi.fn());
@@ -34,7 +37,7 @@ vi.mock('../../../../components/common/ConfirmDialog', () => ({ useConfirm: () =
 vi.mock('../../../../services/events.service', () => ({ eventsService: service }));
 vi.mock('../../../../hooks/usePermission', () => ({ usePermission: () => perms.edit }));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'de-CH' } }),
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -55,6 +58,7 @@ describe('EventCodeCard', () => {
     service.regenerateAccessCode.mockReset();
     service.setAccessCode.mockReset();
     service.removeAccessCode.mockReset();
+    service.getQrPrintBlob.mockReset();
     confirmMock.mockReset();
     vi.mocked(toast.error).mockClear();
     perms.edit = true;
@@ -68,6 +72,36 @@ describe('EventCodeCard', () => {
     expect(screen.queryByTestId('event-code-value')).toBeNull();
     expect(screen.queryByText('events.eventCode.regenerate')).toBeNull();
     expect(screen.queryByText('events.eventCode.remove')).toBeNull();
+    expect(screen.queryByTestId('event-code-print')).toBeNull();
+  });
+
+  it('downloads the /code table card and poster with the code variant', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:print');
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    service.getQrPrintBlob.mockResolvedValue(new Blob(['%PDF']));
+    perms.edit = false; // printing needs no edit permission
+    renderCard();
+    fireEvent.click(screen.getByText('events.qrTableCard'));
+    await vi.waitFor(() => expect(service.getQrPrintBlob).toHaveBeenCalledWith(9, 'table-card', 'de', 'code'));
+    fireEvent.click(screen.getByText('events.qrPoster'));
+    await vi.waitFor(() => expect(service.getQrPrintBlob).toHaveBeenCalledWith(9, 'poster', 'de', 'code'));
+    expect(click).toHaveBeenCalledTimes(2);
+    click.mockRestore();
+  });
+
+  it('shows no print buttons while the gallery has no code', () => {
+    renderCard({ access_code: null } as Partial<Event>);
+    expect(screen.getByText('events.eventCode.none')).toBeInTheDocument();
+    expect(screen.queryByTestId('event-code-print')).toBeNull();
+    expect(screen.queryByText('events.qrTableCard')).toBeNull();
+  });
+
+  it('says so when a print download fails', async () => {
+    service.getQrPrintBlob.mockRejectedValue(new Error('409'));
+    renderCard();
+    fireEvent.click(screen.getByText('events.qrPoster'));
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith('errors.downloadFailed'));
   });
 
   it('removes the code after confirmation', async () => {

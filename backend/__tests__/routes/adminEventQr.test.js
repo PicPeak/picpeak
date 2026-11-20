@@ -2,6 +2,7 @@
  * HTTP tests for the gallery QR endpoints (#836):
  *   GET /api/admin/events/:id/qr        (PNG / SVG)
  *   GET /api/admin/events/:id/qr-print  (table-card / poster PDF)
+ *   GET /api/admin/events/:id/qr-print?variant=code  (fixed /code QR + event code, issue 2495)
  * Same real-SQLite harness as adminEvents.smoke.test.js.
  */
 const path = require('path');
@@ -17,6 +18,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'admin-events-qr-test-secret'
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const request = require('supertest');
+const QRCode = require('qrcode');
 const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken } = require('../integration/helpers/crmDb');
 
 async function insertEvent(db, adminId, over = {}) {
@@ -113,6 +115,73 @@ describe('admin event QR endpoints', () => {
     const eventId = await insertEvent(db, adminId, { share_link: '', share_token: null });
     const res = await auth(request(app).get(`/api/admin/events/${eventId}/qr`));
     expect(res.status).toBe(409);
+  });
+
+  describe('event-code variant (issue 2495)', () => {
+    async function setCodesEnabled(on) {
+      await db('app_settings').where({ setting_key: 'general_event_codes_enabled' }).del();
+      if (on !== undefined) {
+        await db('app_settings').insert({
+          setting_key: 'general_event_codes_enabled', setting_value: JSON.stringify(on),
+          setting_type: 'general', updated_at: new Date().toISOString(),
+        });
+      }
+    }
+    const printCode = (eventId, query = '') => auth(request(app)
+      .get(`/api/admin/events/${eventId}/qr-print?variant=code&origin=https://photos.example.com${query}`)).buffer();
+
+    afterEach(async () => {
+      jest.restoreAllMocks();
+      await setCodesEnabled(undefined);
+    });
+
+    it.each(['table-card', 'poster'])('renders the %s with the fixed /code QR', async (template) => {
+      await setCodesEnabled(true);
+      const eventId = await insertEvent(db, adminId, { access_code: 'K7M4QX' });
+      const qrSpy = jest.spyOn(QRCode, 'toBuffer');
+      const res = await printCode(eventId, `&template=${template}&lang=de`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('application/pdf');
+      expect(res.headers['content-disposition']).toContain(`qr-code-${template}-`);
+      expect(res.body.slice(0, 4).toString()).toBe('%PDF');
+      // The QR is the same for every event: the entry page, never the share link.
+      expect(qrSpy).toHaveBeenCalledTimes(1);
+      expect(qrSpy.mock.calls[0][0]).toBe('https://photos.example.com/code');
+    }, 120000);
+
+    it('409s while event codes are switched off', async () => {
+      await setCodesEnabled(false);
+      const eventId = await insertEvent(db, adminId, { access_code: 'K7M4QX' });
+      const res = await printCode(eventId);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('EVENT_CODES_DISABLED');
+    });
+
+    it('409s when the event has no code', async () => {
+      await setCodesEnabled(true);
+      const eventId = await insertEvent(db, adminId, { access_code: null });
+      const res = await printCode(eventId);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('EVENT_HAS_NO_CODE');
+    });
+
+    it('403s for an admin who may not act on another owner\'s gallery', async () => {
+      await setCodesEnabled(true);
+      const eventId = await insertEvent(db, adminId, { access_code: 'K7M4QX' });
+      const ins = await db('admin_users').insert({
+        username: `other-${Math.random().toString(16).slice(2)}`,
+        email: `other-${Math.random().toString(16).slice(2)}@example.com`,
+        password_hash: 'x', must_change_password: false, created_at: new Date().toISOString(),
+      }).returning('id');
+      const otherId = ins[0]?.id ?? ins[0];
+      // The built-in admin role reads every gallery (events.view_all), but
+      // the gallery's links and code stay its owner's.
+      await assignAdminRole(db, otherId, 'admin');
+      const res = await request(app)
+        .get(`/api/admin/events/${eventId}/qr-print?variant=code`)
+        .set('Authorization', `Bearer ${mintAdminToken(otherId)}`);
+      expect(res.status).toBe(403);
+    });
   });
 
   it('404s for a non-existent event', async () => {

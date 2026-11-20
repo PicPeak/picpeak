@@ -605,9 +605,11 @@ export const eventsService = {
     return data;
   },
 
-  async getQrPrintBlob(eventId: number, template: 'table-card' | 'poster', lang: string): Promise<Blob> {
+  // variant 'code' (issue 2495): the QR opens the fixed /code page and the
+  // sheet shows the event code.
+  async getQrPrintBlob(eventId: number, template: 'table-card' | 'poster', lang: string, variant?: 'code'): Promise<Blob> {
     const { data } = await api.get(`/admin/events/${eventId}/qr-print`, {
-      params: { template, lang, origin: window.location.origin },
+      params: { template, lang, origin: window.location.origin, variant },
       responseType: 'blob',
     });
     return data;
