@@ -8,7 +8,10 @@ const { AppError } = require('../../utils/errors');
 const businessProfileService = require('../businessProfileService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { renumberLineItemPositions } = require('../../utils/lineItemPositions');
-const { extendedLineColumns, lineItemFieldsToApi } = require('../../utils/lineItemTotals');
+const { extendedLineColumns, lineItemFieldsToApi, resolvedParentTotal, ownLineMinor } = require('../../utils/lineItemTotals');
+const { cleanNetMinor } = require('../../utils/invoiceRounding');
+const { toMillis } = require('../../utils/queueTimestamps');
+const { getAppSetting } = require('../../utils/appSettings');
 const { computeMonthlyCadenceDate, getHierarchyHelpers, nextInvoiceNumber } = require('./helpers');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 const { toDateOnly } = require('../../utils/dateOnly');
@@ -224,12 +227,8 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
   // Recompute totals across the entire draft so the running figures
   // shown on the customer-detail "Monthly queue" card stay accurate
   // as items accumulate. Mirrors createInvoice's totals path.
-  const allItems = await trx('invoice_line_items')
-    .where({ invoice_id: draft.id });
-  let netMinor = 0;
-  for (const li of allItems) {
-    if (li.parent_line_item_id == null) netMinor += ensureInt(li.line_total_minor);
-  }
+  const { netMinor } = await resolveUnissuedInvoiceNet(trx, draft.id,
+    { actor: adminId, source: 'invoice.monthly.appendItems' });
   const vatRate = ensureNumber(payload.vatRate, draft.row.vat_rate || 0);
   // A UK business rounds its VAT total down (utils/vatAmount).
   const vatMinor = vatMinorFor(netMinor, Number(vatRate), { roundDown: await roundsVatDown(trx) });
@@ -361,7 +360,73 @@ async function getMonthlyDraft(customerId) {
     })),
   };
 }
+/**
+ * The net of an unissued invoice whose lines changed in place (a monthly
+ * draft taking an append, an hours entry edited or removed, a re-bill
+ * unwound), by the same rule as createInvoice:
+ *   - a parent's stored total follows its priced sub-items (migration 119)
+ *     and adds its options (migration 371); parents that disagree are
+ *     rewritten, audited, so the net matches the lines the PDF prints;
+ *   - with crm_invoice_round_total on, the net is the full-precision sum
+ *     rounded once (utils/invoiceRounding).
+ * Callers keep their own VAT step. Returns the net and the lines read.
+ */
+/**
+ * Whether an invoice's scheduled send time has come (it is armed for sending,
+ * so issued). No send time: not armed. A send time that can't be read counts
+ * as armed, so an edit is refused rather than landing on an invoice that may
+ * already be going out. Read through toMillis (a zone-less SQLite time is
+ * UTC), shared by every check that decides whether an invoice can change.
+ */
+function isArmed(scheduledSendAt) {
+  if (scheduledSendAt == null || scheduledSendAt === '') return false;
+  const at = toMillis(scheduledSendAt);
+  return at == null || at <= Date.now();
+}
+
+async function resolveUnissuedInvoiceNet(trx, invoiceId, audit = {}) {
+  // Every caller checks first; this holds the line for a future one. An
+  // invoice that left 'scheduled' (armed, sent, paid, cancelled) is issued or
+  // closed, and its lines are never rewritten.
+  // Open means: still 'scheduled', not a Storno, and either the running
+  // monthly draft or not yet due to be sent (an armed invoice is issued).
+  const invoice = await trx('invoices').where({ id: invoiceId })
+    .first('status', 'kind', 'is_monthly_draft', 'scheduled_send_at');
+  const monthlyDraft = invoice && (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1);
+  const armed = invoice && !monthlyDraft && isArmed(invoice.scheduled_send_at);
+  if (!invoice || invoice.status !== 'scheduled' || invoice.kind === 'storno' || armed) {
+    throw new AppError('This invoice has already been issued — Storno it to change it.', 409, 'INVOICE_LOCKED');
+  }
+  const allItems = await trx('invoice_line_items').where({ invoice_id: invoiceId });
+  const childrenOf = new Map();
+  for (const li of allItems) {
+    if (li.parent_line_item_id == null) continue;
+    if (!childrenOf.has(li.parent_line_item_id)) childrenOf.set(li.parent_line_item_id, []);
+    childrenOf.get(li.parent_line_item_id).push(li);
+  }
+  for (const li of allItems) {
+    if (li.parent_line_item_id != null) continue;
+    const children = childrenOf.get(li.id) || [];
+    // No priced sub-line (left): a parent is back at its own amount, which a
+    // removed sub-line may have replaced before.
+    const resolved = resolvedParentTotal(li, children) ?? (children.length ? ownLineMinor(li) : null);
+    if (resolved == null || resolved === ensureInt(li.line_total_minor)) continue;
+    await auditedUpdate(trx, 'invoice_line_items', { id: li.id }, { line_total_minor: resolved }, audit);
+    li.line_total_minor = resolved;
+  }
+  let netMinor = 0;
+  for (const li of allItems) {
+    if (li.parent_line_item_id == null) netMinor += ensureInt(li.line_total_minor);
+  }
+  if ((await getAppSetting('crm_invoice_round_total', false, trx)) === true) {
+    netMinor = cleanNetMinor(allItems, { parentKey: 'parent_line_item_id', positionKey: 'id' });
+  }
+  return { netMinor, allItems };
+}
+
 module.exports = {
+  isArmed,
+  resolveUnissuedInvoiceNet,
   getOrCreateMonthlyDraft,
   appendToMonthlyDraft,
   appendOneLineItemToMonthlyDraft,

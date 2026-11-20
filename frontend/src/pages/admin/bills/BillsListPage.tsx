@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Receipt, Plus, Search, Upload, X } from 'lucide-react';
+import { Receipt, Plus, Search, Upload, X, Layers } from 'lucide-react';
 import { billsService, isDraftInvoice, type InvoiceStatus, type InvoiceSort } from '../../../services/bills.service';
 import { Button, Card, Input, Loading, LocalizedDateInput, SortableHeader, useColumnSort, type SortColumnMap } from '../../../components/common';
 import { formatMoney } from '../../../components/admin/LineItemsTable';
@@ -18,6 +18,8 @@ import { useEscapeClose } from '../../../components/common/useEscapeClose';
 import { todayIsoDate } from '../../../utils/localDate';
 import { useUkBusiness } from '../../../hooks/useUkBusiness';
 import { lacksGbpRate } from '../../../utils/vatGbpRate';
+import { useFeatureEnabled } from '../../../contexts/FeatureFlagsContext';
+import { usePermission } from '../../../hooks/usePermission';
 
 const STATUSES: InvoiceStatus[] = ['scheduled', 'pending_delivery', 'sent', 'paid', 'overdue', 'cancelled', 'skipped'];
 
@@ -35,6 +37,9 @@ const SORT_COLUMNS: SortColumnMap = {
 
 export const BillsListPage: React.FC = () => {
   const { t } = useTranslation();
+  const quotesOn = useFeatureEnabled('quotes');
+  const canViewCatalogue = usePermission('quotes.view');
+  const catalogueOn = quotesOn && canViewCatalogue;
   // A UK business's invoice waits for its GBP rate (issue 2439).
   const ukBusiness = useUkBusiness();
   const navigate = useNavigate();
@@ -75,6 +80,13 @@ export const BillsListPage: React.FC = () => {
         description={t('bills.subtitle', 'Schedule, send, track payments and chase late invoices.')}
         actions={(
           <>
+            {/* The services the invoice editor adds from live in the quote
+                catalogue, behind the quotes feature and its view right. */}
+            {catalogueOn && (
+              <Link to="/admin/clients/quotes/catalog">
+                <Button variant="outline"><Layers className="w-4 h-4 mr-1" />{t('quotes.catalog.title', 'Catalogue & templates')}</Button>
+              </Link>
+            )}
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload className="w-4 h-4 mr-1" />
               {t('bills.import', 'Import historical')}

@@ -24,6 +24,8 @@
  * is zero, so the behaviour is unchanged.
  */
 
+const { isOptionLine } = require('./lineItemTotals');
+
 function ensureNumber(v, d = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : d;
@@ -80,14 +82,17 @@ function cleanNetMinor(items, { parentKey = 'parent_position', positionKey = 'po
     if (!isTopLevel(li, parentKey)) continue; // sub-items roll into their parent
     const kids = childrenByParent.get(ensureInt(li[positionKey])) || [];
     const pricedKids = kids.filter((c) => ensureInt(c.unit_price_minor) > 0);
-    const pricedKidsRounded = pricedKids.reduce((s, c) => s + ensureInt(c.line_total_minor), 0);
+    const regularKids = pricedKids.filter((c) => !isOptionLine(c));
+    const regularKidsRounded = regularKids.reduce((s, c) => s + ensureInt(c.line_total_minor), 0);
     // Same override test as computeTotals phase 2: a parent with at least
-    // one priced sub-item derives its total from those children.
-    if (pricedKidsRounded > 0) {
-      for (const c of pricedKids) exact += exactLineMinor(c);
+    // one priced regular sub-item derives its total from those children;
+    // priced option sub-items (migration 371) add to either.
+    if (regularKidsRounded > 0) {
+      for (const c of regularKids) exact += exactLineMinor(c);
     } else {
       exact += exactLineMinor(li);
     }
+    for (const c of pricedKids) if (isOptionLine(c)) exact += exactLineMinor(c);
   }
   return Math.round(exact);
 }

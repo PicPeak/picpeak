@@ -284,6 +284,8 @@ function transformLineItemPreset(p) {
     bookingDepositPercent: p.booking_deposit_percent == null ? null : Number(p.booking_deposit_percent),
     bookingDepositMinor: p.booking_deposit_minor == null ? null : Number(p.booking_deposit_minor),
     galleryUnlock: p.gallery_unlock || 'full_payment',
+    // Migration 371 — services offered as options under this one.
+    optionPresetIds: quoteService.presetOptionIds(p),
   };
 }
 
@@ -455,6 +457,10 @@ const QUOTE_LINE_VALIDATORS = [
   body('lineItems.*.promotionSnapshot').optional({ nullable: true }).isObject(),
   // Pricing-factor snapshot on a factor-priced service line (#2440).
   body('lineItems.*.pricingFactors').optional({ nullable: true }).isObject(),
+  // An option sub-line that adds to its parent's price (migration 371).
+  body('lineItems.*.addsToParent').optional({ nullable: true }).isBoolean(),
+  // The catalogue service a line came from (an integer column).
+  body('lineItems.*.cataloguePresetId').optional({ nullable: true }).isInt({ min: 1, max: 2147483647 }),
   body('hours').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0, max: 9999 }),
   body('days').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0, max: 999 }),
 ];
@@ -830,6 +836,11 @@ const PRESET_CATALOGUE_VALIDATORS = [
   body('bookingDepositPercent').optional({ nullable: true }).isFloat({ min: 0, max: 100 }),
   body('bookingDepositMinor').optional({ nullable: true }).isInt({ min: 0 }),
   body('galleryUnlock').optional().isIn(['full_payment', 'deposit', 'off']),
+  body('optionPresetIds').optional().isArray({ max: 20 }),
+  body('optionPresetIds.*').isInt({ min: 1 }),
+  // The list the form loaded (optimistic check against a concurrent edit).
+  body('expectedOptionPresetIds').optional().isArray({ max: 20 }),
+  body('expectedOptionPresetIds.*').isInt({ min: 1 }),
 ];
 
 function presetCatalogueFields(reqBody) {
@@ -848,6 +859,8 @@ function presetCatalogueFields(reqBody) {
     booking_deposit_percent: reqBody.bookingDepositPercent,
     booking_deposit_minor: reqBody.bookingDepositMinor,
     gallery_unlock: reqBody.galleryUnlock,
+    option_preset_ids: reqBody.optionPresetIds,
+    expected_option_preset_ids: reqBody.expectedOptionPresetIds,
   };
 }
 
