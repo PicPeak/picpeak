@@ -5,6 +5,18 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.206.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.205.2-beta.0...v3.206.0-beta.0) (2026-11-20)
+
+
+### Features
+
+* **events:** short event code and a fixed guest entry page at /code ([#2580](https://github.com/PicPeak/picpeak/issues/2580)) ([cc833c7](https://github.com/PicPeak/picpeak/commit/cc833c7c21424a6c08b50efc30dd949a74468880))
+
+
+### Documentation
+
+* **readme:** link the 90-second intro video from the header ([#2579](https://github.com/PicPeak/picpeak/issues/2579)) ([5a4b364](https://github.com/PicPeak/picpeak/commit/5a4b364e66c754ad01c36e72dffc09cb9fcedf8e))
+
 ## [3.205.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.205.1-beta.0...v3.205.2-beta.0) (2026-11-19)
 
 
