@@ -28,10 +28,18 @@ const router = express.Router();
 
 // 20 misses per 15 minutes per IP (per /64 on IPv6); after that the whole
 // address is blocked for the rest of the window (see above).
+//
+// Every request is counted while it runs and refunded when it ends, unless it
+// was a miss (404). The limiter's own 429s are refunded too: otherwise valid
+// lookups arriving together from one venue address, briefly over the limit
+// while in flight, would leave their 429s behind as misses and block the
+// address with no wrong code typed. A blocked address stays blocked, as its
+// 20 misses are never refunded.
 const lookupLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   skipSuccessfulRequests: true,
+  requestWasSuccessful: (_req, res) => res.statusCode !== 404,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: rateLimitKey,
