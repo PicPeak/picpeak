@@ -30,6 +30,7 @@ vi.mock('../DownloadQuotaNotice', () => ({ DownloadQuotaNotice: () => null }));
 import { galleryService } from '../../../services/gallery.service';
 import { DownloadResolutionModal } from '../DownloadResolutionModal';
 import { DownloadIdentityCancelledError } from '../../../utils/downloadLimit';
+import { isGalleryMountHeld } from '../../../utils/downloadIdentity';
 
 const TOKEN = 'b'.repeat(64);
 const choices = [{ id: '1500x1000', label: 'Medium', width: 1500, height: 1000 }];
@@ -107,5 +108,16 @@ describe('DownloadResolutionModal: onDownloaded', () => {
     expect(onClose).toHaveBeenCalled();
     expect(screen.queryByText('Preparation failed')).toBeNull();
     expect(onDownloaded).not.toHaveBeenCalled();
+  });
+
+  it('holds the gallery mounted while open (issue 2503)', () => {
+    // A guest identity replaced meanwhile rebuilds the gallery only after it
+    // closes, so the dialog keeps its job.
+    const { unmount } = render(
+      <DownloadResolutionModal slug="party" choices={choices} photoIds={[1, 2]} onClose={vi.fn()} />,
+    );
+    expect(isGalleryMountHeld('party')).toBe(true);
+    unmount();
+    expect(isGalleryMountHeld('party')).toBe(false);
   });
 });

@@ -325,9 +325,20 @@ describe('guest identity before downloading (issue 2503)', () => {
       expect(guest.body.code).toBe(CODE);
     });
 
-    it('issues no ticket without a guest identity', async () => {
+    it('issues no ticket without a guest identity, with a code apart from an expired session', async () => {
       const res = await request(app).post(`/api/gallery/${SLUG}/guest/download-ticket`);
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe(CODE);
+      // A guest removed since, and a guest of another gallery, the same way.
+      const gone = await addGuest(eventId, 'Hanna');
+      const { signGuestToken } = require('../../src/middleware/guestAuth');
+      const goneToken = signGuestToken({ guestId: gone, eventId, identifier: 'Hanna-identifier', name: 'Hanna' });
+      await db('gallery_guests').where({ id: gone }).update({ is_deleted: true });
+      for (const token of [goneToken, otherGuestToken]) {
+        const refused = await request(app).post(`/api/gallery/${SLUG}/guest/download-ticket`).set('x-guest-token', token);
+        expect(refused.status).toBe(403);
+        expect(refused.body.code).toBe(CODE);
+      }
     });
 
     it('does not ask outside guest identity mode', async () => {

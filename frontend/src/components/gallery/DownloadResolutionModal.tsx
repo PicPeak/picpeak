@@ -16,7 +16,7 @@ import {
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import type { StartedArchive } from '../../contexts/ArchiveDownloadContext';
 import { useGalleryDialog } from './hooks/useGalleryDialog';
-import { isDownloadIdentityCancelled } from '../../utils/downloadIdentity';
+import { holdGalleryMount, isDownloadIdentityCancelled } from '../../utils/downloadIdentity';
 
 /**
  * Resolution picker for gallery downloads (#858).
@@ -112,6 +112,9 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
   // invalidates all replies and polling loops belonging to the old one.
   const generation = useRef(0);
   useEffect(() => () => { generation.current += 1; }, []);
+  // A guest identity replaced while this dialog is open (issue 2503) rebuilds
+  // the gallery only once it closes: the rebuild would unmount it mid-job.
+  useEffect(() => holdGalleryMount(slug), [slug]);
 
   // Read through a ref: reportError feeds the polling effects, which must not
   // restart whenever the parent hands in a new onClose.

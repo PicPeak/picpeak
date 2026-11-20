@@ -91,6 +91,27 @@ describe('withDownloadIdentity', () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
+  it('asks again when the ticket route refuses the guest', async () => {
+    const gate = { required: true, ensure: vi.fn(async () => undefined), forget: vi.fn() };
+    setDownloadIdentityGate('party', gate);
+    vi.mocked(guestsService.getDownloadTicket).mockRejectedValueOnce(Object.assign(new Error('refused'), {
+      response: { status: 403, data: { code: GUEST_IDENTITY_REQUIRED_CODE } },
+    }));
+    const url = await withDownloadIdentity('party', () => withGuestTicket('party', '/api/gallery/party/download-all'));
+    expect(url).toBe('/api/gallery/party/download-all?guest_ticket=ticket-1');
+    expect(gate.forget).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the guest when the ticket request fails on an expired gallery session', async () => {
+    const gate = { required: true, ensure: vi.fn(async () => undefined), forget: vi.fn() };
+    setDownloadIdentityGate('party', gate);
+    const expired = Object.assign(new Error('unauthorised'), { response: { status: 401, data: { error: 'Session expired' } } });
+    vi.mocked(guestsService.getDownloadTicket).mockRejectedValueOnce(expired);
+    await expect(withDownloadIdentity('party', () => withGuestTicket('party', '/api/gallery/party/download-all')))
+      .rejects.toBe(expired);
+    expect(gate.forget).not.toHaveBeenCalled();
+  });
+
   it('passes any other failure through untouched', async () => {
     const gate = { required: true, ensure: vi.fn(async () => undefined), forget: vi.fn() };
     setDownloadIdentityGate('party', gate);

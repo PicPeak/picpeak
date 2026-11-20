@@ -22,6 +22,8 @@ export interface DownloadIdentityGate {
   ensure: () => Promise<void>;
   /** Drop an identity the server no longer accepts, so ensure() asks again. */
   forget: () => void;
+  /** No download holds the gallery anymore (holdGalleryMount). */
+  idle?: () => void;
 }
 
 const gates = new Map<string, DownloadIdentityGate>();
@@ -34,15 +36,40 @@ export function setDownloadIdentityGate(slug: string, gate: DownloadIdentityGate
 
 export const isDownloadIdentityRequired = (slug: string): boolean => !!gates.get(slug)?.required;
 
+// A download in progress holds the gallery mounted. Replacing a refused guest
+// identity mid-download rebuilds the gallery for the new guest (their likes,
+// favourites and labels, not the previous guest's), but not while a download
+// is still running in it: the size picker would lose its job. The rebuild
+// waits until the last hold is released.
+const holds = new Map<string, number>();
+
+/** Hold the gallery mounted until the returned release is called. */
+export function holdGalleryMount(slug: string): () => void {
+  holds.set(slug, (holds.get(slug) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const left = (holds.get(slug) ?? 1) - 1;
+    if (left > 0) {
+      holds.set(slug, left);
+      return;
+    }
+    holds.delete(slug);
+    gates.get(slug)?.idle?.();
+  };
+}
+
+export const isGalleryMountHeld = (slug: string): boolean => (holds.get(slug) ?? 0) > 0;
+
 // The cancellation error lives in downloadLimit.ts, next to the other
 // refusals callers stay silent about.
 export { isDownloadIdentityCancelled } from './downloadLimit';
 
-// The ticket route refusing a guest token the server no longer accepts.
-class StaleGuestIdentityError extends Error {}
-
+// The download routes and the ticket route refuse a missing or stale guest
+// identity with 403 GUEST_IDENTITY_REQUIRED. Any other refusal, a 401 for an
+// expired gallery session above all, is not about the guest.
 async function isIdentityRefusal(error: unknown): Promise<boolean> {
-  if (error instanceof StaleGuestIdentityError) return true;
   const response = (error as { response?: { status?: number; data?: unknown; headers?: Record<string, unknown> } })?.response;
   if (!response || response.status !== 403) return false;
   // The HEAD preflight of a direct download gets no body; the server names
@@ -81,9 +108,14 @@ export async function withDownloadIdentity<T>(slug: string, run: () => Promise<T
   } catch (error) {
     const gate = gates.get(slug);
     if (!gate || !(await isIdentityRefusal(error))) throw error;
-    gate.forget();
-    await ensureOrCancel(gate);
-    return run();
+    const release = holdGalleryMount(slug);
+    try {
+      gate.forget();
+      await ensureOrCancel(gate);
+      return await run();
+    } finally {
+      release();
+    }
   }
 }
 
@@ -106,13 +138,6 @@ export async function withGuestTicket(slug: string, url: string): Promise<string
     if (!settings?.require_guest_for_download) return url;
     await ensureOrCancel(gate);
   }
-  let ticket: string;
-  try {
-    ticket = await guestsService.getDownloadTicket(slug);
-  } catch (error) {
-    const status = (error as { response?: { status?: number } })?.response?.status;
-    if (status === 401) throw new StaleGuestIdentityError('Guest identity no longer accepted');
-    throw error;
-  }
+  const ticket = await guestsService.getDownloadTicket(slug);
   return `${url}${url.includes('?') ? '&' : '?'}guest_ticket=${encodeURIComponent(ticket)}`;
 }

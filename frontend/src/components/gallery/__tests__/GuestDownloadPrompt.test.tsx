@@ -7,7 +7,7 @@
  * asked. The prompt says why it opened and shows the photographer's privacy
  * note.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
@@ -39,7 +39,7 @@ import { guestsService } from '../../../services/guests.service';
 import { galleryService } from '../../../services/gallery.service';
 import { GuestIdentityProvider } from '../../../contexts/GuestIdentityContext';
 import { GuestNamePromptModal } from '../GuestNamePromptModal';
-import { isDownloadIdentityCancelled } from '../../../utils/downloadIdentity';
+import { holdGalleryMount, isDownloadIdentityCancelled } from '../../../utils/downloadIdentity';
 import { clearGuestIdentity, storeGuestIdentity } from '../../../utils/guestIdentityStorage';
 
 const SLUG = 'wedding';
@@ -128,40 +128,75 @@ describe('guest name before downloading (issue 2503)', () => {
     expect(downloadCalls()).toHaveLength(1);
   });
 
-  it('keeps the gallery mounted while a refused identity is replaced and the download retried', async () => {
-    // A guest removed or merged since: the server refuses their identity.
-    storeGuestIdentity(SLUG, { id: 5, name: 'Old', email: null, identifier: 'id-5' }, 'stale-token');
-    vi.mocked(api.get)
-      .mockRejectedValueOnce(Object.assign(new Error('refused'), {
-        response: { status: 403, data: '', headers: { 'x-error-code': 'GUEST_IDENTITY_REQUIRED' } },
-      }));
-    let mounts = 0;
+  describe('a refused identity replaced mid-download', () => {
+    let mounts: number;
+    let closeDialog: () => void = () => {};
     const MountCounter: React.FC = () => {
       React.useEffect(() => { mounts += 1; }, []);
       return null;
     };
-    const user = userEvent.setup();
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <GuestIdentityProvider slug={SLUG} identityMode="guest" requireForDownload>
-          <GuestNamePromptModal />
-          <DownloadButton />
-          <MountCounter />
-        </GuestIdentityProvider>
-      </QueryClientProvider>,
-    );
-    expect(mounts).toBe(1);
+    // Stands in for the size picker: holds the gallery while it is open.
+    const HoldingDialog: React.FC = () => {
+      React.useEffect(() => holdGalleryMount(SLUG), []);
+      return null;
+    };
+    const Host: React.FC<{ withDialog: boolean }> = ({ withDialog }) => {
+      const [open, setOpen] = React.useState(withDialog);
+      closeDialog = () => setOpen(false);
+      return (
+        <QueryClientProvider client={new QueryClient()}>
+          <GuestIdentityProvider slug={SLUG} identityMode="guest" requireForDownload>
+            <GuestNamePromptModal />
+            <DownloadButton />
+            <MountCounter />
+            {open && <HoldingDialog />}
+          </GuestIdentityProvider>
+        </QueryClientProvider>
+      );
+    };
 
-    await user.click(screen.getByRole('button', { name: 'Download' }));
-    await screen.findByRole('dialog');
-    await user.type(screen.getByLabelText(/Your name/), 'Anna');
-    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    let mountsAtRetry: number | null;
+    const replaceIdentity = async (withDialog: boolean) => {
+      // A guest removed or merged since: the server refuses their identity.
+      storeGuestIdentity(SLUG, { id: 5, name: 'Old', email: null, identifier: 'id-5' }, 'stale-token');
+      mounts = 0;
+      mountsAtRetry = null;
+      vi.mocked(api.get)
+        .mockRejectedValueOnce(Object.assign(new Error('refused'), {
+          response: { status: 403, data: '', headers: { 'x-error-code': 'GUEST_IDENTITY_REQUIRED' } },
+        }))
+        .mockImplementationOnce(async () => {
+          mountsAtRetry = mounts;
+          return { data: new Blob(['x'], { type: 'image/jpeg' }), headers: {} };
+        });
+      const user = userEvent.setup();
+      render(<Host withDialog={withDialog} />);
+      expect(mounts).toBe(1);
 
-    await waitFor(() => expect(outcome).toBe('done'));
-    expect(downloadCalls()).toHaveLength(2);
-    // A dialog driving the download (the size picker) would have been
-    // unmounted and its retried job discarded.
-    expect(mounts).toBe(1);
+      await user.click(screen.getByRole('button', { name: 'Download' }));
+      await screen.findByRole('dialog');
+      await user.type(screen.getByLabelText(/Your name/), 'Anna');
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+      await waitFor(() => expect(outcome).toBe('done'));
+      expect(downloadCalls()).toHaveLength(2);
+      // The retry ran in the same gallery: a dialog driving the download
+      // (the size picker) would otherwise have lost its job.
+      expect(mountsAtRetry).toBe(1);
+    };
+
+    it('rebuilds the gallery for the new guest once the download finished', async () => {
+      await replaceIdentity(false);
+      // Likes, favourites and labels held in local state are the new guest's.
+      await waitFor(() => expect(mounts).toBe(2));
+    });
+
+    it('waits with the rebuild until an open download dialog closes', async () => {
+      await replaceIdentity(true);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(mounts).toBe(1);
+      act(() => closeDialog());
+      await waitFor(() => expect(mounts).toBe(2));
+    });
   });
 
   it('does not ask when the gallery does not require it', async () => {

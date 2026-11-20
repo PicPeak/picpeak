@@ -7,7 +7,7 @@ import {
   getGuestIdentity,
   storeGuestIdentity,
 } from '../utils/guestIdentityStorage';
-import { setDownloadIdentityGate } from '../utils/downloadIdentity';
+import { isGalleryMountHeld, setDownloadIdentityGate } from '../utils/downloadIdentity';
 
 type IdentityMode = 'simple' | 'guest';
 
@@ -184,8 +184,14 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   // Set by the download gate's forget() (issue 2503): a stale identity the
   // server refused is dropped in the middle of a download, which then asks
   // again and retries. Re-keying there would unmount the download's dialog
-  // and discard the retried job, so that one clear does not re-key.
-  const keepSubtreeOnClearRef = useRef(false);
+  // and discard the retried job, so the re-key waits until a guest is
+  // identified again and no download holds the gallery (holdGalleryMount).
+  const remountPendingRef = useRef(false);
+  const remountIfPending = useCallback(() => {
+    if (!remountPendingRef.current || !identityRef.current || isGalleryMountHeld(slug)) return;
+    remountPendingRef.current = false;
+    setIdentityGeneration((g) => g + 1);
+  }, [slug]);
   useEffect(() => {
     const currentId = identity?.id ?? null;
     const previousId = previousIdentityId.current;
@@ -207,10 +213,12 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     // first time (null -> A) must not remount, or registering from the prompt
     // would tear down the gallery under the very click that triggered it and
     // drop the pending action.
-    const keepSubtree = keepSubtreeOnClearRef.current && currentId === null;
-    keepSubtreeOnClearRef.current = false;
-    if (previousId !== null && !keepSubtree) setIdentityGeneration((g) => g + 1);
-  }, [identity, slug, queryClient]);
+    if (remountPendingRef.current) {
+      remountIfPending();
+      return;
+    }
+    if (previousId !== null) setIdentityGeneration((g) => g + 1);
+  }, [identity, slug, queryClient, remountIfPending]);
 
   // When an invite token is present on the URL (?invite=xxx), redeem it once
   // on mount. The server returns a guest token we can persist.
@@ -453,13 +461,14 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       ensure: async () => { await ensureIdentity('download'); },
       forget: () => {
         clearGuestIdentity(slug);
-        if (identityRef.current) keepSubtreeOnClearRef.current = true;
+        if (identityRef.current) remountPendingRef.current = true;
         identityRef.current = null;
         setIdentity(null);
       },
+      idle: remountIfPending,
     });
     return () => setDownloadIdentityGate(slug, null);
-  }, [slug, identityMode, requireForDownload, downloadExempt, ensureIdentity]);
+  }, [slug, identityMode, requireForDownload, downloadExempt, ensureIdentity, remountIfPending]);
 
   const isRequired = identityMode === 'guest' && !identity;
 

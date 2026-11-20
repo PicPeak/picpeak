@@ -90,7 +90,9 @@ describe('native archive transport', () => {
     try {
       // The email link opened on another device: the stored guest token is refused.
       vi.mocked(api.post)
-        .mockRejectedValueOnce(Object.assign(new Error('unauthorized'), { response: { status: 401 } }))
+        .mockRejectedValueOnce(Object.assign(new Error('refused'), {
+          response: { status: 403, data: { code: 'GUEST_IDENTITY_REQUIRED' } },
+        }))
         .mockResolvedValueOnce({ data: { ticket: 'fresh' } });
       await galleryService.downloadJobFile('party', 'job');
       expect(gate.forget).toHaveBeenCalledTimes(1);

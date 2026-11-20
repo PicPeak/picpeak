@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 const { rateLimitKey } = require('../utils/rateLimitKey');
 const { verifyGalleryAccess, denySlideshowToken } = require('../middleware/gallery');
 const {
-  resolveGuest, requireGuest, signGuestToken, signGuestDownloadTicket,
+  resolveGuest, requireGuest, signGuestToken, signGuestDownloadTicket, GUEST_IDENTITY_REQUIRED,
 } = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
 const selectionSubmissions = require('../services/selectionSubmissions');
@@ -242,9 +242,14 @@ router.delete('/:slug/guest/me', verifyGalleryAccess, resolveGuest, requireGuest
  * downloads the browser navigates to (archives, direct photo downloads),
  * which carry no x-guest-token header. See signGuestDownloadTicket.
  */
-router.post('/:slug/guest/download-ticket', verifyGalleryAccess, denySlideshowToken, resolveGuest, requireGuest, (req, res) => {
-  if (req.guest.eventId !== req.event.id) {
-    return res.status(403).json({ error: 'Guest token does not match gallery' });
+router.post('/:slug/guest/download-ticket', verifyGalleryAccess, denySlideshowToken, resolveGuest, (req, res) => {
+  // No guest (or one removed or merged since), or one of another gallery:
+  // 403 with the download gate's code, so the gallery drops that identity and
+  // asks again. Not requireGuest's 401: a 401 here would read the same as an
+  // expired gallery session from verifyGalleryAccess, which must not cost the
+  // guest a still-valid identity.
+  if (!req.guest || req.guest.eventId !== req.event.id) {
+    return res.status(403).json({ error: 'Guest identity required', code: GUEST_IDENTITY_REQUIRED });
   }
   return res.json({ ticket: signGuestDownloadTicket({ guestId: req.guest.id, eventId: req.event.id }) });
 });
