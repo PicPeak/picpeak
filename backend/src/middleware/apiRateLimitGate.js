@@ -70,6 +70,11 @@ function createApiRateLimitGate(getLimiter) {
     // load of an embedding website, and a 429 there would serve the embed
     // with SAMEORIGIN, a blank frame on that site.
     if (['GET', 'HEAD'].includes(req.method) && /^\/api\/public\/settings\/embed-frame-policy\/?$/.test(path)) return next();
+    // The event code lookup (issue 2495) has its own per-IP limiter that
+    // counts only misses (publicEventCode.js). Guests at one venue share an
+    // IP; in the shared bucket their successful lookups would add up to a 429
+    // for everyone, which is the gallery-verify problem below.
+    if (['GET', 'HEAD'].includes(req.method) && /^\/api\/public\/event-code\/[^/]+\/?$/.test(path)) return next();
     if (EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix))) return next();
     if (AUTH_ENDPOINT_RE.test(path)) return next();
 
