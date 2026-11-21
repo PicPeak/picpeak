@@ -5,6 +5,21 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.208.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.207.0-beta.0...v3.208.0-beta.0) (2026-11-21)
+
+
+### Features
+
+* **backup:** run the restore test against an rsync destination ([#2593](https://github.com/PicPeak/picpeak/issues/2593)) ([5ac35ed](https://github.com/PicPeak/picpeak/commit/5ac35ed617a1dd813a16c17df530fc89ae11dee7))
+* **events:** print the fixed /code QR with the event code ([#2590](https://github.com/PicPeak/picpeak/issues/2590)) ([9c06c68](https://github.com/PicPeak/picpeak/commit/9c06c681afa86403cbeb70a507163d1df07257df))
+
+
+### Bug Fixes
+
+* **backup:** end run rows left at running by a restore or a crash ([#2592](https://github.com/PicPeak/picpeak/issues/2592)) ([461c4c2](https://github.com/PicPeak/picpeak/commit/461c4c2fe832398c3663fb9a64be24c05097c801))
+* **feedback:** keep a removed guest out of a download log written during the removal ([#2589](https://github.com/PicPeak/picpeak/issues/2589)) ([b51e6d5](https://github.com/PicPeak/picpeak/commit/b51e6d573302d7610aeb23d24b785f2916a09562))
+* **restore:** show the run's own result, also after the forced re-login ([#2591](https://github.com/PicPeak/picpeak/issues/2591)) ([5eba003](https://github.com/PicPeak/picpeak/commit/5eba003c6c020b90cb922aa75b7b491792ff74da))
+
 ## [3.207.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.206.0-beta.0...v3.207.0-beta.0) (2026-11-20)
 
 
