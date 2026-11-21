@@ -35,8 +35,8 @@ const TABLES = ['backup_runs', 'database_backup_runs', 'restore_runs'];
 // sweep below ends it, and backupVerificationService.sharedWorkRunning stops
 // waiting for it.
 const RUNNING_ROW_WINDOW_MS = 12 * 60 * 60 * 1000;
-// Past this the dashboard flags a 'running' backup row as possibly crashed,
-// and an admin may delete it unless this process is still writing it.
+// Past this the dashboard flags a 'running' backup row as possibly crashed;
+// an admin may delete such a row once it predates this process.
 const ZOMBIE_THRESHOLD_MS = 30 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const BOOTED_AT = Date.now() - Math.round(process.uptime() * 1000);

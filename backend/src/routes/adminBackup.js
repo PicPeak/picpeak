@@ -515,16 +515,18 @@ router.get('/runs/:id', adminAuth, requirePermission('backup.view'), async (req,
 const backupDeleteError = (res, status, code, message) => res.status(status).json({ error: message, code });
 
 // A 'running' row the dashboard flags as possibly crashed (older than
-// ZOMBIE_THRESHOLD_MS) that this process is not writing: a dead process left
-// it, or a restore brought it back from the dump. Otherwise only the
-// stale-run sweep ends it, up to 13 hours later.
+// ZOMBIE_THRESHOLD_MS) that started before this process booted, so a process
+// that has since died left it, and that this process is not writing. A
+// restore ends the rows it brings back itself (interruptedRuns). Backups have
+// no lease, so a row started after boot may be a sibling worker's live run
+// (PM2 cluster) and stays protected; the stale-run sweep ends it later.
 function isAbandonedRunningRow(run) {
-  const { ZOMBIE_THRESHOLD_MS } = require('../services/interruptedRuns');
+  const { BOOTED_AT, ZOMBIE_THRESHOLD_MS } = require('../services/interruptedRuns');
   const { toTimestamp } = require('../utils/dateNormalize');
   const backupService = require('../services/backupService');
   if (backupService.isBackupRunning() && Number(backupService.currentRunId()) === Number(run.id)) return false;
   const startedAt = toTimestamp(run.started_at);
-  return Number.isFinite(startedAt) && Date.now() - startedAt > ZOMBIE_THRESHOLD_MS;
+  return Number.isFinite(startedAt) && startedAt < BOOTED_AT && Date.now() - startedAt > ZOMBIE_THRESHOLD_MS;
 }
 
 class ArtifactOutOfScopeError extends Error {

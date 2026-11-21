@@ -175,11 +175,26 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
       }
     });
 
-    it('deletes a running row flagged as possibly crashed (older than 30 minutes, not live here)', async () => {
-      const id = await insertRun({ status: 'running', completed_at: null, started_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() });
+    it('deletes a running row flagged as possibly crashed that predates this process', async () => {
+      const id = await insertRun({ status: 'running', completed_at: null });
       const res = await del(id);
       expect(res.status).toBe(200);
       expect(await runExists(id)).toBe(false);
+    });
+
+    it('keeps an old running row started after this process booted (another worker may be writing it)', async () => {
+      const interruptedRuns = require('../../src/services/interruptedRuns');
+      const bootedAt = interruptedRuns.BOOTED_AT;
+      interruptedRuns.BOOTED_AT = Date.now() - 3 * 60 * 60 * 1000;
+      try {
+        const id = await insertRun({ status: 'running', completed_at: null, started_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() });
+        const res = await del(id);
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('BACKUP_RUNNING');
+        expect(await runExists(id)).toBe(true);
+      } finally {
+        interruptedRuns.BOOTED_AT = bootedAt;
+      }
     });
   });
 
