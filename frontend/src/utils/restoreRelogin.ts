@@ -77,10 +77,13 @@ export function noteRestoreSignOut(): void {
 /**
  * Login page: true (once) when a tracked restore should be shown after this
  * sign-in. Later sign-ins go to the dashboard unless the wizard re-armed it.
+ * The dashboard asks with `afterSignOut`: an SSO sign-in lands there directly
+ * (the callback redirects to /admin/dashboard), and an admin who opens the
+ * dashboard while the restore runs, without being signed out, stays there.
  */
-export function takeRestoreRedirect(): boolean {
+export function takeRestoreRedirect({ afterSignOut = false }: { afterSignOut?: boolean } = {}): boolean {
   const marker = readRestoreRun();
-  if (!marker || marker.redirected) return false;
+  if (!marker || marker.redirected || (afterSignOut && !marker.signedOut)) return false;
   rememberRestoreRun({ ...marker, redirected: true });
   return true;
 }

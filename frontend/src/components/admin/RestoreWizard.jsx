@@ -121,7 +121,12 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     if (trackedRun) rearmRestoreRedirect();
   }, []);
 
-  const trackedRow = trackedRun ? restoreStatus?.history?.find((row) => isRunOf(row, trackedRun)) : undefined;
+  // Restores run one at a time, so the run this admin started is the first
+  // one at or after the marker. History is newest first: a later restore or
+  // dry run by someone else must not stand in for it.
+  const trackedRow = trackedRun
+    ? restoreStatus?.history?.filter((row) => isRunOf(row, trackedRun)).pop()
+    : undefined;
   // Once the tracked run has an outcome, it is on screen: drop the marker so
   // the next sign-in in this tab goes to the dashboard again. Same when this
   // admin may not read the restore status at all.

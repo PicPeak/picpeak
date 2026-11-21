@@ -381,6 +381,16 @@ describe('RestoreWizard across the restore sign-out', () => {
     expect(screen.getByText(r.progress.signedOutNote)).toBeTruthy();
   });
 
+  it('a later dry run by someone else does not stand in for the run this admin started', async () => {
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(), signedOut: true }));
+    const laterDryRun = { id: 5, started_at: '2026-11-20T10:05:00.000Z', status: 'completed', was_successful: 0, is_dry_run: 1 };
+    status = { isRunning: false, history: [laterDryRun, thisRunCompleted, previousFailed] };
+    renderWizard();
+
+    expect(await screen.findByText(r.progress.success.title)).toBeTruthy();
+    expect(screen.queryByText(r.progress.errorTitle)).toBeNull();
+  });
+
   it('shows a failed result of this run, read back with SQLite epoch-ms timestamps', async () => {
     sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(), signedOut: true }));
     status = { isRunning: false, history: [

@@ -71,6 +71,15 @@ describe('restore run marker', () => {
     expect(takeRestoreRedirect()).toBe(true);
   });
 
+  it('hands the dashboard (SSO landing) the redirect only after the restore signed the admin out', () => {
+    rememberRestoreRun(fresh());
+    // Opened the dashboard while the restore runs, still signed in: stay.
+    expect(takeRestoreRedirect({ afterSignOut: true })).toBe(false);
+    noteRestoreSignOut();
+    expect(takeRestoreRedirect({ afterSignOut: true })).toBe(true);
+    expect(takeRestoreRedirect({ afterSignOut: true })).toBe(false);
+  });
+
   it('matches only rows started at or after the marker, in every timestamp shape', () => {
     const marker = fresh();
     expect(isRunOf({ started_at: '2026-11-20T10:00:00.000Z' }, marker)).toBe(true);
