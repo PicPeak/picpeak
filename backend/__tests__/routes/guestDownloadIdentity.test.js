@@ -475,6 +475,38 @@ describe('guest identity before downloading (issue 2503)', () => {
     });
   });
 
+  it('checks the survivor too when it is removed while the row moves to it', async () => {
+    const guestAuth = require('../../src/middleware/guestAuth');
+    const kept = await addGuest(eventId, 'Mia');
+    const merged = await addGuest(eventId, 'Nils');
+    await db('activity_logs').insert({
+      activity_type: 'guest_merged',
+      actor_type: 'admin',
+      metadata: JSON.stringify({ event_id: String(eventId), keep_id: kept, merged_ids: [merged] }),
+      event_id: eventId,
+    });
+    await db('gallery_guests').where({ id: merged }).update({ is_deleted: true });
+    const [row] = await db('access_logs').insert({ event_id: eventId, action: 'download', guest_id: merged }).returning('id');
+    const rowId = row?.id ?? row;
+
+    // The survivor's removal completes after the lookup named it and before
+    // the row moves: its own access_logs pass found nothing of this row.
+    const real = guestAuth.loggedGuestId;
+    const spy = jest.spyOn(guestAuth, 'loggedGuestId').mockImplementationOnce(async (...args) => {
+      const result = await real(...args);
+      await db('gallery_guests').where({ id: kept }).update({ is_deleted: true });
+      await db('access_logs').where({ event_id: eventId, guest_id: kept }).update({ guest_id: null });
+      return result;
+    });
+    try {
+      await guestAuth.settleLoggedGuest(merged, eventId);
+    } finally {
+      spy.mockRestore();
+    }
+    const after = await db('access_logs').where({ id: rowId }).first('guest_id');
+    expect(after.guest_id).toBeNull();
+  });
+
   describe('the guest an archive is logged under once it finished', () => {
     // An archive logs on completion; the guest the request named may have
     // been removed or merged while it streamed.

@@ -305,17 +305,25 @@ async function loggedGuestId(guestId, eventId) {
  * PostgreSQL a merge holds the guest rows FOR UPDATE until it commits; the
  * share lock waits for it, so the check does not read the guest mid-merge.
  * Any row of the guest left behind goes where loggedGuestId says: to the
- * survivor of a merge, or to nobody. Never rejects.
+ * survivor of a merge, or to nobody. The survivor gets the same check in
+ * turn: it may be removed or merged itself while the rows move to it, and its
+ * own cleanup may have run before they arrived. Never rejects.
  */
 async function settleLoggedGuest(guestId, eventId) {
   if (!guestId) return;
   try {
-    if (db.client.config.client === 'pg') {
-      await db('gallery_guests').where({ id: guestId }).forShare().first('id');
+    let id = guestId;
+    // A chain of merges is short; the bound only guards against a cycle.
+    for (let hop = 0; hop < 10; hop += 1) {
+      if (db.client.config.client === 'pg') {
+        await db('gallery_guests').where({ id }).forShare().first('id');
+      }
+      const current = await module.exports.loggedGuestId(id, eventId);
+      if (current !== null && Number(current) === Number(id)) return;
+      await db('access_logs').where({ event_id: eventId, guest_id: id }).update({ guest_id: current });
+      if (current === null) return;
+      id = current;
     }
-    const current = await loggedGuestId(guestId, eventId);
-    if (current !== null && Number(current) === Number(guestId)) return;
-    await db('access_logs').where({ event_id: eventId, guest_id: guestId }).update({ guest_id: current });
   } catch (err) {
     logger.warn('Access log guest re-check failed', { eventId, error: err?.message });
   }
