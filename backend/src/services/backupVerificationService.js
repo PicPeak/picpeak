@@ -7,11 +7,15 @@
  * whether its bytes are still there and load. This service answers that, in
  * two levels, and keeps one `backup_verifications` row per test:
  *
- *   deep   Fetch the restore point back from its destination (local or S3),
- *          check the manifest signature, hash the database dump against the
- *          manifest, hash every business-docs/ file plus a rotating sample
- *          of the other files (all of them on a "full" run), and check the
- *          parent chain.
+ *   deep   Fetch the restore point back from its destination (local, S3 or
+ *          rsync), check the manifest signature, hash the database dump
+ *          against the manifest, hash every business-docs/ file plus a
+ *          rotating sample of the other files (all of them on a "full" run),
+ *          and check the parent chain. An rsync destination is a mirror of
+ *          the newest run only: that run is fetched (its signed manifest from
+ *          <path>/manifests/, the dump and the sample, in bounded batches)
+ *          into the work directory; older runs are skipped as
+ *          rsync_superseded (planRsyncBackup).
  *   drill  Load the dump into a throwaway database, never the live one: a
  *          private SQLite copy, or a `picpeak_drill_<id>` PostgreSQL
  *          database that is dropped afterwards. Check integrity, foreign
@@ -44,6 +48,8 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { standaloneSnapshotOfRun } = require('../utils/backupRestorePoint');
 const { backupS3Access } = require('../utils/s3EndpointPolicy');
+const rsyncRestore = require('../utils/rsyncRestore');
+const { toTimestamp } = require('../utils/dateNormalize');
 const {
   DRILL_TEMP_PREFIX, drillDatabaseName, drillPrefixFor, assertDrillDatabaseName,
 } = require('../utils/drillDatabase');
@@ -189,7 +195,6 @@ let monitorIntervalMs = 30 * 1000;
 
 /** 'backup' / 'restore' when another process (any replica) is running one. */
 async function sharedWorkRunning() {
-  const { toTimestamp } = require('../utils/dateNormalize');
   const since = Math.max(BOOTED_AT, Date.now() - RUNNING_ROW_WINDOW_MS);
   const live = (rows) => rows.some((row) => {
     const at = toTimestamp(row.started_at);
@@ -250,6 +255,7 @@ async function releaseLease(token, id) {
 function yieldTo(reason) {
   if (!current) return;
   current.aborted = current.aborted || reason;
+  current.abort.abort();
   for (const child of current.children) killTree(child);
 }
 
@@ -428,7 +434,7 @@ function s3Settings(config) {
 async function planFileBackup(run, config, checks) {
   const stats = parseJson(run.statistics, {}) || {};
   const destination = String(stats.destination || config.backup_destination_type || '').toLowerCase();
-  if (destination === 'rsync') return { skip: 'not_verifiable_rsync' };
+  if (destination === 'rsync') return planRsyncBackup(run, config, checks);
   if (!run.manifest_path) return { skip: 'no_manifest' };
 
   const backupService = require('./backupService');
@@ -468,6 +474,168 @@ async function planFileBackup(run, config, checks) {
     ? { type: 's3', prefix: snapshot.prefix }
     : { type: 'local', root: snapshot.root };
 
+  return {
+    source,
+    s3: snapshot.type === 's3' ? s3Settings(config) : null,
+    ...(await contentPlan(manifest)),
+  };
+}
+
+// ---------------------------------------------------------------- rsync --
+
+const runDestination = (run, config) => String((parseJson(run.statistics, {}) || {}).destination
+  || config.backup_destination_type || '').toLowerCase();
+
+/**
+ * An rsync destination is one mirror (--delete): it holds the files and the
+ * dump of the newest run only, and <path>/manifests/ keeps that run's signed
+ * manifest only (uploadRsyncManifest). So only the run whose manifest is the
+ * destination's current one can be tested; an older run is `rsync_superseded`,
+ * neither a pass nor a failure. Identity is the authenticated content, never
+ * a file name: the remote manifest's backup.id must be this run's manifest_id
+ * (and, with the local copy at hand, both must carry the same keyed
+ * checksum). Without a network round trip, a newer completed rsync run
+ * already settles it.
+ */
+async function planRsyncBackup(run, config, checks) {
+  const newer = await db('backup_runs').where('status', 'completed').where('id', '>', run.id)
+    .select('id', 'statistics').orderBy('id', 'desc');
+  if (newer.some((row) => runDestination(row, config) === 'rsync')) return { skip: 'rsync_superseded' };
+
+  // The local copy (backup_manifest_path), when this host still has it. A
+  // run from before the manifest was copied to the destination
+  // (rsync_manifest_layout mirror-v1) left nothing there to test against.
+  let local = null;
+  if (run.manifest_path) {
+    const present = await fs.access(run.manifest_path).then(() => true, () => false);
+    if (present) {
+      const validation = await require('./backupService').validateBackupManifest(run.manifest_path);
+      if (validation.authentication && validation.authentication.state === 'legacy') return { skip: 'not_verifiable_rsync' };
+      if (!validation.valid || !validation.manifest) {
+        checks.push(check('manifest_signature', 'failed', `The manifest could not be read or its signature does not match: ${validation.error || 'unknown error'}`));
+        return { stop: true };
+      }
+      if (!rsyncRestore.isRemoteMirrorManifest(validation.manifest)) return { skip: 'not_verifiable_rsync' };
+      local = validation.manifest;
+    }
+  }
+
+  // No rsync destination configured any more: nothing to fetch it from.
+  if (!config.backup_rsync_host || !config.backup_rsync_path) return { skip: 'not_verifiable_rsync' };
+  let listed;
+  try {
+    listed = await rsyncRestore.listRemoteManifests(config, { signal: current && current.abort.signal });
+  } catch (error) {
+    // Cancelled (a backup started, say): the outer handler records the skip.
+    if (current && current.aborted) throw error;
+    if (error.code === 'RESTORE_REMOTE_MANIFEST_NOT_FOUND' && !local) return { skip: 'not_verifiable_rsync' };
+    checks.push(check('destination', 'failed', String(error.message).slice(0, 500)));
+    return { stop: true };
+  }
+  if (listed.length === 0 && !local) return { skip: 'not_verifiable_rsync' };
+
+  const ownId = run.manifest_id || (run.manifest_path ? path.basename(run.manifest_path, path.extname(run.manifest_path)) : null);
+  const isOwn = (entry) => Boolean(ownId) && `backup-manifest-${entry.manifest && entry.manifest.backup && entry.manifest.backup.id}` === ownId;
+  const stamp = (entry) => toTimestamp(entry.manifest && entry.manifest.backup && entry.manifest.backup.timestamp);
+  const authentic = listed.filter((entry) => !entry.error);
+  const currentEntry = authentic.reduce((best, entry) => (!best || stamp(entry) > stamp(best) ? entry : best), null);
+  const own = listed.find(isOwn);
+  const ownStamp = local ? toTimestamp(local.backup && local.backup.timestamp) : toTimestamp(run.started_at);
+
+  if (own && own.error) {
+    checks.push(check('manifest_signature', 'failed', `The manifest on the rsync destination fails authentication: ${own.error}`));
+    return { stop: true };
+  }
+  if (!own || own !== currentEntry) {
+    if (currentEntry && stamp(currentEntry) > ownStamp) return { skip: 'rsync_superseded' };
+    checks.push(check('destination', 'failed', currentEntry
+      ? `The rsync destination holds the manifest of an earlier backup (${currentEntry.name}), not this one's; this run's manifest did not reach it`
+      : 'The rsync destination holds no signed manifest of this backup in manifests/'));
+    return { stop: true };
+  }
+  const manifest = own.manifest;
+  if (local && local.verification.total_checksum !== manifest.verification.total_checksum) {
+    checks.push(check('manifest_signature', 'failed', 'The manifest on the rsync destination differs from the one this backup wrote'));
+    return { stop: true };
+  }
+  checks.push(check('manifest_signature', 'passed', 'Manifest on the rsync destination is signed and is this backup\'s'));
+  // The mirror run lists every file of the mirror, not a delta.
+  checks.push(check('parent_chain', 'passed', 'rsync mirror: the manifest lists every file, no parent needed'));
+  return { source: { type: 'rsync' }, s3: null, rsync: config, ...(await contentPlan(manifest)) };
+}
+
+// Files come over in batches of at most this much, each hashed and removed
+// before the next, so a full run never stages the whole library.
+const RSYNC_BATCH_BYTES = 256 * 1024 * 1024;
+const RSYNC_BATCH_FILES = 1000;
+
+function rsyncBatches(entries) {
+  const batches = [];
+  let batch = null;
+  for (const entry of entries) {
+    const size = Number(entry.size) || 0;
+    if (!batch || batch.files.length >= RSYNC_BATCH_FILES || (batch.files.length && batch.bytes + size > RSYNC_BATCH_BYTES)) {
+      batch = { files: [], bytes: 0, largest: 0 };
+      batches.push(batch);
+    }
+    batch.files.push(entry);
+    batch.bytes += size;
+    batch.largest = Math.max(batch.largest, size);
+  }
+  return batches;
+}
+
+// The byte budget of one transfer: what the manifest records, plus slack
+// for rsync's own temporary files.
+const rsyncBudget = (bytes) => Math.ceil(bytes * 1.01) + 1024 * 1024;
+
+// A missing file is not the end of the test: the hashing step reports it as
+// missing, like a file gone from a local destination.
+async function fetchFromRsync(plan, relPaths, root, { maxSize, bytes }) {
+  try {
+    await rsyncRestore.fetchRemoteFiles(plan.rsync, relPaths, root, {
+      maxSize: Math.max(1, maxSize), budgetBytes: rsyncBudget(bytes), signal: current && current.abort.signal,
+    });
+  } catch (error) {
+    if (error.code !== 'RESTORE_REMOTE_FILE_MISSING') throw error;
+  }
+}
+
+/**
+ * The deep step for an rsync destination: pull the dump, then the selected
+ * files batch by batch, into the private work directory over the backup's
+ * own connection (resolveRsyncConnection: known_hosts, StrictHostKeyChecking),
+ * and hash them in the worker as a local restore point. Same result shape as
+ * the worker's deep mode; the verified dump ends up at <workDir>/dump.
+ */
+async function deepFromRsync(plan, workDir, files) {
+  const result = { dump: null, files: [] };
+  const root = path.join(workDir, 'remote');
+  const fresh = async () => {
+    await fs.rm(root, { recursive: true, force: true });
+    await fs.mkdir(root, { recursive: true, mode: 0o700 });
+  };
+  if (plan.dump) {
+    await fresh();
+    const size = Number(plan.dump.size) || 0;
+    await fetchFromRsync(plan, [plan.dump.path], root, { maxSize: size, bytes: size });
+    const deep = await runWorker('deep', { source: { type: 'local', root }, s3: null, dump: plan.dump, dumpTarget: null, files: [] });
+    result.dump = deep.dump;
+    if (deep.dump && deep.dump.ok) await fs.rename(path.join(root, plan.dump.path), path.join(workDir, 'dump'));
+  }
+  for (const batch of rsyncBatches(files)) {
+    await fresh();
+    await fetchFromRsync(plan, batch.files.map((entry) => entry.path), root, { maxSize: batch.largest, bytes: batch.bytes });
+    const deep = await runWorker('deep', { source: { type: 'local', root }, s3: null, dump: null, dumpTarget: null, files: batch.files });
+    result.files.push(...deep.files);
+  }
+  await fs.rm(root, { recursive: true, force: true });
+  return result;
+}
+
+// What a manifest says to fetch and expect: the dump, the files, the
+// engine and row counts the drill compares with.
+async function contentPlan(manifest) {
   const dumpRel = manifest.database && manifest.database.backup_file;
   const dumpEntry = dumpRel ? {
     path: String(dumpRel).split(path.sep).join('/'),
@@ -479,8 +647,6 @@ async function planFileBackup(run, config, checks) {
     .filter((entry) => !dumpEntry || String(entry.path).split(path.sep).join('/') !== dumpEntry.path);
 
   return {
-    source,
-    s3: snapshot.type === 's3' ? s3Settings(config) : null,
     dump: dumpEntry,
     files: fileEntries,
     engine: dumpEngine(manifest.database && manifest.database.type),
@@ -515,14 +681,16 @@ async function planDatabaseBackup(run, checks) {
   };
 }
 
-async function hasSpaceFor(dir, plan) {
-  if (!plan.dump) return true;
-  const dumpSize = Number(plan.dump.size) || 0;
-  const plain = plan.plainSize || dumpSize * ASSUMED_EXPANSION;
+// `stagedBytes`: files an rsync test downloads besides the dump (its
+// largest batch; each batch is removed before the next).
+async function hasSpaceFor(dir, plan, stagedBytes = 0) {
+  if (!plan.dump && !stagedBytes) return true;
+  const dumpSize = plan.dump ? Number(plan.dump.size) || 0 : 0;
+  const plain = plan.dump ? plan.plainSize || dumpSize * ASSUMED_EXPANSION : 0;
   // The fetched dump plus its decompressed form (the SQLite drill copy, or
   // the SQL psql reads). On PostgreSQL the drill database itself lives on
   // the database server, whose free space is not visible from here.
-  const needed = dumpSize + plain + SPACE_MARGIN_BYTES;
+  const needed = dumpSize + plain + stagedBytes + SPACE_MARGIN_BYTES;
   try {
     const stat = await fs.statfs(dir);
     return Number(stat.bavail) * Number(stat.bsize) >= needed;
@@ -614,7 +782,7 @@ async function execute(id, target, { full, samplePercent, drill }) {
       if (!run || run.status !== 'completed') return finishRow(id, { status: 'skipped', skipReason: 'no_backup' });
       plan = await planDatabaseBackup(run, checks);
     }
-    if (plan.stop) return finishRow(id, { status: 'failed', checks });
+    if (plan.stop) return stopped() || finishRow(id, { status: 'failed', checks });
     // A check that already failed (the parent chain, say) is not hidden
     // behind the skip.
     if (plan.skip) {
@@ -622,17 +790,20 @@ async function execute(id, target, { full, samplePercent, drill }) {
     }
 
     await fs.mkdir(workDir, { recursive: true, mode: 0o700 });
-    if (!(await hasSpaceFor(workDir, plan))) {
+    const { docs, sample, sampledOf } = selectFiles(plan.files, { full, samplePercent, rotation: id });
+    const selected = [...docs, ...sample].map((entry) => ({ path: entry.path, checksum: entry.checksum, size: entry.size }));
+    const rsync = plan.source.type === 'rsync';
+    const staged = rsync ? Math.max(0, ...rsyncBatches(selected).map((batch) => batch.bytes)) : 0;
+    if (!(await hasSpaceFor(workDir, plan, staged))) {
       return finishRow(id, { status: 'skipped', skipReason: 'insufficient_space', checks });
     }
 
-    const { docs, sample, sampledOf } = selectFiles(plan.files, { full, samplePercent, rotation: id });
     let deep;
     try {
-      deep = await runWorker('deep', {
+      deep = rsync ? await deepFromRsync(plan, workDir, selected) : await runWorker('deep', {
         source: plan.source, s3: plan.s3, dump: plan.dump,
         dumpTarget: plan.dump ? path.join(workDir, 'dump') : null,
-        files: [...docs, ...sample].map((entry) => ({ path: entry.path, checksum: entry.checksum, size: entry.size })),
+        files: selected,
       });
     } catch (error) {
       if (current && current.aborted) return stopped();
@@ -775,7 +946,8 @@ async function runOne(target, options = {}) {
     if (await targetExists(target)) return insertRow({ ...rowFields, status: 'skipped', skipReason: 'busy' });
     return null;
   }
-  const state = { id: null, aborted: null, children: new Set() };
+  // `abort` stops an rsync download, which is not a worker child.
+  const state = { id: null, aborted: null, children: new Set(), abort: new AbortController() };
   current = state;
   const lease = jobState.startLeaseKeeper(JOB_NAME, token);
   // While the test runs: a lease that moved on means another process took
@@ -1015,13 +1187,23 @@ async function getSummary({ limit = 20 } = {}) {
   else health = 'stale';
 
   const byBackupRun = {};
+  // Why a run's shown status is "skipped" (rsync_superseded, ...).
+  const skipReasonByBackupRun = {};
   const perRun = await db('backup_verifications').whereNotNull('backup_run_id').orderBy('id', 'desc').limit(1000)
-    .select('backup_run_id', 'status');
+    .select('backup_run_id', 'status', 'skip_reason');
   for (const row of perRun) {
     const key = String(row.backup_run_id);
     const seen = byBackupRun[key];
-    // A later "skipped: busy" must not hide an earlier result.
-    if (!seen || (seen === 'skipped' && row.status !== 'skipped')) byBackupRun[key] = row.status;
+    // A later "skipped: busy" must not hide an earlier result. A later
+    // "skipped: rsync_superseded" is final: the run can no longer be tested,
+    // so an earlier pass must not show over it.
+    const supersededSeen = seen === 'skipped' && skipReasonByBackupRun[key] === 'rsync_superseded';
+    if (!seen || (seen === 'skipped' && !supersededSeen
+      && (row.status !== 'skipped' || row.skip_reason === 'rsync_superseded'))) {
+      byBackupRun[key] = row.status;
+      if (row.status === 'skipped' && row.skip_reason) skipReasonByBackupRun[key] = row.skip_reason;
+      else delete skipReasonByBackupRun[key];
+    }
   }
 
   const settings = await readSettings();
@@ -1033,6 +1215,7 @@ async function getSummary({ limit = 20 } = {}) {
     staleDays: STALE_DAYS,
     running,
     byBackupRun,
+    skipReasonByBackupRun,
     settings: { enabled: settings.enabled, cron: settings.cron, samplePercent: settings.samplePercent },
   };
 }
@@ -1156,5 +1339,5 @@ module.exports = {
   sweepStale,
   yieldTo,
   runsUnderTest,
-  _internal: { current: () => current, setMonitorInterval: (ms) => { monitorIntervalMs = ms; }, leftByDeadProcess, fileCheckResult, runWorker, setWorkerPath: (p) => { workerPath = p || WORKER; }, privileges, selectFiles, bucketOf, overallStatus, planFileBackup, planDatabaseBackup, liveTarget, drain: () => draining, drainNow: () => drain(), queue },
+  _internal: { current: () => current, setMonitorInterval: (ms) => { monitorIntervalMs = ms; }, leftByDeadProcess, fileCheckResult, runWorker, setWorkerPath: (p) => { workerPath = p || WORKER; }, privileges, selectFiles, bucketOf, overallStatus, planFileBackup, planDatabaseBackup, rsyncBatches, liveTarget, drain: () => draining, drainNow: () => drain(), queue },
 };

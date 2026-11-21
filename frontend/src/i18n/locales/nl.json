@@ -3198,7 +3198,8 @@
         "destination": "Back-upbestemming"
       },
       "skipReasons": {
-        "not_verifiable_rsync": "Back-ups die via rsync worden verzonden, kunnen niet worden teruggehaald om te testen en worden dus niet gecontroleerd. Gebruik een lokale of S3-bestemming om hersteltests te krijgen.",
+        "not_verifiable_rsync": "Deze rsync-back-up kan niet worden teruggehaald voor een test: hij is gemaakt voordat back-ups hun manifest naar de rsync-bestemming kopieerden, of er is geen rsync-bestemming meer ingesteld. Nieuwere rsync-back-ups worden wel getest.",
+        "rsync_superseded": "Alleen de nieuwste rsync-back-up kan worden getest: de bestemming is een spiegel en bevat nu een nieuwere back-up.",
         "insufficient_space": "Er was niet genoeg vrije schijfruimte om een testkopie terug te zetten. Maak ruimte vrij op de server en voer de test opnieuw uit.",
         "busy": "Er liep op dat moment een back-up, herstel of andere test, dus deze test is overgeslagen.",
         "no_backup": "Er was geen geslaagde back-up om te testen.",
@@ -3216,7 +3217,9 @@
         "verified": "Gecontroleerd",
         "failed": "Test mislukt",
         "skipped": "Niet testbaar",
-        "notVerified": "Niet gecontroleerd"
+        "notVerified": "Niet gecontroleerd",
+        "superseded": "Vervangen",
+        "supersededHint": "Alleen de nieuwste rsync-back-up kan worden getest: de bestemming is een spiegel en bevat nu een nieuwere back-up."
       },
       "config": {
         "title": "Hersteltest",

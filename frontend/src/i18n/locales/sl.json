@@ -5510,7 +5510,8 @@
         "destination": "Cilj varnostnih kopij"
       },
       "skipReasons": {
-        "not_verifiable_rsync": "Varnostnih kopij, poslanih prek rsync, ni mogoče prenesti nazaj za preizkus, zato niso preverjene. Za preizkuse obnovitve uporabite lokalni cilj ali S3.",
+        "not_verifiable_rsync": "Te varnostne kopije rsync ni mogoče prenesti nazaj za preizkus: narejena je bila, preden so varnostne kopije svoj manifest kopirale na cilj rsync, ali pa cilj rsync ni več nastavljen. Novejše varnostne kopije rsync se preizkusijo.",
+        "rsync_superseded": "Preizkusiti je mogoče le najnovejšo varnostno kopijo rsync: cilj je zrcalo in zdaj vsebuje novejšo varnostno kopijo.",
         "insufficient_space": "Za obnovitev preizkusne kopije ni bilo dovolj prostora na disku. Sprostite prostor na strežniku in znova zaženite preizkus.",
         "busy": "Takrat je potekalo varnostno kopiranje, obnovitev ali drug preizkus, zato je bil ta preizkus preskočen.",
         "no_backup": "Ni bilo uspešne varnostne kopije za preizkus.",
@@ -5528,7 +5529,9 @@
         "verified": "Preverjeno",
         "failed": "Preizkus neuspešen",
         "skipped": "Ni mogoče preizkusiti",
-        "notVerified": "Ni preverjeno"
+        "notVerified": "Ni preverjeno",
+        "superseded": "Nadomeščena",
+        "supersededHint": "Preizkusiti je mogoče le najnovejšo varnostno kopijo rsync: cilj je zrcalo in zdaj vsebuje novejšo varnostno kopijo."
       },
       "config": {
         "title": "Preizkus obnovitve",

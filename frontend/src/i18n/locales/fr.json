@@ -3258,7 +3258,8 @@
         "destination": "Destination de la sauvegarde"
       },
       "skipReasons": {
-        "not_verifiable_rsync": "Les sauvegardes envoyées par rsync ne peuvent pas être récupérées pour être testées ; elles ne sont donc pas vérifiées. Utilisez une destination locale ou S3 pour bénéficier des tests de restauration.",
+        "not_verifiable_rsync": "Cette sauvegarde rsync ne peut pas être récupérée pour un test : elle date d'avant la copie du manifeste vers la destination rsync, ou aucune destination rsync n'est plus configurée. Les sauvegardes rsync plus récentes sont testées.",
+        "rsync_superseded": "Seule la sauvegarde rsync la plus récente peut être testée : la destination est un miroir et contient désormais une sauvegarde plus récente.",
         "insufficient_space": "L'espace disque libre était insuffisant pour restaurer une copie de test. Libérez de l'espace sur le serveur puis relancez le test.",
         "busy": "Une sauvegarde, une restauration ou un autre test était en cours à ce moment-là ; ce test a donc été ignoré.",
         "no_backup": "Il n'y avait aucune sauvegarde réussie à tester.",
@@ -3276,7 +3277,9 @@
         "verified": "Vérifiée",
         "failed": "Test échoué",
         "skipped": "Non testable",
-        "notVerified": "Non vérifiée"
+        "notVerified": "Non vérifiée",
+        "superseded": "Remplacée",
+        "supersededHint": "Seule la sauvegarde rsync la plus récente peut être testée : la destination est un miroir et contient désormais une sauvegarde plus récente."
       },
       "config": {
         "title": "Test de restauration",

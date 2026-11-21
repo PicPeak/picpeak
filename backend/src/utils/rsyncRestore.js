@@ -118,12 +118,13 @@ const manifestsNotFound = remoteDir => ({
  * most MAX_MANIFEST_BYTES, the newest MAX_LISTED_MANIFESTS of them, within
  * MAX_LISTED_MANIFEST_BYTES together.
  */
-async function selectRemoteManifests(remote) {
+async function selectRemoteManifests(remote, { signal } = {}) {
   const remoteDir = `${remote.base}/${RSYNC_MANIFEST_DIR}`;
   let newest = [];
   const outcome = await rsyncConnection.runRsync(['--list-only', `--timeout=${IO_TIMEOUT_SECONDS}`,
     '-e', remote.connection.rsyncShell, `${remote.connection.rsyncTarget}:${remoteDir}/`], {
     timeoutMs: 0,
+    signal,
     onStdoutLine: (line) => {
       const match = LIST_LINE_RE.exec(line);
       if (!match || match[1] !== '-' || !REMOTE_MANIFEST_NAME_RE.test(match[5])) return;
@@ -154,11 +155,11 @@ const byNewest = (a, b) => (a.stamp === b.stamp ? b.name.localeCompare(a.name) :
  * fetchRemoteFiles, so each is size-capped, the transfer has a byte budget
  * and no symlink is followed or recreated. Returns `{ name, path }` each.
  */
-async function fetchRemoteManifests(config, dir, { name } = {}) {
+async function fetchRemoteManifests(config, dir, { name, signal } = {}) {
   if (name !== undefined) parseRemoteManifestRef(REMOTE_REF_PREFIX + name);
   const remote = await connectRemote(config);
   const remoteDir = `${remote.base}/${RSYNC_MANIFEST_DIR}`;
-  const entries = name ? [{ name, size: MAX_MANIFEST_BYTES }] : await selectRemoteManifests(remote);
+  const entries = name ? [{ name, size: MAX_MANIFEST_BYTES }] : await selectRemoteManifests(remote, { signal });
   if (entries.length === 0) return [];
   const root = path.join(dir, 'fetched');
   await fs.mkdir(root, { recursive: true, mode: 0o700 });
@@ -167,6 +168,7 @@ async function fetchRemoteManifests(config, dir, { name } = {}) {
     await module.exports.fetchRemoteFiles(config, rels, root, {
       maxSize: MAX_MANIFEST_BYTES,
       budgetBytes: entries.reduce((total, entry) => total + entry.size, 0) + 1024 * 1024,
+      signal,
     });
   } catch (error) {
     if (error.code === 'RESTORE_REMOTE_FILE_MISSING') {
@@ -190,15 +192,15 @@ function parseManifestFile(raw, file) {
  * restore would (signature, or a host-approved recovery digest). Other
  * manifests are left out; one that fails authentication is returned with
  * its error so the wizard can say so. The download directory is private and
- * removed before this returns.
+ * removed before this returns. `signal` stops the listing and the download.
  */
-async function listRemoteManifests(config) {
+async function listRemoteManifests(config, { signal } = {}) {
   const backupManifest = require('../services/backupManifest');
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-rsync-manifests-'));
   try {
     await fs.chmod(dir, 0o700);
     const listed = [];
-    for (const file of await fetchRemoteManifests(config, dir)) {
+    for (const file of await fetchRemoteManifests(config, dir, { signal })) {
       let manifest;
       try {
         manifest = parseManifestFile(await fs.readFile(file.path, 'utf8'), file.name);
@@ -279,9 +281,10 @@ async function stagedBytes(dir) {
  * and the run is stopped the moment they exceed it, so a destination that
  * sends more than the manifest records cannot fill the volume before any
  * checksum is compared. Every listed file must have arrived as a regular
- * file; missing ones are named in the error.
+ * file; missing ones are named in the error. `signal` stops the transfer
+ * from outside (a restore test yielding to a backup).
  */
-async function fetchRemoteFiles(config, relPaths, root, { maxSize, budgetBytes, onProgress } = {}) {
+async function fetchRemoteFiles(config, relPaths, root, { maxSize, budgetBytes, onProgress, signal } = {}) {
   relPaths.forEach(rel => assertMirrorRelativePath(rel, 'manifest path'));
   const remote = await connectRemote(config);
   const listFile = path.join(path.dirname(root), 'files-from');
@@ -292,6 +295,11 @@ async function fetchRemoteFiles(config, relPaths, root, { maxSize, budgetBytes, 
     `${remote.connection.rsyncTarget}:${remote.base}/`, `${root}/`];
   let outcome;
   const controller = new AbortController();
+  const stopFromOutside = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', stopFromOutside, { once: true });
+  }
   const budgeted = Number.isFinite(budgetBytes) && budgetBytes >= 0;
   const before = budgeted ? await stagedBytes(root) : 0;
   let overBudget = false;
@@ -316,6 +324,7 @@ async function fetchRemoteFiles(config, relPaths, root, { maxSize, budgetBytes, 
     });
   } finally {
     if (watcher) clearInterval(watcher);
+    if (signal) signal.removeEventListener('abort', stopFromOutside);
     await fs.rm(listFile, { force: true });
   }
   if (overBudget || await overBy()) {

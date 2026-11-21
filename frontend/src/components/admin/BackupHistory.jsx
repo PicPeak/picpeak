@@ -97,6 +97,7 @@ export const BackupHistory = ({ restoreTestEnabled = false } = {}) => {
     refetchInterval: (query) => (query.state.data?.running ? 5000 : false),
   });
   const verificationByRun = (restoreTestEnabled && verifications?.byBackupRun) || null;
+  const skipReasonByRun = verifications?.skipReasonByBackupRun || {};
 
   // Delete backup mutation (issue 1711). The route removes the run's own
   // stored artifact before the record, and answers with a stable code when
@@ -253,7 +254,10 @@ export const BackupHistory = ({ restoreTestEnabled = false } = {}) => {
                           </div>
                           {verificationByRun && backup.status !== 'running' && (
                             <div className="mt-1 ml-7">
-                              <RestoreTestRunBadge status={verificationByRun[String(backup.id)]} />
+                              <RestoreTestRunBadge
+                                status={verificationByRun[String(backup.id)]}
+                                skipReason={skipReasonByRun[String(backup.id)]}
+                              />
                             </div>
                           )}
                         </td>
