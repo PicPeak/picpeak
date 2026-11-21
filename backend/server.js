@@ -1527,6 +1527,11 @@ async function startServerInternal() {
       logger.warn(`[setup] ensureSetupToken skipped: ${err.message}`);
     }
 
+    // Backup and restore rows a process that died mid-run left at
+    // 'running'; checked again hourly. Before the backup schedule starts.
+    await require('./src/services/interruptedRuns').startStaleRunSweep()
+      .catch((err) => logger.warn(`Interrupted backup run sweep failed: ${err.message}`));
+
     // Start backup service
     await startBackupService();
 

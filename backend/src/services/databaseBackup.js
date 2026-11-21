@@ -216,6 +216,7 @@ function isUnderPubliclyServableRoot(candidatePath) {
 class DatabaseBackupService {
   constructor() {
     this.isRunning = false;
+    this.currentRunId = null;
     this.currentProgress = null;
     this.dbType = knexConfig.client === 'pg' ? 'postgresql' : 'sqlite';
   }
@@ -692,6 +693,8 @@ class DatabaseBackupService {
       const runId = insertResult[0]?.id || insertResult[0];
 
       backupRun = { id: runId };
+      // Read by interruptedRuns.js, which must leave this row alone.
+      this.currentRunId = runId;
       
       // Get initial checksums
       let tableChecksums = null;
@@ -844,6 +847,7 @@ class DatabaseBackupService {
       throw error;
     } finally {
       this.isRunning = false;
+      this.currentRunId = null;
       this.currentProgress = null;
     }
   }
