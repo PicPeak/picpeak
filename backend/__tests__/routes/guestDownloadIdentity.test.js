@@ -371,6 +371,142 @@ describe('guest identity before downloading (issue 2503)', () => {
     expect(await db('access_logs').where({ event_id: eventId })).toHaveLength(2);
   });
 
+  describe('a log row written while the guest is being removed', () => {
+    // The removal anonymises the guest's access_logs rows and marks the guest
+    // deleted; a view or download resolves the guest and inserts its row.
+    // Both orders of the two must leave no row naming the removed guest.
+    // Required lazily: db.js binds its file on first load, after bootCrmDb.
+    const feedbackService = () => require('../../src/services/feedbackService');
+    const deferred = () => {
+      let resolve;
+      const promise = new Promise((r) => { resolve = r; });
+      return { promise, resolve };
+    };
+    const until = async (check) => {
+      for (let i = 0; i < 200; i += 1) {
+        if (await check()) return;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      throw new Error('condition not reached');
+    };
+    const newGuest = async (name) => {
+      const id = await addGuest(eventId, name);
+      const { signGuestToken } = require('../../src/middleware/guestAuth');
+      return { id, token: signGuestToken({ guestId: id, eventId, identifier: `${name}-identifier`, name }) };
+    };
+
+    beforeAll(() => setRequired(true));
+    afterEach(() => jest.restoreAllMocks());
+
+    it('clears a download written after the anonymisation but before the guest is marked removed', async () => {
+      const guest = await newGuest('Ida');
+      const anonymised = deferred();
+      const release = deferred();
+      const service = feedbackService();
+      const original = service.anonymizeGuestFeedback.bind(service);
+      jest.spyOn(service, 'anonymizeGuestFeedback').mockImplementation(async (id) => {
+        const result = await original(id);
+        anonymised.resolve();
+        await release.promise;
+        return result;
+      });
+
+      const removal = request(app).delete(`/api/gallery/${SLUG}/guest/me`).set('x-guest-token', guest.token).then((r) => r);
+      await anonymised.promise;
+      // The guest is not marked removed yet: the download is let through
+      // and logged under the guest.
+      const dl = await request(app).get(`/api/gallery/${SLUG}/download/${photoId}`).set('x-guest-token', guest.token);
+      expect(dl.status).toBe(200);
+      expect(await db('access_logs').where({ guest_id: guest.id })).toHaveLength(1);
+
+      release.resolve();
+      expect((await removal).status).toBe(200);
+      expect(await db('access_logs').where({ guest_id: guest.id })).toHaveLength(0);
+      expect(await db('access_logs').where({ event_id: eventId, action: 'download' })).toHaveLength(1);
+    });
+
+    it('clears a view resolved before the removal and written after it', async () => {
+      const guest = await newGuest('Jana');
+      const resolved = deferred();
+      const release = deferred();
+      const service = feedbackService();
+      const original = service.getEventFeedbackSettings.bind(service);
+      jest.spyOn(service, 'getEventFeedbackSettings').mockImplementation(async (...args) => {
+        const settings = await original(...args);
+        // Hold only the lookup that names the guest of the view's row.
+        if (new Error().stack.includes('viewGuestId')) {
+          resolved.resolve();
+          await release.promise;
+        }
+        return settings;
+      });
+
+      const view = request(app).get(`/api/gallery/${SLUG}/photos`).set('x-guest-token', guest.token).then((r) => r);
+      await resolved.promise;
+      const removal = await request(app).delete(`/api/gallery/${SLUG}/guest/me`).set('x-guest-token', guest.token);
+      expect(removal.status).toBe(200);
+
+      release.resolve();
+      expect((await view).status).toBe(200);
+      await until(async () => (await db('access_logs').where({ event_id: eventId, action: 'view' })).length === 1);
+      expect(await db('access_logs').where({ guest_id: guest.id })).toHaveLength(0);
+    });
+
+    it('moves a row written under a guest merged meanwhile to the guest that is left', async () => {
+      const { settleLoggedGuest } = require('../../src/middleware/guestAuth');
+      const kept = await addGuest(eventId, 'Karl');
+      const merged = await addGuest(eventId, 'Lena');
+      await db('activity_logs').insert({
+        activity_type: 'guest_merged',
+        actor_type: 'admin',
+        metadata: JSON.stringify({ event_id: String(eventId), keep_id: kept, merged_ids: [merged] }),
+        event_id: eventId,
+      });
+      await db('gallery_guests').where({ id: merged }).update({ is_deleted: true });
+      await db('access_logs').insert({ event_id: eventId, action: 'download', guest_id: merged });
+
+      await settleLoggedGuest(merged, eventId);
+      expect(await db('access_logs').where({ guest_id: merged })).toHaveLength(0);
+      expect(await db('access_logs').where({ guest_id: kept })).toHaveLength(1);
+
+      // A live guest's rows stay as they are.
+      await settleLoggedGuest(kept, eventId);
+      expect(await db('access_logs').where({ guest_id: kept })).toHaveLength(1);
+    });
+  });
+
+  it('checks the survivor too when it is removed while the row moves to it', async () => {
+    const guestAuth = require('../../src/middleware/guestAuth');
+    const kept = await addGuest(eventId, 'Mia');
+    const merged = await addGuest(eventId, 'Nils');
+    await db('activity_logs').insert({
+      activity_type: 'guest_merged',
+      actor_type: 'admin',
+      metadata: JSON.stringify({ event_id: String(eventId), keep_id: kept, merged_ids: [merged] }),
+      event_id: eventId,
+    });
+    await db('gallery_guests').where({ id: merged }).update({ is_deleted: true });
+    const [row] = await db('access_logs').insert({ event_id: eventId, action: 'download', guest_id: merged }).returning('id');
+    const rowId = row?.id ?? row;
+
+    // The survivor's removal completes after the lookup named it and before
+    // the row moves: its own access_logs pass found nothing of this row.
+    const real = guestAuth.loggedGuestId;
+    const spy = jest.spyOn(guestAuth, 'loggedGuestId').mockImplementationOnce(async (...args) => {
+      const result = await real(...args);
+      await db('gallery_guests').where({ id: kept }).update({ is_deleted: true });
+      await db('access_logs').where({ event_id: eventId, guest_id: kept }).update({ guest_id: null });
+      return result;
+    });
+    try {
+      await guestAuth.settleLoggedGuest(merged, eventId);
+    } finally {
+      spy.mockRestore();
+    }
+    const after = await db('access_logs').where({ id: rowId }).first('guest_id');
+    expect(after.guest_id).toBeNull();
+  });
+
   describe('the guest an archive is logged under once it finished', () => {
     // An archive logs on completion; the guest the request named may have
     // been removed or merged while it streamed.

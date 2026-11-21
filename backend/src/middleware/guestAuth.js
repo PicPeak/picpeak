@@ -295,6 +295,41 @@ async function loggedGuestId(guestId, eventId) {
 }
 
 /**
+ * Checks the guest an access_logs row was just written under once more, after
+ * the write (issue 2503). The guest was looked up before the insert, and a
+ * removal or merge can complete in between: its access_logs rewrite then ran
+ * before the row existed. Looking again after the insert closes that window,
+ * because a removal marks the guest deleted before its final access_logs pass
+ * and a merge moves the rows in the same transaction that marks the guest
+ * merged. So either that pass sees the row, or this check sees the mark. On
+ * PostgreSQL a merge holds the guest rows FOR UPDATE until it commits; the
+ * share lock waits for it, so the check does not read the guest mid-merge.
+ * Any row of the guest left behind goes where loggedGuestId says: to the
+ * survivor of a merge, or to nobody. The survivor gets the same check in
+ * turn: it may be removed or merged itself while the rows move to it, and its
+ * own cleanup may have run before they arrived. Never rejects.
+ */
+async function settleLoggedGuest(guestId, eventId) {
+  if (!guestId) return;
+  try {
+    let id = guestId;
+    // A chain of merges is short; the bound only guards against a cycle.
+    for (let hop = 0; hop < 10; hop += 1) {
+      if (db.client.config.client === 'pg') {
+        await db('gallery_guests').where({ id }).forShare().first('id');
+      }
+      const current = await module.exports.loggedGuestId(id, eventId);
+      if (current !== null && Number(current) === Number(id)) return;
+      await db('access_logs').where({ event_id: eventId, guest_id: id }).update({ guest_id: current });
+      if (current === null) return;
+      id = current;
+    }
+  } catch (err) {
+    logger.warn('Access log guest re-check failed', { eventId, error: err?.message });
+  }
+}
+
+/**
  * The guest a gallery view is logged under: the identified guest, and only
  * while the gallery asks for identity before downloading (issue 2503). With
  * the setting off a view stays anonymous, as before.
@@ -316,5 +351,6 @@ module.exports = {
   signGuestDownloadTicket,
   guestDownloadGate,
   loggedGuestId,
+  settleLoggedGuest,
   viewGuestId,
 };

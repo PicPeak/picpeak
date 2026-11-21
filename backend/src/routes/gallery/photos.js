@@ -14,7 +14,7 @@ router.param('photoId', (req, res, next, value) => {
   next();
 });
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
-const { resolveGuest, scopeGuestToFeedback, viewGuestId } = require('../../middleware/guestAuth');
+const { resolveGuest, scopeGuestToFeedback, viewGuestId, settleLoggedGuest } = require('../../middleware/guestAuth');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const { generateGuestIdentifier } = require('../../middleware/feedbackRateLimit');
 const { errorResponse } = require('../../utils/routeHelpers');
@@ -73,6 +73,9 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, scopeGuestToFeedb
         action: 'view',
         ...(guestId ? { guest_id: guestId } : {}),
       });
+      // A removal that completed since the guest was resolved has missed
+      // this row; check the guest once more (settleLoggedGuest).
+      if (guestId) await settleLoggedGuest(guestId, req.event.id);
       notifyGalleryOpened(req.event, req);
     }
     
