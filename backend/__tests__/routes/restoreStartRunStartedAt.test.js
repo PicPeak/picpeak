@@ -1,9 +1,9 @@
 /**
- * /admin/restore/start answers with `startedAfter`, a server timestamp taken
- * before the background run inserts its restore_runs row. The restore wizard
- * keeps it across the forced re-login a database restore causes and treats
- * only a row with started_at >= startedAfter as this run's result, so the
- * previous run is never shown as the outcome of the one just started.
+ * /admin/restore/start answers with `runStartedAt` and hands the same value
+ * to the run, whose restore_runs row keeps it as started_at. The restore
+ * wizard keeps it across the forced re-login a database restore causes and
+ * treats only the row with exactly that started_at as this run's result, so
+ * neither the previous run nor a later one is shown as its outcome.
  */
 const path = require('path');
 const fs = require('fs');
@@ -57,12 +57,8 @@ describe('POST /admin/restore/start', () => {
 
   afterAll(async () => { if (cleanup) await cleanup(); });
 
-  it('returns a startedAfter no later than the run it starts', async () => {
-    let runStartedAt;
-    const restore = jest.spyOn(restoreService, 'restore').mockImplementation(async () => {
-      runStartedAt = new Date().toISOString();
-    });
-    const before = Date.now();
+  it('returns the runStartedAt it hands to the run', async () => {
+    const restore = jest.spyOn(restoreService, 'restore').mockResolvedValue(undefined);
     try {
       const res = await request(app)
         .post('/api/admin/restore/start')
@@ -71,9 +67,8 @@ describe('POST /admin/restore/start', () => {
 
       expect(res.status).toBe(200);
       expect(restore).toHaveBeenCalledTimes(1);
-      const startedAfter = Date.parse(res.body.startedAfter);
-      expect(startedAfter).toBeGreaterThanOrEqual(before);
-      expect(startedAfter).toBeLessThanOrEqual(Date.parse(runStartedAt));
+      expect(Number.isFinite(Date.parse(res.body.runStartedAt))).toBe(true);
+      expect(restore.mock.calls[0][0].runStartedAt).toBe(res.body.runStartedAt);
     } finally {
       restore.mockRestore();
     }

@@ -91,7 +91,7 @@ describe('BackupManagement header', () => {
 describe('BackupManagement and the restore re-login marker', () => {
   const MARKER = 'picpeak_restore_run';
   const setMarker = () => sessionStorage.setItem(MARKER,
-    JSON.stringify({ startedAfter: '2026-11-20T10:00:00.000Z', since: Date.now(), redirected: true }));
+    JSON.stringify({ runStartedAt: '2026-11-20T10:00:00.000Z', since: Date.now(), redirected: true }));
   afterEach(() => { auth.role = 'super_admin'; sessionStorage.clear(); });
 
   it('drops the marker for an admin that may not restore', async () => {

@@ -23,8 +23,8 @@ export const RESTORE_RUN_GRACE_MS = 30 * 1000;
 export const RESTORE_RESULT_PATH = '/admin/settings?tab=backup&backupTab=restore';
 
 export interface RestoreRunMarker {
-  /** Server time just before the run started; its restore_runs row starts at or after it. */
-  startedAfter: string;
+  /** The run's started_at as /admin/restore/start returned it; its restore_runs row carries exactly this. */
+  runStartedAt: string;
   /** Browser clock (ms) at the start; TTL and grace periods use it, not server time. */
   since: number;
   /** Set when an admin request got a 401 while the marker was present. */
@@ -38,7 +38,7 @@ export function readRestoreRun(): RestoreRunMarker | null {
     const raw = sessionStorage.getItem(KEY);
     if (!raw) return null;
     const marker = JSON.parse(raw);
-    if (!marker || typeof marker.startedAfter !== 'string' || !Number.isFinite(marker.since)) {
+    if (!marker || typeof marker.runStartedAt !== 'string' || !Number.isFinite(marker.since)) {
       sessionStorage.removeItem(KEY);
       return null;
     }
@@ -91,7 +91,9 @@ export function takeRestoreRedirect({ afterSignOut = false }: { afterSignOut?: b
 /** Wizard: the admin reached the run, so a later sign-out may bring them back. */
 export function rearmRestoreRedirect(): void {
   const marker = readRestoreRun();
-  if (marker?.redirected) rememberRestoreRun({ ...marker, redirected: false });
+  // The sign-out that brought them here is used up: a plain visit to the
+  // dashboard must not send them back (a new 401 sets it again).
+  if (marker?.redirected || marker?.signedOut) rememberRestoreRun({ ...marker, redirected: false, signedOut: false });
 }
 
 const toMs = (value: unknown): number => {
@@ -102,6 +104,6 @@ const toMs = (value: unknown): number => {
 /** True when this restore_runs row is the run the marker was set for. */
 export function isRunOf(row: { started_at?: unknown } | null | undefined, marker: RestoreRunMarker): boolean {
   const started = toMs(row?.started_at);
-  const after = toMs(marker.startedAfter);
-  return Number.isFinite(started) && Number.isFinite(after) && started >= after;
+  const own = toMs(marker.runStartedAt);
+  return Number.isFinite(started) && Number.isFinite(own) && started === own;
 }

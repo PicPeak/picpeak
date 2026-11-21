@@ -52,7 +52,7 @@ describe('AdminLoginPage after a restore sign-out', () => {
   });
 
   const track = (extra: Record<string, unknown> = {}) => sessionStorage.setItem('picpeak_restore_run',
-    JSON.stringify({ startedAfter: '2026-11-20T10:00:00.000Z', since: Date.now(), signedOut: true, ...extra }));
+    JSON.stringify({ runStartedAt: '2026-11-20T10:00:00.000Z', since: Date.now(), signedOut: true, ...extra }));
 
   it('goes back to the restore tab while a restore is tracked', () => {
     track();

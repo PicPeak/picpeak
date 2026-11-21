@@ -121,12 +121,9 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     if (trackedRun) rearmRestoreRedirect();
   }, []);
 
-  // Restores run one at a time, so the run this admin started is the first
-  // one at or after the marker. History is newest first: a later restore or
-  // dry run by someone else must not stand in for it.
-  const trackedRow = trackedRun
-    ? restoreStatus?.history?.filter((row) => isRunOf(row, trackedRun)).pop()
-    : undefined;
+  // Exactly the run this admin started: a later restore or dry run by
+  // someone else must not stand in for it.
+  const trackedRow = trackedRun ? restoreStatus?.history?.find((row) => isRunOf(row, trackedRun)) : undefined;
   // Once the tracked run has an outcome, it is on screen: drop the marker so
   // the next sign-in in this tab goes to the dashboard again. Same when this
   // admin may not read the restore status at all.
@@ -214,11 +211,13 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
       return response.data;
     },
     onSuccess: (data) => {
-      // Only a restore_runs row started at or after this instant is this
-      // run's result; the cached status still names the previous run.
-      const marker = { startedAfter: data?.startedAfter || new Date().toISOString(), since: Date.now() };
-      rememberRestoreRun(marker);
-      setTrackedRun(marker);
+      // Only the restore_runs row with exactly this started_at is this run's
+      // result; the cached status still names the previous run.
+      if (data?.runStartedAt) {
+        const marker = { runStartedAt: data.runStartedAt, since: Date.now() };
+        rememberRestoreRun(marker);
+        setTrackedRun(marker);
+      }
       queryClient.invalidateQueries({ queryKey: ['restore-status'] });
       setCurrentStep(4);
       toast.success('Restore started successfully');

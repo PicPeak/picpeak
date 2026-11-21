@@ -82,8 +82,8 @@ const userCase: Validation = {
 const clean: Validation = { isValid: true, errors: [], warnings: [], notices: [] };
 
 // What /admin/restore/start answers with; the run it starts begins after it.
-const STARTED_AFTER = '2026-11-20T10:00:00.000Z';
-const THIS_RUN_STARTED = '2026-11-20T10:00:00.120Z';
+const RUN_STARTED_AT = '2026-11-20T10:00:00.000Z';
+const THIS_RUN_STARTED = RUN_STARTED_AT;
 
 const mockBackend = ({ validation, history = [], settings = { restore_allow_force: true } }: {
   validation: Validation;
@@ -102,7 +102,7 @@ const mockBackend = ({ validation, history = [], settings = { restore_allow_forc
         backup_type: 'full', total_size: 1024, database_included: true }] } };
     }
     if (url === '/admin/restore/validate') return { data: { data: { validation, spaceCheck: null } } };
-    if (url === '/admin/restore/start') return { data: { success: true, startedAfter: STARTED_AFTER } };
+    if (url === '/admin/restore/start') return { data: { success: true, runStartedAt: RUN_STARTED_AT } };
     throw new Error(`unexpected POST ${url}`);
   });
 };
@@ -355,7 +355,7 @@ describe('RestoreWizard across the restore sign-out', () => {
     expect(screen.queryByText(r.progress.failedSubtitle)).toBeNull();
     expect(screen.queryByText('pg_restore exploded yesterday')).toBeNull();
     expect(JSON.parse(sessionStorage.getItem(MARKER_KEY) as string)).toEqual({
-      startedAfter: STARTED_AFTER, since: expect.any(Number) });
+      runStartedAt: RUN_STARTED_AT, since: expect.any(Number) });
 
     // This run's row shows up on a later poll.
     status = { isRunning: false, history: [thisRunCompleted, previousFailed] };
@@ -366,7 +366,7 @@ describe('RestoreWizard across the restore sign-out', () => {
   });
 
   it('after signing in again, opens on the result of the run that signed the admin out', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(), signedOut: true }));
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT, since: Date.now(), signedOut: true }));
     status = { isRunning: false, history: [thisRunCompleted, previousFailed] };
     renderWizard();
 
@@ -382,7 +382,7 @@ describe('RestoreWizard across the restore sign-out', () => {
   });
 
   it('a later dry run by someone else does not stand in for the run this admin started', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(), signedOut: true }));
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT, since: Date.now(), signedOut: true }));
     const laterDryRun = { id: 5, started_at: '2026-11-20T10:05:00.000Z', status: 'completed', was_successful: 0, is_dry_run: 1 };
     status = { isRunning: false, history: [laterDryRun, thisRunCompleted, previousFailed] };
     renderWizard();
@@ -392,7 +392,7 @@ describe('RestoreWizard across the restore sign-out', () => {
   });
 
   it('shows a failed result of this run, read back with SQLite epoch-ms timestamps', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(), signedOut: true }));
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT, since: Date.now(), signedOut: true }));
     status = { isRunning: false, history: [
       { ...thisRunCompleted, started_at: Date.parse(THIS_RUN_STARTED), status: 'migrations_pending',
         was_successful: 0, error_message: '2 database migration(s) have not run' },
@@ -406,7 +406,7 @@ describe('RestoreWizard across the restore sign-out', () => {
   });
 
   it('keeps the marker while the run is still going after the re-login', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(), signedOut: true }));
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT, since: Date.now(), signedOut: true }));
     status = { isRunning: true, history: [{ ...thisRunCompleted, status: 'running', was_successful: 0 }, previousFailed] };
     renderWizard();
 
@@ -416,7 +416,7 @@ describe('RestoreWizard across the restore sign-out', () => {
   });
 
   it('re-arms the post-login redirect once the admin is back on the run', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(),
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT, since: Date.now(),
       signedOut: true, redirected: true }));
     status = { isRunning: true, history: [{ ...thisRunCompleted, status: 'running', was_successful: 0 }] };
     renderWizard();
@@ -427,7 +427,7 @@ describe('RestoreWizard across the restore sign-out', () => {
 
   it('stops waiting for a run that never started once the grace period is over', async () => {
     // Nothing running and no row of this run, 31 s after the start.
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER,
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT,
       since: Date.now() - RESTORE_RUN_GRACE_MS - 1000, signedOut: true }));
     renderWizard();
 
@@ -439,7 +439,7 @@ describe('RestoreWizard across the restore sign-out', () => {
   });
 
   it('keeps waiting within the grace period, then gives up', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER,
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT,
       since: Date.now() - RESTORE_RUN_GRACE_MS + 1500 }));
     renderWizard();
 
@@ -450,7 +450,7 @@ describe('RestoreWizard across the restore sign-out', () => {
   });
 
   it('does not give up while the restore is running', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER,
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT,
       since: Date.now() - RESTORE_RUN_GRACE_MS - 1000 }));
     // The DB swap replaced this run's row; it is written again at the end.
     status = { isRunning: true, history: [previousFailed] };
@@ -462,7 +462,7 @@ describe('RestoreWizard across the restore sign-out', () => {
   });
 
   it('starting a new restore drops the marker and the note', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ startedAfter: STARTED_AFTER, since: Date.now(), signedOut: true }));
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT, since: Date.now(), signedOut: true }));
     status = { isRunning: false, history: [thisRunCompleted] };
     const u = user();
     renderWizard();

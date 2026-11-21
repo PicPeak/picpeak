@@ -11,8 +11,8 @@ import {
   RESTORE_RUN_TTL_MS, takeRestoreRedirect,
 } from '../restoreRelogin';
 
-const startedAfter = '2026-11-20T10:00:00.000Z';
-const fresh = () => ({ startedAfter, since: Date.now() });
+const runStartedAt = '2026-11-20T10:00:00.000Z';
+const fresh = () => ({ runStartedAt, since: Date.now() });
 
 describe('restore run marker', () => {
   beforeEach(() => sessionStorage.clear());
@@ -29,10 +29,10 @@ describe('restore run marker', () => {
   it('ignores a malformed entry', () => {
     sessionStorage.setItem('picpeak_restore_run', '{not json');
     expect(readRestoreRun()).toBeNull();
-    sessionStorage.setItem('picpeak_restore_run', '{"startedAfter":5}');
+    sessionStorage.setItem('picpeak_restore_run', '{"runStartedAt":5}');
     expect(readRestoreRun()).toBeNull();
     // Without the browser-clock start it cannot expire, so it is dropped.
-    sessionStorage.setItem('picpeak_restore_run', JSON.stringify({ startedAfter }));
+    sessionStorage.setItem('picpeak_restore_run', JSON.stringify({ runStartedAt }));
     expect(readRestoreRun()).toBeNull();
     expect(sessionStorage.getItem('picpeak_restore_run')).toBeNull();
   });
@@ -48,7 +48,7 @@ describe('restore run marker', () => {
 
   it('expires two hours after the start', () => {
     const now = Date.now();
-    rememberRestoreRun({ startedAfter, since: now - RESTORE_RUN_TTL_MS + 1000 });
+    rememberRestoreRun({ runStartedAt, since: now - RESTORE_RUN_TTL_MS + 1000 });
     expect(readRestoreRun()).not.toBeNull();
     const spy = vi.spyOn(Date, 'now').mockReturnValue(now + 2000);
     try {
@@ -78,14 +78,22 @@ describe('restore run marker', () => {
     noteRestoreSignOut();
     expect(takeRestoreRedirect({ afterSignOut: true })).toBe(true);
     expect(takeRestoreRedirect({ afterSignOut: true })).toBe(false);
+    // Back on the run, the wizard re-arms: the sign-out is used up, so a plain
+    // dashboard visit stays there until the next 401.
+    rearmRestoreRedirect();
+    expect(readRestoreRun()?.signedOut).toBe(false);
+    expect(takeRestoreRedirect({ afterSignOut: true })).toBe(false);
+    noteRestoreSignOut();
+    expect(takeRestoreRedirect({ afterSignOut: true })).toBe(true);
   });
 
-  it('matches only rows started at or after the marker, in every timestamp shape', () => {
+  it('matches only the row with exactly the marker\'s started_at, in every timestamp shape', () => {
     const marker = fresh();
     expect(isRunOf({ started_at: '2026-11-20T10:00:00.000Z' }, marker)).toBe(true);
-    expect(isRunOf({ started_at: '2026-11-20T10:00:00.250Z' }, marker)).toBe(true);
     // SQLite rows restored from a dump can carry epoch milliseconds.
-    expect(isRunOf({ started_at: Date.parse('2026-11-20T10:00:01.000Z') }, marker)).toBe(true);
+    expect(isRunOf({ started_at: Date.parse('2026-11-20T10:00:00.000Z') }, marker)).toBe(true);
+    // A later run (another admin's restore or dry run) is not this one.
+    expect(isRunOf({ started_at: '2026-11-20T10:00:00.250Z' }, marker)).toBe(false);
     expect(isRunOf({ started_at: '2026-11-19T22:00:00.000Z' }, marker)).toBe(false);
     expect(isRunOf({ started_at: null }, marker)).toBe(false);
     expect(isRunOf({}, marker)).toBe(false);

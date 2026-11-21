@@ -574,7 +574,10 @@ class RestoreService {
     this.preRestoreBackupPath = null;
     this.generationIndexSnapshot = null;
     this.portableRuntimeSnapshot = null;
-    const startTime = new Date();
+    // A run started from the admin API is known by the start time it was
+    // given (/admin/restore/start returns it); the row keeps it exactly.
+    const givenStart = options.runStartedAt ? new Date(options.runStartedAt) : null;
+    const startTime = givenStart && Number.isFinite(givenStart.getTime()) ? givenStart : new Date();
     let restoreRun = null;
     // Flipped right before step 6, the first step that writes to this
     // install. Everything before it (validation, disk space, the safety
