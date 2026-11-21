@@ -374,6 +374,8 @@ describe('RestoreWizard across the restore sign-out', () => {
     expect(screen.getByRole('heading', { name: r.progress.title })).toBeTruthy();
     expect(screen.getByText(r.progress.signedOutNote)).toBeTruthy();
     expect(screen.queryByText('pg_restore exploded yesterday')).toBeNull();
+    // The backend's live progress is reset by then; a finished run reads 100%.
+    expect(screen.getByText('100%')).toBeTruthy();
     await waitFor(() => expect(sessionStorage.getItem(MARKER_KEY)).toBeNull());
     // The result stays on screen after the marker is gone.
     expect(screen.getByText(r.progress.signedOutNote)).toBeTruthy();

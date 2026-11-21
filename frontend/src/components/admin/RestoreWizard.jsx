@@ -860,6 +860,10 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     const lastRunError = lastRun?.error_message
       ? lastRun.error_message.split('\n')[0].slice(0, 500)
       : null;
+    // The live progress lives in the backend's memory and is reset once the
+    // run ends (and after the re-login a restore forces), so a finished run
+    // would otherwise read 0%.
+    const percentage = lastRunSucceeded ? 100 : (progress.percentage || 0);
     const subtitle = isRunning
       ? t('backup.restore.progress.inProgress')
       : waitingForRun
@@ -957,12 +961,12 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
           <div className="space-y-4">
             <div className="flex justify-between text-sm">
               <span className="text-soft">{t('backup.restore.progress.overallProgress')}</span>
-              <span className="font-medium text-heading">{progress.percentage || 0}%</span>
+              <span className="font-medium text-heading">{percentage}%</span>
             </div>
             <div className="w-full bg-fill rounded-full h-3">
               <div
                 className="bg-accent-strong h-3 rounded-full transition-all duration-500"
-                style={{ width: `${progress.percentage || 0}%` }}
+                style={{ width: `${percentage}%` }}
               />
             </div>
             {progress.currentFile && (
