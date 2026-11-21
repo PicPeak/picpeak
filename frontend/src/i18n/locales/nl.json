@@ -774,7 +774,9 @@
       "remove": "Code verwijderen",
       "removeTitle": "Evenementcode verwijderen?",
       "removeConfirm": "De code werkt meteen niet meer, ook niet op al gedrukte kaarten. De deellink blijft werken.",
-      "removed": "Evenementcode verwijderd"
+      "removed": "Evenementcode verwijderd",
+      "printTitle": "Afdrukken met de code",
+      "printHint": "De QR-code opent {{url}} en is voor elke galerij hetzelfde. De code staat eronder."
     },
     "selection": {
       "title": "Selectie voor gasten",

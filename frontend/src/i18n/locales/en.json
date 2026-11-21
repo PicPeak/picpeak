@@ -2006,7 +2006,9 @@
       "remove": "Remove code",
       "removeTitle": "Remove the event code?",
       "removeConfirm": "The code stops working at once, also on cards that are already printed. The share link keeps working.",
-      "removed": "Event code removed"
+      "removed": "Event code removed",
+      "printTitle": "Print with the code",
+      "printHint": "The QR code opens {{url}} and is the same for every gallery. The code is printed below it."
     },
     "selection": {
       "title": "Selection for guests",

@@ -787,7 +787,9 @@
       "remove": "Supprimer le code",
       "removeTitle": "Supprimer le code d’événement ?",
       "removeConfirm": "Le code cesse immédiatement de fonctionner, y compris sur les cartes déjà imprimées. Le lien de partage continue de fonctionner.",
-      "removed": "Code d’événement supprimé"
+      "removed": "Code d’événement supprimé",
+      "printTitle": "Imprimer avec le code",
+      "printHint": "Le QR code ouvre {{url}} et reste le même pour toutes les galeries. Le code est imprimé en dessous."
     },
     "selection": {
       "title": "Sélection pour les invités",

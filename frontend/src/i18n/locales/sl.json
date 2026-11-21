@@ -1792,7 +1792,9 @@
       "remove": "Odstrani kodo",
       "removeTitle": "Odstranim kodo dogodka?",
       "removeConfirm": "Koda takoj preneha delovati, tudi na že natisnjenih karticah. Povezava za deljenje deluje naprej.",
-      "removed": "Koda dogodka odstranjena"
+      "removed": "Koda dogodka odstranjena",
+      "printTitle": "Natisni s kodo",
+      "printHint": "Koda QR odpre {{url}} in je enaka za vse galerije. Koda je natisnjena pod njo."
     },
     "selection": {
       "title": "Izbor za goste",

@@ -2,14 +2,15 @@
  * The gallery's event code (issue 2495), next to the share link card. Guests
  * type it on the fixed entry page /code and land on the share link, so one
  * printed QR code serves every event. The admin can copy it, generate a new
- * one, set their own, or remove it. Event codes are opt-in: while the setting
- * is off the card only says so.
+ * one, set their own, or remove it, and download a table card or poster whose
+ * QR opens /code with the code printed under it. Event codes are opt-in:
+ * while the setting is off the card only says so.
  */
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Copy, Hash, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { CheckCircle, Copy, Download, Hash, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, Card, Input } from '../../../components/common';
 import { useConfirm } from '../../../components/common/ConfirmDialog';
@@ -41,13 +42,24 @@ const copyText = async (text: string) => {
   if (!ok) throw new Error('Copy failed');
 };
 
+const saveBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 // 409 EVENT_CODES_DISABLED: the setting was switched off after this page
 // loaded its public settings.
 const codesDisabledError = (err: unknown) =>
   (err as { response?: { data?: { code?: string } } })?.response?.data?.code === 'EVENT_CODES_DISABLED';
 
 export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEvent }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const confirm = useConfirm();
   const canEdit = usePermission('events.edit');
   const queryClient = useQueryClient();
@@ -83,6 +95,15 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
       setTimeout(() => setCopied(null), 2000);
     } catch {
       toast.error(t('errors.copyFailed', 'Failed to copy link. Please copy manually.'));
+    }
+  };
+
+  const handlePrintDownload = async (template: 'table-card' | 'poster') => {
+    try {
+      const lang = (i18n.language || 'en').split('-')[0];
+      saveBlob(await eventsService.getQrPrintBlob(event.id, template, lang, 'code'), `qr-code-${template}-${event.slug}.pdf`);
+    } catch {
+      toast.error(t('errors.downloadFailed', 'Download failed'));
     }
   };
 
@@ -231,6 +252,20 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
               ) : isGalleryPublic(event.require_password) ? (
                 <p className="text-sm text-soft mt-3">{t('events.eventCode.publicWarning', 'This gallery has no password, so anyone who knows the code can open it.')}</p>
               ) : null}
+              <div className="mt-4" data-testid="event-code-print">
+                <h3 className="text-sm font-medium text-heading">{t('events.eventCode.printTitle', 'Print with the code')}</h3>
+                <p className="text-sm text-soft mt-1 mb-2">
+                  {t('events.eventCode.printHint', 'The QR code opens {{url}} and is the same for every gallery. The code is printed below it.', { url: buildShareLinkUrl('/code') })}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Button variant="outline" size="sm" leftIcon={<Download className="w-4 h-4" />} onClick={() => handlePrintDownload('table-card')}>
+                    {t('events.qrTableCard', 'Table card (A6)')}
+                  </Button>
+                  <Button variant="outline" size="sm" leftIcon={<Download className="w-4 h-4" />} onClick={() => handlePrintDownload('poster')}>
+                    {t('events.qrPoster', 'Poster (A4)')}
+                  </Button>
+                </div>
+              </div>
             </>
           ) : (
             <p className="text-sm text-soft">{t('events.eventCode.none', 'This gallery has no code yet.')}</p>
