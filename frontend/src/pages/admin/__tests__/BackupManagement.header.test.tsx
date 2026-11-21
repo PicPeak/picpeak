@@ -6,11 +6,11 @@
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BackupManagement } from '../BackupManagement';
 
-const { get } = vi.hoisted(() => ({ get: vi.fn() }));
+const { get, auth } = vi.hoisted(() => ({ get: vi.fn(), auth: { role: 'super_admin' } }));
 
 vi.mock('../../../config/api', () => ({ api: { get, post: vi.fn(), put: vi.fn() } }));
 vi.mock('react-i18next', async () => {
@@ -21,7 +21,7 @@ vi.mock('react-i18next', async () => {
   };
 });
 vi.mock('../../../contexts/AdminAuthContext', () => ({
-  useAdminAuth: () => ({ user: { role: { name: 'super_admin' } } }),
+  useAdminAuth: () => ({ user: { role: { name: auth.role } } }),
 }));
 vi.mock('../../../hooks/useLocalizedDate', () => ({
   useLocalizedDate: () => ({ formatDateTime: (value: string) => `at ${value}` }),
@@ -82,5 +82,28 @@ describe('BackupManagement header', () => {
   it('shows no key warning while the signing key is usable or not yet created', async () => {
     await renderWithStatus({ lastBackup: completed, signingKey: { ready: false, source: 'missing', keyId: null } });
     expect(screen.queryByText('backup.status.signingKeyInvalid')).not.toBeInTheDocument();
+  });
+});
+
+// A restore started in this tab leaves a marker that sends the next sign-in
+// back to its result. An account that cannot run restores cannot see that
+// result, so the marker goes instead of steering every later sign-in here.
+describe('BackupManagement and the restore re-login marker', () => {
+  const MARKER = 'picpeak_restore_run';
+  const setMarker = () => sessionStorage.setItem(MARKER,
+    JSON.stringify({ runStartedAt: '2026-11-20T10:00:00.000Z', since: Date.now(), redirected: true }));
+  afterEach(() => { auth.role = 'super_admin'; sessionStorage.clear(); });
+
+  it('drops the marker for an admin that may not restore', async () => {
+    auth.role = 'admin';
+    setMarker();
+    await renderWithStatus({ lastBackup: completed });
+    expect(sessionStorage.getItem(MARKER)).toBeNull();
+  });
+
+  it('keeps it for a Super Admin, whose restore tab shows the result', async () => {
+    setMarker();
+    await renderWithStatus({ lastBackup: completed });
+    expect(sessionStorage.getItem(MARKER)).not.toBeNull();
   });
 });

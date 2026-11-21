@@ -3579,7 +3579,10 @@
         "success": {
           "title": "Restauration terminée avec succès",
           "message": "Vos données ont été restaurées. Veuillez vérifier que tout fonctionne correctement."
-        }
+        },
+        "starting": "Démarrage de la restauration…",
+        "signedOutNote": "Vous avez été déconnecté, car la restauration a remplacé la base de données. Il fallait s'attendre à devoir vous reconnecter. Voici ci-dessous la restauration que vous avez lancée.",
+        "notStarted": "La restauration n'a pas démarré ou son résultat n'a pas pu être lu — consultez l'historique des restaurations."
       },
       "actions": {
         "back": "Retour",

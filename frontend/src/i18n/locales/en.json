@@ -7076,7 +7076,10 @@
         "migrationsPendingSubtitle": "Data restored, but database migrations are still pending. The site stays in maintenance mode — see below.",
         "migrationsPendingTitle": "Database migrations pending",
         "errorUnknown": "No error message recorded.",
-        "rolledBack": "Pre-restore safety backup was used to roll back. Destination is in its pre-restore state — safe to retry once the issue above is resolved."
+        "rolledBack": "Pre-restore safety backup was used to roll back. Destination is in its pre-restore state — safe to retry once the issue above is resolved.",
+        "starting": "Starting the restore…",
+        "signedOutNote": "You were signed out because the restore replaced the database. Signing in again was expected. Below is the restore you started.",
+        "notStarted": "The restore did not start or its result could not be read — check the restore history."
       },
       "actions": {
         "back": "Back",

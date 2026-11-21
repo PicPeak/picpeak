@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Lock, Mail, Eye, EyeOff, AlertCircle, ShieldCheck, KeyRound, ArrowLeft, Fingerprint } from 'lucide-react';
@@ -17,11 +17,15 @@ import { useAdminDarkMode } from '../../contexts/AdminDarkModeContext';
 import { resolveLoginLogoClasses } from '../../utils/loginLogoSize';
 import { buildResourceUrl } from '../../utils/url';
 import { api } from '../../config/api';
+import { takeRestoreRedirect, RESTORE_RESULT_PATH } from '../../utils/restoreRelogin';
 
 export const AdminLoginPage: React.FC = () => {
   const { t } = useTranslation();
   const { isAuthenticated, login } = useAdminAuth();
   const [searchParams] = useSearchParams();
+  // Decided once per sign-in: takeRestoreRedirect() consumes the marker's
+  // redirect, and a repeated render must not read it as already used.
+  const restoreRedirect = useRef<boolean | null>(null);
   
   const [formData, setFormData] = useState({
     email: '',
@@ -96,9 +100,11 @@ export const AdminLoginPage: React.FC = () => {
     return <Navigate to="/setup" replace />;
   }
 
-  // Redirect if already authenticated or login successful
+  // Redirect if already authenticated or login successful. A restore started
+  // in this tab signed the admin out; take them back to its result (once).
   if (isAuthenticated || loginSuccess) {
-    return <Navigate to="/admin/dashboard" replace />;
+    if (restoreRedirect.current === null) restoreRedirect.current = takeRestoreRedirect();
+    return <Navigate to={restoreRedirect.current ? RESTORE_RESULT_PATH : '/admin/dashboard'} replace />;
   }
 
   const validateForm = (): boolean => {
