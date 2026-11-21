@@ -514,6 +514,19 @@ router.get('/runs/:id', adminAuth, requirePermission('backup.view'), async (req,
 // do, so the UI never reports a deletion that left storage behind.
 const backupDeleteError = (res, status, code, message) => res.status(status).json({ error: message, code });
 
+// A 'running' row the dashboard flags as possibly crashed (older than
+// ZOMBIE_THRESHOLD_MS) that this process is not writing: a dead process left
+// it, or a restore brought it back from the dump. Otherwise only the
+// stale-run sweep ends it, up to 13 hours later.
+function isAbandonedRunningRow(run) {
+  const { ZOMBIE_THRESHOLD_MS } = require('../services/interruptedRuns');
+  const { toTimestamp } = require('../utils/dateNormalize');
+  const backupService = require('../services/backupService');
+  if (backupService.isBackupRunning() && Number(backupService.currentRunId()) === Number(run.id)) return false;
+  const startedAt = toTimestamp(run.started_at);
+  return Number.isFinite(startedAt) && Date.now() - startedAt > ZOMBIE_THRESHOLD_MS;
+}
+
 class ArtifactOutOfScopeError extends Error {
   constructor(message) {
     super(message);
@@ -661,7 +674,7 @@ router.delete('/runs/:id', adminAuth, requirePermission('backup.delete'), async 
     if (!run) {
       return backupDeleteError(res, 404, 'BACKUP_NOT_FOUND', 'Backup run not found');
     }
-    if (run.status === 'running') {
+    if (run.status === 'running' && !isAbandonedRunningRow(run)) {
       return backupDeleteError(res, 409, 'BACKUP_RUNNING', 'A running backup cannot be deleted');
     }
 

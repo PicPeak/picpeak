@@ -151,12 +151,35 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
       expect(res.status).toBe(404);
     });
 
-    it('refuses to delete a running backup', async () => {
-      const id = await insertRun({ status: 'running', completed_at: null });
+    it('refuses to delete a running backup that started recently', async () => {
+      const id = await insertRun({ status: 'running', completed_at: null, started_at: new Date(Date.now() - 5 * 60 * 1000).toISOString() });
       const res = await del(id);
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('BACKUP_RUNNING');
       expect(await runExists(id)).toBe(true);
+    });
+
+    it('refuses to delete the running backup this process is writing, however old', async () => {
+      const id = await insertRun({ status: 'running', completed_at: null });
+      const backupService = require('../../src/services/backupService');
+      const running = jest.spyOn(backupService, 'isBackupRunning').mockReturnValue(true);
+      const current = jest.spyOn(backupService, 'currentRunId').mockReturnValue(id);
+      try {
+        const res = await del(id);
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('BACKUP_RUNNING');
+        expect(await runExists(id)).toBe(true);
+      } finally {
+        running.mockRestore();
+        current.mockRestore();
+      }
+    });
+
+    it('deletes a running row flagged as possibly crashed (older than 30 minutes, not live here)', async () => {
+      const id = await insertRun({ status: 'running', completed_at: null, started_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() });
+      const res = await del(id);
+      expect(res.status).toBe(200);
+      expect(await runExists(id)).toBe(false);
     });
   });
 

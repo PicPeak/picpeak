@@ -20,8 +20,8 @@
  *     RUNNING_ROW_WINDOW_MS AND started before this process booted. Backups
  *     have no lease or heartbeat, so a row another replica is still writing
  *     cannot be told apart from a dead one; the same 12-hour window is where
- *     backupVerificationService.sharedWorkRunning already stops counting a
- *     row as live. The cost: after a crash the row stays 'running' (and the
+ *     backupVerificationService.sharedWorkRunning stops counting a row as
+ *     live. The cost: after a crash the row stays 'running' (and the
  *     dashboard flags it as possibly crashed) for up to 13 hours.
  */
 
@@ -31,7 +31,13 @@ const { toTimestamp } = require('../utils/dateNormalize');
 const applicationWork = require('./activeApplicationWork');
 
 const TABLES = ['backup_runs', 'database_backup_runs', 'restore_runs'];
+// Past this a 'running' row no longer counts as a live run anywhere: the
+// sweep below ends it, and backupVerificationService.sharedWorkRunning stops
+// waiting for it.
 const RUNNING_ROW_WINDOW_MS = 12 * 60 * 60 * 1000;
+// Past this the dashboard flags a 'running' backup row as possibly crashed,
+// and an admin may delete it unless this process is still writing it.
+const ZOMBIE_THRESHOLD_MS = 30 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const BOOTED_AT = Date.now() - Math.round(process.uptime() * 1000);
 
@@ -109,6 +115,8 @@ async function startStaleRunSweep() {
 
 module.exports = {
   BOOTED_AT,
+  RUNNING_ROW_WINDOW_MS,
+  ZOMBIE_THRESHOLD_MS,
   markRestoredRuns,
   sweepStaleRuns,
   startStaleRunSweep,

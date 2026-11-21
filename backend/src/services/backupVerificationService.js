@@ -38,6 +38,7 @@ const knexConfig = require('../../knexfile');
 const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 const jobState = require('./maintenanceJobState');
+const { BOOTED_AT, RUNNING_ROW_WINDOW_MS } = require('./interruptedRuns');
 const { getStoragePath } = require('../config/storage');
 const { formatBoolean } = require('../utils/dbCompat');
 const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
@@ -184,8 +185,6 @@ async function readMaintenanceMode() {
 // process booted count (a crash before the restart cannot have written
 // one), and none older than RUNNING_ROW_WINDOW_MS. The cost: a backup that
 // another replica started before this one booted is not seen.
-const RUNNING_ROW_WINDOW_MS = 12 * 60 * 60 * 1000;
-const BOOTED_AT = Date.now() - Math.round(process.uptime() * 1000);
 let monitorIntervalMs = 30 * 1000;
 
 /** 'backup' / 'restore' when another process (any replica) is running one. */

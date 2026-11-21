@@ -2084,7 +2084,7 @@ async function getBackupStatus(limit = 10) {
     // Detect zombie running rows (started >30min ago, never updated)
     // — these are processes that died without writing a completed_at.
     // Surface them so the admin can tell at a glance vs a live run.
-    const ZOMBIE_THRESHOLD_MS = 30 * 60 * 1000;
+    const { ZOMBIE_THRESHOLD_MS } = require('./interruptedRuns');
     const zombieRuns = runs.filter(r =>
       r.status === 'running'
       && r.started_at
