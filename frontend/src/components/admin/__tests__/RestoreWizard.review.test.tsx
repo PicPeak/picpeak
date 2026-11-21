@@ -391,6 +391,17 @@ describe('RestoreWizard across the restore sign-out', () => {
     expect(screen.queryByText(r.progress.errorTitle)).toBeNull();
   });
 
+  it('shows this run\'s result while someone else\'s operation is running now', async () => {
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT, since: Date.now(), signedOut: true }));
+    const laterRunning = { id: 6, started_at: '2026-11-20T10:30:00.000Z', status: 'running', was_successful: 0 };
+    status = { isRunning: true, history: [laterRunning, thisRunCompleted, previousFailed] };
+    renderWizard();
+
+    expect(await screen.findByText(r.progress.success.title)).toBeTruthy();
+    expect(screen.getByText('100%')).toBeTruthy();
+    await waitFor(() => expect(sessionStorage.getItem(MARKER_KEY)).toBeNull());
+  });
+
   it('shows a failed result of this run, read back with SQLite epoch-ms timestamps', async () => {
     sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT, since: Date.now(), signedOut: true }));
     status = { isRunning: false, history: [
@@ -436,6 +447,21 @@ describe('RestoreWizard across the restore sign-out', () => {
     expect(screen.queryByText(r.progress.failedSubtitle)).toBeNull();
     expect(screen.queryByText('pg_restore exploded yesterday')).toBeNull();
     expect(sessionStorage.getItem(MARKER_KEY)).toBeNull();
+  });
+
+  it('does not give up on the run while the status cannot be read', async () => {
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT,
+      since: Date.now() - RESTORE_RUN_GRACE_MS - 1000, signedOut: true }));
+    get.mockImplementation(async (url: string) => {
+      if (url === '/admin/restore/status') throw new Error('Network Error');
+      throw new Error(`unexpected GET ${url}`);
+    });
+    renderWizard();
+
+    await waitFor(() => expect(statusCalls()).toBeGreaterThan(0));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText(r.progress.notStarted)).toBeNull();
+    expect(sessionStorage.getItem(MARKER_KEY)).not.toBeNull();
   });
 
   it('keeps waiting within the grace period, then gives up', async () => {

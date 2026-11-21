@@ -106,7 +106,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
   const [validationResult, setValidationResult] = useState(null);
 
   // Fetch restore status
-  const { data: restoreStatus, error: restoreStatusError } = useQuery({
+  const { data: restoreStatus, error: restoreStatusError, dataUpdatedAt: restoreStatusAt } = useQuery({
     queryKey: ['restore-status'],
     queryFn: async () => {
       const response = await api.get('/admin/restore/status');
@@ -127,7 +127,9 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
   // Once the tracked run has an outcome, it is on screen: drop the marker so
   // the next sign-in in this tab goes to the dashboard again. Same when this
   // admin may not read the restore status at all.
-  const trackedRunFinished = !!trackedRow && restoreStatus?.isRunning === false && trackedRow.status !== 'running';
+  // The run's own row decides: another admin's restore or dry run may be
+  // running by the time this one is read back.
+  const trackedRunFinished = !!trackedRow && trackedRow.status !== 'running';
   const statusForbidden = restoreStatusError?.response?.status === 403;
   useEffect(() => {
     if (trackedRunFinished || statusForbidden) clearRestoreRun();
@@ -137,7 +139,10 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
   // start. After the grace period it did not start (or its row cannot be
   // read), so stop waiting and say so instead of "Starting..." forever.
   const [trackedRunMissing, setTrackedRunMissing] = useState(false);
-  const awaitingTrackedRow = !!trackedRun && restoreStatus?.isRunning === false && !trackedRow;
+  // Only a status read after the start counts: a failing poll keeps the
+  // cached pre-start answer, which says nothing about this run.
+  const awaitingTrackedRow = !!trackedRun && !restoreStatusError && restoreStatusAt >= trackedRun.since
+    && restoreStatus?.isRunning === false && !trackedRow;
   useEffect(() => {
     if (!awaitingTrackedRow) {
       setTrackedRunMissing(false);
@@ -836,8 +841,12 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
   );
 
   const renderProgress = () => {
-    const progress = restoreStatus?.currentProgress || {};
-    const isRunning = restoreStatus?.isRunning;
+    // A tracked run that has ended shows its outcome, even while someone
+    // else's restore or dry run is running now; that run's live progress is
+    // not this one's.
+    const otherRunLive = trackedRunFinished && !!restoreStatus?.isRunning;
+    const progress = (otherRunLive ? null : restoreStatus?.currentProgress) || {};
+    const isRunning = restoreStatus?.isRunning && !trackedRunFinished;
     // Pull the most recent restore_runs row from history so we can
     // tell whether the "not running" state means success, failure, or
     // never-started. The history endpoint already returns rows newest
