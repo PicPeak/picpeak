@@ -233,6 +233,58 @@ describe('restore test of an rsync backup', () => {
     expect(summary.skipReasonByBackupRun).toEqual({ [first.run.id]: 'rsync_superseded' });
   });
 
+  it('shows a run verified earlier as superseded once a newer backup replaced the mirror', async () => {
+    const first = await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    expect((await verify(first.run.id)).status).toBe('passed');
+    await backupToRemote();
+    expect(await verify(first.run.id)).toMatchObject({ status: 'skipped', skip_reason: 'rsync_superseded' });
+    // A later busy skip does not hide it either.
+    await db('backup_verifications').insert({ backup_run_id: first.run.id, status: 'skipped', skip_reason: 'busy',
+      triggered_by: 'schedule', started_at: new Date().toISOString(), completed_at: new Date().toISOString() });
+
+    const summary = await verification.getSummary();
+    expect(summary.byBackupRun[first.run.id]).toBe('skipped');
+    expect(summary.skipReasonByBackupRun[first.run.id]).toBe('rsync_superseded');
+  });
+
+  it('stops the manifest listing when a backup starts during it, ending as skipped, not failed', async () => {
+    const { run } = await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    const real = rsyncConnection.runRsync.getMockImplementation();
+    rsyncConnection.runRsync.mockImplementation(async (args, options = {}) => {
+      if (args.includes('--list-only')) {
+        verification.yieldTo('backup');
+        expect(options.signal && options.signal.aborted).toBe(true);
+        return { code: 20, stderr: 'rsync error: received SIGINT, SIGTERM, or SIGHUP (code 20)', aborted: true };
+      }
+      return real(args, options);
+    });
+
+    const row = await verify(run.id);
+    expect(row).toMatchObject({ status: 'skipped', skip_reason: 'busy' });
+  });
+
+  it('records a manifest download that fails after the test was cancelled as skipped', async () => {
+    const { run } = await backupToRemote();
+    const calls = [];
+    serveRemote(calls);
+    const real = rsyncConnection.runRsync.getMockImplementation();
+    rsyncConnection.runRsync.mockImplementation(async (args, options = {}) => {
+      if (args.includes(`--max-size=${16 * 1024 * 1024}`)) {
+        verification.yieldTo('backup');
+        // The new backup rotated the manifest away mid-download.
+        return { code: 23, stderr: `rsync: [sender] link_stat "${remoteBase}/manifests/x" failed: No such file or directory (2)\n` };
+      }
+      return real(args, options);
+    });
+
+    const row = await verify(run.id);
+    expect(row).toMatchObject({ status: 'skipped', skip_reason: 'busy' });
+  });
+
   it('tells superseded from the destination itself when this host does not know the newer run', async () => {
     const first = await backupToRemote();
     await backupToRemote();

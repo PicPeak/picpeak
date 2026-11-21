@@ -525,8 +525,10 @@ async function planRsyncBackup(run, config, checks) {
   if (!config.backup_rsync_host || !config.backup_rsync_path) return { skip: 'not_verifiable_rsync' };
   let listed;
   try {
-    listed = await rsyncRestore.listRemoteManifests(config);
+    listed = await rsyncRestore.listRemoteManifests(config, { signal: current && current.abort.signal });
   } catch (error) {
+    // Cancelled (a backup started, say): the outer handler records the skip.
+    if (current && current.aborted) throw error;
     if (error.code === 'RESTORE_REMOTE_MANIFEST_NOT_FOUND' && !local) return { skip: 'not_verifiable_rsync' };
     checks.push(check('destination', 'failed', String(error.message).slice(0, 500)));
     return { stop: true };
@@ -781,7 +783,7 @@ async function execute(id, target, { full, samplePercent, drill }) {
       if (!run || run.status !== 'completed') return finishRow(id, { status: 'skipped', skipReason: 'no_backup' });
       plan = await planDatabaseBackup(run, checks);
     }
-    if (plan.stop) return finishRow(id, { status: 'failed', checks });
+    if (plan.stop) return stopped() || finishRow(id, { status: 'failed', checks });
     // A check that already failed (the parent chain, say) is not hidden
     // behind the skip.
     if (plan.skip) {
@@ -1193,8 +1195,12 @@ async function getSummary({ limit = 20 } = {}) {
   for (const row of perRun) {
     const key = String(row.backup_run_id);
     const seen = byBackupRun[key];
-    // A later "skipped: busy" must not hide an earlier result.
-    if (!seen || (seen === 'skipped' && row.status !== 'skipped')) {
+    // A later "skipped: busy" must not hide an earlier result. A later
+    // "skipped: rsync_superseded" is final: the run can no longer be tested,
+    // so an earlier pass must not show over it.
+    const supersededSeen = seen === 'skipped' && skipReasonByBackupRun[key] === 'rsync_superseded';
+    if (!seen || (seen === 'skipped' && !supersededSeen
+      && (row.status !== 'skipped' || row.skip_reason === 'rsync_superseded'))) {
       byBackupRun[key] = row.status;
       if (row.status === 'skipped' && row.skip_reason) skipReasonByBackupRun[key] = row.skip_reason;
       else delete skipReasonByBackupRun[key];
