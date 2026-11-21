@@ -107,8 +107,9 @@ const mockBackend = ({ validation, history = [], settings = { restore_allow_forc
   });
 };
 
-const renderWizard = () => {
+const renderWizard = (prepare?: (client: QueryClient) => void) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  prepare?.(client);
   return render(
     <QueryClientProvider client={client}>
       <RestoreWizard />
@@ -449,14 +450,17 @@ describe('RestoreWizard across the restore sign-out', () => {
     expect(sessionStorage.getItem(MARKER_KEY)).toBeNull();
   });
 
-  it('does not give up on the run while the status cannot be read', async () => {
-    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT,
-      since: Date.now() - RESTORE_RUN_GRACE_MS - 1000, signedOut: true }));
+  it('does not give up on the run while polls fail and only a pre-start status is cached', async () => {
+    const since = Date.now() - RESTORE_RUN_GRACE_MS - 1000;
+    sessionStorage.setItem(MARKER_KEY, JSON.stringify({ runStartedAt: RUN_STARTED_AT, since, signedOut: true }));
     get.mockImplementation(async (url: string) => {
       if (url === '/admin/restore/status') throw new Error('Network Error');
       throw new Error(`unexpected GET ${url}`);
     });
-    renderWizard();
+    // The answer read before the start: nothing running, no row of this run.
+    renderWizard((client) => client.setQueryData(['restore-status'],
+      { isRunning: false, history: [previousFailed], currentProgress: null, settings: { restore_allow_force: true } },
+      { updatedAt: since - 1000 }));
 
     await waitFor(() => expect(statusCalls()).toBeGreaterThan(0));
     await new Promise((resolve) => setTimeout(resolve, 50));
