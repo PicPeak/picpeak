@@ -776,6 +776,9 @@ class RestoreService {
       if (options.restoreType === 'full' || options.restoreType === 'database') {
         await invalidateSessionsIssuedSoFar();
         this.log('info', 'Sessions issued before the restore invalidated');
+        // Every dump holds its own backup run as 'running'; nothing would
+        // ever end the rows it brought back (interruptedRuns.js).
+        await require('./interruptedRuns').markRestoredRuns(startTime.getTime());
       }
 
       // Step 7b: Replay operator-meta settings AFTER verification.
