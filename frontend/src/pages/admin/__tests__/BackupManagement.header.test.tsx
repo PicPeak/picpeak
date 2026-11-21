@@ -5,11 +5,12 @@
  */
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BackupManagement } from '../BackupManagement';
 
-const { get } = vi.hoisted(() => ({ get: vi.fn() }));
+const { get, auth } = vi.hoisted(() => ({ get: vi.fn(), auth: { role: 'super_admin' } }));
 
 vi.mock('../../../config/api', () => ({ api: { get, post: vi.fn(), put: vi.fn() } }));
 vi.mock('react-i18next', async () => {
@@ -20,7 +21,7 @@ vi.mock('react-i18next', async () => {
   };
 });
 vi.mock('../../../contexts/AdminAuthContext', () => ({
-  useAdminAuth: () => ({ user: { role: { name: 'super_admin' } } }),
+  useAdminAuth: () => ({ user: { role: { name: auth.role } } }),
 }));
 vi.mock('../../../hooks/useLocalizedDate', () => ({
   useLocalizedDate: () => ({ formatDateTime: (value: string) => `at ${value}` }),
@@ -29,7 +30,7 @@ vi.mock('../../../hooks/useLocalizedDate', () => ({
 vi.mock('../../../components/admin/BackupDashboard', () => ({ BackupDashboard: () => null }));
 vi.mock('../../../components/admin/BackupConfiguration', () => ({ BackupConfiguration: () => null }));
 vi.mock('../../../components/admin/BackupHistory', () => ({ BackupHistory: () => null }));
-vi.mock('../../../components/admin/RestoreWizard', () => ({ RestoreWizard: () => null }));
+vi.mock('../../../components/admin/RestoreWizard', () => ({ RestoreWizard: () => <div>restore-wizard</div> }));
 vi.mock('../../../components/admin/PicpeakBackupCard', () => ({ PicpeakExportCard: () => null }));
 vi.mock('../../../components/admin/BackupIntegrityCard', () => ({ BackupIntegrityCard: () => null }));
 vi.mock('../../../components/admin/BackupCoverageCard', () => ({ BackupCoverageCard: () => null }));
@@ -38,12 +39,17 @@ const completed = { id: 1, status: 'completed', created_at: '2026-09-23T03:00:00
 const failed = { id: 2, status: 'failed', created_at: '2026-09-24T08:38:00Z' };
 const running = { id: 3, status: 'running', created_at: '2026-09-24T09:00:00Z' };
 
-const renderWithStatus = async (status: Record<string, unknown>) => {
+const renderWithStatus = async (status: Record<string, unknown>, url = '/admin/settings?tab=backup') => {
   get.mockImplementation(async (url: string) => ({
     data: url.endsWith('/status') ? { isRunning: false, ...status } : { backup_enabled: true },
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><BackupManagement /></QueryClientProvider>);
+  window.history.replaceState(null, '', url);
+  render(
+    <MemoryRouter initialEntries={[url]}>
+      <QueryClientProvider client={client}><BackupManagement /></QueryClientProvider>
+    </MemoryRouter>,
+  );
   await screen.findByText('backup.title');
 };
 
@@ -67,5 +73,43 @@ describe('BackupManagement header', () => {
     await renderWithStatus({ lastBackup: completed, lastSuccessfulBackup: completed });
     const label = screen.getByText(/backup.status.lastBackup:/);
     expect(label.previousElementSibling).toHaveClass('text-green-500');
+  });
+});
+
+// A restore started in this tab leaves a marker that sends the next sign-in
+// back to its result. An account that cannot run restores cannot see that
+// result, so the marker goes instead of steering every later sign-in here.
+describe('BackupManagement and the restore re-login marker', () => {
+  const MARKER = 'picpeak_restore_run';
+  const setMarker = () => sessionStorage.setItem(MARKER,
+    JSON.stringify({ runStartedAt: '2026-11-20T10:00:00.000Z', since: Date.now(), redirected: true }));
+  afterEach(() => { auth.role = 'super_admin'; sessionStorage.clear(); });
+
+  it('drops the marker for an admin that may not restore', async () => {
+    auth.role = 'admin';
+    setMarker();
+    await renderWithStatus({ lastBackup: completed });
+    expect(sessionStorage.getItem(MARKER)).toBeNull();
+  });
+
+  it('keeps it for a Super Admin, whose restore tab shows the result', async () => {
+    setMarker();
+    await renderWithStatus({ lastBackup: completed });
+    expect(sessionStorage.getItem(MARKER)).not.toBeNull();
+  });
+});
+
+// The sign-in after a restore links to /admin/settings?tab=backup&backupTab=restore.
+describe('BackupManagement ?backupTab=', () => {
+  afterEach(() => { window.history.replaceState(null, '', '/'); });
+
+  it('opens the restore tab the link names', async () => {
+    await renderWithStatus({ lastBackup: completed }, '/admin/settings?tab=backup&backupTab=restore');
+    expect(screen.getByText('restore-wizard')).toBeInTheDocument();
+  });
+
+  it('opens the dashboard tab without it', async () => {
+    await renderWithStatus({ lastBackup: completed });
+    expect(screen.queryByText('restore-wizard')).not.toBeInTheDocument();
   });
 });

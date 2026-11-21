@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   HardDrive,
   Settings,
@@ -30,11 +31,30 @@ import { BackupIntegrityCard } from '../../components/admin/BackupIntegrityCard'
 import { BackupCoverageCard } from '../../components/admin/BackupCoverageCard';
 import { api } from '../../config/api';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
+import { clearRestoreRun } from '../../utils/restoreRelogin';
 
 type TabId = 'dashboard' | 'configuration' | 'history' | 'restore' | 'integrity' | 'coverage';
+const TAB_IDS: TabId[] = ['dashboard', 'configuration', 'history', 'restore', 'integrity', 'coverage'];
+
+// `?backupTab=restore` opens a tab directly (the sign-in after a restore
+// links to its result this way). Read once on mount; the tabs are local state.
+const initialTab = (): TabId => {
+  if (typeof window === 'undefined') return 'dashboard';
+  const requested = new URLSearchParams(window.location.search).get('backupTab');
+  return TAB_IDS.find((id) => id === requested) ?? 'dashboard';
+};
 
 export const BackupManagement: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+  // Drop ?backupTab= once read, so a reload or Back after switching tabs
+  // does not jump to the linked tab again.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (!searchParams.has('backupTab')) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('backupTab');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const { t } = useTranslation();
   // Full-instance export contains every secret, so the endpoint is
   // super_admin-only (GHSA-pv6w) — hide the card for other roles instead
@@ -42,6 +62,12 @@ export const BackupManagement: React.FC = () => {
   // restores are super_admin-only too.
   const { user } = useAdminAuth();
   const isSuperAdmin = user?.role?.name === 'super_admin';
+  // A restore started in this tab replaced the admin accounts; when the
+  // account signed in now cannot run restores it cannot see that result
+  // either, so the marker that would send it back here goes.
+  useEffect(() => {
+    if (user && !isSuperAdmin) clearRestoreRun();
+  }, [user, isSuperAdmin]);
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   // Set when a save is refused because the S3 endpoint is private, so the
   // configuration form can offer the Super Admin approval (issue 1641).
