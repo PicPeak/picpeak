@@ -6569,6 +6569,7 @@
       },
       "restoreError": {
         "RESTORE_MANIFEST_INVALID": "The file is not a backup this instance can restore.",
+        "RESTORE_LEDGER_UNKNOWN_MIGRATIONS": "This backup comes from a newer PicPeak release line: its database has migrations this version does not include. Restore it on a PicPeak version that includes them.",
         "RESTORE_PRIVILEGE_MISSING": "The database user of this instance is not allowed to run a restore (PostgreSQL SUPERUSER is required).",
         "RESTORE_CAPACITY_LIMIT": "There is not enough free space on the storage volume for this backup.",
         "RESTORE_CAPACITY_UNKNOWN": "Free space on the storage volume could not be measured.",
