@@ -20,6 +20,7 @@ const { assertCompleteFileRestore, resolveBackupPointLocation } = require('../ut
 const applicationWork = require('./activeApplicationWork');
 const portableRuntime = require('./portableRestoreRuntimeState');
 const rsyncRestore = require('../utils/rsyncRestore');
+const { classifyLedger } = require('../utils/schemaLevel');
 
 // A manifest is attacker-influenceable (hand-crafted backup). Reject any
 // entry path that would resolve OUTSIDE its intended base directory
@@ -482,6 +483,15 @@ function assessBackupVersion(backupVersion, currentVersion) {
   return null;
 }
 
+// The portable import's refusal (ledgerRefusal), with its code leading the
+// message as the other restore codes do, so the stored error_message carries
+// it to the wizard.
+function ledgerRefusalError(refusal, extra = {}) {
+  return Object.assign(new rsyncRestore.RestoreRemoteError(refusal.code, refusal.message), {
+    statusCode: refusal.statusCode, unknownMigrations: refusal.unknownMigrations, ...extra,
+  });
+}
+
 const { formatBytes } = require('../utils/formatBytes');
 const os = require('os');
 
@@ -825,6 +835,14 @@ class RestoreService {
         }
       }
 
+      // The restored ledger was checked in the dump before the swap; this
+      // reads it from the restored database, drops the other line's twins so
+      // this code's counterparts run in step 7c, and refuses (rolling back) what
+      // the dump check could not read (issue 2480).
+      if (options.restoreType === 'full' || options.restoreType === 'database') {
+        await this.reconcileRestoredLedger();
+      }
+
       // Step 7c: Apply any post-backup migrations to the restored DB.
       //
       // The backup carries the schema state of whatever migrations had
@@ -1037,6 +1055,9 @@ class RestoreService {
 
     } catch (error) {
       this.log('error', 'Restore failed', { error: error.message, stack: error.stack });
+      // A check inside the restore step that refused before its first write
+      // (the dump's migration ledger, issue 2480).
+      if (error && error.beforeDestinationChange === true) destinationTouched = false;
 
       // Always attempt rollback when a pre-restore backup exists.
       // Historically rollback was only triggered when post-restore
@@ -1712,7 +1733,8 @@ class RestoreService {
 
     } catch (error) {
       result.errors.push(error.message);
-      throw new Error(`Full restore failed: ${error.message}`);
+      throw Object.assign(new Error(`Full restore failed: ${error.message}`),
+        { code: error.code, beforeDestinationChange: error.beforeDestinationChange });
     }
   }
 
@@ -1809,6 +1831,14 @@ class RestoreService {
       : await stageDatabaseDump(dbBackupPath, manifest.database.checksum, this.tempDir, dumpOptions);
     dbBackupPath = staged.dump;
     this.log('info', 'Database dump checksum checked against the manifest');
+    // Before the dump replaces anything: a ledger from the other release
+    // line with migrations this code does not ship is refused (issue 2480).
+    try {
+      await this.assertDumpLedgerKnown(dbBackupPath);
+    } catch (error) {
+      await staged.cleanup();
+      throw error;
+    }
 
     // Decompress if needed
     let restoreFile = dbBackupPath;
@@ -2126,6 +2156,61 @@ END $$;`
         await fs.unlink(restoreFile).catch(() => {});
       }
       await staged.cleanup();
+    }
+  }
+
+  /**
+   * The migration ledger in the dump about to be restored, sorted against
+   * this code (classifyLedger, issue 2480). Names this code neither ships nor
+   * has a counterpart of are refused before the dump replaces anything:
+   * restored verbatim, they would stand in for this line's own migrations of
+   * the same number range and the runner would skip those. A dump whose
+   * ledger cannot be read is not refused here; reconcileRestoredLedger reads
+   * the restored table after the swap and rolls back instead.
+   */
+  async assertDumpLedgerKnown(dumpPath) {
+    let names;
+    try {
+      if (this.dbType === 'sqlite' && dumpPath.endsWith('.gz')) {
+        await assertDecompressSpace(dumpPath, bytes => this.formatBytes(bytes));
+      }
+      names = await require('./nativeDumpLedger').readDumpLedger(dumpPath, this.dbType);
+    } catch (err) {
+      this.log('warn', `Could not read the migration ledger in the database dump (${err.message}); `
+        + 'it is checked in the restored database instead');
+      return;
+    }
+    const refusal = require('./picpeakImportService').ledgerRefusal(names);
+    if (refusal) throw ledgerRefusalError(refusal, { beforeDestinationChange: true });
+    if (!names) {
+      this.log('warn', 'The database dump holds no migrations table');
+      return;
+    }
+    const { twins } = classifyLedger(names);
+    if (twins.length) {
+      this.log('info', `The dump's ledger records ${twins.length} migration(s) of the other release line; `
+        + 'they are dropped after the restore so this version\'s counterparts run');
+    }
+  }
+
+  /**
+   * After the swap, before the post-restore migrations: the restored ledger
+   * loses the other release line's twins, so the runner applies this code's
+   * own counterparts, as on a promote upgrade. Unknown names (a dump the
+   * check above could not read) fail the restore, which rolls it back.
+   */
+  async reconcileRestoredLedger() {
+    if (!(await db.schema.hasTable('migrations'))) return;
+    const names = Array.from(await db('migrations').select('filename'), row => row.filename);
+    const refusal = require('./picpeakImportService').ledgerRefusal(names);
+    if (refusal) throw ledgerRefusalError(refusal);
+    const { twins } = classifyLedger(names);
+    for (let i = 0; i < twins.length; i += 500) {
+      await db('migrations').whereIn('filename', twins.slice(i, i + 500)).del();
+    }
+    if (twins.length) {
+      this.log('info', `Dropped ${twins.length} migration(s) of the other release line from the restored ledger; `
+        + 'their counterparts run now');
     }
   }
 
