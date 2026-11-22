@@ -691,6 +691,48 @@
     "guestPrompt": {
       "downloadDescription": "Antes de descargar, indique al fotógrafo quién es. Sus descargas se guardan con este nombre."
     },
+    "walkthrough": {
+      "help": "Mostrar la guía de la galería",
+      "stepOf": "Paso {{current}} de {{total}}",
+      "next": "Siguiente",
+      "back": "Atrás",
+      "skip": "Omitir",
+      "done": "Entendido",
+      "steps": {
+        "browse": {
+          "title": "Bienvenido a la galería",
+          "body": "Desplázate por las fotos y toca una para verla a tamaño completo.",
+          "bodyCategories": "Desplázate por las fotos y toca una para verla a tamaño completo. Las categorías te llevan directamente a una parte del día."
+        },
+        "favorites": {
+          "title": "Marca tus favoritas",
+          "bodyLikes": "Toca el corazón de una foto para marcar las que más te gustan. Después, el filtro muestra solo esas.",
+          "bodyFavorites": "Abre una foto y toca el marcador para guardarla como favorita. Después, el filtro muestra solo esas.",
+          "bodyBoth": "Toca el corazón de una foto para marcar las que más te gustan, o abre una foto y toca el marcador para guardarla como favorita. Después, el filtro muestra solo esas."
+        },
+        "download": {
+          "title": "Descargar fotos",
+          "body": "Descarga toda la galería con este botón, o abre una foto para descargar solo esa."
+        },
+        "faces": {
+          "title": "Encontrar personas",
+          "body": "Toca una cara para ver todas las fotos en las que aparece esa persona.",
+          "bodySelfie": "Toca una cara para ver todas las fotos en las que aparece esa persona, o encuentra tus propias fotos con un selfie."
+        },
+        "upload": {
+          "title": "Añade tus fotos",
+          "body": "Comparte aquí tus propias fotos del día. Aparecen en la galería para todos."
+        },
+        "hide": {
+          "title": "Ocultar fotos a los invitados",
+          "body": "Has abierto el enlace de cliente. El ojo de una foto la oculta a los invitados; tú la sigues viendo aquí."
+        },
+        "help": {
+          "title": "¿Lo necesitas de nuevo?",
+          "body": "Abre esta guía de nuevo en cualquier momento con el icono del signo de interrogación."
+        }
+      }
+    },
     "language": {
       "switch": "Idioma"
     }
@@ -1347,6 +1389,8 @@
     "showExifToGuestsHelp": "La cámara, el objetivo, la distancia focal, la apertura, la velocidad de obturación y el ISO aparecen bajo la foto en la vista a pantalla completa. La ubicación y los números de serie nunca se guardan ni se muestran.",
     "neutralPhotoLabels": "Mostrar una etiqueta neutra en lugar de los nombres de archivo",
     "neutralPhotoLabelsHelp": "Los invitados ven «Foto 12 de 84» en lugar del nombre de archivo de la cámara en la vista a pantalla completa, en los pies de foto y en el texto para lectores de pantalla. Las descargas conservan sus nombres de archivo y la lista «Copiar nombres de archivo» no se ofrece a los invitados. La vista de administración siempre muestra los nombres de archivo.",
+    "walkthroughEnabled": "Mostrar un recorrido en la primera visita",
+    "walkthroughEnabledHelp": "Clientes e invitados ven en su primera visita una breve guía de lo que ofrece esta galería. Pueden omitirla y volver a abrirla con el icono de ayuda.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Los saltos de línea se conservan en los correos",
       "tip": "Consejo: pulsa Intro para crear una nueva línea. Cada línea aparecerá como un párrafo independiente en los correos.",
@@ -1660,7 +1704,9 @@
       "firstLookKeywordsHelp": "Separadas por comas. Se ignoran mayúsculas, espacios, guiones y guiones bajos, así que «FirstLook» también coincide con «first-look».",
       "deliveryDays": "Galería completa vence tras (días)",
       "deliveryDaysHelp": "Si una primera selección empieza sin fecha prometida, la galería completa vence tantos días después de la fecha del evento.",
-      "defaultAllowDecisions": "Aprobar / rechazar cada foto"
+      "defaultAllowDecisions": "Aprobar / rechazar cada foto",
+      "defaultWalkthroughEnabled": "Mostrar un recorrido en la primera visita por defecto",
+      "defaultWalkthroughEnabledHelp": "Las galerías nuevas empiezan con la guía activada. Las galerías existentes mantienen su propia configuración."
     },
     "imageSecurity": {
       "title": "Proteger Imagen",

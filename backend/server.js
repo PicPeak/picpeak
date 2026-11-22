@@ -1032,6 +1032,8 @@ app.use('/api/admin/webhooks', require('./src/routes/adminWebhooks'));
 // Public v1 API for n8n / external integrations (#322). Mounted under
 // /api/v1; auth handled per-route via apiTokenAuth (Bearer tokens).
 app.use('/api/v1', require('./src/middleware/productUsage').productUsageApi, require('./src/routes/v1/events'));
+// PicTransfer sends through the same token surface (issue 2586).
+app.use('/api/v1', require('./src/middleware/productUsage').productUsageApi, require('./src/routes/v1/transfers'));
 
 // Swagger UI for the v1 API. Admin-gated since it lists endpoint shapes
 // that should not be enumerable to anonymous users (a common reduce-info-leak hardening).

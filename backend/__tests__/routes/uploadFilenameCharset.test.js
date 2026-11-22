@@ -14,7 +14,7 @@ const ROUTE_FILES = [
   'src/routes/gallery/uploads.js',
   'src/routes/v1/events.js',
   'src/routes/publicTransferUpload.js',
-  'src/routes/adminTransfers.js',
+  'src/middleware/transferDeliverables.js',
 ];
 
 describe('upload filename charset (issue 2072)', () => {

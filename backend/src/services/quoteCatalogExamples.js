@@ -152,6 +152,9 @@ async function seed() {
   // No payment-terms example: payment conditions come from the payment terms.
 
   // Archived: out of the quote editor's pickers until someone restores them.
+  // A plain bulk update, not deleteLineItemPreset: these services were made a
+  // moment ago, so no service lists them as an option yet (migration 371) and
+  // there is nothing to prune.
   const off = { is_active: formatBoolean(false), updated_at: new Date() };
   await db('quote_line_item_presets').whereIn('id', Object.values(presets)).update(off);
   await db('quote_packages').where({ id: pkg.id }).update(off);

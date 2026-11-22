@@ -1918,6 +1918,48 @@
       "limitReached": "You can have up to {{count}} lists.",
       "saveError": "The list could not be saved."
     },
+    "walkthrough": {
+      "help": "Show the gallery guide",
+      "stepOf": "Step {{current}} of {{total}}",
+      "next": "Next",
+      "back": "Back",
+      "skip": "Skip",
+      "done": "Got it",
+      "steps": {
+        "browse": {
+          "title": "Welcome to the gallery",
+          "body": "Scroll through the photos and tap one to see it full size.",
+          "bodyCategories": "Scroll through the photos and tap one to see it full size. The categories take you straight to one part of the day."
+        },
+        "favorites": {
+          "title": "Mark your favourites",
+          "bodyLikes": "Tap the heart on a photo to mark the ones you love. The filter shows only those later.",
+          "bodyFavorites": "Open a photo and tap the bookmark to keep it as a favourite. The filter shows only those later.",
+          "bodyBoth": "Tap the heart on a photo to mark the ones you love, or open a photo and tap the bookmark to keep it as a favourite. The filter shows only those later."
+        },
+        "download": {
+          "title": "Download photos",
+          "body": "Download the whole gallery with this button, or open a photo to download just that one."
+        },
+        "faces": {
+          "title": "Find people",
+          "body": "Tap a face to see every photo that person is in.",
+          "bodySelfie": "Tap a face to see every photo that person is in, or find your own photos with a selfie."
+        },
+        "upload": {
+          "title": "Add your photos",
+          "body": "Share your own photos of the day here. They appear in the gallery for everyone."
+        },
+        "hide": {
+          "title": "Hide photos from guests",
+          "body": "You opened the client link. The eye on a photo hides it from guests; you still see it here."
+        },
+        "help": {
+          "title": "Need this again?",
+          "body": "Open this guide again at any time with the question mark icon."
+        }
+      }
+    },
     "language": {
       "switch": "Language"
     }
@@ -2839,6 +2881,8 @@
     "showExifToGuestsHelp": "Camera, lens, focal length, aperture, shutter speed and ISO appear below the photo in the full-screen view. Location and serial numbers are never stored or shown.",
     "neutralPhotoLabels": "Show a neutral label instead of filenames",
     "neutralPhotoLabelsHelp": "Guests see “Photo 12 of 84” instead of the camera filename in the full-screen view, on tile captions and in screen-reader text. Downloads keep their filenames, and the Copy filenames list is not offered to guests. The admin view always shows filenames.",
+    "walkthroughEnabled": "Show a first-visit walkthrough",
+    "walkthroughEnabledHelp": "Clients and guests see a short guided tour of what this gallery offers on their first visit. They can skip it and open it again with the help icon.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Line breaks will be preserved in emails",
       "tip": "Tip: Press Enter to create a new line. Each line will appear as a separate paragraph in emails.",
@@ -3308,7 +3352,9 @@
       "firstLookKeywordsHelp": "Comma-separated. Case, spaces, dashes and underscores are ignored, so \"FirstLook\" also matches \"first-look\".",
       "deliveryDays": "Full gallery due after (days)",
       "deliveryDaysHelp": "When a first look starts without a promised date, the full gallery is due this many days after the event date.",
-      "defaultAllowDecisions": "Approve / reject per photo"
+      "defaultAllowDecisions": "Approve / reject per photo",
+      "defaultWalkthroughEnabled": "Show a first-visit walkthrough by default",
+      "defaultWalkthroughEnabledHelp": "New galleries start with the short guided tour switched on. Existing galleries keep their own setting."
     },
     "imageSecurity": {
       "title": "Image Protection",
@@ -6616,6 +6662,7 @@
       },
       "restoreError": {
         "RESTORE_MANIFEST_INVALID": "The file is not a backup this instance can restore.",
+        "RESTORE_LEDGER_UNKNOWN_MIGRATIONS": "This backup comes from a newer PicPeak release line: its database has migrations this version does not include. Restore it on a PicPeak version that includes them.",
         "RESTORE_PRIVILEGE_MISSING": "The database user of this instance is not allowed to run a restore (PostgreSQL SUPERUSER is required).",
         "RESTORE_CAPACITY_LIMIT": "There is not enough free space on the storage volume for this backup.",
         "RESTORE_CAPACITY_UNKNOWN": "Free space on the storage volume could not be measured.",
@@ -10363,7 +10410,17 @@
       "rateFromChain": "Customer / default rate",
       "restore": "Restore",
       "savedToast": "Saved.",
-      "servicesIntro": "Your services with a fixed price or priced by the hour / day. They appear in the quote editor's \"Add from preset\" list and in packages.",
+      "servicesIntro": "Your services with a fixed price or priced by the hour / day. They appear in the \"Add from preset\" list of the quote and invoice editor, and in packages.",
+      "options": {
+        "legend": "Options",
+        "none": "No other fixed-price services in this currency yet.",
+        "hint": "In the quote and invoice editor, each option is a checkbox on this service's line. Ticking it adds the option as a sub-line, and its price is added to the line's own price. Archiving a service, or changing its currency or price type, removes it from these lists; restoring it does not add it back. Services with an album product or pricing factors cannot be options. At most {{max}} options.",
+        "count": "Options: {{names}}",
+        "dropped_one": "No longer fits as an option and is removed on save: {{names}}",
+        "dropped_other": "No longer fit as options and are removed on save: {{names}}",
+        "noLongerFits": "{{name}} (no longer fits)",
+        "missing": "Service #{{id}}"
+      },
       "tab": {
         "packages": "Packages",
         "promotions": "Promotions",
@@ -10520,6 +10577,12 @@
       "detailsPlaceholder": "Optional notes — fine print, package inclusions, conditions…",
       "autoTotaledHint": "Total auto-computed from sub-items below",
       "autoTotaledNote": "= sum of sub-items",
+      "withOption": "+ {{name}} ({{price}})",
+      "withOptionQuantity": "+ {{name}} ({{quantity}} × {{price}})",
+      "withOptionBooked": "+ {{name}}",
+      "optionNote": "included in the main line's price",
+      "removeBookedOption": "Remove \"{{name}}\" ({{amount}})? It cannot be ticked again from this editor.",
+      "removeEditedOption": "Remove \"{{name}}\"? Its line differs from the catalogue entry, and those differences go with it.",
       "discountLine": "Discount",
       "discountPercentHint": "{{percent}} % of the subtotal",
       "followsDays": "Follows the quote days",
@@ -10564,6 +10627,8 @@
     }
   },
   "bills": {
+    "catalogueCurrencyMismatch_one": "{{count}} line comes from a catalogue service priced in another currency than {{currency}}. Its price was not converted: check it.",
+    "catalogueCurrencyMismatch_other": "{{count}} lines come from catalogue services priced in another currency than {{currency}}. Their prices were not converted: check them.",
     "title": "Invoices",
     "subtitle": "Schedule, send, track payments and chase late invoices.",
     "new": "New invoice",

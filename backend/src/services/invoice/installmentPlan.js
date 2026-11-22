@@ -132,7 +132,10 @@ async function replaceReconciliationLine(
   const nonRecon = all.filter((x) => !isReconciliationLineItem(x));
   const subtotal = topLineSubtotal != null
     ? topLineSubtotal
-    : nonRecon.filter((x) => x.parent_position == null)
+    // Stored rows name their parent by id (no parent_position column), so the
+    // top-level lines are those without one; a sub-item's amount is already in
+    // its parent's stored total (migrations 119 + 371).
+    : nonRecon.filter((x) => x.parent_line_item_id == null)
       .reduce((s, x) => s + ensureInt(x.line_total_minor), 0);
   const adjustment = netSlice - subtotal;
   if (adjustment === 0) return;
@@ -300,9 +303,14 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
     // New sibling — clone canonical lines from existing[0] on first
     // use, then reuse the cached copy for any further new siblings.
     if (canonicalLineItems === null) {
-      const sourceLines = await trx('invoice_line_items')
-        .where({ invoice_id: existing[0].id })
-        .orderBy('position', 'asc');
+      // Sub-lines name their parent by id; the clone needs its position
+      // (as the Storno copy reads it), or every sub-line is cloned top-level
+      // and an option sub-line (migration 371) would add to nothing.
+      const sourceLines = await trx('invoice_line_items as li')
+        .leftJoin('invoice_line_items as parent', 'parent.id', 'li.parent_line_item_id')
+        .where('li.invoice_id', existing[0].id)
+        .select('li.*', 'parent.position as parent_position')
+        .orderBy('li.position', 'asc');
       canonicalLineItems = sourceLines.filter((li) => !isReconciliationLineItem(li));
     }
 

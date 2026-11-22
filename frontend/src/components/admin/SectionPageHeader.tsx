@@ -33,8 +33,11 @@ export const SectionPageHeader: React.FC<SectionPageHeaderProps> = ({
   className = 'mb-6',
 }) => {
   return (
-    <div className={`flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between ${className}`}>
-      <div className="min-w-0">
+    // The title takes at least 16rem and the rest of the row; when that and the
+    // actions don't fit side by side, the actions wrap onto their own row,
+    // right-aligned, instead of running over the title or past the page.
+    <div className={`flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between ${className}`}>
+      <div className="min-w-0 sm:flex-[1_1_16rem]">
         <div className="flex items-center gap-2">
           {Icon && <Icon className="w-6 h-6 flex-shrink-0 text-muted" />}
           <h1 className="text-2xl font-bold text-heading">{title}</h1>
@@ -45,7 +48,7 @@ export const SectionPageHeader: React.FC<SectionPageHeaderProps> = ({
         )}
       </div>
       {actions && (
-        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 flex-shrink-0">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center sm:justify-end gap-2 flex-shrink-0 sm:ml-auto sm:max-w-full">
           {actions}
         </div>
       )}

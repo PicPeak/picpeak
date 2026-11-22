@@ -51,6 +51,43 @@ function isUnselectedOptional(li) {
 }
 
 /**
+ * An option sub-line (migration 371, `adds_to_parent`): its amount is added
+ * to the parent's, where a regular priced sub-line replaces it.
+ */
+function isOptionLine(li) {
+  return Boolean(li) && isTruthyFlag(li.adds_to_parent);
+}
+
+/** A line's own qty × unit × discount, rounded as computeTotals rounds it. */
+function ownLineMinor(li) {
+  const qty = ensureNumber(li.quantity, 1);
+  const discount = Math.max(0, Math.min(100, ensureNumber(li.discount_percent, 0)));
+  return Math.round(Math.round(qty * ensureInt(li.unit_price_minor)) * (1 - discount / 100));
+}
+
+/**
+ * The resolved total of a top-level line from its sub-lines, or null when
+ * the sub-lines leave it as it is (migrations 119 + 371):
+ *   - priced regular sub-lines replace the parent's own amount with their
+ *     sum ("the parent auto-totals what's under it");
+ *   - priced option sub-lines add their sum to whichever amount applies.
+ * The parent's own amount is recomputed from its price, not read from
+ * `line_total_minor`, so resolving rows that were resolved before (a stored
+ * invoice re-rendered) never adds the options twice.
+ */
+function resolvedParentTotal(parent, children) {
+  let regular = 0;
+  let options = 0;
+  for (const c of children || []) {
+    if (!(ensureInt(c.unit_price_minor) > 0)) continue;
+    if (isOptionLine(c)) options += ensureInt(c.line_total_minor);
+    else regular += ensureInt(c.line_total_minor);
+  }
+  if (regular <= 0 && options <= 0) return null;
+  return (regular > 0 ? regular : ownLineMinor(parent)) + options;
+}
+
+/**
  * Promotion snapshots are stored as JSON text (portable across SQLite and
  * Postgres). Accepts the parsed object, the JSON string or nothing.
  */
@@ -113,6 +150,10 @@ function normalizeLineItems(items) {
       is_optional: isTruthyFlag(li.is_optional),
       selected: li.selected == null ? true : isTruthyFlag(li.selected),
     };
+    // Only a sub-line can add to a parent (migration 371), and only a
+    // non-negative amount: a negative one would print as included in the
+    // main line's price while resolvedParentTotal leaves it out.
+    if (isTopLevel(out) || ensureInt(out.unit_price_minor) < 0) out.adds_to_parent = false;
     if (lineKind === 'discount') {
       if (!isTopLevel(out)) {
         throw new AppError('A discount line cannot be a sub-item', 400, 'LINE_ITEM_DISCOUNT_NESTED');
@@ -238,6 +279,11 @@ function extendedLineColumns(li, { invoice = false } = {}) {
     bound_to: li.bound_to || null,
     promotion_snapshot: snapshot ? JSON.stringify(snapshot) : null,
     pricing_factors: pricingFactorsColumn(li.pricing_factors),
+    // Only a sub-line can add to a parent (migration 371); the invoice paths
+    // never run normalizeLineItems, so the rule lives here too.
+    adds_to_parent: formatBoolean(isOptionLine(li)
+      && !(isTopLevel(li) && isTopLevel(li, 'parent_line_item_id'))
+      && ensureInt(li.unit_price_minor) >= 0),
     ...(li.catalogue_preset_id == null ? {} : { catalogue_preset_id: li.catalogue_preset_id }),
     ...(li.configuration_definition == null ? {} : { configuration_locked: formatBoolean(isTruthyFlag(li.configuration_locked)) }),
     ...(li.configuration_definition == null ? {} : { configuration_definition: typeof li.configuration_definition === 'string' ? li.configuration_definition : JSON.stringify(li.configuration_definition), configuration_snapshot: li.configuration_snapshot == null ? null : typeof li.configuration_snapshot === 'string' ? li.configuration_snapshot : JSON.stringify(li.configuration_snapshot), configuration_base_details: li.configuration_base_details || null }),
@@ -260,6 +306,7 @@ function lineItemFieldsFromApi(li) {
   if (li.boundTo !== undefined) out.bound_to = li.boundTo || null;
   if (li.promotionSnapshot !== undefined) out.promotion_snapshot = li.promotionSnapshot || null;
   if (li.pricingFactors !== undefined) out.pricing_factors = li.pricingFactors || null;
+  if (li.addsToParent !== undefined) out.adds_to_parent = isTruthyFlag(li.addsToParent);
   // Wire-only: the quote service turns it into promotion_snapshot.
   if (li.promotionId !== undefined && li.promotionId !== null && li.promotionId !== '') {
     out.promotion_id = ensureInt(li.promotionId);
@@ -284,6 +331,7 @@ function lineItemFieldsToApi(li) {
     boundTo: li.bound_to || null,
     promotionSnapshot: parsePromotionSnapshot(li.promotion_snapshot),
     pricingFactors: parsePromotionSnapshot(li.pricing_factors),
+    addsToParent: isOptionLine(li),
   };
 }
 
@@ -297,6 +345,9 @@ module.exports = {
   isTruthyFlag,
   isDiscountLine,
   isUnselectedOptional,
+  isOptionLine,
+  ownLineMinor,
+  resolvedParentTotal,
   parsePromotionSnapshot,
   validatePromotionSnapshot,
   normalizeLineItems,

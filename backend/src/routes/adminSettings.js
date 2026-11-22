@@ -1962,6 +1962,11 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
       const raw = settings.event_default_show_credits_to_guests;
       settings.event_default_show_credits_to_guests = raw === true || raw === 'true' || raw === 1 || raw === '1';
     }
+    // First-visit walkthrough default for new galleries (issue 2551).
+    if (Object.prototype.hasOwnProperty.call(settings, 'event_default_walkthrough_enabled')) {
+      const raw = settings.event_default_walkthrough_enabled;
+      settings.event_default_walkthrough_enabled = raw === true || raw === 'true' || raw === 1 || raw === '1';
+    }
 
     // Folders (issue 1786) and two-stage delivery (issue 1562).
     for (const key of ['event_default_folder_structure', 'first_look_keyword_detection']) {

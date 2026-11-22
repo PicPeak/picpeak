@@ -50,4 +50,68 @@ function shippedMigration(dir = path.join(__dirname, '../../migrations/core')) {
   ), null);
 }
 
-module.exports = { migrationOrder, latestMigration, shippedMigration };
+// Every migration filename this code ships, as the runner stores it in
+// `migrations.filename`: the bare basename with `.js`, for core and legacy
+// alike (run-migrations-safe.js records path.basename of each file).
+function shippedMigrationNames(dirs = [
+  path.join(__dirname, '../../migrations/core'),
+  path.join(__dirname, '../../migrations/legacy'),
+]) {
+  const names = new Set();
+  for (const dir of dirs) {
+    let files = [];
+    try { files = fs.readdirSync(dir); } catch (_) { /* An absent folder ships nothing. */ }
+    for (const name of files) if (/\.js$/.test(name)) names.add(name);
+  }
+  return names;
+}
+
+// Ledger names this line once shipped and no longer does, other than renames
+// that kept the part after the number. `init.js` became 001_init.js in 2025,
+// and the migrations reorganisation (9854ca2f5) renamed two to *_duplicate.js
+// without touching ledger rows; an install that old still records them. Left
+// in place: the runner ignores them. These are all of them on either line.
+const RETIRED_MIGRATIONS = new Set([
+  'init.js',
+  '014_add_host_name_to_events.js',
+  '027_add_rate_limit_settings.js',
+]);
+
+// The part of a migration filename after its leading number, or null when it
+// has none. stable backports main's migrations under its own numbers with the
+// same rest (stable 254_fix_translated_email_template_placeholders.js is main
+// 366_fix_translated_email_template_placeholders.js).
+function migrationStem(name) {
+  const m = String(name || '').match(/^\d+_(.+)$/);
+  return m ? m[1] : null;
+}
+
+// Sort the ledger of a restored archive against this code (issue 2480):
+// - keep: names this code ships (or once shipped, RETIRED_MIGRATIONS);
+// - twins: names of the other release line whose stem a shipped file has.
+//   Their rows are dropped so this code's own counterpart runs on the next
+//   start, as on a promote upgrade;
+// - unknown: anything else. This code cannot know what such a migration did
+//   to the schema, and the runner would never apply this line's migrations a
+//   foreign name stands in for, so the restore is refused.
+function classifyLedger(names, shipped = shippedMigrationNames()) {
+  const stems = new Set();
+  for (const name of shipped) {
+    const stem = migrationStem(name);
+    if (stem) stems.add(stem);
+  }
+  const keep = [];
+  const twins = [];
+  const unknown = [];
+  for (const name of names) {
+    if (shipped.has(name) || RETIRED_MIGRATIONS.has(name)) keep.push(name);
+    else if (stems.has(migrationStem(name))) twins.push(name);
+    else unknown.push(name);
+  }
+  const byOrder = (a, b) => migrationOrder(a) - migrationOrder(b) || (a < b ? -1 : a > b ? 1 : 0);
+  return { keep, twins, unknown: unknown.sort(byOrder) };
+}
+
+module.exports = {
+  migrationOrder, latestMigration, shippedMigration, shippedMigrationNames, migrationStem, classifyLedger,
+};

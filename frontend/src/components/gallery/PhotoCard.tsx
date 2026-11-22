@@ -549,6 +549,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
     <div
       ref={setContainerRef}
       className={className}
+      data-tour="photo"
       style={lazy ? { ...style, opacity: !inView && fadeInWhenVisible ? 0 : 1 } : style}
       onClick={handlePhotoClick}
       // A photo tile: the lightbox grows out of the one it was opened from.

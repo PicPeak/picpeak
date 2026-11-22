@@ -29,6 +29,7 @@ const { hasColumnCached } = require('../utils/schemaCache');
 const { vatMinorFor, roundsVatDown } = require('../utils/vatAmount');
 const invoiceService = require('./invoiceService');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('./accountingHistory');
+const { isArmed } = require('./invoice/drafts');
 
 // ---------------------------------------------------------------------
 // Pure helpers — exported under `_internal` for direct unit testing.
@@ -122,8 +123,7 @@ function isEntryLocked(entry, invoice) {
   if (!invoice) return false; // entry references a deleted invoice — treat as unbilled
   if (invoice.status !== 'scheduled') return true;
   if (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1) return false;
-  if (!invoice.scheduled_send_at) return false;
-  return new Date(invoice.scheduled_send_at).getTime() <= Date.now();
+  return isArmed(invoice.scheduled_send_at);
 }
 
 /**
@@ -368,12 +368,8 @@ async function updateEntry(entryId, payload, adminId) {
         line_total_minor: newLineItem.line_total_minor,
         updated_at: new Date(),
       }, audit);
-      // Recompute invoice totals — same shape as appendToMonthlyDraft.
-      const allItems = await trx('invoice_line_items').where({ invoice_id: entry.invoice_id });
-      let netMinor = 0;
-      for (const li of allItems) {
-        if (li.parent_line_item_id == null) netMinor += Number(li.line_total_minor || 0);
-      }
+      // Recompute invoice totals by the same rule as appendToMonthlyDraft.
+      const { netMinor } = await require('./invoice/drafts').resolveUnissuedInvoiceNet(trx, entry.invoice_id, audit);
       const vatRate = Number(invoice.vat_rate || 0);
       const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: await roundsVatDown(trx) });
       const shippingMinor = Number(invoice.shipping_amount_minor || 0);
@@ -428,12 +424,10 @@ async function deleteEntry(entryId, adminId) {
     if (entry.invoice_line_item_id) {
       await auditedDelete(trx, 'invoice_line_items', { id: entry.invoice_line_item_id }, audit);
     }
-    if (entry.invoice_id) {
-      const allItems = await trx('invoice_line_items').where({ invoice_id: entry.invoice_id });
-      let netMinor = 0;
-      for (const li of allItems) {
-        if (li.parent_line_item_id == null) netMinor += Number(li.line_total_minor || 0);
-      }
+    // An entry whose invoice no longer exists has no totals to recompute.
+    if (entry.invoice_id && invoice) {
+      // Same rule as appendToMonthlyDraft (parents resolved, round-total).
+      const { netMinor } = await require('./invoice/drafts').resolveUnissuedInvoiceNet(trx, entry.invoice_id, audit);
       const vatRate = Number(invoice.vat_rate || 0);
       const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: await roundsVatDown(trx) });
       const shippingMinor = Number(invoice.shipping_amount_minor || 0);

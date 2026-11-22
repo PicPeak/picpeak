@@ -146,8 +146,9 @@ describe('isInvoiceMutable (re-categorise unwind guard)', () => {
   const past = new Date(Date.now() - 86400000).toISOString();
   it('monthly draft and not-yet-armed scheduled are mutable', () => {
     expect(isInvoiceMutable(null)).toBe(true); // referenced invoice gone
-    expect(isInvoiceMutable({ is_monthly_draft: true })).toBe(true);
-    expect(isInvoiceMutable({ is_monthly_draft: 1 })).toBe(true);
+    // A running monthly draft is 'scheduled'; its send time doesn't lock it.
+    expect(isInvoiceMutable({ status: 'scheduled', is_monthly_draft: true, scheduled_send_at: past })).toBe(true);
+    expect(isInvoiceMutable({ status: 'scheduled', is_monthly_draft: 1 })).toBe(true);
     expect(isInvoiceMutable({ status: 'scheduled', scheduled_send_at: null })).toBe(true);
     expect(isInvoiceMutable({ status: 'scheduled', scheduled_send_at: future })).toBe(true);
   });
@@ -156,5 +157,9 @@ describe('isInvoiceMutable (re-categorise unwind guard)', () => {
     expect(isInvoiceMutable({ status: 'sent' })).toBe(false);
     expect(isInvoiceMutable({ status: 'paid' })).toBe(false);
     expect(isInvoiceMutable({ status: 'cancelled' })).toBe(false);
+    // Paid or cancelled while still flagged as the monthly draft (the
+    // scheduler clears the flag on its next pass): closed all the same.
+    expect(isInvoiceMutable({ status: 'paid', is_monthly_draft: 1 })).toBe(false);
+    expect(isInvoiceMutable({ status: 'cancelled', is_monthly_draft: true })).toBe(false);
   });
 });

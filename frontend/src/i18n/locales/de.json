@@ -1598,6 +1598,7 @@
       },
       "restoreError": {
         "RESTORE_MANIFEST_INVALID": "Die Datei ist kein Backup, das diese Instanz wiederherstellen kann.",
+        "RESTORE_LEDGER_UNKNOWN_MIGRATIONS": "Dieses Backup stammt aus einer neueren PicPeak-Release-Linie: Seine Datenbank enthält Migrationen, die diese Version nicht kennt. Stellen Sie es auf einer PicPeak-Version wieder her, die sie enthält.",
         "RESTORE_PRIVILEGE_MISSING": "Der Datenbankbenutzer dieser Instanz darf keine Wiederherstellung ausführen (PostgreSQL-SUPERUSER ist erforderlich).",
         "RESTORE_CAPACITY_LIMIT": "Auf dem Speichervolume ist nicht genug Platz für dieses Backup frei.",
         "RESTORE_CAPACITY_UNKNOWN": "Der freie Platz auf dem Speichervolume konnte nicht ermittelt werden.",
@@ -2672,6 +2673,48 @@
       "limitReached": "Du kannst bis zu {{count}} Listen anlegen.",
       "saveError": "Die Liste konnte nicht gespeichert werden."
     },
+    "walkthrough": {
+      "help": "Galerie-Rundgang anzeigen",
+      "stepOf": "Schritt {{current}} von {{total}}",
+      "next": "Weiter",
+      "back": "Zurück",
+      "skip": "Überspringen",
+      "done": "Verstanden",
+      "steps": {
+        "browse": {
+          "title": "Willkommen in der Galerie",
+          "body": "Scrollen Sie durch die Fotos und tippen Sie eines an, um es groß zu sehen.",
+          "bodyCategories": "Scrollen Sie durch die Fotos und tippen Sie eines an, um es groß zu sehen. Die Kategorien bringen Sie direkt zu einem Teil des Tages."
+        },
+        "favorites": {
+          "title": "Favoriten markieren",
+          "bodyLikes": "Tippen Sie auf das Herz eines Fotos, um Ihre Lieblingsfotos zu markieren. Der Filter zeigt Ihnen später nur diese.",
+          "bodyFavorites": "Öffnen Sie ein Foto und tippen Sie auf das Lesezeichen, um es als Favorit zu merken. Der Filter zeigt Ihnen später nur diese.",
+          "bodyBoth": "Tippen Sie auf das Herz eines Fotos, um Ihre Lieblingsfotos zu markieren, oder öffnen Sie ein Foto und tippen Sie auf das Lesezeichen, um es als Favorit zu merken. Der Filter zeigt Ihnen später nur diese."
+        },
+        "download": {
+          "title": "Fotos herunterladen",
+          "body": "Laden Sie mit diesem Button die ganze Galerie herunter, oder öffnen Sie ein Foto, um nur dieses herunterzuladen."
+        },
+        "faces": {
+          "title": "Personen finden",
+          "body": "Tippen Sie auf ein Gesicht, um alle Fotos dieser Person zu sehen.",
+          "bodySelfie": "Tippen Sie auf ein Gesicht, um alle Fotos dieser Person zu sehen, oder finden Sie Ihre eigenen Fotos mit einem Selfie."
+        },
+        "upload": {
+          "title": "Eigene Fotos hinzufügen",
+          "body": "Teilen Sie hier Ihre eigenen Fotos vom Tag. Sie erscheinen für alle in der Galerie."
+        },
+        "hide": {
+          "title": "Fotos vor Gästen verbergen",
+          "body": "Sie haben den Kundenlink geöffnet. Mit dem Auge auf einem Foto verbergen Sie es vor Gästen; Sie sehen es hier weiterhin."
+        },
+        "help": {
+          "title": "Noch einmal ansehen?",
+          "body": "Öffnen Sie diesen Rundgang jederzeit wieder über das Fragezeichen-Symbol."
+        }
+      }
+    },
     "language": {
       "switch": "Sprache"
     }
@@ -3593,6 +3636,8 @@
     "showExifToGuestsHelp": "Kamera, Objektiv, Brennweite, Blende, Belichtungszeit und ISO erscheinen in der Vollbildansicht unter dem Foto. Standort und Seriennummern werden nie gespeichert oder angezeigt.",
     "neutralPhotoLabels": "Neutrale Bezeichnung statt Dateinamen anzeigen",
     "neutralPhotoLabelsHelp": "Gäste sehen „Foto 12 von 84“ statt des Kamera-Dateinamens in der Vollbildansicht, in Bildunterschriften und in Screenreader-Texten. Downloads behalten ihre Dateinamen, und die Liste „Dateinamen kopieren“ wird Gästen nicht angeboten. Im Adminbereich stehen immer die Dateinamen.",
+    "walkthroughEnabled": "Rundgang beim ersten Besuch anzeigen",
+    "walkthroughEnabledHelp": "Kunden und Gäste sehen beim ersten Besuch eine kurze Einführung in das, was diese Galerie bietet. Sie können sie überspringen und über das Hilfe-Symbol erneut öffnen.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Zeilenumbrüche bleiben in E-Mails erhalten",
       "tip": "Tipp: Mit der Eingabetaste beginnst du eine neue Zeile. Jede Zeile erscheint in E-Mails als eigener Absatz.",
@@ -3996,7 +4041,9 @@
       "firstLookKeywordsHelp": "Durch Kommas getrennt. Groß-/Kleinschreibung, Leerzeichen, Binde- und Unterstriche werden ignoriert, „FirstLook“ passt also auch auf „first-look“.",
       "deliveryDays": "Vollständige Galerie fällig nach (Tagen)",
       "deliveryDaysHelp": "Startet eine erste Auswahl ohne zugesagtes Datum, ist die vollständige Galerie so viele Tage nach dem Eventdatum fällig.",
-      "defaultAllowDecisions": "Freigabe / Ablehnung pro Foto"
+      "defaultAllowDecisions": "Freigabe / Ablehnung pro Foto",
+      "defaultWalkthroughEnabled": "Rundgang beim ersten Besuch standardmäßig anzeigen",
+      "defaultWalkthroughEnabledHelp": "Neue Galerien starten mit eingeschaltetem Rundgang. Bestehende Galerien behalten ihre eigene Einstellung."
     },
     "imageSecurity": {
       "title": "Bildschutz",
@@ -10328,7 +10375,17 @@
       "rateFromChain": "Kunden- / Standardsatz",
       "restore": "Wiederherstellen",
       "savedToast": "Gespeichert.",
-      "servicesIntro": "Leistungen mit Fixpreis oder pro Stunde / Tag. Sie stehen im Angebotseditor und in Paketen zur Auswahl.",
+      "servicesIntro": "Leistungen mit Fixpreis oder pro Stunde / Tag. Sie stehen im Angebots- und Rechnungseditor und in Paketen zur Auswahl.",
+      "options": {
+        "legend": "Optionen",
+        "none": "Noch keine anderen Leistungen mit Fixpreis in dieser Währung.",
+        "hint": "Im Angebots- und Rechnungseditor ist jede Option ein Häkchen an der Position dieser Leistung. Angehakt wird sie als Unterposition eingefügt und ihr Preis zum Preis der Position addiert. Wird eine Leistung archiviert oder ändert sich ihre Währung oder Preisart, fällt sie aus diesen Listen; beim Wiederherstellen kommt sie nicht zurück. Leistungen mit Albumprodukt oder Preisfaktoren können keine Optionen sein. Höchstens {{max}} Optionen.",
+        "count": "Optionen: {{names}}",
+        "dropped_one": "Passt nicht mehr als Option und wird beim Speichern entfernt: {{names}}",
+        "dropped_other": "Passen nicht mehr als Optionen und werden beim Speichern entfernt: {{names}}",
+        "noLongerFits": "{{name}} (passt nicht mehr)",
+        "missing": "Leistung #{{id}}"
+      },
       "tab": {
         "packages": "Pakete",
         "promotions": "Aktionen",
@@ -10485,6 +10542,12 @@
       "detailsPlaceholder": "Optionale Notizen — Kleingedrucktes, Paketinhalte, Bedingungen…",
       "autoTotaledHint": "Summe automatisch aus den Unterpositionen berechnet",
       "autoTotaledNote": "= Σ Unterpositionen",
+      "withOption": "+ {{name}} ({{price}})",
+      "withOptionQuantity": "+ {{name}} ({{quantity}} × {{price}})",
+      "withOptionBooked": "+ {{name}}",
+      "optionNote": "im Preis der Hauptposition enthalten",
+      "removeBookedOption": "„{{name}}“ ({{amount}}) entfernen? Sie lässt sich in diesem Editor nicht wieder anhaken.",
+      "removeEditedOption": "„{{name}}“ entfernen? Die Zeile weicht vom Katalogeintrag ab, diese Abweichungen gehen verloren.",
       "discountLine": "Rabatt",
       "discountPercentHint": "{{percent}} % der Zwischensumme",
       "followsDays": "Folgt den Tagen des Angebots",
@@ -10529,6 +10592,8 @@
     }
   },
   "bills": {
+    "catalogueCurrencyMismatch_one": "{{count}} Position stammt aus einer Katalogleistung in einer anderen Währung als {{currency}}. Ihr Preis wurde nicht umgerechnet: bitte prüfen.",
+    "catalogueCurrencyMismatch_other": "{{count}} Positionen stammen aus Katalogleistungen in einer anderen Währung als {{currency}}. Ihre Preise wurden nicht umgerechnet: bitte prüfen.",
     "status": {
       "scheduled": "Geplant",
       "draft": "Entwurf",

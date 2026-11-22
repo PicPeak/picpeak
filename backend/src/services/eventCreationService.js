@@ -77,6 +77,8 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     // Uploader names (#1561). undefined = take the Event Defaults value.
     guest_name_mode: guestNameModeInput,
     show_credits_to_guests: showCreditsInput,
+    // First-visit walkthrough (issue 2551). undefined = take the Event Defaults value.
+    walkthrough_enabled: walkthroughInput,
     allow_downloads = true,
     disable_right_click = false,
     enable_devtools_protection: enableDevtoolsProtectionInput,
@@ -271,6 +273,15 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     if (setting !== undefined) showCreditsFallback = setting;
   }
   const show_credits_to_guests = parseBooleanInput(showCreditsInput, showCreditsFallback);
+
+  // First-visit walkthrough (issue 2551): Settings > Events default when the
+  // body omits it, off when that is unset too.
+  let walkthroughFallback = false;
+  if (walkthroughInput === undefined) {
+    const setting = await readBooleanSetting('event_default_walkthrough_enabled');
+    if (setting !== undefined) walkthroughFallback = setting;
+  }
+  const walkthrough_enabled = parseBooleanInput(walkthroughInput, walkthroughFallback);
 
   // Sub-toggle defaults from the global Settings > Events values (#1044).
   // One batched read; an explicitly-sent body value still wins.
@@ -504,6 +515,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     upload_category_id,
     guest_name_mode,
     show_credits_to_guests: formatBoolean(show_credits_to_guests),
+    walkthrough_enabled: formatBoolean(walkthrough_enabled),
     allow_downloads: formatBoolean(allow_downloads !== undefined ? allow_downloads : true),
     disable_right_click: formatBoolean(disable_right_click !== undefined ? disable_right_click : false),
     enable_devtools_protection: formatBoolean(effectiveEnableDevtoolsProtection),

@@ -42,10 +42,10 @@ import type { FactorPriceResult, FactorValue, PricingFactor, PricingFactorsSnaps
 import type { ConfigurationValues } from '../../features/album-products/ConfigurationPicker';
 import { useTranslation } from 'react-i18next';
 import { Plus, X, ArrowUp, ArrowDown, Save as SaveIcon, ChevronDown, ChevronRight, CornerDownRight, Tag, SlidersHorizontal } from 'lucide-react';
-import { Button } from '../common';
+import { Button, useConfirm } from '../common';
 import { DecimalInput } from '../common/DecimalInput';
 import { AddOnBookButton, AddOnBookingState } from '../common/AddOnBookButton';
-import { formatMoney } from '../../utils/money';
+import { formatMoney, formatMoneyMinor } from '../../utils/money';
 import {
   countedLines, isUnselectedOptional, resolveDiscountAmounts,
   type BoundTo, type LineKind, type LineUnit, type PriceMode, type PromotionSnapshot, type RateSource,
@@ -82,6 +82,11 @@ export interface EditableLineItem {
   promotionId?: number | null;
   /** Factor snapshot on a factor-priced service's parent line (#2440). */
   pricingFactors?: PricingFactorsSnapshot | null;
+  /**
+   * An option sub-line (migration 371): its amount is added to the parent's
+   * own price, where a regular priced sub-line replaces it.
+   */
+  addsToParent?: boolean;
 }
 
 export interface LineItemPresetMinimal {
@@ -96,6 +101,11 @@ export interface LineItemPresetMinimal {
   pinnedRateMinor?: number | null;
   /** Pricing factors attached to the item (#2440). */
   factorIds?: number[];
+  /** Services offered as options under this one (migration 371). */
+  optionPresetIds?: number[];
+  currency?: string;
+  /** Linked album product (an option never is one). */
+  productId?: string | null;
 }
 
 /** A catalogue package the editor can insert as a parent line + its items. */
@@ -146,7 +156,7 @@ interface Props {
   /** Quote-wide hours / days that bound lines follow (quotes only). */
   hours?: number | null;
   days?: number | null;
-  /** Catalogue packages offered in the "Insert package" picker (quotes only). */
+  /** Catalogue packages offered in the "Insert package" picker. */
   packages?: PackageForInsert[];
   /**
    * Pricing factors (#2440, quotes only): the factor library, and the call
@@ -175,13 +185,14 @@ export function generatedSubLines(items: EditableLineItem[], parentPosition: num
   const out = new Set<number>();
   // A snapshot from before the lines were recorded: every sub-line is the
   // pricing's, as re-pricing always treated them.
+  // A ticked option (migration 371) is the admin's, never the pricing's.
   if (!Array.isArray(parent?.pricingFactors?.lines)) {
-    for (const it of items) if (it.parentPosition === parentPosition) out.add(it.position);
+    for (const it of items) if (it.parentPosition === parentPosition && !it.addsToParent) out.add(it.position);
     return out;
   }
   const recorded = [...parent.pricingFactors.lines];
   for (const it of items) {
-    if (it.parentPosition !== parentPosition) continue;
+    if (it.parentPosition !== parentPosition || it.addsToParent) continue;
     // A line priced from a rate follows the rate: "Apply current rates" may
     // have moved its price since, which is not a change by hand.
     const followsRate = isRatePriced(it) && usesRateChain(it);
@@ -229,17 +240,20 @@ function lineFromCatalogue(
   parentPosition: number | null,
   mode: 'quote' | 'invoice',
 ): EditableLineItem {
-  const rateBased = mode === 'quote' && (src.priceMode === 'hour' || src.priceMode === 'day');
+  const rateItem = src.priceMode === 'hour' || src.priceMode === 'day';
+  const rateBased = mode === 'quote' && rateItem;
   const pinned = src.pinnedRateMinor != null;
   return {
     ...blankLine(position, parentPosition),
     quantity: src.quantity,
     description: src.name,
-    unitPrice: rateBased
+    // Invoices have no rate chain: an hour / day item comes in at its own
+    // pinned rate (the invoice editor offers no other rate item).
+    unitPrice: rateItem && (rateBased || pinned)
       ? (pinned ? Number(src.pinnedRateMinor) / 100 : 0)
       : Number(src.unitPriceMinor || 0) / 100,
     detailsText: src.detailsText || '',
-    unit: src.unit || (rateBased ? (src.priceMode as LineUnit) : null),
+    unit: src.unit || (rateItem ? (src.priceMode as LineUnit) : null),
     priceMode: rateBased ? src.priceMode : null,
     rateSource: rateBased ? (pinned ? 'item' : 'auto') : null,
     boundTo: rateBased ? (src.boundTo || null) : null,
@@ -252,6 +266,7 @@ export const LineItemsTable: React.FC<Props> = ({
   factors = [], priceWithFactors,
 }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const isQuote = mode === 'quote';
 
   // Pricing factors (#2440): the item being priced, and the parent line it
@@ -344,7 +359,7 @@ export const LineItemsTable: React.FC<Props> = ({
     const pos = nextFreshPosition(items);
     const row = preset
       ? {
-        cataloguePresetId: mode === 'quote' ? preset.id : undefined,
+        cataloguePresetId: preset.id,
         ...lineFromCatalogue({
           name: preset.name,
           unitPriceMinor: preset.unitPriceMinor,
@@ -377,7 +392,7 @@ export const LineItemsTable: React.FC<Props> = ({
       quantity: it.quantity ?? (Number(it.quantityDefault) || 1),
       detailsText: it.detailsText,
       boundTo: it.boundTo,
-    }, parentPos + 1 + i, parentPos, mode), cataloguePresetId: mode === 'quote' ? it.presetId : undefined }));
+    }, parentPos + 1 + i, parentPos, mode), cataloguePresetId: it.presetId }));
     if (itemLines.length === 0) return;
     let rows: EditableLineItem[];
     if (itemLines.length === 1) {
@@ -409,6 +424,79 @@ export const LineItemsTable: React.FC<Props> = ({
     }
     const next = [...items];
     next.splice(insertAt, 0, blankLine(nextFreshPosition(items), parent.position));
+    onChange(next);
+  };
+
+  /**
+   * The options the line's catalogue service offers, in its order: those still
+   * active, priced fixed and in the document's currency. The catalogue checks
+   * that when the service is saved, but the option can change after it.
+   */
+  const serviceOptions = (li: EditableLineItem): LineItemPresetMinimal[] => {
+    if (isDiscount(li) || li.cataloguePresetId == null) return [];
+    const service = presets.find((p) => p.id === li.cataloguePresetId);
+    return (service?.optionPresetIds || [])
+      .map((id) => presets.find((p) => p.id === id))
+      .filter((p): p is LineItemPresetMinimal => Boolean(p)
+        && (p!.priceMode || 'fixed') === 'fixed'
+        && !p!.productId
+        && !(p!.factorIds?.length)
+        && (!p!.currency || p!.currency.toUpperCase() === String(currency || '').toUpperCase()));
+  };
+
+  /**
+   * Option lines already booked under `li` that none of its offered options
+   * stands for (the service was archived, changed, or isn't loaded here):
+   * still shown ticked, so unticking removes them like any other option.
+   */
+  const bookedElsewhere = (li: EditableLineItem, offered: LineItemPresetMinimal[]) => items.filter((it) => it.parentPosition === li.position
+    && it.addsToParent && !offered.some((o) => o.id === it.cataloguePresetId));
+
+  /** The option sub-lines of a parent that came from catalogue item `optionId`. */
+  const optionLinesOf = (parentPosition: number, optionId: number) => items.filter((it) => it.parentPosition === parentPosition
+    && it.addsToParent && it.cataloguePresetId === optionId);
+
+  /**
+   * Tick or untick a service's option (migration 371). Ticking books it as a
+   * sub-line after the parent's last sub-line, priced from the catalogue and
+   * added to the parent's own price; unticking removes it again.
+   */
+  const toggleOption = async (parentIdx: number, option: LineItemPresetMinimal, on: boolean) => {
+    const parent = items[parentIdx];
+    if (!parent || isSub(parent) || isDiscount(parent)) return;
+    if (!on) {
+      const lines = optionLinesOf(parent.position, option.id);
+      // A line changed by hand (text, price, quantity, notes) is the admin's
+      // work: ask before the tick takes it away.
+      const edited = lines.some((it) => it.description !== option.name
+        || Math.round(Number(it.unitPrice) * 100) !== Number(option.unitPriceMinor || 0)
+        || Number(it.quantity) !== (Number(option.quantityDefault) || 1)
+        || Number(it.discountPercent || 0) !== 0
+        || (it.detailsText || '') !== (option.detailsText || ''));
+      if (edited && !(await confirm({
+        message: t('crm.lineItems.removeEditedOption', 'Remove "{{name}}"? Its line differs from the catalogue entry, and those differences go with it.', { name: option.name }),
+        variant: 'warning',
+        confirmLabel: t('crm.lineItems.remove', 'Remove'),
+      }))) return;
+      const drop = new Set(lines.map((it) => it.position));
+      onChange(items.filter((it) => !drop.has(it.position)));
+      return;
+    }
+    let insertAt = parentIdx + 1;
+    while (insertAt < items.length && items[insertAt].parentPosition === parent.position) insertAt += 1;
+    const line: EditableLineItem = {
+      ...lineFromCatalogue({
+        name: option.name,
+        unitPriceMinor: option.unitPriceMinor,
+        unit: option.unit,
+        quantity: Number(option.quantityDefault) || 1,
+        detailsText: option.detailsText,
+      }, nextFreshPosition(items), parent.position, mode),
+      cataloguePresetId: option.id,
+      addsToParent: true,
+    };
+    const next = [...items];
+    next.splice(insertAt, 0, line);
     onChange(next);
   };
 
@@ -489,8 +577,13 @@ export const LineItemsTable: React.FC<Props> = ({
     return li.quantity;
   };
 
-  const rawLineTotal = (li: EditableLineItem) =>
-    Math.round(effectiveQuantity(li) * li.unitPrice * (1 - li.discountPercent / 100) * 100) / 100;
+  // In minor units, as the server rounds (qty × unit in Rappen, then the
+  // discount): a float product of major units can land a cent off.
+  const rawLineTotal = (li: EditableLineItem) => {
+    const unitMinor = Math.round((Number(li.unitPrice) || 0) * 100);
+    const rawMinor = Math.round(effectiveQuantity(li) * unitMinor);
+    return Math.round(rawMinor * (1 - li.discountPercent / 100)) / 100;
+  };
 
   /**
    * A parent has "priced sub-items" when at least one of its
@@ -506,15 +599,25 @@ export const LineItemsTable: React.FC<Props> = ({
   // quote each keystroke ran ~O(n²) array scans. Build a Map once per
   // render and read O(1) afterwards.
   const childPricingByParent = useMemo(() => {
-    const map = new Map<number, { hasPriced: boolean; pricedSum: number; pricedSumExact: number }>();
+    const map = new Map<number, {
+      hasPriced: boolean; pricedSum: number; pricedSumExact: number; optionSum: number; optionSumExact: number;
+    }>();
     for (const c of items) {
       if (c.parentPosition == null) continue;
       if (!(c.unitPrice > 0)) continue;
-      const cur = map.get(c.parentPosition) || { hasPriced: false, pricedSum: 0, pricedSumExact: 0 };
-      cur.hasPriced = true;
-      cur.pricedSum += rawLineTotal(c);
+      const cur = map.get(c.parentPosition)
+        || { hasPriced: false, pricedSum: 0, pricedSumExact: 0, optionSum: 0, optionSumExact: 0 };
       // Un-rounded contribution for the clean-net reconciliation below.
-      cur.pricedSumExact += effectiveQuantity(c) * c.unitPrice * (1 - c.discountPercent / 100);
+      const exact = effectiveQuantity(c) * c.unitPrice * (1 - c.discountPercent / 100);
+      if (c.addsToParent) {
+        // An option (migration 371) adds to the parent instead of replacing it.
+        cur.optionSum += rawLineTotal(c);
+        cur.optionSumExact += exact;
+      } else {
+        cur.hasPriced = true;
+        cur.pricedSum += rawLineTotal(c);
+        cur.pricedSumExact += exact;
+      }
       map.set(c.parentPosition, cur);
     }
     return map;
@@ -526,13 +629,17 @@ export const LineItemsTable: React.FC<Props> = ({
     childPricingByParent.get(parentPos)?.hasPriced || false;
   const pricedChildrenSum = (parentPos: number) =>
     childPricingByParent.get(parentPos)?.pricedSum || 0;
+  const optionsSum = (parentPos: number) =>
+    childPricingByParent.get(parentPos)?.optionSum || 0;
 
-  /** Resolved total of a regular line: a parent auto-sums when sub-items are priced. */
+  /**
+   * Resolved total of a regular line: a parent auto-sums when sub-items are
+   * priced, and its booked options add to that (backend resolvedParentTotal).
+   */
   const itemTotal = (li: EditableLineItem) => {
-    if (!isSub(li) && hasPricedChildren(li.position)) {
-      return pricedChildrenSum(li.position);
-    }
-    return rawLineTotal(li);
+    if (isSub(li)) return rawLineTotal(li);
+    const base = hasPricedChildren(li.position) ? pricedChildrenSum(li.position) : rawLineTotal(li);
+    return Math.round((base + optionsSum(li.position)) * 100) / 100;
   };
 
   // Totals follow the server: unselected add-ons don't count, discount
@@ -555,9 +662,10 @@ export const LineItemsTable: React.FC<Props> = ({
   // `subtotal` is shown as a "Rundung" row and folded into the total, so
   // the editor preview matches the saved invoice + PDF.
   const cleanExact = regularTopLevel.reduce((s, li) => (
-    hasPricedChildren(li.position)
+    (hasPricedChildren(li.position)
       ? s + (childPricingByParent.get(li.position)?.pricedSumExact || 0)
-      : s + effectiveQuantity(li) * li.unitPrice * (1 - li.discountPercent / 100)
+      : s + effectiveQuantity(li) * li.unitPrice * (1 - li.discountPercent / 100))
+    + (childPricingByParent.get(li.position)?.optionSumExact || 0)
   ), 0) - discountTotal;
   const cleanSubtotal = Math.round(cleanExact * 100) / 100;
   const roundingAdjustment = roundTotal ? Math.round((cleanSubtotal - subtotal) * 100) / 100 : 0;
@@ -843,6 +951,47 @@ export const LineItemsTable: React.FC<Props> = ({
                             <span>{t('crm.lineItems.optional', 'Offer as add-on')}</span>
                           </label>
                         )}
+                        {/* Options of the catalogue service (migration 371): a tick
+                            books one as a sub-line that adds to this line's price. */}
+                        {!sub && serviceOptions(li).map((option) => {
+                          const qty = Number(option.quantityDefault) || 1;
+                          const price = formatMoneyMinor(Number(option.unitPriceMinor || 0), currency);
+                          return (
+                            <label key={option.id} className={`inline-flex items-center gap-1 ${dim}`}>
+                              <input
+                                type="checkbox"
+                                checked={optionLinesOf(li.position, option.id).length > 0}
+                                onChange={(e) => { void toggleOption(idx, option, e.target.checked); }}
+                              />
+                              <span>
+                                {qty === 1
+                                  ? t('crm.lineItems.withOption', '+ {{name}} ({{price}})', { name: option.name, price })
+                                  : t('crm.lineItems.withOptionQuantity', '+ {{name}} ({{quantity}} × {{price}})', { name: option.name, quantity: qty, price })}
+                              </span>
+                            </label>
+                          );
+                        })}
+                        {!sub && bookedElsewhere(li, serviceOptions(li)).map((line) => (
+                          <label key={`booked-${line.position}`} className={`inline-flex items-center gap-1 ${dim}`}>
+                            <input
+                              type="checkbox"
+                              checked
+                              onChange={async () => {
+                                // No offered option stands for this line here (its service changed, or
+                                // isn't loaded in this editor): always ask, it may be the admin's own work.
+                                if (!(await confirm({
+                                  message: t('crm.lineItems.removeBookedOption', 'Remove "{{name}}" ({{amount}})? It cannot be ticked again from this editor.', {
+                                    name: line.description, amount: formatMoney(rawLineTotal(line), currency),
+                                  }),
+                                  variant: 'warning',
+                                  confirmLabel: t('crm.lineItems.remove', 'Remove'),
+                                }))) return;
+                                onChange(items.filter((it) => it.position !== line.position));
+                              }}
+                            />
+                            <span>{t('crm.lineItems.withOptionBooked', '+ {{name}}', { name: line.description })}</span>
+                          </label>
+                        ))}
                       </div>
                       <button
                         type="button"
@@ -928,6 +1077,11 @@ export const LineItemsTable: React.FC<Props> = ({
                           {t('crm.lineItems.autoTotaledNote', '= Σ Unterpositionen') as string}
                         </div>
                       )}
+                      {sub && li.addsToParent && li.unitPrice > 0 && (
+                        <div className="text-[10px] font-normal text-muted italic mt-0.5">
+                          {t('crm.lineItems.optionNote', "included in the main line's price")}
+                        </div>
+                      )}
                     </td>
                     <td className={`px-2 py-2 align-top ${dim}`}>
                       <div className="flex items-center gap-1 justify-end flex-wrap">
@@ -1008,7 +1162,7 @@ export const LineItemsTable: React.FC<Props> = ({
             ))}
           </select>
         )}
-        {isQuote && packages.length > 0 && (
+        {packages.length > 0 && (
           <select
             aria-label={t('crm.lineItems.insertPackage', 'Insert package…') as string}
             className="text-sm rounded-md border border-line-strong bg-panel px-3 py-1.5"
@@ -1056,6 +1210,7 @@ export function toEditableLineItem(li: {
   priceMode?: PriceMode | null; rateSource?: RateSource | null; boundTo?: BoundTo | null;
   promotionSnapshot?: PromotionSnapshot | null;
   pricingFactors?: PricingFactorsSnapshot | null;
+  addsToParent?: boolean;
 }): EditableLineItem {
   return {
     id: li.id,
@@ -1079,6 +1234,7 @@ export function toEditableLineItem(li: {
     boundTo: li.boundTo ?? null,
     promotionSnapshot: li.promotionSnapshot ?? null,
     pricingFactors: li.pricingFactors ?? null,
+    addsToParent: !!li.addsToParent,
   };
 }
 
@@ -1109,6 +1265,7 @@ export function toPayloadLineItem(li: EditableLineItem) {
     rateSource: li.rateSource ?? null,
     boundTo: li.boundTo ?? null,
     pricingFactors: li.pricingFactors ?? null,
+    addsToParent: li.parentPosition != null && !!li.addsToParent,
     ...(freshPromotion
       ? { promotionId: li.promotionId }
       : { promotionSnapshot: li.promotionSnapshot ?? null }),

@@ -303,6 +303,26 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             </div>
           </div>
 
+          {/* First-visit walkthrough default (issue 2551): new galleries only. */}
+          <div>
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={eventSettings.event_default_walkthrough_enabled}
+                onChange={(e) => setEventSettings(prev => ({ ...prev, event_default_walkthrough_enabled: e.target.checked }))}
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
+              />
+              <div>
+                <span className="text-sm font-medium text-body">
+                  {t('settings.events.defaultWalkthroughEnabled', 'Show a first-visit walkthrough by default')}
+                </span>
+                <p className="text-xs text-muted mt-1">
+                  {t('settings.events.defaultWalkthroughEnabledHelp', 'New galleries start with the short guided tour switched on. Existing galleries keep their own setting.')}
+                </p>
+              </div>
+            </label>
+          </div>
+
           {/* Download limit default (issue 1560) */}
           <div>
             <label
