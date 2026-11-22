@@ -281,6 +281,54 @@ describe('create, upload, deliver', () => {
     expect(mockSendTemplateEmail).toHaveBeenCalledTimes(2);
   });
 
+  it('mails the stored recipients and the supplied ones together', async () => {
+    const send = await createSend(tokens.write, { recipient_emails: ['stored@example.com'] });
+    await as(tokens.write).post(`/transfers/${send.id}/files`).attach('files', Buffer.from('PK'), 'All.zip');
+    const deliver = await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({ recipient_emails: ['extra@example.com', 'stored@example.com'] });
+    expect(deliver.status).toBe(200);
+    expect(deliver.body.sent).toBe(2);
+    expect(mockSendTemplateEmail.mock.calls.map((c) => c[0]).sort()).toEqual(['extra@example.com', 'stored@example.com']);
+  });
+
+  it('mails an address once when a second deliver read it as unsent before the first mailed it', async () => {
+    const transferService = require('../../src/services/transferService');
+    const send = await createSend(tokens.write, { recipient_emails: ['once@example.com'] });
+    await as(tokens.write).post(`/transfers/${send.id}/files`).attach('files', Buffer.from('PK'), 'All.zip');
+    // The view an overlapping deliver read before the first one claimed the row.
+    const stale = await transferService.getTransfer(send.id);
+    expect((await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({})).body.sent).toBe(1);
+    jest.spyOn(transferService, 'getTransfer').mockResolvedValueOnce(stale);
+    const second = await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({});
+    expect(second.status).toBe(200);
+    expect(second.body.sent).toBe(0);
+    expect(second.body.already_sent).toEqual(['once@example.com']);
+    expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('mails a new address once when two onlyUnsent sends race to record it', async () => {
+    const transferService = require('../../src/services/transferService');
+    const send = await createSend(tokens.write);
+    await as(tokens.write).post(`/transfers/${send.id}/files`).attach('files', Buffer.from('PK'), 'All.zip');
+    const results = await Promise.all([1, 2].map(() => transferService.sendTransferEmails(send.id, ['race@example.com'], { onlyUnsent: true })));
+    expect(results.reduce((n, r) => n + r.sent, 0)).toBe(1);
+    expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
+    expect(await db('transfer_recipients').where({ transfer_id: send.id, email: 'race@example.com' })).toHaveLength(1);
+  });
+
+  it('reports a recipient whose mail failed and mails it on the next deliver', async () => {
+    const send = await createSend(tokens.write, { recipient_emails: ['flaky@example.com'] });
+    await as(tokens.write).post(`/transfers/${send.id}/files`).attach('files', Buffer.from('PK'), 'All.zip');
+    mockSendTemplateEmail.mockRejectedValueOnce(new Error('SMTP down'));
+    const first = await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({});
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ sent: 0, failed: ['flaky@example.com'] });
+    const [row] = await db('transfer_recipients').where({ transfer_id: send.id });
+    expect(row.last_sent_at).toBeNull();
+    const retry = await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({});
+    expect(retry.body).toMatchObject({ sent: 1, failed: [], already_sent: [] });
+    expect(mockSendTemplateEmail).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the mail held when deliver comes before any file, and sends it with the first one', async () => {
     const send = await createSend(tokens.write);
     const deliver = await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({ recipient_emails: ['early@example.com'] });

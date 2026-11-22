@@ -1290,15 +1290,23 @@ async function removeExtraFiles(transferId) {
  * While nothing is downloadable yet (every photo still processing, issue 2061)
  * no "ready" mail goes out: the recipients are recorded with no last_sent_at,
  * and sendHeldReadyEmails sends to them once the transfer has a file.
+ *
+ * `onlyUnsent` (the API v1 deliver, issue 2586) makes the call safe to retry
+ * and to overlap: an address already mailed is skipped and left untouched
+ * (reported in `already_sent`), every other address is claimed with a guarded
+ * update before it is mailed so only one caller mails it, and an address
+ * whose mail could not be sent goes back to unsent (reported in `failed`) so
+ * the next call retries it. Off, an explicit call mails every address again:
+ * the admin "Send again".
  */
-async function sendTransferEmails(transferId, emails) {
-  const clean = [...new Set((emails || [])
+async function sendTransferEmails(transferId, emails, { onlyUnsent = false } = {}) {
+  let clean = [...new Set((emails || [])
     .map((e) => String(e || '').trim())
     .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
-  if (!clean.length) return { sent: 0, recipients: [] };
+  if (!clean.length) return { sent: 0, recipients: [], failed: [], already_sent: [] };
 
   const transfer = await db('transfers').where({ id: transferId }).first();
-  if (!transfer) return { sent: 0, recipients: [] };
+  if (!transfer) return { sent: 0, recipients: [], failed: [], already_sent: [] };
 
   // Read before the count: a held row that a finishing photo claims (and
   // mails) after the count must not be put back on hold below, or it is
@@ -1306,6 +1314,14 @@ async function sendTransferEmails(transferId, emails) {
   const before = await db('transfer_recipients')
     .where({ transfer_id: transferId }).whereIn('email', clean)
     .select('id', 'email', 'last_sent_at');
+  let alreadySent = [];
+  if (onlyUnsent) {
+    // Neither mailed nor put back on hold below: they are not ours to touch.
+    const mailed = new Set(before.filter((r) => r.last_sent_at != null).map((r) => r.email));
+    alreadySent = clean.filter((e) => mailed.has(e));
+    clean = clean.filter((e) => !mailed.has(e));
+    if (!clean.length) return { sent: 0, recipients: [], failed: [], already_sent: alreadySent };
+  }
   // An explicit send ends a hold for files still arriving (the page calls
   // this once they have, the admin's "Send again" any time). Only after the
   // snapshot above: while the hold stands no automatic path claims a held
@@ -1324,6 +1340,9 @@ async function sendTransferEmails(transferId, emails) {
           await db('transfer_recipients').where({ id: existing.id }).whereNotNull('last_sent_at')
             .update({ last_sent_at: null });
         }
+      } else if (onlyUnsent) {
+        // A held duplicate would be mailed once per row when a file lands.
+        await recordUnsentRecipient(transferId, email);
       } else {
         await db('transfer_recipients').insert({
           transfer_id: transferId, email, created_at: new Date(), last_sent_at: null,
@@ -1333,12 +1352,28 @@ async function sendTransferEmails(transferId, emails) {
     // A photo that finished between the count above and these rows found
     // nothing held, so ask once more.
     const late = await sendHeldReadyEmails(transferId);
-    return { sent: late.sent, recipients: clean, held: late.sent === 0 };
+    return { sent: late.sent, recipients: clean, held: late.sent === 0, failed: [], already_sent: alreadySent };
   }
 
   const vars = await readyEmailVars(transfer, fileCount);
   let sent = 0;
+  const failed = [];
   for (const email of clean) {
+    if (onlyUnsent) {
+      const row = before.find((r) => r.email === email) || await recordUnsentRecipient(transferId, email);
+      // One stamp, so a failed send resets only the claim this call made.
+      const stamp = new Date();
+      const claimed = await db('transfer_recipients').where({ id: row.id }).whereNull('last_sent_at')
+        .update({ last_sent_at: stamp });
+      if (claimed !== 1) continue; // another caller is mailing it, or has
+      if (await sendReadyEmail(transferId, email, vars)) {
+        sent += 1;
+      } else {
+        await db('transfer_recipients').where({ id: row.id, last_sent_at: stamp }).update({ last_sent_at: null });
+        failed.push(email);
+      }
+      continue;
+    }
     // Record the recipient regardless of delivery so the detail panel shows who
     // it was addressed to (and a future resend has the list).
     // Decided from the snapshot read before the count, not a fresh read: a
@@ -1360,7 +1395,24 @@ async function sendTransferEmails(transferId, emails) {
     }
     if (await sendReadyEmail(transferId, email, vars)) sent += 1;
   }
-  return { sent, recipients: clean };
+  return { sent, recipients: clean, failed, already_sent: alreadySent };
+}
+
+/**
+ * The one recipient row for an address, created unsent when there is none.
+ * transfer_recipients has no unique (transfer_id, email) index, so two callers
+ * can both insert one: the lowest id is the row both then claim, and a caller
+ * whose own insert is not that row removes it again.
+ */
+async function recordUnsentRecipient(transferId, email) {
+  const [inserted] = await db('transfer_recipients').insert({
+    transfer_id: transferId, email, created_at: new Date(), last_sent_at: null,
+  }).returning('id');
+  const ownId = typeof inserted === 'object' && inserted !== null ? inserted.id : inserted;
+  const canonical = await db('transfer_recipients').where({ transfer_id: transferId, email })
+    .orderBy('id', 'asc').first('id');
+  if (canonical.id !== ownId) await db('transfer_recipients').where({ id: ownId }).del();
+  return canonical;
 }
 
 /**

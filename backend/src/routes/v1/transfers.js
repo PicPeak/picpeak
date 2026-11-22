@@ -409,7 +409,7 @@ router.delete('/transfers/:id/chunked-upload/:uploadId',
  *   post:
  *     tags: [Transfers]
  *     summary: Send the ready mail once the uploads are done
- *     description: "Ends the delivery hold and mails the download link to the recipients that have not been mailed yet: the ones given on create plus any in recipient_emails. Safe to retry: an address that was already mailed is skipped (listed in already_sent) unless resend is true. Without any recipient nothing is mailed and the answer carries the share_url to hand over yourself. While no file is downloadable yet the mail stays held (held = true) and goes out when the first file lands."
+ *     description: "Ends the delivery hold and mails the download link to the recipients that have not been mailed yet: the ones given on create plus any in recipient_emails. Safe to retry and to overlap: each address is mailed once, an address that was already mailed is skipped (listed in already_sent) unless resend is true, and an address whose mail failed is listed in failed and retried by the next deliver. Without any recipient nothing is mailed and the answer carries the share_url to hand over yourself. While no file is downloadable yet the mail stays held (held = true) and goes out when the first file lands."
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: integer } }
@@ -423,7 +423,7 @@ router.delete('/transfers/:id/chunked-upload/:uploadId',
  *                 type: array
  *                 maxItems: 100
  *                 items: { type: string, format: email }
- *                 description: "Defaults to the recipients already on the transfer."
+ *                 description: "Added to the recipients already on the transfer."
  *               resend: { type: boolean, default: false, description: "Mail addresses that were already mailed again." }
  *     responses:
  *       200:
@@ -435,7 +435,8 @@ router.delete('/transfers/:id/chunked-upload/:uploadId',
  *               properties:
  *                 sent: { type: integer }
  *                 held: { type: boolean }
- *                 already_sent: { type: array, items: { type: string } }
+ *                 already_sent: { type: array, items: { type: string }, description: "Addresses skipped because they were mailed before (never with resend)." }
+ *                 failed: { type: array, items: { type: string }, description: "Addresses whose mail could not be sent. They stay unsent, so the next deliver retries them." }
  *                 share_url: { type: string, format: uri }
  *                 transfer: { $ref: '#/components/schemas/Transfer' }
  *       400: { description: "Validation error, or the transfer is a file request (NOT_A_SEND)" }
@@ -469,20 +470,19 @@ router.post(
       });
     }
     const resend = req.body.resend === true || req.body.resend === 'true';
+    const stored = (transfer.recipients || []).map((r) => r.email);
     const given = (req.body.recipient_emails || []).map((e) => String(e).trim());
-    const targets = [...new Set(given.length ? given : (transfer.recipients || []).map((r) => r.email))];
-    // An address that already got the mail is not mailed again on a retry;
-    // the admin "Send again" semantics are opt-in through `resend`.
-    const mailed = new Set((transfer.recipients || []).filter((r) => r.last_sent_at != null).map((r) => r.email));
-    const alreadySent = resend ? [] : targets.filter((e) => mailed.has(e));
-    const pending = resend ? targets : targets.filter((e) => !mailed.has(e));
+    // The recipients recorded on create plus any named now. Compared as
+    // written, like every other transfer recipient lookup.
+    const targets = [...new Set([...stored, ...given])];
 
-    let result = { sent: 0, held: false };
-    if (pending.length) {
-      // Ends the hold set on create and mails, or records them held while
-      // nothing is downloadable yet (issue 2061). Held rows are claimed with a
-      // guarded update, so concurrent retries mail each address once.
-      result = await transferService.sendTransferEmails(id, pending);
+    let result = { sent: 0, held: false, failed: [], already_sent: [] };
+    if (targets.length) {
+      // Without resend: each address is mailed at most once across retries
+      // and overlapping calls, and one whose mail failed stays unsent for the
+      // next call (see sendTransferEmails). Ends the hold set on create, or
+      // records the addresses held while nothing is downloadable yet.
+      result = await transferService.sendTransferEmails(id, targets, { onlyUnsent: !resend });
     }
     let fresh = transfer;
     try {
@@ -495,7 +495,8 @@ router.post(
     return res.json({
       sent: result.sent || 0,
       held: !!result.held,
-      already_sent: alreadySent,
+      already_sent: result.already_sent || [],
+      failed: result.failed || [],
       share_url: view.share_url,
       transfer: view,
     });
