@@ -302,6 +302,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                 variant="outline"
                 size="sm"
                 leftIcon={<Upload className="w-4 h-4" />}
+                data-tour="upload"
                 onClick={() => {
                   onUploadClick();
                   if (isMobile) onClose();
@@ -344,6 +345,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                   size="sm"
                   leftIcon={<Download className="w-4 h-4" />}
                   onClick={onDownloadAll}
+                  data-tour="download-all"
                   disabled={isDownloading || (downloadAllTotal ?? totalPhotos) === 0 || downloadAllOverQuota}
                   title={downloadAllOverQuota
                     ? t('gallery.downloadLimit.downloadAllBlocked', 'This gallery holds more photos than your remaining downloads')
@@ -545,7 +547,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
 
           {/* Categories Section - Hidden for carousel layout */}
           {galleryLayout !== 'carousel' && categories.length > 0 && (
-            <div className="gallery-sidebar-section gallery-sidebar-categories p-4 border-b border-border-token">
+            <div className="gallery-sidebar-section gallery-sidebar-categories p-4 border-b border-border-token" data-tour="categories">
               <h3 className="gallery-sidebar-section-title text-sm font-semibold text-muted-theme mb-3 flex items-center gap-2">
                 <Filter className="w-4 h-4" />
                 {t('gallery.categories')}

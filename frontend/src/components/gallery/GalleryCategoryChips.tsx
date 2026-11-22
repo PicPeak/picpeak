@@ -40,7 +40,7 @@ export const GalleryCategoryChips: React.FC<GalleryCategoryChipsProps> = ({
   const { t } = useTranslation();
   if (categories.length === 0) return null;
   return (
-    <div className={`w-full ${className}`}>
+    <div className={`w-full ${className}`} data-tour="categories">
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant={selectedCategoryId === null ? 'primary' : 'outline'}

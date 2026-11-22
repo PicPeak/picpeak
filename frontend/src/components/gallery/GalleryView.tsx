@@ -109,6 +109,10 @@ import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
 import { useQueryClient } from '@tanstack/react-query';
 import { FavoriteListsContext, favoriteRowInList, useFavoriteListsState } from '../../contexts/FavoriteListsContext';
 import { FavoriteListsDialog } from './FavoriteListsDialog';
+import { GalleryWalkthrough } from './walkthrough/GalleryWalkthrough';
+import { WalkthroughHelpButton } from './walkthrough/WalkthroughHelpButton';
+import { isAdminPreviewUrl, useGalleryWalkthrough } from './walkthrough/useGalleryWalkthrough';
+import { buildWalkthroughSteps, type WalkthroughScope } from './walkthrough/walkthroughSteps';
 
 interface GalleryViewProps {
   slug: string;
@@ -493,6 +497,17 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // From the /photos payload, not the prop: the prop's event shape comes
   // from /info, which does not carry this flag.
   const peopleEnabled = data?.event?.people_enabled === true;
+  // First-visit walkthrough (issue 2551). A portal customer gets the client
+  // tour without the hide step; a full-link visitor the guest one. Never in
+  // an admin preview. It waits for the feedback settings (they decide the
+  // favourites step) and for a deep-linked photo's lightbox to close.
+  const walkthroughScope: WalkthroughScope = isClient ? 'client' : viaCustomer ? 'customer' : 'guest';
+  const walkthrough = useGalleryWalkthrough({
+    slug,
+    scope: walkthroughScope,
+    enabled: data?.event?.walkthrough_enabled === true && !isAdminPreviewUrl(),
+    ready: !!data && feedbackSettings !== undefined && pendingPhotoLink === null && linkedPhotoId === null,
+  });
   const selfieSearchEnabled = peopleEnabled && data?.event?.selfie_search_enabled === true;
   // Only while the search is offered: a filter left over from before the host
   // switched it off would empty the grid with no chip to clear it.
@@ -1786,7 +1801,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     const shown = shownPhotos.length;
     const peopleDownloadableIds = peopleDownloadIdsOf(shownPhotos);
     return (
-      <div className={className}>
+      <div className={className} data-tour="people">
         {selfieSearchEnabled && (
           <div className="flex justify-end pb-2">
             <button
@@ -2022,6 +2037,19 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Not in an admin preview.
   const showBackToAccount = viaCustomer && !adminPreview;
 
+  // The walkthrough's steps (issue 2551), from what this visitor can do here.
+  const walkthroughEnabled = data.event.walkthrough_enabled === true && !adminPreview;
+  const walkthroughSteps = walkthroughEnabled ? buildWalkthroughSteps({
+    scope: walkthroughScope,
+    hasCategories: filterCategories(data.categories).length > 0 || (data.event.chapter_marker_style || 'off') !== 'off',
+    likes: feedbackEnabled && !!feedbackSettings?.allow_likes,
+    favorites: feedbackEnabled && !!feedbackSettings?.allow_favorites,
+    downloads: allowDownloads,
+    people: peopleEnabled,
+    selfie: selfieSearchEnabled,
+    uploads: allowUploads,
+  }) : [];
+
   // Folder navigation (#1160, nested since issue 1786): the view switch, a
   // breadcrumb, the tiles of the current level's subfolders and, inside a
   // folder, its (recursive) download. Defined once and rendered by BOTH layout
@@ -2124,7 +2152,14 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         />
       ) : null;
       const peoplePanel = buildPeoplePanel(shownPhotos, toolbar ? 'mt-3' : undefined);
-      return toolbar || peoplePanel ? <div className="gallery-toolbox">{toolbar}{peoplePanel}</div> : null;
+      // These layouts keep their header inside the layout, so the
+      // walkthrough's help icon (issue 2551) sits in this row.
+      const help = walkthroughEnabled ? (
+        <div className="flex justify-end"><WalkthroughHelpButton onClick={walkthrough.reopen} /></div>
+      ) : null;
+      return toolbar || peoplePanel || help
+        ? <div className="gallery-toolbox">{help}{toolbar}{peoplePanel}</div>
+        : null;
     };
     return withDownloadProviders(
       // The same identity flow as the standard layout below (issue 1733):
@@ -2211,6 +2246,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 // nav (logout, favourites), and pushing the button over there
                 // physically covers those controls.
                 className="pointer-events-auto"
+                data-tour="download-all"
               >
                 {t('gallery.downloadEverything', 'Download all photos')}
               </Button>
@@ -2360,6 +2396,8 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
         {clientAccessDialog}
         {clearLikesDialog}
+        {/* Centered cards: these layouts draw their own chrome. */}
+        <GalleryWalkthrough open={walkthrough.open} steps={walkthroughSteps} anchored={false} onClose={walkthrough.close} />
 
         {/* Upload Modal for full-page layouts */}
         {showUploadModal && allowUploads && (
@@ -2595,6 +2633,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 leftIcon={<Upload className="w-4 h-4" />}
                 onClick={() => setShowUploadModal(true)}
                 className={!showSidebar ? 'flex-1 sm:flex-initial' : ''}
+                data-tour="upload"
               >
                 <span className="hidden sm:inline">{t('upload.uploadPhotos')}</span>
                 <span className="sm:hidden">{t('common.upload')}</span>
@@ -2602,10 +2641,16 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             );
           }
           
+          // Reopens the first-visit walkthrough (issue 2551).
+          if (walkthroughEnabled) {
+            items.push(<WalkthroughHelpButton key="walkthrough-help" onClick={walkthrough.reopen} />);
+          }
+
           return items.length > 0 ? <>{items}</> : null;
         })()}
       >
         {clientAccessDialog}
+        <GalleryWalkthrough open={walkthrough.open} steps={walkthroughSteps} anchored onClose={walkthrough.close} />
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
         <PrintShopEntry />
         {/* Expiration Banner */}
@@ -2626,7 +2671,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
         {/* Client Access Banner (#172) */}
         {isClient && (
-          <div className="mt-4 rounded-lg status-chip hue-warning p-4">
+          <div className="mt-4 rounded-lg status-chip hue-warning p-4" data-tour="client-banner">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-2">
                 <Shield className="w-5 h-5" />

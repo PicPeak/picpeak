@@ -704,6 +704,48 @@
       "nameTaken": "Je hebt al een lijst met deze naam.",
       "limitReached": "Je kunt maximaal {{count}} lijsten hebben.",
       "saveError": "De lijst kon niet worden opgeslagen."
+    },
+    "walkthrough": {
+      "help": "Rondleiding door de galerij tonen",
+      "stepOf": "Stap {{current}} van {{total}}",
+      "next": "Volgende",
+      "back": "Terug",
+      "skip": "Overslaan",
+      "done": "Begrepen",
+      "steps": {
+        "browse": {
+          "title": "Welkom in de galerij",
+          "body": "Scrol door de foto's en tik op een foto om hem groot te bekijken.",
+          "bodyCategories": "Scrol door de foto's en tik op een foto om hem groot te bekijken. De categorieën brengen je direct naar een deel van de dag."
+        },
+        "favorites": {
+          "title": "Markeer je favorieten",
+          "bodyLikes": "Tik op het hartje van een foto om je favorieten te markeren. Het filter toont later alleen die foto's.",
+          "bodyFavorites": "Tik op de bladwijzer van een foto om hem als favoriet te bewaren. Het filter toont later alleen die foto's.",
+          "bodyBoth": "Tik op het hartje of de bladwijzer van een foto om je favorieten te markeren. Het filter toont later alleen die foto's."
+        },
+        "download": {
+          "title": "Foto's downloaden",
+          "body": "Download de hele galerij met deze knop, of open een foto om alleen die te downloaden."
+        },
+        "faces": {
+          "title": "Personen vinden",
+          "body": "Tik op een gezicht om alle foto's van die persoon te zien.",
+          "bodySelfie": "Tik op een gezicht om alle foto's van die persoon te zien, of vind je eigen foto's met een selfie."
+        },
+        "upload": {
+          "title": "Voeg je foto's toe",
+          "body": "Deel hier je eigen foto's van de dag. Ze verschijnen voor iedereen in de galerij."
+        },
+        "hide": {
+          "title": "Foto's verbergen voor gasten",
+          "body": "Je hebt de klantlink geopend. Met het oog op een foto verberg je hem voor gasten; jij ziet hem hier nog steeds."
+        },
+        "help": {
+          "title": "Nog een keer bekijken?",
+          "body": "Open deze rondleiding op elk moment opnieuw met het vraagteken-pictogram."
+        }
+      }
     }
   },
   "categories": {
@@ -1305,6 +1347,8 @@
     "showExifToGuestsHelp": "Camera, objectief, brandpuntsafstand, diafragma, sluitertijd en ISO verschijnen onder de foto in de volledige weergave. Locatie en serienummers worden nooit opgeslagen of getoond.",
     "neutralPhotoLabels": "Neutraal label tonen in plaats van bestandsnamen",
     "neutralPhotoLabelsHelp": "Gasten zien “Foto 12 van 84” in plaats van de bestandsnaam van de camera in de volledige weergave, in bijschriften en in tekst voor schermlezers. Downloads houden hun bestandsnamen, en de lijst ‘Bestandsnamen kopiëren’ wordt gasten niet aangeboden. In het beheer staan altijd de bestandsnamen.",
+    "walkthroughEnabled": "Rondleiding bij het eerste bezoek tonen",
+    "walkthroughEnabledHelp": "Klanten en gasten zien bij hun eerste bezoek een korte rondleiding langs wat deze galerij biedt. Ze kunnen hem overslaan en opnieuw openen met het help-pictogram.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Regeleinden blijven behouden in e-mails",
       "tip": "Tip: druk op Enter voor een nieuwe regel. Elke regel verschijnt in e-mails als een aparte alinea.",
@@ -1572,7 +1616,9 @@
       "firstLookKeywordsHelp": "Gescheiden door komma's. Hoofdletters, spaties, streepjes en underscores worden genegeerd, dus „FirstLook” past ook op „first-look”.",
       "deliveryDays": "Volledige galerie verschuldigd na (dagen)",
       "deliveryDaysHelp": "Als een eerste selectie start zonder toegezegde datum, is de volledige galerie zoveel dagen na de evenementdatum verschuldigd.",
-      "defaultAllowDecisions": "Goedkeuren / afwijzen per foto"
+      "defaultAllowDecisions": "Goedkeuren / afwijzen per foto",
+      "defaultWalkthroughEnabled": "Rondleiding bij het eerste bezoek standaard tonen",
+      "defaultWalkthroughEnabledHelp": "Nieuwe galerijen starten met de rondleiding ingeschakeld. Bestaande galerijen houden hun eigen instelling."
     },
     "imageSecurity": {
       "title": "Afbeeldingsbeveiliging",

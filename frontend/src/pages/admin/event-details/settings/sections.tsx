@@ -517,6 +517,19 @@ export const GuestsSection: React.FC<FieldsProps & {
         </label>
         <p className="text-xs text-muted mt-1 ml-6">{t('events.neutralPhotoLabelsHelp')}</p>
       </div>
+      {/* First-visit walkthrough (issue 2551). */}
+      <div>
+        <label className="flex items-center">
+          <input
+            type="checkbox"
+            checked={f.walkthrough_enabled}
+            onChange={(e) => set({ walkthrough_enabled: e.target.checked })}
+            className={checkboxClass}
+          />
+          <span className="ml-2 text-sm text-body">{t('events.walkthroughEnabled')}</span>
+        </label>
+        <p className="text-xs text-muted mt-1 ml-6">{t('events.walkthroughEnabledHelp')}</p>
+      </div>
       {feedback && (
         <div className="pt-4 border-t border-line">
           <h4 className="text-sm font-semibold text-heading mb-3">{t('feedback.settings.title', 'Guest Feedback Settings')}</h4>

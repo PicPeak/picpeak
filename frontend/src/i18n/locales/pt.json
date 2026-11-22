@@ -820,6 +820,48 @@
       "nameTaken": "Você já tem uma lista com este nome.",
       "limitReached": "Você pode ter até {{count}} listas.",
       "saveError": "Não foi possível salvar a lista."
+    },
+    "walkthrough": {
+      "help": "Mostrar o guia da galeria",
+      "stepOf": "Passo {{current}} de {{total}}",
+      "next": "Próximo",
+      "back": "Voltar",
+      "skip": "Pular",
+      "done": "Entendi",
+      "steps": {
+        "browse": {
+          "title": "Bem-vindo à galeria",
+          "body": "Role pelas fotos e toque em uma para vê-la em tamanho grande.",
+          "bodyCategories": "Role pelas fotos e toque em uma para vê-la em tamanho grande. As categorias levam você direto a uma parte do dia."
+        },
+        "favorites": {
+          "title": "Marque suas favoritas",
+          "bodyLikes": "Toque no coração de uma foto para marcar as que você ama. Depois, o filtro mostra só essas.",
+          "bodyFavorites": "Toque no marcador de uma foto para guardá-la como favorita. Depois, o filtro mostra só essas.",
+          "bodyBoth": "Toque no coração ou no marcador de uma foto para marcar as que você ama. Depois, o filtro mostra só essas."
+        },
+        "download": {
+          "title": "Baixar fotos",
+          "body": "Baixe a galeria inteira com este botão, ou abra uma foto para baixar só ela."
+        },
+        "faces": {
+          "title": "Encontrar pessoas",
+          "body": "Toque em um rosto para ver todas as fotos em que essa pessoa aparece.",
+          "bodySelfie": "Toque em um rosto para ver todas as fotos em que essa pessoa aparece, ou encontre suas próprias fotos com uma selfie."
+        },
+        "upload": {
+          "title": "Adicione suas fotos",
+          "body": "Compartilhe aqui suas próprias fotos do dia. Elas aparecem na galeria para todos."
+        },
+        "hide": {
+          "title": "Ocultar fotos dos convidados",
+          "body": "Você abriu o link de cliente. O olho em uma foto a oculta dos convidados; você continua vendo-a aqui."
+        },
+        "help": {
+          "title": "Precisa ver de novo?",
+          "body": "Abra este guia de novo a qualquer momento pelo ícone de ponto de interrogação."
+        }
+      }
     }
   },
   "categories": {
@@ -1433,6 +1475,8 @@
     "showExifToGuestsHelp": "Câmera, lente, distância focal, abertura, velocidade do obturador e ISO aparecem abaixo da foto na visualização em tela cheia. A localização e os números de série nunca são armazenados nem exibidos.",
     "neutralPhotoLabels": "Mostrar um rótulo neutro em vez dos nomes de arquivo",
     "neutralPhotoLabelsHelp": "Os convidados veem “Foto 12 de 84” em vez do nome de arquivo da câmera na visualização em tela cheia, nas legendas das miniaturas e no texto para leitores de tela. Os downloads mantêm os nomes de arquivo, e a lista “Copiar nomes de arquivo” não é oferecida aos convidados. A área de administração sempre mostra os nomes de arquivo.",
+    "walkthroughEnabled": "Mostrar um tour na primeira visita",
+    "walkthroughEnabledHelp": "Clientes e convidados veem na primeira visita um breve tour pelo que esta galeria oferece. Eles podem pular e abrir de novo pelo ícone de ajuda.",
     "welcomeEditor": {
       "lineBreaksPreserved": "As quebras de linha são mantidas nos e-mails",
       "tip": "Dica: prima Enter para criar uma nova linha. Cada linha aparecerá como um parágrafo separado nos e-mails.",
@@ -1701,7 +1745,9 @@
       "firstLookKeywordsHelp": "Separadas por vírgulas. Maiúsculas, espaços, hífenes e sublinhados são ignorados, então «FirstLook» também corresponde a «first-look».",
       "deliveryDays": "Galeria completa vence após (dias)",
       "deliveryDaysHelp": "Se uma primeira seleção começar sem data prometida, a galeria completa vence este número de dias após a data do evento.",
-      "defaultAllowDecisions": "Aprovar / rejeitar cada foto"
+      "defaultAllowDecisions": "Aprovar / rejeitar cada foto",
+      "defaultWalkthroughEnabled": "Mostrar um tour na primeira visita por padrão",
+      "defaultWalkthroughEnabledHelp": "Novas galerias começam com o tour ativado. Galerias existentes mantêm a própria configuração."
     },
     "imageSecurity": {
       "title": "Proteção de Imagem",

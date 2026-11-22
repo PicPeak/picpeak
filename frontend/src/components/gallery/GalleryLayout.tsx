@@ -112,6 +112,7 @@ const HeaderDownloadButton: React.FC<{
     onClick={onClick}
     disabled={isDownloading}
     aria-label={label}
+    data-tour="download-all"
     className="gallery-btn gallery-btn-download inline-flex items-center gap-2 px-3 sm:px-4 h-9 rounded-lg text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
     style={{
       backgroundColor: 'var(--color-accent)',
@@ -438,6 +439,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                     size="sm"
                     leftIcon={<Download className="w-4 h-4" />}
                     onClick={onDownloadAll}
+                    data-tour="download-all"
                     isLoading={isDownloading}
                     className="gallery-btn gallery-btn-download hidden sm:flex"
                   >
@@ -517,6 +519,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                     size="sm"
                     leftIcon={<Download className="w-4 h-4" />}
                     onClick={onDownloadAll}
+                    data-tour="download-all"
                     isLoading={isDownloading}
                     className="gallery-btn gallery-btn-download hidden sm:flex"
                   >
@@ -565,6 +568,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                     size="sm"
                     leftIcon={<Download className="w-4 h-4" />}
                     onClick={onDownloadAll}
+                    data-tour="download-all"
                     isLoading={isDownloading}
                     className="gallery-btn gallery-btn-download hidden sm:flex"
                   >
@@ -618,6 +622,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                     size="sm"
                     leftIcon={<Download className="w-4 h-4" />}
                     onClick={onDownloadAll}
+                    data-tour="download-all"
                     isLoading={isDownloading}
                     className="gallery-btn gallery-btn-download"
                   >
