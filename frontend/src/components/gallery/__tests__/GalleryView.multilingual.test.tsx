@@ -72,10 +72,11 @@ vi.mock('../GalleryLayout', () => ({
 }));
 vi.mock('../PhotoGridWithLayouts', () => ({
   PhotoGridWithLayouts: ({ welcomeMessage, categories, beforeGrid, photos: shown }: {
-    welcomeMessage?: string; categories?: Array<{ name: string }>; photos?: unknown[];
+    welcomeMessage?: string; categories?: Array<{ name: string }>; photos?: Array<{ category_name?: string }>;
     beforeGrid?: React.ReactNode | ((photos: unknown[]) => React.ReactNode);
   }) => (
-    <div data-testid="grid" data-categories={(categories || []).map((c) => c.name).join('|')}>
+    <div data-testid="grid" data-categories={(categories || []).map((c) => c.name).join('|')}
+      data-photo-categories={(shown || []).map((p) => p.category_name ?? '').join('|')}>
       <div data-testid="before-grid">{typeof beforeGrid === 'function' ? beforeGrid(shown || []) : beforeGrid}</div>
       <p data-testid="welcome">{welcomeMessage}<GallerySecondaryText kind="welcome" /></p>
     </div>
@@ -105,7 +106,7 @@ function show(mode: 'off' | 'visitor' | 'bilingual', { translated = true, langua
         ...(texts ? { translations: { event_name: { en: 'Wedding' }, welcome_message: { en: 'Welcome' } } } : {}),
       },
       categories: [{ id: 3, name: 'Trauung', slug: 'trauung', is_global: false, ...(texts ? { translations: { name: { en: 'Ceremony' } } } : {}) }],
-      photos: [{ id: 7, filename: 'a.jpg', url: '/a.jpg', thumbnail_url: '/a-t.jpg', type: 'photo', size: 1, uploaded_at: '2026-09-19T10:00:00Z', category_id: 3 }],
+      photos: [{ id: 7, filename: 'a.jpg', url: '/a.jpg', thumbnail_url: '/a-t.jpg', type: 'photo', size: 1, uploaded_at: '2026-09-19T10:00:00Z', category_id: 3, category_name: 'Trauung' }],
     },
     isLoading: false,
     error: null,
@@ -168,5 +169,8 @@ describe('GalleryView multilingual texts', () => {
     expect(screen.getByTestId('before-grid').contains(switcher())).toBe(true);
     // Story's scenes are its categories: they arrive resolved too.
     if (layout === 'gallery-story') expect(screen.getByTestId('grid').dataset.categories).toBe('Ceremony');
+    // Premium's tabs, Story's scene titles, captions and search read the
+    // photo's own category name: it follows the categories.
+    expect(screen.getByTestId('grid').dataset.photoCategories).toBe('Ceremony');
   });
 });

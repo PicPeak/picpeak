@@ -89,7 +89,7 @@ export const StoryChapterMarker: React.FC<StoryChapterMarkerProps> = ({
             {chapter.location && <span>{chapter.location}</span>}
           </p>
         )}
-        {chapter.subheading && (
+        {(chapter.subheading || chapter.secondary?.subheading) && (
           <p className="story-chapter-subheading">
             {chapter.subheading}
             {chapter.secondary?.subheading && <span className="story-chapter-secondary">{chapter.secondary.subheading}</span>}

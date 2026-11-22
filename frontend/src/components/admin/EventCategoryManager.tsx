@@ -52,10 +52,15 @@ function textsFor(rows: ContentTranslation[] | undefined, entityType: Translatio
   return out;
 }
 
-function textChanges(entityType: TranslationEntity, entityId: number, draft: TextsDraft, base: TextsDraft): TranslationChange[] {
+/**
+ * The writes for the texts the admin edited. `edits` holds only the keys
+ * typed into; every other translation is left as it is on the server, so a
+ * draft opened before the translations arrived cannot delete them.
+ */
+function textChanges(entityType: TranslationEntity, entityId: number, edits: TextsDraft, base: TextsDraft): TranslationChange[] {
   const changes: TranslationChange[] = [];
-  for (const key of new Set([...Object.keys(draft), ...Object.keys(base)])) {
-    const next = (draft[key] ?? '').trim();
+  for (const key of Object.keys(edits)) {
+    const next = (edits[key] ?? '').trim();
     if (next === (base[key] ?? '').trim()) continue;
     const [field, language] = key.split(':');
     changes.push({ entity_type: entityType, entity_id: entityId, field, language, text: next === '' ? null : next });
@@ -70,8 +75,9 @@ interface ChapterEditorProps {
   /** Multilingual texts (issue 2550): the gallery's other languages; empty while the mode is off. */
   languages: string[];
   primary: string | null;
+  /** What the server has with the admin's edits on top. */
   texts: TextsDraft;
-  onTextsChange: (texts: TextsDraft) => void;
+  onTextChange: (key: string, text: string) => void;
   onSave: () => void;
   onClear: () => void;
   onCancel: () => void;
@@ -80,7 +86,7 @@ interface ChapterEditorProps {
 
 /** Heading, time, location and subheading of one category's chapter marker (issue 2548). */
 const ChapterEditor: React.FC<ChapterEditorProps> = ({
-  category, draft, onChange, onSave, onClear, onCancel, saving, languages, primary, texts, onTextsChange,
+  category, draft, onChange, onSave, onClear, onCancel, saving, languages, primary, texts, onTextChange,
 }) => {
   const { t } = useTranslation();
   const [language, setLanguage] = useState<string | null>(null);
@@ -96,7 +102,7 @@ const ChapterEditor: React.FC<ChapterEditorProps> = ({
   const translated = (field: typeof CHAPTER_TEXT_FIELDS[number]) => ({
     id: `chapter-${category.id}-${field.column}`,
     value: active ? texts[`${field.field}:${active}`] ?? '' : '',
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => onTextsChange({ ...texts, [`${field.field}:${active}`]: e.target.value }),
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => onTextChange(`${field.field}:${active}`, e.target.value),
     className: chapterInputClass,
     maxLength: field.max,
     lang: active ?? undefined,
@@ -208,9 +214,12 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
   });
   const textPrimary = textState?.text_primary_language ?? null;
   const textLanguages = translationLanguages(textState?.text_language_mode, textPrimary, textState?.text_secondary_language);
-  const [chapterTexts, setChapterTexts] = useState<TextsDraft>({});
+  // Only the texts the admin typed into; what the server has fills the rest.
+  const [chapterEdits, setChapterEdits] = useState<TextsDraft>({});
   const [nameEditId, setNameEditId] = useState<number | null>(null);
-  const [nameTexts, setNameTexts] = useState<TextsDraft>({});
+  const [nameEdits, setNameEdits] = useState<TextsDraft>({});
+  const CHAPTER_FIELD_NAMES = CHAPTER_TEXT_FIELDS.map((f) => f.field);
+  const chapterBase = (categoryId: number) => textsFor(textState?.translations, 'chapter', categoryId, CHAPTER_FIELD_NAMES);
 
   // Fetch this event's categories (globals + event-specific), already resolved
   // to the event's effective order by the backend (#782).
@@ -334,10 +343,11 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
   // Chapter marker (issue 2548), stored per event: a shared category can
   // carry a different time and place in every gallery.
   const chapterMutation = useMutationWithToast({
-    mutationFn: async ({ categoryId, data, texts }: { categoryId: number; data: CategoryChapterData; texts: TextsDraft }) => {
+    mutationFn: async ({ categoryId, data, edits, removeAll = false }: { categoryId: number; data: CategoryChapterData; edits: TextsDraft; removeAll?: boolean }) => {
       const saved = await categoriesService.updateChapter(eventId, categoryId, data);
-      const base = textsFor(textState?.translations, 'chapter', categoryId, CHAPTER_TEXT_FIELDS.map((f) => f.field));
-      const changes = textChanges('chapter', categoryId, texts, base);
+      const base = chapterBase(categoryId);
+      // Removing the marker removes its translations; a save writes the edits only.
+      const changes = textChanges('chapter', categoryId, removeAll ? Object.fromEntries(Object.keys(base).map((key) => [key, ''])) : edits, base);
       if (changes.length > 0) await translationsService.save(eventId, changes);
       return saved;
     },
@@ -359,15 +369,16 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
       chapter_time: hasChapter(category) ? category.chapter_time ?? '' : category.chapter_time_suggestion ?? '',
       chapter_location: category.chapter_location ?? '',
     });
-    setChapterTexts(textsFor(textState?.translations, 'chapter', category.id, CHAPTER_TEXT_FIELDS.map((f) => f.field)));
+    setChapterEdits({});
     setChapterEditId(category.id);
   };
 
-  const saveChapter = (categoryId: number, data: CategoryChapterData, texts: TextsDraft) => {
+  const saveChapter = (categoryId: number, data: CategoryChapterData, edits: TextsDraft, removeAll = false) => {
     const trimmed = (v: string | null) => (v && v.trim() ? v.trim() : null);
     chapterMutation.mutate({
       categoryId,
-      texts,
+      edits,
+      removeAll,
       data: {
         chapter_heading: trimmed(data.chapter_heading),
         chapter_subheading: trimmed(data.chapter_subheading),
@@ -379,8 +390,8 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
 
   // Translated category names (issue 2550), for this gallery only.
   const nameMutation = useMutationWithToast({
-    mutationFn: ({ categoryId, texts }: { categoryId: number; texts: TextsDraft }) => {
-      const changes = textChanges('category', categoryId, texts, textsFor(textState?.translations, 'category', categoryId, ['name']));
+    mutationFn: ({ categoryId, edits }: { categoryId: number; edits: TextsDraft }) => {
+      const changes = textChanges('category', categoryId, edits, textsFor(textState?.translations, 'category', categoryId, ['name']));
       return changes.length > 0 ? translationsService.save(eventId, changes) : Promise.resolve(null);
     },
     invalidateKeys: [[...translationsQueryKey(eventId)]],
@@ -394,7 +405,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
       setNameEditId(null);
       return;
     }
-    setNameTexts(textsFor(textState?.translations, 'category', category.id, ['name']));
+    setNameEdits({});
     setNameEditId(category.id);
   };
 
@@ -690,9 +701,9 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                       defaultHint={category.is_global
                         ? t('categories.translations.sharedHint', 'A shared category: its name is changed in Settings. The translations here are for this gallery only.')
                         : t('categories.translations.defaultHint', 'The name as you created it. The translations are for this gallery only.')}
-                      translations={Object.fromEntries(Object.entries(nameTexts)
-                        .filter(([key]) => key.startsWith('name:')).map(([key, value]) => [key.slice(5), value]))}
-                      onTranslationChange={(language, text) => setNameTexts((prev) => ({ ...prev, [`name:${language}`]: text }))}
+                      translations={Object.fromEntries(Object.entries({ ...textsFor(textState?.translations, 'category', category.id, ['name']), ...nameEdits })
+                        .map(([key, value]) => [key.slice(5), value]))}
+                      onTranslationChange={(language, text) => setNameEdits((prev) => ({ ...prev, [`name:${language}`]: text }))}
                       maxLength={100}
                       inputClassName={chapterInputClass}
                       labelClassName="block text-xs font-medium text-soft mb-1"
@@ -704,7 +715,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => nameMutation.mutate({ categoryId: category.id, texts: nameTexts })}
+                        onClick={() => nameMutation.mutate({ categoryId: category.id, edits: nameEdits })}
                         disabled={nameMutation.isPending}
                       >
                         {nameMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : t('common.save')}
@@ -717,13 +728,13 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                     category={category}
                     draft={chapterDraft}
                     onChange={setChapterDraft}
-                    onSave={() => saveChapter(category.id, chapterDraft, chapterTexts)}
+                    onSave={() => saveChapter(category.id, chapterDraft, chapterEdits)}
                     // Removing the marker removes its translations too.
-                    onClear={() => saveChapter(category.id, EMPTY_CHAPTER, {})}
+                    onClear={() => saveChapter(category.id, EMPTY_CHAPTER, {}, true)}
                     languages={textLanguages}
                     primary={textPrimary}
-                    texts={chapterTexts}
-                    onTextsChange={setChapterTexts}
+                    texts={{ ...chapterBase(category.id), ...chapterEdits }}
+                    onTextChange={(key, text) => setChapterEdits((prev) => ({ ...prev, [key]: text }))}
                     onCancel={() => setChapterEditId(null)}
                     saving={chapterMutation.isPending}
                   />

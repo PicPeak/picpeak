@@ -111,6 +111,14 @@ describe('resolveCategories', () => {
     expect(first.chapter?.secondary).toEqual({ heading: 'Ceremony', subheading: 'Meeting the yes-sayers' });
   });
 
+  it('bilingual: a blank default heading keeps an explicit second-language heading', () => {
+    const blank = [{ ...categories[0], chapter: { ...categories[0].chapter!, heading: null, translations: { heading: { en: 'Wedding ceremony' } } } }];
+    expect(resolveCategories(config('bilingual', 'en'), blank)![0].chapter?.secondary?.heading).toBe('Wedding ceremony');
+    // Without one, the name's second language; without that, nothing.
+    const noName = [{ ...categories[0], translations: {}, chapter: { ...categories[0].chapter!, heading: null, translations: {} } }];
+    expect(resolveCategories(config('bilingual', 'en'), noName)![0].chapter?.secondary).toBeUndefined();
+  });
+
   it('bilingual: a written heading takes its own second line', () => {
     const withHeading = [{ ...categories[0], chapter: { ...categories[0].chapter!, heading: 'Ja', translations: { heading: { en: 'Yes' } } } }];
     expect(resolveCategories(config('bilingual', 'en'), withHeading)![0].chapter?.secondary).toEqual({ heading: 'Yes', subheading: null });

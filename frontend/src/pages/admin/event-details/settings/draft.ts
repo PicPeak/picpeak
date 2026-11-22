@@ -134,6 +134,22 @@ export function eventTextChanges(draft: EventTextsDraft | null | undefined, base
   return changes;
 }
 
+/**
+ * Per key, like the events row: a text the admin has not touched follows the
+ * server, so a translation saved elsewhere meanwhile is neither lost from
+ * the draft nor deleted by the next save. Before they first load, the server's.
+ */
+function rebaseTexts(current: EventTextsDraft | null | undefined, prevBase: EventTextsDraft | null | undefined, server: EventTextsDraft | null | undefined) {
+  if (!current || !prevBase || !server) return server;
+  const out: EventTextsDraft = {};
+  for (const key of new Set([...Object.keys(current), ...Object.keys(prevBase), ...Object.keys(server)])) {
+    const touched = (current[key] ?? '') !== (prevBase[key] ?? '');
+    const value = touched ? current[key] : server[key];
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
 /** The draft's texts with the keys of one section put back to `base`. */
 function resetTexts(draft: EventTextsDraft | null | undefined, base: EventTextsDraft | null | undefined, section: SettingsSectionKey) {
   if (!draft || !base) return draft;
@@ -472,14 +488,14 @@ export function rebaseDraft(current: EventSettingsDraft, prevBase: EventSettings
   Object.keys(serverFields).forEach((key) => {
     if (sameValue(fields[key], prevFields[key])) fields[key] = serverFields[key];
   });
-  const slice = <K extends 'feedback' | 'downloads' | 'slideshow' | 'translations'>(k: K) =>
+  const slice = <K extends 'feedback' | 'downloads' | 'slideshow'>(k: K) =>
     (sameValue(current[k], prevBase[k]) ? server[k] : current[k]);
   return {
     event: fields as unknown as EventFields,
     feedback: slice('feedback'),
     downloads: slice('downloads'),
     slideshow: slice('slideshow'),
-    translations: slice('translations'),
+    translations: rebaseTexts(current.translations, prevBase.translations, server.translations),
   };
 }
 

@@ -56,7 +56,10 @@ function state(mode: 'off' | 'visitor' | 'bilingual') {
     text_language_mode: mode, text_primary_language: mode === 'off' ? null : 'de',
     text_secondary_language: mode === 'bilingual' ? 'en' : null,
     languages: ['en', 'de', 'es', 'fr', 'nl', 'pt', 'ru', 'sl'],
-    translations: [{ entity_type: 'category', entity_id: 9, field: 'name', language: 'en', text: 'Ceremony' }],
+    translations: [
+      { entity_type: 'category', entity_id: 9, field: 'name', language: 'en', text: 'Ceremony' },
+      { entity_type: 'chapter', entity_id: 9, field: 'heading', language: 'en', text: 'Wedding ceremony' },
+    ],
   };
 }
 
@@ -104,6 +107,39 @@ describe('EventCategoryManager translations', () => {
     ]));
   });
 
+  it('a chapter saved after the translations arrive late deletes none of them', async () => {
+    let release: (value: unknown) => void = () => {};
+    mocks.getTranslations.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: 'Chapter marker' }));
+    release({
+      ...state('bilingual'),
+      translations: [
+        { entity_type: 'chapter', entity_id: 9, field: 'heading', language: 'en', text: 'Wedding ceremony' },
+        { entity_type: 'chapter', entity_id: 9, field: 'location', language: 'en', text: 'Registry office' },
+      ],
+    });
+    const tablist = await screen.findByRole('tablist');
+    // The tab shows the arrived text, not an empty draft.
+    fireEvent.click(within(tablist).getAllByRole('tab')[1]);
+    expect((screen.getByLabelText('Heading') as HTMLInputElement).value).toBe('Wedding ceremony');
+    fireEvent.click(within(tablist).getAllByRole('tab')[0]);
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '12:30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+    await waitFor(() => expect(mocks.updateChapter).toHaveBeenCalled());
+    expect(mocks.saveTranslations).not.toHaveBeenCalled();
+  });
+
+  it('removing the marker removes its translations', async () => {
+    mocks.getTranslations.mockResolvedValue(state('bilingual'));
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: 'Chapter marker' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove marker' }));
+    await waitFor(() => expect(mocks.saveTranslations).toHaveBeenCalledWith(4, [
+      { entity_type: 'chapter', entity_id: 9, field: 'heading', language: 'en', text: null },
+    ]));
+  });
+
   it('bilingual: the chapter marker takes the second language next to the marker itself', async () => {
     mocks.getTranslations.mockResolvedValue(state('bilingual'));
     show();
@@ -115,10 +151,10 @@ describe('EventCategoryManager translations', () => {
     expect(screen.queryByLabelText('Time')).toBeNull();
     const heading = screen.getByLabelText('Heading') as HTMLInputElement;
     expect(heading.placeholder).toBe('Die Trauung');
-    fireEvent.change(heading, { target: { value: 'Wedding ceremony' } });
+    fireEvent.change(heading, { target: { value: 'The ceremony' } });
     fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
     await waitFor(() => expect(mocks.saveTranslations).toHaveBeenCalledWith(4, [
-      { entity_type: 'chapter', entity_id: 9, field: 'heading', language: 'en', text: 'Wedding ceremony' },
+      { entity_type: 'chapter', entity_id: 9, field: 'heading', language: 'en', text: 'The ceremony' },
     ]));
     expect(mocks.updateChapter).toHaveBeenCalledWith(4, 9, expect.objectContaining({ chapter_heading: 'Die Trauung', chapter_time: '12:00' }));
   });

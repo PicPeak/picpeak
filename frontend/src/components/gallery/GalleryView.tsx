@@ -318,11 +318,18 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // below is the one this visitor reads, resolved once here; the title and
   // the welcome message are resolved next to the props that carry them.
   const galleryText = useGalleryText(galleryData?.event);
-  const data = React.useMemo(() => (
-    galleryData && galleryText.config.mode !== 'off'
-      ? { ...galleryData, categories: resolveCategories(galleryText.config, galleryData.categories) ?? galleryData.categories }
-      : galleryData
-  ), [galleryData, galleryText.config]);
+  const data = React.useMemo(() => {
+    if (!galleryData || galleryText.config.mode === 'off') return galleryData;
+    const categories = resolveCategories(galleryText.config, galleryData.categories) ?? galleryData.categories;
+    // Premium's tabs, Story's scene titles and search, and the carousel
+    // captions read the photo's own category_name: it follows its category.
+    const names = new Map((categories || []).map((category) => [Number(category.id), category.name]));
+    const photos = galleryData.photos?.map((photo) => {
+      const name = photo.category_id != null ? names.get(Number(photo.category_id)) : undefined;
+      return name !== undefined && name !== photo.category_name ? { ...photo, category_name: name } : photo;
+    });
+    return { ...galleryData, categories, photos };
+  }, [galleryData, galleryText.config]);
   const eventTitle = galleryText.pair(event.event_name, galleryData?.event?.translations?.event_name);
   const welcomeText = galleryText.pair(event.welcome_message, galleryData?.event?.translations?.welcome_message);
   const secondaryTexts = React.useMemo(

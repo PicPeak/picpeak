@@ -124,6 +124,18 @@ describe('StoryChapterMarker', () => {
     expect(container.querySelectorAll('.story-chapter-secondary')).toHaveLength(2);
   });
 
+  it('bilingual (issue 2550): a subheading written only in the second language still shows', () => {
+    const { container } = render(
+      <StoryChapterMarker
+        category={category}
+        chapter={{ ...full, subheading: null, secondary: { heading: null, subheading: 'Meeting the yes-sayers' } }}
+        variant="divider"
+        slug="x"
+      />
+    );
+    expect(container.querySelector('.story-chapter-subheading')?.textContent).toBe('Meeting the yes-sayers');
+  });
+
   it('is a real heading with an anchor id', () => {
     const { container } = render(
       <StoryChapterMarker category={category} chapter={full} variant="divider" slug="x" />

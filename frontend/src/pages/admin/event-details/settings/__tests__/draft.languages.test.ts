@@ -92,6 +92,12 @@ describe('event texts', () => {
     const server = { ...loaded, 'event_name:de': 'Hochzeit!' };
     expect(rebaseDraft(slices(base, loaded), slices(base, loaded), slices(base, server)).translations).toEqual(server);
     const edited = { ...loaded, 'event_name:fr': 'Mariage' };
-    expect(rebaseDraft(slices(base, edited), slices(base, loaded), slices(base, server)).translations).toEqual(edited);
+    // Per key: the edit stays, the text that arrived meanwhile comes in too,
+    // so the save does not delete what the admin never touched.
+    const rebased = rebaseDraft(slices(base, edited), slices(base, loaded), slices(base, server)).translations!;
+    expect(rebased).toEqual({ ...server, 'event_name:fr': 'Mariage' });
+    expect(eventTextChanges(rebased, server, 4)).toEqual([
+      { entity_type: 'event', entity_id: 4, field: 'event_name', language: 'fr', text: 'Mariage' },
+    ]);
   });
 });

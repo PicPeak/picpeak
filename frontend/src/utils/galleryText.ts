@@ -102,7 +102,10 @@ function resolveChapter(config: GalleryTextConfig, chapter: ChapterMarkerText, n
   const t = chapter.translations || {};
   const heading = resolvePair(config, chapter.heading, t.heading);
   const subheading = resolvePair(config, chapter.subheading, t.subheading);
-  const secondaryHeading = chapter.heading || textIn(t.heading, config.primary) ? heading.secondary : name.secondary;
+  // Per language: a written second-language heading, else (when the marker
+  // has no heading of its own and shows the category name) the name's.
+  const ownHeading = Boolean(chapter.heading || textIn(t.heading, config.primary));
+  const secondaryHeading = heading.secondary ?? (ownHeading ? null : name.secondary);
   return {
     ...chapter,
     heading: heading.primary,
