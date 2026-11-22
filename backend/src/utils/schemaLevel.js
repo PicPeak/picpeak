@@ -67,9 +67,15 @@ function shippedMigrationNames(dirs = [
 }
 
 // Ledger names this line once shipped and no longer does, other than renames
-// that kept the part after the number. `init.js` became 001_init.js in 2025;
-// an install that old still records it. Left in place: the runner ignores it.
-const RETIRED_MIGRATIONS = new Set(['init.js']);
+// that kept the part after the number. `init.js` became 001_init.js in 2025,
+// and the migrations reorganisation (9854ca2f5) renamed two to *_duplicate.js
+// without touching ledger rows; an install that old still records them. Left
+// in place: the runner ignores them. These are all of them on either line.
+const RETIRED_MIGRATIONS = new Set([
+  'init.js',
+  '014_add_host_name_to_events.js',
+  '027_add_rate_limit_settings.js',
+]);
 
 // The part of a migration filename after its leading number, or null when it
 // has none. stable backports main's migrations under its own numbers with the
