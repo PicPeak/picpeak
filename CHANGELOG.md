@@ -5,6 +5,21 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.209.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.208.0-beta.0...v3.209.0-beta.0) (2026-11-22)
+
+
+### Features
+
+* **api:** expose PicTransfer sends through API v1 tokens ([#2600](https://github.com/PicPeak/picpeak/issues/2600)) ([76894d3](https://github.com/PicPeak/picpeak/commit/76894d3a42124de1f4482f2117102b958f1e7cc5))
+* **crm:** catalogue on invoices, service options that add to a line, PDF links ([#2585](https://github.com/PicPeak/picpeak/issues/2585)) ([65745c9](https://github.com/PicPeak/picpeak/commit/65745c9438b7a2c31d3912153594fcea5ff03ec5))
+* **gallery:** multilingual gallery titles and texts ([#2604](https://github.com/PicPeak/picpeak/issues/2604)) ([24673f0](https://github.com/PicPeak/picpeak/commit/24673f0cda4ad92a764ae4858a01845d358b166f))
+* **gallery:** optional first-visit walkthrough for clients and guests ([#2603](https://github.com/PicPeak/picpeak/issues/2603)) ([c76b603](https://github.com/PicPeak/picpeak/commit/c76b60346ecb4edbbe432d0a769ca41ed29819a3))
+
+
+### Bug Fixes
+
+* **restore:** refuse or reconcile a migration ledger from the other release line ([#2601](https://github.com/PicPeak/picpeak/issues/2601)) ([c23b4cf](https://github.com/PicPeak/picpeak/commit/c23b4cfe2bb240fca1dde44c465bea6fa77846e1))
+
 ## [3.208.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.207.0-beta.0...v3.208.0-beta.0) (2026-11-21)
 
 
