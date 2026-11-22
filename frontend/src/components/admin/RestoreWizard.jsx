@@ -870,8 +870,20 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
       !isRunning && lastRun && lastRun.status === 'completed' && dbFlag(lastRun.was_successful);
     // Strip the noisy stack-trace tail from the error message so the
     // user sees the actionable line first.
-    const lastRunError = lastRun?.error_message
-      ? backupErrorText(backupErrorCode(lastRun.error_message), t) ?? lastRun.error_message.split('\n')[0].slice(0, 500)
+    const lastRunFirstLine = lastRun?.error_message
+      ? lastRun.error_message.split('\n')[0].slice(0, 500)
+      : null;
+    // A known code reads in the admin's language; what happened to this
+    // install afterwards stays in the server's words, since only the message
+    // records it (restore_runs has was_rollback_attempted, not its outcome).
+    const lastRunCodeText = lastRun?.error_message
+      ? backupErrorText(backupErrorCode(lastRun.error_message), t)
+      : null;
+    const lastRunError = lastRunCodeText ?? lastRunFirstLine;
+    const rollbackFailed = !!lastRun?.error_message?.includes('ROLLBACK ALSO FAILED');
+    const lastRunOutcome = lastRunCodeText
+      ? (lastRun.error_message.match(/ROLLBACK ALSO FAILED:[^\n]*/)
+        || lastRun.error_message.match(/no pre-restore backup available[^)\n]*/))?.[0]?.slice(0, 500) ?? null
       : null;
     // The live progress lives in the backend's memory and is reset once the
     // run ends (and after the re-login a restore forces), so a finished run
@@ -883,6 +895,8 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
         ? (trackedRunMissing ? t('backup.restore.progress.notStarted') : t('backup.restore.progress.starting'))
       : lastRunBlocked
         ? t('backup.restore.progress.blockedSubtitle')
+        : lastRunFailed && (!dbFlag(lastRun.was_rollback_attempted) || rollbackFailed)
+          ? t('backup.restore.progress.failedNotRolledBackSubtitle')
         : lastRunFailed
           ? t('backup.restore.progress.failedSubtitle', 'Restore failed — see error below. Destination has been rolled back to its pre-restore state.')
           : lastRunMigrationsPending
@@ -926,7 +940,10 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
                 <p className="text-sm text-danger-text font-mono break-all">
                   {lastRunError || t('backup.restore.progress.errorUnknown', 'No error message recorded.')}
                 </p>
-                {dbFlag(lastRun.was_rollback_attempted) && (
+                {lastRunOutcome && (
+                  <p className="mt-2 text-sm text-danger-text font-mono break-all">{lastRunOutcome}</p>
+                )}
+                {dbFlag(lastRun.was_rollback_attempted) && !rollbackFailed && (
                   <p className="mt-2 text-xs text-danger-text">
                     {t('backup.restore.progress.rolledBack',
                       'Pre-restore safety backup was used to roll back. Destination is in its pre-restore state — safe to retry once the issue above is resolved.')}

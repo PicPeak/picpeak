@@ -21,6 +21,7 @@ const applicationWork = require('./activeApplicationWork');
 const portableRuntime = require('./portableRestoreRuntimeState');
 const rsyncRestore = require('../utils/rsyncRestore');
 const { classifyLedger } = require('../utils/schemaLevel');
+const { decompressLimiter, DecompressLimitError } = require('../utils/decompressLimit');
 
 // A manifest is attacker-influenceable (hand-crafted backup). Reject any
 // entry path that would resolve OUTSIDE its intended base directory
@@ -2176,6 +2177,9 @@ END $$;`
       }
       names = await require('./nativeDumpLedger').readDumpLedger(dumpPath, this.dbType);
     } catch (err) {
+      // Past the decompression cap the restore itself would refuse the dump
+      // (decompressFile); refuse it here, before anything changes.
+      if (err instanceof DecompressLimitError) throw Object.assign(err, { beforeDestinationChange: true });
       this.log('warn', `Could not read the migration ledger in the database dump (${err.message}); `
         + 'it is checked in the restored database instead');
       return;
@@ -2673,28 +2677,9 @@ END $$;`
    * Decompress gzip file
    */
   async decompressFile(inputPath, outputPath) {
-    // Bound the EXPANDED size (GHSA-h652). gunzip happily inflates a small
-    // crafted .gz into an unbounded stream, filling the disk before any later
-    // validation runs. Cap it and fail the pipeline the moment the limit is
-    // crossed. The default is deliberately generous — real database dumps are
-    // large — and overridable for installs with genuinely bigger data.
-    const configured = Number(process.env.RESTORE_MAX_DECOMPRESSED_BYTES);
-    const maxBytes = Number.isFinite(configured) && configured > 0
-      ? configured
-      : 50 * 1024 * 1024 * 1024; // 50 GB
-
-    let written = 0;
-    const limiter = new Transform({
-      transform(chunk, _enc, cb) {
-        written += chunk.length;
-        if (written > maxBytes) {
-          return cb(new Error(
-            `Decompressed size exceeds limit of ${maxBytes} bytes — refusing to continue`
-          ));
-        }
-        cb(null, chunk);
-      },
-    });
+    // Bound the EXPANDED size (GHSA-h652, see decompressLimit.js) and fail
+    // the pipeline the moment the limit is crossed.
+    const limiter = decompressLimiter();
 
     const gunzip = zlib.createGunzip();
     const source = createReadStream(inputPath);

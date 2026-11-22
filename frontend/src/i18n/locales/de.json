@@ -2104,6 +2104,7 @@
           "verifyIntegrity": "Dokumentintegrität jetzt prüfen"
         },
         "failedSubtitle": "Wiederherstellung fehlgeschlagen — siehe Fehler unten. Das Ziel wurde auf den Stand vor der Wiederherstellung zurückgesetzt.",
+        "failedNotRolledBackSubtitle": "Wiederherstellung fehlgeschlagen — siehe Fehler unten. Das Ziel wurde nicht zurückgesetzt und ist möglicherweise unvollständig; prüfen Sie es vor einem neuen Versuch.",
         "blockedSubtitle": "Wiederherstellung nicht gestartet — eine Vorabprüfung hat sie gestoppt. Auf dieser Installation wurde nichts geändert.",
         "blockedTitle": "Wiederherstellung vor jeder Änderung gestoppt",
         "idle": "Derzeit läuft keine Wiederherstellung.",

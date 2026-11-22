@@ -259,12 +259,53 @@ describe('RestoreWizard result', () => {
     expect(screen.queryByText(/RESTORE_LEDGER_UNKNOWN_MIGRATIONS/)).toBeNull();
   });
 
+  const LEDGER_REFUSAL = 'RESTORE_LEDGER_UNKNOWN_MIGRATIONS: This backup comes from a newer PicPeak release line: '
+    + 'its database has migration 999_x.js, which this version does not include. Restore it on a PicPeak version that includes 999_x.js.';
+
+  it('a translated failure keeps a failed rollback visible and does not call the install safe', async () => {
+    await reachResult({
+      id: 10, status: 'failed', was_successful: 0, was_rollback_attempted: 1,
+      error_message: `${LEDGER_REFUSAL} | ROLLBACK ALSO FAILED: psql exited 2 — destination is in a partial state, inspect before retrying`,
+    });
+
+    expect(screen.getByText(en.backup.errors.RESTORE_LEDGER_UNKNOWN_MIGRATIONS)).toBeTruthy();
+    expect(screen.getByText(/^ROLLBACK ALSO FAILED: psql exited 2 — destination is in a partial state/)).toBeTruthy();
+    expect(screen.queryByText(r.progress.rolledBack)).toBeNull();
+    expect(screen.getByText(r.progress.failedNotRolledBackSubtitle)).toBeTruthy();
+    expect(screen.queryByText(r.progress.failedSubtitle)).toBeNull();
+  });
+
+  it('a translated failure without a safety backup says the destination may be partial', async () => {
+    await reachResult({
+      id: 11, status: 'failed', was_successful: 0, was_rollback_attempted: 0,
+      error_message: `${LEDGER_REFUSAL} (no pre-restore backup available — destination may be partial)`,
+    });
+
+    expect(screen.getByText(en.backup.errors.RESTORE_LEDGER_UNKNOWN_MIGRATIONS)).toBeTruthy();
+    expect(screen.getByText('no pre-restore backup available — destination may be partial')).toBeTruthy();
+    expect(screen.queryByText(r.progress.rolledBack)).toBeNull();
+    expect(screen.getByText(r.progress.failedNotRolledBackSubtitle)).toBeTruthy();
+  });
+
+  it('a translated failure that was rolled back says so', async () => {
+    await reachResult({
+      id: 12, status: 'failed', was_successful: 0, was_rollback_attempted: 1,
+      error_message: `${LEDGER_REFUSAL} (rolled back successfully to pre-restore state)`,
+    });
+
+    expect(screen.getByText(en.backup.errors.RESTORE_LEDGER_UNKNOWN_MIGRATIONS)).toBeTruthy();
+    expect(screen.getByText(r.progress.rolledBack)).toBeTruthy();
+    expect(screen.getByText(r.progress.failedSubtitle)).toBeTruthy();
+  });
+
   it('a failed run with a numeric 0 rollback flag (SQLite) renders no stray 0', async () => {
     await reachResult({
       id: 8, status: 'failed', was_successful: 0, was_rollback_attempted: 0, error_message: 'pg_restore exploded',
     });
 
-    expect(screen.getByText(r.progress.failedSubtitle)).toBeTruthy();
+    // No safety backup was replayed: the subtitle does not claim one was.
+    expect(screen.getByText(r.progress.failedNotRolledBackSubtitle)).toBeTruthy();
+    expect(screen.queryByText(r.progress.failedSubtitle)).toBeNull();
     // The error box holds its title and the message, nothing else.
     const errorBox = screen.getByText('pg_restore exploded').parentElement as HTMLElement;
     expect(errorBox.textContent).toBe(`${r.progress.errorTitle}pg_restore exploded`);

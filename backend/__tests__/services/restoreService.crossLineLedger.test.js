@@ -138,6 +138,19 @@ describe('restoreService — migration ledger of another release line', () => {
     expect(run.error_message).toContain('this install was not modified');
   });
 
+  it('refuses a gzipped dump that expands past RESTORE_MAX_DECOMPRESSED_BYTES before anything is changed', async () => {
+    const dump = await makeDump(async () => {}, { gzip: true });
+    process.env.RESTORE_MAX_DECOMPRESSED_BYTES = String(64 * 1024);
+    try {
+      await expect(restore(dump)).rejects.toThrow(/Decompressed size exceeds limit of 65536 bytes/);
+    } finally { delete process.env.RESTORE_MAX_DECOMPRESSED_BYTES; }
+
+    expect(sqliteRestoreCalls()).toHaveLength(0);
+    expect(await marker()).toBe('target');
+    const run = await latestRun();
+    expect(run.status).toBe('blocked');
+  });
+
   it('refuses a PostgreSQL dump with an unknown migration before the first psql call', async () => {
     const fixture = fs.readFileSync(path.join(__dirname, '../fixtures/pgDumpPlainLedger.sql'), 'utf8');
     const dump = path.join(backupRoot, 'database', 'picpeak-db-postgresql-1.sql.gz');
