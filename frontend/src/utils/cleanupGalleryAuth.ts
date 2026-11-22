@@ -1,3 +1,5 @@
+import { safeRemoveItem } from './safeStorage';
+
 /**
  * Cleanup helper for legacy gallery-auth artefacts.
  *
@@ -22,10 +24,10 @@
  */
 export const cleanupOldGalleryAuth = () => {
   // Legacy global keys (pre-multi-gallery shape).
-  localStorage.removeItem('gallery_event');
-  localStorage.removeItem('gallery_token');
-  sessionStorage.removeItem('gallery_event');
-  sessionStorage.removeItem('gallery_token');
+  safeRemoveItem('local', 'gallery_event');
+  safeRemoveItem('local', 'gallery_token');
+  safeRemoveItem('session', 'gallery_event');
+  safeRemoveItem('session', 'gallery_token');
 
   // Legacy bare cookie (path=/, no slug suffix). Slug-scoped
   // `gallery_token_<slug>` cookies are kept — they're how the customer
@@ -33,5 +35,5 @@ export const cleanupOldGalleryAuth = () => {
   document.cookie = 'gallery_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
 
   // gallery_active_slug is a UI hint, not auth. Safe to drop.
-  sessionStorage.removeItem('gallery_active_slug');
+  safeRemoveItem('session', 'gallery_active_slug');
 };

@@ -52,6 +52,11 @@ import { usePublicSettings } from '../../hooks/usePublicSettings';
 import type { Photo } from '../../types';
 import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
 import { useQueryClient } from '@tanstack/react-query';
+import { safeGetItem, safeSetItem } from '../../utils/safeStorage';
+
+// Guest id for this page view when localStorage is unavailable, so a remount
+// does not mint a second guest.
+let pageViewGuestId: string | null = null;
 
 interface GalleryViewProps {
   slug: string;
@@ -195,12 +200,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   // Generate a unique guest ID for this session
   useEffect(() => {
-    // Use existing guest ID from localStorage or generate new one
-    let storedGuestId = localStorage.getItem('gallery_guest_id');
+    // Use existing guest ID from localStorage or generate new one. Without
+    // usable storage the module-level copy keeps it stable for this page view.
+    let storedGuestId = safeGetItem('local', 'gallery_guest_id') || pageViewGuestId;
     if (!storedGuestId) {
       storedGuestId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem('gallery_guest_id', storedGuestId);
+      safeSetItem('local', 'gallery_guest_id', storedGuestId);
     }
+    pageViewGuestId = storedGuestId;
     setGuestId(storedGuestId);
   }, []);
   

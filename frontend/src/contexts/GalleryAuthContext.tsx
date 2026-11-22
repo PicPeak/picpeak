@@ -12,6 +12,7 @@ import {
   storeGalleryToken,
 } from '../utils/galleryAuthStorage';
 import { clearGuestIdentity } from '../utils/guestIdentityStorage';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '../utils/safeStorage';
 import type { GalleryAccessLevel } from '../types';
 
 interface GalleryEvent {
@@ -186,7 +187,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
     const currentSlug = routeInfo.slug;
     setActiveGallerySlug(currentSlug);
 
-    const storedEvent = sessionStorage.getItem(`gallery_event_${currentSlug}`);
+    const storedEvent = safeGetItem('session', `gallery_event_${currentSlug}`);
     if (storedEvent) {
       try {
         const parsed = JSON.parse(storedEvent);
@@ -194,16 +195,16 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
           const normalizedStored = normalizeEvent(parsed);
           setEvent(normalizedStored);
           if (normalizedStored) {
-            sessionStorage.setItem(`gallery_event_${currentSlug}`, JSON.stringify(normalizedStored));
+            safeSetItem('session', `gallery_event_${currentSlug}`, JSON.stringify(normalizedStored));
           }
         }
       } catch {
-        sessionStorage.removeItem(`gallery_event_${currentSlug}`);
+        safeRemoveItem('session', `gallery_event_${currentSlug}`);
       }
     }
 
     // Restore access level from session storage
-    const storedAccessLevel = sessionStorage.getItem(`gallery_access_level_${currentSlug}`);
+    const storedAccessLevel = safeGetItem('session', `gallery_access_level_${currentSlug}`);
     if (storedAccessLevel === 'client') {
       setAccessLevel('client');
     } else {
@@ -235,7 +236,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
           // session to 'guest' while the backend kept serving it as a client.
           if (sessionResponse.data.accessLevel === 'client') {
             setAccessLevel('client');
-            sessionStorage.setItem(`gallery_access_level_${currentSlug}`, 'client');
+            safeSetItem('session', `gallery_access_level_${currentSlug}`, 'client');
           }
           setViaCustomer(Boolean(sessionResponse.data.viaCustomer));
 
@@ -251,7 +252,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
             const normalizedEvent = normalizeEvent(galleryData.event);
             setEvent(normalizedEvent);
             if (normalizedEvent) {
-              sessionStorage.setItem(`gallery_event_${currentSlug}`, JSON.stringify(normalizedEvent));
+              safeSetItem('session', `gallery_event_${currentSlug}`, JSON.stringify(normalizedEvent));
             }
           }
 
@@ -290,7 +291,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
               const normalizedEvent = normalizeEvent(response.event);
               setEvent(normalizedEvent);
               if (normalizedEvent) {
-                sessionStorage.setItem(`gallery_event_${currentSlug}`, JSON.stringify(normalizedEvent));
+                safeSetItem('session', `gallery_event_${currentSlug}`, JSON.stringify(normalizedEvent));
               }
               setIsAuthenticated(true);
               return;
@@ -299,12 +300,12 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         }
 
         setIsAuthenticated(false);
-        sessionStorage.removeItem(`gallery_event_${currentSlug}`);
+        safeRemoveItem('session', `gallery_event_${currentSlug}`);
         setEvent(null);
         clearGalleryToken(currentSlug);
       } catch (initialiseError: any) {
         setIsAuthenticated(false);
-        sessionStorage.removeItem(`gallery_event_${currentSlug}`);
+        safeRemoveItem('session', `gallery_event_${currentSlug}`);
         setEvent(null);
         clearGalleryToken(currentSlug);
         if (initialiseError?.response?.data?.error) {
@@ -337,7 +338,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       const normalizedEvent = normalizeEvent(response.event);
       setEvent(normalizedEvent);
       if (normalizedEvent) {
-        sessionStorage.setItem(`gallery_event_${slug}`, JSON.stringify(normalizedEvent));
+        safeSetItem('session', `gallery_event_${slug}`, JSON.stringify(normalizedEvent));
       }
       setIsAuthenticated(true);
     } catch (err: any) {
@@ -361,10 +362,10 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       const normalizedEvent = normalizeEvent(response.event);
       setEvent(normalizedEvent);
       if (normalizedEvent) {
-        sessionStorage.setItem(`gallery_event_${slug}`, JSON.stringify(normalizedEvent));
+        safeSetItem('session', `gallery_event_${slug}`, JSON.stringify(normalizedEvent));
       }
       setAccessLevel(response.accessLevel || 'client');
-      sessionStorage.setItem(`gallery_access_level_${slug}`, 'client');
+      safeSetItem('session', `gallery_access_level_${slug}`, 'client');
       setIsAuthenticated(true);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Invalid PIN');
@@ -377,8 +378,8 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
   const closeSession = (keepGuestIdentity: boolean) => {
     const currentSlug = routeInfo.slug;
     if (currentSlug) {
-      sessionStorage.removeItem(`gallery_event_${currentSlug}`);
-      sessionStorage.removeItem(`gallery_access_level_${currentSlug}`);
+      safeRemoveItem('session', `gallery_event_${currentSlug}`);
+      safeRemoveItem('session', `gallery_access_level_${currentSlug}`);
       clearGalleryToken(currentSlug);
       // Logout is the "I am leaving this device" signal. Now that the guest
       // identity outlives the tab (#1265), leaving it behind would greet the
