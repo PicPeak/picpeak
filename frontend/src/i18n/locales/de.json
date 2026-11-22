@@ -1704,6 +1704,7 @@
           "verifyIntegrity": "Dokumentintegrität jetzt prüfen"
         },
         "failedSubtitle": "Wiederherstellung fehlgeschlagen — siehe Fehler unten. Das Ziel wurde auf den Stand vor der Wiederherstellung zurückgesetzt.",
+        "failedNotRolledBackSubtitle": "Wiederherstellung fehlgeschlagen — siehe Fehler unten. Das Ziel wurde nicht zurückgesetzt und ist möglicherweise unvollständig; prüfen Sie es vor einem neuen Versuch.",
         "blockedSubtitle": "Wiederherstellung nicht gestartet — eine Vorabprüfung hat sie gestoppt. Auf dieser Installation wurde nichts geändert.",
         "blockedTitle": "Wiederherstellung vor jeder Änderung gestoppt",
         "idle": "Derzeit läuft keine Wiederherstellung.",
@@ -1748,6 +1749,7 @@
       "RSYNC_REMOTE_PATH_NOT_FOUND": "Der Zielpfad existiert auf dem Ziel nicht, sein übergeordnetes Verzeichnis ebenfalls nicht. rsync legt nur das letzte Verzeichnis des Pfads an; legen Sie das übergeordnete zuerst an.",
       "RSYNC_REMOTE_PATH_DENIED": "Das Ziel verweigert dem SSH-Benutzer den Zugriff auf den Zielpfad. Prüfen Sie dessen Berechtigungen.",
       "RESTORE_REMOTE_MANIFEST_NOT_FOUND": "Das Rsync-Ziel hat kein manifests-Verzeichnis (oder das ausgewählte Manifest liegt dort nicht mehr). Backups von vor der Manifest-Kopie aufs Ziel lassen sich nicht direkt von dort wiederherstellen: Spiegel von Hand zurückkopieren oder ein neues Backup erstellen.",
+      "RESTORE_LEDGER_UNKNOWN_MIGRATIONS": "Dieses Backup stammt aus einer neueren PicPeak-Release-Linie: Seine Datenbank enthält Migrationen, die diese Version nicht kennt. Stellen Sie es auf einer PicPeak-Version wieder her, die sie enthält.",
       "S3_ENDPOINT_FORBIDDEN": "Der S3-Endpunkt zeigt auf eine Link-Local-, Cloud-Metadaten- oder reservierte Adresse. Solche Ziele können nie freigegeben werden.",
       "S3_ENDPOINT_UNRESOLVED": "Der Hostname des S3-Endpunkts konnte nicht aufgelöst werden.",
       "S3_ENDPOINT_INVALID": "Der S3-Endpunkt ist keine gültige URL.",
