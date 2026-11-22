@@ -299,6 +299,21 @@ describe('create, upload, deliver', () => {
     expect(mockSendTemplateEmail).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['disabled', { is_active: false }, 'TRANSFER_DISABLED'],
+    ['expired', { expires_at: new Date(Date.now() - 864e5).toISOString() }, 'TRANSFER_EXPIRED'],
+  ])('refuses to deliver a %s transfer with 409 and mails nothing', async (_label, patch, reason) => {
+    const send = await createSend(tokens.write, { recipient_emails: ['late@example.com'] });
+    await as(tokens.write).post(`/transfers/${send.id}/files`).attach('files', Buffer.from('PK'), 'All.zip');
+    await db('transfers').where({ id: send.id }).update(patch);
+    const deliver = await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({});
+    expect(deliver.status).toBe(409);
+    expect(deliver.body).toMatchObject({ code: 'TRANSFER_NOT_ACTIVE', reason });
+    expect(mockSendTemplateEmail).not.toHaveBeenCalled();
+    const [recipient] = await db('transfer_recipients').where({ transfer_id: send.id });
+    expect(recipient.last_sent_at).toBeNull();
+  });
+
   it('neither uploads into nor mails a file request made in the admin UI', async () => {
     const id = unwrap(await db('transfers').insert({
       token: crypto.randomBytes(32).toString('hex'), kind: 'request', title: 'Request', expires_at: new Date(Date.now() + 864e5).toISOString(),

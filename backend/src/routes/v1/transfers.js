@@ -442,6 +442,7 @@ router.delete('/transfers/:id/chunked-upload/:uploadId',
  *       401: { description: Missing/invalid token }
  *       403: { description: "PicTransfer is off, the token lacks write scope, or its owner lacks events.edit" }
  *       404: { description: "No such transfer, or one the token owner did not create" }
+ *       409: { description: "TRANSFER_NOT_ACTIVE: the link is disabled, expired or out of downloads (reason: TRANSFER_DISABLED, TRANSFER_EXPIRED or DOWNLOAD_LIMIT_REACHED). Nothing is mailed." }
  */
 router.post(
   '/transfers/:id/deliver',
@@ -458,6 +459,14 @@ router.post(
     if (!transfer) return res.status(404).json({ error: 'Transfer not found' });
     if (transfer.kind === transferService.KIND_REQUEST) {
       return res.status(400).json({ error: 'A file request does not send files out', code: 'NOT_A_SEND' });
+    }
+    // The public download route's own predicate: a disabled, expired or used
+    // up link is not mailed out, it would only lead the client to an error.
+    const downloadable = transferService.assertDownloadable(transfer);
+    if (!downloadable.ok) {
+      return res.status(409).json({
+        error: 'The transfer link is not active', code: 'TRANSFER_NOT_ACTIVE', reason: downloadable.code,
+      });
     }
     const resend = req.body.resend === true || req.body.resend === 'true';
     const given = (req.body.recipient_emails || []).map((e) => String(e).trim());

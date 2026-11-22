@@ -41,6 +41,80 @@ function parseScopes(raw) {
 }
 
 /**
+ * Resolve the Bearer API token on a request to its row and active owner, or
+ * to the refusal apiTokenAuth answers with. Memoized on the request: the
+ * general rate limiter asks first (a valid token earns the same skip as an
+ * admin session) and apiTokenAuth reuses that answer instead of reading the
+ * token and its owner a second time.
+ *
+ * @returns {Promise<{ row, admin } | { refusal: { status, body } }>}
+ */
+function resolveApiToken(req) {
+  if (!req.apiTokenResolution) req.apiTokenResolution = lookupApiToken(req.headers?.authorization || '');
+  return req.apiTokenResolution;
+}
+
+const refuse = (status, error, code) => ({ refusal: { status, body: { error, code } } });
+
+async function lookupApiToken(header) {
+  if (!header.startsWith('Bearer ')) return refuse(401, 'Missing API token', 'NO_TOKEN');
+  const token = header.slice(7).trim();
+  if (!token.startsWith(TOKEN_PREFIX)) return refuse(401, 'Invalid token format', 'INVALID_TOKEN');
+
+  const hashed = hashToken(token);
+  const row = await db('api_tokens').where({ hashed_token: hashed }).first();
+  if (!row) return refuse(401, 'Invalid token', 'INVALID_TOKEN');
+  if (row.revoked_at) return refuse(401, 'Token revoked', 'TOKEN_REVOKED');
+  if (row.expires_at && new Date(row.expires_at) <= new Date()) return refuse(401, 'Token expired', 'TOKEN_EXPIRED');
+
+  // Load the owner WITH their role name (GHSA-9697). Without it,
+  // req.admin.roleName was undefined — and every ownership check keys on
+  // roleName — so the v1 surface could not tell a super_admin from a
+  // demoted viewer. Mirrors adminAuth's shape, including the
+  // roles-table-missing fallback used during upgrades.
+  let admin;
+  try {
+    admin = await db('admin_users')
+      .leftJoin('roles', 'roles.id', 'admin_users.role_id')
+      .where({ 'admin_users.id': row.created_by, 'admin_users.is_active': formatBoolean(true) })
+      .select(
+        'admin_users.id',
+        'admin_users.username',
+        'admin_users.email',
+        'admin_users.must_change_password',
+        'roles.id as role_id',
+        'roles.name as role_name'
+      )
+      .first();
+  } catch (joinError) {
+    // Fail CLOSED on anything that isn't a genuinely missing roles schema:
+    // the fallback fabricates super_admin, so a transient query failure must
+    // not become a free privilege upgrade. Rethrow → outer catch → 500.
+    if (!isMissingRolesSchema(joinError)) throw joinError;
+    logger.debug('Roles table not available in apiTokenAuth', { error: joinError.message });
+    // No role_id in the projection. isMissingRolesSchema() treats
+    // "no such column: admin_users.role_id" as a legitimate fallback state
+    // (dbErrors.js:44, the post-054/pre-057 window), and selecting the very
+    // column whose absence sent us here throws again — straight out to the
+    // outer catch as a 500. sessionAccessService's fallback omits it for the
+    // same reason and nulls the field afterwards.
+    admin = await db('admin_users')
+      .where({ id: row.created_by, is_active: formatBoolean(true) })
+      .select('id', 'username', 'email', 'must_change_password')
+      .first();
+    if (admin) {
+      admin.role_id = null;
+      admin.role_name = 'super_admin'; // upgrade-path parity with adminAuth
+    }
+  }
+  if (!admin) return refuse(401, 'Token owner unavailable', 'OWNER_INACTIVE');
+  if ([true, 1, '1', 'true'].includes(admin.must_change_password)) {
+    return refuse(403, 'Change your password before using the API.', 'MUST_CHANGE_PASSWORD');
+  }
+  return { row, admin };
+}
+
+/**
  * Middleware: authenticate via API token. Maps the token to its owner
  * admin user, attaches { req.admin, req.apiToken }, then defers to the
  * regular permission machinery on top.
@@ -51,75 +125,9 @@ function parseScopes(raw) {
  */
 async function apiTokenAuth(req, res, next) {
   try {
-    const header = req.headers?.authorization || '';
-    if (!header.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing API token', code: 'NO_TOKEN' });
-    }
-    const token = header.slice(7).trim();
-    if (!token.startsWith(TOKEN_PREFIX)) {
-      return res.status(401).json({ error: 'Invalid token format', code: 'INVALID_TOKEN' });
-    }
-
-    const hashed = hashToken(token);
-    const row = await db('api_tokens').where({ hashed_token: hashed }).first();
-    if (!row) {
-      return res.status(401).json({ error: 'Invalid token', code: 'INVALID_TOKEN' });
-    }
-    if (row.revoked_at) {
-      return res.status(401).json({ error: 'Token revoked', code: 'TOKEN_REVOKED' });
-    }
-    if (row.expires_at && new Date(row.expires_at) <= new Date()) {
-      return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
-    }
-
-    // Load the owner WITH their role name (GHSA-9697). Without it,
-    // req.admin.roleName was undefined — and every ownership check keys on
-    // roleName — so the v1 surface could not tell a super_admin from a
-    // demoted viewer. Mirrors adminAuth's shape, including the
-    // roles-table-missing fallback used during upgrades.
-    let admin;
-    try {
-      admin = await db('admin_users')
-        .leftJoin('roles', 'roles.id', 'admin_users.role_id')
-        .where({ 'admin_users.id': row.created_by, 'admin_users.is_active': formatBoolean(true) })
-        .select(
-          'admin_users.id',
-          'admin_users.username',
-          'admin_users.email',
-          'admin_users.must_change_password',
-          'roles.id as role_id',
-          'roles.name as role_name'
-        )
-        .first();
-    } catch (joinError) {
-      // Fail CLOSED on anything that isn't a genuinely missing roles schema:
-      // the fallback fabricates super_admin, so a transient query failure must
-      // not become a free privilege upgrade. Rethrow → outer catch → 500.
-      if (!isMissingRolesSchema(joinError)) throw joinError;
-      logger.debug('Roles table not available in apiTokenAuth', { error: joinError.message });
-      // No role_id in the projection. isMissingRolesSchema() treats
-      // "no such column: admin_users.role_id" as a legitimate fallback state
-      // (dbErrors.js:44, the post-054/pre-057 window), and selecting the very
-      // column whose absence sent us here throws again — straight out to the
-      // outer catch as a 500. sessionAccessService's fallback omits it for the
-      // same reason and nulls the field afterwards.
-      admin = await db('admin_users')
-        .where({ id: row.created_by, is_active: formatBoolean(true) })
-        .select('id', 'username', 'email', 'must_change_password')
-        .first();
-      if (admin) {
-        admin.role_id = null;
-        admin.role_name = 'super_admin'; // upgrade-path parity with adminAuth
-      }
-    }
-    if (!admin) {
-      return res.status(401).json({ error: 'Token owner unavailable', code: 'OWNER_INACTIVE' });
-    }
-    if ([true, 1, '1', 'true'].includes(admin.must_change_password)) {
-      return res.status(403).json({
-        error: 'Change your password before using the API.', code: 'MUST_CHANGE_PASSWORD'
-      });
-    }
+    const resolved = await resolveApiToken(req);
+    if (resolved.refusal) return res.status(resolved.refusal.status).json(resolved.refusal.body);
+    const { row, admin } = resolved;
 
     // Touch last_used_at — async, don't block the request.
     db('api_tokens').where({ id: row.id }).update({ last_used_at: new Date().toISOString() })
@@ -176,6 +184,7 @@ function requireApiScope(scope) {
 
 module.exports = {
   apiTokenAuth,
+  resolveApiToken,
   requireApiScope,
   generateApiToken,
   hashToken,
