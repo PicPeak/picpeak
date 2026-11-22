@@ -3629,7 +3629,10 @@
       "filled": "hat Text",
       "empty": "noch kein Text",
       "tabsLabel": "Sprache",
-      "translationHint": "Der Text auf {{language}}, von Hand geschrieben. Lassen Sie ihn leer, wenn es keinen gibt."
+      "translationHint": "Der Text auf {{language}}, von Hand geschrieben. Lassen Sie ihn leer, wenn es keinen gibt.",
+      "hiddenNotice": "{{count}} Texte haben eine Übersetzung auf {{language}}. Solange {{language}} die erste Sprache ist, zeigt die Galerie stattdessen Ihre ursprünglichen Texte, und diese Übersetzungen bleiben verborgen. Stellen Sie die erste Sprache zurück, um sie wieder zu verwenden, oder entfernen Sie sie.",
+      "hiddenRemove": "Diese Übersetzungen entfernen",
+      "hiddenRemoveConfirm": "Die {{count}} Übersetzungen auf {{language}} entfernen? Das lässt sich nicht rückgängig machen."
     }
   },
   "settings": {

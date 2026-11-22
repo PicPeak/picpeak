@@ -5,7 +5,8 @@
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { LanguagesSection } from '../LanguagesSection';
 import { GeneralSection } from '../sections';
@@ -22,10 +23,20 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('../../../../../components/admin/CustomerAccountPicker', () => ({ CustomerAccountPicker: () => null }));
 vi.mock('../../../../../components/admin/TeamMemberPicker', () => ({ TeamMemberPicker: () => null }));
+const translations = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn() }));
+vi.mock('../../../../../services/translations.service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../../services/translations.service')>()),
+  translationsService: translations,
+}));
+vi.mock('../../../../../components/common/ConfirmDialog', () => ({ useConfirm: () => async () => true }));
 
 const event = { id: 1, event_name: 'Hochzeit', welcome_message: 'Willkommen' } as unknown as Event;
 
-afterEach(cleanup);
+const render = (ui: React.ReactElement) => rtlRender(
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>,
+);
+
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('LanguagesSection', () => {
   it('starts off, without tabs', () => {
@@ -53,6 +64,34 @@ describe('LanguagesSection', () => {
     expect(input.value).toBe('Wedding');
     fireEvent.change(input, { target: { value: 'The wedding' } });
     expect(setTexts).toHaveBeenCalledWith({ 'event_name:en': 'The wedding' });
+  });
+});
+
+describe('LanguagesSection, a translation in the first language', () => {
+  const rows = [
+    { entity_type: 'event', entity_id: 1, field: 'event_name', language: 'en', text: 'Wedding' },
+    { entity_type: 'category', entity_id: 9, field: 'name', language: 'en', text: 'Ceremony' },
+    { entity_type: 'category', entity_id: 9, field: 'name', language: 'fr', text: 'Cérémonie' },
+  ];
+  const f = (primary: string): EventFields => ({ ...eventFieldsFromEvent(event, null), text_language_mode: 'visitor', text_primary_language: primary });
+
+  it('is named as hidden while that language is first, and can be removed', async () => {
+    translations.get.mockResolvedValue({ text_language_mode: 'visitor', text_primary_language: 'de', translations: rows });
+    translations.save.mockResolvedValue({});
+    render(<LanguagesSection f={f('en')} set={vi.fn()} event={event} texts={{}} setTexts={vi.fn()} />);
+    await screen.findByTestId('hidden-primary-translations');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove these translations' }));
+    await waitFor(() => expect(translations.save).toHaveBeenCalledWith(1, [
+      { entity_type: 'event', entity_id: 1, field: 'event_name', language: 'en', text: null },
+      { entity_type: 'category', entity_id: 9, field: 'name', language: 'en', text: null },
+    ]));
+  });
+
+  it('says nothing when no translation is in the first language', async () => {
+    translations.get.mockResolvedValue({ text_language_mode: 'visitor', text_primary_language: 'de', translations: rows });
+    render(<LanguagesSection f={f('de')} set={vi.fn()} event={event} texts={{}} setTexts={vi.fn()} />);
+    await waitFor(() => expect(translations.get).toHaveBeenCalled());
+    expect(screen.queryByTestId('hidden-primary-translations')).toBeNull();
   });
 });
 

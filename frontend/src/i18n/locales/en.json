@@ -2875,7 +2875,10 @@
       "filled": "has text",
       "empty": "no text yet",
       "tabsLabel": "Language",
-      "translationHint": "The {{language}} text, written by hand. Leave it empty if there is none."
+      "translationHint": "The {{language}} text, written by hand. Leave it empty if there is none.",
+      "hiddenNotice": "{{count}} texts have a translation in {{language}}. While {{language}} is the first language, the gallery shows your original texts instead and these translations stay hidden. Switch the first language back to use them again, or remove them.",
+      "hiddenRemove": "Remove these translations",
+      "hiddenRemoveConfirm": "Remove the {{count}} translations written in {{language}}? This cannot be undone."
     }
   },
   "settings": {

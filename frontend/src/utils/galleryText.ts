@@ -6,11 +6,17 @@
  * other languages, language code → text. By the gallery's mode:
  *
  *   off        the default text, as before
- *   visitor    the visitor's UI language → the primary language → the default
+ *   visitor    the visitor's UI language → the default text
  *   bilingual  the primary language (else the default) prominent, and for the
  *              title, the welcome message and the chapter heading/subheading
  *              the secondary language smaller below; every other text shows
  *              the primary language alone
+ *
+ * The default text IS the primary language's: a translation row written in
+ * the current primary language (left over from before the primary changed)
+ * is never shown, so editing the stored text always shows. The admin's
+ * Languages section names such rows and offers to remove them; switching the
+ * primary back brings them into use again.
  */
 import type { ChapterMarkerText, PhotoCategory, TextLanguageMode, TextTranslations } from '../types';
 
@@ -62,12 +68,11 @@ const textIn = (translations: TextTranslations | undefined, language: string | n
 export function resolveText(config: GalleryTextConfig, defaultText: string, translations?: TextTranslations): string;
 export function resolveText(config: GalleryTextConfig, defaultText: string | null | undefined, translations?: TextTranslations): string | null;
 export function resolveText(config: GalleryTextConfig, defaultText: string | null | undefined, translations?: TextTranslations): string | null {
-  if (config.mode === 'off') return defaultText ?? null;
-  if (config.mode === 'visitor') {
+  if (config.mode === 'visitor' && config.language !== config.primary) {
     const visitor = textIn(translations, config.language);
     if (visitor) return visitor;
   }
-  return textIn(translations, config.primary) ?? defaultText ?? null;
+  return defaultText ?? null;
 }
 
 /** The primary text and, in bilingual mode, the secondary one below it. */
@@ -104,8 +109,7 @@ function resolveChapter(config: GalleryTextConfig, chapter: ChapterMarkerText, n
   const subheading = resolvePair(config, chapter.subheading, t.subheading);
   // Per language: a written second-language heading, else (when the marker
   // has no heading of its own and shows the category name) the name's.
-  const ownHeading = Boolean(chapter.heading || textIn(t.heading, config.primary));
-  const secondaryHeading = heading.secondary ?? (ownHeading ? null : name.secondary);
+  const secondaryHeading = heading.secondary ?? (chapter.heading ? null : name.secondary);
   return {
     ...chapter,
     heading: heading.primary,

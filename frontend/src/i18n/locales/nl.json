@@ -1358,7 +1358,10 @@
       "filled": "heeft tekst",
       "empty": "nog geen tekst",
       "tabsLabel": "Taal",
-      "translationHint": "De tekst in het {{language}}, met de hand geschreven. Laat leeg als er geen is."
+      "translationHint": "De tekst in het {{language}}, met de hand geschreven. Laat leeg als er geen is.",
+      "hiddenNotice": "{{count}} teksten hebben een vertaling in het {{language}}. Zolang {{language}} de eerste taal is, toont de galerij uw oorspronkelijke teksten en blijven deze vertalingen verborgen. Zet de eerste taal terug om ze weer te gebruiken, of verwijder ze.",
+      "hiddenRemove": "Deze vertalingen verwijderen",
+      "hiddenRemoveConfirm": "De {{count}} vertalingen in het {{language}} verwijderen? Dit kan niet ongedaan worden gemaakt."
     }
   },
   "settings": {

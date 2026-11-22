@@ -1486,7 +1486,10 @@
       "filled": "tem texto",
       "empty": "ainda sem texto",
       "tabsLabel": "Idioma",
-      "translationHint": "O texto em {{language}}, escrito à mão. Deixe vazio se não houver."
+      "translationHint": "O texto em {{language}}, escrito à mão. Deixe vazio se não houver.",
+      "hiddenNotice": "{{count}} textos têm uma tradução em {{language}}. Enquanto {{language}} for o primeiro idioma, a galeria mostra os seus textos originais e estas traduções ficam ocultas. Volte a mudar o primeiro idioma para as usar novamente, ou remova-as.",
+      "hiddenRemove": "Remover estas traduções",
+      "hiddenRemoveConfirm": "Remover as {{count}} traduções escritas em {{language}}? Não é possível anular."
     }
   },
   "settings": {

@@ -7,6 +7,10 @@
  */
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '../../../../components/common/Button';
+import { useConfirm } from '../../../../components/common/ConfirmDialog';
+import { translationsQueryKey, translationsService } from '../../../../services/translations.service';
 import type { Event, TextLanguageMode } from '../../../../types';
 import { languageName, TEXT_LANGUAGES, TranslatableField, translationLanguages } from '../../../../components/admin/TranslatableField';
 import { SectionCard, inputClass, labelClass, type FieldsProps } from './sections';
@@ -15,12 +19,45 @@ import { textsOfField, type EventTextsDraft } from './draft';
 const selectClass = 'w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-md shadow-sm focus:ring-accent focus:border-accent-dark text-sm disabled:bg-inset';
 
 export const LanguagesSection: React.FC<FieldsProps & {
-  event: Pick<Event, 'event_name'>;
+  event: Pick<Event, 'id' | 'event_name'>;
   texts: EventTextsDraft | null;
   setTexts: (patch: Record<string, string>) => void;
 }> = ({ f, set, event, texts, setTexts }) => {
   const { t, i18n } = useTranslation();
   const mode = f.text_language_mode;
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+  const [removing, setRemoving] = React.useState(false);
+
+  // Translations written in the language now chosen as the first one (the
+  // primary changed after they were written). The gallery shows the stored
+  // texts for the first language, so these stay hidden; say so, and let the
+  // admin remove them. Switching the first language back uses them again.
+  const { data: textState } = useQuery({
+    queryKey: translationsQueryKey(event.id),
+    queryFn: () => translationsService.get(event.id),
+    enabled: mode !== 'off',
+  });
+  const hiddenRows = mode !== 'off' && f.text_primary_language
+    ? (textState?.translations || []).filter((row) => row.language === f.text_primary_language)
+    : [];
+  const removeHidden = async () => {
+    const ok = await confirm({
+      message: t('events.languages.hiddenRemoveConfirm', 'Remove the {{count}} translations written in {{language}}? This cannot be undone.',
+        { count: hiddenRows.length, language: languageName(f.text_primary_language) }),
+      variant: 'danger',
+    });
+    if (!ok) return;
+    setRemoving(true);
+    try {
+      await translationsService.save(event.id, hiddenRows.map((row) => ({
+        entity_type: row.entity_type, entity_id: row.entity_id, field: row.field, language: row.language, text: null,
+      })));
+      await queryClient.invalidateQueries({ queryKey: translationsQueryKey(event.id) });
+    } finally {
+      setRemoving(false);
+    }
+  };
   const fallbackPrimary = TEXT_LANGUAGES.includes(i18n.language.split('-')[0]) ? i18n.language.split('-')[0] : 'en';
 
   const chooseMode = (next: TextLanguageMode) => {
@@ -105,6 +142,18 @@ export const LanguagesSection: React.FC<FieldsProps & {
                 </select>
               </div>
             )}
+          </div>
+        )}
+
+        {hiddenRows.length > 0 && (
+          <div className="rounded-lg border border-warning-line bg-warning-soft p-4 space-y-3" data-testid="hidden-primary-translations">
+            <p className="text-sm text-warning-text">
+              {t('events.languages.hiddenNotice', '{{count}} texts have a translation in {{language}}. While {{language}} is the first language, the gallery shows your original texts instead and these translations stay hidden. Switch the first language back to use them again, or remove them.',
+                { count: hiddenRows.length, language: languageName(f.text_primary_language) })}
+            </p>
+            <Button variant="outline" size="sm" onClick={removeHidden} disabled={removing}>
+              {t('events.languages.hiddenRemove', 'Remove these translations')}
+            </Button>
           </div>
         )}
       </SectionCard>

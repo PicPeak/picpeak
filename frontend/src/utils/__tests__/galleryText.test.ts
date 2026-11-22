@@ -40,11 +40,21 @@ describe('resolveText', () => {
     expect(resolveText(config('visitor', 'fr-FR'), 'Hochzeit', title)).toBe('Mariage');
   });
 
-  it('visitor: then the primary language, then the default text', () => {
-    expect(resolveText(config('visitor', 'es'), 'Hochzeit', { de: 'Die Hochzeit', en: 'Wedding' })).toBe('Die Hochzeit');
+  it('visitor: then the default text, which is the primary language', () => {
     expect(resolveText(config('visitor', 'es'), 'Hochzeit', title)).toBe('Hochzeit');
     expect(resolveText(config('visitor', 'es', null), 'Hochzeit', title)).toBe('Hochzeit');
     expect(resolveText(config('visitor', 'en'), 'Hochzeit', undefined)).toBe('Hochzeit');
+  });
+
+  it('the stored text always wins for the primary language; a translation row in it stays hidden', () => {
+    // The primary switched DE -> EN while an English translation existed.
+    const enFirst = (mode: string, language: string) => config(mode, language, 'en', 'de');
+    expect(resolveText(enFirst('visitor', 'en'), 'Wedding (edited)', title)).toBe('Wedding (edited)');
+    expect(resolveText(enFirst('visitor', 'es'), 'Wedding (edited)', title)).toBe('Wedding (edited)');
+    expect(resolvePair(enFirst('bilingual', 'en'), 'Wedding (edited)', { ...title, de: 'Hochzeit' }))
+      .toEqual({ primary: 'Wedding (edited)', secondary: 'Hochzeit' });
+    // A visitor in another written language still gets theirs.
+    expect(resolveText(enFirst('visitor', 'fr'), 'Wedding (edited)', title)).toBe('Mariage');
   });
 
   it('visitor: a blank translation does not count', () => {
@@ -53,7 +63,8 @@ describe('resolveText', () => {
 
   it('bilingual: the primary language for single-language places, whatever the visitor reads', () => {
     expect(resolveText(config('bilingual', 'en'), 'Hochzeit', title)).toBe('Hochzeit');
-    expect(resolveText(config('bilingual', 'en', 'en', 'de'), 'Hochzeit', title)).toBe('Wedding');
+    // The stored text is the primary language's, whatever a row says.
+    expect(resolveText(config('bilingual', 'en', 'en', 'de'), 'Wedding', title)).toBe('Wedding');
   });
 
   it('keeps an empty default empty', () => {

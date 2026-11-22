@@ -356,7 +356,11 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         : { ...previous, [src]: dimensions }
     ));
   }, []);
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  // The chosen tab, held by one of its categories' ids (issue 2550): a
+  // language switch re-translates every category_name, and a name held here
+  // would then match nothing. The name is kept for when no photo of the
+  // category is on screen (a search), so the tab keeps filtering as before.
+  const [activeTab, setActiveTab] = useState<{ categoryId: number | null; name: string } | null>(null);
   // Per-viewer is_liked is the server's truth (#590 follow-up): the set
   // follows each payload, and a click holds its state while its submit runs
   // and until a payload confirms it, counting overlapping submits per photo
@@ -387,7 +391,21 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     return Array.from(cats);
   }, [photos]);
 
-  // Filter photos by active category
+  // The chosen tab's current name: what its category is called now.
+  const activeCategory = useMemo(() => {
+    if (!activeTab) return null;
+    const current = activeTab.categoryId == null ? undefined
+      : photos.find((photo) => photo.category_id != null && Number(photo.category_id) === activeTab.categoryId);
+    return current?.category_name || activeTab.name;
+  }, [photos, activeTab]);
+  const chooseCategory = (name: string | null) => {
+    if (name === null) return setActiveTab(null);
+    const first = photos.find((photo) => photo.category_name === name);
+    setActiveTab({ categoryId: first?.category_id != null ? Number(first.category_id) : null, name });
+  };
+
+  // Filter photos by active category. Tabs group by name, as before: two
+  // categories that share one are one tab.
   const filteredPhotos = useMemo(() => {
     if (!activeCategory) return photos;
     return photos.filter(photo => photo.category_name === activeCategory);
@@ -435,7 +453,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       lightboxPhotoIdRef.current = openPhotoId;
       setLightboxIndex(index);
     } else if (photos.some((photo) => photo.id === openPhotoId)) {
-      setActiveCategory(null);
+      setActiveTab(null);
     }
   }, [openPhotoId, filteredPhotos, photos]);
 
@@ -800,7 +818,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     <div className="gallery-premium-nav-categories">
       <button
         className={`gallery-premium-nav-category ${!activeCategory ? 'active' : ''}`}
-        onClick={() => setActiveCategory(null)}
+        onClick={() => chooseCategory(null)}
       >
         {t('gallery.allPhotos', 'All Photos')}
       </button>
@@ -808,7 +826,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         <button
           key={cat}
           className={`gallery-premium-nav-category ${activeCategory === cat ? 'active' : ''}`}
-          onClick={() => setActiveCategory(cat)}
+          onClick={() => chooseCategory(cat)}
         >
           {cat}
         </button>
