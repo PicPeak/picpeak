@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.209.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.209.0-beta.0...v3.209.1-beta.0) (2026-11-22)
+
+
+### Bug Fixes
+
+* **gallery:** keep the public gallery working when Web Storage throws ([#2607](https://github.com/PicPeak/picpeak/issues/2607)) ([830a617](https://github.com/PicPeak/picpeak/commit/830a617ca6eb9740c206cf793088daae62d7f4ff))
+* **restore:** refuse or reconcile a native dump's migration ledger from the other release line ([#2610](https://github.com/PicPeak/picpeak/issues/2610)) ([0ef80a0](https://github.com/PicPeak/picpeak/commit/0ef80a0619964e551ddb9f28af66c27c730d5186))
+
 ## [3.209.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.208.0-beta.0...v3.209.0-beta.0) (2026-11-22)
 
 
