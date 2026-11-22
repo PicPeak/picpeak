@@ -2672,6 +2672,48 @@
       "nameTaken": "Du hast bereits eine Liste mit diesem Namen.",
       "limitReached": "Du kannst bis zu {{count}} Listen anlegen.",
       "saveError": "Die Liste konnte nicht gespeichert werden."
+    },
+    "walkthrough": {
+      "help": "Galerie-Rundgang anzeigen",
+      "stepOf": "Schritt {{current}} von {{total}}",
+      "next": "Weiter",
+      "back": "Zurück",
+      "skip": "Überspringen",
+      "done": "Verstanden",
+      "steps": {
+        "browse": {
+          "title": "Willkommen in der Galerie",
+          "body": "Scrollen Sie durch die Fotos und tippen Sie eines an, um es groß zu sehen.",
+          "bodyCategories": "Scrollen Sie durch die Fotos und tippen Sie eines an, um es groß zu sehen. Die Kategorien bringen Sie direkt zu einem Teil des Tages."
+        },
+        "favorites": {
+          "title": "Favoriten markieren",
+          "bodyLikes": "Tippen Sie auf das Herz eines Fotos, um Ihre Lieblingsfotos zu markieren. Der Filter zeigt Ihnen später nur diese.",
+          "bodyFavorites": "Öffnen Sie ein Foto und tippen Sie auf das Lesezeichen, um es als Favorit zu merken. Der Filter zeigt Ihnen später nur diese.",
+          "bodyBoth": "Tippen Sie auf das Herz eines Fotos, um Ihre Lieblingsfotos zu markieren, oder öffnen Sie ein Foto und tippen Sie auf das Lesezeichen, um es als Favorit zu merken. Der Filter zeigt Ihnen später nur diese."
+        },
+        "download": {
+          "title": "Fotos herunterladen",
+          "body": "Laden Sie mit diesem Button die ganze Galerie herunter, oder öffnen Sie ein Foto, um nur dieses herunterzuladen."
+        },
+        "faces": {
+          "title": "Personen finden",
+          "body": "Tippen Sie auf ein Gesicht, um alle Fotos dieser Person zu sehen.",
+          "bodySelfie": "Tippen Sie auf ein Gesicht, um alle Fotos dieser Person zu sehen, oder finden Sie Ihre eigenen Fotos mit einem Selfie."
+        },
+        "upload": {
+          "title": "Eigene Fotos hinzufügen",
+          "body": "Teilen Sie hier Ihre eigenen Fotos vom Tag. Sie erscheinen für alle in der Galerie."
+        },
+        "hide": {
+          "title": "Fotos vor Gästen verbergen",
+          "body": "Sie haben den Kundenlink geöffnet. Mit dem Auge auf einem Foto verbergen Sie es vor Gästen; Sie sehen es hier weiterhin."
+        },
+        "help": {
+          "title": "Noch einmal ansehen?",
+          "body": "Öffnen Sie diesen Rundgang jederzeit wieder über das Fragezeichen-Symbol."
+        }
+      }
     }
   },
   "categories": {
@@ -3577,6 +3619,8 @@
     "showExifToGuestsHelp": "Kamera, Objektiv, Brennweite, Blende, Belichtungszeit und ISO erscheinen in der Vollbildansicht unter dem Foto. Standort und Seriennummern werden nie gespeichert oder angezeigt.",
     "neutralPhotoLabels": "Neutrale Bezeichnung statt Dateinamen anzeigen",
     "neutralPhotoLabelsHelp": "Gäste sehen „Foto 12 von 84“ statt des Kamera-Dateinamens in der Vollbildansicht, in Bildunterschriften und in Screenreader-Texten. Downloads behalten ihre Dateinamen, und die Liste „Dateinamen kopieren“ wird Gästen nicht angeboten. Im Adminbereich stehen immer die Dateinamen.",
+    "walkthroughEnabled": "Rundgang beim ersten Besuch anzeigen",
+    "walkthroughEnabledHelp": "Kunden und Gäste sehen beim ersten Besuch eine kurze Einführung in das, was diese Galerie bietet. Sie können sie überspringen und über das Hilfe-Symbol erneut öffnen.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Zeilenumbrüche bleiben in E-Mails erhalten",
       "tip": "Tipp: Mit der Eingabetaste beginnst du eine neue Zeile. Jede Zeile erscheint in E-Mails als eigener Absatz.",
@@ -3950,7 +3994,9 @@
       "firstLookKeywordsHelp": "Durch Kommas getrennt. Groß-/Kleinschreibung, Leerzeichen, Binde- und Unterstriche werden ignoriert, „FirstLook“ passt also auch auf „first-look“.",
       "deliveryDays": "Vollständige Galerie fällig nach (Tagen)",
       "deliveryDaysHelp": "Startet eine erste Auswahl ohne zugesagtes Datum, ist die vollständige Galerie so viele Tage nach dem Eventdatum fällig.",
-      "defaultAllowDecisions": "Freigabe / Ablehnung pro Foto"
+      "defaultAllowDecisions": "Freigabe / Ablehnung pro Foto",
+      "defaultWalkthroughEnabled": "Rundgang beim ersten Besuch standardmäßig anzeigen",
+      "defaultWalkthroughEnabledHelp": "Neue Galerien starten mit eingeschaltetem Rundgang. Bestehende Galerien behalten ihre eigene Einstellung."
     },
     "imageSecurity": {
       "title": "Bildschutz",

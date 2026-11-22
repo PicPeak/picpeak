@@ -154,6 +154,8 @@ export interface EventSettings {
   // Uploader names for new galleries (#1561).
   event_default_guest_name_mode: GuestNameMode;
   event_default_show_credits_to_guests: boolean;
+  // First-visit walkthrough for new galleries (issue 2551).
+  event_default_walkthrough_enabled: boolean;
   // Folders + two-stage delivery (issues 1786, 1562).
   event_default_folder_structure: boolean;
   event_default_delivery_days: number;
@@ -281,6 +283,7 @@ export function useSettingsState() {
     event_default_download_limit: 0,
     event_default_guest_name_mode: 'off',
     event_default_show_credits_to_guests: false,
+    event_default_walkthrough_enabled: false,
     event_default_folder_structure: true,
     event_default_delivery_days: 7,
     first_look_keyword_detection: true,
@@ -461,6 +464,7 @@ export function useSettingsState() {
           ? settings.event_default_guest_name_mode
           : 'off',
         event_default_show_credits_to_guests: toBoolean(settings.event_default_show_credits_to_guests, false),
+        event_default_walkthrough_enabled: toBoolean(settings.event_default_walkthrough_enabled, false),
         // Fallbacks mirror the backend (eventCreationService, deliveryService,
         // folderTreeService.getFirstLookKeywords).
         event_default_folder_structure: toBoolean(settings.event_default_folder_structure, true),

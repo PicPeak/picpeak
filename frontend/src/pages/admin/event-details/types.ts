@@ -26,6 +26,8 @@ export type EditFormState = {
   show_exif_to_guests: boolean;
   // Neutral photo labels for guests (issue 1733, E6)
   neutral_photo_labels: boolean;
+  // First-visit walkthrough for clients and guests (issue 2551)
+  walkthrough_enabled: boolean;
   hero_photo_id: number | null;
   customer_name: string;
   customer_email: string;

@@ -60,6 +60,8 @@ export interface Event {
   show_exif_to_guests?: boolean | number;
   // "Photo 12 of 84" instead of the filename for guests (issue 1733, E6).
   neutral_photo_labels?: boolean | number;
+  // First-visit walkthrough for clients and guests (issue 2551).
+  walkthrough_enabled?: boolean | number;
   // Reveal mode (#838)
   reveal_mode?: boolean;
   reveal_at?: string | null;
@@ -551,6 +553,8 @@ export interface GalleryData {
     // Neutral photo labels (issue 1733, E6): guests see "Photo 12 of 84"
     // instead of a filename. Display only; downloads keep their names.
     neutral_photo_labels?: boolean;
+    // First-visit walkthrough (issue 2551): shown once, reopenable.
+    walkthrough_enabled?: boolean;
     // "People in this gallery" (#1074). False whenever the global `faces`
     // flag is off, detection is off for this event, or the photographer
     // chose to keep the people strip to themselves. The whole face UI hangs

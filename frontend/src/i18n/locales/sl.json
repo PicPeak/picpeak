@@ -1703,6 +1703,48 @@
       "nameTaken": "Seznam s tem imenom že imate.",
       "limitReached": "Ustvarite lahko največ {{count}} seznamov.",
       "saveError": "Seznama ni bilo mogoče shraniti."
+    },
+    "walkthrough": {
+      "help": "Prikaži vodnik po galeriji",
+      "stepOf": "Korak {{current}} od {{total}}",
+      "next": "Naprej",
+      "back": "Nazaj",
+      "skip": "Preskoči",
+      "done": "Razumem",
+      "steps": {
+        "browse": {
+          "title": "Dobrodošli v galeriji",
+          "body": "Pomikajte se po fotografijah in tapnite eno, da jo vidite v polni velikosti.",
+          "bodyCategories": "Pomikajte se po fotografijah in tapnite eno, da jo vidite v polni velikosti. Kategorije vas peljejo naravnost do dela dneva."
+        },
+        "favorites": {
+          "title": "Označite priljubljene",
+          "bodyLikes": "Tapnite srce na fotografiji, da označite tiste, ki so vam všeč. Filter pozneje prikaže samo te.",
+          "bodyFavorites": "Odprite fotografijo in tapnite zaznamek, da jo shranite med priljubljene. Filter pozneje prikaže samo te.",
+          "bodyBoth": "Tapnite srce na fotografiji, da označite tiste, ki so vam všeč, ali odprite fotografijo in tapnite zaznamek, da jo shranite med priljubljene. Filter pozneje prikaže samo te."
+        },
+        "download": {
+          "title": "Prenos fotografij",
+          "body": "S tem gumbom prenesite celotno galerijo ali odprite fotografijo, da prenesete samo njo."
+        },
+        "faces": {
+          "title": "Iskanje oseb",
+          "body": "Tapnite obraz, da vidite vse fotografije te osebe.",
+          "bodySelfie": "Tapnite obraz, da vidite vse fotografije te osebe, ali poiščite svoje fotografije s selfijem."
+        },
+        "upload": {
+          "title": "Dodajte svoje fotografije",
+          "body": "Tukaj delite svoje fotografije dneva. V galeriji se prikažejo vsem."
+        },
+        "hide": {
+          "title": "Skrivanje fotografij pred gosti",
+          "body": "Odprli ste povezavo za stranko. Oko na fotografiji jo skrije pred gosti; vi jo tukaj še vedno vidite."
+        },
+        "help": {
+          "title": "Potrebujete to znova?",
+          "body": "Ta vodnik lahko kadar koli znova odprete z ikono vprašaja."
+        }
+      }
     }
   },
   "categories": {
@@ -2468,6 +2510,8 @@
     "showExifToGuestsHelp": "Fotoaparat, objektiv, goriščna razdalja, zaslonka, čas osvetlitve in ISO so prikazani pod fotografijo v celozaslonskem pogledu. Lokacija in serijske številke se nikoli ne shranijo in ne prikažejo.",
     "neutralPhotoLabels": "Namesto imen datotek prikaži nevtralno oznako",
     "neutralPhotoLabelsHelp": "Gostje namesto imena datoteke iz fotoaparata vidijo „Fotografija 12 od 84“ v celozaslonskem pogledu, v napisih na sličicah in v besedilu za bralnike zaslona. Prenosi ohranijo svoja imena datotek, seznam „Kopiraj imena datotek“ pa gostom ni na voljo. V skrbniškem pogledu so imena datotek vedno prikazana.",
+    "walkthroughEnabled": "Ob prvem obisku prikaži predstavitev",
+    "walkthroughEnabledHelp": "Stranke in gostje ob prvem obisku vidijo kratko predstavitev tega, kar galerija ponuja. Lahko jo preskočijo in znova odprejo z ikono za pomoč.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Prelomi vrstic se ohranijo v e-poštnih sporočilih",
       "tip": "Namig: pritisnite Enter za novo vrstico. Vsaka vrstica bo v e-poštnih sporočilih ločen odstavek.",
@@ -2774,7 +2818,9 @@
       "firstLookKeywordsHelp": "Ločene z vejicami. Velike črke, presledki, vezaji in podčrtaji se prezrejo, zato se »FirstLook« ujema tudi s »first-look«.",
       "deliveryDays": "Rok za celotno galerijo po (dneh)",
       "deliveryDaysHelp": "Če se prvi izbor začne brez obljubljenega datuma, je celotna galerija zapadla toliko dni po datumu dogodka.",
-      "defaultAllowDecisions": "Odobri / zavrni posamezno fotografijo"
+      "defaultAllowDecisions": "Odobri / zavrni posamezno fotografijo",
+      "defaultWalkthroughEnabled": "Ob prvem obisku privzeto prikaži predstavitev",
+      "defaultWalkthroughEnabledHelp": "Nove galerije se začnejo z vklopljeno predstavitvijo. Obstoječe galerije obdržijo svojo nastavitev."
     },
     "imageSecurity": {
       "title": "Zaščita slik",

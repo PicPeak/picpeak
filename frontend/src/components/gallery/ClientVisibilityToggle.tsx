@@ -52,6 +52,7 @@ export const ClientVisibilityToggle: React.FC<ClientVisibilityToggleProps> = ({
       aria-label={label}
       aria-pressed={isHidden}
       data-testid={`client-visibility-toggle-${photo.id}`}
+      data-tour="hide-photo"
     >
       {isHidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
     </button>

@@ -187,6 +187,8 @@ module.exports = (router) => {
     // Uploader names (#1561).
     body('guest_name_mode').optional().isIn(GUEST_NAME_MODES),
     body('show_credits_to_guests').optional().isBoolean().toBoolean(),
+    // First-visit walkthrough (issue 2551).
+    body('walkthrough_enabled').optional().isBoolean().toBoolean(),
     body('allow_downloads').optional().isBoolean(),
     body('disable_right_click').optional().isBoolean(),
     body('enable_devtools_protection').optional().isBoolean(),
@@ -1049,6 +1051,8 @@ module.exports = (router) => {
         delivery_badge_label: source.delivery_badge_label || null,
         // Live refresh is guest-facing behaviour of the gallery (issue 1733).
         live_refresh: formatBoolean(parseBooleanInput(source.live_refresh, false)),
+        // The first-visit walkthrough is guest-facing behaviour too (issue 2551).
+        walkthrough_enabled: formatBoolean(parseBooleanInput(source.walkthrough_enabled, false)),
         allow_downloads: source.allow_downloads,
         disable_right_click: source.disable_right_click,
         enable_devtools_protection: source.enable_devtools_protection,
@@ -1280,6 +1284,8 @@ module.exports = (router) => {
     body('show_exif_to_guests').optional().isBoolean(),
     // "Photo 12 of 84" instead of filenames for guests (issue 1733, E6).
     body('neutral_photo_labels').optional().isBoolean(),
+    // First-visit walkthrough for clients and guests (issue 2551).
+    body('walkthrough_enabled').optional().isBoolean(),
     // Reveal mode (#838): hide the gallery from guests until reveal.
     body('reveal_mode').optional().isBoolean(),
     body('reveal_at').optional({ nullable: true, checkFalsy: true }).isISO8601(),
@@ -2130,6 +2136,9 @@ module.exports = (router) => {
       }
       if (Object.prototype.hasOwnProperty.call(updates, 'neutral_photo_labels')) {
         updates.neutral_photo_labels = formatBoolean(parseBooleanInput(updates.neutral_photo_labels, false));
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'walkthrough_enabled')) {
+        updates.walkthrough_enabled = formatBoolean(parseBooleanInput(updates.walkthrough_enabled, false));
       }
       if (Object.prototype.hasOwnProperty.call(updates, 'videos_first')) {
         updates.videos_first = formatBoolean(parseBooleanInput(updates.videos_first, false));

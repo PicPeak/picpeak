@@ -1917,6 +1917,48 @@
       "nameTaken": "You already have a list with this name.",
       "limitReached": "You can have up to {{count}} lists.",
       "saveError": "The list could not be saved."
+    },
+    "walkthrough": {
+      "help": "Show the gallery guide",
+      "stepOf": "Step {{current}} of {{total}}",
+      "next": "Next",
+      "back": "Back",
+      "skip": "Skip",
+      "done": "Got it",
+      "steps": {
+        "browse": {
+          "title": "Welcome to the gallery",
+          "body": "Scroll through the photos and tap one to see it full size.",
+          "bodyCategories": "Scroll through the photos and tap one to see it full size. The categories take you straight to one part of the day."
+        },
+        "favorites": {
+          "title": "Mark your favourites",
+          "bodyLikes": "Tap the heart on a photo to mark the ones you love. The filter shows only those later.",
+          "bodyFavorites": "Open a photo and tap the bookmark to keep it as a favourite. The filter shows only those later.",
+          "bodyBoth": "Tap the heart on a photo to mark the ones you love, or open a photo and tap the bookmark to keep it as a favourite. The filter shows only those later."
+        },
+        "download": {
+          "title": "Download photos",
+          "body": "Download the whole gallery with this button, or open a photo to download just that one."
+        },
+        "faces": {
+          "title": "Find people",
+          "body": "Tap a face to see every photo that person is in.",
+          "bodySelfie": "Tap a face to see every photo that person is in, or find your own photos with a selfie."
+        },
+        "upload": {
+          "title": "Add your photos",
+          "body": "Share your own photos of the day here. They appear in the gallery for everyone."
+        },
+        "hide": {
+          "title": "Hide photos from guests",
+          "body": "You opened the client link. The eye on a photo hides it from guests; you still see it here."
+        },
+        "help": {
+          "title": "Need this again?",
+          "body": "Open this guide again at any time with the question mark icon."
+        }
+      }
     }
   },
   "categories": {
@@ -2822,6 +2864,8 @@
     "showExifToGuestsHelp": "Camera, lens, focal length, aperture, shutter speed and ISO appear below the photo in the full-screen view. Location and serial numbers are never stored or shown.",
     "neutralPhotoLabels": "Show a neutral label instead of filenames",
     "neutralPhotoLabelsHelp": "Guests see “Photo 12 of 84” instead of the camera filename in the full-screen view, on tile captions and in screen-reader text. Downloads keep their filenames, and the Copy filenames list is not offered to guests. The admin view always shows filenames.",
+    "walkthroughEnabled": "Show a first-visit walkthrough",
+    "walkthroughEnabledHelp": "Clients and guests see a short guided tour of what this gallery offers on their first visit. They can skip it and open it again with the help icon.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Line breaks will be preserved in emails",
       "tip": "Tip: Press Enter to create a new line. Each line will appear as a separate paragraph in emails.",
@@ -3261,7 +3305,9 @@
       "firstLookKeywordsHelp": "Comma-separated. Case, spaces, dashes and underscores are ignored, so \"FirstLook\" also matches \"first-look\".",
       "deliveryDays": "Full gallery due after (days)",
       "deliveryDaysHelp": "When a first look starts without a promised date, the full gallery is due this many days after the event date.",
-      "defaultAllowDecisions": "Approve / reject per photo"
+      "defaultAllowDecisions": "Approve / reject per photo",
+      "defaultWalkthroughEnabled": "Show a first-visit walkthrough by default",
+      "defaultWalkthroughEnabledHelp": "New galleries start with the short guided tour switched on. Existing galleries keep their own setting."
     },
     "imageSecurity": {
       "title": "Image Protection",
