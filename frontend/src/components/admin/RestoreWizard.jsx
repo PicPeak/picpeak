@@ -873,7 +873,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     // Strip the noisy stack-trace tail from the error message so the
     // user sees the actionable line first.
     const lastRunError = lastRun?.error_message
-      ? lastRun.error_message.split('\n')[0].slice(0, 500)
+      ? backupErrorText(backupErrorCode(lastRun.error_message), t) ?? lastRun.error_message.split('\n')[0].slice(0, 500)
       : null;
     // The live progress lives in the backend's memory and is reset once the
     // run ends (and after the re-login a restore forces), so a finished run

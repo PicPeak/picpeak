@@ -247,6 +247,18 @@ describe('RestoreWizard result', () => {
     expect(screen.queryByText(r.progress.failedSubtitle)).toBeNull();
   });
 
+  it('a run refused for a cross-line migration ledger explains it in the UI language', async () => {
+    await reachResult({
+      id: 9, status: 'blocked', was_successful: 0, was_rollback_attempted: 0,
+      error_message: 'Full restore failed: RESTORE_LEDGER_UNKNOWN_MIGRATIONS: This backup comes from a newer PicPeak release line: '
+        + 'its database has migration 999_x.js, which this version does not include. (stopped before any change — this install was not modified)',
+    });
+
+    expect(screen.getByText(r.progress.blockedTitle)).toBeTruthy();
+    expect(screen.getByText(en.backup.errors.RESTORE_LEDGER_UNKNOWN_MIGRATIONS)).toBeTruthy();
+    expect(screen.queryByText(/RESTORE_LEDGER_UNKNOWN_MIGRATIONS/)).toBeNull();
+  });
+
   it('a failed run with a numeric 0 rollback flag (SQLite) renders no stray 0', async () => {
     await reachResult({
       id: 8, status: 'failed', was_successful: 0, was_rollback_attempted: 0, error_message: 'pg_restore exploded',
