@@ -5,6 +5,18 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.136.1](https://github.com/PicPeak/picpeak/compare/v3.136.0...v3.136.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **backup:** add the backup run delete route the History table calls (stable) ([#2599](https://github.com/PicPeak/picpeak/issues/2599)) ([6139e1a](https://github.com/PicPeak/picpeak/commit/6139e1af903914ae39b1bb2d4a8aad1e2d91955f))
+* **backup:** end run rows left at running by a restore or a crash ([#2596](https://github.com/PicPeak/picpeak/issues/2596)) ([f22cdcf](https://github.com/PicPeak/picpeak/commit/f22cdcff32c71a950c5bff967497db0697bd17fd))
+* **gallery:** keep the public gallery working when Web Storage throws ([#2608](https://github.com/PicPeak/picpeak/issues/2608)) ([2ab3669](https://github.com/PicPeak/picpeak/commit/2ab3669d8b4220dccf65237740bf8c9c89ff9045))
+* **restore:** refuse or reconcile a migration ledger from the other release line (stable) ([#2602](https://github.com/PicPeak/picpeak/issues/2602)) ([4059a85](https://github.com/PicPeak/picpeak/commit/4059a85ce65c529599a630fcfde0cebb20083043))
+* **restore:** refuse or reconcile a native dump's migration ledger from the other release line (stable) ([#2611](https://github.com/PicPeak/picpeak/issues/2611)) ([c5f415f](https://github.com/PicPeak/picpeak/commit/c5f415f63c4b47a8f562e78a9ddaef1987081faa))
+* **restore:** show the run's own result, also after the forced re-login ([#2595](https://github.com/PicPeak/picpeak/issues/2595)) ([1cd0b4f](https://github.com/PicPeak/picpeak/commit/1cd0b4f9d3f2f4abeda83defb42246809e70f73c))
+
 ## [3.136.0](https://github.com/PicPeak/picpeak/compare/v3.135.16...v3.136.0) (2026-11-19)
 
 
