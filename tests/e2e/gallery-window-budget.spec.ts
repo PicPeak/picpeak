@@ -13,11 +13,41 @@ import { test, expect, type Page } from '@playwright/test';
  * gallery, from one end to the other and back. Booting the app and parsing the
  * list are not the layout's to answer for, so the longest task up to then goes
  * to the log only.
+ *
+ * "4x CPU throttle" means four times slower than a reference CPU, not than
+ * whatever host the run landed on: CDP's throttle multiplies the host's own
+ * speed, so a runner image 1.5x slower turned a green 80 ms into a red 125 ms
+ * with no change in the app (issue 2569). Before throttling, each test times a
+ * fixed workload (`benchmark`) and throttles by
+ * CPU_THROTTLE * REFERENCE_BENCH_MS / measured, clamped to [1, CPU_THROTTLE].
+ * A host slower than the reference gets less extra throttling; one so slow that
+ * even rate 1 leaves it more than CPU_THROTTLE times behind the reference gets
+ * the rest as a larger long-task budget, at most MAX_BUDGET_SCALE times.
+ *
+ * Why a real regression still fails: the rate is derived from a workload that
+ * does not touch the app, so a layout that does twice the work still takes
+ * twice as long at the same effective speed. The green longest tasks (54-86 ms)
+ * would become 108-172 ms, over the budget on a slow host as on a reference
+ * one. A host faster than the reference stays at CPU_THROTTLE (the clamp), so
+ * it is held to a little less than 4x the reference; the CI runner class is the
+ * reference, so CI keeps the full margin.
  */
 const PHOTOS = 2000;
 const MAX_DOM_NODES = 3000;
 const MAX_LONG_TASK_MS = 100;
 const CPU_THROTTLE = 4;
+/**
+ * The median `benchmark` time, unthrottled, on the runner class the budget was
+ * set on (ubuntu-24.04 image 20261116.133.1, whose green nightlies booted the
+ * app in 730-810 ms at 4x). Obtained by running this spec on an Apple M4 Max:
+ * benchmark 29-32 ms (median 30) with the app booting in ~490 ms at 4x, so the
+ * runner, ~770 / 490 = 1.57x slower, benchmarks at 30 * 1.57 = 47 ms.
+ * Re-baseline: take the median "bench" from the log of a green nightly on the
+ * runner class that should be the reference and put it here.
+ */
+const REFERENCE_BENCH_MS = 47;
+/** The most a too-slow host's long-task budget is stretched (150 ms). */
+const MAX_BUDGET_SCALE = 1.5;
 
 const SLUG = 'budget-gallery';
 // A 1x1 GIF.
@@ -109,6 +139,38 @@ async function scrollThrough(page: Page) {
   }, { steps: 40 });
 }
 
+/**
+ * Times a fixed, deterministic workload in the page, unthrottled: the median
+ * of five runs after a warm-up, in ms. Object allocation, string building,
+ * sorting, JSON and a hash loop, roughly the mix of booting and laying out the
+ * app (Lighthouse's benchmarkIndex works the same way). Changing it changes
+ * what REFERENCE_BENCH_MS means; re-baseline after.
+ */
+async function benchmark(page: Page) {
+  return page.evaluate(() => {
+    const run = () => {
+      const start = performance.now();
+      const rows = Array.from({ length: 50000 }, (_, index) => ({
+        id: index,
+        name: `IMG_${(index * 7919) % 50000}.jpg`,
+        width: 1000 + ((index * 31) % 5000),
+      }));
+      rows.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+      const text = JSON.stringify(rows);
+      const parsed = JSON.parse(text) as Array<{ width: number }>;
+      let hash = 2166136261;
+      for (let index = 0; index < text.length; index += 1) {
+        hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);
+      }
+      const sum = parsed.reduce((total, row) => total + row.width, 0);
+      return { ms: performance.now() - start, check: (hash ^ sum) >>> 0 };
+    };
+    run();
+    const times = Array.from({ length: 5 }, () => run().ms).sort((a, b) => a - b);
+    return times[2];
+  });
+}
+
 const CASES: Array<{ name: string; layout: string; settings?: Record<string, unknown>; category?: (index: number) => string }> = [
   { name: 'Grid', layout: 'grid' },
   { name: 'Timeline', layout: 'timeline' },
@@ -133,8 +195,15 @@ test.describe('windowed gallery budget', () => {
 
   for (const { name, layout, settings = {}, category } of CASES) {
     test(`${name}: ${PHOTOS} photos stay under ${MAX_DOM_NODES} nodes without a long task`, async ({ page, context }) => {
+      const bench = await benchmark(page);
+      // How many times slower than the reference the host is (above 1) or faster.
+      const hostFactor = bench / REFERENCE_BENCH_MS;
+      const rate = Math.min(CPU_THROTTLE, Math.max(1, CPU_THROTTLE / hostFactor));
+      // Above 1 only when even rate 1 leaves the host past CPU_THROTTLE.
+      const budgetScale = Math.min(MAX_BUDGET_SCALE, Math.max(1, hostFactor / CPU_THROTTLE));
+      const maxLongTask = MAX_LONG_TASK_MS * budgetScale;
       const cdp = await context.newCDPSession(page);
-      await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_THROTTLE });
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate });
       await stubApi(page, settings, layout, makePhotos(category));
 
       await page.goto(`/gallery/${SLUG}`);
@@ -157,13 +226,16 @@ test.describe('windowed gallery budget', () => {
       }));
       const { longest, longTasks, maxNodes, scrolled } = await scrollThrough(page);
       console.log(`${name}: ${atRest} nodes at rest, ${maxNodes} at most scrolling, `
-        + `longest task ${Math.round(longest)} ms (${longTasks} long), ${Math.round(longestAtLoad)} ms at load`);
+        + `longest task ${Math.round(longest)} ms (${longTasks} long), ${Math.round(longestAtLoad)} ms at load; `
+        + `bench ${bench.toFixed(1)} ms (reference ${REFERENCE_BENCH_MS}), throttle ${rate.toFixed(2)}x, `
+        + `long-task budget ${Math.round(maxLongTask)} ms`
+        + (hostFactor / CPU_THROTTLE > MAX_BUDGET_SCALE ? ' (capped: host too slow to hold to 4x reference)' : ''));
 
       // All 2000 are laid out, whatever is mounted: at least 100 rows of them.
       expect(scrolled).toBeGreaterThan(100 * 100);
       expect(atRest).toBeLessThan(MAX_DOM_NODES);
       expect(maxNodes).toBeLessThan(MAX_DOM_NODES);
-      expect(longest).toBeLessThan(MAX_LONG_TASK_MS);
+      expect(longest).toBeLessThan(maxLongTask);
     });
   }
 });
