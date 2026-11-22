@@ -794,6 +794,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // instead of a filename. Display only — `filename` stays in the photo
       // list below, because downloads are still named by it.
       neutral_photo_labels: parseBooleanInput(event.neutral_photo_labels, false),
+      // First-visit walkthrough (issue 2551). The client never shows it in
+      // an admin preview.
+      walkthrough_enabled: parseBooleanInput(event.walkthrough_enabled, false),
       // "People in this gallery" (#1074). False whenever the global flag
       // is off, detection is off for this event, or the photographer chose
       // to keep the strip to themselves — the frontend renders no face UI
