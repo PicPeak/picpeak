@@ -482,7 +482,8 @@ router.post(
       // and overlapping calls, and one whose mail failed stays unsent for the
       // next call (see sendTransferEmails). Ends the hold set on create, or
       // records the addresses held while nothing is downloadable yet.
-      result = await transferService.sendTransferEmails(id, targets, { onlyUnsent: !resend });
+      // With resend too, a failed address is put back to unsent and reported.
+      result = await transferService.sendTransferEmails(id, targets, { onlyUnsent: !resend, trackFailures: true });
     }
     let fresh = transfer;
     try {

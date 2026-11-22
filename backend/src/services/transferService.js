@@ -1298,8 +1298,13 @@ async function removeExtraFiles(transferId) {
  * whose mail could not be sent goes back to unsent (reported in `failed`) so
  * the next call retries it. Off, an explicit call mails every address again:
  * the admin "Send again".
+ *
+ * `trackFailures` gives a send that mails everyone again (resend through the
+ * API v1) the same failure bookkeeping: a failed address goes back to unsent
+ * and is reported in `failed`, so it is not counted as delivered later.
+ * onlyUnsent always does this. Both off is the admin path, unchanged.
  */
-async function sendTransferEmails(transferId, emails, { onlyUnsent = false } = {}) {
+async function sendTransferEmails(transferId, emails, { onlyUnsent = false, trackFailures = false } = {}) {
   let clean = [...new Set((emails || [])
     .map((e) => String(e || '').trim())
     .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
@@ -1377,20 +1382,26 @@ async function sendTransferEmails(transferId, emails, { onlyUnsent = false } = {
     // held row a finishing photo claims meanwhile would otherwise look sent
     // and be mailed again here.
     const existing = before.find((r) => r.email === email);
+    const stamp = new Date();
     if (existing && existing.last_sent_at == null) {
       // Held: claimed like sendHeldReadyEmails does, so a photo finishing
       // meanwhile does not mail it too. Lost means it is being sent already.
       const claimed = await db('transfer_recipients').where({ id: existing.id }).whereNull('last_sent_at')
-        .update({ last_sent_at: new Date() });
+        .update({ last_sent_at: stamp });
       if (claimed !== 1) continue;
     } else if (existing) {
-      await db('transfer_recipients').where({ id: existing.id }).update({ last_sent_at: new Date() });
+      await db('transfer_recipients').where({ id: existing.id }).update({ last_sent_at: stamp });
     } else {
       await db('transfer_recipients').insert({
-        transfer_id: transferId, email, created_at: new Date(), last_sent_at: new Date(),
+        transfer_id: transferId, email, created_at: new Date(), last_sent_at: stamp,
       });
     }
-    if (await sendReadyEmail(transferId, email, vars)) sent += 1;
+    if (await sendReadyEmail(transferId, email, vars)) {
+      sent += 1;
+    } else if (trackFailures) {
+      await releaseRecipient(transferId, email, stamp);
+      failed.push(email);
+    }
   }
   return { sent, recipients: clean, failed, already_sent: alreadySent };
 }

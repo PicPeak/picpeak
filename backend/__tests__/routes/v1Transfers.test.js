@@ -339,6 +339,24 @@ describe('create, upload, deliver', () => {
     expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
   });
 
+  it('reports a failed resend and leaves the address unsent for the next deliver', async () => {
+    const send = await createSend(tokens.write, { recipient_emails: ['again@example.com'] });
+    await as(tokens.write).post(`/transfers/${send.id}/files`).attach('files', Buffer.from('PK'), 'All.zip');
+    expect((await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({})).body.sent).toBe(1);
+    mockSendTemplateEmail.mockRejectedValue(new Error('SMTP down'));
+    const resend = await as(tokens.write).post(`/transfers/${send.id}/deliver`)
+      .send({ resend: true, recipient_emails: ['new@example.com'] });
+    mockSendTemplateEmail.mockReset();
+    mockSendTemplateEmail.mockImplementation(async () => true);
+    expect(resend.status).toBe(200);
+    expect(resend.body.sent).toBe(0);
+    expect([...resend.body.failed].sort()).toEqual(['again@example.com', 'new@example.com']);
+    const rows = await db('transfer_recipients').where({ transfer_id: send.id });
+    expect(rows.every((r) => r.last_sent_at == null)).toBe(true);
+    const next = await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({});
+    expect(next.body).toMatchObject({ sent: 2, already_sent: [], failed: [] });
+  });
+
   it('keeps a failed automatic mail held, so a later deliver sends it', async () => {
     const send = await createSend(tokens.write);
     // Deliver before any file: recorded held, sent automatically by the first upload.
