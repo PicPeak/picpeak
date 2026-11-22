@@ -29,6 +29,8 @@ vi.mock('../../../../../services/translations.service', async (importOriginal) =
   translationsService: translations,
 }));
 vi.mock('../../../../../components/common/ConfirmDialog', () => ({ useConfirm: () => async () => true }));
+const toastError = vi.hoisted(() => vi.fn());
+vi.mock('react-toastify', () => ({ toast: { error: toastError, success: vi.fn() } }));
 
 const event = { id: 1, event_name: 'Hochzeit', welcome_message: 'Willkommen' } as unknown as Event;
 
@@ -85,6 +87,19 @@ describe('LanguagesSection, a translation in the first language', () => {
       { entity_type: 'event', entity_id: 1, field: 'event_name', language: 'en', text: null },
       { entity_type: 'category', entity_id: 9, field: 'name', language: 'en', text: null },
     ]));
+  });
+
+  it('removes more than one request takes in batches of 500, stopping at the first failure', async () => {
+    const many = Array.from({ length: 1201 }, (_, i) => ({ entity_type: 'category', entity_id: i + 1, field: 'name', language: 'en', text: `C${i}` }));
+    translations.get.mockResolvedValue({ text_language_mode: 'visitor', text_primary_language: 'de', translations: many });
+    translations.save.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('boom')).mockResolvedValue({});
+    render(<LanguagesSection f={f('en')} set={vi.fn()} event={event} texts={{}} setTexts={vi.fn()} />);
+    await screen.findByTestId('hidden-primary-translations');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove these translations' }));
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(translations.save).toHaveBeenCalledTimes(2);
+    expect(translations.save.mock.calls.map(([, items]) => items.length)).toEqual([500, 500]);
+    expect(translations.save.mock.calls[1][1][0].entity_id).toBe(501);
   });
 
   it('says nothing when no translation is in the first language', async () => {

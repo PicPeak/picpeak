@@ -1386,7 +1386,8 @@
       "translationHint": "El texto en {{language}}, escrito a mano. Déjalo vacío si no hay ninguno.",
       "hiddenNotice": "{{count}} textos tienen una traducción en {{language}}. Mientras {{language}} sea el primer idioma, la galería muestra tus textos originales y estas traducciones quedan ocultas. Vuelve a cambiar el primer idioma para usarlas de nuevo, o elimínalas.",
       "hiddenRemove": "Eliminar estas traducciones",
-      "hiddenRemoveConfirm": "¿Eliminar las {{count}} traducciones escritas en {{language}}? No se puede deshacer."
+      "hiddenRemoveConfirm": "¿Eliminar las {{count}} traducciones escritas en {{language}}? No se puede deshacer.",
+      "hiddenRemoveFailed": "No se pudieron eliminar algunas traducciones. Inténtalo de nuevo."
     }
   },
   "settings": {

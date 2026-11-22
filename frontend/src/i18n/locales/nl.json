@@ -1361,7 +1361,8 @@
       "translationHint": "De tekst in het {{language}}, met de hand geschreven. Laat leeg als er geen is.",
       "hiddenNotice": "{{count}} teksten hebben een vertaling in het {{language}}. Zolang {{language}} de eerste taal is, toont de galerij uw oorspronkelijke teksten en blijven deze vertalingen verborgen. Zet de eerste taal terug om ze weer te gebruiken, of verwijder ze.",
       "hiddenRemove": "Deze vertalingen verwijderen",
-      "hiddenRemoveConfirm": "De {{count}} vertalingen in het {{language}} verwijderen? Dit kan niet ongedaan worden gemaakt."
+      "hiddenRemoveConfirm": "De {{count}} vertalingen in het {{language}} verwijderen? Dit kan niet ongedaan worden gemaakt.",
+      "hiddenRemoveFailed": "Sommige vertalingen konden niet worden verwijderd. Probeer het opnieuw."
     }
   },
   "settings": {

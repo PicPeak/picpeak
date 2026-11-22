@@ -10,7 +10,8 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../../../components/common/Button';
 import { useConfirm } from '../../../../components/common/ConfirmDialog';
-import { translationsQueryKey, translationsService } from '../../../../services/translations.service';
+import { toast } from 'react-toastify';
+import { TRANSLATION_BATCH_SIZE, translationsQueryKey, translationsService } from '../../../../services/translations.service';
 import type { Event, TextLanguageMode } from '../../../../types';
 import { languageName, TEXT_LANGUAGES, TranslatableField, translationLanguages } from '../../../../components/admin/TranslatableField';
 import { SectionCard, inputClass, labelClass, type FieldsProps } from './sections';
@@ -50,11 +51,18 @@ export const LanguagesSection: React.FC<FieldsProps & {
     if (!ok) return;
     setRemoving(true);
     try {
-      await translationsService.save(event.id, hiddenRows.map((row) => ({
+      // The server takes at most 500 changes per request: one batch after
+      // the other, stopping at the first that fails.
+      const changes = hiddenRows.map((row) => ({
         entity_type: row.entity_type, entity_id: row.entity_id, field: row.field, language: row.language, text: null,
-      })));
-      await queryClient.invalidateQueries({ queryKey: translationsQueryKey(event.id) });
+      }));
+      for (let start = 0; start < changes.length; start += TRANSLATION_BATCH_SIZE) {
+        await translationsService.save(event.id, changes.slice(start, start + TRANSLATION_BATCH_SIZE));
+      }
+    } catch {
+      toast.error(t('events.languages.hiddenRemoveFailed', 'Some translations could not be removed. Try again.'));
     } finally {
+      await queryClient.invalidateQueries({ queryKey: translationsQueryKey(event.id) });
       setRemoving(false);
     }
   };

@@ -30,6 +30,9 @@ export interface TranslationChange {
   text: string | null;
 }
 
+/** The most changes PUT /translations takes in one request (MAX_ITEMS_PER_SAVE). */
+export const TRANSLATION_BATCH_SIZE = 500;
+
 export const translationsQueryKey = (eventId: number) => ['event-translations', eventId] as const;
 
 /** language → text for one entity's field. */

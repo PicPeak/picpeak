@@ -1378,7 +1378,8 @@
       "translationHint": "Le texte en {{language}}, rédigé à la main. Laissez-le vide s’il n’y en a pas.",
       "hiddenNotice": "{{count}} textes ont une traduction en {{language}}. Tant que {{language}} est la première langue, la galerie affiche vos textes d’origine et ces traductions restent masquées. Rétablissez la première langue pour les réutiliser, ou supprimez-les.",
       "hiddenRemove": "Supprimer ces traductions",
-      "hiddenRemoveConfirm": "Supprimer les {{count}} traductions rédigées en {{language}} ? Cette action est irréversible."
+      "hiddenRemoveConfirm": "Supprimer les {{count}} traductions rédigées en {{language}} ? Cette action est irréversible.",
+      "hiddenRemoveFailed": "Certaines traductions n’ont pas pu être supprimées. Réessayez."
     }
   },
   "settings": {

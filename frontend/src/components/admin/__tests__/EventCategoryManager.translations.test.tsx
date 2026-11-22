@@ -130,14 +130,15 @@ describe('EventCategoryManager translations', () => {
     expect(mocks.saveTranslations).not.toHaveBeenCalled();
   });
 
-  it('removing the marker removes its translations', async () => {
-    mocks.getTranslations.mockResolvedValue(state('bilingual'));
+  it('removing the marker leaves its translations to the server, before or after they load', async () => {
+    mocks.getTranslations.mockReturnValue(new Promise(() => {}));
     show();
     fireEvent.click(await screen.findByRole('button', { name: 'Chapter marker' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Remove marker' }));
-    await waitFor(() => expect(mocks.saveTranslations).toHaveBeenCalledWith(4, [
-      { entity_type: 'chapter', entity_id: 9, field: 'heading', language: 'en', text: null },
-    ]));
+    await waitFor(() => expect(mocks.updateChapter).toHaveBeenCalledWith(4, 9, {
+      chapter_heading: null, chapter_subheading: null, chapter_time: null, chapter_location: null,
+    }));
+    expect(mocks.saveTranslations).not.toHaveBeenCalled();
   });
 
   it('bilingual: the chapter marker takes the second language next to the marker itself', async () => {

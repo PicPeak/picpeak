@@ -343,11 +343,11 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
   // Chapter marker (issue 2548), stored per event: a shared category can
   // carry a different time and place in every gallery.
   const chapterMutation = useMutationWithToast({
-    mutationFn: async ({ categoryId, data, edits, removeAll = false }: { categoryId: number; data: CategoryChapterData; edits: TextsDraft; removeAll?: boolean }) => {
+    mutationFn: async ({ categoryId, data, edits }: { categoryId: number; data: CategoryChapterData; edits: TextsDraft }) => {
+      // Removing the marker removes its translations on the server, in the
+      // same transaction; a save writes the admin's edits only.
       const saved = await categoriesService.updateChapter(eventId, categoryId, data);
-      const base = chapterBase(categoryId);
-      // Removing the marker removes its translations; a save writes the edits only.
-      const changes = textChanges('chapter', categoryId, removeAll ? Object.fromEntries(Object.keys(base).map((key) => [key, ''])) : edits, base);
+      const changes = textChanges('chapter', categoryId, edits, chapterBase(categoryId));
       if (changes.length > 0) await translationsService.save(eventId, changes);
       return saved;
     },
@@ -373,12 +373,11 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
     setChapterEditId(category.id);
   };
 
-  const saveChapter = (categoryId: number, data: CategoryChapterData, edits: TextsDraft, removeAll = false) => {
+  const saveChapter = (categoryId: number, data: CategoryChapterData, edits: TextsDraft) => {
     const trimmed = (v: string | null) => (v && v.trim() ? v.trim() : null);
     chapterMutation.mutate({
       categoryId,
       edits,
-      removeAll,
       data: {
         chapter_heading: trimmed(data.chapter_heading),
         chapter_subheading: trimmed(data.chapter_subheading),
@@ -729,8 +728,8 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                     draft={chapterDraft}
                     onChange={setChapterDraft}
                     onSave={() => saveChapter(category.id, chapterDraft, chapterEdits)}
-                    // Removing the marker removes its translations too.
-                    onClear={() => saveChapter(category.id, EMPTY_CHAPTER, {}, true)}
+                    // Removing the marker removes its translations too (server-side).
+                    onClear={() => saveChapter(category.id, EMPTY_CHAPTER, {})}
                     languages={textLanguages}
                     primary={textPrimary}
                     texts={{ ...chapterBase(category.id), ...chapterEdits }}

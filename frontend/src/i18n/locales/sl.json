@@ -2524,7 +2524,8 @@
       "translationHint": "Besedilo v jeziku {{language}}, napisano ročno. Pustite prazno, če ga ni.",
       "hiddenNotice": "{{count}} besedil ima prevod v jeziku {{language}}. Dokler je {{language}} prvi jezik, galerija prikazuje vaša izvirna besedila, ti prevodi pa ostanejo skriti. Prvi jezik nastavite nazaj, da jih spet uporabite, ali jih odstranite.",
       "hiddenRemove": "Odstrani te prevode",
-      "hiddenRemoveConfirm": "Odstranim {{count}} prevodov v jeziku {{language}}? Tega ni mogoče razveljaviti."
+      "hiddenRemoveConfirm": "Odstranim {{count}} prevodov v jeziku {{language}}? Tega ni mogoče razveljaviti.",
+      "hiddenRemoveFailed": "Nekaterih prevodov ni bilo mogoče odstraniti. Poskusite znova."
     }
   },
   "settings": {

@@ -346,6 +346,25 @@ describe('multilingual gallery texts (issue 2550)', () => {
     expect(await rowsOf({ event_id: event.id })).toHaveLength(6);
   });
 
+  it('removing a chapter marker removes its translations, and only those', async () => {
+    const event = await makeEvent();
+    const cat = await makeCategory('Trauung', event.id);
+    const chapter = (body) => admin(request(app).put(`/api/admin/categories/event/${event.id}/${cat}/chapter`)).send(body);
+    await chapter({ chapter_heading: 'Trauung', chapter_time: '12:00' }).expect(200);
+    await put(event.id, [
+      item('chapter', cat, 'heading', 'en', 'Wedding ceremony'),
+      item('category', cat, 'name', 'en', 'Ceremony'),
+    ]).expect(200);
+    // Changing the marker keeps them.
+    await chapter({ chapter_time: '12:30' }).expect(200);
+    expect(await rowsOf({ event_id: event.id, entity_type: 'chapter' })).toHaveLength(1);
+    // Clearing every field removes the marker and its translations.
+    await chapter({ chapter_heading: null, chapter_subheading: null, chapter_time: null, chapter_location: null }).expect(200);
+    expect(await db('event_category_chapters').where({ event_id: event.id, category_id: cat }).first()).toBeUndefined();
+    expect(await rowsOf({ event_id: event.id, entity_type: 'chapter' })).toHaveLength(0);
+    expect(await rowsOf({ event_id: event.id, entity_type: 'category' })).toHaveLength(1);
+  });
+
   describe('deleting leaves no translation rows behind (SQLite FK cascades are inert)', () => {
     const textRow = (eventId, entityType, entityId) => db('content_translations').insert({
       event_id: eventId, entity_type: entityType, entity_id: entityId, field: entityType === 'chapter' ? 'heading' : 'name',
