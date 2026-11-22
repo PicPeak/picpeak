@@ -153,6 +153,7 @@ async function importInMaintenanceWorker() {
     const manifest = await helpers().readManifestFromZip(request.archivePath);
     const blockers = await helpers().validateManifest(manifest);
     if (blockers.length) throw Object.assign(new Error(blockers[0]), { statusCode: 400 });
+    await helpers().assertArchiveLedgerKnown(request.archivePath);
     const pg = ['pg', 'postgres', 'postgresql'].includes(db.client.config.client);
     const targetEngine = pg ? 'pg' : 'sqlite';
     const crossEngine = ((manifest.database && manifest.database.engine) || targetEngine) !== targetEngine;

@@ -29,7 +29,7 @@ const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
 const { isoSqliteCostTimestamps, COST_TIMESTAMP_TABLES } = require('../utils/costTimestamps');
 const { isoSqliteInvoiceSendAt, holdPassedPgSendDates, markHeldInvoices } = require('../utils/invoiceSendAt');
 const { pgDateColumnsByTable } = require('../utils/dateOnly');
-const { migrationOrder, latestMigration, shippedMigration } = require('../utils/schemaLevel');
+const { migrationOrder, latestMigration, shippedMigration, classifyLedger } = require('../utils/schemaLevel');
 const { rowBatches } = require('./portableImportRows');
 const {
   dedupeExternalPhotos,
@@ -179,6 +179,65 @@ async function validateManifest(manifest) {
     errors.push('This backup is from a newer database schema than this instance. Update this instance to at least the backup version before restoring.');
   }
   return errors;
+}
+
+// The runner's ledger as the archive carries it (data/migrations.ndjson), or
+// null when the archive has none. Read straight from the open archive, so the
+// check below runs before anything is extracted or deleted.
+const LEDGER_ENTRY = 'data/migrations.ndjson';
+const LEDGER_MAX_BYTES = 16 * 1024 * 1024;
+async function readArchiveLedger(picpeakPath) {
+  const zip = await boundedArchive.openBoundedArchive(picpeakPath, { validateFileKey: importFilePathProblem });
+  try {
+    if (!(await zip.entry(LEDGER_ENTRY))) return null;
+    const damaged = () => Object.assign(archiveLimitError('The backup\'s migration ledger is not one PicPeak wrote.', 400),
+      { code: 'PORTABLE_ARCHIVE_REFUSED' });
+    const bytes = await boundedArchive.readEntryWithin(zip, LEDGER_ENTRY, LEDGER_MAX_BYTES, damaged);
+    const names = [];
+    try {
+      for (const line of new TextDecoder('utf-8', { fatal: true }).decode(bytes).split('\n')) {
+        if (!line.trim()) continue;
+        const row = JSON.parse(line);
+        if (row && typeof row.filename === 'string') names.push(row.filename);
+      }
+    } catch (_) { throw damaged(); }
+    return names;
+  } finally { await zip.close(); }
+}
+
+// The refusal for a ledger that records migrations this code neither ships
+// nor has a counterpart of (issue 2480), or null when it may be restored.
+// Restored verbatim, such names would stand in for this line's own
+// migrations of the same number range, and the runner would skip those.
+function ledgerRefusal(names) {
+  if (!names) return null;
+  const { unknown } = classifyLedger(names);
+  if (!unknown.length) return null;
+  const err = new Error(`This backup comes from a newer PicPeak release line: its database has migration ${unknown[0]}, which this version does not include. Restore it on a PicPeak version that includes ${unknown[0]}.`);
+  err.code = 'RESTORE_LEDGER_UNKNOWN_MIGRATIONS';
+  err.statusCode = 400;
+  err.unknownMigrations = unknown;
+  return err;
+}
+
+async function assertArchiveLedgerKnown(picpeakPath) {
+  const refusal = ledgerRefusal(await readArchiveLedger(picpeakPath));
+  if (refusal) throw refusal;
+}
+
+// Inside the replace transaction, after the archive's ledger is loaded: drop
+// the other line's twins so this code's counterparts run on the next start,
+// and refuse (rolling everything back) what the preflight should have caught.
+async function reconcileRestoredLedger(trx) {
+  if (!(await trx.schema.hasTable('migrations'))) return;
+  const names = Array.from(await trx('migrations').select('filename'), (row) => row.filename);
+  const refusal = ledgerRefusal(names);
+  if (refusal) throw refusal;
+  const { twins } = classifyLedger(names);
+  for (let i = 0; i < twins.length; i += 500) {
+    await trx('migrations').whereIn('filename', twins.slice(i, i + 500)).del();
+  }
+  if (twins.length) logger.info(`picpeakImport: dropped ${twins.length} migration(s) of the other release line from the restored ledger; their counterparts run on the next start (issue 2480)`);
 }
 
 // Re-insert the operator's account inside the restore transaction so they keep
@@ -806,6 +865,8 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       }
     }
 
+    if (tables.includes('migrations')) await reconcileRestoredLedger(trx);
+
     // After every table, so the comparison runs against the restored Branding
     // theme (app_settings), not the one this instance had.
     if (legacyThemeEventIds.length > 0) {
@@ -916,6 +977,9 @@ module.exports = {
   importFromPicpeak,
   readManifestFromZip,
   validateManifest,
+  readArchiveLedger,
+  ledgerRefusal,
+  assertArchiveLedgerKnown,
   assertArchiveWithinLimits,
   extractWithinLimits,
   // exported for testing — the cross-engine coercion (#1038)
