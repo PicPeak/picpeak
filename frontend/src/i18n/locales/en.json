@@ -4774,6 +4774,7 @@
           "verifyIntegrity": "Verify document integrity now"
         },
         "failedSubtitle": "Restore failed — see error below. Destination has been rolled back to its pre-restore state.",
+        "failedNotRolledBackSubtitle": "Restore failed — see error below. The destination was not rolled back and may be in a partial state; check it before retrying.",
         "blockedSubtitle": "Restore did not start — a pre-flight check stopped it. Nothing on this install was changed.",
         "blockedTitle": "Restore stopped before any change",
         "idle": "No restore in progress.",
