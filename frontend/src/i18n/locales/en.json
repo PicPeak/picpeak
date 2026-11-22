@@ -1917,6 +1917,9 @@
       "nameTaken": "You already have a list with this name.",
       "limitReached": "You can have up to {{count}} lists.",
       "saveError": "The list could not be saved."
+    },
+    "language": {
+      "switch": "Language"
     }
   },
   "categories": {
@@ -1970,6 +1973,14 @@
       "useSuggestion": "Use {{time}} (first photo)",
       "hint": "Shown above this category when the gallery shows chapter markers (Settings → Appearance). Only in this gallery.",
       "clear": "Remove marker"
+    },
+    "translations": {
+      "edit": "Name in other languages",
+      "label": "Category name",
+      "sharedHint": "A shared category: its name is changed in Settings. The translations here are for this gallery only.",
+      "defaultHint": "The name as you created it. The translations are for this gallery only.",
+      "saved": "Category name translations saved",
+      "saveFailed": "Failed to save the category name translations"
     }
   },
   "eventCode": {
@@ -2613,7 +2624,8 @@
         "source": "Where the photos of this gallery come from.",
         "delivery": "Nested folders from uploads, and delivering a first look before the full gallery.",
         "tags": "Tag photos by scene so guests can filter the gallery.",
-        "pricing": "Sell individual photo downloads: price, free quota and access window."
+        "pricing": "Sell individual photo downloads: price, free quota and access window.",
+        "languages": "Show the title, welcome message and category texts in more than one language."
       },
       "access": "Access",
       "appearance": "Appearance",
@@ -2704,14 +2716,19 @@
         "teamMembers_one": "{{count}} team member",
         "teamMembers_other": "{{count}} team members",
         "teamReview": "team uploads reviewed",
-        "tags": "Tag photos by scene so guests can filter"
+        "tags": "Tag photos by scene so guests can filter",
+        "languagesVisitor": "Visitor's language",
+        "languagesDefault": "default {{language}}",
+        "languagesBilingual": "Bilingual",
+        "languagesOff": "One language"
       },
       "undoSection": "Undo changes in this section",
       "delivery": "Folders & delivery",
       "passwordOwnerOnly": "Only the gallery owner can change the password or turn it off.",
       "recipientsOwnerOnly": "Only the gallery owner can change who receives the gallery email.",
       "tags": "Tags",
-      "pricing": "Photo sales"
+      "pricing": "Photo sales",
+      "languages": "Languages"
     },
     "folders": {
       "sectionTitle": "Folders",
@@ -2833,6 +2850,32 @@
       "divider": "Divider",
       "hero": "Banner with category image",
       "help": "Shows a heading, time, location and subheading above each category in the Story layout. Write them per category under Photos → Categories. A banner without a category image is shown as a divider."
+    },
+    "languages": {
+      "intro": "Write the gallery texts in more than one language. You write every translation yourself; nothing is translated automatically.",
+      "mode": "Gallery texts",
+      "modeOff": "One language",
+      "modeOffHelp": "The texts as you typed them, for every visitor.",
+      "modeVisitor": "Visitor's language",
+      "modeVisitorHelp": "Each visitor reads the texts in the language their browser asks for, when you wrote one; otherwise in the gallery's language. Visitors can switch the language in the gallery.",
+      "modeBilingual": "Two languages together",
+      "modeBilingualHelp": "The title, the welcome message and the chapter markers show both languages: the first one large, the second one smaller below it. Category names show the first language.",
+      "primary": "First language (large)",
+      "default": "Language of your texts",
+      "defaultHelp": "The language you wrote the title, welcome message and category names in. Visitors without a translation in their language see these texts.",
+      "secondary": "Second language (smaller)",
+      "textsTitle": "Title",
+      "textsHelp": "Pick a language tab to write the title in it. The welcome message has the same tabs under General, category names and chapter markers under Photos → Categories.",
+      "titleLabel": "Gallery title",
+      "titleRenameHint": "Rename the gallery with the pencil next to its name at the top of the page.",
+      "primaryRequired": "Choose the language the gallery texts are written in.",
+      "secondaryRequired": "Choose a second language, different from the first, for the bilingual gallery.",
+      "defaultText": "Default",
+      "defaultShort": "Default",
+      "filled": "has text",
+      "empty": "no text yet",
+      "tabsLabel": "Language",
+      "translationHint": "The {{language}} text, written by hand. Leave it empty if there is none."
     }
   },
   "settings": {

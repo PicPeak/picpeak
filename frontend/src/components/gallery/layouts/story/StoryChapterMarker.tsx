@@ -77,7 +77,11 @@ export const StoryChapterMarker: React.FC<StoryChapterMarkerProps> = ({
         </div>
       )}
       <div className="story-chapter-text">
-        <h2 id={anchor} className="story-chapter-heading">{heading}</h2>
+        <h2 id={anchor} className="story-chapter-heading">
+          {heading}
+          {/* Bilingual mode (issue 2550): the second language, smaller below. */}
+          {chapter.secondary?.heading && <span className="story-chapter-secondary">{chapter.secondary.heading}</span>}
+        </h2>
         {(time || chapter.location) && (
           <p className="story-chapter-meta">
             {time && <time dateTime={chapter.time as string}>{time}</time>}
@@ -85,7 +89,12 @@ export const StoryChapterMarker: React.FC<StoryChapterMarkerProps> = ({
             {chapter.location && <span>{chapter.location}</span>}
           </p>
         )}
-        {chapter.subheading && <p className="story-chapter-subheading">{chapter.subheading}</p>}
+        {chapter.subheading && (
+          <p className="story-chapter-subheading">
+            {chapter.subheading}
+            {chapter.secondary?.subheading && <span className="story-chapter-secondary">{chapter.secondary.subheading}</span>}
+          </p>
+        )}
       </div>
     </header>
   );

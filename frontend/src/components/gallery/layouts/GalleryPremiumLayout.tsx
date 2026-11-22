@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { GallerySecondaryText } from '../../../hooks/useGalleryText';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { createPortal } from 'react-dom';
 import { MasonryPhotoAlbum } from 'react-photo-album';
@@ -915,6 +916,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
             )}
             <h1 className="gallery-premium-hero-title">
               {eventName || t('gallery.photoGallery')}
+              <GallerySecondaryText kind="title" />
             </h1>
           </motion.div>
         </div>

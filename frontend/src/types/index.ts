@@ -125,6 +125,10 @@ export interface Event {
   hero_image_anchor?: string;
   // Chapter markers above the categories (issue 2548). 'off' by default.
   chapter_marker_style?: ChapterMarkerStyle;
+  // Multilingual texts (issue 2550). 'off' by default.
+  text_language_mode?: TextLanguageMode;
+  text_primary_language?: string | null;
+  text_secondary_language?: string | null;
   // CSS Template
   css_template_id?: number | null;
   // Off = the gallery renders the global Branding theme; on = its own
@@ -201,6 +205,11 @@ export type HighlightsMode = 'off' | 'manual' | 'rating';
 
 export interface GalleryInfo {
   event_name: string;
+  // Multilingual texts (issue 2550): the title's texts, while the mode is on.
+  text_language_mode?: TextLanguageMode;
+  text_primary_language?: string | null;
+  text_secondary_language?: string | null;
+  translations?: { event_name?: TextTranslations };
   event_type: string;
   event_date: string | null;
   expires_at: string | null;
@@ -449,9 +458,17 @@ export interface PhotoCategory {
   // markers and the category is part of the storyline; plain text, the
   // heading falls back to the category name.
   chapter?: ChapterMarkerText;
+  // Hand-written names in other languages (issue 2550), language → text.
+  // Present only while the gallery's text language mode is on.
+  translations?: { name?: TextTranslations };
 }
 
 export type ChapterMarkerStyle = 'off' | 'divider' | 'hero';
+
+/** Multilingual gallery texts (issue 2550). */
+export type TextLanguageMode = 'off' | 'visitor' | 'bilingual';
+/** language code → text, the default text excluded. */
+export type TextTranslations = Partial<Record<string, string>>;
 
 export interface ChapterMarkerText {
   heading: string | null;
@@ -459,6 +476,11 @@ export interface ChapterMarkerText {
   // Wall-clock time of day, 'HH:MM' (24 h).
   time: string | null;
   location: string | null;
+  // Hand-written texts in other languages (issue 2550); time is not text.
+  translations?: { heading?: TextTranslations; subheading?: TextTranslations; location?: TextTranslations };
+  // Filled in by the client for bilingual mode: the secondary language's
+  // heading and subheading, shown smaller below the primary ones.
+  secondary?: { heading: string | null; subheading: string | null };
 }
 
 // Two-stage delivery (issue 1562) as the guest payload carries it. Absent or
@@ -536,6 +558,11 @@ export interface GalleryData {
     hero_image_anchor?: string;
     // Chapter markers above the categories (issue 2548).
     chapter_marker_style?: ChapterMarkerStyle;
+    // Multilingual texts (issue 2550): the texts are present only while the mode is on.
+    text_language_mode?: TextLanguageMode;
+    text_primary_language?: string | null;
+    text_secondary_language?: string | null;
+    translations?: { event_name?: TextTranslations; welcome_message?: TextTranslations };
     // Default photo sort order
     default_photo_sort?: string;
     // Live refresh (issue 1733, C5): poll /photos/state for new photos.

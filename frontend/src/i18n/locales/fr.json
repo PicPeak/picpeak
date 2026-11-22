@@ -717,6 +717,9 @@
       "nameTaken": "Vous avez déjà une liste portant ce nom.",
       "limitReached": "Vous pouvez créer jusqu’à {{count}} listes.",
       "saveError": "La liste n’a pas pu être enregistrée."
+    },
+    "language": {
+      "switch": "Langue"
     }
   },
   "categories": {
@@ -751,6 +754,14 @@
       "useSuggestion": "Utiliser {{time}} (première photo)",
       "hint": "Affiché au-dessus de cette catégorie lorsque la galerie montre les marqueurs de chapitre (Paramètres → Apparence). Uniquement dans cette galerie.",
       "clear": "Supprimer le marqueur"
+    },
+    "translations": {
+      "edit": "Nom dans d’autres langues",
+      "label": "Nom de la catégorie",
+      "sharedHint": "Une catégorie partagée : son nom se modifie dans les Paramètres. Les traductions ici ne valent que pour cette galerie.",
+      "defaultHint": "Le nom tel que vous l’avez créé. Les traductions ne valent que pour cette galerie.",
+      "saved": "Traductions du nom de catégorie enregistrées",
+      "saveFailed": "Impossible d’enregistrer les traductions du nom de catégorie"
     }
   },
   "eventCode": {
@@ -1205,7 +1216,8 @@
       "about": {
         "embed": "Affichez cette galerie sur votre propre site.",
         "delivery": "Dossiers imbriqués issus des envois, et une première sélection avant la galerie complète.",
-        "tags": "Taguer les photos par scène pour que les invités puissent filtrer la galerie."
+        "tags": "Taguer les photos par scène pour que les invités puissent filtrer la galerie.",
+        "languages": "Afficher le titre, le message de bienvenue et les textes de catégorie dans plusieurs langues."
       },
       "summary": {
         "noEmbed": "Non intégrée",
@@ -1218,11 +1230,16 @@
         "teamMembers_other": "{{count}} membres de l'équipe",
         "teamReview": "envois de l'équipe vérifiés",
         "uploadsApproved": "approbation requise",
-        "tags": "Taguer les photos par scène pour que les invités filtrent"
+        "tags": "Taguer les photos par scène pour que les invités filtrent",
+        "languagesVisitor": "Langue du visiteur",
+        "languagesDefault": "par défaut {{language}}",
+        "languagesBilingual": "Bilingue",
+        "languagesOff": "Une langue"
       },
       "passwordOwnerOnly": "Seul le propriétaire de la galerie peut modifier le mot de passe ou le désactiver.",
       "recipientsOwnerOnly": "Seul le propriétaire de la galerie peut modifier qui reçoit l’e-mail de la galerie.",
-      "tags": "Tags"
+      "tags": "Tags",
+      "languages": "Langues"
     },
     "folders": {
       "sectionTitle": "Dossiers",
@@ -1333,6 +1350,32 @@
       "divider": "Séparateur",
       "hero": "Bannière avec l’image de la catégorie",
       "help": "Affiche un titre, une heure, un lieu et un sous-titre au-dessus de chaque catégorie dans la mise en page Story. Rédigez-les par catégorie sous Photos → Catégories. Une bannière sans image de catégorie s’affiche comme séparateur."
+    },
+    "languages": {
+      "intro": "Rédigez les textes de la galerie dans plusieurs langues. Vous écrivez chaque traduction vous-même ; rien n’est traduit automatiquement.",
+      "mode": "Textes de la galerie",
+      "modeOff": "Une langue",
+      "modeOffHelp": "Les textes tels que vous les avez saisis, pour chaque visiteur.",
+      "modeVisitor": "Langue du visiteur",
+      "modeVisitorHelp": "Chaque visiteur lit les textes dans la langue demandée par son navigateur, si vous l’avez rédigée ; sinon dans la langue de la galerie. Les visiteurs peuvent changer de langue dans la galerie.",
+      "modeBilingual": "Deux langues ensemble",
+      "modeBilingualHelp": "Le titre, le message de bienvenue et les marqueurs de chapitre affichent les deux langues : la première en grand, la seconde plus petite en dessous. Les noms de catégorie affichent la première langue.",
+      "primary": "Première langue (grande)",
+      "default": "Langue de vos textes",
+      "defaultHelp": "La langue dans laquelle vous avez rédigé le titre, le message de bienvenue et les noms de catégorie. Les visiteurs sans traduction dans leur langue voient ces textes.",
+      "secondary": "Deuxième langue (plus petite)",
+      "textsTitle": "Titre",
+      "textsHelp": "Choisissez un onglet de langue pour y rédiger le titre. Le message de bienvenue a les mêmes onglets sous Général, les noms de catégorie et les marqueurs de chapitre sous Photos → Catégories.",
+      "titleLabel": "Titre de la galerie",
+      "titleRenameHint": "Renommez la galerie avec le crayon à côté de son nom en haut de la page.",
+      "primaryRequired": "Choisissez la langue dans laquelle les textes de la galerie sont rédigés.",
+      "secondaryRequired": "Choisissez une deuxième langue, différente de la première, pour la galerie bilingue.",
+      "defaultText": "Par défaut",
+      "defaultShort": "Défaut",
+      "filled": "a un texte",
+      "empty": "pas encore de texte",
+      "tabsLabel": "Langue",
+      "translationHint": "Le texte en {{language}}, rédigé à la main. Laissez-le vide s’il n’y en a pas."
     }
   },
   "settings": {

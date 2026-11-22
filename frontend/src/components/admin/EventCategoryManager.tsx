@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, X, Loader2, Image as ImageIcon, Check, Download, DownloadCloud, ArrowUp, ArrowDown, RotateCcw, Folder, FolderOpen, BookOpen } from 'lucide-react';
+import { Plus, X, Loader2, Image as ImageIcon, Check, Download, DownloadCloud, ArrowUp, ArrowDown, RotateCcw, Folder, FolderOpen, BookOpen, Languages } from 'lucide-react';
 import { categoriesService, type CategoryChapterData, type PhotoCategory } from '../../services/categories.service';
 import { photosService } from '../../services/photos.service';
 import { folderQueryKey } from '../../services/folders.service';
@@ -9,6 +9,11 @@ import { useTranslation } from 'react-i18next';
 import { useMutationWithToast, useModal } from '../../hooks';
 import { useEscapeClose } from '../common/useEscapeClose';
 import { isImeComposing } from '../../utils/imeComposition';
+import {
+  translationsOf, translationsQueryKey, translationsService,
+  type ContentTranslation, type TranslationChange, type TranslationEntity,
+} from '../../services/translations.service';
+import { LanguageTabs, TranslatableField, translationLanguages } from './TranslatableField';
 
 interface EventCategoryManagerProps {
   eventId: number;
@@ -27,10 +32,46 @@ const hasChapter = (category: PhotoCategory) => Boolean(
 
 const chapterInputClass = 'w-full px-3 py-1.5 text-sm border border-line-strong rounded-md bg-panel text-heading focus:ring-2 focus:ring-accent';
 
+/** Chapter texts that take a translation (issue 2550); the time does not. */
+const CHAPTER_TEXT_FIELDS = [
+  { field: 'heading', column: 'chapter_heading', max: 100 },
+  { field: 'subheading', column: 'chapter_subheading', max: 200 },
+  { field: 'location', column: 'chapter_location', max: 120 },
+] as const;
+
+/** `${field}:${language}` → text for one entity of the event. */
+type TextsDraft = Record<string, string>;
+
+function textsFor(rows: ContentTranslation[] | undefined, entityType: TranslationEntity, entityId: number, fields: readonly string[]): TextsDraft {
+  const out: TextsDraft = {};
+  for (const field of fields) {
+    for (const [language, text] of Object.entries(translationsOf(rows, entityType, entityId, field))) {
+      if (text) out[`${field}:${language}`] = text;
+    }
+  }
+  return out;
+}
+
+function textChanges(entityType: TranslationEntity, entityId: number, draft: TextsDraft, base: TextsDraft): TranslationChange[] {
+  const changes: TranslationChange[] = [];
+  for (const key of new Set([...Object.keys(draft), ...Object.keys(base)])) {
+    const next = (draft[key] ?? '').trim();
+    if (next === (base[key] ?? '').trim()) continue;
+    const [field, language] = key.split(':');
+    changes.push({ entity_type: entityType, entity_id: entityId, field, language, text: next === '' ? null : next });
+  }
+  return changes;
+}
+
 interface ChapterEditorProps {
   category: PhotoCategory;
   draft: CategoryChapterData;
   onChange: (draft: CategoryChapterData) => void;
+  /** Multilingual texts (issue 2550): the gallery's other languages; empty while the mode is off. */
+  languages: string[];
+  primary: string | null;
+  texts: TextsDraft;
+  onTextsChange: (texts: TextsDraft) => void;
   onSave: () => void;
   onClear: () => void;
   onCancel: () => void;
@@ -38,8 +79,12 @@ interface ChapterEditorProps {
 }
 
 /** Heading, time, location and subheading of one category's chapter marker (issue 2548). */
-const ChapterEditor: React.FC<ChapterEditorProps> = ({ category, draft, onChange, onSave, onClear, onCancel, saving }) => {
+const ChapterEditor: React.FC<ChapterEditorProps> = ({
+  category, draft, onChange, onSave, onClear, onCancel, saving, languages, primary, texts, onTextsChange,
+}) => {
   const { t } = useTranslation();
+  const [language, setLanguage] = useState<string | null>(null);
+  const active = language !== null && languages.includes(language) ? language : null;
   const field = (key: keyof CategoryChapterData) => ({
     id: `chapter-${category.id}-${key}`,
     value: draft[key] ?? '',
@@ -48,8 +93,45 @@ const ChapterEditor: React.FC<ChapterEditorProps> = ({ category, draft, onChange
   });
   const labelClass = 'block text-xs font-medium text-soft mb-1';
   const suggestion = category.chapter_time_suggestion;
+  const translated = (field: typeof CHAPTER_TEXT_FIELDS[number]) => ({
+    id: `chapter-${category.id}-${field.column}`,
+    value: active ? texts[`${field.field}:${active}`] ?? '' : '',
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => onTextsChange({ ...texts, [`${field.field}:${active}`]: e.target.value }),
+    className: chapterInputClass,
+    maxLength: field.max,
+    lang: active ?? undefined,
+    placeholder: (field.column === 'chapter_heading' ? draft.chapter_heading || category.name : draft[field.column]) || undefined,
+  });
+  const fieldLabel = (field: typeof CHAPTER_TEXT_FIELDS[number]) => ({
+    heading: t('categories.chapter.heading', 'Heading'),
+    subheading: t('categories.chapter.subheading', 'Subheading'),
+    location: t('categories.chapter.location', 'Location'),
+  }[field.field]);
   return (
     <div className="basis-full mt-2 pt-1 space-y-3 border-t border-line">
+      {languages.length > 0 && (
+        <div className="pt-2">
+          <LanguageTabs
+            primary={primary}
+            languages={languages}
+            active={active}
+            onChange={setLanguage}
+            filled={(code) => (code === null
+              ? Boolean(draft.chapter_heading || draft.chapter_subheading || draft.chapter_location)
+              : CHAPTER_TEXT_FIELDS.some((field) => (texts[`${field.field}:${code}`] ?? '').trim() !== ''))}
+          />
+        </div>
+      )}
+      {active ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {CHAPTER_TEXT_FIELDS.map((field) => (
+            <div key={field.field} className={field.field === 'location' ? '' : 'sm:col-span-2'}>
+              <label htmlFor={`chapter-${category.id}-${field.column}`} className={labelClass}>{fieldLabel(field)}</label>
+              <input type="text" {...translated(field)} />
+            </div>
+          ))}
+        </div>
+      ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
         <div className="sm:col-span-2">
           <label htmlFor={`chapter-${category.id}-chapter_heading`} className={labelClass}>
@@ -85,6 +167,7 @@ const ChapterEditor: React.FC<ChapterEditorProps> = ({ category, draft, onChange
           <input type="text" maxLength={200} {...field('chapter_subheading')} />
         </div>
       </div>
+      )}
       <p className="text-xs text-muted italic">
         {t('categories.chapter.hint', 'Shown above this category when the gallery shows chapter markers (Settings → Appearance). Only in this gallery.')}
       </p>
@@ -116,6 +199,18 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
   // Chapter marker editor (issue 2548): one category at a time.
   const [chapterEditId, setChapterEditId] = useState<number | null>(null);
   const [chapterDraft, setChapterDraft] = useState<CategoryChapterData>(EMPTY_CHAPTER);
+
+  // Multilingual texts (issue 2550): the gallery's languages, and the
+  // translated names and chapter texts of its categories, per gallery.
+  const { data: textState } = useQuery({
+    queryKey: translationsQueryKey(eventId),
+    queryFn: () => translationsService.get(eventId),
+  });
+  const textPrimary = textState?.text_primary_language ?? null;
+  const textLanguages = translationLanguages(textState?.text_language_mode, textPrimary, textState?.text_secondary_language);
+  const [chapterTexts, setChapterTexts] = useState<TextsDraft>({});
+  const [nameEditId, setNameEditId] = useState<number | null>(null);
+  const [nameTexts, setNameTexts] = useState<TextsDraft>({});
 
   // Fetch this event's categories (globals + event-specific), already resolved
   // to the event's effective order by the backend (#782).
@@ -239,9 +334,14 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
   // Chapter marker (issue 2548), stored per event: a shared category can
   // carry a different time and place in every gallery.
   const chapterMutation = useMutationWithToast({
-    mutationFn: ({ categoryId, data }: { categoryId: number; data: CategoryChapterData }) =>
-      categoriesService.updateChapter(eventId, categoryId, data),
-    invalidateKeys: [['event-categories', eventId]],
+    mutationFn: async ({ categoryId, data, texts }: { categoryId: number; data: CategoryChapterData; texts: TextsDraft }) => {
+      const saved = await categoriesService.updateChapter(eventId, categoryId, data);
+      const base = textsFor(textState?.translations, 'chapter', categoryId, CHAPTER_TEXT_FIELDS.map((f) => f.field));
+      const changes = textChanges('chapter', categoryId, texts, base);
+      if (changes.length > 0) await translationsService.save(eventId, changes);
+      return saved;
+    },
+    invalidateKeys: [['event-categories', eventId], [...translationsQueryKey(eventId)]],
     successMessage: t('categories.chapter.saved', 'Chapter marker saved'),
     onSuccess: () => setChapterEditId(null),
     errorMessage: t('categories.chapter.saveFailed', 'Failed to save the chapter marker'),
@@ -259,13 +359,15 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
       chapter_time: hasChapter(category) ? category.chapter_time ?? '' : category.chapter_time_suggestion ?? '',
       chapter_location: category.chapter_location ?? '',
     });
+    setChapterTexts(textsFor(textState?.translations, 'chapter', category.id, CHAPTER_TEXT_FIELDS.map((f) => f.field)));
     setChapterEditId(category.id);
   };
 
-  const saveChapter = (categoryId: number, data: CategoryChapterData) => {
+  const saveChapter = (categoryId: number, data: CategoryChapterData, texts: TextsDraft) => {
     const trimmed = (v: string | null) => (v && v.trim() ? v.trim() : null);
     chapterMutation.mutate({
       categoryId,
+      texts,
       data: {
         chapter_heading: trimmed(data.chapter_heading),
         chapter_subheading: trimmed(data.chapter_subheading),
@@ -273,6 +375,27 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
         chapter_location: trimmed(data.chapter_location),
       },
     });
+  };
+
+  // Translated category names (issue 2550), for this gallery only.
+  const nameMutation = useMutationWithToast({
+    mutationFn: ({ categoryId, texts }: { categoryId: number; texts: TextsDraft }) => {
+      const changes = textChanges('category', categoryId, texts, textsFor(textState?.translations, 'category', categoryId, ['name']));
+      return changes.length > 0 ? translationsService.save(eventId, changes) : Promise.resolve(null);
+    },
+    invalidateKeys: [[...translationsQueryKey(eventId)]],
+    successMessage: t('categories.translations.saved', 'Category name translations saved'),
+    onSuccess: () => setNameEditId(null),
+    errorMessage: t('categories.translations.saveFailed', 'Failed to save the category name translations'),
+  });
+
+  const openNameEditor = (category: PhotoCategory) => {
+    if (nameEditId === category.id) {
+      setNameEditId(null);
+      return;
+    }
+    setNameTexts(textsFor(textState?.translations, 'category', category.id, ['name']));
+    setNameEditId(category.id);
   };
 
   const handleMove = (index: number, dir: -1 | 1) => {
@@ -457,6 +580,21 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                   )}
                 </div>
                 <div className="flex items-center gap-1">
+                  {/* Translated names (issue 2550): while the gallery has more than one language. */}
+                  {textLanguages.length > 0 && (
+                    <button
+                      onClick={() => openNameEditor(category)}
+                      className={`p-1 transition-colors ${
+                        Object.keys(translationsOf(textState?.translations, 'category', category.id, 'name')).length > 0
+                          ? 'text-accent hover:text-faint' : 'text-faint hover:text-accent'
+                      }`}
+                      title={t('categories.translations.edit', 'Name in other languages')}
+                      aria-label={t('categories.translations.edit', 'Name in other languages')}
+                      aria-expanded={nameEditId === category.id}
+                    >
+                      <Languages className="w-3 h-3" />
+                    </button>
+                  )}
                   {/* Chapter marker (issue 2548): any category in the story,
                       shared ones too; not folders, not guest uploads. */}
                   {!category.is_folder && category.chapter_available !== false && (
@@ -541,13 +679,51 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                     </>
                   )}
                 </div>
+                {nameEditId === category.id && textLanguages.length > 0 && (
+                  <div className="basis-full mt-2 pt-3 space-y-3 border-t border-line">
+                    <TranslatableField
+                      id={`category-${category.id}-name`}
+                      label={t('categories.translations.label', 'Category name')}
+                      primary={textPrimary}
+                      languages={textLanguages}
+                      value={category.name}
+                      defaultHint={category.is_global
+                        ? t('categories.translations.sharedHint', 'A shared category: its name is changed in Settings. The translations here are for this gallery only.')
+                        : t('categories.translations.defaultHint', 'The name as you created it. The translations are for this gallery only.')}
+                      translations={Object.fromEntries(Object.entries(nameTexts)
+                        .filter(([key]) => key.startsWith('name:')).map(([key, value]) => [key.slice(5), value]))}
+                      onTranslationChange={(language, text) => setNameTexts((prev) => ({ ...prev, [`name:${language}`]: text }))}
+                      maxLength={100}
+                      inputClassName={chapterInputClass}
+                      labelClassName="block text-xs font-medium text-soft mb-1"
+                    />
+                    <div className="flex flex-wrap gap-2 justify-end">
+                      <Button variant="outline" size="sm" onClick={() => setNameEditId(null)}>
+                        {t('common.cancel')}
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => nameMutation.mutate({ categoryId: category.id, texts: nameTexts })}
+                        disabled={nameMutation.isPending}
+                      >
+                        {nameMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : t('common.save')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {chapterEditId === category.id && (
                   <ChapterEditor
                     category={category}
                     draft={chapterDraft}
                     onChange={setChapterDraft}
-                    onSave={() => saveChapter(category.id, chapterDraft)}
-                    onClear={() => saveChapter(category.id, EMPTY_CHAPTER)}
+                    onSave={() => saveChapter(category.id, chapterDraft, chapterTexts)}
+                    // Removing the marker removes its translations too.
+                    onClear={() => saveChapter(category.id, EMPTY_CHAPTER, {})}
+                    languages={textLanguages}
+                    primary={textPrimary}
+                    texts={chapterTexts}
+                    onTextsChange={setChapterTexts}
                     onCancel={() => setChapterEditId(null)}
                     saving={chapterMutation.isPending}
                   />

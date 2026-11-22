@@ -820,6 +820,9 @@
       "nameTaken": "Você já tem uma lista com este nome.",
       "limitReached": "Você pode ter até {{count}} listas.",
       "saveError": "Não foi possível salvar a lista."
+    },
+    "language": {
+      "switch": "Idioma"
     }
   },
   "categories": {
@@ -854,6 +857,14 @@
       "useSuggestion": "Usar {{time}} (primeira foto)",
       "hint": "Mostrado acima desta categoria quando a galeria mostra marcadores de capítulo (Definições → Aparência). Apenas nesta galeria.",
       "clear": "Remover marcador"
+    },
+    "translations": {
+      "edit": "Nome noutros idiomas",
+      "label": "Nome da categoria",
+      "sharedHint": "Uma categoria partilhada: o nome é alterado nas Definições. As traduções aqui valem apenas para esta galeria.",
+      "defaultHint": "O nome tal como o criou. As traduções valem apenas para esta galeria.",
+      "saved": "Traduções do nome da categoria guardadas",
+      "saveFailed": "Não foi possível guardar as traduções do nome da categoria"
     }
   },
   "eventCode": {
@@ -1316,7 +1327,8 @@
       "about": {
         "embed": "Mostre esta galeria no seu próprio site.",
         "delivery": "Pastas aninhadas a partir dos envios e uma primeira seleção antes da galeria completa.",
-        "tags": "Marque as fotos por cena para que os convidados possam filtrar a galeria."
+        "tags": "Marque as fotos por cena para que os convidados possam filtrar a galeria.",
+        "languages": "Mostrar o título, a mensagem de boas-vindas e os textos das categorias em mais de um idioma."
       },
       "summary": {
         "noEmbed": "Não incorporada",
@@ -1329,11 +1341,16 @@
         "teamMembers_other": "{{count}} membros da equipe",
         "teamReview": "envios da equipe revisados",
         "uploadsApproved": "aprovação necessária",
-        "tags": "Marcar as fotos por cena para que os convidados filtrem"
+        "tags": "Marcar as fotos por cena para que os convidados filtrem",
+        "languagesVisitor": "Idioma do visitante",
+        "languagesDefault": "predefinido {{language}}",
+        "languagesBilingual": "Bilingue",
+        "languagesOff": "Um idioma"
       },
       "passwordOwnerOnly": "Apenas o proprietário da galeria pode alterar a senha ou desativá-la.",
       "recipientsOwnerOnly": "Apenas o proprietário da galeria pode alterar quem recebe o e-mail da galeria.",
-      "tags": "Tags"
+      "tags": "Tags",
+      "languages": "Idiomas"
     },
     "folders": {
       "sectionTitle": "Pastas",
@@ -1444,6 +1461,32 @@
       "divider": "Divisor",
       "hero": "Banner com imagem da categoria",
       "help": "Mostra um título, hora, local e subtítulo acima de cada categoria no layout Story. Escreva-os por categoria em Fotos → Categorias. Um banner sem imagem de categoria é mostrado como divisor."
+    },
+    "languages": {
+      "intro": "Escreva os textos da galeria em mais de um idioma. Cada tradução é escrita por si; nada é traduzido automaticamente.",
+      "mode": "Textos da galeria",
+      "modeOff": "Um idioma",
+      "modeOffHelp": "Os textos tal como os escreveu, para todos os visitantes.",
+      "modeVisitor": "Idioma do visitante",
+      "modeVisitorHelp": "Cada visitante lê os textos no idioma que o navegador pede, se o escreveu; caso contrário, no idioma da galeria. Os visitantes podem mudar o idioma na galeria.",
+      "modeBilingual": "Dois idiomas juntos",
+      "modeBilingualHelp": "O título, a mensagem de boas-vindas e os marcadores de capítulo mostram os dois idiomas: o primeiro grande, o segundo menor por baixo. Os nomes das categorias mostram o primeiro idioma.",
+      "primary": "Primeiro idioma (grande)",
+      "default": "Idioma dos seus textos",
+      "defaultHelp": "O idioma em que escreveu o título, a mensagem de boas-vindas e os nomes das categorias. Os visitantes sem tradução no seu idioma veem estes textos.",
+      "secondary": "Segundo idioma (menor)",
+      "textsTitle": "Título",
+      "textsHelp": "Escolha um separador de idioma para escrever o título nesse idioma. A mensagem de boas-vindas tem os mesmos separadores em Geral; os nomes das categorias e os marcadores de capítulo em Fotos → Categorias.",
+      "titleLabel": "Título da galeria",
+      "titleRenameHint": "Mude o nome da galeria com o lápis junto ao nome, no topo da página.",
+      "primaryRequired": "Escolha o idioma em que os textos da galeria estão escritos.",
+      "secondaryRequired": "Escolha um segundo idioma, diferente do primeiro, para a galeria bilingue.",
+      "defaultText": "Predefinido",
+      "defaultShort": "Predefinido",
+      "filled": "tem texto",
+      "empty": "ainda sem texto",
+      "tabsLabel": "Idioma",
+      "translationHint": "O texto em {{language}}, escrito à mão. Deixe vazio se não houver."
     }
   },
   "settings": {

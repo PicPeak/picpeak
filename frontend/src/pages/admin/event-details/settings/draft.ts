@@ -20,6 +20,8 @@ import { normalizeRequirePassword } from '../../../../utils/accessControl';
 import { expiryDay } from '../../../../utils/expiryDay';
 import type { CustomerGroup } from '../../../../services/customerAdmin.service';
 import type { EditFormState } from '../types';
+import type { TextLanguageMode } from '../../../../types';
+import type { ContentTranslation, TranslationChange } from '../../../../services/translations.service';
 import { safeParseDate } from '../utils';
 
 export type SettingsSectionKey =
@@ -36,6 +38,7 @@ export type SettingsSectionKey =
   | 'embed'
   | 'faces'
   | 'tags'
+  | 'languages'
   | 'danger';
 
 export interface EventFields extends EditFormState {
@@ -70,6 +73,74 @@ export interface EventFields extends EditFormState {
   review_contributor_uploads: boolean;
   /** Hold guest uploads until the owner or a reviewer approves them. */
   moderate_guest_uploads: boolean;
+  /** Multilingual texts (issue 2550). */
+  text_language_mode: TextLanguageMode;
+  text_primary_language: string | null;
+  text_secondary_language: string | null;
+}
+
+/**
+ * The gallery title's and welcome message's translations (issue 2550),
+ * keyed `${field}:${language}`, saved through PUT /:id/translations. Category
+ * and chapter texts are edited and saved in the category manager.
+ */
+export type EventTextsDraft = Record<string, string>;
+
+export const EVENT_TEXT_FIELDS = ['event_name', 'welcome_message'] as const;
+export type EventTextField = typeof EVENT_TEXT_FIELDS[number];
+
+/** Which Settings section shows each translated event field. */
+const SECTION_OF_TEXT_FIELD: Record<EventTextField, SettingsSectionKey> = {
+  event_name: 'languages',
+  welcome_message: 'general',
+};
+
+const textFieldOf = (key: string) => key.split(':')[0] as EventTextField;
+
+export function eventTextsFromRows(rows: ContentTranslation[] | undefined, eventId: number): EventTextsDraft | null {
+  if (!rows) return null;
+  const out: EventTextsDraft = {};
+  for (const row of rows) {
+    if (row.entity_type === 'event' && Number(row.entity_id) === Number(eventId)
+      && (EVENT_TEXT_FIELDS as readonly string[]).includes(row.field)) {
+      out[`${row.field}:${row.language}`] = row.text;
+    }
+  }
+  return out;
+}
+
+/** `${field}:${language}` → text, for one event field. */
+export function textsOfField(texts: EventTextsDraft | null, field: string): Partial<Record<string, string>> {
+  const out: Partial<Record<string, string>> = {};
+  for (const [key, value] of Object.entries(texts || {})) {
+    const [f, language] = key.split(':');
+    if (f === field) out[language] = value;
+  }
+  return out;
+}
+
+/** The translation writes this draft stands for; an emptied text removes the row. */
+export function eventTextChanges(draft: EventTextsDraft | null | undefined, base: EventTextsDraft | null | undefined, eventId: number): TranslationChange[] {
+  if (!draft || !base) return [];
+  const keys = new Set([...Object.keys(draft), ...Object.keys(base)]);
+  const changes: TranslationChange[] = [];
+  for (const key of keys) {
+    const next = (draft[key] ?? '').trim();
+    const prev = (base[key] ?? '').trim();
+    if (next === prev) continue;
+    const [field, language] = key.split(':');
+    changes.push({ entity_type: 'event', entity_id: eventId, field, language, text: next === '' ? null : next });
+  }
+  return changes;
+}
+
+/** The draft's texts with the keys of one section put back to `base`. */
+function resetTexts(draft: EventTextsDraft | null | undefined, base: EventTextsDraft | null | undefined, section: SettingsSectionKey) {
+  if (!draft || !base) return draft;
+  const out: EventTextsDraft = {};
+  for (const [key, value] of Object.entries(draft)) if (SECTION_OF_TEXT_FIELD[textFieldOf(key)] !== section) out[key] = value;
+  for (const [key, value] of Object.entries(base)) if (SECTION_OF_TEXT_FIELD[textFieldOf(key)] === section) out[key] = value;
+  return out;
 }
 
 export const INHERIT = '__inherit__';
@@ -87,6 +158,8 @@ export interface EventSettingsDraft {
   feedback: FeedbackSettings | null;
   downloads: DownloadsDraft | null;
   slideshow: SlideshowStyle | null;
+  /** Null until loaded; absent in drafts built before issue 2550. */
+  translations?: EventTextsDraft | null;
 }
 
 const truthy = (v: unknown) => v === true || v === 1 || v === '1' || v === 'true';
@@ -236,6 +309,10 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     assigned_admins: event.assigned_admins || [],
     review_contributor_uploads: truthy(event.review_contributor_uploads),
     moderate_guest_uploads: truthy(event.moderate_guest_uploads),
+    text_language_mode: event.text_language_mode === 'visitor' || event.text_language_mode === 'bilingual'
+      ? event.text_language_mode : 'off',
+    text_primary_language: event.text_primary_language || null,
+    text_secondary_language: event.text_secondary_language || null,
   };
 }
 
@@ -326,6 +403,9 @@ export const SECTION_OF_FIELD: Record<keyof EventFields, SettingsSectionKey> = {
   delivery_expected_count: 'delivery',
   delivery_due_at: 'delivery',
   delivery_badge_label: 'delivery',
+  text_language_mode: 'languages',
+  text_primary_language: 'languages',
+  text_secondary_language: 'languages',
 };
 
 /** Key-order independent JSON, so two equal drafts always compare equal. */
@@ -351,6 +431,11 @@ export function dirtySections(draft: EventSettingsDraft, base: EventSettingsDraf
   if (!sameValue(draft.feedback, base.feedback)) out.add('guests');
   if (!sameValue(draft.downloads, base.downloads)) out.add('downloads');
   if (!sameValue(draft.slideshow, base.slideshow)) out.add('slideshow');
+  if (draft.translations && base.translations) {
+    for (const change of eventTextChanges(draft.translations, base.translations, 0)) {
+      out.add(SECTION_OF_TEXT_FIELD[change.field as EventTextField]);
+    }
+  }
   return out;
 }
 
@@ -369,6 +454,7 @@ export function resetSection(draft: EventSettingsDraft, base: EventSettingsDraft
     feedback: section === 'guests' ? base.feedback : draft.feedback,
     downloads: section === 'downloads' ? base.downloads : draft.downloads,
     slideshow: section === 'slideshow' ? base.slideshow : draft.slideshow,
+    translations: resetTexts(draft.translations, base.translations, section),
   };
 }
 
@@ -386,13 +472,14 @@ export function rebaseDraft(current: EventSettingsDraft, prevBase: EventSettings
   Object.keys(serverFields).forEach((key) => {
     if (sameValue(fields[key], prevFields[key])) fields[key] = serverFields[key];
   });
-  const slice = <K extends 'feedback' | 'downloads' | 'slideshow'>(k: K) =>
+  const slice = <K extends 'feedback' | 'downloads' | 'slideshow' | 'translations'>(k: K) =>
     (sameValue(current[k], prevBase[k]) ? server[k] : current[k]);
   return {
     event: fields as unknown as EventFields,
     feedback: slice('feedback'),
     downloads: slice('downloads'),
     slideshow: slice('slideshow'),
+    translations: slice('translations'),
   };
 }
 
@@ -467,6 +554,9 @@ function requestFields(f: EventFields): Record<string, unknown> {
     og_image_share_enabled: f.og_image_share_enabled,
     hero_image_anchor: f.hero_image_anchor,
     chapter_marker_style: f.chapter_marker_style,
+    text_language_mode: f.text_language_mode,
+    text_primary_language: f.text_primary_language || null,
+    text_secondary_language: f.text_secondary_language || null,
     hero_logo_visible: f.hero_logo_visible,
     hero_logo_size: f.hero_logo_size,
     hero_logo_position: f.hero_logo_position,
@@ -541,6 +631,13 @@ export function eventUpdatePayload(
       t('events.guestUploadMaxEdgeInvalid', 'The longest edge must be a whole number from 1024 to 16384, or empty.'),
       'guests',
     );
+  }
+  if (draft.text_language_mode !== 'off' && !draft.text_primary_language) {
+    throw new DraftValidationError(t('events.languages.primaryRequired', 'Choose the language the gallery texts are written in.'), 'languages');
+  }
+  if (draft.text_language_mode === 'bilingual'
+    && (!draft.text_secondary_language || draft.text_secondary_language === draft.text_primary_language)) {
+    throw new DraftValidationError(t('events.languages.secondaryRequired', 'Choose a second language, different from the first, for the bilingual gallery.'), 'languages');
   }
   const expected = draft.delivery_expected_count.trim();
   if (expected !== '' && (!Number.isInteger(Number(expected)) || Number(expected) < 1)) {

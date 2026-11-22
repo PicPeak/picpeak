@@ -1,5 +1,6 @@
 import { PhotoSalesCartButton } from '../../../features/photo-sales/PhotoSalesCartButton';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { GallerySecondaryText } from '../../../hooks/useGalleryText';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
 import { BackToAccountLink } from '../BackToAccountLink';
@@ -922,7 +923,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         </h2>
         <p className="story-footer-text">
           {footerString(storyFooterText, STORY_FOOTER_TEXT_MAX)
-            || welcomeMessage
+            || (welcomeMessage && <>{welcomeMessage}<GallerySecondaryText kind="welcome" /></>)
             || t('gallery.thankYouMessage', 'For being part of our story and making our special day unforgettable.')}
         </p>
         {canDownloadAll && (

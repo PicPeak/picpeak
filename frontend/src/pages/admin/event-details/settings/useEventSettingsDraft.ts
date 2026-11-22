@@ -7,6 +7,7 @@ import type { ThemeConfig } from '../../../../types/theme.types';
 import { api } from '../../../../config/api';
 import { eventsService } from '../../../../services/events.service';
 import { feedbackService, type FeedbackSettings } from '../../../../services/feedback.service';
+import { translationsQueryKey, translationsService } from '../../../../services/translations.service';
 import { archiveInProgressError } from '../../../../utils/archiveErrors';
 import {
   INHERIT,
@@ -14,6 +15,8 @@ import {
   dirtySections,
   downloadsPayload,
   eventFieldsFromEvent,
+  eventTextChanges,
+  eventTextsFromRows,
   eventUpdatePayload,
   rebaseDraft,
   resetSection,
@@ -62,6 +65,7 @@ const SLICE_LABEL_SECTION: Record<Slice, SettingsSectionKey> = {
   feedback: 'guests',
   downloads: 'downloads',
   slideshow: 'slideshow',
+  translations: 'languages',
 };
 
 /**
@@ -86,12 +90,19 @@ export function useEventSettingsDraft({
     queryFn: async () => (await api.get(`/admin/events/${event.id}/download-resolutions`)).data,
   });
 
+  // The title's and welcome message's translations (issue 2550).
+  const { data: translationsData } = useQuery({
+    queryKey: translationsQueryKey(event.id),
+    queryFn: () => translationsService.get(event.id),
+  });
+
   const serverState = useMemo<EventSettingsDraft>(() => ({
     event: eventFieldsFromEvent(event, branding),
     feedback: feedbackSettings ?? null,
     downloads: downloadsFromPayload(downloadsData),
     slideshow: slideshowFromEvent(event),
-  }), [event, feedbackSettings, downloadsData, branding]);
+    translations: eventTextsFromRows(translationsData?.translations, event.id),
+  }), [event, feedbackSettings, downloadsData, branding, translationsData]);
 
   const [base, setBase] = useState<EventSettingsDraft>(serverState);
   const [draft, setDraft] = useState<EventSettingsDraft>(serverState);
@@ -167,6 +178,10 @@ export function useEventSettingsDraft({
       const slideshow = draft.slideshow;
       await run('slideshow', () => eventsService.updateSlideshowSettings(event.id, slideshowPayload(slideshow)));
     }
+    const textChanges = eventTextChanges(draft.translations, base.translations, event.id);
+    if (textChanges.length > 0) {
+      await run('translations', () => translationsService.save(event.id, textChanges));
+    }
 
     // Saved slices become the new comparison point straight away (the
     // refetches below confirm them); the password is never kept in the draft.
@@ -187,6 +202,7 @@ export function useEventSettingsDraft({
       queryClient.invalidateQueries({ queryKey: ['admin-event', String(event.id)] }),
       queryClient.invalidateQueries({ queryKey: ['admin-event-feedback-settings', String(event.id)] }),
       queryClient.invalidateQueries({ queryKey: ['event-download-resolutions', event.id] }),
+      queryClient.invalidateQueries({ queryKey: translationsQueryKey(event.id) }),
       // Saving "partial" brings up the status card and "Full gallery is ready".
       queryClient.invalidateQueries({ queryKey: ['event-delivery', event.id] }),
       queryClient.invalidateQueries({ queryKey: ['admin-events'] }),

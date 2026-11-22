@@ -1,4 +1,5 @@
 import React from 'react';
+import { GallerySecondaryText } from '../../../../hooks/useGalleryText';
 import { motion } from 'framer-motion';
 import { parseISO } from 'date-fns';
 import { useTranslation } from 'react-i18next';
@@ -71,7 +72,7 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
           {formattedDate && (
             <p className="story-hero-date">{formattedDate}</p>
           )}
-          <h1 className="story-hero-title">{title}</h1>
+          <h1 className="story-hero-title">{title}<GallerySecondaryText kind="title" /></h1>
           <div className="story-hero-stats">
             <span className="story-hero-stats-divider" />
             <span>{stats}</span>

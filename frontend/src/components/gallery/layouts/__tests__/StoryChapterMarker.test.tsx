@@ -107,6 +107,23 @@ describe('StoryChapterMarker', () => {
     expect(marker.querySelector('time')?.getAttribute('datetime')).toBe('12:00');
   });
 
+  it('bilingual (issue 2550): the second language smaller below heading and subheading, not the location', () => {
+    const { container } = render(
+      <StoryChapterMarker
+        category={category}
+        chapter={{ ...full, heading: 'Trauung', secondary: { heading: 'Wedding ceremony', subheading: 'Meeting the yes-sayers' } }}
+        variant="divider"
+        slug="x"
+      />
+    );
+    const heading = container.querySelector('h2') as HTMLElement;
+    expect(heading.firstChild?.textContent).toBe('Trauung');
+    expect(heading.querySelector('.story-chapter-secondary')?.textContent).toBe('Wedding ceremony');
+    expect(container.querySelector('.story-chapter-subheading .story-chapter-secondary')?.textContent).toBe('Meeting the yes-sayers');
+    expect(container.querySelector('.story-chapter-meta .story-chapter-secondary')).toBeNull();
+    expect(container.querySelectorAll('.story-chapter-secondary')).toHaveLength(2);
+  });
+
   it('is a real heading with an anchor id', () => {
     const { container } = render(
       <StoryChapterMarker category={category} chapter={full} variant="divider" slug="x" />
