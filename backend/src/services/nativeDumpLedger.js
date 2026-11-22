@@ -116,7 +116,7 @@ const HEAD_BYTES = 256;
 // body) never is. It reads any piece of the stream at a time, so a long
 // value is scanned once, as it arrives, and never buffered.
 function sqlLexer() {
-  let mode = 'code'; // code | sq | sqEnd | esq | esqEsc | dq | dqEnd | dash | slash | line | block | blockStar | blockSlash | tag | dollar
+  let mode = 'code'; // code | sq | sqEnd | esq | esqEnd | esqEsc | dq | dqEnd | dash | slash | line | block | blockStar | blockSlash | tag | dollar
   let depth = 0; // block comment nesting
   let ended = true;
   let prev1 = ''; // the two code characters before the current one
@@ -147,7 +147,10 @@ function sqlLexer() {
     case 'code': code(c); return;
     case 'sq': if (c === '\'') mode = 'sqEnd'; return;
     case 'sqEnd': if (c === '\'') { mode = 'sq'; return; } mode = 'code'; prev1 = '\''; code(c); return;
-    case 'esq': if (c === '\\') mode = 'esqEsc'; else if (c === '\'') mode = 'sqEnd'; return;
+    case 'esq': if (c === '\\') mode = 'esqEsc'; else if (c === '\'') mode = 'esqEnd'; return;
+    // A doubled quote inside E'...' stays an escape string: a later \' is
+    // still an escaped quote, not the end.
+    case 'esqEnd': if (c === '\'') { mode = 'esq'; return; } mode = 'code'; prev1 = '\''; code(c); return;
     case 'esqEsc': mode = 'esq'; return;
     case 'dq': if (c === '"') mode = 'dqEnd'; return;
     case 'dqEnd': if (c === '"') { mode = 'dq'; return; } mode = 'code'; prev1 = '"'; code(c); return;

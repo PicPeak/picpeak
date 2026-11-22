@@ -86,6 +86,19 @@ describe('readPgDumpLedger', () => {
     expect(await readPgDumpLedger(fromText(dump))).toEqual(['001_init.js']);
   });
 
+  it('keeps an E string open across a doubled quote, so a later \\\' does not end it', async () => {
+    const dump = [
+      'INSERT INTO public.events (id, title) VALUES (3, E\'it\'\'s \\\' still inside',
+      'COPY public.migrations (id, filename) FROM stdin;',
+      '9\t999_fake.js',
+      '\\.',
+      '\');',
+      'INSERT INTO public.migrations (id, filename) VALUES (1, \'001_init.js\');',
+      '',
+    ].join('\n');
+    expect(await readPgDumpLedger(fromText(dump))).toEqual(['001_init.js']);
+  });
+
   it('is unreadable, not guessed, when the dump ends inside a string', async () => {
     const dump = 'INSERT INTO public.events (id, title) VALUES (1, \'never closed\nCOPY public.migrations (id, filename) FROM stdin;\n';
     await expect(readPgDumpLedger(fromText(dump))).rejects.toBeInstanceOf(LedgerUnreadableError);
