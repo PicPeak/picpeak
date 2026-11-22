@@ -2,7 +2,7 @@
  * Admin → deals lineage endpoint.
  *
  * One UUID per customer engagement spans every quote, contract, and
- * invoice (migration 140). This route exposes the union: given a
+ * invoice (migration 107). This route exposes the union: given a
  * deal_uuid, return every related document so the frontend's
  * DocumentLineageCard can render the full chain with a single query
  * instead of walking the legacy point-to-point FKs in JS.
@@ -10,11 +10,6 @@
  * Read-only. The same `customers.view` permission used elsewhere for
  * lineage display is the gate here — anyone who can read a quote or
  * invoice detail page can read its deal lineage.
- *
- * Sibling routes (`/api/admin/quotes/:id/lineage`,
- * `/api/admin/contracts/:id/lineage`, `/api/admin/invoices/:id/lineage`)
- * also exist as conveniences so the frontend doesn't have to fetch
- * the deal_uuid first; they resolve and delegate to the same service.
  */
 
 const express = require('express');

@@ -18,13 +18,13 @@ import {
 } from '../../../../services/quoteCatalog.service';
 import { formatMoneyMinor } from '../../../../utils/money';
 import { CURRENCIES, labelCls, toMinor } from './shared';
+import { apiErrorText } from '../../../../utils/apiErrorText';
 
 const INPUT_TYPES: FactorInputType[] = ['number', 'choice', 'zone', 'toggle'];
 const inputCls = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-panel';
 const selectCls = `${inputCls} h-10`;
 const fromMinor = (minor: number | null | undefined) => (minor == null ? NaN : minor / 100);
 const orNull = (n: number) => (Number.isFinite(n) ? n : null);
-const errorText = (err: any): string => err?.response?.data?.error || err?.message || 'Failed';
 
 interface OptionForm {
   id?: number;
@@ -133,7 +133,7 @@ export const PricingFactorsTab: React.FC = () => {
       refresh();
       toast.success(t('quotes.catalog.savedToast', 'Saved.'));
     } catch (err) {
-      toast.error(errorText(err));
+      toast.error(apiErrorText(err));
     }
   };
 
@@ -143,7 +143,7 @@ export const PricingFactorsTab: React.FC = () => {
       else await quoteCatalogService.archiveFactor(f.id);
       refresh();
     } catch (err) {
-      toast.error(errorText(err));
+      toast.error(apiErrorText(err));
     }
   };
 

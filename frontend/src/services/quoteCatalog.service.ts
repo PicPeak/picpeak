@@ -234,8 +234,8 @@ export const quoteCatalogService = {
   },
 
   // ---- pricing factors (#2440) ----------------------------------------
-  async listFactors(opts: { activeOnly?: boolean } = {}): Promise<PricingFactor[]> {
-    const { data } = await api.get('/admin/quote-catalog/factors', { params: opts.activeOnly ? { activeOnly: 'true' } : undefined });
+  async listFactors(): Promise<PricingFactor[]> {
+    const { data } = await api.get('/admin/quote-catalog/factors');
     return unwrap<{ factors: PricingFactor[] }>(data).factors;
   },
   async createFactor(payload: Partial<PricingFactor> & { name: string; inputType: FactorInputType }): Promise<PricingFactor> {

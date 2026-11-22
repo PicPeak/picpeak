@@ -638,7 +638,7 @@ describe('workflow engine', () => {
     });
     const [runId] = await engine.emitWorkflowEvent('noedge.event', { entityType: 'x', entityId: 1 });
     const approval = await db('workflow_approvals').where({ run_id: runId, status: 'pending' }).first();
-    await engine.actById(approval.id, 'deny'); // deny has no edge
+    await engine.actByIdForAdmin(approval.id, 'deny', { roleName: 'super_admin' }); // deny has no edge
     const run = await db('workflow_runs').where({ id: runId }).first();
     expect(run.status).toBe('failed'); // loud failure, not a green 'done'
     expect(run.error).toMatch(/deny.*no matching edge/i);
@@ -669,7 +669,7 @@ describe('workflow engine', () => {
 
     // Admin confirms EARLY (before the wait date).
     const approval = await db('workflow_approvals').where({ run_id: runId, status: 'pending' }).first();
-    await engine.actById(approval.id, 'confirm');
+    await engine.actByIdForAdmin(approval.id, 'confirm', { roleName: 'super_admin' });
     run = await db('workflow_runs').where({ id: runId }).first();
     expect(run.status).toBe('waiting');
     expect(run.current_node).toBe('g2'); // now holding at the wait, not yet dispatched

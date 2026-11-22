@@ -23,7 +23,7 @@ import { Button, Loading } from '../../../components/common';
 import { api } from '../../../config/api';
 import { useAdminDarkMode } from '../../../contexts/AdminDarkModeContext';
 import { useMutationWithToast } from '../../../hooks';
-import { workflowsService, type WorkflowNodeType } from '../../../services/workflows.service';
+import { workflowsService, type WorkflowEdge, type WorkflowNode, type WorkflowNodeType } from '../../../services/workflows.service';
 import { NodeConfigPanel } from './NodeConfigPanel';
 
 const PALETTE: WorkflowNodeType[] = ['trigger', 'condition', 'branch', 'loop', 'wait', 'action', 'gate', 'webhook'];
@@ -118,6 +118,32 @@ function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
   });
 }
 
+// The canvas as workflow_nodes / workflow_edges rows (Save, the JSON box) and back.
+function toPayload(nodes: Node[], edges: Edge[]): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  return {
+    nodes: nodes.map((n) => {
+      const data = n.data as { nodeType: WorkflowNodeType; config?: Record<string, unknown> };
+      return {
+        node_key: n.id, type: data.nodeType, config: data.config || {},
+        pos_x: Math.round(n.position.x), pos_y: Math.round(n.position.y),
+      };
+    }),
+    edges: edges.map((e) => ({ from_node: e.source, from_handle: e.sourceHandle || null, to_node: e.target })),
+  };
+}
+
+function fromPayload(nodes: WorkflowNode[], edges: WorkflowEdge[], triggerType: string): { nodes: Node[]; edges: Edge[] } {
+  return {
+    nodes: nodes.map((n) => ({
+      id: n.node_key, type: 'wf', position: { x: n.pos_x || 0, y: n.pos_y || 0 },
+      data: { nodeType: n.type, config: n.config || {}, triggerType },
+    })),
+    edges: edges.map((e, i) => ({
+      id: `e${i}`, source: e.from_node, target: e.to_node, sourceHandle: e.from_handle || undefined, label: e.from_handle || undefined,
+    })),
+  };
+}
+
 export const WorkflowEditorPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -163,11 +189,7 @@ export const WorkflowEditorPage: React.FC = () => {
     trigger_type: triggerType,
     trigger_config: triggerConfig,
     enabled,
-    nodes: nodes.map((n) => ({
-      node_key: n.id, type: (n.data as any).nodeType, config: (n.data as any).config || {},
-      pos_x: Math.round(n.position.x), pos_y: Math.round(n.position.y),
-    })),
-    edges: edges.map((e) => ({ from_node: e.source, from_handle: e.sourceHandle || null, to_node: e.target })),
+    ...toPayload(nodes, edges),
   }, null, 2);
 
   const openText = () => { setText(serializeFlow()); setTextErr(null); setTextMode(true); };
@@ -182,13 +204,9 @@ export const WorkflowEditorPage: React.FC = () => {
     if (p.trigger_type) setTriggerType(p.trigger_type);
     if (p.trigger_config && typeof p.trigger_config === 'object') setTriggerConfig(p.trigger_config);
     if (p.enabled != null) setEnabled(!!p.enabled);
-    setNodes(p.nodes.map((n: any) => ({
-      id: n.node_key, type: 'wf', position: { x: n.pos_x || 0, y: n.pos_y || 0 },
-      data: { nodeType: n.type, config: n.config || {}, triggerType: tt },
-    })));
-    setEdges(p.edges.map((e: any, i: number) => ({
-      id: `e${i}`, source: e.from_node, target: e.to_node, sourceHandle: e.from_handle || undefined, label: e.from_handle || undefined,
-    })));
+    const graph = fromPayload(p.nodes, p.edges, tt);
+    setNodes(graph.nodes);
+    setEdges(graph.edges);
     setTextErr(null);
     setTextMode(false);
     toast.success(t('workflows.editor.textLoaded', 'Loaded — review and Save') as string);
@@ -202,19 +220,9 @@ export const WorkflowEditorPage: React.FC = () => {
     setTriggerType(workflow.trigger_type);
     setTriggerConfig((workflow.trigger_config as Record<string, any>) || {});
     setEnabled(workflow.enabled === true || workflow.enabled === 1);
-    setNodes(workflow.nodes.map((n) => ({
-      id: n.node_key,
-      type: 'wf',
-      position: { x: n.pos_x || 0, y: n.pos_y || 0 },
-      data: { nodeType: n.type, config: n.config || {}, triggerType: workflow.trigger_type },
-    })));
-    setEdges(workflow.edges.map((e, i) => ({
-      id: `e${i}`,
-      source: e.from_node,
-      target: e.to_node,
-      sourceHandle: e.from_handle || undefined,
-      label: e.from_handle || undefined,
-    })));
+    const graph = fromPayload(workflow.nodes, workflow.edges, workflow.trigger_type);
+    setNodes(graph.nodes);
+    setEdges(graph.edges);
   }, [workflow, setNodes, setEdges]);
 
   // Keep the trigger node's label in sync when the trigger is changed in the toolbar.
@@ -254,11 +262,7 @@ export const WorkflowEditorPage: React.FC = () => {
       trigger_type: triggerType,
       trigger_config: triggerConfig,
       enabled,
-      nodes: nodes.map((n) => ({
-        node_key: n.id, type: (n.data as any).nodeType, config: (n.data as any).config || {},
-        pos_x: Math.round(n.position.x), pos_y: Math.round(n.position.y),
-      })),
-      edges: edges.map((e) => ({ from_node: e.source, from_handle: e.sourceHandle || null, to_node: e.target })),
+      ...toPayload(nodes, edges),
     }),
     successMessage: t('workflows.editor.saved', 'Workflow saved') as string,
     invalidateKeys: [['workflow', workflowId], ['workflows']],

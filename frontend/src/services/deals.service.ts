@@ -1,6 +1,6 @@
 /**
  * dealsService — typed wrappers for the `/api/admin/deals/:uuid/...`
- * routes (migration 140's deal_uuid grouping). Read surface lives in
+ * routes (migration 107's deal_uuid grouping). Read surface lives in
  * `DocumentLineageCard` via inline `useQuery`; mutations land here so
  * call sites stay tidy.
  */
@@ -8,7 +8,7 @@
 import { api } from '../config/api';
 import type { PaymentTermInstallment } from './quotes.service';
 
-export interface UpdateInstallmentPlanResult {
+interface UpdateInstallmentPlanResult {
   invoiceIds: number[];
   kept: number[];
   created: number[];
@@ -34,5 +34,3 @@ export const dealsService = {
     return (res.data?.data || res.data) as UpdateInstallmentPlanResult;
   },
 };
-
-export default dealsService;

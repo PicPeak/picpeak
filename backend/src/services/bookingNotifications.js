@@ -12,19 +12,16 @@ const logger = require('../utils/logger');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { formatDate } = require('../utils/dateFormatter');
 const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
-const { _internal: tz } = require('../utils/businessHours');
 const emailProcessor = require('./emailProcessor');
 const businessProfileService = require('./businessProfileService');
+const { workingHours, localParts, depositReceivedMinor, ERASED_EMAIL } = require('./bookingService');
 
 async function context(request) {
   const { profile } = await businessProfileService.getProfile();
-  const { timezone } = await require('./bookingService').workingHours();
+  const { timezone } = await workingHours();
   const language = request.language || (profile && profile.default_locale) || 'en';
-  const parts = (instant) => tz.getZonedParts(new Date(instant), timezone);
-  const day = (p) => `${p.y}-${String(p.mo).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
-  const time = (p) => `${String(p.hh).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}`;
-  const start = parts(request.starts_at);
-  const hold = parts(request.hold_expires_at);
+  const start = localParts(request.starts_at, timezone);
+  const hold = localParts(request.hold_expires_at, timezone);
   const locale = issuerIntlLocale(profile && profile.country_code) || (language === 'de' ? 'de-CH' : 'en-GB');
   const estimate = new Intl.NumberFormat(locale, { style: 'currency', currency: request.currency || 'CHF' })
     .format(Number(request.estimate_minor || 0) / 100);
@@ -36,9 +33,9 @@ async function context(request) {
       client_email: request.email,
       business_name: (profile && (profile.company_name || profile.business_name)) || '',
       service_name: request.service_name,
-      booking_date: await formatDate(day(start), language),
-      booking_time: time(start),
-      hold_until: `${await formatDate(day(hold), language)} ${time(hold)}`,
+      booking_date: await formatDate(start.date, language),
+      booking_time: start.time,
+      hold_until: `${await formatDate(hold.date, language)} ${hold.time}`,
       estimate,
       reference: request.reference,
     },
@@ -91,12 +88,12 @@ const LATE_PAYMENT_REASONS = {
  */
 async function notifyDeclined(request, { lateReason = null } = {}) {
   // An erased client has no address left to write to.
-  if (request.email === require('./bookingService').ERASED_EMAIL) return;
+  if (request.email === ERASED_EMAIL) return;
   const { language, vars } = await context(request);
   // What actually came in: a payment of another amount is refunded in full.
   // Amounts are hundredths in every currency, as everywhere in the app.
   const deposit = new Intl.NumberFormat(language === 'de' ? 'de-CH' : 'en-GB', { style: 'currency', currency: request.currency || 'CHF' })
-    .format(Number(request.deposit_received_minor ?? request.deposit_minor ?? 0) / 100);
+    .format(depositReceivedMinor(request) / 100);
   const late = LATE_PAYMENT_REASONS[lateReason];
   await queue('booking_request_declined', request.email, {
     ...vars,

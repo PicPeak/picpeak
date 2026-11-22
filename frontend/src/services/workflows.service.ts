@@ -38,20 +38,6 @@ export interface WorkflowDetail extends WorkflowSummary {
   edges: WorkflowEdge[];
 }
 
-export interface WorkflowRun {
-  id: number;
-  workflow_id: number;
-  version: number;
-  trigger_event: string;
-  entity_type?: string | null;
-  entity_id?: number | null;
-  status: string;
-  current_node?: string | null;
-  started_at?: string;
-  finished_at?: string | null;
-  error?: string | null;
-}
-
 export interface WorkflowApproval {
   id: number;
   type: string;
@@ -85,7 +71,6 @@ export const workflowsService = {
   setEnabled: async (id: number, enabled: boolean) =>
     (await api.patch(`/admin/workflows/${id}/enabled`, { enabled })).data,
   remove: async (id: number) => (await api.delete(`/admin/workflows/${id}`)).data,
-  runs: async (id: number): Promise<WorkflowRun[]> => (await api.get<WorkflowRun[]>(`/admin/workflows/${id}/runs`)).data,
   approvals: async (): Promise<WorkflowApproval[]> => (await api.get<WorkflowApproval[]>('/admin/workflows/approvals')).data,
   actApproval: async (id: number, action: 'confirm' | 'deny') =>
     (await api.post(`/admin/workflows/approvals/${id}/${action}`)).data,

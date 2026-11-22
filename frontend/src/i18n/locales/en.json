@@ -1370,7 +1370,6 @@
       "recipientCustomer": "Customer (respects business hours)",
       "recipientAdmin": "Admin (sent immediately)",
       "emailTemplate": "Email template key",
-      "webhookUrl": "Webhook URL",
       "webhookTarget": "Webhook",
       "webhookNone": "— Select a configured webhook —",
       "webhookInactive": "(inactive)",
@@ -9360,10 +9359,7 @@
     "search": "Search by name or customer…",
     "empty": "Start one with New inquiry, or galleries you already have were grouped automatically.",
     "notFound": "Project not found",
-    "noCustomer": "No single customer",
     "rename": "Rename",
-    "timeline": "Milestones",
-    "eventCount": "{{count}} galleries",
     "totalHours": "{{hours}} logged",
     "col": {
       "name": "Project",
@@ -9386,8 +9382,6 @@
       "paidLabel": "Paid"
     },
     "events": {
-      "title": "Galleries",
-      "none": "No galleries grouped under this project yet.",
       "attachAfterCreateFailed": "The gallery was created but could not be attached to the project. Attach it on the project page."
     },
     "feed": {
@@ -9443,8 +9437,6 @@
       "completed": "Completed",
       "cancelled": "Cancelled"
     },
-    "eventCount_one": "{{count}} events",
-    "eventCount_other": "{{count}} events",
     "loadFailed": "Could not load the projects",
     "noMatches": "No projects match this search",
     "emptyTitle": "No projects yet",

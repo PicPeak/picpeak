@@ -2,7 +2,7 @@
  * dealsService — read-only lineage queries grouped by `deal_uuid`.
  *
  * One UUID spans every quote, contract, and invoice that belongs to
- * the same customer engagement (migration 140). This module is the
+ * the same customer engagement (migration 107). This module is the
  * single read surface for "show me everything tied to this deal" so
  * the frontend's DocumentLineageCard, internal audit traversals, and
  * any future deal-scoped reports query through one helper instead of
@@ -158,22 +158,6 @@ async function getDealDocuments(dealUuid) {
   };
 }
 
-/**
- * Convenience: resolve a deal_uuid from any document identifier.
- * Useful for routes that receive an invoice/quote/contract id and
- * want the full lineage without making the client pass the UUID
- * explicitly.
- *
- * Returns the UUID string, or null if the row doesn't exist.
- */
-async function resolveDealUuidFor(kind, id) {
-  const table = ({ quote: 'quotes', contract: 'contracts', invoice: 'invoices' })[kind];
-  if (!table) return null;
-  const row = await db(table).where({ id }).first('deal_uuid');
-  return row?.deal_uuid || null;
-}
-
 module.exports = {
   getDealDocuments,
-  resolveDealUuidFor,
 };

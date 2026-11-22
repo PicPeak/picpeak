@@ -34,6 +34,22 @@ async function loadGraph(workflowId, version) {
   return { nodeByKey, edges };
 }
 
+/** Store one version of a graph (editor save and built-in seeding). */
+async function writeGraph(trx, workflowId, version, nodes = [], edges = []) {
+  for (const n of nodes) {
+    await trx('workflow_nodes').insert({
+      workflow_id: workflowId, version, node_key: n.node_key, type: n.type,
+      config: JSON.stringify(n.config || {}), pos_x: n.pos_x || 0, pos_y: n.pos_y || 0,
+    });
+  }
+  for (const e of edges) {
+    await trx('workflow_edges').insert({
+      workflow_id: workflowId, version, from_node: e.from_node, from_handle: e.from_handle || null,
+      to_node: e.to_node, label: e.label || null, loop_back: !!e.loop_back,
+    });
+  }
+}
+
 // Pick the outgoing edge from `fromNode`. With a handle, prefer the matching
 // handle; otherwise fall back to a default (null-handle) edge or the sole edge.
 function outEdge(edges, fromNode, handle) {
@@ -319,13 +335,7 @@ async function resumeRun(runId, { decisionHandle = null } = {}) {
  */
 async function emitWorkflowEvent(triggerType, { entityType = null, entityId = null, payload = {}, targetWorkflowId = null, dedupSuffix = null } = {}) {
   try {
-    const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
-    let enabled = false;
-    try { enabled = await isFeatureEnabled('workflows'); } catch (e) {
-      logger.warn('[workflow] flag check failed — treating workflows as disabled', { error: e.message });
-      return [];
-    }
-    if (!enabled) return [];
+    if (!(await workflowsEnabled())) return [];
 
     // targetWorkflowId restricts the fan-out to a SINGLE chosen flow — used when
     // the entity explicitly selected which flow to run (e.g. a quote picks its
@@ -534,7 +544,7 @@ async function backfillDunningRuns(targetWorkflowId) {
  * Emit `event.date_approaching` for events entering an enabled flow's lead
  * window. This is the trigger source for the pre-event reminder built-in, so it
  * faithfully honours the same per-event controls the legacy eventReminderService
- * pass uses (migration 143): skips `event_reminder_disabled` events, skips ones
+ * pass uses (migration 107): skips `event_reminder_disabled` events, skips ones
  * already sent (`event_reminder_sent_at`), and fires at `event_date − offset`
  * where offset = the event's `event_reminder_offset_days` override else the
  * flow's `daysBefore`. emitWorkflowEvent's per-(flow,entity) dedup_key keeps the
@@ -749,13 +759,9 @@ module.exports = {
   recoverStaleRuns,
   testRun,
   startRun,
-  advanceRun,
   resumeRun,
-  finishRun,
-  failRun,
   workflowsEnabled,
-  // exported for tests / introspection
+  parseJson,
   loadGraph,
-  outEdge,
-  computeWakeAt,
+  writeGraph,
 };

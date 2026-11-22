@@ -1188,7 +1188,6 @@
       "recipientCustomer": "Stranka (upošteva poslovni čas)",
       "recipientAdmin": "Skrbnik (pošlje se takoj)",
       "emailTemplate": "Ključ e-poštne predloge",
-      "webhookUrl": "URL webhooka",
       "webhookTarget": "Webhook",
       "webhookNone": "— Izberite nastavljen webhook —",
       "webhookInactive": "(neaktivno)",
@@ -8007,10 +8006,7 @@
     "subtitle": "Združite dogodke v projekte in si v enem nadzornem središču oglejte vso e-pošto, dokumente, galerije in ure.",
     "search": "Išči po imenu ali stranki…",
     "notFound": "Projekt ni najden",
-    "noCustomer": "Brez ene določene stranke",
     "rename": "Preimenuj",
-    "timeline": "Mejniki",
-    "eventCount": "{{count}} dogodkov",
     "totalHours": "Zabeleženo: {{hours}}",
     "col": {
       "name": "Projekt",
@@ -8027,10 +8023,6 @@
     "value": {
       "label": "Vrednost projekta",
       "paid": "plačano"
-    },
-    "events": {
-      "title": "Dogodki",
-      "none": "Pod tem projektom še ni združenih dogodkov."
     },
     "feed": {
       "title": "Dejavnost",
@@ -8066,9 +8058,7 @@
     "status": {
       "active": "Aktivno",
       "archived": "Arhiviran"
-    },
-    "eventCount_one": "{{count}} dogodek",
-    "eventCount_other": "{{count}} dogodkov"
+    }
   },
   "calendar": {
     "pageTitle": "Koledar",

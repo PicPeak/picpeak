@@ -5,20 +5,18 @@
  * has real content and admins can see (and tweak) their processes as blocks.
  *
  * IMPORTANT — every built-in is seeded DISABLED. Live behaviour is UNCHANGED
- * until an admin enables a flow: the hardcoded reminder ladder still runs, and
- * the booking document actions (prepare_quote/contract/event/invoice) are still
- * stubs that record an observable `skipped` step rather than firing. The
- * cutover (drive each process through the engine + stop the hardcoded path) is a
- * deliberate follow-up so we never double-act. Enabling a flow before its
- * cutover is safe — at worst it records skipped steps — but the dunning flow in
- * particular auto-suppresses the hardcoded ladder while enabled so the two never
- * double-send.
+ * until an admin enables a flow: the hardcoded reminder paths still run. Each
+ * legacy path stands down only while its built-in is enabled (the dunning
+ * ladder, the expiry mails, the pre-event reminder), so the two never
+ * double-send. The booking document actions (prepare_quote/contract/event/
+ * invoice, send_document) are wired to the CRM services.
  *
  * Idempotent: keyed on builtin_key. Once seeded, admin edits are preserved (we
  * never overwrite an enabled built-in, and re-seed a disabled one only when its
  * SEED_VERSION moves on). Self-heal pattern per [[feedback_self_heal_pattern]].
  */
 const { getAppSetting } = require('../utils/appSettings');
+const { parseJson, writeGraph } = require('./workflows/engine');
 
 const DUNNING_KEY = 'invoice_dunning';
 
@@ -65,9 +63,7 @@ function buildDunningGraph({ firstDays, gapDays, maxReminders }) {
 // A document is never sent without an explicit admin OK: prepare_* creates a
 // DRAFT, the admin adjusts line items / terms in the CRM, then confirms the
 // review gate, and only then does send_document fire. The "signed?" gate models
-// the external signing step (no e-sign webhook yet). The document actions are
-// stubs until the booking cutover, so an enabled run records observable skipped
-// steps rather than acting.
+// the external signing step (no e-sign webhook yet).
 function buildBookingFullGraph() {
   const nodes = [
     { node_key: 't', type: 'trigger', config: {}, pos_x: 320, pos_y: 0 },
@@ -107,8 +103,7 @@ function buildBookingFullGraph() {
 
 // Booking — quote accepted → create the event/gallery → wait to the event date
 // → prepare invoice → ADMIN REVIEW GATE → send invoice. The no-contract path
-// (e.g. small shoots). Same review-before-send rule and stub caveat as the full
-// booking flow.
+// (e.g. small shoots). Same review-before-send rule as the full booking flow.
 function buildBookingSimpleGraph() {
   const nodes = [
     { node_key: 't', type: 'trigger', config: {}, pos_x: 320, pos_y: 0 },
@@ -135,8 +130,7 @@ function buildBookingSimpleGraph() {
 
 // Booking — quote accepted → prepare invoice → admin review gate → send. No
 // event/gallery and no wait: the invoice goes out as soon as the admin approves
-// it. For shoots billed without a delivered online gallery. Same stub caveat as
-// the other booking flows (prepare_invoice/send_document not yet wired).
+// it. For shoots billed without a delivered online gallery.
 function buildBookingInvoiceOnlyGraph() {
   const nodes = [
     { node_key: 't', type: 'trigger', config: {}, pos_x: 320, pos_y: 0 },
@@ -377,27 +371,6 @@ const BUILTINS = [
 // migrated yet, DB down) leaves the flag clear and a later call can retry.
 let booted = false;
 
-function parseSeedConfig(raw) {
-  if (raw == null) return {};
-  if (typeof raw === 'object') return raw;
-  try { return JSON.parse(raw) || {}; } catch (e) { return {}; }
-}
-
-async function writeGraph(trx, workflowId, version, nodes, edges) {
-  for (const n of nodes) {
-    await trx('workflow_nodes').insert({
-      workflow_id: workflowId, version, node_key: n.node_key, type: n.type,
-      config: JSON.stringify(n.config || {}), pos_x: n.pos_x || 0, pos_y: n.pos_y || 0,
-    });
-  }
-  for (const e of edges) {
-    await trx('workflow_edges').insert({
-      workflow_id: workflowId, version, from_node: e.from_node, from_handle: e.from_handle || null,
-      to_node: e.to_node, label: e.label || null, loop_back: !!e.loop_back,
-    });
-  }
-}
-
 async function seedOneBuiltin(db, logger, def) {
   const { nodes, edges } = await def.build();
   const baseCfg = typeof def.trigger_config === 'function'
@@ -414,7 +387,7 @@ async function seedOneBuiltin(db, logger, def) {
     // never-touched copy, re-seed on a SEED_VERSION bump and (re-)apply the seed
     // default `enabled`, so a shipped default flip (e.g. enabled→disabled for
     // first beta) propagates to installs the admin hasn't customised.
-    const storedVersion = Number(parseSeedConfig(existing.trigger_config).seedVersion) || 0;
+    const storedVersion = Number((parseJson(existing.trigger_config, {}) || {}).seedVersion) || 0;
     const adminOwned = !!existing.admin_toggled_at;
     if (adminOwned || storedVersion >= def.version) return;
 

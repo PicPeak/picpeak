@@ -1,6 +1,6 @@
 /**
  * eventReminderService — pre-event customer reminder emails
- * (migration 143).
+ * (migration 107).
  *
  * Sends ONE reminder per event N days before `event_date`. Goal: nudge
  * the customer on prep — space for equipment setup, dress-code notes,
@@ -19,7 +19,8 @@
  *      seeded. Admin manages these via the existing email-template
  *      editor (no schema rule restricts what they can create here;
  *      whatever slug-prefixed templates exist will match).
- *   2. `event_reminder_default` — catch-all, seeded by migration 143.
+ *   2. `event_reminder_default` — catch-all, seeded at runtime by
+ *      ensureEventReminderTemplatesSeeded (eventReminderTemplates.js).
  *
  * Falls through silently when the catch-all is missing (logs a warn
  * but doesn't throw — the cron must not crash the whole tick because
@@ -146,14 +147,9 @@ async function runEventReminderPass() {
   const daysBeforeDefault = Number.isFinite(globalDaysBefore) && globalDaysBefore >= 0
     ? globalDaysBefore : DEFAULT_DAYS_BEFORE;
 
-  // Pull the business name once per pass for the payload.
-  const profile = await db('business_profile').where({ id: 1 }).first('company_name');
-  const businessName = profile?.company_name || '';
-
   // Candidate set: active events with a date in the future, not yet sent, not
-  // disabled per-event. Recipient comes from the event row itself (customer_email
-  // / host_email) — events have no customer_account_id. `events.*` so the
-  // customer_email column (newer; absent on very old installs) is read safely.
+  // disabled per-event. `events.*` so the customer_email column (newer; absent
+  // on very old installs) is read safely.
   const now = new Date();
   const rows = await db('events')
     .whereNotNull('events.event_date')
@@ -168,9 +164,6 @@ async function runEventReminderPass() {
   let skipped = 0;
   for (const row of rows) {
     try {
-      // Inline event email, else the assigned customer account(s).
-      const recipients = await resolveReminderRecipients(row);
-      if (!recipients.length) { skipped += 1; continue; }
       const rawOffset = row.event_reminder_offset_days;
       const offsetDays = (rawOffset != null && rawOffset !== '' && Number.isFinite(Number(rawOffset)))
         ? Number(rawOffset)
@@ -180,27 +173,10 @@ async function runEventReminderPass() {
       const triggerAt = new Date(ed.getTime() - offsetDays * 86_400_000);
       if (now < triggerAt) { skipped += 1; continue; }
 
-      const templateKey = await resolveTemplateKey(row.event_type);
-      for (const r of recipients) {
-        const payload = composePayload({
-          event: row, recipientEmail: r.email, daysBefore: offsetDays, businessName,
-        });
-        // Per-event body override rides through as a variable the template can branch on.
-        if (row.event_reminder_body_override) {
-          payload.body_override = row.event_reminder_body_override;
-        }
-        // Inline → event language; assigned account → customer's preferred language (no eventId).
-        await emailProcessor.queueEmail(r.fromEvent ? row.id : null, r.email, templateKey, payload);
-      }
-
-      // Stamp sent_at immediately so a same-pass-re-entrancy (or a
-      // crash between queueEmail and the update) doesn't double-send
-      // on the next tick. The queueEmail call is itself idempotent at
-      // the queue level; we belt-and-suspenders here.
-      await db('events')
-        .where({ id: row.id })
-        .update({ event_reminder_sent_at: new Date() });
-      sent += 1;
+      // Counted per event, not per recipient; a business skip (no recipient)
+      // counts as skipped.
+      if ((await sendReminderForEvent(row.id)).sent > 0) sent += 1;
+      else skipped += 1;
     } catch (err) {
       logger.error('Event reminder send failed', {
         eventId: row.id, err: err.message,

@@ -266,14 +266,15 @@ async function filterOwnedEventIds(admin, eventIds, { honourManageAll = false } 
  *      creatable since createProject stamps created_by) stays super_admin-only.
  *      Failing closed beats failing open; a super_admin can reassign it.
  *
- * Returned as a subquery so callers avoid materialising an id list.
+ * Returned as a subquery so callers avoid materialising an id list. `conn`
+ * lets a caller inside a transaction build it on that transaction.
  */
-function ownedProjectsSubquery(admin) {
+function ownedProjectsSubquery(admin, conn = db) {
   if (admin?.roleName === 'super_admin') return null;
 
-  const linkedEvents = () => db('events').select(db.raw('1')).whereRaw('events.project_id = projects.id');
+  const linkedEvents = () => conn('events').select(conn.raw('1')).whereRaw('events.project_id = projects.id');
 
-  return db('projects').select('projects.id').where((w) => {
+  return conn('projects').select('projects.id').where((w) => {
     w.where('projects.created_by', admin.id)
       .orWhere((noOwner) => {
         noOwner
@@ -282,7 +283,7 @@ function ownedProjectsSubquery(admin) {
           // from everyone but super_admin forever.
           .where((c) => c
             .whereNull('projects.created_by')
-            .orWhereNotIn('projects.created_by', db('admin_users').select('id')))
+            .orWhereNotIn('projects.created_by', conn('admin_users').select('id')))
           .whereExists(linkedEvents())
           .whereNotExists(
             linkedEvents().whereNotNull('events.created_by').whereNot('events.created_by', admin.id),

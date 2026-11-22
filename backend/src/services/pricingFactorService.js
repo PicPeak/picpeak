@@ -640,11 +640,13 @@ function parseSnapshot(value) {
 
 module.exports = {
   INPUT_TYPES,
+  MAX_OPTIONS,
+  MAX_STORED_NUMBER,
+  MIN_STEP,
   NUMBER_EFFECTS,
   TOGGLE_EFFECTS,
   OPTION_EFFECTS,
   listFactors,
-  getFactor,
   saveFactor,
   archiveFactor,
   presetFactorIds,
@@ -653,7 +655,4 @@ module.exports = {
   writePresetFactors,
   priceWithFactors,
   parseSnapshot,
-  postcodeMatches,
-  zoneForPostcode,
-  normalisePostcodeList,
 };
