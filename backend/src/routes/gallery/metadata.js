@@ -15,6 +15,8 @@ const { handleAsync, errorResponse } = require('../../utils/routeHelpers');
 const { isGalleryHidden } = require('../../utils/revealMode');
 const { NotFoundError } = require('../../utils/errors');
 const { toDateOnly } = require('../../utils/dateOnly');
+const { hasColumnCached } = require('../../utils/schemaCache');
+const { languageSettingsOf, publicTranslationsFor } = require('../../services/contentTranslations');
 async function checkSlugRedirect(slug) {
   try {
     const hasTable = await db.schema.hasTable('slug_redirects');
@@ -217,7 +219,10 @@ router.get('/:slug/info', noStoreCache, async (req, res) => {
         'promo_mode',
         'promo_markdown',
         'info_mode',
-        'info_markdown'
+        'info_markdown',
+        // Multilingual texts (issue 2550, migration 373).
+        ...(await hasColumnCached('events', 'text_language_mode')
+          ? ['text_language_mode', 'text_primary_language', 'text_secondary_language'] : [])
       )
       .first();
 
@@ -271,8 +276,14 @@ router.get('/:slug/info', noStoreCache, async (req, res) => {
     const globalLogoSize = await getAppSetting('branding_logo_size', 'medium');
 
     const theme = await publicThemeFields(event);
+    // The title is already public here, so are its translations (issue
+    // 2550); the login page shows it before the visitor is let in. The
+    // welcome message's stay behind the login, as the message does.
+    const textTranslations = await publicTranslationsFor(event);
     res.json({
       event_name: event.event_name,
+      ...languageSettingsOf(event),
+      ...(textTranslations ? { translations: { event_name: textTranslations.event.event_name || {} } } : {}),
       event_type: event.event_type,
       event_date: toDateOnly(event.event_date),
       expires_at: event.expires_at,

@@ -74,6 +74,7 @@ const { PhotoExportService } = require('../../services/photoExportService');
 const { mergeMarks } = require('../../services/markMerge');
 const feedbackService = require('../../services/feedbackService');
 const archiver = require('archiver');
+const { translationRowsForEvent } = require('../../services/contentTranslations');
 const { Readable } = require('stream');
 const { getStorage } = require('../../services/storage');
 const { isStorageNotFoundError } = require('../../services/storage/storageErrors');
@@ -374,6 +375,13 @@ router.get('/event-types', apiTokenAuth, requireApiScope('read'), requirePermiss
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *     description: |
+ *       The events row without its password hashes, plus `translations`:
+ *       the gallery's hand-written texts in other languages (issue 2550),
+ *       one entry per entity, field and language. entity_type is `event`
+ *       (fields event_name, welcome_message), `category` (name) or
+ *       `chapter` (heading, subheading, location); for the latter two
+ *       entity_id is the category id. Read-only here.
  *     responses:
  *       200: { description: Event details }
  *       404: { description: Not found }
@@ -387,6 +395,7 @@ router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requirePermissi
     // #1271 — the encrypted copies are server-only as well
     delete event.password_recoverable;
     delete event.client_password_recoverable;
+    event.translations = await translationRowsForEvent(event.id);
     res.json(event);
   } catch (error) {
     logger.error('v1 GET /events/:id failed', { error: error.message });

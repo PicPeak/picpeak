@@ -15,6 +15,7 @@ const { getEventCategoriesOrdered } = require('../utils/categoryOrder');
 const logger = require('../utils/logger');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const chapters = require('../services/categoryChapters');
+const { deleteCategoryTranslations } = require('../services/contentTranslations');
 const router = express.Router();
 
 /**
@@ -534,6 +535,8 @@ router.delete('/:id', adminAuth, requirePermission('settings.edit'), async (req,
     if (await db.schema.hasTable('event_category_chapters')) {
       await db('event_category_chapters').where('category_id', id).del();
     }
+    // Its translated names and chapter texts (migration 373), the same reason.
+    await deleteCategoryTranslations(db, id);
     await db('photo_categories').where('id', id).delete();
     
     // Log activity

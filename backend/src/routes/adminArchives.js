@@ -1010,6 +1010,7 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
     const hasDownloadGrants = await db.schema.hasTable('event_download_grants');
     const hasAdminAssignments = await db.schema.hasTable('event_admin_assignments');
     const hasChapters = await db.schema.hasTable('event_category_chapters');
+    const hasTranslations = await db.schema.hasTable('content_translations');
     const hasDownloadRecipients = await db.schema.hasTable('download_job_recipients');
     const hasSelectionSubmissions = await db.schema.hasTable('selection_submissions');
     await db.transaction(async (trx) => {
@@ -1041,6 +1042,9 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       }
       if (hasChapters) {
         await trx('event_category_chapters').where('event_id', req.params.id).del();
+      }
+      if (hasTranslations) {
+        await trx('content_translations').where('event_id', req.params.id).del();
       }
       if (hasDownloadRecipients) {
         await trx('download_job_recipients')

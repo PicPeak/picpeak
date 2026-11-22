@@ -27,7 +27,7 @@ jest.mock('../../src/database/db', () => {
     select() { return this; },
     first: async () => mockEvent,
   }));
-  db.schema = { hasTable: async () => false };
+  db.schema = { hasTable: async () => false, hasColumn: async () => false };
   return { db, withRetry: (fn) => fn() };
 });
 jest.mock('../../src/middleware/gallery', () => ({
