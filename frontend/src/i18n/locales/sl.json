@@ -2450,7 +2450,10 @@
         "success": {
           "title": "Obnovitev je bila uspešno zaključena",
           "message": "Vaši podatki so bili obnovljeni. Preverite, ali vse deluje pravilno."
-        }
+        },
+        "starting": "Zaganjanje obnovitve…",
+        "signedOutNote": "Odjavljeni ste bili, ker je obnovitev zamenjala podatkovno bazo. Ponovna prijava je bila pričakovana. Spodaj je obnovitev, ki ste jo zagnali.",
+        "notStarted": "Obnovitev se ni zagnala ali njenega rezultata ni bilo mogoče prebrati — preverite zgodovino obnovitev."
       },
       "actions": {
         "back": "Nazaj",

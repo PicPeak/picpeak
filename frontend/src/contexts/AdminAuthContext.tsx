@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { api } from '../config/api';
+import { noteRestoreSignOut } from '../utils/restoreRelogin';
 import { authService } from '../services';
 import type { AdminUser } from '../types';
 
@@ -67,6 +68,9 @@ export const AdminAuthProvider: React.FC<AdminAuthProviderProps> = ({ children }
             sessionStorage.setItem('admin_user', JSON.stringify(response.data.adminUser));
           }
         } else {
+          // A restore started in this tab may have ended the session before
+          // any admin request saw the 401 (a reload in between).
+          noteRestoreSignOut();
           sessionStorage.removeItem('admin_user');
           setIsAuthenticated(false);
           setUser(null);

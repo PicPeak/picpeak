@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Calendar, 
@@ -32,6 +32,7 @@ import { eventsService } from '../../services/events.service';
 import { adminService, ActivityType, type Activity } from '../../services/admin.service';
 import { workflowsService } from '../../services/workflows.service';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
+import { RESTORE_RESULT_PATH, takeRestoreRedirect } from '../../utils/restoreRelogin';
 
 interface StatCard {
   title: string;
@@ -68,6 +69,11 @@ export function buildActivityParams(activity: Activity): Record<string, unknown>
 export const AdminDashboard: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // An SSO sign-in after the sign-out a restore forces lands here, not on
+  // the login page: take the admin on to the result of that restore (once).
+  useEffect(() => {
+    if (takeRestoreRedirect({ afterSignOut: true })) navigate(RESTORE_RESULT_PATH, { replace: true });
+  }, [navigate]);
   const { format, formatDistanceToNow } = useLocalizedDate();
 
   // Fetch dashboard statistics
