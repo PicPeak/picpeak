@@ -14,6 +14,8 @@ interface GalleryWalkthroughProps {
    */
   anchored: boolean;
   onClose: () => void;
+  /** The dialog is on screen (each time it opens). */
+  onShown?: () => void;
 }
 
 // Coach marks from Tailwind's `md` up; below it simple centered cards.
@@ -83,7 +85,7 @@ function placeCard(target: Box, card: { width: number; height: number }, vw: num
  * A dialog: focus moves into it and stays there, Escape skips the tour,
  * the arrow keys go back and forth, and focus returns to where it was.
  */
-export const GalleryWalkthrough: React.FC<GalleryWalkthroughProps> = ({ open, steps, anchored, onClose }) => {
+export const GalleryWalkthrough: React.FC<GalleryWalkthroughProps> = ({ open, steps, anchored, onClose, onShown }) => {
   const { t } = useTranslation();
   const [index, setIndex] = useState(0);
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
@@ -100,6 +102,11 @@ export const GalleryWalkthrough: React.FC<GalleryWalkthroughProps> = ({ open, st
   }, [open]);
 
   const shown = open && steps.length > 0;
+  const onShownRef = useRef(onShown);
+  onShownRef.current = onShown;
+  useEffect(() => {
+    if (shown) onShownRef.current?.();
+  }, [shown]);
   useGalleryDialog({ open: shown, onClose, panelRef, initialFocusRef: primaryRef });
 
   const current = steps[Math.min(index, steps.length - 1)];

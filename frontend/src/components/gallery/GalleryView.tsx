@@ -497,24 +497,13 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // From the /photos payload, not the prop: the prop's event shape comes
   // from /info, which does not carry this flag.
   const peopleEnabled = data?.event?.people_enabled === true;
-  // First-visit walkthrough (issue 2551). A portal customer gets the client
-  // tour without the hide step; a full-link visitor the guest one. Never in
-  // an admin preview. It waits for the feedback settings (they decide the
-  // favourites step) and for a deep-linked photo's lightbox to close.
-  const walkthroughScope: WalkthroughScope = isClient ? 'client' : viaCustomer ? 'customer' : 'guest';
-  const walkthrough = useGalleryWalkthrough({
-    slug,
-    scope: walkthroughScope,
-    enabled: data?.event?.walkthrough_enabled === true && !isAdminPreviewUrl(),
-    ready: !!data && feedbackSettings !== undefined && pendingPhotoLink === null && linkedPhotoId === null,
-  });
   const selfieSearchEnabled = peopleEnabled && data?.event?.selfie_search_enabled === true;
   // Only while the search is offered: a filter left over from before the host
   // switched it off would empty the grid with no chip to clear it.
   const activeSelfiePhotoIds = selfieSearchEnabled ? selfiePhotoIds : null;
   // Automatic scene tags (issue 1733), from the same payload.
   const tagsEnabled = data?.event?.tags_enabled === true;
-  const { data: peopleData } = useQuery({
+  const { data: peopleData, isFetched: peopleFetched } = useQuery({
     queryKey: ['gallery-people', slug, accessScope],
     queryFn: () => galleryService.getPeople(slug),
     enabled: peopleEnabled,
@@ -626,6 +615,31 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   }, [viewAll, data?.categories, delivery, t]);
 
   const people = useMemo(() => peopleInScope(allPeople, scopedPhotos), [allPeople, scopedPhotos]);
+
+  // First-visit walkthrough (issue 2551). A portal customer gets the client
+  // tour without the hide step; a full-link visitor the guest one. Never in
+  // an admin preview.
+  const walkthroughScope: WalkthroughScope = isClient ? 'client' : viaCustomer ? 'customer' : 'guest';
+  // The people step only where the people controls are on screen: the
+  // selfie button, or a strip PeopleStrip renders (two people or a scan).
+  const peopleControlsShown = peopleEnabled
+    && (selfieSearchEnabled || people.length >= 2 || peopleData?.scan?.in_progress === true);
+  // Something modal is already up (a ?download_job= link opens the size
+  // picker, a ?photo= link the lightbox): the tour waits until it closes.
+  const blockingDialogOpen = pendingPhotoLink !== null || linkedPhotoId !== null
+    || showResolutionPicker || resolutionPickerIds !== null || resumeJobToken !== null
+    || showSelfieSearch || showUploadModal || showPeopleSheet || showCopyFilenames
+    || showClientAccess || confirmClearLikes;
+  const walkthrough = useGalleryWalkthrough({
+    slug,
+    scope: walkthroughScope,
+    enabled: data?.event?.walkthrough_enabled === true && !isAdminPreviewUrl(),
+    // Steps final (feedback settings and, where on, the people list are in),
+    // the gallery actually shown (not the hidden-until-reveal notice), and
+    // nothing else modal on screen.
+    ready: !!data && !hiddenUntilReveal && feedbackSettings !== undefined
+      && (!peopleEnabled || peopleFetched) && !blockingDialogOpen,
+  });
 
   // A credit filter whose name is gone from the scope (erased by "Forget me",
   // renamed by the host) would keep emptying the grid while the chips, and
@@ -2045,7 +2059,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     likes: feedbackEnabled && !!feedbackSettings?.allow_likes,
     favorites: feedbackEnabled && !!feedbackSettings?.allow_favorites,
     downloads: allowDownloads,
-    people: peopleEnabled,
+    people: peopleControlsShown,
     selfie: selfieSearchEnabled,
     uploads: allowUploads,
   }) : [];
@@ -2397,7 +2411,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         {clientAccessDialog}
         {clearLikesDialog}
         {/* Centered cards: these layouts draw their own chrome. */}
-        <GalleryWalkthrough open={walkthrough.open} steps={walkthroughSteps} anchored={false} onClose={walkthrough.close} />
+        <GalleryWalkthrough open={walkthrough.open} steps={walkthroughSteps} anchored={false} onClose={walkthrough.close} onShown={walkthrough.markShown} />
 
         {/* Upload Modal for full-page layouts */}
         {showUploadModal && allowUploads && (
@@ -2650,7 +2664,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         })()}
       >
         {clientAccessDialog}
-        <GalleryWalkthrough open={walkthrough.open} steps={walkthroughSteps} anchored onClose={walkthrough.close} />
+        <GalleryWalkthrough open={walkthrough.open} steps={walkthroughSteps} anchored onClose={walkthrough.close} onShown={walkthrough.markShown} />
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
         <PrintShopEntry />
         {/* Expiration Banner */}

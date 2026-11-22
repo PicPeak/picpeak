@@ -84,6 +84,12 @@ vi.mock('../GallerySidebar', () => ({
     return null;
   },
 }));
+vi.mock('../PeopleStrip', () => ({ PeopleStrip: () => null }));
+vi.mock('../DownloadResolutionModal', () => ({
+  DownloadResolutionModal: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid="resolution-modal"><button type="button" onClick={onClose}>close-picker</button></div>
+  ),
+}));
 vi.mock('../PhotoGridWithLayouts', () => ({
   PhotoGridWithLayouts: (props: GridProps) => {
     captured.grid = props;
@@ -93,6 +99,7 @@ vi.mock('../PhotoGridWithLayouts', () => ({
 
 import { GalleryView } from '../GalleryView';
 import { resetWalkthroughMemory, walkthroughStorageKey } from '../walkthrough/walkthroughStorage';
+import { galleryService } from '../../../services/gallery.service';
 
 const event = {
   id: 1,
@@ -107,12 +114,13 @@ const photo = (id: number) => ({
   uploaded_at: '2026-09-19T10:00:00Z',
 });
 
-function show(eventOverrides: Record<string, unknown> = {}) {
+function show(eventOverrides: Record<string, unknown> = {}, dataOverrides: Record<string, unknown> = {}) {
   stable.photos = {
     data: {
       event: { ...event, allow_downloads: true, walkthrough_enabled: true, ...eventOverrides },
       categories: [],
       photos: [photo(7), photo(8)],
+      ...dataOverrides,
     },
     isLoading: false,
     error: null,
@@ -125,6 +133,20 @@ function show(eventOverrides: Record<string, unknown> = {}) {
     </QueryClientProvider>,
   );
 }
+
+/** Every step title, walking the open tour to its end. */
+function tourTitles(): string[] {
+  const titles: string[] = [];
+  for (let i = 0; i < 10; i += 1) {
+    titles.push(screen.getByRole('dialog').querySelector('h2')!.textContent || '');
+    const next = screen.queryByText('gallery.walkthrough.next');
+    if (!next) break;
+    fireEvent.click(next);
+  }
+  return titles.map((title) => title.replace('gallery.walkthrough.steps.', '').replace('.title', ''));
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 30));
 
 const helpButton = () => screen.queryByRole('button', { name: 'gallery.walkthrough.help' });
 
@@ -207,5 +229,57 @@ describe('GalleryView walkthrough (issue 2551)', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(helpButton()).toBeNull();
+  });
+
+  it('waits while the download dialog from a ?download_job= link is open', async () => {
+    window.history.replaceState(null, '', `/gallery/wedding?download_job=${'a'.repeat(64)}`);
+    show();
+    expect(await screen.findByTestId('resolution-modal')).toBeInTheDocument();
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(window.localStorage.getItem(walkthroughStorageKey('wedding', 'guest'))).toBeNull();
+    fireEvent.click(screen.getByText('close-picker'));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('gallery.walkthrough.steps.browse.title');
+    expect(window.localStorage.getItem(walkthroughStorageKey('wedding', 'guest'))).toBe('1');
+  });
+
+  it('does not use up the first visit while the gallery is hidden until reveal', async () => {
+    const hidden = show({}, { hidden_until_reveal: true, photos: [] });
+    await settle();
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(window.localStorage.getItem(walkthroughStorageKey('wedding', 'guest'))).toBeNull();
+    hidden.unmount();
+
+    show();
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('has a people step only when the people controls are on screen', async () => {
+    const getPeople = vi.mocked(galleryService.getPeople);
+    const withPeople = (ids: number[]) => ({
+      photos: [{ ...photo(7), person_ids: ids }, { ...photo(8), person_ids: ids }],
+    });
+
+    // One person and no scan: PeopleStrip renders nothing, no selfie search.
+    getPeople.mockResolvedValue({ people: [{ id: 1, face_count: 2 }] } as never);
+    const one = show({ people_enabled: true }, withPeople([1]));
+    await screen.findByRole('dialog');
+    expect(tourTitles()).not.toContain('faces');
+    one.unmount();
+
+    resetWalkthroughMemory();
+    window.localStorage.clear();
+    getPeople.mockResolvedValue({ people: [{ id: 1, face_count: 2 }, { id: 2, face_count: 2 }] } as never);
+    show({ people_enabled: true }, withPeople([1, 2]));
+    await screen.findByRole('dialog');
+    expect(tourTitles()).toContain('faces');
+  });
+
+  it('keeps the people step for selfie search with nobody listed yet', async () => {
+    vi.mocked(galleryService.getPeople).mockResolvedValue({ people: [] } as never);
+    show({ people_enabled: true, selfie_search_enabled: true });
+    await screen.findByRole('dialog');
+    expect(tourTitles()).toContain('faces');
   });
 });

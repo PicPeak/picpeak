@@ -85,6 +85,16 @@ describe('GalleryWalkthrough (issue 2551)', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
+  it('reports that it is on screen once per opening, never while closed', () => {
+    mockDesktop(false);
+    const onShown = vi.fn();
+    const { rerender } = render(<GalleryWalkthrough open={false} steps={steps} anchored onClose={() => {}} onShown={onShown} />);
+    expect(onShown).not.toHaveBeenCalled();
+    rerender(<GalleryWalkthrough open steps={steps} anchored onClose={() => {}} onShown={onShown} />);
+    fireEvent.click(screen.getByText('gallery.walkthrough.next'));
+    expect(onShown).toHaveBeenCalledTimes(1);
+  });
+
   it('renders nothing while closed', () => {
     render(<GalleryWalkthrough open={false} steps={steps} anchored onClose={() => {}} />);
     expect(screen.queryByRole('dialog')).toBeNull();

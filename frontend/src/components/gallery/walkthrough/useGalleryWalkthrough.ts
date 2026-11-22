@@ -7,7 +7,10 @@ interface Options {
   scope: WalkthroughScope;
   /** The gallery switched the walkthrough on, and this is no admin preview. */
   enabled: boolean;
-  /** The gallery and its feature settings have loaded, so the steps are final. */
+  /**
+   * The steps are final and the gallery is on screen with nothing else
+   * modal over it. Auto-opening waits for this.
+   */
   ready: boolean;
 }
 
@@ -16,13 +19,16 @@ export interface GalleryWalkthroughState {
   /** The help icon: reopens the tour from its first step. */
   reopen: () => void;
   close: () => void;
+  /** Called by the dialog once it is actually on screen: records it as seen. */
+  markShown: () => void;
 }
 
 /**
- * Opens the walkthrough once on a visitor's first visit (issue 2551) and
- * records that it was shown, so it does not come back on the next visit.
- * It counts as seen as soon as it opens: a visitor who reloads in the middle
- * of it has seen enough to find the help icon.
+ * Opens the walkthrough once on a visitor's first visit (issue 2551). It
+ * counts as seen when the dialog is actually on screen (markShown), not when
+ * it is asked to open: a page that never renders it (the hidden-until-reveal
+ * notice) must not use up the first visit. A visitor who reloads in the
+ * middle of it has seen enough to find the help icon.
  */
 export function useGalleryWalkthrough({ slug, scope, enabled, ready }: Options): GalleryWalkthroughState {
   const [open, setOpen] = useState(false);
@@ -30,7 +36,6 @@ export function useGalleryWalkthrough({ slug, scope, enabled, ready }: Options):
   useEffect(() => {
     if (!enabled || !ready) return;
     if (hasSeenWalkthrough(slug, scope)) return;
-    markWalkthroughSeen(slug, scope);
     setOpen(true);
   }, [enabled, ready, slug, scope]);
 
@@ -41,7 +46,8 @@ export function useGalleryWalkthrough({ slug, scope, enabled, ready }: Options):
 
   const reopen = useCallback(() => setOpen(true), []);
   const close = useCallback(() => setOpen(false), []);
-  return { open: open && enabled, reopen, close };
+  const markShown = useCallback(() => markWalkthroughSeen(slug, scope), [slug, scope]);
+  return { open: open && enabled, reopen, close, markShown };
 }
 
 /** The gallery tab an admin opened from the dashboard (#868). */
