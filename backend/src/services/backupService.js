@@ -30,6 +30,8 @@ const { withTrustedCrmAccess } = require('../database/crmAccess');
 const service = {};
 let backupJob = null;
 let isRunning = false;
+// The backup_runs row the run in this process is writing (interruptedRuns.js).
+let currentRunId = null;
 
 function ensureMockableExec() {
   const current = childProcess.exec;
@@ -1548,6 +1550,7 @@ async function runBackupInternal(isManual = false) {
       db_schema_version: schemaVersion
     }).returning('id');
     runId = insertResult[0]?.id || insertResult[0];
+    currentRunId = runId;
 
     // A destination that is itself a backed-up folder nests one more copy
     // of the tree per run (issue 1780). Before the dump, which is written
@@ -1808,6 +1811,7 @@ async function runBackupInternal(isManual = false) {
   } finally {
     if (recoveryStage) await fs.rm(recoveryStage, { recursive: true, force: true }).catch(error => logger.warn(`Could not remove recovery staging: ${error.message}`));
     isRunning = false;
+    currentRunId = null;
   }
 }
 
@@ -1976,7 +1980,7 @@ async function getBackupStatus(limit = 10) {
     // Detect zombie running rows (started >30min ago, never updated)
     // — these are processes that died without writing a completed_at.
     // Surface them so the admin can tell at a glance vs a live run.
-    const ZOMBIE_THRESHOLD_MS = 30 * 60 * 1000;
+    const { ZOMBIE_THRESHOLD_MS } = require('./interruptedRuns');
     const zombieRuns = runs.filter(r =>
       r.status === 'running'
       && r.started_at
@@ -2273,6 +2277,7 @@ service.startBackupService = startBackupService;
 service.stopBackupService = stopBackupService;
 service.triggerManualBackup = triggerManualBackup;
 service.getBackupStatus = getBackupStatus;
+service.currentRunId = () => currentRunId;
 service.cleanupOldBackupRuns = cleanupOldBackupRuns;
 service.getCurrentSchemaVersion = getCurrentSchemaVersion;
 service.getBackupManifest = getBackupManifest;
