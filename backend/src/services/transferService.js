@@ -1360,16 +1360,13 @@ async function sendTransferEmails(transferId, emails, { onlyUnsent = false } = {
   const failed = [];
   for (const email of clean) {
     if (onlyUnsent) {
-      const row = before.find((r) => r.email === email) || await recordUnsentRecipient(transferId, email);
-      // One stamp, so a failed send resets only the claim this call made.
-      const stamp = new Date();
-      const claimed = await db('transfer_recipients').where({ id: row.id }).whereNull('last_sent_at')
-        .update({ last_sent_at: stamp });
-      if (claimed !== 1) continue; // another caller is mailing it, or has
+      if (!before.some((r) => r.email === email)) await recordUnsentRecipient(transferId, email);
+      const stamp = await claimRecipient(transferId, email);
+      if (stamp === null) continue; // another caller is mailing it, or has
       if (await sendReadyEmail(transferId, email, vars)) {
         sent += 1;
       } else {
-        await db('transfer_recipients').where({ id: row.id, last_sent_at: stamp }).update({ last_sent_at: null });
+        await releaseRecipient(transferId, email, stamp);
         failed.push(email);
       }
       continue;
@@ -1401,8 +1398,9 @@ async function sendTransferEmails(transferId, emails, { onlyUnsent = false } = {
 /**
  * The one recipient row for an address, created unsent when there is none.
  * transfer_recipients has no unique (transfer_id, email) index, so two callers
- * can both insert one: the lowest id is the row both then claim, and a caller
- * whose own insert is not that row removes it again.
+ * can both insert one: the lowest id is kept and a caller whose own insert is
+ * not that row removes it again. Claims are per address (claimRecipient), so
+ * a duplicate that lives on briefly is still mailed once.
  */
 async function recordUnsentRecipient(transferId, email) {
   const [inserted] = await db('transfer_recipients').insert({
@@ -1493,14 +1491,37 @@ async function sendHeldReadyEmails(transferId) {
 
   const vars = await readyEmailVars(transfer, fileCount);
   let sent = 0;
-  for (const recipient of held) {
-    const claimed = await db('transfer_recipients')
-      .where({ id: recipient.id }).whereNull('last_sent_at')
-      .update({ last_sent_at: new Date() });
-    if (claimed !== 1) continue;
-    if (await sendReadyEmail(transferId, recipient.email, vars)) sent += 1;
+  // Per address, not per row: transfer_recipients has no unique
+  // (transfer_id, email) index, so one address can briefly have two held rows.
+  for (const email of [...new Set(held.map((r) => r.email))]) {
+    const stamp = await claimRecipient(transferId, email);
+    if (stamp === null) continue;
+    if (await sendReadyEmail(transferId, email, vars)) sent += 1;
+    // Held again, so the next trigger or an explicit send retries it.
+    else await releaseRecipient(transferId, email, stamp);
   }
   return { sent };
+}
+
+/**
+ * Claim every held row of one address with one guarded update, so whichever
+ * caller (worker, replica, request) wins mails it once. Resolves the claim's
+ * stamp, or null when another caller holds it. A send that then fails is
+ * handed to releaseRecipient, which makes the address held again.
+ */
+async function claimRecipient(transferId, email) {
+  const stamp = new Date();
+  const claimed = await db('transfer_recipients')
+    .where({ transfer_id: transferId, email }).whereNull('last_sent_at')
+    .update({ last_sent_at: stamp });
+  return claimed > 0 ? stamp : null;
+}
+
+/** Undo one claim, and only that one: a later claim carries another stamp. */
+async function releaseRecipient(transferId, email, stamp) {
+  await db('transfer_recipients')
+    .where({ transfer_id: transferId, email, last_sent_at: stamp })
+    .update({ last_sent_at: null });
 }
 
 /**

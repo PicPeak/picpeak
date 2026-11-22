@@ -339,6 +339,30 @@ describe('create, upload, deliver', () => {
     expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps a failed automatic mail held, so a later deliver sends it', async () => {
+    const send = await createSend(tokens.write);
+    // Deliver before any file: recorded held, sent automatically by the first upload.
+    expect((await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({ recipient_emails: ['auto@example.com'] })).body.held).toBe(true);
+    mockSendTemplateEmail.mockRejectedValueOnce(new Error('SMTP down'));
+    await as(tokens.write).post(`/transfers/${send.id}/files`).attach('files', Buffer.from('PK'), 'All.zip');
+    expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
+    const [row] = await db('transfer_recipients').where({ transfer_id: send.id });
+    expect(row.last_sent_at).toBeNull();
+    const deliver = await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({});
+    expect(deliver.body).toMatchObject({ sent: 1, already_sent: [], failed: [] });
+    expect(mockSendTemplateEmail).toHaveBeenCalledTimes(2);
+  });
+
+  it('mails an address once when it has two held rows', async () => {
+    const send = await createSend(tokens.write);
+    const row = { transfer_id: send.id, email: 'twice@example.com', created_at: new Date().toISOString(), last_sent_at: null };
+    await db('transfer_recipients').insert([row, row]);
+    await as(tokens.write).post(`/transfers/${send.id}/files`).attach('files', Buffer.from('PK'), 'All.zip');
+    expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
+    const rows = await db('transfer_recipients').where({ transfer_id: send.id });
+    expect(rows.every((r) => r.last_sent_at != null)).toBe(true);
+  });
+
   it('returns the link without mailing when the send has no recipients', async () => {
     const send = await createSend(tokens.write);
     const deliver = await as(tokens.write).post(`/transfers/${send.id}/deliver`).send({});
