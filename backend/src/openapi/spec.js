@@ -14,7 +14,8 @@ const baseDoc = {
     title: 'PicPeak API',
     version: 'v1',
     description:
-      'Public REST API for PicPeak — create gallery events, upload photos, fetch share links. ' +
+      'Public REST API for PicPeak — create gallery events, upload photos, fetch share links, ' +
+      'and hand files over to a client through PicTransfer. ' +
       'Authenticate with a Bearer token issued via the admin **Settings → API Tokens** tab.'
   },
   servers: [

@@ -1874,6 +1874,24 @@
         "POST /events/:id/reset-password"
       ]
     },
+    "v1/transfers.js": {
+      "decision": "partial",
+      "signals": [
+        "api_integration"
+      ],
+      "reason": "Single bit after successful admin-owned scoped API authentication, as for v1/events.js. No transfer titles, recipients, file names or sizes; API requests do not trigger reports.",
+      "route_signatures": [
+        "GET /transfers",
+        "POST /transfers",
+        "GET /transfers/:id",
+        "POST /transfers/:id/files",
+        "POST /transfers/:id/chunked-upload/init",
+        "POST /transfers/:id/chunked-upload/:uploadId/chunk/:chunkIndex",
+        "POST /transfers/:id/chunked-upload/:uploadId/complete",
+        "DELETE /transfers/:id/chunked-upload/:uploadId",
+        "POST /transfers/:id/deliver"
+      ]
+    },
     "gallery/downloads.js": {
       "decision": "excluded",
       "signals": [],

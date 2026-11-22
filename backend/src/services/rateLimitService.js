@@ -122,6 +122,24 @@ function clearSettingsCache() {
  */
 async function isAuthenticated(req) {
   try {
+    // An API v1 token (issue 2586) earns the same skip as an admin session,
+    // but only one apiTokenAuth would accept: a row that exists, is neither
+    // revoked nor expired, and belongs to an active owner. A string with the
+    // right prefix and no valid row is counted like any other request. The
+    // answer is memoized on the request, so apiTokenAuth does not read the
+    // token a second time. Only on /api/v1, the one surface a token opens:
+    // elsewhere it authenticates nothing, so it buys no budget there either.
+    // Required here, not at the top: the middleware pulls in the permission
+    // and ownership services.
+    const { resolveApiToken, TOKEN_PREFIX } = require('../middleware/apiTokenAuth');
+    const header = String(req.headers?.authorization || '');
+    if (header.startsWith(`Bearer ${TOKEN_PREFIX}`)) {
+      if (!/^\/api\/v1\//i.test(String(req.path || '').replace(/\/{2,}/g, '/'))) return false;
+      const resolved = await resolveApiToken(req);
+      if (resolved.refusal) return false;
+      req.tokenType = 'api';
+      return true;
+    }
     const slugMatch = req.path.match(/\/api\/gallery\/([^/]+)/);
     const slug = slugMatch ? slugMatch[1] : req.requestedSlug;
     const token = getAdminTokenFromRequest(req) || getGalleryTokenFromRequest(req, slug);
