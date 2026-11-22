@@ -10392,6 +10392,8 @@
     }
   },
   "bills": {
+    "catalogueCurrencyMismatch_one": "{{count}} Position stammt aus einer Katalogleistung in einer anderen Währung als {{currency}}. Ihr Preis wurde nicht umgerechnet: bitte prüfen.",
+    "catalogueCurrencyMismatch_other": "{{count}} Positionen stammen aus Katalogleistungen in einer anderen Währung als {{currency}}. Ihre Preise wurden nicht umgerechnet: bitte prüfen.",
     "status": {
       "scheduled": "Geplant",
       "draft": "Entwurf",

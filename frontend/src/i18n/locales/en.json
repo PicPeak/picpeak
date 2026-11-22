@@ -10427,6 +10427,8 @@
     }
   },
   "bills": {
+    "catalogueCurrencyMismatch_one": "{{count}} line comes from a catalogue service priced in another currency than {{currency}}. Its price was not converted: check it.",
+    "catalogueCurrencyMismatch_other": "{{count}} lines come from catalogue services priced in another currency than {{currency}}. Their prices were not converted: check them.",
     "title": "Invoices",
     "subtitle": "Schedule, send, track payments and chase late invoices.",
     "new": "New invoice",

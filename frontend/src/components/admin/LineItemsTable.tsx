@@ -1210,6 +1210,7 @@ export function toEditableLineItem(li: {
   priceMode?: PriceMode | null; rateSource?: RateSource | null; boundTo?: BoundTo | null;
   promotionSnapshot?: PromotionSnapshot | null;
   pricingFactors?: PricingFactorsSnapshot | null;
+  addsToParent?: boolean;
 }): EditableLineItem {
   return {
     id: li.id,

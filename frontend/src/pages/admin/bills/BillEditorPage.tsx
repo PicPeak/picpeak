@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye } from 'lucide-react';
-import { Button, Card, Loading, Input, LocalizedDateInput, TimeField } from '../../../components/common';
+import { Button, Card, Loading, Input, LocalizedDateInput, Notice, TimeField } from '../../../components/common';
 import { DocumentHeader } from '../../../components/admin/DocumentHeader';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { useLeaveGuard } from '../../../contexts/UnsavedChangesContext';
@@ -52,6 +52,23 @@ const invoicePriceable = (item: { priceMode?: string | null; pinnedRateMinor?: n
 // A catalogue entry with no currency fits any; otherwise it must match.
 const inCurrency = (value: string | null | undefined, currency: string) => !value
   || value.toUpperCase() === String(currency || '').toUpperCase();
+
+/**
+ * How many lines came from a catalogue service priced in another currency than
+ * the invoice (it changed after they were added): their prices are snapshots
+ * and were not converted.
+ */
+export function foreignCurrencyLineCount(
+  lines: Array<{ cataloguePresetId?: number | null }>,
+  presets: LineItemPreset[],
+  currency: string,
+): number {
+  return lines.filter((li) => {
+    if (li.cataloguePresetId == null) return false;
+    const service = presets.find((p) => p.id === li.cataloguePresetId);
+    return Boolean(service) && !inCurrency(service?.currency, currency);
+  }).length;
+}
 
 /**
  * The catalogue an invoice in `currency` offers: services it can price on its
@@ -313,6 +330,13 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   const { presets: invoicePresets, packages: invoicePackages } = useMemo(
     () => invoiceCatalogue(liPresets?.presets || [], packages, currency),
     [liPresets, packages, currency],
+  );
+  // Catalogue lines whose service is priced in another currency than the
+  // invoice (the currency changed after they were added). Their prices are
+  // snapshots and were not converted, so say so where they are edited.
+  const foreignCurrencyLines = useMemo(
+    () => foreignCurrencyLineCount(lineItems, liPresets?.presets || [], currency),
+    [lineItems, liPresets, currency],
   );
   const { data: outputVatCodes } = useQuery({ queryKey: ['vat-codes', 'output'], queryFn: () => vatCodesService.listOutput() });
   const didSeedVatRef = useRef(false);
@@ -805,6 +829,18 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
           vatRoundDown={ukBusiness} onChange={setLineItems}
           presets={catalogueOn ? invoicePresets : []}
           packages={catalogueOn ? invoicePackages : []} />
+        {foreignCurrencyLines > 0 && (
+          <div className="mt-3">
+            <Notice tone="warning">
+              {t('bills.catalogueCurrencyMismatch', {
+                count: foreignCurrencyLines,
+                currency,
+                defaultValue: '{{count}} line comes from a catalogue service priced in another currency than {{currency}}. Its price was not converted: check it.',
+                defaultValue_other: '{{count}} lines come from catalogue services priced in another currency than {{currency}}. Their prices were not converted: check them.',
+              })}
+            </Notice>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
           <VatRateSelect
             label={t('bills.field.vatRate', 'VAT rate %') as string}

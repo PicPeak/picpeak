@@ -360,17 +360,7 @@ async function getMonthlyDraft(customerId) {
     })),
   };
 }
-/**
- * The net of an unissued invoice whose lines changed in place (a monthly
- * draft taking an append, an hours entry edited or removed, a re-bill
- * unwound), by the same rule as createInvoice:
- *   - a parent's stored total follows its priced sub-items (migration 119)
- *     and adds its options (migration 371); parents that disagree are
- *     rewritten, audited, so the net matches the lines the PDF prints;
- *   - with crm_invoice_round_total on, the net is the full-precision sum
- *     rounded once (utils/invoiceRounding).
- * Callers keep their own VAT step. Returns the net and the lines read.
- */
+
 /**
  * Whether an invoice's scheduled send time has come (it is armed for sending,
  * so issued). No send time: not armed. A send time that can't be read counts
@@ -384,12 +374,22 @@ function isArmed(scheduledSendAt) {
   return at == null || at <= Date.now();
 }
 
+/**
+ * The net of an unissued invoice whose lines changed in place (a monthly
+ * draft taking an append, an hours entry edited or removed, a re-bill
+ * unwound), by the same rule as createInvoice:
+ *   - a parent's stored total follows its priced sub-items (migration 119)
+ *     and adds its options (migration 371); parents that disagree are
+ *     rewritten, audited, so the net matches the lines the PDF prints;
+ *   - with crm_invoice_round_total on, the net is the full-precision sum
+ *     rounded once (utils/invoiceRounding).
+ * Callers keep their own VAT step. Returns the net and the lines read.
+ */
 async function resolveUnissuedInvoiceNet(trx, invoiceId, audit = {}) {
-  // Every caller checks first; this holds the line for a future one. An
-  // invoice that left 'scheduled' (armed, sent, paid, cancelled) is issued or
-  // closed, and its lines are never rewritten.
-  // Open means: still 'scheduled', not a Storno, and either the running
-  // monthly draft or not yet due to be sent (an armed invoice is issued).
+  // Every caller checks first; this holds the line for a future one. Open
+  // means: still 'scheduled', not a Storno, and either the running monthly
+  // draft or not yet due to be sent. Anything else is issued or closed, and
+  // its lines are never rewritten.
   const invoice = await trx('invoices').where({ id: invoiceId })
     .first('status', 'kind', 'is_monthly_draft', 'scheduled_send_at');
   const monthlyDraft = invoice && (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1);

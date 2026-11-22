@@ -2,7 +2,7 @@
  * What the invoice editor's catalogue offers (service options PR): only what
  * an invoice can price on its own, in the invoice's currency.
  */
-import { invoiceCatalogue } from '../BillEditorPage';
+import { foreignCurrencyLineCount, invoiceCatalogue } from '../BillEditorPage';
 import type { LineItemPreset } from '../../../../services/quotes.service';
 import type { QuotePackage } from '../../../../services/quoteCatalog.service';
 
@@ -36,4 +36,13 @@ test('offers only packages in its currency made of such services', () => {
     pkg({ id: 12, items: [{ presetId: 5, priceMode: 'fixed' }] as QuotePackage['items'] }),
   ];
   expect(invoiceCatalogue(presets, packages, 'CHF').packages.map((p) => p.id)).toEqual([10]);
+});
+
+test('counts catalogue lines priced in another currency than the invoice', () => {
+  const presets = [preset({ id: 1, currency: 'CHF' }), preset({ id: 2, currency: 'EUR' })];
+  const lines = [{ cataloguePresetId: 1 }, { cataloguePresetId: 2 }, { cataloguePresetId: null }, { cataloguePresetId: 99 }];
+  // The currency changed to EUR after the CHF line was added; an unknown service isn't counted.
+  expect(foreignCurrencyLineCount(lines, presets, 'EUR')).toBe(1);
+  expect(foreignCurrencyLineCount(lines, presets, 'chf')).toBe(1);
+  expect(foreignCurrencyLineCount([{ cataloguePresetId: 1 }], presets, 'CHF')).toBe(0);
 });
