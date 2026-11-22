@@ -2278,6 +2278,7 @@ service.stopBackupService = stopBackupService;
 service.triggerManualBackup = triggerManualBackup;
 service.getBackupStatus = getBackupStatus;
 service.currentRunId = () => currentRunId;
+service.isBackupRunning = () => isRunning;
 service.cleanupOldBackupRuns = cleanupOldBackupRuns;
 service.getCurrentSchemaVersion = getCurrentSchemaVersion;
 service.getBackupManifest = getBackupManifest;
