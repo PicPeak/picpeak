@@ -10,7 +10,7 @@ const zlib = require('zlib');
 const knex = require('knex');
 const { Readable } = require('stream');
 const {
-  readDumpLedger, readPgDumpLedger, LedgerUnreadableError,
+  readDumpLedger, readPgDumpLedger, pgDumpLedgerParser, LedgerUnreadableError,
 } = require('../../src/services/nativeDumpLedger');
 const { DecompressLimitError } = require('../../src/utils/decompressLimit');
 
@@ -89,6 +89,50 @@ describe('readPgDumpLedger', () => {
   it('is unreadable, not guessed, when the dump ends inside a string', async () => {
     const dump = 'INSERT INTO public.events (id, title) VALUES (1, \'never closed\nCOPY public.migrations (id, filename) FROM stdin;\n';
     await expect(readPgDumpLedger(fromText(dump))).rejects.toBeInstanceOf(LedgerUnreadableError);
+  });
+
+  it.each(['pgDumpPlainLedger.sql', 'pgDumpPlainAdversarial.sql', 'pgDumpInsertsAdversarial.sql'])(
+    'reads %s the same whatever the chunk boundaries', (name) => {
+      const text = fs.readFileSync(path.join(__dirname, '../fixtures', name), 'utf8');
+      for (const size of [1, 2, 3, 7, 64, 257]) {
+        const parser = pgDumpLedgerParser();
+        for (let i = 0; i < text.length; i += size) parser.feed(text.slice(i, i + size));
+        expect(parser.end()).toEqual(['001_init.js', '366_fix_translated_email_template_placeholders.js']);
+      }
+    },
+  );
+
+  describe('long lines', () => {
+    const MiB = 1024 * 1024;
+    const LEDGER = 'COPY public.migrations (id, filename) FROM stdin;\n1\t001_init.js\n\\.\n';
+    const feedChunked = (parser, parts) => {
+      for (const part of parts) for (let i = 0; i < part.length; i += 16 * 1024) parser.feed(part.slice(i, i + 16 * 1024));
+      return parser.end();
+    };
+
+    it.each([
+      ['a COPY row of another table', (v) => ['COPY public.events (id, title) FROM stdin;\n1\t', v, '\n\\.\n']],
+      ['an INSERT of another table', (v) => ['INSERT INTO public.events VALUES (1, \'', v, '\');\n']],
+    ])('skips %s of 32 MiB in linear time without buffering it', (_label, rows) => {
+      const parser = pgDumpLedgerParser();
+      const started = Date.now();
+      expect(feedChunked(parser, [...rows('x'.repeat(32 * MiB)), LEDGER])).toEqual(['001_init.js']);
+      expect(Date.now() - started).toBeLessThan(3000);
+      // Nothing beyond the head of a line (256 characters) was held.
+      expect(parser.maxBuffered).toBeLessThanOrEqual(256);
+    });
+
+    it('is unreadable when a ledger row or ledger INSERT passes the 1 MiB cap', () => {
+      const row = pgDumpLedgerParser();
+      expect(() => feedChunked(row, [`COPY public.migrations (id, filename) FROM stdin;\n1\t${'x'.repeat(2 * MiB)}.js\n\\.\n`]))
+        .toThrow(LedgerUnreadableError);
+      expect(row.maxBuffered).toBeLessThanOrEqual(MiB + 16 * 1024);
+
+      const insert = pgDumpLedgerParser();
+      expect(() => feedChunked(insert, [`INSERT INTO public.migrations (id, filename) VALUES (1, '${'x'.repeat(2 * MiB)}.js');\n`]))
+        .toThrow(LedgerUnreadableError);
+      expect(insert.maxBuffered).toBeLessThanOrEqual(MiB + 16 * 1024);
+    });
   });
 
   it('finds the filename column wherever the COPY column list puts it, quoted or not', async () => {

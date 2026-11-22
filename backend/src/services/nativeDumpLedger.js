@@ -100,78 +100,123 @@ function insertTuples(text) {
   }
 }
 
-// Where a line of SQL leaves the lexer: inside a string, quoted identifier,
-// dollar-quoted body or block comment, and whether the last token outside
-// all of them ended a statement. Only a line that starts at a statement
-// boundary can be a ledger statement; text inside another table's string
-// value (a multi-line event title in an --inserts dump, a function body)
-// never is.
+// The most a ledger statement, a ledger COPY row or the head of any line is
+// buffered to. A migrations row or INSERT header never comes close; past it
+// the dump is unreadable (warn path) rather than held in memory.
+const LINE_CAP = 1024 * 1024;
+// How much of a line at a statement start is looked at to decide whether it
+// can be a ledger statement (COPY / CREATE TABLE / INSERT INTO migrations).
+const HEAD_BYTES = 256;
+
+// Where the SQL read so far leaves the lexer: inside a string, quoted
+// identifier, dollar-quoted body or comment, and whether the last token
+// outside all of them ended a statement. Only a line that starts at a
+// statement boundary can be a ledger statement; text inside another table's
+// string value (a multi-line event title in an --inserts dump, a function
+// body) never is. It reads any piece of the stream at a time, so a long
+// value is scanned once, as it arrives, and never buffered.
 function sqlLexer() {
-  const state = { quote: null, dollar: null, comment: 0, ended: true };
-  const identChar = ch => /[A-Za-z0-9_]/.test(ch || '');
-  return {
-    atStatementStart: () => state.quote === null && state.dollar === null && state.comment === 0 && state.ended,
-    neutral: () => state.quote === null && state.dollar === null && state.comment === 0,
-    ended: () => state.ended,
-    scan(line) {
-      let i = 0;
-      while (i < line.length) {
-        const c = line[i];
-        if (state.comment > 0) {
-          if (c === '*' && line[i + 1] === '/') { state.comment -= 1; i += 2; continue; }
-          if (c === '/' && line[i + 1] === '*') { state.comment += 1; i += 2; continue; }
-          i += 1; continue;
-        }
-        if (state.dollar !== null) {
-          const close = `$${state.dollar}$`;
-          if (line.startsWith(close, i)) { state.dollar = null; i += close.length; continue; }
-          i += 1; continue;
-        }
-        if (state.quote === '\'' || state.quote === 'E\'') {
-          if (state.quote === 'E\'' && c === '\\') { i += 2; continue; }
-          if (c === '\'') {
-            if (line[i + 1] === '\'') { i += 2; continue; }
-            state.quote = null;
-          }
-          i += 1; continue;
-        }
-        if (state.quote === '"') {
-          if (c === '"') {
-            if (line[i + 1] === '"') { i += 2; continue; }
-            state.quote = null;
-          }
-          i += 1; continue;
-        }
-        if (c === '-' && line[i + 1] === '-') break;
-        if (c === '/' && line[i + 1] === '*') { state.comment = 1; i += 2; continue; }
-        if (/\s/.test(c)) { i += 1; continue; }
-        state.ended = c === ';';
-        if (c === '\'') {
-          state.quote = (line[i - 1] === 'E' || line[i - 1] === 'e') && !identChar(line[i - 2]) ? 'E\'' : '\'';
-        } else if (c === '"') {
-          state.quote = '"';
-        } else if (c === '$' && !identChar(line[i - 1])) {
-          const tag = line.slice(i).match(/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/);
-          if (tag) { state.dollar = tag[1] || ''; i += tag[0].length; continue; }
-        }
-        i += 1;
+  let mode = 'code'; // code | sq | sqEnd | esq | esqEsc | dq | dqEnd | dash | slash | line | block | blockStar | blockSlash | tag | dollar
+  let depth = 0; // block comment nesting
+  let ended = true;
+  let prev1 = ''; // the two code characters before the current one
+  let prev2 = '';
+  let tag = '';
+  let close = '';
+  let matched = 0; // how much of `$tag$` the dollar body has matched
+  const ident = ch => /[A-Za-z0-9_]/.test(ch);
+
+  const code = (c) => {
+    if (c === '-') { mode = 'dash'; return; }
+    if (c === '/') { mode = 'slash'; return; }
+    if (/\s/.test(c)) { prev2 = prev1; prev1 = c; return; }
+    ended = c === ';';
+    if (c === '\'') {
+      mode = (prev1 === 'E' || prev1 === 'e') && !ident(prev2) ? 'esq' : 'sq';
+    } else if (c === '"') {
+      mode = 'dq';
+    } else if (c === '$' && !ident(prev1)) {
+      mode = 'tag';
+      tag = '';
+    }
+    prev2 = prev1; prev1 = c;
+  };
+
+  const step = (c) => {
+    switch (mode) {
+    case 'code': code(c); return;
+    case 'sq': if (c === '\'') mode = 'sqEnd'; return;
+    case 'sqEnd': if (c === '\'') { mode = 'sq'; return; } mode = 'code'; prev1 = '\''; code(c); return;
+    case 'esq': if (c === '\\') mode = 'esqEsc'; else if (c === '\'') mode = 'sqEnd'; return;
+    case 'esqEsc': mode = 'esq'; return;
+    case 'dq': if (c === '"') mode = 'dqEnd'; return;
+    case 'dqEnd': if (c === '"') { mode = 'dq'; return; } mode = 'code'; prev1 = '"'; code(c); return;
+    case 'dash':
+      if (c === '-') { mode = 'line'; return; }
+      mode = 'code'; ended = false; prev2 = prev1; prev1 = '-'; code(c); return;
+    case 'slash':
+      if (c === '*') { mode = 'block'; depth = 1; return; }
+      mode = 'code'; ended = false; prev2 = prev1; prev1 = '/'; code(c); return;
+    case 'line': if (c === '\n') mode = 'code'; return;
+    case 'block': if (c === '*') mode = 'blockStar'; else if (c === '/') mode = 'blockSlash'; return;
+    case 'blockStar':
+      if (c === '/') { depth -= 1; mode = depth ? 'block' : 'code'; return; }
+      mode = 'block'; step(c); return;
+    case 'blockSlash':
+      if (c === '*') { depth += 1; mode = 'block'; return; }
+      mode = 'block'; step(c); return;
+    case 'tag':
+      if (c === '$') { close = `$${tag}$`; matched = 0; mode = 'dollar'; return; }
+      if ((tag ? /[A-Za-z0-9_]/ : /[A-Za-z_]/).test(c) && tag.length < 64) { tag += c; return; }
+      // `$1` or a lone `$`: not a dollar quote.
+      mode = 'code'; prev1 = tag ? tag[tag.length - 1] : '$'; code(c); return;
+    case 'dollar':
+      if (c === close[matched]) {
+        matched += 1;
+        if (matched === close.length) { mode = 'code'; prev1 = '$'; }
+      } else {
+        matched = c === '$' ? 1 : 0;
       }
-    },
+      return;
+    default: throw new Error(`lexer mode ${mode}`);
+    }
+  };
+
+  return {
+    scan(text) { for (let i = 0; i < text.length; i += 1) step(text[i]); },
+    neutral: () => mode === 'code' || mode === 'line' || mode === 'dash' || mode === 'slash',
+    atStatementStart: () => (mode === 'code' || mode === 'line') && ended,
+    ended: () => ended,
   };
 }
 
 /**
- * A line-by-line reader of a plain pg_dump. Feed it every line, then call
- * end() for the ledger. Ledger statements are recognised only where a
- * statement starts; a dump that ends inside a string or statement is
+ * A streaming reader of a plain pg_dump: feed() it the text as it arrives,
+ * then end() for the ledger. Ledger statements are recognised only where a
+ * statement starts. Every byte is looked at once; nothing longer than
+ * LINE_CAP is ever held (maxBuffered reports the most that was), and COPY
+ * data of other tables is skipped without buffering its rows. A dump that
+ * ends inside a string or statement, or a ledger line past the cap, is
  * unreadable rather than read as a guess.
  */
 function pgDumpLedgerParser() {
   let names = null;
   let tableColumns = null;
   let create = null; // column names while inside CREATE TABLE migrations
-  let copy = null; // { ledger: boolean, index }
   let insert = null; // { index, text } until the statement's closing ';'
+  // What the current line is: 'start' (beginning of a line), 'head' (the
+  // first bytes of a line at a statement start, held to classify it),
+  // 'lex' (the rest of a line that is no ledger statement: lexed, not
+  // held), 'meta' (a psql \command line), 'line' (a whole line held for
+  // the ledger: a COPY header, CREATE/INSERT INTO migrations, a ledger row),
+  // 'copySkip' (another table's COPY data).
+  let mode = 'start';
+  let buf = '';
+  let copyLedger = null; // { index } inside the migrations COPY block
+  // copySkip: the first bytes of the current data line, enough to see `\.`.
+  let skipHead = '';
+  let skipLen = 0;
+  let maxBuffered = 0;
   const lexer = sqlLexer();
 
   const filenameIndex = (columns) => {
@@ -183,11 +228,18 @@ function pgDumpLedgerParser() {
     if (names === null) names = [];
     if (typeof value === 'string') names.push(value);
   };
+  const hold = (text) => {
+    buf += text;
+    if (buf.length > LINE_CAP) throw new LedgerUnreadableError(`A ledger line of the dump is longer than ${LINE_CAP} characters`);
+    if (buf.length > maxBuffered) maxBuffered = buf.length;
+  };
   const statementDone = () => lexer.neutral() && lexer.ended();
 
   const insertLine = (text) => {
     insert.text += `\n${text}`;
-    lexer.scan(text);
+    if (insert.text.length > LINE_CAP) throw new LedgerUnreadableError('An INSERT into migrations is longer than the cap');
+    if (insert.text.length > maxBuffered) maxBuffered = insert.text.length;
+    lexer.scan(`${text}\n`);
     if (!statementDone()) return;
     const statement = insert.text.trim();
     if (!statement.endsWith(';')) throw new LedgerUnreadableError('Malformed INSERT into migrations');
@@ -195,56 +247,126 @@ function pgDumpLedgerParser() {
     insert = null;
   };
 
-  return {
-    line(line) {
-      if (copy) {
-        // COPY data: one row per line, newlines inside values escaped.
-        if (line === '\\.') { copy = null; return; }
-        if (copy.ledger) add(copyField(line.split('\t')[copy.index] ?? '\\N'));
-        return;
+  // A whole held line, without its newline.
+  const line = (text) => {
+    if (copyLedger) {
+      if (text === '\\.') { copyLedger = null; return; }
+      add(copyField(text.split('\t')[copyLedger.index] ?? '\\N'));
+      return;
+    }
+    if (insert) { insertLine(text); return; }
+    if (create) {
+      if (lexer.neutral()) {
+        const m = text.match(/^\s*("(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)\s/);
+        if (m && !/^(CONSTRAINT|PRIMARY|UNIQUE|CHECK|FOREIGN|EXCLUDE)$/i.test(m[1])) {
+          create.push(m[1].replace(/^"(.*)"$/, '$1'));
+        }
       }
-      if (insert) { insertLine(line); return; }
-      if (create) {
-        if (lexer.neutral()) {
-          const m = line.match(/^\s*("(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)\s/);
-          if (m && !/^(CONSTRAINT|PRIMARY|UNIQUE|CHECK|FOREIGN|EXCLUDE)$/i.test(m[1])) {
-            create.push(m[1].replace(/^"(.*)"$/, '$1'));
+      lexer.scan(`${text}\n`);
+      if (statementDone()) {
+        tableColumns = create;
+        create = null;
+        if (names === null) names = [];
+      }
+      return;
+    }
+    // A line at a statement start.
+    const ledgerCopy = text.match(COPY_LEDGER_RE);
+    if (ledgerCopy) {
+      if (names === null) names = [];
+      copyLedger = { index: filenameIndex(identifiers(ledgerCopy[1])) };
+      return;
+    }
+    if (COPY_ANY_RE.test(text)) { mode = 'copySkip'; skipHead = ''; skipLen = 0; return; }
+    if (CREATE_LEDGER_RE.test(text)) { create = []; lexer.scan(`${text}\n`); return; }
+    const start = text.match(INSERT_LEDGER_RE);
+    if (start) {
+      const columns = start[1] ? identifiers(start[1]) : tableColumns;
+      if (!columns) throw new LedgerUnreadableError('INSERT into migrations before its CREATE TABLE');
+      insert = { index: filenameIndex(columns), text: '' };
+      // The header itself holds no quote; the lexer sees only the values.
+      lexer.scan(text.slice(0, text.length - start[2].length));
+      insertLine(start[2]);
+      return;
+    }
+    lexer.scan(`${text}\n`);
+  };
+
+  // Whether the head of a line at a statement start may be a ledger
+  // statement (held whole) or is anything else (lexed as it streams).
+  const ledgerHead = head => /^COPY\s/i.test(head)
+    || new RegExp(String.raw`^CREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?${TABLE}[\s(]`, 'i').test(head)
+    || new RegExp(String.raw`^INSERT\s+INTO\s+${TABLE}[\s(]`, 'i').test(head);
+
+  const endLine = (text) => {
+    line(text.replace(/\r$/, ''));
+    if (mode !== 'copySkip') mode = 'start';
+  };
+
+  const feed = (text) => {
+    let pos = 0;
+    while (pos < text.length) {
+      if (mode === 'copySkip') {
+        // Another table's COPY data: only `\.` alone on a line matters.
+        const nl = text.indexOf('\n', pos);
+        const stop = nl < 0 ? text.length : nl;
+        if (skipHead.length < 3) skipHead += text.slice(pos, Math.min(stop, pos + 3 - skipHead.length));
+        skipLen += stop - pos;
+        if (nl < 0) return;
+        if ((skipLen === 2 && skipHead === '\\.') || (skipLen === 3 && skipHead === '\\.\r')) mode = 'start';
+        skipHead = '';
+        skipLen = 0;
+        pos = nl + 1;
+        continue;
+      }
+      if (mode === 'start') {
+        buf = '';
+        if (copyLedger || insert || create) mode = 'line';
+        else if (lexer.atStatementStart()) mode = 'head';
+        else mode = 'lex';
+      }
+      const nl = text.indexOf('\n', pos);
+      const stop = nl < 0 ? text.length : nl;
+      if (mode === 'lex') {
+        lexer.scan(text.slice(pos, nl < 0 ? text.length : nl + 1));
+        if (nl >= 0) mode = 'start';
+      } else if (mode === 'meta') {
+        if (nl >= 0) mode = 'start';
+      } else if (mode === 'line') {
+        hold(text.slice(pos, stop));
+        if (nl >= 0) endLine(buf);
+      } else { // head
+        const seg = text.slice(pos, Math.min(stop, pos + HEAD_BYTES - buf.length));
+        hold(seg);
+        pos += seg.length;
+        if (nl >= 0 && pos === stop) {
+          // The whole line is in: a psql \command, or a statement start.
+          if (buf.startsWith('\\')) mode = 'start'; else endLine(buf);
+          pos = nl + 1;
+        } else if (buf.length >= HEAD_BYTES) {
+          // A long line: decide on its head.
+          if (buf.startsWith('\\')) { mode = 'meta'; buf = ''; } else if (ledgerHead(buf)) { mode = 'line'; } else {
+            lexer.scan(buf);
+            buf = '';
+            mode = 'lex';
           }
         }
-        lexer.scan(line);
-        if (statementDone()) {
-          tableColumns = create;
-          create = null;
-          if (names === null) names = [];
-        }
-        return;
+        continue;
       }
-      if (lexer.atStatementStart()) {
-        // psql meta-commands (\connect, \restrict) end at the line.
-        if (/^\\/.test(line)) return;
-        const copyLedger = line.match(COPY_LEDGER_RE);
-        if (copyLedger) {
-          if (names === null) names = [];
-          copy = { ledger: true, index: filenameIndex(identifiers(copyLedger[1])) };
-          return;
-        }
-        if (COPY_ANY_RE.test(line)) { copy = { ledger: false }; return; }
-        if (CREATE_LEDGER_RE.test(line)) { create = []; lexer.scan(line); return; }
-        const start = line.match(INSERT_LEDGER_RE);
-        if (start) {
-          const columns = start[1] ? identifiers(start[1]) : tableColumns;
-          if (!columns) throw new LedgerUnreadableError('INSERT into migrations before its CREATE TABLE');
-          insert = { index: filenameIndex(columns), text: '' };
-          // The header itself holds no quote; the lexer sees only the values.
-          lexer.scan(line.slice(0, line.length - start[2].length));
-          insertLine(start[2]);
-          return;
-        }
-      }
-      lexer.scan(line);
-    },
+      pos = nl < 0 ? text.length : nl + 1;
+    }
+  };
+
+  return {
+    feed,
+    /** A whole line, as feed() would take it with its newline. */
+    line: text => feed(`${text}\n`),
+    get maxBuffered() { return maxBuffered; },
     end() {
-      if (copy && copy.ledger) throw new LedgerUnreadableError('The dump ends inside the migrations COPY block');
+      // A last line without a newline.
+      if (buf && (mode === 'head' || mode === 'line') && !(mode === 'head' && buf.startsWith('\\'))) endLine(buf);
+      buf = '';
+      if (copyLedger) throw new LedgerUnreadableError('The dump ends inside the migrations COPY block');
       if (create) throw new LedgerUnreadableError('The dump ends inside the migrations CREATE TABLE');
       if (insert) throw new LedgerUnreadableError('The dump ends inside an INSERT into migrations');
       if (!lexer.neutral()) throw new LedgerUnreadableError('The dump ends inside a quoted string or comment');
@@ -258,16 +380,7 @@ function pgDumpLedgerParser() {
 async function readPgDumpLedger(...streams) {
   const parser = pgDumpLedgerParser();
   const decoder = new StringDecoder('utf8');
-  let rest = '';
   let first = true;
-  const feed = (text) => {
-    rest += text;
-    let newline;
-    while ((newline = rest.indexOf('\n')) >= 0) {
-      parser.line(rest.slice(0, newline).replace(/\r$/, ''));
-      rest = rest.slice(newline + 1);
-    }
-  };
   await pipeline(...streams, new Writable({
     write(chunk, _enc, done) {
       try {
@@ -277,14 +390,13 @@ async function readPgDumpLedger(...streams) {
           throw new LedgerUnreadableError('The dump is a pg_dump custom-format archive, not a plain SQL dump');
         }
         first = false;
-        feed(typeof chunk === 'string' ? chunk : decoder.write(chunk));
+        parser.feed(typeof chunk === 'string' ? chunk : decoder.write(chunk));
         done();
       } catch (err) { done(err); }
     },
     final(done) {
       try {
-        feed(decoder.end());
-        if (rest) parser.line(rest.replace(/\r$/, ''));
+        parser.feed(decoder.end());
         done();
       } catch (err) { done(err); }
     },
