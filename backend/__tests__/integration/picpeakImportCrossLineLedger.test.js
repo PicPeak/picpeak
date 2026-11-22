@@ -79,8 +79,10 @@ describe('cross-line migration ledger on a portable restore (issue 2480)', () =>
     });
 
     it('drops the twins of the other line and refuses names without a counterpart', () => {
-      const result = classifyLedger(['001_init.js', ...Object.keys(MAIN_TWINS), FOREIGN, '900_newer.js', 'init.js']);
-      expect(result.keep).toEqual(['001_init.js', 'init.js']);
+      const result = classifyLedger(['001_init.js', ...Object.keys(MAIN_TWINS), FOREIGN, '900_newer.js', 'init.js',
+        '014_add_host_name_to_events.js', '027_add_rate_limit_settings.js']);
+      // Names an install from before the migrations reorganisation still records.
+      expect(result.keep).toEqual(['001_init.js', 'init.js', '014_add_host_name_to_events.js', '027_add_rate_limit_settings.js']);
       expect(result.twins).toEqual(Object.keys(MAIN_TWINS));
       expect(result.unknown).toEqual([FOREIGN, '900_newer.js']);
     });
