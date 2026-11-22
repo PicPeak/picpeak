@@ -220,10 +220,13 @@ describe('PicTransfer ownership guards (#998)', () => {
     });
 
     it('answers missing and foreign ids identically, so it is not an existence oracle', () => {
-      const guard = routerSrc.slice(
-        routerSrc.indexOf('async function requireTransferOwnership'),
-        routerSrc.indexOf('// List'),
+      // The guard lives in the module shared with the API v1 transfer routes.
+      const guardSrc = fs.readFileSync(
+        path.join(__dirname, '../../src/middleware/transferDeliverables.js'), 'utf8',
       );
+      const start = guardSrc.indexOf('async function requireTransferOwnership');
+      expect(start).toBeGreaterThan(-1);
+      const guard = guardSrc.slice(start, guardSrc.indexOf('\n}\n', start));
       // Both branches must 404. A 403 on foreign would confirm the row exists.
       const notFounds = [...guard.matchAll(/status\(404\)/g)];
       expect(notFounds.length).toBeGreaterThanOrEqual(2);

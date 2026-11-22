@@ -20,6 +20,8 @@ const GUARDED = [
   ['adminExternalMedia.js', "router.post('/events/:id/import-external'", 'requireEventOwnership'],
   ['v1/events.js', "'/events/:id/photos',", 'requireEventOwnership'],
   ['v1/events.js', "'/events/:id/photos/download',", 'requireEventOwnership'],
+  ['v1/transfers.js', "router.post('/transfers/:id/files'", '...ownedWrite'],
+  ['v1/transfers.js', "router.post('/transfers/:id/chunked-upload/init'", '...ownedWrite'],
 ];
 
 // A resumed chunked upload must be able to finish, so these stay unguarded.
@@ -29,6 +31,8 @@ const NEVER_GUARDED = [
   ['adminPhotos.js', "router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex'"],
   ['adminTransfers.js', "router.post('/:id/chunked-upload/:uploadId/chunk/:chunkIndex'"],
   ['adminTransfers.js', "router.post('/:id/chunked-upload/:uploadId/complete'"],
+  ['v1/transfers.js', "router.post('/transfers/:id/chunked-upload/:uploadId/chunk/:chunkIndex'"],
+  ['v1/transfers.js', "router.post('/transfers/:id/chunked-upload/:uploadId/complete'"],
   ['publicTransferUpload.js', "router.post('/:token/chunked-upload/:uploadId/chunk/:chunkIndex'"],
   ['publicTransferUpload.js', "router.post('/:token/chunked-upload/:uploadId/complete'"],
 ];
@@ -67,7 +71,9 @@ describe('capability guard placement', () => {
 
   it('decides a transfer create in its file filter, before any file is staged', () => {
     const source = fs.readFileSync(path.join(__dirname, '../..', ROUTES, 'adminTransfers.js'), 'utf8');
-    const filter = source.slice(source.indexOf('fileFilter:'));
+    // The multer instance is shared with the API v1 transfer routes.
+    const shared = fs.readFileSync(path.join(__dirname, '../..', 'src/middleware/transferDeliverables.js'), 'utf8');
+    const filter = shared.slice(shared.indexOf('fileFilter:'));
     expect(filter.indexOf('capabilityPaused(capability)')).toBeGreaterThan(-1);
     expect(filter.indexOf('capabilityPaused(capability)')).toBeLessThan(filter.indexOf('return cb(null, true)'));
     const create = source.slice(source.indexOf("router.post('/',"));
