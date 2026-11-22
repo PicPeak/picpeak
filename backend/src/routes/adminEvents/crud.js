@@ -36,6 +36,7 @@ const eventAdminAssignments = require('../../services/eventAdminAssignmentsServi
 const { mayReviewUploads, holdsForReview } = require('../../services/uploadReviewService');
 const { applyEventListSort } = require('./listSort');
 const { chapterStyleOf, chapterRowsForEvent, chapterFieldsOf } = require('../../services/categoryChapters');
+const { TEXT_LANGUAGES, TEXT_LANGUAGE_MODES, languageSettingsOf, copyTranslations } = require('../../services/contentTranslations');
 const { VIDEO_COUNT_SQL, VIDEO_DURATION_SQL } = require('../../utils/mediaTypeSql');
 
 const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../../utils/galleryPasswordVault');
@@ -1110,6 +1111,8 @@ module.exports = (router) => {
         ...slideshowStyle,
         // Chapter markers are part of the gallery's look (issue 2548).
         ...(eventColumns.has('chapter_marker_style') ? { chapter_marker_style: chapterStyleOf(source) } : {}),
+        // So are its languages (issue 2550); the texts are copied below.
+        ...(eventColumns.has('text_language_mode') ? languageSettingsOf(source) : {}),
       }).returning('id');
 
       const newEventId = insertResult[0]?.id || insertResult[0];
@@ -1218,6 +1221,12 @@ module.exports = (router) => {
           updated_at: new Date().toISOString(),
         });
       }
+
+      // Translated texts (issue 2550) follow their entity the same way. The
+      // title's are copied only when the copy keeps the source's title: a
+      // renamed copy would show the old name in every other language.
+      const keepsTitle = String(event_name) === String(source.event_name);
+      await copyTranslations(id, newEventId, copiedCategoryId, { skip: keepsTitle ? [] : ['event:event_name'] });
 
       await logActivity('event_duplicated',
         { source_event_id: parseInt(id, 10), source_event_name: source.event_name },
@@ -1382,6 +1391,11 @@ module.exports = (router) => {
     body('videos_first').optional().isBoolean(),
     // Chapter markers above the categories (issue 2548).
     body('chapter_marker_style').optional().isIn(['off', 'divider', 'hero']),
+    // Multilingual texts (issue 2550): the mode and the two languages it
+    // names; the texts themselves go through /:id/translations.
+    body('text_language_mode').optional().isIn(TEXT_LANGUAGE_MODES),
+    body('text_primary_language').optional({ nullable: true }).isIn(TEXT_LANGUAGES),
+    body('text_secondary_language').optional({ nullable: true }).isIn(TEXT_LANGUAGES),
     // Which photos get the larger tiles (issue 2549), and the admin star
     // rating that makes one in 'rating' mode.
     body('highlights_mode').optional().isIn(['off', 'manual', 'rating']),

@@ -732,6 +732,9 @@
           "body": "Abre esta guía de nuevo en cualquier momento con el icono del signo de interrogación."
         }
       }
+    },
+    "language": {
+      "switch": "Idioma"
     }
   },
   "categories": {
@@ -771,6 +774,14 @@
       "useSuggestion": "Usar {{time}} (primera foto)",
       "hint": "Se muestra sobre esta categoría cuando la galería muestra marcadores de capítulo (Ajustes → Apariencia). Solo en esta galería.",
       "clear": "Quitar marcador"
+    },
+    "translations": {
+      "edit": "Nombre en otros idiomas",
+      "label": "Nombre de la categoría",
+      "sharedHint": "Una categoría compartida: su nombre se cambia en Ajustes. Las traducciones de aquí son solo para esta galería.",
+      "defaultHint": "El nombre tal como lo creaste. Las traducciones son solo para esta galería.",
+      "saved": "Traducciones del nombre de la categoría guardadas",
+      "saveFailed": "No se pudieron guardar las traducciones del nombre de la categoría"
     }
   },
   "eventCode": {
@@ -1256,7 +1267,8 @@
       "about": {
         "embed": "Muestra esta galería en tu propio sitio web.",
         "delivery": "Carpetas anidadas de las subidas y una primera selección antes de la galería completa.",
-        "tags": "Etiqueta las fotos por escena para que los invitados puedan filtrar la galería."
+        "tags": "Etiqueta las fotos por escena para que los invitados puedan filtrar la galería.",
+        "languages": "Muestra el título, el mensaje de bienvenida y los textos de categoría en más de un idioma."
       },
       "summary": {
         "noEmbed": "Sin insertar",
@@ -1269,11 +1281,16 @@
         "teamMembers_other": "{{count}} miembros del equipo",
         "teamReview": "subidas del equipo revisadas",
         "uploadsApproved": "aprobación requerida",
-        "tags": "Etiquetar las fotos por escena para que los invitados filtren"
+        "tags": "Etiquetar las fotos por escena para que los invitados filtren",
+        "languagesVisitor": "Idioma del visitante",
+        "languagesDefault": "predeterminado {{language}}",
+        "languagesBilingual": "Bilingüe",
+        "languagesOff": "Un idioma"
       },
       "passwordOwnerOnly": "Solo el propietario de la galería puede cambiar la contraseña o desactivarla.",
       "recipientsOwnerOnly": "Solo el propietario de la galería puede cambiar quién recibe el correo de la galería.",
-      "tags": "Etiquetas"
+      "tags": "Etiquetas",
+      "languages": "Idiomas"
     },
     "folders": {
       "sectionTitle": "Carpetas",
@@ -1385,6 +1402,36 @@
       "divider": "Separador",
       "hero": "Banner con imagen de la categoría",
       "help": "Muestra un título, hora, lugar y subtítulo sobre cada categoría en el diseño Story. Escríbelos por categoría en Fotos → Categorías. Un banner sin imagen de categoría se muestra como separador."
+    },
+    "languages": {
+      "intro": "Escribe los textos de la galería en más de un idioma. Cada traducción la escribes tú; nada se traduce automáticamente.",
+      "mode": "Textos de la galería",
+      "modeOff": "Un idioma",
+      "modeOffHelp": "Los textos tal como los escribiste, para todos los visitantes.",
+      "modeVisitor": "Idioma del visitante",
+      "modeVisitorHelp": "Cada visitante lee los textos en el idioma que pide su navegador, si lo escribiste; si no, en el idioma de la galería. Los visitantes pueden cambiar el idioma en la galería.",
+      "modeBilingual": "Dos idiomas juntos",
+      "modeBilingualHelp": "El título, el mensaje de bienvenida y los marcadores de capítulo muestran ambos idiomas: el primero grande y el segundo más pequeño debajo. Los nombres de categoría muestran el primer idioma.",
+      "primary": "Primer idioma (grande)",
+      "default": "Idioma de tus textos",
+      "defaultHelp": "El idioma en el que escribiste el título, el mensaje de bienvenida y los nombres de categoría. Los visitantes sin traducción en su idioma ven estos textos.",
+      "secondary": "Segundo idioma (más pequeño)",
+      "textsTitle": "Título",
+      "textsHelp": "Elige una pestaña de idioma para escribir el título en él. El mensaje de bienvenida tiene las mismas pestañas en General; los nombres de categoría y los marcadores de capítulo, en Fotos → Categorías.",
+      "titleLabel": "Título de la galería",
+      "titleRenameHint": "Cambia el nombre de la galería con el lápiz junto a su nombre, arriba en la página.",
+      "primaryRequired": "Elige el idioma en el que están escritos los textos de la galería.",
+      "secondaryRequired": "Elige un segundo idioma, distinto del primero, para la galería bilingüe.",
+      "defaultText": "Predeterminado",
+      "defaultShort": "Predeterminado",
+      "filled": "tiene texto",
+      "empty": "aún sin texto",
+      "tabsLabel": "Idioma",
+      "translationHint": "El texto en {{language}}, escrito a mano. Déjalo vacío si no hay ninguno.",
+      "hiddenNotice": "{{count}} textos tienen una traducción en {{language}}. Mientras {{language}} sea el primer idioma, la galería muestra tus textos originales y estas traducciones quedan ocultas. Vuelve a cambiar el primer idioma para usarlas de nuevo, o elimínalas.",
+      "hiddenRemove": "Eliminar estas traducciones",
+      "hiddenRemoveConfirm": "¿Eliminar las {{count}} traducciones escritas en {{language}}? No se puede deshacer.",
+      "hiddenRemoveFailed": "No se pudieron eliminar algunas traducciones. Inténtalo de nuevo."
     }
   },
   "settings": {

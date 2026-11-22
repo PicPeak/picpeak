@@ -863,6 +863,15 @@
         "DELETE /:id/access-code"
       ]
     },
+    "adminEvents/translations.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Admin read and write of a gallery's hand-written texts in other languages (issue 2550); no usage signal, no texts, languages or counts reported.",
+      "route_signatures": [
+        "GET /:id/translations",
+        "PUT /:id/translations"
+      ]
+    },
     "adminEvents/tags.js": {
       "decision": "excluded",
       "signals": [],

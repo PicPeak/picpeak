@@ -1745,6 +1745,9 @@
           "body": "Ta vodnik lahko kadar koli znova odprete z ikono vprašaja."
         }
       }
+    },
+    "language": {
+      "switch": "Jezik"
     }
   },
   "categories": {
@@ -1798,6 +1801,14 @@
       "useSuggestion": "Uporabi {{time}} (prva fotografija)",
       "hint": "Prikazano nad to kategorijo, ko galerija prikazuje oznake poglavij (Nastavitve → Videz). Samo v tej galeriji.",
       "clear": "Odstrani oznako"
+    },
+    "translations": {
+      "edit": "Ime v drugih jezikih",
+      "label": "Ime kategorije",
+      "sharedHint": "Skupna kategorija: njeno ime spremenite v Nastavitvah. Prevodi tukaj veljajo samo za to galerijo.",
+      "defaultHint": "Ime, kot ste ga ustvarili. Prevodi veljajo samo za to galerijo.",
+      "saved": "Prevodi imena kategorije so shranjeni",
+      "saveFailed": "Prevodov imena kategorije ni bilo mogoče shraniti"
     }
   },
   "eventCode": {
@@ -2371,7 +2382,8 @@
       "about": {
         "embed": "Prikažite to galerijo na svoji spletni strani.",
         "delivery": "Gnezdene mape iz nalaganj in prvi izbor pred celotno galerijo.",
-        "tags": "Označite fotografije po prizorih, da lahko gostje filtrirajo galerijo."
+        "tags": "Označite fotografije po prizorih, da lahko gostje filtrirajo galerijo.",
+        "languages": "Prikaži naslov, pozdravno sporočilo in besedila kategorij v več jezikih."
       },
       "summary": {
         "noEmbed": "Ni vdelana",
@@ -2386,11 +2398,16 @@
         "teamMembers_other": "{{count}} članov ekipe",
         "teamReview": "nalaganja ekipe se pregledujejo",
         "uploadsApproved": "potrebna odobritev",
-        "tags": "Oznake po prizorih, da lahko gostje filtrirajo"
+        "tags": "Oznake po prizorih, da lahko gostje filtrirajo",
+        "languagesVisitor": "Jezik obiskovalca",
+        "languagesDefault": "privzeto {{language}}",
+        "languagesBilingual": "Dvojezično",
+        "languagesOff": "En jezik"
       },
       "passwordOwnerOnly": "Samo lastnik galerije lahko spremeni geslo ali ga izklopi.",
       "recipientsOwnerOnly": "Samo lastnik galerije lahko spremeni, kdo prejme e-pošto galerije.",
-      "tags": "Oznake"
+      "tags": "Oznake",
+      "languages": "Jeziki"
     },
     "folders": {
       "sectionTitle": "Mape",
@@ -2523,6 +2540,36 @@
       "divider": "Ločilna črta",
       "hero": "Pasica s sliko kategorije",
       "help": "V postavitvi Story nad vsako kategorijo prikaže naslov, čas, kraj in podnaslov. Vnesete jih za vsako kategorijo pod Fotografije → Kategorije. Pasica brez slike kategorije se prikaže kot ločilna črta."
+    },
+    "languages": {
+      "intro": "Besedila galerije napišite v več jezikih. Vsak prevod napišete sami; nič se ne prevede samodejno.",
+      "mode": "Besedila galerije",
+      "modeOff": "En jezik",
+      "modeOffHelp": "Besedila, kot ste jih vnesli, za vse obiskovalce.",
+      "modeVisitor": "Jezik obiskovalca",
+      "modeVisitorHelp": "Vsak obiskovalec bere besedila v jeziku, ki ga zahteva njegov brskalnik, če ste ga napisali; sicer v jeziku galerije. Obiskovalci lahko jezik zamenjajo v galeriji.",
+      "modeBilingual": "Dva jezika skupaj",
+      "modeBilingualHelp": "Naslov, pozdravno sporočilo in oznake poglavij prikažejo oba jezika: prvega veliko, drugega manjše pod njim. Imena kategorij so v prvem jeziku.",
+      "primary": "Prvi jezik (velik)",
+      "default": "Jezik vaših besedil",
+      "defaultHelp": "Jezik, v katerem ste napisali naslov, pozdravno sporočilo in imena kategorij. Obiskovalci brez prevoda v svojem jeziku vidijo ta besedila.",
+      "secondary": "Drugi jezik (manjši)",
+      "textsTitle": "Naslov",
+      "textsHelp": "Izberite zavihek jezika, da v njem napišete naslov. Pozdravno sporočilo ima enake zavihke pod Splošno, imena kategorij in oznake poglavij pod Fotografije → Kategorije.",
+      "titleLabel": "Naslov galerije",
+      "titleRenameHint": "Galerijo preimenujete s svinčnikom ob njenem imenu na vrhu strani.",
+      "primaryRequired": "Izberite jezik, v katerem so napisana besedila galerije.",
+      "secondaryRequired": "Za dvojezično galerijo izberite drugi jezik, ki se razlikuje od prvega.",
+      "defaultText": "Privzeto",
+      "defaultShort": "Privzeto",
+      "filled": "ima besedilo",
+      "empty": "še brez besedila",
+      "tabsLabel": "Jezik",
+      "translationHint": "Besedilo v jeziku {{language}}, napisano ročno. Pustite prazno, če ga ni.",
+      "hiddenNotice": "{{count}} besedil ima prevod v jeziku {{language}}. Dokler je {{language}} prvi jezik, galerija prikazuje vaša izvirna besedila, ti prevodi pa ostanejo skriti. Prvi jezik nastavite nazaj, da jih spet uporabite, ali jih odstranite.",
+      "hiddenRemove": "Odstrani te prevode",
+      "hiddenRemoveConfirm": "Odstranim {{count}} prevodov v jeziku {{language}}? Tega ni mogoče razveljaviti.",
+      "hiddenRemoveFailed": "Nekaterih prevodov ni bilo mogoče odstraniti. Poskusite znova."
     }
   },
   "settings": {

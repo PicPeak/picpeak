@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Globe } from 'lucide-react';
+import { useOnClickOutside } from '../../hooks/useOnClickOutside';
 
 // SVG Flag Components
 const GBFlag: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => (
@@ -89,28 +90,51 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'sl', name: 'Slovenščina', Flag: SLFlag },
 ];
 
-export const LanguageSelector: React.FC = () => {
-  const { i18n } = useTranslation();
-  const [isOpen, setIsOpen] = React.useState(false);
+interface LanguageSelectorProps {
+  /**
+   * Language codes to offer, in this order. Omitted: every UI language.
+   * The gallery passes the languages it has texts in (issue 2550).
+   */
+  languages?: string[];
+  /** 'gallery' draws with the gallery theme's tokens instead of the admin UI's. */
+  variant?: 'admin' | 'gallery';
+  className?: string;
+}
 
-  const currentLanguage = SUPPORTED_LANGUAGES.find(lang => lang.code === i18n.language) || SUPPORTED_LANGUAGES[0];
+export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ languages, variant = 'admin', className = '' }) => {
+  const { t, i18n } = useTranslation();
+  const [isOpen, setIsOpen] = React.useState(false);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  useOnClickOutside(rootRef, () => setIsOpen(false));
+
+  const offered = languages
+    ? languages.map((code) => SUPPORTED_LANGUAGES.find((lang) => lang.code === code)).filter((lang): lang is typeof SUPPORTED_LANGUAGES[number] => !!lang)
+    : SUPPORTED_LANGUAGES;
+  const activeCode = (i18n.resolvedLanguage || i18n.language || '').split('-')[0];
+  const currentLanguage = SUPPORTED_LANGUAGES.find(lang => lang.code === activeCode) || offered[0] || SUPPORTED_LANGUAGES[0];
 
   const handleLanguageChange = (languageCode: string) => {
     i18n.changeLanguage(languageCode);
     setIsOpen(false);
   };
 
+  const gallery = variant === 'gallery';
   return (
-    <div className="relative">
+    <div ref={rootRef} className={`relative ${className}`}>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-2 sm:px-3 py-2 text-sm font-medium text-body bg-panel border border-line-strong rounded-lg hover:bg-hover focus:outline-none focus:ring-2 focus:ring-accent"
+        className={gallery
+          ? 'gallery-btn gallery-language-switcher inline-flex items-center gap-2 px-2 sm:px-3 h-9 text-sm font-medium rounded-lg border border-border-token bg-surface text-theme hover-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2'
+          : 'flex items-center gap-2 px-2 sm:px-3 py-2 text-sm font-medium text-body bg-panel border border-line-strong rounded-lg hover:bg-hover focus:outline-none focus:ring-2 focus:ring-accent'}
         // On <sm the language *name* is hidden — the Globe + flag pair
         // is enough recognition on its own and stops this control from
         // pushing into the company-name title on narrow mobile widths
         // (#523). Full name stays on sm+ where there's room.
-        aria-label={currentLanguage.name}
+        aria-label={gallery ? `${t('gallery.language.switch', 'Language')}: ${currentLanguage.name}` : currentLanguage.name}
         title={currentLanguage.name}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
       >
         <Globe className="w-4 h-4" />
         <currentLanguage.Flag className="w-5 h-5" />
@@ -118,16 +142,29 @@ export const LanguageSelector: React.FC = () => {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-panel rounded-lg shadow-lg border border-line py-1 z-50">
-          {SUPPORTED_LANGUAGES.map((language) => (
+        <div
+          role="menu"
+          className={gallery
+            ? 'absolute right-0 mt-2 w-48 bg-surface rounded-lg shadow-lg border border-border-token py-1 z-50'
+            : 'absolute right-0 mt-2 w-48 bg-panel rounded-lg shadow-lg border border-line py-1 z-50'}
+        >
+          {offered.map((language) => (
             <button
               key={language.code}
+              type="button"
+              role="menuitemradio"
+              aria-checked={language.code === currentLanguage.code}
+              lang={language.code}
               onClick={() => handleLanguageChange(language.code)}
-              className={`w-full text-left px-4 py-2 text-sm hover:bg-hover flex items-center gap-3 ${
-                language.code === i18n.language
-                  ? 'text-accent bg-accent-dark/15'
-                  : 'text-body'
-              }`}
+              className={gallery
+                ? `w-full text-left px-4 py-2 text-sm hover-surface flex items-center gap-3 ${
+                  language.code === currentLanguage.code ? 'bg-accent-dark text-accent-fg' : 'text-muted-theme'
+                }`
+                : `w-full text-left px-4 py-2 text-sm hover:bg-hover flex items-center gap-3 ${
+                  language.code === i18n.language
+                    ? 'text-accent bg-accent-dark/15'
+                    : 'text-body'
+                }`}
             >
               <language.Flag className="w-5 h-5" />
               <span>{language.name}</span>

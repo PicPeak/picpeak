@@ -746,6 +746,9 @@
           "body": "Open deze rondleiding op elk moment opnieuw met het vraagteken-pictogram."
         }
       }
+    },
+    "language": {
+      "switch": "Taal"
     }
   },
   "categories": {
@@ -780,6 +783,14 @@
       "useSuggestion": "{{time}} gebruiken (eerste foto)",
       "hint": "Wordt boven deze categorie getoond als de galerij hoofdstukmarkeringen toont (Instellingen → Weergave). Alleen in deze galerij.",
       "clear": "Markering verwijderen"
+    },
+    "translations": {
+      "edit": "Naam in andere talen",
+      "label": "Categorienaam",
+      "sharedHint": "Een gedeelde categorie: de naam wijzigt u in Instellingen. De vertalingen hier gelden alleen voor deze galerij.",
+      "defaultHint": "De naam zoals u die hebt aangemaakt. De vertalingen gelden alleen voor deze galerij.",
+      "saved": "Vertalingen van de categorienaam opgeslagen",
+      "saveFailed": "De vertalingen van de categorienaam konden niet worden opgeslagen"
     }
   },
   "eventCode": {
@@ -1232,7 +1243,8 @@
       "about": {
         "embed": "Toon deze galerij op uw eigen website.",
         "delivery": "Geneste mappen uit uploads en een eerste selectie vóór de volledige galerie.",
-        "tags": "Tag foto's op scène zodat gasten de galerij kunnen filteren."
+        "tags": "Tag foto's op scène zodat gasten de galerij kunnen filteren.",
+        "languages": "De titel, het welkomstbericht en de categorieteksten in meer dan één taal tonen."
       },
       "summary": {
         "noEmbed": "Niet ingesloten",
@@ -1245,11 +1257,16 @@
         "teamMembers_other": "{{count}} teamleden",
         "teamReview": "teamuploads worden gecontroleerd",
         "uploadsApproved": "goedkeuring vereist",
-        "tags": "Foto's op scène taggen zodat gasten kunnen filteren"
+        "tags": "Foto's op scène taggen zodat gasten kunnen filteren",
+        "languagesVisitor": "Taal van de bezoeker",
+        "languagesDefault": "standaard {{language}}",
+        "languagesBilingual": "Tweetalig",
+        "languagesOff": "Eén taal"
       },
       "passwordOwnerOnly": "Alleen de eigenaar van de galerij kan het wachtwoord wijzigen of uitschakelen.",
       "recipientsOwnerOnly": "Alleen de eigenaar van de galerij kan wijzigen wie de galerij-e-mail ontvangt.",
-      "tags": "Tags"
+      "tags": "Tags",
+      "languages": "Talen"
     },
     "folders": {
       "sectionTitle": "Mappen",
@@ -1360,6 +1377,36 @@
       "divider": "Scheidingslijn",
       "hero": "Banner met categorieafbeelding",
       "help": "Toont in de Story-lay-out boven elke categorie een kop, tijd, locatie en ondertitel. Schrijf ze per categorie onder Foto’s → Categorieën. Een banner zonder categorieafbeelding wordt als scheidingslijn getoond."
+    },
+    "languages": {
+      "intro": "Schrijf de teksten van de galerij in meer dan één taal. Elke vertaling schrijft u zelf; er wordt niets automatisch vertaald.",
+      "mode": "Galerijteksten",
+      "modeOff": "Eén taal",
+      "modeOffHelp": "De teksten zoals u ze hebt getypt, voor elke bezoeker.",
+      "modeVisitor": "Taal van de bezoeker",
+      "modeVisitorHelp": "Elke bezoeker leest de teksten in de taal die zijn browser vraagt, als u die hebt geschreven; anders in de taal van de galerij. Bezoekers kunnen de taal in de galerij wisselen.",
+      "modeBilingual": "Twee talen samen",
+      "modeBilingualHelp": "De titel, het welkomstbericht en de hoofdstukmarkeringen tonen beide talen: de eerste groot, de tweede kleiner eronder. Categorienamen tonen de eerste taal.",
+      "primary": "Eerste taal (groot)",
+      "default": "Taal van uw teksten",
+      "defaultHelp": "De taal waarin u de titel, het welkomstbericht en de categorienamen hebt geschreven. Bezoekers zonder vertaling in hun taal zien deze teksten.",
+      "secondary": "Tweede taal (kleiner)",
+      "textsTitle": "Titel",
+      "textsHelp": "Kies een taaltabblad om de titel in die taal te schrijven. Het welkomstbericht heeft dezelfde tabbladen onder Algemeen, categorienamen en hoofdstukmarkeringen onder Foto’s → Categorieën.",
+      "titleLabel": "Galerijtitel",
+      "titleRenameHint": "Hernoem de galerij met het potlood naast de naam bovenaan de pagina.",
+      "primaryRequired": "Kies de taal waarin de galerijteksten zijn geschreven.",
+      "secondaryRequired": "Kies voor de tweetalige galerij een tweede taal die verschilt van de eerste.",
+      "defaultText": "Standaard",
+      "defaultShort": "Standaard",
+      "filled": "heeft tekst",
+      "empty": "nog geen tekst",
+      "tabsLabel": "Taal",
+      "translationHint": "De tekst in het {{language}}, met de hand geschreven. Laat leeg als er geen is.",
+      "hiddenNotice": "{{count}} teksten hebben een vertaling in het {{language}}. Zolang {{language}} de eerste taal is, toont de galerij uw oorspronkelijke teksten en blijven deze vertalingen verborgen. Zet de eerste taal terug om ze weer te gebruiken, of verwijder ze.",
+      "hiddenRemove": "Deze vertalingen verwijderen",
+      "hiddenRemoveConfirm": "De {{count}} vertalingen in het {{language}} verwijderen? Dit kan niet ongedaan worden gemaakt.",
+      "hiddenRemoveFailed": "Sommige vertalingen konden niet worden verwijderd. Probeer het opnieuw."
     }
   },
   "settings": {

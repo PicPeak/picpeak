@@ -65,6 +65,9 @@ import { CopyFilenamesDialog } from './CopyFilenamesDialog';
 import { ExpirationBanner } from './ExpirationBanner';
 import { CountdownTimer } from './CountdownTimer';
 import { GalleryLayout } from './GalleryLayout';
+import { GallerySecondaryTextProvider, useGalleryText } from '../../hooks/useGalleryText';
+import { galleryTextLanguages, resolveCategories } from '../../utils/galleryText';
+import { LanguageSelector } from '../common/LanguageSelector';
 import { GallerySidebar } from './GallerySidebar';
 import { GalleryClientAccessDialog } from './GalleryClientAccessDialog';
 import { GalleryToolbar } from './GalleryToolbar';
@@ -314,7 +317,35 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   
   // Fetch photos WITHOUT filter (always get all photos, filter on frontend)
   // This ensures counts are always calculated from the full dataset
-  const { data, isLoading, error, refetch } = useGalleryPhotos(slug, 'all', guestId, !isSwitchingClientMode, accessScope);
+  const { data: galleryData, isLoading, error, refetch } = useGalleryPhotos(slug, 'all', guestId, !isSwitchingClientMode, accessScope);
+  // Multilingual texts (issue 2550): every category name and chapter text
+  // below is the one this visitor reads, resolved once here; the title and
+  // the welcome message are resolved next to the props that carry them.
+  const galleryText = useGalleryText(galleryData?.event);
+  const data = React.useMemo(() => {
+    if (!galleryData || galleryText.config.mode === 'off') return galleryData;
+    const categories = resolveCategories(galleryText.config, galleryData.categories) ?? galleryData.categories;
+    // Premium's tabs, Story's scene titles and search, and the carousel
+    // captions read the photo's own category_name: it follows its category.
+    const names = new Map((categories || []).map((category) => [Number(category.id), category.name]));
+    const photos = galleryData.photos?.map((photo) => {
+      const name = photo.category_id != null ? names.get(Number(photo.category_id)) : undefined;
+      return name !== undefined && name !== photo.category_name ? { ...photo, category_name: name } : photo;
+    });
+    return { ...galleryData, categories, photos };
+  }, [galleryData, galleryText.config]);
+  const eventTitle = galleryText.pair(event.event_name, galleryData?.event?.translations?.event_name);
+  const welcomeText = galleryText.pair(event.welcome_message, galleryData?.event?.translations?.welcome_message);
+  const secondaryTexts = React.useMemo(
+    () => ({ title: eventTitle.secondary, welcome: welcomeText.secondary }),
+    [eventTitle.secondary, welcomeText.secondary],
+  );
+  const textLanguages = galleryTextLanguages(galleryText.config, galleryData?.event, galleryData?.categories);
+  // A small switcher, only when the gallery has texts in more than one
+  // language; it changes the UI language, and with it the gallery texts.
+  const languageSwitcher = textLanguages.length > 1
+    ? <LanguageSelector variant="gallery" languages={textLanguages} />
+    : null;
   const handleFeedbackChange = useFeedbackChange(slug, refetch, { patchRows: !isClient });
   const { isSelectionMode, setIsSelectionMode, selectedPhotos, setSelectedPhotos } = useGallerySelection(data?.photos);
   
@@ -1660,9 +1691,11 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     <DownloadQuotaProvider slug={slug} event={data?.event}>
       <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
         <FavoriteListsContext.Provider value={favoriteLists}>
-          <ArchiveDownloadDialog available={downloadsAvailable} />
-          <FavoriteListsDialog />
-          {children}
+          <GallerySecondaryTextProvider value={secondaryTexts}>
+            <ArchiveDownloadDialog available={downloadsAvailable} />
+            <FavoriteListsDialog />
+            {children}
+          </GallerySecondaryTextProvider>
         </FavoriteListsContext.Provider>
       </PhotoDownloadChoiceProvider>
     </DownloadQuotaProvider>
@@ -1952,6 +1985,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <GalleryLayout
         event={{
           ...event,
+          event_name: eventTitle.primary ?? event.event_name,
           // The reveal-hidden view still renders the chrome, so BOTH
           // banners resolve here too. The context `event` comes from the
           // gallery login response and carries no banner fields, which would
@@ -2173,14 +2207,14 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         />
       ) : null;
       const peoplePanel = buildPeoplePanel(shownPhotos, toolbar ? 'mt-3' : undefined);
-      // These layouts keep their header inside the layout, so the
-      // walkthrough's help icon (issue 2551) sits in this row.
-      const help = walkthroughEnabled ? (
-        <div className="flex justify-end"><WalkthroughHelpButton onClick={walkthrough.reopen} /></div>
-      ) : null;
-      return toolbar || peoplePanel || help
-        ? <div className="gallery-toolbox">{help}{toolbar}{peoplePanel}</div>
+      // These layouts draw their own header, so the language switcher
+      // (issue 2550) and the walkthrough's help icon (issue 2551) sit at the
+      // top of the toolbox instead.
+      const help = walkthroughEnabled ? <WalkthroughHelpButton onClick={walkthrough.reopen} /> : null;
+      const language = languageSwitcher || help
+        ? <div className={`gallery-toolbox-language flex justify-end gap-2 ${toolbar || peoplePanel ? 'mb-3' : ''}`}>{help}{languageSwitcher}</div>
         : null;
+      return toolbar || peoplePanel || language ? <div className="gallery-toolbox">{language}{toolbar}{peoplePanel}</div> : null;
     };
     return withDownloadProviders(
       // The same identity flow as the standard layout below (issue 1733):
@@ -2369,7 +2403,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onSelectionChange={setSelectedPhotos}
           photosForIds={photosForIds}
           onToggleSelectionMode={toggleSelectionMode}
-          eventName={event.event_name}
+          eventName={eventTitle.primary ?? event.event_name}
           eventLogo={data?.event?.hero_logo_url || brandingSettings?.logo_url}
           eventDate={event.event_date}
           expiresAt={event.expires_at}
@@ -2392,7 +2426,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           chapterMarkerStyle={data?.event?.chapter_marker_style || 'off'}
           // The hero photo of a chapter stays when a filter or search hides it.
           chapterHeroPhotos={data?.photos}
-          welcomeMessage={event.welcome_message}
+          welcomeMessage={welcomeText.primary ?? undefined}
           // Same gate as the standard layout below (#1149). These layouts
           // render the button on the callback being present rather than on a
           // showLogout flag, so withholding it is how the gate reaches them.
@@ -2581,6 +2615,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <GalleryLayout
         event={{
           ...event,
+          event_name: eventTitle.primary ?? event.event_name,
           // Per-event promo override (#440).
           promo_mode: (data?.event as { promo_mode?: 'inherit' | 'custom' | 'off' })?.promo_mode,
           promo_markdown: (data?.event as { promo_markdown?: string | null })?.promo_markdown,
@@ -2632,6 +2667,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         headerExtra={(() => {
           const items = [];
           if (!showSidebar && clientAccessControl) items.push(<React.Fragment key="client-access">{clientAccessControl}</React.Fragment>);
+          if (languageSwitcher) items.push(<React.Fragment key="language">{languageSwitcher}</React.Fragment>);
 
           // Photo sales: the cart takes the header's download slot.
           if (salesCheckoutReady) {
@@ -2842,7 +2878,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onSelectionChange={setSelectedPhotos}
             photosForIds={photosForIds}
             onToggleSelectionMode={toggleSelectionMode}
-            eventName={event.event_name}
+            eventName={eventTitle.primary ?? event.event_name}
             eventLogo={data?.event?.hero_logo_url || brandingSettings?.logo_url}
             eventDate={event.event_date}
             expiresAt={event.expires_at}
@@ -2860,7 +2896,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             headerStyle={data?.event?.header_style || theme.headerStyle}
             heroDividerStyle={data?.event?.hero_divider_style || theme.heroDividerStyle || 'wave'}
             heroImageAnchor={data?.event?.hero_image_anchor || 'center'}
-            welcomeMessage={event.welcome_message}
+            welcomeMessage={welcomeText.primary ?? undefined}
             isClient={isClient}
             onToggleVisibility={isClient ? handleToggleVisibility : undefined}
             showOriginalFilename={showOriginalFilename}

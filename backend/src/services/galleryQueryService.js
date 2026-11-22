@@ -12,6 +12,7 @@ const watermarkService = require('./watermarkService');
 const logger = require('../utils/logger');
 const { getEventCategoriesOrdered } = require('../utils/categoryOrder');
 const { chapterStyleOf, chapterRowsForEvent, publicChapterOf } = require('./categoryChapters');
+const { languageSettingsOf, publicTranslationsFor } = require('./contentTranslations');
 const folderTree = require('./folderTreeService');
 const { guestDeliveryPayload } = require('./deliveryService');
 const { getUseOriginalFilenames } = require('./downloadFilenameService');
@@ -567,6 +568,19 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     }
   }
 
+  // Multilingual texts (issue 2550): the hand-written texts in other
+  // languages, next to the default text each field already carries. Only
+  // while the gallery's mode is on, and only for the categories (and
+  // markers) this viewer is sent anyway.
+  const textTranslations = await publicTranslationsFor(event);
+  if (textTranslations) {
+    for (const category of categories) {
+      const id = Number(category.id);
+      category.translations = textTranslations.category.get(id) || {};
+      if (category.chapter) category.chapter.translations = textTranslations.chapter.get(id) || {};
+    }
+  }
+
   // Build a map for quick category lookup
   const categoryMap = {};
   categories.forEach(cat => {
@@ -757,6 +771,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       hero_divider_style: theme.hero_divider_style,
       hero_image_anchor: event.hero_image_anchor || 'center',
       chapter_marker_style: chapterStyle,
+      // Multilingual texts (issue 2550): mode, languages and, while the mode
+      // is on, the title's and welcome message's texts per language.
+      ...languageSettingsOf(event),
+      ...(textTranslations ? { translations: textTranslations.event } : {}),
       default_photo_sort: event.default_photo_sort || 'upload_date_desc',
       // Photo sales: priced-gallery settings drive the
       // purchase buttons and the free quota in the gallery UI.

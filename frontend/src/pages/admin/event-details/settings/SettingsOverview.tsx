@@ -9,7 +9,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle, Bell, ChevronRight, Code, Download, FolderOpen, FolderTree, Lock, MonitorPlay,
-  Palette, ScanFace, SlidersHorizontal, Tags, Users, ShoppingCart, type LucideIcon,
+  Languages, Palette, ScanFace, SlidersHorizontal, Tags, Users, ShoppingCart, type LucideIcon,
 } from 'lucide-react';
 import type { Event } from '../../../../types';
 import { formatPhotoPrice } from '../../../../features/photo-sales/photoSales';
@@ -31,12 +31,13 @@ export const SECTION_ICON: Record<SettingsSectionKey, LucideIcon> = {
   reminder: Bell,
   faces: ScanFace,
   tags: Tags,
+  languages: Languages,
   danger: AlertTriangle,
 };
 
 /** Most used first; the danger zone is not in a group, it closes the list. */
 export const SECTION_GROUPS: Array<{ key: string; label: string; sections: SettingsSectionKey[] }> = [
-  { key: 'basics', label: 'Basics', sections: ['general', 'appearance'] },
+  { key: 'basics', label: 'Basics', sections: ['general', 'appearance', 'languages'] },
   { key: 'access', label: 'Access & downloads', sections: ['access', 'downloads', 'pricing'] },
   { key: 'guests', label: 'Guests', sections: ['guests', 'slideshow', 'embed'] },
   { key: 'photos', label: 'Photos & automation', sections: ['source', 'delivery', 'reminder', 'faces', 'tags'] },
@@ -83,6 +84,17 @@ export function useSectionSummaries(
         ...(teamMembers > 0 ? [{ text: s('teamMembers', '{{count}} team members', { count: teamMembers }) }] : []),
         ...(f.review_contributor_uploads ? [{ text: s('teamReview', 'team uploads reviewed') }] : []),
       ],
+    },
+    // Multilingual texts (issue 2550).
+    languages: {
+      parts: f.text_language_mode === 'visitor'
+        ? [{ text: s('languagesVisitor', 'Visitor\'s language'), tone: 'strong' as const },
+          ...(f.text_primary_language ? [{ text: s('languagesDefault', 'default {{language}}', { language: f.text_primary_language.toUpperCase() }) }] : [])]
+        : f.text_language_mode === 'bilingual'
+          ? [{ text: s('languagesBilingual', 'Bilingual'), tone: 'strong' as const },
+            { text: [f.text_primary_language, f.text_secondary_language].filter(Boolean).map((code) => (code as string).toUpperCase()).join(' + ') }]
+          : [{ text: s('languagesOff', 'One language'), tone: 'off' as const }],
+      isDefault: f.text_language_mode === 'off',
     },
     appearance: {
       parts: [{ text: f.custom_theme_enabled ? s('ownStyling', 'Own styling') : s('globalTheme', 'Global theme') }],

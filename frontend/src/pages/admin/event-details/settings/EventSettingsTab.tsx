@@ -36,6 +36,7 @@ import { AppearanceSection } from './AppearanceSection';
 import { SlideshowSection } from './SlideshowSection';
 import { EmbedSection } from './EmbedSection';
 import { DeliverySection } from './DeliverySection';
+import { LanguagesSection } from './LanguagesSection';
 import { safeParseDate } from '../utils';
 import { SECTION_ICON, SettingsOverview, useSectionSummaries } from './SettingsOverview';
 
@@ -100,6 +101,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
     { key: 'pricing', label: t('events.settingsTab.pricing', 'Photo sales'), show: true },
     { key: 'guests', label: t('events.settingsTab.guests', 'Guest interaction'), show: true },
     { key: 'appearance', label: t('events.settingsTab.appearance', 'Appearance'), show: true },
+    { key: 'languages', label: t('events.settingsTab.languages', 'Languages'), show: true },
     { key: 'source', label: t('events.settingsTab.source', 'Photo source'), show: true },
     { key: 'delivery', label: t('events.settingsTab.delivery', 'Folders & delivery'), show: true },
     { key: 'reminder', label: t('eventReminderOverride.title', 'Pre-event reminder'), show: !!flags.reminderEmails },
@@ -122,6 +124,9 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
   useFillViewport();
 
   const set = (patch: Partial<EventFields>) => setEvent((prev) => ({ ...prev, ...patch }));
+  // Translated title and welcome message (issue 2550), `${field}:${language}` → text.
+  const setTexts = (patch: Record<string, string>) =>
+    setDraft((d) => (d.translations ? { ...d, translations: { ...d.translations, ...patch } } : d));
 
   // A link to a section the flags hide (or the role can't see) falls back
   // to nothing opened, and the URL stops naming it. Only once flags and
@@ -178,6 +183,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
   const about: Record<SettingsSectionKey, string> = {
     general: t('events.settingsTab.about.general', 'Customer, client accounts and the welcome message.'),
     appearance: t('events.settingsTab.about.appearance', 'Hero photo, logo, banners and the look of the gallery.'),
+    languages: t('events.settingsTab.about.languages', 'Show the title, welcome message and category texts in more than one language.'),
     access: t('events.settingsTab.about.access', 'Who can open the gallery, and until when.'),
     downloads: t('events.settingsTab.about.downloads', 'What guests may download, in which size, and how photos are protected.'),
     guests: t('events.settingsTab.about.guests', 'Guest uploads, names and feedback.'),
@@ -195,7 +201,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
   const body = (() => {
     switch (active) {
       case 'general':
-        return <GeneralSection f={draft.event} set={set} phoneFieldEnabled={phoneFieldEnabled} event={event} />;
+        return <GeneralSection f={draft.event} set={set} phoneFieldEnabled={phoneFieldEnabled} event={event} texts={draft.translations ?? null} setTexts={setTexts} />;
       case 'access':
         return <AccessSection f={draft.event} set={set} ownsEvent={ownsEvent} canChangeAvailability={!event.share_secrets_hidden} />;
       case 'downloads':
@@ -220,6 +226,8 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
             setFeedback={(feedback) => setDraft((d) => ({ ...d, feedback }))}
           />
         );
+      case 'languages':
+        return <LanguagesSection f={draft.event} set={set} event={event} texts={draft.translations ?? null} setTexts={setTexts} />;
       case 'appearance':
         return <AppearanceSection f={draft.event} set={set} event={event} photos={photos} readOnly={!canEdit} />;
       case 'source':

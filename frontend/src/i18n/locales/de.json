@@ -2714,6 +2714,9 @@
           "body": "Öffnen Sie diesen Rundgang jederzeit wieder über das Fragezeichen-Symbol."
         }
       }
+    },
+    "language": {
+      "switch": "Sprache"
     }
   },
   "categories": {
@@ -2767,6 +2770,14 @@
       "useSuggestion": "{{time}} übernehmen (erstes Foto)",
       "hint": "Erscheint über dieser Kategorie, wenn die Galerie Kapitelmarken zeigt (Einstellungen → Erscheinungsbild). Gilt nur für diese Galerie.",
       "clear": "Marke entfernen"
+    },
+    "translations": {
+      "edit": "Name in anderen Sprachen",
+      "label": "Kategoriename",
+      "sharedHint": "Eine gemeinsame Kategorie: ihr Name wird in den Einstellungen geändert. Die Übersetzungen hier gelten nur für diese Galerie.",
+      "defaultHint": "Der Name, wie Sie ihn angelegt haben. Die Übersetzungen gelten nur für diese Galerie.",
+      "saved": "Übersetzungen des Kategorienamens gespeichert",
+      "saveFailed": "Die Übersetzungen des Kategorienamens konnten nicht gespeichert werden"
     }
   },
   "eventCode": {
@@ -3410,7 +3421,8 @@
         "source": "Woher die Fotos dieser Galerie kommen.",
         "delivery": "Verschachtelte Ordner aus Uploads und eine erste Auswahl vor der vollständigen Galerie.",
         "tags": "Fotos nach Szenen taggen, damit Gäste die Galerie filtern können.",
-        "pricing": "Einzelne Foto-Downloads verkaufen: Preis, Gratis-Kontingent und Zugriffsdauer."
+        "pricing": "Einzelne Foto-Downloads verkaufen: Preis, Gratis-Kontingent und Zugriffsdauer.",
+        "languages": "Titel, Willkommensnachricht und Kategorietexte in mehr als einer Sprache zeigen."
       },
       "access": "Zugang",
       "appearance": "Erscheinungsbild",
@@ -3501,14 +3513,19 @@
         "teamMembers_one": "{{count}} Teammitglied",
         "teamMembers_other": "{{count}} Teammitglieder",
         "teamReview": "Team-Uploads werden geprüft",
-        "tags": "Fotos nach Szenen taggen, damit Gäste filtern können"
+        "tags": "Fotos nach Szenen taggen, damit Gäste filtern können",
+        "languagesVisitor": "Sprache des Besuchers",
+        "languagesDefault": "Standard {{language}}",
+        "languagesBilingual": "Zweisprachig",
+        "languagesOff": "Eine Sprache"
       },
       "undoSection": "Diesen Bereich zurücksetzen",
       "delivery": "Ordner & Auslieferung",
       "passwordOwnerOnly": "Nur der Besitzer der Galerie kann das Passwort ändern oder ausschalten.",
       "recipientsOwnerOnly": "Nur der Besitzer der Galerie kann ändern, wer die Galerie-E-Mail erhält.",
       "tags": "Tags",
-      "pricing": "Foto-Verkauf"
+      "pricing": "Foto-Verkauf",
+      "languages": "Sprachen"
     },
     "folders": {
       "sectionTitle": "Ordner",
@@ -3632,6 +3649,36 @@
       "divider": "Trennlinie",
       "hero": "Banner mit Kategoriebild",
       "help": "Zeigt im Story-Layout über jeder Kategorie eine Überschrift, Uhrzeit, Ort und Unterzeile. Die Texte legen Sie pro Kategorie unter Fotos → Kategorien fest. Ein Banner ohne Kategoriebild wird als Trennlinie gezeigt."
+    },
+    "languages": {
+      "intro": "Schreiben Sie die Texte der Galerie in mehr als einer Sprache. Jede Übersetzung schreiben Sie selbst; nichts wird automatisch übersetzt.",
+      "mode": "Galerietexte",
+      "modeOff": "Eine Sprache",
+      "modeOffHelp": "Die Texte so, wie Sie sie geschrieben haben, für alle Besucher.",
+      "modeVisitor": "Sprache des Besuchers",
+      "modeVisitorHelp": "Jeder Besucher liest die Texte in der Sprache, die sein Browser anfragt, wenn Sie sie geschrieben haben; sonst in der Sprache der Galerie. Besucher können die Sprache in der Galerie wechseln.",
+      "modeBilingual": "Zwei Sprachen zusammen",
+      "modeBilingualHelp": "Titel, Willkommensnachricht und Kapitelmarken zeigen beide Sprachen: die erste groß, die zweite kleiner darunter. Kategorienamen zeigen die erste Sprache.",
+      "primary": "Erste Sprache (groß)",
+      "default": "Sprache Ihrer Texte",
+      "defaultHelp": "Die Sprache, in der Sie Titel, Willkommensnachricht und Kategorienamen geschrieben haben. Besucher ohne Übersetzung in ihrer Sprache sehen diese Texte.",
+      "secondary": "Zweite Sprache (kleiner)",
+      "textsTitle": "Titel",
+      "textsHelp": "Wählen Sie einen Sprach-Reiter, um den Titel in dieser Sprache zu schreiben. Die Willkommensnachricht hat dieselben Reiter unter Allgemein, Kategorienamen und Kapitelmarken unter Fotos → Kategorien.",
+      "titleLabel": "Galerietitel",
+      "titleRenameHint": "Benennen Sie die Galerie mit dem Stift neben ihrem Namen oben auf der Seite um.",
+      "primaryRequired": "Wählen Sie die Sprache, in der die Galerietexte geschrieben sind.",
+      "secondaryRequired": "Wählen Sie für die zweisprachige Galerie eine zweite Sprache, die sich von der ersten unterscheidet.",
+      "defaultText": "Standard",
+      "defaultShort": "Standard",
+      "filled": "hat Text",
+      "empty": "noch kein Text",
+      "tabsLabel": "Sprache",
+      "translationHint": "Der Text auf {{language}}, von Hand geschrieben. Lassen Sie ihn leer, wenn es keinen gibt.",
+      "hiddenNotice": "{{count}} Texte haben eine Übersetzung auf {{language}}. Solange {{language}} die erste Sprache ist, zeigt die Galerie stattdessen Ihre ursprünglichen Texte, und diese Übersetzungen bleiben verborgen. Stellen Sie die erste Sprache zurück, um sie wieder zu verwenden, oder entfernen Sie sie.",
+      "hiddenRemove": "Diese Übersetzungen entfernen",
+      "hiddenRemoveConfirm": "Die {{count}} Übersetzungen auf {{language}} entfernen? Das lässt sich nicht rückgängig machen.",
+      "hiddenRemoveFailed": "Einige Übersetzungen konnten nicht entfernt werden. Versuchen Sie es erneut."
     }
   },
   "settings": {

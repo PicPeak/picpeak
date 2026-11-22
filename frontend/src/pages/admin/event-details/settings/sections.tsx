@@ -20,7 +20,8 @@ import type { FeedbackSettings as FeedbackSettingsType } from '../../../../servi
 import { ExternalFolderPicker } from '../ExternalFolderPicker';
 import { SelectionPanel } from './SelectionPanel';
 import { useExternalImport } from '../useExternalImport';
-import { emailNeedsPassword, GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, type EventFields } from './draft';
+import { emailNeedsPassword, GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, type EventFields, type EventTextsDraft, textsOfField } from './draft';
+import { TranslatableField, translationLanguages } from '../../../../components/admin/TranslatableField';
 import { radioGroupKeyDown } from '../../../../utils/ariaKeyboard';
 
 export interface FieldsProps {
@@ -56,7 +57,10 @@ export const GeneralSection: React.FC<FieldsProps & {
    * this admin may change the team (issue 743).
    */
   event?: Pick<Event, 'event_name' | 'event_date' | 'event_type' | 'can_manage_assignments' | 'can_review_uploads' | 'created_by'>;
-}> = ({ f, set, phoneFieldEnabled, event }) => {
+  /** The welcome message's translations (issue 2550), `${field}:${language}` → text. */
+  texts?: EventTextsDraft | null;
+  setTexts?: (patch: Record<string, string>) => void;
+}> = ({ f, set, phoneFieldEnabled, event, texts, setTexts }) => {
   const { t } = useTranslation();
   const [showPassword, setShowPassword] = useState(false);
   // Only the owner changes the team and the review switch; everyone else
@@ -208,17 +212,23 @@ export const GeneralSection: React.FC<FieldsProps & {
           </p>
         </div>
       )}
-      <div>
-        <label className={labelClass} htmlFor="settings-welcome">{t('events.welcomeMessageLabel')}</label>
-        <textarea
-          id="settings-welcome"
-          value={f.welcome_message}
-          onChange={(e) => set({ welcome_message: e.target.value })}
-          className={inputClass}
-          rows={3}
-          placeholder={t('events.welcomeMessage')}
-        />
-      </div>
+      {/* One tab per language while the gallery shows more than one (issue 2550). */}
+      <TranslatableField
+        id="settings-welcome"
+        label={t('events.welcomeMessageLabel')}
+        primary={f.text_primary_language}
+        languages={texts && setTexts ? translationLanguages(f.text_language_mode, f.text_primary_language, f.text_secondary_language) : []}
+        value={f.welcome_message}
+        onChange={(value) => set({ welcome_message: value })}
+        translations={textsOfField(texts ?? null, 'welcome_message')}
+        onTranslationChange={(language, text) => setTexts?.({ [`welcome_message:${language}`]: text })}
+        multiline
+        rows={3}
+        maxLength={10000}
+        placeholder={t('events.welcomeMessage')}
+        inputClassName={inputClass}
+        labelClassName={labelClass}
+      />
     </SectionCard>
   );
 };

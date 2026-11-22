@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { GallerySecondaryText, useGallerySecondaryText } from '../../hooks/useGalleryText';
 import { GalleryEmptyMessage } from './GalleryEmptyMessage';
 import { toast as toastify } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
@@ -203,6 +204,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   people,
   onSelectPerson,
 }) => {
+  // Bilingual mode (issue 2550): a welcome written only in the second language still shows.
+  const secondaryWelcome = useGallerySecondaryText().welcome;
   const archives = useArchiveDownload();
   const { t } = useTranslation();
   const { theme } = useTheme();
@@ -614,9 +617,9 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
       )}
 
       {/* Welcome Message - shown for non-fullpage layouts when set */}
-      {!isFullPageLayout && welcomeMessage && (
+      {!isFullPageLayout && (welcomeMessage || secondaryWelcome) && (
         <div className="mb-6 px-4 py-3 rounded-lg bg-card-theme/50 border border-border-theme text-center">
-          <p className="text-sm text-muted-theme whitespace-pre-line">{welcomeMessage}</p>
+          <p className="text-sm text-muted-theme whitespace-pre-line">{welcomeMessage}<GallerySecondaryText kind="welcome" /></p>
         </div>
       )}
 

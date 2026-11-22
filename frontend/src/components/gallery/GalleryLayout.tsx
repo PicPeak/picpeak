@@ -1,4 +1,5 @@
 import React from 'react';
+import { GallerySecondaryText } from '../../hooks/useGalleryText';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Calendar, Clock, Download, LogOut, Facebook, Instagram, Twitter, Youtube, MessageCircle } from 'lucide-react';
@@ -409,6 +410,8 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                 >
                   {event.event_name}
                 </h1>
+                {/* Bilingual title (issue 2550): its own line, so both truncate. */}
+                <GallerySecondaryText kind="title" className="!text-xs sm:!text-sm !mt-0 text-theme truncate" />
                 {(event.event_date || event.expires_at) && (
                   <div className="hidden sm:flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs sm:text-sm text-muted-theme">
                     {event.event_date && (
@@ -509,6 +512,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                   style={{ fontFamily: headingFontFamily }}
                 >
                   {event.event_name}
+                  <GallerySecondaryText kind="title" inline />
                 </h1>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
@@ -715,6 +719,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                 }}
               >
                 {event.event_name}
+                <GallerySecondaryText kind="title" />
               </h1>
               
               {/* Event Details */}

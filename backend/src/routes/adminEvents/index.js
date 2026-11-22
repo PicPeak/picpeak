@@ -23,5 +23,6 @@ require('./qr')(router);
 require('./faces')(router);
 require('./tags')(router);
 require('./photoOrders')(router);
+require('./translations')(router);
 
 module.exports = router;

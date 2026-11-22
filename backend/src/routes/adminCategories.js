@@ -15,6 +15,7 @@ const { getEventCategoriesOrdered } = require('../utils/categoryOrder');
 const logger = require('../utils/logger');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const chapters = require('../services/categoryChapters');
+const { deleteCategoryTranslations } = require('../services/contentTranslations');
 const router = express.Router();
 
 /**
@@ -474,7 +475,15 @@ router.put('/event/:eventId/:id/chapter', adminAuth, requirePermission('settings
     const next = { ...chapters.chapterFieldsOf(before), ...chapters.chapterUpdateFrom(req.body) };
     const empty = chapters.CHAPTER_FIELDS.every((field) => next[field] === null);
     if (empty) {
-      await db('event_category_chapters').where({ event_id: eventId, category_id: categoryId }).del();
+      // No marker, no texts for it: its translations (migration 373) go in
+      // the same transaction, so a removal never leaves them showing.
+      await db.transaction(async (trx) => {
+        await trx('event_category_chapters').where({ event_id: eventId, category_id: categoryId }).del();
+        if (await trx.schema.hasTable('content_translations')) {
+          await trx('content_translations')
+            .where({ event_id: eventId, entity_type: 'chapter', entity_id: categoryId }).del();
+        }
+      });
     } else {
       await db('event_category_chapters')
         .insert({ event_id: eventId, category_id: categoryId, ...next, updated_at: new Date().toISOString() })
@@ -534,6 +543,8 @@ router.delete('/:id', adminAuth, requirePermission('settings.edit'), async (req,
     if (await db.schema.hasTable('event_category_chapters')) {
       await db('event_category_chapters').where('category_id', id).del();
     }
+    // Its translated names and chapter texts (migration 373), the same reason.
+    await deleteCategoryTranslations(db, id);
     await db('photo_categories').where('id', id).delete();
     
     // Log activity

@@ -575,6 +575,8 @@ async function deleteFolder(eventId, folderId, conn = db) {
     if (await trx.schema.hasTable('event_category_chapters')) {
       await trx('event_category_chapters').where({ category_id: folder.id }).del();
     }
+    // Translated names (migration 373): the same reason.
+    await require('./contentTranslations').deleteCategoryTranslations(trx, folder.id);
     await trx('photo_categories').where('id', folder.id).del();
     return moved;
   };

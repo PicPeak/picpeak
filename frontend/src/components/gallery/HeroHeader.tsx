@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { GallerySecondaryText } from '../../hooks/useGalleryText';
 import { ChevronDown, Calendar, Clock } from 'lucide-react';
 import { parseISO } from 'date-fns';
 import { useTranslation } from 'react-i18next';
@@ -193,6 +194,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
             {eventName && (
               <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold text-white drop-shadow-lg mb-4">
                 {eventName}
+                <GallerySecondaryText kind="title" />
               </h1>
             )}
 

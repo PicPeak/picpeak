@@ -517,6 +517,21 @@
   overflow-wrap: anywhere;
 }
 
+/* Bilingual mode (issue 2550): the secondary language below, smaller and
+   quieter, in the colour of the text it belongs to. */
+.story-chapter-secondary {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.5em;
+  line-height: 1.3;
+  opacity: 0.75;
+}
+
+.story-chapter-subheading .story-chapter-secondary {
+  font-size: 0.9em;
+  margin-top: 0.125rem;
+}
+
 .story-chapter-divider {
   padding: 1.5rem 0;
   border-top: 1px solid var(--story-border);

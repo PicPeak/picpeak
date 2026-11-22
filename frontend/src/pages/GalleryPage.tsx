@@ -11,6 +11,7 @@ import { usePublicSettings } from '../hooks/usePublicSettings';
 import { Input, Button, ReCaptcha, CMSContentBlock, PoweredBy } from '../components/common';
 import { useGalleryAuth, useTheme } from '../contexts';
 import { useGalleryInfo } from '../hooks/useGallery';
+import { useGalleryText } from '../hooks/useGalleryText';
 import { useFollowGalleryRename } from '../hooks/useFollowGalleryRename';
 import { useShowAgbLink } from '../hooks/useShowAgbLink';
 import { GalleryView } from '../components/gallery';
@@ -148,12 +149,18 @@ export const GalleryPage: React.FC = () => {
   
   const { data: settingsData, isLoading: isLoadingSettings } = usePublicSettings();
   
-  // Set language from admin settings when on login page
+  // Set language from admin settings when on login page. Not for a gallery
+  // in visitor-language mode (issue 2550): it follows the language the
+  // visitor's browser asked for, so forcing the default here would show
+  // every guest the default language's texts. Waits for /info (or its
+  // failure) to know the mode.
+  const galleryInfoSettled = Boolean(galleryInfo) || Boolean(infoError);
+  const followsVisitorLanguage = galleryInfo?.text_language_mode === 'visitor';
   React.useEffect(() => {
-    if (!isAuthenticated && settingsData?.default_language) {
-      i18n.changeLanguage(settingsData.default_language);
-    }
-  }, [settingsData, isAuthenticated, i18n]);
+    if (isAuthenticated || !settingsData?.default_language || !galleryInfoSettled || followsVisitorLanguage) return;
+    i18n.changeLanguage(settingsData.default_language);
+  }, [settingsData, isAuthenticated, i18n, galleryInfoSettled, followsVisitorLanguage]);
+  const loginTitle = useGalleryText(galleryInfo).pair(galleryInfo?.event_name, galleryInfo?.translations?.event_name);
 
   // Apply theme for gallery (both login page and authenticated view)
   React.useEffect(() => {
@@ -542,7 +549,10 @@ export const GalleryPage: React.FC = () => {
               />
             )}
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-2 px-2" style={{ color: 'var(--color-accent-dark)' }}>
-              {galleryInfo?.event_name}
+              {loginTitle.primary}
+              {loginTitle.secondary && (
+                <span className="block mt-1 text-[0.55em] font-normal opacity-75" data-gallery-text="secondary">{loginTitle.secondary}</span>
+              )}
             </h1>
           </div>
 

@@ -1,5 +1,6 @@
 import { PhotoSalesCartButton } from '../../../features/photo-sales/PhotoSalesCartButton';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { GallerySecondaryText, useGallerySecondaryText } from '../../../hooks/useGalleryText';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
 import { BackToAccountLink } from '../BackToAccountLink';
@@ -138,6 +139,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   isClient = false,
   onToggleVisibility,
 }) => {
+  // Bilingual mode (issue 2550): a welcome written only in the second language still shows.
+  const secondaryWelcome = useGallerySecondaryText().welcome;
   // These props are passed by parent but we use our own feedback system, so mark as intentionally unused
   void _onPhotoClick;
   void _onOpenPhotoWithFeedback;
@@ -922,7 +925,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         </h2>
         <p className="story-footer-text">
           {footerString(storyFooterText, STORY_FOOTER_TEXT_MAX)
-            || welcomeMessage
+            || ((welcomeMessage || secondaryWelcome) && <>{welcomeMessage}<GallerySecondaryText kind="welcome" /></>)
             || t('gallery.thankYouMessage', 'For being part of our story and making our special day unforgettable.')}
         </p>
         {canDownloadAll && (
