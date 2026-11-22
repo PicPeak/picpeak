@@ -1203,6 +1203,7 @@
       },
       "restoreError": {
         "RESTORE_MANIFEST_INVALID": "Die Datei ist kein Backup, das diese Instanz wiederherstellen kann.",
+        "RESTORE_LEDGER_UNKNOWN_MIGRATIONS": "Dieses Backup stammt aus einer neueren PicPeak-Release-Linie: Seine Datenbank enthält Migrationen, die diese Version nicht kennt. Stellen Sie es auf einer PicPeak-Version wieder her, die sie enthält.",
         "RESTORE_PRIVILEGE_MISSING": "Der Datenbankbenutzer dieser Instanz darf keine Wiederherstellung ausführen (PostgreSQL-SUPERUSER ist erforderlich).",
         "RESTORE_CAPACITY_LIMIT": "Auf dem Speichervolume ist nicht genug Platz für dieses Backup frei.",
         "RESTORE_CAPACITY_UNKNOWN": "Der freie Platz auf dem Speichervolume konnte nicht ermittelt werden.",

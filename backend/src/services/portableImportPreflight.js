@@ -71,6 +71,9 @@ async function preflightArchive(archivePath, { db = require('../database/db').db
   }
   const blockers = await helpers().validateManifest(manifest);
   if (blockers.length) throw refuse(blockers[0], 'RESTORE_MANIFEST_INVALID');
+  // Next to the forward-only check: a ledger from another release line with
+  // migrations this code does not ship (issue 2480).
+  await helpers().assertArchiveLedgerKnown(archivePath);
   const recorded = catalogue(manifest);
   const allTables = (await require('./picpeakExportService').listDataTables()).filter(table => !RUNTIME_TABLES.has(table));
   const zip = await archive.openBoundedArchive(archivePath, { validateFileKey: helpers().importFilePathProblem, allowedTables: new Set(allTables) });
