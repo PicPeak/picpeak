@@ -85,6 +85,20 @@ vi.mock('../GallerySidebar', () => ({
   },
 }));
 vi.mock('../PeopleStrip', () => ({ PeopleStrip: () => null }));
+// The album configurator a client's ?album= link opens (a modal, no role,
+// so the tour stays the only role="dialog" here).
+vi.mock('../../../features/album-products/GuidedAlbumFlow', () => ({
+  GuidedAlbumFlow: ({ onClose }: { onClose: () => void }) => (
+    <div aria-modal="true" data-testid="album-flow"><button type="button" onClick={onClose}>close-album</button></div>
+  ),
+}));
+vi.mock('../../../features/album-products/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../features/album-products/model')>();
+  return {
+    ...actual,
+    albumProducts: { ...actual.albumProducts, client: vi.fn().mockResolvedValue([]) },
+  };
+});
 vi.mock('../../../services/guests.service', () => ({
   guestsService: { redeemInvite: vi.fn() },
 }));
@@ -117,6 +131,7 @@ import { resetWalkthroughMemory, walkthroughStorageKey } from '../walkthrough/wa
 import { galleryService } from '../../../services/gallery.service';
 import { feedbackService } from '../../../services/feedback.service';
 import { guestsService } from '../../../services/guests.service';
+import { albumProducts } from '../../../features/album-products/model';
 
 const event = {
   id: 1,
@@ -173,6 +188,7 @@ beforeEach(() => {
   stable.auth = { logout: () => {}, isClient: false, viaCustomer: false };
   stable.theme = { setTheme: () => {}, theme: { controlsStyle: 'sidebar' } };
   window.sessionStorage.clear();
+  vi.mocked(albumProducts.client).mockResolvedValue([]);
   vi.mocked(feedbackService.getGalleryFeedbackSettings).mockResolvedValue({ feedback_enabled: false });
   window.history.replaceState(null, '', '/gallery/wedding');
 });
@@ -367,6 +383,50 @@ describe('GalleryView walkthrough (issue 2551)', () => {
       await screen.findByRole('dialog');
       fireEvent.click(screen.getByText('gallery.walkthrough.next'));
       expect(screen.getByRole('dialog')).toHaveTextContent('gallery.walkthrough.steps.favorites.bodyLikes');
+    });
+  });
+
+  describe('other dialogs on the page', () => {
+    it('waits for the album configurator a client ?album= link opens', async () => {
+      stable.auth = { logout: () => {}, isClient: true, viaCustomer: false };
+      let deliver: (offers: unknown) => void = () => {};
+      vi.mocked(albumProducts.client).mockReturnValue(new Promise((r) => { deliver = r; }) as never);
+      window.history.replaceState(null, '', '/gallery/wedding?album=offer-1');
+      show();
+      await waitFor(() => expect(albumProducts.client).toHaveBeenCalled());
+      await settle();
+      // Offers still loading: the link has not opened its dialog yet.
+      expect(screen.queryByTestId('gallery-walkthrough')).toBeNull();
+      deliver([{ id: 'offer-1', product: { guided: true }, readOnly: false }]);
+      expect(await screen.findByTestId('album-flow')).toBeInTheDocument();
+      await settle();
+      expect(screen.queryByTestId('gallery-walkthrough')).toBeNull();
+      fireEvent.click(screen.getByText('close-album'));
+      expect(await screen.findByTestId('gallery-walkthrough')).toBeInTheDocument();
+    });
+
+    it('waits while any modal dialog is in the page, and opens once it is gone', async () => {
+      const modal = document.createElement('div');
+      modal.setAttribute('aria-modal', 'true');
+      document.body.appendChild(modal);
+      show();
+      await waitFor(() => expect(helpButton()).not.toBeNull());
+      await settle();
+      expect(screen.queryByTestId('gallery-walkthrough')).toBeNull();
+      expect(window.localStorage.getItem(walkthroughStorageKey('wedding', 'guest'))).toBeNull();
+      modal.remove();
+      expect(await screen.findByTestId('gallery-walkthrough')).toBeInTheDocument();
+    });
+
+    it('still opens from the help icon while another dialog is up', async () => {
+      const modal = document.createElement('div');
+      modal.setAttribute('aria-modal', 'true');
+      document.body.appendChild(modal);
+      show();
+      await waitFor(() => expect(helpButton()).not.toBeNull());
+      fireEvent.click(helpButton()!);
+      expect(await screen.findByTestId('gallery-walkthrough')).toBeInTheDocument();
+      modal.remove();
     });
   });
 });

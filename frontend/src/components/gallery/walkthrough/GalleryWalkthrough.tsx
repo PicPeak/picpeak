@@ -190,7 +190,7 @@ export const GalleryWalkthrough: React.FC<GalleryWalkthroughProps> = ({ open, st
   const motion = reducedMotion ? '' : 'transition-[top,left,width,height] duration-200 ease-out';
 
   return createPortal(
-    <div className="fixed inset-0 z-[90]" data-testid="gallery-walkthrough">
+    <div className="fixed inset-0 z-[90]" data-testid="gallery-walkthrough" data-walkthrough-root="">
       {anchoredBox ? (
         <div
           aria-hidden="true"

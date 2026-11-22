@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { WalkthroughScope } from './walkthroughSteps';
 import { hasSeenWalkthrough, markWalkthroughSeen } from './walkthroughStorage';
 
@@ -20,6 +20,8 @@ export interface GalleryWalkthroughState {
    * else modal is up.
    */
   autoOpen: () => void;
+  /** autoOpen would open it now: on, closed, and not seen on this device. */
+  autoOpenPending: boolean;
   /** Called by the dialog once it is actually on screen: records it as seen. */
   markShown: () => void;
 }
@@ -33,6 +35,8 @@ export interface GalleryWalkthroughState {
  */
 export function useGalleryWalkthrough({ slug, scope, enabled }: Options): GalleryWalkthroughState {
   const [open, setOpen] = useState(false);
+  // Bumped when the tour is recorded as seen, so autoOpenPending follows.
+  const [seenVersion, setSeenVersion] = useState(0);
 
   const autoOpen = useCallback(() => {
     if (enabled && !hasSeenWalkthrough(slug, scope)) setOpen(true);
@@ -45,8 +49,17 @@ export function useGalleryWalkthrough({ slug, scope, enabled }: Options): Galler
 
   const reopen = useCallback(() => setOpen(true), []);
   const close = useCallback(() => setOpen(false), []);
-  const markShown = useCallback(() => markWalkthroughSeen(slug, scope), [slug, scope]);
-  return { open: open && enabled, reopen, close, autoOpen, markShown };
+  const markShown = useCallback(() => {
+    markWalkthroughSeen(slug, scope);
+    setSeenVersion((v) => v + 1);
+  }, [slug, scope]);
+  const autoOpenPending = useMemo(
+    () => enabled && !open && !hasSeenWalkthrough(slug, scope),
+    // seenVersion: re-read storage once the tour has been shown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [enabled, open, slug, scope, seenVersion],
+  );
+  return { open: open && enabled, reopen, close, autoOpen, autoOpenPending, markShown };
 }
 
 /** The gallery tab an admin opened from the dashboard (#868). */

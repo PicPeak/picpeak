@@ -639,6 +639,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // the gallery actually shown (not the hidden-until-reveal notice), and
   // none of the gallery's dialogs on screen. GalleryWalkthroughHost adds the
   // guest identity provider's dialogs.
+  // A client's or portal customer's ?album= link opens the album
+  // configurator once its offers load; the host waits for it.
+  const [albumLinkOnArrival] = useState(() => new URLSearchParams(window.location.search).has('album'));
+  const walkthroughAlbumPending = albumLinkOnArrival && (isClient || viaCustomer);
   const walkthroughReady = !!data && !hiddenUntilReveal && feedbackSettings !== undefined
     && (!peopleEnabled || peopleFetched) && !blockingDialogOpen;
 
@@ -2414,7 +2418,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         {clientAccessDialog}
         {clearLikesDialog}
         {/* Centered cards: these layouts draw their own chrome. */}
-        <GalleryWalkthroughHost walkthrough={walkthrough} ready={walkthroughReady} steps={walkthroughSteps} anchored={false} />
+        <GalleryWalkthroughHost walkthrough={walkthrough} ready={walkthroughReady} albumLinkPending={walkthroughAlbumPending} steps={walkthroughSteps} anchored={false} />
 
         {/* Upload Modal for full-page layouts */}
         {showUploadModal && allowUploads && (
@@ -2667,7 +2671,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         })()}
       >
         {clientAccessDialog}
-        <GalleryWalkthroughHost walkthrough={walkthrough} ready={walkthroughReady} steps={walkthroughSteps} anchored />
+        <GalleryWalkthroughHost walkthrough={walkthrough} ready={walkthroughReady} albumLinkPending={walkthroughAlbumPending} steps={walkthroughSteps} anchored />
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
         <PrintShopEntry />
         {/* Expiration Banner */}
