@@ -147,6 +147,10 @@ export interface TemplateLine {
   boundTo: BoundTo | null;
   rateSource: 'auto' | 'item' | 'manual' | null;
   detailsText: string | null;
+  /** A sub-item that adds to its parent's price (a service option, migration 371). */
+  addsToParent?: boolean;
+  /** The catalogue service a written line came from, for its options (not re-priced on publish). */
+  optionsFromPresetId?: number | null;
 }
 
 export type TemplateSection =
