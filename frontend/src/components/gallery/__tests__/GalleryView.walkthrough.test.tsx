@@ -85,6 +85,21 @@ vi.mock('../GallerySidebar', () => ({
   },
 }));
 vi.mock('../PeopleStrip', () => ({ PeopleStrip: () => null }));
+vi.mock('../../../services/guests.service', () => ({
+  guestsService: { redeemInvite: vi.fn() },
+}));
+// The real provider decides when recovery is open; the modal is a stand-in.
+vi.mock('../GuestRecoveryModal', async () => {
+  const { useGuestIdentity } = await import('../../../contexts/GuestIdentityContext');
+  return {
+    GuestRecoveryModal: () => {
+      const { recoveryOpen, closeRecovery } = useGuestIdentity();
+      return recoveryOpen
+        ? <div data-testid="recovery-modal"><button type="button" onClick={closeRecovery}>close-recovery</button></div>
+        : null;
+    },
+  };
+});
 vi.mock('../DownloadResolutionModal', () => ({
   DownloadResolutionModal: ({ onClose }: { onClose: () => void }) => (
     <div data-testid="resolution-modal"><button type="button" onClick={onClose}>close-picker</button></div>
@@ -100,6 +115,8 @@ vi.mock('../PhotoGridWithLayouts', () => ({
 import { GalleryView } from '../GalleryView';
 import { resetWalkthroughMemory, walkthroughStorageKey } from '../walkthrough/walkthroughStorage';
 import { galleryService } from '../../../services/gallery.service';
+import { feedbackService } from '../../../services/feedback.service';
+import { guestsService } from '../../../services/guests.service';
 
 const event = {
   id: 1,
@@ -154,6 +171,9 @@ beforeEach(() => {
   resetWalkthroughMemory();
   window.localStorage.clear();
   stable.auth = { logout: () => {}, isClient: false, viaCustomer: false };
+  stable.theme = { setTheme: () => {}, theme: { controlsStyle: 'sidebar' } };
+  window.sessionStorage.clear();
+  vi.mocked(feedbackService.getGalleryFeedbackSettings).mockResolvedValue({ feedback_enabled: false });
   window.history.replaceState(null, '', '/gallery/wedding');
 });
 
@@ -281,5 +301,72 @@ describe('GalleryView walkthrough (issue 2551)', () => {
     show({ people_enabled: true, selfie_search_enabled: true });
     await screen.findByRole('dialog');
     expect(tourTitles()).toContain('faces');
+  });
+
+  describe('guest identity dialogs', () => {
+    const guestMode = () => {
+      vi.mocked(feedbackService.getGalleryFeedbackSettings)
+        .mockResolvedValue({ feedback_enabled: true, identity_mode: 'guest', allow_likes: true } as never);
+      vi.mocked(feedbackService.getMyFeedback).mockResolvedValue([] as never);
+    };
+
+    it('waits while recovery for a spent invite is open, and opens after it', async () => {
+      guestMode();
+      vi.mocked(guestsService.redeemInvite).mockRejectedValue(
+        { response: { status: 409, data: { guest_id: 5, recoverable: true } } },
+      );
+      window.history.replaceState(null, '', '/gallery/wedding?invite=spent-token');
+      show();
+      expect(await screen.findByTestId('recovery-modal')).toBeInTheDocument();
+      await settle();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(window.localStorage.getItem(walkthroughStorageKey('wedding', 'guest'))).toBeNull();
+      fireEvent.click(screen.getByText('close-recovery'));
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('waits while an invite is still being redeemed', async () => {
+      guestMode();
+      let finish: (v: unknown) => void = () => {};
+      vi.mocked(guestsService.redeemInvite).mockReturnValue(new Promise((r) => { finish = r; }) as never);
+      window.history.replaceState(null, '', '/gallery/wedding?invite=fresh-token');
+      show();
+      await waitFor(() => expect(guestsService.redeemInvite).toHaveBeenCalled());
+      await settle();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      finish({ guest: { id: 9, name: 'Ana' }, token: 'guest-token' });
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    });
+  });
+
+  describe('favourites step per layout', () => {
+    const favouritesOnly = () => vi.mocked(feedbackService.getGalleryFeedbackSettings)
+      .mockResolvedValue({ feedback_enabled: true, allow_likes: false, allow_favorites: true } as never);
+
+    it('tells a standard layout to open the photo for the bookmark', async () => {
+      favouritesOnly();
+      show();
+      await screen.findByRole('dialog');
+      fireEvent.click(screen.getByText('gallery.walkthrough.next'));
+      expect(screen.getByRole('dialog')).toHaveTextContent('gallery.walkthrough.steps.favorites.bodyFavorites');
+    });
+
+    it('has no favourites step in Premium, which offers no bookmark', async () => {
+      favouritesOnly();
+      stable.theme = { setTheme: () => {}, theme: { galleryLayout: 'gallery-premium' } };
+      show();
+      await screen.findByRole('dialog');
+      expect(tourTitles()).not.toContain('favorites');
+    });
+
+    it('keeps the likes wording in Premium when both are allowed', async () => {
+      vi.mocked(feedbackService.getGalleryFeedbackSettings)
+        .mockResolvedValue({ feedback_enabled: true, allow_likes: true, allow_favorites: true } as never);
+      stable.theme = { setTheme: () => {}, theme: { galleryLayout: 'gallery-premium' } };
+      show();
+      await screen.findByRole('dialog');
+      fireEvent.click(screen.getByText('gallery.walkthrough.next'));
+      expect(screen.getByRole('dialog')).toHaveTextContent('gallery.walkthrough.steps.favorites.bodyLikes');
+    });
   });
 });

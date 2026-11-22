@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWalkthroughSteps, MAX_WALKTHROUGH_STEPS, type WalkthroughFeatures } from '../walkthroughSteps';
+import { buildWalkthroughSteps, layoutFeedbackActions, MAX_WALKTHROUGH_STEPS, type WalkthroughFeatures } from '../walkthroughSteps';
 
 const none: WalkthroughFeatures = {
   scope: 'guest', hasCategories: false, likes: false, favorites: false, downloads: false,
@@ -50,5 +50,12 @@ describe('buildWalkthroughSteps (issue 2551)', () => {
     expect(byId({ people: true }).faces.bodyKey).toMatch(/faces\.body$/);
     expect(byId({ people: true, selfie: true }).faces.bodyKey).toMatch(/bodySelfie$/);
     expect(byId({ downloads: true }).download.anchors[0]).toBe('[data-tour="download-all"]');
+  });
+
+  it('knows Premium has likes but no favourites, every other layout both', () => {
+    expect(layoutFeedbackActions('gallery-premium')).toEqual({ likes: true, favorites: false });
+    for (const layout of ['grid', 'masonry', 'mosaic', 'timeline', 'carousel', 'gallery-story', undefined]) {
+      expect(layoutFeedbackActions(layout)).toEqual({ likes: true, favorites: true });
+    }
   });
 });

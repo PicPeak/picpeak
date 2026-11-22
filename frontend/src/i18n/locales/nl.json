@@ -721,8 +721,8 @@
         "favorites": {
           "title": "Markeer je favorieten",
           "bodyLikes": "Tik op het hartje van een foto om je favorieten te markeren. Het filter toont later alleen die foto's.",
-          "bodyFavorites": "Tik op de bladwijzer van een foto om hem als favoriet te bewaren. Het filter toont later alleen die foto's.",
-          "bodyBoth": "Tik op het hartje of de bladwijzer van een foto om je favorieten te markeren. Het filter toont later alleen die foto's."
+          "bodyFavorites": "Open een foto en tik op de bladwijzer om hem als favoriet te bewaren. Het filter toont later alleen die foto's.",
+          "bodyBoth": "Tik op het hartje van een foto om je favorieten te markeren, of open een foto en tik op de bladwijzer om hem als favoriet te bewaren. Het filter toont later alleen die foto's."
         },
         "download": {
           "title": "Foto's downloaden",

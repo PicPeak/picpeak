@@ -1720,8 +1720,8 @@
         "favorites": {
           "title": "Označite priljubljene",
           "bodyLikes": "Tapnite srce na fotografiji, da označite tiste, ki so vam všeč. Filter pozneje prikaže samo te.",
-          "bodyFavorites": "Tapnite zaznamek na fotografiji, da jo shranite med priljubljene. Filter pozneje prikaže samo te.",
-          "bodyBoth": "Tapnite srce ali zaznamek na fotografiji, da označite tiste, ki so vam všeč. Filter pozneje prikaže samo te."
+          "bodyFavorites": "Odprite fotografijo in tapnite zaznamek, da jo shranite med priljubljene. Filter pozneje prikaže samo te.",
+          "bodyBoth": "Tapnite srce na fotografiji, da označite tiste, ki so vam všeč, ali odprite fotografijo in tapnite zaznamek, da jo shranite med priljubljene. Filter pozneje prikaže samo te."
         },
         "download": {
           "title": "Prenos fotografij",

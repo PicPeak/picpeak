@@ -7,11 +7,6 @@ interface Options {
   scope: WalkthroughScope;
   /** The gallery switched the walkthrough on, and this is no admin preview. */
   enabled: boolean;
-  /**
-   * The steps are final and the gallery is on screen with nothing else
-   * modal over it. Auto-opening waits for this.
-   */
-  ready: boolean;
 }
 
 export interface GalleryWalkthroughState {
@@ -19,6 +14,12 @@ export interface GalleryWalkthroughState {
   /** The help icon: reopens the tour from its first step. */
   reopen: () => void;
   close: () => void;
+  /**
+   * The first-visit opening: opens unless this visitor has seen the tour.
+   * GalleryWalkthroughHost calls it once the gallery is ready and nothing
+   * else modal is up.
+   */
+  autoOpen: () => void;
   /** Called by the dialog once it is actually on screen: records it as seen. */
   markShown: () => void;
 }
@@ -30,14 +31,12 @@ export interface GalleryWalkthroughState {
  * notice) must not use up the first visit. A visitor who reloads in the
  * middle of it has seen enough to find the help icon.
  */
-export function useGalleryWalkthrough({ slug, scope, enabled, ready }: Options): GalleryWalkthroughState {
+export function useGalleryWalkthrough({ slug, scope, enabled }: Options): GalleryWalkthroughState {
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (!enabled || !ready) return;
-    if (hasSeenWalkthrough(slug, scope)) return;
-    setOpen(true);
-  }, [enabled, ready, slug, scope]);
+  const autoOpen = useCallback(() => {
+    if (enabled && !hasSeenWalkthrough(slug, scope)) setOpen(true);
+  }, [enabled, slug, scope]);
 
   // Switched off while open (a refetch after the admin's change).
   useEffect(() => {
@@ -47,7 +46,7 @@ export function useGalleryWalkthrough({ slug, scope, enabled, ready }: Options):
   const reopen = useCallback(() => setOpen(true), []);
   const close = useCallback(() => setOpen(false), []);
   const markShown = useCallback(() => markWalkthroughSeen(slug, scope), [slug, scope]);
-  return { open: open && enabled, reopen, close, markShown };
+  return { open: open && enabled, reopen, close, autoOpen, markShown };
 }
 
 /** The gallery tab an admin opened from the dashboard (#868). */

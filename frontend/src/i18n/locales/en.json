@@ -1934,8 +1934,8 @@
         "favorites": {
           "title": "Mark your favourites",
           "bodyLikes": "Tap the heart on a photo to mark the ones you love. The filter shows only those later.",
-          "bodyFavorites": "Tap the bookmark on a photo to keep it as a favourite. The filter shows only those later.",
-          "bodyBoth": "Tap the heart or the bookmark on a photo to mark the ones you love. The filter shows only those later."
+          "bodyFavorites": "Open a photo and tap the bookmark to keep it as a favourite. The filter shows only those later.",
+          "bodyBoth": "Tap the heart on a photo to mark the ones you love, or open a photo and tap the bookmark to keep it as a favourite. The filter shows only those later."
         },
         "download": {
           "title": "Download photos",

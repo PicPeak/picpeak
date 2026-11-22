@@ -29,6 +29,12 @@ interface GuestIdentityContextValue {
    * identity for its guest (issue 2209). null when the visitor opened it.
    */
   recoveryReason: 'spent-invite' | null;
+  /**
+   * An invite link is being redeemed in guest mode: its outcome may still
+   * open recovery, so overlays that open on their own (the first-visit
+   * walkthrough, issue 2551) wait for it.
+   */
+  invitePending: boolean;
   openPrompt: () => void;
   closePrompt: () => void;
   openRecovery: () => void;
@@ -115,6 +121,16 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   identityRef.current = identity;
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryReason, setRecoveryReason] = useState<'spent-invite' | null>(null);
+  // True from mount while an invite from the URL or the pending slot is
+  // still to be redeemed (issue 2551), so the very first render already
+  // says so; cleared once redemption settles or there is nothing to redeem.
+  const [inviteRedeeming, setInviteRedeeming] = useState<boolean>(() => {
+    try {
+      return !!new URLSearchParams(window.location.search).get('invite') || !!readPendingInvite(slug);
+    } catch {
+      return false;
+    }
+  });
 
   // Pending promise resolvers for ensureIdentity() calls waiting on prompt.
   const pendingResolvers = useRef<Array<(identity: GuestIdentity) => void>>([]);
@@ -277,8 +293,12 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     if (identityMode !== 'guest') return;
     const parked = parkedInviteRef.current;
     const inviteToken = (parked && parked.slug === slug ? parked.token : null) || readPendingInvite(slug);
-    if (!inviteToken || redeemedInviteRef.current === inviteToken) return;
+    if (!inviteToken || redeemedInviteRef.current === inviteToken) {
+      if (!invitePromiseRef.current) setInviteRedeeming(false);
+      return;
+    }
     redeemedInviteRef.current = inviteToken;
+    setInviteRedeeming(true);
     const settleInvite = () => {
       parkedInviteRef.current = null;
       writePendingInvite(slug, null);
@@ -337,6 +357,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
         console.warn('Failed to redeem invite token', error);
       } finally {
         invitePromiseRef.current = null;
+        setInviteRedeeming(false);
       }
     })();
   }, [slug, identityMode]);
@@ -496,6 +517,8 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   }, [slug, identityMode, requireForDownload, downloadExempt, ensureIdentity, remountIfPending]);
 
   const isRequired = identityMode === 'guest' && !identity;
+  // Only guest mode redeems invites; in simple mode the token just waits.
+  const invitePending = identityMode === 'guest' && inviteRedeeming;
 
   const value = useMemo<GuestIdentityContextValue>(
     () => ({
@@ -507,6 +530,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       promptReason,
       recoveryOpen,
       recoveryReason,
+      invitePending,
       openPrompt,
       closePrompt,
       openRecovery,
@@ -529,6 +553,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       promptReason,
       recoveryOpen,
       recoveryReason,
+      invitePending,
       openPrompt,
       closePrompt,
       openRecovery,

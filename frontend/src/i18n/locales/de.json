@@ -2688,8 +2688,8 @@
         "favorites": {
           "title": "Favoriten markieren",
           "bodyLikes": "Tippen Sie auf das Herz eines Fotos, um Ihre Lieblingsfotos zu markieren. Der Filter zeigt Ihnen später nur diese.",
-          "bodyFavorites": "Tippen Sie auf das Lesezeichen eines Fotos, um es als Favorit zu merken. Der Filter zeigt Ihnen später nur diese.",
-          "bodyBoth": "Tippen Sie auf das Herz oder das Lesezeichen eines Fotos, um Ihre Lieblingsfotos zu markieren. Der Filter zeigt Ihnen später nur diese."
+          "bodyFavorites": "Öffnen Sie ein Foto und tippen Sie auf das Lesezeichen, um es als Favorit zu merken. Der Filter zeigt Ihnen später nur diese.",
+          "bodyBoth": "Tippen Sie auf das Herz eines Fotos, um Ihre Lieblingsfotos zu markieren, oder öffnen Sie ein Foto und tippen Sie auf das Lesezeichen, um es als Favorit zu merken. Der Filter zeigt Ihnen später nur diese."
         },
         "download": {
           "title": "Fotos herunterladen",

@@ -837,8 +837,8 @@
         "favorites": {
           "title": "Marque suas favoritas",
           "bodyLikes": "Toque no coração de uma foto para marcar as que você ama. Depois, o filtro mostra só essas.",
-          "bodyFavorites": "Toque no marcador de uma foto para guardá-la como favorita. Depois, o filtro mostra só essas.",
-          "bodyBoth": "Toque no coração ou no marcador de uma foto para marcar as que você ama. Depois, o filtro mostra só essas."
+          "bodyFavorites": "Abra uma foto e toque no marcador para guardá-la como favorita. Depois, o filtro mostra só essas.",
+          "bodyBoth": "Toque no coração de uma foto para marcar as que você ama, ou abra uma foto e toque no marcador para guardá-la como favorita. Depois, o filtro mostra só essas."
         },
         "download": {
           "title": "Baixar fotos",

@@ -109,10 +109,10 @@ import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
 import { useQueryClient } from '@tanstack/react-query';
 import { FavoriteListsContext, favoriteRowInList, useFavoriteListsState } from '../../contexts/FavoriteListsContext';
 import { FavoriteListsDialog } from './FavoriteListsDialog';
-import { GalleryWalkthrough } from './walkthrough/GalleryWalkthrough';
+import { GalleryWalkthroughHost } from './walkthrough/GalleryWalkthroughHost';
 import { WalkthroughHelpButton } from './walkthrough/WalkthroughHelpButton';
 import { isAdminPreviewUrl, useGalleryWalkthrough } from './walkthrough/useGalleryWalkthrough';
-import { buildWalkthroughSteps, type WalkthroughScope } from './walkthrough/walkthroughSteps';
+import { buildWalkthroughSteps, layoutFeedbackActions, type WalkthroughScope } from './walkthrough/walkthroughSteps';
 
 interface GalleryViewProps {
   slug: string;
@@ -634,12 +634,13 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     slug,
     scope: walkthroughScope,
     enabled: data?.event?.walkthrough_enabled === true && !isAdminPreviewUrl(),
-    // Steps final (feedback settings and, where on, the people list are in),
-    // the gallery actually shown (not the hidden-until-reveal notice), and
-    // nothing else modal on screen.
-    ready: !!data && !hiddenUntilReveal && feedbackSettings !== undefined
-      && (!peopleEnabled || peopleFetched) && !blockingDialogOpen,
   });
+  // Steps final (feedback settings and, where on, the people list are in),
+  // the gallery actually shown (not the hidden-until-reveal notice), and
+  // none of the gallery's dialogs on screen. GalleryWalkthroughHost adds the
+  // guest identity provider's dialogs.
+  const walkthroughReady = !!data && !hiddenUntilReveal && feedbackSettings !== undefined
+    && (!peopleEnabled || peopleFetched) && !blockingDialogOpen;
 
   // A credit filter whose name is gone from the scope (erased by "Forget me",
   // renamed by the host) would keep emptying the grid while the chips, and
@@ -2056,8 +2057,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const walkthroughSteps = walkthroughEnabled ? buildWalkthroughSteps({
     scope: walkthroughScope,
     hasCategories: filterCategories(data.categories).length > 0 || (data.event.chapter_marker_style || 'off') !== 'off',
-    likes: feedbackEnabled && !!feedbackSettings?.allow_likes,
-    favorites: feedbackEnabled && !!feedbackSettings?.allow_favorites,
+    // What the active layout puts on screen, not only what feedback allows:
+    // Premium has no favourite (bookmark) action anywhere.
+    likes: feedbackEnabled && !!feedbackSettings?.allow_likes && layoutFeedbackActions(theme.galleryLayout).likes,
+    favorites: feedbackEnabled && !!feedbackSettings?.allow_favorites && layoutFeedbackActions(theme.galleryLayout).favorites,
     downloads: allowDownloads,
     people: peopleControlsShown,
     selfie: selfieSearchEnabled,
@@ -2411,7 +2414,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         {clientAccessDialog}
         {clearLikesDialog}
         {/* Centered cards: these layouts draw their own chrome. */}
-        <GalleryWalkthrough open={walkthrough.open} steps={walkthroughSteps} anchored={false} onClose={walkthrough.close} onShown={walkthrough.markShown} />
+        <GalleryWalkthroughHost walkthrough={walkthrough} ready={walkthroughReady} steps={walkthroughSteps} anchored={false} />
 
         {/* Upload Modal for full-page layouts */}
         {showUploadModal && allowUploads && (
@@ -2664,7 +2667,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         })()}
       >
         {clientAccessDialog}
-        <GalleryWalkthrough open={walkthrough.open} steps={walkthroughSteps} anchored onClose={walkthrough.close} onShown={walkthrough.markShown} />
+        <GalleryWalkthroughHost walkthrough={walkthrough} ready={walkthroughReady} steps={walkthroughSteps} anchored />
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
         <PrintShopEntry />
         {/* Expiration Banner */}

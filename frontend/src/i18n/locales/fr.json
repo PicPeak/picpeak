@@ -734,8 +734,8 @@
         "favorites": {
           "title": "Marquez vos favorites",
           "bodyLikes": "Touchez le cœur d'une photo pour marquer celles que vous aimez. Le filtre n'affiche ensuite que celles-ci.",
-          "bodyFavorites": "Touchez le signet d'une photo pour la garder en favori. Le filtre n'affiche ensuite que celles-ci.",
-          "bodyBoth": "Touchez le cœur ou le signet d'une photo pour marquer celles que vous aimez. Le filtre n'affiche ensuite que celles-ci."
+          "bodyFavorites": "Ouvrez une photo et touchez le signet pour la garder en favori. Le filtre n'affiche ensuite que celles-ci.",
+          "bodyBoth": "Touchez le cœur d'une photo pour marquer celles que vous aimez, ou ouvrez une photo et touchez le signet pour la garder en favori. Le filtre n'affiche ensuite que celles-ci."
         },
         "download": {
           "title": "Télécharger des photos",
