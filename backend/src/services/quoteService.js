@@ -816,8 +816,17 @@ async function updateQuote(id, payload, adminId) {
     // Conditional on the status read above: the draft-only and lock checks
     // ran before the transaction, so a quote sent or accepted meanwhile is
     // refused instead of being changed (and reverted to draft) here.
-    const saved = await auditedUpdate(trx, 'quotes', { id, status: existing.status }, updates, history);
+    // The customer and currency it was read with too: the customer /
+    // currency decisions above (bank account, token revocation, new deal)
+    // hold only for that row, so an overlapping save is refused.
+    const saved = await auditedUpdate(trx, 'quotes', {
+      id, status: existing.status, customer_account_id: existing.customer_account_id, currency: existing.currency,
+    }, updates, history);
     if (!saved) {
+      const now = await trx('quotes').where({ id }).first('status');
+      if (now && now.status === existing.status) {
+        throw new AppError('This quote was changed by another save. Reload it and try again.', 409, 'QUOTE_CHANGED');
+      }
       throw new AppError('This quote changed status while it was being saved. Reload it and try again.', 409, 'QUOTE_NOT_DRAFT');
     }
 
@@ -1382,7 +1391,22 @@ async function recordResponse({ token, action, ip, tosAccepted, actor = QUOTE_LI
       updates.tos_accepted_at = now;
       updates.tos_text_snapshot = tosText || null;
     }
-    await auditedUpdate(trx, 'quotes', { id: quote.id }, updates, history);
+    // The link again, inside the transaction: a customer change after it was
+    // read above expires every link the old customer holds.
+    const liveToken = await trx('quote_action_tokens').where({ id: tokenRow.id }).first();
+    if (!liveToken || liveToken.used_action === 'revoked' || !liveToken.expires_at
+      || new Date(liveToken.expires_at).getTime() < Date.now()) {
+      throw new AppError('Token expired', 410);
+    }
+    // Conditional on the status and customer this request read: a quote
+    // reopened, moved to another customer and sent again meanwhile is not
+    // this link's to answer.
+    const applied = await auditedUpdate(trx, 'quotes', {
+      id: quote.id, status: quote.status, customer_account_id: quote.customer_account_id,
+    }, updates, history);
+    if (!applied) {
+      throw new AppError('This quote changed while you were answering it. Reload the page.', 409, 'QUOTE_CHANGED');
+    }
     await trx('quote_action_tokens').where({ id: tokenRow.id }).update({
       used_at: now,
       used_action: newStatus,

@@ -8,7 +8,8 @@
  *   - a customer change is refused on a quote an invoice was made from even
  *     when the admin may not read invoices;
  *   - a send that read the quote before a customer change records nothing,
- *     mints no link, queues no email and keeps no file.
+ *     mints no link, queues no email and keeps no file;
+ *   - an overlapping save that changed the customer refuses the other save.
  */
 
 const crypto = require('crypto');
@@ -124,4 +125,23 @@ test('a send that read the quote before its customer changed records and emails 
   expect(queued).toHaveLength(queuedBefore + 1);
   expect(queued[queued.length - 1].recipient_email).toBe('other@example.com');
   expect(storedFilesOf(quoteNumber)).toHaveLength(1);
+});
+
+test('a save is refused when another save changed the customer after it was read', async () => {
+  const quoteId = await draft();
+  const businessProfileService = require('../../src/services/businessProfileService');
+  const realResolve = businessProfileService.resolveBankAccountForCurrency;
+  // Another save moves the quote to the other customer while this one
+  // resolves the new currency's bank account.
+  const spy = jest.spyOn(businessProfileService, 'resolveBankAccountForCurrency').mockImplementationOnce(async (...args) => {
+    await db('quotes').where({ id: quoteId }).update({ customer_account_id: otherCustomerId });
+    return realResolve(...args);
+  });
+  try {
+    await expect(quoteService.updateQuote(quoteId, { currency: 'EUR' }, adminId))
+      .rejects.toMatchObject({ statusCode: 409, code: 'QUOTE_CHANGED' });
+  } finally {
+    spy.mockRestore();
+  }
+  expect((await db('quotes').where({ id: quoteId }).first()).currency).toBe('CHF');
 });
