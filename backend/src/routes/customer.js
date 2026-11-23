@@ -850,7 +850,7 @@ router.get('/contracts', customerAuth, async (req, res) => {
     // grouped read rather than a probe per row, and the button is only
     // offered for a contract that actually has one.
     const certified = new Set();
-    if (rows.length && await dbi.schema.hasTable('generated_documents')) {
+    if (rows.length) {
       const certificates = await dbi('generated_documents')
         .where({ doc_type: 'contract', kind: 'audit' })
         .whereIn('doc_id', rows.map((r) => r.id))

@@ -28,7 +28,6 @@ const { getQueueProcessorStatus } = require('../services/emailProcessor');
 const dependencyHealth = require('../services/dependencyHealth');
 const { CAPABILITIES, isCapability } = require('../services/capabilities');
 const { toMillis } = require('../utils/queueTimestamps');
-const { hasColumnCached } = require('../utils/schemaCache');
 const {
   isEncryptedEmailData, isProtectedEmailType, PROTECTED_PENDING_STATUS,
 } = require('../utils/emailQueueEncryption');
@@ -487,7 +486,7 @@ router.post(
       error_message: null,
       scheduled_at: null,
       // A retry starts the outage allowance again, like the attempts.
-      ...(await hasColumnCached('email_queue', 'deferred_since') ? { deferred_since: null } : {}),
+      deferred_since: null,
     });
     if (!updated) return res.status(404).json({ error: 'Email not found' });
     return successResponse(res, { retried: true });

@@ -322,10 +322,6 @@ async function billEvent(
   itemIds = null,
 ) {
   if (!(await enabled(db))) throw new AppError('CRM billing is disabled', 403);
-  // Pre-warm native drift checks before taking SQLite's only connection.
-  const { hasColumnCached } = require('../../utils/schemaCache');
-  await hasColumnCached('invoices', 'vat_code');
-  await hasColumnCached('invoices', 'project_id');
   return db.transaction(async (tx) => {
     const event = eventId
       ? await tx('events').where({ id: eventId }).forUpdate().first()

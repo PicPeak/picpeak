@@ -60,7 +60,7 @@ async function createFromQuote(quoteId, adminId, { contractTemplateId = null } =
   if (contractTemplateId) {
     versionId = await templates.usablePublishedVersionId(contractTemplateId);
     if (!versionId) throw new AppError('Pick a published contract template', 400, 'TEMPLATE_VERSION_INVALID');
-  } else if (quote.source_template_id && await hasColumnCached('quote_templates', 'default_contract_template_id')) {
+  } else if (quote.source_template_id) {
     const quoteTemplate = await db('quote_templates').where({ id: quote.source_template_id })
       .select('default_contract_template_id').first();
     versionId = await templates.usablePublishedVersionId(quoteTemplate && quoteTemplate.default_contract_template_id);
@@ -87,10 +87,9 @@ async function createFromQuote(quoteId, adminId, { contractTemplateId = null } =
   const hasContractSourceQuote = await hasColumnCached('contracts', 'source_quote_id');
   const hasQuoteContractBackPointer = await hasColumnCached('quotes', 'converted_contract_id');
   const hasContractEventCols = await hasColumnCached('contracts', 'event_name');
-  // The contract stays in the quote's project (migration 121), so the project
-  // page shows it without a second link, when the converter owns that project.
-  const carriedProject = await hasColumnCached('contracts', 'project_id')
-    ? await require('../projectService').carriedProjectId(quote.project_id, adminId) : null;
+  // The contract stays in the quote's project, so the project page shows it
+  // without a second link, when the converter owns that project.
+  const carriedProject = await require('../projectService').carriedProjectId(quote.project_id, adminId);
 
   // Resolve the actor BEFORE opening the transaction — adminActor reads
   // admin_users via the global db, which deadlocks the single-connection
@@ -286,7 +285,6 @@ async function convertToEvent(contractId, adminId) {
   for (const [k, v] of Object.entries(candidate)) {
     if (Object.prototype.hasOwnProperty.call(eventCols, k)) eventRow[k] = v;
   }
-  const hasAssignments = await db.schema.hasTable('event_customer_assignments');
 
   const eventId = await db.transaction(async (trx) => {
     // Claim the contract before creating anything, so two concurrent
@@ -304,21 +302,18 @@ async function convertToEvent(contractId, adminId) {
     const newEventId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
     // Link the customer so they see the event on their portal once
-    // the admin activates it. Best-effort — older installs without
-    // the junction table still get the event row. In a savepoint, so a
-    // failed insert does not abort the transaction on PostgreSQL.
-    if (hasAssignments) {
-      try {
-        await trx.transaction(async (sp) => {
-          await sp('event_customer_assignments').insert({
-            event_id: newEventId,
-            customer_account_id: customer.id,
-            assigned_by_admin_id: adminId,
-            assigned_at: new Date(),
-          });
+    // the admin activates it. Best-effort, in a savepoint, so a failed
+    // insert does not abort the transaction on PostgreSQL.
+    try {
+      await trx.transaction(async (sp) => {
+        await sp('event_customer_assignments').insert({
+          event_id: newEventId,
+          customer_account_id: customer.id,
+          assigned_by_admin_id: adminId,
+          assigned_at: new Date(),
         });
-      } catch (_) { /* best-effort */ }
-    }
+      });
+    } catch (_) { /* best-effort */ }
 
     if (hasContractConvertedEvent) {
       await auditedUpdate(trx, 'contracts', { id: contractId }, {
@@ -430,50 +425,44 @@ async function convertToInvoiceOnly(contractId, adminId, options = {}) {
   // Schema-drift guard — skip the back-pointer update silently when the
   // invoices table lacks the lineage column.
   const hasInvoiceContractBackPointer = await hasColumnCached('invoices', 'source_contract_id');
-  // Migration 231 — skip the claim entirely on installs that haven't
-  // migrated yet (same schema-drift pattern as the back-pointer above).
-  const hasInvoicePreparedAt = await hasColumnCached('contracts', 'invoice_prepared_at');
 
   // Taken before branching so it covers both Path A and Path B below —
   // they're reached through the same contractId and the same
   // check-then-act shape, so one per-contract claim protects both.
-  let claimedAt = null;
-  if (hasInvoicePreparedAt) {
-    // A claim is never cleared after a successful conversion, so once it
-    // goes stale a later call would re-claim it. Hand back the invoice a
-    // finished conversion produced before claiming, so that call (or a
-    // retry after a crash past the commit) adopts it instead of
-    // double-billing (Path B) or erroring on the converted quote (Path A).
-    const finished = await existingContractInvoiceResult(contract, contractId, hasInvoiceContractBackPointer);
-    if (finished) return finished;
-    claimedAt = await claimContractForInvoiceConversion(contractId, adminId);
-    if (!claimedAt) {
-      // Someone else already claimed this contract — a concurrent request
-      // that's still running, or one that already finished. Either way,
-      // hand back the invoice it produced instead of erroring, matching
-      // the alreadyConverted pattern used elsewhere in this file.
-      const existing = await existingContractInvoiceResult(contract, contractId, hasInvoiceContractBackPointer);
-      if (existing) return existing;
-      // Claimed but no invoice yet, and not stale enough to re-claim —
-      // a conversion is genuinely in progress right now.
-      throw new AppError(
-        'This contract is already being converted to an invoice. Try again shortly.',
-        409, 'INVOICE_CONVERSION_IN_PROGRESS',
-      );
-    }
+  // A claim is never cleared after a successful conversion, so once it
+  // goes stale a later call would re-claim it. Hand back the invoice a
+  // finished conversion produced before claiming, so that call (or a
+  // retry after a crash past the commit) adopts it instead of
+  // double-billing (Path B) or erroring on the converted quote (Path A).
+  const finished = await existingContractInvoiceResult(contract, contractId, hasInvoiceContractBackPointer);
+  if (finished) return finished;
+  const claimedAt = await claimContractForInvoiceConversion(contractId, adminId);
+  if (!claimedAt) {
+    // Someone else already claimed this contract — a concurrent request
+    // that's still running, or one that already finished. Either way,
+    // hand back the invoice it produced instead of erroring, matching
+    // the alreadyConverted pattern used elsewhere in this file.
+    const existing = await existingContractInvoiceResult(contract, contractId, hasInvoiceContractBackPointer);
+    if (existing) return existing;
+    // Claimed but no invoice yet, and not stale enough to re-claim —
+    // a conversion is genuinely in progress right now.
+    throw new AppError(
+      'This contract is already being converted to an invoice. Try again shortly.',
+      409, 'INVOICE_CONVERSION_IN_PROGRESS',
+    );
   }
 
   try {
     return await convertClaimedContractToInvoice(contract, contractId, adminId, hasInvoiceContractBackPointer, options);
   } catch (err) {
-    if (claimedAt) await releaseContractInvoiceClaim(contractId, adminId, claimedAt);
+    await releaseContractInvoiceClaim(contractId, adminId, claimedAt);
     throw err;
   }
 }
 
-/** The actual conversion, run only once a claim (if the schema has the
- * column) has been won. Split out of convertToInvoiceOnly so the claim
- * can wrap it in a try/catch without re-indenting both branches. */
+/** The actual conversion, run only once a claim has been won. Split out of
+ * convertToInvoiceOnly so the claim can wrap it in a try/catch without
+ * re-indenting both branches. */
 async function convertClaimedContractToInvoice(contract, contractId, adminId, hasInvoiceContractBackPointer, options = {}) {
   // Path A: contract has a source quote → replay its line items +
   // payment plan via quoteService (full installment schedule).

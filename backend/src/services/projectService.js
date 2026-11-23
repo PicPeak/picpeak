@@ -138,11 +138,9 @@ function assertDateRange(row) {
 }
 
 /** The inquiry columns `payload` sets, as a row patch. Keys left undefined are
- *  not touched; an empty value clears the column. Nothing is written on an
- *  instance that has not run migration 315. */
+ *  not touched; an empty value clears the column. */
 async function inquiryPatch(payload = {}) {
   const patch = {};
-  if (!(await hasColumnCached('projects', 'notes'))) return patch;
   for (const [key, column] of Object.entries(INQUIRY_FIELDS)) {
     if (payload[key] === undefined) continue;
     let value = payload[key];
@@ -153,7 +151,7 @@ async function inquiryPatch(payload = {}) {
     if (column === 'currency' && value) value = value.toUpperCase();
     patch[column] = value;
   }
-  if (payload.skippedStages !== undefined && await hasColumnCached('projects', 'skipped_stages')) {
+  if (payload.skippedStages !== undefined) {
     const list = Array.from(new Set((payload.skippedStages || []).filter((x) => SKIPPABLE_STAGES.includes(x))));
     patch.skipped_stages = list.length ? list.join(',') : null;
   }
@@ -186,25 +184,22 @@ async function invoicesForProjects(projectIds, columns) {
     .whereIn('e.project_id', projectIds)
     .select('e.project_id as project_id', ...cols));
 
-  if (await hasColumnCached('invoices', 'project_id')) {
-    keep(await db('invoices as inv')
-      .whereIn('inv.project_id', projectIds)
-      .select('inv.project_id as project_id', ...cols.filter((c) => c !== 'inv.project_id')));
-  }
+  keep(await db('invoices as inv')
+    .whereIn('inv.project_id', projectIds)
+    .select('inv.project_id as project_id', ...cols.filter((c) => c !== 'inv.project_id')));
 
   if (await hasColumnCached('invoices', 'deal_uuid')) {
     const dealToProject = new Map();
     for (const tbl of ['quotes', 'contracts']) {
-      if (!(await hasColumnCached(tbl, 'project_id')) || !(await hasColumnCached(tbl, 'deal_uuid'))) continue;
+      if (!(await hasColumnCached(tbl, 'deal_uuid'))) continue;
       const rows = await db(tbl).whereIn('project_id', projectIds).whereNotNull('deal_uuid')
         .distinct('deal_uuid', 'project_id');
       for (const r of rows) if (!dealToProject.has(r.deal_uuid)) dealToProject.set(r.deal_uuid, r.project_id);
     }
     const deals = Array.from(dealToProject.keys());
-    const ownColumn = await hasColumnCached('invoices', 'project_id');
     for (let i = 0; i < deals.length; i += CHUNK) {
       const rows = await db('invoices as inv').whereIn('inv.deal_uuid', deals.slice(i, i + CHUNK))
-        .select(...cols, ...(ownColumn ? ['inv.project_id as __own_project'] : []));
+        .select(...cols, 'inv.project_id as __own_project');
       // An invoice tied to a project of its own belongs there, not to the
       // project its deal's quote or contract was attached to later.
       keep(rows
@@ -218,7 +213,7 @@ async function invoicesForProjects(projectIds, columns) {
   // pointing elsewhere does not count it twice. One rule for the list, the
   // dashboard and the overview, whatever the status filter.
   const eventIds = Array.from(new Set(Array.from(found.values()).map((r) => r.event_id).filter((e) => e != null)));
-  if (eventIds.length && await hasColumnCached('events', 'project_id')) {
+  if (eventIds.length) {
     const eventProject = new Map();
     for (let i = 0; i < eventIds.length; i += CHUNK) {
       const evs = await db('events').whereIn('id', eventIds.slice(i, i + CHUNK)).whereNotNull('project_id').select('id', 'project_id');
@@ -310,32 +305,10 @@ async function attachValuations(projects, perms = {}) {
       ['id', 'deal_uuid', 'total_amount_minor', 'paid_amount_minor', 'currency']);
   }
   let quotes = [];
-  if (perms.quotes !== false && await hasColumnCached('quotes', 'project_id')) {
+  if (perms.quotes !== false) {
     quotes = await db('quotes')
       .whereIn('project_id', projectIds)
       .select('project_id', 'id', 'deal_uuid', 'total_amount_minor', 'currency', 'issue_date');
-  } else if (perms.quotes !== false && await hasColumnCached('quotes', 'customer_account_id')) {
-    // Pre-121 fallback: no quotes.project_id column yet. Scope quotes by the
-    // project's customer (mirrors the detail page) so the list isn't all-zero
-    // during the upgrade window. Imprecise when one customer owns several
-    // projects — each then shows the customer's full quote total — but never
-    // zero. Goes away the moment migration 121 lands.
-    const custToProjects = new Map();
-    for (const p of projects) {
-      if (p.customerAccountId == null) continue;
-      const list = custToProjects.get(p.customerAccountId) || [];
-      list.push(p.id); custToProjects.set(p.customerAccountId, list);
-    }
-    if (custToProjects.size) {
-      const rows = await db('quotes')
-        .whereIn('customer_account_id', Array.from(custToProjects.keys()))
-        .select('customer_account_id', 'id', 'deal_uuid', 'total_amount_minor', 'currency', 'issue_date');
-      for (const r of rows) {
-        for (const pid of (custToProjects.get(r.customer_account_id) || [])) {
-          quotes.push({ ...r, project_id: pid });
-        }
-      }
-    }
   }
 
   const invByProject = new Map();
@@ -377,9 +350,8 @@ async function createProject({ name, customerAccountId = null, status = 'active'
   assertDateRange(row);
   // Record the owner (GHSA-wrg5). adminId was already passed in and silently
   // discarded, which left a brand-new empty project with no derivable owner —
-  // it has no linked events to infer one from yet. Guarded so an instance that
-  // has not run migration 167 still creates projects.
-  if (adminId && await hasColumnCached('projects', 'created_by')) {
+  // it has no linked events to infer one from yet.
+  if (adminId) {
     row.created_by = adminId;
   }
   const inserted = await db('projects').insert(row).returning('id');
@@ -393,19 +365,17 @@ async function createProject({ name, customerAccountId = null, status = 'active'
  *  rejected. */
 async function projectLinkedCustomerIds(id, conn = db) {
   const ids = new Set();
-  if (await hasColumnCached('events', 'project_id') && await conn.schema.hasTable('event_customer_assignments')) {
-    const rows = await conn('event_customer_assignments as eca')
-      .join('events as e', 'e.id', 'eca.event_id')
-      .where('e.project_id', id)
-      .distinct('eca.customer_account_id as cid');
-    for (const r of rows) if (r.cid != null) ids.add(Number(r.cid));
-  }
+  const rows = await conn('event_customer_assignments as eca')
+    .join('events as e', 'e.id', 'eca.event_id')
+    .where('e.project_id', id)
+    .distinct('eca.customer_account_id as cid');
+  for (const r of rows) if (r.cid != null) ids.add(Number(r.cid));
   // Every linked document counts, not only the caller's: the rule is about the
   // project, and the CRM access layer would otherwise hide another admin's
   // quote from this read. Only customer ids leave this function.
   const { withTrustedCrmAccess } = require('../database/crmAccess');
   for (const tbl of ['quotes', 'contracts', 'invoices']) {
-    if (await hasColumnCached(tbl, 'project_id') && await hasColumnCached(tbl, 'customer_account_id')) {
+    if (await hasColumnCached(tbl, 'customer_account_id')) {
       const rows = await withTrustedCrmAccess('project single-customer rule',
         () => conn(tbl).where({ project_id: id }).whereNotNull('customer_account_id').distinct('customer_account_id as cid'));
       for (const r of rows) if (r.cid != null) ids.add(Number(r.cid));
@@ -437,10 +407,9 @@ async function holdProjectToCustomer(projectId, customerAccountId) {
 /** Whether the project holds a gallery or a quote, contract or invoice
  *  (anyone's: the status describes the project, not the caller's view of it). */
 async function projectHoldsAnything(id) {
-  if (await hasColumnCached('events', 'project_id') && await db('events').where({ project_id: id }).first('id')) return true;
+  if (await db('events').where({ project_id: id }).first('id')) return true;
   const { withTrustedCrmAccess } = require('../database/crmAccess');
   for (const tbl of ['quotes', 'contracts', 'invoices']) {
-    if (!(await hasColumnCached(tbl, 'project_id'))) continue;
     const row = await withTrustedCrmAccess('project status rule', () => db(tbl).where({ project_id: id }).first('id'));
     if (row) return true;
   }
@@ -515,10 +484,6 @@ async function deleteProject(id, actor = null, { checked = null } = {}) {
   if (!existing) throw new AppError('Project not found', 404);
   const { deleteWithAccountingHistory } = require('./accountingHistory');
   const { withTrustedCrmAccess } = require('../database/crmAccess');
-  // Resolved before the transaction: on SQLite a query on the global
-  // connection waits for the one the transaction holds.
-  const eventsLinked = await hasColumnCached('events', 'project_id');
-  const documentsLinked = await hasColumnCached('customer_documents', 'project_id');
   const tables = checked ? Object.keys(checked.ids) : [];
   await db.transaction(async (trx) => {
     if (checked) {
@@ -533,14 +498,10 @@ async function deleteProject(id, actor = null, { checked = null } = {}) {
           () => trx(table).where({ project_id: id }).pluck('id'));
         if (!same(now, checked.ids[table])) throw changed();
       }
-      if (eventsLinked && !same(await trx('events').where({ project_id: id }).pluck('id'), checked.eventIds)) throw changed();
+      if (!same(await trx('events').where({ project_id: id }).pluck('id'), checked.eventIds)) throw changed();
     }
-    if (eventsLinked) {
-      await trx('events').where({ project_id: id }).update({ project_id: null });
-    }
-    if (documentsLinked) {
-      await trx('customer_documents').where({ project_id: id }).update({ project_id: null });
-    }
+    await trx('events').where({ project_id: id }).update({ project_id: null });
+    await trx('customer_documents').where({ project_id: id }).update({ project_id: null });
     await deleteWithAccountingHistory(trx, 'projects', { id },
       { actor: actor?.id ?? null, source: 'project.delete' });
   });
@@ -557,7 +518,6 @@ async function promoteInquiry(projectId, conn = db) {
 /** Distinct customer_account_ids an event is assigned to (event_customer_assignments
  *  is many-to-many, but a gallery normally belongs to exactly one account). */
 async function eventCustomerIds(eventId, conn = db) {
-  if (!(await conn.schema.hasTable('event_customer_assignments'))) return [];
   const rows = await conn('event_customer_assignments')
     .where({ event_id: eventId })
     .distinct('customer_account_id');
@@ -644,10 +604,7 @@ async function carriedProjectId(projectId, adminId, { target = 'documents' } = {
 
 /** The optional columns linkDealToProject checks. */
 const DEAL_LINK_COLUMNS = [
-  ['quotes', 'deal_uuid'], ['quotes', 'project_id'],
-  ['contracts', 'deal_uuid'], ['contracts', 'converted_event_id'], ['contracts', 'project_id'],
-  ['invoices', 'deal_uuid'], ['invoices', 'project_id'],
-  ['events', 'project_id'],
+  ['quotes', 'deal_uuid'], ['contracts', 'deal_uuid'], ['contracts', 'converted_event_id'], ['invoices', 'deal_uuid'],
 ];
 
 /**
@@ -797,21 +754,21 @@ async function linkDealToProject(dealUuid, projectId, conn = db, actor = null) {
   // Cleared to write: link the deal's quotes/contracts, re-point its events so
   // invoices/emails/gallery roll up automatically.
   const history = { actor: actor?.id ?? null, source: 'project.link_deal' };
-  if (quotesHaveDeal && await hasColumnCached('quotes', 'project_id')) {
+  if (quotesHaveDeal) {
     await auditedUpdate(conn, 'quotes', { deal_uuid: dealUuid }, { project_id: projectId }, history);
   }
-  if (contractsHaveDeal && await hasColumnCached('contracts', 'project_id')) {
+  if (contractsHaveDeal) {
     await auditedUpdate(conn, 'contracts', { deal_uuid: dealUuid }, { project_id: projectId }, history);
   }
   // A deal lives in one project: its invoices tied to a project of their own
-  // (created in or attached to one, migration 315) move with it, or the deal
-  // would count in two projects. Invoices without one follow the deal anyway.
-  if (await hasColumnCached('invoices', 'deal_uuid') && await hasColumnCached('invoices', 'project_id')) {
+  // (created in or attached to one) move with it, or the deal would count in
+  // two projects. Invoices without one follow the deal anyway.
+  if (await hasColumnCached('invoices', 'deal_uuid')) {
     await auditedUpdate(conn, 'invoices',
       (q) => q.where({ deal_uuid: dealUuid }).whereNotNull('project_id').whereNot('project_id', projectId),
       { project_id: projectId }, history);
   }
-  if (eventIds.size && await hasColumnCached('events', 'project_id')) {
+  if (eventIds.size) {
     await conn('events').whereIn('id', Array.from(eventIds)).update({ project_id: projectId });
   }
 
@@ -828,9 +785,6 @@ async function linkDealToProject(dealUuid, projectId, conn = db, actor = null) {
 /** Attach (or, with projectId=null, detach) a quote/contract to a project.
  *  Attaching cascades the link across the deal lineage (see linkDealToProject). */
 async function assignDocument(table, projectId, documentId, actor = null) {
-  if (!(await hasColumnCached(table, 'project_id'))) {
-    throw new AppError('This instance has no project_id column yet — run migrations', 409);
-  }
   let project = null;
   if (projectId != null) {
     project = await db('projects').where({ id: projectId }).first();
@@ -880,7 +834,7 @@ async function dealProjectElsewhere(dealUuid, projectId, conn = db) {
   return withTrustedCrmAccess('project attach: deal lineage elsewhere', async () => {
     const galleries = [];
     for (const tbl of ['quotes', 'contracts', 'invoices']) {
-      if (!(await hasColumnCached(tbl, 'deal_uuid')) || !(await hasColumnCached(tbl, 'project_id'))) continue;
+      if (!(await hasColumnCached(tbl, 'deal_uuid'))) continue;
       const elsewhere = await conn(tbl).where({ deal_uuid: dealUuid })
         .whereNotNull('project_id').whereNot('project_id', projectId).first('id');
       if (elsewhere) return true;
@@ -889,7 +843,7 @@ async function dealProjectElsewhere(dealUuid, projectId, conn = db) {
         galleries.push(...await conn(tbl).where({ deal_uuid: dealUuid }).whereNotNull(galleryColumn).pluck(galleryColumn));
       }
     }
-    if (galleries.length && await hasColumnCached('events', 'project_id')) {
+    if (galleries.length) {
       const moved = await conn('events').whereIn('id', Array.from(new Set(galleries)))
         .whereNotNull('project_id').whereNot('project_id', projectId).first('id');
       if (moved) return true;
@@ -950,7 +904,7 @@ async function invoiceAttachRefusal(inv, projectId, conn = db) {
   if (inv.deal_uuid && await dealProjectElsewhere(inv.deal_uuid, projectId, conn)) {
     return { status: 422, code: 'PROJECT_DEAL_ELSEWHERE', message: 'Its quote, contract or another invoice of the same deal belongs to another project' };
   }
-  if (inv.event_id && await hasColumnCached('events', 'project_id')) {
+  if (inv.event_id) {
     const event = await conn('events').where({ id: inv.event_id }).first('project_id');
     if (event?.project_id != null && Number(event.project_id) !== Number(projectId)) {
       return { status: 422, code: 'PROJECT_EVENT_MISMATCH', message: 'This invoice’s gallery belongs to another project' };
@@ -979,9 +933,6 @@ const INVOICE_ATTACH_COLUMNS = ['id', 'event_id', 'deal_uuid', 'customer_account
  * back. The caller's route vets the gallery owner.
  */
 async function assignInvoice(projectId, invoiceId, actor = null) {
-  if (!(await hasColumnCached('invoices', 'project_id'))) {
-    throw new AppError('This instance has no invoices.project_id column yet — run migrations', 409);
-  }
   const project = await db('projects').where({ id: projectId }).first('id');
   if (!project) throw new AppError('Project not found', 404);
   if (actor?.id && !(await carriedProjectId(projectId, actor.id))) {
@@ -994,8 +945,7 @@ async function assignInvoice(projectId, invoiceId, actor = null) {
   const refusal = await invoiceAttachRefusal(inv, projectId);
   if (refusal) throw new AppError(refusal.message, refusal.status, refusal.code);
 
-  const eventsLinked = await hasColumnCached('events', 'project_id');
-  const event = inv.event_id && eventsLinked ? await db('events').where({ id: inv.event_id }).first('id', 'project_id') : null;
+  const event = inv.event_id ? await db('events').where({ id: inv.event_id }).first('id', 'project_id') : null;
 
   // Projects hold one customer: the invoice's, and its gallery's (as
   // assignEvent checks it). An empty project adopts the first.
@@ -1025,8 +975,8 @@ async function assignInvoice(projectId, invoiceId, actor = null) {
 
   // Resolved before the transaction: on SQLite a query on the global
   // connection waits for the one the transaction holds.
-  for (const [table, column] of [['quotes', 'deal_uuid'], ['quotes', 'project_id'], ['quotes', 'converted_event_id'],
-    ['contracts', 'deal_uuid'], ['contracts', 'project_id'], ['contracts', 'converted_event_id'], ['invoices', 'deal_uuid'],
+  for (const [table, column] of [['quotes', 'deal_uuid'], ['quotes', 'converted_event_id'],
+    ['contracts', 'deal_uuid'], ['contracts', 'converted_event_id'], ['invoices', 'deal_uuid'],
     ['invoices', 'event_id']]) {
     await hasColumnCached(table, column);
   }
@@ -1066,9 +1016,6 @@ async function assignInvoice(projectId, invoiceId, actor = null) {
  * with that gallery or document. The same write rule as attaching.
  */
 async function unassignInvoice(projectId, invoiceId, actor = null) {
-  if (!(await hasColumnCached('invoices', 'project_id'))) {
-    throw new AppError('This instance has no invoices.project_id column yet — run migrations', 409);
-  }
   if (actor?.id && !(await carriedProjectId(projectId, actor.id))) {
     throw new AppError('Documents can join only a project you created', 403, 'PROJECT_NOT_LINKABLE');
   }
@@ -1209,9 +1156,9 @@ async function attachStages(projects, perms = {}) {
     for (const r of rows) { const l = m.get(r.project_id) || []; l.push(r); m.set(r.project_id, l); }
     return m;
   };
-  const quotes = perms.quotes !== false && await hasColumnCached('quotes', 'project_id')
+  const quotes = perms.quotes !== false
     ? group(await db('quotes').whereIn('project_id', ids).select('project_id', 'status')) : new Map();
-  const contracts = perms.contracts !== false && await hasColumnCached('contracts', 'project_id')
+  const contracts = perms.contracts !== false
     ? group(await db('contracts').whereIn('project_id', ids).select('project_id', 'status')) : new Map();
   const events = group(await db('events').whereIn('project_id', ids).select('project_id', 'is_draft'));
   const invoices = perms.bills !== false
@@ -1280,7 +1227,7 @@ async function getProjectOverview(id, perms = {}, admin = null) {
     // project (DELETE /projects/:id/invoices/:invoiceId); one that rolls up
     // through its gallery or deal leaves with that.
     const direct = new Set();
-    if (rows.length && await hasColumnCached('invoices', 'project_id')) {
+    if (rows.length) {
       const ids = rows.map((r) => r.id);
       for (let i = 0; i < ids.length; i += CHUNK) {
         for (const r of await db('invoices').whereIn('id', ids.slice(i, i + CHUNK)).where({ project_id: id }).select('id')) direct.add(r.id);
@@ -1292,32 +1239,22 @@ async function getProjectOverview(id, perms = {}, admin = null) {
       .sort((a, b) => (b.issue_date ? new Date(b.issue_date).getTime() : 0) - (a.issue_date ? new Date(a.issue_date).getTime() : 0));
   }
 
-  // Quotes / contracts. These tables carry no event_id (migration 107), so
-  // they're linked to the project explicitly via project_id (migration 121).
-  // Where that column doesn't exist yet (pre-121 DB) we fall back to the
-  // project's customer — the original, less precise scoping.
-  const quotesHaveProjectId = await hasColumnCached('quotes', 'project_id');
-  const contractsHaveProjectId = await hasColumnCached('contracts', 'project_id');
-
-  if (perms.quotes !== false && (quotesHaveProjectId || project.customerAccountId)) {
+  // Quotes / contracts. These tables carry no event_id, so they're linked to
+  // the project explicitly via project_id.
+  if (perms.quotes !== false) {
     // source_template_id preselects the contract template when the project
     // page converts an accepted quote (ConvertToContractDialog).
-    const quoteCols = ['id', 'quote_number', 'status', 'issue_date', 'valid_until', 'total_amount_minor', 'currency', 'deal_uuid'];
-    if (await hasColumnCached('quotes', 'source_template_id')) quoteCols.push('source_template_id');
-    let q = db('quotes')
-      .select(quoteCols)
+    out.quotes = await db('quotes')
+      .select('id', 'quote_number', 'status', 'issue_date', 'valid_until', 'total_amount_minor', 'currency', 'deal_uuid',
+        'source_template_id')
+      .where({ project_id: id })
       .orderBy('issue_date', 'desc');
-    if (quotesHaveProjectId) q = q.where({ project_id: id });
-    else q = q.where({ customer_account_id: project.customerAccountId });
-    out.quotes = await q;
   }
-  if (perms.contracts !== false && (contractsHaveProjectId || project.customerAccountId)) {
-    let q = db('contracts')
+  if (perms.contracts !== false) {
+    out.contracts = await db('contracts')
       .select('id', 'contract_number', 'status', 'issue_date', 'signed_by_customer_at', 'deal_uuid')
+      .where({ project_id: id })
       .orderBy('issue_date', 'desc');
-    if (contractsHaveProjectId) q = q.where({ project_id: id });
-    else q = q.where({ customer_account_id: project.customerAccountId });
-    out.contracts = await q;
   }
 
   // Emails — newest first. rendered_html presence flagged; body fetched lazily
@@ -1538,7 +1475,7 @@ async function retryEmail(emailId, adminId = null) {
   await db('email_queue').where({ id: emailId }).update({
     status: pendingStatusFor(row), retry_count: 0, error_message: null, scheduled_at: null,
     // A retry starts the outage allowance again, like the attempts.
-    ...(await hasColumnCached('email_queue', 'deferred_since') ? { deferred_since: null } : {}),
+    deferred_since: null,
   });
   await logEmailAction('project_email_retried', emailId, row, adminId);
   return { id: emailId, status: 'pending' };

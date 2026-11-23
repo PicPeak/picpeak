@@ -85,7 +85,6 @@ function redactSnapshot(raw) {
 async function plan(db, customerId) {
   if (!(await db.schema.hasTable('contracts'))) return null;
   const hasSigners = await db.schema.hasTable('contract_signers');
-  const hasRedactedColumn = await db.schema.hasColumn('contracts', 'rendered_content_redacted_at');
   // Quotes are accounting records and survive erasure, so a quote converted
   // into a contract this erasure kills must lose its converted_contract_id
   // the same way an admin cancel or a decline releases it (issue 1588).
@@ -93,7 +92,7 @@ async function plan(db, customerId) {
     && (await db.schema.hasColumn('quotes', 'converted_contract_id'));
   const rows = await db('contracts').where({ customer_account_id: customerId })
     .select('id', 'status', 'source_quote_id', 'rendered_content', 'signed_by_customer_at', 'signed_by_admin_at', 'signed_pdf_path');
-  if (!rows.length) return { customerId, redact: [], retain: [], hasSigners, hasRedactedColumn, hasQuoteBackPointer };
+  if (!rows.length) return { customerId, redact: [], retain: [], hasSigners, hasQuoteBackPointer };
 
   const signedIds = hasSigners
     ? new Set((await db('contract_signers')
@@ -120,7 +119,7 @@ async function plan(db, customerId) {
       });
     }
   }
-  return { customerId, redact, retain, hasSigners, hasRedactedColumn, hasQuoteBackPointer };
+  return { customerId, redact, retain, hasSigners, hasQuoteBackPointer };
 }
 
 /** Revoke every way into a contract: signer links and sessions, action tokens. */
@@ -154,7 +153,7 @@ async function apply(trx, contractPlan, actor) {
     const applied = await auditedUpdate(trx, 'contracts', claim, {
       ...(entry.cancel ? { status: 'cancelled' } : {}),
       ...(entry.redacted ? { rendered_content: entry.redacted } : {}),
-      ...(entry.redacted && contractPlan.hasRedactedColumn ? { rendered_content_redacted_at: stamp() } : {}),
+      ...(entry.redacted ? { rendered_content_redacted_at: stamp() } : {}),
       updated_at: stamp(),
     }, history);
     if (!applied) continue;

@@ -292,11 +292,10 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
  * strand the supplier cost: the CRM panel shows it as Open but every billing
  * path filters on billed_invoice_id IS NULL, so it could never be re-billed.
  * Mirrors the categorise-time reset; returns the item to the billable pool.
- * Best-effort + schema-guarded (no-op on non-accounting installs).
+ * Best-effort.
  */
 async function releaseRebillsForCancelledInvoice(conn, invoiceId, adminId) {
   try {
-    if (!(await conn.schema.hasTable('inbound_documents'))) return;
     await auditedUpdate(conn, 'inbound_documents', { billed_invoice_id: invoiceId },
       { billed_invoice_id: null, billed_invoice_line_item_id: null, updated_at: new Date() },
       { actor: adminId, source: 'invoice.cancel.releaseRebills' });
@@ -647,10 +646,7 @@ async function reissueInvoice(id, adminId) {
   // later validation failure, leaving orphan drafts after the Storno
   // already committed. createInvoice's internal reads (getProfile,
   // getAppSetting, bank resolution, audit) all accept the trx now, so
-  // the round-1 SQLite deadlock is gone the right way. createInvoice's
-  // vat_gbp_rate schema check reads the global db, so it is cached here
-  // first, before the transaction holds the only SQLite connection.
-  if (original.vat_gbp_rate != null) await hasColumnCached('invoices', 'vat_gbp_rate');
+  // the round-1 SQLite deadlock is gone the right way.
   return await db.transaction(async (trx) => {
     // One live replacement per original. Two reissues that both found the
     // original already cancelled (or one that lost the Storno race above and

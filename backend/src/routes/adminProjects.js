@@ -19,7 +19,6 @@ const { db } = require('../database/db');
 const { ownedProjectsSubquery, requireProjectOwnership, filterOwnedEventIds } = require('../middleware/ownership');
 const { requireOwnedQueuedEmail: requireOwnedQueuedEmailParam } = require('../middleware/emailQueueOwnership');
 const { ForbiddenError } = require('../utils/errors');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { withTrustedCrmAccess } = require('../database/crmAccess');
 
 const router = express.Router();
@@ -245,7 +244,6 @@ router.delete('/:id',
       ['quotes', 'quotes.manage'], ['contracts', 'contracts.manage'], ['invoices', 'bills.manage'],
       ['customer_hour_entries', 'customers.edit'], ['customer_documents', 'customers.documents.manage'],
     ]) {
-      if (!(await hasColumnCached(table, 'project_id'))) continue;
       const linkedIds = await withTrustedCrmAccess('project delete: linked-record census',
         () => db(table).where({ project_id: id }).pluck('id'));
       checked.ids[table] = linkedIds;

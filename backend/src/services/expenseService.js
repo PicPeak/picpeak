@@ -346,8 +346,7 @@ async function resolveMarkup(source, override, contractId, trx) {
   if (source && source.markupType && source.markupType !== 'none') {
     return pick(source.markupType, source.markupPercent, source.markupFlatMinor);
   }
-  const { hasColumnCached } = require('../utils/schemaCache');
-  if (contractId && (await hasColumnCached('contracts', 'expense_markup_type'))) {
+  if (contractId) {
     const c = await (trx || db)('contracts').where({ id: contractId })
       .first('expense_markup_type', 'expense_markup_percent', 'expense_markup_flat_minor');
     if (c && c.expense_markup_type && c.expense_markup_type !== 'none') {

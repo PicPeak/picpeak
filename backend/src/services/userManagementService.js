@@ -645,10 +645,7 @@ async function deleteAdminUser(id, deletedById) {
     'You can only delete accounts whose role is within your own permissions');
   if (!(await isSuperAdminActor(deletedById))) {
     const owned = await db('events').where('created_by', id).count('id as count').first();
-    let ownedProjects = 0;
-    if (await hasColumnCached('projects', 'created_by')) {
-      ownedProjects = Number((await db('projects').where('created_by', id).count('id as count').first())?.count) || 0;
-    }
+    const ownedProjects = Number((await db('projects').where('created_by', id).count('id as count').first())?.count) || 0;
     if (Number(owned?.count) > 0 || ownedProjects > 0) {
       throw new ConflictError('This user still owns events or projects. Only a Super Admin can delete the account.');
     }

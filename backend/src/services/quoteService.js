@@ -52,7 +52,6 @@ const { buildIssuerBlock, buildRecipientBlock } = require('./_renderContext');
 const pdfService = require('./pdfService');
 const emailProcessor = require('./emailProcessor');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { getVatRegisteredSetting } = require('../utils/vatRegistration');
 const {
   normalizeLineItems, countedLineItems, resolveDiscountLines, extendedLineColumns, parsePromotionSnapshot, resolvedParentTotal,
@@ -544,15 +543,8 @@ async function createQuote(payload, adminId) {
   // Resolve bank account for the chosen currency.
   const bank = await businessProfileService.resolveBankAccountForCurrency(currency, payload.businessBankAccountId);
 
-  // Resolve schema-drift column checks BEFORE the transaction — a cold
-  // hasColumnCached lookup hits the global db, which deadlocks the single-
-  // connection SQLite pool if issued inside the trx (prepare_quote runs this
-  // unattended from a workflow).
-  const hasProjectId = await hasColumnCached('quotes', 'project_id');
-  const hasVatCode = await hasColumnCached('quotes', 'vat_code');
-  const hasEventType = await hasColumnCached('quotes', 'event_type');
-  const hasBookingWorkflowId = await hasColumnCached('quotes', 'booking_workflow_id');
-  // linkDealToProject's column checks read through the global db too.
+  // linkDealToProject's column checks read through the global db, which on
+  // SQLite waits for the connection the transaction below holds.
   if (payload.projectId) await require('./projectService').resolveDealLinkSchema();
 
   return await db.transaction(async (trx) => {
@@ -615,21 +607,21 @@ async function createQuote(payload, adminId) {
       updated_at: new Date(),
     };
     // Migration 121 — optional link to a Project Overview project.
-    if (payload.projectId !== undefined && hasProjectId) {
+    if (payload.projectId !== undefined) {
       row.project_id = payload.projectId || null;
     }
     // Migration 130 — snapshot the chosen output VAT code (immutable; the export
     // emits exactly this rather than re-deriving from the mutable rate→code map).
-    if (payload.vatCode !== undefined && hasVatCode) {
+    if (payload.vatCode !== undefined) {
       row.vat_code = payload.vatCode ? String(payload.vatCode).slice(0, 16) : null;
     }
     // Migration 146 — event type (event_types.slug_prefix). Drives the type of
     // the event the quote converts into, instead of the old hardcoded 'wedding'.
-    if (payload.eventType !== undefined && hasEventType) {
+    if (payload.eventType !== undefined) {
       row.event_type = payload.eventType ? String(payload.eventType).slice(0, 64) : null;
     }
     // Migration 147 — the booking workflow this quote runs on acceptance.
-    if (payload.bookingWorkflowId !== undefined && hasBookingWorkflowId) {
+    if (payload.bookingWorkflowId !== undefined) {
       row.booking_workflow_id = payload.bookingWorkflowId || null;
     }
     const history = { actor: adminId, source: 'quote.create' };
@@ -746,17 +738,11 @@ async function updateQuote(id, payload, adminId) {
     );
   }
 
-  // Resolve schema-drift column checks BEFORE the transaction, as createQuote
-  // does: a cold hasColumnCached lookup goes through the global db, and inside
-  // the trx it waits on the single-connection SQLite pool for the connection
-  // the trx holds. The quote editor sends projectId, so the save stalled for
-  // the 60s acquire timeout and failed.
-  const has = (field, column) => Object.prototype.hasOwnProperty.call(payload, field)
-    && hasColumnCached('quotes', column);
-  const hasProjectId = await has('projectId', 'project_id');
-  const hasVatCode = await has('vatCode', 'vat_code');
-  const hasEventType = await has('eventType', 'event_type');
-  const hasBookingWorkflowId = await has('bookingWorkflowId', 'booking_workflow_id');
+  const has = (field) => Object.prototype.hasOwnProperty.call(payload, field);
+  const hasProjectId = has('projectId');
+  const hasVatCode = has('vatCode');
+  const hasEventType = has('eventType');
+  const hasBookingWorkflowId = has('bookingWorkflowId');
 
   // A new currency takes its own bank account, as on create. The editor
   // echoes the stored account back, which must not pin the old currency's.
@@ -1209,10 +1195,6 @@ async function sendQuote(id, adminId) {
 
   const customer = await db('customer_accounts').where({ id: quote.customer_account_id }).first();
   ensureCustomerFeatureEnabled(customer, 'quotes');
-  // Read before the transaction opens — a schema lookup inside it waits on
-  // the one SQLite connection the transaction holds.
-  const hasNotifiedColumn = await hasColumnCached('quotes', 'acceptance_notified_at');
-  const hasEmittedColumn = await hasColumnCached('quotes', 'workflow_response_emitted_at');
 
   // Snapshot payment term so future template edits don't mutate the doc.
   // Prefer the two new split FKs; fall back to the legacy
@@ -1270,8 +1252,8 @@ async function sendQuote(id, adminId) {
       declined_at: null,
       tos_accepted_at: null,
       tos_text_snapshot: null,
-      ...(hasNotifiedColumn ? { acceptance_notified_at: null } : {}),
-      ...(hasEmittedColumn ? { workflow_response_emitted_at: null } : {}),
+      acceptance_notified_at: null,
+      workflow_response_emitted_at: null,
       updated_at: new Date(),
     }, { actor: adminId, source: 'quote.send' });
   });
@@ -1630,12 +1612,10 @@ async function notifyBusinessOfAcceptance(quoteId, { onlyOnce = false } = {}) {
   try {
     // Claimed before the mail is built, so two acceptances arriving together
     // send one notice.
-    if (await hasColumnCached('quotes', 'acceptance_notified_at')) {
-      const claim = db('quotes').where({ id: quoteId });
-      if (onlyOnce) claim.whereNull('acceptance_notified_at');
-      const claimed = await claim.update({ acceptance_notified_at: new Date().toISOString() });
-      if (!claimed) return;
-    }
+    const claim = db('quotes').where({ id: quoteId });
+    if (onlyOnce) claim.whereNull('acceptance_notified_at');
+    const claimed = await claim.update({ acceptance_notified_at: new Date().toISOString() });
+    if (!claimed) return;
     const { profile } = await businessProfileService.getProfile();
     if (!profile || !profile.email) return;
     const quote = await db('quotes').where({ id: quoteId }).first();
@@ -1777,14 +1757,11 @@ async function maybeEmitQuoteResponse(quote, status, responseLockedAt, history =
   const lockedAtMs = toMillis(responseLockedAt);
   const locked = !responseLockedAt || lockedAtMs == null || lockedAtMs <= Date.now();
   if (!locked) return false; // deferred to the finalize sweep
-  const hasCol = await hasColumnCached('quotes', 'workflow_response_emitted_at');
-  if (hasCol) {
-    // Atomically claim the emit so a concurrent finalize sweep can't double-fire.
-    const claimed = await auditedUpdate(db, 'quotes',
-      (q) => q.where({ id: quote.id }).whereNull('workflow_response_emitted_at'),
-      { workflow_response_emitted_at: stamp(new Date()) }, history);
-    if (!claimed) return false; // already emitted elsewhere
-  }
+  // Atomically claim the emit so a concurrent finalize sweep can't double-fire.
+  const claimed = await auditedUpdate(db, 'quotes',
+    (q) => q.where({ id: quote.id }).whereNull('workflow_response_emitted_at'),
+    { workflow_response_emitted_at: stamp(new Date()) }, history);
+  if (!claimed) return false; // already emitted elsewhere
   await emitQuoteEvent(quote, status);
   return true;
 }
@@ -1796,8 +1773,6 @@ async function maybeEmitQuoteResponse(quote, status, responseLockedAt, history =
  * tick. Returns the number emitted.
  */
 async function finalizeQuoteResponses(limit = 200) {
-  const hasCol = await hasColumnCached('quotes', 'workflow_response_emitted_at');
-  if (!hasCol) return 0; // pre-migration install — nothing to finalise
   // The unemitted accept/decline set is naturally small (a row leaves it the
   // moment it's emitted), so fetch the candidates and compare the lock time in
   // JS — avoids SQLite/Postgres date-string comparison pitfalls.
@@ -2195,7 +2170,6 @@ async function adminDeclineQuote(id, adminId, reason = null) {
 
   const now = new Date();
   const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 5000) : null;
-  const hasReasonColumn = await hasColumnCached('quotes', 'decline_reason');
   const history = { actor: adminId, source: 'quote.decline.admin' };
 
   await db.transaction(async (trx) => {
@@ -2211,7 +2185,7 @@ async function adminDeclineQuote(id, adminId, reason = null) {
     };
     // A declined acceptance stays on record; anything else never had one.
     if (quote.status !== 'accepted') updates.accepted_at = null;
-    if (hasReasonColumn) updates.decline_reason = cleanReason;
+    updates.decline_reason = cleanReason;
     // Conditional on the status this call read, like the reissue: two
     // requests that both passed the checks above must not both write.
     const declined = await auditedUpdate(trx, 'quotes', { id, status: quote.status }, updates, history);
@@ -2264,13 +2238,12 @@ async function reissueQuote(id, adminId, reason = null) {
 
   const now = new Date();
   const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 5000) : null;
-  const hasReasonColumn = await hasColumnCached('quotes', 'decline_reason');
 
   await db.transaction(async (trx) => {
     const updates = {
       status: 'declined', response_locked_at: stamp(now), declined_at: stamp(now), updated_at: now,
+      decline_reason: cleanReason,
     };
-    if (hasReasonColumn) updates.decline_reason = cleanReason;
     // Only the request that takes the quote out of `accepted` reissues it.
     // The status check above runs outside the transaction, so two clicks
     // both passed it and each made a replacement draft; the unique index on
@@ -2519,10 +2492,6 @@ async function convertToEvent(quoteId, adminId, options = {}) {
   const carriedProject = await require('./projectService')
     .carriedProjectId(options.projectId || quote.project_id, adminId, { target: 'events' });
 
-  // Booking requests (#2440): resolved before the transaction (a cold column
-  // lookup inside it would wait on SQLite's single connection).
-  const canLockForPayment = await hasColumnCached('events', 'payment_lock');
-
   const result = await db.transaction(async (trx) => {
     // Claim the quote before creating anything. Two concurrent conversions
     // both pass the reads above; on PostgreSQL the second waits here on the
@@ -2610,7 +2579,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
 
     // A gallery from a booking request waits for full payment when its
     // service says so (#2440). In the same transaction: it never exists open.
-    if (canLockForPayment) await require('./bookingDeposits').applyGalleryLock(trx, quote.id, eventId);
+    await require('./bookingDeposits').applyGalleryLock(trx, quote.id, eventId);
 
     // Junction row so the customer can already see the event in their
     // dashboard once the admin activates it.

@@ -1786,8 +1786,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
             await db('email_queue').where({ id: email.id, status: email.status }).update({
               error_message: error.message,
               scheduled_at: queueTimestamp(now + MAIL_OUTAGE_RETRY_MS),
-              ...(email.deferred_since == null && await hasColumnCached('email_queue', 'deferred_since')
-                ? { deferred_since: queueTimestamp(now) } : {}),
+              ...(email.deferred_since == null ? { deferred_since: queueTimestamp(now) } : {}),
             });
           } catch (updateError) {
             logger.error(`Failed to defer email ${email.id}:`, updateError);
@@ -1854,25 +1853,18 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
 //   business_hours                 JSON, per-ISO-weekday opening blocks
 //   scheduled_email_floor_enabled  master on/off switch
 //   timezone                       IANA zone the blocks are read in
-// Any failure (column missing on a half-migrated install, bad data) or an
-// unconfigured schedule degrades to `enabled: false` so a queued email is
-// never lost — it just sends at its original time.
+// Any failure (bad data) or an unconfigured schedule degrades to
+// `enabled: false` so a queued email is never lost — it just sends at its
+// original time.
 async function getScheduledEmailConfig() {
   try {
-    if (!(await hasColumnCached('business_profile', 'business_hours'))) {
-      return { enabled: false };
-    }
-    const hasToggle = await hasColumnCached('business_profile', 'scheduled_email_floor_enabled');
-    const cols = ['business_hours', 'timezone'];
-    if (hasToggle) cols.push('scheduled_email_floor_enabled');
-    const profile = await db('business_profile').where({ id: 1 }).first(cols);
+    const profile = await db('business_profile').where({ id: 1 })
+      .first('business_hours', 'timezone', 'scheduled_email_floor_enabled');
     if (!profile) return { enabled: false };
 
-    const enabled = hasToggle
-      ? (profile.scheduled_email_floor_enabled === true
-        || profile.scheduled_email_floor_enabled === 1
-        || profile.scheduled_email_floor_enabled === '1')
-      : true;
+    const enabled = profile.scheduled_email_floor_enabled === true
+      || profile.scheduled_email_floor_enabled === 1
+      || profile.scheduled_email_floor_enabled === '1';
     if (!enabled) return { enabled: false };
 
     const schedule = normaliseSchedule(profile.business_hours);

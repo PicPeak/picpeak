@@ -57,18 +57,11 @@ const { db } = require('../database/db');
 const emailProcessor = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getAppSetting } = require('../utils/appSettings');
-const { hasColumnCached } = require('../utils/schemaCache');
 const logger = require('../utils/logger');
 const { ensureEventReminderTemplatesSeeded } = require('./eventReminderTemplates');
 
 const DEFAULT_DAYS_BEFORE = 2;
 const DEFAULT_TEMPLATE_GROUP = 'event_reminder';
-
-// One-shot guard: the "schema not migrated" warn would otherwise fire
-// once per cron tick (≈ hourly) on installs that haven't applied
-// migration 143 yet. Log on the first encounter only — subsequent
-// ticks no-op silently.
-let schemaWarnLogged = false;
 
 /**
  * Resolve the reminder template within a GROUP (template-key prefix). The group
@@ -139,17 +132,6 @@ async function runEventReminderPass() {
       return { scanned: 0, sent: 0, skipped: 0, byWorkflow: true };
     }
   } catch (_) { /* workflow subsystem down → keep the legacy pass running */ }
-
-  // Column-existence guards — pre-migration installs return early
-  // instead of throwing.
-  const hasCols = await hasColumnCached('events', 'event_reminder_sent_at');
-  if (!hasCols) {
-    if (!schemaWarnLogged) {
-      logger.warn('Event reminder pass skipped — schema not yet migrated (run migration 143). Suppressing further warnings until restart.');
-      schemaWarnLogged = true;
-    }
-    return { scanned: 0, sent: 0, skipped: 0 };
-  }
 
   // Self-heal the seeded templates. Idempotent — only inserts missing
   // rows and backfills empty translations, never overwrites edits.
@@ -257,9 +239,6 @@ async function runEventReminderPass() {
  * propagate so the caller can surface them.
  */
 async function sendReminderForEvent(eventId, { templateGroup = null } = {}) {
-  const hasCols = await hasColumnCached('events', 'event_reminder_sent_at');
-  if (!hasCols) return { sent: 0, skipped: 1, reason: 'schema_not_migrated' };
-
   // Self-heal templates (idempotent, process-cached) — same as the pass.
   try { await ensureEventReminderTemplatesSeeded(db, logger); } catch (err) {
     logger.error('Event reminder template self-heal failed', { message: err.message });

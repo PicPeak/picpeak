@@ -235,120 +235,116 @@ async function loadCosts({ from, to, cur }) {
   };
 
   // 1) Incoming invoices (external supplier payables).
-  if (await db.schema.hasTable('inbound_documents')) {
-    const inbound = await db('inbound_documents')
-      .leftJoin('events', 'inbound_documents.event_id', 'events.id')
-      // Date in range: invoice_date (a DATE) when set, else created_at (a
-      // TIMESTAMP). Split instead of COALESCE so we never compare mixed
-      // date/timestamp types (a Postgres error the mocked tests can't see).
-      .where((qb) => {
-        qb.whereBetween('inbound_documents.invoice_date', [from, to])
-          .orWhere((q2) => q2.whereNull('inbound_documents.invoice_date')
-            .andWhere('inbound_documents.created_at', '>=', from)
-            .andWhere('inbound_documents.created_at', '<', beforeEnd));
-      })
-      // Currency match, but INCLUDE rows with no currency set — captured
-      // invoices (email/upload) often have a null currency; treat them as the
-      // report currency rather than silently dropping them from the cost side.
-      .where((qb) => { qb.where('inbound_documents.currency', cur).orWhereNull('inbound_documents.currency'); })
-      .whereNotIn('inbound_documents.status', ['declined', 'duplicate'])
-      .orderBy('inbound_documents.created_at', 'asc')
-      .select(
-        'inbound_documents.id',
-        'inbound_documents.invoice_date',
-        'inbound_documents.created_at',
-        'inbound_documents.supplier_name',
-        // inbound_documents has no free-text `description` column (that lives on
-        // `expenses`); use the supplier invoice number as the row descriptor so
-        // the cost side aligns with the expense rows without a phantom column.
-        'inbound_documents.invoice_number',
-        'inbound_documents.disposition',
-        'inbound_documents.tax_treatment',
-        'inbound_documents.status',
-        'inbound_documents.event_id',
-        'inbound_documents.net_amount_minor',
-        'inbound_documents.vat_amount_minor',
-        'inbound_documents.total_amount_minor',
-        'events.event_name as event_name',
-      );
-    for (const r of inbound) {
-      const vat = normMinor(r.vat_amount_minor);
-      let total = normMinor(r.total_amount_minor);
-      let net = normMinor(r.net_amount_minor);
-      if (!total && (net || vat)) total = net + vat;
-      if (!net && total) net = total - vat;
-      push({
-        id: r.id,
-        source: 'incoming',
-        date: r.invoice_date || r.created_at,
-        supplierLabel: (r.supplier_name && String(r.supplier_name).trim()) || '',
-        description: r.invoice_number || '',
-        eventName: r.event_id ? (r.event_name || '') : '',
-        disposition: r.disposition || '',
-        taxTreatment: r.tax_treatment || 'domestic',
-        status: r.status || '',
-        netMinor: net,
-        vatMinor: vat,
-        totalMinor: total,
-      });
-    }
+  const inbound = await db('inbound_documents')
+    .leftJoin('events', 'inbound_documents.event_id', 'events.id')
+    // Date in range: invoice_date (a DATE) when set, else created_at (a
+    // TIMESTAMP). Split instead of COALESCE so we never compare mixed
+    // date/timestamp types (a Postgres error the mocked tests can't see).
+    .where((qb) => {
+      qb.whereBetween('inbound_documents.invoice_date', [from, to])
+        .orWhere((q2) => q2.whereNull('inbound_documents.invoice_date')
+          .andWhere('inbound_documents.created_at', '>=', from)
+          .andWhere('inbound_documents.created_at', '<', beforeEnd));
+    })
+    // Currency match, but INCLUDE rows with no currency set — captured
+    // invoices (email/upload) often have a null currency; treat them as the
+    // report currency rather than silently dropping them from the cost side.
+    .where((qb) => { qb.where('inbound_documents.currency', cur).orWhereNull('inbound_documents.currency'); })
+    .whereNotIn('inbound_documents.status', ['declined', 'duplicate'])
+    .orderBy('inbound_documents.created_at', 'asc')
+    .select(
+      'inbound_documents.id',
+      'inbound_documents.invoice_date',
+      'inbound_documents.created_at',
+      'inbound_documents.supplier_name',
+      // inbound_documents has no free-text `description` column (that lives on
+      // `expenses`); use the supplier invoice number as the row descriptor so
+      // the cost side aligns with the expense rows without a phantom column.
+      'inbound_documents.invoice_number',
+      'inbound_documents.disposition',
+      'inbound_documents.tax_treatment',
+      'inbound_documents.status',
+      'inbound_documents.event_id',
+      'inbound_documents.net_amount_minor',
+      'inbound_documents.vat_amount_minor',
+      'inbound_documents.total_amount_minor',
+      'events.event_name as event_name',
+    );
+  for (const r of inbound) {
+    const vat = normMinor(r.vat_amount_minor);
+    let total = normMinor(r.total_amount_minor);
+    let net = normMinor(r.net_amount_minor);
+    if (!total && (net || vat)) total = net + vat;
+    if (!net && total) net = total - vat;
+    push({
+      id: r.id,
+      source: 'incoming',
+      date: r.invoice_date || r.created_at,
+      supplierLabel: (r.supplier_name && String(r.supplier_name).trim()) || '',
+      description: r.invoice_number || '',
+      eventName: r.event_id ? (r.event_name || '') : '',
+      disposition: r.disposition || '',
+      taxTreatment: r.tax_treatment || 'domestic',
+      status: r.status || '',
+      netMinor: net,
+      vatMinor: vat,
+      totalMinor: total,
+    });
   }
 
   // 2) Internal expenses (own-costs).
-  if (await db.schema.hasTable('expenses')) {
-    const isChf = cur === 'CHF';
-    const q = db('expenses')
-      .leftJoin('events', 'expenses.event_id', 'events.id')
-      .whereRaw('expenses.created_at >= ? AND expenses.created_at < ?', [from, beforeEnd])
-      .whereNot('expenses.status', 'declined')
-      .whereNotIn('expenses.disposition', ['duplikat', 'abgelehnt']);
-    // CHF report includes every expense (all carry a CHF base). A
-    // foreign-currency report matches the expense's original currency.
-    if (!isChf) q.where('expenses.original_currency', cur);
-    const expenses = await q
-      .orderBy('expenses.created_at', 'asc')
-      .select(
-        'expenses.id',
-        'expenses.created_at',
-        'expenses.supplier_name',
-        'expenses.description',
-        'expenses.disposition',
-        'expenses.tax_treatment',
-        'expenses.status',
-        'expenses.event_id',
-        'expenses.original_currency',
-        'expenses.original_amount_minor',
-        'expenses.chf_amount_minor',
-        'expenses.net_amount_minor',
-        'expenses.vat_amount_minor',
-        'expenses.gross_amount_minor',
-        'events.event_name as event_name',
-      );
-    for (const r of expenses) {
-      const vat = normMinor(r.vat_amount_minor);
-      let net = normMinor(r.net_amount_minor);
-      let total = normMinor(r.gross_amount_minor);
-      // Fallback to the single stored amount when net/vat/gross are not
-      // broken out (internal mileage/per-diem expenses carry only a base
-      // amount, no VAT split).
-      const base = isChf ? normMinor(r.chf_amount_minor) : normMinor(r.original_amount_minor);
-      if (!total) total = (net || vat) ? net + vat : base;
-      if (!net) net = total - vat;
-      push({
-        id: r.id,
-        source: 'expense',
-        date: r.created_at,
-        supplierLabel: (r.supplier_name && String(r.supplier_name).trim()) || '',
-        description: r.description || '',
-        eventName: r.event_id ? (r.event_name || '') : '',
-        disposition: r.disposition || '',
-        taxTreatment: r.tax_treatment || 'domestic',
-        status: r.status || '',
-        netMinor: net,
-        vatMinor: vat,
-        totalMinor: total,
-      });
-    }
+  const isChf = cur === 'CHF';
+  const q = db('expenses')
+    .leftJoin('events', 'expenses.event_id', 'events.id')
+    .whereRaw('expenses.created_at >= ? AND expenses.created_at < ?', [from, beforeEnd])
+    .whereNot('expenses.status', 'declined')
+    .whereNotIn('expenses.disposition', ['duplikat', 'abgelehnt']);
+  // CHF report includes every expense (all carry a CHF base). A
+  // foreign-currency report matches the expense's original currency.
+  if (!isChf) q.where('expenses.original_currency', cur);
+  const expenses = await q
+    .orderBy('expenses.created_at', 'asc')
+    .select(
+      'expenses.id',
+      'expenses.created_at',
+      'expenses.supplier_name',
+      'expenses.description',
+      'expenses.disposition',
+      'expenses.tax_treatment',
+      'expenses.status',
+      'expenses.event_id',
+      'expenses.original_currency',
+      'expenses.original_amount_minor',
+      'expenses.chf_amount_minor',
+      'expenses.net_amount_minor',
+      'expenses.vat_amount_minor',
+      'expenses.gross_amount_minor',
+      'events.event_name as event_name',
+    );
+  for (const r of expenses) {
+    const vat = normMinor(r.vat_amount_minor);
+    let net = normMinor(r.net_amount_minor);
+    let total = normMinor(r.gross_amount_minor);
+    // Fallback to the single stored amount when net/vat/gross are not
+    // broken out (internal mileage/per-diem expenses carry only a base
+    // amount, no VAT split).
+    const base = isChf ? normMinor(r.chf_amount_minor) : normMinor(r.original_amount_minor);
+    if (!total) total = (net || vat) ? net + vat : base;
+    if (!net) net = total - vat;
+    push({
+      id: r.id,
+      source: 'expense',
+      date: r.created_at,
+      supplierLabel: (r.supplier_name && String(r.supplier_name).trim()) || '',
+      description: r.description || '',
+      eventName: r.event_id ? (r.event_name || '') : '',
+      disposition: r.disposition || '',
+      taxTreatment: r.tax_treatment || 'domestic',
+      status: r.status || '',
+      netMinor: net,
+      vatMinor: vat,
+      totalMinor: total,
+    });
   }
 
   // Stable chronological order across both sources.
