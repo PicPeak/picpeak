@@ -114,5 +114,6 @@ test('an offered add-on is labelled', async () => {
     }],
   });
   renderCard();
-  expect(await screen.findByText(/Album \(add-on\)/)).toBeInTheDocument();
+  expect(await screen.findByText('(add-on)')).toBeInTheDocument();
+  expect(screen.getByText(/^1 · Album$/)).toBeInTheDocument();
 });

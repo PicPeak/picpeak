@@ -88,10 +88,13 @@ export const QuoteVersionsCard: React.FC<{ quoteId: number; currency: string }> 
                 <ul className="mt-1 text-xs text-muted space-y-0.5">
                   {lines.map((l, i) => (
                     <li key={i} className="flex justify-between gap-3">
-                      <span className="truncate" title={l.description}>
-                        {l.lineKind === 'discount' ? '' : `${l.quantity}${l.unit ? ` ${t(`crm.lineItems.unitShort.${l.unit}`, l.unit)}` : ''} · `}
-                        {l.description}
-                        {l.isOptional && ` ${t('quotes.versions.addOn', '(add-on)')}`}
+                      <span className="flex min-w-0 gap-1">
+                        <span className="truncate" title={l.description}>
+                          {l.lineKind === 'discount' ? '' : `${l.quantity}${l.unit ? ` ${t(`crm.lineItems.unitShort.${l.unit}`, l.unit)}` : ''} · `}
+                          {l.description}
+                        </span>
+                        {/* Outside the truncated text, so a long description never hides it. */}
+                        {l.isOptional && <span className="shrink-0">{t('quotes.versions.addOn', '(add-on)')}</span>}
                       </span>
                       <span className="tabular-nums shrink-0">{formatMoneyMinor(l.lineTotalMinor, summary?.currency || currency)}</span>
                     </li>
