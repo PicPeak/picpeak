@@ -757,6 +757,67 @@ router.get(
   })
 );
 
+// Every PDF this quote went out as (sent, accepted), newest first. Editing a
+// sent quote overwrites it in place, so these files are the record of what
+// each earlier version offered. Each carries the totals and lines it was
+// stored with; files written before that summary existed have none.
+router.get(
+  '/:id/documents',
+  requirePermission('quotes.view'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const id = parseInt(req.params.id, 10);
+    const exists = await db('quotes').where({ id }).first('id');
+    if (!exists) return res.status(404).json({ error: 'Quote not found' });
+    const rows = await require('../services/documentArtifactService').listForDocument('quote', id);
+    const documents = rows.map((d) => ({
+      id: d.id,
+      kind: d.kind,
+      generatedAt: d.generatedAt,
+      pages: d.pages,
+      bytes: d.bytes,
+      summary: d.manifest,
+    }));
+    return successResponse(res, { documents });
+  }),
+);
+
+// One stored version's file, exactly as written. Never re-rendered: a
+// missing file is a 404, not today's quote under yesterday's date.
+router.get(
+  '/:id/documents/:documentId/pdf',
+  requirePermission('quotes.view'),
+  [param('id').isInt({ min: 1 }), param('documentId').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const id = parseInt(req.params.id, 10);
+    const documentId = parseInt(req.params.documentId, 10);
+    const doc = await db('generated_documents')
+      .where({ id: documentId, doc_type: 'quote', doc_id: id })
+      .first('id', 'kind', 'path', 'generated_at');
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+    const { readStoredDocumentPdf } = require('../utils/storedDocumentPdf');
+    const buf = readStoredDocumentPdf(doc.path, 'quote');
+    if (!buf) return res.status(404).json({ error: 'The stored PDF file is missing', code: 'DOCUMENT_FILE_MISSING' });
+    const { buildPdfFilename } = require('../utils/pdfFilename');
+    const { buildContentDisposition } = require('../utils/filenameSanitizer');
+    const quote = await db('quotes').where({ id }).first('quote_number', 'customer_account_id');
+    const customer = quote ? await db('customer_accounts').where({ id: quote.customer_account_id }).first() : null;
+    // When it was stored (UTC, to the minute) tells two versions of one
+    // number apart, also two sent on the same day.
+    const stamp = `${doc.kind}-${new Date(doc.generated_at).toISOString().slice(0, 16).replace('T', '-').replace(':', '')}`;
+    const filename = buildPdfFilename({
+      docNumber: quote?.quote_number ? `${quote.quote_number}-${stamp}` : null,
+      customer,
+      fallback: `quote-${id}-${stamp}`,
+    });
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', buildContentDisposition(filename, 'inline'));
+    return res.send(buf);
+  }),
+);
+
 router.post(
   '/preview',
   requirePermission('quotes.manage'),
