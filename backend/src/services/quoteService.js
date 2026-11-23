@@ -766,12 +766,6 @@ async function updateQuote(id, payload, adminId) {
     if (existing.status === 'expired') {
       updates.pdf_path = null;
     }
-    // The payment term frozen at the last send belongs to that send. An
-    // edited quote shows its current term until it is sent again, and an
-    // admin acceptance before that freezes the current term instead.
-    if (existing.status === 'sent' || existing.status === 'expired') {
-      updates.payment_term_snapshot = null;
-    }
     const map = {
       eventName: 'event_name',
       eventDate: 'event_date',
@@ -862,8 +856,17 @@ async function updateQuote(id, payload, adminId) {
     // Conditional on the status read above: the draft-only and lock checks
     // ran before the transaction, so a quote sent or accepted meanwhile is
     // refused instead of being changed (and reverted to draft) here.
-    const saved = await auditedUpdate(trx, 'quotes', { id, status: existing.status }, updates, history);
+    // The customer and currency it was read with too: the customer /
+    // currency decisions above (bank account, token revocation, new deal)
+    // hold only for that row, so an overlapping save is refused.
+    const saved = await auditedUpdate(trx, 'quotes', {
+      id, status: existing.status, customer_account_id: existing.customer_account_id, currency: existing.currency,
+    }, updates, history);
     if (!saved) {
+      const now = await trx('quotes').where({ id }).first('status');
+      if (now && now.status === existing.status) {
+        throw new AppError('This quote was changed by another save. Reload it and try again.', 409, 'QUOTE_CHANGED');
+      }
       throw new AppError('This quote changed status while it was being saved. Reload it and try again.', 409, 'QUOTE_NOT_DRAFT');
     }
 
@@ -1953,10 +1956,20 @@ async function recordResponse({
     // without a message keeps the earlier one.
     const message = isAccept && customerMessage ? String(customerMessage).trim().slice(0, 2000) : '';
     if (message) updates.customer_message = message;
-    // Conditional on the status this request read: a conversion committing
-    // between the checks above and here would otherwise be flipped back to
-    // accepted or declined by an answer that never saw it.
-    const applied = await auditedUpdate(trx, 'quotes', { id: quote.id, status: quote.status }, updates, history);
+    // The link again, inside the transaction: a customer change after it was
+    // read above expires every link the old customer holds.
+    const liveToken = await trx('quote_action_tokens').where({ id: tokenRow.id }).first();
+    const liveExpires = toMillis(liveToken?.expires_at);
+    if (!liveToken || liveToken.used_action === 'revoked' || liveExpires == null || liveExpires < Date.now()) {
+      throw new AppError('Token expired', 410);
+    }
+    // Conditional on the status and customer this request read: a conversion
+    // committing between the checks above and here would otherwise be
+    // flipped back to accepted or declined by an answer that never saw it,
+    // and a quote moved to another customer is not this link's to answer.
+    const applied = await auditedUpdate(trx, 'quotes', {
+      id: quote.id, status: quote.status, customer_account_id: quote.customer_account_id,
+    }, updates, history);
     if (!applied) {
       throw new AppError('This quote changed while you were answering it. Reload the page.', 409, 'QUOTE_CHANGED');
     }
@@ -2033,16 +2046,34 @@ async function adminAcceptQuote(id, adminId) {
   const acceptedLines = await loadQuoteLinesWithParentPosition(id);
   const hasChoices = offeredOptionalPositions(acceptedLines).length > 0 || acceptedLines.some(li => li.configuration_definition);
   const selection = hasChoices ? await totalsForSelection(quote, acceptedLines, currentOptionalSelection(acceptedLines)) : null;
-  // A quote accepted without a send since its last edit has no term of its
-  // own frozen (a draft's snapshot, if any, is from an earlier send): freeze
-  // its current term now, so the accepted PDF and the invoices made from it
-  // show the conditions the admin last saved.
+  // A quote accepted without a send since its last edit (a draft) freezes its
+  // current term now, over the snapshot an earlier send left: the accepted
+  // PDF and the invoices made from it show the conditions the admin last
+  // saved. A sent quote keeps the term it was sent with.
   const termUpdate = storedPaymentTerm(quote) ? {} : {
     payment_term_snapshot: await resolvePaymentTerm(quote).then(t => (t ? JSON.stringify(t) : null)),
   };
+  // Conditional on the term inputs as read: a save that picked other terms
+  // meanwhile must not be accepted under the term resolved from this read.
+  const asRead = {
+    id,
+    status: quote.status,
+    payment_term_template_id: quote.payment_term_template_id,
+    payment_net_days_template_id: quote.payment_net_days_template_id,
+    payment_timing_template_id: quote.payment_timing_template_id,
+  };
+  const overrideOf = (row) => {
+    const value = row?.payment_term_installments_override;
+    if (typeof value !== 'string') return JSON.stringify(value ?? null);
+    try { return JSON.stringify(JSON.parse(value)); } catch (_) { return value; }
+  };
   await db.transaction(async trx => {
-    const applied = await auditedUpdate(trx, 'quotes', { id, status: quote.status }, { status: 'accepted', responded_at: stamp(now), response_locked_at: stamp(responseLockedAt), accepted_at: stamp(now), updated_at: now, ...termUpdate }, history);
-    if (!applied) throw new AppError('The quote changed; reload it', 409, 'QUOTE_CHANGED');
+    const applied = await auditedUpdate(trx, 'quotes', asRead, { status: 'accepted', responded_at: stamp(now), response_locked_at: stamp(responseLockedAt), accepted_at: stamp(now), updated_at: now, ...termUpdate }, history);
+    // The override is a json column (no `=` on PostgreSQL): compared once
+    // the update holds the row.
+    if (!applied || overrideOf(await trx('quotes').where({ id }).first('payment_term_installments_override')) !== overrideOf(quote)) {
+      throw new AppError('The quote changed; reload it', 409, 'QUOTE_CHANGED');
+    }
     if (selection) await writeAcceptedSelection(trx, quote, acceptedLines, selection, 'admin', now, { history });
   });
 
@@ -3277,7 +3308,9 @@ async function composeSnapshotFromSplitFks(row) {
     ? JSON.parse(timing.installments)
     : timing.installments;
   return {
-    description: timing.description || netDays.description || null,
+    // The timing template's text describes its own schedule; with an
+    // override it no longer matches the installments, so it is left out.
+    description: (override ? null : timing.description) || netDays.description || null,
     net_days: netDays.net_days,
     skonto_percent: netDays.skonto_percent,
     skonto_within_days: netDays.skonto_within_days,

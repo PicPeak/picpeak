@@ -108,4 +108,25 @@ describe('buildRenderContext payment term', () => {
     const draft = await quoteService._internal.buildRenderContext({ ...quote, status: 'draft' }, lineItems);
     expect(draft.paymentTerm).toEqual(expect.objectContaining({ description: 'Edited later', netDays: 45 }));
   });
+
+  it('leaves out the timing template\'s schedule text when the quote overrides its installments', async () => {
+    const netDaysId = await insertId('payment_net_days_templates', {
+      name: 'Override Net 15', description: 'Payable within 15 days', net_days: 15,
+    });
+    const timingId = await insertId('payment_timing_templates', {
+      name: 'Override half', description: '50% on booking, 50% after the event',
+      installments: JSON.stringify([{ percent: 50, label: 'Deposit' }, { percent: 50, label: 'Balance' }]),
+    });
+    const quoteId = await quoteService.createQuote({
+      customerAccountId: customerId, currency: 'CHF', vatRate: 0,
+      paymentNetDaysTemplateId: netDaysId, paymentTimingTemplateId: timingId,
+      installments: [{ percent: 30, label: 'Deposit' }, { percent: 70, label: 'Balance' }],
+      lineItems: [{ position: 1, quantity: 1, description: 'Reportage', unit_price_minor: 100000 }],
+    }, adminId);
+    const { quote, lineItems } = await quoteService.getQuoteById(quoteId);
+    expect(quote.payment_term_installments_override).toBeTruthy();
+
+    const ctx = await quoteService._internal.buildRenderContext(quote, lineItems);
+    expect(ctx.paymentTerm).toEqual(expect.objectContaining({ description: 'Payable within 15 days', netDays: 15 }));
+  });
 });

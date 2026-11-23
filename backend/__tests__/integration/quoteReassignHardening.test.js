@@ -6,6 +6,8 @@
  * Pins:
  *   - an edited sent quote accepted on the customer's behalf without a new
  *     send freezes the term the admin last saved, not the one sent before;
+ *   - editing a sent quote leaves the term an invoice made from it inherits;
+ *   - an overlapping save that changed the customer refuses the other save;
  *   - a customer change is refused on a quote an invoice was made from even
  *     when the admin may not read invoices;
  *   - a send that read the quote before a customer change records nothing,
@@ -124,4 +126,50 @@ test('a send that read the quote before its customer changed records and emails 
   expect(await db('generated_documents').where({ doc_type: 'quote', doc_id: quoteId })).toHaveLength(1);
   const queued = await db('email_queue').where({ email_type: 'quote_sent' });
   expect(queued.map((e) => e.recipient_email)).toEqual(['other@example.com']);
+});
+
+test('editing a sent quote leaves the term an invoice made from it inherits', async () => {
+  const net = await insertId('payment_net_days_templates', {
+    name: 'Net 20 Skonto 3', description: '20 days net', net_days: 20, skonto_percent: 3, skonto_within_days: 10,
+  });
+  const timing = await insertId('payment_timing_templates', {
+    name: 'Inherit all after', description: 'Everything after the event',
+    installments: JSON.stringify([{ percent: 100, label: 'Full' }]),
+  });
+  const quoteId = await draft({ paymentNetDaysTemplateId: net, paymentTimingTemplateId: timing });
+  const { quote } = await quoteService.getQuoteById(quoteId);
+  const sentTerm = await quoteService._internal.resolvePaymentTerm(quote);
+  await db('quotes').where({ id: quoteId }).update({ status: 'sent', payment_term_snapshot: JSON.stringify(sentTerm) });
+  const invoiceId = await insertId('invoices', {
+    invoice_number: `HARD-INH-${quoteId}`, customer_account_id: customerId, issue_date: '2026-06-01',
+    due_date: '2026-06-30', status: 'draft', currency: 'CHF', net_amount_minor: 10000, vat_amount_minor: 0,
+    total_amount_minor: 10000, created_by_admin_id: adminId, deal_uuid: crypto.randomUUID(), source_quote_id: quoteId,
+  });
+  const { resolveSkontoPercentForInvoice } = require('../../src/services/invoiceService');
+  const invoice = () => db('invoices').where({ id: invoiceId }).first();
+  expect(await resolveSkontoPercentForInvoice(await invoice())).toBe(3);
+
+  await quoteService.updateQuote(quoteId, { eventName: 'Renamed' }, adminId);
+
+  expect(await resolveSkontoPercentForInvoice(await invoice())).toBe(3);
+});
+
+test('a save is refused when another save changed the customer after it was read', async () => {
+  const quoteId = await draft();
+  const businessProfileService = require('../../src/services/businessProfileService');
+  const realResolve = businessProfileService.resolveBankAccountForCurrency;
+  // Another save moves the quote to the other customer while this one
+  // resolves the new currency's bank account.
+  const spy = jest.spyOn(businessProfileService, 'resolveBankAccountForCurrency').mockImplementationOnce(async (...args) => {
+    await db('quotes').where({ id: quoteId }).update({ customer_account_id: otherCustomerId });
+    return realResolve(...args);
+  });
+  try {
+    await expect(quoteService.updateQuote(quoteId, { currency: 'EUR' }, adminId))
+      .rejects.toMatchObject({ statusCode: 409, code: 'QUOTE_CHANGED' });
+  } finally {
+    spy.mockRestore();
+  }
+  const row = await db('quotes').where({ id: quoteId }).first();
+  expect(row.currency).toBe('CHF');
 });
