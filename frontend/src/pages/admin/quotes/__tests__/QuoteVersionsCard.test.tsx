@@ -1,5 +1,5 @@
 /**
- * Quote detail → "Sent versions": every PDF the quote went out as, newest
+ * Quote detail → "Stored versions": every PDF the quote went out as, newest
  * first, with the total and lines stored with it; each opens its own file.
  * Hidden until the quote has been sent once.
  */
@@ -69,7 +69,7 @@ test('lists each send with what it offered and opens its own file', async () => 
   vi.spyOn(window, 'open').mockReturnValue(win as unknown as Window);
 
   renderCard();
-  expect(await screen.findByText('Sent versions')).toBeInTheDocument();
+  expect(await screen.findByText('Stored versions')).toBeInTheDocument();
   expect(screen.getByText('at 2026-11-10')).toBeInTheDocument();
   expect(document.body.textContent).toContain(formatMoneyMinor(40000, 'CHF'));
   expect(screen.getByText(/^80 · Edited images$/)).toBeInTheDocument();
@@ -116,4 +116,20 @@ test('an offered add-on is labelled', async () => {
   renderCard();
   expect(await screen.findByText('(add-on)')).toBeInTheDocument();
   expect(screen.getByText(/^1 · Album$/)).toBeInTheDocument();
+});
+
+test('a row without an amount shows its text only', async () => {
+  documents.mockResolvedValue({
+    documents: [{
+      id: 32, kind: 'sent', generatedAt: '2026-11-20', pages: 1, bytes: 1,
+      summary: { ...summary(10, 10000), lines: [
+        { description: 'Wedding day', quantity: 1, unit: null, lineTotalMinor: 0, lineKind: 'item', notIncluded: false },
+        { description: 'Edited images', quantity: 10, unit: null, lineTotalMinor: 10000, lineKind: 'item', notIncluded: false },
+      ] },
+    }],
+  });
+  renderCard();
+  expect(await screen.findByText(/^Wedding day$/)).toBeInTheDocument();
+  expect(screen.getByText(/^10 · Edited images$/)).toBeInTheDocument();
+  expect(document.body.textContent).not.toContain(formatMoneyMinor(0, 'CHF'));
 });

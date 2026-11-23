@@ -1,5 +1,5 @@
 /**
- * "Sent versions" on the quote detail page: every PDF this quote went out as
+ * "Stored versions" on the quote detail page: every PDF this quote went out as
  * (each send, each accepted copy), newest first. Editing a sent quote
  * overwrites its lines in place, so these files are the only record of what
  * an earlier send offered. Each row shows the total and lines stored with
@@ -49,7 +49,7 @@ export const QuoteVersionsCard: React.FC<{ quoteId: number; currency: string }> 
 
   return (
     <Card>
-      <h3 className="font-semibold mb-1 text-heading">{t('quotes.versions.title', 'Sent versions')}</h3>
+      <h3 className="font-semibold mb-1 text-heading">{t('quotes.versions.title', 'Stored versions')}</h3>
       <p className="text-xs text-muted mb-3">
         {t('quotes.versions.hint', 'Each stored version of this quote, as its PDF was saved.')}
       </p>
@@ -86,19 +86,26 @@ export const QuoteVersionsCard: React.FC<{ quoteId: number; currency: string }> 
               </div>
               {lines.length > 0 && (
                 <ul className="mt-1 text-xs text-muted space-y-0.5">
-                  {lines.map((l, i) => (
-                    <li key={i} className="flex justify-between gap-3">
-                      <span className="flex min-w-0 gap-1">
-                        <span className="truncate" title={l.description}>
-                          {l.lineKind === 'discount' ? '' : `${l.quantity}${l.unit ? ` ${t(`crm.lineItems.unitShort.${l.unit}`, l.unit)}` : ''} · `}
-                          {l.description}
+                  {lines.map((l, i) => {
+                    // A heading or note row carries no amount: show its text only,
+                    // not "1 · Heading  CHF 0.00".
+                    const textOnly = l.lineKind !== 'discount' && !l.lineTotalMinor;
+                    return (
+                      <li key={i} className="flex justify-between gap-3">
+                        <span className="flex min-w-0 gap-1">
+                          <span className="truncate" title={l.description}>
+                            {l.lineKind === 'discount' || textOnly ? '' : `${l.quantity}${l.unit ? ` ${t(`crm.lineItems.unitShort.${l.unit}`, l.unit)}` : ''} · `}
+                            {l.description}
+                          </span>
+                          {/* Outside the truncated text, so a long description never hides it. */}
+                          {l.isOptional && <span className="shrink-0">{t('quotes.versions.addOn', '(add-on)')}</span>}
                         </span>
-                        {/* Outside the truncated text, so a long description never hides it. */}
-                        {l.isOptional && <span className="shrink-0">{t('quotes.versions.addOn', '(add-on)')}</span>}
-                      </span>
-                      <span className="tabular-nums shrink-0">{formatMoneyMinor(l.lineTotalMinor, summary?.currency || currency)}</span>
-                    </li>
-                  ))}
+                        {!textOnly && (
+                          <span className="tabular-nums shrink-0">{formatMoneyMinor(l.lineTotalMinor, summary?.currency || currency)}</span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </li>

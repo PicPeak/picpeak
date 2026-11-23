@@ -10557,7 +10557,7 @@
     "saveAndIssue": "Save & issue",
     "confirmIssue": "Issue this quote now? This customer gets no email.",
     "versions": {
-      "title": "Sent versions",
+      "title": "Stored versions",
       "hint": "Each stored version of this quote, as its PDF was saved.",
       "latest": "latest",
       "open": "Open PDF",

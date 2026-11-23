@@ -8733,7 +8733,7 @@
     "saveAndIssue": "Shrani in izdaj",
     "confirmIssue": "Izdati to ponudbo zdaj? Ta stranka ne prejme e-pošte.",
     "versions": {
-      "title": "Poslane različice",
+      "title": "Shranjene različice",
       "hint": "Vsaka shranjena različica te ponudbe, kot je bil shranjen njen PDF.",
       "latest": "najnovejša",
       "open": "Odpri PDF",

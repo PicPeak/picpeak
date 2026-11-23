@@ -10522,7 +10522,7 @@
     "saveAndIssue": "Speichern & ausstellen",
     "confirmIssue": "Dieses Angebot jetzt ausstellen? Dieser Kunde erhält keine E-Mail.",
     "versions": {
-      "title": "Versendete Fassungen",
+      "title": "Gespeicherte Fassungen",
       "hint": "Jede gespeicherte Fassung dieses Angebots, so wie ihr PDF abgelegt wurde.",
       "latest": "aktuell",
       "open": "PDF öffnen",
