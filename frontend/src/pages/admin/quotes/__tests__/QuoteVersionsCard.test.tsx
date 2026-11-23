@@ -27,7 +27,8 @@ vi.mock('react-i18next', async () => {
     }),
   };
 });
-vi.mock('react-toastify', () => ({ toast: { error: vi.fn() } }));
+const toastError = vi.fn();
+vi.mock('react-toastify', () => ({ toast: { error: (...args: unknown[]) => toastError(...args) } }));
 vi.mock('../../../../hooks/useLocalizedDate', () => ({
   useLocalizedDate: () => ({ formatDateTime: (d: string) => `at ${d}` }),
 }));
@@ -88,4 +89,30 @@ test('a quote never sent shows nothing', async () => {
   const { container } = renderCard();
   await vi.waitFor(() => expect(documents).toHaveBeenCalled());
   expect(container).toBeEmptyDOMElement();
+});
+
+test('a missing file says so, though the error body arrives as a Blob', async () => {
+  documents.mockResolvedValue({
+    documents: [{ id: 30, kind: 'sent', generatedAt: '2026-11-20', pages: 1, bytes: 1, summary: null }],
+  });
+  const body = new Blob([JSON.stringify({ error: 'The stored PDF file is missing', code: 'DOCUMENT_FILE_MISSING' })], { type: 'application/json' });
+  documentPdfUrl.mockRejectedValue(Object.assign(new Error('Request failed with status code 404'), { response: { status: 404, data: body } }));
+  const win = { location: { href: '' }, close: vi.fn() };
+  vi.spyOn(window, 'open').mockReturnValue(win as unknown as Window);
+
+  renderCard();
+  await userEvent.click(await screen.findByRole('button', { name: /Open PDF/ }));
+  await vi.waitFor(() => expect(toastError).toHaveBeenCalledWith('This PDF is no longer on the server.'));
+  expect(win.close).toHaveBeenCalled();
+});
+
+test('an offered add-on is labelled', async () => {
+  documents.mockResolvedValue({
+    documents: [{
+      id: 31, kind: 'sent', generatedAt: '2026-11-20', pages: 1, bytes: 1,
+      summary: { ...summary(10, 10000), lines: [{ description: 'Album', quantity: 1, unit: null, lineTotalMinor: 30000, lineKind: 'item', isOptional: true, notIncluded: false }] },
+    }],
+  });
+  renderCard();
+  expect(await screen.findByText(/Album \(add-on\)/)).toBeInTheDocument();
 });

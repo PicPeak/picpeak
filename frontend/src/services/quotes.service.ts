@@ -326,6 +326,8 @@ export interface QuoteVersionSummary {
     unit: string | null;
     lineTotalMinor: number;
     lineKind: string | null;
+    /** An offered add-on; absent on summaries stored before it was kept. */
+    isOptional?: boolean;
     notIncluded: boolean;
   }>;
 }

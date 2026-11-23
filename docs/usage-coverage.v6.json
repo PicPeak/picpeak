@@ -1271,6 +1271,8 @@
         "POST /:id/convert-to-invoice",
         "POST /:id/convert-to-contract",
         "GET /:id/pdf",
+        "GET /:id/documents",
+        "GET /:id/documents/:documentId/pdf",
         "POST /preview",
         "GET /presets/line-items",
         "POST /presets/line-items",

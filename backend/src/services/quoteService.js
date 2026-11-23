@@ -1290,6 +1290,8 @@ function quoteVersionSummary(quote, lineItems) {
         unit: li.unit || null,
         lineTotalMinor: ensureInt(li.line_total_minor),
         lineKind: li.line_kind || null,
+        // An offered add-on: on a sent version it isn't booked yet.
+        isOptional: isTruthyFlag(li.is_optional),
         notIncluded: isUnselectedOptional(li),
       })),
   };

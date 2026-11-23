@@ -10557,14 +10557,15 @@
     "confirmIssue": "Issue this quote now? This customer gets no email.",
     "versions": {
       "title": "Sent versions",
-      "hint": "Each version as it went out to the customer.",
+      "hint": "Each stored version of this quote, as its PDF was saved.",
       "latest": "latest",
       "open": "Open PDF",
       "fileMissing": "This PDF is no longer on the server.",
       "kind": {
         "sent": "Sent",
         "accepted": "Accepted"
-      }
+      },
+      "addOn": "(add-on)"
     }
   },
   "crm": {

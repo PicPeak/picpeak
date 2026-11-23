@@ -13,6 +13,7 @@ import { toast } from 'react-toastify';
 import { Eye } from 'lucide-react';
 import { Badge, Button, Card } from '../../../components/common';
 import { quotesService, type QuoteStoredVersion } from '../../../services/quotes.service';
+import { decodeBlobErrorBody } from '../../../utils/documentAccess';
 import { formatMoneyMinor } from '../../../utils/money';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 
@@ -38,6 +39,8 @@ export const QuoteVersionsCard: React.FC<{ quoteId: number; currency: string }> 
       win.location.href = await quotesService.documentPdfUrl(quoteId, version.id);
     } catch (err: any) {
       win.close();
+      // A blob request gets its JSON error body as a Blob too.
+      await decodeBlobErrorBody(err);
       toast.error(err?.response?.data?.code === 'DOCUMENT_FILE_MISSING'
         ? t('quotes.versions.fileMissing', 'This PDF is no longer on the server.')
         : (err?.response?.data?.error || err.message));
@@ -48,7 +51,7 @@ export const QuoteVersionsCard: React.FC<{ quoteId: number; currency: string }> 
     <Card>
       <h3 className="font-semibold mb-1 text-heading">{t('quotes.versions.title', 'Sent versions')}</h3>
       <p className="text-xs text-muted mb-3">
-        {t('quotes.versions.hint', 'Each version as it went out to the customer.')}
+        {t('quotes.versions.hint', 'Each stored version of this quote, as its PDF was saved.')}
       </p>
       <ul className="divide-y divide-line-faint">
         {versions.map((v, index) => {
@@ -85,9 +88,10 @@ export const QuoteVersionsCard: React.FC<{ quoteId: number; currency: string }> 
                 <ul className="mt-1 text-xs text-muted space-y-0.5">
                   {lines.map((l, i) => (
                     <li key={i} className="flex justify-between gap-3">
-                      <span className="truncate">
+                      <span className="truncate" title={l.description}>
                         {l.lineKind === 'discount' ? '' : `${l.quantity}${l.unit ? ` ${t(`crm.lineItems.unitShort.${l.unit}`, l.unit)}` : ''} · `}
                         {l.description}
+                        {l.isOptional && ` ${t('quotes.versions.addOn', '(add-on)')}`}
                       </span>
                       <span className="tabular-nums shrink-0">{formatMoneyMinor(l.lineTotalMinor, summary?.currency || currency)}</span>
                     </li>

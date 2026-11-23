@@ -8734,14 +8734,15 @@
     "confirmIssue": "Izdati to ponudbo zdaj? Ta stranka ne prejme e-pošte.",
     "versions": {
       "title": "Poslane različice",
-      "hint": "Vsaka različica, kot je bila poslana stranki.",
+      "hint": "Vsaka shranjena različica te ponudbe, kot je bil shranjen njen PDF.",
       "latest": "najnovejša",
       "open": "Odpri PDF",
       "fileMissing": "Ta PDF ni več na strežniku.",
       "kind": {
         "sent": "Poslano",
         "accepted": "Sprejeto"
-      }
+      },
+      "addOn": "(dodatek)"
     }
   },
   "crm": {

@@ -8,7 +8,8 @@
  *   - every send keeps its own file, listed newest first, with the totals
  *     and lines it was stored with;
  *   - each version opens as the bytes stored at the time, not a re-render;
- *   - a version of another quote, or one whose file is gone, is a 404.
+ *   - a version of another quote, or one whose file is gone, is a 404;
+ *   - an admin who may view quotes but not this one sees none of its versions.
  */
 
 const fs = require('fs');
@@ -92,7 +93,7 @@ test('each send is kept and listed with what it offered', async () => {
     netAmountMinor: 30000,
     totalAmountMinor: 30000,
     lines: [{
-      description: 'Edited images', quantity: 40, unit: 'piece', lineTotalMinor: 30000, lineKind: 'item', notIncluded: false,
+      description: 'Edited images', quantity: 40, unit: 'piece', lineTotalMinor: 30000, lineKind: 'item', isOptional: false, notIncluded: false,
     }],
   });
   expect(first.summary.totalAmountMinor).toBe(40000);
@@ -133,4 +134,43 @@ test('a version of another quote, or one whose file is gone, is a 404', async ()
   const none = await request(adminApp).get(`/api/admin/quotes/${otherId}/documents`).set(auth);
   expect(none.status).toBe(200);
   expect(none.body.documents).toEqual([]);
+});
+
+test('an offered add-on is marked in the summary', async () => {
+  const quoteId = await quoteService.createQuote({
+    customerAccountId: customerId, currency: 'CHF', vatRate: 0, lineItems: [
+      ...lines(20, 1000),
+      { position: 2, quantity: 1, description: 'Album', unit_price_minor: 30000, is_optional: true },
+    ],
+  }, adminId);
+  await quoteService.sendQuote(quoteId, adminId);
+  const res = await request(adminApp).get(`/api/admin/quotes/${quoteId}/documents`).set(auth);
+  expect(res.body.documents[0].summary.lines.map((l) => [l.description, l.isOptional]))
+    .toEqual([['Edited images', false], ['Album', true]]);
+});
+
+test('an admin who may view quotes but not this one sees none of its versions', async () => {
+  const quoteId = await quoteService.createQuote({
+    customerAccountId: customerId, currency: 'CHF', vatRate: 0, lineItems: lines(10, 1000),
+  }, adminId);
+  await quoteService.sendQuote(quoteId, adminId);
+  const row = await db('generated_documents').where({ doc_type: 'quote', doc_id: quoteId }).first('id');
+
+  const formatBoolean = (value) => require('../../src/utils/dbCompat').formatBoolean(value);
+  const [role] = await db('roles').insert({ name: 'quote_versions_viewer', display_name: 'Quote viewer' }).returning('id');
+  const roleId = role.id ?? role;
+  const permission = await db('permissions').where({ name: 'quotes.view' }).first('id');
+  await db('role_permissions').insert({ role_id: roleId, permission_id: permission.id });
+  const [other] = await db('admin_users').insert({
+    username: 'other-viewer', email: 'other-viewer@example.test', password_hash: 'unused', role_id: roleId,
+    is_active: formatBoolean(true), must_change_password: formatBoolean(false),
+  }).returning('id');
+  require('../../src/middleware/permissions').clearPermissionCache();
+  const otherAuth = { Authorization: `Bearer ${mintAdminToken(other.id ?? other)}` };
+
+  const list = await request(adminApp).get(`/api/admin/quotes/${quoteId}/documents`).set(otherAuth);
+  expect(list.status).toBe(404);
+  expect(JSON.stringify(list.body)).not.toMatch(/Edited images/);
+  const file = await request(adminApp).get(`/api/admin/quotes/${quoteId}/documents/${row.id}/pdf`).set(otherAuth);
+  expect(file.status).toBe(404);
 });
