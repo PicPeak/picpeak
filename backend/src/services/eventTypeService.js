@@ -7,7 +7,6 @@
 
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
-const { hasColumnCached } = require('../utils/schemaCache');
 const logger = require('../utils/logger');
 const { auditedUpdate } = require('./accountingHistory');
 
@@ -239,20 +238,12 @@ const updateEventType = async (id, updates, actor = null) => {
     return getEventTypeById(id);
   }
 
-  // Resolve schema lookups BEFORE opening the transaction — hasColumnCached
-  // reads via the global db, and a global read inside a SQLite transaction
-  // (single connection) deadlocks.
-  const quotesHasEventType = await hasColumnCached('quotes', 'event_type');
-
   await db.transaction(async (trx) => {
     await trx('event_types').where('id', id).update(updateData);
     // Re-point existing documents from the old slug to the new one.
     const evCount = await trx('events').where('event_type', oldSlug).update({ event_type: newSlug });
-    let qCount = 0;
-    if (quotesHasEventType) {
-      qCount = await auditedUpdate(trx, 'quotes', { event_type: oldSlug }, { event_type: newSlug },
-        { actor, source: 'event_type.rename' });
-    }
+    const qCount = await auditedUpdate(trx, 'quotes', { event_type: oldSlug }, { event_type: newSlug },
+      { actor, source: 'event_type.rename' });
     // Carry the authored per-type reminder template along (subject/body follow the
     // rename). Guard: never clobber an existing target template for the new slug.
     const oldKey = `event_reminder_${oldSlug}`;
@@ -338,23 +329,20 @@ const deleteEventType = async (id) => {
     }
   }
 
-  // Quotes carry event_type too (migration 146) — a dangling slug there would
-  // corrupt the quote→event conversion default chain.
-  if (await hasColumnCached('quotes', 'event_type')) {
-    const quotesUsingType = await db('quotes')
-      .where('event_type', eventType.slug_prefix)
-      .count('id as count')
-      .first();
-    if (quotesUsingType && parseInt(quotesUsingType.count) > 0) {
-      const error = new Error(`Cannot delete: ${quotesUsingType.count} quotes are using this type. Deactivate it instead.`);
-      error.code = 'IN_USE';
-      throw error;
-    }
+  // Quotes carry event_type too — a dangling slug there would corrupt the
+  // quote→event conversion default chain.
+  const quotesUsingType = await db('quotes')
+    .where('event_type', eventType.slug_prefix)
+    .count('id as count')
+    .first();
+  if (quotesUsingType && parseInt(quotesUsingType.count) > 0) {
+    const error = new Error(`Cannot delete: ${quotesUsingType.count} quotes are using this type. Deactivate it instead.`);
+    error.code = 'IN_USE';
+    throw error;
   }
 
   // Resolve schema lookups BEFORE opening the transaction — a global-db read
-  // inside a SQLite transaction (single connection) deadlocks. Same pattern
-  // as the rename cascade in updateEventType above.
+  // inside a SQLite transaction (single connection) deadlocks.
   const hasTranslations = await db.schema.hasTable('email_template_translations');
 
   await db.transaction(async (trx) => {

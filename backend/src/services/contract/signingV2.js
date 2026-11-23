@@ -88,7 +88,7 @@ const readDateFormat = readDocumentDateFormat;
 async function stampFontOptions() {
   const profile = (await db('business_profile').where({ id: 1 }).first()) || {};
   return {
-    issuer: { pdfFontTtfPath: profile.pdf_font_ttf_path || null, pdfFontFamily: profile.pdf_font_family || null },
+    issuer: { pdfFontFamily: profile.pdf_font_family || null },
     theme: await require('../pdfThemeService').resolveTheme('contract'),
   };
 }
@@ -241,7 +241,6 @@ function safeFailureCode(err) {
 async function recordFollowUpFailure(contractId, step, err) {
   logger.error('A contract follow-up step failed', { contractId, step, code: err && err.code, message: err && err.message });
   try {
-    if (!(await hasColumnCached('contracts', 'follow_up_failed_at'))) return;
     await auditedUpdate(db, 'contracts', { id: contractId }, {
       follow_up_failed_at: new Date().toISOString(),
       follow_up_error: `${step}:${safeFailureCode(err) || 'FAILED'}`,
@@ -258,7 +257,6 @@ async function recordFollowUpFailure(contractId, step, err) {
  */
 async function clearFollowUpFailure(contractId, { steps = null } = {}) {
   try {
-    if (!(await hasColumnCached('contracts', 'follow_up_failed_at'))) return;
     const match = (q) => {
       q.where({ id: contractId }).whereNotNull('follow_up_failed_at');
       if (steps) q.where((b) => { for (const step of steps) b.orWhere('follow_up_error', 'like', `${step}:%`); });

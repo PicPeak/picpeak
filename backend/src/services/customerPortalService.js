@@ -556,5 +556,5 @@ async function getEventOverview(customerId, slug, session = null) {
 }
 
 module.exports = {
-  shapeEvent, getDashboard, getActivity, getEventOverview, dealLineageForEvent, _internal: { toDateOnly, needsActionFor, recentFor },
+  shapeEvent, getDashboard, getActivity, getEventOverview, _internal: { needsActionFor, recentFor },
 };

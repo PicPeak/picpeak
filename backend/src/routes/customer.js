@@ -4,12 +4,6 @@ const { isGalleryAvailable, isGalleryExpired } = require('../utils/galleryLifecy
  *
  * Mounted at /api/customer (see server.js). Every endpoint here requires
  * a valid 'customer' JWT — see middleware/customerAuth.js.
- *
- * Endpoints:
- *   GET  /events                       list assigned events for dashboard
- *   GET  /events/:slug/access-token    mint a gallery JWT so the customer
- *                                      can browse the event without going
- *                                      through the per-event password gate
  */
 
 const express = require('express');
@@ -856,7 +850,7 @@ router.get('/contracts', customerAuth, async (req, res) => {
     // grouped read rather than a probe per row, and the button is only
     // offered for a contract that actually has one.
     const certified = new Set();
-    if (rows.length && await dbi.schema.hasTable('generated_documents')) {
+    if (rows.length) {
       const certificates = await dbi('generated_documents')
         .where({ doc_type: 'contract', kind: 'audit' })
         .whereIn('doc_id', rows.map((r) => r.id))

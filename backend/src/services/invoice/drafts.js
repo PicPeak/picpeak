@@ -1,6 +1,3 @@
-// Extracted verbatim from invoiceService.js — see ../invoiceService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const crypto = require('crypto');
 const { db, logActivity } = require('../../database/db');
 const { adminActivityActor } = require('../../utils/activityActor');
@@ -16,7 +13,6 @@ const { computeMonthlyCadenceDate, getHierarchyHelpers, nextInvoiceNumber } = re
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 const { toDateOnly } = require('../../utils/dateOnly');
 const { vatMinorFor, roundsVatDown, normaliseVatGbpRate } = require('../../utils/vatAmount');
-const { hasColumnCached } = require('../../utils/schemaCache');
 
 
 /**
@@ -139,7 +135,7 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
   };
   try {
     const inserted = await auditedInsert(trx, 'invoices', row, { actor: adminId, source: 'invoice.monthly.createDraft' });
-    const id = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+    const id = inserted[0].id;
     return { id, row: { ...row, id }, created: true };
   } catch (err) {
     // Partial-unique-index violation: another transaction snuck a draft
@@ -236,12 +232,9 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
   const totalMinor = netMinor + vatMinor + shippingMinor;
 
   // A GBP rate entered with the appended items (issue 2439) becomes the
-  // draft's: the draft is the invoice that will be sent. Only POST /invoices
-  // passes one, without a transaction, so the schema read never waits on a
-  // connection a trx holds (SQLite).
+  // draft's: the draft is the invoice that will be sent.
   const gbpRateUpdate = {};
-  if (payload.vatGbpRate !== undefined && payload.vatGbpRate !== null && payload.vatGbpRate !== ''
-      && await hasColumnCached('invoices', 'vat_gbp_rate')) {
+  if (payload.vatGbpRate !== undefined && payload.vatGbpRate !== null && payload.vatGbpRate !== '') {
     const { profile } = await businessProfileService.getProfile(trx);
     const rate = normaliseVatGbpRate(payload.vatGbpRate, { countryCode: profile?.country_code, currency: draft.row.currency });
     if (rate != null) gbpRateUpdate.vat_gbp_rate = rate;
@@ -302,22 +295,6 @@ async function appendOneLineItemToMonthlyDraft(customer, lineItem, adminId, trx)
   return { invoiceId: draftId, lineItemId: tail?.id || null };
 }
 
-/**
- * Admin override — issue the customer's running monthly draft NOW,
- * bypassing the cadence-day wait. Mirrors the scheduler's monthly
- * pass (migration 128): clears is_monthly_draft, sets the issue date
- * + scheduled_send_at to now, and fires sendInvoice inline so the
- * email goes out on the next email-queue tick (~60s) instead of
- * waiting for the next scheduler iteration.
- *
- * Refuses when:
- *   - no draft exists (admin hasn't queued anything yet)
- *   - the draft has zero line items (nothing to send — same as the
- *     scheduler's empty-month skip path)
- *
- * Returns { invoiceId, invoiceNumber } so the route can surface the
- * resulting invoice on the response toast.
- */
 /**
  * Read the customer's running monthly draft + its line items so the
  * customer-detail page can preview what will ship on the next cycle

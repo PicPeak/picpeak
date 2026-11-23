@@ -1,6 +1,3 @@
-// Extracted verbatim from contractService.js — see ../contractService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
 const { formatShortDate } = require('../../utils/dateFormatter');
@@ -562,18 +559,6 @@ async function buildRenderContext(contract, inclusions, textSections = [], optio
         ip: contract.signed_admin_ip,
       } : null,
     },
-    // Audit-trail evidence appended to the rendered PDF as a final
-    // page (issue #3). The renderer skips the page when this is null
-    // OR when the contract isn't signed yet, so unsigned PDFs stay
-    // unchanged. Hashes are best-effort: pdfSha256 may be null on
-    // installs that haven't migrated to the new schema column yet —
-    // the page still renders the rest of the evidence.
-    audit: (contract.signed_customer_name || contract.signed_admin_name) ? {
-      contractNumber: contract.contract_number,
-      issuedAt: contract.sent_at,
-      pdfSha256: contract.pdf_sha256 || null,
-      signedPdfSha256: contract.signed_pdf_sha256 || null,
-    } : null,
   };
 }
 module.exports = {

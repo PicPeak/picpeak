@@ -1,6 +1,3 @@
-// Extracted verbatim from contractService.js — see ../contractService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const { db } = require('../../database/db');
 const logger = require('../../utils/logger');
 const { getAppSetting } = require('../../utils/appSettings');

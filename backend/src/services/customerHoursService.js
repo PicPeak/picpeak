@@ -25,7 +25,6 @@
 const { db, logActivity } = require('../database/db');
 const { adminActivityActor } = require('../utils/activityActor');
 const { AppError } = require('../utils/errors');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { vatMinorFor, roundsVatDown } = require('../utils/vatAmount');
 const invoiceService = require('./invoiceService');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('./accountingHistory');
@@ -82,21 +81,12 @@ function resolveEffectiveRate(entry, customer, installDefaultMinor = null) {
 
 /**
  * Read the install-wide default hourly rate (minor units) off the
- * singleton business_profile row. Returns null when unset OR when the
- * column doesn't exist yet (pre-migration-113 install) — callers then
+ * singleton business_profile row. Returns null when unset — callers then
  * fall through to the HOURLY_RATE_REQUIRED path. Accepts an optional
  * transaction so it joins the caller's atomic unit.
  */
 async function getInstallDefaultRateMinor(trx) {
   const conn = trx || db;
-  // A cold global schema-cache lookup would acquire a second connection
-  // while SQLite's only connection is held by the caller's transaction.
-  const hasRate = trx
-    ? await trx.schema.hasColumn('business_profile', 'default_hourly_rate_minor')
-    : await hasColumnCached('business_profile', 'default_hourly_rate_minor');
-  if (!hasRate) {
-    return null;
-  }
   const row = await conn('business_profile').where({ id: 1 })
     .first('default_hourly_rate_minor');
   return row && row.default_hourly_rate_minor != null
@@ -237,12 +227,6 @@ async function createEntry(customerId, payload, adminId) {
   // (The monthly/billing paths additionally route through createInvoice, whose
   // OWN internal logActivity still runs in-trx — that shared root limitation is
   // tracked in feedback_sqlite_global_write_in_transaction.)
-  //
-  // The project_id column check has the same problem: hasColumnCached reads
-  // the schema through the global db, so a cold lookup inside the transaction
-  // waits on the connection the transaction holds. Resolve it here.
-  const hasProjectCol = payload.projectId !== undefined
-    && await hasColumnCached('customer_hour_entries', 'project_id');
   let logInfo = null;
   const result = await db.transaction(async (trx) => {
     const row = {
@@ -262,9 +246,9 @@ async function createEntry(customerId, payload, adminId) {
     // at most one customer, so reject booking hours onto a project owned by a
     // DIFFERENT customer (defence-in-depth behind the customer-scoped picker).
     // Unassigned projects (customer_account_id null) are allowed for anyone.
-    if (hasProjectCol) {
+    if (payload.projectId !== undefined) {
       const projectId = payload.projectId || null;
-      if (projectId && await trx.schema.hasTable('projects')) {
+      if (projectId) {
         const project = await trx('projects').where({ id: projectId }).select('customer_account_id').first();
         if (!project) throw new AppError('Project not found', 404, 'PROJECT_NOT_FOUND');
         if (project.customer_account_id != null && project.customer_account_id !== customer.id) {
@@ -274,7 +258,7 @@ async function createEntry(customerId, payload, adminId) {
       row.project_id = projectId;
     }
     const inserted = await auditedInsert(trx, 'customer_hour_entries', row, { actor: adminId || null, source: 'hours.createEntry' });
-    const entryId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+    const entryId = inserted[0].id;
 
     // Accumulator-mode customers (monthly + manual) get the auto-append
     // treatment — the entry lands on the running draft instead of staying

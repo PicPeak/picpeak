@@ -1,26 +1,7 @@
 /**
  * Admin → Quotes Routes
  *
- * Endpoint mounted at /api/admin/quotes. Surface:
- *   GET    /                            list (filter + sort + paginate)
- *   POST   /                            create (status=draft)
- *   GET    /:id                         detail
- *   PUT    /:id                         update (line items + scalars)
- *   POST   /:id/send                    render PDF + queue email
- *   POST   /:id/duplicate               clone as new draft
- *   POST   /:id/convert                 convert accepted quote → event
- *   GET    /:id/pdf                     preview / download persisted PDF
- *   GET    /:id/documents               every stored version (sent, accepted)
- *   GET    /:id/documents/:documentId/pdf  one stored version's file
- *   POST   /preview                     render PDF from unsaved payload
- *   GET    /presets/line-items
- *   POST   /presets/line-items
- *   PUT    /presets/line-items/:id
- *   DELETE /presets/line-items/:id
- *   GET    /presets/payment-terms
- *   POST   /presets/payment-terms
- *   PUT    /presets/payment-terms/:id
- *   DELETE /presets/payment-terms/:id
+ * Mounted at /api/admin/quotes.
  *
  * Permissions: `quotes.view` for reads, `quotes.manage` for writes.
  * The global `quotes` feature flag is checked at the route layer so a
@@ -116,7 +97,7 @@ function transformQuote(q) {
       noAdminEmails: q.customer_no_admin_emails === true || q.customer_no_admin_emails === 1,
     },
     status: q.status,
-    // Migration 140 — cross-document lineage UUID. Lets the frontend
+    // Cross-document lineage UUID. Lets the frontend
     // call /api/admin/deals/:uuid/documents in one shot to render the
     // full lineage (quote + contract + N invoices + Storni).
     dealUuid: q.deal_uuid || null,
@@ -132,10 +113,10 @@ function transformQuote(q) {
     eventTimeEnd: q.event_time_end,
     expectedDurationHours: q.expected_duration_hours == null ? null : Number(q.expected_duration_hours),
     paymentTermTemplateId: q.payment_term_template_id,
-    // Split payment-term picker (migration 124).
+    // Split payment-term picker.
     paymentNetDaysTemplateId: q.payment_net_days_template_id || null,
     paymentTimingTemplateId: q.payment_timing_template_id || null,
-    // Migration 142 — the per-quote installment override, so the editor can
+    // The per-quote installment override, so the editor can
     // show (and clear) the plan it saved; null = the timing template's.
     installmentsOverride: parseInstallmentsOverride(q.payment_term_installments_override),
     netAmountMinor: q.net_amount_minor,
@@ -165,7 +146,7 @@ function transformQuote(q) {
     replacedByQuoteId: q.replaced_by_quote_id ?? null,
     replacedByQuoteNumber: q.replaced_by_quote_number ?? null,
     convertedEventId: q.converted_event_id,
-    // Migration 130 lineage. Null until quoteService.createFromQuote
+    // Lineage. Null until quoteService.createFromQuote
     // sets it. Surfaced so QuoteDetailPage can render a "Linked
     // contract" badge alongside the existing resulting-invoices list.
     // contract_number comes from the conv_contract JOIN — falls back
@@ -197,7 +178,7 @@ function transformLineItem(li) {
     unitPriceMinor: li.unit_price_minor,
     discountPercent: li.discount_percent == null ? 0 : Number(li.discount_percent),
     lineTotalMinor: li.line_total_minor,
-    // Hierarchy (migration 119). `parentPosition` is what the editor
+    // Hierarchy. `parentPosition` is what the editor
     // uses to thread sub-items in unsaved drafts; on existing rows
     // we hydrate it from the actual parent's position via a join in
     // getQuoteById (see service). NULL = top-level item.
@@ -225,7 +206,7 @@ function transformPaymentTermTemplate(t) {
   };
 }
 
-// Split payment-term templates (migration 124). Two transforms because
+// Split payment-term templates. Two transforms because
 // the rows have different shapes — net-days carries Skonto, timing
 // carries the installments array.
 function transformPaymentNetDaysTemplate(t) {
@@ -314,7 +295,7 @@ function mapPayloadToService(body) {
     paymentNetDaysTemplateId: 'paymentNetDaysTemplateId',
     paymentTimingTemplateId: 'paymentTimingTemplateId',
     // Ad-hoc installments override (commit #6). Stored on quotes
-    // as payment_term_installments_override via migration 142.
+    // as payment_term_installments_override.
     installments: 'installments',
     vatRate: 'vatRate', shippingAmountMinor: 'shippingAmountMinor',
     introText: 'introText', outroText: 'outroText',
@@ -338,7 +319,7 @@ function mapPayloadToService(body) {
       description: li.description,
       unit_price_minor: li.unitPriceMinor,
       discount_percent: li.discountPercent,
-      // Migration 119 — sub-item + details support. parentPosition
+      // Sub-item + details support. parentPosition
       // refers to another item's position in the same payload; the
       // service resolves it to parent_line_item_id after inserting
       // the parents.
@@ -438,7 +419,7 @@ const QUOTE_LINE_VALIDATORS = [
   // zero — see quoteService.
   body('lineItems.*.unitPriceMinor').optional({ values: 'falsy' }).isInt(),
   body('lineItems.*.discountPercent').optional({ values: 'falsy' }).isFloat({ min: 0, max: 100 }),
-  // Migration 119: sub-item + details support. Cross-row constraints
+  // Sub-item + details support. Cross-row constraints
   // (parent must exist, max 1 level deep) are enforced by the service
   // (validateLineItemHierarchy); these per-field validators just keep
   // bad data from reaching it.
@@ -527,7 +508,8 @@ router.put(
     body('customerAccountId').optional({ values: 'falsy' }).isInt({ min: 1 }),
     body('language').optional({ values: 'falsy' }).isString().isLength({ max: 8 }),
     body('currency').optional({ values: 'falsy' }).isString().isLength({ min: 3, max: 3 }),
-    body('issueDate').optional({ values: 'falsy' }).isISO8601(),
+    // No issueDate: the issue date is set on create and the editor has no
+    // field for it, so updateQuote doesn't take one.
     body('validUntil').optional({ values: 'falsy' }).isISO8601(),
     body('eventName').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
     body('eventDate').optional({ values: 'falsy' }).isISO8601(),
@@ -1073,7 +1055,7 @@ router.delete(
 );
 
 // ---------------------------------------------------------------------
-// Presets — payment net-days (migration 124, half of the split)
+// Presets — payment net-days (half of the split)
 // ---------------------------------------------------------------------
 
 router.get(
@@ -1143,7 +1125,7 @@ router.delete(
 );
 
 // ---------------------------------------------------------------------
-// Presets — payment timing (migration 124, other half of the split)
+// Presets — payment timing (other half of the split)
 // ---------------------------------------------------------------------
 
 router.get(

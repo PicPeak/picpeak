@@ -49,10 +49,6 @@ const mockDbFn = jest.fn((tableName) => {
 // COALESCE (migration 123). The chain's select() ignores its
 // arguments so the raw() return value just needs to exist.
 mockDbFn.raw = jest.fn((sql) => sql);
-// #4 loadCosts schema-guards each cost table; default the PDF/CSV
-// fixtures to "no accounting tables" so these renderers exercise the
-// revenue path unchanged.
-mockDbFn.schema = { hasTable: jest.fn(async () => false) };
 
 jest.mock('../../src/database/db', () => ({
   db: mockDbFn,

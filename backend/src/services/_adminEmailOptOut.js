@@ -25,7 +25,6 @@
  */
 
 const { db } = require('../database/db');
-const { hasColumnCached } = require('../utils/schemaCache');
 
 // Customer-facing CRM mail. Deliberately NOT listed: account mail
 // (invitation, password reset), contract_signing_code (a one-time code the
@@ -58,14 +57,13 @@ function isAdministrativeEmailType(emailType) {
 const asFlag = (value) => value === true || value === 1;
 const norm = (value) => String(value || '').trim().toLowerCase();
 
-/** The customer row the decisions need, or null (unknown id, pre-migration DB). */
+/** The customer row the decisions need, or null (unknown id). */
 async function loadCustomer(customerOrId) {
   if (customerOrId == null) return null;
   if (typeof customerOrId === 'object') {
     if ('no_admin_emails' in customerOrId) return customerOrId;
     customerOrId = customerOrId.id;
   }
-  if (!(await hasColumnCached('customer_accounts', 'no_admin_emails'))) return null;
   return db('customer_accounts').where({ id: customerOrId })
     .first('id', 'email', 'billing_email', 'no_admin_emails');
 }
@@ -100,7 +98,6 @@ async function isSuppressedForRecipient(recipientEmail, emailType, customerAccou
   if (customerAccountId != null) return isHeldBackFor(customerAccountId, recipientEmail);
   const address = norm(recipientEmail);
   if (!address) return false;
-  if (!(await hasColumnCached('customer_accounts', 'no_admin_emails'))) return false;
   const matches = await db('customer_accounts')
     .where((q) => {
       q.whereRaw('LOWER(email) = ?', [address]).orWhereRaw('LOWER(billing_email) = ?', [address]);

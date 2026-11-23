@@ -8743,7 +8743,6 @@
     },
     "table": {
       "name": "Name",
-      "email": "Email",
       "company": "Company",
       "eventCount": "Galleries",
       "lastLogin": "Last login",
@@ -8757,16 +8756,7 @@
     "invite": {
       "button": "Invite customer",
       "title": "Invite a customer",
-      "description": "They will receive an email with a link to set up their account. Once they have accepted, you can assign them to events.",
-      "email": "Email",
-      "submit": "Send invitation",
-      "success": "Invitation sent",
-      "error": "Could not send invitation.",
-      "conflict": "A customer with this email already exists or has a pending invitation.",
-      "invalidEmail": "Please enter a valid email",
-      "showPrefill": "+ Add contact details (optional)",
-      "hidePrefill": "− Hide contact details",
-      "prefillHint": "Anything you fill in will be pre-populated on the customer's sign-up page — they can still edit it."
+      "description": "They will receive an email with a link to set up their account. Once they have accepted, you can assign them to events."
     },
     "invitations": {
       "empty": "No pending invitations.",
@@ -8815,7 +8805,6 @@
       "preferredLanguage": "Preferred language",
       "preferredLanguageHint": "Drives portal UI, quote/invoice PDFs, and billing emails (reminders/dunning). New customers default to the business-profile language ({{lang}}); override here per customer.",
       "salutation": "Salutation",
-      "salutationNone": "—",
       "firstName": "First name",
       "lastName": "Last name",
       "displayName": "Display name",
@@ -8828,9 +8817,7 @@
       "postalCode": "Postal code",
       "city": "City",
       "state": "State / region",
-      "countryCode": "Country (ISO 2)",
       "country": "Country",
-      "countryName": "Country (full name)",
       "notesHint": "Visible only to admins. Never shown to the customer.",
       "featuresSection": "Customer features",
       "featuresHint": "Per-customer overrides for the customer-surface tabs. The global toggles in Settings → Customer Surface are the master switch — when global is OFF nobody sees the tab, regardless of what you set here. Defaults are ON, so flip a switch OFF to hide a tab for this specific customer.",
@@ -8895,7 +8882,6 @@
       "title": "Erase customer data?",
       "body": "Removes the customer's name, email, phone, address, company and credentials. The account row stays so historical gallery-access records and audit logs still reference it. This is irreversible — you cannot restore the data afterwards.",
       "confirm": "Erase permanently",
-      "confirmInFlight": "Erasing…",
       "success": "Customer erased",
       "error": "Could not erase customer"
     },
@@ -9188,9 +9174,6 @@
     }
   },
   "accounting": {
-    "title": "Accounting",
-    "subtitle": "Inbound supplier invoices, expenses and reporting.",
-    "navAriaLabel": "Accounting navigation",
     "empty": {
       "title": "No accounting features enabled",
       "body": "Enable the Tax report (or another accounting sub-feature) under Settings → Features to get started."
@@ -9198,9 +9181,7 @@
     "subnav": {
       "incomingInvoices": "Incoming invoices",
       "expenses": "Expenses",
-      "taxReport": "Tax",
-      "export": "Treuhänder export",
-      "chartOfAccounts": "Chart of accounts"
+      "taxReport": "Tax"
     },
     "taxTreatment": {
       "domestic": "Domestic (with VAT)",
@@ -9234,8 +9215,6 @@
       "scanCamera": "Scan with camera",
       "uploadFile": "Upload file",
       "capturedToast": "Document captured.",
-      "categorizedToast": "Document categorized.",
-      "triageTitle": "Categorize document",
       "saveCategorize": "Save",
       "saveCategorizePay": "Save & mark paid",
       "categorize": "Categorize",
@@ -9244,7 +9223,6 @@
       "empty": "No documents yet — capture one above.",
       "untitled": "Untitled document",
       "noAmount": "amount not entered",
-      "rebillHint": "Creates an editable scheduled invoice on the client. VAT/tax handling is v1 — verify with your Treuhänder.",
       "previewLoading": "Loading preview…",
       "previewError": "Preview unavailable — enter the fields manually.",
       "qrHint": "Showing the last page — the Swiss QR-bill usually sits at the bottom.",
@@ -9266,9 +9244,7 @@
         "disposition": "Disposition",
         "category": "Category",
         "categoryNone": "— none —",
-        "declineReason": "Reason",
         "customer": "Client",
-        "eventId": "Event ID (optional)",
         "markup": "Markup",
         "reference": "Payment reference",
         "referenceHint": "QR / ESR reference or message",
@@ -9280,12 +9256,6 @@
         "supplierCountryHint": "Sets the tax treatment automatically: outside your VAT-reclaim countries → foreign VAT (not reclaimable)."
       },
       "loadFailed": "Could not load the incoming invoices"
-    },
-    "expenseStatus": {
-      "open": "Open",
-      "parked": "Parked",
-      "billed": "Billed",
-      "declined": "Declined"
     },
     "paymentMethod": {
       "bank_transfer": "Bank transfer",
@@ -9299,7 +9269,6 @@
       "label": "Book to",
       "company": "Company",
       "event": "Gallery",
-      "eventId": "Event ID",
       "inboundHint": "Which gallery carries this cost in your reports & tax export (Company = general overhead). This is separate from who you re-bill it to."
     },
     "incoming": {
@@ -9358,21 +9327,16 @@
     },
     "ledger": {
       "subtitle": "Internal expenses such as mileage, per diems and cash receipts, booked to a gallery or the company.",
-      "allStatuses": "All statuses",
-      "allDispositions": "All dispositions",
       "allKinds": "All types",
       "empty": "No expenses yet — add one above.",
       "untitled": "Expense",
-      "invoiceLink": "Invoice",
       "paid": "Paid",
       "markPaid": "Mark paid",
-      "markPaidTitle": "Mark supplier paid",
       "paidDate": "Payment date",
       "method": "Method",
       "reference": "Reference (optional)",
       "confirmPaid": "Mark paid",
       "paidToast": "Marked as paid.",
-      "unpaidToast": "Marked as not paid.",
       "addExpense": "Add expense",
       "addTitle": "Add expense",
       "editTitle": "Edit expense",
@@ -9386,7 +9350,6 @@
       "locked": "Locked",
       "lockedHint": "Locked — this expense is on a client invoice.",
       "description": "Description",
-      "descriptionHint": "e.g. mileage, per-diem, cash receipt",
       "createdToast": "Expense added.",
       "loadFailed": "Could not load the expenses"
     }
@@ -9913,16 +9876,11 @@
       "deleteAction": "Delete VAT code"
     },
     "export": {
-      "title": "Treuhänder export",
-      "intro": "Download the collective journal (revenue + costs as accrual postings with account and VAT codes) for import into your Treuhänder’s accounting software.",
       "format": "Target tool",
       "format_generic": "Generic (all columns)",
       "format_banana": "Banana — double-entry",
       "format_banana_ie": "Banana — income & expense",
-      "format_bexio": "bexio",
-      "download": "Download CSV",
-      "failed": "Export failed.",
-      "disclaimer": "Accrual basis only (document dates) — payments/bank movements are not included. Account + VAT codes follow your Chart-of-accounts mapping. Always review the import with your Treuhänder before filing."
+      "format_bexio": "bexio"
     }
   },
   "taxReport": {
@@ -10258,7 +10216,6 @@
       "vatRate": "VAT rate %",
       "shipping": "Shipping amount",
       "currency": "Currency",
-      "selectPaymentTerm": "— Select payment terms —",
       "paymentNetDays": "Net days",
       "paymentTiming": "Payment schedule",
       "selectNetDays": "— Select net days —",
@@ -10300,13 +10257,6 @@
     "title": "Quotes",
     "subtitle": "Send, track and convert quotes into events.",
     "searchPlaceholder": "Search by number, customer, event…",
-    "sort": {
-      "newest": "Newest first",
-      "oldest": "Oldest first",
-      "customerAsc": "Customer A→Z",
-      "valueAsc": "Value low→high",
-      "valueDesc": "Value high→low"
-    },
     "empty": "No quotes yet.",
     "table": {
       "customer": "Customer",
@@ -10581,7 +10531,6 @@
       "position": "Pos.",
       "discount": "Rabatt %",
       "descriptionPlaceholder": "Description (multi-line OK)",
-      "saveAsPreset": "Save as preset",
       "empty": "No line items yet — add one to get started.",
       "addRow": "Add row",
       "addFromPreset": "Add from preset…",
@@ -10649,14 +10598,6 @@
     "new": "New invoice",
     "searchPlaceholder": "Search by number or customer…",
     "pagination": "Page {{page}} of {{total}} · {{count}} invoices",
-    "sort": {
-      "newest": "Newest first",
-      "dueAsc": "Due soon first",
-      "dueDesc": "Due latest first",
-      "customerAsc": "Customer A→Z",
-      "valueAsc": "Value low→high",
-      "valueDesc": "Value high→low"
-    },
     "filter": {
       "unpaidOnly": "Unpaid only"
     },
@@ -10682,7 +10623,6 @@
     "monthlyDraftBadge": "Monthly draft — ships via the customer's cadence day or \"Trigger invoice now\"",
     "confirmReminder": "Send a reminder now?",
     "reminderToast": "Reminder sent.",
-    "confirmCancel": "Cancel this invoice?",
     "confirmCancelDraft": "Cancel this draft invoice? No document goes out.",
     "confirmCancelIssued": "A Stornorechnung will be generated and emailed to the customer immediately. This cannot be undone. Continue?",
     "cancelledToast": "Invoice cancelled.",
@@ -10726,7 +10666,6 @@
       "shipping": "Shipping",
       "currency": "Currency",
       "ccPdfEmail": "CC PDF to (extra recipient)",
-      "sourceQuote": "From quote",
       "businessBankAccount": "Payment account",
       "bankAccountProfileDefault": "Use business profile default for {{currency}}",
       "bankAccountDefaultBadge": "(default)",
@@ -10749,7 +10688,6 @@
       "ccPdfPickFromAdmins": "Pick from admins:",
       "paymentTermHelp": "Net days + Skonto for this invoice. Leave blank to inherit from the source quote or the global CRM defaults.",
       "skontoDisabled": "Disable Skonto for this invoice (suppresses the early-payment-discount block on the PDF and the \"Paid with Skonto\" buttons in the admin email / record-payment dialog).",
-      "sourceContract": "From contract",
       "status": "Status"
     },
     "import": "Import historical",
@@ -11590,13 +11528,6 @@
       "eventHelp": "Snapshotted onto the contract and propagated to any event / invoice generated from it. Set this so the customer portal and dunning emails show the right \"Wedding Doe / Müller\" label.",
       "eventName": "Event name",
       "eventNamePlaceholder": "e.g. Wedding Doe / Müller",
-      "eventType": "Event type",
-      "eventTypeNone": "— Use default —",
-      "eventTypeHint": "Used for the event created when this quote is accepted.",
-      "bookingWorkflow": "Booking workflow (on acceptance)",
-      "bookingWorkflowNone": "— None —",
-      "bookingWorkflowDisabled": "(disabled)",
-      "bookingWorkflowHint": "The flow that runs when the customer accepts. Leave as None to run no booking flow. The flow must be enabled to fire.",
       "eventSection": "Event (optional)",
       "eventTimeEnd": "End",
       "eventTimeStart": "Start",

@@ -973,59 +973,6 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
 }
 
 /**
- * GDPR-style erasure: anonymize-in-place rather than hard delete.
- *
- * Why anonymize, not delete?
- *   - `customer_invitations.accepted_customer_id` has no ON DELETE CASCADE
- *     (Postgres default RESTRICT), so a hard delete would fail if the
- *     customer accepted any invitations. Anonymize sidesteps the FK
- *     constraint entirely.
- *   - `event_customer_assignments` and `activity_logs` rows referencing
- *     this customer are part of the gallery's access audit trail. Wiping
- *     them would leave gaps that "who had access to this event" queries
- *     can't recover from.
- *
- * What we do:
- *   - Replace the email with a sentinel `deleted-<id>-<random>@deleted.invalid`
- *     so unique-on-email holds and the address can never collide with a
- *     real customer the admin invites later.
- *   - NULL every PII column (name, phone, company, vat, full address, notes).
- *   - Wipe `password_hash` so credentials can't be reused.
- *   - Set `is_active=false` and bump `password_changed_at` so any
- *     outstanding tokens die immediately.
- *   - Delete pending invitations + reset tokens for this customer.
- *   - Clear the names and session digests in this customer's product choice
- *     history and withdraw their offers (albumProducts/retention.js).
- *   - Redact every contract nobody signed (cancelling a draft or sent one),
- *     and revoke every live signing link and session on the signed ones
- *     (contract/erasure.js).
- *   - Cancel every `email_queue` row still pending for this customer's
- *     address (so nothing queued before the erasure goes out after it), and
- *     redact the variables + recipient on every row for this address that
- *     isn't already gone — sent, failed or just-cancelled — so the archive
- *     and any backup stop carrying their data (#1593). Matched on the
- *     address as stored *before* this function rewrites it to the sentinel
- *     below, case-insensitively (an address stored with different casing
- *     than the account is still the same mailbox) since the customer took
- *     it (currentAddressSince), and on each former
- *     address for the time the customer held it (formerAddressWindows,
- *     issue 1971). Contract mail queued to
- *     a signer's own address (not the account email) is covered only for
- *     the unsigned contracts this erasure redacts, and only rows whose
- *     email_data names one of those contracts — see
- *     contractSignerQueueTargets below.
- *
- * What we keep:
- *   - The customer_accounts row itself (anonymized).
- *   - Their event_customer_assignments rows (with a now-anonymized FK).
- *   - All activity_logs / access_logs (audit trail).
- *   - Contracts that carry a signature, whole — they are the record of a
- *     concluded agreement (contract/erasure.js states the rule).
- *
- * Wrapped in a transaction so a partial failure doesn't leave half-erased
- * state.
- */
-/**
  * Who a redacted contract's invitations went to (issue 1593): for every
  * unsigned contract the erasure plan redacts, its contract_number and the
  * plaintext addresses of its signers. Read on the global connection BEFORE
@@ -1306,6 +1253,59 @@ async function forgetEventContacts(trx, eventIds, emails) {
   return [...changed];
 }
 
+/**
+ * GDPR-style erasure: anonymize-in-place rather than hard delete.
+ *
+ * Why anonymize, not delete?
+ *   - `customer_invitations.accepted_customer_id` has no ON DELETE CASCADE
+ *     (Postgres default RESTRICT), so a hard delete would fail if the
+ *     customer accepted any invitations. Anonymize sidesteps the FK
+ *     constraint entirely.
+ *   - `event_customer_assignments` and `activity_logs` rows referencing
+ *     this customer are part of the gallery's access audit trail. Wiping
+ *     them would leave gaps that "who had access to this event" queries
+ *     can't recover from.
+ *
+ * What we do:
+ *   - Replace the email with a sentinel `deleted-<id>-<random>@deleted.invalid`
+ *     so unique-on-email holds and the address can never collide with a
+ *     real customer the admin invites later.
+ *   - NULL every PII column (name, phone, company, vat, full address, notes).
+ *   - Wipe `password_hash` so credentials can't be reused.
+ *   - Set `is_active=false` and bump `password_changed_at` so any
+ *     outstanding tokens die immediately.
+ *   - Delete pending invitations + reset tokens for this customer.
+ *   - Clear the names and session digests in this customer's product choice
+ *     history and withdraw their offers (albumProducts/retention.js).
+ *   - Redact every contract nobody signed (cancelling a draft or sent one),
+ *     and revoke every live signing link and session on the signed ones
+ *     (contract/erasure.js).
+ *   - Cancel every `email_queue` row still pending for this customer's
+ *     address (so nothing queued before the erasure goes out after it), and
+ *     redact the variables + recipient on every row for this address that
+ *     isn't already gone — sent, failed or just-cancelled — so the archive
+ *     and any backup stop carrying their data (#1593). Matched on the
+ *     address as stored *before* this function rewrites it to the sentinel
+ *     below, case-insensitively (an address stored with different casing
+ *     than the account is still the same mailbox) since the customer took
+ *     it (currentAddressSince), and on each former
+ *     address for the time the customer held it (formerAddressWindows,
+ *     issue 1971). Contract mail queued to
+ *     a signer's own address (not the account email) is covered only for
+ *     the unsigned contracts this erasure redacts, and only rows whose
+ *     email_data names one of those contracts — see
+ *     contractSignerQueueTargets below.
+ *
+ * What we keep:
+ *   - The customer_accounts row itself (anonymized).
+ *   - Their event_customer_assignments rows (with a now-anonymized FK).
+ *   - All activity_logs / access_logs (audit trail).
+ *   - Contracts that carry a signature, whole — they are the record of a
+ *     concluded agreement (contract/erasure.js states the rule).
+ *
+ * Wrapped in a transaction so a partial failure doesn't leave half-erased
+ * state.
+ */
 async function eraseCustomer(id, erasedByAdminId) {
   let customer = await db('customer_accounts').where('id', id).first();
   if (!customer) {
@@ -1369,11 +1369,8 @@ async function eraseCustomer(id, erasedByAdminId) {
 
     // Booking requests (issue 2440): the client's details on requests linked
     // to this customer or sent from one of its addresses.
-    if (await trx.schema.hasTable('booking_requests')) {
-      const contactEmails = await trx.schema.hasTable('customer_contacts')
-        ? await trx('customer_contacts').where({ customer_account_id: id }).pluck('email') : [];
-      await require('./bookingService').forgetCustomer(trx, id, [customer.email, ...contactEmails]);
-    }
+    const bookingEmails = await trx('customer_contacts').where({ customer_account_id: id }).pluck('email');
+    await require('./bookingService').forgetCustomer(trx, id, [customer.email, ...bookingEmails]);
 
     // email_queue (#1593): cancel what hasn't gone out yet, then redact the
     // variables + recipient on every row for this address that isn't
@@ -1573,14 +1570,11 @@ async function eraseCustomer(id, erasedByAdminId) {
     // Pending re-bills (incoming invoices, migration 132) attached to this
     // customer would otherwise stay billable to the now-anonymized account —
     // return the not-yet-billed ones to the inbox for re-triage so they're not
-    // silently lost or billed to a ghost (PR #636 review #2). Guarded for
-    // schema drift on installs that predate migration 132.
-    if (await trx.schema.hasColumn('inbound_documents', 'customer_account_id')) {
-      await auditedUpdate(trx, 'inbound_documents',
-        (q) => q.where({ customer_account_id: id }).whereNull('billed_invoice_id'),
-        { customer_account_id: null, disposition: null, status: 'unsorted', updated_at: new Date() },
-        { actor: erasedByAdminId || null, source: 'customer.erase' });
-    }
+    // silently lost or billed to a ghost (PR #636 review #2).
+    await auditedUpdate(trx, 'inbound_documents',
+      (q) => q.where({ customer_account_id: id }).whereNull('billed_invoice_id'),
+      { customer_account_id: null, disposition: null, status: 'unsorted', updated_at: new Date() },
+      { actor: erasedByAdminId || null, source: 'customer.erase' });
   });
 
   // Campaign counters (#1593 bug 3), recomputed now that the cancellations
@@ -2169,6 +2163,14 @@ async function getEffectiveFeaturesForCustomer(customerOrId) {
   };
 }
 
+/** The features of a portal session: the customer's, narrowed to this login. */
+async function getEffectiveFeaturesForSession(sessionCustomer) {
+  const features = await getEffectiveFeaturesForCustomer(sessionCustomer.id);
+  return sessionCustomer.contactId
+    ? customerContactsService.applyRights(features, sessionCustomer.rights)
+    : features;
+}
+
 /**
  * Admin triggers a password reset for an existing customer.
  *
@@ -2184,14 +2186,6 @@ async function getEffectiveFeaturesForCustomer(customerOrId) {
  * we delete it before creating the new one — admins re-clicking the
  * "Send reset" button shouldn't fan out two valid links.
  */
-/** The features of a portal session: the customer's, narrowed to this login. */
-async function getEffectiveFeaturesForSession(sessionCustomer) {
-  const features = await getEffectiveFeaturesForCustomer(sessionCustomer.id);
-  return sessionCustomer.contactId
-    ? customerContactsService.applyRights(features, sessionCustomer.rights)
-    : features;
-}
-
 async function createPasswordReset({ customerId, requestedByAdminId }) {
   const customer = await db('customer_accounts').where('id', customerId).first();
   if (!customer) {

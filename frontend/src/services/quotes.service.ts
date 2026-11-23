@@ -500,21 +500,6 @@ export const quotesService = {
     return data.data || data;
   },
 
-  async createPaymentTermTemplate(payload: Omit<PaymentTermTemplate, 'id' | 'isSystem'>): Promise<{ template: PaymentTermTemplate }> {
-    const { data } = await api.post('/admin/quotes/presets/payment-terms', payload);
-    return data.data || data;
-  },
-
-  async updatePaymentTermTemplate(id: number, payload: Partial<PaymentTermTemplate>): Promise<{ template: PaymentTermTemplate }> {
-    const { data } = await api.put(`/admin/quotes/presets/payment-terms/${id}`, payload);
-    return data.data || data;
-  },
-
-  async deletePaymentTermTemplate(id: number): Promise<{ deleted: true }> {
-    const { data } = await api.delete(`/admin/quotes/presets/payment-terms/${id}`);
-    return data.data || data;
-  },
-
   // Split payment-term templates (migration 124).
   async listPaymentNetDaysTemplates(): Promise<{ templates: PaymentNetDaysTemplate[] }> {
     const { data } = await api.get('/admin/quotes/presets/payment-net-days');

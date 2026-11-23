@@ -204,7 +204,6 @@ async function buildSyntheticParties() {
     footerLine: profile.footer_line,
     vatId: profile.vat_id,
     logoPath: null, // skip logo file lookup for the synthetic render
-    pdfFontTtfPath: profile.pdf_font_ttf_path,
     pdfFontFamily: profile.pdf_font_family || null,
     countryName: profile.country_name || null,
     showLogo: false,

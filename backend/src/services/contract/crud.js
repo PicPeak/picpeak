@@ -1,6 +1,3 @@
-// Extracted verbatim from contractService.js — see ../contractService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const crypto = require('crypto');
 const { db, withRetry, logActivity } = require('../../database/db');
 const logger = require('../../utils/logger');
@@ -137,9 +134,9 @@ async function getContractById(id) {
         'blk.description as block_description',
         'blk.body_text as block_body_text',
         'blk.body_text_de as block_body_text_de',
-        // Migration 131 — locale variants. Pulled with column-existence
-        // guard so installs that haven't run migration 131 still load
-        // contracts (just without the new columns).
+        // Locale variants. Pulled with a column-existence guard so an
+        // install whose contract_blocks table lacks them still loads
+        // contracts (just without the extra columns).
         ...(await hasColumnCached('contract_blocks', 'body_text_ru')
           ? ['blk.body_text_ru as block_body_text_ru'] : []),
         ...(await hasColumnCached('contract_blocks', 'body_text_pt')
@@ -174,9 +171,9 @@ async function getContractById(id) {
  */
 async function createContract(payload, adminId, { idempotencyKey = null, imported = null } = {}) {
   // Self-heal: ensure runtime-seeded system blocks (e.g. the
-  // quote_line_items_table added after migration 131 was deployed)
-  // exist before we copy active system blocks into the new contract's
-  // inclusion list. Idempotent — only fires if rows are missing.
+  // quote_line_items_table block) exist before we copy active system
+  // blocks into the new contract's inclusion list. Idempotent — only
+  // fires if rows are missing.
   await ensureSystemBlocksSeeded();
 
   const customer = await db('customer_accounts').where({ id: payload.customerAccountId }).first();
@@ -202,20 +199,13 @@ async function createContract(payload, adminId, { idempotencyKey = null, importe
   const validUntil = payload.validUntil || new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
     .toISOString().slice(0, 10);
 
-  // Schema-drift guard for the event-snapshot columns added as
-  // in-place migration 130 edits. We only write them when the DB
-  // actually has them; older dev installs that haven't re-migrated
-  // simply skip these fields (contract still saves successfully).
+  // Schema-drift guard for the event-snapshot columns. We only write them
+  // when the DB actually has them; an install whose contracts table lacks
+  // them simply skips these fields (contract still saves successfully).
   const hasEventCols = await hasColumnCached('contracts', 'event_name');
-  // Migration 121 — optional link to a Project Overview project. Resolved
-  // here, never inside the transaction: hasColumnCached reads the schema
-  // through the global db, which on the single-connection SQLite pool waits
-  // for the connection the transaction holds. The editor always sends
-  // projectId, so every create stalled on the 60s acquire timeout and
-  // failed with a generic error (issue 1447).
-  const hasProjectCol = payload.projectId !== undefined && await hasColumnCached('contracts', 'project_id');
-  // Migration 214 — resolved before the transaction for the same reason.
-  const hasKeyCol = Boolean(idempotencyKey) && await hasColumnCached('contracts', 'create_idempotency_key');
+  // Optional link to a Project Overview project.
+  const hasProjectCol = payload.projectId !== undefined;
+  const hasKeyCol = Boolean(idempotencyKey);
 
   // Resolve the audit actor BEFORE the transaction — adminActor reads
   // admin_users via the global db, which inside the trx would grab a
@@ -239,7 +229,7 @@ async function createContract(payload, adminId, { idempotencyKey = null, importe
       outro_text: payload.outroText || (version ? content.pickLocale(version.outro_text, language) : '') || null,
       template_id: version ? version.template_id : null,
       template_version_id: version ? version.id : null,
-      // Migration 140 — standalone contract is a deal root; mint a
+      // Standalone contract is a deal root; mint a
       // fresh UUID. The createFromQuote path (line ~1557) sets this
       // from the source quote's deal_uuid instead.
       deal_uuid: crypto.randomUUID(),
@@ -335,19 +325,18 @@ async function createContract(payload, adminId, { idempotencyKey = null, importe
  * of a second one. A key another admin already used is refused rather than
  * handing over their draft.
  *
- * Without a key (or on a schema without migration 214) this is createContract.
+ * Without a key this is createContract.
  * `imported` is passed through for POST /import (see ./imports).
  * Returns `{ id, replayed }`.
  */
 async function createContractIdempotent(payload, adminId, idempotencyKey, { imported = null } = {}) {
-  if (!idempotencyKey || !(await hasColumnCached('contracts', 'create_idempotency_key'))) {
+  if (!idempotencyKey) {
     return { id: await createContract(payload, adminId, { imported }), replayed: false };
   }
-  const hasImportedCol = await hasColumnCached('contracts', 'imported_at');
   const findEarlier = async () => {
     const existing = await db('contracts')
       .where({ create_idempotency_key: idempotencyKey })
-      .select('id', 'created_by_admin_id', 'customer_account_id', ...(hasImportedCol ? ['imported_at'] : []))
+      .select('id', 'created_by_admin_id', 'customer_account_id', 'imported_at')
       .first();
     if (!existing) return null;
     // A replay answers with the earlier draft as-is, and an update cannot move
@@ -357,7 +346,7 @@ async function createContractIdempotent(payload, adminId, idempotencyKey, { impo
     // round: the caller would be told about a contract of the wrong kind.
     if (Number(existing.created_by_admin_id) !== Number(adminId)
       || Number(existing.customer_account_id) !== Number(payload.customerAccountId)
-      || (hasImportedCol && Boolean(existing.imported_at) !== Boolean(imported))) {
+      || Boolean(existing.imported_at) !== Boolean(imported)) {
       throw new AppError('This request key was already used for a different draft.', 409, 'IDEMPOTENCY_KEY_CONFLICT');
     }
     return { id: existing.id, replayed: true };
@@ -493,9 +482,7 @@ async function updateContract(id, payload, adminId) {
   if (payload.lockVersion !== undefined && ensureInt(payload.lockVersion) !== lockVersion) throw staleEdit();
 
   const hasEventCols = await hasColumnCached('contracts', 'event_name');
-  // Outside the transaction for the same reason as in createContract: inside
-  // it, this schema read deadlocks the single-connection SQLite pool.
-  const hasProjectCol = 'projectId' in payload && await hasColumnCached('contracts', 'project_id');
+  const hasProjectCol = 'projectId' in payload;
   const countryCode = Array.isArray(payload.blocks)
     ? (await businessProfileService.getProfile()).profile?.country_code
     : null;
@@ -513,9 +500,9 @@ async function updateContract(id, payload, adminId) {
       validUntil: 'valid_until',
       issueDate: 'issue_date',
     };
-    // Event-snapshot fields only flow through when the DB has them
-    // (in-place migration 130 edit). Guarded so dev installs that
-    // haven't re-migrated don't crash the update.
+    // Event-snapshot fields only flow through when the DB has them.
+    // Guarded so an install whose contracts table lacks them doesn't
+    // crash the update.
     if (hasEventCols) {
       Object.assign(map, {
         eventName: 'event_name',

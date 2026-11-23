@@ -1,6 +1,3 @@
-// Extracted verbatim from invoiceService.js — see ../invoiceService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const crypto = require('crypto');
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
@@ -47,7 +44,7 @@ function ensureCustomerCanBill(customer) {
  * Used on create and when a scheduled invoice's linked event changes.
  */
 async function ensureEventMatchesCustomer(eventId, customerAccountId, trx = db) {
-  if (!eventId || !(await trx.schema.hasTable('event_customer_assignments'))) return;
+  if (!eventId) return;
   const assignments = await trx('event_customer_assignments')
     .where({ event_id: eventId })
     .select('customer_account_id');
@@ -176,7 +173,7 @@ async function resolveDealUuid(trx, payload) {
 
 /**
  * Snap a baseline date to the next billing-cycle boundary for a
- * customer on a fixed cadence. Used by scheduleInvoicesForEvent so
+ * customer on a fixed cadence. Used by spawnInstallmentInvoices so
  * monthly / quarterly customers don't get billed immediately on quote
  * acceptance — instead the invoice fires on `billing_cycle_day` of the
  * next period.
@@ -253,10 +250,6 @@ function computeMonthlyCadenceDate(year, month /* 0-based */, cycleDay) {
   }
   return new Date(year, month, target);
 }
-
-// ----------------------------------------------------------------------
-// updateInstallmentPlan — atomic post-spawn plan edit
-// ----------------------------------------------------------------------
 
 // Statuses that are still pre-customer: not sent, not in the portal, not in
 // the books, unless an older row carries a payment (isInvoiceEditable). These
@@ -338,6 +331,5 @@ module.exports = {
   isInvoiceEditable,
   orPaidAwaitingDelivery,
   VALID_INSTALLMENT_TRIGGERS,
-  resolveIntlLocale,
   formatMajor,
 };

@@ -118,4 +118,4 @@ async function claimNextSequence(kind, year, trx) {
   return await db.transaction(async (innerTrx) => exec(innerTrx));
 }
 
-module.exports = { claimNextSequence, formatNumberInTemplate, nextDocumentNumber };
+module.exports = { claimNextSequence, nextDocumentNumber };

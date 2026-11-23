@@ -2,7 +2,7 @@
  * invoiceService — lifecycle for `invoices`, line items, payment log.
  *
  * Layers on top of quoteService for the conversion path: quoteService
- * .convertToEvent() calls into scheduleInvoicesForEvent() to fan out
+ * .convertToEvent() calls into spawnInstallmentInvoices() to fan out
  * one row per installment with the right `scheduled_send_at` relative
  * to the event date.
  *
@@ -38,9 +38,9 @@ const {
   listInvoices, getInvoiceById,
 } = queries;
 const {
-  getOrCreateMonthlyDraft, getMonthlyDraft, appendToMonthlyDraft, appendOneLineItemToMonthlyDraft,
+  getMonthlyDraft, appendToMonthlyDraft, appendOneLineItemToMonthlyDraft,
 } = drafts;
-const { createInvoice, spawnInstallmentInvoices, scheduleInvoicesForEvent } = create;
+const { createInvoice, spawnInstallmentInvoices } = create;
 const { updateInstallmentPlan, validateInstallmentPlanInput } = installmentPlan;
 const { renderInvoicePdfBuffer, renderInvoicePdfFromPayload, getInvoicePdfBuffer } = render;
 const {
@@ -62,7 +62,6 @@ module.exports = {
   getInvoiceById,
   createInvoice,
   spawnInstallmentInvoices,
-  scheduleInvoicesForEvent,
   updateInstallmentPlan,
   validateInstallmentPlanInput,
   sendInvoice,
@@ -88,7 +87,6 @@ module.exports = {
   // Monthly billing accumulator (migration 128) — exposed so
   // customerHoursService can append hour-logged line items onto the
   // running draft without duplicating the period/totals logic.
-  getOrCreateMonthlyDraft,
   getMonthlyDraft,
   appendToMonthlyDraft,
   appendOneLineItemToMonthlyDraft,
