@@ -16,10 +16,8 @@ import { projectsService, type ProjectOverview } from '../../../services/project
 import type { AttachKind } from './AttachDocumentDialog';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { formatMoneyMinor } from '../../../utils/money';
+import { QUOTE_STATUS_TONE } from '../../../utils/quoteStatus';
 
-const QUOTE_TONE: Record<string, BadgeTone> = {
-  draft: 'neutral', sent: 'info', expired: 'warning', accepted: 'success', declined: 'danger', converted: 'success',
-};
 const CONTRACT_TONE: Record<string, BadgeTone> = {
   draft: 'neutral', sent: 'info', awaiting_data: 'info', signed_by_customer: 'info', signed_by_admin: 'info',
   fully_signed: 'success', cancelled: 'danger', declined: 'danger', expired: 'warning',
@@ -141,7 +139,7 @@ export const ProjectDocumentsCard: React.FC<Props> = ({ data, flags, can, canAtt
               icon={<FileText className="w-4 h-4" />}
               title={q.quote_number}
               subtitle={date(q.issue_date)}
-              badge={<Badge tone={QUOTE_TONE[q.status] ?? 'neutral'}>{t(`quotes.status.${q.status}`, q.status)}</Badge>}
+              badge={<Badge tone={QUOTE_STATUS_TONE[q.status] ?? 'neutral'}>{t(`quotes.status.${q.status}`, q.status)}</Badge>}
               amount={formatMoneyMinor(Number(q.total_amount_minor), q.currency)}
               href={link('quotes', `/admin/clients/quotes/${q.id}`)}
             />

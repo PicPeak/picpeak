@@ -28,16 +28,16 @@ import { DecimalInput } from '../../../components/common/DecimalInput';
 import { useUkBusiness } from '../../../hooks/useUkBusiness';
 import { CustomerPicker } from '../../../components/admin/CustomerPicker';
 import { VatRateSelect } from '../../../components/admin/VatRateSelect';
-import { accountingService } from '../../../services/accounting.service';
-import { vatCodesService } from '../../../services/vatCodes.service';
 import {
   LineItemsTable, toEditableLineItem, toPayloadLineItem, type EditableLineItem,
 } from '../../../components/admin/LineItemsTable';
 import { countedLines } from '../../../utils/lineItemTotals';
 import { InstallmentsPanel } from '../../../components/admin/InstallmentsPanel';
 import { customerAdminService } from '../../../services/customerAdmin.service';
-import { userManagementService } from '../../../services/userManagement.service';
-import { settingsService } from '../../../services/settings.service';
+import {
+  CcPdfField, PaymentTermSelects, useDefaultOutputVat, useDefaultPaymentTemplates,
+} from '../../../components/admin/DocumentEditorFields';
+import { toMinor } from '../../../utils/money';
 import { useAdminAuth } from '../../../contexts/AdminAuthContext';
 import { toast } from 'react-toastify';
 import { fromLocalDateTimeInput, todayIsoDate, toLocalDateTimeInput } from '../../../utils/localDate';
@@ -90,10 +90,6 @@ export function invoiceCatalogue(
 }
 // One empty list for "no packages yet", so the memo below doesn't recompute.
 const NO_PACKAGES: never[] = [];
-
-function toMinor(amount: number) {
-  return Math.round((Number(amount) || 0) * 100);
-}
 
 /** What the page can ask of the form. */
 export interface BillFormHandle {
@@ -210,14 +206,11 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   // + Timing. The editor now drives entirely off the two split lists;
   // the legacy `ptTemplates` query was kept around "for back-compat
   // preview text" but never read. Removed (D.1 cleanup).
-  const { data: netDaysTemplates } = useQuery({
-    queryKey: ['payment-net-days-templates'],
-    queryFn: () => quotesService.listPaymentNetDaysTemplates(),
-  });
-  const { data: timingTemplates } = useQuery({
-    queryKey: ['payment-timing-templates'],
-    queryFn: () => quotesService.listPaymentTimingTemplates(),
-  });
+  // The CRM defaults (migration 125) are loaded with them; the per-invoice
+  // pickers override them.
+  const {
+    netDaysTemplates, timingTemplates, appSettings, defaults: paymentDefaults,
+  } = useDefaultPaymentTemplates(isEdit);
 
   const { data: existing, isLoading } = useQuery({
     queryKey: ['invoice', id],
@@ -276,24 +269,9 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing]);
 
-  // Admin auth + list — used to pre-fill + offer a dropdown for the
-  // "CC PDF to" field (mirrors the QuoteEditorPage pattern + the
-  // admin_email picker on CreateEventPage). Falls back to an empty
-  // list silently if the current user lacks users.view permission so
-  // basic admins still get the auto-prefill from currentAdmin.
+  // The "CC PDF to" field is auto-prefilled from the current admin, so
+  // basic admins without users.view (no admin picker) still get it.
   const { user: currentAdmin } = useAdminAuth();
-  const { data: adminUsers } = useQuery({
-    queryKey: ['admin-users-list'],
-    queryFn: async () => {
-      try { return await userManagementService.getUsers(); } catch { return []; }
-    },
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  });
-  const activeAdmins = useMemo(
-    () => (adminUsers || []).filter((u: any) => u.isActive !== false && !!u.email),
-    [adminUsers]
-  );
 
   // Pre-fill CC PDF email with the current admin's email on a brand-
   // new invoice. Skip on edit and don't clobber existing values.
@@ -310,7 +288,7 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   // Accounting) on a brand-new, blank invoice — so new invoices don't silently
   // start at 0%. Skips edits and conversions (quote/contract bring their own
   // VAT), and never clobbers a value the admin already touched.
-  const { data: acctSettings } = useQuery({ queryKey: ['accounting-settings'], queryFn: () => accountingService.getSettings() });
+  const defaultVat = useDefaultOutputVat(!isEdit);
   // The service catalogue (quotes feature, quotes.view): add services and
   // packages from it, and tick a service's options. Same keys as the quote
   // editor, so both read one cache.
@@ -338,17 +316,13 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     () => foreignCurrencyLineCount(lineItems, liPresets?.presets || [], currency),
     [lineItems, liPresets, currency],
   );
-  const { data: outputVatCodes } = useQuery({ queryKey: ['vat-codes', 'output'], queryFn: () => vatCodesService.listOutput() });
   const didSeedVatRef = useRef(false);
   useEffect(() => {
-    if (isEdit || didSeedVatRef.current) return;
+    if (!defaultVat || didSeedVatRef.current) return;
     if (searchParams.get('fromContractId') || searchParams.get('fromQuoteId')) return;
     if (vatCode || vatRate) return;
-    const code = acctSettings?.accounting_default_output_vat_code;
-    if (!code || !outputVatCodes) return;
-    const match = outputVatCodes.find((c) => c.code === code);
-    if (match) { didSeedVatRef.current = true; setVatRate(Number(match.rate)); setVatCode(match.code); }
-  }, [isEdit, searchParams, acctSettings, outputVatCodes, vatCode, vatRate]);
+    didSeedVatRef.current = true; setVatRate(Number(defaultVat.rate)); setVatCode(defaultVat.code);
+  }, [searchParams, defaultVat, vatCode, vatRate]);
 
   // Pre-fill the customer when the editor is opened from a customer
   // detail page via `?customerAccountId=42`. Runs once on mount, only
@@ -470,43 +444,14 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
 
   // Customer autocomplete moved into <CustomerPicker> (C.5).
 
-  // Load the admin-configured CRM defaults (migration 125). The
-  // editor's prefill prefers these over the hardcoded fallbacks below
-  // so the per-invoice picker is a true override.
-  const { data: appSettings } = useQuery({
-    queryKey: ['app-settings'],
-    queryFn: () => settingsService.getAllSettings(),
-    enabled: !isEdit,
-  });
-
-  // Auto-default both pickers on a brand-new invoice. Resolution
-  // order: configured setting → Net 30 / first-timing fallback → first.
+  // Auto-default both pickers on a brand-new invoice, once.
   const didPrefillPaymentRef = useRef(false);
   useEffect(() => {
-    if (isEdit) return;
-    if (didPrefillPaymentRef.current) return;
-    if (!netDaysTemplates?.templates?.length || !timingTemplates?.templates?.length) return;
-    if (appSettings === undefined) return;
-
-    const settingNetDaysId = appSettings?.crm_invoices_default_payment_net_days_template_id;
-    const settingTimingId  = appSettings?.crm_invoices_default_payment_timing_template_id;
-    const settingNetDays = settingNetDaysId
-      ? netDaysTemplates.templates.find((t) => t.id === settingNetDaysId)
-      : null;
-    const settingTiming = settingTimingId
-      ? timingTemplates.templates.find((t) => t.id === settingTimingId)
-      : null;
-
-    const defaultNetDays = settingNetDays
-      || netDaysTemplates.templates.find((t) => t.netDays === 30)
-      || netDaysTemplates.templates[0];
-    const defaultTiming = settingTiming
-      || timingTemplates.templates[0];
-
+    if (!paymentDefaults || didPrefillPaymentRef.current) return;
     didPrefillPaymentRef.current = true;
-    setPaymentNetDaysTemplateId((prev) => prev ?? defaultNetDays.id);
-    setPaymentTimingTemplateId((prev) => prev ?? defaultTiming.id);
-  }, [isEdit, netDaysTemplates, timingTemplates, appSettings]);
+    setPaymentNetDaysTemplateId((prev) => prev ?? paymentDefaults.netDaysId);
+    setPaymentTimingTemplateId((prev) => prev ?? paymentDefaults.timingId);
+  }, [paymentDefaults]);
 
   // Auto-track the due date off (scheduled send date else issue date) +
   // the selected Net-days template, mirroring the backend's
@@ -888,34 +833,15 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
           className="text-xs text-accent hover:underline mb-2 inline-block">
           {t('common.configureInSettings', 'Configure defaults in Settings ↗')}
         </Link>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium mb-1">{t('bills.field.paymentNetDays', 'Net days')}</label>
-            <select
-              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
-              value={paymentNetDaysTemplateId || ''}
-              onChange={(e) => setPaymentNetDaysTemplateId(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">{t('bills.field.selectNetDays', '— Select net days —')}</option>
-              {netDaysTemplates?.templates.map((tpl) => (
-                <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">{t('bills.field.paymentTiming', 'Payment schedule')}</label>
-            <select
-              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
-              value={paymentTimingTemplateId || ''}
-              onChange={(e) => setPaymentTimingTemplateId(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">{t('bills.field.selectTiming', '— Select schedule —')}</option>
-              {timingTemplates?.templates.map((tpl) => (
-                <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <PaymentTermSelects
+          ns="bills"
+          netDaysTemplates={netDaysTemplates?.templates}
+          timingTemplates={timingTemplates?.templates}
+          netDaysId={paymentNetDaysTemplateId}
+          timingId={paymentTimingTemplateId}
+          onNetDaysChange={setPaymentNetDaysTemplateId}
+          onTimingChange={setPaymentTimingTemplateId}
+        />
         {/* Per-invoice Skonto opt-out (migration 126). Surfaced
             alongside the payment-term pickers because it's a peer
             override of the same CRM defaults. Admin ticks this for
@@ -956,33 +882,7 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
         {/* CC PDF — admin email prefilled, with a picker when more than
             one admin exists. Mirrors the quote editor + CreateEventPage
             so the muscle memory carries over. */}
-        <div className="space-y-1">
-          <Input type="email"
-            label={t('bills.field.ccPdfEmail', 'CC PDF to (extra recipient)') as string}
-            placeholder={t('bills.field.ccPdfEmailPlaceholder', 'name@example.com') as string}
-            value={ccPdfEmail} onChange={(e) => setCcPdfEmail(e.target.value)} />
-          {activeAdmins.length > 1 && (
-            <div className="flex items-center gap-2">
-              <label htmlFor="bill-cc-pdf-picker" className="text-xs text-soft whitespace-nowrap">
-                {t('bills.field.ccPdfPickFromAdmins', 'Pick from admins:')}
-              </label>
-              <select
-                id="bill-cc-pdf-picker"
-                value={activeAdmins.some((a: any) => a.email === ccPdfEmail) ? ccPdfEmail : ''}
-                onChange={(e) => {
-                  const email = e.target.value;
-                  if (email) setCcPdfEmail(email);
-                }}
-                className="text-xs px-2 py-1 border border-line-strong bg-panel text-heading rounded focus:ring-2 focus:ring-accent focus:border-accent-dark"
-              >
-                <option value="">{t('bills.field.ccPdfCustom', 'Custom email')}</option>
-                {activeAdmins.map((a: any) => (
-                  <option key={a.id} value={a.email}>{a.email}</option>
-                ))}
-              </select>
-            </div>
-          )}
-        </div>
+        <CcPdfField ns="bills" pickerId="bill-cc-pdf-picker" value={ccPdfEmail} onChange={setCcPdfEmail} />
       </Card>
     </div>
   );

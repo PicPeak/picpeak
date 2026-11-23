@@ -10,12 +10,13 @@
  * columns (Number, Customer, Title, Issued, Status) and the per-status
  * badge palette are preserved.
  */
-import React, { useState } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ScrollText, Plus, Search, BookOpen } from 'lucide-react';
-import { Button, Card, Loading, SortableHeader, useColumnSort, type SortColumnMap } from '../../../components/common';
+import { ScrollText, Plus, BookOpen } from 'lucide-react';
+import { Button, Card, Loading, SortableHeader, type SortColumnMap } from '../../../components/common';
+import { ListSearch, Pager, StatusChips, useDocumentListState } from '../../../components/admin/DocumentListControls';
 import {
   contractsService,
   type ContractStatus,
@@ -41,12 +42,9 @@ export const ContractsListPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { format } = useLocalizedDate();
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ContractStatus[]>([]);
-  const { sort, activeKey, activeDir, toggle } = useColumnSort<ContractSort>(SORT_COLUMNS, 'issue_desc');
-  const [page, setPage] = useState(1);
-
-  const onSort = (key: string) => { toggle(key); setPage(1); };
+  const {
+    search, setSearch, statusFilter, toggleStatus, sort, activeKey, activeDir, onSort, page, setPage,
+  } = useDocumentListState<ContractStatus, ContractSort>(SORT_COLUMNS, 'issue_desc');
 
   const { data, isLoading } = useQuery({
     queryKey: ['contracts', { search, statusFilter, sort, page }],
@@ -56,11 +54,6 @@ export const ContractsListPage: React.FC = () => {
       sort, page, pageSize: 25,
     }),
   });
-
-  const toggleStatus = (s: ContractStatus) => {
-    setStatusFilter((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
-    setPage(1);
-  };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
@@ -96,33 +89,13 @@ export const ContractsListPage: React.FC = () => {
       />
 
       <Card padding="lg">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-            <input
-              type="text"
-              placeholder={t('contracts.list.searchPlaceholder', 'Search by number, title or customer…') as string}
-              className="w-full pl-9 pr-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            />
-          </div>
-        </div>
+        <ListSearch
+          value={search}
+          onChange={setSearch}
+          placeholder={t('contracts.list.searchPlaceholder', 'Search by number, title or customer…') as string}
+        />
 
-        <div className="mt-3 flex flex-wrap gap-1">
-          {STATUSES.map((s) => {
-            const active = statusFilter.includes(s);
-            return (
-              <button key={s} type="button" onClick={() => toggleStatus(s)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                  active
-                    ? 'bg-accent-dark text-white border-accent-dark'
-                    : 'bg-panel text-body border-line-strong'
-                }`}
-              >{t(`contracts.status.${s}`, s)}</button>
-            );
-          })}
-        </div>
+        <StatusChips statuses={STATUSES} active={statusFilter} onToggle={toggleStatus} labelPrefix="contracts.status" />
 
         {/* Body of the same card — table or empty state. Matches the
             single-card layout used by Customers / Quotes / Invoices. */}
@@ -177,23 +150,14 @@ export const ContractsListPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-              {totalPages > 1 && (
-                <div className="flex justify-between items-center px-3 py-2 border-t border-line text-sm">
-                  <span className="text-muted">
-                    {t('contracts.list.pagination', 'Page {{page}} of {{total}} · {{count}} contracts', {
-                      page, total: totalPages, count: data.total,
-                    })}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                      {t('common.previous', 'Previous')}
-                    </Button>
-                    <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
-                      {t('common.next', 'Next')}
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <Pager
+                page={page}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                label={t('contracts.list.pagination', 'Page {{page}} of {{total}} · {{count}} contracts', {
+                  page, total: totalPages, count: data.total,
+                })}
+              />
             </div>
           )}
         </div>

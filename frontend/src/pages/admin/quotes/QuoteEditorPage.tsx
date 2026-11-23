@@ -36,8 +36,6 @@ import { quoteCatalogService, type FactorValue } from '../../../services/quoteCa
 import { CustomerPicker } from '../../../components/admin/CustomerPicker';
 import { ProjectSelect } from '../../../components/admin/ProjectSelect';
 import { VatRateSelect } from '../../../components/admin/VatRateSelect';
-import { accountingService } from '../../../services/accounting.service';
-import { vatCodesService } from '../../../services/vatCodes.service';
 import { eventTypesService } from '../../../services/eventTypes.service';
 import { workflowsService } from '../../../services/workflows.service';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
@@ -45,8 +43,10 @@ import { useProjectPrefill } from '../projects/useProjectPrefill';
 import { InstallmentsPanel } from '../../../components/admin/InstallmentsPanel';
 import { customerAdminService } from '../../../services/customerAdmin.service';
 import { businessProfileService } from '../../../services/businessProfile.service';
-import { userManagementService } from '../../../services/userManagement.service';
-import { settingsService } from '../../../services/settings.service';
+import {
+  CcPdfField, PaymentTermSelects, useDefaultOutputVat, useDefaultPaymentTemplates,
+} from '../../../components/admin/DocumentEditorFields';
+import { toMinor } from '../../../utils/money';
 import { useAdminAuth } from '../../../contexts/AdminAuthContext';
 import { usePermissions } from '../../../contexts/PermissionsContext';
 import { useUkBusiness } from '../../../hooks/useUkBusiness';
@@ -132,10 +132,6 @@ const empty: FormState = {
   days: null,
   installments: null,
 };
-
-function toMinor(amount: number) {
-  return Math.round((Number(amount) || 0) * 100);
-}
 
 /**
  * A new quote's form: in the business's currency (Settings → Business
@@ -384,8 +380,7 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
   // Seed the VAT from the configured default OUTPUT code (Settings →
   // Accounting) on a brand-new, blank quote — so quotes (and the invoices they
   // convert to) don't silently start at 0%. Never clobbers a touched value.
-  const { data: acctSettings } = useQuery({ queryKey: ['accounting-settings'], queryFn: () => accountingService.getSettings() });
-  const { data: outputVatCodes } = useQuery({ queryKey: ['vat-codes', 'output'], queryFn: () => vatCodesService.listOutput() });
+  const defaultVat = useDefaultOutputVat(!isEdit);
   // Active event types — drives the event-type dropdown (and the type of the
   // event this quote converts into).
   const { data: eventTypes = [] } = useQuery({ queryKey: ['event-types-active'], queryFn: () => eventTypesService.getActiveEventTypes() });
@@ -404,14 +399,10 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
   );
   const didSeedVatRef = useRef(false);
   useEffect(() => {
-    if (isEdit || didSeedVatRef.current) return;
-    const code = acctSettings?.accounting_default_output_vat_code;
-    if (!code || !outputVatCodes) return;
-    const match = outputVatCodes.find((c) => c.code === code);
-    if (!match) return;
-    setForm((prev) => (prev.vatCode || prev.vatRate ? prev : { ...prev, vatRate: Number(match.rate), vatCode: match.code }));
+    if (!defaultVat || didSeedVatRef.current) return;
+    setForm((prev) => (prev.vatCode || prev.vatRate ? prev : { ...prev, vatRate: Number(defaultVat.rate), vatCode: defaultVat.code }));
     didSeedVatRef.current = true;
-  }, [isEdit, acctSettings, outputVatCodes]);
+  }, [defaultVat]);
 
   // Customer search + inline-create state now lives inside
   // <CustomerPicker> (migration C.5 extraction).
@@ -438,14 +429,11 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
     queryKey: ['payment-term-templates'],
     queryFn: () => quotesService.listPaymentTermTemplates(),
   });
-  const { data: netDaysTemplates } = useQuery({
-    queryKey: ['payment-net-days-templates'],
-    queryFn: () => quotesService.listPaymentNetDaysTemplates(),
-  });
-  const { data: timingTemplates } = useQuery({
-    queryKey: ['payment-timing-templates'],
-    queryFn: () => quotesService.listPaymentTimingTemplates(),
-  });
+  // The CRM defaults (migration 125, admin-editable on the CRM settings
+  // page) come with them; the per-quote pickers override them.
+  const {
+    netDaysTemplates, timingTemplates, appSettings, defaults: paymentDefaults,
+  } = useDefaultPaymentTemplates(isEdit);
   const { data: liPresets } = useQuery({
     queryKey: ['line-item-presets'],
     queryFn: () => quotesService.listLineItemPresets(),
@@ -479,24 +467,9 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
     [form.customerAccountId, form.language, i18n.language],
   );
 
-  // Admin user list — used to pre-fill + offer a dropdown for the
-  // "CC PDF to" field, mirroring CreateEventPage's admin_email picker.
-  // Falls back to an empty list silently if the current user lacks
-  // users.view permission so basic admins still get the auto-prefill
-  // from the currently signed-in admin.
+  // "CC PDF to" field: auto-prefilled from the currently signed-in admin,
+  // so basic admins without users.view still get it.
   const { user: currentAdmin } = useAdminAuth();
-  const { data: adminUsers } = useQuery({
-    queryKey: ['admin-users-list'],
-    queryFn: async () => {
-      try { return await userManagementService.getUsers(); } catch { return []; }
-    },
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  });
-  const activeAdmins = useMemo(
-    () => (adminUsers || []).filter((u: any) => u.isActive !== false && !!u.email),
-    [adminUsers]
-  );
 
   // Auto-prefill the CC PDF email with the current admin's email, only
   // on a brand-new quote and only once. Don't clobber edits or existing
@@ -510,51 +483,17 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
     setForm((prev) => (prev.ccPdfEmail ? prev : { ...prev, ccPdfEmail: currentAdmin.email }));
   }, [currentAdmin?.email, isEdit]);
 
-  // Load the CRM defaults (migration 125 seeded; admin-editable on
-  // the CRM settings page). The prefill effect below prefers these
-  // over hardcoded fallbacks so the per-quote picker becomes a true
-  // override of an admin-configurable global default.
-  const { data: appSettings } = useQuery({
-    queryKey: ['app-settings'],
-    queryFn: () => settingsService.getAllSettings(),
-    enabled: !isEdit,
-  });
-
-  // Auto-default the two new pickers on a brand-new quote. Resolution
-  // order: settings-configured default → "Net 30" + first-timing
-  // hardcoded fallback (for fresh installs missing the seed) → first
-  // available template.
+  // Auto-default the two pickers on a brand-new quote, once.
   const didPrefillPaymentRef = useRef(false);
   useEffect(() => {
-    if (isEdit) return;
-    if (didPrefillPaymentRef.current) return;
-    if (!netDaysTemplates?.templates?.length || !timingTemplates?.templates?.length) return;
-    // Wait for settings to load so the admin's configured default
-    // wins over the hardcoded fallback. Empty/missing setting → null.
-    if (appSettings === undefined) return;
-
-    const settingNetDaysId = appSettings?.crm_invoices_default_payment_net_days_template_id;
-    const settingTimingId  = appSettings?.crm_invoices_default_payment_timing_template_id;
-    const settingNetDays = settingNetDaysId
-      ? netDaysTemplates.templates.find((t) => t.id === settingNetDaysId)
-      : null;
-    const settingTiming = settingTimingId
-      ? timingTemplates.templates.find((t) => t.id === settingTimingId)
-      : null;
-
-    const defaultNetDays = settingNetDays
-      || netDaysTemplates.templates.find((t) => t.netDays === 30)
-      || netDaysTemplates.templates[0];
-    const defaultTiming = settingTiming
-      || timingTemplates.templates[0];
-
+    if (!paymentDefaults || didPrefillPaymentRef.current) return;
     didPrefillPaymentRef.current = true;
     setForm((prev) => ({
       ...prev,
-      paymentNetDaysTemplateId: prev.paymentNetDaysTemplateId ?? defaultNetDays.id,
-      paymentTimingTemplateId: prev.paymentTimingTemplateId ?? defaultTiming.id,
+      paymentNetDaysTemplateId: prev.paymentNetDaysTemplateId ?? paymentDefaults.netDaysId,
+      paymentTimingTemplateId: prev.paymentTimingTemplateId ?? paymentDefaults.timingId,
     }));
-  }, [isEdit, netDaysTemplates, timingTemplates, appSettings]);
+  }, [paymentDefaults]);
 
   const installmentPreview = useMemo<PaymentTermInstallment[]>(() => {
     // Migration 124 — preview now comes from the timing template when
@@ -863,34 +802,15 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
           className="text-xs text-accent hover:underline mb-2 inline-block">
           {t('common.configureInSettings', 'Configure defaults in Settings ↗')}
         </Link>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium mb-1">{t('quotes.field.paymentNetDays', 'Net days')}</label>
-            <select
-              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
-              value={form.paymentNetDaysTemplateId || ''}
-              onChange={(e) => setForm((f) => ({ ...f, paymentNetDaysTemplateId: e.target.value ? Number(e.target.value) : null }))}
-            >
-              <option value="">{t('quotes.field.selectNetDays', '— Select net days —')}</option>
-              {netDaysTemplates?.templates.map((tpl) => (
-                <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">{t('quotes.field.paymentTiming', 'Payment schedule')}</label>
-            <select
-              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
-              value={form.paymentTimingTemplateId || ''}
-              onChange={(e) => setForm((f) => ({ ...f, paymentTimingTemplateId: e.target.value ? Number(e.target.value) : null }))}
-            >
-              <option value="">{t('quotes.field.selectTiming', '— Select schedule —')}</option>
-              {timingTemplates?.templates.map((tpl) => (
-                <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <PaymentTermSelects
+          ns="quotes"
+          netDaysTemplates={netDaysTemplates?.templates}
+          timingTemplates={timingTemplates?.templates}
+          netDaysId={form.paymentNetDaysTemplateId}
+          timingId={form.paymentTimingTemplateId}
+          onNetDaysChange={(id) => setForm((f) => ({ ...f, paymentNetDaysTemplateId: id }))}
+          onTimingChange={(id) => setForm((f) => ({ ...f, paymentTimingTemplateId: id }))}
+        />
         {installmentPreview.length > 0 && (
           <ul className="mt-3 text-sm space-y-1 text-soft">
             {installmentPreview.map((inst, i) => (
@@ -939,36 +859,8 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
           {/* CC PDF — admin email prefilled, with a picker when more
               than one admin exists. Mirrors the admin_email field on
               CreateEventPage so the muscle memory carries over. */}
-          <div className="space-y-1">
-            <Input
-              type="email"
-              label={t('quotes.field.ccPdfEmail', 'CC PDF to (extra recipient)') as string}
-              placeholder={t('quotes.field.ccPdfEmailPlaceholder', 'name@example.com') as string}
-              value={form.ccPdfEmail}
-              onChange={(e) => setForm((f) => ({ ...f, ccPdfEmail: e.target.value }))}
-            />
-            {activeAdmins.length > 1 && (
-              <div className="flex items-center gap-2">
-                <label htmlFor="cc-pdf-picker" className="text-xs text-soft whitespace-nowrap">
-                  {t('quotes.field.ccPdfPickFromAdmins', 'Pick from admins:')}
-                </label>
-                <select
-                  id="cc-pdf-picker"
-                  value={activeAdmins.some((a: any) => a.email === form.ccPdfEmail) ? form.ccPdfEmail : ''}
-                  onChange={(e) => {
-                    const email = e.target.value;
-                    if (email) setForm((prev) => ({ ...prev, ccPdfEmail: email }));
-                  }}
-                  className="text-xs px-2 py-1 border border-line-strong bg-panel text-heading rounded focus:ring-2 focus:ring-accent focus:border-accent-dark"
-                >
-                  <option value="">{t('quotes.field.ccPdfCustom', 'Custom email')}</option>
-                  {activeAdmins.map((a: any) => (
-                    <option key={a.id} value={a.email}>{a.email}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
+          <CcPdfField ns="quotes" pickerId="cc-pdf-picker" value={form.ccPdfEmail}
+            onChange={(email) => setForm((f) => ({ ...f, ccPdfEmail: email }))} />
 
           <div>
             <label className="block text-sm font-medium mb-1">{t('quotes.field.internalNotes', 'Internal notes (not on PDF)')}</label>

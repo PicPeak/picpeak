@@ -17,14 +17,11 @@ import {
   type FactorEffect, type FactorInputType, type PricingFactor, type PricingFactorOption,
 } from '../../../../services/quoteCatalog.service';
 import { formatMoneyMinor } from '../../../../utils/money';
+import { CURRENCIES, labelCls, toMinor } from './shared';
 
 const INPUT_TYPES: FactorInputType[] = ['number', 'choice', 'zone', 'toggle'];
-const CURRENCIES = ['CHF', 'EUR', 'USD', 'GBP'];
-
 const inputCls = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-panel';
 const selectCls = `${inputCls} h-10`;
-const labelCls = 'block text-sm font-medium text-body mb-1';
-const toMinor = (major: number) => Math.round((Number.isFinite(major) ? major : 0) * 100);
 const fromMinor = (minor: number | null | undefined) => (minor == null ? NaN : minor / 100);
 const orNull = (n: number) => (Number.isFinite(n) ? n : null);
 const errorText = (err: any): string => err?.response?.data?.error || err?.message || 'Failed';

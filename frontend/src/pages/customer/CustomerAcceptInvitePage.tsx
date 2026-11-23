@@ -29,6 +29,7 @@ import {
 } from '../../services/customer.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
+import { SALUTATION_OPTIONS } from './salutation';
 
 interface FormState {
   display_name: string;
@@ -47,14 +48,6 @@ interface FormState {
   state: string;
   country_code: string;
 }
-
-const SALUTATION_OPTIONS = [
-  { value: '', labelKey: 'customer.profile.salutation.none', fallback: '— Not specified —' },
-  { value: 'Herr', labelKey: 'customer.profile.salutation.herr', fallback: 'Herr' },
-  { value: 'Frau', labelKey: 'customer.profile.salutation.frau', fallback: 'Frau' },
-  { value: 'Mx', labelKey: 'customer.profile.salutation.mx', fallback: 'Mx' },
-  { value: 'Dr', labelKey: 'customer.profile.salutation.dr', fallback: 'Dr.' },
-];
 
 const EMPTY: FormState = {
   display_name: '', password: '', confirm: '',

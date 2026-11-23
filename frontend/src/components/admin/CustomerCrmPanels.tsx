@@ -28,7 +28,7 @@ import { contractsService } from '../../services/contracts.service';
 import { accountingService, type CustomerRebillItem } from '../../services/accounting.service';
 import { customerAdminService } from '../../services/customerAdmin.service';
 import { CrossAddInvoiceDialog } from './CrossAddInvoiceDialog';
-import { formatMoney } from './LineItemsTable';
+import { formatMoneyMinor } from '../../utils/money';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
 interface Props {
@@ -120,7 +120,7 @@ const QuotesPanel: React.FC<Props> = ({ customerAccountId }) => {
                 </Link>
                 <span className="text-xs text-muted ml-2">{q.eventName || fmtDate(q.issueDate)}</span>
               </div>
-              <span className="text-sm tabular-nums">{formatMoney(Number(q.totalAmountMinor) / 100, q.currency)}</span>
+              <span className="text-sm tabular-nums">{formatMoneyMinor(Number(q.totalAmountMinor), q.currency)}</span>
               <Badge tone={quoteTone(q.status)}>{t(`quotes.status.${q.status}`, q.status)}</Badge>
             </li>
           ))}
@@ -221,7 +221,7 @@ const InvoicesPanel: React.FC<Props> = ({ customerAccountId }) => {
                   {inv.installmentTotal > 1 ? ` · ${inv.installmentIndex + 1}/${inv.installmentTotal}` : ''}
                 </span>
               </div>
-              <span className="text-sm tabular-nums">{formatMoney(Number(inv.totalAmountMinor) / 100, inv.currency)}</span>
+              <span className="text-sm tabular-nums">{formatMoneyMinor(Number(inv.totalAmountMinor), inv.currency)}</span>
               {isDraftInvoice(inv) ? (
                 <Badge tone="warning">{t('bills.status.draft', 'Draft')}</Badge>
               ) : (
@@ -380,11 +380,11 @@ const RebillsPanel: React.FC<Props> = ({ customerAccountId }) => {
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-sm tabular-nums text-heading">
-                          {formatMoney(r.rebilledMinor / 100, r.currency)}
+                          {formatMoneyMinor(Number(r.rebilledMinor), r.currency)}
                         </div>
                         {r.rebilledMinor !== r.costMinor && (
                           <div className="text-xs text-faint tabular-nums">
-                            {t('rebills.costLabel', 'cost {{amount}}', { amount: formatMoney(r.costMinor / 100, r.currency) })}
+                            {t('rebills.costLabel', 'cost {{amount}}', { amount: formatMoneyMinor(Number(r.costMinor), r.currency) })}
                           </div>
                         )}
                       </div>

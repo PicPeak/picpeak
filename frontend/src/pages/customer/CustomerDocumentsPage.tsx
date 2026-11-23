@@ -18,7 +18,7 @@ import { Download, FolderOpen, Inbox, Trash2, Upload, X } from 'lucide-react';
 import { useCustomerAuth } from '../../contexts/CustomerAuthContext';
 import { toast } from 'react-toastify';
 
-import { Button, Card, EmptyState, ErrorState, Loading, useConfirm } from '../../components/common';
+import { Button, Card, EmptyState, Loading, useConfirm } from '../../components/common';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { formatFileSize } from '../../utils/fileSize';
 import {
@@ -26,6 +26,7 @@ import {
 } from '../../utils/documentFormats';
 import { customerService, type CustomerDocument } from '../../services/customer.service';
 import { calendarDay } from '../../utils/calendarDay';
+import { PortalLoadError } from './PortalListControls';
 
 /** Error code from an API error. Blob responses (downloads) carry JSON too. */
 export async function readErrorCode(err: any): Promise<string | undefined> {
@@ -271,22 +272,16 @@ export const CustomerDocumentsPage: React.FC = () => {
 
   if (isLoading) return <Loading />;
   if (isError) {
-    const status = (error as any)?.response?.status;
     return (
-      <div className="container py-8">
-        <h1 className="text-2xl font-bold text-theme mb-2">{t('customer.documents.title', 'Documents')}</h1>
-        {status === 403 ? (
-          <p className="text-muted-theme">
-            {t('customer.documents.disabled', 'Documents are not available for your account.')}
-          </p>
-        ) : (
-          <ErrorState
-            title={t('customer.documents.loadError', 'Could not load your documents.')}
-            onRetry={() => { void refetch(); }}
-            retrying={isFetching}
-          />
-        )}
-      </div>
+      <PortalLoadError
+        alwaysShowTitle
+        error={error}
+        title={t('customer.documents.title', 'Documents')}
+        disabledText={t('customer.documents.disabled', 'Documents are not available for your account.')}
+        loadErrorTitle={t('customer.documents.loadError', 'Could not load your documents.')}
+        onRetry={() => { void refetch(); }}
+        retrying={isFetching}
+      />
     );
   }
 

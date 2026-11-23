@@ -38,7 +38,7 @@ import { HoursSection } from '../../components/admin/HoursSection';
 import { CustomerDocumentsCard } from '../../components/admin/CustomerDocumentsCard';
 import { CustomerActivityCard } from '../../components/admin/CustomerActivityCard';
 import { PermissionGate } from '../../components/admin/PermissionGate';
-import { formatMoney } from '../../components/admin/LineItemsTable';
+import { formatMoneyMinor } from '../../utils/money';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast, useModal } from '../../hooks';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
@@ -981,10 +981,10 @@ export const CustomerDetailPage: React.FC = () => {
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{li.quantity}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
-                        {formatMoney(li.unitPriceMinor / 100, monthlyDraft.currency)}
+                        {formatMoneyMinor(Number(li.unitPriceMinor), monthlyDraft.currency)}
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
-                        {formatMoney(li.lineTotalMinor / 100, monthlyDraft.currency)}
+                        {formatMoneyMinor(Number(li.lineTotalMinor), monthlyDraft.currency)}
                       </td>
                     </tr>
                   ))}
@@ -995,7 +995,7 @@ export const CustomerDetailPage: React.FC = () => {
                       {t('crm.lineItems.total', 'Total')}
                     </td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums">
-                      {formatMoney(monthlyDraft.totalAmountMinor / 100, monthlyDraft.currency)}
+                      {formatMoneyMinor(Number(monthlyDraft.totalAmountMinor), monthlyDraft.currency)}
                     </td>
                   </tr>
                 </tfoot>

@@ -101,9 +101,17 @@ export function formatMoney(
  */
 export function formatMoneyMinor(
   minor: number,
-  currency: string,
+  currency: string | null | undefined,
   opts?: FormatMoneyOptions,
 ): string {
   const safe = Number.isFinite(minor) ? minor : 0;
   return buildFormatter(currency, opts).format(safe / 100);
+}
+
+/**
+ * A MAJOR-unit amount from an editor field (12.5) as integer MINOR units
+ * (1250). Anything that is not a number counts as 0.
+ */
+export function toMinor(amount: number): number {
+  return Math.round((Number(amount) || 0) * 100);
 }

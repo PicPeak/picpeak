@@ -26,24 +26,8 @@ import { contractTemplatesService } from '../../../../services/contractTemplates
 import { usePermissions } from '../../../../contexts/PermissionsContext';
 import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
 import type { BoundTo, LineUnit } from '../../../../utils/lineItemTotals';
+import { CURRENCIES, LANGUAGES, UNITS, errorText, inputCls, labelCls, selectCls } from './shared';
 
-const UNITS: LineUnit[] = ['hour', 'day', 'piece', 'km', 'flat'];
-const CURRENCIES = ['CHF', 'EUR', 'USD', 'GBP'];
-const LANGUAGES = ['de', 'en', 'fr', 'nl', 'pt', 'ru'];
-const inputCls = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900';
-// Native selects ignore vertical padding in Safari; a fixed height keeps them level with the inputs.
-const selectCls = `${inputCls} h-10`;
-const labelCls = 'block text-sm font-medium text-body mb-1';
-// The API's message, plus what each rejected field says (a 400 lists them in `details`).
-const errorText = (err: any): string => {
-  const data = err?.response?.data;
-  const details: Array<{ field?: string; message?: string }> = Array.isArray(data?.details) ? data.details : [];
-  const reasons = details
-    .map((d) => (d.message && d.message !== 'Invalid value' ? d.message : d.field ? `${d.field}: ${d.message || 'invalid'}` : null))
-    .filter(Boolean);
-  if (reasons.length) return reasons.join(' · ');
-  return data?.error || err?.message || 'Failed';
-};
 
 const newLine = (): TemplateLine => ({
   description: '', quantity: 1, unitPriceMinor: 0, discountPercent: 0, unit: null, priceMode: null,

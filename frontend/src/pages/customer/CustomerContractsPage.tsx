@@ -16,13 +16,17 @@ import { useNavigate } from 'react-router-dom';
 import { ScrollText, PenLine, Download, ShieldCheck } from 'lucide-react';
 import { customerService, type CustomerContract } from '../../services/customer.service';
 import { PORTAL_SIGNING_SCOPE, signingSessionStore } from '../../services/publicContractSigning.service';
-import { Card, EmptyState, ErrorState, Loading } from '../../components/common';
+import { Card, EmptyState, Loading } from '../../components/common';
 import { toast } from 'react-toastify';
 
 import { formatShortDate } from '../../utils/dateShort';
 import { contractStatusLabel } from '../../utils/contractStatus';
+import {
+  FilterSortBar, PortalLoadError, SORT_OPTIONS, sortPortalRows, type PortalOption, type SortKey,
+} from './PortalListControls';
 
-type SortKey = 'newest' | 'oldest';
+type ContractSort = Extract<SortKey, 'newest' | 'oldest'>;
+const CONTRACT_SORT_OPTIONS = SORT_OPTIONS.slice(0, 2) as PortalOption<ContractSort>[];
 type StatusFilter =
   | 'all'
   | 'sent'
@@ -53,41 +57,27 @@ export const CustomerContractsPage: React.FC = () => {
     queryFn: () => customerService.listContracts(),
   });
 
-  const [sort, setSort] = useState<SortKey>('newest');
+  const [sort, setSort] = useState<ContractSort>('newest');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const visible = useMemo(() => {
     const rows = data || [];
     const filtered = statusFilter === 'all' ? rows : rows.filter((c) => c.status === statusFilter);
-    return [...filtered].sort((a, b) => {
-      const da = new Date(a.issueDate).getTime();
-      const db = new Date(b.issueDate).getTime();
-      return sort === 'oldest' ? da - db : db - da;
-    });
+    return sortPortalRows(filtered, sort);
   }, [data, sort, statusFilter]);
 
   if (isLoading) return <Loading />;
   if (isError) {
-    const status = (error as any)?.response?.status;
-    if (status === 403) {
-      return (
-        <div className="container py-8">
-          <h1 className="text-2xl font-bold text-theme mb-2">{t('customer.contracts.title', 'Contracts')}</h1>
-          <p className="text-muted-theme">
-            {t('customer.contracts.disabled',
-              'This feature is currently disabled for your account.')}
-          </p>
-        </div>
-      );
-    }
     return (
-      <div className="container py-8">
-        <ErrorState
-          title={t('customer.contracts.loadError', 'Could not load contracts.')}
-          onRetry={() => { void refetch(); }}
-          retrying={isFetching}
-        />
-      </div>
+      <PortalLoadError
+        error={error}
+        title={t('customer.contracts.title', 'Contracts')}
+        disabledText={t('customer.contracts.disabled',
+          'This feature is currently disabled for your account.')}
+        loadErrorTitle={t('customer.contracts.loadError', 'Could not load contracts.')}
+        onRetry={() => { void refetch(); }}
+        retrying={isFetching}
+      />
     );
   }
 
@@ -111,38 +101,13 @@ export const CustomerContractsPage: React.FC = () => {
         </Card>
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="text-xs text-muted-theme uppercase tracking-wider">
-                {t('customer.filter.label', 'Filter')}
-              </label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                className="input-themed h-9 w-auto"
-              >
-                {STATUS_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{t(o.key, o.fallback)}</option>
-                ))}
-              </select>
-              <label className="text-xs text-muted-theme uppercase tracking-wider ml-2">
-                {t('customer.sort.label', 'Sort')}
-              </label>
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as SortKey)}
-                className="input-themed h-9 w-auto"
-              >
-                <option value="newest">{t('customer.sort.newest', 'Newest first')}</option>
-                <option value="oldest">{t('customer.sort.oldest', 'Oldest first')}</option>
-              </select>
-            </div>
-            <div className="text-xs text-muted-theme">
-              {visible.length === all.length
-                ? t('customer.filter.countAll', '{{count}} total', { count: all.length })
-                : t('customer.filter.countFiltered', '{{visible}} of {{total}}', { visible: visible.length, total: all.length })}
-            </div>
-          </div>
+          <FilterSortBar
+            sort={sort} onSortChange={setSort} sortOptions={CONTRACT_SORT_OPTIONS}
+            statusFilter={statusFilter} onStatusChange={setStatusFilter}
+            statusOptions={STATUS_OPTIONS}
+            totalRowCount={all.length}
+            visibleRowCount={visible.length}
+          />
           <Card padding="none">
             <ul className="divide-y divide-border-token">
               {visible.map((c) => <ContractRow key={c.id} c={c} />)}

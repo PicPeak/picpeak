@@ -15,20 +15,14 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { FileText, ExternalLink, Download } from 'lucide-react';
 import { customerService, type CustomerQuote } from '../../services/customer.service';
-import { Card, EmptyState, ErrorState, Loading } from '../../components/common';
+import { Card, EmptyState, Loading } from '../../components/common';
 import { toast } from 'react-toastify';
-import { formatMoney } from '../../utils/money';
+import { formatMoneyMinor } from '../../utils/money';
 import { formatShortDate } from '../../utils/dateShort';
+import { FilterSortBar, PortalLoadError, sortPortalRows, type SortKey } from './PortalListControls';
 
-type SortKey = 'newest' | 'oldest' | 'price_desc' | 'price_asc';
 type StatusFilter = 'all' | 'sent' | 'accepted' | 'declined' | 'expired' | 'converted';
 
-const SORT_OPTIONS: { value: SortKey; key: string; fallback: string }[] = [
-  { value: 'newest',     key: 'customer.sort.newest',    fallback: 'Newest first' },
-  { value: 'oldest',     key: 'customer.sort.oldest',    fallback: 'Oldest first' },
-  { value: 'price_desc', key: 'customer.sort.priceDesc', fallback: 'Price (high to low)' },
-  { value: 'price_asc',  key: 'customer.sort.priceAsc',  fallback: 'Price (low to high)' },
-];
 const STATUS_OPTIONS: { value: StatusFilter; key: string; fallback: string }[] = [
   { value: 'all',       key: 'customer.filter.all',       fallback: 'All' },
   { value: 'sent',      key: 'quotes.status.sent',        fallback: 'Open / sent' },
@@ -53,44 +47,21 @@ export const CustomerQuotesPage: React.FC = () => {
     const filtered = statusFilter === 'all'
       ? rows
       : rows.filter((q) => q.status === statusFilter);
-    const sorted = [...filtered].sort((a, b) => {
-      switch (sort) {
-      case 'oldest':
-        return new Date(a.issueDate).getTime() - new Date(b.issueDate).getTime();
-      case 'price_desc':
-        return Number(b.totalAmountMinor || 0) - Number(a.totalAmountMinor || 0);
-      case 'price_asc':
-        return Number(a.totalAmountMinor || 0) - Number(b.totalAmountMinor || 0);
-      case 'newest':
-      default:
-        return new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime();
-      }
-    });
-    return sorted;
+    return sortPortalRows(filtered, sort);
   }, [data, sort, statusFilter]);
 
   if (isLoading) return <Loading />;
   if (isError) {
-    const status = (error as any)?.response?.status;
-    if (status === 403) {
-      return (
-        <div className="container py-8">
-          <h1 className="text-2xl font-bold text-theme mb-2">{t('customer.quotes.title', 'Quotes')}</h1>
-          <p className="text-muted-theme">
-            {t('customer.quotes.disabled',
-              'This feature is currently disabled for your account. Please contact your photographer if you expected to see quotes here.')}
-          </p>
-        </div>
-      );
-    }
     return (
-      <div className="container py-8">
-        <ErrorState
-          title={t('customer.quotes.loadError', 'Could not load quotes.')}
-          onRetry={() => { void refetch(); }}
-          retrying={isFetching}
-        />
-      </div>
+      <PortalLoadError
+        error={error}
+        title={t('customer.quotes.title', 'Quotes')}
+        disabledText={t('customer.quotes.disabled',
+          'This feature is currently disabled for your account. Please contact your photographer if you expected to see quotes here.')}
+        loadErrorTitle={t('customer.quotes.loadError', 'Could not load quotes.')}
+        onRetry={() => { void refetch(); }}
+        retrying={isFetching}
+      />
     );
   }
   const allQuotes = data || [];
@@ -133,57 +104,6 @@ export const CustomerQuotesPage: React.FC = () => {
     </div>
   );
 };
-
-interface FilterSortBarProps<S extends string> {
-  sort: SortKey;
-  onSortChange: (v: SortKey) => void;
-  statusFilter: S;
-  onStatusChange: (v: S) => void;
-  statusOptions: { value: S; key: string; fallback: string }[];
-  totalRowCount: number;
-  visibleRowCount: number;
-}
-function FilterSortBar<S extends string>({
-  sort, onSortChange, statusFilter, onStatusChange, statusOptions,
-  totalRowCount, visibleRowCount,
-}: FilterSortBarProps<S>) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-muted-theme uppercase tracking-wider">
-          {t('customer.filter.label', 'Filter')}
-        </label>
-        <select
-          value={statusFilter}
-          onChange={(e) => onStatusChange(e.target.value as S)}
-          className="input-themed h-9 w-auto"
-        >
-          {statusOptions.map((o) => (
-            <option key={o.value} value={o.value}>{t(o.key, o.fallback)}</option>
-          ))}
-        </select>
-        <label className="text-xs text-muted-theme uppercase tracking-wider ml-2">
-          {t('customer.sort.label', 'Sort')}
-        </label>
-        <select
-          value={sort}
-          onChange={(e) => onSortChange(e.target.value as SortKey)}
-          className="input-themed h-9 w-auto"
-        >
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{t(o.key, o.fallback)}</option>
-          ))}
-        </select>
-      </div>
-      <div className="text-xs text-muted-theme">
-        {visibleRowCount === totalRowCount
-          ? t('customer.filter.countAll', '{{count}} total', { count: totalRowCount })
-          : t('customer.filter.countFiltered', '{{visible}} of {{total}}', { visible: visibleRowCount, total: totalRowCount })}
-      </div>
-    </div>
-  );
-}
 
 const QuoteRow: React.FC<{ q: CustomerQuote }> = ({ q }) => {
   const { t } = useTranslation();
@@ -235,7 +155,7 @@ const QuoteRow: React.FC<{ q: CustomerQuote }> = ({ q }) => {
       </div>
       <div className="text-right">
         <div className="font-medium tabular-nums">
-          {formatMoney(Number(q.totalAmountMinor) / 100, q.currency)}
+          {formatMoneyMinor(Number(q.totalAmountMinor), q.currency)}
         </div>
         <div className="mt-1 flex items-center justify-end gap-3 text-xs">
           <button type="button" onClick={handleDownloadPdf}
