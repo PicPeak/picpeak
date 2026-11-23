@@ -173,3 +173,35 @@ test('a save is refused when another save changed the customer after it was read
   const row = await db('quotes').where({ id: quoteId }).first();
   expect(row.currency).toBe('CHF');
 });
+
+test('an admin acceptance after a term edit leaves the term an invoice made from the quote inherited', async () => {
+  const net3 = await insertId('payment_net_days_templates', {
+    name: 'Accept Skonto 3', description: '20 days net', net_days: 20, skonto_percent: 3, skonto_within_days: 10,
+  });
+  const net1 = await insertId('payment_net_days_templates', {
+    name: 'Accept Skonto 1', description: '10 days net', net_days: 10, skonto_percent: 1, skonto_within_days: 5,
+  });
+  const timing = await insertId('payment_timing_templates', {
+    name: 'Accept inherit all after', description: 'Everything after the event',
+    installments: JSON.stringify([{ percent: 100, label: 'Full' }]),
+  });
+  const quoteId = await draft({ paymentNetDaysTemplateId: net3, paymentTimingTemplateId: timing });
+  const { quote } = await quoteService.getQuoteById(quoteId);
+  const sentTerm = await quoteService._internal.resolvePaymentTerm(quote);
+  await db('quotes').where({ id: quoteId }).update({ status: 'sent', payment_term_snapshot: JSON.stringify(sentTerm) });
+  const invoiceId = await insertId('invoices', {
+    invoice_number: `HARD-ACC-${quoteId}`, customer_account_id: customerId, issue_date: '2026-06-01',
+    due_date: '2026-06-30', status: 'draft', currency: 'CHF', net_amount_minor: 10000, vat_amount_minor: 0,
+    total_amount_minor: 10000, created_by_admin_id: adminId, deal_uuid: crypto.randomUUID(), source_quote_id: quoteId,
+  });
+  const { resolveSkontoPercentForInvoice } = require('../../src/services/invoiceService');
+  const invoice = () => db('invoices').where({ id: invoiceId }).first();
+  expect(await resolveSkontoPercentForInvoice(await invoice())).toBe(3);
+
+  await quoteService.updateQuote(quoteId, { paymentNetDaysTemplateId: net1 }, adminId);
+  await quoteService.adminAcceptQuote(quoteId, adminId);
+
+  expect(JSON.parse((await db('quotes').where({ id: quoteId }).first()).payment_term_snapshot))
+    .toEqual(expect.objectContaining({ skonto_percent: 1 }));
+  expect(await resolveSkontoPercentForInvoice(await invoice())).toBe(3);
+});

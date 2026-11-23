@@ -129,4 +129,31 @@ describe('buildRenderContext payment term', () => {
     const ctx = await quoteService._internal.buildRenderContext(quote, lineItems);
     expect(ctx.paymentTerm).toEqual(expect.objectContaining({ description: 'Payable within 15 days', netDays: 15 }));
   });
+
+  it('previews an unsaved installments override like the saved quote', async () => {
+    const netDaysId = await insertId('payment_net_days_templates', {
+      name: 'Preview Net 15', description: 'Payable within 15 days', net_days: 15,
+    });
+    const timingId = await insertId('payment_timing_templates', {
+      name: 'Preview half', description: '50% on booking, 50% after the event',
+      installments: JSON.stringify([{ percent: 50, label: 'Deposit' }, { percent: 50, label: 'Balance' }]),
+    });
+    const pdfService = require('../../src/services/pdfService');
+    let previewed;
+    const spy = jest.spyOn(pdfService, 'renderQuoteToBuffer').mockImplementationOnce(async (ctx) => {
+      previewed = ctx;
+      return Buffer.from('%PDF-preview');
+    });
+    try {
+      await quoteService.renderQuotePdfFromPayload({
+        customerAccountId: customerId, currency: 'CHF', vatRate: 0,
+        paymentNetDaysTemplateId: netDaysId, paymentTimingTemplateId: timingId,
+        installments: [{ percent: 30, label: 'Deposit' }, { percent: 70, label: 'Balance' }],
+        lineItems: [{ position: 1, quantity: 1, description: 'Reportage', unit_price_minor: 100000 }],
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(previewed.paymentTerm).toEqual(expect.objectContaining({ description: 'Payable within 15 days', netDays: 15 }));
+  });
 });
