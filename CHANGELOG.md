@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.210.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.209.3-beta.0...v3.210.0-beta.0) (2026-11-23)
+
+
+### Features
+
+* **crm:** list a quote's sent versions ([#2632](https://github.com/PicPeak/picpeak/issues/2632)) ([56d08c1](https://github.com/PicPeak/picpeak/commit/56d08c1fc1572674842089d520c7b144762cd3b0))
+
+
+### Bug Fixes
+
+* **admin:** build guest links on the configured public site URL ([#2635](https://github.com/PicPeak/picpeak/issues/2635)) ([04ee2fc](https://github.com/PicPeak/picpeak/commit/04ee2fcd68e09ce52a834f4ea76f39f96d6be623))
+* **pdf:** keep a wrapped link's underline on its own line ([#2633](https://github.com/PicPeak/picpeak/issues/2633)) ([01f2cc8](https://github.com/PicPeak/picpeak/commit/01f2cc87f2d99ad74e1adea6c1944832c7faaeb9))
+
 ## [3.209.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.209.2-beta.0...v3.209.3-beta.0) (2026-11-23)
 
 
