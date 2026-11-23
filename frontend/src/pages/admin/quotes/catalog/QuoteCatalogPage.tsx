@@ -30,34 +30,19 @@ import { useFeatureEnabled } from '../../../../contexts/FeatureFlagsContext';
 import type { BoundTo, LineUnit, PriceMode } from '../../../../utils/lineItemTotals';
 import { bookingService } from '../../../../services/booking.service';
 import { effectiveDeposit } from '../../../../features/booking/effectiveDeposit';
+import {
+  CURRENCIES, LANGUAGES, UNITS, errorText, inputCls, labelCls, selectCls, toMinor,
+} from './shared';
 
 type Tab = 'services' | 'factors' | 'packages' | 'promotions' | 'textBlocks' | 'templates';
 const TABS: Tab[] = ['services', 'factors', 'packages', 'promotions', 'textBlocks', 'templates'];
-const UNITS: LineUnit[] = ['hour', 'day', 'piece', 'km', 'flat'];
-const CURRENCIES = ['CHF', 'EUR', 'USD', 'GBP'];
 const TEXT_BLOCK_KINDS: TextBlockKind[] = ['intro', 'scope', 'note', 'closing', 'terms'];
-const LANGUAGES = ['de', 'en', 'fr', 'nl', 'pt', 'ru'];
 // Mirrors backend utils/placeholders QUOTE_PLACEHOLDERS.
 const PLACEHOLDERS = [
   'customer_name', 'customer_company', 'event_name', 'event_date', 'quote_number', 'valid_until',
   'business_name', 'hours', 'days', 'hourly_rate', 'day_rate',
 ];
 
-const inputCls = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900';
-// Native selects ignore vertical padding in Safari; a fixed height keeps them level with the inputs.
-const selectCls = `${inputCls} h-10`;
-const labelCls = 'block text-sm font-medium text-body mb-1';
-const toMinor = (major: number) => Math.round((Number.isFinite(major) ? major : 0) * 100);
-// The API's message, plus what each rejected field says (a 400 lists them in `details`).
-const errorText = (err: any): string => {
-  const data = err?.response?.data;
-  const details: Array<{ field?: string; message?: string }> = Array.isArray(data?.details) ? data.details : [];
-  const reasons = details
-    .map((d) => (d.message && d.message !== 'Invalid value' ? d.message : d.field ? `${d.field}: ${d.message || 'invalid'}` : null))
-    .filter(Boolean);
-  if (reasons.length) return reasons.join(' · ');
-  return data?.error || err?.message || 'Failed';
-};
 
 const ArchivedBadge: React.FC = () => {
   const { t } = useTranslation();

@@ -26,6 +26,10 @@ import { todayIsoDate } from '../../../utils/localDate';
 import { useUkBusiness } from '../../../hooks/useUkBusiness';
 import { lacksGbpRate } from '../../../utils/vatGbpRate';
 
+const statusTone: Record<string, BadgeTone> = {
+  scheduled: 'neutral', pending_delivery: 'info', sent: 'info', overdue: 'danger', paid: 'success', cancelled: 'neutral',
+};
+
 export const BillDetailPage: React.FC = () => {
   const { t } = useTranslation();
   // A UK business's invoice waits for its GBP rate (issue 2439).
@@ -107,8 +111,8 @@ export const BillDetailPage: React.FC = () => {
             {priceless
               ? ''
               : isSub
-                ? `(${formatMoney(Number(li.lineTotalMinor || 0) / 100, currency)})`
-                : formatMoney(Number(li.lineTotalMinor || 0) / 100, currency)}
+                ? `(${formatMoneyMinor(Number(li.lineTotalMinor || 0), currency)})`
+                : formatMoneyMinor(Number(li.lineTotalMinor || 0), currency)}
           </td>
         </tr>
       );
@@ -357,9 +361,6 @@ export const BillDetailPage: React.FC = () => {
     setPayReference((cur) => cur || inv.invoiceNumber || '');
     setPayDialogOpen(true);
   };
-  const statusTone: Record<string, BadgeTone> = {
-    scheduled: 'neutral', pending_delivery: 'info', sent: 'info', overdue: 'danger', paid: 'success', cancelled: 'neutral',
-  };
   // The primary action of the moment: Send while scheduled, Mark delivered
   // for a delivery invoice, Mark paid once issued.
   const primary: 'send' | 'release' | 'pay' | null = inv.status === 'scheduled' && canSend
@@ -481,11 +482,11 @@ export const BillDetailPage: React.FC = () => {
               <div><div className="text-body">{t('bills.field.dueDate', 'Due')}</div><div>{fmtDate(inv.dueDate)}</div></div>
               {inv.scheduledSendAt && <div><div className="text-body">{t('bills.field.scheduledSendAt', 'Scheduled send')}</div><div>{fmtDate(inv.scheduledSendAt)}</div></div>}
               {inv.installmentTotal > 1 && <div><div className="text-body">{t('bills.field.installment', 'Installment')}</div><div>{inv.installmentIndex + 1}/{inv.installmentTotal}</div></div>}
-              <div><div className="text-body">{t('bills.field.total', 'Total')}</div><div>{formatMoney(Number(inv.totalAmountMinor || 0) / 100, inv.currency)}</div></div>
-              <div><div className="text-body">{t('bills.field.paid', 'Paid')}</div><div>{formatMoney(Number(inv.paidAmountMinor || 0) / 100, inv.currency)}</div></div>
+              <div><div className="text-body">{t('bills.field.total', 'Total')}</div><div>{formatMoneyMinor(Number(inv.totalAmountMinor || 0), inv.currency)}</div></div>
+              <div><div className="text-body">{t('bills.field.paid', 'Paid')}</div><div>{formatMoneyMinor(Number(inv.paidAmountMinor || 0), inv.currency)}</div></div>
               <div><div className="text-body">{t('bills.field.outstanding', 'Outstanding')}</div>
                 <div className={outstanding > 0 ? 'text-danger-text font-medium' : ''}>{formatMoney(outstanding, inv.currency)}</div></div>
-              {inv.lateFeeAmountMinor > 0 && <div><div className="text-body">{t('bills.field.lateFee', 'Late fee')}</div><div className="text-warning-text">{formatMoney(Number(inv.lateFeeAmountMinor) / 100, inv.currency)}</div></div>}
+              {inv.lateFeeAmountMinor > 0 && <div><div className="text-body">{t('bills.field.lateFee', 'Late fee')}</div><div className="text-warning-text">{formatMoneyMinor(Number(inv.lateFeeAmountMinor), inv.currency)}</div></div>}
               {/* Source-quote / source-contract cross-links moved out of
                   the top stats grid into the unified Linked-documents card
                   above, mirroring the quote + contract detail pages. The
@@ -538,7 +539,7 @@ export const BillDetailPage: React.FC = () => {
                   {data.payments.map((p) => (
                     <tr key={p.id} className="border-b border-line-faint">
                       <td className="py-2 pr-4 whitespace-nowrap">{fmtDate(p.paidAt)}</td>
-                      <td className="py-2 px-4 text-right tabular-nums whitespace-nowrap">{formatMoney(Number(p.amountMinor) / 100, inv.currency)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums whitespace-nowrap">{formatMoneyMinor(Number(p.amountMinor), inv.currency)}</td>
                       <td className="py-2 pl-4 pr-4 whitespace-nowrap">{p.paymentMethod || '—'}</td>
                       {/* break-all: a Stripe PaymentIntent (a booked deposit) has no break point. */}
                       <td className="py-2 pr-4 font-mono text-xs break-all">{p.reference || '—'}</td>

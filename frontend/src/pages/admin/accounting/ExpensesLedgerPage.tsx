@@ -24,12 +24,9 @@ import {
   type Expense, type ExpenseKind, type ExpenseCategory, type MarkupType, type PaymentMethod,
 } from '../../../services/accounting.service';
 import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
-
-const PAYMENT_METHODS: PaymentMethod[] = ['bank_transfer', 'cash', 'twint', 'paypal', 'card', 'other'];
+import { PAYMENT_METHODS, labelCls, selectCls } from './shared';
 
 const KINDS: ExpenseKind[] = ['amount', 'mileage', 'per_diem'];
-const labelCls = 'block text-sm font-medium text-body mb-1';
-const selectCls = 'w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm';
 const kindIcon: Record<ExpenseKind, React.ReactNode> = {
   amount: <Coins className="w-3.5 h-3.5" />, mileage: <Car className="w-3.5 h-3.5" />, per_diem: <CalendarDays className="w-3.5 h-3.5" />,
 };

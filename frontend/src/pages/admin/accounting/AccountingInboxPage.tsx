@@ -25,9 +25,9 @@ import {
   type InboundDocument, type Disposition, type MarkupType, type PaymentMethod, type ExpenseCategory,
 } from '../../../services/accounting.service';
 import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
+import { PAYMENT_METHODS, labelCls, selectCls } from './shared';
 
 const DISPOSITIONS: Disposition[] = ['rebill', 'durchlaufend', 'eigener_aufwand', 'duplikat', 'abgelehnt'];
-const PAYMENT_METHODS: PaymentMethod[] = ['bank_transfer', 'cash', 'twint', 'paypal', 'card', 'other'];
 // Only client-facing dispositions book to an event. A "Company expense"
 // (eigener_aufwand) always books to the company — no event picker.
 const BOOKING_DISPOSITIONS: Disposition[] = ['rebill', 'durchlaufend'];
@@ -39,8 +39,6 @@ const statusTones: Record<string, BadgeTone> = {
   duplicate: 'neutral',
 };
 
-const labelCls = 'block text-sm font-medium text-body mb-1';
-const selectCls = 'w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm';
 
 /**
  * Reusable rasterised-document preview. PDFs render as server-side page

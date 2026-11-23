@@ -42,14 +42,7 @@ import {
   type CustomerProfileUpdate,
 } from '../../services/customer.service';
 import { useCustomerAuth } from '../../contexts/CustomerAuthContext';
-
-const SALUTATION_OPTIONS = [
-  { value: '', labelKey: 'customer.profile.salutation.none', fallback: '— Not specified —' },
-  { value: 'Herr', labelKey: 'customer.profile.salutation.herr', fallback: 'Herr' },
-  { value: 'Frau', labelKey: 'customer.profile.salutation.frau', fallback: 'Frau' },
-  { value: 'Mx', labelKey: 'customer.profile.salutation.mx', fallback: 'Mx' },
-  { value: 'Dr', labelKey: 'customer.profile.salutation.dr', fallback: 'Dr.' },
-];
+import { SALUTATION_OPTIONS } from './salutation';
 
 /** Normalise a server profile into the local form-state shape (string | ''). */
 function profileToForm(p: CustomerProfileFull): CustomerProfileUpdate {

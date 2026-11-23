@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, Send, Copy, ArrowRightCircle, Receipt, CheckCircle2, ScrollText, XCircle, FilePlus, LayoutTemplate, RefreshCw, FileCheck } from 'lucide-react';
-import { ActionMenu, Badge, Button, Card, Loading, Notice, useConfirm, usePrompt, type ActionMenuItem, type BadgeTone } from '../../../components/common';
+import { ActionMenu, Badge, Button, Card, Loading, Notice, useConfirm, usePrompt, type ActionMenuItem } from '../../../components/common';
 import { DocumentHeader } from '../../../components/admin/DocumentHeader';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { usePermission } from '../../../hooks/usePermission';
@@ -20,20 +20,16 @@ import { DocumentLineageCard } from '../../../components/admin/DocumentLineageCa
 import { QuoteAddOnsCard } from './QuoteAddOnsCard';
 import { quotesService } from '../../../services/quotes.service';
 import { quoteCatalogService } from '../../../services/quoteCatalog.service';
-import { formatMoney } from '../../../components/admin/LineItemsTable';
 import { formatMoneyMinor } from '../../../utils/money';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import { toast } from 'react-toastify';
 import { quoteErrorText } from '../../../utils/quoteErrors';
 import { ConvertToContractDialog } from './ConvertToContractDialog';
+import { QUOTE_STATUS_TONE } from '../../../utils/quoteStatus';
 
 // The statuses the server refuses to edit (quoteService.updateQuote).
 const LOCKED_STATUSES = ['accepted', 'declined', 'converted'];
-
-const STATUS_TONE: Record<string, BadgeTone> = {
-  draft: 'neutral', sent: 'info', expired: 'warning', accepted: 'success', declined: 'danger', converted: 'success',
-};
 
 export const QuoteDetailPage: React.FC = () => {
   const { t } = useTranslation();
@@ -344,7 +340,7 @@ export const QuoteDetailPage: React.FC = () => {
     <div>
       <DocumentHeader
         title={q.quoteNumber}
-        status={<Badge tone={STATUS_TONE[q.status] ?? 'neutral'}>{t(`quotes.status.${q.status}`, q.status)}</Badge>}
+        status={<Badge tone={QUOTE_STATUS_TONE[q.status] ?? 'neutral'}>{t(`quotes.status.${q.status}`, q.status)}</Badge>}
         meta={(
           <>
             <span>{t('quotes.forCustomer', 'for {{name}}', { name: customerName })}</span>
@@ -455,11 +451,11 @@ export const QuoteDetailPage: React.FC = () => {
               </table>
               <div className="flex flex-col items-end gap-1 mt-4 text-sm">
                 <div className="flex gap-6"><span className="text-soft">{t('crm.lineItems.subtotal', 'Subtotal')}:</span>
-                  <span className="tabular-nums w-28 text-right">{formatMoney(Number(q.netAmountMinor || 0) / 100, q.currency)}</span></div>
+                  <span className="tabular-nums w-28 text-right">{formatMoneyMinor(Number(q.netAmountMinor || 0), q.currency)}</span></div>
                 <div className="flex gap-6"><span className="text-soft">{t('crm.lineItems.vat', 'VAT')} ({Number(q.vatRate || 0).toFixed(1)}%):</span>
-                  <span className="tabular-nums w-28 text-right">{formatMoney(Number(q.vatAmountMinor || 0) / 100, q.currency)}</span></div>
+                  <span className="tabular-nums w-28 text-right">{formatMoneyMinor(Number(q.vatAmountMinor || 0), q.currency)}</span></div>
                 <div className="flex gap-6 font-semibold text-base"><span>{t('crm.lineItems.total', 'Total')}:</span>
-                  <span className="tabular-nums w-28 text-right">{formatMoney(Number(q.totalAmountMinor || 0) / 100, q.currency)}</span></div>
+                  <span className="tabular-nums w-28 text-right">{formatMoneyMinor(Number(q.totalAmountMinor || 0), q.currency)}</span></div>
               </div>
             </Card>
             </>
