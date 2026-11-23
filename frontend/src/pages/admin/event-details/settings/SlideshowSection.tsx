@@ -16,6 +16,8 @@ import { eventsService } from '../../../../services/events.service';
 import { categoriesService } from '../../../../services/categories.service';
 import type { SlideshowStyle } from '../../../../services/slideshow.service';
 import { SectionCard, labelClass } from './sections';
+import { usePublicBaseUrl } from '../../../../hooks/usePublicBaseUrl';
+import { buildPublicUrl } from '../../../../utils/url';
 
 export const SlideshowSection: React.FC<{
   event: Event;
@@ -29,7 +31,9 @@ export const SlideshowSection: React.FC<{
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const token = event.show_share_token ?? null;
-  const link = token ? `${window.location.origin}/gallery/${event.slug}/show/${token}` : '';
+  // The kiosk screen is not the admin's browser: on the public address (issue 2630).
+  const publicBaseUrl = usePublicBaseUrl();
+  const link = token ? buildPublicUrl(`/gallery/${event.slug}/show/${token}`, publicBaseUrl) : '';
 
   const { data: categories = [] } = useQuery({
     queryKey: ['event-categories', event.id],

@@ -33,6 +33,8 @@ import { parseWholeNumber } from '../../../utils/wholeNumber';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useUploadInterrupted } from '../../../hooks/useUploadInterrupted';
 import { useScreenWakeLock } from '../../../hooks/useScreenWakeLock';
+import { usePublicBaseUrl } from '../../../hooks/usePublicBaseUrl';
+import { buildPublicUrl } from '../../../utils/url';
 import {
   transfersService,
   type Transfer,
@@ -89,11 +91,12 @@ function formatBytes(bytes: number | null | undefined): string {
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
-function recipientUrl(token: string): string {
-  return `${window.location.origin}/transfer/${token}`;
+// Transfer links are for the recipient: on the public address (issue 2630).
+function recipientUrl(token: string, publicBase: string): string {
+  return buildPublicUrl(`/transfer/${token}`, publicBase);
 }
-function uploadUrl(token: string): string {
-  return `${window.location.origin}/transfer-upload/${token}`;
+function uploadUrl(token: string, publicBase: string): string {
+  return buildPublicUrl(`/transfer-upload/${token}`, publicBase);
 }
 
 const STATUS_TONES: Record<string, BadgeTone> = {
@@ -738,6 +741,7 @@ const UploadLimitEditor: React.FC<{ transfer: Transfer; canEdit: boolean; onSave
 
 const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCopy, confirm, canEdit, canView }) => {
   const { t } = useTranslation();
+  const publicBaseUrl = usePublicBaseUrl();
   const { formatDateTime } = useLocalizedDate();
   const fmtDate = (d: string | null) => (d ? formatDateTime(d) : '—');
   const [showPicker, setShowPicker] = useState(false);
@@ -834,7 +838,7 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
   };
 
   const primaryLink = transfer
-    ? (isRequest ? uploadUrl(transfer.token) : recipientUrl(transfer.token))
+    ? (isRequest ? uploadUrl(transfer.token, publicBaseUrl) : recipientUrl(transfer.token, publicBaseUrl))
     : '';
 
   return (
@@ -1016,8 +1020,8 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
                   {transfer.upload_code ? (
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="rounded bg-subtle px-3 py-1.5 font-mono text-lg tracking-widest">{transfer.upload_code}</div>
-                      <Input readOnly value={uploadUrl(transfer.upload_code)} className="flex-1 min-w-[200px]" />
-                      <Button variant="outline" size="sm" leftIcon={<Copy className="h-4 w-4" />} onClick={() => onCopy(uploadUrl(transfer.upload_code as string))}>
+                      <Input readOnly value={uploadUrl(transfer.upload_code, publicBaseUrl)} className="flex-1 min-w-[200px]" />
+                      <Button variant="outline" size="sm" leftIcon={<Copy className="h-4 w-4" />} onClick={() => onCopy(uploadUrl(transfer.upload_code as string, publicBaseUrl))}>
                         {t('transfers.copyLink', 'Copy link')}
                       </Button>
                     </div>

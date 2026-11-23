@@ -138,6 +138,12 @@ export interface PublicSettings {
    * the login page should not offer one. Compare with window.location.origin.
    */
   passkey_origin?: string | null;
+  /**
+   * The public address guests reach this install on (issue 2630): FRONTEND_URL
+   * or the Site URL setting, or null when neither is configured (or loopback).
+   * Read it through usePublicBaseUrl().
+   */
+  public_site_url?: string | null;
 }
 
 export const publicSettingsService = {
