@@ -712,7 +712,8 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     'feature_documents',
     // CRM billing cadence (migration 102). 'per_event' (default) keeps
     // each invoice firing on its own schedule; monthly/quarterly snap
-    // every scheduled invoice to billing_cycle_day of the next period.
+    // every scheduled invoice to billing_cycle_day of the next period;
+    // 'manual' collects lines on a draft the admin sends by hand.
     'billing_cadence', 'billing_cycle_day',
     // Hour-logging default rate (migration 129). Minor units; null
     // means admin must enter a per-entry override on every entry.
@@ -809,7 +810,7 @@ async function updateCustomer(id, updates, updatedByAdminId) {
         // Whitelist enum. Anything else flips to 'per_event' so we
         // never persist garbage that the scheduler can't interpret.
         const v = String(updates[f] || '').toLowerCase();
-        allowed[f] = ['per_event', 'monthly', 'quarterly'].includes(v) ? v : 'per_event';
+        allowed[f] = ['per_event', 'monthly', 'quarterly', 'manual'].includes(v) ? v : 'per_event';
       } else if (f === 'billing_cycle_day') {
         // Sign carries the interpretation:
         //   positive 1..28  → day-of-month (clamped to month length at

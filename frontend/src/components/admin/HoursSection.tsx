@@ -39,7 +39,7 @@ import { isImeComposing } from '../../utils/imeComposition';
 export interface HoursSectionProps {
   customerId: number;
   customerHourlyRateMinor: number | null;
-  billingCadence: 'per_event' | 'monthly' | 'quarterly';
+  billingCadence: 'per_event' | 'monthly' | 'quarterly' | 'manual';
   onHourlyRateChange?: (next: number | null) => void;
   /**
    * When true, render only the entry-history table + the per-event
@@ -241,7 +241,10 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
     }
     return { unbilledCount: count, unbilledTotalMajor: minor / 100 };
   }, [entries, effectiveDefaultRateMinor]);
-  const isMonthly = billingCadence === 'monthly';
+  // Accumulator cadences (monthly + manual) auto-append each entry to the
+  // running draft; the backend refuses "Bill these hours" for them with
+  // CADENCE_MISMATCH (customerHoursService.billUnbilledHours).
+  const isAccumulator = billingCadence === 'monthly' || billingCadence === 'manual';
 
   // Local lockout check — mirrors customerHoursService.isEntryLocked
   // so the delete button can be disabled before the request is sent.
@@ -264,7 +267,10 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
         {t('customers.hours.section', 'Hours')}
       </h2>
       <p className="text-xs text-muted mb-4">
-        {isMonthly
+        {billingCadence === 'manual'
+          ? t('customers.hours.manualHint',
+            'Entries auto-append to the running manual draft. Edit / delete remains possible until you click "Trigger invoice now".')
+          : isAccumulator
           ? t('customers.hours.monthlyHint',
             'Entries auto-append to the current monthly draft. Edit / delete remains possible until the scheduler arms the draft for send.')
           : t('customers.hours.perEventHint',
@@ -429,7 +435,7 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
       {/* Bill-these-hours button for per-event customers only. Stays
           visible in compact mode so the customer-detail page can
           still trigger the on-demand billing action. */}
-      {!isMonthly && unbilledCount > 0 && canBill && (
+      {!isAccumulator && unbilledCount > 0 && canBill && (
         <Notice
           tone="info"
           className="mb-4"
