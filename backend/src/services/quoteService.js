@@ -945,6 +945,10 @@ async function renderQuotePdfFromPayload(payload) {
     payment_term_template_id: payload.paymentTermTemplateId,
     payment_net_days_template_id: payload.paymentNetDaysTemplateId,
     payment_timing_template_id: payload.paymentTimingTemplateId,
+    // The override as the saved row holds it, so the preview's term matches.
+    payment_term_installments_override: Array.isArray(payload.installments) && payload.installments.length > 0
+      ? JSON.stringify(payload.installments)
+      : null,
     business_bank_account_id: payload.businessBankAccountId,
     net_amount_minor: totals.netAmountMinor,
     vat_rate: ensureNumber(payload.vatRate, 0),
@@ -1304,6 +1308,23 @@ async function recordResponse({ token, action, ip, tosAccepted, actor = QUOTE_LI
 }
 
 /**
+ * Invoices made from a quote without a payment term of their own show the
+ * quote's snapshot. Before an acceptance replaces that snapshot, they get the
+ * one they showed so far, so their terms (Skonto, net days) don't change
+ * after the fact. Outside the admin's CRM view: the invoices keep what they
+ * already showed, whoever may read them.
+ */
+async function keepInheritedTerm(trx, quote, termUpdate, history) {
+  if (!('payment_term_snapshot' in termUpdate) || !quote.payment_term_snapshot) return;
+  const inherited = typeof quote.payment_term_snapshot === 'string'
+    ? quote.payment_term_snapshot : JSON.stringify(quote.payment_term_snapshot);
+  await require('../database/crmAccess').withTrustedCrmAccess('quote accept: invoices keep the inherited term',
+    () => auditedUpdate(trx, 'invoices',
+      (q) => q.where({ source_quote_id: quote.id }).whereNull('payment_term_snapshot'),
+      { payment_term_snapshot: inherited }, history));
+}
+
+/**
  * Admin "accept on behalf of customer" — records the quote as
  * accepted directly, bypassing the public token + response window.
  * Used when the admin is on the phone with the customer and they
@@ -1379,6 +1400,7 @@ async function adminAcceptQuote(id, adminId) {
     if (!applied || overrideOf(await trx('quotes').where({ id }).first('payment_term_installments_override')) !== overrideOf(quote)) {
       throw new AppError('The quote changed; reload it', 409, 'QUOTE_CHANGED');
     }
+    await keepInheritedTerm(trx, quote, termUpdate, history);
   });
 
   try {
