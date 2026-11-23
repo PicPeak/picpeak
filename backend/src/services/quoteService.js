@@ -27,6 +27,7 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { unicodeSearchForms } = require('../utils/sqlSecurity');
 const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
@@ -1127,7 +1128,6 @@ async function sendQuote(id, adminId) {
   // Render PDF + persist snapshot.
   const ctx = await buildRenderContext(quote, lineItems);
   const buffer = await pdfService.renderQuoteToBuffer(ctx);
-  const pdfPath = await persistDocPdf('quote', quote, buffer, '', { kind: 'sent', theme: ctx.theme, issuer: ctx.issuer, lineItems });
 
   // Snapshot payment term so future template edits don't mutate the doc.
   // Migration 124 — prefer the two new split FKs; fall back to the legacy
@@ -1149,6 +1149,10 @@ async function sendQuote(id, adminId) {
     ? new Date(new Date(quote.valid_until).getTime() + 14 * 24 * 60 * 60 * 1000)
     : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
 
+  // Stored right before the send is recorded, and taken back if recording
+  // fails: the quote page lists every stored version, so a file kept from
+  // a send that never happened would show as an offer that went out.
+  const pdfPath = await persistDocPdf('quote', quote, buffer, '', { kind: 'sent', theme: ctx.theme, issuer: ctx.issuer, lineItems });
   await db.transaction(async (trx) => {
     await trx('quote_action_tokens').insert({
       quote_id: id,
@@ -1187,6 +1191,9 @@ async function sendQuote(id, adminId) {
       ...(hasEmittedColumn ? { workflow_response_emitted_at: null } : {}),
       updated_at: new Date(),
     }, { actor: adminId, source: 'quote.send' });
+  }).catch(async (err) => {
+    await discardUnsentVersion(id, pdfPath);
+    throw err;
   });
 
   // Queue customer email (with PDF + cc) — honour the global
@@ -1241,6 +1248,23 @@ function formatMajor(minor, currency, locale, issuerCountryCode) {
   return new Intl.NumberFormat(intlLocale, {
     style: 'currency', currency: (currency || 'CHF').toUpperCase(),
   }).format(Number(minor || 0) / 100);
+}
+
+/**
+ * Remove the version stored for a send that was not recorded: its
+ * generated_documents row and its file. Best effort: the send's own error
+ * is what the caller reports, so a failed cleanup is logged, not thrown.
+ */
+async function discardUnsentVersion(quoteId, pdfPath) {
+  if (!pdfPath) return;
+  try {
+    await db('generated_documents')
+      .where({ doc_type: 'quote', doc_id: quoteId, kind: 'sent', path: toStoredPath(pdfPath) })
+      .del();
+    fs.rmSync(pdfPath, { force: true });
+  } catch (err) {
+    logger.warn('Could not remove the PDF stored for a failed quote send', { quoteId, error: err.message });
+  }
 }
 
 /**

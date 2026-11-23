@@ -9,10 +9,12 @@
  *     and lines it was stored with;
  *   - each version opens as the bytes stored at the time, not a re-render;
  *   - a version of another quote, or one whose file is gone, is a 404;
- *   - an admin who may view quotes but not this one sees none of its versions.
+ *   - an admin who may view quotes but not this one sees none of its versions;
+ *   - a send that fails to record keeps no version, file or row.
  */
 
 const fs = require('fs');
+const path = require('path');
 const request = require('supertest');
 const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
@@ -173,4 +175,31 @@ test('an admin who may view quotes but not this one sees none of its versions', 
   expect(JSON.stringify(list.body)).not.toMatch(/Edited images/);
   const file = await request(adminApp).get(`/api/admin/quotes/${quoteId}/documents/${row.id}/pdf`).set(otherAuth);
   expect(file.status).toBe(404);
+});
+
+test('a send that fails to record keeps no version', async () => {
+  const quoteId = await quoteService.createQuote({
+    customerAccountId: customerId, currency: 'CHF', vatRate: 0, lineItems: lines(12, 1000),
+  }, adminId);
+  const filesBefore = (await db('generated_documents').select('path')).length;
+  // The send's transaction writes its token first; without the table it fails.
+  await db.schema.renameTable('quote_action_tokens', 'quote_action_tokens_hidden');
+  try {
+    await expect(quoteService.sendQuote(quoteId, adminId)).rejects.toThrow();
+  } finally {
+    await db.schema.renameTable('quote_action_tokens_hidden', 'quote_action_tokens');
+  }
+
+  expect(await db('generated_documents').where({ doc_type: 'quote', doc_id: quoteId })).toHaveLength(0);
+  expect((await db('generated_documents').select('path')).length).toBe(filesBefore);
+  const quote = await db('quotes').where({ id: quoteId }).first();
+  expect(quote.status).toBe('draft');
+  const { resolveStoredPath } = require('../../src/utils/storedPath');
+  const year = String(new Date(quote.issue_date || Date.now()).getFullYear());
+  const dir = path.dirname(resolveStoredPath(`business-docs/quote/${year}/x.pdf`) || '');
+  const leftovers = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.startsWith(quote.quote_number)) : [];
+  expect(leftovers).toEqual([]);
+
+  const list = await request(adminApp).get(`/api/admin/quotes/${quoteId}/documents`).set(auth);
+  expect(list.body.documents).toEqual([]);
 });
