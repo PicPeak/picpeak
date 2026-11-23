@@ -105,7 +105,7 @@ export const BillsListPage: React.FC = () => {
             />
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={unpaidOnly} onChange={(e) => setUnpaidOnly(e.target.checked)} />
+            <input type="checkbox" checked={unpaidOnly} onChange={(e) => { setUnpaidOnly(e.target.checked); setPage(1); }} />
             {t('bills.filter.unpaidOnly', 'Unpaid only')}
           </label>
         </div>
@@ -212,6 +212,23 @@ export const BillsListPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+              {data.pagination.totalPages > 1 && (
+                <div className="flex justify-between items-center px-3 py-2 border-t border-neutral-200 dark:border-neutral-700 text-sm">
+                  <span className="text-neutral-500 dark:text-neutral-400">
+                    {t('bills.pagination', 'Page {{page}} of {{total}} · {{count}} invoices', {
+                      page: data.pagination.page, total: data.pagination.totalPages, count: data.pagination.total,
+                    })}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                      {t('common.previous', 'Previous')}
+                    </Button>
+                    <Button variant="outline" size="sm" disabled={page >= data.pagination.totalPages} onClick={() => setPage((p) => p + 1)}>
+                      {t('common.next', 'Next')}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
