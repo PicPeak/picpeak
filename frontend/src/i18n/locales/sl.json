@@ -8731,7 +8731,18 @@
     "saveAndIssueTitle": "Izdati z neshranjenimi spremembami?",
     "saveAndIssueMessage": "Spremembe se najprej shranijo, nato se ponudba izda. Ta stranka ne prejme e-pošte.",
     "saveAndIssue": "Shrani in izdaj",
-    "confirmIssue": "Izdati to ponudbo zdaj? Ta stranka ne prejme e-pošte."
+    "confirmIssue": "Izdati to ponudbo zdaj? Ta stranka ne prejme e-pošte.",
+    "versions": {
+      "title": "Poslane različice",
+      "hint": "Vsaka različica, kot je bila poslana stranki.",
+      "latest": "najnovejša",
+      "open": "Odpri PDF",
+      "fileMissing": "Ta PDF ni več na strežniku.",
+      "kind": {
+        "sent": "Poslano",
+        "accepted": "Sprejeto"
+      }
+    }
   },
   "crm": {
     "lineItems": {

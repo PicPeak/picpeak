@@ -10519,7 +10519,18 @@
     "saveAndIssueTitle": "Mit ungespeicherten Änderungen ausstellen?",
     "saveAndIssueMessage": "Ihre Änderungen werden zuerst gespeichert, dann wird das Angebot ausgestellt. Dieser Kunde erhält keine E-Mail.",
     "saveAndIssue": "Speichern & ausstellen",
-    "confirmIssue": "Dieses Angebot jetzt ausstellen? Dieser Kunde erhält keine E-Mail."
+    "confirmIssue": "Dieses Angebot jetzt ausstellen? Dieser Kunde erhält keine E-Mail.",
+    "versions": {
+      "title": "Versendete Fassungen",
+      "hint": "Jede Fassung so, wie sie an die Kundschaft ging.",
+      "latest": "aktuell",
+      "open": "PDF öffnen",
+      "fileMissing": "Dieses PDF liegt nicht mehr auf dem Server.",
+      "kind": {
+        "sent": "Versendet",
+        "accepted": "Angenommen"
+      }
+    }
   },
   "crm": {
     "lineItems": {

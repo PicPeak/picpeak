@@ -315,6 +315,31 @@ export interface QuoteListResponse {
   pagination: { total: number; page: number; pageSize: number; totalPages: number };
 }
 
+/** What a stored quote version offered, kept with its file at send time. */
+export interface QuoteVersionSummary {
+  currency: string | null;
+  netAmountMinor: number;
+  totalAmountMinor: number;
+  lines: Array<{
+    description: string;
+    quantity: number;
+    unit: string | null;
+    lineTotalMinor: number;
+    lineKind: string | null;
+    notIncluded: boolean;
+  }>;
+}
+
+export interface QuoteStoredVersion {
+  id: number;
+  kind: 'sent' | 'accepted' | string;
+  generatedAt: string;
+  pages: number | null;
+  bytes: number;
+  /** Null for files stored before the summary was kept. */
+  summary: QuoteVersionSummary | null;
+}
+
 export const quotesService = {
   async list(params: {
     status?: QuoteStatus[];
@@ -419,6 +444,18 @@ export const quotesService = {
   /** Returns a blob URL the editor can `window.open()` straight into a tab. */
   async pdfUrl(id: number): Promise<string> {
     const res = await api.get(`/admin/quotes/${id}/pdf`, { responseType: 'blob' });
+    return URL.createObjectURL(res.data);
+  },
+
+  /** Every PDF the quote went out as (sent, accepted), newest first. */
+  async documents(id: number): Promise<{ documents: QuoteStoredVersion[] }> {
+    const { data } = await api.get(`/admin/quotes/${id}/documents`);
+    return data.data || data;
+  },
+
+  /** A blob URL for one stored version, the bytes exactly as they went out. */
+  async documentPdfUrl(id: number, documentId: number): Promise<string> {
+    const res = await api.get(`/admin/quotes/${id}/documents/${documentId}/pdf`, { responseType: 'blob' });
     return URL.createObjectURL(res.data);
   },
 
