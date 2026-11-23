@@ -22,6 +22,8 @@ import { useMutationWithToast } from '../../../hooks/useMutationWithToast';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useUploadInterrupted } from '../../../hooks/useUploadInterrupted';
 import { useScreenWakeLock } from '../../../hooks/useScreenWakeLock';
+import { usePublicBaseUrl } from '../../../hooks/usePublicBaseUrl';
+import { buildPublicUrl } from '../../../utils/url';
 import { transfersService, type TransferWriteResult } from '../../../services/transfers.service';
 
 /**
@@ -70,11 +72,12 @@ function formatBytes(bytes: number | null | undefined): string {
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
-function recipientUrl(token: string): string {
-  return `${window.location.origin}/transfer/${token}`;
+// Transfer links are for the recipient: on the public address (issue 2630).
+function recipientUrl(token: string, publicBase: string): string {
+  return buildPublicUrl(`/transfer/${token}`, publicBase);
 }
-function uploadUrl(uploadToken: string): string {
-  return `${window.location.origin}/transfer-upload/${uploadToken}`;
+function uploadUrl(uploadToken: string, publicBase: string): string {
+  return buildPublicUrl(`/transfer-upload/${uploadToken}`, publicBase);
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -472,6 +475,7 @@ interface DetailProps {
 
 const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCopy, confirm }) => {
   const { t } = useTranslation();
+  const publicBaseUrl = usePublicBaseUrl();
   const { formatDateTime } = useLocalizedDate();
   const fmtDate = (d: string | null) => (d ? formatDateTime(d) : '—');
   const [showPicker, setShowPicker] = useState(false);
@@ -558,8 +562,8 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
             {/* Prominent recipient link + download-all, up top */}
             <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/50">
               <div className="flex flex-wrap items-center gap-2">
-                <Input readOnly value={recipientUrl(transfer.token)} className="flex-1 min-w-[220px]" />
-                <Button variant="outline" leftIcon={<Copy className="h-4 w-4" />} onClick={() => onCopy(recipientUrl(transfer.token))}>
+                <Input readOnly value={recipientUrl(transfer.token, publicBaseUrl)} className="flex-1 min-w-[220px]" />
+                <Button variant="outline" leftIcon={<Copy className="h-4 w-4" />} onClick={() => onCopy(recipientUrl(transfer.token, publicBaseUrl))}>
                   {t('transfers.copyLink', 'Copy link')}
                 </Button>
                 <a href={transfersService.adminDownloadUrl(transfer.id)}>
@@ -699,8 +703,8 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
                 <>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="rounded bg-neutral-100 px-3 py-1.5 font-mono text-lg tracking-widest dark:bg-neutral-800">{transfer.upload_token}</div>
-                    <Input readOnly value={uploadUrl(transfer.upload_token)} className="flex-1 min-w-[200px]" />
-                    <Button variant="outline" size="sm" leftIcon={<Copy className="h-4 w-4" />} onClick={() => onCopy(uploadUrl(transfer.upload_token as string))}>
+                    <Input readOnly value={uploadUrl(transfer.upload_token, publicBaseUrl)} className="flex-1 min-w-[200px]" />
+                    <Button variant="outline" size="sm" leftIcon={<Copy className="h-4 w-4" />} onClick={() => onCopy(uploadUrl(transfer.upload_token as string, publicBaseUrl))}>
                       {t('transfers.copyLink', 'Copy link')}
                     </Button>
                   </div>

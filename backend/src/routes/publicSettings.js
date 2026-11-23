@@ -165,6 +165,16 @@ router.get('/', async (req, res) => {
       // Cached (10s TTL): this endpoint is unauthenticated and hit by every
       // new client; the login route itself always checks uncached.
       oidc_local_login_disabled: await require('../services/oidcService').isLocalLoginDisabledCached().catch(() => false),
+      // The public address (issue 2630): links an admin copies for guests are
+      // built on it, so an admin panel opened on an internal domain still
+      // hands out the public one. Same resolver as emails; null when nothing
+      // usable is configured (the frontend then uses its own origin). It is
+      // in every share link and email already, so it is no secret.
+      public_site_url: await (async () => {
+        const { getFrontendBaseUrl, isLoopbackBase } = require('../utils/frontendUrl');
+        const base = await getFrontendBaseUrl();
+        return base && !isLoopbackBase(base) ? base : null;
+      })().catch(() => null),
       enable_recaptcha: settingsObject.security_enable_recaptcha === true || settingsObject.security_enable_recaptcha === 'true',
       recaptcha_site_key: settingsObject.security_recaptcha_site_key || null,
       maintenance_mode: settingsObject.general_maintenance_mode === true || settingsObject.general_maintenance_mode === 'true',

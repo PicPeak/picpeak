@@ -367,21 +367,21 @@ export const eventsService = {
   },
 
   // Gallery QR code (#836). Admin API uses Bearer auth, so images are fetched
-  // as blobs — an <img src> would not carry the token. `origin` is passed so
-  // the backend can fall back to the admin browser's origin when the
-  // configured FRONTEND_URL is missing/localhost — the QR must encode the
-  // same URL the share-link card displays.
-  async getQrBlob(eventId: number, format: 'png' | 'svg', size?: number): Promise<Blob> {
+  // as blobs — an <img src> would not carry the token. `origin` is the base
+  // the QR is anchored on: the QR must encode the same URL the share-link
+  // card displays, so callers pass usePublicBaseUrl() (issue 2630); without
+  // it the admin browser's origin is sent, as before.
+  async getQrBlob(eventId: number, format: 'png' | 'svg', size?: number, origin?: string): Promise<Blob> {
     const { data } = await api.get(`/admin/events/${eventId}/qr`, {
-      params: { format, size, origin: window.location.origin },
+      params: { format, size, origin: origin || window.location.origin },
       responseType: 'blob',
     });
     return data;
   },
 
-  async getQrPrintBlob(eventId: number, template: 'table-card' | 'poster', lang: string): Promise<Blob> {
+  async getQrPrintBlob(eventId: number, template: 'table-card' | 'poster', lang: string, origin?: string): Promise<Blob> {
     const { data } = await api.get(`/admin/events/${eventId}/qr-print`, {
-      params: { template, lang, origin: window.location.origin },
+      params: { template, lang, origin: origin || window.location.origin },
       responseType: 'blob',
     });
     return data;
