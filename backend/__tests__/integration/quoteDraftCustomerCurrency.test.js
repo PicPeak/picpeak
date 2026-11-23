@@ -4,11 +4,14 @@
  * quoteService -> SQLite with the full core-migration run (helpers/crmDb).
  * Pins: a draft saves a new customer and currency, with createQuote's
  * customer checks and the new currency's bank account; a new customer
- * re-runs the project's customer check, leaves the old customer's deal and
- * is refused on a booking request's quote; a sent quote refuses both, and a
- * quote whose status changed mid-save is refused.
+ * re-runs the project's customer check, leaves the old customer's deal,
+ * closes the links the old customer was sent, and is refused on a booking
+ * request's quote and on a quote an invoice or contract was made from; a
+ * sent quote refuses both, and a quote whose status changed mid-save is
+ * refused.
  */
 
+const crypto = require('crypto');
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
 jest.setTimeout(120000);
@@ -199,6 +202,57 @@ describe('updateQuote customer and currency', () => {
     // Other edits still save.
     await quoteService.updateQuote(quoteId, { customerAccountId: customerId, eventName: 'Booked' }, adminId);
     expect((await db('quotes').where({ id: quoteId }).first()).event_name).toBe('Booked');
+  });
+
+  it('closes the links the old customer was sent when the customer changes', async () => {
+    const quoteId = await draft();
+    const later = new Date(Date.now() + 30 * 86400000).toISOString();
+    const answeredAt = new Date(Date.now() - 86400000).toISOString();
+    // A quote sent to the old customer, answered once, then edited back to a draft.
+    await db('quote_action_tokens').insert([
+      { quote_id: quoteId, token: 'a'.repeat(64), expires_at: later },
+      { quote_id: quoteId, token: 'b'.repeat(64), expires_at: later, used_at: answeredAt, used_action: 'declined' },
+    ]);
+
+    // A save that keeps the customer leaves them alone.
+    await quoteService.updateQuote(quoteId, { customerAccountId: customerId, eventName: 'Same' }, adminId);
+    let rows = await db('quote_action_tokens').where({ quote_id: quoteId }).orderBy('token');
+    expect(rows.every((r) => new Date(r.expires_at).getTime() > Date.now())).toBe(true);
+
+    await quoteService.updateQuote(quoteId, { customerAccountId: otherCustomerId }, adminId);
+    rows = await db('quote_action_tokens').where({ quote_id: quoteId }).orderBy('token');
+    expect(rows.every((r) => new Date(r.expires_at).getTime() <= Date.now())).toBe(true);
+    expect(rows[0].used_action).toBe('revoked');
+    expect(rows[0].used_at).toBeTruthy();
+    // The earlier answer stays on record.
+    expect(rows[1].used_action).toBe('declined');
+    expect(new Date(rows[1].used_at).toISOString()).toBe(answeredAt);
+  });
+
+  it.each([
+    ['an invoice', 'invoices', (quoteId) => ({
+      invoice_number: `QDRAFT-INV-${quoteId}`, customer_account_id: customerId, issue_date: '2026-06-01',
+      due_date: '2026-06-30', status: 'draft', currency: 'CHF', net_amount_minor: 10000, vat_amount_minor: 0,
+      total_amount_minor: 10000, created_by_admin_id: adminId, deal_uuid: crypto.randomUUID(), source_quote_id: quoteId,
+    })],
+    ['a contract', 'contracts', (quoteId) => ({
+      contract_number: `QDRAFT-CON-${quoteId}`, customer_account_id: customerId, issue_date: '2026-06-01',
+      created_by_admin_id: adminId, deal_uuid: crypto.randomUUID(), source_quote_id: quoteId,
+    })],
+  ])('refuses a new customer on a quote %s was made from', async (_label, table, row) => {
+    const quoteId = await draft();
+    const before = await db('quotes').where({ id: quoteId }).first();
+    await db(table).insert(row(quoteId));
+
+    await expect(quoteService.updateQuote(quoteId, { customerAccountId: otherCustomerId }, adminId))
+      .rejects.toMatchObject({ statusCode: 409, code: 'QUOTE_HAS_DOCUMENTS' });
+    const after = await db('quotes').where({ id: quoteId }).first();
+    expect(Number(after.customer_account_id)).toBe(customerId);
+    expect(after.deal_uuid).toBe(before.deal_uuid);
+
+    // Other edits still save.
+    await quoteService.updateQuote(quoteId, { customerAccountId: customerId, eventName: 'Kept' }, adminId);
+    expect((await db('quotes').where({ id: quoteId }).first()).event_name).toBe('Kept');
   });
 
   it('refuses the save when the quote left its status after it was read', async () => {

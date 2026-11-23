@@ -854,6 +854,23 @@ async function updateQuote(id, payload, adminId) {
           409, 'QUOTE_BOOKING_LINKED',
         );
       }
+      // An invoice or contract made from the quote stays with the customer
+      // and deal it was made for, so the quote does too.
+      const madeFrom = await trx('invoices').where({ source_quote_id: id }).first('id')
+        || await trx('contracts').where({ source_quote_id: id }).first('id');
+      if (madeFrom) {
+        throw new AppError(
+          'An invoice or contract was made from this quote, so it stays with its customer. Create a new quote for the other customer.',
+          409, 'QUOTE_HAS_DOCUMENTS',
+        );
+      }
+      // Links sent to the old customer close: the quote now carries another
+      // customer's data. Expiring them is what closes the page, since a
+      // used link still opens it (the customer may change their answer).
+      const revokedAt = stamp(new Date());
+      await trx('quote_action_tokens').where({ quote_id: id }).update({ expires_at: revokedAt });
+      await trx('quote_action_tokens').where({ quote_id: id }).whereNull('used_at')
+        .update({ used_at: revokedAt, used_action: 'revoked' });
       updates.customer_account_id = customerId;
       // A deal is one customer's: the quote leaves the old customer's deal
       // (and the quote it reissued) and starts a deal of its own, as on create.
