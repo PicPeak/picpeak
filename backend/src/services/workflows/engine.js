@@ -75,11 +75,6 @@ async function workflowsEnabled() {
   }
 }
 
-function gateTimeout(config = {}) {
-  const days = Number((config || {}).timeoutDays || 0);
-  return days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
-}
-
 function matchFilter(filter, payload) {
   if (!filter || typeof filter !== 'object') return true;
   const { field, op = 'eq', value } = filter;
@@ -214,7 +209,7 @@ async function advanceRun(runId) {
           break;
         }
         const paused = await notCancelled(runId)
-          .update({ status: 'waiting', wake_at: gateTimeout(node.config), current_node: currentKey, context: JSON.stringify(context) });
+          .update({ status: 'waiting', wake_at: null, current_node: currentKey, context: JSON.stringify(context) });
         if (!paused) return; // cancelled meanwhile
         await recordStep(runId, node, 'waiting', { gate: true });
         // Optional setup hook (create approval + send admin email) — registered
