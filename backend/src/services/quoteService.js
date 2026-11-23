@@ -17,7 +17,8 @@
  *   sent      emailed to customer; public token live
  *   accepted  customer accepted; ready to convert to event
  *   declined  customer declined; admin can resend after edits
- *   expired   valid_until passed without a response (set by the scheduler)
+ *   expired   valid_until passed without a response (no code writes it;
+ *             kept for rows that carry it)
  *   converted accepted + event created from it
  *
  * Per-customer feature override: when `customer_accounts.feature_quotes`
@@ -51,7 +52,6 @@ const { buildIssuerBlock, buildRecipientBlock } = require('./_renderContext');
 const pdfService = require('./pdfService');
 const emailProcessor = require('./emailProcessor');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { getVatRegisteredSetting } = require('../utils/vatRegistration');
 const {
   normalizeLineItems, countedLineItems, resolveDiscountLines, extendedLineColumns, parsePromotionSnapshot, resolvedParentTotal,
@@ -119,7 +119,7 @@ const { toMillis } = require('../utils/queueTimestamps');
  * supplied line items + VAT rate. Returns BigInt-safe integers (minor
  * units). Discount is applied before VAT.
  *
- * Hierarchy rules (migration 119):
+ * Hierarchy rules:
  *   - Items with `parent_position` are SUB-ITEMS of the referenced
  *     top-level item.
  *   - Each sub-item's `line_total_minor` is computed (qty × unit ×
@@ -316,7 +316,7 @@ async function insertLineItemsHierarchical(trx, tableName, ownerColumn, ownerId,
 }
 
 // Atomic gap-free quote number generator. See utils/documentSequences.js
-// for the locking story; migration 132 created the underlying table.
+// for the locking story.
 // The previous SELECT-MAX-then-INSERT path raced under concurrent
 // admin creates and could emit `Q-2026-AB12C3` after 5 retries.
 async function nextQuoteNumber(trx) {
@@ -450,7 +450,7 @@ async function getQuoteById(id) {
     // block and the editor shows "undefined undefined" in its summary.
     const quote = await db('quotes')
       .leftJoin('customer_accounts', 'quotes.customer_account_id', 'customer_accounts.id')
-      // Migration 130 lineage: the human contract_number of the
+      // Lineage: the human contract_number of the
       // contract this quote was converted into, so the detail view
       // shows "Linked contract LBM-C-2026-0010" instead of just "#10".
       // LEFT join — most quotes never get converted to a contract.
@@ -543,14 +543,9 @@ async function createQuote(payload, adminId) {
   // Resolve bank account for the chosen currency.
   const bank = await businessProfileService.resolveBankAccountForCurrency(currency, payload.businessBankAccountId);
 
-  // Resolve schema-drift column checks BEFORE the transaction — a cold
-  // hasColumnCached lookup hits the global db, which deadlocks the single-
-  // connection SQLite pool if issued inside the trx (prepare_quote runs this
-  // unattended from a workflow).
-  const hasProjectId = await hasColumnCached('quotes', 'project_id');
-  const hasVatCode = await hasColumnCached('quotes', 'vat_code');
-  const hasEventType = await hasColumnCached('quotes', 'event_type');
-  const hasBookingWorkflowId = await hasColumnCached('quotes', 'booking_workflow_id');
+  // linkDealToProject's column checks read through the global db, which on
+  // SQLite waits for the connection the transaction below holds.
+  if (payload.projectId) await require('./projectService').resolveDealLinkSchema();
 
   return await db.transaction(async (trx) => {
     // SQLite's 1-connection default deadlocks when claimNextSequence
@@ -578,12 +573,12 @@ async function createQuote(payload, adminId) {
       source_template_id: payload.sourceTemplateId || null,
       source_template_version: payload.sourceTemplateVersion || null,
       payment_term_template_id: payload.paymentTermTemplateId || null,
-      // Migration 124 — split payment-term picker. Editor stops writing
+      // Split payment-term picker. Editor stops writing
       // to the legacy single FK once both new ones are present; the
       // legacy column stays nullable for backward compatibility.
       payment_net_days_template_id: payload.paymentNetDaysTemplateId || null,
       payment_timing_template_id: payload.paymentTimingTemplateId || null,
-      // Migration 142 — ad-hoc installments override (commit #6). When
+      // Ad-hoc installments override (commit #6). When
       // the editor's InstallmentsPanel is set the array lands here;
       // composeSnapshotFromSplitFks then substitutes it for the
       // template's installments field at every snapshot-read site
@@ -601,7 +596,7 @@ async function createQuote(payload, adminId) {
       internal_notes: payload.internalNotes || null,
       cc_pdf_email: payload.ccPdfEmail || null,
       business_bank_account_id: bank?.id || null,
-      // Migration 140 — cross-document lineage UUID. A freshly-created
+      // Cross-document lineage UUID. A freshly-created
       // quote is the root of its deal chain; mint a new one here and let
       // convertQuoteToContract / convertQuoteToInvoices propagate it down.
       // A reissued quote (#1451) stays in the deal of the quote it replaces.
@@ -612,21 +607,21 @@ async function createQuote(payload, adminId) {
       updated_at: new Date(),
     };
     // Migration 121 — optional link to a Project Overview project.
-    if (payload.projectId !== undefined && hasProjectId) {
+    if (payload.projectId !== undefined) {
       row.project_id = payload.projectId || null;
     }
     // Migration 130 — snapshot the chosen output VAT code (immutable; the export
     // emits exactly this rather than re-deriving from the mutable rate→code map).
-    if (payload.vatCode !== undefined && hasVatCode) {
+    if (payload.vatCode !== undefined) {
       row.vat_code = payload.vatCode ? String(payload.vatCode).slice(0, 16) : null;
     }
     // Migration 146 — event type (event_types.slug_prefix). Drives the type of
     // the event the quote converts into, instead of the old hardcoded 'wedding'.
-    if (payload.eventType !== undefined && hasEventType) {
+    if (payload.eventType !== undefined) {
       row.event_type = payload.eventType ? String(payload.eventType).slice(0, 64) : null;
     }
     // Migration 147 — the booking workflow this quote runs on acceptance.
-    if (payload.bookingWorkflowId !== undefined && hasBookingWorkflowId) {
+    if (payload.bookingWorkflowId !== undefined) {
       row.booking_workflow_id = payload.bookingWorkflowId || null;
     }
     const history = { actor: adminId, source: 'quote.create' };
@@ -695,11 +690,34 @@ async function updateQuote(id, payload, adminId) {
     );
   }
 
+  // The editor's customer picker and currency select stay live on a saved
+  // quote, so both are taken here, on a draft only: a sent or expired quote
+  // went out to its customer in its currency. A new customer gets the
+  // checks createQuote runs.
+  const sent = (field) => Object.prototype.hasOwnProperty.call(payload, field);
+  const customerId = sent('customerAccountId') && payload.customerAccountId
+    ? ensureInt(payload.customerAccountId) : ensureInt(existing.customer_account_id);
+  const customerChanged = customerId !== ensureInt(existing.customer_account_id);
+  // The editor echoes the stored currency, in whatever case it was stored.
+  // A legacy quote without one takes a currency while it is a draft; after
+  // that its save must not count as a currency change.
+  const storedCurrency = existing.currency ? String(existing.currency).toUpperCase() : null;
+  const requestedCurrency = sent('currency') && payload.currency ? String(payload.currency).toUpperCase() : null;
+  const currencyChanged = requestedCurrency != null && requestedCurrency !== storedCurrency
+    && (storedCurrency != null || existing.status === 'draft');
+  const currency = currencyChanged ? requestedCurrency : existing.currency;
+  if ((customerChanged || currencyChanged) && existing.status !== 'draft') {
+    throw new AppError('The customer and currency can only change while the quote is a draft.', 409, 'QUOTE_NOT_DRAFT');
+  }
+  if (customerChanged) {
+    ensureCustomerFeatureEnabled(await db('customer_accounts').where({ id: customerId }).first(), 'quotes');
+  }
+
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
   const preparedLineItems = await prepareQuoteLineItems(payload.lineItems, {
     quoteId: id,
-    customerId: existing.customer_account_id,
-    currency: existing.currency,
+    customerId,
+    currency,
     hours: Object.prototype.hasOwnProperty.call(payload, 'hours') ? payload.hours : existing.hours,
     days: Object.prototype.hasOwnProperty.call(payload, 'days') ? payload.days : existing.days,
   });
@@ -720,17 +738,28 @@ async function updateQuote(id, payload, adminId) {
     );
   }
 
-  // Resolve schema-drift column checks BEFORE the transaction, as createQuote
-  // does: a cold hasColumnCached lookup goes through the global db, and inside
-  // the trx it waits on the single-connection SQLite pool for the connection
-  // the trx holds. The quote editor sends projectId, so the save stalled for
-  // the 60s acquire timeout and failed.
-  const has = (field, column) => Object.prototype.hasOwnProperty.call(payload, field)
-    && hasColumnCached('quotes', column);
-  const hasProjectId = await has('projectId', 'project_id');
-  const hasVatCode = await has('vatCode', 'vat_code');
-  const hasEventType = await has('eventType', 'event_type');
-  const hasBookingWorkflowId = await has('bookingWorkflowId', 'booking_workflow_id');
+  const has = (field) => Object.prototype.hasOwnProperty.call(payload, field);
+  const hasProjectId = has('projectId');
+  const hasVatCode = has('vatCode');
+  const hasEventType = has('eventType');
+  const hasBookingWorkflowId = has('bookingWorkflowId');
+
+  // A new currency takes its own bank account, as on create. The editor
+  // echoes the stored account back, which must not pin the old currency's.
+  const bankId = sent('businessBankAccountId') && payload.businessBankAccountId
+    && ensureInt(payload.businessBankAccountId) !== ensureInt(existing.business_bank_account_id)
+    ? payload.businessBankAccountId : null;
+  const bank = currencyChanged
+    ? await businessProfileService.resolveBankAccountForCurrency(currency, bankId)
+    : null;
+
+  // A new customer on a quote that keeps its project re-runs that project's
+  // customer check, also when the request leaves projectId out.
+  const linkProjectId = hasProjectId
+    ? (payload.projectId || null)
+    : (customerChanged ? existing.project_id || null : null);
+  // linkDealToProject's column checks read through the global db too.
+  if (linkProjectId) await require('./projectService').resolveDealLinkSchema();
 
   return await db.transaction(async (trx) => {
     const updates = {
@@ -758,7 +787,7 @@ async function updateQuote(id, payload, adminId) {
       eventTimeEnd: 'event_time_end',
       expectedDurationHours: 'expected_duration_hours',
       paymentTermTemplateId: 'payment_term_template_id',
-      // Migration 124 — split picker. Both legacy + new FKs accepted
+      // Split picker. Both legacy + new FKs accepted
       // on the update path so the editor can transition without breaking.
       paymentNetDaysTemplateId: 'payment_net_days_template_id',
       paymentTimingTemplateId: 'payment_timing_template_id',
@@ -778,7 +807,7 @@ async function updateQuote(id, payload, adminId) {
         updates[col] = payload[api];
       }
     }
-    // Migration 142 — ad-hoc installments override (commit #6). Treated
+    // Ad-hoc installments override (commit #6). Treated
     // separately because it needs JSON encoding + "empty array means
     // clear the override" semantics.
     if (Object.prototype.hasOwnProperty.call(payload, 'installments')) {
@@ -803,14 +832,56 @@ async function updateQuote(id, payload, adminId) {
     if (hasBookingWorkflowId) {
       updates.booking_workflow_id = payload.bookingWorkflowId || null;
     }
+    if (customerChanged) {
+      // A booking request's quote belongs to the booking's customer: its
+      // deposits and gallery lock follow the quote's deal.
+      if (await trx('booking_requests').where({ quote_id: id }).first('id')) {
+        throw new AppError(
+          'This quote came from a booking request, so it stays with the booking\'s customer. Create a new quote for the other customer.',
+          409, 'QUOTE_BOOKING_LINKED',
+        );
+      }
+      // An invoice or contract made from the quote stays with the customer
+      // and deal it was made for, so the quote does too.
+      const madeFrom = await trx('invoices').where({ source_quote_id: id }).first('id')
+        || await trx('contracts').where({ source_quote_id: id }).first('id');
+      if (madeFrom) {
+        throw new AppError(
+          'An invoice or contract was made from this quote, so it stays with its customer. Create a new quote for the other customer.',
+          409, 'QUOTE_HAS_DOCUMENTS',
+        );
+      }
+      // Links sent to the old customer close: the quote now carries another
+      // customer's data. Expiring them is what closes the page, since a
+      // used link still opens it (the customer may change their answer).
+      const revokedAt = stamp(new Date());
+      await trx('quote_action_tokens').where({ quote_id: id }).update({ expires_at: revokedAt });
+      await trx('quote_action_tokens').where({ quote_id: id }).whereNull('used_at')
+        .update({ used_at: revokedAt, used_action: 'revoked' });
+      updates.customer_account_id = customerId;
+      // A deal is one customer's: the quote leaves the old customer's deal
+      // (and the quote it reissued) and starts a deal of its own, as on create.
+      updates.deal_uuid = crypto.randomUUID();
+      updates.replaces_quote_id = null;
+    }
+    if (currencyChanged) {
+      updates.currency = currency;
+      updates.business_bank_account_id = bank?.id || null;
+    }
     const history = { actor: adminId, source: 'quote.update' };
-    await auditedUpdate(trx, 'quotes', { id }, updates, history);
+    // Conditional on the status read above: the draft-only and lock checks
+    // ran before the transaction, so a quote sent or accepted meanwhile is
+    // refused instead of being changed (and reverted to draft) here.
+    const saved = await auditedUpdate(trx, 'quotes', { id, status: existing.status }, updates, history);
+    if (!saved) {
+      throw new AppError('This quote changed status while it was being saved. Reload it and try again.', 409, 'QUOTE_NOT_DRAFT');
+    }
 
     // When linked to a project, cascade across the deal lineage so the linked
     // contract / event / invoices roll up into the same project automatically.
-    if (updates.project_id) {
+    if (linkProjectId) {
       const dealRow = await trx('quotes').where({ id }).select('deal_uuid').first();
-      await require('./projectService').linkDealToProject(dealRow && dealRow.deal_uuid, updates.project_id, trx, { id: adminId });
+      await require('./projectService').linkDealToProject(dealRow && dealRow.deal_uuid, linkProjectId, trx, { id: adminId });
     }
 
     // Delete + reinsert keeps the editor flow simple: the frontend
@@ -976,7 +1047,7 @@ async function buildRenderContext(quote, lineItems, { paymentTerm: givenPaymentT
       lineKind: li.line_kind || 'item',
       unit: li.unit || null,
       promotion: parsePromotionSnapshot(li.promotion_snapshot),
-      // Migration 119 hierarchy + details — surfaced to the PDF
+      // Hierarchy + details — surfaced to the PDF
       // renderer so drawLineItems can indent sub-items + render
       // details_text below.
       parentLineItemId: li.parent_line_item_id || null,
@@ -1124,13 +1195,9 @@ async function sendQuote(id, adminId) {
 
   const customer = await db('customer_accounts').where({ id: quote.customer_account_id }).first();
   ensureCustomerFeatureEnabled(customer, 'quotes');
-  // Read before the transaction opens — a schema lookup inside it waits on
-  // the one SQLite connection the transaction holds.
-  const hasNotifiedColumn = await hasColumnCached('quotes', 'acceptance_notified_at');
-  const hasEmittedColumn = await hasColumnCached('quotes', 'workflow_response_emitted_at');
 
   // Snapshot payment term so future template edits don't mutate the doc.
-  // Migration 124 — prefer the two new split FKs; fall back to the legacy
+  // Prefer the two new split FKs; fall back to the legacy
   // single FK when the quote was authored before the split was deployed.
   // Output shape is unchanged: { description, net_days, skonto_percent,
   // skonto_within_days, installments } — that's what pdfService and the
@@ -1140,7 +1207,7 @@ async function sendQuote(id, adminId) {
   // Render PDF + persist snapshot.
   const ctx = await buildRenderContext(quote, lineItems, { paymentTerm: paymentTermSnapshot });
   const buffer = await pdfService.renderQuoteToBuffer(ctx);
-  const pdfPath = await persistDocPdf('quote', quote, buffer, '', { kind: 'sent', theme: ctx.theme, issuer: ctx.issuer });
+  const pdfPath = await persistDocPdf(quote, buffer, '', { kind: 'sent', theme: ctx.theme, issuer: ctx.issuer });
 
   // Mint a single shared token; accept and decline are differentiated
   // by the request body. This makes the email link survive a customer
@@ -1185,8 +1252,8 @@ async function sendQuote(id, adminId) {
       declined_at: null,
       tos_accepted_at: null,
       tos_text_snapshot: null,
-      ...(hasNotifiedColumn ? { acceptance_notified_at: null } : {}),
-      ...(hasEmittedColumn ? { workflow_response_emitted_at: null } : {}),
+      acceptance_notified_at: null,
+      workflow_response_emitted_at: null,
       updated_at: new Date(),
     }, { actor: adminId, source: 'quote.send' });
   });
@@ -1251,14 +1318,14 @@ function formatMajor(minor, currency, locale, issuerCountryCode) {
  * version (e.g. '-accepted') next to the sent file; `meta` carries the kind
  * and the theme / issuer it was rendered with.
  */
-async function persistDocPdf(type, doc, buffer, suffix = '', meta = {}) {
-  const number = doc.quote_number || doc.invoice_number;
+async function persistDocPdf(doc, buffer, suffix = '', meta = {}) {
+  const number = doc.quote_number;
   if (!number) return null;
   const year = (doc.issue_date ? new Date(doc.issue_date) : new Date()).getFullYear();
   const stored = await documentArtifactService.persist({
-    docType: type,
+    docType: 'quote',
     docId: doc.id,
-    kind: meta.kind || (suffix ? 'accepted' : 'sent'),
+    kind: meta.kind,
     buffer,
     fileName: `${number}${suffix}.pdf`,
     year,
@@ -1521,7 +1588,7 @@ async function storeAcceptedQuotePdf(quoteId) {
     const data = await getQuoteById(quoteId);
     const ctx = await buildRenderContext(data.quote, data.lineItems);
     const buffer = await pdfService.renderQuoteToBuffer(ctx);
-    const pdfPath = await persistDocPdf('quote', data.quote, buffer, await acceptedSuffix(quoteId),
+    const pdfPath = await persistDocPdf(data.quote, buffer, await acceptedSuffix(quoteId),
       { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer });
     await auditedUpdate(db, 'quotes', { id: quoteId }, { pdf_path: toStoredPath(pdfPath) },
       { source: 'quote.accepted.pdf' });
@@ -1545,12 +1612,10 @@ async function notifyBusinessOfAcceptance(quoteId, { onlyOnce = false } = {}) {
   try {
     // Claimed before the mail is built, so two acceptances arriving together
     // send one notice.
-    if (await hasColumnCached('quotes', 'acceptance_notified_at')) {
-      const claim = db('quotes').where({ id: quoteId });
-      if (onlyOnce) claim.whereNull('acceptance_notified_at');
-      const claimed = await claim.update({ acceptance_notified_at: new Date().toISOString() });
-      if (!claimed) return;
-    }
+    const claim = db('quotes').where({ id: quoteId });
+    if (onlyOnce) claim.whereNull('acceptance_notified_at');
+    const claimed = await claim.update({ acceptance_notified_at: new Date().toISOString() });
+    if (!claimed) return;
     const { profile } = await businessProfileService.getProfile();
     if (!profile || !profile.email) return;
     const quote = await db('quotes').where({ id: quoteId }).first();
@@ -1638,14 +1703,6 @@ async function resolveCustomerSelection(quote, { selectedOptional, expectedTotal
 }
 
 /**
- * Record a customer response from the public accept/decline link.
- *
- * 15-min toggle rule: the first response opens a window equal to
- * crm_quotes_accept_window_minutes (default 15). Within that window
- * the same token may flip accept↔decline. After the window expires the
- * response is locked.
- */
-/**
  * Fire a quote lifecycle event for the workflow engine. Best-effort: resolves
  * the customer email (so send_email actions have a recipient) and never throws
  * into the caller. No-op when the workflows flag is off (emit fails closed).
@@ -1700,14 +1757,11 @@ async function maybeEmitQuoteResponse(quote, status, responseLockedAt, history =
   const lockedAtMs = toMillis(responseLockedAt);
   const locked = !responseLockedAt || lockedAtMs == null || lockedAtMs <= Date.now();
   if (!locked) return false; // deferred to the finalize sweep
-  const hasCol = await hasColumnCached('quotes', 'workflow_response_emitted_at');
-  if (hasCol) {
-    // Atomically claim the emit so a concurrent finalize sweep can't double-fire.
-    const claimed = await auditedUpdate(db, 'quotes',
-      (q) => q.where({ id: quote.id }).whereNull('workflow_response_emitted_at'),
-      { workflow_response_emitted_at: stamp(new Date()) }, history);
-    if (!claimed) return false; // already emitted elsewhere
-  }
+  // Atomically claim the emit so a concurrent finalize sweep can't double-fire.
+  const claimed = await auditedUpdate(db, 'quotes',
+    (q) => q.where({ id: quote.id }).whereNull('workflow_response_emitted_at'),
+    { workflow_response_emitted_at: stamp(new Date()) }, history);
+  if (!claimed) return false; // already emitted elsewhere
   await emitQuoteEvent(quote, status);
   return true;
 }
@@ -1719,8 +1773,6 @@ async function maybeEmitQuoteResponse(quote, status, responseLockedAt, history =
  * tick. Returns the number emitted.
  */
 async function finalizeQuoteResponses(limit = 200) {
-  const hasCol = await hasColumnCached('quotes', 'workflow_response_emitted_at');
-  if (!hasCol) return 0; // pre-migration install — nothing to finalise
   // The unemitted accept/decline set is naturally small (a row leaves it the
   // moment it's emitted), so fetch the candidates and compare the lock time in
   // JS — avoids SQLite/Postgres date-string comparison pitfalls.
@@ -1754,6 +1806,13 @@ async function finalizeQuoteResponses(limit = 200) {
 const QUOTE_LINK_ACTOR = { type: 'public', id: null, name: 'quote-link' };
 
 /**
+ * Record a customer response from the public accept/decline link.
+ *
+ * 15-min toggle rule: the first response opens a window equal to
+ * crm_quotes_accept_window_minutes (default 15). Within that window
+ * the same token may flip accept↔decline. After the window expires the
+ * response is locked.
+ *
  * `actor` names the responder in the accounting change history: the customer
  * portal passes the signed-in customer; the public link leaves the default.
  */
@@ -1812,7 +1871,6 @@ async function recordResponse({
     throw new AppError('Terms of Service must be accepted before the quote can be accepted.',
       400, 'TOS_REQUIRED');
   }
-  const effectiveAction = action;
 
   const now = new Date();
   const windowMinutes = ensureInt(await getAppSetting('crm_quotes_accept_window_minutes')) || 15;
@@ -1831,7 +1889,7 @@ async function recordResponse({
     }
   }
 
-  const isAccept = effectiveAction === 'accept';
+  const isAccept = action === 'accept';
   const newStatus = isAccept ? 'accepted' : 'declined';
   const respondedAt = quote.responded_at || now;
   const responseLockedAt = new Date(new Date(respondedAt).getTime() + windowMinutes * 60 * 1000);
@@ -1970,7 +2028,7 @@ async function adminAcceptQuote(id, adminId) {
       // Persist PDF snapshot under the same convention sendQuote uses
       // — keeps every issued PDF on disk for the audit trail.
       // Kept next to the sent file rather than over it (#1451).
-      const pdfPath = await persistDocPdf('quote', fresh, buffer, '-accepted',
+      const pdfPath = await persistDocPdf(fresh, buffer, '-accepted',
         { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer });
       // Record it like sendQuote does: the accepted quote opens as this
       // file from now on instead of re-rendering (#1451).
@@ -2112,7 +2170,6 @@ async function adminDeclineQuote(id, adminId, reason = null) {
 
   const now = new Date();
   const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 5000) : null;
-  const hasReasonColumn = await hasColumnCached('quotes', 'decline_reason');
   const history = { actor: adminId, source: 'quote.decline.admin' };
 
   await db.transaction(async (trx) => {
@@ -2128,7 +2185,7 @@ async function adminDeclineQuote(id, adminId, reason = null) {
     };
     // A declined acceptance stays on record; anything else never had one.
     if (quote.status !== 'accepted') updates.accepted_at = null;
-    if (hasReasonColumn) updates.decline_reason = cleanReason;
+    updates.decline_reason = cleanReason;
     // Conditional on the status this call read, like the reissue: two
     // requests that both passed the checks above must not both write.
     const declined = await auditedUpdate(trx, 'quotes', { id, status: quote.status }, updates, history);
@@ -2181,13 +2238,12 @@ async function reissueQuote(id, adminId, reason = null) {
 
   const now = new Date();
   const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 5000) : null;
-  const hasReasonColumn = await hasColumnCached('quotes', 'decline_reason');
 
   await db.transaction(async (trx) => {
     const updates = {
       status: 'declined', response_locked_at: stamp(now), declined_at: stamp(now), updated_at: now,
+      decline_reason: cleanReason,
     };
-    if (hasReasonColumn) updates.decline_reason = cleanReason;
     // Only the request that takes the quote out of `accepted` reissues it.
     // The status check above runs outside the transaction, so two clicks
     // both passed it and each made a replacement draft; the unique index on
@@ -2212,15 +2268,6 @@ async function reissueQuote(id, adminId, reason = null) {
   return { quoteId: newId };
 }
 
-/**
- * Convert an accepted quote to an event + scheduled invoices.
- * Wraps everything in a transaction so a half-finished conversion
- * doesn't litter the DB.
- *
- * Implementation note: invoice creation delegates to invoiceService —
- * required by Commit 7. We `require` lazily to dodge the circular
- * dependency between quoteService and invoiceService.
- */
 /**
  * Convert an accepted quote directly into an invoice — no event, no
  * gallery, just the financial document. Used for engagements that
@@ -2295,7 +2342,7 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       ? paymentTermSnapshot.installments
       : [{ percent: 100, trigger: 'after_delivery', offset_days: 0, label: 'Total' }];
 
-    const spawnResult = await invoiceService.scheduleInvoicesForEvent({
+    const spawnResult = await invoiceService.spawnInstallmentInvoices({
       trx,
       // eventId omitted → invoices have source_quote_id but no event_id.
       eventId: null,
@@ -2316,11 +2363,11 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       eventDate: quote.event_date,
       // Inline event snapshot — copied so the converted invoice
       // keeps the quote's event label / times for accounting + UI
-      // even when there's no `events` row to fall back to (migration 123).
+      // even when there's no `events` row to fall back to.
       eventName: quote.event_name,
       eventTimeStart: quote.event_time_start,
       eventTimeEnd: quote.event_time_end,
-      // Migration 124 — pass the split payment-term FKs + the
+      // Pass the split payment-term FKs + the
       // composed snapshot through so the converted invoice carries
       // them on both the FK and snapshot paths.
       paymentNetDaysTemplateId: quote.payment_net_days_template_id,
@@ -2332,7 +2379,7 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       // selected payment-term template so each scheduled invoice's
       // due_date reflects what the customer agreed to on the quote.
       netDays: paymentTermSnapshot?.net_days,
-      // Migration 140 — every spawned invoice inherits the source
+      // Every spawned invoice inherits the source
       // quote's deal_uuid so quote + N invoices group under one deal.
       dealUuid: quote.deal_uuid,
       // Workflow draft-seam: when called by the booking flow's prepare_invoice
@@ -2382,6 +2429,15 @@ async function existingConversion(eventId) {
   return { eventId, alreadyConverted: true, invoiceIds: existingInvoices.map((r) => r.id) };
 }
 
+/**
+ * Convert an accepted quote to an event + scheduled invoices.
+ * Wraps everything in a transaction so a half-finished conversion
+ * doesn't litter the DB.
+ *
+ * Implementation note: invoice creation delegates to invoiceService —
+ * required by Commit 7. We `require` lazily to dodge the circular
+ * dependency between quoteService and invoiceService.
+ */
 async function convertToEvent(quoteId, adminId, options = {}) {
   const { quote, lineItems } = (await getQuoteById(quoteId)) || {};
   if (!quote) throw new AppError('Quote not found', 404);
@@ -2435,10 +2491,6 @@ async function convertToEvent(quoteId, adminId, options = {}) {
   // quote's), when the converter owns it. Resolved before the transaction.
   const carriedProject = await require('./projectService')
     .carriedProjectId(options.projectId || quote.project_id, adminId, { target: 'events' });
-
-  // Booking requests (#2440): resolved before the transaction (a cold column
-  // lookup inside it would wait on SQLite's single connection).
-  const canLockForPayment = await hasColumnCached('events', 'payment_lock');
 
   const result = await db.transaction(async (trx) => {
     // Claim the quote before creating anything. Two concurrent conversions
@@ -2527,7 +2579,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
 
     // A gallery from a booking request waits for full payment when its
     // service says so (#2440). In the same transaction: it never exists open.
-    if (canLockForPayment) await require('./bookingDeposits').applyGalleryLock(trx, quote.id, eventId);
+    await require('./bookingDeposits').applyGalleryLock(trx, quote.id, eventId);
 
     // Junction row so the customer can already see the event in their
     // dashboard once the admin activates it.
@@ -2557,7 +2609,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
     // money documents separately.
     const spawnResult = options.skipInvoices === true
       ? { invoiceIds: [] }
-      : await invoiceService.scheduleInvoicesForEvent({
+      : await invoiceService.spawnInstallmentInvoices({
         trx,
         eventId,
         quoteId: quote.id,
@@ -2576,7 +2628,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
         installments,
         eventDate: quote.event_date,
         // Inline event snapshot — same rationale as convertToInvoiceOnly
-        // above (migration 123).
+        // above.
         eventName: quote.event_name,
         eventTimeStart: quote.event_time_start,
         eventTimeEnd: quote.event_time_end,
@@ -2585,7 +2637,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
         // Net 14 / 30 / 60 / 90 carry through from the quote's
         // payment-term template (same as convertToInvoiceOnly).
         netDays: paymentTermSnapshot?.net_days,
-        // Migration 140 — propagate the quote's deal_uuid down through
+        // Propagate the quote's deal_uuid down through
         // every spawned invoice (same as convertToInvoiceOnly above).
         dealUuid: quote.deal_uuid,
         // Workflow draft-seam: the booking flow's prepare_event creates the
@@ -2626,6 +2678,25 @@ async function convertToEvent(quoteId, adminId, options = {}) {
 }
 
 /**
+ * A stored quote line back into the createQuote / updateQuote line shape:
+ * sub-items, notes and the migration-215 fields included. `overrides` are
+ * applied last, after the stored columns.
+ */
+function storedLineToPayload(li, overrides = {}) {
+  return {
+    position: li.position,
+    quantity: li.quantity,
+    description: li.description,
+    unit_price_minor: li.unit_price_minor,
+    discount_percent: li.discount_percent,
+    parent_position: li.parent_position == null ? null : li.parent_position,
+    details_text: li.details_text || null,
+    ...extendedLineColumns(li),
+    ...overrides,
+  };
+}
+
+/**
  * Re-apply the current customer / business hour and day rates to the lines
  * whose price came from a rate (#1451). Drafts only: a sent quote keeps the
  * prices the customer saw. Lines with a pinned catalogue rate or a typed
@@ -2637,23 +2708,10 @@ async function recalculateRates(id, adminId) {
   if (data.quote.status !== 'draft') {
     throw new AppError('Only draft quotes can pick up new rates', 409, 'QUOTE_NOT_DRAFT');
   }
-  const lineItems = data.lineItems.map((li) => ({
-    position: li.position,
-    quantity: li.quantity,
-    description: li.description,
-    unit_price_minor: li.unit_price_minor,
-    discount_percent: li.discount_percent,
-    parent_position: li.parent_position == null ? null : li.parent_position,
-    details_text: li.details_text || null,
-    line_kind: li.line_kind,
-    unit: li.unit,
-    is_optional: li.is_optional,
-    selected: li.selected,
-    price_mode: li.price_mode,
+  // The override goes after the stored columns: extendedLineColumns copies
+  // rate_source too, and before it the old source won and nothing changed.
+  const lineItems = data.lineItems.map((li) => storedLineToPayload(li, {
     rate_source: li.rate_source === 'customer' || li.rate_source === 'default' ? 'auto' : li.rate_source,
-    bound_to: li.bound_to,
-    promotion_snapshot: li.promotion_snapshot,
-    ...extendedLineColumns(li),
   }));
   await updateQuote(id, { lineItems }, adminId);
 }
@@ -2686,24 +2744,7 @@ async function duplicateQuote(id, adminId, { replacesQuoteId = null, dealUuid = 
     // Full line shape: sub-items, notes and the migration-215 fields used to
     // be dropped here (and this is what the prepare_quote workflow action
     // copies). Stored rates stay as they are — nothing is re-resolved.
-    lineItems: lineItems.map((li) => ({
-      position: li.position,
-      quantity: li.quantity,
-      description: li.description,
-      unit_price_minor: li.unit_price_minor,
-      discount_percent: li.discount_percent,
-      parent_position: li.parent_position == null ? null : li.parent_position,
-      details_text: li.details_text || null,
-      line_kind: li.line_kind,
-      unit: li.unit,
-      is_optional: li.is_optional,
-      selected: li.selected,
-      price_mode: li.price_mode,
-      rate_source: li.rate_source,
-      bound_to: li.bound_to,
-      promotion_snapshot: li.promotion_snapshot,
-      ...extendedLineColumns(li),
-    })),
+    lineItems: lineItems.map((li) => storedLineToPayload(li)),
     // Set only by reissueQuote: the reissued quote keeps the deal.
     replacesQuoteId,
     dealUuid,
@@ -3052,7 +3093,7 @@ async function deletePaymentTermTemplate(id) {
 }
 
 // ---------------------------------------------------------------------
-// Split payment-term templates — net-days + timing (migration 124).
+// Split payment-term templates — net-days + timing.
 //
 // The two new tables decouple the "Net X days" choice from the
 // "payment timing / split" choice. CRUD shape mirrors the legacy
@@ -3168,7 +3209,7 @@ async function updatePaymentTimingTemplate(id, payload) {
 
 /**
  * Compose a legacy-shape `payment_term_snapshot` JSON object from the
- * two new split FKs on a quote or invoice row (migration 124).
+ * two new split FKs on a quote or invoice row.
  *
  * Returns null when at least one of the two FKs is unset — the caller
  * then falls back to reading the legacy `payment_term_template_id`
@@ -3177,7 +3218,7 @@ async function updatePaymentTimingTemplate(id, payload) {
  * doesn't.
  *
  * Output shape is identical to the legacy template row so downstream
- * consumers (pdfService, scheduleInvoicesForEvent, dunning) work
+ * consumers (pdfService, spawnInstallmentInvoices, dunning) work
  * without changes:
  *
  *   { description, net_days, skonto_percent, skonto_within_days,
@@ -3190,7 +3231,7 @@ async function composeSnapshotFromSplitFks(row) {
   const timing = await db('payment_timing_templates')
     .where({ id: row.payment_timing_template_id }).first();
   if (!netDays || !timing) return null;
-  // Migration 142 — ad-hoc installments override. When the quote
+  // Ad-hoc installments override. When the quote
   // carries a populated `payment_term_installments_override`, those
   // rows replace the template's installments in the snapshot. Keeps
   // every other snapshot field (net_days / skonto) coming from the
@@ -3274,7 +3315,6 @@ module.exports = {
   convertToInvoiceOnly,
 
   // Preview / PDF
-  renderQuotePdfBuffer,
   renderQuotePdfFromPayload,
 
   // Presets
@@ -3287,7 +3327,7 @@ module.exports = {
   createPaymentTermTemplate,
   updatePaymentTermTemplate,
   deletePaymentTermTemplate,
-  // Split payment-term templates (migration 124).
+  // Split payment-term templates.
   listPaymentNetDaysTemplates,
   createPaymentNetDaysTemplate,
   updatePaymentNetDaysTemplate,
@@ -3303,12 +3343,9 @@ module.exports = {
     // Shared with quoteTemplateService so {{hourly_rate}} reads exactly like
     // the amounts in the quote email.
     formatMajor,
-    ensureCustomerFeatureEnabled,
-    nextQuoteNumber,
-    persistDocPdf,
     buildRenderContext,
     resolvePaymentTerm,
-    // Migration 119: hierarchy helpers — shared with invoiceService
+    // Hierarchy helpers — shared with invoiceService
     // (commit 3) so the quote → invoice cloner stays consistent.
     validateLineItemHierarchy,
     insertLineItemsHierarchical,

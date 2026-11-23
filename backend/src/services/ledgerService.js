@@ -126,10 +126,8 @@ async function accountReferences(acct) {
   const refs = [];
   const vat = await db('vat_codes').where({ account_id: acct.id }).first();
   if (vat) refs.push('VAT code');
-  if (await db.schema.hasColumn('expense_categories', 'ledger_account_id')) {
-    const cat = await db('expense_categories').where({ ledger_account_id: acct.id }).first();
-    if (cat) refs.push('expense category');
-  }
+  const cat = await db('expense_categories').where({ ledger_account_id: acct.id }).first();
+  if (cat) refs.push('expense category');
   // Default-account settings reference accounts by NUMBER.
   const settingKeys = ['ledger_account_debitoren', 'ledger_account_kreditoren', 'ledger_account_bank',
     'ledger_account_cash', 'ledger_account_default_revenue', 'ledger_account_default_expense',
@@ -189,10 +187,9 @@ async function deleteVatCode(id, adminId = null) {
 
 // ── mappings (categories + settings) ─────────────────────────────────
 async function getMappings() {
-  const hasCol = await db.schema.hasColumn('expense_categories', 'ledger_account_id');
   const categories = await db('expense_categories')
     .orderBy('display_order', 'asc')
-    .select('id', 'name', 'color', hasCol ? 'ledger_account_id' : db.raw('NULL as ledger_account_id'));
+    .select('id', 'name', 'color', 'ledger_account_id');
   const settingKeys = ['ledger_account_debitoren', 'ledger_account_kreditoren', 'ledger_account_bank',
     'ledger_account_cash', 'ledger_account_default_revenue', 'ledger_account_default_expense',
     'ledger_account_mileage', 'ledger_account_per_diem', 'ledger_account_rebilled_revenue',
@@ -204,9 +201,6 @@ async function getMappings() {
 }
 
 async function setCategoryAccount(categoryId, ledgerAccountId, adminId = null) {
-  if (!(await db.schema.hasColumn('expense_categories', 'ledger_account_id'))) {
-    throw httpError(409, 'category→account mapping column missing', 'SCHEMA');
-  }
   await auditedUpdate(db, 'expense_categories', { id: categoryId }, { ledger_account_id: ledgerAccountId || null },
     { actor: adminId, source: 'expense_category.ledger_account' });
   return db('expense_categories').where({ id: categoryId }).first();
@@ -262,8 +256,7 @@ async function buildPostings({ from, to, currency } = {}) {
     const postings = [];
 
     // 1) Revenue invoices → Dr Debitoren / Cr Ertrag (gross, output VAT code).
-    // Migration 130 — prefer the snapshotted vat_code; guard for pre-130 DBs.
-    const hasInvVatCode = await db.schema.hasColumn('invoices', 'vat_code');
+    // Prefer the snapshotted vat_code.
     const invoices = await db('invoices')
       .leftJoin('customer_accounts', 'invoices.customer_account_id', 'customer_accounts.id')
       .leftJoin('events', 'invoices.event_id', 'events.id')
@@ -273,7 +266,7 @@ async function buildPostings({ from, to, currency } = {}) {
       .orderBy('invoices.issue_date', 'asc')
       .select(
         'invoices.id', 'invoices.invoice_number', 'invoices.issue_date', 'invoices.vat_rate',
-        ...(hasInvVatCode ? ['invoices.vat_code'] : []),
+        'invoices.vat_code',
         'invoices.net_amount_minor', 'invoices.vat_amount_minor', 'invoices.total_amount_minor',
         'customer_accounts.company_name as customer_company_name',
         'customer_accounts.first_name as customer_first_name',
@@ -303,93 +296,83 @@ async function buildPostings({ from, to, currency } = {}) {
     }
 
     // 2) Incoming supplier invoices → Dr Aufwand / Cr Kreditoren (input VAT).
-    if (await db.schema.hasTable('inbound_documents')) {
-      const hasCatCol = await db.schema.hasColumn('expense_categories', 'ledger_account_id');
-      const inbound = await db('inbound_documents')
-        .leftJoin('events', 'inbound_documents.event_id', 'events.id')
-        .modify((q) => {
-          if (hasCatCol) q.leftJoin('expense_categories', 'inbound_documents.category_id', 'expense_categories.id');
-        })
-        .where((qb) => {
-          qb.whereBetween('inbound_documents.invoice_date', [from, to])
-            .orWhere((q2) => q2.whereNull('inbound_documents.invoice_date')
-              .andWhere('inbound_documents.created_at', '>=', from)
-              .andWhere('inbound_documents.created_at', '<', beforeEnd));
-        })
-        .where((qb) => { qb.where('inbound_documents.currency', cur).orWhereNull('inbound_documents.currency'); })
-        .whereNotIn('inbound_documents.status', ['declined', 'duplicate'])
-        .orderBy('inbound_documents.created_at', 'asc')
-        .select(
-          'inbound_documents.id', 'inbound_documents.invoice_number', 'inbound_documents.invoice_date',
-          'inbound_documents.created_at', 'inbound_documents.supplier_name', 'inbound_documents.tax_treatment',
-          'inbound_documents.net_amount_minor', 'inbound_documents.vat_amount_minor', 'inbound_documents.total_amount_minor',
-          'inbound_documents.event_id',
-          hasCatCol ? 'expense_categories.ledger_account_id as cat_account_id' : db.raw('NULL as cat_account_id'),
-          'events.event_name as event_name',
-        );
-      for (const d of inbound) {
-        const acctNumber = cfg.accountById.get(d.cat_account_id)?.number || cfg.settings.defaultExpense;
-        const vatCode = cfg.vatMap[d.tax_treatment || 'domestic'] || '';
-        const gross = ensureInt(d.total_amount_minor) || (ensureInt(d.net_amount_minor) + ensureInt(d.vat_amount_minor));
-        postings.push({
-          date: d.invoice_date || d.created_at,
-          docNumber: d.invoice_number || '',
-          description: [d.supplier_name, d.invoice_number].filter(Boolean).join(' · '),
-          debitAccount: acctNumber, debitName: nameOf(acctNumber),
-          creditAccount: cfg.settings.kreditoren, creditName: nameOf(cfg.settings.kreditoren),
-          grossMinor: gross,
-          netMinor: ensureInt(d.net_amount_minor) || (gross - ensureInt(d.vat_amount_minor)),
-          vatMinor: ensureInt(d.vat_amount_minor),
-          vatCode, vatRate: 0,
-          source: 'incoming', eventName: d.event_id ? (d.event_name || '') : '',
-        });
-      }
+    const inbound = await db('inbound_documents')
+      .leftJoin('events', 'inbound_documents.event_id', 'events.id')
+      .leftJoin('expense_categories', 'inbound_documents.category_id', 'expense_categories.id')
+      .where((qb) => {
+        qb.whereBetween('inbound_documents.invoice_date', [from, to])
+          .orWhere((q2) => q2.whereNull('inbound_documents.invoice_date')
+            .andWhere('inbound_documents.created_at', '>=', from)
+            .andWhere('inbound_documents.created_at', '<', beforeEnd));
+      })
+      .where((qb) => { qb.where('inbound_documents.currency', cur).orWhereNull('inbound_documents.currency'); })
+      .whereNotIn('inbound_documents.status', ['declined', 'duplicate'])
+      .orderBy('inbound_documents.created_at', 'asc')
+      .select(
+        'inbound_documents.id', 'inbound_documents.invoice_number', 'inbound_documents.invoice_date',
+        'inbound_documents.created_at', 'inbound_documents.supplier_name', 'inbound_documents.tax_treatment',
+        'inbound_documents.net_amount_minor', 'inbound_documents.vat_amount_minor', 'inbound_documents.total_amount_minor',
+        'inbound_documents.event_id',
+        'expense_categories.ledger_account_id as cat_account_id',
+        'events.event_name as event_name',
+      );
+    for (const d of inbound) {
+      const acctNumber = cfg.accountById.get(d.cat_account_id)?.number || cfg.settings.defaultExpense;
+      const vatCode = cfg.vatMap[d.tax_treatment || 'domestic'] || '';
+      const gross = ensureInt(d.total_amount_minor) || (ensureInt(d.net_amount_minor) + ensureInt(d.vat_amount_minor));
+      postings.push({
+        date: d.invoice_date || d.created_at,
+        docNumber: d.invoice_number || '',
+        description: [d.supplier_name, d.invoice_number].filter(Boolean).join(' · '),
+        debitAccount: acctNumber, debitName: nameOf(acctNumber),
+        creditAccount: cfg.settings.kreditoren, creditName: nameOf(cfg.settings.kreditoren),
+        grossMinor: gross,
+        netMinor: ensureInt(d.net_amount_minor) || (gross - ensureInt(d.vat_amount_minor)),
+        vatMinor: ensureInt(d.vat_amount_minor),
+        vatCode, vatRate: 0,
+        source: 'incoming', eventName: d.event_id ? (d.event_name || '') : '',
+      });
     }
 
     // 3) Internal expenses → Dr Aufwand / Cr Kreditoren (input VAT).
-    if (await db.schema.hasTable('expenses')) {
-      const hasCatCol = await db.schema.hasColumn('expense_categories', 'ledger_account_id');
-      const expenses = await db('expenses')
-        .leftJoin('events', 'expenses.event_id', 'events.id')
-        .modify((q) => {
-          if (hasCatCol) q.leftJoin('expense_categories', 'expenses.category_id', 'expense_categories.id');
-        })
-        .whereRaw('expenses.created_at >= ? AND expenses.created_at < ?', [from, beforeEnd])
-        .whereNot('expenses.status', 'declined')
-        .whereNotIn('expenses.disposition', ['duplikat', 'abgelehnt'])
-        .modify((q) => { if (cur !== 'CHF') q.where('expenses.original_currency', cur); })
-        .orderBy('expenses.created_at', 'asc')
-        .select(
-          'expenses.id', 'expenses.created_at', 'expenses.kind', 'expenses.supplier_name', 'expenses.description',
-          'expenses.tax_treatment', 'expenses.event_id',
-          'expenses.original_amount_minor', 'expenses.chf_amount_minor',
-          'expenses.net_amount_minor', 'expenses.vat_amount_minor', 'expenses.gross_amount_minor',
-          hasCatCol ? 'expense_categories.ledger_account_id as cat_account_id' : db.raw('NULL as cat_account_id'),
-          'events.event_name as event_name',
-        );
-      const isChf = cur === 'CHF';
-      for (const e of expenses) {
-        // Account: category mapping → kind default (mileage/per-diem) → default expense.
-        let acctNumber = cfg.accountById.get(e.cat_account_id)?.number;
-        if (!acctNumber && e.kind === 'mileage') acctNumber = cfg.settings.mileage;
-        if (!acctNumber && e.kind === 'per_diem') acctNumber = cfg.settings.perDiem;
-        if (!acctNumber) acctNumber = cfg.settings.defaultExpense;
-        const vatCode = cfg.vatMap[e.tax_treatment || 'domestic'] || '';
-        const base = isChf ? ensureInt(e.chf_amount_minor) : ensureInt(e.original_amount_minor);
-        const gross = ensureInt(e.gross_amount_minor) || ((ensureInt(e.net_amount_minor) || ensureInt(e.vat_amount_minor)) ? ensureInt(e.net_amount_minor) + ensureInt(e.vat_amount_minor) : base);
-        postings.push({
-          date: e.created_at,
-          docNumber: `EXP-${e.id}`,
-          description: e.description || e.supplier_name || `Expense #${e.id}`,
-          debitAccount: acctNumber, debitName: nameOf(acctNumber),
-          creditAccount: cfg.settings.kreditoren, creditName: nameOf(cfg.settings.kreditoren),
-          grossMinor: gross,
-          netMinor: ensureInt(e.net_amount_minor) || (gross - ensureInt(e.vat_amount_minor)),
-          vatMinor: ensureInt(e.vat_amount_minor),
-          vatCode, vatRate: 0,
-          source: 'expense', eventName: e.event_id ? (e.event_name || '') : '',
-        });
-      }
+    const expenses = await db('expenses')
+      .leftJoin('events', 'expenses.event_id', 'events.id')
+      .leftJoin('expense_categories', 'expenses.category_id', 'expense_categories.id')
+      .whereRaw('expenses.created_at >= ? AND expenses.created_at < ?', [from, beforeEnd])
+      .whereNot('expenses.status', 'declined')
+      .whereNotIn('expenses.disposition', ['duplikat', 'abgelehnt'])
+      .modify((q) => { if (cur !== 'CHF') q.where('expenses.original_currency', cur); })
+      .orderBy('expenses.created_at', 'asc')
+      .select(
+        'expenses.id', 'expenses.created_at', 'expenses.kind', 'expenses.supplier_name', 'expenses.description',
+        'expenses.tax_treatment', 'expenses.event_id',
+        'expenses.original_amount_minor', 'expenses.chf_amount_minor',
+        'expenses.net_amount_minor', 'expenses.vat_amount_minor', 'expenses.gross_amount_minor',
+        'expense_categories.ledger_account_id as cat_account_id',
+        'events.event_name as event_name',
+      );
+    const isChf = cur === 'CHF';
+    for (const e of expenses) {
+      // Account: category mapping → kind default (mileage/per-diem) → default expense.
+      let acctNumber = cfg.accountById.get(e.cat_account_id)?.number;
+      if (!acctNumber && e.kind === 'mileage') acctNumber = cfg.settings.mileage;
+      if (!acctNumber && e.kind === 'per_diem') acctNumber = cfg.settings.perDiem;
+      if (!acctNumber) acctNumber = cfg.settings.defaultExpense;
+      const vatCode = cfg.vatMap[e.tax_treatment || 'domestic'] || '';
+      const base = isChf ? ensureInt(e.chf_amount_minor) : ensureInt(e.original_amount_minor);
+      const gross = ensureInt(e.gross_amount_minor) || ((ensureInt(e.net_amount_minor) || ensureInt(e.vat_amount_minor)) ? ensureInt(e.net_amount_minor) + ensureInt(e.vat_amount_minor) : base);
+      postings.push({
+        date: e.created_at,
+        docNumber: `EXP-${e.id}`,
+        description: e.description || e.supplier_name || `Expense #${e.id}`,
+        debitAccount: acctNumber, debitName: nameOf(acctNumber),
+        creditAccount: cfg.settings.kreditoren, creditName: nameOf(cfg.settings.kreditoren),
+        grossMinor: gross,
+        netMinor: ensureInt(e.net_amount_minor) || (gross - ensureInt(e.vat_amount_minor)),
+        vatMinor: ensureInt(e.vat_amount_minor),
+        vatCode, vatRate: 0,
+        source: 'expense', eventName: e.event_id ? (e.event_name || '') : '',
+      });
     }
 
     // By time value: on PostgreSQL `date` is a Date (issue 2335).
@@ -510,6 +493,6 @@ module.exports = {
   listAccounts, createAccount, updateAccount, deleteAccount,
   listVatCodes, createVatCode, updateVatCode, deleteVatCode,
   getMappings, setCategoryAccount, updateSettings,
-  getConfig, buildPostings, exportPostings,
+  buildPostings, exportPostings,
   _internal: { rateKey, csvEscape, neutralizeSpreadsheetFormula, minorToDecimal },
 };

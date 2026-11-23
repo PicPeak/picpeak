@@ -1,6 +1,3 @@
-// Extracted verbatim from invoiceService.js — see ../invoiceService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const { db, withRetry } = require('../../database/db');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { unicodeSearchForms } = require('../../utils/sqlSecurity');

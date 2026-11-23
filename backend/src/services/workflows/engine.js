@@ -436,7 +436,6 @@ async function recoverStaleRuns({ staleMs = RECOVERY_STALE_MS, limit = 50 } = {}
     let enabled = false;
     try { enabled = await isFeatureEnabled('workflows'); } catch (e) { return 0; }
     if (!enabled) return 0;
-    if (!(await db.schema.hasColumn('workflow_runs', 'updated_at'))) return 0;
 
     const cutoff = new Date(Date.now() - staleMs).toISOString();
     const stale = await db('workflow_runs')
@@ -484,7 +483,6 @@ async function isBuiltinFlowActive(builtinKey) {
   try {
     const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
     if (!(await isFeatureEnabled('workflows'))) return false;
-    if (!(await db.schema.hasTable('workflows'))) return false;
     const wf = await db('workflows').where({ builtin_key: builtinKey, enabled: true }).first();
     return !!wf;
   } catch (e) {
@@ -558,9 +556,6 @@ async function emitDueEventReminders(limit = 200) {
     const flows = await db('workflows').where({ enabled: true, trigger_type: 'event.date_approaching' });
     if (!flows.length) return 0;
 
-    const { hasColumnCached } = require('../../utils/schemaCache');
-    const hasReminderCols = await hasColumnCached('events', 'event_reminder_sent_at');
-
     // The admin heads-up resolves its recipient from ctx.vars.adminEmail; events
     // don't carry one, so source it from the business profile (best-effort).
     let adminEmail = null;
@@ -582,22 +577,20 @@ async function emitDueEventReminders(limit = 200) {
       const maxOffset = Math.max(daysBefore, 60);
       const windowEndIso = new Date(now + maxOffset * 86400000).toISOString().slice(0, 10);
 
-      let q = db('events')
+      const events = await db('events')
         .where('is_active', true)
         .where('is_archived', false)
         .whereNotNull('event_date')
         .where('event_date', '>=', todayIso)
-        .where('event_date', '<=', windowEndIso);
-      // Faithful to the legacy pass: never remind a disabled or already-sent event.
-      if (hasReminderCols) {
-        q = q.where('event_reminder_disabled', false).whereNull('event_reminder_sent_at');
-      }
-      const events = await q.limit(limit);
+        .where('event_date', '<=', windowEndIso)
+        // Faithful to the legacy pass: never remind a disabled or already-sent event.
+        .where('event_reminder_disabled', false).whereNull('event_reminder_sent_at')
+        .limit(limit);
 
       for (const ev of events) {
         // A null/blank per-event offset means "use the flow's daysBefore" — guard
         // against Number(null)===0 silently making the reminder fire on the event day.
-        const rawOffset = hasReminderCols ? ev.event_reminder_offset_days : null;
+        const rawOffset = ev.event_reminder_offset_days;
         const offset = (rawOffset != null && rawOffset !== '' && Number.isFinite(Number(rawOffset)))
           ? Number(rawOffset)
           : daysBefore;
@@ -677,7 +670,6 @@ const CUSTOMER_CONTACT_VARS = ['customerEmail', 'recipientEmail', 'customerName'
 async function forgetCustomer(trx, customerId, {
   email = null, contactEmails = [], formerEmails = [], eventIds = [],
 } = {}) {
-  if (!(await trx.schema.hasTable('workflow_runs'))) return [];
   const id = Number(customerId);
   const lower = (list) => list.filter(Boolean).map((e) => String(e).toLowerCase());
   // Addresses that are this customer's now: the account's and its contacts'.
@@ -687,8 +679,6 @@ async function forgetCustomer(trx, customerId, {
   const former = new Set(lower(formerEmails));
   const events = new Set(eventIds.map(Number));
   const addresses = [...new Set([...own, ...former])];
-  const hasApprovals = await trx.schema.hasTable('workflow_approvals');
-  const hasSteps = await trx.schema.hasTable('workflow_run_steps');
   const mentions = (value) => {
     const text = String(value || '').toLowerCase();
     return addresses.some((address) => text.includes(address));
@@ -733,17 +723,15 @@ async function forgetCustomer(trx, customerId, {
         Object.assign(patch, { status: 'cancelled', wake_at: null, finished_at: trx.fn.now(), error: 'customer erased' });
       }
       await trx('workflow_runs').where({ id: run.id }).update(patch);
-      if (hasApprovals) {
-        await trx('workflow_approvals').where({ run_id: run.id }).whereIn('status', ['pending', 'expired'])
-          .update({ status: 'cancelled' });
-        for (const approval of await trx('workflow_approvals').where({ run_id: run.id }).select('id', 'payload')) {
-          const payload = parseJson(approval.payload, null);
-          if (!payload || typeof payload !== 'object') continue;
-          await trx('workflow_approvals').where({ id: approval.id })
-            .update({ payload: JSON.stringify({ ...payload, vars: scrub(payload.vars) }) });
-        }
+      await trx('workflow_approvals').where({ run_id: run.id }).whereIn('status', ['pending', 'expired'])
+        .update({ status: 'cancelled' });
+      for (const approval of await trx('workflow_approvals').where({ run_id: run.id }).select('id', 'payload')) {
+        const payload = parseJson(approval.payload, null);
+        if (!payload || typeof payload !== 'object') continue;
+        await trx('workflow_approvals').where({ id: approval.id })
+          .update({ payload: JSON.stringify({ ...payload, vars: scrub(payload.vars) }) });
       }
-      if (hasSteps && addresses.length > 0) {
+      if (addresses.length > 0) {
         for (const step of await trx('workflow_run_steps').where({ run_id: run.id }).whereNotNull('result').select('id', 'result')) {
           const text = typeof step.result === 'string' ? step.result : JSON.stringify(step.result);
           if (!mentions(text)) continue;

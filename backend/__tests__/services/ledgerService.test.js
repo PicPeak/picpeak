@@ -46,10 +46,6 @@ const mockDbFn = jest.fn((table) => {
   }
 });
 mockDbFn.raw = (s) => s;
-mockDbFn.schema = {
-  hasTable: jest.fn(async () => true),
-  hasColumn: jest.fn(async () => true),
-};
 
 jest.mock('../../src/database/db', () => ({ db: mockDbFn, withRetry: async (fn) => fn() }));
 

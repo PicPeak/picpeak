@@ -24,7 +24,6 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission, userHasAllPermissions } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const workflows = require('../services/workflows');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { executableGraph } = require('../database/crmAccess');
 
 router.use(adminAuth, requireFeatureFlag('workflows'));
@@ -303,7 +302,6 @@ router.put('/:id', requirePermission('workflows.manage'), async (req, res, next)
       if (stubs.length) return res.status(409).json({ error: `This flow can't be enabled yet — it uses actions that aren't implemented: ${stubs.join(', ')}.` });
     }
     const newVersion = wf.version + 1;
-    const hasAdminToggled = await hasColumnCached('workflows', 'admin_toggled_at');
     // Whether this save changes what the workflow executes, not just its
     // name, layout or enabled state.
     const storedNodes = await db('workflow_nodes').where({ workflow_id: id, version: wf.version });
@@ -338,7 +336,7 @@ router.put('/:id', requirePermission('workflows.manage'), async (req, res, next)
       if (graphChanged) update.created_by = req.admin.id;
       // An admin edit claims ownership of a built-in so the boot seeder stops
       // re-seeding / re-enabling it (see _workflowSeedBoot).
-      if (hasAdminToggled) update.admin_toggled_at = trx.fn.now();
+      update.admin_toggled_at = trx.fn.now();
       await trx('workflows').where({ id }).update(update);
       await writeGraph(trx, id, newVersion, b.nodes, b.edges);
     });
@@ -362,10 +360,9 @@ router.patch('/:id/enabled', requirePermission('workflows.manage'), async (req, 
         return res.status(409).json({ error: `This flow can't be enabled yet — it uses actions that aren't implemented: ${stubs.join(', ')}.` });
       }
     }
-    const patch = { enabled, updated_at: db.fn.now() };
     // Mark admin ownership so the boot seeder won't re-flip this built-in's
     // enabled state on the next SEED_VERSION bump (review nit #1).
-    if (await hasColumnCached('workflows', 'admin_toggled_at')) patch.admin_toggled_at = db.fn.now();
+    const patch = { enabled, updated_at: db.fn.now(), admin_toggled_at: db.fn.now() };
     await db('workflows').where({ id }).update(patch);
     // Turning dunning ON enrolls existing open/unpaid invoices (anchored to
     // their due date) so it starts chasing current debtors, not only invoices

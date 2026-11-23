@@ -1,8 +1,8 @@
 /**
  * contractBlocksService — CRUD for the contract block library.
  *
- * The library is shared across all contracts. System blocks (12 seeded
- * by migration 130) cannot be deleted but their body text remains
+ * The library is shared across all contracts. System blocks (the seeded
+ * ones) cannot be deleted but their body text remains
  * editable so the admin's lawyer can rewrite them. Admin-authored
  * (non-system) blocks can be freely created, edited, and removed.
  *
@@ -20,10 +20,10 @@ const { hasColumnCached } = require('../utils/schemaCache');
 const ALLOWED_SECTIONS = ['basics', 'scope', 'privacy', 'commercial', 'nda', 'closing'];
 
 /**
- * System blocks added to the seed AFTER migration 131 was already
- * deployed to beta. knex won't re-run an already-applied migration,
- * so the new system blocks listed here need a runtime self-heal —
- * same pattern as `ensureContractEmailTemplatesSeeded` for templates.
+ * System blocks added to the seed after the CRM migration was already
+ * deployed. knex won't re-run an already-applied migration, so the new
+ * system blocks listed here need a runtime self-heal — same pattern as
+ * `ensureContractEmailTemplatesSeeded` for templates.
  *
  * Each entry must carry every column the row needs. `slug` is the
  * uniqueness key; the seeder is no-op when the row already exists.
@@ -246,7 +246,7 @@ let _systemBlocksSeeded = false;
  * Self-heal: insert any RUNTIME_SEEDED_BLOCKS entries that don't yet
  * exist in contract_blocks. Called from listBlocks + createContract
  * paths so new system blocks appear automatically on installs that
- * applied an earlier version of migration 131. Idempotent.
+ * applied an earlier version of the CRM migration. Idempotent.
  */
 async function ensureSystemBlocksSeeded() {
   if (_systemBlocksSeeded) return [];
@@ -305,8 +305,8 @@ function slugify(name) {
 }
 
 async function listBlocks({ section, includeInactive = false, forNewContract = false, customerAccountId = null } = {}) {
-  // Self-heal before reading so the new system block (added to the
-  // already-deployed migration 131 in feat/crm) appears in the
+  // Self-heal before reading so a system block added after the CRM
+  // migration was deployed appears in the
   // library UI immediately on first GET, without needing a fresh
   // install. Safe to call repeatedly — guarded by _systemBlocksSeeded.
   await ensureSystemBlocksSeeded();
@@ -370,9 +370,9 @@ async function createBlock(payload) {
     created_at: new Date(),
     updated_at: new Date(),
   };
-  // Schema-drift guard — migration 131 adds these columns. On installs
-  // that haven't migrated yet, only EN+DE bodies persist; the other
-  // four fields are accepted from the payload but silently dropped.
+  // Schema-drift guard — on an install whose contract_blocks table lacks
+  // these columns, only EN+DE bodies persist; the other four fields are
+  // accepted from the payload but silently dropped.
   for (const [field, payloadKey] of [
     ['body_text_ru', 'bodyTextRu'],
     ['body_text_pt', 'bodyTextPt'],

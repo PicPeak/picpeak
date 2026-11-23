@@ -1,6 +1,3 @@
-// Extracted verbatim from invoiceService.js — see ../invoiceService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const crypto = require('crypto');
 const { db, logActivity } = require('../../database/db');
 const logger = require('../../utils/logger');
@@ -17,7 +14,6 @@ const {
   applyReminder, paymentCheckLinkStillValid, resolveAdminEmailForInvoice, resolvePerReminderFeeMinor, resolveSkontoPercentForInvoice,
 } = require('./reminders');
 const { toDateOnly } = require('../../utils/dateOnly');
-const { hasColumnCached } = require('../../utils/schemaCache');
 
 // Payment-check token lifetime (GHSA-wg94-f86h-vq68 hardening). This
 // unauthenticated magic link is the only gate on a write to the
@@ -425,9 +421,8 @@ async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
     expires_at: expiresAt.toISOString(),
     created_at: nowIso,
     // Who the link goes to, so it stops working once they may no longer
-    // record payments here (migration 360; none for the business address).
-    ...(await hasColumnCached('invoice_payment_check_tokens', 'recipient_admin_id')
-      ? { recipient_admin_id: adminContact.adminId ?? null } : {}),
+    // record payments here (none for the business address).
+    recipient_admin_id: adminContact.adminId ?? null,
   });
   // ISO here too: the throttle above reads last_payment_check_at back, and a
   // bare Date is the one shape that can't be read (see the note there).
@@ -862,7 +857,6 @@ async function applyPaymentCheckAction({ invoice, outstandingMinor, action, amou
 }
 module.exports = {
   markPaid,
-  queueInvoicePaidAdminNotification,
   queuePaymentCheckEmail,
   getPaymentCheckByToken,
   recordPaymentCheckAction,

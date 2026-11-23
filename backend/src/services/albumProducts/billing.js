@@ -193,7 +193,7 @@ async function lock(tx, offer, eventId, adminId) {
     actor: adminId,
     source: 'product.lock',
   });
-  item.id = inserted[0]?.id ?? inserted[0];
+  item.id = inserted[0].id;
   // Only an unarmed, unissued invoice is safe to extend automatically. More
   // than one candidate needs the photographer to choose explicitly. An
   // invoice held after its send date passed (send_held_at, migration 358)
@@ -267,7 +267,7 @@ async function append(tx, invoice, items, adminId) {
       },
       history,
     );
-    const id = inserted[0]?.id ?? inserted[0];
+    const id = inserted[0].id;
     const stamped = await auditedUpdate(
       tx,
       'product_billable_items',
@@ -322,10 +322,6 @@ async function billEvent(
   itemIds = null,
 ) {
   if (!(await enabled(db))) throw new AppError('CRM billing is disabled', 403);
-  // Pre-warm native drift checks before taking SQLite's only connection.
-  const { hasColumnCached } = require('../../utils/schemaCache');
-  await hasColumnCached('invoices', 'vat_code');
-  await hasColumnCached('invoices', 'project_id');
   return db.transaction(async (tx) => {
     const event = eventId
       ? await tx('events').where({ id: eventId }).forUpdate().first()

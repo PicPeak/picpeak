@@ -43,8 +43,8 @@ const signatures = require('./contract/signatures');
 const conversions = require('./contract/conversions');
 const imports = require('./contract/imports');
 
-const { SECTIONS_ORDER, nextContractNumber } = helpers;
-const { renderTemplatedBody, buildPlaceholderContext, buildRenderContext } = renderContext;
+const { SECTIONS_ORDER } = helpers;
+const { renderTemplatedBody } = renderContext;
 const {
   listContracts, getContractById, createContract, createContractIdempotent, updateContract, cancelContract,
 } = crud;
@@ -75,12 +75,9 @@ module.exports = {
   rerenderAndResend,
   restampSignatures,
   getAuditTrail,
-  // Exported for tests + the public-route preview endpoint.
+  // Exported for tests.
   _internal: {
-    nextContractNumber,
     renderTemplatedBody,
-    buildPlaceholderContext,
-    buildRenderContext,
     SECTIONS_ORDER,
   },
 };

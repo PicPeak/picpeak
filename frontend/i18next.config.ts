@@ -27,7 +27,7 @@ export default defineConfig({
     // Pruning is unsafe in this codebase. A large share of keys is never visible to the
     // AST extractor because it is built at runtime — 82 distinct dynamic key templates in
     // src, e.g. admin.activities, admin.notificationMessages, projects.status,
-    // accounting.expenseStatus, crmSettings — or held in constant tables the extractor does
+    // crmSettings — or held in constant tables the extractor does
     // not resolve (AdminSidebar `nameKey`, CrmDevelopmentPage `titleKey`/`descKey`).
     // Turned on as-is, it deletes 422 keys per locale, 203 of which src references.
     //

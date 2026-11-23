@@ -113,7 +113,7 @@ export const ContractDetailPage: React.FC = () => {
   });
   const { data: linkedInvoices } = useQuery({
     queryKey: ['contract-invoices', numericId],
-    queryFn: () => billsService.list({ pageSize: 50 } as any),
+    queryFn: () => billsService.list({ pageSize: 50 }),
     enabled: numericId !== null,
     // Filter client-side because the bills endpoint doesn't support
     // sourceContractId yet. The bills list response is capped at 50

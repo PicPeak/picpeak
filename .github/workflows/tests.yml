@@ -87,12 +87,21 @@ jobs:
       # Every suite creates and deletes its own bucket, so no bucket is made
       # here.
       - name: Start MinIO
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
+          # cgr.dev answers 500 ("Too many connections") in bursts, so each
+          # image gets a few tries with a growing pause before the next one.
+          pull() {
+            for wait in 0 10 20 40; do
+              sleep "$wait"
+              docker pull --quiet "$1" && return 0
+            done
+            return 1
+          }
           image="$MINIO_IMAGE"
-          if ! docker pull --quiet "$image"; then
+          if ! pull "$image"; then
             image="$MINIO_FALLBACK_IMAGE"
-            docker pull --quiet "$image"
+            pull "$image"
             digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$image")
             echo "::warning title=MinIO pin not pulled::$MINIO_IMAGE could not be pulled (gone upstream, or a registry error); ran $digest instead. If the pin is gone, pin that digest as MINIO_IMAGE in tests.yml."
           fi

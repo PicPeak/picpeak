@@ -81,10 +81,8 @@ function buildIssuerBlock(profile, logoPath, options = {}) {
     vatLabel: profile.vat_label || null,
     // pre-resolved absolute path; renderer never re-resolves.
     logoPath,
-    pdfFontTtfPath: profile.pdf_font_ttf_path,
-    // Bundled fonts dropdown (migration 121). When set, pdfService loads
+    // Bundled fonts dropdown (migration 107). When set, pdfService loads
     // <family>/400.ttf + <family>/700.ttf from backend/assets/fonts/.
-    // Priority: pdfFontTtfPath wins if both are present.
     pdfFontFamily: profile.pdf_font_family || null,
     // Free-text country name override (migration 107).
     countryName: profile.country_name || null,

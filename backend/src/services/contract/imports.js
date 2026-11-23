@@ -78,9 +78,9 @@ async function importContract(payload, filePath, adminId, { idempotencyKey = nul
     // A signed import is the authoritative signed copy: the same columns a
     // wet-signed upload sets, so every reader treats it the same way.
     signed_pdf_path: signed ? storedPath : null,
+    imported_at: new Date().toISOString(),
   };
   const optional = {
-    imported_at: new Date().toISOString(),
     pdf_sha256: sha256,
     signed_pdf_sha256: signed ? sha256 : null,
     signed_pdf_is_wet_upload: signed,

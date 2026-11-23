@@ -5,6 +5,23 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.209.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.209.2-beta.0...v3.209.3-beta.0) (2026-11-23)
+
+
+### Bug Fixes
+
+* **crm:** save a draft quote's customer and currency ([#2624](https://github.com/PicPeak/picpeak/issues/2624)) ([88366cd](https://github.com/PicPeak/picpeak/commit/88366cdab7b1a4de1fe8cc98f56ea275904631b5))
+
+## [3.209.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.209.1-beta.0...v3.209.2-beta.0) (2026-11-23)
+
+
+### Bug Fixes
+
+* **crm:** page through the invoices list ([#2622](https://github.com/PicPeak/picpeak/issues/2622)) ([54937c2](https://github.com/PicPeak/picpeak/commit/54937c26e45b1989852a7b70fe697d3fb8db5f8e))
+* **crm:** recalculate rates on a draft quote again ([#2620](https://github.com/PicPeak/picpeak/issues/2620)) ([150c710](https://github.com/PicPeak/picpeak/commit/150c7107198cd2d86822be0651054ab219d64ab4))
+* **crm:** save the manual billing cadence on a customer ([#2621](https://github.com/PicPeak/picpeak/issues/2621)) ([067a170](https://github.com/PicPeak/picpeak/commit/067a170be9c40e42d66b65a967a7f9182efa2dd6))
+* **crm:** show the split payment term on the quote PDF ([#2623](https://github.com/PicPeak/picpeak/issues/2623)) ([892b3b8](https://github.com/PicPeak/picpeak/commit/892b3b8f327b39a98cd289c92761ea85219bd69d))
+
 ## [3.209.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.209.0-beta.0...v3.209.1-beta.0) (2026-11-22)
 
 

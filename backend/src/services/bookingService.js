@@ -26,7 +26,6 @@ const { isTruthyFlag } = require('../utils/lineItemTotals');
 const { normaliseSchedule, _internal: tz } = require('../utils/businessHours');
 const { toTimestamp } = require('../utils/dateNormalize');
 const pricingFactors = require('./pricingFactorService');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { scheduledTask } = require('./scheduledTask');
 
 const STATUSES = ['awaiting_payment', 'pending', 'accepted', 'declined', 'expired'];
@@ -248,7 +247,6 @@ function wallTime(day, hhmm, zone) {
  */
 async function busyIntervals(from, to, zone, { excludeRequestId = null, now = new Date(), conn = db } = {}) {
   const busy = [];
-  const hasDeposits = await hasColumnCached('booking_requests', 'deposit_status');
 
   const blocks = await conn('booking_blocks').where('starts_at', '<', ts(to)).andWhere('ends_at', '>', ts(from));
   for (const b of blocks) busy.push({ start: toDate(b.starts_at).getTime(), end: toDate(b.ends_at).getTime() });
@@ -267,9 +265,8 @@ async function busyIntervals(from, to, zone, { excludeRequestId = null, now = ne
           .whereRaw('quotes.id = booking_requests.quote_id').whereNot('quotes.status', 'declined'))
         .orWhere((fresh) => fresh.whereNull('quote_id').andWhere('decided_at', '>', ts(now.getTime() - ACCEPTING_MS)))))
         .orWhere((p) => p.whereIn('status', ['pending', 'awaiting_payment']).andWhere('hold_expires_at', '>', ts(now)));
-      // Paid deposits hold past the hold time (see expireStaleHolds). The
-      // column lookup is cached before createRequest's transaction opens.
-      if (hasDeposits) q.orWhere((p) => p.where('status', 'pending').whereIn('deposit_status', PAID_DEPOSIT));
+      // Paid deposits hold past the hold time (see expireStaleHolds).
+      q.orWhere((p) => p.where('status', 'pending').whereIn('deposit_status', PAID_DEPOSIT));
     });
   if (excludeRequestId) requests.whereNot('id', excludeRequestId);
   // Read as trusted: the public routes run with no CRM actor, which may not
@@ -381,23 +378,20 @@ const stopBookingHousekeeping = () => housekeeping.stop();
  * deposit checkout was never paid (part 3).
  */
 async function expireStaleHolds(now = new Date()) {
-  const hasDeposits = await hasColumnCached('booking_requests', 'deposit_status');
   const pending = db('booking_requests').where({ status: 'pending' }).andWhere('hold_expires_at', '<=', ts(now));
   // A request whose deposit came in (or is under review) holds its slot
   // until the admin decides: expiring it would free the time and keep the
   // client's money.
-  if (hasDeposits) pending.whereNotIn('deposit_status', PAID_DEPOSIT);
+  pending.whereNotIn('deposit_status', PAID_DEPOSIT);
   await pending.update({ status: 'expired', updated_at: ts(now) });
-  if (hasDeposits) {
-    await db('booking_requests').where({ status: 'awaiting_payment' }).andWhere('hold_expires_at', '<=', ts(now))
-      .update({ status: 'expired', deposit_status: 'expired', updated_at: ts(now) });
-  }
+  await db('booking_requests').where({ status: 'awaiting_payment' }).andWhere('hold_expires_at', '<=', ts(now))
+    .update({ status: 'expired', deposit_status: 'expired', updated_at: ts(now) });
   // Retention: declined and expired requests hold a client's details and
   // never became a customer; they go after RETENTION_DAYS. A deposit that
   // still needs the admin (paid, under review, refund failed) keeps its row.
   const purge = db('booking_requests').whereIn('status', ['declined', 'expired'])
     .andWhere('updated_at', '<', ts(now.getTime() - RETENTION_DAYS * 86400000));
-  if (hasDeposits) purge.whereNotIn('deposit_status', [...PAID_DEPOSIT, 'refund_failed']);
+  purge.whereNotIn('deposit_status', [...PAID_DEPOSIT, 'refund_failed']);
   await purge.del();
 }
 
@@ -428,11 +422,7 @@ async function forgetCustomer(trx, customerId, emails = []) {
   // An open request of someone erased cannot be accepted any more. One whose
   // deposit came in stays for the admin to decline, which refunds it.
   const open = rows().whereIn('status', ['pending', 'expired', 'awaiting_payment']);
-  // Through `trx`: the cached lookup reads on the global handle, which waits
-  // for this transaction on SQLite.
-  if (await trx.schema.hasColumn('booking_requests', 'deposit_status')) {
-    open.where((q) => q.whereNull('deposit_status').orWhereNotIn('deposit_status', PAID_DEPOSIT));
-  }
+  open.where((q) => q.whereNull('deposit_status').orWhereNotIn('deposit_status', PAID_DEPOSIT));
   await open.update({ status: 'declined', decided_at: ts(new Date()) });
   await rows().update({
     name: 'Erased', email: ERASED_EMAIL, phone: null, company: null, message: null,
@@ -463,10 +453,10 @@ function withRequestLock(fn) {
  * with the hold not run out, and (part 3) pending with a paid deposit or one
  * under review, which hold until the admin decides.
  */
-function openRequests(conn, now, hasDeposits = true) {
+function openRequests(conn, now) {
   return conn('booking_requests').where((q) => {
     q.where((p) => p.whereIn('status', ['pending', 'awaiting_payment']).andWhere('hold_expires_at', '>', ts(now)));
-    if (hasDeposits) q.orWhere((p) => p.where('status', 'pending').whereIn('deposit_status', PAID_DEPOSIT));
+    q.orWhere((p) => p.where('status', 'pending').whereIn('deposit_status', PAID_DEPOSIT));
   });
 }
 
@@ -476,25 +466,25 @@ function openRequests(conn, now, hasDeposits = true) {
  * hash, per email, and in total. Runs inside the request transaction,
  * after the lock, so concurrent posts cannot all pass the same count.
  */
-async function assertMayRequest(conn, { email, ipHash, settings, now, hasDeposits = true }) {
+async function assertMayRequest(conn, { email, ipHash, settings, now }) {
   const count = async (q) => Number((await q.count('* as n').first()).n);
   // Per client, a request counts while it is open and for a day after it
   // was sent: with a short notice period a hold can last only minutes, and
   // a new address per request must not buy a new client mail each time.
   const counted = () => conn('booking_requests').where((q) => q
-    .whereIn('id', openRequests(conn, now, hasDeposits).select('id'))
+    .whereIn('id', openRequests(conn, now).select('id'))
     .orWhere('created_at', '>', ts(now.getTime() - CLIENT_WINDOW_MS)));
   if (ipHash && await count(counted().where({ client_ip_hash: ipHash })) >= MAX_OPEN_PER_CLIENT) {
     throw new AppError('You already have open or recent booking requests. Please wait for the studio to answer them.', 429, 'BOOKING_TOO_MANY_OPEN');
   }
-  if (await count(openRequests(conn, now, hasDeposits).whereRaw('LOWER(email) = ?', [email])) >= MAX_OPEN_PER_EMAIL) {
+  if (await count(openRequests(conn, now).whereRaw('LOWER(email) = ?', [email])) >= MAX_OPEN_PER_EMAIL) {
     throw new AppError('You already have open or recent booking requests. Please wait for the studio to answer them.', 429, 'BOOKING_TOO_MANY_OPEN');
   }
   // The total leaves out requests whose deposit came in (paid, review,
   // disputed): they do not expire, so a few of them would close the form for
   // everyone until the studio decides. They still count per client and email.
-  const unpaid = openRequests(conn, now, hasDeposits);
-  if (hasDeposits) unpaid.where((q) => q.whereNull('deposit_status').orWhereNotIn('deposit_status', PAID_DEPOSIT));
+  const unpaid = openRequests(conn, now);
+  unpaid.where((q) => q.whereNull('deposit_status').orWhereNotIn('deposit_status', PAID_DEPOSIT));
   if (await count(unpaid) >= Number(settings.max_open_requests)) {
     throw new AppError('The studio has too many open requests right now. Please write to them directly.', 429, 'BOOKING_REQUESTS_FULL');
   }
@@ -524,10 +514,9 @@ async function createRequest(input, { now = new Date() } = {}) {
   // Part 3: a deposit, when the service asks for one and Stripe is set up.
   // The slot is then held only for the checkout until the payment is in.
   const deposits = require('./bookingDeposits');
-  const hasDeposits = await hasColumnCached('booking_requests', 'deposit_status');
-  const depositMinor = hasDeposits ? deposits.depositFor(preset, estimate.totalMinor) : 0;
+  const depositMinor = deposits.depositFor(preset, estimate.totalMinor);
   const takesDeposit = depositMinor > 0 && await deposits.stripeReady();
-  const statusToken = hasDeposits ? deposits.newStatusToken() : null;
+  const statusToken = deposits.newStatusToken();
   const holdUntil = takesDeposit
     ? now.getTime() + deposits.CHECKOUT_HOLD_MINUTES * 60000
     : now.getTime() + settings.hold_hours * 3600000;
@@ -535,8 +524,8 @@ async function createRequest(input, { now = new Date() } = {}) {
   let repeat = null;
   const insertId = await db.transaction(async (trx) => {
     await takeRequestLock(trx);
-    await assertMayRequest(trx, { email, ipHash, settings, now, hasDeposits });
-    repeat = await openRequests(trx, now, hasDeposits).whereRaw('LOWER(email) = ?', [email]).first('id');
+    await assertMayRequest(trx, { email, ipHash, settings, now });
+    repeat = await openRequests(trx, now).whereRaw('LOWER(email) = ?', [email]).first('id');
     // Every read goes through `trx`: SQLite has one connection, and a read
     // on the global handle inside this transaction would wait for itself.
     const { free, durationMinutes: duration } = await isSlotFree(preset, start.toISOString(), pricedValues, { now, conn: trx });
@@ -561,12 +550,10 @@ async function createRequest(input, { now = new Date() } = {}) {
       estimate_lines: JSON.stringify(estimate.lines),
       estimate_minor: estimate.totalMinor,
       currency: estimate.currency,
-      ...(hasDeposits ? {
-        deposit_minor: takesDeposit ? depositMinor : 0,
-        deposit_status: takesDeposit ? 'open' : 'none',
-        gallery_unlock: deposits.GALLERY_UNLOCK.includes(preset.gallery_unlock) ? preset.gallery_unlock : 'full_payment',
-        status_token_hash: deposits.hashToken(statusToken),
-      } : {}),
+      deposit_minor: takesDeposit ? depositMinor : 0,
+      deposit_status: takesDeposit ? 'open' : 'none',
+      gallery_unlock: deposits.GALLERY_UNLOCK.includes(preset.gallery_unlock) ? preset.gallery_unlock : 'full_payment',
+      status_token_hash: deposits.hashToken(statusToken),
       created_at: ts(now),
       updated_at: ts(now),
     }).returning('id');
@@ -615,7 +602,7 @@ function splitName(name) {
 async function customerFor(request, adminId) {
   const email = request.email.toLowerCase();
   const ids = new Set((await db('customer_accounts').whereRaw('LOWER(email) = ?', [email]).pluck('id')).map(Number));
-  if (!ids.size && await hasColumnCached('customer_contacts', 'email')) {
+  if (!ids.size) {
     for (const id of await db('customer_contacts').whereRaw('LOWER(email) = ?', [email]).pluck('customer_account_id')) {
       ids.add(Number(id));
     }

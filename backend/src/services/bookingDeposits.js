@@ -28,7 +28,6 @@ const { AppError } = require('../utils/errors');
 const { toTimestamp } = require('../utils/dateNormalize');
 const { withTrustedCrmAccess } = require('../database/crmAccess');
 
-const { hasColumnCached } = require('../utils/schemaCache');
 const { formatBoolean } = require('../utils/dbCompat');
 
 const DEPOSIT_TYPES = ['none', 'percent', 'fixed'];
@@ -218,7 +217,6 @@ async function reconcileSession(request, session) {
     // check and the write share the lock new requests take, so a request
     // made meanwhile and this restore cannot both win the slot.
     const booking = require('./bookingService');
-    await hasColumnCached('booking_requests', 'deposit_status'); // warm before the transaction
     const outcome = await booking.withRequestLock(async (trx) => {
       // Expired, or still waiting with its hold run out (not swept yet).
       const late = await trx('booking_requests').where({ id: request.id }).whereIn('status', LATE_STATUSES)
@@ -497,7 +495,6 @@ async function businessDay(instant) {
  * keeps the admin side open to decide it.
  */
 async function depositDecisionsOpen() {
-  if (!(await hasColumnCached('booking_requests', 'deposit_status'))) return false;
   const pending = db('booking_requests').whereIn('deposit_status', ['paid', 'review', 'disputed', 'refund_failed'])
     .whereNot((settled) => settled.where({ status: 'accepted', deposit_status: 'paid' })
       .whereRaw('COALESCE(deposit_applied_minor, 0) >= COALESCE(deposit_received_minor, deposit_minor)'));
@@ -509,7 +506,6 @@ async function depositDecisionsOpen() {
   if (row) return true;
   // A gallery still locked until its deal is paid: the admin may need to
   // open it by hand. Existence only, so read across owners.
-  if (!(await hasColumnCached('events', 'payment_lock'))) return false;
   const locked = await withTrustedCrmAccess('booking: locked galleries', () => db('events')
     .whereNotNull('payment_lock').whereNull('payment_unlocked_at')
     // An archived gallery is done with; its stale lock is no decision.
@@ -528,7 +524,7 @@ async function depositDecisionsOpen() {
  */
 async function depositAlertsForInvoice(payments) {
   const intents = (payments || []).map((p) => p.reference).filter((r) => typeof r === 'string' && r.startsWith('pi_'));
-  if (!intents.length || !(await hasColumnCached('booking_requests', 'payment_intent_id'))) return [];
+  if (!intents.length) return [];
   const rows = await db('booking_requests').whereIn('payment_intent_id', intents)
     .whereIn('deposit_status', ['refunded', 'disputed']).select('id', 'reference', 'deposit_status');
   return rows.map((r) => ({ requestId: r.id, reference: r.reference, depositStatus: r.deposit_status }));

@@ -24,7 +24,6 @@ let invoiceRowsForRun = [];
 let replacementsRowsForRun = [];
 let inboundRowsForRun = [];
 let expenseRowsForRun = [];
-let costTablesPresent = false;
 let callCount = 0;
 
 function makeChain(initialRows) {
@@ -61,9 +60,6 @@ const mockDbFn = jest.fn((tableName) => {
   if (callCount === 1) return makeChain(invoiceRowsForRun);
   return makeChain(replacementsRowsForRun);
 });
-// loadCosts (#4) schema-guards each cost table. Default off so the
-// revenue-only tests are unaffected; cost-side tests flip it on.
-mockDbFn.schema = { hasTable: jest.fn(async () => costTablesPresent) };
 // `.raw()` is used in the .select() column list for the event_name
 // COALESCE (migration 123). The chain's select() ignores its
 // arguments and returns the mocked rows, so the raw() return value
@@ -83,7 +79,6 @@ beforeEach(() => {
   replacementsRowsForRun = [];
   inboundRowsForRun = [];
   expenseRowsForRun = [];
-  costTablesPresent = false;
   callCount = 0;
   mockDbFn.mockClear();
 });
@@ -394,7 +389,7 @@ describe('getTaxReport', () => {
     expect(out.cancelledCount).toBe(0);
   });
 
-  it('returns an empty cost side + zeroed summary when accounting tables are absent', async () => {
+  it('returns an empty cost side + zeroed summary when there are no costs', async () => {
     invoiceRowsForRun = [
       {
         id: 1, invoice_number: 'R-2026-0001', issue_date: '2026-01-15',
@@ -404,7 +399,6 @@ describe('getTaxReport', () => {
         customer_company_name: 'ACME', event_name: 'X',
       },
     ];
-    costTablesPresent = false; // no accounting migrations on this DB
     const out = await taxReportService.getTaxReport({
       from: '2026-01-01', to: '2026-03-31', currency: 'CHF',
     });
@@ -428,7 +422,6 @@ describe('getTaxReport', () => {
         customer_company_name: 'ACME', event_name: 'Wedding A',
       },
     ];
-    costTablesPresent = true;
     // Incoming supplier invoice: net 20000 + vat 1540 = 21540.
     inboundRowsForRun = [
       {
@@ -482,7 +475,6 @@ describe('getTaxReport', () => {
   });
 
   it('excludes declined/duplicate incoming invoices via the query filter (sanity on chain wiring)', async () => {
-    costTablesPresent = true;
     inboundRowsForRun = []; // the whereNotIn filter is applied in SQL; here we assert empty → zeroed
     expenseRowsForRun = [];
     const out = await taxReportService.getTaxReport({
@@ -526,7 +518,6 @@ describe('export scope helpers', () => {
 
 describe('renderTaxReportCsv scope', () => {
   beforeEach(() => {
-    costTablesPresent = true;
     invoiceRowsForRun = [{
       id: 1, invoice_number: 'R-2026-0001', issue_date: '2026-01-15',
       currency: 'CHF', status: 'paid', vat_rate: 8.1,
@@ -596,7 +587,6 @@ describe('report row order (issue 2335)', () => {
   const PERIOD = { from: '2026-10-01', to: '2026-10-31', currency: 'CHF' };
 
   it('sorts PostgreSQL Dates chronologically, not by weekday name', async () => {
-    costTablesPresent = true;
     invoiceRowsForRun = [invoice(1, new Date(2026, 9, 16)), invoice(2, new Date(2026, 9, 12))];
     inboundRowsForRun = [inbound(5, new Date(2026, 9, 15), new Date(2026, 9, 20, 9))];
     expenseRowsForRun = [expense(9, new Date(2026, 9, 13, 12)), expense(8, new Date(2026, 9, 19, 8))];
@@ -616,7 +606,6 @@ describe('report row order (issue 2335)', () => {
   });
 
   it('sorts SQLite text, zone-less timestamps and epoch ms together', async () => {
-    costTablesPresent = true;
     invoiceRowsForRun = [invoice(1, '2026-10-16'), invoice(2, '2026-10-12')];
     inboundRowsForRun = [inbound(5, null, '2026-10-15 09:00:00')];
     expenseRowsForRun = [expense(9, Date.UTC(2026, 9, 13, 12))];

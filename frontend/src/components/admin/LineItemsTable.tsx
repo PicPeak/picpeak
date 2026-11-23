@@ -41,7 +41,7 @@ import { PricingFactorsDialog } from './quotes/PricingFactorsDialog';
 import type { FactorPriceResult, FactorValue, PricingFactor, PricingFactorsSnapshot } from '../../services/quoteCatalog.service';
 import type { ConfigurationValues } from '../../features/album-products/ConfigurationPicker';
 import { useTranslation } from 'react-i18next';
-import { Plus, X, ArrowUp, ArrowDown, Save as SaveIcon, ChevronDown, ChevronRight, CornerDownRight, Tag, SlidersHorizontal } from 'lucide-react';
+import { Plus, X, ArrowUp, ArrowDown, ChevronDown, ChevronRight, CornerDownRight, Tag, SlidersHorizontal } from 'lucide-react';
 import { Button, useConfirm } from '../common';
 import { DecimalInput } from '../common/DecimalInput';
 import { AddOnBookButton, AddOnBookingState } from '../common/AddOnBookButton';
@@ -150,7 +150,6 @@ interface Props {
   vatRoundDown?: boolean;
   onChange: (items: EditableLineItem[]) => void;
   presets?: LineItemPresetMinimal[];
-  onSaveAsPreset?: (item: EditableLineItem) => void;
   /** 'quote' enables optional add-ons and hour/day rates; invoices carry units only. */
   mode?: 'quote' | 'invoice';
   /** Quote-wide hours / days that bound lines follow (quotes only). */
@@ -262,7 +261,7 @@ function lineFromCatalogue(
 
 export const LineItemsTable: React.FC<Props> = ({
   items, currency, showDiscount = true, vatRate = 0, shippingAmount = 0, roundTotal = false,
-  vatRoundDown = false, onChange, presets = [], onSaveAsPreset, mode = 'invoice', hours = null, days = null, packages = [],
+  vatRoundDown = false, onChange, presets = [], mode = 'invoice', hours = null, days = null, packages = [],
   factors = [], priceWithFactors,
 }) => {
   const { t } = useTranslation();
@@ -1098,13 +1097,6 @@ export const LineItemsTable: React.FC<Props> = ({
                             className="p-1 rounded hover:bg-hover"
                             title={t('crm.lineItems.addSubItem', 'Add sub-item') as string}>
                             <CornerDownRight className="w-4 h-4" />
-                          </button>
-                        )}
-                        {onSaveAsPreset && !sub && (
-                          <button type="button" onClick={() => onSaveAsPreset(li)} aria-label="Save as preset"
-                            className="p-1 rounded hover:bg-hover"
-                            title={t('crm.lineItems.saveAsPreset', 'Save as preset') as string}>
-                            <SaveIcon className="w-4 h-4" />
                           </button>
                         )}
                         <button type="button" onClick={() => removeRow(idx)} aria-label="Remove"
