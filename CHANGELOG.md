@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.210.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.0-beta.0...v3.210.1-beta.0) (2026-11-23)
+
+
+### Bug Fixes
+
+* **projects:** stop returning milestones from the project overview ([6981ba3](https://github.com/PicPeak/picpeak/commit/6981ba378d7c7429a02ff193d8b51b98eb3984a1))
+* **workflows:** leave wake_at empty on a run waiting at a gate ([6981ba3](https://github.com/PicPeak/picpeak/commit/6981ba378d7c7429a02ff193d8b51b98eb3984a1))
+
 ## [3.210.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.209.3-beta.0...v3.210.0-beta.0) (2026-11-23)
 
 
