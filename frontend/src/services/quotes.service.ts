@@ -334,7 +334,7 @@ export interface QuoteVersionSummary {
 
 export interface QuoteStoredVersion {
   id: number;
-  kind: 'sent' | 'accepted' | string;
+  kind: 'sent' | 'accepted';
   generatedAt: string;
   pages: number | null;
   bytes: number;
