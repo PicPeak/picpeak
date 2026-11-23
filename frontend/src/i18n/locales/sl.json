@@ -8816,6 +8816,7 @@
     "subtitle": "Načrtujte in pošiljajte račune, spremljajte plačila ter opominjajte pri zamudah.",
     "new": "Nov račun",
     "searchPlaceholder": "Išči po številki ali stranki…",
+    "pagination": "Stran {{page}} od {{total}} · {{count}} računov",
     "sort": {
       "newest": "Najprej najnovejše",
       "dueAsc": "Najprej kmalu zapadli",

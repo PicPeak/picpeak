@@ -8638,6 +8638,7 @@
     "hours": {
       "section": "Hours",
       "monthlyHint": "Entries auto-append to the current monthly draft. Edit / delete remains possible until the scheduler arms the draft for send.",
+      "manualHint": "Entries auto-append to the running manual draft. Edit / delete remains possible until you click \"Trigger invoice now\".",
       "perEventHint": "Logged entries stay unbilled until you click \"Create draft invoice\" — one scheduled invoice is generated with a line per entry and opened in the editor, so you can add other items before it ships.",
       "form": {
         "title": "Log new entry",
@@ -10647,6 +10648,7 @@
     "subtitle": "Schedule, send, track payments and chase late invoices.",
     "new": "New invoice",
     "searchPlaceholder": "Search by number or customer…",
+    "pagination": "Page {{page}} of {{total}} · {{count}} invoices",
     "sort": {
       "newest": "Newest first",
       "dueAsc": "Due soon first",
