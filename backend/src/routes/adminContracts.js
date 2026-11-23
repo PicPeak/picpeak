@@ -173,7 +173,7 @@ function transformContract(c, inclusions, textSections, attachmentRows) {
       noAdminEmails: c.customer_no_admin_emails === true || c.customer_no_admin_emails === 1,
     },
     status: c.status,
-    // Migration 140 — cross-document lineage UUID. See adminQuotes
+    // Cross-document lineage UUID. See adminQuotes
     // transform for the same note; lets the lineage card fetch every
     // related doc in one query.
     dealUuid: c.deal_uuid || null,
@@ -182,7 +182,7 @@ function transformContract(c, inclusions, textSections, attachmentRows) {
     issueDate: toDateOnly(c.issue_date),
     validUntil: toDateOnly(c.valid_until),
     title: c.title,
-    // Event snapshot fields (migration 130 in-place edit). Null when
+    // Event snapshot fields. Null when
     // the standalone contract didn't set them OR when the column
     // hasn't migrated yet on this install — the API surface stays
     // stable either way.
@@ -200,7 +200,7 @@ function transformContract(c, inclusions, textSections, attachmentRows) {
     // with since we issued it.
     pdfSha256: c.pdf_sha256 || null,
     signedPdfSha256: c.signed_pdf_sha256 || null,
-    // Migration 136 — surface the post-sign re-stamp failure marker so
+    // Surface the post-sign re-stamp failure marker so
     // the admin detail page can render a recovery banner. Null when
     // the most recent stamp succeeded (or the migration hasn't run on
     // this install — the front-end branches on truthiness).
@@ -216,7 +216,7 @@ function transformContract(c, inclusions, textSections, attachmentRows) {
     signedAdminIp: c.signed_admin_ip,
     signedAdminSignaturePath: c.signed_admin_signature_path,
     createdByAdminId: c.created_by_admin_id,
-    // Lineage back-pointers (migration 130). Surfaced so the
+    // Lineage back-pointers. Surfaced so the
     // ContractDetailPage can render "Linked quote" + "Linked
     // invoices" panels alongside the existing block list. The
     // values are nullable when the back-pointers haven't been
@@ -287,7 +287,7 @@ function transformBlock(b) {
     description: b.description,
     bodyText: b.body_text,
     bodyTextDe: b.body_text_de,
-    // Migration 131 — additional language bodies. Fall back to null
+    // Additional language bodies. Fall back to null
     // on schema-drift (column missing on a not-yet-migrated install)
     // so the field always exists on the JSON shape.
     bodyTextRu: b.body_text_ru ?? null,
@@ -1070,10 +1070,9 @@ router.get(
 );
 
 // Integrity check — re-hashes pdf_path + signed_pdf_path on disk and
-// compares to the stored pdf_sha256 / signed_pdf_sha256 (migration
-// 131). Lets the admin confirm a contract PDF on disk still matches
-// what was issued, catching backup-corruption / manual-edit cases
-// without needing to drop to a shell.
+// compares to the stored pdf_sha256 / signed_pdf_sha256. Lets the admin
+// confirm a contract PDF on disk still matches what was issued, catching
+// backup-corruption / manual-edit cases without needing to drop to a shell.
 // The itemised integrity report (#1446): every artefact re-hashed against
 // what was recorded, the event chain, the manifest. `?format=pdf` renders it
 // as a one-page report. Each run is logged with its overall result.
@@ -1093,7 +1092,7 @@ router.get(
       report,
       locale: (contract && contract.language) || 'de',
       theme,
-      issuer: { pdfFontTtfPath: profile.pdf_font_ttf_path || null, pdfFontFamily: profile.pdf_font_family || null, companyName: profile.company_name || null },
+      issuer: { pdfFontFamily: profile.pdf_font_family || null, companyName: profile.company_name || null },
     });
     res.set('Content-Type', 'application/pdf');
     res.set('X-Content-Type-Options', 'nosniff');

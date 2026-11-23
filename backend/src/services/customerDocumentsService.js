@@ -371,13 +371,9 @@ async function listVisibleRows(customerId) {
   return customerVisibleQuery(customerId).orderBy('customer_documents.id', 'desc');
 }
 
-async function getForCustomer(customerId, documentId) {
-  return customerVisibleQuery(customerId).where('customer_documents.id', documentId).first();
-}
-
 /**
  * What one document id means to this customer, for the document page and the
- * download route (#1444). Unlike getForCustomer it also answers for rows the
+ * download route (#1444). Unlike listForCustomer it also answers for rows the
  * customer can no longer see, so the page can say *why* — but only for rows
  * the customer did see once:
  *
@@ -916,10 +912,8 @@ module.exports = {
   getLimits,
   getRetentionDays,
   getUsageBytes,
-  parseOptionalId,
   listForCustomer,
   listVisibleRows,
-  getForCustomer,
   getStateForCustomer,
   listForAdmin,
   getForAdmin,

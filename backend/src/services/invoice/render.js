@@ -1,6 +1,3 @@
-// Extracted verbatim from invoiceService.js — see ../invoiceService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
 const { cleanNetMinor } = require('../../utils/invoiceRounding');

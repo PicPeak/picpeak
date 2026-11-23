@@ -30,7 +30,7 @@ import { Loading } from '../../components/common';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import { DocumentVerificationStep } from '../../components/public/DocumentVerificationStep';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
-import { SignaturePadField, type SignaturePadHandle } from '../../components/contracts/SignaturePadField';
+import { SignaturePadField, downscaleSignature, type SignaturePadHandle } from '../../components/contracts/SignaturePadField';
 import { formatMoneyMinor } from '../../utils/money';
 import { CONTRACT_CARD as CARD, ContractBody, SECTION_LABELS } from '../../components/contracts/ContractBody';
 import { OtpVerifyStep } from '../../components/contracts/OtpVerifyStep';
@@ -1345,43 +1345,6 @@ const DeclinePanel: React.FC<{
 // ---------------------------------------------------------------------
 // Contracts sent before signatures v2: one link, no code.
 // ---------------------------------------------------------------------
-
-/**
- * Maximum width of the exported signature PNG. The on-screen canvas
- * uses CSS-pixel size × devicePixelRatio for crisp strokes; without
- * downscaling, a 4× retina display exports a multi-MB PNG that
- * trips the server's SIGNATURE_TOO_LARGE cap (1 MB base64). 800 px
- * is wide enough to render the signature legibly when stamped onto
- * the contract PDF (printed at 4 inches × 200 dpi).
- */
-const MAX_SIGNATURE_WIDTH = 800;
-
-/**
- * Export the signature canvas as a downscaled PNG data URL.
- * Renders the source canvas onto a temporary canvas at
- * MAX_SIGNATURE_WIDTH (preserving aspect ratio), then exports via
- * toDataURL. The pad parameter is passed for the empty-state check
- * + the fallback path when downscaling can't run.
- */
-function downscaleSignature(pad: SignaturePad, sourceCanvas: HTMLCanvasElement): string {
-  const srcW = sourceCanvas.width;
-  const srcH = sourceCanvas.height;
-  if (srcW <= MAX_SIGNATURE_WIDTH) {
-    return pad.toDataURL('image/png');
-  }
-  const scale = MAX_SIGNATURE_WIDTH / srcW;
-  const targetW = MAX_SIGNATURE_WIDTH;
-  const targetH = Math.round(srcH * scale);
-  const dst = document.createElement('canvas');
-  dst.width = targetW;
-  dst.height = targetH;
-  const ctx = dst.getContext('2d');
-  if (!ctx) return pad.toDataURL('image/png');
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(sourceCanvas, 0, 0, srcW, srcH, 0, 0, targetW, targetH);
-  return dst.toDataURL('image/png');
-}
 
 export interface ContractSignPayload {
   name: string;

@@ -737,7 +737,7 @@ router.post(
     const inserted = await accountingHistory.auditedInsert(db, 'invoices', row, {
       actor: req.admin.id, source: 'invoice.import',
     });
-    const invoiceId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+    const invoiceId = inserted[0].id;
     capabilityEvidence(res, 'crm_invoice_import');
 
     return successResponse(res, {

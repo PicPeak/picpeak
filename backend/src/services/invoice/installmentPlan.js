@@ -1,6 +1,3 @@
-// Extracted verbatim from invoiceService.js — see ../invoiceService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const { logActivity } = require('../../database/db');
 const { adminActivityActor } = require('../../utils/activityActor');
 const { AppError } = require('../../utils/errors');
@@ -110,13 +107,9 @@ function isReconciliationLineItem(li) {
  * description matches the new label/percent and the line's amount
  * closes the gap between the cloned-quote-line subtotal and the
  * sibling's net slice. Symmetric with the inline logic in spawn.
- *
- * `topLineSubtotal` is the sum of non-reconciliation, top-level line
- * items already on the invoice — passed in so callers reading the row
- * once don't have to re-query.
  */
 async function replaceReconciliationLine(
-  trx, invoiceId, { label, percent, index, total, netSlice, topLineSubtotal, actor = null },
+  trx, invoiceId, { label, percent, index, total, netSlice, actor = null },
 ) {
   const context = { actor, source: 'invoice.installmentPlan.reconciliationLine' };
   const all = await trx('invoice_line_items')
@@ -130,13 +123,11 @@ async function replaceReconciliationLine(
   if (total <= 1) return;
 
   const nonRecon = all.filter((x) => !isReconciliationLineItem(x));
-  const subtotal = topLineSubtotal != null
-    ? topLineSubtotal
-    // Stored rows name their parent by id (no parent_position column), so the
-    // top-level lines are those without one; a sub-item's amount is already in
-    // its parent's stored total (migrations 119 + 371).
-    : nonRecon.filter((x) => x.parent_line_item_id == null)
-      .reduce((s, x) => s + ensureInt(x.line_total_minor), 0);
+  // Stored rows name their parent by id (no parent_position column), so the
+  // top-level lines are those without one; a sub-item's amount is already in
+  // its parent's stored total (migrations 119 + 371).
+  const subtotal = nonRecon.filter((x) => x.parent_line_item_id == null)
+    .reduce((s, x) => s + ensureInt(x.line_total_minor), 0);
   const adjustment = netSlice - subtotal;
   if (adjustment === 0) return;
 
@@ -349,7 +340,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
       updated_at: new Date(),
     };
     const inserted = await auditedInsert(trx, 'invoices', row, { actor: adminId, source: 'invoice.installmentPlan.create' });
-    const newId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+    const newId = inserted[0].id;
 
     if (canonicalLineItems.length > 0) {
       const cloned = canonicalLineItems.map((li) => ({
@@ -406,7 +397,6 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
 module.exports = {
   computeSliceTotals,
   validateInstallmentPlanInput,
-  isReconciliationLineItem,
   replaceReconciliationLine,
   updateInstallmentPlan,
 };

@@ -7460,7 +7460,6 @@
     },
     "table": {
       "name": "Ime",
-      "email": "E-pošta",
       "company": "Podjetje",
       "eventCount": "Dogodki",
       "lastLogin": "Zadnja prijava",
@@ -7474,16 +7473,7 @@
     "invite": {
       "button": "Povabi stranko",
       "title": "Povabi stranko",
-      "description": "Prejela bo e-pošto s povezavo za nastavitev računa. Ko povabilo sprejme, jo lahko dodelite dogodkom.",
-      "email": "E-pošta",
-      "submit": "Pošlji povabilo",
-      "success": "Povabilo poslano",
-      "error": "Povabila ni bilo mogoče poslati.",
-      "conflict": "Stranka s to e-pošto že obstaja ali ima čakajoče povabilo.",
-      "invalidEmail": "Vnesite veljaven e-poštni naslov",
-      "showPrefill": "+ Dodaj kontaktne podatke (neobvezno)",
-      "hidePrefill": "− Skrij kontaktne podatke",
-      "prefillHint": "Vse, kar izpolnite, bo vnaprej izpolnjeno na strani za registracijo stranke — še vedno bo lahko podatke uredila."
+      "description": "Prejela bo e-pošto s povezavo za nastavitev računa. Ko povabilo sprejme, jo lahko dodelite dogodkom."
     },
     "invitations": {
       "empty": "Ni čakajočih povabil.",
@@ -7524,7 +7514,6 @@
       "preferredLanguage": "Želeni jezik",
       "preferredLanguageHint": "Določa jezik portala, PDF-jev ponudb/računov in obračunske e-pošte (opomniki). Nove stranke privzeto uporabljajo jezik poslovnega profila ({{lang}}); tukaj ga lahko za posamezno stranko preglasite.",
       "salutation": "Nagovor",
-      "salutationNone": "—",
       "firstName": "Ime",
       "lastName": "Priimek",
       "displayName": "Prikazno ime",
@@ -7537,9 +7526,7 @@
       "postalCode": "Poštna številka",
       "city": "Mesto",
       "state": "Zvezna država / regija",
-      "countryCode": "Država (ISO 2)",
       "country": "Država",
-      "countryName": "Država (polno ime)",
       "notesHint": "Vidno samo administratorjem. Nikoli ni prikazano stranki.",
       "featuresSection": "Funkcije stranke",
       "featuresHint": "Prepisi po stranki za zavihke v površini stranke. Globalna stikala v Nastavitve → Površina stranke so glavno stikalo — ko je globalno IZKLOPLJENO, nihče ne vidi zavihka, ne glede na nastavitev tukaj. Privzeto so VKLOPLJENA, zato izklopite stikalo, da skrijete zavihek za to specifično stranko.",
@@ -7604,7 +7591,6 @@
       "title": "Izbrišem podatke stranke?",
       "body": "Odstrani ime, e-pošto, telefon, naslov, podjetje in prijavne podatke stranke. Vrstica računa ostane, da zgodovinski zapisi dostopa do dogodkov in revizijski dnevniki še vedno kažejo nanjo. To je nepovratno — podatkov pozneje ne morete obnoviti.",
       "confirm": "Trajno izbriši",
-      "confirmInFlight": "Brisanje…",
       "success": "Stranka izbrisana",
       "error": "Stranke ni bilo mogoče izbrisati"
     },
@@ -7840,9 +7826,6 @@
     }
   },
   "accounting": {
-    "title": "Računovodstvo",
-    "subtitle": "Prejeti računi dobaviteljev, stroški in poročanje.",
-    "navAriaLabel": "Krmarjenje po računovodstvu",
     "empty": {
       "title": "Nobena računovodska funkcija ni omogočena",
       "body": "Za začetek v Nastavitve → Funkcije omogočite Davčno poročilo (ali drugo računovodsko podfunkcijo)."
@@ -7850,9 +7833,7 @@
     "subnav": {
       "incomingInvoices": "Prejeti računi",
       "expenses": "Stroški",
-      "taxReport": "Davek",
-      "export": "Izvoz za fiduciarja",
-      "chartOfAccounts": "Kontni načrt"
+      "taxReport": "Davek"
     },
     "taxTreatment": {
       "domestic": "Domače (z DDV)",
@@ -7885,8 +7866,6 @@
       "scanCamera": "Skeniraj s kamero",
       "uploadFile": "Naloži datoteko",
       "capturedToast": "Dokument zajet.",
-      "categorizedToast": "Dokument kategoriziran.",
-      "triageTitle": "Kategoriziraj dokument",
       "saveCategorize": "Shrani",
       "saveCategorizePay": "Shrani in označi kot plačano",
       "categorize": "Kategoriziraj",
@@ -7895,7 +7874,6 @@
       "empty": "Dokumentov še ni — zajemite prvega zgoraj.",
       "untitled": "Neimenovan dokument",
       "noAmount": "znesek ni vnesen",
-      "rebillHint": "Ustvari urejevalni načrtovani račun pri stranki. Obravnava DDV/davkov je v1 — preverite s svojim fiduciarjem.",
       "previewLoading": "Nalaganje predogleda…",
       "previewError": "Predogled ni na voljo — polja vnesite ročno.",
       "qrHint": "Prikazana je zadnja stran — švicarski QR-račun je običajno spodaj.",
@@ -7917,9 +7895,7 @@
         "disposition": "Obravnava",
         "category": "Kategorija",
         "categoryNone": "— brez —",
-        "declineReason": "Razlog",
         "customer": "Stranka",
-        "eventId": "ID dogodka (neobvezno)",
         "markup": "Pribitek",
         "reference": "Sklic za plačilo",
         "referenceHint": "QR / ESR sklic ali sporočilo",
@@ -7930,12 +7906,6 @@
         "supplierCountryNone": "— neznano —",
         "supplierCountryHint": "Samodejno določi davčno obravnavo: zunaj držav, kjer lahko odbijate DDV → tuji DDV (brez pravice do odbitka)."
       }
-    },
-    "expenseStatus": {
-      "open": "Odpri",
-      "parked": "Odloženo",
-      "billed": "Obračunano",
-      "declined": "Zavrnjeno"
     },
     "paymentMethod": {
       "bank_transfer": "Bančno nakazilo",
@@ -7949,7 +7919,6 @@
       "label": "Knjiži na",
       "company": "Podjetje",
       "event": "Dogodek",
-      "eventId": "ID dogodka",
       "inboundHint": "Kateri dogodek nosi ta strošek v poročilih in davčnem izvozu (Podjetje = splošni režijski stroški). To je ločeno od tega, komu ga ponovno zaračunate."
     },
     "incoming": {
@@ -8007,21 +7976,16 @@
       "other": "Drugo"
     },
     "ledger": {
-      "allStatuses": "Vsa stanja",
-      "allDispositions": "Vse obravnave",
       "allKinds": "Vse vrste",
       "empty": "Stroškov še ni — dodajte prvega zgoraj.",
       "untitled": "Strošek",
-      "invoiceLink": "Račun",
       "paid": "Plačano",
       "markPaid": "Označi kot plačano",
-      "markPaidTitle": "Označi dobavitelja kot plačanega",
       "paidDate": "Datum plačila",
       "method": "Način",
       "reference": "Sklic (neobvezno)",
       "confirmPaid": "Označi kot plačano",
       "paidToast": "Označeno kot plačano.",
-      "unpaidToast": "Označeno kot neplačano.",
       "addExpense": "Dodaj strošek",
       "addTitle": "Dodaj strošek",
       "editTitle": "Uredi strošek",
@@ -8035,7 +7999,6 @@
       "locked": "Zaklenjeno",
       "lockedHint": "Zaklenjeno — ta strošek je na računu stranke.",
       "description": "Opis",
-      "descriptionHint": "npr. kilometrina, dnevnica, gotovinski račun",
       "createdToast": "Strošek dodan."
     }
   },
@@ -8332,16 +8295,11 @@
       "legacyRate": "{{rate}} % (ni nastavljeno)"
     },
     "export": {
-      "title": "Izvoz za fiduciarja",
-      "intro": "Prenesite skupni dnevnik (prihodki + stroški kot obračunske knjižbe s konti in kodami DDV) za uvoz v računovodsko programsko opremo vašega fiduciarja.",
       "format": "Ciljno orodje",
       "format_generic": "Splošno (vsi stolpci)",
       "format_banana": "Banana — dvostavno",
       "format_banana_ie": "Banana — prihodki in odhodki",
-      "format_bexio": "bexio",
-      "download": "Prenesi CSV",
-      "failed": "Izvoz ni uspel.",
-      "disclaimer": "Samo obračunska osnova (datumi dokumentov) — plačila in bančna gibanja niso vključena. Konti in kode DDV sledijo vaši preslikavi kontnega načrta. Pred oddajo uvoz vedno preverite s svojim fiduciarjem."
+      "format_bexio": "bexio"
     }
   },
   "taxReport": {
@@ -8459,7 +8417,6 @@
       "vatRate": "Stopnja DDV %",
       "shipping": "Znesek poštnine",
       "currency": "Valuta",
-      "selectPaymentTerm": "— Izberite plačilne pogoje —",
       "paymentNetDays": "Neto dni",
       "paymentTiming": "Razpored plačil",
       "selectNetDays": "— Izberite neto rok —",
@@ -8501,13 +8458,6 @@
     "title": "Ponudbe",
     "subtitle": "Pošiljajte in spremljajte ponudbe ter jih pretvarjajte v dogodke.",
     "searchPlaceholder": "Išči po številki, stranki, dogodku…",
-    "sort": {
-      "newest": "Najprej najnovejše",
-      "oldest": "Najprej najstarejše",
-      "customerAsc": "Stranka A→Ž",
-      "valueAsc": "Vrednost nizka→visoka",
-      "valueDesc": "Vrednost visoka→nizka"
-    },
     "empty": "Ponudb še ni.",
     "table": {
       "customer": "Stranka",
@@ -8745,7 +8695,6 @@
       "position": "Poz.",
       "discount": "Popust %",
       "descriptionPlaceholder": "Opis (lahko več vrstic)",
-      "saveAsPreset": "Shrani kot prednastavitev",
       "empty": "Postavk še ni — dodajte prvo.",
       "addRow": "Dodaj vrstico",
       "addFromPreset": "Dodaj iz prednastavitve…",
@@ -8805,14 +8754,6 @@
     "new": "Nov račun",
     "searchPlaceholder": "Išči po številki ali stranki…",
     "pagination": "Stran {{page}} od {{total}} · {{count}} računov",
-    "sort": {
-      "newest": "Najprej najnovejše",
-      "dueAsc": "Najprej kmalu zapadli",
-      "dueDesc": "Najprej najpozneje zapadli",
-      "customerAsc": "Stranka A→Ž",
-      "valueAsc": "Vrednost nizka→visoka",
-      "valueDesc": "Vrednost visoka→nizka"
-    },
     "filter": {
       "unpaidOnly": "Samo neplačani"
     },
@@ -8838,7 +8779,6 @@
     "monthlyDraftBadge": "Mesečni osnutek — pošlje se glede na obračunski dan stranke ali z »Sproži račun zdaj«",
     "confirmReminder": "Pošljem opomnik zdaj?",
     "reminderToast": "Opomnik poslan.",
-    "confirmCancel": "Prekličem ta račun?",
     "confirmCancelDraft": "Prekličem ta osnutek računa? Noben dokument ne bo poslan.",
     "confirmCancelIssued": "Takoj bo ustvarjen storno račun in po e-pošti poslan stranki. Tega ni mogoče razveljaviti. Nadaljujem?",
     "cancelledToast": "Račun preklican.",
@@ -8877,7 +8817,6 @@
       "shipping": "Poštnina",
       "currency": "Valuta",
       "ccPdfEmail": "Kopijo PDF pošlji tudi na",
-      "sourceQuote": "Iz ponudbe",
       "businessBankAccount": "Račun za plačilo",
       "bankAccountProfileDefault": "Uporabi privzeti poslovni profil za {{currency}}",
       "bankAccountDefaultBadge": "(privzeto)",
@@ -8900,7 +8839,6 @@
       "ccPdfPickFromAdmins": "Izberi med administratorji:",
       "paymentTermHelp": "Neto rok + skonto za ta račun. Pustite prazno za dedovanje iz izvorne ponudbe ali globalnih privzetih nastavitev CRM.",
       "skontoDisabled": "Onemogoči skonto za ta račun (skrije blok popusta za zgodnje plačilo na PDF-ju in gumbe »Plačano s skontom« v skrbniški e-pošti / pogovornem oknu za beleženje plačila).",
-      "sourceContract": "Iz pogodbe",
       "status": "Stanje"
     },
     "import": "Uvozi zgodovinski račun",
@@ -9688,13 +9626,6 @@
       "eventHelp": "Shrani se kot posnetek v pogodbi in prenese v vsak dogodek/račun, ustvarjen iz nje. Nastavite ga, da portal stranke in e-pošta za izterjavo prikazujeta pravilno oznako »Poroka Novak / Müller«.",
       "eventName": "Ime dogodka",
       "eventNamePlaceholder": "npr. Poroka Novak / Müller",
-      "eventType": "Vrsta dogodka",
-      "eventTypeNone": "— Uporabi privzeto —",
-      "eventTypeHint": "Uporabi se za dogodek, ustvarjen ob sprejemu te ponudbe.",
-      "bookingWorkflow": "Delovni tok rezervacije (ob sprejemu)",
-      "bookingWorkflowNone": "— Brez —",
-      "bookingWorkflowDisabled": "(onemogočeno)",
-      "bookingWorkflowHint": "Tok, ki se zažene, ko stranka sprejme. Pustite »Brez«, če ne želite zagona rezervacijskega toka. Tok mora biti omogočen, da se sproži.",
       "eventSection": "Dogodek (neobvezno)",
       "eventTimeEnd": "Konec",
       "eventTimeStart": "Začetek",

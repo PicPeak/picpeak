@@ -8708,7 +8708,6 @@
     },
     "table": {
       "name": "Name",
-      "email": "E-Mail",
       "company": "Firma",
       "eventCount": "Galerien",
       "lastLogin": "Letzte Anmeldung",
@@ -8722,16 +8721,7 @@
     "invite": {
       "button": "Kunden einladen",
       "title": "Kunden einladen",
-      "description": "Der Kunde erhält eine E-Mail mit einem Link zum Einrichten des Kontos. Nach Annahme können Sie ihn Events zuordnen.",
-      "email": "E-Mail",
-      "submit": "Einladung senden",
-      "success": "Einladung gesendet",
-      "error": "Einladung konnte nicht gesendet werden.",
-      "conflict": "Ein Kunde mit dieser E-Mail existiert bereits oder hat eine offene Einladung.",
-      "invalidEmail": "Bitte geben Sie eine gültige E-Mail ein",
-      "showPrefill": "+ Kontaktdaten hinzufügen (optional)",
-      "hidePrefill": "− Kontaktdaten ausblenden",
-      "prefillHint": "Alles, was Sie ausfüllen, wird auf der Anmeldeseite des Kunden vorausgefüllt — er kann es weiterhin bearbeiten."
+      "description": "Der Kunde erhält eine E-Mail mit einem Link zum Einrichten des Kontos. Nach Annahme können Sie ihn Events zuordnen."
     },
     "invitations": {
       "empty": "Keine offenen Einladungen.",
@@ -8780,7 +8770,6 @@
       "preferredLanguage": "Bevorzugte Sprache",
       "preferredLanguageHint": "Steuert die Portal-Sprache, Angebots-/Rechnungs-PDFs sowie Rechnungs-E-Mails (Erinnerungen/Mahnungen). Neue Kunden erben standardmässig die Sprache aus dem Geschäftsprofil ({{lang}}); hier kann pro Kunde überschrieben werden.",
       "salutation": "Anrede",
-      "salutationNone": "—",
       "firstName": "Vorname",
       "lastName": "Nachname",
       "displayName": "Anzeigename",
@@ -8793,9 +8782,7 @@
       "postalCode": "Postleitzahl",
       "city": "Stadt",
       "state": "Bundesland / Region",
-      "countryCode": "Land (ISO-2)",
       "country": "Land",
-      "countryName": "Land (vollständiger Name)",
       "notesHint": "Nur für Administratoren sichtbar. Wird dem Kunden nie gezeigt.",
       "featuresSection": "Kundenfunktionen",
       "featuresHint": "Pro-Kunde-Überschreibungen für die Kundenoberflächen-Tabs. Die globalen Schalter in Einstellungen → Kundenoberfläche sind der Master-Schalter — wenn global AUS, sieht niemand den Tab, unabhängig von der Einstellung hier. Standard ist AN, schalte einen Eintrag AUS, um diesen Tab für diesen Kunden auszublenden.",
@@ -8860,7 +8847,6 @@
       "title": "Kundendaten löschen?",
       "body": "Entfernt Name, E-Mail, Telefon, Adresse, Firma und Login-Daten des Kunden. Der Kontoeintrag bleibt, damit historische Galerie-Zugriffe und Audit-Logs ihn weiter referenzieren können. Dies ist unwiderruflich — die Daten können danach nicht wiederhergestellt werden.",
       "confirm": "Endgültig löschen",
-      "confirmInFlight": "Lösche…",
       "success": "Kunde gelöscht",
       "error": "Kunde konnte nicht gelöscht werden"
     },
@@ -9153,9 +9139,6 @@
     }
   },
   "accounting": {
-    "title": "Buchhaltung",
-    "subtitle": "Eingehende Lieferantenrechnungen, Aufwände und Auswertungen.",
-    "navAriaLabel": "Buchhaltungs-Navigation",
     "empty": {
       "title": "Keine Buchhaltungsfunktionen aktiviert",
       "body": "Aktivieren Sie die Steuerliste (oder eine andere Buchhaltungs-Unterfunktion) unter Einstellungen → Funktionen, um loszulegen."
@@ -9163,9 +9146,7 @@
     "subnav": {
       "incomingInvoices": "Eingangsrechnungen",
       "expenses": "Aufwände",
-      "taxReport": "Steuer",
-      "export": "Treuhänder-Export",
-      "chartOfAccounts": "Kontenplan"
+      "taxReport": "Steuer"
     },
     "taxTreatment": {
       "domestic": "Inland (mit MWST)",
@@ -9199,8 +9180,6 @@
       "scanCamera": "Mit Kamera scannen",
       "uploadFile": "Datei hochladen",
       "capturedToast": "Dokument erfasst.",
-      "categorizedToast": "Dokument kategorisiert.",
-      "triageTitle": "Dokument kategorisieren",
       "saveCategorize": "Speichern",
       "saveCategorizePay": "Speichern & als bezahlt markieren",
       "categorize": "Kategorisieren",
@@ -9209,7 +9188,6 @@
       "empty": "Noch keine Dokumente — oben eines erfassen.",
       "untitled": "Unbenanntes Dokument",
       "noAmount": "Betrag nicht erfasst",
-      "rebillHint": "Erstellt eine bearbeitbare geplante Rechnung beim Kunden. MwSt-/Steuerbehandlung ist v1 — mit Treuhänder prüfen.",
       "previewLoading": "Vorschau wird geladen…",
       "previewError": "Vorschau nicht verfügbar — Felder manuell erfassen.",
       "qrHint": "Letzte Seite — der Schweizer QR-Einzahlschein sitzt meist unten.",
@@ -9231,9 +9209,7 @@
         "disposition": "Zuordnung",
         "category": "Kategorie",
         "categoryNone": "— keine —",
-        "declineReason": "Grund",
         "customer": "Kunde",
-        "eventId": "Event-ID (optional)",
         "markup": "Zuschlag",
         "reference": "Zahlungsreferenz",
         "referenceHint": "QR-/ESR-Referenz oder Mitteilung",
@@ -9245,12 +9221,6 @@
         "supplierCountryHint": "Setzt die Steuerbehandlung automatisch: ausserhalb Ihrer Vorsteuer-Länder → ausländische MwSt (nicht abziehbar)."
       },
       "loadFailed": "Die eingehenden Rechnungen konnten nicht geladen werden"
-    },
-    "expenseStatus": {
-      "open": "Offen",
-      "parked": "Geparkt",
-      "billed": "Verrechnet",
-      "declined": "Abgelehnt"
     },
     "paymentMethod": {
       "bank_transfer": "Überweisung",
@@ -9264,7 +9234,6 @@
       "label": "Buchen auf",
       "company": "Firma",
       "event": "Galerie",
-      "eventId": "Event-ID",
       "inboundHint": "Auf welche Galerie diese Kosten in Auswertungen & Steuerexport entfallen (Firma = allgemeiner Aufwand). Unabhängig davon, an wen Sie weiterverrechnen."
     },
     "incoming": {
@@ -9323,21 +9292,16 @@
     },
     "ledger": {
       "subtitle": "Interne Aufwände wie Kilometer, Spesenpauschalen und Barbelege, gebucht auf eine Galerie oder die Firma.",
-      "allStatuses": "Alle Status",
-      "allDispositions": "Alle Zuordnungen",
       "allKinds": "Alle Arten",
       "empty": "Noch keine Aufwände — oben einen hinzufügen.",
       "untitled": "Aufwand",
-      "invoiceLink": "Rechnung",
       "paid": "Bezahlt",
       "markPaid": "Als bezahlt markieren",
-      "markPaidTitle": "Lieferant als bezahlt markieren",
       "paidDate": "Zahldatum",
       "method": "Methode",
       "reference": "Referenz (optional)",
       "confirmPaid": "Als bezahlt markieren",
       "paidToast": "Als bezahlt markiert.",
-      "unpaidToast": "Als nicht bezahlt markiert.",
       "addExpense": "Aufwand hinzufügen",
       "addTitle": "Aufwand hinzufügen",
       "editTitle": "Aufwand bearbeiten",
@@ -9351,7 +9315,6 @@
       "locked": "Gesperrt",
       "lockedHint": "Gesperrt — dieser Aufwand ist auf einer Kundenrechnung.",
       "description": "Beschreibung",
-      "descriptionHint": "z. B. Kilometer, Spesenpauschale, Barbeleg",
       "createdToast": "Aufwand hinzugefügt.",
       "loadFailed": "Die Ausgaben konnten nicht geladen werden"
     }
@@ -9878,16 +9841,11 @@
       "deleteAction": "MWST-Code löschen"
     },
     "export": {
-      "title": "Treuhänder-Export",
-      "intro": "Laden Sie das Sammeljournal (Erträge + Kosten als periodengerechte Buchungssätze mit Konto- und MWST-Codes) zum Import in die Buchhaltungssoftware Ihres Treuhänders herunter.",
       "format": "Zielsoftware",
       "format_generic": "Generisch (alle Spalten)",
       "format_banana": "Banana — doppelte Buchhaltung",
       "format_banana_ie": "Banana — Einnahmen/Ausgaben",
-      "format_bexio": "bexio",
-      "download": "CSV herunterladen",
-      "failed": "Export fehlgeschlagen.",
-      "disclaimer": "Nur periodengerecht (Belegdaten) — Zahlungen/Bankbewegungen sind nicht enthalten. Konto- + MWST-Codes folgen Ihrer Kontenplan-Zuordnung. Den Import vor der Einreichung immer mit dem Treuhänder prüfen."
+      "format_bexio": "bexio"
     }
   },
   "taxReport": {
@@ -10231,7 +10189,6 @@
       "vatRate": "MwSt-Satz %",
       "shipping": "Versandkosten",
       "currency": "Währung",
-      "selectPaymentTerm": "— Zahlungsbedingungen wählen —",
       "paymentNetDays": "Zahlungsziel",
       "paymentTiming": "Zahlungsablauf",
       "selectNetDays": "— Zahlungsziel wählen —",
@@ -10273,13 +10230,6 @@
     "title": "Angebote",
     "subtitle": "Angebote versenden, verfolgen und in Anlässe umwandeln.",
     "searchPlaceholder": "Nach Nummer, Kunde, Anlass suchen…",
-    "sort": {
-      "newest": "Neueste zuerst",
-      "oldest": "Älteste zuerst",
-      "customerAsc": "Kunde A→Z",
-      "valueAsc": "Betrag aufsteigend",
-      "valueDesc": "Betrag absteigend"
-    },
     "empty": "Noch keine Angebote.",
     "table": {
       "customer": "Kunde",
@@ -10534,7 +10484,6 @@
       "position": "Pos.",
       "discount": "Rabatt %",
       "descriptionPlaceholder": "Beschreibung (mehrere Zeilen möglich)",
-      "saveAsPreset": "Als Vorlage speichern",
       "empty": "Noch keine Positionen — fügen Sie eine hinzu, um zu starten.",
       "addRow": "Position hinzufügen",
       "addFromPreset": "Aus Vorlage hinzufügen…",
@@ -10631,7 +10580,6 @@
       "shipping": "Versand",
       "currency": "Währung",
       "ccPdfEmail": "PDF-Kopie an (zusätzlicher Empfänger)",
-      "sourceQuote": "Aus Angebot",
       "businessBankAccount": "Zahlungskonto",
       "bankAccountProfileDefault": "Geschäftsprofil-Standard für {{currency}} verwenden",
       "bankAccountDefaultBadge": "(Standard)",
@@ -10653,8 +10601,7 @@
       "ccPdfEmailPlaceholder": "name@beispiel.de",
       "ccPdfPickFromAdmins": "Aus Admin-Liste wählen:",
       "paymentTermHelp": "Zahlungsziel + Skonto für diese Rechnung. Leer lassen, um die Werte vom Quell-Angebot oder den globalen CRM-Standardwerten zu übernehmen.",
-      "skontoDisabled": "Skonto für diese Rechnung deaktivieren (unterdrückt den Skonto-Block im PDF sowie die „Mit Skonto bezahlt“-Buttons in der Admin-E-Mail / im Zahlung-erfassen-Dialog).",
-      "sourceContract": "Vom Vertrag"
+      "skontoDisabled": "Skonto für diese Rechnung deaktivieren (unterdrückt den Skonto-Block im PDF sowie die „Mit Skonto bezahlt“-Buttons in der Admin-E-Mail / im Zahlung-erfassen-Dialog)."
     },
     "import": "Historische Rechnung importieren",
     "importTitle": "Historische Rechnung importieren",
@@ -10668,14 +10615,6 @@
     "new": "Neue Rechnung",
     "searchPlaceholder": "Nach Nummer oder Kunde suchen…",
     "pagination": "Seite {{page}} von {{total}} · {{count}} Rechnungen",
-    "sort": {
-      "newest": "Neueste zuerst",
-      "dueAsc": "Fällig zuerst",
-      "dueDesc": "Fällig zuletzt",
-      "customerAsc": "Kunde A→Z",
-      "valueAsc": "Betrag aufsteigend",
-      "valueDesc": "Betrag absteigend"
-    },
     "filter": {
       "unpaidOnly": "Nur unbezahlt"
     },
@@ -10701,7 +10640,6 @@
     "monthlyDraftBadge": "Monats-Entwurf — wird am Stichtag des Kunden oder über „Rechnung jetzt ausstellen“ verschickt",
     "confirmReminder": "Zahlungserinnerung jetzt senden?",
     "reminderToast": "Zahlungserinnerung gesendet.",
-    "confirmCancel": "Diese Rechnung wirklich stornieren? Sie wird ausgegraut und kann nicht mehr bearbeitet werden.",
     "confirmCancelDraft": "Diesen Rechnungsentwurf verwerfen? Es wird kein Dokument an den Kunden gesendet.",
     "confirmCancelIssued": "Es wird eine Stornorechnung erzeugt und sofort an den Kunden gesendet. Dies kann nicht rückgängig gemacht werden. Fortfahren?",
     "cancelledToast": "Rechnung storniert.",
@@ -11544,13 +11482,6 @@
       "eventHelp": "Wird auf den Vertrag übernommen und an jeden daraus erzeugten Anlass / jede Rechnung weitergegeben. Setzen Sie dies, damit Kundenportal und Mahn-E-Mails die richtige Bezeichnung \"Hochzeit Doe / Müller\" anzeigen.",
       "eventName": "Anlassname",
       "eventNamePlaceholder": "z. B. Hochzeit Doe / Müller",
-      "eventType": "Anlasstyp",
-      "eventTypeNone": "— Standard verwenden —",
-      "eventTypeHint": "Wird für den Anlass verwendet, der bei Annahme dieses Angebots erstellt wird.",
-      "bookingWorkflow": "Buchungs-Workflow (bei Annahme)",
-      "bookingWorkflowNone": "— Keiner —",
-      "bookingWorkflowDisabled": "(deaktiviert)",
-      "bookingWorkflowHint": "Der Ablauf, der startet, wenn die Kundin/der Kunde annimmt. „Keiner“ = kein Buchungsablauf. Der Ablauf muss aktiviert sein, um zu starten.",
       "eventSection": "Anlass (optional)",
       "eventTimeEnd": "Ende",
       "eventTimeStart": "Beginn",

@@ -3,13 +3,6 @@
  *
  * Mounted at /api/customer/auth (see server.js wiring). Strictly separate
  * from /api/auth/* (admin) and /api/auth/gallery/* (per-event guests).
- *
- * Endpoints:
- *   POST   /login          email + password → customer_token cookie
- *   POST   /logout         revoke + clear cookie
- *   GET    /session        echo current customer for frontend boot
- *   GET    /invite/:token  public, returns invite metadata
- *   POST   /accept-invite  public, completes the invitation
  */
 
 const express = require('express');

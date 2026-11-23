@@ -1,6 +1,3 @@
-// Extracted verbatim from invoiceService.js — see ../invoiceService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const crypto = require('crypto');
 const { db, logActivity } = require('../../database/db');
 const { adminActivityActor } = require('../../utils/activityActor');
@@ -21,7 +18,7 @@ const { auditedInsert } = require('../accountingHistory');
 
 /**
  * Create one invoice. Returns id. Used both manually (admin creates a
- * standalone invoice) and by scheduleInvoicesForEvent (one per installment).
+ * standalone invoice) and by spawnInstallmentInvoices (one per installment).
  */
 async function createInvoice(payload, adminId, trx = db) {
   const customer = await trx('customer_accounts').where({ id: payload.customerAccountId }).first();
@@ -271,7 +268,7 @@ async function createInvoice(payload, adminId, trx = db) {
     installment_total: ensureInt(payload.installmentTotal) || 1,
     installment_label: payload.installmentLabel || null,
     installment_trigger: payload.installmentTrigger || null,
-    status: scheduledSendAt && scheduledSendAt.getTime() > Date.now() ? 'scheduled' : (payload.sendNow ? 'scheduled' : 'scheduled'),
+    status: 'scheduled',
     scheduled_send_at: toStoredTimestamp(scheduledSendAt),
     net_amount_minor: netMinor,
     vat_rate: vatRate,
@@ -318,7 +315,7 @@ async function createInvoice(payload, adminId, trx = db) {
     row.project_id = payload.projectId;
   }
   const inserted = await auditedInsert(trx, 'invoices', row, { actor: adminId, source: 'invoice.create' });
-  const invoiceId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+  const invoiceId = inserted[0].id;
 
   if (items.length > 0) {
     const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
@@ -346,10 +343,6 @@ async function createInvoice(payload, adminId, trx = db) {
  *
  * Returns `{ invoiceIds: number[] }` — ordered by installment_index
  * so callers can navigate to the first or report N IDs.
- *
- * The legacy export name `scheduleInvoicesForEvent` is preserved as
- * an alias for backward compatibility with quoteService callers; new
- * code should reach for the clearer `spawnInstallmentInvoices`.
  */
 async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, currency, language,
   lineItems, totals, installments, eventDate, adminId,
@@ -514,7 +507,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
     if (vatGbpRate != null) row.vat_gbp_rate = vatGbpRate;
 
     const inserted = await auditedInsert(trx, 'invoices', row, { actor: adminId, source: 'invoice.spawnInstallments' });
-    const invoiceId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+    const invoiceId = inserted[0].id;
 
     // Line items: copy from the quote so the customer sees what they
     // actually agreed to, not a generic "Gesamtbetrag" placeholder.
@@ -613,10 +606,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
   return { invoiceIds };
 }
 
-// Backward-compat alias — older callers reference this name.
-const scheduleInvoicesForEvent = spawnInstallmentInvoices;
 module.exports = {
   createInvoice,
   spawnInstallmentInvoices,
-  scheduleInvoicesForEvent,
 };

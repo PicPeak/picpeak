@@ -88,7 +88,7 @@ const readDateFormat = readDocumentDateFormat;
 async function stampFontOptions() {
   const profile = (await db('business_profile').where({ id: 1 }).first()) || {};
   return {
-    issuer: { pdfFontTtfPath: profile.pdf_font_ttf_path || null, pdfFontFamily: profile.pdf_font_family || null },
+    issuer: { pdfFontFamily: profile.pdf_font_family || null },
     theme: await require('../pdfThemeService').resolveTheme('contract'),
   };
 }

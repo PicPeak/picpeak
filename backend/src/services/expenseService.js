@@ -274,7 +274,7 @@ async function recordInboundDocument({ source, filePath, originalFilename, mimeT
     });
   };
   const inserted = mailClaim ? await require('./mailRetentionService').recordDocument(mailClaim, insert) : await insert(db);
-  const id = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+  const id = inserted[0].id;
   await logActivity('incoming_invoice_captured', { inboundDocumentId: id, source: row.source, duplicate: !!duplicateOfId }, null, adminActor(adminId));
   return getInbound(id);
 }
@@ -951,7 +951,7 @@ async function createExpense(payload, adminId, { receiptPath } = {}) {
   const inserted = await auditedInsert(db, 'expenses', row, {
     actor: historyActor(adminId), source: 'expense.create',
   });
-  const id = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+  const id = inserted[0].id;
   await logActivity('expense_created', { expenseId: id, kind: row.kind }, null, adminActor(adminId));
   return getExpense(id);
 }
@@ -1060,7 +1060,6 @@ async function markExpensePaid(id, { paid, paidAt, paymentMethod, paymentReferen
 }
 
 module.exports = {
-  getAccountingSettings,
   rebillExpense,
   markExpensePaid,
   // incoming invoices
@@ -1085,7 +1084,6 @@ module.exports = {
   updateExpense,
   // constants
   DISPOSITIONS,
-  TAX_TREATMENTS,
   MARKUP_TYPES,
   PAYMENT_METHODS,
   EXPENSE_KINDS,

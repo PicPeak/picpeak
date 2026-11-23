@@ -4457,7 +4457,6 @@
     },
     "table": {
       "name": "Nom",
-      "email": "E-mail",
       "company": "Entreprise",
       "eventCount": "Événements",
       "lastLogin": "Dernière connexion",
@@ -4470,16 +4469,7 @@
     "invite": {
       "button": "Inviter un client",
       "title": "Inviter un client",
-      "description": "Il/elle recevra un e-mail avec un lien pour configurer son compte. Une fois qu'il/elle aura accepté, vous pourrez l'assigner à des événements.",
-      "email": "E-mail",
-      "submit": "Envoyer l'invitation",
-      "success": "Invitation envoyée",
-      "error": "Impossible d'envoyer l'invitation.",
-      "conflict": "Un client avec cet e-mail existe déjà ou a une invitation en attente.",
-      "invalidEmail": "Veuillez entrer un e-mail valide",
-      "showPrefill": "+ Ajouter les détails de contact (optionnel)",
-      "hidePrefill": "− Masquer les détails de contact",
-      "prefillHint": "Tout ce que vous remplissez sera pré-rempli sur la page d'inscription du client — il pourra toujours le modifier."
+      "description": "Il/elle recevra un e-mail avec un lien pour configurer son compte. Une fois qu'il/elle aura accepté, vous pourrez l'assigner à des événements."
     },
     "invitations": {
       "empty": "Aucune invitation en attente.",
@@ -4518,7 +4508,6 @@
       "email": "E-mail",
       "preferredLanguage": "Langue préférée",
       "salutation": "Civilité",
-      "salutationNone": "—",
       "firstName": "Prénom",
       "lastName": "Nom",
       "displayName": "Nom d'affichage",
@@ -4531,7 +4520,6 @@
       "postalCode": "Code postal",
       "city": "Ville",
       "state": "État / région",
-      "countryCode": "Pays (ISO 2)",
       "notesHint": "Visible uniquement par les administrateurs. Jamais montré au client.",
       "featuresSection": "Fonctionnalités client",
       "featuresHint": "Remplacements par client pour les onglets de la surface client. Les bascules globales dans Paramètres → Surface client sont le commutateur principal — lorsque le global est désactivé, personne ne voit l'onglet, quel que soit ce que vous définissez ici. Par défaut, tout est activé, donc désactivez un commutateur pour masquer un onglet pour ce client spécifique.",
@@ -4555,7 +4543,6 @@
       "title": "Effacer les données du client ?",
       "body": "Supprime le nom, l'e-mail, le téléphone, l'adresse, l'entreprise et les identifiants du client. La ligne de compte reste afin que les enregistrements historiques d'accès aux événements et les journaux d'audit y fassent encore référence. Cette action est irréversible — vous ne pourrez pas restaurer les données ensuite.",
       "confirm": "Effacer définitivement",
-      "confirmInFlight": "Effacement en cours…",
       "success": "Client effacé",
       "error": "Impossible d'effacer le client"
     },

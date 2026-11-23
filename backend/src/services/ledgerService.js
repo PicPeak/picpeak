@@ -510,6 +510,6 @@ module.exports = {
   listAccounts, createAccount, updateAccount, deleteAccount,
   listVatCodes, createVatCode, updateVatCode, deleteVatCode,
   getMappings, setCategoryAccount, updateSettings,
-  getConfig, buildPostings, exportPostings,
+  buildPostings, exportPostings,
   _internal: { rateKey, csvEscape, neutralizeSpreadsheetFormula, minorToDecimal },
 };
