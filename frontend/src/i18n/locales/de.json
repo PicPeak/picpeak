@@ -5682,6 +5682,7 @@
     "hours": {
       "section": "Stunden",
       "monthlyHint": "Einträge werden automatisch dem aktuellen monatlichen Entwurf angehängt. Bearbeiten/Löschen möglich, bis der Scheduler den Versand auslöst.",
+      "manualHint": "Einträge werden automatisch dem laufenden manuellen Entwurf angehängt. Bearbeiten/Löschen ist möglich, bis Sie auf „Rechnung jetzt ausstellen“ klicken.",
       "perEventHint": "Erfasste Einträge bleiben unverrechnet, bis Sie auf „Rechnungsentwurf erstellen“ klicken — dann wird eine geplante Rechnung mit einer Zeile pro Eintrag erzeugt und im Editor geöffnet, sodass Sie vor dem Versand weitere Positionen hinzufügen können.",
       "form": {
         "title": "Neuen Eintrag erfassen",
