@@ -785,8 +785,11 @@ async function updateQuote(id, payload, adminId) {
     if (customerChanged) {
       // An invoice or contract made from the quote stays with the customer
       // and deal it was made for, so the quote does too.
-      const madeFrom = await trx('invoices').where({ source_quote_id: id }).first('id')
-        || await trx('contracts').where({ source_quote_id: id }).first('id');
+      // Checked outside the admin's own CRM view: an invoice or contract the
+      // admin may not read still binds the quote. Only the yes/no leaves here.
+      const madeFrom = await require('../database/crmAccess').withTrustedCrmAccess('quote customer change: documents made from it',
+        async () => Boolean(await trx('invoices').where({ source_quote_id: id }).first('id')
+          || await trx('contracts').where({ source_quote_id: id }).first('id')));
       if (madeFrom) {
         throw new AppError(
           'An invoice or contract was made from this quote, so it stays with its customer. Create a new quote for the other customer.',
@@ -1084,19 +1087,32 @@ async function sendQuote(id, adminId) {
     : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
 
   await db.transaction(async (trx) => {
-    await trx('quote_action_tokens').insert({
-      quote_id: id,
-      token,
-      expires_at: expiresAt,
-      created_at: new Date(),
-    });
-    await auditedUpdate(trx, 'quotes', { id }, {
+    // Conditional on the quote as it was read and rendered: a save that
+    // changed its customer or currency meanwhile (or another send) wins,
+    // and this send records nothing, mints no link and emails no one.
+    const recorded = await auditedUpdate(trx, 'quotes', {
+      id, status: quote.status, customer_account_id: quote.customer_account_id, currency: quote.currency,
+    }, {
       status: 'sent',
       sent_at: new Date(),
       pdf_path: toStoredPath(pdfPath),
       payment_term_snapshot: paymentTermSnapshot ? JSON.stringify(paymentTermSnapshot) : null,
       updated_at: new Date(),
     }, { actor: adminId, source: 'quote.send' });
+    if (!recorded) {
+      throw new AppError('This quote changed while it was being sent. Reload it and send it again.', 409, 'QUOTE_CHANGED');
+    }
+    await trx('quote_action_tokens').insert({
+      quote_id: id,
+      token,
+      expires_at: expiresAt,
+      created_at: new Date(),
+    });
+  }).catch((err) => {
+    // This send's own file (persistDocPdf never reuses a name): nothing
+    // points at it once the send is not recorded.
+    if (pdfPath) fs.rmSync(pdfPath, { force: true });
+    throw err;
   });
 
   // Queue customer email (with PDF + cc) — honour the global
@@ -1152,7 +1168,11 @@ function formatMajor(minor, currency, locale, issuerCountryCode) {
 }
 
 /**
- * Persist a rendered PDF under storage/business-docs/quote/<YEAR>/<NUMBER>.pdf
+ * Persist a rendered PDF under storage/business-docs/quote/<YEAR>/<NUMBER>.pdf,
+ * or <NUMBER>-<6 hex>.pdf when that name is taken. A file is never
+ * overwritten: a queued email attaches it by path, and a later send (perhaps
+ * to another customer after the quote was reassigned) must not change what
+ * that email carries.
  */
 async function persistDocPdf(type, doc, buffer) {
   const number = doc.quote_number || doc.invoice_number;
@@ -1160,9 +1180,16 @@ async function persistDocPdf(type, doc, buffer) {
   const year = (doc.issue_date ? new Date(doc.issue_date) : new Date()).getFullYear();
   const root = path.join(getStoragePath(), 'business-docs', type, String(year));
   fs.mkdirSync(root, { recursive: true });
-  const filePath = path.join(root, `${number}.pdf`);
-  fs.writeFileSync(filePath, buffer);
-  return filePath;
+  let filePath = path.join(root, `${number}.pdf`);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      fs.writeFileSync(filePath, buffer, { flag: 'wx' });
+      return filePath;
+    } catch (err) {
+      if (err.code !== 'EEXIST' || attempt > 8) throw err;
+      filePath = path.join(root, `${number}-${crypto.randomBytes(3).toString('hex')}.pdf`);
+    }
+  }
 }
 
 /**
