@@ -10636,6 +10636,7 @@
     "subtitle": "Schedule, send, track payments and chase late invoices.",
     "new": "New invoice",
     "searchPlaceholder": "Search by number or customer…",
+    "pagination": "Page {{page}} of {{total}} · {{count}} invoices",
     "sort": {
       "newest": "Newest first",
       "dueAsc": "Due soon first",
