@@ -41,7 +41,6 @@ const { db } = require('../database/db');
 const { canLinkCrmToEvent, ownsProject } = require('../middleware/ownership');
 const { AppError } = require('../utils/errors');
 const { computeDueDate, ensureEventMatchesCustomer, isInvoiceEditable, resolveNetDaysForRow, UNISSUED_INVOICE_STATUSES } = require('../services/invoice/helpers');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { toDateOnly } = require('../utils/dateOnly');
 const { toIso, toStoredTimestamp, toTimestamp } = require('../utils/dateNormalize');
 const { vatMinorFor, roundsVatDown, normaliseVatGbpRate } = require('../utils/vatAmount');
@@ -538,7 +537,7 @@ async function projectLinkRefusal(req, projectId) {
   // quote's deal: the deal rolls up into its project, so the invoice would
   // count there as well as here. The deal is read unscoped.
   const sourceQuoteId = parseInt(req.body.sourceQuoteId, 10);
-  if (sourceQuoteId && await hasColumnCached('quotes', 'project_id')) {
+  if (sourceQuoteId) {
     const source = await db('quotes').where({ id: sourceQuoteId }).first('project_id', 'deal_uuid');
     const elsewhere = (source?.project_id != null && Number(source.project_id) !== Number(project.id))
       || (source?.deal_uuid && await projectService.dealProjectElsewhere(source.deal_uuid, project.id));
@@ -831,13 +830,12 @@ router.put(
       if (nextEventId) await ensureEventMatchesCustomer(nextEventId, existing.customer_account_id);
       updates.event_id = nextEventId;
     }
-    if (Object.prototype.hasOwnProperty.call(payload, 'vatCode') && await hasColumnCached('invoices', 'vat_code')) {
+    if (Object.prototype.hasOwnProperty.call(payload, 'vatCode')) {
       updates.vat_code = payload.vatCode ? String(payload.vatCode).slice(0, 16) : null;
     }
-    // Migration 352 — the GBP rate of a UK invoice in another currency. A
-    // currency change re-checks it, so a switch to GBP drops the rate.
-    if ((Object.prototype.hasOwnProperty.call(payload, 'vatGbpRate') || payload.currency !== undefined)
-        && await hasColumnCached('invoices', 'vat_gbp_rate')) {
+    // The GBP rate of a UK invoice in another currency. A currency change
+    // re-checks it, so a switch to GBP drops the rate.
+    if (Object.prototype.hasOwnProperty.call(payload, 'vatGbpRate') || payload.currency !== undefined) {
       const { profile } = await require('../services/businessProfileService').getProfile();
       updates.vat_gbp_rate = normaliseVatGbpRate(
         Object.prototype.hasOwnProperty.call(payload, 'vatGbpRate') ? payload.vatGbpRate : existing.vat_gbp_rate,

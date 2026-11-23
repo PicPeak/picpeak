@@ -8,7 +8,6 @@ const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
-const { hasColumnCached } = require('../../utils/schemaCache');
 const { formatMajor } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 const { buildInvoiceRenderContext } = require('./render');
@@ -105,9 +104,9 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
     reminder_level: level,
     last_reminder_sent_at: new Date(),
     late_fee_amount_minor: lateFeeGross,
+    late_fee_vat_minor: lateFeeVat,
     updated_at: new Date(),
   };
-  if (await hasColumnCached('invoices', 'late_fee_vat_minor')) update.late_fee_vat_minor = lateFeeVat;
   // Before the fee lands: a failed lookup must not charge it with no mail.
   const contactRecipients = await customerContactsService.mailRecipients(customer?.id, 'bills');
   // Conditional on the row still waiting on the customer: every caller

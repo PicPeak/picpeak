@@ -44,7 +44,7 @@ function ensureCustomerCanBill(customer) {
  * Used on create and when a scheduled invoice's linked event changes.
  */
 async function ensureEventMatchesCustomer(eventId, customerAccountId, trx = db) {
-  if (!eventId || !(await trx.schema.hasTable('event_customer_assignments'))) return;
+  if (!eventId) return;
   const assignments = await trx('event_customer_assignments')
     .where({ event_id: eventId })
     .select('customer_account_id');

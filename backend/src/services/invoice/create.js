@@ -7,7 +7,6 @@ const { AppError } = require('../../utils/errors');
 const businessProfileService = require('../businessProfileService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
-const { hasColumnCached } = require('../../utils/schemaCache');
 const { toStoredTimestamp, toTimestamp } = require('../../utils/dateNormalize');
 const { vatMinorFor, normaliseVatGbpRate, roundsVatDown } = require('../../utils/vatAmount');
 const { isUnitedKingdom } = require('../../utils/postalAddress');
@@ -202,9 +201,8 @@ async function createInvoice(payload, adminId, trx = db) {
   }
   if (installmentsForSpawn) {
     // Each instalment states its VAT in GBP at the rate the admin entered
-    // (issue 2439). Same schema read as the single-row insert below.
+    // (issue 2439).
     const spawnGbpRate = payload.vatGbpRate !== undefined
-      && await hasColumnCached('invoices', 'vat_gbp_rate')
       ? normaliseVatGbpRate(payload.vatGbpRate, { countryCode: profile?.country_code, currency })
       : null;
     return await spawnInstallmentInvoices({
@@ -295,23 +293,18 @@ async function createInvoice(payload, adminId, trx = db) {
     created_at: new Date(),
     updated_at: new Date(),
   };
-  // Migration 130 — snapshot the chosen output VAT code (immutable; the
-  // accounting export emits exactly this rather than re-deriving from the map).
-  if (payload.vatCode !== undefined && await hasColumnCached('invoices', 'vat_code')) {
+  // Snapshot the chosen output VAT code (immutable; the accounting export
+  // emits exactly this rather than re-deriving from the map).
+  if (payload.vatCode !== undefined) {
     row.vat_code = payload.vatCode ? String(payload.vatCode).slice(0, 16) : null;
   }
-  // Migration 352 — a UK invoice in another currency keeps the GBP rate its
-  // VAT total is stated at (VAT Notice 700/21 s.4.1). POST /invoices passes
-  // vatGbpRate outside a transaction; reissueInvoice, inside one, caches this
-  // schema read before opening it, so it never waits on a connection a trx
-  // holds (SQLite).
-  if (payload.vatGbpRate !== undefined && await hasColumnCached('invoices', 'vat_gbp_rate')) {
+  // A UK invoice in another currency keeps the GBP rate its VAT total is
+  // stated at (VAT Notice 700/21 s.4.1).
+  if (payload.vatGbpRate !== undefined) {
     row.vat_gbp_rate = normaliseVatGbpRate(payload.vatGbpRate, { countryCode: profile?.country_code, currency });
   }
-  // Migration 315 — created from a project page. The route vets the project.
-  // Only POST /invoices passes projectId, without a transaction, so this schema
-  // read on the global db never waits on a connection a trx holds (SQLite).
-  if (payload.projectId && await hasColumnCached('invoices', 'project_id')) {
+  // Created from a project page. The route vets the project.
+  if (payload.projectId) {
     row.project_id = payload.projectId;
   }
   const inserted = await auditedInsert(trx, 'invoices', row, { actor: adminId, source: 'invoice.create' });
@@ -388,9 +381,6 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
   const invoiceIds = [];
   const roundVatDown = await roundsVatDown(trx || db);
 
-  // Migration 315. Only a project-page invoice passes projectId, outside a
-  // transaction, so the schema read never waits on a held connection.
-  const projectIdColumn = !!projectId && await hasColumnCached('invoices', 'project_id');
   for (let i = 0; i < total; i++) {
     const inst = installments[i];
     const percent = ensureNumber(inst.percent, 0);
@@ -502,7 +492,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       created_at: new Date(),
       updated_at: new Date(),
     };
-    if (projectIdColumn) row.project_id = projectId;
+    if (projectId) row.project_id = projectId;
     // Normalised and column-checked by the caller (createInvoice).
     if (vatGbpRate != null) row.vat_gbp_rate = vatGbpRate;
 

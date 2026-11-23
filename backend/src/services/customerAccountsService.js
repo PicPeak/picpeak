@@ -1369,11 +1369,8 @@ async function eraseCustomer(id, erasedByAdminId) {
 
     // Booking requests (issue 2440): the client's details on requests linked
     // to this customer or sent from one of its addresses.
-    if (await trx.schema.hasTable('booking_requests')) {
-      const contactEmails = await trx.schema.hasTable('customer_contacts')
-        ? await trx('customer_contacts').where({ customer_account_id: id }).pluck('email') : [];
-      await require('./bookingService').forgetCustomer(trx, id, [customer.email, ...contactEmails]);
-    }
+    const bookingEmails = await trx('customer_contacts').where({ customer_account_id: id }).pluck('email');
+    await require('./bookingService').forgetCustomer(trx, id, [customer.email, ...bookingEmails]);
 
     // email_queue (#1593): cancel what hasn't gone out yet, then redact the
     // variables + recipient on every row for this address that isn't
@@ -1573,14 +1570,11 @@ async function eraseCustomer(id, erasedByAdminId) {
     // Pending re-bills (incoming invoices, migration 132) attached to this
     // customer would otherwise stay billable to the now-anonymized account —
     // return the not-yet-billed ones to the inbox for re-triage so they're not
-    // silently lost or billed to a ghost (PR #636 review #2). Guarded for
-    // schema drift on installs that predate migration 132.
-    if (await trx.schema.hasColumn('inbound_documents', 'customer_account_id')) {
-      await auditedUpdate(trx, 'inbound_documents',
-        (q) => q.where({ customer_account_id: id }).whereNull('billed_invoice_id'),
-        { customer_account_id: null, disposition: null, status: 'unsorted', updated_at: new Date() },
-        { actor: erasedByAdminId || null, source: 'customer.erase' });
-    }
+    // silently lost or billed to a ghost (PR #636 review #2).
+    await auditedUpdate(trx, 'inbound_documents',
+      (q) => q.where({ customer_account_id: id }).whereNull('billed_invoice_id'),
+      { customer_account_id: null, disposition: null, status: 'unsorted', updated_at: new Date() },
+      { actor: erasedByAdminId || null, source: 'customer.erase' });
   });
 
   // Campaign counters (#1593 bug 3), recomputed now that the cancellations

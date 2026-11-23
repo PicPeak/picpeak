@@ -25,7 +25,7 @@ async function runScheduledTasks() {
   // failing on every tick, enough of them would fill the 20-row batch and
   // hold back every other scheduled invoice. Once the rate is entered the
   // invoice qualifies again. sendInvoice keeps the rule itself.
-  const waitsForGbpRate = await hasColumnCached('invoices', 'vat_gbp_rate') && await isUkBusiness();
+  const waitsForGbpRate = await isUkBusiness();
   const ready = await db('invoices')
     .where({ status: 'scheduled' })
     .andWhere(function() {

@@ -310,8 +310,6 @@ function createService({ db, storage, sharp }) {
     const policy = require('../../database/crmAccess');
     const admin = await billingOwner(event);
     const actor = await policy.loadCrmActor({ id: admin.id });
-    const { hasColumnCached } = require('../../utils/schemaCache');
-    await hasColumnCached('invoices', 'vat_code'); await hasColumnCached('invoices', 'project_id');
     return policy.withCrmActor(actor, () => db.transaction(async tx => {
       await tx('customer_accounts').where({ id: customerId }).forUpdate().first();
       await tx('events').where({ id: eventId }).forUpdate().first();
