@@ -403,8 +403,39 @@ function logPasswordValidationFailure(context, errors, metadata = {}) {
   });
 }
 
+/**
+ * Customer-account password policy (customer portal, invitations, resets):
+ * 8 characters, one uppercase letter, one digit. No special-character
+ * requirement, no breach-list lookup, no dictionary check — those tripped up
+ * real customers picking real passwords (e.g. "PartyTime2026"), and the
+ * account only sees galleries and its own documents, never admin surfaces.
+ *
+ * Returns null on success, or a string error message on failure.
+ */
+function validateCustomerPassword(password) {
+  if (typeof password !== 'string' || password.length < 8) {
+    return 'Password must be at least 8 characters long.';
+  }
+  if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter.';
+  if (!/[0-9]/.test(password)) return 'Password must contain at least one number.';
+  return null;
+}
+
+/** Answer 400 when `password` fails the customer policy; true when it did. */
+function rejectWeakCustomerPassword(res, password) {
+  const policyError = validateCustomerPassword(password);
+  if (!policyError) return false;
+  res.status(400).json({
+    error: 'Password does not meet complexity requirements',
+    details: [policyError],
+  });
+  return true;
+}
+
 module.exports = {
   MAX_PASSWORD_LENGTH,
+  validateCustomerPassword,
+  rejectWeakCustomerPassword,
   validatePassword,
   validatePasswordInContext,
   generateSecurePassword,

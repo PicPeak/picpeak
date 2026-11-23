@@ -14,6 +14,8 @@
  * is free after the first call in a process.
  */
 
+const { seedTemplates } = require('./emailTemplateUpgrade');
+
 const CONTRACT_EMAIL_TEMPLATES = {
   contract_sent: {
     category: 'contracts', feature_flag: 'contracts',
@@ -262,86 +264,16 @@ const CONTRACT_EMAIL_TEMPLATES = {
 let _seeded = false;
 
 /**
- * Insert any missing contract email templates into email_templates +
- * email_template_translations. Safe to call concurrently — each
- * row's existence check happens inline before insert.
- *
- * Returns the list of templateKeys that were newly inserted (for
- * logging / diagnostics). Empty array = all templates already exist.
+ * Insert any missing contract email templates (emailTemplateUpgrade.
+ * seedTemplates). Returns the list of templateKeys that were newly inserted
+ * (for logging / diagnostics). Empty array = all templates already exist.
  */
 async function ensureContractEmailTemplatesSeeded(db, logger) {
   if (_seeded) return [];
-  if (!(await db.schema.hasTable('email_templates'))) return [];
-
-  const cols = await db('email_templates').columnInfo();
-  const hasTranslationsTable = await db.schema.hasTable('email_template_translations');
-  const newlyInserted = [];
-
-  for (const [templateKey, def] of Object.entries(CONTRACT_EMAIL_TEMPLATES)) {
-    const existing = await db('email_templates').where({ template_key: templateKey }).first();
-    if (existing) continue;
-
-    const enContent = def.en;
-    const masterRow = {
-      template_key: templateKey,
-      variables: JSON.stringify(def.variables),
-    };
-    if ('category' in cols)     masterRow.category = def.category;
-    if ('subcategory' in cols)  masterRow.subcategory = null;
-    if ('feature_flag' in cols) masterRow.feature_flag = def.feature_flag;
-    if ('created_at' in cols)   masterRow.created_at = new Date();
-    if ('updated_at' in cols)   masterRow.updated_at = new Date();
-
-    // Fill any subject_<lang> / body_html_<lang> / body_text_<lang>
-    // shaped columns the install happens to have (legacy variants vs
-    // the modern email_template_translations table).
-    for (const colName of Object.keys(cols)) {
-      if (colName === 'subject' || /^subject_[a-z]{2,3}$/i.test(colName)) {
-        masterRow[colName] = enContent.subject;
-      } else if (colName === 'body_html' || /^body_html_[a-z]{2,3}$/i.test(colName)) {
-        masterRow[colName] = enContent.body_html;
-      } else if (colName === 'body_text' || /^body_text_[a-z]{2,3}$/i.test(colName)) {
-        masterRow[colName] = enContent.body_text;
-      }
-    }
-
-    try {
-      const inserted = await db('email_templates').insert(masterRow).returning('id');
-      const templateId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
-      if (hasTranslationsTable && templateId) {
-        for (const lang of ['en', 'de']) {
-          const content = def[lang];
-          if (!content) continue;
-          await db('email_template_translations').insert({
-            template_id: templateId,
-            language: lang,
-            subject: content.subject,
-            body_html: content.body_html,
-            body_text: content.body_text,
-            created_at: new Date(),
-            updated_at: new Date(),
-          });
-        }
-      }
-      newlyInserted.push(templateKey);
-      if (logger) {
-        logger.info(`Self-healed missing contract email template at runtime: ${templateKey}`);
-      }
-    } catch (err) {
-      // Keep _seeded=false so the next call retries. Don't throw —
-      // the caller (queueEmail upstream) will surface its own error
-      // if the template still can't be looked up.
-      if (logger) {
-        logger.error(`Failed to seed contract email template ${templateKey}`, {
-          message: err.message,
-        });
-      }
-      return newlyInserted;
-    }
-  }
-
-  _seeded = true;
-  return newlyInserted;
+  const result = await seedTemplates(db, logger, CONTRACT_EMAIL_TEMPLATES, 'contract');
+  if (!result) return [];
+  if (!result.failed) _seeded = true;
+  return result.inserted;
 }
 
 module.exports = {

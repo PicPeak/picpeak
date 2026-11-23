@@ -213,21 +213,13 @@ async function convertToEvent(contractId, adminId) {
   }
 
   // Path B: standalone contract → mint an empty placeholder event
-  // row the admin fleshes out from the events admin page. Same
-  // column-introspection trick quoteService uses so installs with
-  // old/new host_*/customer_* column variants both work.
+  // row the admin fleshes out from the events admin page, built like the
+  // quote path's (quoteService.buildPlaceholderEventRow).
   const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
   ensureCustomerActive(customer);
-  const adminRow = await db('admin_users').where({ id: adminId }).first();
   const today = new Date();
   const oneYearFromNow = new Date(today.getTime());
   oneYearFromNow.setFullYear(today.getFullYear() + 1);
-
-  const fullName = [customer.first_name, customer.last_name].filter(Boolean).join(' ')
-    || customer.display_name || customer.company_name || contract.contract_number;
-  const customerEmail = customer.email || `${contract.contract_number.toLowerCase()}@picpeak.local`;
-  const adminEmail = adminRow?.email || customer.email || 'admin@picpeak.local';
-  const placeholderHash = crypto.randomBytes(32).toString('hex');
   // A 32-hex token and a /gallery/... link like every other gallery
   // (eventCreationService); see quoteService.convertToEvent.
   const shareToken = crypto.randomBytes(16).toString('hex');
@@ -238,53 +230,31 @@ async function convertToEvent(contractId, adminId) {
   const eventType = (await getAppSetting('crm_default_event_type'))
     || (await resolveDefaultEventType());
 
-  const eventCols = await db('events').columnInfo();
-  const { getImageSecurityDefaults, resolveImageSecurityColumns } = require('../../routes/adminEvents/helpers');
-  const imageSecurityColumns = resolveImageSecurityColumns({}, await getImageSecurityDefaults());
   // Not one another gallery holds or a renamed gallery's old slug leads from.
   const slug = await require('../slugRedirects').unusedSlug(
     () => `contract-${contract.contract_number.toLowerCase()}-${crypto.randomBytes(3).toString('hex')}`,
   );
   const { shareLinkToStore } = await buildShareLinkVariants({ slug, shareToken });
-  const candidate = {
-    slug,
+  // Not inside a transaction, so the global db reads are fine.
+  const eventRow = await require('../quoteService').buildPlaceholderEventRow(db, {
+    customer,
+    adminId,
+    documentNumber: contract.contract_number,
     // Prefer the contract's event_name snapshot (set on the contract
     // editor or inherited from the source quote) over the contract
     // title. Falls back to a deterministic placeholder so the event
     // row never has a blank name.
-    event_name: contract.event_name || contract.title || `Event ${contract.contract_number}`,
-    event_date: contract.event_date || contract.issue_date,
-    host_name: fullName,
-    host_email: customerEmail,
-    customer_name: fullName,
-    customer_email: customerEmail,
-    customer_phone: customer.phone,
-    admin_email: adminEmail,
-    event_type: eventType,
-    password_hash: placeholderHash,
-    share_link: shareLinkToStore,
-    share_token: shareToken,
-    expires_at: oneYearFromNow,
-    is_active: true,
-    is_archived: false,
-    is_draft: true,
-    created_by: adminId,
-    quote_id: null,
-    // The gallery stays in the contract's project when the converter owns it
-    // (dropped below when the column is missing, like every other candidate key).
-    project_id: await require('../projectService').carriedProjectId(contract.project_id, adminId, { target: 'events' }),
-    created_at: new Date(),
-    updated_at: new Date(),
-    // #1296 — a signed standalone contract converts straight to a gallery
-    // here, without going through quoteService, so the global Image Security
-    // defaults have to be applied on this path too. Not inside a transaction,
-    // so the global db read is fine.
-    ...imageSecurityColumns,
-  };
-  const eventRow = {};
-  for (const [k, v] of Object.entries(candidate)) {
-    if (Object.prototype.hasOwnProperty.call(eventCols, k)) eventRow[k] = v;
-  }
+    eventName: contract.event_name || contract.title || `Event ${contract.contract_number}`,
+    eventDate: contract.event_date || contract.issue_date,
+    eventType,
+    slug,
+    shareLinkToStore,
+    shareToken,
+    expiresAt: oneYearFromNow,
+    quoteId: null,
+    // The gallery stays in the contract's project when the converter owns it.
+    projectId: await require('../projectService').carriedProjectId(contract.project_id, adminId, { target: 'events' }),
+  });
 
   const eventId = await db.transaction(async (trx) => {
     // Claim the contract before creating anything, so two concurrent

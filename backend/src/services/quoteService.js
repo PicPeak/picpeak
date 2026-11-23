@@ -161,24 +161,11 @@ function computeTotals(lineItems, vatRate, shippingAmountMinor = 0, options = {}
     return { ...li, line_total_minor: discountedMinor, parent_position: parentPosition };
   });
 
-  // Phase 2: resolve parents. For each top-level item, sum its priced
-  // sub-items; if the sum > 0, override the parent's line_total_minor.
-  // Index by position for O(n) lookup.
-  const childrenByParent = new Map();
-  for (const li of computed) {
-    if (li.parent_position == null) continue;
-    if (!childrenByParent.has(li.parent_position)) childrenByParent.set(li.parent_position, []);
-    childrenByParent.get(li.parent_position).push(li);
-  }
-  for (const li of computed) {
-    if (li.parent_position != null) continue; // skip sub-items
-    const children = childrenByParent.get(ensureInt(li.position)) || [];
-    // Priced sub-items override the parent's own amount (the editor
-    // disables the parent input then — but the backend is the source of
-    // truth either way); priced option sub-items (migration 371) add to it.
-    const resolved = resolvedParentTotal(li, children);
-    if (resolved != null) li.line_total_minor = resolved;
-  }
+  // Phase 2: resolve parents. Priced sub-items override the parent's own
+  // amount (the editor disables the parent input then — but the backend is
+  // the source of truth either way); priced option sub-items (migration 371)
+  // add to it.
+  resolveParentTotalsFromSubItems(computed);
 
   // Phase 2b (#1451): discount lines take their amount from the regular
   // subtotal — percentage promotions first, then fixed, capped at the
@@ -488,13 +475,54 @@ async function getQuoteById(id) {
     // parent_line_item_id. The editor uses position (1-based, stable
     // within the payload) to thread sub-items; the DB id is just for
     // unrelated callers.
-    const lineItems = await db('quote_line_items as li')
-      .leftJoin('quote_line_items as parent', 'parent.id', 'li.parent_line_item_id')
-      .where('li.quote_id', id)
-      .orderBy('li.position', 'asc')
-      .select('li.*', 'parent.position as parent_position');
+    const lineItems = await loadQuoteLinesWithParentPosition(id);
     return { quote, lineItems };
   });
+}
+
+/** A quote's totals by the save rules (round-total + UK VAT settings). */
+async function quoteTotalsFor(lineItems, vatRate, shippingAmountMinor) {
+  const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
+  return computeTotals(lineItems, vatRate, shippingAmountMinor, { roundTotal, roundVatDown: await roundsVatDown() });
+}
+
+/**
+ * Negative line items (Rabatt) are allowed, but the resulting quote total
+ * must not go below zero — a quote represents an offer of value, not a
+ * credit note.
+ */
+function rejectNegativeQuoteTotal(totals) {
+  if (totals.totalAmountMinor < 0) {
+    throw new AppError('Quote total cannot be negative. Reduce the discount amount.', 400, 'QUOTE_TOTAL_NEGATIVE');
+  }
+}
+
+/**
+ * computeTotals lines → rows for insertLineItemsHierarchical. The wire-only
+ * `parent_position` stays so the helper can resolve it; the helper strips
+ * it before the actual DB insert.
+ */
+function toQuoteLineRows(lineItems) {
+  return lineItems.map((li, idx) => ({
+    position: ensureInt(li.position) || (idx + 1),
+    quantity: ensureNumber(li.quantity, 1),
+    description: String(li.description || ''),
+    unit_price_minor: ensureInt(li.unit_price_minor),
+    discount_percent: ensureNumber(li.discount_percent, 0),
+    line_total_minor: li.line_total_minor,
+    details_text: li.details_text || null,
+    parent_position: li.parent_position || null,
+    ...extendedLineColumns(li),
+  }));
+}
+
+/**
+ * The ad-hoc installments override (InstallmentsPanel) as stored: JSON,
+ * and an empty or missing array clears it. composeSnapshotFromSplitFks
+ * substitutes it for the template's installments at every snapshot read.
+ */
+function encodeInstallmentsOverride(installments) {
+  return Array.isArray(installments) && installments.length > 0 ? JSON.stringify(installments) : null;
 }
 
 /**
@@ -519,27 +547,11 @@ async function createQuote(payload, adminId) {
 
   // Authoritative totals. Rates, hours/days and promotions are resolved
   // server-side first (#1451).
-  const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
   const preparedLineItems = await prepareQuoteLineItems(payload.lineItems, {
     customerId: payload.customerAccountId, currency, hours: payload.hours, days: payload.days,
   });
-  const totals = computeTotals(
-    preparedLineItems,
-    payload.vatRate,
-    payload.shippingAmountMinor,
-    { roundTotal, roundVatDown: await roundsVatDown() }
-  );
-
-  // Negative line items (Rabatt) are allowed, but the resulting
-  // quote total must not go below zero — a quote represents an
-  // offer of value, not a credit note.
-  if (totals.totalAmountMinor < 0) {
-    throw new AppError(
-      'Quote total cannot be negative. Reduce the discount amount.',
-      400,
-      'QUOTE_TOTAL_NEGATIVE',
-    );
-  }
+  const totals = await quoteTotalsFor(preparedLineItems, payload.vatRate, payload.shippingAmountMinor);
+  rejectNegativeQuoteTotal(totals);
 
   // Resolve bank account for the chosen currency.
   const bank = await businessProfileService.resolveBankAccountForCurrency(currency, payload.businessBankAccountId);
@@ -584,9 +596,7 @@ async function createQuote(payload, adminId) {
       // composeSnapshotFromSplitFks then substitutes it for the
       // template's installments field at every snapshot-read site
       // (send, convertToEvent, convertToInvoiceOnly).
-      payment_term_installments_override: Array.isArray(payload.installments) && payload.installments.length > 0
-        ? JSON.stringify(payload.installments)
-        : null,
+      payment_term_installments_override: encodeInstallmentsOverride(payload.installments),
       net_amount_minor: totals.netAmountMinor,
       vat_rate: ensureNumber(payload.vatRate, 0),
       vat_amount_minor: totals.vatAmountMinor,
@@ -637,20 +647,7 @@ async function createQuote(payload, adminId) {
     }
 
     if (totals.lineItems.length > 0) {
-      // Normalise rows for the hierarchical-insert helper. We preserve
-      // the wire-only `parent_position` field here so the helper can
-      // resolve it; the helper strips it before the actual DB insert.
-      const rows = totals.lineItems.map((li, idx) => ({
-        position: ensureInt(li.position) || (idx + 1),
-        quantity: ensureNumber(li.quantity, 1),
-        description: String(li.description || ''),
-        unit_price_minor: ensureInt(li.unit_price_minor),
-        discount_percent: ensureNumber(li.discount_percent, 0),
-        line_total_minor: li.line_total_minor,
-        details_text: li.details_text || null,
-        parent_position: li.parent_position || null,
-        ...extendedLineColumns(li),
-      }));
+      const rows = toQuoteLineRows(totals.lineItems);
       validateLineItemHierarchy(rows);
       await insertLineItemsHierarchical(trx, 'quote_line_items', 'quote_id', quoteId, rows, history);
     }
@@ -695,15 +692,15 @@ async function updateQuote(id, payload, adminId) {
   // quote, so both are taken here, on a draft only: a sent or expired quote
   // went out to its customer in its currency. A new customer gets the
   // checks createQuote runs.
-  const sent = (field) => Object.prototype.hasOwnProperty.call(payload, field);
-  const customerId = sent('customerAccountId') && payload.customerAccountId
+  const has = (field) => Object.prototype.hasOwnProperty.call(payload, field);
+  const customerId = has('customerAccountId') && payload.customerAccountId
     ? ensureInt(payload.customerAccountId) : ensureInt(existing.customer_account_id);
   const customerChanged = customerId !== ensureInt(existing.customer_account_id);
   // The editor echoes the stored currency, in whatever case it was stored.
   // A legacy quote without one takes a currency while it is a draft; after
   // that its save must not count as a currency change.
   const storedCurrency = existing.currency ? String(existing.currency).toUpperCase() : null;
-  const requestedCurrency = sent('currency') && payload.currency ? String(payload.currency).toUpperCase() : null;
+  const requestedCurrency = has('currency') && payload.currency ? String(payload.currency).toUpperCase() : null;
   const currencyChanged = requestedCurrency != null && requestedCurrency !== storedCurrency
     && (storedCurrency != null || existing.status === 'draft');
   const currency = currencyChanged ? requestedCurrency : existing.currency;
@@ -714,7 +711,6 @@ async function updateQuote(id, payload, adminId) {
     ensureCustomerFeatureEnabled(await db('customer_accounts').where({ id: customerId }).first(), 'quotes');
   }
 
-  const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
   const preparedLineItems = await prepareQuoteLineItems(payload.lineItems, {
     quoteId: id,
     customerId,
@@ -722,24 +718,13 @@ async function updateQuote(id, payload, adminId) {
     hours: Object.prototype.hasOwnProperty.call(payload, 'hours') ? payload.hours : existing.hours,
     days: Object.prototype.hasOwnProperty.call(payload, 'days') ? payload.days : existing.days,
   });
-  const totals = computeTotals(
+  const totals = await quoteTotalsFor(
     preparedLineItems,
     payload.vatRate ?? existing.vat_rate,
     payload.shippingAmountMinor ?? existing.shipping_amount_minor,
-    { roundTotal, roundVatDown: await roundsVatDown() }
   );
+  rejectNegativeQuoteTotal(totals);
 
-  // Negative line items (Rabatt) are allowed, but the resulting
-  // quote total must not go below zero. See createQuote.
-  if (totals.totalAmountMinor < 0) {
-    throw new AppError(
-      'Quote total cannot be negative. Reduce the discount amount.',
-      400,
-      'QUOTE_TOTAL_NEGATIVE',
-    );
-  }
-
-  const has = (field) => Object.prototype.hasOwnProperty.call(payload, field);
   const hasProjectId = has('projectId');
   const hasVatCode = has('vatCode');
   const hasEventType = has('eventType');
@@ -747,7 +732,7 @@ async function updateQuote(id, payload, adminId) {
 
   // A new currency takes its own bank account, as on create. The editor
   // echoes the stored account back, which must not pin the old currency's.
-  const bankId = sent('businessBankAccountId') && payload.businessBankAccountId
+  const bankId = has('businessBankAccountId') && payload.businessBankAccountId
     && ensureInt(payload.businessBankAccountId) !== ensureInt(existing.business_bank_account_id)
     ? payload.businessBankAccountId : null;
   const bank = currencyChanged
@@ -808,14 +793,9 @@ async function updateQuote(id, payload, adminId) {
         updates[col] = payload[api];
       }
     }
-    // Ad-hoc installments override (commit #6). Treated
-    // separately because it needs JSON encoding + "empty array means
-    // clear the override" semantics.
+    // Ad-hoc installments override: an empty array clears it.
     if (Object.prototype.hasOwnProperty.call(payload, 'installments')) {
-      updates.payment_term_installments_override =
-        Array.isArray(payload.installments) && payload.installments.length > 0
-          ? JSON.stringify(payload.installments)
-          : null;
+      updates.payment_term_installments_override = encodeInstallmentsOverride(payload.installments);
     }
     // Migration 121 — optional Project Overview link.
     if (hasProjectId) {
@@ -892,17 +872,7 @@ async function updateQuote(id, payload, adminId) {
     // no orphan risk here.
     await auditedDelete(trx, 'quote_line_items', { quote_id: id }, history);
     if (totals.lineItems.length > 0) {
-      const rows = totals.lineItems.map((li, idx) => ({
-        position: ensureInt(li.position) || (idx + 1),
-        quantity: ensureNumber(li.quantity, 1),
-        description: String(li.description || ''),
-        unit_price_minor: ensureInt(li.unit_price_minor),
-        discount_percent: ensureNumber(li.discount_percent, 0),
-        line_total_minor: li.line_total_minor,
-        details_text: li.details_text || null,
-        parent_position: li.parent_position || null,
-        ...extendedLineColumns(li),
-      }));
+      const rows = toQuoteLineRows(totals.lineItems);
       validateLineItemHierarchy(rows);
       await insertLineItemsHierarchical(trx, 'quote_line_items', 'quote_id', id, rows, history);
     }
@@ -1115,19 +1085,13 @@ async function renderQuotePdfFromPayload(payload) {
   // The same fallbacks as createQuote, so the preview is the quote it saves.
   const profile = (await businessProfileService.getProfile()).profile;
   const currency = (payload.currency || profile?.default_currency || 'CHF').toUpperCase();
-  const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
   const preparedLineItems = await prepareQuoteLineItems(payload.lineItems, {
     customerId: payload.customerAccountId,
     currency,
     hours: payload.hours,
     days: payload.days,
   });
-  const totals = computeTotals(
-    preparedLineItems,
-    payload.vatRate,
-    payload.shippingAmountMinor,
-    { roundTotal, roundVatDown: await roundsVatDown() }
-  );
+  const totals = await quoteTotalsFor(preparedLineItems, payload.vatRate, payload.shippingAmountMinor);
   const fakeQuote = {
     quote_number: 'PREVIEW',
     customer_account_id: payload.customerAccountId,
@@ -1395,8 +1359,8 @@ function quoteVersionSummary(quote, lineItems) {
 // ---------------------------------------------------------------------
 
 /** A quote's lines with `parent_position`, the shape getQuoteById returns. */
-async function loadQuoteLinesWithParentPosition(quoteId) {
-  return db('quote_line_items as li')
+async function loadQuoteLinesWithParentPosition(quoteId, conn = db) {
+  return conn('quote_line_items as li')
     .leftJoin('quote_line_items as parent', 'parent.id', 'li.parent_line_item_id')
     .where('li.quote_id', quoteId)
     .orderBy('li.position', 'asc')
@@ -1459,8 +1423,7 @@ function applyOptionalSelection(lineItems, selectedPositions) {
 async function totalsForSelection(quote, lineItems, selectedPositions, configurations, complete = true) {
   const { chosen, lines: optionalLines } = applyOptionalSelection(lineItems, selectedPositions);
   const lines = require('./albumProducts/crm').configureLines(optionalLines, configurations, { complete });
-  const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
-  const totals = computeTotals(lines, quote.vat_rate, quote.shipping_amount_minor, { roundTotal, roundVatDown: await roundsVatDown() });
+  const totals = await quoteTotalsFor(lines, quote.vat_rate, quote.shipping_amount_minor);
   // Same rule as create and update: a quote is an offer, never a credit
   // note. Removing an add-on shrinks the subtotal a manual negative line is
   // taken from, so a choice the customer is free to make could otherwise
@@ -1560,11 +1523,7 @@ async function writeAcceptedSelection(
   // both read the row before either wrote, so one entry replaced the other
   // and both recorded the same stale "before".
   const current = (await trx('quotes').where({ id: quote.id }).forUpdate().first()) || quote;
-  const locked = await trx('quote_line_items as li')
-    .leftJoin('quote_line_items as parent', 'parent.id', 'li.parent_line_item_id')
-    .where('li.quote_id', quote.id)
-    .orderBy('li.position', 'asc')
-    .select('li.*', 'parent.position as parent_position');
+  const locked = await loadQuoteLinesWithParentPosition(quote.id, trx);
   // Another identical submission may have committed after this request read
   // the offer. Check again under the quote lock before adding history or PDFs.
   if (current.selection_accepted_at && currentOptionalSelection(locked).join(',') === chosen.join(',') &&
@@ -2096,9 +2055,7 @@ async function adminAcceptQuote(id, adminId) {
       const lang = customer.preferred_language || ctx.locale || 'de';
       await emailProcessor.queueEmail(null, customer.email, 'quote_accepted_customer', {
         quote_number: fresh.quote_number,
-        customer_name: customer.display_name
-          || [customer.first_name, customer.last_name].filter(Boolean).join(' ')
-          || customer.email.split('@')[0],
+        customer_name: customerDisplayName(customer),
         event_name: fresh.event_name || '',
         total_amount: formatMoney(fresh.total_amount_minor, fresh.currency, lang),
         accepted_on_behalf: true,
@@ -2323,6 +2280,61 @@ async function reissueQuote(id, adminId, reason = null) {
   return { quoteId: newId };
 }
 
+/** Refuse a conversion while the quote's contract is in flight, unless the contract re-entered here. */
+function assertNoContractInFlight(quote, options, convertTo) {
+  if (quote.converted_contract_id && !options.fromContract) {
+    throw new AppError(
+      `This quote already has a pending contract. Convert the contract to ${convertTo} instead, or cancel the contract first.`,
+      409, 'CONTRACT_IN_FLIGHT',
+    );
+  }
+}
+
+/** The quote's payment-term snapshot, parsed (invalid JSON throws, as before), or null. */
+function parsePaymentTermSnapshot(quote) {
+  if (!quote.payment_term_snapshot) return null;
+  return typeof quote.payment_term_snapshot === 'string'
+    ? JSON.parse(quote.payment_term_snapshot)
+    : quote.payment_term_snapshot;
+}
+
+/**
+ * The spawnInstallmentInvoices arguments both quote conversions share: the
+ * quote's totals and its instalment plan (one 100 % after-delivery invoice
+ * without one), the inline event snapshot so a converted invoice keeps the
+ * quote's event label / times even with no `events` row, the snapshot's net
+ * days for each due date, and the quote's deal_uuid so quote + N invoices
+ * group under one deal.
+ */
+function invoiceScheduleArgs(quote, lineItems, customer, paymentTermSnapshot, adminId) {
+  return {
+    quoteId: quote.id,
+    customer,
+    currency: quote.currency,
+    language: quote.language,
+    // Unselected optional add-ons never reach an invoice (#1451).
+    lineItems: countedLineItems(lineItems),
+    totals: {
+      net: quote.net_amount_minor,
+      vatRate: quote.vat_rate,
+      vat: quote.vat_amount_minor,
+      shipping: quote.shipping_amount_minor,
+      total: quote.total_amount_minor,
+    },
+    installments: Array.isArray(paymentTermSnapshot?.installments)
+      ? paymentTermSnapshot.installments
+      : [{ percent: 100, trigger: 'after_delivery', offset_days: 0, label: 'Total' }],
+    eventDate: quote.event_date,
+    eventName: quote.event_name,
+    eventTimeStart: quote.event_time_start,
+    eventTimeEnd: quote.event_time_end,
+    adminId,
+    ccPdfEmail: quote.cc_pdf_email,
+    netDays: paymentTermSnapshot?.net_days,
+    dealUuid: quote.deal_uuid,
+  };
+}
+
 /**
  * Convert an accepted quote directly into an invoice — no event, no
  * gallery, just the financial document. Used for engagements that
@@ -2354,12 +2366,7 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
   // in flight. contractService.convertToInvoiceOnly re-enters this
   // path on the contract→invoice button — it passes
   // { fromContract: true } so the guard yields.
-  if (quote.converted_contract_id && !options.fromContract) {
-    throw new AppError(
-      'This quote already has a pending contract. Convert the contract to invoices instead, or cancel the contract first.',
-      409, 'CONTRACT_IN_FLIGHT',
-    );
-  }
+  assertNoContractInFlight(quote, options, 'invoices');
 
   const customer = await db('customer_accounts').where({ id: quote.customer_account_id }).first();
   ensureCustomerFeatureEnabled(customer, 'quotes');
@@ -2370,11 +2377,7 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       409, 'CUSTOMER_FEATURE_DISABLED');
   }
 
-  const paymentTermSnapshot = quote.payment_term_snapshot
-    ? (typeof quote.payment_term_snapshot === 'string'
-      ? JSON.parse(quote.payment_term_snapshot)
-      : quote.payment_term_snapshot)
-    : null;
+  const paymentTermSnapshot = parsePaymentTermSnapshot(quote);
 
   const invoiceService = require('./invoiceService');
 
@@ -2393,50 +2396,19 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       throw new AppError(`Cannot convert a quote with status '${current?.status}'`, 409);
     }
 
-    const installments = Array.isArray(paymentTermSnapshot?.installments)
-      ? paymentTermSnapshot.installments
-      : [{ percent: 100, trigger: 'after_delivery', offset_days: 0, label: 'Total' }];
-
+    const scheduleArgs = invoiceScheduleArgs(quote, lineItems, customer, paymentTermSnapshot, adminId);
+    const { installments } = scheduleArgs;
     const spawnResult = await invoiceService.spawnInstallmentInvoices({
+      ...scheduleArgs,
       trx,
       // eventId omitted → invoices have source_quote_id but no event_id.
       eventId: null,
-      quoteId: quote.id,
-      customer,
-      currency: quote.currency,
-      language: quote.language,
-      // Unselected optional add-ons never reach an invoice (#1451).
-      lineItems: countedLineItems(lineItems),
-      totals: {
-        net: quote.net_amount_minor,
-        vatRate: quote.vat_rate,
-        vat: quote.vat_amount_minor,
-        shipping: quote.shipping_amount_minor,
-        total: quote.total_amount_minor,
-      },
-      installments,
-      eventDate: quote.event_date,
-      // Inline event snapshot — copied so the converted invoice
-      // keeps the quote's event label / times for accounting + UI
-      // even when there's no `events` row to fall back to.
-      eventName: quote.event_name,
-      eventTimeStart: quote.event_time_start,
-      eventTimeEnd: quote.event_time_end,
       // Pass the split payment-term FKs + the
       // composed snapshot through so the converted invoice carries
       // them on both the FK and snapshot paths.
       paymentNetDaysTemplateId: quote.payment_net_days_template_id,
       paymentTimingTemplateId: quote.payment_timing_template_id,
       paymentTermSnapshot,
-      adminId,
-      ccPdfEmail: quote.cc_pdf_email,
-      // Net 14 / 30 / 60 / 90 carry through from the quote's
-      // selected payment-term template so each scheduled invoice's
-      // due_date reflects what the customer agreed to on the quote.
-      netDays: paymentTermSnapshot?.net_days,
-      // Every spawned invoice inherits the source
-      // quote's deal_uuid so quote + N invoices group under one deal.
-      dealUuid: quote.deal_uuid,
       // Workflow draft-seam: when called by the booking flow's prepare_invoice
       // action, create the invoices on HOLD (no scheduled_send_at) so they wait
       // for the explicit send_document after the review gate.
@@ -2479,6 +2451,59 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
   return result;
 }
 
+/**
+ * The draft gallery a converted quote or standalone contract becomes
+ * (quoteService.convertToEvent, contract/conversions.convertToEvent): a
+ * placeholder password, the customer as host, and the global Image Security
+ * defaults (#1296). The expiry is the caller's: a quote's runs a year past
+ * the event, a contract's a year from now. The events table drifted across
+ * migrations (host_* vs customer_* columns), so only the columns the table
+ * actually has are kept.
+ */
+async function buildPlaceholderEventRow(conn, {
+  customer, adminId, documentNumber, eventName, eventDate, eventType,
+  slug, shareLinkToStore, shareToken, expiresAt, quoteId, projectId,
+}) {
+  const adminRow = await conn('admin_users').where({ id: adminId }).first();
+  const fullName = [customer.first_name, customer.last_name].filter(Boolean).join(' ')
+    || customer.display_name || customer.company_name || documentNumber;
+  const customerEmail = customer.email || `${documentNumber.toLowerCase()}@picpeak.local`;
+  const adminEmail = adminRow?.email || customer.email || 'admin@picpeak.local';
+  const eventCols = await conn('events').columnInfo();
+  // Required lazily: a service reaching into a route helper.
+  const { getImageSecurityDefaults, resolveImageSecurityColumns } = require('../routes/adminEvents/helpers');
+  const candidate = {
+    slug,
+    event_name: eventName,
+    event_date: eventDate,
+    host_name: fullName,
+    host_email: customerEmail,
+    customer_name: fullName,
+    customer_email: customerEmail,
+    customer_phone: customer.phone,
+    admin_email: adminEmail,
+    event_type: eventType,
+    password_hash: crypto.randomBytes(32).toString('hex'),
+    share_link: shareLinkToStore,
+    share_token: shareToken,
+    expires_at: expiresAt,
+    is_active: true,
+    is_archived: false,
+    is_draft: true,
+    created_by: adminId,
+    quote_id: quoteId,
+    project_id: projectId,
+    created_at: new Date(),
+    updated_at: new Date(),
+    ...resolveImageSecurityColumns({}, await getImageSecurityDefaults(conn)),
+  };
+  const eventRow = {};
+  for (const [k, v] of Object.entries(candidate)) {
+    if (Object.prototype.hasOwnProperty.call(eventCols, k)) eventRow[k] = v;
+  }
+  return eventRow;
+}
+
 async function existingConversion(eventId) {
   const existingInvoices = await db('invoices').where({ event_id: eventId }).select('id');
   return { eventId, alreadyConverted: true, invoiceIds: existingInvoices.map((r) => r.id) };
@@ -2510,21 +2535,12 @@ async function convertToEvent(quoteId, adminId, options = {}) {
   assertQuoteTransition(quote.status, 'converted');
   // Same guard as convertToInvoiceOnly — refuse if a contract is in
   // flight unless the contract→event button re-entered this path.
-  if (quote.converted_contract_id && !options.fromContract) {
-    throw new AppError(
-      'This quote already has a pending contract. Convert the contract to an event instead, or cancel the contract first.',
-      409, 'CONTRACT_IN_FLIGHT',
-    );
-  }
+  assertNoContractInFlight(quote, options, 'an event');
 
   const customer = await db('customer_accounts').where({ id: quote.customer_account_id }).first();
   ensureCustomerFeatureEnabled(customer, 'quotes');
 
-  const paymentTermSnapshot = quote.payment_term_snapshot
-    ? (typeof quote.payment_term_snapshot === 'string'
-      ? JSON.parse(quote.payment_term_snapshot)
-      : quote.payment_term_snapshot)
-    : null;
+  const paymentTermSnapshot = parsePaymentTermSnapshot(quote);
 
   // Lazy import to avoid the circular dep.
   const invoiceService = require('./invoiceService');
@@ -2558,13 +2574,6 @@ async function convertToEvent(quoteId, adminId, options = {}) {
       { updated_at: new Date() }, { actor: adminId, source: 'quote.convert.event' });
     if (claimed !== 1) return null;
 
-    // The events table schema has drifted across migrations:
-    // installs that ran the original 060 series have
-    // host_name/host_email; later ones renamed to customer_*; some
-    // have both. Rather than hard-code one set and fail on the
-    // other, introspect the columns at runtime and only insert
-    // fields the table actually has.
-    const adminRow = await trx('admin_users').where({ id: adminId }).first();
     // A year after the event, open through the end of that day in the
     // instance time zone (a date-only expiry, as the settings field sets).
     const eventDay = toDateOnly(quote.event_date || quote.issue_date);
@@ -2577,11 +2586,6 @@ async function convertToEvent(quoteId, adminId, options = {}) {
       oneYearAfterEvent = new Date(quote.event_date || quote.issue_date);
       oneYearAfterEvent.setFullYear(oneYearAfterEvent.getFullYear() + 1);
     }
-    const placeholder = crypto.randomBytes(32).toString('hex');
-    const fullName = [customer.first_name, customer.last_name].filter(Boolean).join(' ')
-      || customer.display_name || customer.company_name || quote.quote_number;
-    const customerEmail = customer.email || `${quote.quote_number.toLowerCase()}@picpeak.local`;
-    const adminEmail = adminRow?.email || customer.email || 'admin@picpeak.local';
 
     // Event type for the new event: the type chosen on the quote (migration 146),
     // else a configurable org default, else the resolved catch-all (an ACTIVE
@@ -2590,45 +2594,20 @@ async function convertToEvent(quoteId, adminId, options = {}) {
       || (await getAppSetting('crm_default_event_type', null, trx))
       || (await resolveDefaultEventType(trx));
 
-    // Each candidate column is paired with the value we'd write. We
-    // ask the DB which columns exist and only keep the matching pairs
-    // — bullet-proof against schema drift in either direction.
-    const eventCols = await trx('events').columnInfo();
-    const { getImageSecurityDefaults, resolveImageSecurityColumns } = require('../routes/adminEvents/helpers');
-    const imageSecurityColumns = resolveImageSecurityColumns({}, await getImageSecurityDefaults(trx));
-    const candidate = {
+    const eventRow = await buildPlaceholderEventRow(trx, {
+      customer,
+      adminId,
+      documentNumber: quote.quote_number,
+      eventName: quote.event_name || `Event ${quote.quote_number}`,
+      eventDate: quote.event_date || quote.issue_date,
+      eventType,
       slug,
-      event_name: quote.event_name || `Event ${quote.quote_number}`,
-      event_date: quote.event_date || quote.issue_date,
-      host_name: fullName,
-      host_email: customerEmail,
-      customer_name: fullName,
-      customer_email: customerEmail,
-      customer_phone: customer.phone,
-      admin_email: adminEmail,
-      event_type: eventType,
-      password_hash: placeholder,
-      share_link: shareLinkToStore,
-      share_token: shareToken,
-      expires_at: oneYearAfterEvent,
-      is_active: true,
-      is_archived: false,
-      is_draft: true,
-      created_by: adminId,
-      quote_id: quote.id,
-      project_id: carriedProject,
-      created_at: new Date(),
-      updated_at: new Date(),
-      // #1296 — a converted quote produces a real gallery, so the global
-      // Image Security defaults have to reach it too. Required lazily: this
-      // is a service reaching into a route helper, and the lazy form keeps
-      // the module graph acyclic the way the storage require below does.
-      ...imageSecurityColumns,
-    };
-    const eventRow = {};
-    for (const [k, v] of Object.entries(candidate)) {
-      if (Object.prototype.hasOwnProperty.call(eventCols, k)) eventRow[k] = v;
-    }
+      shareLinkToStore,
+      shareToken,
+      expiresAt: oneYearAfterEvent,
+      quoteId: quote.id,
+      projectId: carriedProject,
+    });
     const inserted = await trx('events').insert(eventRow).returning('id');
     const eventId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
@@ -2654,47 +2633,16 @@ async function convertToEvent(quoteId, adminId, options = {}) {
       updated_at: new Date(),
     });
 
-    // Build the invoice schedule from installments.
-    const installments = Array.isArray(paymentTermSnapshot?.installments)
-      ? paymentTermSnapshot.installments
-      : [{ percent: 100, trigger: 'after_delivery', offset_days: 0, label: 'Total' }];
-
     // `skipInvoices` (workflow reserve_date): create the event as a pure date
     // hold — no invoices scheduled at all. The other booking actions handle
-    // money documents separately.
+    // money documents separately. Unlike convertToInvoiceOnly, the payment-
+    // term FKs and snapshot are not passed here.
     const spawnResult = options.skipInvoices === true
       ? { invoiceIds: [] }
       : await invoiceService.spawnInstallmentInvoices({
+        ...invoiceScheduleArgs(quote, lineItems, customer, paymentTermSnapshot, adminId),
         trx,
         eventId,
-        quoteId: quote.id,
-        customer,
-        currency: quote.currency,
-        language: quote.language,
-        // Unselected optional add-ons never reach an invoice (#1451).
-        lineItems: countedLineItems(lineItems),
-        totals: {
-          net: quote.net_amount_minor,
-          vatRate: quote.vat_rate,
-          vat: quote.vat_amount_minor,
-          shipping: quote.shipping_amount_minor,
-          total: quote.total_amount_minor,
-        },
-        installments,
-        eventDate: quote.event_date,
-        // Inline event snapshot — same rationale as convertToInvoiceOnly
-        // above.
-        eventName: quote.event_name,
-        eventTimeStart: quote.event_time_start,
-        eventTimeEnd: quote.event_time_end,
-        adminId,
-        ccPdfEmail: quote.cc_pdf_email,
-        // Net 14 / 30 / 60 / 90 carry through from the quote's
-        // payment-term template (same as convertToInvoiceOnly).
-        netDays: paymentTermSnapshot?.net_days,
-        // Propagate the quote's deal_uuid down through
-        // every spawned invoice (same as convertToInvoiceOnly above).
-        dealUuid: quote.deal_uuid,
         // Workflow draft-seam: the booking flow's prepare_event creates the
         // event's invoices on HOLD (no scheduled_send_at) so they wait for the
         // review gate + explicit send_document after the event date.
@@ -3352,6 +3300,7 @@ async function resolvePaymentTerm(quote) {
 module.exports = {
   // Lifecycle
   listQuotes,
+  buildPlaceholderEventRow,
   getQuoteById,
   createQuote,
   updateQuote,

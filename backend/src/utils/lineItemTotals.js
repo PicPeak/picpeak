@@ -335,6 +335,43 @@ function lineItemFieldsToApi(li) {
   };
 }
 
+/** Line-item DB row → the API line both the quote and invoice routes return. */
+function lineItemToApi(li) {
+  return {
+    id: li.id,
+    position: li.position,
+    quantity: Number(li.quantity),
+    description: li.description,
+    unitPriceMinor: li.unit_price_minor,
+    discountPercent: li.discount_percent == null ? 0 : Number(li.discount_percent),
+    lineTotalMinor: li.line_total_minor,
+    // `parentPosition` comes from the parent self-join on read; NULL =
+    // top-level item. `parentLineItemId` is the raw FK.
+    parentLineItemId: li.parent_line_item_id || null,
+    parentPosition: li.parent_position == null ? null : Number(li.parent_position),
+    detailsText: li.details_text || null,
+    ...lineItemFieldsToApi(li),
+  };
+}
+
+/**
+ * Editor payload line → service line (quotes and invoices). `parentPosition`
+ * refers to another item's position in the same payload; the service
+ * resolves it to parent_line_item_id after inserting the parents.
+ */
+function lineItemFromPayload(li, idx) {
+  return {
+    position: li.position == null ? idx + 1 : li.position,
+    quantity: li.quantity,
+    description: li.description,
+    unit_price_minor: li.unitPriceMinor,
+    discount_percent: li.discountPercent,
+    parent_position: li.parentPosition == null || li.parentPosition === '' ? null : Number(li.parentPosition),
+    details_text: li.detailsText == null ? null : String(li.detailsText),
+    ...lineItemFieldsFromApi(li),
+  };
+}
+
 module.exports = {
   LINE_KINDS,
   UNITS,
@@ -356,4 +393,6 @@ module.exports = {
   extendedLineColumns,
   lineItemFieldsFromApi,
   lineItemFieldsToApi,
+  lineItemToApi,
+  lineItemFromPayload,
 };

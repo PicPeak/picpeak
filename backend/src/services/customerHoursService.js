@@ -25,10 +25,9 @@
 const { db, logActivity } = require('../database/db');
 const { adminActivityActor } = require('../utils/activityActor');
 const { AppError } = require('../utils/errors');
-const { vatMinorFor, roundsVatDown } = require('../utils/vatAmount');
 const invoiceService = require('./invoiceService');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('./accountingHistory');
-const { isArmed } = require('./invoice/drafts');
+const { isOpenForLineChanges, retotalUnissuedInvoice } = require('./invoice/drafts');
 
 // ---------------------------------------------------------------------
 // Pure helpers — exported under `_internal` for direct unit testing.
@@ -111,9 +110,7 @@ async function getInstallDefaultRateMinor(trx) {
 function isEntryLocked(entry, invoice) {
   if (!entry.invoice_id) return false;
   if (!invoice) return false; // entry references a deleted invoice — treat as unbilled
-  if (invoice.status !== 'scheduled') return true;
-  if (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1) return false;
-  return isArmed(invoice.scheduled_send_at);
+  return !isOpenForLineChanges(invoice);
 }
 
 /**
@@ -353,17 +350,8 @@ async function updateEntry(entryId, payload, adminId) {
         updated_at: new Date(),
       }, audit);
       // Recompute invoice totals by the same rule as appendToMonthlyDraft.
-      const { netMinor } = await require('./invoice/drafts').resolveUnissuedInvoiceNet(trx, entry.invoice_id, audit);
-      const vatRate = Number(invoice.vat_rate || 0);
-      const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: await roundsVatDown(trx) });
-      const shippingMinor = Number(invoice.shipping_amount_minor || 0);
-      const totalMinor = netMinor + vatMinor + shippingMinor;
-      await auditedUpdate(trx, 'invoices', { id: entry.invoice_id }, {
-        net_amount_minor: netMinor,
-        vat_amount_minor: vatMinor,
-        total_amount_minor: totalMinor,
-        updated_at: new Date(),
-      }, audit);
+      // A deleted invoice ({ id } only) is refused there as INVOICE_LOCKED.
+      await retotalUnissuedInvoice(trx, invoice || { id: entry.invoice_id }, audit);
     }
 
     await auditedUpdate(trx, 'customer_hour_entries', { id: entryId }, {
@@ -411,17 +399,7 @@ async function deleteEntry(entryId, adminId) {
     // An entry whose invoice no longer exists has no totals to recompute.
     if (entry.invoice_id && invoice) {
       // Same rule as appendToMonthlyDraft (parents resolved, round-total).
-      const { netMinor } = await require('./invoice/drafts').resolveUnissuedInvoiceNet(trx, entry.invoice_id, audit);
-      const vatRate = Number(invoice.vat_rate || 0);
-      const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: await roundsVatDown(trx) });
-      const shippingMinor = Number(invoice.shipping_amount_minor || 0);
-      const totalMinor = netMinor + vatMinor + shippingMinor;
-      await auditedUpdate(trx, 'invoices', { id: entry.invoice_id }, {
-        net_amount_minor: netMinor,
-        vat_amount_minor: vatMinor,
-        total_amount_minor: totalMinor,
-        updated_at: new Date(),
-      }, audit);
+      await retotalUnissuedInvoice(trx, invoice, audit);
     }
 
     await auditedDelete(trx, 'customer_hour_entries', { id: entryId }, audit);

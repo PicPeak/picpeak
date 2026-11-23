@@ -26,7 +26,7 @@ const { capabilityTokenColumns, digestCapabilityToken } = require('../utils/capa
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
 const customerContactsService = require('./customerContactsService');
 
-const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days, matches admin invites
+const { INVITATION_TTL_MS, PASSWORD_RESET_TTL_MS, claimInvitation, claimReset } = require('./customerCredentialClaims');
 
 /**
  * Fire customer.created for the workflow engine, from every creation path
@@ -403,19 +403,8 @@ async function acceptInvitationOnce({ token, name, password, profile }) {
   const preferredLanguage = merged.preferred_language || defaultPreferredLanguage;
 
   const customerId = await db.transaction(async (trx) => {
-    // Claim the invitation first. Two submissions of the same link both
-    // pass the read above before either commits; only the one whose
-    // conditional update affects the row may go on to set credentials.
-    // A concurrent cancellation (which deletes the row) also lands here
-    // as zero rows.
-    const claimed = await trx('customer_invitations')
-      .where('id', invitation.id)
-      .whereNull('accepted_at')
-      .where('expires_at', '>', new Date())
-      .update({ accepted_at: new Date().toISOString() });
-    if (claimed !== 1) {
-      throw new ValidationError('Invalid or expired invitation');
-    }
+    // Claim the invitation first (customerCredentialClaims).
+    await claimInvitation(trx, invitation.id);
 
     let id;
     if (promoting) {
@@ -2030,8 +2019,6 @@ async function cancelInvitation(id, cancelledByAdminId) {
 // Customer-surface global toggles + password resets (#354 follow-up)
 // =====================================================================
 
-const PASSWORD_RESET_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-
 /**
 /**
  * Read the master "Customer portal" feature flag (#354). When false,
@@ -2129,30 +2116,30 @@ async function getEffectiveFeaturesForCustomer(customerOrId) {
   // customer toggle on. Normalise both shapes here so the Quotes /
   // Invoices tabs appear consistently.
   const truthy = (v) => v === true || v === 1 || v === '1' || v === 't';
+  // One read of the five master rows; a missing row reads as undefined.
+  const masterRows = await db('feature_flags')
+    .whereIn('key', ['hoursLogging', 'contracts', 'documents', 'quotes', 'bills'])
+    .select('key', 'value');
+  const master = Object.fromEntries(masterRows.map((row) => [row.key, row]));
   // Hours logging gates on the master feature_flags row (Settings →
   // Features) AND the per-customer flag. The customer_surface
   // app_settings layer is admin-side-only here — no portal surface
   // for hours, so we skip the third gate the bills/quotes use.
-  const hoursMaster = await db('feature_flags').where({ key: 'hoursLogging' }).first();
-  const hoursLoggingMaster = hoursMaster ? Boolean(hoursMaster.value) : true;
+  const hoursLoggingMaster = master.hoursLogging ? Boolean(master.hoursLogging.value) : true;
   // Contracts: global feature_flags row AND the per-customer override
   // (migration 131). feature_contracts defaults TRUE, so existing customers
   // keep their Contracts tab; an admin can hide it per customer.
-  const contractsMaster = await db('feature_flags').where({ key: 'contracts' }).first();
-  const contractsEnabled = contractsMaster ? Boolean(contractsMaster.value) : false;
+  const contractsEnabled = master.contracts ? Boolean(master.contracts.value) : false;
   // Documents (migration 225): global `documents` flag AND the per-customer
   // override, which defaults TRUE like feature_contracts. A missing flag row
   // reads as off.
-  const documentsMaster = await db('feature_flags').where({ key: 'documents' }).first();
-  const documentsEnabled = documentsMaster ? truthy(documentsMaster.value) : false;
+  const documentsEnabled = master.documents ? truthy(master.documents.value) : false;
   // Quotes / Bills: the global feature_flags row (Settings → Features; a
   // missing row reads as off) AND the older customer_surface switch AND the
   // per-customer flag. The older switch stays as an extra gate so an
   // install that had the portal tabs off keeps them off.
-  const quotesMaster = await db('feature_flags').where({ key: 'quotes' }).first();
-  const billsMaster = await db('feature_flags').where({ key: 'bills' }).first();
-  const quotesEnabled = (quotesMaster ? truthy(quotesMaster.value) : false) && globals.quotesEnabled;
-  const billsEnabled = (billsMaster ? truthy(billsMaster.value) : false) && globals.billsEnabled;
+  const quotesEnabled = (master.quotes ? truthy(master.quotes.value) : false) && globals.quotesEnabled;
+  const billsEnabled = (master.bills ? truthy(master.bills.value) : false) && globals.billsEnabled;
   return {
     calendar: globals.calendarEnabled && truthy(customer.feature_calendar),
     quotes:   quotesEnabled && truthy(customer.feature_quotes),
@@ -2290,18 +2277,9 @@ async function applyPasswordReset({ token, password }) {
 
   const passwordHash = await bcrypt.hash(password, getBcryptRounds());
   await db.transaction(async (trx) => {
-    // Claim the token first. Two submissions of the same link both pass the
-    // read above before either commits; only the one whose conditional
-    // update affects the row may change the password, so the later
-    // submission cannot overwrite the password the first one set.
-    const claimed = await trx('customer_password_resets')
-      .where('id', row.id)
-      .whereNull('used_at')
-      .where('expires_at', '>', new Date())
-      .update({ used_at: new Date().toISOString() });
-    if (claimed !== 1) {
-      throw new ValidationError('Invalid or expired reset link');
-    }
+    // Claim the token first, so a later submission of the same link cannot
+    // overwrite the password the first one set.
+    await claimReset(trx, row.id);
     const updated = await auditedUpdate(trx, 'customer_accounts', { id: customer.id, is_active: formatBoolean(true) }, {
       password_hash: passwordHash,
       password_changed_at: new Date(),

@@ -72,6 +72,58 @@ function whereSignedPdfInputsUnchanged(query, row) {
 }
 
 /**
+ * Record that the signed PDF could not be rendered or recorded, so the admin
+ * detail page shows a recovery banner. The message is stored as given. A
+ * failed marker write is logged and swallowed, so the signing step itself
+ * still succeeds; `logSuffix` says which step in that log line.
+ */
+async function markSignedPdfRenderFailed(contractId, message, history, logSuffix) {
+  try {
+    if (await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
+      await auditedUpdate(db, 'contracts', { id: contractId }, {
+        signed_pdf_render_failed_at: new Date(),
+        signed_pdf_render_error: message,
+        updated_at: new Date(),
+      }, history);
+    }
+  } catch (markErr) {
+    logger.error(`Failed to record signed_pdf_render_failed marker${logSuffix}`, {
+      contractId, message: markErr.message,
+    });
+  }
+}
+
+/**
+ * The "fully signed" email to both parties, each rendered with their own
+ * greeting. The business copy goes to the business profile's email (the
+ * inbox the contract was sent from), else the counter-signing admin's
+ * account email, and never twice to the same inbox. The caller picks the
+ * attachments.
+ */
+async function queueFullySignedEmails(contract, customer, profile, adminRow, attachments) {
+  if (customer?.email) {
+    await emailProcessor.queueEmail(null, customer.email, 'contract_fully_signed', {
+      contract_number: contract.contract_number,
+      customer_name: customer.display_name
+        || [customer.first_name, customer.last_name].filter(Boolean).join(' ')
+        || customer.email.split('@')[0]
+        || '',
+      title: contract.title || '',
+      attachments,
+    }, { customerAccountId: customer.id });
+  }
+  const adminEmail = profile.email || adminRow?.email;
+  if (adminEmail && adminEmail !== customer?.email) {
+    await emailProcessor.queueEmail(null, adminEmail, 'contract_fully_signed', {
+      contract_number: contract.contract_number,
+      customer_name: profile.company_name || adminRow?.first_name || 'Team',
+      title: contract.title || '',
+      attachments,
+    });
+  }
+}
+
+/**
  * `actor` names the signer in the accounting change history: the customer
  * portal passes the signed-in customer; the public link leaves the default.
  */
@@ -244,22 +296,7 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
     // admin detail page can render a recovery banner instead of the
     // admin only discovering this through monitoring. err.message is
     // truncated to 2 KB; the full stack stays in server logs.
-    try {
-      if (await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
-        await auditedUpdate(db, 'contracts', { id: contract.id }, {
-          signed_pdf_render_failed_at: new Date(),
-          signed_pdf_render_error: String(err.message || 'Unknown error').slice(0, 2048),
-          updated_at: new Date(),
-        }, history);
-      }
-    } catch (markErr) {
-      // Marker write itself failed — log + swallow so the customer
-      // sign response still succeeds. The orphan stays orphan but
-      // we've at least surfaced both errors.
-      logger.error('Failed to record signed_pdf_render_failed marker', {
-        contractId: contract.id, message: markErr.message,
-      });
-    }
+    await markSignedPdfRenderFailed(contract.id, String(err.message || 'Unknown error').slice(0, 2048), history, '');
   }
 
   // Notify admin, at the business address (Settings → business profile).
@@ -432,19 +469,7 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
     });
     // Mirror the customer-sign branch: persist a
     // recovery marker so the admin detail page can surface a banner.
-    try {
-      if (await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
-        await auditedUpdate(db, 'contracts', { id: contract.id }, {
-          signed_pdf_render_failed_at: new Date(),
-          signed_pdf_render_error: String(err.message || 'Unknown error').slice(0, 2048),
-          updated_at: new Date(),
-        }, history);
-      }
-    } catch (markErr) {
-      logger.error('Failed to record signed_pdf_render_failed marker (admin sign)', {
-        contractId: contract.id, message: markErr.message,
-      });
-    }
+    await markSignedPdfRenderFailed(contract.id, String(err.message || 'Unknown error').slice(0, 2048), history, ' (admin sign)');
   }
 
   // When the admin's signature is what FINALISED the contract (i.e.
@@ -472,19 +497,9 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
       && (currentIsWetUpload || current.signed_pdf_path !== refreshed.contract.signed_pdf_path)) {
       fullySignedAttachment = current.signed_pdf_path;
     } else {
-      try {
-        if (await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
-          await auditedUpdate(db, 'contracts', { id: contract.id }, {
-            signed_pdf_render_failed_at: new Date(),
-            signed_pdf_render_error: 'The counter-signed PDF was replaced by a concurrent change before it was recorded, so the fully-signed emails were not sent. Re-send the signed PDF once that change has finished.',
-            updated_at: new Date(),
-          }, history);
-        }
-      } catch (markErr) {
-        logger.error('Failed to record signed_pdf_render_failed marker (admin sign superseded)', {
-          contractId: contract.id, message: markErr.message,
-        });
-      }
+      await markSignedPdfRenderFailed(contract.id,
+        'The counter-signed PDF was replaced by a concurrent change before it was recorded, so the fully-signed emails were not sent. Re-send the signed PDF once that change has finished.',
+        history, ' (admin sign superseded)');
     }
   }
   if (newStatus === 'fully_signed' && !fullySignedAttachment) {
@@ -498,10 +513,6 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
       const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
       const profile = (await businessProfileService.getProfile()).profile || {};
       const adminRow = await db('admin_users').where({ id: adminId }).first();
-      const customerName = customer?.display_name
-        || [customer?.first_name, customer?.last_name].filter(Boolean).join(' ')
-        || customer?.email?.split('@')[0]
-        || '';
       // Generate the audit certificate as a SIBLING document (separate
       // PDF) and attach it alongside the stamped contract. Audit cert
       // captures timestamps, IPs, names, and SHA-256 hashes — the legal
@@ -525,30 +536,8 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
           contentType: 'application/pdf',
         });
       }
-      const attachmentsArg = attachments.length > 0 ? attachments : undefined;
-
-      // 1. Customer copy
-      if (customer?.email) {
-        await emailProcessor.queueEmail(null, customer.email, 'contract_fully_signed', {
-          contract_number: refreshed.contract.contract_number,
-          customer_name: customerName,
-          title: refreshed.contract.title || '',
-          attachments: attachmentsArg,
-        }, { customerAccountId: customer.id });
-      }
-      // 2. Admin copy. Prefer business_profile.email (the inbox the
-      // contract was sent FROM); fall back to the counter-signing
-      // admin's account email so the audit trail still reaches a
-      // human even on installs where business_profile.email is blank.
-      const adminEmail = profile.email || adminRow?.email;
-      if (adminEmail && adminEmail !== customer?.email) {
-        await emailProcessor.queueEmail(null, adminEmail, 'contract_fully_signed', {
-          contract_number: refreshed.contract.contract_number,
-          customer_name: profile.company_name || adminRow?.first_name || 'Team',
-          title: refreshed.contract.title || '',
-          attachments: attachmentsArg,
-        });
-      }
+      await queueFullySignedEmails(refreshed.contract, customer, profile, adminRow,
+        attachments.length > 0 ? attachments : undefined);
     } catch (err) {
       logger.error('Failed to send contract_fully_signed emails', {
         contractId: contract.id,
@@ -707,10 +696,6 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
     const refreshedContract = await db('contracts').where({ id: contractId }).first();
     const customer = await db('customer_accounts').where({ id: refreshedContract.customer_account_id }).first();
     const profile = (await businessProfileService.getProfile()).profile || {};
-    const customerName = customer?.display_name
-      || [customer?.first_name, customer?.last_name].filter(Boolean).join(' ')
-      || customer?.email?.split('@')[0]
-      || '';
     const attachments = [{
       filename: `${refreshedContract.contract_number}-signed.pdf`,
       contentPath: filePath,
@@ -727,22 +712,9 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
         contentType: 'application/pdf',
       });
     }
-    if (customer?.email) {
-      await emailProcessor.queueEmail(null, customer.email, 'contract_fully_signed', {
-        contract_number: refreshedContract.contract_number,
-        customer_name: customerName,
-        title: refreshedContract.title || '',
-        attachments,
-      }, { customerAccountId: customer.id });
-    }
-    if (profile.email && profile.email !== customer?.email) {
-      await emailProcessor.queueEmail(null, profile.email, 'contract_fully_signed', {
-        contract_number: refreshedContract.contract_number,
-        customer_name: profile.company_name || 'Team',
-        title: refreshedContract.title || '',
-        attachments,
-      });
-    }
+    // No counter-signing admin here: the business copy goes to the
+    // business profile's address only.
+    await queueFullySignedEmails(refreshedContract, customer, profile, null, attachments);
   } catch (err) {
     logger.warn('Failed to send contract_fully_signed emails after PDF upload', {
       contractId, error: err.message,
@@ -887,10 +859,6 @@ async function rerenderAndResend(contractId, adminId) {
   const customer = await db('customer_accounts').where({ id: refetched.customer_account_id }).first();
   const profile = (await businessProfileService.getProfile()).profile || {};
   const adminRow = await db('admin_users').where({ id: adminId }).first();
-  const customerName = customer?.display_name
-    || [customer?.first_name, customer?.last_name].filter(Boolean).join(' ')
-    || customer?.email?.split('@')[0]
-    || '';
   // Sibling audit certificate (timestamps + IPs + hashes). Best-effort:
   // missing certificate doesn't block the email — the stamped contract
   // alone is the primary attachment.
@@ -930,23 +898,7 @@ async function rerenderAndResend(contractId, adminId) {
     });
   }
 
-  if (customer?.email) {
-    await emailProcessor.queueEmail(null, customer.email, 'contract_fully_signed', {
-      contract_number: refetched.contract_number,
-      customer_name: customerName,
-      title: refetched.title || '',
-      attachments,
-    }, { customerAccountId: customer.id });
-  }
-  const adminEmail = profile.email || adminRow?.email;
-  if (adminEmail && adminEmail !== customer?.email) {
-    await emailProcessor.queueEmail(null, adminEmail, 'contract_fully_signed', {
-      contract_number: refetched.contract_number,
-      customer_name: profile.company_name || adminRow?.first_name || 'Team',
-      title: refetched.title || '',
-      attachments,
-    });
-  }
+  await queueFullySignedEmails(refetched, customer, profile, adminRow, attachments);
 
   try {
     await logActivity('contract_resent_signed', { contractId }, null, await adminActor(adminId));
@@ -1068,17 +1020,7 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
   // entry so the admin sees it and re-stamps with a usable image.
   if (failedStamps && failedStamps.length) {
     const message = `The ${failedStamps.join(' and ')} signature could not be stamped onto the PDF.`;
-    try {
-      if (await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
-        await auditedUpdate(db, 'contracts', { id: contract.id }, {
-          signed_pdf_render_failed_at: new Date(),
-          signed_pdf_render_error: message,
-          updated_at: new Date(),
-        }, history);
-      }
-    } catch (markErr) {
-      logger.error('Failed to record signed_pdf_render_failed marker (re-stamp)', { contractId: contract.id, message: markErr.message });
-    }
+    await markSignedPdfRenderFailed(contract.id, message, history, ' (re-stamp)');
     try {
       await logActivity('contract_signatures_restamped', {
         contractId,

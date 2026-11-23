@@ -10,10 +10,10 @@ const { resolveBillingRecipients } = require('../_billingRecipients');
 const customerContactsService = require('../customerContactsService');
 const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
-const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
+const { ensureInt } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
-const { computeDueDate, ensureCustomerCanBill, formatMajor, getHierarchyHelpers, nextInvoiceNumber, resolveNetDaysForRow, isInvoiceEditable } = require('./helpers');
-const { getInvoiceById } = require('./queries');
+const { cloneInvoiceLine, computeDueDate, ensureCustomerCanBill, formatMajor, getHierarchyHelpers, nextInvoiceNumber, resolveNetDaysForRow, isInvoiceEditable } = require('./helpers');
+const { getInvoiceById, loadInvoiceLines } = require('./queries');
 const { createInvoice } = require('./create');
 const { buildInvoiceRenderContext } = require('./render');
 const { collectRebillProofAttachments } = require('./rebillProofs');
@@ -442,24 +442,9 @@ async function createStorno(originalId, adminId, trx = db) {
   // Snapshot the original's line items (positive amounts — the
   // Storno's sign convention lives on the row-level totals + the
   // renderer flip).
-  const lineItems = await trx('invoice_line_items as li')
-    .leftJoin('invoice_line_items as parent', 'parent.id', 'li.parent_line_item_id')
-    .where('li.invoice_id', originalId)
-    .orderBy('li.position', 'asc')
-    .select('li.*', 'parent.position as parent_position');
+  const lineItems = await loadInvoiceLines(trx, originalId);
   if (lineItems.length > 0) {
-    const cloned = lineItems.map((li) => ({
-      position: ensureInt(li.position),
-      quantity: li.quantity,
-      description: li.description,
-      unit_price_minor: ensureInt(li.unit_price_minor),
-      discount_percent: ensureNumber(li.discount_percent, 0),
-      line_total_minor: ensureInt(li.line_total_minor),
-      parent_position: li.parent_position == null ? null : ensureInt(li.parent_position),
-      details_text: li.details_text || null,
-      // Migration 220 — a discount line stays a discount line on the Storno.
-      ...extendedLineColumns(li, { invoice: true }),
-    }));
+    const cloned = lineItems.map(cloneInvoiceLine);
     const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
     validateLineItemHierarchy(cloned);
     await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', stornoId, cloned,
@@ -661,11 +646,7 @@ async function reissueInvoice(id, adminId) {
         `This invoice was already reissued as ${existing.invoice_number}.`, 409, 'ALREADY_REISSUED',
       );
     }
-    const lineItems = await trx('invoice_line_items as li')
-      .leftJoin('invoice_line_items as parent', 'parent.id', 'li.parent_line_item_id')
-      .where('li.invoice_id', id)
-      .orderBy('li.position', 'asc')
-      .select('li.*', 'parent.position as parent_position');
+    const lineItems = await loadInvoiceLines(trx, id);
     const liPayload = lineItems.map((li) => ({
       position: li.position,
       quantity: Number(li.quantity),

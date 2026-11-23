@@ -21,7 +21,7 @@
  * Templates UI. Flag for native review in the PR description.
  */
 
-const { upgradeUneditedTemplates } = require('./emailTemplateUpgrade');
+const { seedTemplates, upgradeUneditedTemplates } = require('./emailTemplateUpgrade');
 
 const CRM_EMAIL_TEMPLATES = {
   quote_sent: {
@@ -830,85 +830,21 @@ const PREVIOUS_DEFAULTS = {
 
 async function ensureCrmEmailTemplatesSeeded(db, logger) {
   if (_seeded) return [];
-  if (!(await db.schema.hasTable('email_templates'))) return [];
-
-  const cols = await db('email_templates').columnInfo();
-  const hasTranslationsTable = await db.schema.hasTable('email_template_translations');
-  const newlyInserted = [];
-
-  for (const [templateKey, def] of Object.entries(CRM_EMAIL_TEMPLATES)) {
-    const existing = await db('email_templates').where({ template_key: templateKey }).first();
-    if (existing) continue;
-
-    const enContent = def.en;
-    const masterRow = {
-      template_key: templateKey,
-      variables: JSON.stringify(def.variables),
-    };
-    if ('category' in cols)     masterRow.category = def.category;
-    if ('subcategory' in cols)  masterRow.subcategory = null;
-    if ('feature_flag' in cols) masterRow.feature_flag = def.feature_flag;
-    if ('created_at' in cols)   masterRow.created_at = new Date();
-    if ('updated_at' in cols)   masterRow.updated_at = new Date();
-
-    // Fill legacy subject_<lang> / body_html_<lang> / body_text_<lang>
-    // columns when present (the modern translations table is populated
-    // below regardless).
-    for (const colName of Object.keys(cols)) {
-      if (colName === 'subject' || /^subject_[a-z]{2,3}$/i.test(colName)) {
-        masterRow[colName] = enContent.subject;
-      } else if (colName === 'body_html' || /^body_html_[a-z]{2,3}$/i.test(colName)) {
-        masterRow[colName] = enContent.body_html;
-      } else if (colName === 'body_text' || /^body_text_[a-z]{2,3}$/i.test(colName)) {
-        masterRow[colName] = enContent.body_text;
-      }
-    }
-
-    try {
-      const inserted = await db('email_templates').insert(masterRow).returning('id');
-      const templateId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
-      if (hasTranslationsTable && templateId) {
-        for (const lang of ['en', 'de']) {
-          const content = def[lang];
-          if (!content) continue;
-          await db('email_template_translations').insert({
-            template_id: templateId,
-            language: lang,
-            subject: content.subject,
-            body_html: content.body_html,
-            body_text: content.body_text,
-            created_at: new Date(),
-            updated_at: new Date(),
-          });
-        }
-      }
-      newlyInserted.push(templateKey);
-      if (logger) {
-        logger.info(`Self-healed missing CRM email template at runtime: ${templateKey}`);
-      }
-    } catch (err) {
-      // Keep _seeded=false so the next call retries. Don't throw —
-      // caller surfaces its own error if the template still can't be
-      // looked up.
-      if (logger) {
-        logger.error(`Failed to seed CRM email template ${templateKey}`, {
-          message: err.message,
-        });
-      }
-      return newlyInserted;
-    }
-  }
+  const result = await seedTemplates(db, logger, CRM_EMAIL_TEMPLATES, 'CRM');
+  if (!result) return [];
+  if (result.failed) return result.inserted;
 
   try {
     await upgradeUneditedTemplates(db, {
-      templates: CRM_EMAIL_TEMPLATES, previousDefaults: PREVIOUS_DEFAULTS, cols, hasTranslationsTable, logger,
+      templates: CRM_EMAIL_TEMPLATES, previousDefaults: PREVIOUS_DEFAULTS,
+      cols: result.cols, hasTranslationsTable: result.hasTranslationsTable, logger,
     });
   } catch (err) {
     if (logger) logger.warn('Could not update the default email templates', { message: err.message });
   }
 
   _seeded = true;
-  return newlyInserted;
+  return result.inserted;
 }
 
 module.exports = {

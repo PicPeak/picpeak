@@ -13,6 +13,7 @@ const CRM = require('./crm');
 const G = require('./library');
 const V = require('./validation');
 const { retain } = require('./retention');
+const { loadInvoiceLines } = require('../invoice/queries');
 function scoped(query) {
   const actor = require('../../database/crmAccess').currentCrmActor();
   return actor && actor.roleName !== 'super_admin'
@@ -280,11 +281,7 @@ async function append(tx, invoice, items, adminId) {
     await retain(tx, 'billable', item.id, [line]);
     await retain(tx, 'invoice', invoice.id, [line]);
   }
-  const stored = await tx('invoice_line_items as li')
-    .leftJoin('invoice_line_items as parent', 'parent.id', 'li.parent_line_item_id')
-    .where('li.invoice_id', invoice.id)
-    .orderBy('li.position')
-    .select('li.*', 'parent.position as parent_position');
+  const stored = await loadInvoiceLines(tx, invoice.id);
   const roundTotal = (await require('../../utils/appSettings').getAppSetting('crm_invoice_round_total', false, tx)) === true;
   const totals = require('../quoteService')._internal.computeTotals(
     stored, invoice.vat_rate, invoice.shipping_amount_minor,
