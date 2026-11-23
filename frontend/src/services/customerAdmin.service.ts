@@ -459,24 +459,6 @@ export const customerAdminService = {
     return unwrap(response.data);
   },
 
-  /**
-   * Invite a customer. `prefill` is an optional set of profile fields the
-   * admin can pre-populate on the invitation row — the customer sees them
-   * pre-filled (and editable) on the accept form. Saves the customer typing
-   * for the common case where the photographer already has the wedding
-   * couple's name + address from the booking form.
-   */
-  async invite(
-    email: string,
-    prefill?: CustomerInvitePrefill,
-  ): Promise<{ id: number; email: string; expiresAt: string }> {
-    const response = await api.post<Enveloped<{ invitation: { id: number; email: string; expiresAt: string } }>>(
-      '/admin/customers/invite',
-      { email, prefill },
-    );
-    return unwrap(response.data).invitation;
-  },
-
   async listInvitations(): Promise<CustomerInvitationSummary[]> {
     const response = await api.get<{ invitations: CustomerInvitationSummary[] }>('/admin/customers/invitations');
     return response.data.invitations;

@@ -4666,7 +4666,6 @@
     },
     "table": {
       "name": "Nome",
-      "email": "E-mail",
       "company": "Empresa",
       "eventCount": "Eventos",
       "lastLogin": "Último acesso",
@@ -4679,16 +4678,7 @@
     "invite": {
       "button": "Convidar cliente",
       "title": "Convidar um cliente",
-      "description": "Eles receberão um e-mail com um link para configurar a conta. Após aceitarem, você pode atribuí-los a eventos.",
-      "email": "E-mail",
-      "submit": "Enviar convite",
-      "success": "Convite enviado",
-      "error": "Não foi possível enviar o convite.",
-      "conflict": "Já existe um cliente com este e-mail ou um convite pendente.",
-      "invalidEmail": "Informe um e-mail válido",
-      "showPrefill": "+ Adicionar detalhes de contato (opcional)",
-      "hidePrefill": "− Ocultar detalhes de contato",
-      "prefillHint": "Qualquer dado preenchido será pré-preenchido na página de cadastro do cliente — ele ainda pode editá-lo."
+      "description": "Eles receberão um e-mail com um link para configurar a conta. Após aceitarem, você pode atribuí-los a eventos."
     },
     "invitations": {
       "empty": "Nenhum convite pendente.",
@@ -4727,7 +4717,6 @@
       "email": "E-mail",
       "preferredLanguage": "Idioma preferido",
       "salutation": "Saudação",
-      "salutationNone": "—",
       "firstName": "Nome",
       "lastName": "Sobrenome",
       "displayName": "Nome de exibição",
@@ -4740,7 +4729,6 @@
       "postalCode": "CEP",
       "city": "Cidade",
       "state": "Estado / região",
-      "countryCode": "País (ISO 2)",
       "notesHint": "Visível apenas para administradores. Nunca mostrado ao cliente.",
       "featuresSection": "Funções do cliente",
       "featuresHint": "Substituições por cliente para as abas do portal. Os toggles globais em Configurações → Recursos são a chave principal — quando o global está DESLIGADO ninguém vê a aba, independente do que você definir aqui. Os padrões são LIGADOS; desligue um para ocultar uma aba para este cliente específico.",
@@ -4764,7 +4752,6 @@
       "title": "Apagar dados do cliente?",
       "body": "Remove nome, e-mail, telefone, endereço, empresa e credenciais do cliente. O registro da conta permanece para que registros históricos de acesso e logs de auditoria ainda o referenciem. Esta ação é irreversível — você não poderá restaurar os dados depois.",
       "confirm": "Apagar permanentemente",
-      "confirmInFlight": "Apagando…",
       "success": "Cliente apagado",
       "error": "Não foi possível apagar o cliente"
     },

@@ -1,6 +1,3 @@
-// Extracted verbatim from contractService.js — see ../contractService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const fs = require('fs');
 const { db, logActivity } = require('../../database/db');
 const { readDocumentDateFormat } = require('../../utils/documentDateFormat');
@@ -214,7 +211,7 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
       updated_at: new Date(),
     };
     if (hasSignedPdfSha) updates.signed_pdf_sha256 = signedSha256;
-    // Migration 136 — clear any pre-existing render-failed marker; the
+    // Clear any pre-existing render-failed marker; the
     // most recent stamp attempt just succeeded.
     if (await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
       updates.signed_pdf_render_failed_at = null;
@@ -243,7 +240,7 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
       message: err.message,
       stack: err.stack,
     });
-    // Migration 136 — surface the failure on the contract row so the
+    // Surface the failure on the contract row so the
     // admin detail page can render a recovery banner instead of the
     // admin only discovering this through monitoring. err.message is
     // truncated to 2 KB; the full stack stays in server logs.
@@ -433,7 +430,7 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
       message: err.message,
       stack: err.stack,
     });
-    // Migration 136 — mirror the customer-sign branch: persist a
+    // Mirror the customer-sign branch: persist a
     // recovery marker so the admin detail page can surface a banner.
     try {
       if (await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
@@ -646,7 +643,7 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
     status: 'fully_signed',
     updated_at: now,
   };
-  // Migration 135 — durable wet-upload discriminator. Persists the
+  // Durable wet-upload discriminator. Persists the
   // "this row holds an authoritative wet upload, do not auto-overwrite"
   // signal as a column rather than inferring from the file path. See
   // the migration body for the full rationale.
@@ -819,7 +816,7 @@ async function rerenderAndResend(contractId, adminId) {
   }
 
   let attachmentPath = contract.signed_pdf_path || null;
-  // Migration 135 — `signed_pdf_is_wet_upload` is the durable
+  // `signed_pdf_is_wet_upload` is the durable
   // authoritative-source discriminator. It's set TRUE only by
   // attachSignedPdfUpload, so any non-wet path here is a system
   // stamp safe to replace. We still null-check the path so missing
@@ -864,7 +861,7 @@ async function rerenderAndResend(contractId, adminId) {
       updated_at: new Date(),
     };
     if (hasSignedPdfSha) updates.signed_pdf_sha256 = signedSha256;
-    // Migration 136 — this branch is a recovery path; clear any
+    // This branch is a recovery path; clear any
     // existing failed-render marker.
     if (await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
       updates.signed_pdf_render_failed_at = null;
@@ -1094,7 +1091,7 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
   const { storedPath: signedPath } = await persistContractPdf(refreshed.contract, stampedBuffer,
     contract.status === 'fully_signed' ? 'fully-signed' : 'partially-signed');
 
-  // Migration 135 — read the discriminator column. Fall back to the
+  // Read the discriminator column. Fall back to the
   // historical substring rule only when the column is absent (un-
   // migrated install) so we never accidentally overwrite a wet upload.
   const hasWetFlagColumn = await hasColumnCached('contracts', 'signed_pdf_is_wet_upload');
@@ -1110,7 +1107,7 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
       updated_at: new Date(),
     };
     if (hasSignedPdfSha) updates.signed_pdf_sha256 = signedSha256;
-    // Migration 136 — restamp is a recovery path; clear the marker. Not on a
+    // Restamp is a recovery path; clear the marker. Not on a
     // fully-signed contract: there the marker can also stand for
     // fully-signed emails never sent, which only "Re-send signed PDF" sends,
     // and that clears it.

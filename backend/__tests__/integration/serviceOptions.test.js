@@ -337,7 +337,7 @@ describe('service options', () => {
     });
     // The slice is exactly the main line's 210.00: nothing to reconcile.
     await db.transaction((trx) => replaceReconciliationLine(trx, invoiceId, {
-      label: 'Anzahlung', percent: 100, index: 0, total: 2, netSlice: 21000, topLineSubtotal: null, actor: adminId,
+      label: 'Anzahlung', percent: 100, index: 0, total: 2, netSlice: 21000, actor: adminId,
     }));
     const lines = await db('invoice_line_items').where({ invoice_id: invoiceId });
     expect(lines).toHaveLength(2);

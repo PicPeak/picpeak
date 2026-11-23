@@ -64,18 +64,9 @@ describe('createBaseDocument', () => {
     expect(buf.slice(0, 4).toString('ascii')).toBe('%PDF');
   });
 
-  it('keeps Helvetica fonts when the issuer has no custom TTF path', () => {
+  it('keeps Helvetica fonts when the issuer has no font family', () => {
     const { fonts } = pdfService.createBaseDocument({
-      issuer: { pdfFontTtfPath: null },
-    });
-    expect(fonts.body).toBe('Helvetica');
-    expect(fonts.bold).toBe('Helvetica-Bold');
-  });
-
-  it('falls back to Helvetica when the custom TTF path does not exist', () => {
-    // No exception, no logger.error blow-up — just silent fallback.
-    const { fonts } = pdfService.createBaseDocument({
-      issuer: { pdfFontTtfPath: '/nonexistent/path/font.ttf' },
+      issuer: { pdfFontFamily: null },
     });
     expect(fonts.body).toBe('Helvetica');
     expect(fonts.bold).toBe('Helvetica-Bold');
@@ -108,25 +99,6 @@ describe('createBaseDocument', () => {
     });
     expect(fonts.body).toBe('Helvetica');
     expect(fonts.bold).toBe('Helvetica-Bold');
-  });
-
-  it('prefers pdfFontTtfPath over pdfFontFamily when both are set', () => {
-    // The explicit upload is the priority-1 override. When the upload
-    // path is unusable (file missing) the family is consulted next.
-    // Here we set BOTH to invalid values and confirm Helvetica fallback
-    // — what matters is that the family DIDN'T get registered while a
-    // (failed) explicit path was being evaluated.
-    const { fonts } = pdfService.createBaseDocument({
-      issuer: {
-        pdfFontTtfPath: '/nonexistent/path/font.ttf',
-        pdfFontFamily: 'Inter',
-      },
-    });
-    // pdfFontTtfPath misses → falls through to pdfFontFamily → Inter
-    // registers successfully. crm-body / crm-bold confirm a custom
-    // font won.
-    expect(fonts.body).toBe('crm-body');
-    expect(fonts.bold).toBe('crm-bold');
   });
 
   it('forwards PDF info metadata (Title, Author) to the document', () => {

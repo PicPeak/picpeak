@@ -17,7 +17,8 @@
  *   sent      emailed to customer; public token live
  *   accepted  customer accepted; ready to convert to event
  *   declined  customer declined; admin can resend after edits
- *   expired   valid_until passed without a response (set by the scheduler)
+ *   expired   valid_until passed without a response (no code writes it;
+ *             kept for rows that carry it)
  *   converted accepted + event created from it
  *
  * Per-customer feature override: when `customer_accounts.feature_quotes`
@@ -119,7 +120,7 @@ const { toMillis } = require('../utils/queueTimestamps');
  * supplied line items + VAT rate. Returns BigInt-safe integers (minor
  * units). Discount is applied before VAT.
  *
- * Hierarchy rules (migration 119):
+ * Hierarchy rules:
  *   - Items with `parent_position` are SUB-ITEMS of the referenced
  *     top-level item.
  *   - Each sub-item's `line_total_minor` is computed (qty × unit ×
@@ -316,7 +317,7 @@ async function insertLineItemsHierarchical(trx, tableName, ownerColumn, ownerId,
 }
 
 // Atomic gap-free quote number generator. See utils/documentSequences.js
-// for the locking story; migration 132 created the underlying table.
+// for the locking story.
 // The previous SELECT-MAX-then-INSERT path raced under concurrent
 // admin creates and could emit `Q-2026-AB12C3` after 5 retries.
 async function nextQuoteNumber(trx) {
@@ -450,7 +451,7 @@ async function getQuoteById(id) {
     // block and the editor shows "undefined undefined" in its summary.
     const quote = await db('quotes')
       .leftJoin('customer_accounts', 'quotes.customer_account_id', 'customer_accounts.id')
-      // Migration 130 lineage: the human contract_number of the
+      // Lineage: the human contract_number of the
       // contract this quote was converted into, so the detail view
       // shows "Linked contract LBM-C-2026-0010" instead of just "#10".
       // LEFT join — most quotes never get converted to a contract.
@@ -578,12 +579,12 @@ async function createQuote(payload, adminId) {
       source_template_id: payload.sourceTemplateId || null,
       source_template_version: payload.sourceTemplateVersion || null,
       payment_term_template_id: payload.paymentTermTemplateId || null,
-      // Migration 124 — split payment-term picker. Editor stops writing
+      // Split payment-term picker. Editor stops writing
       // to the legacy single FK once both new ones are present; the
       // legacy column stays nullable for backward compatibility.
       payment_net_days_template_id: payload.paymentNetDaysTemplateId || null,
       payment_timing_template_id: payload.paymentTimingTemplateId || null,
-      // Migration 142 — ad-hoc installments override (commit #6). When
+      // Ad-hoc installments override (commit #6). When
       // the editor's InstallmentsPanel is set the array lands here;
       // composeSnapshotFromSplitFks then substitutes it for the
       // template's installments field at every snapshot-read site
@@ -601,7 +602,7 @@ async function createQuote(payload, adminId) {
       internal_notes: payload.internalNotes || null,
       cc_pdf_email: payload.ccPdfEmail || null,
       business_bank_account_id: bank?.id || null,
-      // Migration 140 — cross-document lineage UUID. A freshly-created
+      // Cross-document lineage UUID. A freshly-created
       // quote is the root of its deal chain; mint a new one here and let
       // convertQuoteToContract / convertQuoteToInvoices propagate it down.
       // A reissued quote (#1451) stays in the deal of the quote it replaces.
@@ -758,7 +759,7 @@ async function updateQuote(id, payload, adminId) {
       eventTimeEnd: 'event_time_end',
       expectedDurationHours: 'expected_duration_hours',
       paymentTermTemplateId: 'payment_term_template_id',
-      // Migration 124 — split picker. Both legacy + new FKs accepted
+      // Split picker. Both legacy + new FKs accepted
       // on the update path so the editor can transition without breaking.
       paymentNetDaysTemplateId: 'payment_net_days_template_id',
       paymentTimingTemplateId: 'payment_timing_template_id',
@@ -778,7 +779,7 @@ async function updateQuote(id, payload, adminId) {
         updates[col] = payload[api];
       }
     }
-    // Migration 142 — ad-hoc installments override (commit #6). Treated
+    // Ad-hoc installments override (commit #6). Treated
     // separately because it needs JSON encoding + "empty array means
     // clear the override" semantics.
     if (Object.prototype.hasOwnProperty.call(payload, 'installments')) {
@@ -976,7 +977,7 @@ async function buildRenderContext(quote, lineItems, { paymentTerm: givenPaymentT
       lineKind: li.line_kind || 'item',
       unit: li.unit || null,
       promotion: parsePromotionSnapshot(li.promotion_snapshot),
-      // Migration 119 hierarchy + details — surfaced to the PDF
+      // Hierarchy + details — surfaced to the PDF
       // renderer so drawLineItems can indent sub-items + render
       // details_text below.
       parentLineItemId: li.parent_line_item_id || null,
@@ -1130,7 +1131,7 @@ async function sendQuote(id, adminId) {
   const hasEmittedColumn = await hasColumnCached('quotes', 'workflow_response_emitted_at');
 
   // Snapshot payment term so future template edits don't mutate the doc.
-  // Migration 124 — prefer the two new split FKs; fall back to the legacy
+  // Prefer the two new split FKs; fall back to the legacy
   // single FK when the quote was authored before the split was deployed.
   // Output shape is unchanged: { description, net_days, skonto_percent,
   // skonto_within_days, installments } — that's what pdfService and the
@@ -1140,7 +1141,7 @@ async function sendQuote(id, adminId) {
   // Render PDF + persist snapshot.
   const ctx = await buildRenderContext(quote, lineItems, { paymentTerm: paymentTermSnapshot });
   const buffer = await pdfService.renderQuoteToBuffer(ctx);
-  const pdfPath = await persistDocPdf('quote', quote, buffer, '', { kind: 'sent', theme: ctx.theme, issuer: ctx.issuer });
+  const pdfPath = await persistDocPdf(quote, buffer, '', { kind: 'sent', theme: ctx.theme, issuer: ctx.issuer });
 
   // Mint a single shared token; accept and decline are differentiated
   // by the request body. This makes the email link survive a customer
@@ -1251,14 +1252,14 @@ function formatMajor(minor, currency, locale, issuerCountryCode) {
  * version (e.g. '-accepted') next to the sent file; `meta` carries the kind
  * and the theme / issuer it was rendered with.
  */
-async function persistDocPdf(type, doc, buffer, suffix = '', meta = {}) {
-  const number = doc.quote_number || doc.invoice_number;
+async function persistDocPdf(doc, buffer, suffix = '', meta = {}) {
+  const number = doc.quote_number;
   if (!number) return null;
   const year = (doc.issue_date ? new Date(doc.issue_date) : new Date()).getFullYear();
   const stored = await documentArtifactService.persist({
-    docType: type,
+    docType: 'quote',
     docId: doc.id,
-    kind: meta.kind || (suffix ? 'accepted' : 'sent'),
+    kind: meta.kind,
     buffer,
     fileName: `${number}${suffix}.pdf`,
     year,
@@ -1521,7 +1522,7 @@ async function storeAcceptedQuotePdf(quoteId) {
     const data = await getQuoteById(quoteId);
     const ctx = await buildRenderContext(data.quote, data.lineItems);
     const buffer = await pdfService.renderQuoteToBuffer(ctx);
-    const pdfPath = await persistDocPdf('quote', data.quote, buffer, await acceptedSuffix(quoteId),
+    const pdfPath = await persistDocPdf(data.quote, buffer, await acceptedSuffix(quoteId),
       { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer });
     await auditedUpdate(db, 'quotes', { id: quoteId }, { pdf_path: toStoredPath(pdfPath) },
       { source: 'quote.accepted.pdf' });
@@ -1638,14 +1639,6 @@ async function resolveCustomerSelection(quote, { selectedOptional, expectedTotal
 }
 
 /**
- * Record a customer response from the public accept/decline link.
- *
- * 15-min toggle rule: the first response opens a window equal to
- * crm_quotes_accept_window_minutes (default 15). Within that window
- * the same token may flip accept↔decline. After the window expires the
- * response is locked.
- */
-/**
  * Fire a quote lifecycle event for the workflow engine. Best-effort: resolves
  * the customer email (so send_email actions have a recipient) and never throws
  * into the caller. No-op when the workflows flag is off (emit fails closed).
@@ -1754,6 +1747,13 @@ async function finalizeQuoteResponses(limit = 200) {
 const QUOTE_LINK_ACTOR = { type: 'public', id: null, name: 'quote-link' };
 
 /**
+ * Record a customer response from the public accept/decline link.
+ *
+ * 15-min toggle rule: the first response opens a window equal to
+ * crm_quotes_accept_window_minutes (default 15). Within that window
+ * the same token may flip accept↔decline. After the window expires the
+ * response is locked.
+ *
  * `actor` names the responder in the accounting change history: the customer
  * portal passes the signed-in customer; the public link leaves the default.
  */
@@ -1812,7 +1812,6 @@ async function recordResponse({
     throw new AppError('Terms of Service must be accepted before the quote can be accepted.',
       400, 'TOS_REQUIRED');
   }
-  const effectiveAction = action;
 
   const now = new Date();
   const windowMinutes = ensureInt(await getAppSetting('crm_quotes_accept_window_minutes')) || 15;
@@ -1831,7 +1830,7 @@ async function recordResponse({
     }
   }
 
-  const isAccept = effectiveAction === 'accept';
+  const isAccept = action === 'accept';
   const newStatus = isAccept ? 'accepted' : 'declined';
   const respondedAt = quote.responded_at || now;
   const responseLockedAt = new Date(new Date(respondedAt).getTime() + windowMinutes * 60 * 1000);
@@ -1970,7 +1969,7 @@ async function adminAcceptQuote(id, adminId) {
       // Persist PDF snapshot under the same convention sendQuote uses
       // — keeps every issued PDF on disk for the audit trail.
       // Kept next to the sent file rather than over it (#1451).
-      const pdfPath = await persistDocPdf('quote', fresh, buffer, '-accepted',
+      const pdfPath = await persistDocPdf(fresh, buffer, '-accepted',
         { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer });
       // Record it like sendQuote does: the accepted quote opens as this
       // file from now on instead of re-rendering (#1451).
@@ -2213,15 +2212,6 @@ async function reissueQuote(id, adminId, reason = null) {
 }
 
 /**
- * Convert an accepted quote to an event + scheduled invoices.
- * Wraps everything in a transaction so a half-finished conversion
- * doesn't litter the DB.
- *
- * Implementation note: invoice creation delegates to invoiceService —
- * required by Commit 7. We `require` lazily to dodge the circular
- * dependency between quoteService and invoiceService.
- */
-/**
  * Convert an accepted quote directly into an invoice — no event, no
  * gallery, just the financial document. Used for engagements that
  * don't produce a photo deliverable (consulting, equipment hire, etc).
@@ -2295,7 +2285,7 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       ? paymentTermSnapshot.installments
       : [{ percent: 100, trigger: 'after_delivery', offset_days: 0, label: 'Total' }];
 
-    const spawnResult = await invoiceService.scheduleInvoicesForEvent({
+    const spawnResult = await invoiceService.spawnInstallmentInvoices({
       trx,
       // eventId omitted → invoices have source_quote_id but no event_id.
       eventId: null,
@@ -2316,11 +2306,11 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       eventDate: quote.event_date,
       // Inline event snapshot — copied so the converted invoice
       // keeps the quote's event label / times for accounting + UI
-      // even when there's no `events` row to fall back to (migration 123).
+      // even when there's no `events` row to fall back to.
       eventName: quote.event_name,
       eventTimeStart: quote.event_time_start,
       eventTimeEnd: quote.event_time_end,
-      // Migration 124 — pass the split payment-term FKs + the
+      // Pass the split payment-term FKs + the
       // composed snapshot through so the converted invoice carries
       // them on both the FK and snapshot paths.
       paymentNetDaysTemplateId: quote.payment_net_days_template_id,
@@ -2332,7 +2322,7 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       // selected payment-term template so each scheduled invoice's
       // due_date reflects what the customer agreed to on the quote.
       netDays: paymentTermSnapshot?.net_days,
-      // Migration 140 — every spawned invoice inherits the source
+      // Every spawned invoice inherits the source
       // quote's deal_uuid so quote + N invoices group under one deal.
       dealUuid: quote.deal_uuid,
       // Workflow draft-seam: when called by the booking flow's prepare_invoice
@@ -2382,6 +2372,15 @@ async function existingConversion(eventId) {
   return { eventId, alreadyConverted: true, invoiceIds: existingInvoices.map((r) => r.id) };
 }
 
+/**
+ * Convert an accepted quote to an event + scheduled invoices.
+ * Wraps everything in a transaction so a half-finished conversion
+ * doesn't litter the DB.
+ *
+ * Implementation note: invoice creation delegates to invoiceService —
+ * required by Commit 7. We `require` lazily to dodge the circular
+ * dependency between quoteService and invoiceService.
+ */
 async function convertToEvent(quoteId, adminId, options = {}) {
   const { quote, lineItems } = (await getQuoteById(quoteId)) || {};
   if (!quote) throw new AppError('Quote not found', 404);
@@ -2557,7 +2556,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
     // money documents separately.
     const spawnResult = options.skipInvoices === true
       ? { invoiceIds: [] }
-      : await invoiceService.scheduleInvoicesForEvent({
+      : await invoiceService.spawnInstallmentInvoices({
         trx,
         eventId,
         quoteId: quote.id,
@@ -2576,7 +2575,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
         installments,
         eventDate: quote.event_date,
         // Inline event snapshot — same rationale as convertToInvoiceOnly
-        // above (migration 123).
+        // above.
         eventName: quote.event_name,
         eventTimeStart: quote.event_time_start,
         eventTimeEnd: quote.event_time_end,
@@ -2585,7 +2584,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
         // Net 14 / 30 / 60 / 90 carry through from the quote's
         // payment-term template (same as convertToInvoiceOnly).
         netDays: paymentTermSnapshot?.net_days,
-        // Migration 140 — propagate the quote's deal_uuid down through
+        // Propagate the quote's deal_uuid down through
         // every spawned invoice (same as convertToInvoiceOnly above).
         dealUuid: quote.deal_uuid,
         // Workflow draft-seam: the booking flow's prepare_event creates the
@@ -3041,7 +3040,7 @@ async function deletePaymentTermTemplate(id) {
 }
 
 // ---------------------------------------------------------------------
-// Split payment-term templates — net-days + timing (migration 124).
+// Split payment-term templates — net-days + timing.
 //
 // The two new tables decouple the "Net X days" choice from the
 // "payment timing / split" choice. CRUD shape mirrors the legacy
@@ -3157,7 +3156,7 @@ async function updatePaymentTimingTemplate(id, payload) {
 
 /**
  * Compose a legacy-shape `payment_term_snapshot` JSON object from the
- * two new split FKs on a quote or invoice row (migration 124).
+ * two new split FKs on a quote or invoice row.
  *
  * Returns null when at least one of the two FKs is unset — the caller
  * then falls back to reading the legacy `payment_term_template_id`
@@ -3166,7 +3165,7 @@ async function updatePaymentTimingTemplate(id, payload) {
  * doesn't.
  *
  * Output shape is identical to the legacy template row so downstream
- * consumers (pdfService, scheduleInvoicesForEvent, dunning) work
+ * consumers (pdfService, spawnInstallmentInvoices, dunning) work
  * without changes:
  *
  *   { description, net_days, skonto_percent, skonto_within_days,
@@ -3179,7 +3178,7 @@ async function composeSnapshotFromSplitFks(row) {
   const timing = await db('payment_timing_templates')
     .where({ id: row.payment_timing_template_id }).first();
   if (!netDays || !timing) return null;
-  // Migration 142 — ad-hoc installments override. When the quote
+  // Ad-hoc installments override. When the quote
   // carries a populated `payment_term_installments_override`, those
   // rows replace the template's installments in the snapshot. Keeps
   // every other snapshot field (net_days / skonto) coming from the
@@ -3263,7 +3262,6 @@ module.exports = {
   convertToInvoiceOnly,
 
   // Preview / PDF
-  renderQuotePdfBuffer,
   renderQuotePdfFromPayload,
 
   // Presets
@@ -3276,7 +3274,7 @@ module.exports = {
   createPaymentTermTemplate,
   updatePaymentTermTemplate,
   deletePaymentTermTemplate,
-  // Split payment-term templates (migration 124).
+  // Split payment-term templates.
   listPaymentNetDaysTemplates,
   createPaymentNetDaysTemplate,
   updatePaymentNetDaysTemplate,
@@ -3292,12 +3290,9 @@ module.exports = {
     // Shared with quoteTemplateService so {{hourly_rate}} reads exactly like
     // the amounts in the quote email.
     formatMajor,
-    ensureCustomerFeatureEnabled,
-    nextQuoteNumber,
-    persistDocPdf,
     buildRenderContext,
     resolvePaymentTerm,
-    // Migration 119: hierarchy helpers — shared with invoiceService
+    // Hierarchy helpers — shared with invoiceService
     // (commit 3) so the quote → invoice cloner stays consistent.
     validateLineItemHierarchy,
     insertLineItemsHierarchical,

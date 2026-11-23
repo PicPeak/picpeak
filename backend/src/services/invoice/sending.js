@@ -1,6 +1,3 @@
-// Extracted verbatim from invoiceService.js — see ../invoiceService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const crypto = require('crypto');
 const { db, logActivity } = require('../../database/db');
 const { adminActivityActor } = require('../../utils/activityActor');
@@ -441,9 +438,7 @@ async function createStorno(originalId, adminId, trx = db) {
     created_at: now,
     updated_at: now,
   }, { actor: adminId, source: 'invoice.storno.create' });
-  const stornoId = Array.isArray(insertedRow)
-    ? (insertedRow[0]?.id ?? insertedRow[0])
-    : insertedRow;
+  const stornoId = insertedRow[0].id;
 
   // Snapshot the original's line items (positive amounts — the
   // Storno's sign convention lives on the row-level totals + the
@@ -866,6 +861,22 @@ async function cancelInvoice(id, adminId) {
   return { cancelled: true, stornoId };
 }
 
+/**
+ * Admin override — issue the customer's running monthly draft NOW,
+ * bypassing the cadence-day wait. Mirrors the scheduler's monthly
+ * pass: clears is_monthly_draft, sets the issue date
+ * + scheduled_send_at to now, and fires sendInvoice inline so the
+ * email goes out on the next email-queue tick (~60s) instead of
+ * waiting for the next scheduler iteration.
+ *
+ * Refuses when:
+ *   - no draft exists (admin hasn't queued anything yet)
+ *   - the draft has zero line items (nothing to send — same as the
+ *     scheduler's empty-month skip path)
+ *
+ * Returns { invoiceId, invoiceNumber } so the route can surface the
+ * resulting invoice on the response toast.
+ */
 async function triggerMonthlyBillNow(customerId, adminId) {
   const draft = await db('invoices')
     .where({ customer_account_id: customerId, is_monthly_draft: true, status: 'scheduled' })

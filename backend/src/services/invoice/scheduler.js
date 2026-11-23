@@ -1,6 +1,3 @@
-// Extracted verbatim from invoiceService.js — see ../invoiceService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const { db, logActivity } = require('../../database/db');
 const logger = require('../../utils/logger');
 const { getAppSetting } = require('../../utils/appSettings');

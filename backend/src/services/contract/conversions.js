@@ -1,6 +1,3 @@
-// Extracted verbatim from contractService.js — see ../contractService.js for the
-// module-level overview. Do not add behavior here without updating the entry re-exports.
-
 const crypto = require('crypto');
 const { buildShareLinkVariants } = require('../shareLinkService');
 const { db, logActivity } = require('../../database/db');
@@ -84,10 +81,9 @@ async function createFromQuote(quoteId, adminId, { contractTemplateId = null } =
     ? `Contract — ${quote.event_name}`
     : `Contract from quote ${quote.quote_number}`;
 
-  // Schema-drift safety: the lineage columns landed in migration 130
-  // as in-place edits. Dev installs that ran 130 BEFORE that edit
-  // won't have these columns yet. hasColumn() lets us skip the
-  // affected writes instead of crashing with a generic 500.
+  // Schema-drift safety: an install whose CRM tables predate the lineage
+  // columns won't have them. hasColumn() lets us skip the affected writes
+  // instead of crashing with a generic 500.
   const hasContractSourceQuote = await hasColumnCached('contracts', 'source_quote_id');
   const hasQuoteContractBackPointer = await hasColumnCached('quotes', 'converted_contract_id');
   const hasContractEventCols = await hasColumnCached('contracts', 'event_name');
@@ -431,9 +427,8 @@ async function convertToInvoiceOnly(contractId, adminId, options = {}) {
     );
   }
 
-  // Schema-drift guard — the lineage columns are in-place edits to
-  // migration 130. Skip the back-pointer update silently when the
-  // column hasn't migrated yet.
+  // Schema-drift guard — skip the back-pointer update silently when the
+  // invoices table lacks the lineage column.
   const hasInvoiceContractBackPointer = await hasColumnCached('invoices', 'source_contract_id');
   // Migration 231 — skip the claim entirely on installs that haven't
   // migrated yet (same schema-drift pattern as the back-pointer above).

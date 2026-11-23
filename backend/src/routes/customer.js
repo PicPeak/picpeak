@@ -4,12 +4,6 @@ const { isGalleryAvailable, isGalleryExpired } = require('../utils/galleryLifecy
  *
  * Mounted at /api/customer (see server.js). Every endpoint here requires
  * a valid 'customer' JWT — see middleware/customerAuth.js.
- *
- * Endpoints:
- *   GET  /events                       list assigned events for dashboard
- *   GET  /events/:slug/access-token    mint a gallery JWT so the customer
- *                                      can browse the event without going
- *                                      through the per-event password gate
  */
 
 const express = require('express');

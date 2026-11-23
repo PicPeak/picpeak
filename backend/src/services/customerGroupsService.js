@@ -529,7 +529,6 @@ async function bulkAssign({ customerIds, addGroupIds, removeGroupIds, dryRun = f
 }
 
 module.exports = {
-  DEFAULT_COLOR,
   MAX_GROUPS_PER_CUSTOMER,
   list,
   countUngrouped,
@@ -544,5 +543,4 @@ module.exports = {
   logCustomerGroupsAssigned,
   assertAssignable,
   bulkAssign,
-  _internal: { normalizeColor, normalizeName, normalizeDescription, nameKey },
 };

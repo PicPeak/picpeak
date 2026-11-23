@@ -874,13 +874,10 @@ async function deleteAllForErasure(trx, customerId) {
 }
 
 module.exports = {
-  RIGHTS,
-  AREAS,
   HOLDER_RIGHTS,
   rightsOf,
   hasRight,
   applyRights,
-  asFlag,
   isContactEmail,
   conflictOnDuplicate,
   credentialFor,

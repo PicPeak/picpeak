@@ -22,7 +22,7 @@ const quoteService = require('../../src/services/quoteService');
 const { validateLineItemHierarchy, insertLineItemsHierarchical } = quoteService._internal;
 
 describe('quote → invoice cloner shape', () => {
-  // Models the in-memory transformation step from `scheduleInvoicesForEvent`:
+  // Models the in-memory transformation step from `spawnInstallmentInvoices`:
   // take source quote line items (with parent_position) and produce the
   // `cloned` array that's passed into insertLineItemsHierarchical.
   function modelCloner(sourceLines) {
@@ -63,7 +63,7 @@ describe('quote → invoice cloner shape', () => {
   });
 
   it('installment adjustment reconciles against TOP-LEVEL cloned items only', () => {
-    // Recreate the inner math from scheduleInvoicesForEvent: sum
+    // Recreate the inner math from spawnInstallmentInvoices: sum
     // only line_total_minor where parent_position is null. Sub-items
     // would otherwise double-count and skew the adjustment.
     //

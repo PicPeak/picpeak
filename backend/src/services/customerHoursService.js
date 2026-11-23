@@ -274,7 +274,7 @@ async function createEntry(customerId, payload, adminId) {
       row.project_id = projectId;
     }
     const inserted = await auditedInsert(trx, 'customer_hour_entries', row, { actor: adminId || null, source: 'hours.createEntry' });
-    const entryId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+    const entryId = inserted[0].id;
 
     // Accumulator-mode customers (monthly + manual) get the auto-append
     // treatment — the entry lands on the running draft instead of staying

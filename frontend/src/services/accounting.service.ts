@@ -207,10 +207,8 @@ export const accountingService = {
   async listInbound(params: { status?: InboundStatus; page?: number; pageSize?: number } = {}): Promise<Paginated<InboundDocument>> {
     const { data } = await api.get('/admin/expenses/inbound', { params }); return data;
   },
-  async getInbound(id: number): Promise<InboundDocument> { const { data } = await api.get(`/admin/expenses/inbound/${id}`); return data.document; },
   async updateInbound(id: number, fields: Partial<InboundDocument>): Promise<InboundDocument> { const { data } = await api.patch(`/admin/expenses/inbound/${id}`, fields); return data.document; },
   async categorizeInbound(id: number, payload: CategorizePayload): Promise<InboundDocument> { const { data } = await api.post(`/admin/expenses/inbound/${id}/categorize`, payload); return data.document; },
-  async rebillInbound(id: number, payload: CategorizePayload): Promise<{ document: InboundDocument; invoiceId: number }> { const { data } = await api.post(`/admin/expenses/inbound/${id}/rebill`, payload); return data; },
   /** Per-event customers with pending (categorised, unbilled) re-bills. */
   async listPendingRebills(): Promise<PendingRebillSummary[]> { const { data } = await api.get('/admin/expenses/inbound/pending-summary'); return data.items; },
   /** Bundle one customer's pending re-bills into a single invoice. */
@@ -227,7 +225,6 @@ export const accountingService = {
   async listExpenses(params: { kind?: ExpenseKind; categoryId?: number; eventId?: number | 'company'; page?: number; pageSize?: number } = {}): Promise<Paginated<Expense>> {
     const { data } = await api.get('/admin/expenses', { params }); return data;
   },
-  async getExpense(id: number): Promise<Expense> { const { data } = await api.get(`/admin/expenses/${id}`); return data.expense; },
   async createExpense(payload: ExpensePayload, file?: File | null): Promise<Expense> {
     const { data } = await api.post('/admin/expenses', expenseFormData(payload, file), { headers: { 'Content-Type': 'multipart/form-data' } });
     return data.expense;

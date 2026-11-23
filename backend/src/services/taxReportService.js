@@ -642,7 +642,6 @@ async function loadRenderContext(locale) {
     footerLine: profile.footer_line,
     vatId: profile.vat_id,
     logoPath: profile.logo_path,
-    pdfFontTtfPath: profile.pdf_font_ttf_path,
     pdfFontFamily: profile.pdf_font_family || null,
     showLogo: profile.pdf_show_logo == null ? true
       : (profile.pdf_show_logo === true || profile.pdf_show_logo === 1 || profile.pdf_show_logo === '1'),

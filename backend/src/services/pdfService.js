@@ -183,7 +183,7 @@ const ADDR_WINDOW = {
 
 // Default to PDFKit's built-in Helvetica. These constants are STILL
 // used by the rest of the renderer as logical font names; when the
-// admin has uploaded a custom TTF (business_profile.pdf_font_ttf_path),
+// theme or issuer names a font family (services/pdf/fonts.js),
 // renderDocument registers it under these same names so every existing
 // `doc.font(doc._fonts ? doc._fonts.body : FONT_BODY)` / `doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD)` call automatically
 // picks it up. If only one weight is available we register it for both
@@ -989,9 +989,8 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
     // Bullet (U+2022) is part of the WinAnsi character set that
     // PDFKit's built-in Helvetica supports, unlike the earlier "↳"
     // (U+21B3) which rendered as the font's .notdef glyph ("!3").
-    // Custom TTFs registered via business_profile.pdf_font_ttf_path
-    // typically include the arrow too, but the bullet is the safe
-    // common-denominator that always renders.
+    // Custom font families typically include the arrow too, but the
+    // bullet is the safe common-denominator that always renders.
     let descText = isSubItem ? `\u2022 ${li.description || ''}` : (li.description || '');
     if (isDiscount && li.promotion && li.promotion.type === 'percent') {
       descText = `${descText} (${stripTrailingZeros(li.promotion.percent)} %)`;
@@ -2244,7 +2243,7 @@ function stampPageNumbers(doc, locale, { beforeStamp, insertedBeforeLast = 0, do
  *
  *   options = {
  *     orientation: 'portrait' | 'landscape' (default 'portrait'),
- *     issuer: { pdfFontTtfPath? } — used for optional custom-font registration,
+ *     issuer: { pdfFontFamily? } — used for optional custom-font registration,
  *     info:   { Title?, Author? } — PDF metadata (filename in Chrome viewer),
  *   }
  *
@@ -2274,16 +2273,8 @@ function createBaseDocument(options = {}) {
     info: options.info || {},
   });
 
-  // Font registration. Resolution priority:
-  //   1. issuer.pdfFontTtfPath  → legacy free-text upload (migration 103).
-  //      The UI for setting it was retired in favour of the dropdown,
-  //      but any existing value still wins so deployments that already
-  //      pointed at a custom brand font keep rendering with it.
-  //   2. issuer.pdfFontFamily   → bundled-fonts dropdown (migration 121).
-  //      Maps to backend/assets/fonts/<family>/400.ttf for body and
-  //      <family>/700.ttf for bold. Falls back to 600/400 if 700 is
-  //      missing (some families don't ship every weight).
-  //   3. Helvetica              → PDFKit's built-in default.
+  // Font registration, resolved per services/pdf/fonts.js: the theme's or
+  // issuer's font family (uploaded or bundled), else Helvetica.
   //
   // Same block is mirrored below in renderDocument so quote / invoice
   // / tax-report PDFs all resolve fonts identically.
@@ -2293,19 +2284,6 @@ function createBaseDocument(options = {}) {
   doc._fonts = registerThemeFonts(doc, options.issuer || {}, options.theme || null);
 
   return { doc, page, fonts: doc._fonts };
-}
-
-/**
- * Register the issuer's custom font faces (legacy uploaded TTF, else the
- * bundled family) per services/pdf/fonts.js. Returns the
- * `{ body, bold, italic }` logical names when a custom font applies, or
- * `null` when the document stays on Helvetica.
- *
- * Exported via _internal for unit tests.
- */
-function registerCustomFonts(doc, issuer) {
-  if (!issuer || typeof issuer !== 'object') return null;
-  return pdfFonts.registerFonts(doc, { fontFamily: issuer.pdfFontFamily });
 }
 
 /**
@@ -2365,9 +2343,8 @@ function renderDocument(type, context) {
         doc.on('end', () => resolve(Buffer.concat(chunks)));
         doc.on('error', reject);
 
-        // Font registration. Same resolution priority as
-        // createBaseDocument: pdfFontTtfPath (legacy override) →
-        // pdfFontFamily (bundled dropdown) → Helvetica. Helpers below
+        // Font registration. Same resolution as createBaseDocument:
+        // the font family (uploaded or bundled) → Helvetica. Helpers below
         // read `doc._fonts` (one extra word per doc) so we don't have
         // to thread the font names through every drawing function or
         // fork the helpers per branding.
@@ -3280,7 +3257,7 @@ module.exports = {
   _raw: { renderDocument, renderContract: renderContractInProcess },
   // Exposed for unit tests + advanced callers.
   _internal: {
-    formatMinor, formatDate, t, registerCustomFonts, registerThemeFonts, drawLineItems, drawContractTotals, stampPageNumbers, themeColor,
+    formatMinor, formatDate, t, registerThemeFonts, drawLineItems, drawContractTotals, stampPageNumbers, themeColor,
     legalDisclosureLines, smallTextSize, pageMetricsFor,
   },
 };

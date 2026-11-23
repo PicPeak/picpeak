@@ -383,6 +383,5 @@ module.exports = {
   auditedDelete,
   deleteWithAccountingHistory,
   listHistory,
-  diffRows,
   normalizeActor,
 };

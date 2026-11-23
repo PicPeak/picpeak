@@ -4384,7 +4384,6 @@
     },
     "table": {
       "name": "Naam",
-      "email": "E-mail",
       "company": "Bedrijf",
       "eventCount": "Evenementen",
       "lastLogin": "Laatste login",
@@ -4397,16 +4396,7 @@
     "invite": {
       "button": "Klant uitnodigen",
       "title": "Een klant uitnodigen",
-      "description": "Ze ontvangen een e-mail met een link om hun account aan te maken. Zodra ze deze hebben geaccepteerd, kun je ze aan evenementen toewijzen.",
-      "email": "E-mail",
-      "submit": "Uitnodiging versturen",
-      "success": "Uitnodiging verzonden",
-      "error": "Uitnodiging kon niet worden verzonden.",
-      "conflict": "Er bestaat al een klant met dit e-mailadres of er staat een uitnodiging open.",
-      "invalidEmail": "Voer een geldig e-mailadres in",
-      "showPrefill": "+ Contactgegevens toevoegen (optioneel)",
-      "hidePrefill": "− Contactgegevens verbergen",
-      "prefillHint": "Alles wat je invult wordt voorgevuld op de inschrijfpagina van de klant — ze kunnen het nog steeds bewerken."
+      "description": "Ze ontvangen een e-mail met een link om hun account aan te maken. Zodra ze deze hebben geaccepteerd, kun je ze aan evenementen toewijzen."
     },
     "invitations": {
       "empty": "Geen openstaande uitnodigingen.",
@@ -4445,7 +4435,6 @@
       "email": "E-mail",
       "preferredLanguage": "Voorkeurstaal",
       "salutation": "Aanhef",
-      "salutationNone": "—",
       "firstName": "Voornaam",
       "lastName": "Achternaam",
       "displayName": "Weergavenaam",
@@ -4458,7 +4447,6 @@
       "postalCode": "Postcode",
       "city": "Stad",
       "state": "Provincie / regio",
-      "countryCode": "Land (ISO 2)",
       "notesHint": "Alleen zichtbaar voor beheerders. Wordt nooit aan de klant getoond.",
       "featuresSection": "Klantfuncties",
       "featuresHint": "Per-klant overrides voor de tabbladen van de klantenomgeving. De globale schakelaars in Instellingen → Functies zijn de hoofdschakelaar — als globaal UIT staat, ziet niemand het tabblad, ongeacht wat je hier instelt. Standaard staat alles AAN; zet een schakelaar UIT om een tabblad voor deze specifieke klant te verbergen.",
@@ -4482,7 +4470,6 @@
       "title": "Klantgegevens wissen?",
       "body": "Verwijdert de naam, e-mail, telefoon, adres, bedrijf en inloggegevens van de klant. De accountrij blijft staan zodat historische toegangs- en auditgegevens nog steeds verwijzen. Dit is onomkeerbaar — je kunt de gegevens daarna niet meer herstellen.",
       "confirm": "Definitief wissen",
-      "confirmInFlight": "Bezig met wissen…",
       "success": "Klant gewist",
       "error": "Klant kon niet worden gewist"
     },
