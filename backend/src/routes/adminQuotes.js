@@ -508,7 +508,8 @@ router.put(
     body('customerAccountId').optional({ values: 'falsy' }).isInt({ min: 1 }),
     body('language').optional({ values: 'falsy' }).isString().isLength({ max: 8 }),
     body('currency').optional({ values: 'falsy' }).isString().isLength({ min: 3, max: 3 }),
-    body('issueDate').optional({ values: 'falsy' }).isISO8601(),
+    // No issueDate: the issue date is set on create and the editor has no
+    // field for it, so updateQuote doesn't take one.
     body('validUntil').optional({ values: 'falsy' }).isISO8601(),
     body('eventName').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
     body('eventDate').optional({ values: 'falsy' }).isISO8601(),
