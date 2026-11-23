@@ -83,9 +83,9 @@ describe('EventCodeCard', () => {
     perms.edit = false; // printing needs no edit permission
     renderCard();
     fireEvent.click(screen.getByText('events.qrTableCard'));
-    await vi.waitFor(() => expect(service.getQrPrintBlob).toHaveBeenCalledWith(9, 'table-card', 'de', 'code'));
+    await vi.waitFor(() => expect(service.getQrPrintBlob).toHaveBeenCalledWith(9, 'table-card', 'de', 'code', window.location.origin));
     fireEvent.click(screen.getByText('events.qrPoster'));
-    await vi.waitFor(() => expect(service.getQrPrintBlob).toHaveBeenCalledWith(9, 'poster', 'de', 'code'));
+    await vi.waitFor(() => expect(service.getQrPrintBlob).toHaveBeenCalledWith(9, 'poster', 'de', 'code', window.location.origin));
     expect(click).toHaveBeenCalledTimes(2);
     click.mockRestore();
   });

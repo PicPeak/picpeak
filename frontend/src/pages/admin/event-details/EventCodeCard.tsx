@@ -17,6 +17,7 @@ import { useConfirm } from '../../../components/common/ConfirmDialog';
 import { eventsService } from '../../../services/events.service';
 import { usePermission } from '../../../hooks/usePermission';
 import { PUBLIC_SETTINGS_QUERY_KEY, usePublicSettings } from '../../../hooks/usePublicSettings';
+import { usePublicBaseUrl } from '../../../hooks/usePublicBaseUrl';
 import { isGalleryPublic } from '../../../utils/accessControl';
 import { buildShareLinkUrl } from '../../../utils/url';
 import { eventCodeUrl, formatEventCode, isValidEventCode, normalizeEventCode } from '../../../utils/eventCode';
@@ -64,6 +65,8 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
   const canEdit = usePermission('events.edit');
   const queryClient = useQueryClient();
   const { data: publicSettings, isLoading: settingsLoading } = usePublicSettings();
+  // The code page links and QR are for guests: on the public address (issue 2630).
+  const publicBaseUrl = usePublicBaseUrl();
   const [code, setCode] = useState<string | null>(event.access_code ?? null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -90,7 +93,7 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
   const handleCopy = async (kind: 'code' | 'link') => {
     if (!code) return;
     try {
-      await copyText(kind === 'code' ? formatEventCode(code) : eventCodeUrl(code));
+      await copyText(kind === 'code' ? formatEventCode(code) : eventCodeUrl(code, publicBaseUrl));
       setCopied(kind);
       setTimeout(() => setCopied(null), 2000);
     } catch {
@@ -101,7 +104,7 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
   const handlePrintDownload = async (template: 'table-card' | 'poster') => {
     try {
       const lang = (i18n.language || 'en').split('-')[0];
-      saveBlob(await eventsService.getQrPrintBlob(event.id, template, lang, 'code'), `qr-code-${template}-${event.slug}.pdf`);
+      saveBlob(await eventsService.getQrPrintBlob(event.id, template, lang, 'code', publicBaseUrl), `qr-code-${template}-${event.slug}.pdf`);
     } catch {
       toast.error(t('errors.downloadFailed', 'Download failed'));
     }
@@ -193,7 +196,7 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
       ) : (
         <>
           <p className="text-sm text-soft mt-1 mb-4">
-            {t('events.eventCode.hint', 'Guests enter this code at {{url}} to find the gallery.', { url: buildShareLinkUrl('/code') })}
+            {t('events.eventCode.hint', 'Guests enter this code at {{url}} to find the gallery.', { url: buildShareLinkUrl('/code', publicBaseUrl) })}
           </p>
 
           {editing ? (
@@ -255,7 +258,7 @@ export const EventCodeCard: React.FC<EventCodeCardProps> = ({ event, refetchEven
               <div className="mt-4" data-testid="event-code-print">
                 <h3 className="text-sm font-medium text-heading">{t('events.eventCode.printTitle', 'Print with the code')}</h3>
                 <p className="text-sm text-soft mt-1 mb-2">
-                  {t('events.eventCode.printHint', 'The QR code opens {{url}} and is the same for every gallery. The code is printed below it.', { url: buildShareLinkUrl('/code') })}
+                  {t('events.eventCode.printHint', 'The QR code opens {{url}} and is the same for every gallery. The code is printed below it.', { url: buildShareLinkUrl('/code', publicBaseUrl) })}
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <Button variant="outline" size="sm" leftIcon={<Download className="w-4 h-4" />} onClick={() => handlePrintDownload('table-card')}>

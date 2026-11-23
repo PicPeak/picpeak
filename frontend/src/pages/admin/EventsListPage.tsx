@@ -41,6 +41,7 @@ import { isGalleryPublic } from '../../utils/accessControl';
 import { mediaSplitLabel, splitMediaCount } from '../../utils/mediaCounts';
 import { buildShareLinkUrl } from '../../utils/url';
 import { useViewGalleryUrl } from '../../hooks/useViewGalleryUrl';
+import { usePublicBaseUrl } from '../../hooks/usePublicBaseUrl';
 import type { Event } from '../../types';
 import { useDeliveryDue, isAwaitingFullGallery } from './event-details/deliveryStatus';
 import { getEventsListSort, parseEventsListSort, setEventsListSort } from '../../utils/eventsListPrefs';
@@ -51,6 +52,7 @@ const PAGE_SIZE = 20;
 export const EventsListPage: React.FC = () => {
   const { t } = useTranslation();
   const viewGalleryUrl = useViewGalleryUrl();
+  const publicBaseUrl = usePublicBaseUrl();
   const { format, formatExpiry } = useLocalizedDate();
   const deliveryDue = useDeliveryDue();
   const navigate = useNavigate();
@@ -68,7 +70,7 @@ export const EventsListPage: React.FC = () => {
   const [copiedEventId, setCopiedEventId] = useState<number | null>(null);
 
   const copyShareLink = async (event: Event) => {
-    const url = buildShareLinkUrl(event.share_link);
+    const url = buildShareLinkUrl(event.share_link, publicBaseUrl);
     if (!url || url === '#') {
       toast.error(t('errors.noShareLink', 'No share link available'));
       return;

@@ -13,6 +13,7 @@ import { useConfirm } from '../../../../components/common/ConfirmDialog';
 import { eventsService } from '../../../../services/events.service';
 import { normalizeRequirePassword } from '../../../../utils/accessControl';
 import { SectionCard, labelClass } from './sections';
+import { usePublicBaseUrl } from '../../../../hooks/usePublicBaseUrl';
 
 const escapeAttribute = (value: string) => value
   .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -49,7 +50,9 @@ export const EmbedSection: React.FC<{
 
   const token = event.embed_token ?? null;
   const hasPassword = normalizeRequirePassword(event.require_password, true);
-  const snippet = token ? embedSnippet(window.location.origin, event, token) : '';
+  // The snippet runs on someone else's website: on the public address (issue 2630).
+  const publicBaseUrl = usePublicBaseUrl();
+  const snippet = token ? embedSnippet(publicBaseUrl, event, token) : '';
 
   const run = async (action: () => Promise<unknown>, success: string) => {
     setBusy(true);
