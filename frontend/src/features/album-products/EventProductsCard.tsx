@@ -8,6 +8,8 @@ import { toast } from 'react-toastify';
 import { Button, Card, Badge, Loading, Notice, useConfirm } from '../../components/common';
 import { AdminAuthenticatedImage } from '../../components/admin/AdminAuthenticatedImage';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { usePublicBaseUrl } from '../../hooks/usePublicBaseUrl';
+import { buildPublicUrl } from '../../utils/url';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { AlbumChoiceDetails } from './AlbumChoiceDetails';
@@ -93,6 +95,8 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const queryClient = useQueryClient();
+  // The customer link is for the customer: on the public address (issue 2630).
+  const publicBaseUrl = usePublicBaseUrl();
   const query = useQuery({
     queryKey: ['gallery-products', eventId],
     queryFn: () => albumProducts.event(eventId),
@@ -185,7 +189,7 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(
-        `${window.location.origin}/customer/events/${slug}`,
+        buildPublicUrl(`/customer/events/${slug}`, publicBaseUrl),
       );
       toast.success(t('albumProducts.linkCopied', 'Client link copied'));
     } catch {

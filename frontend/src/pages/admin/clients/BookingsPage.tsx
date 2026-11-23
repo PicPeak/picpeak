@@ -17,6 +17,8 @@ import { Copy, ExternalLink, Trash2 } from 'lucide-react';
 import { Button, Card, Loading } from '../../../components/common';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
+import { usePublicBaseUrl } from '../../../hooks/usePublicBaseUrl';
+import { buildPublicUrl } from '../../../utils/url';
 import { bookingService, type BookingRequest, type BookingSettings, type BookingStatus } from '../../../services/booking.service';
 import { formatMoneyMinor } from '../../../utils/money';
 import { zonedWallClock } from '../../../utils/zonedWallClock';
@@ -386,7 +388,9 @@ const SettingsTab: React.FC<{ settings: BookingSettings; timezone: string; hasBu
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [form, setForm] = useState(settings);
-  const publicUrl = `${window.location.origin}/book`;
+  // The booking page is for clients: on the public address (issue 2630).
+  const publicBaseUrl = usePublicBaseUrl();
+  const publicUrl = buildPublicUrl('/book', publicBaseUrl);
 
   const save = async () => {
     try {

@@ -10505,7 +10505,19 @@
     "saveAndIssueTitle": "Issue with your unsaved changes?",
     "saveAndIssueMessage": "Your changes are saved first, then the quote is issued. This customer gets no email.",
     "saveAndIssue": "Save & issue",
-    "confirmIssue": "Issue this quote now? This customer gets no email."
+    "confirmIssue": "Issue this quote now? This customer gets no email.",
+    "versions": {
+      "title": "Stored versions",
+      "hint": "Each stored version of this quote, as its PDF was saved.",
+      "latest": "latest",
+      "open": "Open PDF",
+      "fileMissing": "This PDF is no longer on the server.",
+      "kind": {
+        "sent": "Sent",
+        "accepted": "Accepted"
+      },
+      "addOn": "(add-on)"
+    }
   },
   "crm": {
     "lineItems": {

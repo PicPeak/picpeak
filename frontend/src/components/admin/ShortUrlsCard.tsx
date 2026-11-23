@@ -20,24 +20,22 @@ import { Button, Card, Input, useConfirm } from '../common';
 import { shortUrlsService, type GalleryShortUrl } from '../../services/shortUrls.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { toast } from 'react-toastify';
+import { usePublicBaseUrl } from '../../hooks/usePublicBaseUrl';
+import { buildPublicUrl } from '../../utils/url';
 
 interface Props {
   eventId: number;
 }
 
-function buildShortUrl(slug: string): string {
-  // Build from window.location so it survives reverse-proxy + custom-
-  // domain setups without needing a separate FRONTEND_URL config in the
-  // browser bundle. SSR-safe fallback: just the relative path.
-  if (typeof window === 'undefined') return `/s/${slug}`;
-  return `${window.location.origin}/s/${slug}`;
-}
 
 export const ShortUrlsCard: React.FC<Props> = ({ eventId }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const { formatDateTime } = useLocalizedDate();
   const qc = useQueryClient();
+  // Short links are for guests: on the public address (issue 2630), not on
+  // the origin the admin panel happens to be open on.
+  const publicBaseUrl = usePublicBaseUrl();
 
   const [customSlug, setCustomSlug] = useState('');
   const [error, setError] = useState<string | undefined>();
@@ -101,7 +99,7 @@ export const ShortUrlsCard: React.FC<Props> = ({ eventId }) => {
   };
 
   const handleCopy = async (row: GalleryShortUrl) => {
-    const url = buildShortUrl(row.short_slug);
+    const url = buildPublicUrl(`/s/${row.short_slug}`, publicBaseUrl);
     try {
       await navigator.clipboard.writeText(url);
       setCopiedId(row.id);

@@ -18,6 +18,7 @@ import { usePermission } from '../../../hooks/usePermission';
 import { QuoteForm, type QuoteFormHandle, type QuoteFormState } from './QuoteEditorPage';
 import { DocumentLineageCard } from '../../../components/admin/DocumentLineageCard';
 import { QuoteAddOnsCard } from './QuoteAddOnsCard';
+import { QuoteVersionsCard } from './QuoteVersionsCard';
 import { quotesService } from '../../../services/quotes.service';
 import { quoteCatalogService } from '../../../services/quoteCatalog.service';
 import { formatMoneyMinor } from '../../../utils/money';
@@ -482,6 +483,8 @@ export const QuoteDetailPage: React.FC = () => {
           {/* Cross-document lineage via deal_uuid (migration 140): every
               quote / contract / invoice / Storno / reissue of this engagement. */}
           <DocumentLineageCard dealUuid={q.dealUuid} current={{ kind: 'quote', id: q.id }} />
+          {/* Earlier sends stay readable after the quote is edited. */}
+          <QuoteVersionsCard quoteId={q.id} currency={q.currency} />
           {!editable && q.internalNotes && (
             <Card>
               <h3 className="font-semibold mb-2 text-heading">{t('quotes.section.internalNotes', 'Internal notes')}</h3>

@@ -28,6 +28,7 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { unicodeSearchForms } = require('../utils/sqlSecurity');
 const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
@@ -1171,7 +1172,6 @@ async function sendQuote(id, adminId) {
   // Render PDF + persist snapshot.
   const ctx = await buildRenderContext(quote, lineItems, { paymentTerm: paymentTermSnapshot });
   const buffer = await pdfService.renderQuoteToBuffer(ctx);
-  const pdfPath = await persistDocPdf(quote, buffer, '', { kind: 'sent', theme: ctx.theme, issuer: ctx.issuer });
 
   // Mint a single shared token; accept and decline are differentiated
   // by the request body. This makes the email link survive a customer
@@ -1182,6 +1182,10 @@ async function sendQuote(id, adminId) {
     ? new Date(new Date(quote.valid_until).getTime() + 14 * 24 * 60 * 60 * 1000)
     : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
 
+  // Stored right before the send is recorded, and taken back if recording
+  // fails: the quote page lists every stored version, so a file kept from
+  // a send that never happened would show as an offer that went out.
+  const pdfPath = await persistDocPdf(quote, buffer, '', { kind: 'sent', theme: ctx.theme, issuer: ctx.issuer, lineItems });
   await db.transaction(async (trx) => {
     await trx('quote_action_tokens').insert({
       quote_id: id,
@@ -1220,6 +1224,9 @@ async function sendQuote(id, adminId) {
       workflow_response_emitted_at: null,
       updated_at: new Date(),
     }, { actor: adminId, source: 'quote.send' });
+  }).catch(async (err) => {
+    await discardUnsentVersion(id, pdfPath);
+    throw err;
   });
 
   // Queue customer email (with PDF + cc) — honour the global
@@ -1277,6 +1284,23 @@ function formatMajor(minor, currency, locale, issuerCountryCode) {
 }
 
 /**
+ * Remove the version stored for a send that was not recorded: its
+ * generated_documents row and its file. Best effort: the send's own error
+ * is what the caller reports, so a failed cleanup is logged, not thrown.
+ */
+async function discardUnsentVersion(quoteId, pdfPath) {
+  if (!pdfPath) return;
+  try {
+    await db('generated_documents')
+      .where({ doc_type: 'quote', doc_id: quoteId, kind: 'sent', path: toStoredPath(pdfPath) })
+      .del();
+    fs.rmSync(pdfPath, { force: true });
+  } catch (err) {
+    logger.warn('Could not remove the PDF stored for a failed quote send', { quoteId, error: err.message });
+  }
+}
+
+/**
  * Persist a rendered PDF under storage/business-docs/quote/<YEAR>/<NUMBER><suffix>.pdf
  * and record it in generated_documents (#1445). `suffix` keeps a later
  * version (e.g. '-accepted') next to the sent file; `meta` carries the kind
@@ -1295,8 +1319,39 @@ async function persistDocPdf(doc, buffer, suffix = '', meta = {}) {
     year,
     theme: meta.theme,
     issuer: meta.issuer,
+    manifest: meta.lineItems ? quoteVersionSummary(doc, meta.lineItems) : undefined,
   });
   return stored.path;
+}
+
+/**
+ * What a stored quote version said, kept with its file so the quote page
+ * can list earlier versions without opening each PDF: the totals and the
+ * top-level lines. Editing a sent quote overwrites its lines in place, so
+ * this and the PDF are the only record of what an earlier send offered.
+ */
+function quoteVersionSummary(quote, lineItems) {
+  const firstLine = (text) => {
+    const line = String(text || '').split('\n')[0].trim();
+    return line.length > 120 ? `${line.slice(0, 119)}…` : line;
+  };
+  return {
+    currency: quote.currency || null,
+    netAmountMinor: ensureInt(quote.net_amount_minor),
+    totalAmountMinor: ensureInt(quote.total_amount_minor),
+    lines: (lineItems || [])
+      .filter((li) => li.parent_line_item_id == null)
+      .map((li) => ({
+        description: firstLine(li.description),
+        quantity: ensureNumber(li.quantity, 0),
+        unit: li.unit || null,
+        lineTotalMinor: ensureInt(li.line_total_minor),
+        lineKind: li.line_kind || null,
+        // An offered add-on: on a sent version it isn't booked yet.
+        isOptional: isTruthyFlag(li.is_optional),
+        notIncluded: isUnselectedOptional(li),
+      })),
+  };
 }
 
 // ---------------------------------------------------------------------
@@ -1548,7 +1603,7 @@ async function storeAcceptedQuotePdf(quoteId) {
     const ctx = await buildRenderContext(data.quote, data.lineItems);
     const buffer = await pdfService.renderQuoteToBuffer(ctx);
     const pdfPath = await persistDocPdf(data.quote, buffer, await acceptedSuffix(quoteId),
-      { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer });
+      { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer, lineItems: data.lineItems });
     await auditedUpdate(db, 'quotes', { id: quoteId }, { pdf_path: toStoredPath(pdfPath) },
       { source: 'quote.accepted.pdf' });
   } catch (err) {
@@ -1988,7 +2043,7 @@ async function adminAcceptQuote(id, adminId) {
       // — keeps every issued PDF on disk for the audit trail.
       // Kept next to the sent file rather than over it (#1451).
       const pdfPath = await persistDocPdf(fresh, buffer, '-accepted',
-        { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer });
+        { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer, lineItems });
       // Record it like sendQuote does: the accepted quote opens as this
       // file from now on instead of re-rendering (#1451).
       await auditedUpdate(db, 'quotes', { id }, { pdf_path: toStoredPath(pdfPath) },

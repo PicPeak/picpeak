@@ -26,9 +26,9 @@ export function formatEventCode(code: string | null | undefined): string {
   return code.length === 6 ? `${code.slice(0, 3)}-${code.slice(3)}` : code;
 }
 
-/** The entry page URL that opens a gallery with its code filled in, on the share link's origin. */
-export function eventCodeUrl(code: string): string {
-  return buildShareLinkUrl(`/code/${code}`);
+/** The entry page URL that opens a gallery with its code filled in, on the share link's base (`usePublicBaseUrl()`). */
+export function eventCodeUrl(code: string, publicBase?: string | null): string {
+  return buildShareLinkUrl(`/code/${code}`, publicBase);
 }
 
 /** Leaves the entry page for a gallery with a full document load (see EventCodePage). */

@@ -5,9 +5,13 @@
  */
 const path = require('path');
 const PDFDocument = require('pdfkit');
-const { drawLineItems } = require('../../src/services/pdfService')._internal;
+const { drawLineItems, attachTableWithLinks } = require('../../src/services/pdfService')._internal;
 
-async function render(lineItems) {
+/**
+ * `unwrapped` draws the table the way it was before link cells were
+ * top-anchored: doc.text is pinned so drawLineItems can't wrap it.
+ */
+async function render(lineItems, { bodySize, startY = 100, unwrapped = false } = {}) {
   const doc = new PDFDocument({ size: 'A4', compress: false });
   const face = (weight) => path.join(__dirname, '../../assets/fonts/Jost', weight);
   doc.registerFont('crm-body', face('400.ttf'));
@@ -16,7 +20,12 @@ async function render(lineItems) {
   const chunks = [];
   doc.on('data', (c) => chunks.push(c));
   const done = new Promise((resolve) => doc.on('end', resolve));
-  doc.y = 100;
+  if (bodySize) doc._theme = { bodySize };
+  if (unwrapped) {
+    const plain = PDFDocument.prototype.text;
+    Object.defineProperty(doc, 'text', { get: () => plain, set: () => {}, configurable: true });
+  }
+  doc.y = startY;
   drawLineItems(doc, { type: 'invoice', locale: 'de', currency: 'CHF', intlLocale: 'de-CH', lineItems });
   doc.end();
   await done;
@@ -26,6 +35,9 @@ async function render(lineItems) {
 const item = (extra) => ({
   quantity: 1, description: 'Item', unitPriceMinor: 18000, discountPercent: 0, lineTotalMinor: 18000, ...extra,
 });
+
+// One text matrix per drawn line.
+const drawnLines = (pdf) => (pdf.match(/ Tm\b/g) || []).length;
 
 const linkTargets = (pdf) => [...pdf.matchAll(/\/URI \(([^)]*)\)/g)].map((m) => m[1]);
 
@@ -49,6 +61,65 @@ describe('links in line items', () => {
   it('makes nothing a link without an http(s) address', async () => {
     const pdf = await render([item({ description: 'Shoot', detailsText: 'javascript:alert(1) or ftp://host/x' })]);
     expect(linkTargets(pdf)).toEqual([]);
+  });
+
+  it('puts a wrapped link\'s underline and link box on the line they belong to', async () => {
+    // The line table draws cells middle-anchored; PDFKit used to place the
+    // underline and link box from that y as if it were the line's top, half a
+    // line low, so the first line's underline ran through the second line.
+    // Read the result from the file: each link box must hold its own line's
+    // baseline, with the glyphs' ascent above it and only the descent below.
+    const pdf = await render([item({
+      detailsText: 'https://photos.example.com/gallery/a-long-path-that-wraps-onto-a-second-line/2893801',
+    })]);
+    const boxes = [...pdf.matchAll(/\/Rect \[([\d.]+) ([\d.]+) [\d.]+ ([\d.]+)\]/g)]
+      .map(([, x, bottom, top]) => ({ x: Number(x), bottom: Number(bottom), top: Number(top) }));
+    const baselines = [...pdf.matchAll(/1 0 0 -?1 ([\d.]+) ([\d.]+) Tm/g)]
+      .map(([, x, y]) => ({ x: Number(x), y: Number(y) }));
+    expect(boxes).toHaveLength(2);
+    expect(drawnLines(pdf)).toBe(drawnLines(await render([item({
+      detailsText: 'https://photos.example.com/gallery/a-long-path-that-wraps-onto-a-second-line/2893801',
+    })], { unwrapped: true })));
+    for (const box of boxes) {
+      const line = baselines.find((b) => Math.abs(b.x - box.x) < 0.01 && b.y > box.bottom && b.y < box.top);
+      expect(line).toBeDefined();
+      expect(box.top - line.y).toBeGreaterThan(line.y - box.bottom);
+    }
+  });
+
+  it('draws every line of a wrapped link cell that the plain table draws', async () => {
+    // Top-anchoring moves the cell up half a line. PDFKit drops any line
+    // below startY + height, so the height has to grow by the same half line
+    // or the last line can fall off the bottom (seen with this description
+    // at 12pt from y 113.6).
+    const lineItems = [item({
+      description: 'See https://photos.example.com/abcdefghijabcdefghij for the gallery and more words here',
+    })];
+    for (let i = 0; i <= 50; i += 1) {
+      const startY = 113 + i / 10;
+      const linked = await render(lineItems, { bodySize: 12, startY });
+      const plain = await render(lineItems, { bodySize: 12, startY, unwrapped: true });
+      expect(drawnLines(linked)).toBe(drawnLines(plain));
+    }
+  });
+
+  it('keeps the bottom limit of a link cell where it was', () => {
+    const calls = [];
+    const doc = {
+      _font: { ascender: 900, descender: -300 },
+      _fontSize: 10,
+      text(...args) { calls.push(args); return this; },
+    };
+    const table = {
+      attachTo: (d) => d.text('https://photos.example.com/g', 50, 200, { link: 'x', baseline: 'middle', height: 30 }),
+    };
+    attachTableWithLinks(doc, table);
+    // (900 - -300) / 2 / 1000 * 10 = 6: drawn 6 higher, 6 taller.
+    const [, , y, options] = calls[0];
+    expect(y).toBeCloseTo(194);
+    expect(options.height).toBeCloseTo(36);
+    expect(y + options.height).toBeCloseTo(200 + 30);
+    expect(options.baseline).toBe('top');
   });
 
   it('draws a bare link in a link colour, not the text colour', async () => {

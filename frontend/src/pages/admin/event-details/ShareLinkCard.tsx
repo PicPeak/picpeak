@@ -11,6 +11,7 @@ import { isGalleryPublic } from '../../../utils/accessControl';
 import { useAnyPermission } from '../../../hooks/usePermission';
 import { WhatsAppInviteDialog } from './WhatsAppInviteDialog';
 import { useWhatsAppConfigured } from '../../../hooks/useWhatsAppConfigured';
+import { usePublicBaseUrl } from '../../../hooks/usePublicBaseUrl';
 
 // Clipboard with the textarea/execCommand fallback for non-HTTPS installs
 // (the documented http://host:3000/admin setup has no navigator.clipboard).
@@ -57,6 +58,10 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
   const [copiedLink, setCopiedLink] = useState(false);
   const [whatsAppOpen, setWhatsAppOpen] = useState(false);
   const whatsAppConfigured = useWhatsAppConfigured();
+  // Everything this card hands out is for guests: on the public address
+  // (issue 2630), not on the origin the admin panel happens to be open on.
+  const publicBaseUrl = usePublicBaseUrl();
+  const shareUrl = buildShareLinkUrl(event.share_link, publicBaseUrl);
   const [qrPreviewUrl, setQrPreviewUrl] = useState<string | null>(null);
   const [stored, setStored] = useState<{ password: string | null; client_password: string | null } | null>(null);
   const [loadingStored, setLoadingStored] = useState(false);
@@ -122,7 +127,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
     if (!event.share_link) return;
     let stale = false;
     let objectUrl: string | null = null;
-    eventsService.getQrBlob(event.id, 'png', 300)
+    eventsService.getQrBlob(event.id, 'png', 300, publicBaseUrl)
       .then((blob) => {
         const url = URL.createObjectURL(blob);
         if (stale) {
@@ -139,15 +144,15 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
       stale = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [event.id, event.share_link]);
+  }, [event.id, event.share_link, publicBaseUrl]);
 
   const handleQrDownload = async (kind: 'png' | 'svg' | 'table-card' | 'poster') => {
     try {
       if (kind === 'png' || kind === 'svg') {
-        saveBlob(await eventsService.getQrBlob(event.id, kind, 1024), `qr-${event.slug}.${kind}`);
+        saveBlob(await eventsService.getQrBlob(event.id, kind, 1024, publicBaseUrl), `qr-${event.slug}.${kind}`);
       } else {
         const lang = (i18n.language || 'en').split('-')[0];
-        saveBlob(await eventsService.getQrPrintBlob(event.id, kind, lang), `qr-${kind}-${event.slug}.pdf`);
+        saveBlob(await eventsService.getQrPrintBlob(event.id, kind, lang, undefined, publicBaseUrl), `qr-${kind}-${event.slug}.pdf`);
       }
     } catch {
       toast.error(t('errors.downloadFailed', 'Download failed'));
@@ -162,7 +167,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
         return;
       }
 
-      await copyText(buildShareLinkUrl(event.share_link));
+      await copyText(shareUrl);
 
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
@@ -186,7 +191,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
-          value={buildShareLinkUrl(event.share_link)}
+          value={shareUrl}
           readOnly
           className="flex-1 min-w-[12rem] px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm"
         />
@@ -222,7 +227,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
           open
           onClose={() => setWhatsAppOpen(false)}
           event={event}
-          link={buildShareLinkUrl(event.share_link)}
+          link={shareUrl}
           credential={isGalleryPublic(event.require_password) ? undefined : 'password'}
         />
       )}

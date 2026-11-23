@@ -7,6 +7,8 @@ import { Button, Card, Input, Modal } from '../../../components/common';
 import { eventsService } from '../../../services/events.service';
 import { WhatsAppInviteDialog } from './WhatsAppInviteDialog';
 import { useWhatsAppConfigured } from '../../../hooks/useWhatsAppConfigured';
+import { usePublicBaseUrl } from '../../../hooks/usePublicBaseUrl';
+import { buildPublicUrl } from '../../../utils/url';
 
 interface ClientAccessCardProps {
   event: Event;
@@ -18,6 +20,11 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
   const [copiedClientLink, setCopiedClientLink] = useState(false);
   const [whatsAppOpen, setWhatsAppOpen] = useState(false);
   const whatsAppConfigured = useWhatsAppConfigured();
+  // The client link is for the client: on the public address (issue 2630).
+  const publicBaseUrl = usePublicBaseUrl();
+  const clientLink = event?.client_share_token
+    ? buildPublicUrl(`/gallery/${event.slug}/client-access?token=${event.client_share_token}`, publicBaseUrl)
+    : '';
   const [clientPin, setClientPin] = useState('');
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [enrollPin, setEnrollPin] = useState('');
@@ -157,7 +164,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                 <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="text"
-                    value={`${window.location.origin}/gallery/${event.slug}/client-access?token=${event.client_share_token}`}
+                    value={clientLink}
                     readOnly
                     className="flex-1 min-w-[12rem] px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm"
                   />
@@ -166,7 +173,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                     size="md"
                     leftIcon={copiedClientLink ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                     onClick={async () => {
-                      const link = `${window.location.origin}/gallery/${event.slug}/client-access?token=${event.client_share_token}`;
+                      const link = clientLink;
                       try {
                         await navigator.clipboard.writeText(link);
                       } catch {
@@ -201,7 +208,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                     open
                     onClose={() => setWhatsAppOpen(false)}
                     event={event}
-                    link={`${window.location.origin}/gallery/${event.slug}/client-access?token=${event.client_share_token}`}
+                    link={clientLink}
                     credential="pin"
                   />
                 )}
