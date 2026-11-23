@@ -766,6 +766,12 @@ async function updateQuote(id, payload, adminId) {
     if (existing.status === 'expired') {
       updates.pdf_path = null;
     }
+    // The payment term frozen at the last send belongs to that send. An
+    // edited quote shows its current term until it is sent again, and an
+    // admin acceptance before that freezes the current term instead.
+    if (existing.status === 'sent' || existing.status === 'expired') {
+      updates.payment_term_snapshot = null;
+    }
     const map = {
       eventName: 'event_name',
       eventDate: 'event_date',
@@ -824,8 +830,11 @@ async function updateQuote(id, payload, adminId) {
       }
       // An invoice or contract made from the quote stays with the customer
       // and deal it was made for, so the quote does too.
-      const madeFrom = await trx('invoices').where({ source_quote_id: id }).first('id')
-        || await trx('contracts').where({ source_quote_id: id }).first('id');
+      // Checked outside the admin's own CRM view: an invoice or contract the
+      // admin may not read still binds the quote. Only the yes/no leaves here.
+      const madeFrom = await require('../database/crmAccess').withTrustedCrmAccess('quote customer change: documents made from it',
+        async () => Boolean(await trx('invoices').where({ source_quote_id: id }).first('id')
+          || await trx('contracts').where({ source_quote_id: id }).first('id')));
       if (madeFrom) {
         throw new AppError(
           'An invoice or contract was made from this quote, so it stays with its customer. Create a new quote for the other customer.',
@@ -1187,16 +1196,12 @@ async function sendQuote(id, adminId) {
   // a send that never happened would show as an offer that went out.
   const pdfPath = await persistDocPdf(quote, buffer, '', { kind: 'sent', theme: ctx.theme, issuer: ctx.issuer, lineItems });
   await db.transaction(async (trx) => {
-    await trx('quote_action_tokens').insert({
-      quote_id: id,
-      token,
-      // ISO, like every other value a later check reads back: a bare Date
-      // from another realm is stored as "[object Object]", and an expiry
-      // nobody can read is one no check can enforce.
-      expires_at: stamp(expiresAt),
-      created_at: stamp(new Date()),
-    });
-    await auditedUpdate(trx, 'quotes', { id }, {
+    // Conditional on the quote as it was read and rendered: a save that
+    // changed its customer or currency meanwhile (or another send) wins,
+    // and this send records nothing, mints no link and emails no one.
+    const recorded = await auditedUpdate(trx, 'quotes', {
+      id, status: quote.status, customer_account_id: quote.customer_account_id, currency: quote.currency,
+    }, {
       status: 'sent',
       sent_at: new Date(),
       pdf_path: toStoredPath(pdfPath),
@@ -1224,6 +1229,18 @@ async function sendQuote(id, adminId) {
       workflow_response_emitted_at: null,
       updated_at: new Date(),
     }, { actor: adminId, source: 'quote.send' });
+    if (!recorded) {
+      throw new AppError('This quote changed while it was being sent. Reload it and send it again.', 409, 'QUOTE_CHANGED');
+    }
+    await trx('quote_action_tokens').insert({
+      quote_id: id,
+      token,
+      // ISO, like every other value a later check reads back: a bare Date
+      // from another realm is stored as "[object Object]", and an expiry
+      // nobody can read is one no check can enforce.
+      expires_at: stamp(expiresAt),
+      created_at: stamp(new Date()),
+    });
   }).catch(async (err) => {
     await discardUnsentVersion(id, pdfPath);
     throw err;
@@ -2016,8 +2033,15 @@ async function adminAcceptQuote(id, adminId) {
   const acceptedLines = await loadQuoteLinesWithParentPosition(id);
   const hasChoices = offeredOptionalPositions(acceptedLines).length > 0 || acceptedLines.some(li => li.configuration_definition);
   const selection = hasChoices ? await totalsForSelection(quote, acceptedLines, currentOptionalSelection(acceptedLines)) : null;
+  // A quote accepted without a send since its last edit has no term of its
+  // own frozen (a draft's snapshot, if any, is from an earlier send): freeze
+  // its current term now, so the accepted PDF and the invoices made from it
+  // show the conditions the admin last saved.
+  const termUpdate = storedPaymentTerm(quote) ? {} : {
+    payment_term_snapshot: await resolvePaymentTerm(quote).then(t => (t ? JSON.stringify(t) : null)),
+  };
   await db.transaction(async trx => {
-    const applied = await auditedUpdate(trx, 'quotes', { id, status: quote.status }, { status: 'accepted', responded_at: stamp(now), response_locked_at: stamp(responseLockedAt), accepted_at: stamp(now), updated_at: now }, history);
+    const applied = await auditedUpdate(trx, 'quotes', { id, status: quote.status }, { status: 'accepted', responded_at: stamp(now), response_locked_at: stamp(responseLockedAt), accepted_at: stamp(now), updated_at: now, ...termUpdate }, history);
     if (!applied) throw new AppError('The quote changed; reload it', 409, 'QUOTE_CHANGED');
     if (selection) await writeAcceptedSelection(trx, quote, acceptedLines, selection, 'admin', now, { history });
   });
