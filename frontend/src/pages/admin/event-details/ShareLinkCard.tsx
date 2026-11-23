@@ -8,6 +8,7 @@ import { Button, Card } from '../../../components/common';
 import { eventsService } from '../../../services/events.service';
 import { buildShareLinkUrl } from '../../../utils/url';
 import { isGalleryPublic } from '../../../utils/accessControl';
+import { usePublicBaseUrl } from '../../../hooks/usePublicBaseUrl';
 
 // Clipboard with the textarea/execCommand fallback for non-HTTPS installs
 // (the documented http://host:3000/admin setup has no navigator.clipboard).
@@ -52,6 +53,10 @@ interface ShareLinkCardProps {
 export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPasswordReset, passwordVersion = 0 }) => {
   const { t, i18n } = useTranslation();
   const [copiedLink, setCopiedLink] = useState(false);
+  // Everything this card hands out is for guests: on the public address
+  // (issue 2630), not on the origin the admin panel happens to be open on.
+  const publicBaseUrl = usePublicBaseUrl();
+  const shareUrl = buildShareLinkUrl(event.share_link, publicBaseUrl);
   const [qrPreviewUrl, setQrPreviewUrl] = useState<string | null>(null);
   const [stored, setStored] = useState<{ password: string | null; client_password: string | null } | null>(null);
   const [loadingStored, setLoadingStored] = useState(false);
@@ -109,7 +114,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
     if (!event.share_link) return;
     let stale = false;
     let objectUrl: string | null = null;
-    eventsService.getQrBlob(event.id, 'png', 300)
+    eventsService.getQrBlob(event.id, 'png', 300, publicBaseUrl)
       .then((blob) => {
         const url = URL.createObjectURL(blob);
         if (stale) {
@@ -126,15 +131,15 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
       stale = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [event.id, event.share_link]);
+  }, [event.id, event.share_link, publicBaseUrl]);
 
   const handleQrDownload = async (kind: 'png' | 'svg' | 'table-card' | 'poster') => {
     try {
       if (kind === 'png' || kind === 'svg') {
-        saveBlob(await eventsService.getQrBlob(event.id, kind, 1024), `qr-${event.slug}.${kind}`);
+        saveBlob(await eventsService.getQrBlob(event.id, kind, 1024, publicBaseUrl), `qr-${event.slug}.${kind}`);
       } else {
         const lang = (i18n.language || 'en').split('-')[0];
-        saveBlob(await eventsService.getQrPrintBlob(event.id, kind, lang), `qr-${kind}-${event.slug}.pdf`);
+        saveBlob(await eventsService.getQrPrintBlob(event.id, kind, lang, publicBaseUrl), `qr-${kind}-${event.slug}.pdf`);
       }
     } catch {
       toast.error(t('errors.downloadFailed', 'Download failed'));
@@ -149,7 +154,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
         return;
       }
 
-      await copyText(buildShareLinkUrl(event.share_link));
+      await copyText(shareUrl);
 
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
@@ -173,7 +178,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
       <div className="flex items-center gap-2">
         <input
           type="text"
-          value={buildShareLinkUrl(event.share_link)}
+          value={shareUrl}
           readOnly
           className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm"
         />

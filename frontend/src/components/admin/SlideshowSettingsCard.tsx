@@ -25,6 +25,8 @@ import { eventsService } from '../../services/events.service';
 import { categoriesService } from '../../services/categories.service';
 import { DEFAULT_SLIDESHOW_STYLE, type SlideshowStyle } from '../../services/slideshow.service';
 import { SlideshowStyleFields } from './SlideshowStyleFields';
+import { usePublicBaseUrl } from '../../hooks/usePublicBaseUrl';
+import { buildPublicUrl } from '../../utils/url';
 
 export interface SlideshowSettingsCardProps {
   eventId: number;
@@ -91,7 +93,9 @@ export const SlideshowSettingsCard: React.FC<SlideshowSettingsCardProps> = ({
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const link = token ? `${window.location.origin}/gallery/${slug}/show/${token}` : '';
+  // The kiosk screen is not the admin's browser: on the public address (issue 2630).
+  const publicBaseUrl = usePublicBaseUrl();
+  const link = token ? buildPublicUrl(`/gallery/${slug}/show/${token}`, publicBaseUrl) : '';
 
   // Event categories for the slideshow content filter (#202). Global + this
   // event's own categories; empty for events without any → picker hides.

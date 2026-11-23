@@ -32,6 +32,7 @@ import { eventsService, type EventStatusFilter } from '../../services/events.ser
 import { adminService } from '../../services/admin.service';
 import { isGalleryPublic } from '../../utils/accessControl';
 import { buildShareLinkUrl } from '../../utils/url';
+import { usePublicBaseUrl } from '../../hooks/usePublicBaseUrl';
 import type { Event } from '../../types';
 import { useTranslation } from 'react-i18next';
 
@@ -53,8 +54,11 @@ export const EventsListPage: React.FC = () => {
   const bulkDeleteModal = useModal();
   const [copiedEventId, setCopiedEventId] = useState<number | null>(null);
 
+  // The copied link is for guests: on the public address (issue 2630). The
+  // "View gallery" links below are the admin's own and stay on this origin.
+  const publicBaseUrl = usePublicBaseUrl();
   const copyShareLink = async (event: Event) => {
-    const url = buildShareLinkUrl(event.share_link);
+    const url = buildShareLinkUrl(event.share_link, publicBaseUrl);
     if (!url || url === '#') {
       toast.error(t('errors.noShareLink', 'No share link available'));
       return;

@@ -110,6 +110,12 @@ export interface PublicSettings {
   oidc_button_label?: string;
   /** Effective flag (phase 2): the API refuses password logins right now. */
   oidc_local_login_disabled?: boolean;
+  /**
+   * The public address guests reach this install on (issue 2630): FRONTEND_URL
+   * or the Site URL setting, or null when neither is configured (or loopback).
+   * Read it through usePublicBaseUrl().
+   */
+  public_site_url?: string | null;
 }
 
 export const publicSettingsService = {

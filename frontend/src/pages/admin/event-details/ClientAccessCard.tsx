@@ -5,6 +5,8 @@ import { Shield, Key, Copy, CheckCircle } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, Card } from '../../../components/common';
 import { eventsService } from '../../../services/events.service';
+import { usePublicBaseUrl } from '../../../hooks/usePublicBaseUrl';
+import { buildPublicUrl } from '../../../utils/url';
 
 interface ClientAccessCardProps {
   event: Event;
@@ -14,6 +16,11 @@ interface ClientAccessCardProps {
 export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refetchEvent }) => {
   const { t } = useTranslation();
   const [copiedClientLink, setCopiedClientLink] = useState(false);
+  // The client link is for the client: on the public address (issue 2630).
+  const publicBaseUrl = usePublicBaseUrl();
+  const clientLink = event?.client_share_token
+    ? buildPublicUrl(`/gallery/${event.slug}/client-access?token=${event.client_share_token}`, publicBaseUrl)
+    : '';
   const [clientPin, setClientPin] = useState('');
 
   const regenerateLink = async () => {
@@ -106,7 +113,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
-                    value={`${window.location.origin}/gallery/${event.slug}/client-access?token=${event.client_share_token}`}
+                    value={clientLink}
                     readOnly
                     className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm"
                   />
@@ -115,7 +122,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                     size="md"
                     leftIcon={copiedClientLink ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                     onClick={async () => {
-                      const link = `${window.location.origin}/gallery/${event.slug}/client-access?token=${event.client_share_token}`;
+                      const link = clientLink;
                       try {
                         await navigator.clipboard.writeText(link);
                       } catch {

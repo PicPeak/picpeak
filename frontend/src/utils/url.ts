@@ -134,6 +134,33 @@ export const isProductionMode = (): boolean => {
 };
 
 /**
+ * The address guests and customers reach this install on (issue 2630). The
+ * admin panel may be open on a different, internal origin, so a link meant for
+ * someone else is anchored on the configured public site URL (FRONTEND_URL or
+ * Settings > General > Site URL, as resolved by the backend), not on the
+ * browser. Falls back to the browser origin when nothing valid is configured.
+ *
+ * @param configured - `public_site_url` from the public settings
+ * @returns The base without a trailing slash, or `''` outside a browser
+ */
+export const resolvePublicBaseUrl = (configured: string | null | undefined): string => {
+  if (configured && isAbsoluteHttpUrl(configured)) {
+    return normalizeBase(configured.trim());
+  }
+  return isBrowser ? window.location.origin : '';
+};
+
+/**
+ * An absolute URL for a path on the public address. Pass the base from
+ * `usePublicBaseUrl()`; without one the browser origin is used.
+ */
+export const buildPublicUrl = (path: string, publicBase?: string | null): string => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const base = publicBase ? normalizeBase(publicBase) : resolvePublicBaseUrl(null);
+  return `${base}${normalizedPath}`;
+};
+
+/**
  * Build a fully-qualified gallery share URL from the value stored in
  * `events.share_link`. The DB stores the relative path (e.g.
  * `/gallery/<slug>/<token>`); for display and clipboard copy we need an
@@ -141,23 +168,29 @@ export const isProductionMode = (): boolean => {
  * passed through (with the same localhost-fallback rule used elsewhere).
  *
  * @param link - The relative or absolute share link
+ * @param publicBase - The public address from `usePublicBaseUrl()`; omit it
+ *   only for the admin's own navigation, which stays on the browser origin
  * @returns A fully-qualified URL, or `'#'` if input is empty
  */
-export const buildShareLinkUrl = (link: string | null | undefined): string => {
+export const buildShareLinkUrl = (link: string | null | undefined, publicBase?: string | null): string => {
   if (!link) return '#';
+
+  // An explicit public address (issue 2630) anchors relative links and
+  // loopback-absolute ones; without it the browser origin does, as before.
+  const anchor = (path: string): string => (publicBase ? buildPublicUrl(path, publicBase) : buildFromOrigin(path));
 
   if (ABSOLUTE_URL_REGEX.test(link)) {
     if (!shouldFallbackToRelative(link)) return link;
     try {
       const parsed = new URL(link);
-      return buildFromOrigin(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+      return anchor(`${parsed.pathname}${parsed.search}${parsed.hash}`);
     } catch {
       return link;
     }
   }
 
   const path = link.startsWith('/') ? link : `/gallery/${link}`;
-  return buildFromOrigin(path);
+  return anchor(path);
 };
 
 /**

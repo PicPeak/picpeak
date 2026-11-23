@@ -16,6 +16,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
+vi.mock('../../../../hooks/usePublicBaseUrl', () => ({ usePublicBaseUrl: () => window.location.origin }));
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('../../../../services/events.service', () => ({
   eventsService: { updateEvent: mocks.updateEvent },
