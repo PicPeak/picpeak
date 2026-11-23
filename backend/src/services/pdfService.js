@@ -860,7 +860,9 @@ function linkedCell(doc, text) {
  * difference between PDFKit's 'middle' and 'top' baselines, so the glyphs stay
  * where they were and the underline and link box sit on their own line. If a
  * swissqrbill upgrade stops forcing 'middle', this stops matching and the
- * lineLinks test fails.
+ * lineLinks test fails. The half line is read from PDFKit's private
+ * `_font` / `_fontSize` (PDFKit 0.17, as its own `_fragment` does), so a
+ * PDFKit upgrade needs the same check.
  */
 function attachTableWithLinks(doc, table) {
   const originalText = doc.text;
@@ -869,7 +871,13 @@ function attachTableWithLinks(doc, table) {
     if (options && options.link != null && options.baseline === 'middle' && typeof y === 'number') {
       const font = this._font;
       const halfLine = ((font.ascender - font.descender) / 2 / 1000) * this._fontSize;
-      return originalText.call(this, text, x, y - halfLine, { ...options, baseline: 'top' });
+      // PDFKit drops any line below startY + height, so the height grows by
+      // the same half line: the bottom limit stays where it was.
+      return originalText.call(this, text, x, y - halfLine, {
+        ...options,
+        baseline: 'top',
+        ...(options.height != null ? { height: options.height + halfLine } : {}),
+      });
     }
     return originalText.apply(this, arguments);
   };
@@ -3314,6 +3322,6 @@ module.exports = {
   // Exposed for unit tests + advanced callers.
   _internal: {
     formatMinor, formatDate, t, registerCustomFonts, registerThemeFonts, drawLineItems, drawContractTotals, stampPageNumbers, themeColor,
-    legalDisclosureLines, smallTextSize, pageMetricsFor,
+    legalDisclosureLines, smallTextSize, pageMetricsFor, attachTableWithLinks,
   },
 };
