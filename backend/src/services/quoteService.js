@@ -691,12 +691,6 @@ async function updateQuote(id, payload, adminId) {
       assertQuoteTransition(existing.status, 'draft');
       updates.status = 'draft';
     }
-    // The payment term frozen at the last send belongs to that send. An
-    // edited quote shows its current term until it is sent again, and an
-    // admin acceptance before that freezes the current term instead.
-    if (existing.status === 'sent' || existing.status === 'expired') {
-      updates.payment_term_snapshot = null;
-    }
     const map = {
       eventName: 'event_name',
       eventDate: 'event_date',
@@ -1346,24 +1340,46 @@ async function adminAcceptQuote(id, adminId) {
   const responseLockedAt = new Date(now.getTime() + windowMinutes * 60 * 1000);
 
   const history = { actor: adminId, source: 'quote.accept.admin' };
-  // A quote accepted without a send since its last edit has no term of its
-  // own frozen (a draft's snapshot, if any, is from an earlier send): freeze
-  // its current term now, so the accepted PDF and the invoices made from it
-  // show the conditions the admin last saved.
+  // A quote accepted without a send since its last edit (a draft) freezes its
+  // current term now, over the snapshot an earlier send left: the accepted
+  // PDF and the invoices made from it show the conditions the admin last
+  // saved. A sent quote keeps the term it was sent with.
   const termUpdate = storedPaymentTerm(quote) ? {} : {
     payment_term_snapshot: await resolvePaymentTerm(quote).then(t => (t ? JSON.stringify(t) : null)),
   };
-  await auditedUpdate(db, 'quotes', { id }, {
-    ...termUpdate,
-    status: 'accepted',
-    responded_at: now,
-    response_locked_at: responseLockedAt,
-    accepted_at: now,
-    // accept_on_behalf flag intentionally NOT stored as a separate
-    // column — the audit log entry below captures who accepted and
-    // when, which is the legally relevant breadcrumb.
-    updated_at: now,
-  }, history);
+  // Conditional on the status and term inputs as read: a save that picked
+  // other terms meanwhile must not be accepted under the term resolved from
+  // this read.
+  const asRead = {
+    id,
+    status: quote.status,
+    payment_term_template_id: quote.payment_term_template_id,
+    payment_net_days_template_id: quote.payment_net_days_template_id,
+    payment_timing_template_id: quote.payment_timing_template_id,
+  };
+  const overrideOf = (row) => {
+    const value = row?.payment_term_installments_override;
+    if (typeof value !== 'string') return JSON.stringify(value ?? null);
+    try { return JSON.stringify(JSON.parse(value)); } catch (_) { return value; }
+  };
+  await db.transaction(async (trx) => {
+    const applied = await auditedUpdate(trx, 'quotes', asRead, {
+      ...termUpdate,
+      status: 'accepted',
+      responded_at: now,
+      response_locked_at: responseLockedAt,
+      accepted_at: now,
+      // accept_on_behalf flag intentionally NOT stored as a separate
+      // column — the audit log entry below captures who accepted and
+      // when, which is the legally relevant breadcrumb.
+      updated_at: now,
+    }, history);
+    // The override is a json column (no `=` on PostgreSQL): compared once
+    // the update holds the row.
+    if (!applied || overrideOf(await trx('quotes').where({ id }).first('payment_term_installments_override')) !== overrideOf(quote)) {
+      throw new AppError('The quote changed; reload it', 409, 'QUOTE_CHANGED');
+    }
+  });
 
   try {
     await logActivity('quote_accepted_by_admin', { quoteId: id }, null, `admin:${adminId}`);
@@ -2135,7 +2151,9 @@ async function composeSnapshotFromSplitFks(row) {
     ? JSON.parse(timing.installments)
     : timing.installments;
   return {
-    description: timing.description || netDays.description || null,
+    // The timing template's text describes its own schedule; with an
+    // override it no longer matches the installments, so it is left out.
+    description: (override ? null : timing.description) || netDays.description || null,
     net_days: netDays.net_days,
     skonto_percent: netDays.skonto_percent,
     skonto_within_days: netDays.skonto_within_days,

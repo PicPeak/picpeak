@@ -136,4 +136,55 @@ describe('buildRenderContext payment term', () => {
     const ctx = await quoteService._internal.buildRenderContext(accepted.quote, accepted.lineItems);
     expect(ctx.paymentTerm).toEqual(expect.objectContaining({ netDays: 10 }));
   });
+
+  it('keeps the term an invoice made from a sent quote inherits when the quote is edited', async () => {
+    const netId = await insertId('payment_net_days_templates', {
+      name: 'Inherit Net 20', description: '20 days net', net_days: 20, skonto_percent: 3, skonto_within_days: 10,
+    });
+    const timingId = await insertId('payment_timing_templates', {
+      name: 'Inherit all after', description: 'Everything after the event',
+      installments: JSON.stringify([{ percent: 100, label: 'Full' }]),
+    });
+    const quoteId = await quoteService.createQuote({
+      customerAccountId: customerId, currency: 'CHF', vatRate: 0,
+      paymentNetDaysTemplateId: netId, paymentTimingTemplateId: timingId,
+      lineItems: [{ position: 1, quantity: 1, description: 'Prints', unit_price_minor: 30000 }],
+    }, adminId);
+    const { quote } = await quoteService.getQuoteById(quoteId);
+    const sentTerm = await quoteService._internal.resolvePaymentTerm(quote);
+    await db('quotes').where({ id: quoteId }).update({ status: 'sent', payment_term_snapshot: JSON.stringify(sentTerm) });
+    const invoiceId = await insertId('invoices', {
+      invoice_number: `INHERIT-${quoteId}`, customer_account_id: customerId, issue_date: '2026-06-01',
+      due_date: '2026-06-30', status: 'draft', currency: 'CHF', net_amount_minor: 10000, vat_amount_minor: 0,
+      total_amount_minor: 10000, created_by_admin_id: adminId, deal_uuid: require('crypto').randomUUID(), source_quote_id: quoteId,
+    });
+    const { resolveSkontoPercentForInvoice } = require('../../src/services/invoiceService');
+    const invoice = () => db('invoices').where({ id: invoiceId }).first();
+    expect(await resolveSkontoPercentForInvoice(await invoice())).toBe(3);
+
+    await quoteService.updateQuote(quoteId, { eventName: 'Renamed' }, adminId);
+
+    expect(await resolveSkontoPercentForInvoice(await invoice())).toBe(3);
+  });
+
+  it('leaves out the timing template\'s schedule text when the quote overrides its installments', async () => {
+    const netDaysId = await insertId('payment_net_days_templates', {
+      name: 'Override Net 15', description: 'Payable within 15 days', net_days: 15,
+    });
+    const timingId = await insertId('payment_timing_templates', {
+      name: 'Override half', description: '50% on booking, 50% after the event',
+      installments: JSON.stringify([{ percent: 50, label: 'Deposit' }, { percent: 50, label: 'Balance' }]),
+    });
+    const quoteId = await quoteService.createQuote({
+      customerAccountId: customerId, currency: 'CHF', vatRate: 0,
+      paymentNetDaysTemplateId: netDaysId, paymentTimingTemplateId: timingId,
+      installments: [{ percent: 30, label: 'Deposit' }, { percent: 70, label: 'Balance' }],
+      lineItems: [{ position: 1, quantity: 1, description: 'Reportage', unit_price_minor: 100000 }],
+    }, adminId);
+    const { quote, lineItems } = await quoteService.getQuoteById(quoteId);
+    expect(quote.payment_term_installments_override).toBeTruthy();
+
+    const ctx = await quoteService._internal.buildRenderContext(quote, lineItems);
+    expect(ctx.paymentTerm).toEqual(expect.objectContaining({ description: 'Payable within 15 days', netDays: 15 }));
+  });
 });
