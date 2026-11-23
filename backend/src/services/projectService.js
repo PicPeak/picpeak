@@ -642,6 +642,24 @@ async function carriedProjectId(projectId, adminId, { target = 'documents' } = {
   return row ? row.id : null;
 }
 
+/** The optional columns linkDealToProject checks. */
+const DEAL_LINK_COLUMNS = [
+  ['quotes', 'deal_uuid'], ['quotes', 'project_id'],
+  ['contracts', 'deal_uuid'], ['contracts', 'converted_event_id'], ['contracts', 'project_id'],
+  ['invoices', 'deal_uuid'], ['invoices', 'project_id'],
+  ['events', 'project_id'],
+];
+
+/**
+ * Resolve linkDealToProject's column checks into the schema cache. A caller
+ * that runs linkDealToProject inside its own transaction calls this before
+ * opening it: the checks read through the global db, and on SQLite's single
+ * connection that read waits for the connection the transaction holds.
+ */
+async function resolveDealLinkSchema() {
+  for (const [table, column] of DEAL_LINK_COLUMNS) await hasColumnCached(table, column);
+}
+
 /**
  * Cascade a project link across a whole deal's lineage. Given a deal_uuid, link
  * every quote + contract in that deal to the project, re-point every event the
@@ -1564,6 +1582,7 @@ module.exports = {
   attachMovesFor,
   dealProjectElsewhere,
   linkDealToProject,
+  resolveDealLinkSchema,
   computeValuation,
   getProjectOverview,
   getEmailPreview,
