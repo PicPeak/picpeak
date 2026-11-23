@@ -31,8 +31,9 @@ const { toStoredPath } = require('../utils/storedPath');
 // into the meta block, #1546; 8: a quote no longer prints the invoices' VAT
 // note, and an invoice's reference to its source quote is a "Referenz: <number>"
 // row rather than "Bezug: Angebot <number>" — which also shifts every row of the
-// bottom-aligned meta block).
-const RENDERER_VERSION = '8';
+// bottom-aligned meta block; 9: a link's underline and link box in the line
+// table sit on the link's own line instead of half a line low).
+const RENDERER_VERSION = '9';
 const DOC_TYPES = ['quote', 'invoice', 'contract'];
 
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');

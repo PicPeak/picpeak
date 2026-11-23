@@ -51,6 +51,27 @@ describe('links in line items', () => {
     expect(linkTargets(pdf)).toEqual([]);
   });
 
+  it('puts a wrapped link\'s underline and link box on the line they belong to', async () => {
+    // The line table draws cells middle-anchored; PDFKit used to place the
+    // underline and link box from that y as if it were the line's top, half a
+    // line low, so the first line's underline ran through the second line.
+    // Read the result from the file: each link box must hold its own line's
+    // baseline, with the glyphs' ascent above it and only the descent below.
+    const pdf = await render([item({
+      detailsText: 'https://photos.example.com/gallery/a-long-path-that-wraps-onto-a-second-line/2893801',
+    })]);
+    const boxes = [...pdf.matchAll(/\/Rect \[([\d.]+) ([\d.]+) [\d.]+ ([\d.]+)\]/g)]
+      .map(([, x, bottom, top]) => ({ x: Number(x), bottom: Number(bottom), top: Number(top) }));
+    const baselines = [...pdf.matchAll(/1 0 0 -?1 ([\d.]+) ([\d.]+) Tm/g)]
+      .map(([, x, y]) => ({ x: Number(x), y: Number(y) }));
+    expect(boxes).toHaveLength(2);
+    for (const box of boxes) {
+      const line = baselines.find((b) => Math.abs(b.x - box.x) < 0.01 && b.y > box.bottom && b.y < box.top);
+      expect(line).toBeDefined();
+      expect(box.top - line.y).toBeGreaterThan(line.y - box.bottom);
+    }
+  });
+
   it('draws a bare link in a link colour, not the text colour', async () => {
     const pdf = await render([item({ detailsText: 'https://photos.example.com/g/x' })]);
     // #0b57d0 as PDF fill colour components (11/255 87/255 208/255).

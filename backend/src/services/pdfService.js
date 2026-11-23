@@ -848,6 +848,39 @@ function linkedCell(doc, text) {
   };
 }
 
+/**
+ * Draw `table` with its link cells anchored to the top of their lines.
+ *
+ * swissqrbill's Table (4.x, lib/pdf/table.cjs) draws every cell with
+ * `baseline: 'middle'`, set after the cell's own textOptions, and moves y down
+ * about half a line to match. PDFKit places a fragment's underline and link
+ * box from that y as if it were the line's top, so both land half a line low:
+ * on a wrapped address the underline runs through the next line of text. For
+ * a link cell we draw top-anchored instead, moving y up by exactly the
+ * difference between PDFKit's 'middle' and 'top' baselines, so the glyphs stay
+ * where they were and the underline and link box sit on their own line. If a
+ * swissqrbill upgrade stops forcing 'middle', this stops matching and the
+ * lineLinks test fails.
+ */
+function attachTableWithLinks(doc, table) {
+  const originalText = doc.text;
+  const hadOwnText = Object.prototype.hasOwnProperty.call(doc, 'text');
+  doc.text = function textWithTopAnchoredLinks(text, x, y, options) {
+    if (options && options.link != null && options.baseline === 'middle' && typeof y === 'number') {
+      const font = this._font;
+      const halfLine = ((font.ascender - font.descender) / 2 / 1000) * this._fontSize;
+      return originalText.call(this, text, x, y - halfLine, { ...options, baseline: 'top' });
+    }
+    return originalText.apply(this, arguments);
+  };
+  try {
+    table.attachTo(doc);
+  } finally {
+    if (hadOwnText) doc.text = originalText;
+    else delete doc.text;
+  }
+}
+
 function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
   const { type, locale, lineItems, currency, intlLocale } = ctx;
   // On a Stornorechnung the line items were snapshotted from the
@@ -1279,7 +1312,7 @@ function drawLineItems(doc, ctx, { reserveOnLastPage = 0 } = {}) {
     const rows = [headerRow];
     if (page.carryIn != null) rows.push(carryRow(page.carryIn, 'table_carry_brought'));
     for (const unit of page.units) rows.push(...unit.rows);
-    new Table({ width: contentWidth, rows }).attachTo(doc);
+    attachTableWithLinks(doc, new Table({ width: contentWidth, rows }));
     if (page.carryOut != null) {
       // The row that closes a continuing page is pinned to its foot, like the
       // totals on the last one: the page breaks early so the last page can hold
