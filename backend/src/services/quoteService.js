@@ -2626,6 +2626,25 @@ async function convertToEvent(quoteId, adminId, options = {}) {
 }
 
 /**
+ * A stored quote line back into the createQuote / updateQuote line shape:
+ * sub-items, notes and the migration-215 fields included. `overrides` are
+ * applied last, after the stored columns.
+ */
+function storedLineToPayload(li, overrides = {}) {
+  return {
+    position: li.position,
+    quantity: li.quantity,
+    description: li.description,
+    unit_price_minor: li.unit_price_minor,
+    discount_percent: li.discount_percent,
+    parent_position: li.parent_position == null ? null : li.parent_position,
+    details_text: li.details_text || null,
+    ...extendedLineColumns(li),
+    ...overrides,
+  };
+}
+
+/**
  * Re-apply the current customer / business hour and day rates to the lines
  * whose price came from a rate (#1451). Drafts only: a sent quote keeps the
  * prices the customer saw. Lines with a pinned catalogue rate or a typed
@@ -2637,23 +2656,10 @@ async function recalculateRates(id, adminId) {
   if (data.quote.status !== 'draft') {
     throw new AppError('Only draft quotes can pick up new rates', 409, 'QUOTE_NOT_DRAFT');
   }
-  const lineItems = data.lineItems.map((li) => ({
-    position: li.position,
-    quantity: li.quantity,
-    description: li.description,
-    unit_price_minor: li.unit_price_minor,
-    discount_percent: li.discount_percent,
-    parent_position: li.parent_position == null ? null : li.parent_position,
-    details_text: li.details_text || null,
-    line_kind: li.line_kind,
-    unit: li.unit,
-    is_optional: li.is_optional,
-    selected: li.selected,
-    price_mode: li.price_mode,
+  // The override goes after the stored columns: extendedLineColumns copies
+  // rate_source too, and before it the old source won and nothing changed.
+  const lineItems = data.lineItems.map((li) => storedLineToPayload(li, {
     rate_source: li.rate_source === 'customer' || li.rate_source === 'default' ? 'auto' : li.rate_source,
-    bound_to: li.bound_to,
-    promotion_snapshot: li.promotion_snapshot,
-    ...extendedLineColumns(li),
   }));
   await updateQuote(id, { lineItems }, adminId);
 }
@@ -2686,24 +2692,7 @@ async function duplicateQuote(id, adminId, { replacesQuoteId = null, dealUuid = 
     // Full line shape: sub-items, notes and the migration-215 fields used to
     // be dropped here (and this is what the prepare_quote workflow action
     // copies). Stored rates stay as they are — nothing is re-resolved.
-    lineItems: lineItems.map((li) => ({
-      position: li.position,
-      quantity: li.quantity,
-      description: li.description,
-      unit_price_minor: li.unit_price_minor,
-      discount_percent: li.discount_percent,
-      parent_position: li.parent_position == null ? null : li.parent_position,
-      details_text: li.details_text || null,
-      line_kind: li.line_kind,
-      unit: li.unit,
-      is_optional: li.is_optional,
-      selected: li.selected,
-      price_mode: li.price_mode,
-      rate_source: li.rate_source,
-      bound_to: li.bound_to,
-      promotion_snapshot: li.promotion_snapshot,
-      ...extendedLineColumns(li),
-    })),
+    lineItems: lineItems.map((li) => storedLineToPayload(li)),
     // Set only by reissueQuote: the reissued quote keeps the deal.
     replacesQuoteId,
     dealUuid,
