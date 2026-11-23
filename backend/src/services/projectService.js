@@ -1176,8 +1176,8 @@ async function attachStages(projects, perms = {}) {
 
 /**
  * Full overview aggregation for the cockpit. Returns the project, its events,
- * and the rolled-up emails / quotes / contracts / invoices / hours + a
- * timeline of milestones. `perms` gates which doc types are included.
+ * and the rolled-up emails / quotes / contracts / invoices / hours.
+ * `perms` gates which doc types are included.
  *
  * `admin` (optional) is used only to stamp each email with `canAct` — whether
  * the queued-mail routes would actually accept an action on it. See below.
@@ -1339,18 +1339,6 @@ async function getProjectOverview(id, perms = {}, admin = null) {
     totalMinutes: hours.reduce((s, h) => s + Number(h.duration_minutes || 0), 0),
   };
 
-  // Timeline milestones (latest of each kind that exists), each dated.
-  const milestones = [];
-  const firstQuote = out.quotes.at(-1);
-  if (firstQuote) milestones.push({ kind: 'quote', id: firstQuote.id, label: firstQuote.quote_number, date: firstQuote.issue_date });
-  const firstContract = out.contracts.at(-1);
-  if (firstContract) milestones.push({ kind: 'contract', id: firstContract.id, label: firstContract.contract_number, date: firstContract.issue_date });
-  const pubEvent = events.find((e) => e.is_active && !e.is_draft);
-  if (pubEvent) milestones.push({ kind: 'gallery', id: pubEvent.id, label: pubEvent.event_name, date: pubEvent.event_date });
-  const firstInvoice = out.invoices.at(-1);
-  if (firstInvoice) milestones.push({ kind: 'invoice', id: firstInvoice.id, label: firstInvoice.invoice_number, date: firstInvoice.issue_date });
-  out.milestones = milestones;
-
   // Rolled-up project value (newest stage wins per deal, cumulative).
   out.valuation = computeValuation(out.invoices, out.quotes);
 
@@ -1362,7 +1350,6 @@ async function getProjectOverview(id, perms = {}, admin = null) {
   for (const row of [...out.quotes, ...out.contracts, ...out.invoices]) {
     for (const col of ['issue_date', 'valid_until', 'due_date']) if (col in row) row[col] = toDateOnly(row[col]);
   }
-  for (const milestone of milestones) milestone.date = toDateOnly(milestone.date);
 
   return out;
 }

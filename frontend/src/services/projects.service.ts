@@ -154,13 +154,6 @@ export interface ProjectHourEntry {
   invoice_id: number | null;
 }
 
-export interface ProjectMilestone {
-  kind: 'quote' | 'contract' | 'gallery' | 'invoice';
-  id?: number;
-  label: string;
-  date: string | null;
-}
-
 export interface ProjectOverview {
   project: ProjectSummary;
   events: ProjectEvent[];
@@ -169,7 +162,6 @@ export interface ProjectOverview {
   contracts: ProjectContract[];
   invoices: ProjectInvoice[];
   hours: { entries: ProjectHourEntry[]; totalMinutes: number };
-  milestones: ProjectMilestone[];
   valuation: ProjectValuation;
   stage: ProjectStage;
 }

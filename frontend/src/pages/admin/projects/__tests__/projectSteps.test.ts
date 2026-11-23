@@ -10,7 +10,7 @@ function overview(current: ProjectStageKey | null, extra: Partial<ProjectOvervie
   return {
     project: { id: 7, name: 'Hochzeit', customerAccountId: 3, customerEmail: 'k@example.com', status: 'active', createdAt: null, updatedAt: null },
     events: [], emails: [], quotes: [], contracts: [], invoices: [],
-    hours: { entries: [], totalMinutes: 0 }, milestones: [], valuation: { byCurrency: [] },
+    hours: { entries: [], totalMinutes: 0 }, valuation: { byCurrency: [] },
     stage: { current, stages: keys.map((key) => ({ key, state: key === current ? 'current' : 'todo' })) },
     ...extra,
   } as ProjectOverview;

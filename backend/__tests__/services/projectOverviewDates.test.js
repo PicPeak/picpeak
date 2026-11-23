@@ -33,10 +33,9 @@ describe('getProjectOverview document dates (issue 2333)', () => {
 
   afterAll(async () => { if (cleanup) await cleanup(); });
 
-  it('sends quote dates and the quote milestone as YYYY-MM-DD', async () => {
+  it('sends quote dates as YYYY-MM-DD', async () => {
     const out = await projectService.getProjectOverview(projectId, {}, { id: adminId, roleName: 'super_admin' });
     expect(out.quotes).toHaveLength(1);
     expect(out.quotes[0]).toMatchObject({ issue_date: '2026-10-05', valid_until: '2026-11-04' });
-    expect(out.milestones.find((m) => m.kind === 'quote')).toMatchObject({ date: '2026-10-05' });
   });
 });
