@@ -13,10 +13,9 @@ import { useTranslation } from 'react-i18next';
 import { AlertCircle, CalendarCheck, Clock } from 'lucide-react';
 import { Loading } from '../../components/common';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
-import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { useStudioTime } from '../../features/booking/useStudioTime';
 import { bookingService, type PublicRequestStatus } from '../../services/booking.service';
 import { formatMoneyMinor } from '../../utils/money';
-import { zonedWallClock } from '../../utils/zonedWallClock';
 
 const POLL_MS = 3000;
 const POLL_LIMIT = 20;
@@ -27,7 +26,6 @@ export const BookingStatusPage: React.FC = () => {
   const { token } = useParams<{ token: string }>();
   const [params] = useSearchParams();
   const cancelled = params.get('cancelled') === '1';
-  const { format, formatTime } = useLocalizedDate();
   const polls = React.useRef(0);
 
   const { data, isLoading, isError } = useQuery<PublicRequestStatus>({
@@ -37,6 +35,7 @@ export const BookingStatusPage: React.FC = () => {
     retry: false,
     refetchInterval: (query) => (query.state.data?.status === 'awaiting_payment' && polls.current < POLL_LIMIT ? POLL_MS : false),
   });
+  const studio = useStudioTime(data?.timezone || 'UTC');
 
   const card = 'bg-surface rounded-xl shadow-sm border border-border-token p-6 text-center space-y-3';
   const shell = (children: React.ReactNode) => (
@@ -55,9 +54,8 @@ export const BookingStatusPage: React.FC = () => {
     );
   }
 
-  const start = zonedWallClock(data.startsAt, data.timezone);
   const when = t('booking.public.sentSlot', '{{service}} on {{day}} at {{time}}', {
-    service: data.serviceName, day: format(new Date(`${start.day}T12:00:00`)), time: formatTime(start.time),
+    service: data.serviceName, day: studio.dayOf(data.startsAt), time: studio.time(data.startsAt),
   });
 
   const body = (() => {

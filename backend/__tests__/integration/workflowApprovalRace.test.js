@@ -76,8 +76,8 @@ describe('workflow gate decisions under concurrent requests', () => {
     const { runId, approval } = await pendingGate('race.confirm_deny');
 
     const results = await Promise.all([
-      engine.actById(approval.id, 'confirm', null),
-      engine.actById(approval.id, 'deny', null),
+      engine.actByIdForAdmin(approval.id, 'confirm', { roleName: 'super_admin' }),
+      engine.actByIdForAdmin(approval.id, 'deny', { roleName: 'super_admin' }),
     ]);
 
     expect(calls.confirm + calls.deny).toBe(1);
@@ -92,7 +92,7 @@ describe('workflow gate decisions under concurrent requests', () => {
   test('a repeated confirm resumes the run once', async () => {
     const { approval } = await pendingGate('race.double_confirm');
 
-    const results = await Promise.all([1, 2, 3].map(() => engine.actById(approval.id, 'confirm', null)));
+    const results = await Promise.all([1, 2, 3].map(() => engine.actByIdForAdmin(approval.id, 'confirm', { roleName: 'super_admin' })));
 
     expect(calls.confirm).toBe(1);
     expect(calls.deny).toBe(0);

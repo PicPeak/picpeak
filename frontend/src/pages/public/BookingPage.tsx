@@ -16,7 +16,7 @@ import { CalendarCheck, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-re
 import { Button, Loading } from '../../components/common';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
-import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { useStudioTime } from '../../features/booking/useStudioTime';
 import { FactorInputs, initialFactorValue } from '../../features/pricing-factors/FactorInputs';
 import { bookingService, type PublicRequestResult, type PublicService, type Slot } from '../../services/booking.service';
 import type { FactorValue, PricingFactor } from '../../services/quoteCatalog.service';
@@ -40,7 +40,6 @@ export const BookingPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { isDark } = usePublicDarkMode();
   const { data: publicSettings } = usePublicSettings();
-  const { format, formatTime } = useLocalizedDate();
   const queryClient = useQueryClient();
 
   const { data: info, isLoading, isError } = useQuery({
@@ -111,8 +110,7 @@ export const BookingPage: React.FC = () => {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sent, setSent] = useState<PublicRequestResult | null>(null);
 
-  const wallTime = (instant: string) => formatTime(zonedWallClock(instant, timezone).time);
-  const wallDay = (day: string) => format(new Date(`${day}T12:00:00`));
+  const { day: wallDay, dayOf, time: wallTime } = useStudioTime(timezone);
   const weekdayName = (day: string) => new Intl.DateTimeFormat(i18n.language, { weekday: 'short', timeZone: 'UTC' })
     .format(new Date(`${day}T12:00:00Z`));
 
@@ -183,7 +181,7 @@ export const BookingPage: React.FC = () => {
         {slot && (
           <p>
             {t('booking.public.sentSlot', '{{service}} on {{day}} at {{time}}', {
-              service: service?.name, day: wallDay(zonedWallClock(slot.start, timezone).day), time: wallTime(slot.start),
+              service: service?.name, day: dayOf(slot.start), time: wallTime(slot.start),
             })}
           </p>
         )}
@@ -345,7 +343,7 @@ export const BookingPage: React.FC = () => {
           </div>
           <div className="mt-4 rounded-lg border border-border-token p-3 text-sm">
             {t('booking.public.summary', '{{service}} on {{day}} at {{time}}', {
-              service: service.name, day: wallDay(zonedWallClock(slot.start, timezone).day), time: wallTime(slot.start),
+              service: service.name, day: dayOf(slot.start), time: wallTime(slot.start),
             })}
             {estimate && ` · ${t('booking.public.estimate', 'Estimate')} ${formatMoneyMinor(estimate.totalMinor, estimate.currency)}`}
           </div>

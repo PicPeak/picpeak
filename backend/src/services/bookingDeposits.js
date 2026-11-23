@@ -25,10 +25,14 @@ const crypto = require('crypto');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
-const { toTimestamp } = require('../utils/dateNormalize');
 const { withTrustedCrmAccess } = require('../database/crmAccess');
-
 const { formatBoolean } = require('../utils/dbCompat');
+const { stripeClient } = require('../modules/photoSales/stripeClient');
+const { notifyReceived, notifyDeclined } = require('./bookingNotifications');
+// bookingService requires this module lazily (the two call each other).
+const booking = require('./bookingService');
+
+const { ts, REFUNDABLE_DEPOSIT, depositReceivedMinor: receivedMinor } = booking;
 
 const DEPOSIT_TYPES = ['none', 'percent', 'fixed'];
 const GALLERY_UNLOCK = ['full_payment', 'deposit', 'off'];
@@ -36,7 +40,6 @@ const GALLERY_UNLOCK = ['full_payment', 'deposit', 'off'];
 const CHECKOUT_MINUTES = 30;
 const CHECKOUT_HOLD_MINUTES = 35;
 
-const ts = (v) => new Date(v instanceof Date ? v.getTime() : toTimestamp(v)).toISOString();
 const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
 
 // Stripe's smallest card charge per currency, in the app's minor units
@@ -119,7 +122,6 @@ function newStatusToken() {
  * is expired so its slot is free again, and the error goes to the client.
  */
 async function startCheckout(request, statusToken) {
-  const { stripeClient } = require('../modules/photoSales/stripeClient');
   const { getFrontendBaseUrl } = require('../utils/frontendUrl');
   const base = ((await getFrontendBaseUrl()) || '').replace(/\/+$/, '');
   const statusUrl = `${base}/book/status/${statusToken}`;
@@ -164,7 +166,7 @@ const intentOf = (session) => (typeof session.payment_intent === 'string'
 
 async function notifyPaid(requestId, opts = {}) {
   const fresh = await db('booking_requests').where({ id: requestId }).first();
-  await require('./bookingNotifications').notifyReceived(fresh, opts).catch((err) => {
+  await notifyReceived(fresh, opts).catch((err) => {
     logger.warn('Could not queue the booking request mails', { requestId, error: err.message });
   });
 }
@@ -172,6 +174,18 @@ async function notifyPaid(requestId, opts = {}) {
 // A payment that arrives after the hold: the request is expired, or still
 // waiting because the sweep has not run yet.
 const LATE_STATUSES = ['expired', 'awaiting_payment'];
+// A deposit not paid yet: its checkout is open, or ran out.
+const UNPAID_DEPOSIT = ['open', 'expired'];
+
+/** Refund a declined or late request's deposit and tell the client. */
+async function refundAndNotify(row, { lateReason = null } = {}) {
+  await refundDeposit(row);
+  await notifyDeclined(await db('booking_requests').where({ id: row.id }).first(), { lateReason })
+    .catch((err) => logger.warn(lateReason ? 'Could not queue the late-payment refund mail' : 'Could not queue the refund mail', {
+      requestId: row.id, error: err.message,
+    }));
+  return 'refunded';
+}
 
 /**
  * Apply an authoritative Checkout Session to its request. Idempotent: every
@@ -191,7 +205,7 @@ async function reconcileSession(request, session) {
     && String(session.currency || '').toUpperCase() === String(request.currency || '').toUpperCase();
   const now = new Date();
   if (paid && amountOk) {
-    const settings = await require('./bookingService').getSettings();
+    const settings = await booking.getSettings();
     // Conditional on the deposit not being settled yet: a replay or the
     // status page cannot overwrite a refund or a review.
     const paidFields = {
@@ -207,7 +221,7 @@ async function reconcileSession(request, session) {
     // the payment takes the locked path below.
     const updated = await db('booking_requests').where({ id: request.id, status: 'awaiting_payment' })
       .andWhere('hold_expires_at', '>', ts(now))
-      .whereIn('deposit_status', ['open', 'expired'])
+      .whereIn('deposit_status', UNPAID_DEPOSIT)
       .update({ status: 'pending', ...paidFields });
     if (updated) {
       await notifyPaid(request.id);
@@ -216,11 +230,10 @@ async function reconcileSession(request, session) {
     // The hold ran out before the payment arrived (a late webhook). The
     // check and the write share the lock new requests take, so a request
     // made meanwhile and this restore cannot both win the slot.
-    const booking = require('./bookingService');
     const outcome = await booking.withRequestLock(async (trx) => {
       // Expired, or still waiting with its hold run out (not swept yet).
       const late = await trx('booking_requests').where({ id: request.id }).whereIn('status', LATE_STATUSES)
-        .whereIn('deposit_status', ['open', 'expired']).first();
+        .whereIn('deposit_status', UNPAID_DEPOSIT).first();
       if (!late) return 'none';
       // An admin decision does not take this lock: a write that matched
       // nothing means the request was decided meanwhile, handled below.
@@ -228,12 +241,12 @@ async function reconcileSession(request, session) {
       const begun = new Date(ts(late.starts_at)).getTime() <= now.getTime();
       if (!begun && !(await booking.slotTaken(late, trx))) {
         const restored = await trx('booking_requests').where({ id: late.id }).whereIn('status', LATE_STATUSES)
-          .whereIn('deposit_status', ['open', 'expired'])
+          .whereIn('deposit_status', UNPAID_DEPOSIT)
           .update({ status: 'pending', ...paidFields });
         return restored ? 'restored' : 'none';
       }
       const taken = await trx('booking_requests').where({ id: late.id }).whereIn('status', LATE_STATUSES)
-        .whereIn('deposit_status', ['open', 'expired'])
+        .whereIn('deposit_status', UNPAID_DEPOSIT)
         .update({ ...paidFields, status: 'expired', hold_expires_at: late.hold_expires_at });
       if (!taken) return 'none';
       return begun ? 'begun' : 'taken';
@@ -248,28 +261,18 @@ async function reconcileSession(request, session) {
       // refunded when the request was declined.
       const { hold_expires_at: _hold, ...depositFields } = paidFields;
       const decided = await db('booking_requests').where({ id: request.id })
-        .whereIn('status', ['accepted', 'declined']).whereIn('deposit_status', ['open', 'expired'])
+        .whereIn('status', ['accepted', 'declined']).whereIn('deposit_status', UNPAID_DEPOSIT)
         .update(depositFields);
       if (decided) {
         const row = await db('booking_requests').where({ id: request.id }).first();
-        if (row.status === 'declined') {
-          await refundDeposit(row);
-          await require('./bookingNotifications').notifyDeclined(await db('booking_requests').where({ id: request.id }).first())
-            .catch((err) => logger.warn('Could not queue the refund mail', { requestId: request.id, error: err.message }));
-          return 'refunded';
-        }
+        if (row.status === 'declined') return refundAndNotify(row);
       }
       return 'paid';
     }
     if (outcome === 'taken' || outcome === 'begun') {
       // The time went to someone else, or has already begun: refund, and
       // tell the client why.
-      const row = await db('booking_requests').where({ id: request.id }).first();
-      await refundDeposit(row);
-      await require('./bookingNotifications').notifyDeclined(
-        await db('booking_requests').where({ id: request.id }).first(), { lateReason: outcome },
-      ).catch((err) => logger.warn('Could not queue the late-payment refund mail', { requestId: request.id, error: err.message }));
-      return 'refunded';
+      return refundAndNotify(await db('booking_requests').where({ id: request.id }).first(), { lateReason: outcome });
     }
     return 'paid';
   }
@@ -288,28 +291,23 @@ async function reconcileSession(request, session) {
     // request may hold by now. It is marked expired for review instead.
     const held = await db('booking_requests').where({ id: request.id, status: 'awaiting_payment' })
       .andWhere('hold_expires_at', '>', ts(now))
-      .whereIn('deposit_status', ['open', 'expired'])
+      .whereIn('deposit_status', UNPAID_DEPOSIT)
       .update({ status: 'pending', ...reviewFields });
     const stale = held ? 0 : await db('booking_requests').where({ id: request.id, status: 'awaiting_payment' })
-      .whereIn('deposit_status', ['open', 'expired'])
+      .whereIn('deposit_status', UNPAID_DEPOSIT)
       .update({ status: 'expired', ...reviewFields });
     let marked = stale;
     if (!held && !stale) {
       marked = await db('booking_requests').where({ id: request.id })
         .whereIn('status', ['expired', 'accepted', 'declined'])
-        .whereIn('deposit_status', ['open', 'expired'])
+        .whereIn('deposit_status', UNPAID_DEPOSIT)
         .update(reviewFields);
     }
     if (marked) {
       // Declined before the money arrived: the decline's refund ran on
       // nothing, so this payment goes back now, as with the right amount.
       const row = await db('booking_requests').where({ id: request.id }).first();
-      if (row.status === 'declined') {
-        await refundDeposit(row);
-        await require('./bookingNotifications').notifyDeclined(await db('booking_requests').where({ id: request.id }).first())
-          .catch((err) => logger.warn('Could not queue the refund mail', { requestId: request.id, error: err.message }));
-        return 'refunded';
-      }
+      if (row.status === 'declined') return refundAndNotify(row);
     }
     if (held || marked) await notifyPaid(request.id, { mailClient: Boolean(held) });
     return 'mismatch';
@@ -404,7 +402,7 @@ async function reconcileWebhook(event, client) {
   if (request && !request.checkout_session_id) {
     // The session was made but storing its id failed: adopt it.
     await db('booking_requests').where({ id: request.id }).whereNull('checkout_session_id')
-      .whereIn('deposit_status', ['open', 'expired'])
+      .whereIn('deposit_status', UNPAID_DEPOSIT)
       .update({ checkout_session_id: object.id, updated_at: ts(new Date()) });
     request = await db('booking_requests').where({ id: request.id }).first();
   }
@@ -425,7 +423,6 @@ async function reconcileWebhook(event, client) {
 async function refreshFromStripe(request) {
   if (request.status !== 'awaiting_payment' || !request.checkout_session_id) return request;
   try {
-    const { stripeClient } = require('../modules/photoSales/stripeClient');
     const client = await stripeClient();
     const session = await client.checkout.sessions.retrieve(request.checkout_session_id);
     await reconcileSession(request, session);
@@ -443,7 +440,6 @@ async function refreshFromStripe(request) {
 async function cancelCheckout(request) {
   if (request.status !== 'awaiting_payment' || !request.checkout_session_id) return request;
   try {
-    const { stripeClient } = require('../modules/photoSales/stripeClient');
     const client = await stripeClient();
     try {
       await client.checkout.sessions.expire(request.checkout_session_id);
@@ -460,19 +456,18 @@ async function cancelCheckout(request) {
 /** Refund a paid deposit (the admin declined the request). */
 async function refundDeposit(request) {
   // `review` too: whatever amount came in goes back in full.
-  if (!['paid', 'review'].includes(request.deposit_status) || !request.payment_intent_id) return request.deposit_status;
+  if (!REFUNDABLE_DEPOSIT.includes(request.deposit_status) || !request.payment_intent_id) return request.deposit_status;
   try {
-    const { stripeClient } = require('../modules/photoSales/stripeClient');
     const client = await stripeClient();
     await client.refunds.create({ payment_intent: request.payment_intent_id },
       { idempotencyKey: `picpeak-booking-refund:${request.reference}` });
     // Conditional: a dispute or a failed refund recorded meanwhile stays.
-    await db('booking_requests').where({ id: request.id }).whereIn('deposit_status', ['paid', 'review'])
+    await db('booking_requests').where({ id: request.id }).whereIn('deposit_status', REFUNDABLE_DEPOSIT)
       .update({ deposit_status: 'refunded', updated_at: ts(new Date()) });
     return 'refunded';
   } catch (err) {
     // Stays visible on the request: the admin refunds in Stripe by hand.
-    await db('booking_requests').where({ id: request.id }).whereIn('deposit_status', ['paid', 'review'])
+    await db('booking_requests').where({ id: request.id }).whereIn('deposit_status', REFUNDABLE_DEPOSIT)
       .update({ deposit_status: 'refund_failed', updated_at: ts(new Date()) });
     logger.error('Could not refund a booking deposit', { requestId: request.id, type: err.type || err.name });
     return 'refund_failed';
@@ -481,10 +476,8 @@ async function refundDeposit(request) {
 
 /** The calendar day of an instant in the business timezone (VAT periods follow it). */
 async function businessDay(instant) {
-  const { timezone } = await require('./bookingService').workingHours();
-  const { _internal: tz } = require('../utils/businessHours');
-  const p = tz.getZonedParts(new Date(ts(instant)), timezone);
-  return `${p.y}-${String(p.mo).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
+  const { timezone } = await booking.workingHours();
+  return booking.localParts(instant, timezone).date;
 }
 
 /**
@@ -530,9 +523,6 @@ async function depositAlertsForInvoice(payments) {
   return rows.map((r) => ({ requestId: r.id, reference: r.reference, depositStatus: r.deposit_status }));
 }
 
-/** What came in for a deposit: the charged amount, or the deposit on rows from before it was recorded. */
-const receivedMinor = (request) => Number(request.deposit_received_minor ?? request.deposit_minor ?? 0);
-
 /**
  * Book a paid deposit as a payment on an invoice of the request's deal,
  * over several invoices when one has less open. A deposit held for review
@@ -542,7 +532,7 @@ const receivedMinor = (request) => Number(request.deposit_received_minor ?? requ
 async function applyDepositToInvoice(requestId, invoiceId, adminId) {
   const request = await db('booking_requests').where({ id: requestId }).first();
   if (!request) throw new AppError('Booking request not found', 404);
-  if (!['paid', 'review'].includes(request.deposit_status)) throw new AppError('This request has no paid deposit', 409, 'BOOKING_NO_DEPOSIT');
+  if (!REFUNDABLE_DEPOSIT.includes(request.deposit_status)) throw new AppError('This request has no paid deposit', 409, 'BOOKING_NO_DEPOSIT');
   const applied = Number(request.deposit_applied_minor || 0);
   const remaining = receivedMinor(request) - applied;
   if (remaining <= 0) throw new AppError('The deposit is already booked on invoices', 409, 'BOOKING_DEPOSIT_APPLIED');
@@ -762,7 +752,6 @@ module.exports = {
   stripeReady,
   startCheckout,
   cancelCheckout,
-  reconcileSession,
   reconcileWebhook,
   refreshFromStripe,
   refundDeposit,
@@ -773,5 +762,4 @@ module.exports = {
   unlockGallery,
   galleryLocksForRequests,
   dealInvoicesForRequests,
-  countingInvoices,
 };

@@ -47,7 +47,6 @@ vi.mock('../../../../services/projects.service', () => ({
       },
       events: [], quotes: [], contracts: [], invoices: [],
       hours: { entries: [], totalMinutes: 0 },
-      milestones: [],
       valuation: { byCurrency: [] },
       emails: mockEmails,
     })),

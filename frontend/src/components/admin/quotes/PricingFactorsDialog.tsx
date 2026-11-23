@@ -11,6 +11,7 @@ import { Button, Modal } from '../../common';
 import { FactorInputs, initialFactorValue } from '../../../features/pricing-factors/FactorInputs';
 import type { FactorPriceResult, FactorValue, PricingFactor } from '../../../services/quoteCatalog.service';
 import { formatMoneyMinor } from '../../../utils/money';
+import { apiErrorText } from '../../../utils/apiErrorText';
 
 interface Props {
   open: boolean;
@@ -26,7 +27,6 @@ interface Props {
   keptLines?: number;
 }
 
-const errorText = (err: any): string => err?.response?.data?.error || err?.message || 'Failed';
 
 export const PricingFactorsDialog: React.FC<Props> = ({
   open, title, currency, factors, initialValues, price, onApply, onClose, keptLines = 0,
@@ -54,7 +54,7 @@ export const PricingFactorsDialog: React.FC<Props> = ({
         const next = await price(values);
         if (!cancelled) { setResult(next); setError(null); }
       } catch (err) {
-        if (!cancelled) { setResult(null); setError(errorText(err)); }
+        if (!cancelled) { setResult(null); setError(apiErrorText(err)); }
       } finally {
         if (!cancelled) setBusy(false);
       }

@@ -8,7 +8,8 @@
  * return `{ set: {...} }` to merge values back into `vars`.
  *
  * Keep handlers curated and typed — this is NOT arbitrary code execution. New
- * triggers/actions register here; the canvas palette is derived from these.
+ * triggers/actions register here; the editor's canvas palette is hard-coded in
+ * the frontend and has to be kept in step by hand.
  */
 const conditions = new Map();
 const actions = new Map();
@@ -17,8 +18,6 @@ function registerCondition(key, fn) { conditions.set(key, fn); }
 function registerAction(key, fn) { actions.set(key, fn); }
 function getCondition(key) { return conditions.get(key); }
 function getAction(key) { return actions.get(key); }
-function listConditions() { return Array.from(conditions.keys()); }
-function listActions() { return Array.from(actions.keys()); }
 
 // --- Primitive conditions ---
 registerCondition('always', async () => true);
@@ -66,8 +65,6 @@ module.exports = {
   registerAction,
   getCondition,
   getAction,
-  listConditions,
-  listActions,
   conditions,
   actions,
 };

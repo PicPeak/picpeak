@@ -1455,7 +1455,7 @@ async function startServerInternal() {
       logger.warn('restore-settings self-heal failed at boot:', err.message);
     }
 
-    // Seed built-in workflows (the editable invoice-dunning flow). Disabled by
+    // Seed the built-in workflows (dunning, gallery expiry, pre-event, booking). Disabled by
     // default — live reminder behaviour is unchanged. See _workflowSeedBoot.js.
     try {
       const { seedBuiltinWorkflowsAtBoot } = require('./src/services/_workflowSeedBoot');

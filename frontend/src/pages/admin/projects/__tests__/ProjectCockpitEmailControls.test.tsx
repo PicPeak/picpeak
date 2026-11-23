@@ -41,7 +41,6 @@ const OVERVIEW = {
   },
   events: [], quotes: [], contracts: [], invoices: [],
   hours: { entries: [], totalMinutes: 0 },
-  milestones: [],
   valuation: { byCurrency: [] },
   emails: [
     // Event mail the caller owns → the server says actionable.

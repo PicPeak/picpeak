@@ -11,7 +11,7 @@ import { bookingService } from '../../services/booking.service';
  * That includes `quotes` off, which switches booking off too: refunds and
  * opening a gallery by hand stay open then.
  */
-export function useBookingsReachable(): { reachable: boolean; flagOn: boolean; isLoading: boolean } {
+export function useBookingsReachable(): { reachable: boolean; isLoading: boolean } {
   const { flags, isLoading: flagsLoading } = useFeatureFlags();
   const { hasPermission } = usePermissions();
   const flagOn = Boolean(flags.calendarBooking);
@@ -22,5 +22,5 @@ export function useBookingsReachable(): { reachable: boolean; flagOn: boolean; i
     enabled: ask,
     staleTime: 60_000,
   });
-  return { reachable: flagOn || open, flagOn, isLoading: flagsLoading || (ask && isLoading) };
+  return { reachable: flagOn || open, isLoading: flagsLoading || (ask && isLoading) };
 }

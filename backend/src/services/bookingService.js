@@ -35,6 +35,8 @@ const STATUSES = ['awaiting_payment', 'pending', 'accepted', 'declined', 'expire
 // What erasure leaves in place of a client's address.
 const ERASED_EMAIL = 'erased@deleted.invalid';
 const PAID_DEPOSIT = ['paid', 'review', 'disputed'];
+// Money in that goes back in full when the request is declined.
+const REFUNDABLE_DEPOSIT = ['paid', 'review'];
 const MAX_RANGE_DAYS = 42;
 const DEFAULT_DURATION_MINUTES = 60;
 const MIN_DURATION_MINUTES = 15;
@@ -72,6 +74,9 @@ const iso = (v) => (v == null ? null : toDate(v).toISOString());
 // reads them into timestamptz. Mixing a Date (epoch ms on SQLite) with a
 // string column would compare number against text.
 const ts = (v) => toDate(v).toISOString();
+
+/** What came in for a deposit: the charged amount, or the deposit on rows from before it was recorded. */
+const depositReceivedMinor = (request) => Number(request.deposit_received_minor ?? request.deposit_minor ?? 0);
 
 // ---------------------------------------------------------------------
 // Settings
@@ -198,6 +203,11 @@ async function withDurationValue(preset, values = {}, conn = db) {
   return start == null ? values : { ...values, [factorId]: start };
 }
 
+/** Slot length for a service with the duration factor's start value filled in. */
+async function serviceDuration(preset, values = {}, conn = db) {
+  return durationMinutes(preset, await withDurationValue(preset, values, conn));
+}
+
 /**
  * What the public page shows per service: its description and the factors
  * the client fills in (client-visible ones; the rest take their default).
@@ -242,6 +252,16 @@ function wallTime(day, hhmm, zone) {
 }
 
 /**
+ * OR-adds "holds a slot right now" to `q`: pending or waiting for the deposit
+ * with the hold not run out, or pending with money in, which holds past the
+ * hold time until the admin decides (see expireStaleHolds).
+ */
+function holdsSlot(q, now) {
+  q.orWhere((p) => p.whereIn('status', ['pending', 'awaiting_payment']).andWhere('hold_expires_at', '>', ts(now)))
+    .orWhere((p) => p.where('status', 'pending').whereIn('deposit_status', PAID_DEPOSIT));
+}
+
+/**
  * Busy intervals overlapping [from, to), as { start: ms, end: ms }.
  * `excludeRequestId` leaves one request out (re-checking its own slot).
  */
@@ -263,10 +283,8 @@ async function busyIntervals(from, to, zone, { excludeRequestId = null, now = ne
       q.where((a) => a.where('status', 'accepted').andWhere((link) => link
         .whereExists((e) => e.select(conn.raw('1')).from('quotes')
           .whereRaw('quotes.id = booking_requests.quote_id').whereNot('quotes.status', 'declined'))
-        .orWhere((fresh) => fresh.whereNull('quote_id').andWhere('decided_at', '>', ts(now.getTime() - ACCEPTING_MS)))))
-        .orWhere((p) => p.whereIn('status', ['pending', 'awaiting_payment']).andWhere('hold_expires_at', '>', ts(now)));
-      // Paid deposits hold past the hold time (see expireStaleHolds).
-      q.orWhere((p) => p.where('status', 'pending').whereIn('deposit_status', PAID_DEPOSIT));
+        .orWhere((fresh) => fresh.whereNull('quote_id').andWhere('decided_at', '>', ts(now.getTime() - ACCEPTING_MS)))));
+      holdsSlot(q, now);
     });
   if (excludeRequestId) requests.whereNot('id', excludeRequestId);
   // Read as trusted: the public routes run with no CRM actor, which may not
@@ -308,11 +326,11 @@ async function busyIntervals(from, to, zone, { excludeRequestId = null, now = ne
  *   slots: Array<{start: string, end: string}>}>}
  */
 async function availableSlots(preset, {
-  from, to, values = {}, now = new Date(), excludeRequestId = null, conn = db,
+  from, to, values = {}, now = new Date(), conn = db,
 } = {}) {
   const settings = await getSettings(conn);
   const { schedule, timezone } = await workingHours(conn);
-  const duration = durationMinutes(preset, await withDurationValue(preset, values, conn));
+  const duration = await serviceDuration(preset, values, conn);
   const fromDay = parseLocalDate(from);
   const toDay = parseLocalDate(to);
   if (!fromDay || !toDay) throw new AppError('Pick a date range', 400, 'BOOKING_RANGE_INVALID');
@@ -326,7 +344,7 @@ async function availableSlots(preset, {
   const after = tz.addDays(toDay.y, toDay.mo, toDay.d, 1);
   const rangeEnd = tz.zonedWallClockToUtc(after.y, after.mo, after.d, 0, 0, timezone);
   const bufferMs = settings.buffer_minutes * 60000;
-  const busy = (await busyIntervals(rangeStart, rangeEnd, timezone, { excludeRequestId, now, conn }))
+  const busy = (await busyIntervals(rangeStart, rangeEnd, timezone, { now, conn }))
     .map((b) => ({ start: b.start - bufferMs, end: b.end + bufferMs }));
 
   const slots = [];
@@ -454,10 +472,7 @@ function withRequestLock(fn) {
  * under review, which hold until the admin decides.
  */
 function openRequests(conn, now) {
-  return conn('booking_requests').where((q) => {
-    q.where((p) => p.whereIn('status', ['pending', 'awaiting_payment']).andWhere('hold_expires_at', '>', ts(now)));
-    q.orWhere((p) => p.where('status', 'pending').whereIn('deposit_status', PAID_DEPOSIT));
-  });
+  return conn('booking_requests').where((q) => holdsSlot(q, now));
 }
 
 /**
@@ -495,7 +510,8 @@ async function assertMayRequest(conn, { email, ipHash, settings, now }) {
  * inserted in one transaction, so two clients racing for the same slot
  * cannot both hold it.
  */
-async function createRequest(input, { now = new Date() } = {}) {
+async function createRequest(input) {
+  const now = new Date();
   const preset = await bookableService(input.serviceId);
   const values = input.values || {};
   const language = LANGUAGES.includes(input.language) ? input.language : null;
@@ -677,6 +693,21 @@ async function slotTaken(request, conn = db) {
   return busy.some((b) => start < b.end + bufferMs && end > b.start - bufferMs);
 }
 
+/** A decide that matched nothing: 404 when the request is gone, else 409 with its status. */
+async function throwNotPending(id) {
+  const row = await db('booking_requests').where({ id }).first('status');
+  if (!row) throw new AppError('Booking request not found', 404);
+  throw new AppError(`This request is ${row.status}`, 409, 'BOOKING_NOT_PENDING');
+}
+
+/** Point an accepted request at what accepting made, and read it back. */
+async function linkRequest(id, customer, project, quoteId) {
+  await db('booking_requests').where({ id }).update({
+    customer_account_id: customer.id, project_id: project?.id || null, quote_id: quoteId, updated_at: ts(new Date()),
+  });
+  return db('booking_requests').where({ id }).first();
+}
+
 /**
  * Accept: customer (reused by email, else created passive), a project
  * (website inquiry; it turns active as the quote attaches) and a draft quote
@@ -703,11 +734,7 @@ async function acceptRequest(id, adminId) {
     return trx('booking_requests').where({ id }).whereIn('status', ['pending', 'expired'])
       .update({ status: 'accepted', decided_at: ts(new Date()), decided_by: adminId || null, updated_at: ts(new Date()) });
   });
-  if (!claimed) {
-    const row = await db('booking_requests').where({ id }).first('status');
-    if (!row) throw new AppError('Booking request not found', 404);
-    throw new AppError(`This request is ${row.status}`, 409, 'BOOKING_NOT_PENDING');
-  }
+  if (!claimed) await throwNotPending(id);
   const request = await db('booking_requests').where({ id }).first();
   const { timezone } = await workingHours();
   const start = localParts(request.starts_at, timezone);
@@ -749,22 +776,16 @@ async function acceptRequest(id, adminId) {
         : undefined,
     }, adminId);
     await projectService.assignQuote(project.id, quoteId, { id: adminId });
-    await db('booking_requests').where({ id }).update({
-      customer_account_id: customer.id, project_id: project.id, quote_id: quoteId, updated_at: ts(new Date()),
-    });
-    return db('booking_requests').where({ id }).first();
+    return linkRequest(id, customer, project, quoteId);
   } catch (err) {
     if (quoteId) {
       // The draft quote exists: keep the request accepted and pointing at it
       // and at the project made for it, so nothing is created twice and the
       // admin finds both; the link between the two is what failed.
-      await db('booking_requests').where({ id }).update({
-        customer_account_id: customer.id, project_id: project?.id || null, quote_id: quoteId, updated_at: ts(new Date()),
-      });
       logger.warn('Booking request accepted, but the quote could not be linked to its project', {
         requestId: id, quoteId, error: err.message,
       });
-      return db('booking_requests').where({ id }).first();
+      return linkRequest(id, customer, project, quoteId);
     }
     await db('booking_requests').where({ id }).update({
       status: 'pending', decided_at: null, decided_by: null, updated_at: ts(new Date()),
@@ -790,13 +811,9 @@ async function declineRequest(id, adminId, reason) {
       decline_reason: reason ? String(reason).slice(0, 2000) : null,
       updated_at: ts(new Date()),
     });
-  if (!updated) {
-    const row = await db('booking_requests').where({ id }).first('status');
-    if (!row) throw new AppError('Booking request not found', 404);
-    throw new AppError(`This request is ${row.status}`, 409, 'BOOKING_NOT_PENDING');
-  }
+  if (!updated) await throwNotPending(id);
   let request = await db('booking_requests').where({ id }).first();
-  if (request.deposit_status === 'paid' || request.deposit_status === 'review') {
+  if (REFUNDABLE_DEPOSIT.includes(request.deposit_status)) {
     await require('./bookingDeposits').refundDeposit(request);
     request = await db('booking_requests').where({ id }).first();
   }
@@ -839,6 +856,12 @@ module.exports = {
   STATUSES,
   LANGUAGES,
   iso,
+  ts,
+  fmtDay,
+  localParts,
+  PAID_DEPOSIT,
+  REFUNDABLE_DEPOSIT,
+  depositReceivedMinor,
   forgetCustomer,
   ERASED_EMAIL,
   withRequestLock,
@@ -846,15 +869,13 @@ module.exports = {
   startBookingHousekeeping,
   stopBookingHousekeeping,
   numberFactorStart,
-  withDurationValue,
   getSettings,
   saveSettings,
   workingHours,
   publicCatalogue,
   bookableService,
-  durationMinutes,
+  serviceDuration,
   availableSlots,
-  isSlotFree,
   createRequest,
   listRequests,
   getRequest,
@@ -864,5 +885,4 @@ module.exports = {
   listBlocks,
   createBlock,
   deleteBlock,
-  quoteLines,
 };

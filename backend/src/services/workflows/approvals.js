@@ -5,7 +5,7 @@
  * action, which creates a workflow_approvals row (single-use token stored as a
  * SHA-256 hash) and emails the admin a confirm/deny link. The run stays
  * `waiting` until the admin acts — via the email link (actByToken) or the
- * webview pending-approvals inbox (actById) — at which point the run resumes
+ * webview pending-approvals inbox (actByIdForAdmin) — at which point the run resumes
  * down the matching confirm/deny edge.
  *
  * Internal/admin mail → sent immediately (respectBusinessHours: false).
@@ -177,13 +177,7 @@ async function peekApproval(rawToken) {
   return { found: true, status: a.status, prompt, expired: isExpired(a) };
 }
 
-/** Act on an approval from the admin webview inbox. */
-async function actById(id, decision, adminId) {
-  const approval = await db('workflow_approvals').where({ id }).first();
-  return finalizeApproval(approval, decision, { acted_via: 'web', acted_by: adminId || null });
-}
-
-/** Admin-web equivalent of actById, with the run ownership check in-query. */
+/** Act on an approval from the admin webview inbox, with the run ownership check in-query. */
 async function actByIdForAdmin(id, decision, admin) {
   const { scopeWorkflowRunsQuery, runScopedWorkflowQuery } = require('./access');
   const query = db('workflow_approvals as a')
@@ -198,25 +192,11 @@ async function actByIdForAdmin(id, decision, admin) {
 }
 
 /**
- * Undecided approvals for the webview inbox, newest first, with workflow
+ * Undecided approvals visible to one admin under the workflow entity
+ * boundary, for the webview inbox, newest first, with workflow
  * name. An approval whose emailed link expired is still undecided and its
  * run still waits, so it stays in the inbox (see finalizeApproval).
  */
-async function listPending(limit = 100) {
-  return db('workflow_approvals as a')
-    .join('workflow_runs as r', 'r.id', 'a.run_id')
-    .join('workflows as w', 'w.id', 'r.workflow_id')
-    .whereIn('a.status', ['pending', 'expired'])
-    .select(
-      'a.id', 'a.type', 'a.payload', 'a.created_at', 'a.expires_at',
-      'r.id as run_id', 'r.entity_type', 'r.entity_id',
-      'w.id as workflow_id', 'w.name as workflow_name',
-    )
-    .orderBy('a.created_at', 'desc')
-    .limit(limit);
-}
-
-/** Pending approvals visible to one admin under the workflow entity boundary. */
 async function listPendingForAdmin(admin, limit = 100) {
   const { scopeWorkflowRunsQuery, runScopedWorkflowQuery } = require('./access');
   const query = db('workflow_approvals as a')
@@ -239,13 +219,7 @@ async function listPendingForAdmin(admin, limit = 100) {
 // answers it; a gate elsewhere in a custom flow asks something else and is
 // left alone), `hasDeny` when it has a deny edge to take.
 async function gateShape(workflowId, version, gateKey) {
-  const nodes = await db('workflow_nodes').where({ workflow_id: workflowId, version }).select('node_key', 'type', 'config');
-  const edges = await db('workflow_edges').where({ workflow_id: workflowId, version }).select('from_node', 'from_handle', 'to_node');
-  const byKey = new Map(nodes.map((n) => {
-    let config = n.config;
-    try { config = typeof config === 'string' ? JSON.parse(config) : (config || {}); } catch (_) { config = {}; }
-    return [n.node_key, { ...n, config }];
-  }));
+  const { nodeByKey: byKey, edges } = await engine.loadGraph(workflowId, version);
   const hasDeny = edges.some((e) => e.from_node === gateKey && e.from_handle === 'deny');
   const queue = edges.filter((e) => e.from_node === gateKey && e.from_handle === 'confirm').map((e) => e.to_node);
   const seen = new Set();
@@ -316,6 +290,6 @@ async function answerGatesForInvoice(invoiceId) {
 }
 
 module.exports = {
-  hashToken, createApproval, actByToken, actById, actByIdForAdmin,
-  listPending, listPendingForAdmin, peekApproval, answerGatesForInvoice,
+  hashToken, createApproval, actByToken, actByIdForAdmin,
+  listPendingForAdmin, peekApproval, answerGatesForInvoice,
 };

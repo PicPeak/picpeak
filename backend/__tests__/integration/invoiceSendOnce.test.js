@@ -218,7 +218,7 @@ describe('sendInvoice sends once', () => {
 describe('a booking gate for an invoice handled by hand', () => {
   it('sending the invoice by hand answers the gate, the run goes on, and the approval leaves the inbox', async () => {
     const { runId, approval, invoiceId } = await bookingRunAtGate();
-    expect((await workflows.listPending()).map((a) => a.id)).toContain(approval.id);
+    expect((await workflows.listPendingForAdmin({ roleName: 'super_admin' })).map((a) => a.id)).toContain(approval.id);
     const before = await invoiceMails();
 
     const res = await request(invoiceApp).post(`/api/admin/invoices/${invoiceId}/send`).set(auth()).send({}).expect(200);
@@ -231,7 +231,7 @@ describe('a booking gate for an invoice handled by hand', () => {
     // skipped: one mail, the admin's.
     expect(stepsOf(runId)).toEqual(['after']);
     expect(await invoiceMails()).toBe(before + 1);
-    expect((await workflows.listPending()).map((x) => x.id)).not.toContain(approval.id);
+    expect((await workflows.listPendingForAdmin({ roleName: 'super_admin' })).map((x) => x.id)).not.toContain(approval.id);
   });
 
   it('a late confirm on the answered gate sends nothing', async () => {
@@ -239,7 +239,7 @@ describe('a booking gate for an invoice handled by hand', () => {
     await request(invoiceApp).post(`/api/admin/invoices/${invoiceId}/send`).set(auth()).send({}).expect(200);
     const before = await invoiceMails();
 
-    const res = await workflows.actById(approval.id, 'confirm', adminId);
+    const res = await workflows.actByIdForAdmin(approval.id, 'confirm', { id: adminId, roleName: 'super_admin' });
     expect(res.already).toBe(true);
     expect(await invoiceMails()).toBe(before);
   });
@@ -282,7 +282,7 @@ describe('a booking gate for an invoice handled by hand', () => {
   it('an untouched gate stays pending and its confirm sends the invoice once', async () => {
     const { runId, approval, invoiceId } = await bookingRunAtGate();
     const before = await invoiceMails();
-    await workflows.actById(approval.id, 'confirm', adminId);
+    await workflows.actByIdForAdmin(approval.id, 'confirm', { id: adminId, roleName: 'super_admin' });
     expect((await db('invoices').where({ id: invoiceId }).first()).status).toBe('sent');
     expect((await runOf(runId)).status).toBe('done');
     expect(await invoiceMails()).toBe(before + 1);
@@ -297,7 +297,7 @@ describe('a booking gate for an invoice handled by hand', () => {
     expect((await runOf(runId)).status).toBe('waiting');
 
     const before = await invoiceMails();
-    await workflows.actById(approval.id, 'confirm', adminId);
+    await workflows.actByIdForAdmin(approval.id, 'confirm', { id: adminId, roleName: 'super_admin' });
     expect(await invoiceMails()).toBe(before + 1);
     expect((await db('invoices').where({ id: final }).first()).status).toBe('sent');
   });

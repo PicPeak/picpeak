@@ -24,6 +24,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission, userHasAllPermissions } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const workflows = require('../services/workflows');
+const { parseJson, writeGraph } = require('../services/workflows/engine');
 const { executableGraph } = require('../database/crmAccess');
 
 router.use(adminAuth, requireFeatureFlag('workflows'));
@@ -34,12 +35,6 @@ const MAX_NODES = 200;
 const MAX_EDGES = 500;
 const MAX_NODE_CONFIG_BYTES = 16 * 1024;
 const VALID_NODE_TYPES = new Set(['trigger', 'action', 'condition', 'branch', 'loop', 'wait', 'gate', 'webhook']);
-
-function parseJson(v, fallback) {
-  if (v == null) return fallback;
-  if (typeof v === 'object') return v;
-  try { return JSON.parse(v); } catch (e) { return fallback; }
-}
 
 function entityTypeForTrigger(triggerType) {
   const prefix = String(triggerType || '').split('.')[0];
@@ -119,21 +114,6 @@ async function missingDocumentPermissions(adminId, nodes) {
   return missing;
 }
 
-async function writeGraph(trx, workflowId, version, nodes = [], edges = []) {
-  for (const n of nodes) {
-    await trx('workflow_nodes').insert({
-      workflow_id: workflowId, version, node_key: n.node_key, type: n.type,
-      config: JSON.stringify(n.config || {}), pos_x: n.pos_x || 0, pos_y: n.pos_y || 0,
-    });
-  }
-  for (const e of edges) {
-    await trx('workflow_edges').insert({
-      workflow_id: workflowId, version, from_node: e.from_node, from_handle: e.from_handle || null,
-      to_node: e.to_node, label: e.label || null, loop_back: !!e.loop_back,
-    });
-  }
-}
-
 // --- Approvals inbox (registered before /:id so 'approvals' isn't an id) ---
 router.get('/approvals', requirePermission('workflows.view'), async (req, res, next) => {
   try {
@@ -149,7 +129,6 @@ router.post('/approvals/:id/:action', requirePermission('workflows.manage'), asy
     if (!['confirm', 'deny'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
     const result = await workflows.actByIdForAdmin(Number(req.params.id), action, req.admin);
     if (!result.ok && result.reason === 'not_found') return res.status(404).json({ error: 'Approval not found' });
-    if (!result.ok && result.reason === 'expired') return res.status(410).json({ error: 'Approval expired' });
     res.json(result);
   } catch (e) { next(e); }
 });
@@ -351,8 +330,7 @@ router.patch('/:id/enabled', requirePermission('workflows.manage'), async (req, 
     const wf = await db('workflows').where({ id }).first();
     if (!wf) return res.status(404).json({ error: 'Workflow not found' });
     // Refuse to enable a flow that would silently no-op — i.e. one whose graph
-    // references actions that aren't implemented yet (the booking built-ins'
-    // prepare_*/send_document stubs). Concern #5 from review.
+    // references an action no handler is registered for.
     if (enabled) {
       const rows = await db('workflow_nodes').where({ workflow_id: id, version: wf.version });
       const stubs = unimplementedActionsIn(rows.map((n) => ({ type: n.type, config: parseJson(n.config, {}) })));

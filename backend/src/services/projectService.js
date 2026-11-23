@@ -2,19 +2,20 @@
  * projectService — the admin-only "Project Overview" grouping layer (Model A).
  *
  * A project groups 1..N events. Money documents stay attached to their EVENT
- * (or, for quotes/contracts which carry no event_id, to the CUSTOMER) and the
- * project rolls them up for the cockpit. Customers never see projects.
+ * (or, for quotes/contracts which carry no event_id, to the project through
+ * project_id) and the project rolls them up for the cockpit. Customers never
+ * see projects.
  *
- * Rollup scoping (v1):
+ * Rollup scoping:
  *   - invoices / emails / galleries → by the project's EVENTS (event_id).
  *   - hours                         → by customer_hour_entries.project_id.
- *   - quotes / contracts            → by the project's customer_account_id
- *     (they have no event_id; see migration 107). Empty when the project has
- *     no single customer set.
+ *   - quotes / contracts            → by quotes.project_id / contracts.project_id
+ *     (they have no event_id).
  */
 
 const { db, logActivity } = require('../database/db');
 const { AppError } = require('../utils/errors');
+const { toDateOnly } = require('../utils/dateOnly');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { reachesQueuedEmailRow, senderColumnReady, sentByColumns } = require('../middleware/emailQueueOwnership');
 const { auditedUpdate } = require('./accountingHistory');
@@ -87,19 +88,6 @@ const INQUIRY_FIELDS = {
 };
 const DATE_FIELDS = new Set(['event_date', 'event_end_date']);
 const INT_FIELDS = new Set(['guest_count', 'budget_minor']);
-
-// PostgreSQL hands a `date` column back as a Date at local midnight, SQLite as
-// the stored text. Both leave here as YYYY-MM-DD, so the editor and the
-// document defaults see one shape.
-function toDateOnly(value) {
-  if (value == null || value === '') return null;
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return null;
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
-  }
-  return String(value).slice(0, 10);
-}
 
 function transformProject(p) {
   if (!p) return null;
@@ -651,29 +639,12 @@ async function linkDealToProject(dealUuid, projectId, conn = db, actor = null) {
   // grants ownership on — handing the caller read access to whatever documents
   // were already attached there.
   //
-  // Mirrors ownedProjectsSubquery (middleware/ownership.js) rather than calling
-  // it, because that helper binds the module-level `db` and this runs inside the
-  // caller's transaction.
+  // ownedProjectsSubquery built on `conn`: this runs inside the caller's
+  // transaction.
   if (actor?.id && !(await isSuperAdmin(actor, conn))) {
-    const owned = await conn('projects')
-      .where({ id: projectId })
-      .where((w) => {
-        w.where('created_by', actor.id)
-          .orWhere((noOwner) => {
-            noOwner
-              .where((c) => c
-                .whereNull('created_by')
-                .orWhereNotIn('created_by', conn('admin_users').select('id')))
-              .whereExists(
-                conn('events').select(conn.raw('1')).whereRaw('events.project_id = projects.id'),
-              )
-              .whereNotExists(
-                conn('events').select(conn.raw('1')).whereRaw('events.project_id = projects.id')
-                  .whereNotNull('events.created_by').whereNot('events.created_by', actor.id),
-              );
-          });
-      })
-      .first('id');
+    const owned = await require('../middleware/ownership').ownedProjectsSubquery(actor, conn)
+      .where('projects.id', projectId)
+      .first();
     if (!owned) {
       throw new AppError('Project not found', 404, 'PROJECT_NOT_FOUND');
     }
@@ -735,10 +706,9 @@ async function linkDealToProject(dealUuid, projectId, conn = db, actor = null) {
   // An unassigned project offers no resistance either, since it ADOPTS the
   // deal's customer below rather than rejecting it.
   //
-  // Events are the only ownership signal a deal carries: quotes/contracts have
-  // no created_by in this schema, so a deal whose lineage produced no event
-  // still cannot be attributed to an admin — a pre-existing property of the CRM
-  // model, not something this guard can close.
+  // Only the deal's events are checked here: a deal whose lineage produced no
+  // event is not attributed to an admin by this guard, although its quotes
+  // and contracts record their creator (created_by_admin_id).
   if (actor?.id && eventIds.size && !(await isSuperAdmin(actor, conn))) {
     const ownable = await conn('events')
       .whereIn('id', Array.from(eventIds))
@@ -1176,8 +1146,8 @@ async function attachStages(projects, perms = {}) {
 
 /**
  * Full overview aggregation for the cockpit. Returns the project, its events,
- * and the rolled-up emails / quotes / contracts / invoices / hours + a
- * timeline of milestones. `perms` gates which doc types are included.
+ * and the rolled-up emails / quotes / contracts / invoices / hours.
+ * `perms` gates which doc types are included.
  *
  * `admin` (optional) is used only to stamp each email with `canAct` — whether
  * the queued-mail routes would actually accept an action on it. See below.
@@ -1315,9 +1285,7 @@ async function getProjectOverview(id, perms = {}, admin = null) {
       .orderBy('created_at', 'desc')
       .limit(200);
     for (const r of crmCandidates) {
-      let data = r.email_data;
-      if (typeof data === 'string') { try { data = JSON.parse(data); } catch (_) { data = {}; } }
-      data = data || {};
+      const data = parseEmailData(r.email_data) || {};
       // Match on any document-number key a CRM template carries (storno mails
       // use storno_number / original_invoice_number, not invoice_number).
       const candidates = [data.quote_number, data.contract_number, data.invoice_number,
@@ -1339,18 +1307,6 @@ async function getProjectOverview(id, perms = {}, admin = null) {
     totalMinutes: hours.reduce((s, h) => s + Number(h.duration_minutes || 0), 0),
   };
 
-  // Timeline milestones (latest of each kind that exists), each dated.
-  const milestones = [];
-  const firstQuote = out.quotes.at(-1);
-  if (firstQuote) milestones.push({ kind: 'quote', id: firstQuote.id, label: firstQuote.quote_number, date: firstQuote.issue_date });
-  const firstContract = out.contracts.at(-1);
-  if (firstContract) milestones.push({ kind: 'contract', id: firstContract.id, label: firstContract.contract_number, date: firstContract.issue_date });
-  const pubEvent = events.find((e) => e.is_active && !e.is_draft);
-  if (pubEvent) milestones.push({ kind: 'gallery', id: pubEvent.id, label: pubEvent.event_name, date: pubEvent.event_date });
-  const firstInvoice = out.invoices.at(-1);
-  if (firstInvoice) milestones.push({ kind: 'invoice', id: firstInvoice.id, label: firstInvoice.invoice_number, date: firstInvoice.issue_date });
-  out.milestones = milestones;
-
   // Rolled-up project value (newest stage wins per deal, cumulative).
   out.valuation = computeValuation(out.invoices, out.quotes);
 
@@ -1362,7 +1318,6 @@ async function getProjectOverview(id, perms = {}, admin = null) {
   for (const row of [...out.quotes, ...out.contracts, ...out.invoices]) {
     for (const col of ['issue_date', 'valid_until', 'due_date']) if (col in row) row[col] = toDateOnly(row[col]);
   }
-  for (const milestone of milestones) milestone.date = toDateOnly(milestone.date);
 
   return out;
 }
@@ -1515,12 +1470,10 @@ module.exports = {
   assignInvoice,
   unassignInvoice,
   invoiceAttachRefusal,
-  documentAttachMoves,
   attachMovesFor,
   dealProjectElsewhere,
   linkDealToProject,
   resolveDealLinkSchema,
-  computeValuation,
   getProjectOverview,
   getEmailPreview,
   resendEmail,

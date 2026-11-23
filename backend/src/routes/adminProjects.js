@@ -2,8 +2,8 @@
  * Admin → Projects routes (the admin-only Project Overview cockpit, Model A).
  *
  * Mounted at /api/admin/projects. Projects group events; the overview rolls
- * up the per-event/per-customer documents. Read = `events.view`, write =
- * `events.manage` (projects are fundamentally an events-grouping concept).
+ * up the per-event/per-project documents. Read = `events.view`, write =
+ * `events.edit` (projects are fundamentally an events-grouping concept).
  * The overview additionally gates each money-doc type on the admin's own
  * bills/quotes/contracts view permission.
  */

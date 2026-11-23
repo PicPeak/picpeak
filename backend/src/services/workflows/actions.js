@@ -10,9 +10,9 @@
  * action sets queueEmail's `respectBusinessHours` from the recipient class.
  *
  * The create/prepare-document actions (quote/contract/event/gallery/invoice)
- * are registered so flows validate, but are intentionally NOT wired to the
- * services yet — they record a `skipped` step with a clear reason so the gap
- * is observable rather than silent. Wiring is a follow-up commit.
+ * call the CRM services. A precondition that does not hold (no entity, no
+ * recipient) records a `skipped` step with a clear reason rather than failing
+ * silently.
  */
 const registry = require('./registry');
 const { formatBoolean } = require('../../utils/dbCompat');

@@ -7,7 +7,7 @@
  * (customerHoursService.resolveEffectiveRate), extended with a day rate:
  *   1. the customer's own rate  (customer_accounts.hourly_rate_minor / day_rate_minor)
  *   2. the business default     (business_profile.default_hourly_rate_minor /
- *                                default_day_rate_minor, migrations 113 + 215)
+ *                                default_day_rate_minor, migrations 113 + 220)
  *
  * Unlike the hours path this never throws: a missing rate is returned as
  * `null` so the quote editor can ask the admin to set one.

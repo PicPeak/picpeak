@@ -111,9 +111,9 @@ describe('approval lifetime is bounded on the server', () => {
     const { runId, approval } = await pendingGate('lifetime.inbox');
     await db('workflow_approvals').where({ id: approval.id })
       .update({ expires_at: new Date(Date.now() - DAY).toISOString() });
-    expect((await engine.listPending()).map((a) => a.id)).toContain(approval.id);
+    expect((await engine.listPendingForAdmin({ roleName: 'super_admin' })).map((a) => a.id)).toContain(approval.id);
 
-    expect(await engine.actById(approval.id, 'confirm', 1)).toEqual({ ok: true, status: 'confirmed' });
+    expect(await engine.actByIdForAdmin(approval.id, 'confirm', { id: 1, roleName: 'super_admin' })).toEqual({ ok: true, status: 'confirmed' });
     expect(calls.confirm).toBe(1);
     expect((await db('workflow_runs').where({ id: runId }).first()).status).toBe('done');
   });
@@ -125,12 +125,12 @@ describe('approval lifetime is bounded on the server', () => {
       .update({ token_hash: engine.hashToken(raw), expires_at: new Date(Date.now() - DAY).toISOString() });
     expect(await engine.actByToken(raw, 'confirm')).toEqual({ ok: false, reason: 'expired' });
     expect((await db('workflow_approvals').where({ id: approval.id }).first()).status).toBe('expired');
-    expect((await engine.listPending()).map((a) => a.id)).toContain(approval.id);
+    expect((await engine.listPendingForAdmin({ roleName: 'super_admin' })).map((a) => a.id)).toContain(approval.id);
 
-    expect(await engine.actById(approval.id, 'deny', 1)).toEqual({ ok: true, status: 'denied' });
+    expect(await engine.actByIdForAdmin(approval.id, 'deny', { id: 1, roleName: 'super_admin' })).toEqual({ ok: true, status: 'denied' });
     expect(calls.confirm).toBe(0);
     expect((await db('workflow_runs').where({ id: runId }).first()).status).not.toBe('waiting');
     // A second decision from anywhere is answered as already decided.
-    expect(await engine.actById(approval.id, 'confirm', 1)).toMatchObject({ ok: true, already: true, status: 'denied' });
+    expect(await engine.actByIdForAdmin(approval.id, 'confirm', { id: 1, roleName: 'super_admin' })).toMatchObject({ ok: true, already: true, status: 'denied' });
   });
 });

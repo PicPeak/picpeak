@@ -139,25 +139,23 @@ export interface PublicRequestResult {
   statusToken?: string | null;
 }
 
-const unwrap = <T,>(data: { data?: T } & T): T => (data.data || data) as T;
-
 export const bookingService = {
   // ---- admin ----------------------------------------------------------
   async listRequests(status?: BookingStatus): Promise<BookingRequest[]> {
-    const { data } = await api.get('/admin/booking/requests', { params: status ? { status } : undefined });
-    return unwrap<{ requests: BookingRequest[] }>(data).requests;
+    const { data } = await api.get<{ requests: BookingRequest[] }>('/admin/booking/requests', { params: status ? { status } : undefined });
+    return data.requests;
   },
   async accept(id: number): Promise<BookingRequest> {
-    const { data } = await api.post(`/admin/booking/requests/${id}/accept`);
-    return unwrap<{ request: BookingRequest }>(data).request;
+    const { data } = await api.post<{ request: BookingRequest }>(`/admin/booking/requests/${id}/accept`);
+    return data.request;
   },
   async decline(id: number, reason: string): Promise<BookingRequest> {
-    const { data } = await api.post(`/admin/booking/requests/${id}/decline`, { reason: reason || undefined });
-    return unwrap<{ request: BookingRequest }>(data).request;
+    const { data } = await api.post<{ request: BookingRequest }>(`/admin/booking/requests/${id}/decline`, { reason: reason || undefined });
+    return data.request;
   },
   async applyDeposit(id: number, invoiceId: number): Promise<BookingRequest> {
-    const { data } = await api.post(`/admin/booking/requests/${id}/apply-deposit`, { invoiceId });
-    return unwrap<{ request: BookingRequest }>(data).request;
+    const { data } = await api.post<{ request: BookingRequest }>(`/admin/booking/requests/${id}/apply-deposit`, { invoiceId });
+    return data.request;
   },
   /** Whether deposits still wait for a decision (keeps Bookings open with the flag off). */
   async decisionsOpen(): Promise<boolean> {
@@ -168,52 +166,52 @@ export const bookingService = {
     await api.post(`/admin/booking/galleries/${eventId}/unlock`);
   },
   async listBlocks(): Promise<BookingBlock[]> {
-    const { data } = await api.get('/admin/booking/blocks');
-    return unwrap<{ blocks: BookingBlock[] }>(data).blocks;
+    const { data } = await api.get<{ blocks: BookingBlock[] }>('/admin/booking/blocks');
+    return data.blocks;
   },
   async createBlock(payload: { startsAt: string; endsAt: string; note?: string }): Promise<BookingBlock> {
-    const { data } = await api.post('/admin/booking/blocks', payload);
-    return unwrap<{ block: BookingBlock }>(data).block;
+    const { data } = await api.post<{ block: BookingBlock }>('/admin/booking/blocks', payload);
+    return data.block;
   },
   async deleteBlock(id: number): Promise<void> {
     await api.delete(`/admin/booking/blocks/${id}`);
   },
-  async getSettings(): Promise<{ settings: BookingSettings; timezone: string; hasBusinessHours: boolean; depositMinimumsMinor?: Record<string, number> }> {
-    const { data } = await api.get('/admin/booking/settings');
-    return unwrap<{ settings: BookingSettings; timezone: string; hasBusinessHours: boolean }>(data);
+  async getSettings(): Promise<{ settings: BookingSettings; timezone: string; hasBusinessHours: boolean; depositMinimumsMinor: Record<string, number> }> {
+    const { data } = await api.get<{ settings: BookingSettings; timezone: string; hasBusinessHours: boolean; depositMinimumsMinor: Record<string, number> }>('/admin/booking/settings');
+    return data;
   },
   async saveSettings(payload: Partial<BookingSettings>): Promise<BookingSettings> {
-    const { data } = await api.put('/admin/booking/settings', payload);
-    return unwrap<{ settings: BookingSettings }>(data).settings;
+    const { data } = await api.put<{ settings: BookingSettings }>('/admin/booking/settings', payload);
+    return data.settings;
   },
 
   // ---- public ---------------------------------------------------------
   async publicInfo(): Promise<PublicBookingInfo> {
-    const { data } = await api.get('/public/booking');
-    return unwrap<PublicBookingInfo>(data);
+    const { data } = await api.get<PublicBookingInfo>('/public/booking');
+    return data;
   },
   async estimate(serviceId: number, values: Record<string, FactorValue>, language?: string): Promise<PublicEstimate> {
-    const { data } = await api.post('/public/booking/estimate', { serviceId, values, language });
-    return unwrap<PublicEstimate>(data);
+    const { data } = await api.post<PublicEstimate>('/public/booking/estimate', { serviceId, values, language });
+    return data;
   },
   async slots(serviceId: number, from: string, to: string, duration?: number | null): Promise<{ timezone: string; durationMinutes: number; slots: Slot[] }> {
-    const { data } = await api.get('/public/booking/slots', {
+    const { data } = await api.get<{ timezone: string; durationMinutes: number; slots: Slot[] }>('/public/booking/slots', {
       params: { serviceId, from, to, ...(duration ? { duration } : {}) },
     });
-    return unwrap<{ timezone: string; durationMinutes: number; slots: Slot[] }>(data);
+    return data;
   },
   async sendRequest(payload: {
     serviceId: number; values: Record<string, FactorValue>; start: string; name: string; email: string;
     phone?: string; company?: string; message?: string; language?: string; website?: string; formToken?: string;
   }): Promise<PublicRequestResult> {
-    const { data } = await api.post('/public/booking/requests', payload);
-    return unwrap<PublicRequestResult>(data);
+    const { data } = await api.post<PublicRequestResult>('/public/booking/requests', payload);
+    return data;
   },
   /** `cancelled`: back from a cancelled checkout; the server closes it and frees the slot. */
   async requestStatus(token: string, opts: { cancelled?: boolean } = {}): Promise<PublicRequestStatus> {
-    const { data } = await api.get(`/public/booking/requests/status/${token}`, {
+    const { data } = await api.get<PublicRequestStatus>(`/public/booking/requests/status/${token}`, {
       params: opts.cancelled ? { cancelled: '1' } : undefined,
     });
-    return unwrap<PublicRequestStatus>(data);
+    return data;
   },
 };

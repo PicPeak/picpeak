@@ -1370,7 +1370,6 @@
       "recipientCustomer": "Kunde (berücksichtigt Geschäftszeiten)",
       "recipientAdmin": "Admin (sofort gesendet)",
       "emailTemplate": "E-Mail-Vorlagenschlüssel",
-      "webhookUrl": "Webhook-URL",
       "webhookTarget": "Webhook",
       "webhookNone": "— Konfigurierten Webhook wählen —",
       "webhookInactive": "(inaktiv)",
@@ -9325,10 +9324,7 @@
     "search": "Nach Name oder Kunde suchen…",
     "empty": "Starten Sie eines mit „Neue Anfrage“, oder bestehende Galerien wurden automatisch gruppiert.",
     "notFound": "Projekt nicht gefunden",
-    "noCustomer": "Kein einzelner Kunde",
     "rename": "Umbenennen",
-    "timeline": "Meilensteine",
-    "eventCount": "{{count}} Galerien",
     "totalHours": "{{hours}} erfasst",
     "col": {
       "name": "Projekt",
@@ -9351,8 +9347,6 @@
       "paidLabel": "Bezahlt"
     },
     "events": {
-      "title": "Galerien",
-      "none": "Diesem Projekt sind noch keine Galerien zugeordnet.",
       "attachAfterCreateFailed": "Die Galerie wurde erstellt, konnte aber nicht dem Projekt zugeordnet werden. Ordnen Sie sie auf der Projektseite zu."
     },
     "feed": {
@@ -9408,8 +9402,6 @@
       "completed": "Abgeschlossen",
       "cancelled": "Abgesagt"
     },
-    "eventCount_one": "{{count}} Event",
-    "eventCount_other": "{{count}} Events",
     "loadFailed": "Die Projekte konnten nicht geladen werden",
     "noMatches": "Keine Projekte passen zu dieser Suche",
     "emptyTitle": "Noch keine Projekte",

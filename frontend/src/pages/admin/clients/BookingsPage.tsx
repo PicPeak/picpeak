@@ -16,20 +16,20 @@ import { toast } from 'react-toastify';
 import { Copy, ExternalLink, Trash2 } from 'lucide-react';
 import { Button, Card, Loading } from '../../../components/common';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
-import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { usePublicBaseUrl } from '../../../hooks/usePublicBaseUrl';
 import { buildPublicUrl } from '../../../utils/url';
 import { bookingService, type BookingRequest, type BookingSettings, type BookingStatus } from '../../../services/booking.service';
 import { formatMoneyMinor } from '../../../utils/money';
 import { zonedWallClock } from '../../../utils/zonedWallClock';
 import { useFeatureEnabled } from '../../../contexts/FeatureFlagsContext';
+import { useStudioTime } from '../../../features/booking/useStudioTime';
+import { apiErrorText } from '../../../utils/apiErrorText';
 
 type Tab = 'requests' | 'blocks' | 'settings';
 const TABS: Tab[] = ['requests', 'blocks', 'settings'];
 
 const inputCls = 'w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-panel';
 const labelCls = 'block text-sm font-medium text-body mb-1';
-const errorText = (err: any): string => err?.response?.data?.error || err?.message || 'Failed';
 
 /** Invoices the deposit can be booked on: issued and still open (the server checks too). */
 /** What came in for the deposit: the charged amount, else the deposit. */
@@ -44,15 +44,6 @@ const STATUS_CLS: Record<BookingStatus, string> = {
   expired: 'bg-fill text-muted',
 };
 
-/** Date + time of an instant in the studio's zone, in the admin's formats. */
-function useStudioTime(timezone: string) {
-  const { format, formatTime } = useLocalizedDate();
-  return (instant: string) => {
-    const { day, time } = zonedWallClock(instant, timezone);
-    return `${format(new Date(`${day}T12:00:00`))} ${formatTime(time)}`;
-  };
-}
-
 const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -62,7 +53,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
     queryKey: ['booking-requests'],
     queryFn: () => bookingService.listRequests(),
   });
-  const at = useStudioTime(timezone);
+  const { at } = useStudioTime(timezone);
   const projectsOn = useFeatureEnabled('projects');
   // With quotes off only declining (refunds) and opening galleries remain.
   const quotesOn = useFeatureEnabled('quotes');
@@ -80,7 +71,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
       toast.success(t('booking.admin.depositApplied', 'Deposit booked on the invoice.'));
       refresh();
     } catch (err) {
-      toast.error(errorText(err));
+      toast.error(apiErrorText(err));
     } finally {
       setBusy(null);
     }
@@ -91,7 +82,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
       toast.success(t('booking.admin.galleryUnlocked', 'Gallery opened.'));
       refresh();
     } catch (err) {
-      toast.error(errorText(err));
+      toast.error(apiErrorText(err));
     }
   };
   const depositLabel = (r: BookingRequest): string | null => {
@@ -119,7 +110,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
       toast.success(t('booking.admin.acceptedToast', 'Accepted. The draft quote is ready to review and send.'));
       refresh();
     } catch (err) {
-      toast.error(errorText(err));
+      toast.error(apiErrorText(err));
     } finally {
       setBusy(null);
     }
@@ -133,7 +124,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
       setDeclining(null);
       refresh();
     } catch (err) {
-      toast.error(errorText(err));
+      toast.error(apiErrorText(err));
     } finally {
       setBusy(null);
     }
@@ -299,7 +290,7 @@ const RequestsTab: React.FC<{ timezone: string }> = ({ timezone }) => {
 const BlocksTab: React.FC<{ timezone: string }> = ({ timezone }) => {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const at = useStudioTime(timezone);
+  const { at } = useStudioTime(timezone);
   const { data: blocks = [], isLoading } = useQuery({ queryKey: ['booking-blocks'], queryFn: () => bookingService.listBlocks() });
   const [form, setForm] = useState({ start: '', end: '', note: '' });
 
@@ -313,7 +304,7 @@ const BlocksTab: React.FC<{ timezone: string }> = ({ timezone }) => {
       setForm({ start: '', end: '', note: '' });
       qc.invalidateQueries({ queryKey: ['booking-blocks'] });
     } catch (err) {
-      toast.error(errorText(err));
+      toast.error(apiErrorText(err));
     }
   };
   const remove = async (id: number) => {
@@ -321,7 +312,7 @@ const BlocksTab: React.FC<{ timezone: string }> = ({ timezone }) => {
       await bookingService.deleteBlock(id);
       qc.invalidateQueries({ queryKey: ['booking-blocks'] });
     } catch (err) {
-      toast.error(errorText(err));
+      toast.error(apiErrorText(err));
     }
   };
 
@@ -398,7 +389,7 @@ const SettingsTab: React.FC<{ settings: BookingSettings; timezone: string; hasBu
       qc.invalidateQueries({ queryKey: ['booking-settings'] });
       toast.success(t('quotes.catalog.savedToast', 'Saved.'));
     } catch (err) {
-      toast.error(errorText(err));
+      toast.error(apiErrorText(err));
     }
   };
 

@@ -27,6 +27,7 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const booking = require('../services/bookingService');
+const deposits = require('../services/bookingDeposits');
 const pricingFactors = require('../services/pricingFactorService');
 const { isTruthyFlag } = require('../utils/lineItemTotals');
 
@@ -95,7 +96,6 @@ router.get(
   '/',
   readLimiter,
   handleAsync(async (req, res) => {
-    const deposits = require('../services/bookingDeposits');
     const [catalogue, settings, { timezone }, profile, stripeReady] = await Promise.all([
       booking.publicCatalogue(),
       booking.getSettings(),
@@ -116,7 +116,7 @@ router.get(
         name: preset.name,
         description: preset.description || null,
         currency: preset.currency,
-        durationMinutes: booking.durationMinutes(preset, await booking.withDurationValue(preset, {})),
+        durationMinutes: await booking.serviceDuration(preset),
         durationFactorId: preset.booking_duration_factor_id || null,
         factors: factors.map(publicFactor),
         // Part 3: shown before the client sends; only when Stripe can take it.
@@ -156,11 +156,10 @@ router.post(
       totalMinor: result.totalMinor,
       lines: result.lines.map((l) => ({ description: l.description, totalMinor: l.totalMinor })),
       unmatched: result.unmatched,
-      depositMinor: (await require('../services/bookingDeposits').stripeReady())
-        ? require('../services/bookingDeposits').depositFor(preset, result.totalMinor) : 0,
+      depositMinor: (await deposits.stripeReady()) ? deposits.depositFor(preset, result.totalMinor) : 0,
       // The length the request will be checked with: the priced values, so a
       // factor the client cannot see keeps its default here too.
-      durationMinutes: booking.durationMinutes(preset, await booking.withDurationValue(preset, result.snapshot.values || {})),
+      durationMinutes: await booking.serviceDuration(preset, result.snapshot.values || {}),
     });
   })
 );
@@ -256,7 +255,6 @@ router.get(
   [param('token').isHexadecimal().isLength({ min: 48, max: 48 }), query('cancelled').optional().isIn(['1'])],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const deposits = require('../services/bookingDeposits');
     let request = await db('booking_requests').where({ status_token_hash: deposits.hashToken(req.params.token) }).first();
     if (!request) return res.status(404).json({ error: 'Booking request not found', code: 'BOOKING_NOT_FOUND' });
     // Stripe first: a payment that is in must count before any expiry runs.
