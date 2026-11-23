@@ -691,6 +691,12 @@ async function updateQuote(id, payload, adminId) {
       assertQuoteTransition(existing.status, 'draft');
       updates.status = 'draft';
     }
+    // The payment term frozen at the last send belongs to that send. An
+    // edited quote shows its current term until it is sent again, and an
+    // admin acceptance before that freezes the current term instead.
+    if (existing.status === 'sent' || existing.status === 'expired') {
+      updates.payment_term_snapshot = null;
+    }
     const map = {
       eventName: 'event_name',
       eventDate: 'event_date',
@@ -1340,7 +1346,15 @@ async function adminAcceptQuote(id, adminId) {
   const responseLockedAt = new Date(now.getTime() + windowMinutes * 60 * 1000);
 
   const history = { actor: adminId, source: 'quote.accept.admin' };
+  // A quote accepted without a send since its last edit has no term of its
+  // own frozen (a draft's snapshot, if any, is from an earlier send): freeze
+  // its current term now, so the accepted PDF and the invoices made from it
+  // show the conditions the admin last saved.
+  const termUpdate = storedPaymentTerm(quote) ? {} : {
+    payment_term_snapshot: await resolvePaymentTerm(quote).then(t => (t ? JSON.stringify(t) : null)),
+  };
   await auditedUpdate(db, 'quotes', { id }, {
+    ...termUpdate,
     status: 'accepted',
     responded_at: now,
     response_locked_at: responseLockedAt,

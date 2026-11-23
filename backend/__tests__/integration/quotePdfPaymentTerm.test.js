@@ -108,4 +108,32 @@ describe('buildRenderContext payment term', () => {
     const draft = await quoteService._internal.buildRenderContext({ ...quote, status: 'draft' }, lineItems);
     expect(draft.paymentTerm).toEqual(expect.objectContaining({ description: 'Edited later', netDays: 45 }));
   });
+
+  it('freezes the edited term when an edited sent quote is accepted on the customer\'s behalf', async () => {
+    const net30 = await insertId('payment_net_days_templates', { name: 'Accept Net 30', description: '30 days net', net_days: 30 });
+    const net10 = await insertId('payment_net_days_templates', { name: 'Accept Net 10', description: '10 days net', net_days: 10 });
+    const timingId = await insertId('payment_timing_templates', {
+      name: 'Accept all after', description: 'Everything after the event',
+      installments: JSON.stringify([{ percent: 100, label: 'Full' }]),
+    });
+    const quoteId = await quoteService.createQuote({
+      customerAccountId: customerId, currency: 'CHF', vatRate: 0,
+      paymentNetDaysTemplateId: net30, paymentTimingTemplateId: timingId,
+      lineItems: [{ position: 1, quantity: 1, description: 'Prints', unit_price_minor: 30000 }],
+    }, adminId);
+    // Sent with Net 30.
+    const { quote } = await quoteService.getQuoteById(quoteId);
+    const sentTerm = await quoteService._internal.resolvePaymentTerm(quote);
+    await db('quotes').where({ id: quoteId }).update({ status: 'sent', payment_term_snapshot: JSON.stringify(sentTerm) });
+
+    // Edited to Net 10 (back to draft), then accepted without a new send.
+    await quoteService.updateQuote(quoteId, { paymentNetDaysTemplateId: net10 }, adminId);
+    await quoteService.adminAcceptQuote(quoteId, adminId);
+
+    const accepted = await quoteService.getQuoteById(quoteId);
+    expect(accepted.quote.status).toBe('accepted');
+    expect(JSON.parse(accepted.quote.payment_term_snapshot)).toEqual(expect.objectContaining({ net_days: 10 }));
+    const ctx = await quoteService._internal.buildRenderContext(accepted.quote, accepted.lineItems);
+    expect(ctx.paymentTerm).toEqual(expect.objectContaining({ netDays: 10 }));
+  });
 });
