@@ -857,9 +857,9 @@ async function buildRenderContext(quote, lineItems) {
   const bank = quote.business_bank_account_id
     ? await db('business_bank_accounts').where({ id: quote.business_bank_account_id }).first()
     : await businessProfileService.resolveBankAccountForCurrency(quote.currency);
-  const paymentTerm = quote.payment_term_template_id
-    ? await db('payment_term_templates').where({ id: quote.payment_term_template_id }).first()
-    : null;
+  // The split pickers first, the legacy single template second: the same
+  // term sendQuote snapshots, so the PDF shows what the quote stores.
+  const paymentTerm = await resolvePaymentTerm(quote);
 
   // Resolve the PDF logo to a verified absolute disk path. The
   // helper exhaustively tries:
@@ -1068,6 +1068,8 @@ async function renderQuotePdfFromPayload(payload) {
     hours: payload.hours,
     days: payload.days,
     payment_term_template_id: payload.paymentTermTemplateId,
+    payment_net_days_template_id: payload.paymentNetDaysTemplateId,
+    payment_timing_template_id: payload.paymentTimingTemplateId,
     business_bank_account_id: payload.businessBankAccountId,
     net_amount_minor: totals.netAmountMinor,
     vat_rate: ensureNumber(payload.vatRate, 0),
@@ -1135,10 +1137,7 @@ async function sendQuote(id, adminId) {
   // Output shape is unchanged: { description, net_days, skonto_percent,
   // skonto_within_days, installments } — that's what pdfService and the
   // scheduler already read.
-  const paymentTermSnapshot = await composeSnapshotFromSplitFks(quote)
-    || (quote.payment_term_template_id
-      ? await db('payment_term_templates').where({ id: quote.payment_term_template_id }).first()
-      : null);
+  const paymentTermSnapshot = await resolvePaymentTerm(quote);
 
   // Mint a single shared token; accept and decline are differentiated
   // by the request body. This makes the email link survive a customer
@@ -3224,6 +3223,17 @@ async function deletePaymentTimingTemplate(id) {
   await db('payment_timing_templates').where({ id })
     .update({ is_active: formatBoolean(false), updated_at: new Date() });
   return { deleted: true };
+}
+
+/**
+ * The quote's payment term: the split pickers when both are set, else the
+ * legacy single template row, else null.
+ */
+async function resolvePaymentTerm(quote) {
+  return await composeSnapshotFromSplitFks(quote)
+    || (quote.payment_term_template_id
+      ? await db('payment_term_templates').where({ id: quote.payment_term_template_id }).first()
+      : null);
 }
 
 module.exports = {
