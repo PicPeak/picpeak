@@ -17,7 +17,7 @@ const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { renumberLineItemPositions } = require('../utils/lineItemPositions');
 const {
-  LINE_KINDS, UNITS, PRICE_MODES, BOUND_TO, RATE_SOURCES, lineItemFieldsFromApi, lineItemFieldsToApi,
+  LINE_KINDS, UNITS, PRICE_MODES, BOUND_TO, RATE_SOURCES, lineItemToApi, lineItemFromPayload,
 } = require('../utils/lineItemTotals');
 const quoteService = require('../services/quoteService');
 const accountingHistory = require('../services/accountingHistory');
@@ -169,27 +169,6 @@ function transformQuote(q) {
   };
 }
 
-function transformLineItem(li) {
-  return {
-    id: li.id,
-    position: li.position,
-    quantity: Number(li.quantity),
-    description: li.description,
-    unitPriceMinor: li.unit_price_minor,
-    discountPercent: li.discount_percent == null ? 0 : Number(li.discount_percent),
-    lineTotalMinor: li.line_total_minor,
-    // Hierarchy. `parentPosition` is what the editor
-    // uses to thread sub-items in unsaved drafts; on existing rows
-    // we hydrate it from the actual parent's position via a join in
-    // getQuoteById (see service). NULL = top-level item.
-    parentLineItemId: li.parent_line_item_id || null,
-    parentPosition: li.parent_position == null ? null : Number(li.parent_position),
-    detailsText: li.details_text || null,
-    // Migration 220 — line kind, unit, optional add-on, rate + promotion.
-    ...lineItemFieldsToApi(li),
-  };
-}
-
 function transformPaymentTermTemplate(t) {
   if (!t) return null;
   return {
@@ -313,20 +292,7 @@ function mapPayloadToService(body) {
     // The editor keeps `position` as a stable row id, so the array order is
     // the order the user arranged. Renumber it before the service stores it,
     // or a reorder is lost on save (#1452).
-    out.lineItems = renumberLineItemPositions(body.lineItems.map((li, idx) => ({
-      position: li.position == null ? idx + 1 : li.position,
-      quantity: li.quantity,
-      description: li.description,
-      unit_price_minor: li.unitPriceMinor,
-      discount_percent: li.discountPercent,
-      // Sub-item + details support. parentPosition
-      // refers to another item's position in the same payload; the
-      // service resolves it to parent_line_item_id after inserting
-      // the parents.
-      parent_position: li.parentPosition == null || li.parentPosition === '' ? null : Number(li.parentPosition),
-      details_text: li.detailsText == null ? null : String(li.detailsText),
-      ...lineItemFieldsFromApi(li),
-    })));
+    out.lineItems = renumberLineItemPositions(body.lineItems.map(lineItemFromPayload));
   }
   return out;
 }
@@ -399,7 +365,7 @@ router.get(
     if (!data) return res.status(404).json({ error: 'Quote not found' });
     return successResponse(res, {
       quote: transformQuote(data.quote),
-      lineItems: data.lineItems.map(transformLineItem),
+      lineItems: data.lineItems.map(lineItemToApi),
     });
   })
 );
@@ -491,7 +457,7 @@ router.post(
     const data = await quoteService.getQuoteById(id);
     return successResponse(res, {
       quote: transformQuote(data.quote),
-      lineItems: data.lineItems.map(transformLineItem),
+      lineItems: data.lineItems.map(lineItemToApi),
     }, 201, 'Quote created');
   })
 );
@@ -536,7 +502,7 @@ router.put(
     const data = await quoteService.getQuoteById(id);
     return successResponse(res, {
       quote: transformQuote(data.quote),
-      lineItems: data.lineItems.map(transformLineItem),
+      lineItems: data.lineItems.map(lineItemToApi),
     }, 200, 'Quote updated');
   })
 );
@@ -582,7 +548,7 @@ router.post(
     const data = await quoteService.getQuoteById(id);
     return successResponse(res, {
       quote: transformQuote(data.quote),
-      lineItems: data.lineItems.map(transformLineItem),
+      lineItems: data.lineItems.map(lineItemToApi),
     });
   })
 );
@@ -626,7 +592,7 @@ router.post(
     return successResponse(res, {
       ...result,
       quote: transformQuote(data.quote),
-      lineItems: data.lineItems.map(transformLineItem),
+      lineItems: data.lineItems.map(lineItemToApi),
     });
   })
 );

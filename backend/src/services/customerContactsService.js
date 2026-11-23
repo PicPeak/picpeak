@@ -31,8 +31,7 @@ const { AppError, ConflictError, NotFoundError, ValidationError } = require('../
 const { capabilityTokenColumns } = require('../utils/capabilityToken');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
 
-const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const PASSWORD_RESET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const { INVITATION_TTL_MS, PASSWORD_RESET_TTL_MS, claimInvitation, claimReset } = require('./customerCredentialClaims');
 const GALLERY_NOTICES = ['gallery_completed', 'customer_gallery_assigned'];
 // pg_advisory_xact_lock class for one address's login. The other classes are
 // 1074-1078 and two mnemonic ones (selectionSubmissions, portableRestore).
@@ -686,11 +685,7 @@ async function acceptInvitation(invitation, { name, password, profile }) {
       .where({ id: invitation.contact_id, email: invitation.email, is_active: formatBoolean(true) })
       .forUpdate()
       .first();
-    const claimed = await trx('customer_invitations')
-      .where('id', invitation.id).whereNull('accepted_at')
-      .where('expires_at', '>', new Date())
-      .update({ accepted_at: new Date().toISOString() });
-    if (claimed !== 1) throw new ValidationError('Invalid or expired invitation');
+    await claimInvitation(trx, invitation.id);
 
     const customer = row && await trx('customer_accounts')
       .where({ id: row.customer_account_id, is_active: formatBoolean(true) }).first('id');
@@ -775,10 +770,7 @@ async function applyPasswordReset(row, password) {
     const locked = await lockContact(trx, contact.customer_account_id, contact.id);
     if (locked.email !== contact.email) throw new ValidationError('Invalid or expired reset link');
     await lockLogins(trx, [contact.email.toLowerCase()]);
-    const claimed = await trx('customer_password_resets')
-      .where('id', row.id).whereNull('used_at').where('expires_at', '>', new Date())
-      .update({ used_at: new Date().toISOString() });
-    if (claimed !== 1) throw new ValidationError('Invalid or expired reset link');
+    await claimReset(trx, row.id);
     const updated = await setPassword(contact.email, passwordHash, trx);
     if (updated !== 1) throw new ValidationError('Invalid or expired reset link');
   });

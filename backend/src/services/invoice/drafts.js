@@ -10,6 +10,7 @@ const { cleanNetMinor } = require('../../utils/invoiceRounding');
 const { toMillis } = require('../../utils/queueTimestamps');
 const { getAppSetting } = require('../../utils/appSettings');
 const { computeMonthlyCadenceDate, getHierarchyHelpers, nextInvoiceNumber } = require('./helpers');
+const { loadInvoiceLines } = require('./queries');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 const { toDateOnly } = require('../../utils/dateOnly');
 const { vatMinorFor, roundsVatDown, normaliseVatGbpRate } = require('../../utils/vatAmount');
@@ -308,11 +309,7 @@ async function getMonthlyDraft(customerId) {
     .orderBy('id', 'desc')
     .first();
   if (!draft) return null;
-  const lineItems = await db('invoice_line_items as li')
-    .leftJoin('invoice_line_items as parent', 'parent.id', 'li.parent_line_item_id')
-    .where('li.invoice_id', draft.id)
-    .orderBy('li.position', 'asc')
-    .select('li.*', 'parent.position as parent_position');
+  const lineItems = await loadInvoiceLines(db, draft.id);
   return {
     id: draft.id,
     invoiceNumber: draft.invoice_number,
@@ -352,6 +349,19 @@ function isArmed(scheduledSendAt) {
 }
 
 /**
+ * Can an invoice's lines still change in place? Only while it is
+ * 'scheduled' and either the running monthly draft or not yet due to be
+ * sent. The status comes first: a draft that was paid or cancelled keeps
+ * its monthly flag until the scheduler's next pass, and is closed.
+ * (Invoices have no 'draft' status; that state IS 'scheduled'.)
+ */
+function isOpenForLineChanges(invoice) {
+  if (invoice.status !== 'scheduled') return false;
+  if (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1) return true;
+  return !isArmed(invoice.scheduled_send_at);
+}
+
+/**
  * The net of an unissued invoice whose lines changed in place (a monthly
  * draft taking an append, an hours entry edited or removed, a re-bill
  * unwound), by the same rule as createInvoice:
@@ -369,9 +379,7 @@ async function resolveUnissuedInvoiceNet(trx, invoiceId, audit = {}) {
   // its lines are never rewritten.
   const invoice = await trx('invoices').where({ id: invoiceId })
     .first('status', 'kind', 'is_monthly_draft', 'scheduled_send_at');
-  const monthlyDraft = invoice && (invoice.is_monthly_draft === true || invoice.is_monthly_draft === 1);
-  const armed = invoice && !monthlyDraft && isArmed(invoice.scheduled_send_at);
-  if (!invoice || invoice.status !== 'scheduled' || invoice.kind === 'storno' || armed) {
+  if (!invoice || invoice.kind === 'storno' || !isOpenForLineChanges(invoice)) {
     throw new AppError('This invoice has already been issued — Storno it to change it.', 409, 'INVOICE_LOCKED');
   }
   const allItems = await trx('invoice_line_items').where({ invoice_id: invoiceId });
@@ -401,9 +409,32 @@ async function resolveUnissuedInvoiceNet(trx, invoiceId, audit = {}) {
   return { netMinor, allItems };
 }
 
+/**
+ * Re-total an unissued invoice after its lines changed in place (an hours
+ * entry edited or removed, a re-bill unwound): resolveUnissuedInvoiceNet,
+ * then VAT at the invoice's stored rate and its stored shipping.
+ * appendToMonthlyDraft keeps its own step (its VAT rate can come from the
+ * payload).
+ */
+async function retotalUnissuedInvoice(trx, invoice, audit) {
+  const { netMinor } = await resolveUnissuedInvoiceNet(trx, invoice.id, audit);
+  const vatRate = Number(invoice.vat_rate || 0);
+  // A UK business rounds its VAT total down (utils/vatAmount).
+  const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: await roundsVatDown(trx) });
+  const shippingMinor = Number(invoice.shipping_amount_minor || 0);
+  await auditedUpdate(trx, 'invoices', { id: invoice.id }, {
+    net_amount_minor: netMinor,
+    vat_amount_minor: vatMinor,
+    total_amount_minor: netMinor + vatMinor + shippingMinor,
+    updated_at: new Date(),
+  }, audit);
+}
+
 module.exports = {
   isArmed,
+  isOpenForLineChanges,
   resolveUnissuedInvoiceNet,
+  retotalUnissuedInvoice,
   getOrCreateMonthlyDraft,
   appendToMonthlyDraft,
   appendOneLineItemToMonthlyDraft,

@@ -7,6 +7,19 @@ const { unicodeSearchForms } = require('../../utils/sqlSecurity');
 // Public API
 // ---------------------------------------------------------------------
 
+/**
+ * An invoice's lines in position order, each with its parent's position as
+ * `parent_position` (migration 119): parent_line_item_id is the DB-level
+ * relationship, but the editor payload and clones thread by position.
+ */
+function loadInvoiceLines(conn, invoiceId) {
+  return conn('invoice_line_items as li')
+    .leftJoin('invoice_line_items as parent', 'parent.id', 'li.parent_line_item_id')
+    .where('li.invoice_id', invoiceId)
+    .orderBy('li.position', 'asc')
+    .select('li.*', 'parent.position as parent_position');
+}
+
 async function listInvoices({ filters = {}, sort = 'issue_desc', page = 1, pageSize = 25 } = {}) {
   return await withRetry(async () => {
     let query = db('invoices')
@@ -154,16 +167,13 @@ async function getInvoiceById(id) {
     // position-based references to rebuild the hierarchy in the UI;
     // parent_line_item_id is the DB-level relationship but isn't
     // stable in the payload the editor sends back. Migration 119.
-    const lineItems = await db('invoice_line_items as li')
-      .leftJoin('invoice_line_items as parent', 'parent.id', 'li.parent_line_item_id')
-      .where('li.invoice_id', id)
-      .orderBy('li.position', 'asc')
-      .select('li.*', 'parent.position as parent_position');
+    const lineItems = await loadInvoiceLines(db, id);
     const payments = await db('invoice_payment_log').where({ invoice_id: id }).orderBy('paid_at', 'asc');
     return { invoice, lineItems, payments };
   });
 }
 module.exports = {
+  loadInvoiceLines,
   listInvoices,
   getInvoiceById,
 };

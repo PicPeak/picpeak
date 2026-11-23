@@ -8,7 +8,7 @@ const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
-const { formatMajor } = require('./helpers');
+const { formatMajor, parseJsonObject } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 const { buildInvoiceRenderContext } = require('./render');
 const { auditedUpdate, normalizeActor } = require('../accountingHistory');
@@ -249,18 +249,13 @@ async function resolveSkontoPercentForInvoice(invoice) {
       .first();
     if (cust && cust.skonto_disabled) return null;
   }
-  const parseSnap = (raw) => {
-    if (!raw) return null;
-    if (typeof raw === 'object') return raw;
-    try { return JSON.parse(raw); } catch { return null; }
-  };
-  const invSnap = parseSnap(invoice.payment_term_snapshot);
+  const invSnap = parseJsonObject(invoice.payment_term_snapshot);
   if (invSnap?.skonto_percent != null && Number(invSnap.skonto_percent) > 0) {
     return Number(invSnap.skonto_percent);
   }
   if (invoice.source_quote_id) {
     const q = await db('quotes').where({ id: invoice.source_quote_id }).select('payment_term_snapshot').first();
-    const qSnap = parseSnap(q?.payment_term_snapshot);
+    const qSnap = parseJsonObject(q?.payment_term_snapshot);
     if (qSnap?.skonto_percent != null && Number(qSnap.skonto_percent) > 0) {
       return Number(qSnap.skonto_percent);
     }

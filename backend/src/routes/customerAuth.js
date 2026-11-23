@@ -11,7 +11,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, param, validationResult } = require('express-validator');
 const { safeValidationErrors } = require('../utils/routeHelpers');
-const { MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
+const { MAX_PASSWORD_LENGTH, rejectWeakCustomerPassword } = require('../utils/passwordValidation');
 const DUMMY_BCRYPT_HASH = '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234';
 const { db, logActivity } = require('../database/db');
 const { verifyRecaptcha } = require('../services/recaptcha');
@@ -309,35 +309,6 @@ router.get('/invite/:token', [
   }
 });
 
-/**
- * Customer-specific password policy.
- *
- * Intentionally simpler than validatePasswordInContext (the admin-grade
- * checker). Rules:
- *   - At least 8 characters
- *   - At least one uppercase letter (A–Z)
- *   - At least one digit (0–9)
- *
- * No special-character requirement, no breach-list lookup, no dictionary
- * check — those tripped up real customers picking real passwords (e.g.
- * "PartyTime2026"). Capitals + a number is enough entropy for an
- * account that only views galleries; it's not protecting financial data.
- *
- * Returns null on success, or a string error message on failure.
- */
-function validateCustomerPassword(password) {
-  if (typeof password !== 'string' || password.length < 8) {
-    return 'Password must be at least 8 characters long.';
-  }
-  if (!/[A-Z]/.test(password)) {
-    return 'Password must contain at least one uppercase letter.';
-  }
-  if (!/[0-9]/.test(password)) {
-    return 'Password must contain at least one number.';
-  }
-  return null;
-}
-
 router.post('/accept-invite', [
   body('token').isLength({ min: 64, max: 64 }).matches(/^[a-f0-9]+$/i),
   body('name').optional({ nullable: true }).isString().trim().isLength({ max: 120 }),
@@ -372,13 +343,7 @@ router.post('/accept-invite', [
     }
     const { token, name, password, profile } = req.body;
 
-    const policyError = validateCustomerPassword(password);
-    if (policyError) {
-      return res.status(400).json({
-        error: 'Password does not meet complexity requirements',
-        details: [policyError],
-      });
-    }
+    if (rejectWeakCustomerPassword(res, password)) return;
 
     const result = await customerAccountsService.acceptInvitation({ token, name, password, profile });
     res.json({ message: 'Invitation accepted', email: result.email });
@@ -432,13 +397,7 @@ router.post('/password-reset', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
-    const policyError = validateCustomerPassword(req.body.password);
-    if (policyError) {
-      return res.status(400).json({
-        error: 'Password does not meet complexity requirements',
-        details: [policyError],
-      });
-    }
+    if (rejectWeakCustomerPassword(res, req.body.password)) return;
     const result = await customerAccountsService.applyPasswordReset({
       token: req.body.token,
       password: req.body.password,

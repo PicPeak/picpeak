@@ -12,9 +12,10 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { body, param, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
-const { getBcryptRounds, MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
+const { getBcryptRounds, MAX_PASSWORD_LENGTH, rejectWeakCustomerPassword } = require('../utils/passwordValidation');
 const { resolveStoredPathStrict, contractPdfRoots } = require('../utils/safePath');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
+const { buildPdfFilename } = require('../utils/pdfFilename');
 const { pipeStreamToResponse, answerVanished } = require('../utils/streamResponse');
 const logger = require('../utils/logger');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
@@ -87,20 +88,6 @@ function customerMaySeeGalleries(req, res) {
   if (customerContactsService.hasRight(req.customer.rights, 'galleries')) return true;
   res.status(403).json({ error: 'Galleries are disabled for this login', code: 'CUSTOMER_RIGHT_MISSING' });
   return false;
-}
-
-/**
- * Customer-side password policy mirrors the one in customerAuth.js — kept
- * deliberately simple (8 chars, one uppercase, one digit) since a customer
- * account only sees galleries, never financial or admin surfaces.
- */
-function validateCustomerPassword(password) {
-  if (typeof password !== 'string' || password.length < 8) {
-    return 'Password must be at least 8 characters long.';
-  }
-  if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter.';
-  if (!/[0-9]/.test(password)) return 'Password must contain at least one number.';
-  return null;
 }
 
 /**
@@ -528,13 +515,7 @@ router.post('/profile/password', [
 
     const { currentPassword, newPassword } = req.body;
 
-    const policyError = validateCustomerPassword(newPassword);
-    if (policyError) {
-      return res.status(400).json({
-        error: 'Password does not meet complexity requirements',
-        details: [policyError],
-      });
-    }
+    if (rejectWeakCustomerPassword(res, newPassword)) return;
 
     const contactId = req.customer.contactId;
     const row = contactId
@@ -584,10 +565,9 @@ router.post('/profile/password', [
 // direct API hit gets a 403 instead of leaking rows.
 router.get('/quotes', customerAuth, async (req, res) => {
   try {
-    const { db: dbi } = require('../database/db');
     // Customer-feature gate — master flag AND per-customer override.
     if (!(await customerFeatureAllowed(req, res, 'quotes', 'Quotes'))) return;
-    const rows = await dbi('quotes')
+    const rows = await db('quotes')
       .where({ customer_account_id: req.customer.id })
       // Hide drafts — they're admin scratch work; nothing has been
       // sent to the customer yet. Mirrors the invoice list above
@@ -662,7 +642,6 @@ router.get('/quotes', customerAuth, async (req, res) => {
 // invoice from their dashboard.
 router.get('/invoices', customerAuth, async (req, res) => {
   try {
-    const { db: dbi } = require('../database/db');
     // Customer-feature gate — master flag AND per-customer override.
     if (!(await customerFeatureAllowed(req, res, 'bills', 'Invoices'))) return;
     // Visibility rules for the customer-facing list:
@@ -677,7 +656,7 @@ router.get('/invoices', customerAuth, async (req, res) => {
     //   - Show `kind='storno'` rows (status='sent' after sendStorno)
     //     unconditionally — they're the customer's legal proof of
     //     cancellation and the only document with the §14c reversal.
-    const rows = await dbi('invoices')
+    const rows = await db('invoices')
       .leftJoin('invoices as cancels_inv', 'invoices.cancels_invoice_id', 'cancels_inv.id')
       .leftJoin('invoices as cancellation_storno', 'invoices.cancellation_storno_id', 'cancellation_storno.id')
       .where({ 'invoices.customer_account_id': req.customer.id })
@@ -742,6 +721,16 @@ router.get('/invoices', customerAuth, async (req, res) => {
   }
 });
 
+// A rendered or stored document PDF, inline, named after its number and
+// the customer (utils/pdfFilename).
+async function sendPdf(req, res, buf, docNumber, fallback) {
+  const customer = await db('customer_accounts').where({ id: req.customer.id }).first();
+  const filename = buildPdfFilename({ docNumber, customer, fallback });
+  res.set('Content-Type', 'application/pdf');
+  res.set('Content-Disposition', buildContentDisposition(filename, 'inline'));
+  res.send(buf);
+}
+
 /**
  * Customer-side quote PDF — mirrors the invoice PDF endpoint above.
  * The customer can re-download any quote that's been sent to them
@@ -750,10 +739,9 @@ router.get('/invoices', customerAuth, async (req, res) => {
  */
 router.get('/quotes/:id/pdf', customerAuth, async (req, res) => {
   try {
-    const { db: dbi } = require('../database/db');
     // Feature-gate — master flag AND per-customer override.
     if (!(await customerFeatureAllowed(req, res, 'quotes', 'Quotes'))) return;
-    const quote = await dbi('quotes')
+    const quote = await db('quotes')
       .where({ id: parseInt(req.params.id, 10), customer_account_id: req.customer.id })
       .first();
     if (!quote) return res.status(404).json({ error: 'Quote not found' });
@@ -764,17 +752,7 @@ router.get('/quotes/:id/pdf', customerAuth, async (req, res) => {
     const quoteService = require('../services/quoteService');
     // The file the customer was sent, not a re-render from today's data.
     const buf = await quoteService.getQuotePdfBuffer(quote.id);
-    const { buildPdfFilename } = require('../utils/pdfFilename');
-    const { buildContentDisposition } = require('../utils/filenameSanitizer');
-    const customer = await dbi('customer_accounts').where({ id: req.customer.id }).first();
-    const filename = buildPdfFilename({
-      docNumber: quote.quote_number,
-      customer,
-      fallback: `quote-${quote.id}`,
-    });
-    res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', buildContentDisposition(filename, 'inline'));
-    res.send(buf);
+    await sendPdf(req, res, buf, quote.quote_number, `quote-${quote.id}`);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to render quote PDF');
   }
@@ -782,10 +760,9 @@ router.get('/quotes/:id/pdf', customerAuth, async (req, res) => {
 
 router.get('/invoices/:id/pdf', customerAuth, async (req, res) => {
   try {
-    const { db: dbi } = require('../database/db');
     // Feature-gate — master flag AND per-customer override.
     if (!(await customerFeatureAllowed(req, res, 'bills', 'Invoices'))) return;
-    const invoice = await dbi('invoices')
+    const invoice = await db('invoices')
       .where({ id: parseInt(req.params.id, 10), customer_account_id: req.customer.id })
       .first();
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
@@ -797,17 +774,7 @@ router.get('/invoices/:id/pdf', customerAuth, async (req, res) => {
     const invoiceService = require('../services/invoiceService');
     // The file the customer was sent, not a re-render from today's data.
     const buf = await invoiceService.getInvoicePdfBuffer(invoice.id);
-    const { buildPdfFilename } = require('../utils/pdfFilename');
-    const { buildContentDisposition } = require('../utils/filenameSanitizer');
-    const customer = await dbi('customer_accounts').where({ id: req.customer.id }).first();
-    const filename = buildPdfFilename({
-      docNumber: invoice.invoice_number,
-      customer,
-      fallback: `invoice-${invoice.id}`,
-    });
-    res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', buildContentDisposition(filename, 'inline'));
-    res.send(buf);
+    await sendPdf(req, res, buf, invoice.invoice_number, `invoice-${invoice.id}`);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to render invoice PDF');
   }
@@ -820,14 +787,13 @@ router.get('/invoices/:id/pdf', customerAuth, async (req, res) => {
 // the authoritative copy customers want after both parties sign.
 router.get('/contracts', customerAuth, async (req, res) => {
   try {
-    const { db: dbi } = require('../database/db');
-    if (!(await dbi.schema.hasTable('contracts'))) {
+    if (!(await db.schema.hasTable('contracts'))) {
       // Feature not migrated on this install yet.
       return res.json({ contracts: [] });
     }
     // Contracts gate — master flag AND per-customer override (migration 131).
     if (!(await customerFeatureAllowed(req, res, 'contracts', 'Contracts'))) return;
-    const rows = await dbi('contracts')
+    const rows = await db('contracts')
       .where({ customer_account_id: req.customer.id })
       .whereNotIn('status', ['draft'])
       .orderBy('issue_date', 'desc')
@@ -851,7 +817,7 @@ router.get('/contracts', customerAuth, async (req, res) => {
     // offered for a contract that actually has one.
     const certified = new Set();
     if (rows.length) {
-      const certificates = await dbi('generated_documents')
+      const certificates = await db('generated_documents')
         .where({ doc_type: 'contract', kind: 'audit' })
         .whereIn('doc_id', rows.map((r) => r.id))
         .distinct('doc_id');
@@ -926,13 +892,12 @@ router.post('/contracts/:id/signing-access', customerAuth, async (req, res) => {
 
 router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
   try {
-    const { db: dbi } = require('../database/db');
-    if (!(await dbi.schema.hasTable('contracts'))) {
+    if (!(await db.schema.hasTable('contracts'))) {
       return res.status(404).json({ error: 'Contract not found' });
     }
     // Contracts gate — master flag AND per-customer override.
     if (!(await customerFeatureAllowed(req, res, 'contracts', 'Contracts'))) return;
-    const contract = await dbi('contracts')
+    const contract = await db('contracts')
       .where({ id: parseInt(req.params.id, 10), customer_account_id: req.customer.id })
       .first();
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
@@ -976,12 +941,11 @@ router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
 // customer's own contract, never a draft.
 router.get('/contracts/:id/certificate', customerAuth, async (req, res) => {
   try {
-    const { db: dbi } = require('../database/db');
-    if (!(await dbi.schema.hasTable('contracts'))) {
+    if (!(await db.schema.hasTable('contracts'))) {
       return res.status(404).json({ error: 'Contract not found' });
     }
     if (!(await customerFeatureAllowed(req, res, 'contracts', 'Contracts'))) return;
-    const contract = await dbi('contracts')
+    const contract = await db('contracts')
       .where({ id: parseInt(req.params.id, 10), customer_account_id: req.customer.id })
       .first();
     if (!contract || contract.status === 'draft') return res.status(404).json({ error: 'Contract not found' });
@@ -1184,9 +1148,9 @@ router.get('/quotes/:id', customerAuth, async (req, res) => {
 
 router.get('/quotes/:id/product-images/:imageId', customerAuth, async (req, res) => {
   try { const quote = await ownedDocument(req, res, QUOTE); if (!quote) return;
-    const image = await require('../services/albumProducts/crm').quoteImage(require('../database/db').db, quote.id, req.params.imageId);
+    const image = await require('../services/albumProducts/crm').quoteImage(db, quote.id, req.params.imageId);
     res.set('Cache-Control', 'private, no-store').type('png');
-    return require('../utils/streamResponse').pipeStreamToResponse(await require('../services/storage').getStorage().get(image.storage_key), res, { context: 'portal quote product image' });
+    return pipeStreamToResponse(await require('../services/storage').getStorage().get(image.storage_key), res, { context: 'portal quote product image' });
   } catch (error) { if (sendServiceRefusal(res, error)) return; errorResponse(res, error, 500, 'Failed to load product image'); }
 });
 

@@ -3,10 +3,10 @@ const { adminActivityActor } = require('../../utils/activityActor');
 const { AppError } = require('../../utils/errors');
 const { toStoredTimestamp } = require('../../utils/dateNormalize');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
-const { extendedLineColumns } = require('../../utils/lineItemTotals');
+const { loadInvoiceLines } = require('./queries');
 const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('../accountingHistory');
-const { computeDueDate, computeScheduledSendAt, isInvoiceEditable, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
+const { cloneInvoiceLine, computeDueDate, computeScheduledSendAt, isInvoiceEditable, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
 
 
 /**
@@ -297,11 +297,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
       // Sub-lines name their parent by id; the clone needs its position
       // (as the Storno copy reads it), or every sub-line is cloned top-level
       // and an option sub-line (migration 371) would add to nothing.
-      const sourceLines = await trx('invoice_line_items as li')
-        .leftJoin('invoice_line_items as parent', 'parent.id', 'li.parent_line_item_id')
-        .where('li.invoice_id', existing[0].id)
-        .select('li.*', 'parent.position as parent_position')
-        .orderBy('li.position', 'asc');
+      const sourceLines = await loadInvoiceLines(trx, existing[0].id);
       canonicalLineItems = sourceLines.filter((li) => !isReconciliationLineItem(li));
     }
 
@@ -343,17 +339,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
     const newId = inserted[0].id;
 
     if (canonicalLineItems.length > 0) {
-      const cloned = canonicalLineItems.map((li) => ({
-        position: ensureInt(li.position),
-        quantity: li.quantity,
-        description: li.description,
-        unit_price_minor: ensureInt(li.unit_price_minor),
-        discount_percent: ensureNumber(li.discount_percent, 0),
-        line_total_minor: ensureInt(li.line_total_minor),
-        parent_position: li.parent_position == null ? null : ensureInt(li.parent_position),
-        details_text: li.details_text || null,
-        ...extendedLineColumns(li, { invoice: true }),
-      }));
+      const cloned = canonicalLineItems.map(cloneInvoiceLine);
       const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
       validateLineItemHierarchy(cloned);
       await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', newId, cloned,

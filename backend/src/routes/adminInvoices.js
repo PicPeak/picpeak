@@ -30,7 +30,7 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const { renumberLineItemPositions } = require('../utils/lineItemPositions');
 const {
   LINE_KINDS, UNITS, PRICE_MODES, BOUND_TO, RATE_SOURCES,
-  extendedLineColumns, lineItemFieldsFromApi, lineItemFieldsToApi,
+  extendedLineColumns, lineItemToApi, lineItemFromPayload,
 } = require('../utils/lineItemTotals');
 const { getStoragePath } = require('../config/storage');
 const invoiceService = require('../services/invoiceService');
@@ -40,10 +40,10 @@ const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireF
 const { db } = require('../database/db');
 const { canLinkCrmToEvent, ownsProject } = require('../middleware/ownership');
 const { AppError } = require('../utils/errors');
-const { computeDueDate, ensureEventMatchesCustomer, isInvoiceEditable, resolveNetDaysForRow, UNISSUED_INVOICE_STATUSES } = require('../services/invoice/helpers');
+const { composePaymentTermSnapshot, computeDueDate, computeInvoiceTotals, ensureEventMatchesCustomer, isInvoiceEditable, resolveNetDaysForRow, UNISSUED_INVOICE_STATUSES } = require('../services/invoice/helpers');
 const { toDateOnly } = require('../utils/dateOnly');
 const { toIso, toStoredTimestamp, toTimestamp } = require('../utils/dateNormalize');
-const { vatMinorFor, roundsVatDown, normaliseVatGbpRate } = require('../utils/vatAmount');
+const { roundsVatDown, normaliseVatGbpRate } = require('../utils/vatAmount');
 
 const router = express.Router();
 // Re-bill proof endpoints (#866) are behind the incoming-invoices flag.
@@ -223,27 +223,6 @@ function transformInvoice(i) {
   };
 }
 
-function transformLineItem(li) {
-  return {
-    id: li.id,
-    position: li.position,
-    quantity: Number(li.quantity),
-    description: li.description,
-    unitPriceMinor: li.unit_price_minor,
-    discountPercent: li.discount_percent == null ? 0 : Number(li.discount_percent),
-    lineTotalMinor: li.line_total_minor,
-    // Hierarchy (migration 119). parentPosition comes from the
-    // self-join in getInvoiceById; parentLineItemId is the raw FK.
-    // detailsText is the optional free-form notes block rendered
-    // below the description on the PDF and customer view.
-    parentLineItemId: li.parent_line_item_id || null,
-    parentPosition: li.parent_position == null ? null : Number(li.parent_position),
-    detailsText: li.details_text || null,
-    // Migration 220 — line kind, unit, rate + promotion.
-    ...lineItemFieldsToApi(li),
-  };
-}
-
 function transformPaymentLog(p) {
   return {
     id: p.id,
@@ -375,18 +354,7 @@ function mapPayloadToService(body) {
     // Same contract as the quotes route: the editor's `position` is a stable
     // row id, so the payload's array order is the display order and is what
     // gets stored (#1452).
-    out.lineItems = renumberLineItemPositions(body.lineItems.map((li, idx) => ({
-      position: li.position == null ? idx + 1 : li.position,
-      quantity: li.quantity,
-      description: li.description,
-      unit_price_minor: li.unitPriceMinor,
-      discount_percent: li.discountPercent,
-      // Migration 119 sub-item + details support — same mapping as
-      // quotes so the editor's payload shape is identical for both.
-      parent_position: li.parentPosition == null || li.parentPosition === '' ? null : Number(li.parentPosition),
-      details_text: li.detailsText == null ? null : String(li.detailsText),
-      ...lineItemFieldsFromApi(li),
-    })));
+    out.lineItems = renumberLineItemPositions(body.lineItems.map(lineItemFromPayload));
   }
   return out;
 }
@@ -479,7 +447,7 @@ router.get(
     invoiceOut.skontoPercent = skontoPercent || null;
     return successResponse(res, {
       invoice: invoiceOut,
-      lineItems: data.lineItems.map(transformLineItem),
+      lineItems: data.lineItems.map(lineItemToApi),
       payments: data.payments.map(transformPaymentLog),
       // A booking deposit booked here that was refunded or disputed since.
       depositAlerts: await require('../services/bookingDeposits').depositAlertsForInvoice(data.payments),
@@ -595,7 +563,7 @@ router.post(
     const data = await invoiceService.getInvoiceById(firstId);
     return successResponse(res, {
       invoice: transformInvoice(data.invoice),
-      lineItems: data.lineItems.map(transformLineItem),
+      lineItems: data.lineItems.map(lineItemToApi),
       invoiceIds,
     }, 201, 'Invoice created');
   })
@@ -883,15 +851,7 @@ router.put(
         const tpl = await db('payment_term_templates').where({ id }).first();
         if (tpl) {
           updates.payment_term_template_id = tpl.id;
-          updates.payment_term_snapshot = JSON.stringify({
-            description: tpl.description || null,
-            net_days: tpl.net_days,
-            skonto_percent: tpl.skonto_percent,
-            skonto_within_days: tpl.skonto_within_days,
-            installments: typeof tpl.installments === 'string'
-              ? (() => { try { return JSON.parse(tpl.installments); } catch { return null; } })()
-              : tpl.installments || null,
-          });
+          updates.payment_term_snapshot = composePaymentTermSnapshot(tpl, tpl);
         }
       } else {
         // Explicit clear — admin picked "no template".
@@ -920,15 +880,7 @@ router.put(
           updates.payment_timing_template_id = timing.id;
           // Clear the legacy FK — the editor is moving off it.
           updates.payment_term_template_id = null;
-          updates.payment_term_snapshot = JSON.stringify({
-            description: timing.description || netDays.description || null,
-            net_days: netDays.net_days,
-            skonto_percent: netDays.skonto_percent,
-            skonto_within_days: netDays.skonto_within_days,
-            installments: typeof timing.installments === 'string'
-              ? (() => { try { return JSON.parse(timing.installments); } catch { return null; } })()
-              : timing.installments || null,
-          });
+          updates.payment_term_snapshot = composePaymentTermSnapshot(netDays, timing);
         }
       } else {
         // Explicit clear — admin emptied both.
@@ -973,20 +925,16 @@ router.put(
           ...extendedLineColumns(li, { invoice: true }),
         };
       });
-      const { resolveParentTotalsFromSubItems } = require('../services/quoteService')._internal;
-      resolveParentTotalsFromSubItems(items);
-      let net = 0;
-      for (const it of items) {
-        if (it.parent_position == null) net += parseInt(it.line_total_minor, 10) || 0;
-      }
+      const vatRate = Number(payload.vatRate ?? existing.vat_rate ?? 0);
+      const shipping = parseInt(payload.shippingAmountMinor ?? existing.shipping_amount_minor ?? 0, 10);
       // Optional sub-cent reconciliation (crm_invoice_round_total), as on
       // create: the editor shows it, so the saved net must follow it too.
-      if ((await require('../utils/appSettings').getAppSetting('crm_invoice_round_total', false)) === true) {
-        net = require('../utils/invoiceRounding').cleanNetMinor(items, { parentKey: 'parent_position', positionKey: 'position' });
-      }
-      const vatRate = Number(payload.vatRate ?? existing.vat_rate ?? 0);
-      const vatAmount = vatMinorFor(net, vatRate, { roundDown: await roundsVatDown() });
-      const shipping = parseInt(payload.shippingAmountMinor ?? existing.shipping_amount_minor ?? 0, 10);
+      const { netMinor: net, vatMinor: vatAmount } = computeInvoiceTotals(items, {
+        vatRate,
+        shippingMinor: shipping,
+        roundTotal: (await require('../utils/appSettings').getAppSetting('crm_invoice_round_total', false)) === true,
+        roundVatDown: await roundsVatDown(),
+      });
       updates.net_amount_minor = net;
       updates.vat_amount_minor = vatAmount;
       updates.vat_rate = vatRate;
@@ -1020,7 +968,7 @@ router.put(
     const data = await invoiceService.getInvoiceById(id);
     return successResponse(res, {
       invoice: transformInvoice(data.invoice),
-      lineItems: data.lineItems.map(transformLineItem),
+      lineItems: data.lineItems.map(lineItemToApi),
     }, 200, 'Invoice updated');
   })
 );

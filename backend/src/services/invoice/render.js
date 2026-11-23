@@ -1,19 +1,18 @@
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
-const { cleanNetMinor } = require('../../utils/invoiceRounding');
 const { AppError } = require('../../utils/errors');
 const businessProfileService = require('../businessProfileService');
 const { buildIssuerBlock, buildRecipientBlock } = require('../_renderContext');
 const pdfService = require('../pdfService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const {
-  vatMinorFor, vatGbpMinorFor, normaliseVatGbpRate, latePaymentCompensationPounds,
+  vatGbpMinorFor, normaliseVatGbpRate, latePaymentCompensationPounds,
 } = require('../../utils/vatAmount');
 const { isUnitedKingdom } = require('../../utils/postalAddress');
 const { isBusinessCustomer } = require('../../utils/customerKind');
 const { parsePromotionSnapshot } = require('../../utils/lineItemTotals');
 const { readStoredDocumentPdf } = require('../../utils/storedDocumentPdf');
-const { getHierarchyHelpers } = require('./helpers');
+const { computeInvoiceTotals, parseJsonObject } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 
 
@@ -62,9 +61,7 @@ async function buildInvoiceRenderContext(invoice, lineItems) {
 
   // Invoice-level snapshot wins when set.
   if (invoice.payment_term_snapshot) {
-    const snapshot = typeof invoice.payment_term_snapshot === 'string'
-      ? (() => { try { return JSON.parse(invoice.payment_term_snapshot); } catch { return null; } })()
-      : invoice.payment_term_snapshot;
+    const snapshot = parseJsonObject(invoice.payment_term_snapshot);
     if (snapshot) {
       paymentTerm = {
         description: snapshot.description,
@@ -84,9 +81,7 @@ async function buildInvoiceRenderContext(invoice, lineItems) {
   if (invoice.source_quote_id) {
     sourceQuote = await db('quotes').where({ id: invoice.source_quote_id }).first();
     if (!paymentTerm && sourceQuote?.payment_term_snapshot) {
-      const snapshot = typeof sourceQuote.payment_term_snapshot === 'string'
-        ? (() => { try { return JSON.parse(sourceQuote.payment_term_snapshot); } catch { return null; } })()
-        : sourceQuote.payment_term_snapshot;
+      const snapshot = parseJsonObject(sourceQuote.payment_term_snapshot);
       if (snapshot) {
         paymentTerm = {
           description: snapshot.description,
@@ -361,25 +356,15 @@ async function renderInvoicePdfFromPayload(payload) {
     const lineTotal = Math.round(Math.round(qty * unit) * (1 - discount / 100));
     return { ...li, position: li.position || idx + 1, line_total_minor: lineTotal };
   });
-  const { resolveParentTotalsFromSubItems } = getHierarchyHelpers();
-  resolveParentTotalsFromSubItems(items);
-  let netMinor = 0;
-  for (const it of items) {
-    if (it.parent_position == null || it.parent_position === '') {
-      netMinor += ensureInt(it.line_total_minor);
-    }
-  }
   // Match the saved-invoice math: clean-net reconciliation when the
   // crm_invoice_round_total setting is on (see createInvoice).
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
-  if (roundTotal) {
-    netMinor = cleanNetMinor(items, { parentKey: 'parent_position', positionKey: 'position' });
-  }
   const vatRate = ensureNumber(payload.vatRate, 0);
   const { profile: issuerProfile } = await businessProfileService.getProfile();
-  const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: isUnitedKingdom(issuerProfile?.country_code) });
   const shippingMinor = ensureInt(payload.shippingAmountMinor);
-  const totalMinor = netMinor + vatMinor + shippingMinor;
+  const { netMinor, vatMinor, totalMinor } = computeInvoiceTotals(items, {
+    vatRate, shippingMinor, roundTotal, roundVatDown: isUnitedKingdom(issuerProfile?.country_code),
+  });
   const fakeInvoice = {
     invoice_number: 'PREVIEW',
     customer_account_id: payload.customerAccountId,

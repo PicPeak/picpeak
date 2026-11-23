@@ -337,6 +337,28 @@ router.get('/search', [
 
 // ---- invitations --------------------------------------------------------
 
+// The created invitation as the API returns it. The raw token is echoed
+// only with an EXPLICIT opt-in (`PICPEAK_ECHO_INVITE_TOKEN=1`), so local dev
+// and Playwright e2e specs can skip the email round-trip and accept straight
+// away. In production the token stays email-channel-only: anyone with API
+// access plus the response body could otherwise take over a freshly-invited
+// account before its owner clicks the link. (The old gate,
+// `NODE_ENV !== 'production'`, was also true where NODE_ENV is simply unset,
+// so a production-shaped host failed open.)
+function invitationPayload(invitation) {
+  const payload = {
+    invitation: {
+      id: invitation.id,
+      email: invitation.email,
+      expiresAt: invitation.expiresAt,
+    },
+  };
+  if (process.env.PICPEAK_ECHO_INVITE_TOKEN === '1') {
+    payload.invitation.token = invitation.token;
+  }
+  return payload;
+}
+
 router.get('/invitations', [
   adminAuth,
   requirePermission('customers.view'),
@@ -380,32 +402,7 @@ router.post('/invite', [
     invitedById: req.admin.id,
     prefill: req.body.prefill,
   });
-  // Echo the token in the response ONLY in non-production. This lets
-  // local dev + Playwright e2e specs skip the email round-trip
-  // (queueing → SMTP → mailbox → parse) and accept the invitation
-  // straight away. In production the token stays email-channel-only:
-  // anyone with API access plus the response body would otherwise be
-  // able to take over a freshly-invited customer account before the
-  // legitimate user clicks the link.
-  const payload = {
-    invitation: {
-      id: invitation.id,
-      email: invitation.email,
-      expiresAt: invitation.expiresAt,
-    },
-  };
-  // C.7 — hardened token echo. The previous shape gated on
-  // `NODE_ENV !== 'production'`, which is true in dev AND when the
-  // variable is unset entirely (some hosting setups never set
-  // NODE_ENV in their entrypoint). That meant the raw invitation
-  // token could leak in production-shaped deployments where the env
-  // happened to be unset. Now requires an EXPLICIT opt-in
-  // (`PICPEAK_ECHO_INVITE_TOKEN=1`) so a misconfigured production
-  // host fails closed instead of open.
-  if (process.env.PICPEAK_ECHO_INVITE_TOKEN === '1') {
-    payload.invitation.token = invitation.token;
-  }
-  successResponse(res, payload, 201);
+  successResponse(res, invitationPayload(invitation), 201);
 }));
 
 router.delete('/invitations/:id', [
@@ -526,43 +523,13 @@ router.post('/:id/send-invite', [
   // Derive the invitation prefill from the customer's existing
   // profile so the accept page is pre-populated with what the admin
   // already entered for them (saves the customer typing it again).
-  // Only the whitelisted fields go through.
-  const prefill = {
-    salutation:     customer.salutation,
-    first_name:     customer.first_name,
-    last_name:      customer.last_name,
-    display_name:   customer.display_name,
-    phone:          customer.phone,
-    company_name:   customer.company_name,
-    vat_id:         customer.vat_id,
-    address_line1:  customer.address_line1,
-    address_line2:  customer.address_line2,
-    postal_code:    customer.postal_code,
-    city:           customer.city,
-    state:          customer.state,
-    country_code:   customer.country_code,
-    country_name:   customer.country_name,
-    preferred_language: customer.preferred_language,
-  };
+  // sanitisePrefill keeps only the whitelisted PREFILLABLE_FIELDS.
   const invitation = await customerAccountsService.createInvitation({
     email: customer.email,
     invitedById: req.admin.id,
-    prefill,
+    prefill: customer,
   });
-  const payload = {
-    invitation: {
-      id: invitation.id,
-      email: invitation.email,
-      expiresAt: invitation.expiresAt,
-    },
-  };
-  // C.7 — see the matching gate on POST /invite. Explicit opt-in
-  // (`PICPEAK_ECHO_INVITE_TOKEN=1`) fails closed when NODE_ENV is
-  // unset in a production-shaped deployment.
-  if (process.env.PICPEAK_ECHO_INVITE_TOKEN === '1') {
-    payload.invitation.token = invitation.token;
-  }
-  successResponse(res, payload, 201);
+  successResponse(res, invitationPayload(invitation), 201);
 }));
 
 // ---- customer record ----------------------------------------------------

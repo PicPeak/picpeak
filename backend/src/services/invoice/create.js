@@ -2,15 +2,15 @@ const crypto = require('crypto');
 const { db, logActivity } = require('../../database/db');
 const { adminActivityActor } = require('../../utils/activityActor');
 const { getAppSetting } = require('../../utils/appSettings');
-const { cleanNetMinor } = require('../../utils/invoiceRounding');
 const { AppError } = require('../../utils/errors');
 const businessProfileService = require('../businessProfileService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
 const { toStoredTimestamp, toTimestamp } = require('../../utils/dateNormalize');
-const { vatMinorFor, normaliseVatGbpRate, roundsVatDown } = require('../../utils/vatAmount');
+const { normaliseVatGbpRate, roundsVatDown } = require('../../utils/vatAmount');
+const { computeSliceTotals } = require('./installmentPlan');
 const { isUnitedKingdom } = require('../../utils/postalAddress');
-const { computeDueDate, computeScheduledSendAt, ensureCustomerCanBill, ensureEventMatchesCustomer, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
+const { cloneInvoiceLine, composePaymentTermSnapshot, computeDueDate, computeInvoiceTotals, computeScheduledSendAt, ensureCustomerCanBill, ensureEventMatchesCustomer, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
 const { appendToMonthlyDraft } = require('./drafts');
 const { auditedInsert } = require('../accountingHistory');
 
@@ -95,29 +95,18 @@ async function createInvoice(payload, adminId, trx = db) {
       ...extendedLineColumns(li, { invoice: true }),
     };
   });
-  // Apply the migration-119 hierarchy resolver: rewrites parent
-  // line_total_minor to sum-of-priced-sub-items where applicable.
-  // Net is then summed across top-level (resolved) items.
-  const { resolveParentTotalsFromSubItems } = getHierarchyHelpers();
-  resolveParentTotalsFromSubItems(items);
-  let netMinor = 0;
-  for (const li of items) {
-    if (li.parent_position == null) netMinor += ensureInt(li.line_total_minor);
-  }
   // Optional sub-cent reconciliation (crm_invoice_round_total). When on,
   // store the full-precision net rounded ONCE so the total matches
   // qty × unit arithmetic; the per-line rounding drift is surfaced as a
   // "Rundung" row at render time (storedNet − Σ line totals). Off by
   // default ⇒ net stays the sum of rounded lines, unchanged behaviour.
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false, trx)) === true;
-  if (roundTotal) {
-    netMinor = cleanNetMinor(items, { parentKey: 'parent_position', positionKey: 'position' });
-  }
   const vatRate = ensureNumber(payload.vatRate, 0);
-  // A UK business rounds its VAT total down (utils/vatAmount).
-  const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: isUnitedKingdom(profile?.country_code) });
   const shippingMinor = ensureInt(payload.shippingAmountMinor);
-  const totalMinor = netMinor + vatMinor + shippingMinor;
+  // A UK business rounds its VAT total down (utils/vatAmount).
+  const { netMinor, vatMinor, totalMinor } = computeInvoiceTotals(items, {
+    vatRate, shippingMinor, roundTotal, roundVatDown: isUnitedKingdom(profile?.country_code),
+  });
 
   // Negative line items (Rabatt) are allowed, but the resulting
   // invoice total must not go below zero. Credit notes belong in
@@ -152,30 +141,14 @@ async function createInvoice(payload, adminId, trx = db) {
     if (netDays && timing) {
       paymentNetDaysTemplateId = netDays.id;
       paymentTimingTemplateId = timing.id;
-      paymentTermSnapshot = JSON.stringify({
-        description: timing.description || netDays.description || null,
-        net_days: netDays.net_days,
-        skonto_percent: netDays.skonto_percent,
-        skonto_within_days: netDays.skonto_within_days,
-        installments: typeof timing.installments === 'string'
-          ? (() => { try { return JSON.parse(timing.installments); } catch { return null; } })()
-          : timing.installments || null,
-      });
+      paymentTermSnapshot = composePaymentTermSnapshot(netDays, timing);
     }
   } else if (payload.paymentTermTemplateId) {
     const tpl = await trx('payment_term_templates')
       .where({ id: payload.paymentTermTemplateId }).first();
     if (tpl) {
       paymentTermTemplateId = tpl.id;
-      paymentTermSnapshot = JSON.stringify({
-        description: tpl.description || null,
-        net_days: tpl.net_days,
-        skonto_percent: tpl.skonto_percent,
-        skonto_within_days: tpl.skonto_within_days,
-        installments: typeof tpl.installments === 'string'
-          ? (() => { try { return JSON.parse(tpl.installments); } catch { return null; } })()
-          : tpl.installments || null,
-      });
+      paymentTermSnapshot = composePaymentTermSnapshot(tpl, tpl);
     }
   }
 
@@ -192,10 +165,9 @@ async function createInvoice(payload, adminId, trx = db) {
   if (Array.isArray(payload.installments) && payload.installments.length > 1) {
     installmentsForSpawn = payload.installments;
   } else if (paymentTermSnapshot) {
-    const parsedSnap = typeof paymentTermSnapshot === 'string'
-      ? (() => { try { return JSON.parse(paymentTermSnapshot); } catch { return null; } })()
-      : paymentTermSnapshot;
-    if (parsedSnap && Array.isArray(parsedSnap.installments) && parsedSnap.installments.length > 1) {
+    // Built just above by composePaymentTermSnapshot, so always valid JSON.
+    const parsedSnap = JSON.parse(paymentTermSnapshot);
+    if (Array.isArray(parsedSnap.installments) && parsedSnap.installments.length > 1) {
       installmentsForSpawn = parsedSnap.installments;
     }
   }
@@ -386,33 +358,12 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
     const percent = ensureNumber(inst.percent, 0);
     if (percent <= 0) continue;
 
-    // Each installment carries its own slice of the totals. Round to
-    // minor units; last installment absorbs rounding drift so the
-    // total exactly equals the quote total.
-    let netSlice, vatSlice, shippingSlice, totalSlice;
-    if (i === total - 1) {
-      // We computed everything so far; remaining slice closes the gap.
-      const accNet = installments.slice(0, i).reduce((s, x) => s + Math.round(ensureInt(totals.net) * ensureNumber(x.percent, 0) / 100), 0);
-      const accVat = installments.slice(0, i).reduce((s, x) => s + Math.round(ensureInt(totals.vat) * ensureNumber(x.percent, 0) / 100), 0);
-      const accShipping = installments.slice(0, i).reduce((s, x) => s + Math.round(ensureInt(totals.shipping) * ensureNumber(x.percent, 0) / 100), 0);
-      const accTotal = installments.slice(0, i).reduce((s, x) => s + Math.round(ensureInt(totals.total) * ensureNumber(x.percent, 0) / 100), 0);
-      netSlice = ensureInt(totals.net) - accNet;
-      vatSlice = ensureInt(totals.vat) - accVat;
-      shippingSlice = ensureInt(totals.shipping) - accShipping;
-      totalSlice = ensureInt(totals.total) - accTotal;
-    } else {
-      netSlice = Math.round(ensureInt(totals.net) * percent / 100);
-      vatSlice = Math.round(ensureInt(totals.vat) * percent / 100);
-      shippingSlice = Math.round(ensureInt(totals.shipping) * percent / 100);
-      totalSlice = Math.round(ensureInt(totals.total) * percent / 100);
-    }
-    // Each instalment is a VAT invoice of its own: a UK business rounds its
-    // VAT down on its own net (utils/vatAmount). The slices may then add up to
-    // a penny or two less VAT than the quote, never more.
-    if (roundVatDown) {
-      vatSlice = vatMinorFor(netSlice, ensureNumber(totals.vatRate, 0), { roundDown: true });
-      totalSlice = netSlice + vatSlice + shippingSlice;
-    }
+    // Each installment carries its own slice of the totals; the last one
+    // absorbs the rounding drift, and a UK business rounds each slice's VAT
+    // down on its own net (installmentPlan.computeSliceTotals).
+    const {
+      net: netSlice, vat: vatSlice, shipping: shippingSlice, total: totalSlice,
+    } = computeSliceTotals(installments, totals, i, { roundVatDown });
 
     let scheduledSendAt = computeScheduledSendAt(inst.trigger, inst.offset_days, eventDate, acceptanceTime);
     // Per-customer billing cadence override: monthly / quarterly
@@ -533,17 +484,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       // correct (also-cloned) parent. insertLineItemsHierarchical
       // resolves position → new parent_line_item_id during the
       // two-phase insert. Migration 119.
-      const cloned = sourceLines.map((li) => ({
-        position: ensureInt(li.position),
-        quantity: li.quantity,
-        description: li.description,
-        unit_price_minor: ensureInt(li.unit_price_minor),
-        discount_percent: ensureNumber(li.discount_percent, 0),
-        line_total_minor: ensureInt(li.line_total_minor),
-        parent_position: li.parent_position == null ? null : ensureInt(li.parent_position),
-        details_text: li.details_text || null,
-        ...extendedLineColumns(li, { invoice: true }),
-      }));
+      const cloned = sourceLines.map(cloneInvoiceLine);
       const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
       validateLineItemHierarchy(cloned);
       await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', invoiceId, cloned,

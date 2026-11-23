@@ -4,7 +4,10 @@ const { getAppSetting } = require('../../utils/appSettings');
 const { issuerIntlLocale } = require('../../utils/issuerIntlLocale');
 const { AppError } = require('../../utils/errors');
 const { nextDocumentNumber } = require('../../utils/documentSequences');
-const { ensureInt } = require('../../utils/numericHelpers');
+const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
+const { extendedLineColumns } = require('../../utils/lineItemTotals');
+const { cleanNetMinor } = require('../../utils/invoiceRounding');
+const { vatMinorFor } = require('../../utils/vatAmount');
 
 // Migration 119 line-item hierarchy helpers, shared with quoteService.
 // We import lazily inside the functions that use them to avoid a
@@ -13,6 +16,71 @@ const { ensureInt } = require('../../utils/numericHelpers');
 function getHierarchyHelpers() {
   // eslint-disable-next-line global-require
   return require('../quoteService')._internal;
+}
+
+/**
+ * Invoice totals from lines that already carry their raw line_total_minor
+ * (each caller keeps its own input coercion). Parent totals auto-resolve
+ * from priced sub-items (migration 119), the net sums top-level lines,
+ * and `roundTotal` (crm_invoice_round_total) swaps in the clean net.
+ * Deliberately not quoteService.computeTotals: invoices skip its line
+ * normalising and discount-line re-resolution.
+ */
+function computeInvoiceTotals(items, { vatRate, shippingMinor, roundTotal, roundVatDown }) {
+  getHierarchyHelpers().resolveParentTotalsFromSubItems(items);
+  let netMinor = 0;
+  for (const li of items) {
+    // '' is the preview's: an unsaved payload line has no parent yet.
+    if (li.parent_position == null || li.parent_position === '') netMinor += ensureInt(li.line_total_minor);
+  }
+  if (roundTotal) netMinor = cleanNetMinor(items, { parentKey: 'parent_position', positionKey: 'position' });
+  const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: roundVatDown });
+  return { items, netMinor, vatMinor, totalMinor: netMinor + vatMinor + shippingMinor };
+}
+
+/**
+ * A stored line (with `parent_position` from the self-join) as the insert
+ * shape for a copy on another invoice: Storno, instalment and quote clones.
+ * insertLineItemsHierarchical resolves parent_position to the new parent.
+ */
+function cloneInvoiceLine(li) {
+  return {
+    position: ensureInt(li.position),
+    quantity: li.quantity,
+    description: li.description,
+    unit_price_minor: ensureInt(li.unit_price_minor),
+    discount_percent: ensureNumber(li.discount_percent, 0),
+    line_total_minor: ensureInt(li.line_total_minor),
+    parent_position: li.parent_position == null ? null : ensureInt(li.parent_position),
+    details_text: li.details_text || null,
+    // Migration 220 — a discount line stays a discount line on the copy.
+    ...extendedLineColumns(li, { invoice: true }),
+  };
+}
+
+/**
+ * A JSON text column (payment-term snapshot, template installments): a
+ * string is parsed (null when it isn't JSON), anything else passes
+ * through, falsy as null.
+ */
+function parseJsonObject(value) {
+  if (typeof value !== 'string') return value || null;
+  try { return JSON.parse(value); } catch { return null; }
+}
+
+/**
+ * The payment-term snapshot stored on an invoice (migrations 113/124), as
+ * JSON text: net days + Skonto from `netDays`, the instalment plan from
+ * `timing`. A legacy single template passes itself as both.
+ */
+function composePaymentTermSnapshot(netDays, timing) {
+  return JSON.stringify({
+    description: timing.description || netDays.description || null,
+    net_days: netDays.net_days,
+    skonto_percent: netDays.skonto_percent,
+    skonto_within_days: netDays.skonto_within_days,
+    installments: parseJsonObject(timing.installments),
+  });
 }
 
 // Atomic gap-free invoice number generator. See utils/documentSequences.js
@@ -132,9 +200,7 @@ async function resolveNetDays(payload, trx = db) {
  * date is stamped. Mirrors resolveNetDays' tail.
  */
 async function resolveNetDaysForRow(invoice) {
-  const snap = typeof invoice.payment_term_snapshot === 'string'
-    ? (() => { try { return JSON.parse(invoice.payment_term_snapshot); } catch { return null; } })()
-    : invoice.payment_term_snapshot;
+  const snap = parseJsonObject(invoice.payment_term_snapshot);
   if (snap && snap.net_days != null) {
     const n = ensureInt(snap.net_days);
     if (n) return n;
@@ -317,6 +383,10 @@ function formatMajor(minor, currency, locale) {
 
 module.exports = {
   getHierarchyHelpers,
+  computeInvoiceTotals,
+  cloneInvoiceLine,
+  parseJsonObject,
+  composePaymentTermSnapshot,
   nextInvoiceNumber,
   ensureCustomerCanBill,
   ensureEventMatchesCustomer,
