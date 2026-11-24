@@ -702,47 +702,62 @@ async function cancelInvoice(id, adminId) {
   return { cancelled: true, stornoId };
 }
 
+/**
+ * Admin override — issue the customer's running monthly drafts NOW. A
+ * customer has one open draft per currency and VAT rate (migration 256);
+ * every one with items is issued, an empty one next to a filled one stays
+ * open. Refuses with NO_MONTHLY_DRAFT when none is open and EMPTY_DRAFT
+ * when every one is empty. Returns { invoiceId, invoiceNumber } of the
+ * first issued draft (the route's toast) and `invoices`, every issued one.
+ */
 async function triggerMonthlyBillNow(customerId, adminId) {
-  const draft = await db('invoices')
+  const drafts = await db('invoices')
     .where({ customer_account_id: customerId, is_monthly_draft: true })
-    .orderBy('id', 'desc')
-    .first();
-  if (!draft) {
+    .orderBy('id', 'asc');
+  if (!drafts.length) {
     throw new AppError('No pending monthly bill for this customer', 409, 'NO_MONTHLY_DRAFT');
   }
-  const items = await db('invoice_line_items').where({ invoice_id: draft.id }).limit(1);
-  if (items.length === 0) {
+  const filled = [];
+  for (const draft of drafts) {
+    const items = await db('invoice_line_items').where({ invoice_id: draft.id }).limit(1);
+    if (items.length) filled.push(draft);
+  }
+  if (filled.length === 0) {
     throw new AppError('Monthly draft is empty — nothing to bill', 409, 'EMPTY_DRAFT');
   }
 
-  // Arm the draft: clear the discriminator, pin issue_date to today,
-  // and set scheduled_send_at to now so the flush pass + sendInvoice
-  // path treats it like any other ready-to-send invoice. Logged as a
-  // distinct activity so the audit trail shows admin override vs the
-  // scheduler's automatic fire.
-  const issueDate = new Date().toISOString().slice(0, 10);
-  await auditedUpdate(db, 'invoices', { id: draft.id }, {
-    is_monthly_draft: false,
-    issue_date: issueDate,
-    scheduled_send_at: new Date(),
-    updated_at: new Date(),
-  }, { actor: adminId, source: 'invoice.monthly.triggerNow' });
-  try {
-    await logActivity('monthly_bill_triggered_manually',
-      { invoiceId: draft.id, customerId, periodEnd: draft.monthly_period_end },
-      null, `admin:${adminId}`);
-  } catch (_) { /* non-fatal */ }
+  const invoices = [];
+  for (const draft of filled) {
+    // Arm the draft: clear the discriminator, pin issue_date to today,
+    // and set scheduled_send_at to now so the flush pass + sendInvoice
+    // path treats it like any other ready-to-send invoice. Logged as a
+    // distinct activity so the audit trail shows admin override vs the
+    // scheduler's automatic fire.
+    const issueDate = new Date().toISOString().slice(0, 10);
+    await auditedUpdate(db, 'invoices', { id: draft.id }, {
+      is_monthly_draft: false,
+      issue_date: issueDate,
+      scheduled_send_at: new Date(),
+      updated_at: new Date(),
+    }, { actor: adminId, source: 'invoice.monthly.triggerNow' });
+    try {
+      await logActivity('monthly_bill_triggered_manually',
+        { invoiceId: draft.id, customerId, periodEnd: draft.monthly_period_end },
+        null, `admin:${adminId}`);
+    } catch (_) { /* non-fatal */ }
 
-  // Inline send so admin gets immediate feedback (PDF stored, status
-  // flipped to 'sent', email queued). A failure here doesn't roll
-  // back the arming — the scheduler will pick it up on the next tick.
-  try {
-    await sendInvoice(draft.id, adminId);
-  } catch (err) {
-    logger.warn('triggerMonthlyBillNow: inline send failed — scheduler will retry',
-      { invoiceId: draft.id, err: err.message });
+    // Inline send so admin gets immediate feedback (PDF stored, status
+    // flipped to 'sent', email queued). A failure here doesn't roll
+    // back the arming — the scheduler will pick it up on the next tick.
+    try {
+      await sendInvoice(draft.id, adminId);
+    } catch (err) {
+      logger.warn('triggerMonthlyBillNow: inline send failed — scheduler will retry',
+        { invoiceId: draft.id, err: err.message });
+    }
+    invoices.push({ invoiceId: draft.id, invoiceNumber: draft.invoice_number, currency: draft.currency });
   }
-  return { invoiceId: draft.id, invoiceNumber: draft.invoice_number };
+  return { invoiceId: invoices[0].invoiceId, invoiceNumber: invoices[0].invoiceNumber, invoices };
 }
 module.exports = {
   sendInvoice,

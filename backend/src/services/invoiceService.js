@@ -38,7 +38,7 @@ const {
   listInvoices, getInvoiceById,
 } = queries;
 const {
-  getOrCreateMonthlyDraft, getMonthlyDraft, appendToMonthlyDraft, appendOneLineItemToMonthlyDraft,
+  getOrCreateMonthlyDraft, getMonthlyDrafts, accumulatedDraftIds, appendToMonthlyDraft, appendOneLineItemToMonthlyDraft,
 } = drafts;
 const { createInvoice, spawnInstallmentInvoices, scheduleInvoicesForEvent } = create;
 const { updateInstallmentPlan, validateInstallmentPlanInput } = installmentPlan;
@@ -88,7 +88,8 @@ module.exports = {
   // customerHoursService can append hour-logged line items onto the
   // running draft without duplicating the period/totals logic.
   getOrCreateMonthlyDraft,
-  getMonthlyDraft,
+  getMonthlyDrafts,
+  accumulatedDraftIds,
   appendToMonthlyDraft,
   appendOneLineItemToMonthlyDraft,
   triggerMonthlyBillNow,

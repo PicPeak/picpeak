@@ -346,8 +346,16 @@ async function releaseContractInvoiceClaim(contractId, adminId, claimedAt) {
 }
 
 /** The alreadyConverted result for a contract whose invoice(s) exist —
- * looked up by the source_contract_id lineage — or null if none do. */
+ * looked up by the source_contract_id lineage, or, for a quote accumulated
+ * into its customer's running monthly / manual bill, by the draft's lineage
+ * rows (migration 256) — or null if none do. */
 async function existingContractInvoiceResult(contract, contractId, hasInvoiceContractBackPointer) {
+  if (contract.source_quote_id) {
+    const accumulated = await require('../invoice/drafts').accumulatedDraftIds(db, { contractId });
+    if (accumulated.length) {
+      return { installmentsCreated: accumulated.length, invoiceIds: accumulated, alreadyConverted: true, accumulated: true };
+    }
+  }
   if (!hasInvoiceContractBackPointer) return null;
   const existing = await db('invoices').where({ source_contract_id: contractId }).orderBy('id').select('id');
   if (!existing.length) return null;

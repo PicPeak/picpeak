@@ -80,7 +80,11 @@ export const CustomerDetailPage: React.FC = () => {
     enabled: Number.isFinite(customerId) && customerId > 0
       && (customer?.billingCadence === 'monthly' || customer?.billingCadence === 'manual'),
   });
-  const monthlyDraft = monthlyDraftRes?.draft || null;
+  // One open draft per currency and VAT rate (migration 256); an older
+  // backend answers with `draft` only.
+  const monthlyDrafts = (monthlyDraftRes?.drafts
+    ?? (monthlyDraftRes?.draft ? [monthlyDraftRes.draft] : []))
+    .filter((d) => d.lineItems.length > 0);
 
   // Business-profile default locale powers the "Preferred language"
   // dropdown's helper hint — admins see which language a brand-new
@@ -238,7 +242,9 @@ export const CustomerDetailPage: React.FC = () => {
     successMessage: (result) =>
       t('customers.billing.triggered',
         'Monthly bill issued: {{number}}',
-        { number: result.invoiceNumber }),
+        { number: result.invoices?.length
+          ? result.invoices.map((i) => i.invoiceNumber).join(', ')
+          : result.invoiceNumber }),
     errorMessage: t('customers.billing.triggerError', 'Could not trigger the monthly bill.'),
   });
 
@@ -823,13 +829,14 @@ export const CustomerDetailPage: React.FC = () => {
           </div>
         )}
 
-        {/* Preview of the open monthly draft (migration 128). Shows
+        {/* Preview of the open monthly drafts (migration 128; one per
+            currency and VAT rate since 256). Shows
             every line item queued for the customer's current billing
             period so admin sees exactly what "Trigger invoice now"
             would ship. Hidden when no draft exists yet (admin hasn't
             saved anything onto the period). */}
-        {(form.billingCadence === 'monthly' || form.billingCadence === 'manual') && monthlyDraft && monthlyDraft.lineItems.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+        {(form.billingCadence === 'monthly' || form.billingCadence === 'manual') && monthlyDrafts.map((monthlyDraft) => (
+          <div key={monthlyDraft.id} className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                 {form.billingCadence === 'manual'
@@ -839,6 +846,15 @@ export const CustomerDetailPage: React.FC = () => {
                       'Pending in this month\'s bill')}
               </h3>
               <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                {monthlyDrafts.length > 1 && (
+                  <>
+                    {t('customers.billing.draftPreview.key', '{{currency}} · VAT {{rate}} %', {
+                      currency: monthlyDraft.currency,
+                      rate: Number(monthlyDraft.vatRate ?? 0),
+                    })}
+                    {' · '}
+                  </>
+                )}
                 {monthlyDraft.periodStart && monthlyDraft.periodEnd
                   ? t('customers.billing.draftPreview.periodRange',
                       '{{number}} · {{from}} – {{to}}',
@@ -890,6 +906,16 @@ export const CustomerDetailPage: React.FC = () => {
                   ))}
                 </tbody>
                 <tfoot className="bg-neutral-50 dark:bg-neutral-800">
+                  {Number(monthlyDraft.shippingAmountMinor || 0) > 0 && (
+                    <tr className="border-t border-neutral-200 dark:border-neutral-700">
+                      <td colSpan={4} className="px-3 py-1.5 text-right">
+                        {t('crm.lineItems.shipping', 'Shipping')}
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">
+                        {formatMoney(Number(monthlyDraft.shippingAmountMinor) / 100, monthlyDraft.currency)}
+                      </td>
+                    </tr>
+                  )}
                   <tr className="border-t-2 border-neutral-300 dark:border-neutral-600">
                     <td colSpan={4} className="px-3 py-2 text-right font-medium">
                       {t('crm.lineItems.total', 'Total')}
@@ -902,7 +928,7 @@ export const CustomerDetailPage: React.FC = () => {
               </table>
             </div>
           </div>
-        )}
+        ))}
 
         {/* Manual trigger — issue the running draft NOW. For monthly
             customers this bypasses the cadence-day scheduler tick; for

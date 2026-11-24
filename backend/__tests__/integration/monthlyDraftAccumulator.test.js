@@ -1,0 +1,263 @@
+/**
+ * The running bill of a monthly- or manual-billing customer (the accumulator
+ * draft, invoice/drafts.js) keeps what a converted quote says (issue 2649,
+ * item 1):
+ *
+ *   - currency: a EUR quote never lands on a CHF draft as CHF; one open draft
+ *     per customer AND currency;
+ *   - VAT: one open draft per customer, currency AND rate, so a 0 % quote
+ *     never retaxes an 8.1 % quote that came first;
+ *   - shipping: the quote's shipping is added to the draft's;
+ *   - parent totals: a zero-priced parent counts its priced sub-items;
+ *   - booking flow: prepare_invoice says the amounts were accumulated and
+ *     send_document skips the running bill instead of failing;
+ *   - lineage: the quotes and contracts accumulated into a draft are
+ *     recorded, so a contract-conversion retry finds the draft.
+ *
+ * Real SQLite with the full core-migration run (helpers/crmDb).
+ */
+const request = require('supertest');
+const {
+  bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
+} = require('./helpers/crmDb');
+
+jest.setTimeout(120000);
+
+let db; let cleanup; let tmpDir; let adminId;
+let quoteService; let invoiceService; let workflows; let token;
+const prevCwd = process.cwd();
+
+// insert(...).returning('id') yields [{ id }] on pg and [id] on SQLite.
+const insertId = async (q) => { const [row] = await q.returning('id'); return row && typeof row === 'object' ? row.id : row; };
+
+let customerSeq = 0;
+async function accumulatorCustomer(cadence = 'monthly', extra = {}) {
+  customerSeq += 1;
+  return insertId(db('customer_accounts').insert({
+    email: `acc-${customerSeq}@example.com`,
+    display_name: `Accumulator ${customerSeq}`,
+    password_hash: 'unused',
+    preferred_language: 'de',
+    is_active: 1,
+    billing_cadence: cadence,
+    created_at: new Date().toISOString(),
+    ...extra,
+  }));
+}
+
+/** An accepted quote made by the quote service (its totals are its own). */
+async function acceptedQuote(customerId, { currency = 'CHF', vatRate = 0, shippingAmountMinor = 0, lineItems } = {}) {
+  const quoteId = await quoteService.createQuote({
+    customerAccountId: customerId,
+    currency,
+    vatRate,
+    shippingAmountMinor,
+    lineItems: lineItems || [{ position: 1, quantity: 1, description: 'Shoot', unit_price_minor: 10000, discount_percent: 0, parent_position: null }],
+  }, adminId);
+  await db('quotes').where({ id: quoteId }).update({ status: 'accepted' });
+  return quoteId;
+}
+
+const openDrafts = (customerId) => db('invoices')
+  .where({ customer_account_id: customerId, is_monthly_draft: true, status: 'scheduled' })
+  .orderBy('id');
+
+beforeAll(async () => {
+  ({ db, cleanup, tmpDir } = await bootCrmDb());
+  process.chdir(tmpDir);
+  // Under jest's vm sandbox node-sqlite3 stores service-created Dates as
+  // "[object Object]"; normalise bindings the way the other invoice suites do.
+  const clientProto = Object.getPrototypeOf(db.client);
+  const origQuery = clientProto._query;
+  clientProto._query = function patchedQuery(connection, obj) {
+    if (obj && Array.isArray(obj.bindings)) {
+      obj.bindings = obj.bindings.map(
+        (b) => (b && typeof b === 'object' && typeof b.toISOString === 'function' ? b.toISOString() : b),
+      );
+    }
+    return origQuery.call(this, connection, obj);
+  };
+  db.client.pool.acquireTimeoutMillis = 2000;
+
+  ({ adminId } = await seedMinimal(db));
+  await assignAdminRole(db, adminId, 'super_admin');
+  token = mintAdminToken(adminId);
+  for (const key of ['bills', 'workflows']) {
+    const updated = await db('feature_flags').where({ key }).update({ value: true });
+    if (!updated) await db('feature_flags').insert({ key, value: true });
+  }
+  const profile = await db('business_profile').first();
+  await db('business_profile').where({ id: profile.id }).update({ default_currency: 'CHF', email: 'studio@example.com' });
+
+  quoteService = require('../../src/services/quoteService');
+  invoiceService = require('../../src/services/invoiceService');
+  workflows = require('../../src/services/workflows');
+}, 120000);
+
+afterAll(async () => {
+  process.chdir(prevCwd);
+  if (cleanup) await cleanup();
+});
+
+describe.each(['monthly', 'manual'])('converting quotes for a %s-billing customer', (cadence) => {
+  test('currency: a EUR quote opens its own EUR draft and is never relabelled CHF', async () => {
+    const customerId = await accumulatorCustomer(cadence);
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { currency: 'CHF' }), adminId);
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { currency: 'EUR' }), adminId);
+
+    const drafts = await openDrafts(customerId);
+    expect(drafts.map((d) => [d.currency, Number(d.total_amount_minor)])).toEqual([['CHF', 10000], ['EUR', 10000]]);
+  });
+
+  test('VAT: a 0 % quote after an 8.1 % one never retaxes the first', async () => {
+    const customerId = await accumulatorCustomer(cadence);
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { vatRate: 8.1 }), adminId);
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { vatRate: 0 }), adminId);
+    // A second 8.1 % quote joins the 8.1 % draft.
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { vatRate: 8.1 }), adminId);
+
+    const drafts = await openDrafts(customerId);
+    expect(drafts.map((d) => [Number(d.vat_rate), Number(d.net_amount_minor), Number(d.vat_amount_minor), Number(d.total_amount_minor)]))
+      .toEqual([[8.1, 20000, 1620, 21620], [0, 10000, 0, 10000]]);
+  });
+
+  test('shipping: the quote\'s shipping is added to the draft', async () => {
+    const customerId = await accumulatorCustomer(cadence);
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { shippingAmountMinor: 1500 }), adminId);
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { shippingAmountMinor: 500 }), adminId);
+
+    const [draft] = await openDrafts(customerId);
+    expect([Number(draft.shipping_amount_minor), Number(draft.total_amount_minor)]).toEqual([2000, 22000]);
+
+    // A later append (an hours entry) keeps it.
+    const customer = await db('customer_accounts').where({ id: customerId }).first();
+    await db.transaction((trx) => invoiceService.appendOneLineItemToMonthlyDraft(customer, {
+      description: 'Editing 1h', quantity: 1, unit_price_minor: 10000, discount_percent: 0,
+    }, adminId, trx));
+    const after = await db('invoices').where({ id: draft.id }).first();
+    expect([Number(after.shipping_amount_minor), Number(after.total_amount_minor)]).toEqual([2000, 32000]);
+  });
+
+  test('parent totals: a zero-priced parent counts its priced sub-item', async () => {
+    const customerId = await accumulatorCustomer(cadence);
+    const quoteId = await acceptedQuote(customerId, {
+      lineItems: [
+        { position: 1, quantity: 1, description: 'Package', unit_price_minor: 0, discount_percent: 0, parent_position: null },
+        { position: 2, quantity: 1, description: 'Coverage', unit_price_minor: 10000, discount_percent: 0, parent_position: 1 },
+      ],
+    });
+    await quoteService.convertToInvoiceOnly(quoteId, adminId);
+
+    const [draft] = await openDrafts(customerId);
+    expect([Number(draft.net_amount_minor), Number(draft.total_amount_minor)]).toEqual([10000, 10000]);
+  });
+
+  test('lineage: the accumulated quote and its contract are recorded, and a contract retry finds the draft', async () => {
+    const customerId = await accumulatorCustomer(cadence);
+    const quoteId = await acceptedQuote(customerId);
+    const contractId = await insertId(db('contracts').insert({
+      contract_number: `C-${cadence}-${customerSeq}`,
+      customer_account_id: customerId,
+      source_quote_id: quoteId,
+      status: 'fully_signed',
+      issue_date: '2026-01-01',
+      title: 'Agreement',
+      language: 'de',
+      created_by_admin_id: adminId,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+    await db('quotes').where({ id: quoteId }).update({ converted_contract_id: contractId });
+
+    const conversions = require('../../src/services/contract/conversions');
+    const first = await conversions.convertToInvoiceOnly(contractId, adminId);
+    const [draft] = await openDrafts(customerId);
+    expect(first.invoiceIds).toEqual([draft.id]);
+    const links = await db('invoice_accumulated_sources').where({ invoice_id: draft.id });
+    expect(links.map((l) => [Number(l.quote_id), Number(l.contract_id)])).toEqual([[quoteId, contractId]]);
+
+    // The claim goes stale (or the request is retried): the retry adopts the
+    // draft instead of failing on the converted quote.
+    await db('contracts').where({ id: contractId }).update({ invoice_prepared_at: null });
+    const again = await conversions.convertToInvoiceOnly(contractId, adminId);
+    expect(again).toMatchObject({ alreadyConverted: true, invoiceIds: [draft.id] });
+    expect(await db('invoice_line_items').where({ invoice_id: draft.id })).toHaveLength(1);
+  });
+});
+
+describe('every open draft of a customer', () => {
+  test('the customer page lists each draft and "Trigger invoice now" issues all of them', async () => {
+    const customerId = await accumulatorCustomer('manual');
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { currency: 'CHF' }), adminId);
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { currency: 'EUR' }), adminId);
+
+    const preview = await invoiceService.getMonthlyDrafts(customerId);
+    expect(preview.map((d) => d.currency)).toEqual(['CHF', 'EUR']);
+
+    const result = await invoiceService.triggerMonthlyBillNow(customerId, adminId);
+    expect(result.invoices.map((i) => i.invoiceId)).toEqual(preview.map((d) => d.id));
+    expect(await openDrafts(customerId)).toHaveLength(0);
+  });
+
+  test('editing a draft onto the currency and rate of another open draft answers 409', async () => {
+    const customerId = await accumulatorCustomer('monthly');
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { vatRate: 8.1 }), adminId);
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { vatRate: 0 }), adminId);
+    const [first] = await openDrafts(customerId);
+
+    const invoiceApp = buildRouteApp('/api/admin/invoices', require('../../src/routes/adminInvoices'));
+    const res = await request(invoiceApp).put(`/api/admin/invoices/${first.id}`)
+      .set('Authorization', `Bearer ${token}`).send({ vatRate: 0 });
+    expect({ status: res.status, code: res.body.code }).toEqual({ status: 409, code: 'MONTHLY_DRAFT_KEY_TAKEN' });
+    expect(Number((await db('invoices').where({ id: first.id }).first()).vat_rate)).toBe(8.1);
+  });
+
+  test('a line that states no rate (an hours entry) joins the open draft at its rate without retaxing it', async () => {
+    const customerId = await accumulatorCustomer('monthly');
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId, { vatRate: 8.1 }), adminId);
+    const customer = await db('customer_accounts').where({ id: customerId }).first();
+    await db.transaction((trx) => invoiceService.appendOneLineItemToMonthlyDraft(customer, {
+      description: 'Editing 1h', quantity: 1, unit_price_minor: 10000, discount_percent: 0,
+    }, adminId, trx));
+
+    const drafts = await openDrafts(customerId);
+    expect(drafts.map((d) => [Number(d.vat_rate), Number(d.net_amount_minor), Number(d.total_amount_minor)]))
+      .toEqual([[8.1, 20000, 21620]]);
+  });
+});
+
+describe('booking flow for an accumulator customer', () => {
+  test('prepare_invoice records the accumulation and send_document skips the running bill', async () => {
+    const customerId = await accumulatorCustomer('monthly');
+    const workflowId = await insertId(db('workflows').insert({
+      name: 'booking accumulator', trigger_type: 'quote.accepted.acc', version: 1, enabled: true, created_by: adminId,
+    }));
+    const nodes = [
+      { key: 't', type: 'trigger' },
+      { key: 'prep', type: 'action', config: { action: 'prepare_invoice' } },
+      { key: 'send', type: 'action', config: { action: 'send_document', document: 'invoice' } },
+    ];
+    for (const n of nodes) {
+      await db('workflow_nodes').insert({ workflow_id: workflowId, version: 1, node_key: n.key, type: n.type, config: JSON.stringify(n.config || {}) });
+    }
+    for (const [from, to] of [['t', 'prep'], ['prep', 'send']]) {
+      await db('workflow_edges').insert({ workflow_id: workflowId, version: 1, from_node: from, from_handle: null, to_node: to, loop_back: false });
+    }
+    const quoteId = await acceptedQuote(customerId);
+    const [runId] = await workflows.emitWorkflowEvent('quote.accepted.acc', {
+      entityType: 'quote', entityId: quoteId, payload: { actorAdminId: adminId },
+    });
+    const run = await db('workflow_runs').where({ id: runId }).first();
+    expect([run.status, run.error]).toEqual(['done', null]);
+
+    const [draft] = await openDrafts(customerId);
+    const vars = (typeof run.context === 'string' ? JSON.parse(run.context) : run.context).vars;
+    expect(vars.preparedInvoiceIds.map(Number)).toEqual([draft.id]);
+    expect(vars.accumulatedInvoiceIds.map(Number)).toEqual([draft.id]);
+
+    const send = workflows.registry.getAction('send_document');
+    const result = await send({ db, run: { id: runId, entity_type: 'quote', entity_id: quoteId }, node: { config: { document: 'invoice' } }, vars });
+    expect(result).toMatchObject({ skipped: true, accumulated: [draft.id] });
+    expect((await db('invoices').where({ id: draft.id }).first()).is_monthly_draft).toBeTruthy();
+  });
+});
