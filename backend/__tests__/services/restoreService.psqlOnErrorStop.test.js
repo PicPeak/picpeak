@@ -29,7 +29,7 @@ const mockLoaded = [];
 // The role may not drop the database: every DROP DATABASE fails.
 const mockDrop = { refused: false };
 // The header-settings question to the server fails (e.g. no EXECUTE on current_setting).
-const mockProbe = { fails: false };
+const mockProbe = { fails: false, failOnce: false };
 const mockSafetyDump = [
   '--', '-- PostgreSQL database dump', '--', '',
   'SET statement_timeout = 0;', 'SET transaction_timeout = 0;', 'SET client_encoding = \'UTF8\';', '',
@@ -55,7 +55,9 @@ jest.mock('../../src/utils/safeExec', () => {
         throw new Error('psql exited with code 1: ERROR:  must be owner of database picpeak_live');
       }
       if (args.includes('-c') && command.includes('current_setting')) {
-        if (mockProbe.fails) throw new Error('psql exited with code 1: ERROR:  permission denied for function current_setting');
+        const failNow = mockProbe.fails || mockProbe.failOnce;
+        mockProbe.failOnce = false;
+        if (failNow) throw new Error('psql exited with code 1: ERROR:  permission denied for function current_setting');
         return { stdout: 'transaction_timeout\n', stderr: '' };
       }
       if (args.includes('-f')) {
@@ -121,7 +123,7 @@ describe('restoreService — PostgreSQL load stops at the first failing statemen
   afterAll(async () => { if (cleanup) await cleanup(); });
 
   beforeEach(async () => {
-    spawnAsync.mockClear(); mockLoads.length = 0; mockLoaded.length = 0; mockDrop.refused = false; mockProbe.fails = false;
+    spawnAsync.mockClear(); mockLoads.length = 0; mockLoaded.length = 0; mockDrop.refused = false; mockProbe.fails = false; mockProbe.failOnce = false;
     // A failed rollback leaves the pool closed (the database would be empty).
     await require('../../src/database/db').reinitPool();
   });
@@ -259,6 +261,22 @@ describe('restoreService — PostgreSQL load stops at the first failing statemen
       const row = await db('restore_runs').orderBy('id', 'desc').first();
       expect(row.status).toBe('failed');
       expect(row.error_message).toMatch(/did not load.*syntax error at or near "BROKEN".*\(rolled back successfully to pre-restore state\)$/);
+    });
+
+    it('a header question that fails once stops the restore before any change, with no rollback', async () => {
+      const svc = newService();
+      mockProbe.failOnce = true;
+
+      await expect(run(svc, writeDump())).rejects.toThrow(/could not be prepared, nothing was changed.*permission denied for function current_setting/);
+
+      // Nothing was dropped, so nothing is rolled back (a rollback would drop
+      // the untouched database and lose writes made since the safety backup).
+      expect(indexOfCall('DROP DATABASE')).toBe(-1);
+      expect(loadCalls()).toHaveLength(0);
+      expect(svc.sendRestoreNotification).toHaveBeenCalledWith('failure', expect.objectContaining({ rollbackAttempted: false }));
+      const { db } = require('../../src/database/db');
+      const row = await db('restore_runs').orderBy('id', 'desc').first();
+      expect(row.status).toBe('blocked');
     });
 
     it('when the rollback fails too, the safety backup is kept and named', async () => {
