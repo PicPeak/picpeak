@@ -279,6 +279,17 @@ describe('restoreService — PostgreSQL load stops at the first failing statemen
       expect(row.status).toBe('blocked');
     });
 
+    it('stays a no-change failure when restoring the target index fails after it too', async () => {
+      const svc = newService();
+      mockProbe.failOnce = true;
+      restoreRuntime.mockRejectedValueOnce(new Error('database briefly unreachable'));
+
+      await expect(run(svc, writeDump())).rejects.toThrow(/could not be prepared.*index preservation failed: database briefly unreachable/);
+
+      expect(indexOfCall('DROP DATABASE')).toBe(-1);
+      expect(svc.sendRestoreNotification).toHaveBeenCalledWith('failure', expect.objectContaining({ rollbackAttempted: false }));
+    });
+
     it('when the rollback fails too, the safety backup is kept and named', async () => {
       const svc = newService();
       mockLoads.push(psqlFailure('/tmp/dump.db', 'BROKEN'), psqlFailure('/tmp/database.sql', 'OOPS'));

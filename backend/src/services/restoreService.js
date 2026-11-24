@@ -2086,7 +2086,11 @@ END $$;`
           await s3Index.restoreDatabaseIndex(db, targetIndex);
           await portableRuntime.restore(db, targetRuntime);
         } catch (preserveError) {
-          throw new Error(`${error.message}; target S3 generation index preservation failed: ${preserveError.message}`);
+          // Keeps beforeDestinationChange: a failure before the DROP stays
+          // one, or the caller would roll back an untouched database.
+          throw Object.assign(
+            new Error(`${error.message}; target S3 generation index preservation failed: ${preserveError.message}`),
+            { beforeDestinationChange: error.beforeDestinationChange });
         }
       }
       this.log('error', 'Database restore failed', { error: error.message });
