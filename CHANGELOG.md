@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.136.3](https://github.com/PicPeak/picpeak/compare/v3.136.2...v3.136.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* **backup:** wait for the SQLite write lock instead of failing the backup (stable) ([#2651](https://github.com/PicPeak/picpeak/issues/2651)) ([2f4795b](https://github.com/PicPeak/picpeak/commit/2f4795b09d14611bf3d3a24b0c4b9d3e8be2896e))
+* **crm:** bind quote reads, answers and project links to the customer they were checked for (stable) ([#2655](https://github.com/PicPeak/picpeak/issues/2655)) ([6287f93](https://github.com/PicPeak/picpeak/commit/6287f936d367b8d44273f7b57277da9deacaf507))
+* **crm:** give every invoice its own payment term; show the split term on the quote PDF (stable) ([#2646](https://github.com/PicPeak/picpeak/issues/2646)) ([58057a2](https://github.com/PicPeak/picpeak/commit/58057a21aebfc0a8ab3e5c60e6d36670b5e513f5))
+* **crm:** keep currency, VAT, shipping and lineage when quotes accumulate into the running bill (stable) ([#2657](https://github.com/PicPeak/picpeak/issues/2657)) ([3ae61b8](https://github.com/PicPeak/picpeak/commit/3ae61b87f44e59622ac347d8d6d1845307c09b5b))
+* **crm:** page through the invoices list (stable) ([#2643](https://github.com/PicPeak/picpeak/issues/2643)) ([8065870](https://github.com/PicPeak/picpeak/commit/8065870ef814f8bf21925c515b9029f6189bfaef))
+* **crm:** save a draft quote's customer and currency (stable) ([#2647](https://github.com/PicPeak/picpeak/issues/2647)) ([faa6f4a](https://github.com/PicPeak/picpeak/commit/faa6f4aa9295095dcf3fd71267756329343dea0b))
+* **crm:** save the manual billing cadence on a customer (stable) ([#2645](https://github.com/PicPeak/picpeak/issues/2645)) ([f8fc4e8](https://github.com/PicPeak/picpeak/commit/f8fc4e8cef7793446e8edda7b3d09a9682560a7c))
+* **money:** format string minor amounts instead of showing 0 (stable) ([#2642](https://github.com/PicPeak/picpeak/issues/2642)) ([37ba325](https://github.com/PicPeak/picpeak/commit/37ba325096fd4fbca98cbb19ef28bbeda07dc527))
+
 ## [3.136.2](https://github.com/PicPeak/picpeak/compare/v3.136.1...v3.136.2) (2026-11-23)
 
 
