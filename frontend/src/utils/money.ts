@@ -77,6 +77,16 @@ function buildFormatter(currency: string | null | undefined, opts?: FormatMoneyO
 }
 
 /**
+ * An amount as a finite number, else 0. Numeric strings are parsed because
+ * PostgreSQL returns bigint columns (`*_amount_minor`) as strings; a blank
+ * or non-numeric string counts as 0, like null/undefined.
+ */
+function toFiniteAmount(amount: number | string | null | undefined): number {
+  const n = typeof amount === 'string' && amount.trim() !== '' ? Number(amount) : amount;
+  return typeof n === 'number' && Number.isFinite(n) ? n : 0;
+}
+
+/**
  * Format a MAJOR-unit amount (e.g. 12.5 for €12.50) as a localised
  * currency string. Pass `*_amount_minor` columns through
  * {@link formatMoneyMinor} instead — passing minor units here yields
@@ -86,24 +96,25 @@ function buildFormatter(currency: string | null | undefined, opts?: FormatMoneyO
  * currency column — and falls back to CHF, same as buildFormatter.
  */
 export function formatMoney(
-  amount: number,
+  amount: number | string | null | undefined,
   currency: string | null | undefined,
   opts?: FormatMoneyOptions,
 ): string {
-  const safe = Number.isFinite(amount) ? amount : 0;
+  const safe = toFiniteAmount(amount);
   return buildFormatter(currency, opts).format(safe);
 }
 
 /**
  * Format a MINOR-unit amount (the integer cents/Rappen stored in
  * `*_amount_minor` columns) as a localised currency string. Divides
- * by 100 before handing to Intl.NumberFormat.
+ * by 100 before handing to Intl.NumberFormat. Accepts the string form
+ * PostgreSQL uses for bigint columns.
  */
 export function formatMoneyMinor(
-  minor: number,
-  currency: string,
+  minor: number | string | null | undefined,
+  currency: string | null | undefined,
   opts?: FormatMoneyOptions,
 ): string {
-  const safe = Number.isFinite(minor) ? minor : 0;
+  const safe = toFiniteAmount(minor);
   return buildFormatter(currency, opts).format(safe / 100);
 }
