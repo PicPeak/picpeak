@@ -104,7 +104,7 @@ describe('restoreService — migration ledger of another release line', () => {
     svc.sendRestoreNotification = jest.fn(async () => {});
     return svc.restore({ source: backupRoot, manifestPath: path.join(backupRoot, 'm.json'), restoreType, skipPreBackup: true });
   };
-  const sqliteRestoreCalls = () => spawnAsync.mock.calls.filter(([cmd, args]) => cmd === 'sqlite3' && String(args[1]).startsWith('.restore'));
+  const sqliteRestoreCalls = () => spawnAsync.mock.calls.filter(([cmd, args]) => cmd === 'sqlite3' && String(args.at(-1)).startsWith('.restore'));
 
   beforeAll(async () => {
     ({ cleanup } = await bootCrmDb());
