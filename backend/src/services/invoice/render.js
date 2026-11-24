@@ -10,6 +10,7 @@ const { buildIssuerBlock, buildRecipientBlock } = require('../_renderContext');
 const pdfService = require('../pdfService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { getHierarchyHelpers } = require('./helpers');
+const { isFrozenTerm } = require('./paymentTerm');
 const { getInvoiceById } = require('./queries');
 
 
@@ -44,8 +45,9 @@ async function buildInvoiceRenderContext(invoice, lineItems) {
   }
 
   // Resolve the payment-term snapshot to thread Skonto + net-days into
-  // the PDF's "Zahlungsbedingungen" block. Three sources, in priority
-  // order:
+  // the PDF's "Zahlungsbedingungen" block. A frozen snapshot (every
+  // invoice made since migration 255) is the whole term. Without the
+  // marker, three sources, in priority order:
   //   1. The invoice's OWN snapshot (migration 113 — set when admin
   //      picks a template directly in the New Invoice form).
   //   2. The originating quote's snapshot, if this invoice was
@@ -55,9 +57,23 @@ async function buildInvoiceRenderContext(invoice, lineItems) {
   // quoteService builds it so pdfService.drawPaymentBlock renders
   // the same block on both document types.
   let paymentTerm = null;
+  // An invoice's own term, frozen when it was created (invoice/paymentTerm):
+  // shown as it is. The fallbacks below run only for a snapshot without the
+  // marker, and behave as before.
+  const ownTerm = typeof invoice.payment_term_snapshot === 'string'
+    ? (() => { try { return JSON.parse(invoice.payment_term_snapshot); } catch { return null; } })()
+    : invoice.payment_term_snapshot;
+  const frozenTerm = isFrozenTerm(ownTerm);
 
   // Invoice-level snapshot wins when set.
-  if (invoice.payment_term_snapshot) {
+  if (frozenTerm) {
+    paymentTerm = {
+      description: ownTerm.description,
+      netDays: ownTerm.net_days,
+      skontoPercent: ownTerm.skonto_percent,
+      skontoWithinDays: ownTerm.skonto_within_days,
+    };
+  } else if (invoice.payment_term_snapshot) {
     const snapshot = typeof invoice.payment_term_snapshot === 'string'
       ? (() => { try { return JSON.parse(invoice.payment_term_snapshot); } catch { return null; } })()
       : invoice.payment_term_snapshot;
@@ -105,7 +121,9 @@ async function buildInvoiceRenderContext(invoice, lineItems) {
   const defaultSkontoDays = Number.isFinite(Number(defaultSkontoDaysRaw)) && Number(defaultSkontoDaysRaw) > 0
     ? parseInt(defaultSkontoDaysRaw, 10) : null;
 
-  if (paymentTerm) {
+  if (frozenTerm) {
+    // Resolved when the invoice was made; nothing to fill.
+  } else if (paymentTerm) {
     // The source quote's snapshot may carry only some of the Skonto
     // fields (e.g. when the template predates Skonto support); fill
     // missing parts from the global defaults so the PDF still shows

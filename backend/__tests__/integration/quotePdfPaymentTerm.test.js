@@ -5,7 +5,9 @@
  * Pins: the quote PDF reads the payment term from the split net-days /
  * timing pickers, like sendQuote, and falls back to the legacy single
  * template. A quote that is no longer a draft renders the term sendQuote
- * snapshotted, even after its template was edited.
+ * snapshotted, even after its template was edited; an edit of a sent or
+ * expired quote drops that snapshot. An invoice made from the quote keeps
+ * its own term (frozen at creation, invoice/paymentTerm).
  */
 
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
@@ -137,34 +139,79 @@ describe('buildRenderContext payment term', () => {
     expect(ctx.paymentTerm).toEqual(expect.objectContaining({ netDays: 10 }));
   });
 
-  it('keeps the term an invoice made from a sent quote inherits when the quote is edited', async () => {
-    const netId = await insertId('payment_net_days_templates', {
-      name: 'Inherit Net 20', description: '20 days net', net_days: 20, skonto_percent: 3, skonto_within_days: 10,
-    });
-    const timingId = await insertId('payment_timing_templates', {
-      name: 'Inherit all after', description: 'Everything after the event',
-      installments: JSON.stringify([{ percent: 100, label: 'Full' }]),
-    });
+  async function netAndTiming(name, net) {
+    return {
+      paymentNetDaysTemplateId: await insertId('payment_net_days_templates', { name, description: `${net.net_days} days net`, ...net }),
+      paymentTimingTemplateId: await insertId('payment_timing_templates', {
+        name: `${name} timing`, description: 'Everything after the event',
+        installments: JSON.stringify([{ percent: 100, label: 'Full' }]),
+      }),
+    };
+  }
+  async function sentQuote(term) {
     const quoteId = await quoteService.createQuote({
-      customerAccountId: customerId, currency: 'CHF', vatRate: 0,
-      paymentNetDaysTemplateId: netId, paymentTimingTemplateId: timingId,
+      customerAccountId: customerId, currency: 'CHF', vatRate: 0, ...term,
       lineItems: [{ position: 1, quantity: 1, description: 'Prints', unit_price_minor: 30000 }],
     }, adminId);
     const { quote } = await quoteService.getQuoteById(quoteId);
     const sentTerm = await quoteService._internal.resolvePaymentTerm(quote);
     await db('quotes').where({ id: quoteId }).update({ status: 'sent', payment_term_snapshot: JSON.stringify(sentTerm) });
-    const invoiceId = await insertId('invoices', {
-      invoice_number: `INHERIT-${quoteId}`, customer_account_id: customerId, issue_date: '2026-06-01',
-      due_date: '2026-06-30', status: 'draft', currency: 'CHF', net_amount_minor: 10000, vat_amount_minor: 0,
-      total_amount_minor: 10000, created_by_admin_id: adminId, deal_uuid: require('crypto').randomUUID(), source_quote_id: quoteId,
-    });
-    const { resolveSkontoPercentForInvoice } = require('../../src/services/invoiceService');
+    return quoteId;
+  }
+  async function pdfTerm(quoteId) {
+    const { quote, lineItems } = await quoteService.getQuoteById(quoteId);
+    return (await quoteService._internal.buildRenderContext(quote, lineItems)).paymentTerm;
+  }
+
+  it('shows Net 10 on a sent Net 30 quote edited to Net 10 and declined on the customer\'s behalf', async () => {
+    const net30 = await netAndTiming('Decline Net 30', { net_days: 30 });
+    const net10 = await netAndTiming('Decline Net 10', { net_days: 10 });
+    const quoteId = await sentQuote(net30);
+
+    await quoteService.updateQuote(quoteId, { paymentNetDaysTemplateId: net10.paymentNetDaysTemplateId }, adminId);
+    expect((await db('quotes').where({ id: quoteId }).first()).payment_term_snapshot).toBeNull();
+    await quoteService.adminDeclineQuote(quoteId, adminId);
+
+    expect((await db('quotes').where({ id: quoteId }).first()).status).toBe('declined');
+    expect(await pdfTerm(quoteId)).toEqual(expect.objectContaining({ netDays: 10 }));
+  });
+
+  it('keeps no stale term on an edited expired quote', async () => {
+    const net30 = await netAndTiming('Expired Net 30', { net_days: 30 });
+    const net10 = await netAndTiming('Expired Net 10', { net_days: 10 });
+    const quoteId = await sentQuote(net30);
+    await db('quotes').where({ id: quoteId }).update({ status: 'expired' });
+
+    await quoteService.updateQuote(quoteId, { paymentNetDaysTemplateId: net10.paymentNetDaysTemplateId }, adminId);
+
+    const row = await db('quotes').where({ id: quoteId }).first();
+    expect(row.status).toBe('expired');
+    expect(row.payment_term_snapshot).toBeNull();
+    expect(await pdfTerm(quoteId)).toEqual(expect.objectContaining({ netDays: 10 }));
+  });
+
+  it('keeps the Skonto of an invoice made from a sent quote through an edit and an admin acceptance', async () => {
+    const skonto3 = await netAndTiming('Keep Skonto 3', { net_days: 20, skonto_percent: 3, skonto_within_days: 10 });
+    const skonto1 = await netAndTiming('Keep Skonto 1', { net_days: 10, skonto_percent: 1, skonto_within_days: 5 });
+    const quoteId = await sentQuote(skonto3);
+    const invoiceService = require('../../src/services/invoiceService');
+    const { invoiceIds: [invoiceId] } = await invoiceService.createInvoice({
+      customerAccountId: customerId, sourceQuoteId: quoteId, currency: 'CHF', vatRate: 0,
+      lineItems: [{ position: 1, quantity: 1, description: 'Deposit', unit_price_minor: 10000 }],
+    }, adminId);
     const invoice = () => db('invoices').where({ id: invoiceId }).first();
-    expect(await resolveSkontoPercentForInvoice(await invoice())).toBe(3);
+    expect(await invoiceService.resolveSkontoPercentForInvoice(await invoice())).toBe(3);
 
-    await quoteService.updateQuote(quoteId, { eventName: 'Renamed' }, adminId);
+    await quoteService.updateQuote(quoteId, { paymentNetDaysTemplateId: skonto1.paymentNetDaysTemplateId }, adminId);
+    expect(await invoiceService.resolveSkontoPercentForInvoice(await invoice())).toBe(3);
+    await quoteService.adminAcceptQuote(quoteId, adminId);
 
-    expect(await resolveSkontoPercentForInvoice(await invoice())).toBe(3);
+    expect(JSON.parse((await db('quotes').where({ id: quoteId }).first()).payment_term_snapshot))
+      .toEqual(expect.objectContaining({ skonto_percent: 1 }));
+    expect(await invoiceService.resolveSkontoPercentForInvoice(await invoice())).toBe(3);
+    const { buildInvoiceRenderContext } = require('../../src/services/invoice/render');
+    expect((await buildInvoiceRenderContext(await invoice(), [])).paymentTerm)
+      .toEqual(expect.objectContaining({ netDays: 20, skontoPercent: 3, skontoWithinDays: 10 }));
   });
 
   it('leaves out the timing template\'s schedule text when the quote overrides its installments', async () => {
@@ -186,42 +233,6 @@ describe('buildRenderContext payment term', () => {
 
     const ctx = await quoteService._internal.buildRenderContext(quote, lineItems);
     expect(ctx.paymentTerm).toEqual(expect.objectContaining({ description: 'Payable within 15 days', netDays: 15 }));
-  });
-
-  it('keeps the term an invoice inherited when an edited quote is accepted on the customer\'s behalf', async () => {
-    const net3 = await insertId('payment_net_days_templates', {
-      name: 'Accept Skonto 3', description: '20 days net', net_days: 20, skonto_percent: 3, skonto_within_days: 10,
-    });
-    const net1 = await insertId('payment_net_days_templates', {
-      name: 'Accept Skonto 1', description: '10 days net', net_days: 10, skonto_percent: 1, skonto_within_days: 5,
-    });
-    const timingId = await insertId('payment_timing_templates', {
-      name: 'Accept inherit all after', description: 'Everything after the event',
-      installments: JSON.stringify([{ percent: 100, label: 'Full' }]),
-    });
-    const quoteId = await quoteService.createQuote({
-      customerAccountId: customerId, currency: 'CHF', vatRate: 0,
-      paymentNetDaysTemplateId: net3, paymentTimingTemplateId: timingId,
-      lineItems: [{ position: 1, quantity: 1, description: 'Prints', unit_price_minor: 30000 }],
-    }, adminId);
-    const { quote } = await quoteService.getQuoteById(quoteId);
-    const sentTerm = await quoteService._internal.resolvePaymentTerm(quote);
-    await db('quotes').where({ id: quoteId }).update({ status: 'sent', payment_term_snapshot: JSON.stringify(sentTerm) });
-    const invoiceId = await insertId('invoices', {
-      invoice_number: `ACCEPT-INH-${quoteId}`, customer_account_id: customerId, issue_date: '2026-06-01',
-      due_date: '2026-06-30', status: 'draft', currency: 'CHF', net_amount_minor: 10000, vat_amount_minor: 0,
-      total_amount_minor: 10000, created_by_admin_id: adminId, deal_uuid: require('crypto').randomUUID(), source_quote_id: quoteId,
-    });
-    const { resolveSkontoPercentForInvoice } = require('../../src/services/invoiceService');
-    const invoice = () => db('invoices').where({ id: invoiceId }).first();
-    expect(await resolveSkontoPercentForInvoice(await invoice())).toBe(3);
-
-    await quoteService.updateQuote(quoteId, { paymentNetDaysTemplateId: net1 }, adminId);
-    await quoteService.adminAcceptQuote(quoteId, adminId);
-
-    expect(JSON.parse((await db('quotes').where({ id: quoteId }).first()).payment_term_snapshot))
-      .toEqual(expect.objectContaining({ skonto_percent: 1 }));
-    expect(await resolveSkontoPercentForInvoice(await invoice())).toBe(3);
   });
 
   it('previews an unsaved installments override like the saved quote', async () => {

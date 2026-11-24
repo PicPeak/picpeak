@@ -9,6 +9,7 @@ const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { renumberLineItemPositions } = require('../../utils/lineItemPositions');
 const { computeMonthlyCadenceDate, getHierarchyHelpers, nextInvoiceNumber } = require('./helpers');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
+const { frozenPaymentTerm } = require('./paymentTerm');
 
 
 /**
@@ -108,6 +109,8 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
     business_bank_account_id: bank?.id || null,
     qr_format: null,
     is_monthly_draft: true,
+    // The defaults as they stand when the draft opens (invoice/paymentTerm).
+    payment_term_snapshot: await frozenPaymentTerm(trx),
     monthly_period_start: periodStart ? periodStart.toISOString().slice(0, 10) : null,
     monthly_period_end: periodEnd ? periodEnd.toISOString().slice(0, 10) : null,
     // Migration 140 — each monthly-draft cycle is its own deal (no

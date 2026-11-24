@@ -11,6 +11,7 @@ const { resolveBillingRecipients } = require('../_billingRecipients');
 const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
+const { frozenPaymentTerm } = require('./paymentTerm');
 const { computeDueDate, ensureCustomerCanBill, formatMajor, getHierarchyHelpers, nextInvoiceNumber, resolveNetDaysForRow } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 const { createInvoice } = require('./create');
@@ -318,6 +319,8 @@ async function createStorno(originalId, adminId, trx = db) {
     business_bank_account_id: null,
     qr_format: null,
     payment_term_template_id: null,
+    // Its own term like every invoice (invoice/paymentTerm): the defaults.
+    payment_term_snapshot: await frozenPaymentTerm(trx),
     // Lineage.
     cancels_invoice_id: original.id,
     replaces_invoice_id: null,
@@ -567,6 +570,8 @@ async function reissueInvoice(id, adminId) {
       // already accepts these on both code paths.
       paymentNetDaysTemplateId: original.payment_net_days_template_id || null,
       paymentTimingTemplateId: original.payment_timing_template_id || null,
+      // Without a template, the term the cancelled invoice showed.
+      _paymentTermSnapshot: original.payment_term_snapshot || null,
       eventName: original.event_name || null,
       eventDate: original.event_date || null,
       eventTimeStart: original.event_time_start || null,

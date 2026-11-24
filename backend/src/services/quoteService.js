@@ -691,6 +691,12 @@ async function updateQuote(id, payload, adminId) {
       assertQuoteTransition(existing.status, 'draft');
       updates.status = 'draft';
     }
+    // The term it was sent with no longer holds: a later decline, accept or
+    // render resolves the edited one. Invoices made from the quote keep their
+    // own, frozen when each was created (invoice/paymentTerm).
+    if (existing.status === 'sent' || existing.status === 'expired') {
+      updates.payment_term_snapshot = null;
+    }
     const map = {
       eventName: 'event_name',
       eventDate: 'event_date',
@@ -1308,23 +1314,6 @@ async function recordResponse({ token, action, ip, tosAccepted, actor = QUOTE_LI
 }
 
 /**
- * Invoices made from a quote without a payment term of their own show the
- * quote's snapshot. Before an acceptance replaces that snapshot, they get the
- * one they showed so far, so their terms (Skonto, net days) don't change
- * after the fact. Outside the admin's CRM view: the invoices keep what they
- * already showed, whoever may read them.
- */
-async function keepInheritedTerm(trx, quote, termUpdate, history) {
-  if (!('payment_term_snapshot' in termUpdate) || !quote.payment_term_snapshot) return;
-  const inherited = typeof quote.payment_term_snapshot === 'string'
-    ? quote.payment_term_snapshot : JSON.stringify(quote.payment_term_snapshot);
-  await require('../database/crmAccess').withTrustedCrmAccess('quote accept: invoices keep the inherited term',
-    () => auditedUpdate(trx, 'invoices',
-      (q) => q.where({ source_quote_id: quote.id }).whereNull('payment_term_snapshot'),
-      { payment_term_snapshot: inherited }, history));
-}
-
-/**
  * Admin "accept on behalf of customer" — records the quote as
  * accepted directly, bypassing the public token + response window.
  * Used when the admin is on the phone with the customer and they
@@ -1362,9 +1351,10 @@ async function adminAcceptQuote(id, adminId) {
 
   const history = { actor: adminId, source: 'quote.accept.admin' };
   // A quote accepted without a send since its last edit (a draft) freezes its
-  // current term now, over the snapshot an earlier send left: the accepted
-  // PDF and the invoices made from it show the conditions the admin last
-  // saved. A sent quote keeps the term it was sent with.
+  // current term now: the accepted PDF and the invoices made from it show the
+  // conditions the admin last saved. A sent quote keeps the term it was sent
+  // with. Invoices already made from the quote keep their own (frozen when
+  // each was created, invoice/paymentTerm).
   const termUpdate = storedPaymentTerm(quote) ? {} : {
     payment_term_snapshot: await resolvePaymentTerm(quote).then(t => (t ? JSON.stringify(t) : null)),
   };
@@ -1400,7 +1390,6 @@ async function adminAcceptQuote(id, adminId) {
     if (!applied || overrideOf(await trx('quotes').where({ id }).first('payment_term_installments_override')) !== overrideOf(quote)) {
       throw new AppError('The quote changed; reload it', 409, 'QUOTE_CHANGED');
     }
-    await keepInheritedTerm(trx, quote, termUpdate, history);
   });
 
   try {
