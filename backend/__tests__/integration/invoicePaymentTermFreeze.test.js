@@ -232,3 +232,29 @@ test('a reissue keeps the term of the invoice it replaces, not its quote\'s late
   const { id: reissued } = await invoiceService.reissueInvoice(invoiceId, adminId);
   expect(await snapshotOf(reissued)).toEqual(expect.objectContaining({ net_days: 20, skonto_percent: 3, frozen: true }));
 });
+
+test('a reissue under a changed default net days dates its due date by the term it keeps, and the send re-anchors it', async () => {
+  const { computeDueDate } = require('../../src/services/invoice/helpers');
+  const day = (d) => d.toISOString().slice(0, 10);
+  await setSetting('crm_payment_default_net_days', 21);
+  const invoiceId = await invoiceFrom(null);
+  expect(await snapshotOf(invoiceId)).toEqual(expect.objectContaining({ net_days: 21 }));
+  await db('invoices').where({ id: invoiceId }).update({ status: 'cancelled' });
+  await setSetting('crm_payment_default_net_days', 30);
+
+  const { id: reissued } = await invoiceService.reissueInvoice(invoiceId, adminId);
+  const row = await loadInvoice(reissued);
+  expect(JSON.parse(row.payment_term_snapshot).net_days).toBe(21);
+  expect(day(new Date(row.due_date))).toBe(day(computeDueDate(new Date(row.issue_date), 21)));
+
+  // An older draft of it, still machine-dated: the send moves the due date
+  // to the send day + 21, as for any other invoice.
+  await db('invoices').where({ id: reissued }).update({
+    issue_date: '2026-01-05', due_date: day(computeDueDate(new Date('2026-01-05'), 21)), scheduled_send_at: null,
+  });
+  await invoiceService.sendInvoice(reissued, adminId);
+  const sent = await loadInvoice(reissued);
+  const today = new Date().toISOString().slice(0, 10);
+  expect(day(new Date(sent.issue_date))).toBe(today);
+  expect(day(new Date(sent.due_date))).toBe(day(computeDueDate(new Date(today), 21)));
+});
