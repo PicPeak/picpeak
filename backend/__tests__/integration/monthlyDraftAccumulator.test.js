@@ -468,3 +468,45 @@ describe('accumulator draft creation race', () => {
     expect(await openDrafts(customerId)).toHaveLength(1);
   });
 });
+
+describe('accumulator draft creation race under a booking flow', () => {
+  test('the flow adopts the draft the same admin opened concurrently under another deal', async () => {
+    const crmAccess = require('../../src/database/crmAccess');
+    const drafts = require('../../src/services/invoice/drafts');
+    const billerId = await adminWithPermissions(['quotes.view', 'quotes.manage', 'bills.view', 'bills.manage']);
+    const customerId = await accumulatorCustomer('monthly');
+    const customer = await db('customer_accounts').where({ id: customerId }).first();
+    const key = { currency: 'CHF', vatRate: 0 };
+    const quoteId = await ownedAcceptedQuote(customerId, billerId);
+    const quote = await db('quotes').where({ id: quoteId }).first();
+    // The booking flow's actor: the biller, fenced to the quote's deal.
+    const actor = Object.freeze({
+      id: billerId, roleName: 'crm_workflow_creator',
+      permissions: new Set(['quotes.view', 'quotes.manage', 'bills.view', 'bills.manage']),
+      capability: Object.freeze({ root: 'quotes', id: quoteId, dealUuid: quote.deal_uuid, eventId: null }),
+    });
+
+    // A concurrent request by the same admin commits its draft, with a deal
+    // of its own, between the flow's lookup (none) and its key check.
+    let rival = null;
+    const real = crmAccess.withTrustedCrmAccess;
+    const spy = jest.spyOn(crmAccess, 'withTrustedCrmAccess').mockImplementation(async (reason, work) => {
+      if (!rival && /out of reach/.test(reason)) {
+        spy.mockImplementation(real);
+        rival = await real('test: concurrent request', () => drafts.getOrCreateMonthlyDraft(customer, billerId, db, key));
+      }
+      return real(reason, work);
+    });
+    let result;
+    try {
+      result = await crmAccess.withCrmActor(actor, () => drafts.withAccumulatorDraftDeal(db, customer, key,
+        (dealUuid) => drafts.getOrCreateMonthlyDraft(customer, billerId, db, { ...key, dealUuid })));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(rival).not.toBeNull();
+    expect(rival.row.deal_uuid).not.toBe(quote.deal_uuid);
+    expect({ id: result.id, created: result.created }).toEqual({ id: rival.id, created: false });
+    expect(await openDrafts(customerId)).toHaveLength(1);
+  });
+});
