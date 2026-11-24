@@ -780,12 +780,28 @@ async function assignDocument(table, projectId, documentId, actor = null) {
   // foreign document into the caller's project and only then refused the
   // cascade. It already stamps this row's project_id via the deal_uuid sweep;
   // the update below covers the standalone (no-deal) document.
-  if (projectId && doc.deal_uuid) {
-    await linkDealToProject(doc.deal_uuid, projectId, db, actor);
-  }
-  await auditedUpdate(db, table, { id: documentId }, { project_id: projectId || null },
-    { actor: actor?.id ?? null, source: 'project.assign_document' });
-  if (projectId) await promoteInquiry(projectId);
+  // One transaction with the conditional write below, so a document moved
+  // meanwhile rolls the cascade back too (customer adoption, inquiry
+  // promotion, links). The cascade's column checks are resolved first: on
+  // SQLite's single connection they would wait on this transaction.
+  if (projectId && doc.deal_uuid) await resolveDealLinkSchema();
+  await db.transaction(async (trx) => {
+    if (projectId && doc.deal_uuid) {
+      await linkDealToProject(doc.deal_uuid, projectId, trx, actor);
+    }
+    // Conditional on the customer and deal the checks above read: a document
+    // moved to another customer meanwhile (a reopened quote reassigned) must
+    // not land in the project of the customer it left.
+    const readAs = { id: documentId, customer_account_id: doc.customer_account_id ?? null };
+    if ('deal_uuid' in doc) readAs.deal_uuid = doc.deal_uuid ?? null;
+    const applied = await auditedUpdate(trx, table, readAs, { project_id: projectId || null },
+      { actor: actor?.id ?? null, source: 'project.assign_document' });
+    if (!applied) {
+      throw new AppError('This document changed while it was being attached. Reload it and try again.', 409,
+        table === 'quotes' ? 'QUOTE_CHANGED' : 'CONTRACT_CHANGED');
+    }
+    if (projectId) await promoteInquiry(projectId, trx);
+  });
   return { projectId: projectId || null, documentId };
 }
 
