@@ -28,6 +28,8 @@ const mockLoads = [];
 const mockLoaded = [];
 // The role may not drop the database: every DROP DATABASE fails.
 const mockDrop = { refused: false };
+// The header-settings question to the server fails (e.g. no EXECUTE on current_setting).
+const mockProbe = { fails: false };
 const mockSafetyDump = [
   '--', '-- PostgreSQL database dump', '--', '',
   'SET statement_timeout = 0;', 'SET transaction_timeout = 0;', 'SET client_encoding = \'UTF8\';', '',
@@ -53,6 +55,7 @@ jest.mock('../../src/utils/safeExec', () => {
         throw new Error('psql exited with code 1: ERROR:  must be owner of database picpeak_live');
       }
       if (args.includes('-c') && command.includes('current_setting')) {
+        if (mockProbe.fails) throw new Error('psql exited with code 1: ERROR:  permission denied for function current_setting');
         return { stdout: 'transaction_timeout\n', stderr: '' };
       }
       if (args.includes('-f')) {
@@ -118,7 +121,7 @@ describe('restoreService — PostgreSQL load stops at the first failing statemen
   afterAll(async () => { if (cleanup) await cleanup(); });
 
   beforeEach(async () => {
-    spawnAsync.mockClear(); mockLoads.length = 0; mockLoaded.length = 0; mockDrop.refused = false;
+    spawnAsync.mockClear(); mockLoads.length = 0; mockLoaded.length = 0; mockDrop.refused = false; mockProbe.fails = false;
     // A failed rollback leaves the pool closed (the database would be empty).
     await require('../../src/database/db').reinitPool();
   });
@@ -133,7 +136,9 @@ describe('restoreService — PostgreSQL load stops at the first failing statemen
     expect(args.slice(0, 5)).toEqual(['-X', '-q', '-v', 'ON_ERROR_STOP=1', '--single-transaction']);
     expect(args.at(-2)).toBe('-f');
     expect(args.at(-1).startsWith(svc.tempDir)).toBe(true);
-    // Drop, create, then load, then the sequence resync.
+    // The header question while the database still exists, then drop,
+    // create, load, and the sequence resync.
+    expect(indexOfCall('current_setting')).toBeLessThan(indexOfCall('DROP DATABASE'));
     const create = indexOfCall('CREATE DATABASE');
     const load = psqlCalls().indexOf(args);
     expect(indexOfCall('DROP DATABASE')).toBeLessThan(create);
@@ -152,6 +157,16 @@ describe('restoreService — PostgreSQL load stops at the first failing statemen
     await expect(svc.performDatabaseRestore(backupRoot, manifestFor(writeDump()), {}))
       .rejects.toThrow(/^The database dump did not load, nothing of it was kept: psql:\/tmp\/dump\.db:42: ERROR: {2}syntax error at or near "BROKEN"$/);
     expect(indexOfCall('setval')).toBe(-1);
+  });
+
+  it('a failing header-settings question fails the restore before anything is dropped', async () => {
+    const svc = newService();
+    mockProbe.fails = true;
+
+    await expect(svc.performDatabaseRestore(backupRoot, manifestFor(writeDump()), {}))
+      .rejects.toThrow('permission denied for function current_setting');
+    expect(indexOfCall('DROP DATABASE')).toBe(-1);
+    expect(loadCalls()).toHaveLength(0);
   });
 
   describe('rollback to the pre-restore safety backup', () => {

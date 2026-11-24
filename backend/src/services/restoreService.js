@@ -6,7 +6,7 @@ const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
 const { createReadStream, createWriteStream, constants: fsConstants } = require('fs');
 const { spawnAsync, spawnToFile } = require('../utils/safeExec');
-const { loadPlainDump } = require('../utils/pgDumpLoad');
+const { prepareDump, loadPreparedDump } = require('../utils/pgDumpLoad');
 const { liveSqliteArgs } = require('../utils/sqliteCli');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
@@ -398,6 +398,11 @@ async function stageDatabaseDump(source, expectedChecksum, tempDir, { allowUnver
     await fs.rm(dir, { recursive: true, force: true });
     throw error;
   }
+}
+
+// psql connection arguments for the target database.
+function pgTarget({ host, port, user, database }) {
+  return ['-h', host, '-p', String(port), '-U', user, '-d', database];
 }
 
 // Database replay can replace the running audit row, or put an older row at
@@ -1979,6 +1984,9 @@ class RestoreService {
           this.log('warn', `Could not snapshot restore-meta settings (continuing): ${err.message}`);
         }
 
+        // Asks the server about the dump's header settings, so it runs while
+        // the database still exists: a failure here leaves it untouched.
+        await this.preparePostgresDump(restoreFile, knexConfig.connection, env);
         await this.recreatePostgresDatabase(knexConfig.connection, env);
 
         // Restore from backup — this one DOES connect to the target DB. One
@@ -2199,20 +2207,26 @@ END $$;`
   }
 
   /**
-   * Loads a plain dump into the target PostgreSQL database in one transaction
-   * that stops at the first failing statement (header settings the server
-   * lacks are skipped and logged). `file` is a private copy in the restore
-   * temp directory; its header is edited in place.
+   * Readies a plain dump for the target PostgreSQL server: header settings
+   * the server lacks are commented out and logged. `file` is a private copy
+   * in the restore temp directory; its header is edited in place. Runs
+   * before the database is dropped, since it asks the server.
    */
-  async loadPostgresDump(file, connection, env) {
-    const { host, port, user, database } = connection;
-    const { skipped } = await loadPlainDump(file, {
-      target: ['-h', host, '-p', String(port), '-U', user, '-d', database],
-      env, workDir: this.tempDir, singleTransaction: true,
+  async preparePostgresDump(file, connection, env) {
+    const skipped = await prepareDump(file, {
+      target: pgTarget(connection), env, workDir: this.tempDir,
     });
     if (skipped.length) {
       this.log('warn', `Skipped dump settings this server does not have: ${skipped.join(', ')}`);
     }
+  }
+
+  /**
+   * Loads a dump preparePostgresDump readied into the target database in one
+   * transaction that stops at the first failing statement.
+   */
+  async loadPostgresDump(file, connection, env) {
+    await loadPreparedDump(file, { target: pgTarget(connection), env, singleTransaction: true });
   }
 
   /**
@@ -2650,6 +2664,9 @@ END $$;`
           await spawnAsync('sqlite3', liveSqliteArgs(dbPath, `.restore '${decompressedPath}'`));
         } else {
           const env = { ...process.env, PGPASSWORD: knexConfig.connection.password };
+          // Before the DROP, as in the restore: a failure here leaves the
+          // database as it is.
+          await this.preparePostgresDump(decompressedPath, knexConfig.connection, env);
           try {
             await this.recreatePostgresDatabase(knexConfig.connection, env);
             try {
