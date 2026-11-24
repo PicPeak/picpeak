@@ -616,29 +616,38 @@ export const customerAdminService = {
     return unwrap(response.data).summary || [];
   },
 
-  /** Admin override — issue the customer's running monthly draft now,
-   *  bypassing the cadence-day wait. 409 when no draft exists or the
-   *  draft is empty. Returns the issued invoice id + number. */
-  async triggerMonthlyBill(customerId: number): Promise<{ invoiceId: number; invoiceNumber: string }> {
-    const response = await api.post<Enveloped<{ invoiceId: number; invoiceNumber: string }>>(
+  /** Admin override — issue the customer's running monthly drafts now
+   *  (one per currency and VAT rate), bypassing the cadence-day wait. 409
+   *  when no draft exists or every draft is empty. Returns the first issued
+   *  invoice id + number and `invoices`, every issued one. */
+  async triggerMonthlyBill(customerId: number): Promise<TriggeredMonthlyBill> {
+    const response = await api.post<Enveloped<TriggeredMonthlyBill>>(
       `/admin/customers/${customerId}/trigger-monthly-bill`,
     );
     return unwrap(response.data);
   },
 
-  /** Preview the customer's open monthly draft (line items + totals).
-   *  Returns null when nothing has been queued for the current period. */
-  async getMonthlyDraft(customerId: number): Promise<{ draft: MonthlyDraftPreview | null }> {
-    const response = await api.get<Enveloped<{ draft: MonthlyDraftPreview | null }>>(
+  /** Preview the customer's open monthly drafts (line items + totals), one
+   *  per currency and VAT rate. `drafts` is empty when nothing has been
+   *  queued for the current period; `draft` is the first of them. */
+  async getMonthlyDraft(customerId: number): Promise<{ draft: MonthlyDraftPreview | null; drafts?: MonthlyDraftPreview[] }> {
+    const response = await api.get<Enveloped<{ draft: MonthlyDraftPreview | null; drafts?: MonthlyDraftPreview[] }>>(
       `/admin/customers/${customerId}/monthly-draft`,
     );
     return unwrap(response.data);
   },
 };
 
+export interface TriggeredMonthlyBill {
+  invoiceId: number;
+  invoiceNumber: string;
+  invoices?: Array<{ invoiceId: number; invoiceNumber: string; currency: string }>;
+}
+
 /** Open bill accumulator preview (migration 128). One row in
  *  the invoices table with is_monthly_draft=true that gathers every
- *  invoice line created for this customer during the current period;
+ *  invoice line created for this customer during the current period, one
+ *  per currency and VAT rate (migration 375);
  *  ships on the cadence day or via triggerMonthlyBill. Manual-cadence
  *  drafts carry no period (periodStart/End null) and ship only on the
  *  admin trigger. */
@@ -651,6 +660,7 @@ export interface MonthlyDraftPreview {
   netAmountMinor: number;
   vatRate: number | null;
   vatAmountMinor: number;
+  shippingAmountMinor?: number;
   totalAmountMinor: number;
   lineItems: MonthlyDraftLineItem[];
 }

@@ -837,6 +837,26 @@ router.put(
     for (const [api, col] of Object.entries(map)) {
       if (Object.prototype.hasOwnProperty.call(payload, api)) updates[col] = payload[api];
     }
+    // A customer has one open monthly draft per currency and VAT rate
+    // (migration 375). Moving a draft onto the key of another one would trip
+    // the unique index; say so instead.
+    if ((existing.is_monthly_draft === true || existing.is_monthly_draft === 1)
+        && (updates.currency !== undefined || updates.vat_rate !== undefined)) {
+      const taken = await db('invoices')
+        .where({
+          customer_account_id: existing.customer_account_id, is_monthly_draft: true, status: 'scheduled',
+          currency: updates.currency ?? existing.currency,
+        })
+        .where('vat_rate', Math.round(Number(updates.vat_rate ?? existing.vat_rate ?? 0) * 100) / 100)
+        .whereNot('id', id)
+        .first('invoice_number');
+      if (taken) {
+        return res.status(409).json({
+          error: `The customer's running bill ${taken.invoice_number} already uses this currency and VAT rate. Add the lines there instead.`,
+          code: 'MONTHLY_DRAFT_KEY_TAKEN',
+        });
+      }
+    }
     // Stored as ISO text, so the scheduler's comparison matches on SQLite too.
     // The editor sends a zone-less 'YYYY-MM-DDTHH:mm' cut from the stored UTC
     // value, so it is read as UTC: an unchanged save keeps the same instant.

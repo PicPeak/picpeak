@@ -14,6 +14,7 @@ const { cloneInvoiceLine, composePaymentTermSnapshot, computeDueDate, computeInv
 const { appendToMonthlyDraft } = require('./drafts');
 const { auditedInsert } = require('../accountingHistory');
 const { frozenPaymentTerm } = require('./paymentTerm');
+const { currentCrmActor, withTrustedCrmAccess } = require('../../database/crmAccess');
 
 
 /**
@@ -333,8 +334,12 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
   // early. The installment / cadence math below is bypassed; the quote's
   // payment timing is irrelevant once items flow into the accumulator.
   if (customer && (customer.billing_cadence === 'monthly' || customer.billing_cadence === 'manual')) {
-    const draftId = await appendToMonthlyDraft({
+    // The quote's currency, rate and shipping go with its lines (issue 2649):
+    // the draft of that currency and rate takes them, and the quote is
+    // recorded against it so conversion retries find the draft.
+    const accumulate = () => appendToMonthlyDraft({
       customerAccountId: customer.id,
+      currency,
       lineItems: (lineItems || []).map((li) => ({
         position: li.position,
         quantity: li.quantity,
@@ -346,8 +351,18 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
         ...extendedLineColumns(li, { invoice: true }),
       })),
       vatRate: totals?.vatRate,
+      shippingAmountMinor: totals?.shipping,
+      sourceQuoteId: quoteId || null,
     }, customer, adminId, trx);
-    return { invoiceIds: draftId ? [draftId] : [] };
+    // A booking flow converting this quote acts within the quote's deal; the
+    // running bill is a deal of its own, which that capability cannot reach.
+    // Appending the quote's own lines to its customer's running bill is what
+    // converting it means here, so that one step runs outside the deal fence.
+    const capability = currentCrmActor()?.capability;
+    const draftId = capability && dealUuid && capability.dealUuid === dealUuid
+      ? await withTrustedCrmAccess('accumulator draft: conversion of a quote in the workflow deal', accumulate)
+      : await accumulate();
+    return { invoiceIds: draftId ? [draftId] : [], accumulated: Boolean(draftId) };
   }
 
   // netDays drives the due-date offset on every scheduled invoice

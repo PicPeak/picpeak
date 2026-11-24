@@ -844,67 +844,78 @@ async function cancelInvoice(id, adminId) {
 }
 
 /**
- * Admin override — issue the customer's running monthly draft NOW,
- * bypassing the cadence-day wait. Mirrors the scheduler's monthly
- * pass: clears is_monthly_draft, sets the issue date
- * + scheduled_send_at to now, and fires sendInvoice inline so the
- * email goes out on the next email-queue tick (~60s) instead of
+ * Admin override — issue the customer's running monthly drafts NOW,
+ * bypassing the cadence-day wait. A customer has one open draft per
+ * currency and VAT rate (migration 375); every one with items is issued.
+ * Mirrors the scheduler's monthly pass: clears is_monthly_draft, sets the
+ * issue date + scheduled_send_at to now, and fires sendInvoice inline so
+ * the email goes out on the next email-queue tick (~60s) instead of
  * waiting for the next scheduler iteration.
  *
  * Refuses when:
  *   - no draft exists (admin hasn't queued anything yet)
- *   - the draft has zero line items (nothing to send — same as the
- *     scheduler's empty-month skip path)
+ *   - every draft has zero line items (nothing to send — same as the
+ *     scheduler's empty-month skip path); an empty one next to a filled
+ *     one is left open
+ *   - a draft to issue still lacks its GBP rate (checked before any is
+ *     armed, so none goes out half way)
  *
- * Returns { invoiceId, invoiceNumber } so the route can surface the
- * resulting invoice on the response toast.
+ * Returns { invoiceId, invoiceNumber } of the first issued draft (the
+ * route's toast) and `invoices`, every issued one.
  */
 async function triggerMonthlyBillNow(customerId, adminId) {
-  const draft = await db('invoices')
+  const drafts = await db('invoices')
     .where({ customer_account_id: customerId, is_monthly_draft: true, status: 'scheduled' })
-    .orderBy('id', 'desc')
-    .first();
-  if (!draft) {
+    .orderBy('id', 'asc');
+  if (!drafts.length) {
     throw new AppError('No pending monthly bill for this customer', 409, 'NO_MONTHLY_DRAFT');
   }
-  const items = await db('invoice_line_items').where({ invoice_id: draft.id }).limit(1);
-  if (items.length === 0) {
+  const filled = [];
+  for (const draft of drafts) {
+    const items = await db('invoice_line_items').where({ invoice_id: draft.id }).limit(1);
+    if (items.length) filled.push(draft);
+  }
+  if (filled.length === 0) {
     throw new AppError('Monthly draft is empty — nothing to bill', 409, 'EMPTY_DRAFT');
   }
 
-  // The draft is sent at once; without its GBP rate that send is refused and
-  // the scheduler leaves it out, so refuse before arming and the admin sees
-  // why (the draft stays a draft, ready once the rate is entered).
-  await assertGbpRateEntered(draft);
+  // The drafts are sent at once; without its GBP rate that send is refused
+  // and the scheduler leaves it out, so refuse before arming and the admin
+  // sees why (the drafts stay drafts, ready once the rate is entered).
+  for (const draft of filled) await assertGbpRateEntered(draft);
 
-  // Arm the draft: clear the discriminator, pin issue_date to today,
-  // and set scheduled_send_at to now so the flush pass + sendInvoice
-  // path treats it like any other ready-to-send invoice. Logged as a
-  // distinct activity so the audit trail shows admin override vs the
-  // scheduler's automatic fire.
-  const issueDate = new Date().toISOString().slice(0, 10);
-  await auditedUpdate(db, 'invoices', { id: draft.id }, {
-    is_monthly_draft: false,
-    issue_date: issueDate,
-    scheduled_send_at: toStoredTimestamp(new Date()),
-    updated_at: new Date(),
-  }, { actor: adminId, source: 'invoice.monthly.triggerNow' });
-  try {
-    await logActivity('monthly_bill_triggered_manually',
-      { invoiceId: draft.id, customerId, periodEnd: draft.monthly_period_end },
-      null, adminActivityActor(adminId));
-  } catch (_) { /* non-fatal */ }
+  const invoices = [];
+  for (const draft of filled) {
+    // Arm the draft: clear the discriminator, pin issue_date to today,
+    // and set scheduled_send_at to now so the flush pass + sendInvoice
+    // path treats it like any other ready-to-send invoice. Logged as a
+    // distinct activity so the audit trail shows admin override vs the
+    // scheduler's automatic fire.
+    const issueDate = new Date().toISOString().slice(0, 10);
+    await auditedUpdate(db, 'invoices', { id: draft.id }, {
+      is_monthly_draft: false,
+      issue_date: issueDate,
+      scheduled_send_at: toStoredTimestamp(new Date()),
+      updated_at: new Date(),
+    }, { actor: adminId, source: 'invoice.monthly.triggerNow' });
+    try {
+      await logActivity('monthly_bill_triggered_manually',
+        { invoiceId: draft.id, customerId, periodEnd: draft.monthly_period_end },
+        null, adminActivityActor(adminId));
+    } catch (_) { /* non-fatal */ }
 
-  // Inline send so admin gets immediate feedback (PDF stored, status
-  // flipped to 'sent', email queued). A failure here doesn't roll
-  // back the arming — the scheduler will pick it up on the next tick.
-  try {
-    await sendInvoice(draft.id, adminId);
-  } catch (err) {
-    logger.warn('triggerMonthlyBillNow: inline send failed — scheduler will retry',
-      { invoiceId: draft.id, err: err.message });
+    // Inline send so admin gets immediate feedback (PDF stored, status
+    // flipped to 'sent', email queued). A failure here doesn't roll
+    // back the arming — the scheduler will pick it up on the next tick.
+    try {
+      await sendInvoice(draft.id, adminId);
+    } catch (err) {
+      logger.warn('triggerMonthlyBillNow: inline send failed — scheduler will retry',
+        { invoiceId: draft.id, err: err.message });
+    }
+    invoices.push({ invoiceId: draft.id, invoiceNumber: draft.invoice_number, currency: draft.currency });
   }
-  return { invoiceId: draft.id, invoiceNumber: draft.invoice_number };
+  return { invoiceId: invoices[0].invoiceId, invoiceNumber: invoices[0].invoiceNumber, invoices };
 }
 module.exports = {
   sendInvoice,

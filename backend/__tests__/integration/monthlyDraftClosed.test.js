@@ -219,7 +219,7 @@ test('a draft closed while still flagged is not shown as the running bill, and t
   const draftId = await addItem(customerId, 100000);
   await db('invoices').where({ id: draftId }).update({ status: 'cancelled' });
 
-  expect(await invoiceService.getMonthlyDraft(customerId)).toBeNull();
+  expect(await invoiceService.getMonthlyDrafts(customerId)).toEqual([]);
   await require('../../src/services/invoice/scheduler').runScheduledTasks();
   const released = await row(draftId);
   expect(released.status).toBe('cancelled');

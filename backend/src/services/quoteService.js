@@ -2488,6 +2488,12 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
         (q) => q.where({ source_quote_id: quote.id }).whereNull('source_contract_id'),
         { source_contract_id: options.sourceContractId },
         { actor: adminId, source: 'contract.convert.invoices' });
+      // A quote accumulated into the customer's running bill has no invoice
+      // of its own: its lineage row takes the contract (migration 375).
+      if (spawnResult?.accumulated) {
+        await trx('invoice_accumulated_sources').where({ quote_id: quote.id }).whereNull('contract_id')
+          .update({ contract_id: options.sourceContractId });
+      }
     }
 
     // Mark quote `converted` without a converted_event_id so the
@@ -2499,7 +2505,13 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       updated_at: new Date(),
     }, { actor: adminId, source: 'quote.convert.invoices' });
 
-    return { installmentsCreated: installments.length, invoiceIds: spawnResult?.invoiceIds || [] };
+    // `accumulated`: the amounts went onto the customer's running monthly /
+    // manual bill (invoiceIds is that draft), which is not sent on its own.
+    return {
+      installmentsCreated: installments.length,
+      invoiceIds: spawnResult?.invoiceIds || [],
+      ...(spawnResult?.accumulated ? { accumulated: true } : {}),
+    };
   });
 
   // Audit log AFTER commit — logActivity writes via the global `db`, which

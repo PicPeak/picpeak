@@ -38,7 +38,7 @@ const {
   listInvoices, getInvoiceById,
 } = queries;
 const {
-  getMonthlyDraft, appendToMonthlyDraft, appendOneLineItemToMonthlyDraft,
+  getMonthlyDrafts, accumulatedDraftIds, appendToMonthlyDraft, appendOneLineItemToMonthlyDraft,
 } = drafts;
 const { createInvoice, spawnInstallmentInvoices } = create;
 const { updateInstallmentPlan, validateInstallmentPlanInput } = installmentPlan;
@@ -87,7 +87,8 @@ module.exports = {
   // Monthly billing accumulator (migration 128) — exposed so
   // customerHoursService can append hour-logged line items onto the
   // running draft without duplicating the period/totals logic.
-  getMonthlyDraft,
+  getMonthlyDrafts,
+  accumulatedDraftIds,
   appendToMonthlyDraft,
   appendOneLineItemToMonthlyDraft,
   triggerMonthlyBillNow,

@@ -17,12 +17,28 @@ const { toDateOnly } = require('../../utils/dateOnly');
 const { vatMinorFor, roundsVatDown, normaliseVatGbpRate } = require('../../utils/vatAmount');
 
 
+/** A VAT rate as the draft key compares it (2 decimals, like the column). */
+function draftVatRate(value) {
+  return Math.round(ensureNumber(value, 0) * 100) / 100;
+}
+
+/** Whether a payload states a VAT rate of its own. */
+function statesVatRate(value) {
+  return value !== undefined && value !== null && value !== '';
+}
+
 /**
  * Find or create the running "monthly draft" invoice for a customer.
- * One draft per customer per current billing period (`monthly_period_end >= today`).
- * Subsequent saves through createInvoice for the same monthly-mode
- * customer append line items onto this draft instead of minting fresh
- * invoices.
+ * One open draft per customer, currency and VAT rate (issue 2649): amounts
+ * are never relabelled into another currency, and lines that came at one
+ * rate are never retaxed at another. Subsequent saves through createInvoice
+ * for the same monthly-mode customer append line items onto the draft of
+ * their key instead of minting fresh invoices.
+ *
+ * `key.currency` defaults to the customer's preferred currency, then the
+ * business default. `key.vatRate` null (the caller states no rate: hours,
+ * re-bills) takes the newest open draft in that currency at whatever rate
+ * it has, and opens one at 0 % when there is none.
  *
  * Returns `{ id, row }` for the draft so the caller can append items
  * + recompute totals without a second query.
@@ -36,7 +52,7 @@ const { vatMinorFor, roundsVatDown, normaliseVatGbpRate } = require('../../utils
  *           authoring items after the cadence is "starting the next
  *           bill", not "appending to one that already fired".
  */
-async function getOrCreateMonthlyDraft(customer, adminId, trx) {
+async function getOrCreateMonthlyDraft(customer, adminId, trx, key = {}) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -62,27 +78,28 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
   // issuance time. Manual drafts have no period_end, so fall back to today.
   const placeholderDate = (periodEnd || today).toISOString().slice(0, 10);
 
-  // Look up any existing open draft for this customer. We deliberately
-  // do NOT filter by monthly_period_end here — only one draft can be
-  // open per customer at a time (enforced by the partial unique index
-  // created in migration 133). If the scheduler hasn't yet promoted an
-  // expired draft, it's still the canonical landing spot for any new
-  // items the admin queues; promoting it is the scheduler's job, not
-  // ours. forUpdate() locks the row on Postgres so concurrent appenders
-  // serialize on totals recomputation; SQLite's transaction write-lock
-  // gives us the same guarantee implicitly.
+  // Route reads through the caller's connection: conversions and re-bills
+  // can already hold SQLite's only connection inside their transaction.
+  const profile = (await businessProfileService.getProfile(trx)).profile;
+  const currency = String(key.currency || customer.preferred_currency || profile?.default_currency || 'CHF').toUpperCase();
+  const vatRate = statesVatRate(key.vatRate) ? draftVatRate(key.vatRate) : null;
+  // The open drafts of this key. Not filtered by monthly_period_end: if the
+  // scheduler hasn't yet promoted an expired draft, it's still the landing
+  // spot for new items; promoting it is the scheduler's job, not ours. The
+  // partial unique index (migration 375) allows one per customer, currency
+  // and rate. forUpdate() locks the row on Postgres so concurrent appenders
+  // serialize on totals recomputation; SQLite's transaction write-lock gives
+  // us the same guarantee implicitly.
   //
   // Only a draft that is still `scheduled` takes items: a cancelled or paid
   // row is a closed document, whatever its draft flag says.
-  const existing = await trx('invoices')
-    .where({
-      customer_account_id: customer.id,
-      is_monthly_draft: true,
-      status: 'scheduled',
-    })
-    .orderBy('id', 'desc')
-    .forUpdate()
-    .first();
+  const openDraftOfKey = () => {
+    const q = trx('invoices')
+      .where({ customer_account_id: customer.id, is_monthly_draft: true, status: 'scheduled', currency });
+    if (vatRate != null) q.where('vat_rate', vatRate);
+    return q.orderBy('id', 'desc');
+  };
+  const existing = await openDraftOfKey().forUpdate().first();
   if (existing) {
     return { id: existing.id, row: existing, created: false };
   }
@@ -96,10 +113,6 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
 
   // None yet — mint one with zero line items + zero totals. The
   // caller appends items + recomputes immediately after.
-  // Reuse the caller's connection: conversions and re-bills can already
-  // hold SQLite's only connection inside their transaction.
-  const profile = (await businessProfileService.getProfile(trx)).profile;
-  const currency = (customer.preferred_currency || profile?.default_currency || 'CHF').toUpperCase();
   const language = customer.preferred_language || profile?.default_locale || 'de';
   const invoiceNumber = await nextInvoiceNumber(trx);
   const bank = await businessProfileService.resolveBankAccountForCurrency(currency, null, trx);
@@ -118,7 +131,9 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
     status: 'scheduled',
     scheduled_send_at: null, // monthly pass sets this on cadence day
     net_amount_minor: 0,
-    vat_rate: 0,
+    // The key's rate, fixed for the draft's life (lines at another rate
+    // open their own draft).
+    vat_rate: vatRate ?? 0,
     vat_amount_minor: 0,
     shipping_amount_minor: 0,
     total_amount_minor: 0,
@@ -154,10 +169,7 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
       /unique/i.test(msg) ||
       /sqlite_constraint/i.test(msg);
     if (!isUniqueViolation) throw err;
-    const winner = await trx('invoices')
-      .where({ customer_account_id: customer.id, is_monthly_draft: true, status: 'scheduled' })
-      .orderBy('id', 'desc')
-      .first();
+    const winner = await openDraftOfKey().first();
     if (!winner) {
       // No row to return despite the unique-violation — this would
       // mean the winning transaction rolled back after we lost the
@@ -180,7 +192,10 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
  * draft's id so the route layer can fetch + return it.
  */
 async function appendToMonthlyDraft(payload, customer, adminId, trx) {
-  const draft = await getOrCreateMonthlyDraft(customer, adminId, trx);
+  // The payload's currency and rate pick the draft (issue 2649): its amounts
+  // stay in their currency and its lines keep their rate.
+  const draft = await getOrCreateMonthlyDraft(customer, adminId, trx,
+    { currency: payload.currency, vatRate: payload.vatRate });
 
   // Load existing line items so we can compute the next `position` and
   // re-sum totals across the merged set. The migration-119 hierarchy
@@ -226,13 +241,14 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
 
   // Recompute totals across the entire draft so the running figures
   // shown on the customer-detail "Monthly queue" card stay accurate
-  // as items accumulate. Mirrors createInvoice's totals path.
+  // as items accumulate. Mirrors createInvoice's totals path. The rate is
+  // the draft's own (its key); the payload's shipping adds to the draft's.
   const { netMinor } = await resolveUnissuedInvoiceNet(trx, draft.id,
     { actor: adminId, source: 'invoice.monthly.appendItems' });
-  const vatRate = ensureNumber(payload.vatRate, draft.row.vat_rate || 0);
+  const vatRate = Number(draft.row.vat_rate || 0);
   // A UK business rounds its VAT total down (utils/vatAmount).
-  const vatMinor = vatMinorFor(netMinor, Number(vatRate), { roundDown: await roundsVatDown(trx) });
-  const shippingMinor = ensureInt(draft.row.shipping_amount_minor);
+  const vatMinor = vatMinorFor(netMinor, vatRate, { roundDown: await roundsVatDown(trx) });
+  const shippingMinor = ensureInt(draft.row.shipping_amount_minor) + ensureInt(payload.shippingAmountMinor);
   const totalMinor = netMinor + vatMinor + shippingMinor;
 
   // A GBP rate entered with the appended items (issue 2439) becomes the
@@ -246,14 +262,22 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
 
   const updated = await auditedUpdate(trx, 'invoices', { id: draft.id, status: 'scheduled', is_monthly_draft: true }, {
     net_amount_minor: netMinor,
-    vat_rate: vatRate,
     vat_amount_minor: vatMinor,
+    shipping_amount_minor: shippingMinor,
     total_amount_minor: totalMinor,
     ...gbpRateUpdate,
     updated_at: new Date(),
   }, { actor: adminId, source: 'invoice.monthly.appendItems' });
   if (!updated) {
     throw new AppError('The running monthly bill was closed in the meantime. Try again.', 409, 'MONTHLY_DRAFT_CLOSED');
+  }
+
+  // The quote (and later its contract) accumulated here (migration 375): the
+  // draft has no source_quote_id, so conversion retries find it this way.
+  if (payload.sourceQuoteId) {
+    await trx('invoice_accumulated_sources').insert({
+      invoice_id: draft.id, quote_id: payload.sourceQuoteId, created_at: new Date().toISOString(),
+    });
   }
 
   try {
@@ -285,10 +309,11 @@ async function appendOneLineItemToMonthlyDraft(customer, lineItem, adminId, trx)
   // Reuse the accumulator path — it handles get-or-create + totals
   // recompute + activity log. We pass a single-item array, and take the
   // draft it appended onto from its return value.
+  // No rate stated: the line joins the open draft at the draft's rate (or
+  // opens one at 0 %), and never retaxes the lines already on it.
   const draftId = await appendToMonthlyDraft({
     customerAccountId: customer.id,
     lineItems: [lineItem],
-    vatRate: 0, // hours logging doesn't ship with VAT today
   }, customer, adminId, trx);
 
   // The tail line item of that draft is the one just appended.
@@ -300,42 +325,58 @@ async function appendOneLineItemToMonthlyDraft(customer, lineItem, adminId, trx)
 }
 
 /**
- * Read the customer's running monthly draft + its line items so the
- * customer-detail page can preview what will ship on the next cycle
- * day. Returns null when no open draft exists (admin hasn't queued
- * anything yet for the current period). Used by GET
- * /admin/customers/:id/monthly-draft.
+ * Read the customer's running monthly drafts + their line items so the
+ * customer-detail page can preview what will ship on the next cycle day.
+ * One per currency and VAT rate (migration 375), oldest first; empty when
+ * no draft is open (admin hasn't queued anything yet for the current
+ * period). Used by GET /admin/customers/:id/monthly-draft.
  */
-async function getMonthlyDraft(customerId) {
-  const draft = await db('invoices')
+async function getMonthlyDrafts(customerId) {
+  const drafts = await db('invoices')
     .where({ customer_account_id: customerId, is_monthly_draft: true, status: 'scheduled' })
-    .orderBy('id', 'desc')
-    .first();
-  if (!draft) return null;
-  const lineItems = await loadInvoiceLines(db, draft.id);
-  return {
-    id: draft.id,
-    invoiceNumber: draft.invoice_number,
-    currency: draft.currency,
-    periodStart: toDateOnly(draft.monthly_period_start),
-    periodEnd: toDateOnly(draft.monthly_period_end),
-    netAmountMinor: draft.net_amount_minor,
-    vatRate: draft.vat_rate == null ? null : Number(draft.vat_rate),
-    vatAmountMinor: draft.vat_amount_minor,
-    totalAmountMinor: draft.total_amount_minor,
-    lineItems: lineItems.map((li) => ({
-      id: li.id,
-      position: li.position,
-      quantity: Number(li.quantity),
-      description: li.description,
-      unitPriceMinor: ensureInt(li.unit_price_minor),
-      discountPercent: Number(li.discount_percent || 0),
-      lineTotalMinor: ensureInt(li.line_total_minor),
-      parentPosition: li.parent_position == null ? null : ensureInt(li.parent_position),
-      detailsText: li.details_text || '',
-      ...lineItemFieldsToApi(li),
-    })),
-  };
+    .orderBy('id', 'asc');
+  const previews = [];
+  for (const draft of drafts) {
+    const lineItems = await loadInvoiceLines(db, draft.id);
+    previews.push({
+      id: draft.id,
+      invoiceNumber: draft.invoice_number,
+      currency: draft.currency,
+      periodStart: toDateOnly(draft.monthly_period_start),
+      periodEnd: toDateOnly(draft.monthly_period_end),
+      netAmountMinor: draft.net_amount_minor,
+      vatRate: draft.vat_rate == null ? null : Number(draft.vat_rate),
+      vatAmountMinor: draft.vat_amount_minor,
+      shippingAmountMinor: draft.shipping_amount_minor,
+      totalAmountMinor: draft.total_amount_minor,
+      lineItems: lineItems.map((li) => ({
+        id: li.id,
+        position: li.position,
+        quantity: Number(li.quantity),
+        description: li.description,
+        unitPriceMinor: ensureInt(li.unit_price_minor),
+        discountPercent: Number(li.discount_percent || 0),
+        lineTotalMinor: ensureInt(li.line_total_minor),
+        parentPosition: li.parent_position == null ? null : ensureInt(li.parent_position),
+        detailsText: li.details_text || '',
+        ...lineItemFieldsToApi(li),
+      })),
+    });
+  }
+  return previews;
+}
+
+/**
+ * The open accumulator drafts a quote or contract was accumulated into
+ * (migration 375), so a conversion retry adopts them. Ids, oldest first.
+ */
+async function accumulatedDraftIds(conn, { quoteId = null, contractId = null }) {
+  if (!quoteId && !contractId) return [];
+  const q = conn('invoice_accumulated_sources');
+  if (quoteId) q.where('quote_id', quoteId);
+  else q.where('contract_id', contractId);
+  const rows = await q.orderBy('invoice_id').distinct('invoice_id');
+  return rows.map((r) => Number(r.invoice_id));
 }
 
 /**
@@ -441,5 +482,6 @@ module.exports = {
   getOrCreateMonthlyDraft,
   appendToMonthlyDraft,
   appendOneLineItemToMonthlyDraft,
-  getMonthlyDraft,
+  getMonthlyDrafts,
+  accumulatedDraftIds,
 };

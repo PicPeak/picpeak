@@ -7572,7 +7572,8 @@
       "draftPreview": {
         "title": "Čaka v računu tega meseca",
         "titleManual": "Čaka — pošlje se z ročno sprožitvijo",
-        "periodRange": "{{number}} · {{from}} – {{to}}"
+        "periodRange": "{{number}} · {{from}} – {{to}}",
+        "key": "{{currency}} · DDV {{rate}} %"
       },
       "rebillAttachProof": "Priloži dokazilo dobavitelja ponovno zaračunanim računom",
       "rebillAttachProofInherit": "Uporabi privzeto nastavitev namestitve",

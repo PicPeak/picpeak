@@ -1073,9 +1073,11 @@ router.post('/:id/trigger-monthly-bill', [
   successResponse(res, result, 201);
 }));
 
-// Preview the customer's open monthly draft (line items + totals) so
+// Preview the customer's open monthly drafts (line items + totals) so
 // the customer-detail page can show "what will ship on the next cycle
-// day". Returns null draft when nothing has been queued yet. Same
+// day". One per currency and VAT rate (migration 375); `draft` is the
+// first of them, kept for older clients, and null when nothing has been
+// queued yet. Same
 // permission scope as the trigger endpoint — both read/operate on
 // the same row.
 router.get('/:id/monthly-draft', [
@@ -1086,8 +1088,8 @@ router.get('/:id/monthly-draft', [
   param('id').isInt({ min: 1 }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
-  const draft = await invoiceService.getMonthlyDraft(parseInt(req.params.id, 10));
-  successResponse(res, { draft });
+  const drafts = await invoiceService.getMonthlyDrafts(parseInt(req.params.id, 10));
+  successResponse(res, { draft: drafts[0] || null, drafts });
 }));
 
 // Ids above PostgreSQL's integer range answer 400 here rather than a 500
