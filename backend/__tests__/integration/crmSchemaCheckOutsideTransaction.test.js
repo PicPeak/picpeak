@@ -1,5 +1,5 @@
 /**
- * Quote updates and hour entries must not deadlock on SQLite.
+ * Quote creates and updates and hour entries must not deadlock on SQLite.
  *
  * updateQuote and customerHoursService.createEntry checked optional columns
  * (quotes.project_id / vat_code / event_type / booking_workflow_id and
@@ -75,6 +75,49 @@ describe('schema checks stay outside CRM transactions', () => {
     const audit = await db('activity_logs').where({ activity_type: 'quote_updated' });
     expect(audit).toHaveLength(1);
   }, WITHIN);
+
+  describe('a quote linked to a project', () => {
+    const lines = [{ position: 1, quantity: 1, description: 'Photo package', unit_price_minor: 150000, discount_percent: 0 }];
+    const project = async (customerAccountId) => {
+      const [row] = await db('projects').insert({
+        name: 'Projekt', customer_account_id: customerAccountId, created_by: adminId,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).returning('id');
+      return row?.id ?? row;
+    };
+
+    // linkDealToProject checks the deal columns; its caller resolves them
+    // before the transaction it runs in.
+    it('creates a quote with a projectId', async () => {
+      const projectId = await project(customerId);
+      clearSchemaCache();
+      const id = await quoteService.createQuote({ customerAccountId: customerId, currency: 'CHF', vatRate: 0, projectId, lineItems: lines }, adminId);
+      expect((await db('quotes').where({ id }).first()).project_id).toBe(projectId);
+    }, WITHIN);
+
+    it('updates a quote with a projectId', async () => {
+      const projectId = await project(customerId);
+      const id = await quoteService.createQuote({ customerAccountId: customerId, currency: 'CHF', vatRate: 0, lineItems: lines }, adminId);
+      clearSchemaCache();
+      await quoteService.updateQuote(id, { projectId, lineItems: lines }, adminId);
+      expect((await db('quotes').where({ id }).first()).project_id).toBe(projectId);
+    }, WITHIN);
+
+    it('changes the customer of a draft that keeps its project', async () => {
+      const [other] = await db('customer_accounts').insert({
+        email: 'schema-other@example.com', display_name: 'Other', is_active: 1, created_at: new Date().toISOString(),
+      }).returning('id');
+      const otherId = other?.id ?? other;
+      // An unassigned project takes the deal's customer, so the change saves.
+      const projectId = await project(null);
+      const id = await quoteService.createQuote({ customerAccountId: customerId, currency: 'CHF', vatRate: 0, lineItems: lines }, adminId);
+      await db('quotes').where({ id }).update({ project_id: projectId });
+      clearSchemaCache();
+      await quoteService.updateQuote(id, { customerAccountId: otherId, lineItems: lines }, adminId);
+      expect(Number((await db('quotes').where({ id }).first()).customer_account_id)).toBe(otherId);
+      expect(Number((await db('projects').where({ id: projectId }).first()).customer_account_id)).toBe(otherId);
+    }, WITHIN);
+  });
 
   it('records an hour entry that sends projectId', async () => {
     clearSchemaCache();

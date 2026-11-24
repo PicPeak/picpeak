@@ -113,7 +113,7 @@ function toMinor(amount: number) {
   return Math.round((Number(amount) || 0) * 100);
 }
 
-function buildPayload(f: FormState): QuoteCreatePayload {
+export function buildPayload(f: FormState): QuoteCreatePayload {
   return {
     customerAccountId: f.customerAccountId || 0,
     language: f.language,
@@ -157,6 +157,36 @@ function buildPayload(f: FormState): QuoteCreatePayload {
       detailsText: li.detailsText || null,
     })),
   };
+}
+
+/** A project holds one customer's work, so switching to a different customer
+ *  drops the project the old customer's quote was in (the save would be
+ *  refused). Picking a first customer keeps a project chosen before it. */
+export function projectAfterCustomerChange(
+  f: Pick<FormState, 'customerAccountId' | 'projectId'>,
+  nextCustomerId: number,
+): number | null {
+  return f.customerAccountId != null && f.customerAccountId !== nextCustomerId ? null : f.projectId;
+}
+
+/** Clearing the customer drops the project that customer's quote was in, so
+ *  clearing and then picking another customer doesn't keep it either. A
+ *  project chosen before any customer stays. */
+export function projectAfterCustomerClear(
+  f: Pick<FormState, 'customerAccountId' | 'projectId'>,
+): number | null {
+  return f.customerAccountId != null ? null : f.projectId;
+}
+
+/**
+ * The save payload for a quote that already exists. The issue date is set
+ * on create and the editor has no field for it, so it isn't sent: the
+ * server doesn't take it on update. Customer and currency are sent, since
+ * both stay editable on a draft.
+ */
+export function updatePayload(f: FormState): Partial<QuoteCreatePayload> {
+  const { issueDate: _issueDate, ...payload } = buildPayload(f);
+  return payload;
 }
 
 export const QuoteEditorPage: React.FC = () => {
@@ -415,10 +445,9 @@ export const QuoteEditorPage: React.FC = () => {
 
     setBusy(true);
     try {
-      const payload = buildPayload(form);
       const saved = isEdit
-        ? await quotesService.update(parseInt(id!, 10), payload)
-        : await quotesService.create(payload);
+        ? await quotesService.update(parseInt(id!, 10), updatePayload(form))
+        : await quotesService.create(buildPayload(form));
       queryClient.invalidateQueries({ queryKey: ['quotes'] });
 
       if (then === 'send') {
@@ -524,12 +553,14 @@ export const QuoteEditorPage: React.FC = () => {
           onSelect={(c) => setForm((f) => ({
             ...f,
             customerAccountId: c.id,
+            projectId: projectAfterCustomerChange(f, c.id),
             customerLabel: c.companyName || c.displayName || c.email,
             customerIsPassive: Boolean(c.isPassive),
           }))}
           onCreate={(c) => setForm((f) => ({
             ...f,
             customerAccountId: c.id,
+            projectId: projectAfterCustomerChange(f, c.id),
             customerLabel: c.companyName || c.displayName || c.email,
             customerIsPassive: Boolean(c.isPassive),
             // Inherit the new customer's language so the quote
@@ -538,6 +569,7 @@ export const QuoteEditorPage: React.FC = () => {
           }))}
           onClear={() => setForm((f) => ({
             ...f, customerAccountId: null, customerLabel: '', customerIsPassive: false,
+            projectId: projectAfterCustomerClear(f),
           }))}
           searchPlaceholder={t('quotes.customerSearch', 'Search customer by email or company…') as string}
         />

@@ -513,6 +513,8 @@ async function createQuote(payload, adminId) {
   const hasVatCode = await hasColumnCached('quotes', 'vat_code');
   const hasEventType = await hasColumnCached('quotes', 'event_type');
   const hasBookingWorkflowId = await hasColumnCached('quotes', 'booking_workflow_id');
+  // linkDealToProject's column checks read through the global db too.
+  if (payload.projectId) await require('./projectService').resolveDealLinkSchema();
 
   return await db.transaction(async (trx) => {
     // SQLite's 1-connection default deadlocks when claimNextSequence
@@ -647,6 +649,29 @@ async function updateQuote(id, payload, adminId) {
     );
   }
 
+  // The editor's customer picker and currency select stay live on a saved
+  // quote, so both are taken here, on a draft only: a sent or expired quote
+  // went out to its customer in its currency. A new customer gets the
+  // checks createQuote runs.
+  const sent = (field) => Object.prototype.hasOwnProperty.call(payload, field);
+  const customerId = sent('customerAccountId') && payload.customerAccountId
+    ? ensureInt(payload.customerAccountId) : ensureInt(existing.customer_account_id);
+  const customerChanged = customerId !== ensureInt(existing.customer_account_id);
+  // The editor echoes the stored currency, in whatever case it was stored.
+  // A legacy quote without one takes a currency while it is a draft; after
+  // that its save must not count as a currency change.
+  const storedCurrency = existing.currency ? String(existing.currency).toUpperCase() : null;
+  const requestedCurrency = sent('currency') && payload.currency ? String(payload.currency).toUpperCase() : null;
+  const currencyChanged = requestedCurrency != null && requestedCurrency !== storedCurrency
+    && (storedCurrency != null || existing.status === 'draft');
+  const currency = currencyChanged ? requestedCurrency : existing.currency;
+  if ((customerChanged || currencyChanged) && existing.status !== 'draft') {
+    throw new AppError('The customer and currency can only change while the quote is a draft.', 409, 'QUOTE_NOT_DRAFT');
+  }
+  if (customerChanged) {
+    ensureCustomerFeatureEnabled(await db('customer_accounts').where({ id: customerId }).first(), 'quotes');
+  }
+
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
   const totals = computeTotals(
     Array.isArray(payload.lineItems) ? payload.lineItems : [],
@@ -676,6 +701,23 @@ async function updateQuote(id, payload, adminId) {
   const hasVatCode = await has('vatCode', 'vat_code');
   const hasEventType = await has('eventType', 'event_type');
   const hasBookingWorkflowId = await has('bookingWorkflowId', 'booking_workflow_id');
+
+  // A new currency takes its own bank account, as on create. The editor
+  // echoes the stored account back, which must not pin the old currency's.
+  const bankId = sent('businessBankAccountId') && payload.businessBankAccountId
+    && ensureInt(payload.businessBankAccountId) !== ensureInt(existing.business_bank_account_id)
+    ? payload.businessBankAccountId : null;
+  const bank = currencyChanged
+    ? await businessProfileService.resolveBankAccountForCurrency(currency, bankId)
+    : null;
+
+  // A new customer on a quote that keeps its project re-runs that project's
+  // customer check, also when the request leaves projectId out.
+  const linkProjectId = hasProjectId
+    ? (payload.projectId || null)
+    : (customerChanged ? existing.project_id || null : null);
+  // linkDealToProject's column checks read through the global db too.
+  if (linkProjectId) await require('./projectService').resolveDealLinkSchema();
 
   return await db.transaction(async (trx) => {
     const updates = {
@@ -746,14 +788,59 @@ async function updateQuote(id, payload, adminId) {
     if (hasBookingWorkflowId) {
       updates.booking_workflow_id = payload.bookingWorkflowId || null;
     }
+    if (customerChanged) {
+      // An invoice or contract made from the quote stays with the customer
+      // and deal it was made for, so the quote does too.
+      // Checked outside the admin's own CRM view: an invoice or contract the
+      // admin may not read still binds the quote. Only the yes/no leaves here.
+      const madeFrom = await require('../database/crmAccess').withTrustedCrmAccess('quote customer change: documents made from it',
+        async () => Boolean(await trx('invoices').where({ source_quote_id: id }).first('id')
+          || await trx('contracts').where({ source_quote_id: id }).first('id')));
+      if (madeFrom) {
+        throw new AppError(
+          'An invoice or contract was made from this quote, so it stays with its customer. Create a new quote for the other customer.',
+          409, 'QUOTE_HAS_DOCUMENTS',
+        );
+      }
+      // Links sent to the old customer close: the quote now carries another
+      // customer's data. Expiring them is what closes the page, since a
+      // used link still opens it (the customer may change their answer).
+      const revokedAt = new Date().toISOString();
+      await trx('quote_action_tokens').where({ quote_id: id }).update({ expires_at: revokedAt });
+      await trx('quote_action_tokens').where({ quote_id: id }).whereNull('used_at')
+        .update({ used_at: revokedAt, used_action: 'revoked' });
+      updates.customer_account_id = customerId;
+      // A deal is one customer's: the quote leaves the old customer's deal
+      // and starts a deal of its own, as on create.
+      updates.deal_uuid = crypto.randomUUID();
+    }
+    if (currencyChanged) {
+      updates.currency = currency;
+      updates.business_bank_account_id = bank?.id || null;
+    }
     const history = { actor: adminId, source: 'quote.update' };
-    await auditedUpdate(trx, 'quotes', { id }, updates, history);
+    // Conditional on the status read above: the draft-only and lock checks
+    // ran before the transaction, so a quote sent or accepted meanwhile is
+    // refused instead of being changed (and reverted to draft) here.
+    // The customer and currency it was read with too: the customer /
+    // currency decisions above (bank account, token revocation, new deal)
+    // hold only for that row, so an overlapping save is refused.
+    const saved = await auditedUpdate(trx, 'quotes', {
+      id, status: existing.status, customer_account_id: existing.customer_account_id, currency: existing.currency,
+    }, updates, history);
+    if (!saved) {
+      const now = await trx('quotes').where({ id }).first('status');
+      if (now && now.status === existing.status) {
+        throw new AppError('This quote was changed by another save. Reload it and try again.', 409, 'QUOTE_CHANGED');
+      }
+      throw new AppError('This quote changed status while it was being saved. Reload it and try again.', 409, 'QUOTE_NOT_DRAFT');
+    }
 
     // When linked to a project, cascade across the deal lineage so the linked
     // contract / event / invoices roll up into the same project automatically.
-    if (updates.project_id) {
+    if (linkProjectId) {
       const dealRow = await trx('quotes').where({ id }).select('deal_uuid').first();
-      await require('./projectService').linkDealToProject(dealRow && dealRow.deal_uuid, updates.project_id, trx, { id: adminId });
+      await require('./projectService').linkDealToProject(dealRow && dealRow.deal_uuid, linkProjectId, trx, { id: adminId });
     }
 
     // Delete + reinsert keeps the editor flow simple: the frontend
@@ -1021,19 +1108,32 @@ async function sendQuote(id, adminId) {
     : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
 
   await db.transaction(async (trx) => {
-    await trx('quote_action_tokens').insert({
-      quote_id: id,
-      token,
-      expires_at: expiresAt,
-      created_at: new Date(),
-    });
-    await auditedUpdate(trx, 'quotes', { id }, {
+    // Conditional on the quote as it was read and rendered: a save that
+    // changed its customer or currency meanwhile (or another send) wins,
+    // and this send records nothing, mints no link and emails no one.
+    const recorded = await auditedUpdate(trx, 'quotes', {
+      id, status: quote.status, customer_account_id: quote.customer_account_id, currency: quote.currency,
+    }, {
       status: 'sent',
       sent_at: new Date(),
       pdf_path: toStoredPath(pdfPath),
       payment_term_snapshot: paymentTermSnapshot ? JSON.stringify(paymentTermSnapshot) : null,
       updated_at: new Date(),
     }, { actor: adminId, source: 'quote.send' });
+    if (!recorded) {
+      throw new AppError('This quote changed while it was being sent. Reload it and send it again.', 409, 'QUOTE_CHANGED');
+    }
+    await trx('quote_action_tokens').insert({
+      quote_id: id,
+      token,
+      expires_at: expiresAt,
+      created_at: new Date(),
+    });
+  }).catch((err) => {
+    // This send's own file (persistDocPdf never reuses a name): nothing
+    // points at it once the send is not recorded.
+    if (pdfPath) fs.rmSync(pdfPath, { force: true });
+    throw err;
   });
 
   // Queue customer email (with PDF + cc) — honour the global
@@ -1089,7 +1189,11 @@ function formatMajor(minor, currency, locale, issuerCountryCode) {
 }
 
 /**
- * Persist a rendered PDF under storage/business-docs/quote/<YEAR>/<NUMBER>.pdf
+ * Persist a rendered PDF under storage/business-docs/quote/<YEAR>/<NUMBER>.pdf,
+ * or <NUMBER>-<6 hex>.pdf when that name is taken. A file is never
+ * overwritten: a queued email attaches it by path, and a later send (perhaps
+ * to another customer after the quote was reassigned) must not change what
+ * that email carries.
  */
 async function persistDocPdf(type, doc, buffer) {
   const number = doc.quote_number || doc.invoice_number;
@@ -1097,9 +1201,16 @@ async function persistDocPdf(type, doc, buffer) {
   const year = (doc.issue_date ? new Date(doc.issue_date) : new Date()).getFullYear();
   const root = path.join(getStoragePath(), 'business-docs', type, String(year));
   fs.mkdirSync(root, { recursive: true });
-  const filePath = path.join(root, `${number}.pdf`);
-  fs.writeFileSync(filePath, buffer);
-  return filePath;
+  let filePath = path.join(root, `${number}.pdf`);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      fs.writeFileSync(filePath, buffer, { flag: 'wx' });
+      return filePath;
+    } catch (err) {
+      if (err.code !== 'EEXIST' || attempt > 8) throw err;
+      filePath = path.join(root, `${number}-${crypto.randomBytes(3).toString('hex')}.pdf`);
+    }
+  }
 }
 
 /**
@@ -1292,7 +1403,22 @@ async function recordResponse({ token, action, ip, tosAccepted, actor = QUOTE_LI
       updates.tos_accepted_at = now;
       updates.tos_text_snapshot = tosText || null;
     }
-    await auditedUpdate(trx, 'quotes', { id: quote.id }, updates, history);
+    // The link again, inside the transaction: a customer change after it was
+    // read above expires every link the old customer holds.
+    const liveToken = await trx('quote_action_tokens').where({ id: tokenRow.id }).first();
+    if (!liveToken || liveToken.used_action === 'revoked' || !liveToken.expires_at
+      || new Date(liveToken.expires_at).getTime() < Date.now()) {
+      throw new AppError('Token expired', 410);
+    }
+    // Conditional on the status and customer this request read: a quote
+    // reopened, moved to another customer and sent again meanwhile is not
+    // this link's to answer.
+    const applied = await auditedUpdate(trx, 'quotes', {
+      id: quote.id, status: quote.status, customer_account_id: quote.customer_account_id,
+    }, updates, history);
+    if (!applied) {
+      throw new AppError('This quote changed while you were answering it. Reload the page.', 409, 'QUOTE_CHANGED');
+    }
     await trx('quote_action_tokens').where({ id: tokenRow.id }).update({
       used_at: now,
       used_action: newStatus,
