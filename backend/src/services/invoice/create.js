@@ -11,9 +11,10 @@ const { normaliseVatGbpRate, roundsVatDown } = require('../../utils/vatAmount');
 const { computeSliceTotals } = require('./installmentPlan');
 const { isUnitedKingdom } = require('../../utils/postalAddress');
 const { cloneInvoiceLine, composePaymentTermSnapshot, computeDueDate, computeInvoiceTotals, computeScheduledSendAt, ensureCustomerCanBill, ensureEventMatchesCustomer, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
-const { appendToMonthlyDraft } = require('./drafts');
+const { appendToMonthlyDraft, withAccumulatorDraftDeal } = require('./drafts');
 const { auditedInsert } = require('../accountingHistory');
 const { frozenPaymentTerm } = require('./paymentTerm');
+const { currentCrmActor } = require('../../database/crmAccess');
 
 
 /**
@@ -39,8 +40,20 @@ async function createInvoice(payload, adminId, trx = db) {
   // (e.g. the accumulator itself, or future test fixtures).
   if ((customer.billing_cadence === 'monthly' || customer.billing_cadence === 'manual')
       && !payload._skipMonthlyRouting) {
+    // The quote an editor save names stays checked as on the invoice path
+    // (readable to this admin, crmAccess) and must be this customer's. The
+    // draft carries no source quote and an editor save is no conversion, so
+    // nothing is recorded as accumulated (spawnInstallmentInvoices does that).
+    if (payload.sourceQuoteId) {
+      const source = await trx('quotes').where({ id: payload.sourceQuoteId }).first('id', 'customer_account_id');
+      if (!source) throw new AppError('Source quote not found', 404, 'SOURCE_QUOTE_NOT_FOUND');
+      if (Number(source.customer_account_id) !== Number(customer.id)) {
+        throw new AppError('The source quote belongs to another customer.', 422, 'SOURCE_QUOTE_CUSTOMER_MISMATCH');
+      }
+    }
+    const { _accumulatedQuoteId, _accumulatedContractId, _draftDealUuid, ...editorPayload } = payload;
     // appendToMonthlyDraft returns the draft id itself, not a row.
-    const draftId = await appendToMonthlyDraft(payload, customer, adminId, trx);
+    const draftId = await appendToMonthlyDraft(editorPayload, customer, adminId, trx);
     return { invoiceIds: draftId ? [draftId] : [] };
   }
 
@@ -324,7 +337,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
   ccPdfEmail, netDays,
   eventName, eventTimeStart, eventTimeEnd,
   paymentNetDaysTemplateId, paymentTimingTemplateId,
-  paymentTermSnapshot, dealUuid, projectId = null, hold = false, vatGbpRate = null }) {
+  paymentTermSnapshot, dealUuid, projectId = null, hold = false, vatGbpRate = null, sourceContractId = null }) {
   // Accumulator intercept (migration 128), same rule as createInvoice.
   // Quote → invoice conversion for a monthly- or manual-mode customer
   // doesn't fan out N installment invoices — the customer pays one
@@ -333,8 +346,12 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
   // early. The installment / cadence math below is bypassed; the quote's
   // payment timing is irrelevant once items flow into the accumulator.
   if (customer && (customer.billing_cadence === 'monthly' || customer.billing_cadence === 'manual')) {
-    const draftId = await appendToMonthlyDraft({
+    // The quote's currency, rate and shipping go with its lines (issue 2649):
+    // the draft of that currency and rate takes them, and the quote is
+    // recorded against it so conversion retries find the draft.
+    const accumulate = (draftDealUuid) => appendToMonthlyDraft({
       customerAccountId: customer.id,
+      currency,
       lineItems: (lineItems || []).map((li) => ({
         position: li.position,
         quantity: li.quantity,
@@ -346,8 +363,21 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
         ...extendedLineColumns(li, { invoice: true }),
       })),
       vatRate: totals?.vatRate,
+      shippingAmountMinor: totals?.shipping,
+      _accumulatedQuoteId: quoteId || null,
+      _accumulatedContractId: sourceContractId || null,
+      _draftDealUuid: draftDealUuid,
     }, customer, adminId, trx);
-    return { invoiceIds: draftId ? [draftId] : [] };
+    // A booking flow converting a quote of its own deal: the running bill is
+    // a deal of its own, so the flow's deal fence is widened to that one deal
+    // (drafts.withAccumulatorDraftDeal). Its actor's permissions and the
+    // draft's ownership still apply: without bills.manage, or with another
+    // admin's draft on the key, the step is refused.
+    const capability = currentCrmActor()?.capability;
+    const draftId = capability && dealUuid && capability.dealUuid === dealUuid
+      ? await withAccumulatorDraftDeal(trx, customer, { currency, vatRate: totals?.vatRate }, accumulate)
+      : await accumulate(undefined);
+    return { invoiceIds: draftId ? [draftId] : [], accumulated: Boolean(draftId) };
   }
 
   // netDays drives the due-date offset on every scheduled invoice

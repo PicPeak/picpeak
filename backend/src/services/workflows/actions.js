@@ -266,6 +266,11 @@ registry.registerAction('webhook', async (ctx) => {
 // the matching draft. Flows run system-side, so the actor is resolved from the
 // scoped execution principal (legacy fallback never chooses a first admin).
 
+// The step output for a quote of a monthly- or manual-billing customer: its
+// amounts are on the customer's running bill, never sent on their own.
+const ACCUMULATED_NOTE = 'amounts accumulated on the customer\'s running monthly/manual bill; '
+  + 'it is sent on the billing cycle day or with "Trigger invoice now", not by this flow';
+
 async function resolveActor(ctx) {
   const principal = require('../../database/crmAccess').currentCrmActor();
   if (principal) return principal.id;
@@ -354,20 +359,35 @@ registry.registerAction('prepare_invoice', async (ctx) => {
     return { already: true, invoiceIds: ctx.vars.preparedInvoiceIds };
   }
   const adminId = await resolveActor(ctx);
+  const { accumulatedDraftIds } = require('../invoice/drafts');
   let invoiceIds;
+  let accumulated = false;
   try {
     const res = await require('../quoteService').convertToInvoiceOnly(quoteId, adminId, { draft: true });
     invoiceIds = res.invoiceIds || [];
+    accumulated = res.accumulated === true;
   } catch (err) {
     // Crash-recovery re-run: the quote may already be 'converted' (convert
-    // throws). Recover the drafts by the quote's deal_uuid so we don't lose them.
-    const quote = await ctx.db('quotes').where({ id: quoteId }).first('deal_uuid');
-    invoiceIds = quote?.deal_uuid
-      ? (await ctx.db('invoices').where({ deal_uuid: quote.deal_uuid }).select('id')).map((r) => r.id)
-      : [];
+    // throws). Recover the drafts by the quote's deal_uuid so we don't lose
+    // them, or the running bill the quote was accumulated into.
+    invoiceIds = await accumulatedDraftIds(ctx.db, { quoteId });
+    accumulated = invoiceIds.length > 0;
+    if (!accumulated) {
+      const quote = await ctx.db('quotes').where({ id: quoteId }).first('deal_uuid');
+      invoiceIds = quote?.deal_uuid
+        ? (await ctx.db('invoices').where({ deal_uuid: quote.deal_uuid }).select('id')).map((r) => r.id)
+        : [];
+    }
     if (!invoiceIds.length) throw err;
   }
   ctx.vars.preparedInvoiceIds = invoiceIds;
+  if (accumulated) {
+    // A monthly- or manual-billing customer: the amounts went onto the
+    // customer's running bill, which goes out on its cycle day or through
+    // "Trigger invoice now". send_document skips it (accumulatedInvoiceIds).
+    ctx.vars.accumulatedInvoiceIds = invoiceIds;
+    return { invoice_prepared: invoiceIds, accumulated: true, note: ACCUMULATED_NOTE };
+  }
   return { invoice_prepared: invoiceIds };
 });
 
@@ -377,7 +397,8 @@ registry.registerAction('prepare_invoice', async (ctx) => {
 // (convertToInvoiceOnly does), creates the invoices on hold, and adopts the
 // ones an earlier run made instead of making them twice. A failure is on the
 // run AND on the contract (recordFollowUpFailure), where the admin looks.
-/** Link a quote-backed contract's unlinked invoices to it; returns how many. */
+/** Link a quote-backed contract's unlinked invoices to it; returns how many.
+ * (A running bill's lineage row takes the contract with the append itself.) */
 async function linkQuoteInvoices(db, contractId) {
   const contract = await db('contracts').where({ id: contractId }).first('source_quote_id');
   if (!contract || !contract.source_quote_id) return 0;
@@ -389,6 +410,14 @@ async function linkQuoteInvoices(db, contractId) {
     (q) => q.where({ source_quote_id: contract.source_quote_id }).whereNull('source_contract_id'),
     { source_contract_id: contractId },
     { actor: null, source: 'contract.convert.invoices' });
+}
+
+/** The invoices a contract was converted into: its own, and the running
+ * bill its quote was accumulated into (accumulated: true). */
+async function contractInvoices(db, contractId) {
+  const accumulated = await require('../invoice/drafts').accumulatedDraftIds(db, { contractId });
+  const own = (await db('invoices').where({ source_contract_id: contractId }).select('id')).map((r) => r.id);
+  return { ids: [...own, ...accumulated.filter((id) => !own.includes(id))], accumulated };
 }
 
 registry.registerAction('prepare_contract_invoice', async (ctx) => {
@@ -403,9 +432,10 @@ registry.registerAction('prepare_contract_invoice', async (ctx) => {
   // Done now: a failure an earlier run recorded is no longer outstanding.
   const cleared = () => require('../contract/signingV2')
     .clearFollowUpFailure(contractId, { steps: ['prepare_contract_invoice'] });
-  const existing = await ctx.db('invoices').where({ source_contract_id: contractId }).select('id');
-  if (existing.length) {
-    ctx.vars.preparedInvoiceIds = existing.map((r) => r.id);
+  const existing = await contractInvoices(ctx.db, contractId);
+  if (existing.ids.length) {
+    ctx.vars.preparedInvoiceIds = existing.ids;
+    if (existing.accumulated.length) ctx.vars.accumulatedInvoiceIds = existing.accumulated;
     await cleared();
     return { already: true, invoiceIds: ctx.vars.preparedInvoiceIds };
   }
@@ -422,9 +452,13 @@ registry.registerAction('prepare_contract_invoice', async (ctx) => {
       throw err;
     }
   }
-  const created = await ctx.db('invoices').where({ source_contract_id: contractId }).select('id');
-  ctx.vars.preparedInvoiceIds = created.map((r) => r.id);
+  const created = await contractInvoices(ctx.db, contractId);
+  ctx.vars.preparedInvoiceIds = created.ids;
   await cleared();
+  if (created.accumulated.length) {
+    ctx.vars.accumulatedInvoiceIds = created.accumulated;
+    return { invoice_prepared: created.ids, accumulated: true, note: ACCUMULATED_NOTE };
+  }
   return { invoice_prepared: ctx.vars.preparedInvoiceIds };
 });
 
@@ -441,16 +475,37 @@ registry.registerAction('send_document', async (ctx) => {
     // Only invoices still unsent go out. One the admin already sent, paid or
     // cancelled by hand is reported, never mailed a second time (and
     // sendInvoice itself refuses an automatic re-send).
+    // The running monthly / manual bill a quote was accumulated into is not
+    // sent here: it goes out on its cycle day or through "Trigger invoice
+    // now" (sendInvoice refuses it as MONTHLY_DRAFT_NOT_SENDABLE). Reported
+    // as `accumulated`, not a failure.
+    const accumulated = new Set((ctx.vars.accumulatedInvoiceIds || []).map(Number));
+    const entity = ctx.run?.entity_type === 'contract' ? { contractId: ctx.run.entity_id }
+      : ctx.run?.entity_type === 'quote' ? { quoteId: ctx.run.entity_id } : null;
+    if (entity && entity[Object.keys(entity)[0]]) {
+      for (const id of await require('../invoice/drafts').accumulatedDraftIds(ctx.db, entity)) accumulated.add(id);
+    }
     let sent = 0;
     const alreadySent = [];
+    const skippedAccumulated = [];
     for (const id of ids) {
+      if (accumulated.has(Number(id))) { skippedAccumulated.push(Number(id)); continue; }
       const row = await ctx.db('invoices').where({ id }).first('status');
       if (!row || row.status !== 'scheduled') { alreadySent.push(id); continue; }
       const res = await invoiceService.sendInvoice(id, adminId);
       if (res && res.sent) sent += 1; else alreadySent.push(id);
     }
-    if (!sent) return { skipped: true, reason: 'invoice already sent, paid or cancelled', already_sent: alreadySent };
-    return alreadySent.length ? { invoices_sent: sent, already_sent: alreadySent } : { invoices_sent: sent };
+    const extra = {
+      ...(alreadySent.length ? { already_sent: alreadySent } : {}),
+      ...(skippedAccumulated.length ? { accumulated: skippedAccumulated } : {}),
+    };
+    if (!sent) {
+      if (skippedAccumulated.length && !alreadySent.length) {
+        return { skipped: true, reason: ACCUMULATED_NOTE, ...extra };
+      }
+      return { skipped: true, reason: 'invoice already sent, paid or cancelled', ...extra };
+    }
+    return { invoices_sent: sent, ...extra };
   }
   if (doc === 'contract') {
     const cid = ctx.vars.preparedContractId;

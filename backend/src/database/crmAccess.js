@@ -17,6 +17,7 @@ const CHILDREN = {
   quote_line_items: ['quotes', 'quote_id'], quote_action_tokens: ['quotes', 'quote_id'],
   invoice_line_items: ['invoices', 'invoice_id'], invoice_payment_log: ['invoices', 'invoice_id'],
   invoice_payment_check_tokens: ['invoices', 'invoice_id'],
+  invoice_accumulated_sources: ['invoices', 'invoice_id'],
   contract_block_inclusions: ['contracts', 'contract_id'],
   contract_text_sections: ['contracts', 'contract_id'], contract_attachment_inclusions: ['contracts', 'contract_id'],
   contract_action_tokens: ['contracts', 'contract_id'], contract_signers: ['contracts', 'contract_id'],
@@ -103,6 +104,25 @@ function withCrmActor(actor, work) {
 function withTrustedCrmAccess(reason, work) {
   if (!reason) throw new Error('Trusted CRM access requires a reason');
   return execution.run({ trusted: reason }, async () => await work());
+}
+/**
+ * Run `work` with the current workflow capability's deal fence widened to
+ * `dealUuids` (the customer's running monthly bill a converted quote is
+ * appended to, which is a deal of its own). Only the fence moves: the actor,
+ * its permissions and the ownership rules stay, so an actor without
+ * bills.manage, or a draft another admin owns, is still refused. Without a
+ * capability (an admin request, a trusted job) `work` runs as it is.
+ */
+function withCapabilityDeals(dealUuids, work) {
+  const context = execution.getStore();
+  const cap = context?.actor?.capability;
+  const extra = (dealUuids || []).filter((d) => typeof d === 'string' && d);
+  if (!cap || !extra.length) return work();
+  const actor = Object.freeze({
+    ...context.actor,
+    capability: Object.freeze({ ...cap, extraDeals: Object.freeze([...(cap.extraDeals || []), ...extra]) }),
+  });
+  return execution.run({ ...context, actor }, async () => await work());
 }
 function crmCapabilityRouter(reason) {
   return (_req, _res, next) => withTrustedCrmAccess(reason, next);
@@ -224,6 +244,7 @@ function predicate(table, alias, actor, write = false) {
       if (cap.root === 'quotes' && root !== 'quotes') anchors.push(`${col(a, 'source_quote_id')} = ${param(cap.id)}`);
       if (cap.root === 'contracts' && root === 'invoices') anchors.push(`${col(a, 'source_contract_id')} = ${param(cap.id)}`);
       if (cap.dealUuid) anchors.push(`${col(a, 'deal_uuid')} = ${param(cap.dealUuid)}`);
+      for (const deal of cap.extraDeals || []) anchors.push(`${col(a, 'deal_uuid')} = ${param(deal)}`);
       if (cap.eventId) anchors.push(`${col(a, root === 'invoices' ? 'event_id' : 'converted_event_id')} = ${param(cap.eventId)}`);
       // An editable built-in graph is not global system authority. Its
       // capability cannot traverse a foreign photographer's stored creator.
@@ -434,7 +455,8 @@ async function validateWrite(builder, client, connection) {
       if (builder._method === 'insert' && Number(row.created_by_admin_id) !== actor.id) throw new ForbiddenError('CRM creator must be the current actor');
       if (builder._method === 'insert' && actor.capability) {
         const cap = actor.capability;
-        const inDeal = cap.dealUuid && row.deal_uuid === cap.dealUuid;
+        const inDeal = (cap.dealUuid && row.deal_uuid === cap.dealUuid)
+          || (row.deal_uuid != null && (cap.extraDeals || []).includes(row.deal_uuid));
         const inEvent = cap.eventId && Number(row.event_id || row.converted_event_id) === Number(cap.eventId);
         const inSource = (cap.root === 'quotes' && Number(row.source_quote_id) === cap.id)
           || (cap.root === 'contracts' && Number(row.source_contract_id) === cap.id);
@@ -460,7 +482,9 @@ async function validateWrite(builder, client, connection) {
         const cap = actor.capability;
         const derivedInsert = builder._method === 'insert' && cap && ((cap.root === 'quotes' && Number(row.source_quote_id) === cap.id)
           || (cap.root === 'contracts' && Number(row.source_contract_id) === cap.id));
-        if (cap && row.deal_uuid !== cap.dealUuid && !derivedInsert) throw new ForbiddenError('CRM lineage exceeds workflow entity capability');
+        if (cap && row.deal_uuid !== cap.dealUuid && !(cap.extraDeals || []).includes(row.deal_uuid) && !derivedInsert) {
+          throw new ForbiddenError('CRM lineage exceeds workflow entity capability');
+        }
         for (const target of Object.keys(ROOTS)) {
           // Lock all existing lineage records first, not merely the visible
           // subset. The scoped check below must account for each of them.
@@ -745,5 +769,5 @@ function assertCompleteCrmView() {
 }
 
 module.exports = { installCrmAccess, loadCrmActor, withCrmActor, currentCrmActor,
-  withTrustedCrmAccess, crmCapabilityRouter, requireCrmDocument, executableGraph, assertCompleteCrmView,
+  withTrustedCrmAccess, withCapabilityDeals, crmCapabilityRouter, requireCrmDocument, executableGraph, assertCompleteCrmView,
   enterTrustedCrmFixtureContext, withoutCrmContext, workflowCrmActor, assertCrmParent };

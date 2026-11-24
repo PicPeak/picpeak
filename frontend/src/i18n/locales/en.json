@@ -8863,7 +8863,8 @@
       "draftPreview": {
         "title": "Pending in this month's bill",
         "titleManual": "Pending — ships on manual trigger",
-        "periodRange": "{{number}} · {{from}} – {{to}}"
+        "periodRange": "{{number}} · {{from}} – {{to}}",
+        "key": "{{currency}} · VAT {{rate}} %"
       },
       "rebillAttachProof": "Attach supplier proof to re-billed invoices",
       "rebillAttachProofInherit": "Use tenant default",
