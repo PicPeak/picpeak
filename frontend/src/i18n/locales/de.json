@@ -6786,6 +6786,7 @@
     "subtitle": "Rechnungen planen, versenden, Zahlungen erfassen und überfällige Rechnungen mahnen.",
     "new": "Neue Rechnung",
     "searchPlaceholder": "Nach Nummer oder Kunde suchen…",
+    "pagination": "Seite {{page}} von {{total}} · {{count}} Rechnungen",
     "sort": {
       "newest": "Neueste zuerst",
       "dueAsc": "Fällig zuerst",
