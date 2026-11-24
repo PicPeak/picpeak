@@ -397,19 +397,16 @@ registry.registerAction('prepare_invoice', async (ctx) => {
 // (convertToInvoiceOnly does), creates the invoices on hold, and adopts the
 // ones an earlier run made instead of making them twice. A failure is on the
 // run AND on the contract (recordFollowUpFailure), where the admin looks.
-/** Link a quote-backed contract's unlinked invoices to it (or the lineage
- * rows of the running bill its quote was accumulated into); returns how many. */
+/** Link a quote-backed contract's unlinked invoices to it; returns how many.
+ * (A running bill's lineage row takes the contract with the append itself.) */
 async function linkQuoteInvoices(db, contractId) {
   const contract = await db('contracts').where({ id: contractId }).first('source_quote_id');
   if (!contract || !contract.source_quote_id) return 0;
   const quote = await db('quotes').where({ id: contract.source_quote_id }).first('converted_contract_id');
   // Only a quote this contract was made from: its invoices came through it.
   if (!quote || Number(quote.converted_contract_id) !== Number(contractId)) return 0;
-  const accumulated = await db('invoice_accumulated_sources')
-    .where({ quote_id: contract.source_quote_id }).whereNull('contract_id')
-    .update({ contract_id: contractId });
   const { auditedUpdate } = require('../accountingHistory');
-  return accumulated + await auditedUpdate(db, 'invoices',
+  return auditedUpdate(db, 'invoices',
     (q) => q.where({ source_quote_id: contract.source_quote_id }).whereNull('source_contract_id'),
     { source_contract_id: contractId },
     { actor: null, source: 'contract.convert.invoices' });

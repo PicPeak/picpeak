@@ -15,6 +15,7 @@ const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 const { frozenPaymentTerm } = require('./paymentTerm');
 const { toDateOnly } = require('../../utils/dateOnly');
 const { vatMinorFor, roundsVatDown, normaliseVatGbpRate } = require('../../utils/vatAmount');
+const { withTrustedCrmAccess, withCapabilityDeals } = require('../../database/crmAccess');
 
 
 /** A VAT rate as the draft key compares it (2 decimals, like the column). */
@@ -25,6 +26,46 @@ function draftVatRate(value) {
 /** Whether a payload states a VAT rate of its own. */
 function statesVatRate(value) {
   return value !== undefined && value !== null && value !== '';
+}
+
+/** The currency and VAT rate of a draft key (see getOrCreateMonthlyDraft). */
+async function resolveDraftKey(trx, customer, key = {}) {
+  const profile = (await businessProfileService.getProfile(trx)).profile;
+  return {
+    profile,
+    currency: String(key.currency || customer.preferred_currency || profile?.default_currency || 'CHF').toUpperCase(),
+    vatRate: statesVatRate(key.vatRate) ? draftVatRate(key.vatRate) : null,
+  };
+}
+
+/**
+ * The customer's open drafts of a key, newest first. Not filtered by
+ * monthly_period_end: if the scheduler hasn't yet promoted an expired draft,
+ * it's still the landing spot for new items; promoting it is the
+ * scheduler's job, not ours. Only a draft that is still `scheduled` takes
+ * items: a cancelled or paid row is a closed document, whatever its draft
+ * flag says. A null rate matches the draft of any rate.
+ */
+function openDraftQuery(trx, customerId, { currency, vatRate }) {
+  const q = trx('invoices')
+    .where({ customer_account_id: customerId, is_monthly_draft: true, status: 'scheduled', currency });
+  if (vatRate != null) q.where('vat_rate', vatRate);
+  return q.orderBy('id', 'desc');
+}
+
+/**
+ * Run `work(dealUuid)` for a booking flow converting a quote of its own deal
+ * into the customer's running bill. The running bill is a deal of its own,
+ * outside the flow's deal fence; widen the fence to that one deal (the open
+ * draft's, or a fresh one the new draft takes). The flow's actor still needs
+ * bills.manage and must own the draft (crmAccess.withCapabilityDeals).
+ */
+async function withAccumulatorDraftDeal(trx, customer, key, work) {
+  const resolved = await resolveDraftKey(trx, customer, key);
+  const open = await withTrustedCrmAccess('accumulator draft: deal of the open draft of the key',
+    () => openDraftQuery(trx, customer.id, resolved).first('deal_uuid'));
+  const dealUuid = open?.deal_uuid || crypto.randomUUID();
+  return withCapabilityDeals([dealUuid], () => work(dealUuid));
 }
 
 /**
@@ -80,25 +121,12 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx, key = {}) {
 
   // Route reads through the caller's connection: conversions and re-bills
   // can already hold SQLite's only connection inside their transaction.
-  const profile = (await businessProfileService.getProfile(trx)).profile;
-  const currency = String(key.currency || customer.preferred_currency || profile?.default_currency || 'CHF').toUpperCase();
-  const vatRate = statesVatRate(key.vatRate) ? draftVatRate(key.vatRate) : null;
-  // The open drafts of this key. Not filtered by monthly_period_end: if the
-  // scheduler hasn't yet promoted an expired draft, it's still the landing
-  // spot for new items; promoting it is the scheduler's job, not ours. The
-  // partial unique index (migration 375) allows one per customer, currency
-  // and rate. forUpdate() locks the row on Postgres so concurrent appenders
-  // serialize on totals recomputation; SQLite's transaction write-lock gives
-  // us the same guarantee implicitly.
-  //
-  // Only a draft that is still `scheduled` takes items: a cancelled or paid
-  // row is a closed document, whatever its draft flag says.
-  const openDraftOfKey = () => {
-    const q = trx('invoices')
-      .where({ customer_account_id: customer.id, is_monthly_draft: true, status: 'scheduled', currency });
-    if (vatRate != null) q.where('vat_rate', vatRate);
-    return q.orderBy('id', 'desc');
-  };
+  const { profile, currency, vatRate } = await resolveDraftKey(trx, customer, key);
+  // The partial unique index (migration 375) allows one open draft per
+  // customer, currency and rate. forUpdate() locks the row on Postgres so
+  // concurrent appenders serialize on totals recomputation; SQLite's
+  // transaction write-lock gives us the same guarantee implicitly.
+  const openDraftOfKey = () => openDraftQuery(trx, customer.id, { currency, vatRate });
   const existing = await openDraftOfKey().forUpdate().first();
   if (existing) {
     return { id: existing.id, row: existing, created: false };
@@ -110,6 +138,15 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx, key = {}) {
     (q) => q.where({ customer_account_id: customer.id, is_monthly_draft: true }).whereNot('status', 'scheduled'),
     { is_monthly_draft: false, updated_at: new Date() },
     { actor: adminId, source: 'invoice.monthly.releaseClosedDraft' });
+
+  // The key's draft may exist and be out of this actor's reach (another
+  // admin's): it holds the key, so say so rather than trip the index.
+  const hidden = await withTrustedCrmAccess('accumulator draft: key held by a draft out of reach',
+    () => openDraftOfKey().first('id'));
+  if (hidden) {
+    throw new AppError('This customer\'s running bill in this currency and VAT rate belongs to another admin.',
+      403, 'MONTHLY_DRAFT_NOT_ACCESSIBLE');
+  }
 
   // None yet — mint one with zero line items + zero totals. The
   // caller appends items + recomputes immediately after.
@@ -147,7 +184,7 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx, key = {}) {
     // Migration 140 — each monthly-draft cycle is its own deal (no
     // quote/contract chain). Fresh UUID at creation; subsequent line
     // appends just mutate this same row, so the uuid sticks.
-    deal_uuid: crypto.randomUUID(),
+    deal_uuid: key.dealUuid || crypto.randomUUID(),
     created_by_admin_id: adminId,
     created_at: new Date(),
     updated_at: new Date(),
@@ -191,11 +228,21 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx, key = {}) {
  * sequence, recomputes totals across the merged set, and returns the
  * draft's id so the route layer can fetch + return it.
  */
-async function appendToMonthlyDraft(payload, customer, adminId, trx) {
+async function appendToMonthlyDraft(payload, customer, adminId, trx = db) {
+  // The lines, the totals and the lineage row commit together.
+  if (!trx.isTransaction) {
+    return db.transaction((t) => appendToMonthlyDraft(payload, customer, adminId, t));
+  }
+  // A conversion that already accumulated this quote (a retry) appends
+  // nothing and hands back the draft it went into.
+  if (payload._accumulatedQuoteId) {
+    const [already] = await accumulatedDraftIds(trx, { quoteId: payload._accumulatedQuoteId });
+    if (already) return already;
+  }
   // The payload's currency and rate pick the draft (issue 2649): its amounts
   // stay in their currency and its lines keep their rate.
   const draft = await getOrCreateMonthlyDraft(customer, adminId, trx,
-    { currency: payload.currency, vatRate: payload.vatRate });
+    { currency: payload.currency, vatRate: payload.vatRate, dealUuid: payload._draftDealUuid });
 
   // Load existing line items so we can compute the next `position` and
   // re-sum totals across the merged set. The migration-119 hierarchy
@@ -272,11 +319,16 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
     throw new AppError('The running monthly bill was closed in the meantime. Try again.', 409, 'MONTHLY_DRAFT_CLOSED');
   }
 
-  // The quote (and later its contract) accumulated here (migration 375): the
-  // draft has no source_quote_id, so conversion retries find it this way.
-  if (payload.sourceQuoteId) {
+  // The quote (and the contract it was converted through) accumulated here
+  // (migration 375): the draft has no source_quote_id, so conversion retries
+  // find it this way. Set only by a conversion (spawnInstallmentInvoices),
+  // whose quote the converting actor has already claimed.
+  if (payload._accumulatedQuoteId) {
     await trx('invoice_accumulated_sources').insert({
-      invoice_id: draft.id, quote_id: payload.sourceQuoteId, created_at: new Date().toISOString(),
+      invoice_id: draft.id,
+      quote_id: payload._accumulatedQuoteId,
+      contract_id: payload._accumulatedContractId || null,
+      created_at: new Date().toISOString(),
     });
   }
 
@@ -367,15 +419,22 @@ async function getMonthlyDrafts(customerId) {
 }
 
 /**
- * The open accumulator drafts a quote or contract was accumulated into
+ * The accumulator drafts a quote or contract was accumulated into
  * (migration 375), so a conversion retry adopts them. Ids, oldest first.
+ * The drafts are deals of their own, outside a booking flow's deal fence:
+ * the fence is widened to them (crmAccess.withCapabilityDeals), and the
+ * actor's permissions and ownership still decide what it reads.
  */
 async function accumulatedDraftIds(conn, { quoteId = null, contractId = null }) {
   if (!quoteId && !contractId) return [];
-  const q = conn('invoice_accumulated_sources');
-  if (quoteId) q.where('quote_id', quoteId);
-  else q.where('contract_id', contractId);
-  const rows = await q.orderBy('invoice_id').distinct('invoice_id');
+  const where = (q) => (quoteId ? q.where('invoice_accumulated_sources.quote_id', quoteId)
+    : q.where('invoice_accumulated_sources.contract_id', contractId));
+  const deals = await withTrustedCrmAccess('accumulator lineage: deals of the drafts',
+    () => where(conn('invoice_accumulated_sources')
+      .join('invoices', 'invoices.id', 'invoice_accumulated_sources.invoice_id'))
+      .distinct('invoices.deal_uuid'));
+  const rows = await withCapabilityDeals(deals.map((d) => d.deal_uuid),
+    () => where(conn('invoice_accumulated_sources')).orderBy('invoice_id').distinct('invoice_id'));
   return rows.map((r) => Number(r.invoice_id));
 }
 
@@ -480,6 +539,7 @@ module.exports = {
   resolveUnissuedInvoiceNet,
   retotalUnissuedInvoice,
   getOrCreateMonthlyDraft,
+  withAccumulatorDraftDeal,
   appendToMonthlyDraft,
   appendOneLineItemToMonthlyDraft,
   getMonthlyDrafts,

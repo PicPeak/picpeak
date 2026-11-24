@@ -259,3 +259,180 @@ describe('booking flow for an accumulator customer', () => {
     expect((await db('invoices').where({ id: draft.id }).first()).is_monthly_draft).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Authorization and atomicity of the accumulator (Codex round 1 on the fix).
+// ---------------------------------------------------------------------------
+
+let roleSeq = 0;
+async function adminWithPermissions(permissions) {
+  roleSeq += 1;
+  const name = `acc_role_${roleSeq}`;
+  const roleId = await insertId(db('roles').insert({ name, display_name: name }));
+  for (const p of await db('permissions').whereIn('name', permissions)) {
+    await db('role_permissions').insert({ role_id: roleId, permission_id: p.id });
+  }
+  return insertId(db('admin_users').insert({
+    username: name, email: `${name}@example.com`, password_hash: 'unused',
+    must_change_password: false, role_id: roleId, created_at: new Date().toISOString(),
+  }));
+}
+
+/** A booking flow authored by `authorId`: prepare_invoice → send_document. */
+let flowSeq = 0;
+async function bookingRun(quoteId, authorId) {
+  flowSeq += 1;
+  const trigger = `quote.accepted.auth${flowSeq}`;
+  const workflowId = await insertId(db('workflows').insert({
+    name: `booking auth ${flowSeq}`, trigger_type: trigger, version: 1, enabled: true, created_by: authorId,
+  }));
+  const nodes = [
+    { key: 't', type: 'trigger' },
+    { key: 'prep', type: 'action', config: { action: 'prepare_invoice' } },
+    { key: 'send', type: 'action', config: { action: 'send_document', document: 'invoice' } },
+  ];
+  for (const n of nodes) {
+    await db('workflow_nodes').insert({ workflow_id: workflowId, version: 1, node_key: n.key, type: n.type, config: JSON.stringify(n.config || {}) });
+  }
+  for (const [from, to] of [['t', 'prep'], ['prep', 'send']]) {
+    await db('workflow_edges').insert({ workflow_id: workflowId, version: 1, from_node: from, from_handle: null, to_node: to, loop_back: false });
+  }
+  const [runId] = await workflows.emitWorkflowEvent(trigger, { entityType: 'quote', entityId: quoteId, payload: {} });
+  return db('workflow_runs').where({ id: runId }).first();
+}
+
+/** An accepted quote owned by `ownerId`. */
+async function ownedAcceptedQuote(customerId, ownerId, { currency = 'CHF', vatRate = 0 } = {}) {
+  const quoteId = await quoteService.createQuote({
+    customerAccountId: customerId, currency, vatRate,
+    lineItems: [{ position: 1, quantity: 1, description: 'Shoot', unit_price_minor: 10000, discount_percent: 0, parent_position: null }],
+  }, ownerId);
+  await db('quotes').where({ id: quoteId }).update({ status: 'accepted', created_by_admin_id: ownerId });
+  return quoteId;
+}
+
+describe('accumulator authorization', () => {
+  let quotesOnlyId; let billerId; let billingOnlyId;
+  beforeAll(async () => {
+    quotesOnlyId = await adminWithPermissions(['quotes.view', 'quotes.manage']);
+    billerId = await adminWithPermissions(['quotes.view', 'quotes.manage', 'bills.view', 'bills.manage']);
+    billingOnlyId = await adminWithPermissions(['bills.view', 'bills.manage']);
+    // The role cache is warm from the suites above; read the new roles.
+    require('../../src/middleware/permissions').clearPermissionCache();
+  });
+
+  test('a booking flow whose author may not manage bills opens no running bill', async () => {
+    const customerId = await accumulatorCustomer('monthly');
+    const quoteId = await ownedAcceptedQuote(customerId, quotesOnlyId);
+    const run = await bookingRun(quoteId, quotesOnlyId);
+    expect(run.status).toBe('failed');
+    expect(run.error).toMatch(/Insufficient CRM permissions/);
+    expect(await db('invoices').where({ customer_account_id: customerId })).toHaveLength(0);
+    expect(await db('invoice_accumulated_sources').where({ quote_id: quoteId })).toHaveLength(0);
+  });
+
+  test('a booking flow never appends to another admin\'s running bill', async () => {
+    const customerId = await accumulatorCustomer('monthly');
+    // The super-admin's own draft for CHF 0 %.
+    await quoteService.convertToInvoiceOnly(await acceptedQuote(customerId), adminId);
+    const [foreign] = await openDrafts(customerId);
+
+    const quoteId = await ownedAcceptedQuote(customerId, billerId);
+    const run = await bookingRun(quoteId, billerId);
+    expect(run.status).toBe('failed');
+    expect(run.error).toMatch(/another admin/i);
+    const after = await db('invoices').where({ id: foreign.id }).first();
+    expect(Number(after.total_amount_minor)).toBe(10000);
+    expect(await db('invoice_line_items').where({ invoice_id: foreign.id })).toHaveLength(1);
+    expect(await openDrafts(customerId)).toHaveLength(1);
+  });
+
+  test('a booking flow whose author manages bills opens and fills its own running bill', async () => {
+    const customerId = await accumulatorCustomer('monthly');
+    const first = await bookingRun(await ownedAcceptedQuote(customerId, billerId), billerId);
+    expect([first.status, first.error]).toEqual(['done', null]);
+    const second = await bookingRun(await ownedAcceptedQuote(customerId, billerId), billerId);
+    expect([second.status, second.error]).toEqual(['done', null]);
+
+    const drafts = await openDrafts(customerId);
+    expect(drafts.map((d) => [Number(d.created_by_admin_id), Number(d.total_amount_minor)])).toEqual([[billerId, 20000]]);
+  });
+
+  test('the bill editor cannot record another customer\'s or an unreadable quote as accumulated', async () => {
+    const customerId = await accumulatorCustomer('monthly');
+    const otherCustomerId = await accumulatorCustomer('monthly');
+    const foreignCustomerQuote = await acceptedQuote(otherCustomerId);
+    const ownCustomerQuote = await acceptedQuote(customerId);
+    const invoiceApp = buildRouteApp('/api/admin/invoices', require('../../src/routes/adminInvoices'));
+    const save = (id, sourceQuoteId) => request(invoiceApp).post('/api/admin/invoices')
+      .set('Authorization', `Bearer ${mintAdminToken(id)}`)
+      .send({
+        customerAccountId: customerId, currency: 'CHF', vatRate: 0, sourceQuoteId,
+        lineItems: [{ position: 1, quantity: 1, description: 'Edited', unitPriceMinor: 10000, discountPercent: 0 }],
+      });
+
+    // Another customer's quote.
+    const crossCustomer = await save(adminId, foreignCustomerQuote);
+    expect(crossCustomer.status).toBeGreaterThanOrEqual(400);
+    // A quote this billing-only admin cannot read.
+    const unreadable = await save(billingOnlyId, ownCustomerQuote);
+    expect(unreadable.status).toBeGreaterThanOrEqual(400);
+    expect(await db('invoices').where({ customer_account_id: customerId })).toHaveLength(0);
+
+    // A readable quote of the customer: saved, but an editor save is no
+    // conversion, so nothing is recorded as accumulated and the quote still
+    // converts (and is recorded) later.
+    const ok = await save(adminId, ownCustomerQuote);
+    expect(ok.status).toBe(201);
+    expect(await db('invoice_accumulated_sources').whereIn('quote_id', [foreignCustomerQuote, ownCustomerQuote])).toHaveLength(0);
+    await quoteService.convertToInvoiceOnly(ownCustomerQuote, adminId);
+    expect(await db('invoice_accumulated_sources').where({ quote_id: ownCustomerQuote })).toHaveLength(1);
+  });
+});
+
+describe('accumulator atomicity and totals', () => {
+  test('a repeated conversion outside a transaction appends once', async () => {
+    const customerId = await accumulatorCustomer('monthly');
+    const customer = await db('customer_accounts').where({ id: customerId }).first();
+    const quoteId = await acceptedQuote(customerId);
+    const convert = () => invoiceService.spawnInstallmentInvoices({
+      trx: db, customer, adminId, quoteId, currency: 'CHF',
+      lineItems: [{ position: 1, quantity: 1, description: 'Shoot', unit_price_minor: 10000, discount_percent: 0, parent_position: null }],
+      totals: { net: 10000, vat: 0, shipping: 0, total: 10000, vatRate: 0 },
+      installments: [{ percent: 100 }],
+    });
+    const first = await convert();
+    const again = await convert().catch((err) => err);
+    expect(again.invoiceIds).toEqual(first.invoiceIds);
+    const [draft] = await openDrafts(customerId);
+    expect(await db('invoice_line_items').where({ invoice_id: draft.id })).toHaveLength(1);
+    expect(Number(draft.total_amount_minor)).toBe(10000);
+  });
+
+  test('editing an hours entry on a rounded-total draft keeps its net', async () => {
+    const settings = require('../../src/utils/appSettings');
+    const hours = require('../../src/services/customerHoursService');
+    const flag = await db('feature_flags').where({ key: 'hoursLogging' }).update({ value: true });
+    if (!flag) await db('feature_flags').insert({ key: 'hoursLogging', value: true });
+    const customerId = await accumulatorCustomer('monthly', { feature_hours_logging: true });
+    await settings.upsertAppSetting('crm_invoice_round_total', 'true', 'crm');
+    try {
+      // 15 minutes at 33.33/h: each line is 8.3325, rounded 8.33; three of
+      // them are 24.9975 exactly, 25.00 rounded once, 24.99 line by line.
+      const entries = [];
+      for (const start of ['09:00', '10:00', '11:00']) {
+        const end = `${start.slice(0, 2)}:15`;
+        entries.push(await hours.createEntry(customerId, {
+          entryDate: '2026-11-02', startTime: start, endTime: end, hourlyRateMinorOverride: 3333,
+        }, adminId));
+      }
+      const [draft] = await openDrafts(customerId);
+      expect(Number(draft.net_amount_minor)).toBe(2500);
+      const entry = await db('customer_hour_entries').where({ customer_account_id: customerId }).orderBy('id').first();
+      await hours.updateEntry(entry.id, { description: 'Retouching' }, adminId);
+      expect(Number((await db('invoices').where({ id: draft.id }).first()).net_amount_minor)).toBe(2500);
+    } finally {
+      await settings.upsertAppSetting('crm_invoice_round_total', 'false', 'crm');
+    }
+  });
+});
