@@ -1985,8 +1985,15 @@ class RestoreService {
         }
 
         // Asks the server about the dump's header settings, so it runs while
-        // the database still exists: a failure here leaves it untouched.
-        await this.preparePostgresDump(restoreFile, knexConfig.connection, env);
+        // the database still exists. A failure here has changed nothing, so
+        // it is marked as such: a rollback would drop the untouched database
+        // and lose what was written since the safety backup.
+        try {
+          await this.preparePostgresDump(restoreFile, knexConfig.connection, env);
+        } catch (error) {
+          throw Object.assign(new Error(`The database dump could not be prepared, nothing was changed: ${error.message}`),
+            { beforeDestinationChange: true });
+        }
         await this.recreatePostgresDatabase(knexConfig.connection, env);
 
         // Restore from backup — this one DOES connect to the target DB. One
