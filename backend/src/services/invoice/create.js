@@ -13,6 +13,7 @@ const { isUnitedKingdom } = require('../../utils/postalAddress');
 const { cloneInvoiceLine, composePaymentTermSnapshot, computeDueDate, computeInvoiceTotals, computeScheduledSendAt, ensureCustomerCanBill, ensureEventMatchesCustomer, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
 const { appendToMonthlyDraft } = require('./drafts');
 const { auditedInsert } = require('../accountingHistory');
+const { frozenPaymentTerm } = require('./paymentTerm');
 
 
 /**
@@ -251,7 +252,12 @@ async function createInvoice(payload, adminId, trx = db) {
     payment_term_template_id: paymentTermTemplateId,
     payment_net_days_template_id: paymentNetDaysTemplateId,
     payment_timing_template_id: paymentTimingTemplateId,
-    payment_term_snapshot: paymentTermSnapshot,
+    // The term the invoice shows, resolved now: later changes to its quote
+    // or the defaults don't reach it. A reissue without a template of its
+    // own keeps the term of the invoice it replaces.
+    payment_term_snapshot: await frozenPaymentTerm(trx, {
+      snapshot: paymentTermSnapshot || payload._paymentTermSnapshot || null, sourceQuoteId: payload.sourceQuoteId || null, netDays: resolvedNetDays,
+    }),
     // Per-invoice Skonto opt-out (migration 126). Defaults to false
     // — invoice inherits the snapshot/global Skonto config unless
     // admin explicitly ticks "Disable Skonto" in the editor.
@@ -350,6 +356,10 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
     || 30;
   const total = installments.length;
   const acceptanceTime = new Date();
+  // One term for every instalment, resolved now (invoice/paymentTerm).
+  const frozenTerm = await frozenPaymentTerm(trx || db, {
+    snapshot: paymentTermSnapshot, sourceQuoteId: quoteId || null, netDays: resolvedNetDays,
+  });
   const invoiceIds = [];
   const roundVatDown = await roundsVatDown(trx || db);
 
@@ -428,11 +438,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       // snapshot itself is the legal record; the FKs are convenience.
       payment_net_days_template_id: paymentNetDaysTemplateId || null,
       payment_timing_template_id: paymentTimingTemplateId || null,
-      payment_term_snapshot: paymentTermSnapshot
-        ? (typeof paymentTermSnapshot === 'string'
-          ? paymentTermSnapshot
-          : JSON.stringify(paymentTermSnapshot))
-        : null,
+      payment_term_snapshot: frozenTerm,
       // Migration 140 — every installment sibling shares one deal_uuid
       // (passed in from the converting caller, ultimately the source
       // quote's value). Defensive fallback to a fresh UUID if the

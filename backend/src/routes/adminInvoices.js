@@ -40,6 +40,7 @@ const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireF
 const { db } = require('../database/db');
 const { canLinkCrmToEvent, ownsProject } = require('../middleware/ownership');
 const { AppError } = require('../utils/errors');
+const { frozenPaymentTerm } = require('../services/invoice/paymentTerm');
 const { composePaymentTermSnapshot, computeDueDate, computeInvoiceTotals, ensureEventMatchesCustomer, isInvoiceEditable, resolveNetDaysForRow, UNISSUED_INVOICE_STATUSES } = require('../services/invoice/helpers');
 const { toDateOnly } = require('../utils/dateOnly');
 const { toIso, toStoredTimestamp, toTimestamp } = require('../utils/dateNormalize');
@@ -696,6 +697,8 @@ router.post(
       // a host migration (Docker volume remount on a new host with a
       // different absolute path).
       imported_pdf_path: path.relative(getStoragePath(), req.file.path),
+      // Its own term like every invoice (invoice/paymentTerm): the defaults.
+      payment_term_snapshot: await frozenPaymentTerm(db),
       created_by_admin_id: req.admin.id,
       created_at: new Date(),
       updated_at: new Date(),
@@ -888,6 +891,14 @@ router.put(
         updates.payment_timing_template_id = null;
         updates.payment_term_snapshot = null;
       }
+    }
+
+    // Stored resolved, as on create (invoice/paymentTerm): a cleared term
+    // takes the quote's and the defaults once, not on every render.
+    if (Object.prototype.hasOwnProperty.call(updates, 'payment_term_snapshot')) {
+      updates.payment_term_snapshot = await frozenPaymentTerm(db, {
+        snapshot: updates.payment_term_snapshot, sourceQuoteId: existing.source_quote_id,
+      });
     }
 
     // A delivery invoice's due date stays machine-set until someone changes

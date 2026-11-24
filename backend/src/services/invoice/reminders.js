@@ -9,6 +9,7 @@ const emailProcessor = require('../emailProcessor');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
 const { formatMajor, parseJsonObject } = require('./helpers');
+const { isFrozenTerm } = require('./paymentTerm');
 const { getInvoiceById } = require('./queries');
 const { buildInvoiceRenderContext } = require('./render');
 const { auditedUpdate, normalizeActor } = require('../accountingHistory');
@@ -222,7 +223,8 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
 
 /**
  * Resolve the effective Skonto percentage for an invoice at the
- * current moment. Resolution chain (matches pdfService rendering):
+ * current moment. An invoice's frozen term (invoice/paymentTerm) is read as
+ * it is. A snapshot without the marker keeps the old chain:
  *   1. invoice.payment_term_snapshot.skonto_percent
  *   2. source quote's payment_term_snapshot.skonto_percent
  *   3. global crm_invoices_skonto_percent_default
@@ -250,6 +252,11 @@ async function resolveSkontoPercentForInvoice(invoice) {
     if (cust && cust.skonto_disabled) return null;
   }
   const invSnap = parseJsonObject(invoice.payment_term_snapshot);
+  // A term frozen when the invoice was made (invoice/paymentTerm) is the
+  // whole answer: no quote, no default.
+  if (isFrozenTerm(invSnap)) {
+    return invSnap.skonto_percent != null && Number(invSnap.skonto_percent) > 0 ? Number(invSnap.skonto_percent) : null;
+  }
   if (invSnap?.skonto_percent != null && Number(invSnap.skonto_percent) > 0) {
     return Number(invSnap.skonto_percent);
   }

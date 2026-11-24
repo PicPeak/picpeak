@@ -6,6 +6,7 @@ const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { loadInvoiceLines } = require('./queries');
 const { vatMinorFor, roundsVatDown } = require('../../utils/vatAmount');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('../accountingHistory');
+const { frozenPaymentTerm } = require('./paymentTerm');
 const { cloneInvoiceLine, computeDueDate, computeScheduledSendAt, isInvoiceEditable, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
 
 
@@ -329,7 +330,10 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
       cc_pdf_email: sample.cc_pdf_email || null,
       payment_net_days_template_id: sample.payment_net_days_template_id || null,
       payment_timing_template_id: sample.payment_timing_template_id || null,
-      payment_term_snapshot: sample.payment_term_snapshot || null,
+      // The sibling's term; an unfrozen one is resolved as it shows today.
+      payment_term_snapshot: await frozenPaymentTerm(trx, {
+        snapshot: sample.payment_term_snapshot, sourceQuoteId: sample.source_quote_id, netDays,
+      }),
       deal_uuid: dealUuid,
       created_by_admin_id: adminId,
       created_at: new Date(),
