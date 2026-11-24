@@ -338,14 +338,14 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
   eventName, eventTimeStart, eventTimeEnd,
   paymentNetDaysTemplateId, paymentTimingTemplateId,
   paymentTermSnapshot, dealUuid, hold = false }) {
-  // Monthly-billing intercept (migration 128). Quote → invoice
-  // conversion for a monthly-mode customer doesn't fan out N
-  // installment invoices — the customer pays one consolidated bill
-  // per period. Append the line items to the running draft (creating
-  // it if needed) and return early. The installment / cadence math
-  // below is bypassed; the quote's payment timing is irrelevant once
-  // items flow into the monthly accumulator.
-  if (customer && customer.billing_cadence === 'monthly') {
+  // Accumulator intercept (migration 128), same rule as createInvoice.
+  // Quote → invoice conversion for a monthly- or manual-mode customer
+  // doesn't fan out N installment invoices — the customer pays one
+  // consolidated bill. Append the line items to the running draft
+  // (creating it if needed; a manual draft has no period) and return
+  // early. The installment / cadence math below is bypassed; the quote's
+  // payment timing is irrelevant once items flow into the accumulator.
+  if (customer && (customer.billing_cadence === 'monthly' || customer.billing_cadence === 'manual')) {
     const draftId = await appendToMonthlyDraft({
       customerAccountId: customer.id,
       lineItems: (lineItems || []).map((li) => ({

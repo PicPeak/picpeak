@@ -93,37 +93,54 @@ describe.each(['monthly', 'manual'])('POST /api/admin/invoices for a %s-billing 
   });
 });
 
-// Quote → invoice conversion takes the same shortcut for monthly customers
-// through spawnInstallmentInvoices, with the same misread return value.
-test('quote conversion for a monthly-billing customer returns the draft id', async () => {
-  // Required here, not at the top: the service binds to the database that
-  // bootCrmDb configured in beforeAll.
-  const invoiceService = require('../../src/services/invoiceService');
-  const inserted = await db('customer_accounts').insert({
-    email: 'monthly-conversion@example.com',
-    display_name: 'monthly conversion customer',
-    password_hash: 'unused',
-    preferred_language: 'de',
-    is_active: 1,
-    billing_cadence: 'monthly',
-    created_at: new Date().toISOString(),
-  }).returning('id');
-  const customer = await db('customer_accounts').where({ id: inserted[0]?.id ?? inserted[0] }).first();
+// Quote → invoice conversion takes the same shortcut through
+// spawnInstallmentInvoices, with the same misread return value. A manual
+// customer's accepted quote used to skip it and fan out installment invoices.
+describe.each(['monthly', 'manual'])('quote conversion for a %s-billing customer', (cadence) => {
+  test('appends to the running draft and returns its id', async () => {
+    // Required here, not at the top: the service binds to the database that
+    // bootCrmDb configured in beforeAll.
+    const invoiceService = require('../../src/services/invoiceService');
+    const inserted = await db('customer_accounts').insert({
+      email: `${cadence}-conversion@example.com`,
+      display_name: `${cadence} conversion customer`,
+      password_hash: 'unused',
+      preferred_language: 'de',
+      is_active: 1,
+      billing_cadence: cadence,
+      created_at: new Date().toISOString(),
+    }).returning('id');
+    const customer = await db('customer_accounts').where({ id: inserted[0]?.id ?? inserted[0] }).first();
 
-  const { invoiceIds } = await db.transaction((trx) => invoiceService.spawnInstallmentInvoices({
-    trx,
-    customer,
-    adminId,
-    lineItems: [{
-      position: 1, quantity: 1, description: 'From quote', unit_price_minor: 10000, discount_percent: 0, parent_position: null,
-    }],
-    totals: { vatRate: 0 },
-  }));
+    const convert = (description) => db.transaction((trx) => invoiceService.spawnInstallmentInvoices({
+      trx,
+      customer,
+      adminId,
+      currency: 'CHF',
+      lineItems: [{
+        position: 1, quantity: 1, description, unit_price_minor: 10000, discount_percent: 0, parent_position: null,
+      }],
+      totals: { net: 10000, vat: 0, total: 10000, vatRate: 0 },
+      installments: [{ percent: 50 }, { percent: 50 }],
+    }));
 
-  expect(invoiceIds).toHaveLength(1);
-  const draft = await db('invoices').where({ id: invoiceIds[0] }).first();
-  expect(Boolean(draft.is_monthly_draft)).toBe(true);
-  expect(draft.customer_account_id).toBe(customer.id);
+    const first = await convert('From quote 1');
+    expect(first.invoiceIds).toHaveLength(1);
+    const second = await convert('From quote 2');
+    expect(second.invoiceIds).toEqual(first.invoiceIds);
+
+    const invoices = await db('invoices').where({ customer_account_id: customer.id });
+    expect(invoices).toHaveLength(1);
+    const [draft] = invoices;
+    expect(Boolean(draft.is_monthly_draft)).toBe(true);
+    // A manual draft has no period, so the scheduler never ships it; a
+    // monthly draft keeps its period end.
+    if (cadence === 'manual') expect(draft.monthly_period_end).toBeNull();
+    else expect(draft.monthly_period_end).not.toBeNull();
+
+    const lines = await db('invoice_line_items').where({ invoice_id: draft.id }).orderBy('position');
+    expect(lines.map((li) => li.description)).toEqual(['From quote 1', 'From quote 2']);
+  });
 });
 
 describe.each(['monthly', 'manual'])('%s re-bills inside a transaction', (cadence) => {
