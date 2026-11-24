@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.210.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.1-beta.0...v3.210.2-beta.0) (2026-11-24)
+
+
+### Bug Fixes
+
+* **backup:** wait for the SQLite write lock instead of failing the backup ([#2650](https://github.com/PicPeak/picpeak/issues/2650)) ([aa2be6b](https://github.com/PicPeak/picpeak/commit/aa2be6be815b6bcf0afb8fee39c25e5295ac10c1))
+* **crm:** give every invoice its own payment term; keep quote send, accept and customer change consistent ([#2648](https://github.com/PicPeak/picpeak/issues/2648)) ([d00865a](https://github.com/PicPeak/picpeak/commit/d00865a75fb30c8eff996762eb37bc07c950bd41))
+* **money:** format string minor amounts instead of showing 0 ([#2641](https://github.com/PicPeak/picpeak/issues/2641)) ([06d206c](https://github.com/PicPeak/picpeak/commit/06d206c92692a8e4582dfd25e775062bc993bb41))
+
 ## [3.210.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.0-beta.0...v3.210.1-beta.0) (2026-11-23)
 
 
