@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const { spawnAsync, spawnToFile } = require('../utils/safeExec');
+const { liveSqliteArgs } = require('../utils/sqliteCli');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { createReadStream, createWriteStream, realpathSync, constants: fsConstants } = require('fs');
@@ -393,8 +394,9 @@ class DatabaseBackupService {
     };
 
     try {
-      // Use SQLite's backup API for consistency
-      await spawnAsync('sqlite3', [dbPath, `.backup '${tempPath}'`]);
+      // Use SQLite's backup API for consistency. The live file can be
+      // write-locked by the app right now, so wait for the lock (sqliteCli).
+      await spawnAsync('sqlite3', liveSqliteArgs(dbPath, `.backup '${tempPath}'`));
       // sqlite3 creates the copy with the process umask (commonly 0644).
       await fs.chmod(tempPath, 0o600);
 

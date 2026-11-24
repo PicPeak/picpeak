@@ -37,8 +37,8 @@ describe('createSQLiteBackup — the .backup dot-command never carries the desti
     spawnAsync.mockReset();
     spawnAsync.mockImplementation(async (cmd, args) => {
       // Emulate `.backup` by creating the target so the later rename works.
-      if (cmd === 'sqlite3' && typeof args[1] === 'string' && args[1].startsWith('.backup ')) {
-        const m = args[1].match(/^\.backup '(.*)'$/s);
+      if (cmd === 'sqlite3' && typeof args.at(-1) === 'string' && args.at(-1).startsWith('.backup ')) {
+        const m = args.at(-1).match(/^\.backup '(.*)'$/s);
         fs.writeFileSync(m[1], 'sqlite-copy');
       }
       return { stdout: 'ok', stderr: '' };
@@ -64,15 +64,15 @@ describe('createSQLiteBackup — the .backup dot-command never carries the desti
 
     await service.createSQLiteBackup(outputPath);
 
-    const backupCalls = spawnAsync.mock.calls.filter(([cmd, args]) => cmd === 'sqlite3' && String(args[1]).startsWith('.backup'));
+    const backupCalls = spawnAsync.mock.calls.filter(([cmd, args]) => cmd === 'sqlite3' && String(args.at(-1)).startsWith('.backup'));
     expect(backupCalls).toHaveLength(1);
-    const dotCommand = backupCalls[0][1][1];
+    const dotCommand = backupCalls[0][1].at(-1);
     expect(dotCommand).toMatch(SAFE);
     expect(dotCommand).not.toContain(dirName);
     // Every other sqlite3 call gets the copy as its own argv element.
     for (const [cmd, args] of spawnAsync.mock.calls) {
       if (cmd !== 'sqlite3') continue;
-      expect(args[0]).toMatch(/^[A-Za-z0-9._/-]+$/);
+      expect(args.at(-2)).toMatch(/^[A-Za-z0-9._/-]+$/);
     }
     // The finished copy still lands at the configured destination.
     expect(fs.readFileSync(outputPath, 'utf8')).toBe('sqlite-copy');
@@ -85,8 +85,8 @@ describe('createSQLiteBackup — the .backup dot-command never carries the desti
     const outputPath = path.join(outputDir, 'picpeak-db-sqlite-2026.sqlite');
     const seen = {};
     spawnAsync.mockImplementation(async (cmd, args) => {
-      if (cmd === 'sqlite3' && typeof args[1] === 'string' && args[1].startsWith('.backup ')) {
-        const m = args[1].match(/^\.backup '(.*)'$/s);
+      if (cmd === 'sqlite3' && typeof args.at(-1) === 'string' && args.at(-1).startsWith('.backup ')) {
+        const m = args.at(-1).match(/^\.backup '(.*)'$/s);
         fs.writeFileSync(m[1], 'sqlite-copy', { mode: 0o644 });
         seen.tempPath = m[1];
       } else if (cmd === 'sqlite3' && args[1] === 'VACUUM;') {
@@ -111,7 +111,7 @@ describe('createSQLiteBackup — the .backup dot-command never carries the desti
     destDir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-sqlitedot-safe-'));
     const outputPath = path.join(destDir, 'picpeak-db-sqlite-2026.sqlite');
     await service.createSQLiteBackup(outputPath);
-    const dotCommand = spawnAsync.mock.calls.find(([cmd, args]) => cmd === 'sqlite3' && String(args[1]).startsWith('.backup'))[1][1];
+    const dotCommand = spawnAsync.mock.calls.find(([cmd, args]) => cmd === 'sqlite3' && String(args.at(-1)).startsWith('.backup'))[1].at(-1);
     expect(dotCommand.match(SAFE)[1].startsWith(destDir + path.sep)).toBe(true);
     expect(fs.existsSync(outputPath)).toBe(true);
     expect(fs.readdirSync(destDir)).toEqual(['picpeak-db-sqlite-2026.sqlite']);
