@@ -2596,11 +2596,19 @@ END $$;`
           await spawnAsync('sqlite3', liveSqliteArgs(dbPath, `.restore '${decompressedPath}'`));
         } else {
           const env = { ...process.env, PGPASSWORD: knexConfig.connection.password };
-          await this.recreatePostgresDatabase(knexConfig.connection, env);
           try {
-            await this.loadPostgresDump(decompressedPath, knexConfig.connection, env);
+            await this.recreatePostgresDatabase(knexConfig.connection, env);
+            try {
+              await this.loadPostgresDump(decompressedPath, knexConfig.connection, env);
+            } catch (error) {
+              throw new Error(`The safety backup did not load, the database is left empty: ${error.message}`);
+            }
           } catch (error) {
-            throw new Error(`The safety backup did not load, the database is left empty: ${error.message}`);
+            // The recreate closed this process's pool before its DROP. When
+            // the DROP is refused the database is intact, and without a new
+            // pool every later query would fail until a restart.
+            await require('../database/db').reinitPool().catch(() => {});
+            throw error;
           }
         }
 

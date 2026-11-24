@@ -26,6 +26,8 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'restore-onerror-test-secret'
 const mockLoads = [];
 // The file each load was given, read at the moment of the call.
 const mockLoaded = [];
+// The role may not drop the database: every DROP DATABASE fails.
+const mockDrop = { refused: false };
 const mockSafetyDump = [
   '--', '-- PostgreSQL database dump', '--', '',
   'SET statement_timeout = 0;', 'SET transaction_timeout = 0;', 'SET client_encoding = \'UTF8\';', '',
@@ -47,6 +49,9 @@ jest.mock('../../src/utils/safeExec', () => {
       if (cmd === 'node') return { stdout: '', stderr: '' };
       if (cmd !== 'psql') return actual.spawnAsync(cmd, args);
       const command = args[args.indexOf('-c') + 1];
+      if (args.includes('-c') && command.startsWith('DROP DATABASE') && mockDrop.refused) {
+        throw new Error('psql exited with code 1: ERROR:  must be owner of database picpeak_live');
+      }
       if (args.includes('-c') && command.includes('current_setting')) {
         return { stdout: 'transaction_timeout\n', stderr: '' };
       }
@@ -113,7 +118,7 @@ describe('restoreService — PostgreSQL load stops at the first failing statemen
   afterAll(async () => { if (cleanup) await cleanup(); });
 
   beforeEach(async () => {
-    spawnAsync.mockClear(); mockLoads.length = 0; mockLoaded.length = 0;
+    spawnAsync.mockClear(); mockLoads.length = 0; mockLoaded.length = 0; mockDrop.refused = false;
     // A failed rollback leaves the pool closed (the database would be empty).
     await require('../../src/database/db').reinitPool();
   });
@@ -189,6 +194,18 @@ describe('restoreService — PostgreSQL load stops at the first failing statemen
       await expect(failure).rejects.toThrow('Rollback failed: The safety backup did not load, the database is left empty: ');
       await expect(failure).rejects.toThrow('ERROR:  syntax error at or near "OOPS"');
       await expect(failure).rejects.toThrow(`the pre-restore safety backup is kept in ${dir}`);
+    });
+
+    it('a refused DROP fails the rollback but leaves this process a working pool', async () => {
+      const svc = rollbackService();
+      const dir = safetyBackup(svc);
+      mockDrop.refused = true;
+
+      await expect(svc.attemptRollback(dir)).rejects.toThrow('must be owner of database');
+      expect(loadCalls()).toHaveLength(0);
+      // The database was never touched; the app must still reach it.
+      const { db } = require('../../src/database/db');
+      await expect(db.raw('select 1 as ok')).resolves.toBeDefined();
     });
   });
 
