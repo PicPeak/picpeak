@@ -208,6 +208,11 @@ registry.registerAction('webhook', async (ctx) => {
 // the matching draft. Flows run system-side, so the actor is resolved from the
 // scoped execution principal (legacy fallback never chooses a first admin).
 
+// The step output for a quote of a monthly- or manual-billing customer: its
+// amounts are on the customer's running bill, never sent on their own.
+const ACCUMULATED_NOTE = 'amounts accumulated on the customer\'s running monthly/manual bill; '
+  + 'it is sent on the billing cycle day or with "Trigger invoice now", not by this flow';
+
 async function resolveActor(ctx) {
   const principal = require('../../database/crmAccess').currentCrmActor();
   if (principal) return principal.id;
@@ -296,20 +301,35 @@ registry.registerAction('prepare_invoice', async (ctx) => {
     return { already: true, invoiceIds: ctx.vars.preparedInvoiceIds };
   }
   const adminId = await resolveActor(ctx);
+  const { accumulatedDraftIds } = require('../invoice/drafts');
   let invoiceIds;
+  let accumulated = false;
   try {
     const res = await require('../quoteService').convertToInvoiceOnly(quoteId, adminId, { draft: true });
     invoiceIds = res.invoiceIds || [];
+    accumulated = res.accumulated === true;
   } catch (err) {
     // Crash-recovery re-run: the quote may already be 'converted' (convert
-    // throws). Recover the drafts by the quote's deal_uuid so we don't lose them.
-    const quote = await ctx.db('quotes').where({ id: quoteId }).first('deal_uuid');
-    invoiceIds = quote?.deal_uuid
-      ? (await ctx.db('invoices').where({ deal_uuid: quote.deal_uuid }).select('id')).map((r) => r.id)
-      : [];
+    // throws). Recover the drafts by the quote's deal_uuid so we don't lose
+    // them, or the running bill the quote was accumulated into.
+    invoiceIds = await accumulatedDraftIds(ctx.db, { quoteId });
+    accumulated = invoiceIds.length > 0;
+    if (!accumulated) {
+      const quote = await ctx.db('quotes').where({ id: quoteId }).first('deal_uuid');
+      invoiceIds = quote?.deal_uuid
+        ? (await ctx.db('invoices').where({ deal_uuid: quote.deal_uuid }).select('id')).map((r) => r.id)
+        : [];
+    }
     if (!invoiceIds.length) throw err;
   }
   ctx.vars.preparedInvoiceIds = invoiceIds;
+  if (accumulated) {
+    // A monthly- or manual-billing customer: the amounts went onto the
+    // customer's running bill, which goes out on its cycle day or through
+    // "Trigger invoice now". send_document skips it (accumulatedInvoiceIds).
+    ctx.vars.accumulatedInvoiceIds = invoiceIds;
+    return { invoice_prepared: invoiceIds, accumulated: true, note: ACCUMULATED_NOTE };
+  }
   return { invoice_prepared: invoiceIds };
 });
 
@@ -323,9 +343,25 @@ registry.registerAction('send_document', async (ctx) => {
     const ids = ctx.vars.preparedInvoiceIds || [];
     if (!ids.length) return { skipped: true, reason: 'no prepared invoice to send' };
     const invoiceService = require('../invoiceService');
+    // The running monthly / manual bill a quote was accumulated into is not
+    // sent here: it goes out on its cycle day or through "Trigger invoice
+    // now" (sendInvoice refuses it as MONTHLY_DRAFT_NOT_SENDABLE). Reported
+    // as `accumulated`, not a failure.
+    const accumulated = new Set((ctx.vars.accumulatedInvoiceIds || []).map(Number));
+    if (ctx.run?.entity_type === 'quote' && ctx.run.entity_id) {
+      const { accumulatedDraftIds } = require('../invoice/drafts');
+      for (const id of await accumulatedDraftIds(ctx.db, { quoteId: ctx.run.entity_id })) accumulated.add(id);
+    }
     let sent = 0;
-    for (const id of ids) { await invoiceService.sendInvoice(id, adminId); sent += 1; }
-    return { invoices_sent: sent };
+    const skippedAccumulated = [];
+    for (const id of ids) {
+      if (accumulated.has(Number(id))) { skippedAccumulated.push(Number(id)); continue; }
+      await invoiceService.sendInvoice(id, adminId); sent += 1;
+    }
+    if (!sent && skippedAccumulated.length) {
+      return { skipped: true, reason: ACCUMULATED_NOTE, accumulated: skippedAccumulated };
+    }
+    return skippedAccumulated.length ? { invoices_sent: sent, accumulated: skippedAccumulated } : { invoices_sent: sent };
   }
   if (doc === 'contract') {
     const cid = ctx.vars.preparedContractId;

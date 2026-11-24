@@ -1769,6 +1769,9 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       // action, create the invoices on HOLD (no scheduled_send_at) so they wait
       // for the explicit send_document after the review gate.
       hold: options.draft === true,
+      // A quote accumulated into the customer's running bill has no invoice
+      // of its own: its lineage row (migration 256) takes the contract.
+      sourceContractId: options.sourceContractId || null,
     });
 
     // Contract→invoice re-entry (contract/conversions.js): stamp the
@@ -1791,7 +1794,13 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       updated_at: new Date(),
     }, { actor: adminId, source: 'quote.convert.invoices' });
 
-    return { installmentsCreated: installments.length, invoiceIds: spawnResult?.invoiceIds || [] };
+    // `accumulated`: the amounts went onto the customer's running monthly /
+    // manual bill (invoiceIds is that draft), which is not sent on its own.
+    return {
+      installmentsCreated: installments.length,
+      invoiceIds: spawnResult?.invoiceIds || [],
+      ...(spawnResult?.accumulated ? { accumulated: true } : {}),
+    };
   });
 
   // Audit log AFTER commit — logActivity writes via the global `db`, which

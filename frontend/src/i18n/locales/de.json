@@ -5908,7 +5908,8 @@
       "draftPreview": {
         "title": "Offen für die Rechnung dieses Monats",
         "titleManual": "Offen – wird auf manuelle Auslösung versendet",
-        "periodRange": "{{number}} · {{from}} – {{to}}"
+        "periodRange": "{{number}} · {{from}} – {{to}}",
+        "key": "{{currency}} · MWST {{rate}} %"
       },
       "rebillAttachProof": "Lieferantenbeleg bei Weiterverrechnungen anhängen",
       "rebillAttachProofInherit": "Mandanten-Standard verwenden",
