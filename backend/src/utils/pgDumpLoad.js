@@ -41,6 +41,10 @@ async function neutraliseUnknownSettings(file, workDir, findUnknown) {
   if (!contained(path.resolve(workDir), path.resolve(file))) {
     throw new Error('Refusing to edit a dump outside the work directory');
   }
+  // The copy is ours but may have arrived read-only: an rsync dump keeps the
+  // remote file's mode (rsync runs without --perms) and is only renamed into
+  // place. Without this an 0444 dump fails here, after the DROP.
+  await fsp.chmod(file, 0o600);
   const handle = await fsp.open(file, 'r+');
   try {
     const { buffer, bytesRead } = await handle.read(Buffer.alloc(HEADER_SCAN_BYTES), 0, HEADER_SCAN_BYTES, 0);
