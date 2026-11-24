@@ -28,6 +28,7 @@ const quoteService = require('../services/quoteService');
 const publicDocumentViews = require('../services/publicDocumentViews');
 const verification = require('../services/publicDocumentVerificationService');
 const { clientIpForAudit } = require('../utils/clientIp');
+const { AppError } = require('../utils/errors');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const { loadActionToken } = require('../utils/publicTokenGuards');
 const { mountVerification, sendVerificationRequired, tokenParam } = require('./publicDocumentVerification');
@@ -49,10 +50,24 @@ const respondLimiter = rateLimit({
   windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,
 });
 
+// A read through a link that went stale while it ran (the quote moved to
+// another customer, which expires the old customer's links) answers like an
+// expired link and shows nothing it read.
+function linkGone() {
+  return new AppError('This link has expired', 410, 'TOKEN_EXPIRED');
+}
+async function throughLink(tokenRow, load) {
+  const read = await publicDocumentViews.readThroughQuoteLink(tokenRow, load);
+  if (!read) throw linkGone();
+  return read.value;
+}
+
 mountVerification(router, {
   kind: KIND,
   tableName: TABLE,
-  loadTarget: publicDocumentViews.quoteVerificationTarget,
+  // The code goes to the customer the link was sent to, never to the one the
+  // quote was moved to while this request ran.
+  loadTarget: (tokenRow) => throughLink(tokenRow, () => publicDocumentViews.quoteVerificationTarget(tokenRow)),
 });
 
 router.get(
@@ -65,7 +80,7 @@ router.get(
     if (!tokenRow) return undefined;
 
     if (!verification.hasValidGrant(req, KIND, tokenRow, req.params.token)) {
-      const target = await publicDocumentViews.quoteVerificationTarget(tokenRow);
+      const target = await throughLink(tokenRow, () => publicDocumentViews.quoteVerificationTarget(tokenRow));
       if (!target) return res.status(404).json({ error: 'Quote not found' });
       // Before the code is confirmed the link says who sent it and where the
       // code will go, and nothing else: no number, status or amounts, no
@@ -80,7 +95,7 @@ router.get(
       });
     }
 
-    const view = await publicDocumentViews.buildQuoteView(tokenRow.quote_id);
+    const view = await throughLink(tokenRow, () => publicDocumentViews.buildQuoteView(tokenRow.quote_id));
     if (!view) return res.status(404).json({ error: 'Quote not found' });
     return successResponse(res, { quote: { ...view, verificationRequired: false } });
   }),
@@ -104,7 +119,7 @@ router.get(
       return sendVerificationRequired(res);
     }
     const selected = req.query.selected ? String(req.query.selected).split(',').map(Number) : [];
-    const totals = await quoteService.previewOptionalSelection(tokenRow.quote_id, selected);
+    const totals = await throughLink(tokenRow, () => quoteService.previewOptionalSelection(tokenRow.quote_id, selected));
     return successResponse(res, totals);
   }),
 );
@@ -112,7 +127,7 @@ router.get(
 router.get('/:token/product-images/:imageId', previewLimiter, [tokenParam()], handleAsync(async (req, res) => {
   validateRequest(req); const tokenRow = await loadActionToken(req, res, { tableName: TABLE, token: req.params.token }); if (!tokenRow) return undefined;
   if (!verification.hasValidGrant(req, KIND, tokenRow, req.params.token)) return sendVerificationRequired(res);
-  const image = await require('../services/albumProducts/crm').quoteImage(require('../database/db').db, tokenRow.quote_id, req.params.imageId);
+  const image = await throughLink(tokenRow, () => require('../services/albumProducts/crm').quoteImage(require('../database/db').db, tokenRow.quote_id, req.params.imageId));
   res.set('Cache-Control', 'private, no-store').type('png');
   return require('../utils/streamResponse').pipeStreamToResponse(await require('../services/storage').getStorage().get(image.storage_key), res, { context: 'quote product image' });
 }));
@@ -122,7 +137,7 @@ router.post('/:token/totals', previewLimiter, [tokenParam(), body('selectedOptio
   const tokenRow = await loadActionToken(req, res, { tableName: TABLE, token: req.params.token });
   if (!tokenRow) return undefined;
   if (!verification.hasValidGrant(req, KIND, tokenRow, req.params.token)) return sendVerificationRequired(res);
-  return successResponse(res, await quoteService.previewOptionalSelection(tokenRow.quote_id, req.body.selectedOptional, req.body.configurations));
+  return successResponse(res, await throughLink(tokenRow, () => quoteService.previewOptionalSelection(tokenRow.quote_id, req.body.selectedOptional, req.body.configurations)));
 }));
 
 router.post(

@@ -998,6 +998,14 @@ function sendUnfrozen(res, contract) {
   });
 }
 
+// Whether a quote ownedDocument returned is still this customer's after a
+// read of it: a quote moved to another customer while the read ran must not
+// show this customer what it read.
+async function stillOwnedQuote(req, quoteId) {
+  return Boolean(await db('quotes').where({ id: quoteId, customer_account_id: req.customer.id })
+    .whereNot('status', 'draft').first('id'));
+}
+
 const CONTRACT = { table: 'contracts', featureKey: 'contracts', label: 'Contracts', notFound: 'Contract not found' };
 const QUOTE = { table: 'quotes', featureKey: 'quotes', label: 'Quotes', notFound: 'Quote not found' };
 
@@ -1134,7 +1142,7 @@ router.get('/quotes/:id', customerAuth, async (req, res) => {
     const quote = await ownedDocument(req, res, QUOTE);
     if (!quote) return;
     const view = await publicDocumentViews.buildQuoteView(quote.id);
-    if (!view) return res.status(404).json({ error: QUOTE.notFound });
+    if (!view || !(await stillOwnedQuote(req, quote.id))) return res.status(404).json({ error: QUOTE.notFound });
     const usableTokens = await publicDocumentViews.usableQuoteTokens([quote.id]);
     res.json({
       quote: view,
@@ -1149,6 +1157,7 @@ router.get('/quotes/:id', customerAuth, async (req, res) => {
 router.get('/quotes/:id/product-images/:imageId', customerAuth, async (req, res) => {
   try { const quote = await ownedDocument(req, res, QUOTE); if (!quote) return;
     const image = await require('../services/albumProducts/crm').quoteImage(db, quote.id, req.params.imageId);
+    if (!(await stillOwnedQuote(req, quote.id))) return res.status(404).json({ error: QUOTE.notFound });
     res.set('Cache-Control', 'private, no-store').type('png');
     return pipeStreamToResponse(await require('../services/storage').getStorage().get(image.storage_key), res, { context: 'portal quote product image' });
   } catch (error) { if (sendServiceRefusal(res, error)) return; errorResponse(res, error, 500, 'Failed to load product image'); }
@@ -1159,6 +1168,7 @@ router.post('/quotes/:id/totals', customerAuth, [body('selectedOptional').isArra
     if (sendValidationErrors(req, res)) return;
     const quote = await ownedDocument(req, res, QUOTE); if (!quote) return;
     const totals = await require('../services/quoteService').previewOptionalSelection(quote.id, req.body.selectedOptional, req.body.configurations);
+    if (!(await stillOwnedQuote(req, quote.id))) return res.status(404).json({ error: QUOTE.notFound });
     return res.json(totals);
   } catch (error) { if (sendServiceRefusal(res, error)) return; errorResponse(res, error, 500, 'Failed to calculate product choices'); }
 });
@@ -1195,6 +1205,10 @@ router.post(
         configurations: req.body.configurations,
         selectedOptional: req.body.selectedOptional,
         actor: portalActor(req),
+        // The token is looked up after the ownership check, so it may be one
+        // sent to a customer the quote moved to meanwhile: the answer counts
+        // only while the quote is this customer's.
+        customerAccountId: req.customer.id,
       });
       res.json({ status: result.status, lockedAt: result.lockedAt });
     } catch (error) {

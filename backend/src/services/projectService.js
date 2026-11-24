@@ -783,8 +783,17 @@ async function assignDocument(table, projectId, documentId, actor = null) {
   if (projectId && doc.deal_uuid) {
     await linkDealToProject(doc.deal_uuid, projectId, db, actor);
   }
-  await auditedUpdate(db, table, { id: documentId }, { project_id: projectId || null },
+  // Conditional on the customer and deal the checks above read: a document
+  // moved to another customer meanwhile (a reopened quote reassigned) must
+  // not land in the project of the customer it left.
+  const readAs = { id: documentId, customer_account_id: doc.customer_account_id ?? null };
+  if ('deal_uuid' in doc) readAs.deal_uuid = doc.deal_uuid ?? null;
+  const applied = await auditedUpdate(db, table, readAs, { project_id: projectId || null },
     { actor: actor?.id ?? null, source: 'project.assign_document' });
+  if (!applied) {
+    throw new AppError('This document changed while it was being attached. Reload it and try again.', 409,
+      table === 'quotes' ? 'QUOTE_CHANGED' : 'CONTRACT_CHANGED');
+  }
   if (projectId) await promoteInquiry(projectId);
   return { projectId: projectId || null, documentId };
 }
