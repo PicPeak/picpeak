@@ -691,6 +691,12 @@ async function updateQuote(id, payload, adminId) {
       assertQuoteTransition(existing.status, 'draft');
       updates.status = 'draft';
     }
+    // The term it was sent with no longer holds: a later decline, accept or
+    // render resolves the edited one. Invoices made from the quote keep their
+    // own, frozen when each was created (invoice/paymentTerm).
+    if (existing.status === 'sent' || existing.status === 'expired') {
+      updates.payment_term_snapshot = null;
+    }
     const map = {
       eventName: 'event_name',
       eventDate: 'event_date',
@@ -785,15 +791,18 @@ async function updateQuote(id, payload, adminId) {
  * by sendQuote (where we persist the PDF) and previewQuote* (where we
  * just return the buffer to the admin).
  */
-async function buildRenderContext(quote, lineItems) {
+async function buildRenderContext(quote, lineItems, { paymentTerm: givenPaymentTerm } = {}) {
   const { profile } = await businessProfileService.getProfile();
   const customer = await db('customer_accounts').where({ id: quote.customer_account_id }).first();
   const bank = quote.business_bank_account_id
     ? await db('business_bank_accounts').where({ id: quote.business_bank_account_id }).first()
     : await businessProfileService.resolveBankAccountForCurrency(quote.currency);
-  const paymentTerm = quote.payment_term_template_id
-    ? await db('payment_term_templates').where({ id: quote.payment_term_template_id }).first()
-    : null;
+  // A sent quote shows the term sendQuote snapshotted, so a template edited
+  // later can't change it. A draft (or a sent quote without a snapshot)
+  // resolves it now: the split pickers first, the legacy template second.
+  const paymentTerm = givenPaymentTerm !== undefined
+    ? givenPaymentTerm
+    : (storedPaymentTerm(quote) || await resolvePaymentTerm(quote));
 
   // Resolve the PDF logo to a verified absolute disk path. The
   // helper exhaustively tries:
@@ -940,6 +949,12 @@ async function renderQuotePdfFromPayload(payload) {
     intro_text: payload.introText,
     outro_text: payload.outroText,
     payment_term_template_id: payload.paymentTermTemplateId,
+    payment_net_days_template_id: payload.paymentNetDaysTemplateId,
+    payment_timing_template_id: payload.paymentTimingTemplateId,
+    // The override as the saved row holds it, so the preview's term matches.
+    payment_term_installments_override: Array.isArray(payload.installments) && payload.installments.length > 0
+      ? JSON.stringify(payload.installments)
+      : null,
     business_bank_account_id: payload.businessBankAccountId,
     net_amount_minor: totals.netAmountMinor,
     vat_rate: ensureNumber(payload.vatRate, 0),
@@ -983,21 +998,18 @@ async function sendQuote(id, adminId) {
   const customer = await db('customer_accounts').where({ id: quote.customer_account_id }).first();
   ensureCustomerFeatureEnabled(customer, 'quotes');
 
-  // Render PDF + persist snapshot.
-  const ctx = await buildRenderContext(quote, lineItems);
-  const buffer = await pdfService.renderQuoteToBuffer(ctx);
-  const pdfPath = await persistDocPdf('quote', quote, buffer);
-
   // Snapshot payment term so future template edits don't mutate the doc.
   // Migration 124 — prefer the two new split FKs; fall back to the legacy
   // single FK when the quote was authored before the split was deployed.
   // Output shape is unchanged: { description, net_days, skonto_percent,
   // skonto_within_days, installments } — that's what pdfService and the
-  // scheduler already read.
-  const paymentTermSnapshot = await composeSnapshotFromSplitFks(quote)
-    || (quote.payment_term_template_id
-      ? await db('payment_term_templates').where({ id: quote.payment_term_template_id }).first()
-      : null);
+  // scheduler already read. The PDF below renders this same term.
+  const paymentTermSnapshot = await resolvePaymentTerm(quote);
+
+  // Render PDF + persist snapshot.
+  const ctx = await buildRenderContext(quote, lineItems, { paymentTerm: paymentTermSnapshot });
+  const buffer = await pdfService.renderQuoteToBuffer(ctx);
+  const pdfPath = await persistDocPdf('quote', quote, buffer);
 
   // Mint a single shared token; accept and decline are differentiated
   // by the request body. This makes the email link survive a customer
@@ -1338,16 +1350,47 @@ async function adminAcceptQuote(id, adminId) {
   const responseLockedAt = new Date(now.getTime() + windowMinutes * 60 * 1000);
 
   const history = { actor: adminId, source: 'quote.accept.admin' };
-  await auditedUpdate(db, 'quotes', { id }, {
-    status: 'accepted',
-    responded_at: now,
-    response_locked_at: responseLockedAt,
-    accepted_at: now,
-    // accept_on_behalf flag intentionally NOT stored as a separate
-    // column — the audit log entry below captures who accepted and
-    // when, which is the legally relevant breadcrumb.
-    updated_at: now,
-  }, history);
+  // A quote accepted without a send since its last edit (a draft) freezes its
+  // current term now: the accepted PDF and the invoices made from it show the
+  // conditions the admin last saved. A sent quote keeps the term it was sent
+  // with. Invoices already made from the quote keep their own (frozen when
+  // each was created, invoice/paymentTerm).
+  const termUpdate = storedPaymentTerm(quote) ? {} : {
+    payment_term_snapshot: await resolvePaymentTerm(quote).then(t => (t ? JSON.stringify(t) : null)),
+  };
+  // Conditional on the status and term inputs as read: a save that picked
+  // other terms meanwhile must not be accepted under the term resolved from
+  // this read.
+  const asRead = {
+    id,
+    status: quote.status,
+    payment_term_template_id: quote.payment_term_template_id,
+    payment_net_days_template_id: quote.payment_net_days_template_id,
+    payment_timing_template_id: quote.payment_timing_template_id,
+  };
+  const overrideOf = (row) => {
+    const value = row?.payment_term_installments_override;
+    if (typeof value !== 'string') return JSON.stringify(value ?? null);
+    try { return JSON.stringify(JSON.parse(value)); } catch (_) { return value; }
+  };
+  await db.transaction(async (trx) => {
+    const applied = await auditedUpdate(trx, 'quotes', asRead, {
+      ...termUpdate,
+      status: 'accepted',
+      responded_at: now,
+      response_locked_at: responseLockedAt,
+      accepted_at: now,
+      // accept_on_behalf flag intentionally NOT stored as a separate
+      // column — the audit log entry below captures who accepted and
+      // when, which is the legally relevant breadcrumb.
+      updated_at: now,
+    }, history);
+    // The override is a json column (no `=` on PostgreSQL): compared once
+    // the update holds the row.
+    if (!applied || overrideOf(await trx('quotes').where({ id }).first('payment_term_installments_override')) !== overrideOf(quote)) {
+      throw new AppError('The quote changed; reload it', 409, 'QUOTE_CHANGED');
+    }
+  });
 
   try {
     await logActivity('quote_accepted_by_admin', { quoteId: id }, null, `admin:${adminId}`);
@@ -2119,12 +2162,39 @@ async function composeSnapshotFromSplitFks(row) {
     ? JSON.parse(timing.installments)
     : timing.installments;
   return {
-    description: timing.description || netDays.description || null,
+    // The timing template's text describes its own schedule; with an
+    // override it no longer matches the installments, so it is left out.
+    description: (override ? null : timing.description) || netDays.description || null,
     net_days: netDays.net_days,
     skonto_percent: netDays.skonto_percent,
     skonto_within_days: netDays.skonto_within_days,
     installments: override || templateInstallments,
   };
+}
+
+/**
+ * The payment term sendQuote froze on a quote that is no longer a draft, or
+ * null (a draft, no snapshot, or one that doesn't parse).
+ */
+function storedPaymentTerm(quote) {
+  if (!quote || quote.status === 'draft' || !quote.payment_term_snapshot) return null;
+  if (typeof quote.payment_term_snapshot !== 'string') return quote.payment_term_snapshot;
+  try {
+    return JSON.parse(quote.payment_term_snapshot);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * The quote's payment term: the split pickers when both are set, else the
+ * legacy single template row, else null.
+ */
+async function resolvePaymentTerm(quote) {
+  return await composeSnapshotFromSplitFks(quote)
+    || (quote.payment_term_template_id
+      ? await db('payment_term_templates').where({ id: quote.payment_term_template_id }).first()
+      : null);
 }
 
 async function deletePaymentTimingTemplate(id) {
@@ -2183,6 +2253,7 @@ module.exports = {
     nextQuoteNumber,
     persistDocPdf,
     buildRenderContext,
+    resolvePaymentTerm,
     // Migration 119: hierarchy helpers — shared with invoiceService
     // (commit 3) so the quote → invoice cloner stays consistent.
     validateLineItemHierarchy,

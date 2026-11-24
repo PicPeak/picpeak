@@ -31,6 +31,7 @@ const { renumberLineItemPositions } = require('../utils/lineItemPositions');
 const { getStoragePath } = require('../config/storage');
 const invoiceService = require('../services/invoiceService');
 const accountingHistory = require('../services/accountingHistory');
+const { frozenPaymentTerm } = require('../services/invoice/paymentTerm');
 const expenseService = require('../services/expenseService');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const { db } = require('../database/db');
@@ -578,6 +579,8 @@ router.post(
       // a host migration (Docker volume remount on a new host with a
       // different absolute path).
       imported_pdf_path: path.relative(getStoragePath(), req.file.path),
+      // Its own term like every invoice (invoice/paymentTerm): the defaults.
+      payment_term_snapshot: await frozenPaymentTerm(db),
       created_by_admin_id: req.admin.id,
       created_at: new Date(),
       updated_at: new Date(),
@@ -711,6 +714,14 @@ router.put(
         updates.payment_timing_template_id = null;
         updates.payment_term_snapshot = null;
       }
+    }
+
+    // Stored resolved, as on create (invoice/paymentTerm): a cleared term
+    // takes the quote's and the defaults once, not on every render.
+    if (Object.prototype.hasOwnProperty.call(updates, 'payment_term_snapshot')) {
+      updates.payment_term_snapshot = await frozenPaymentTerm(db, {
+        snapshot: updates.payment_term_snapshot, sourceQuoteId: existing.source_quote_id,
+      });
     }
 
     if (Array.isArray(payload.lineItems)) {
