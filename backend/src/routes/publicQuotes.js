@@ -27,6 +27,7 @@ const quoteService = require('../services/quoteService');
 const publicDocumentViews = require('../services/publicDocumentViews');
 const verification = require('../services/publicDocumentVerificationService');
 const { clientIpForAudit } = require('../utils/clientIp');
+const { AppError } = require('../utils/errors');
 const { loadActionToken } = require('../utils/publicTokenGuards');
 const { mountVerification, sendVerificationRequired, tokenParam } = require('./publicDocumentVerification');
 
@@ -44,10 +45,24 @@ const respondLimiter = rateLimit({
   windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,
 });
 
+// A read through a link that went stale while it ran (the quote moved to
+// another customer, which expires the old customer's links) answers like an
+// expired link and shows nothing it read.
+function linkGone() {
+  return new AppError('This link has expired', 410, 'TOKEN_EXPIRED');
+}
+async function throughLink(tokenRow, load) {
+  const read = await publicDocumentViews.readThroughQuoteLink(tokenRow, load);
+  if (!read) throw linkGone();
+  return read.value;
+}
+
 mountVerification(router, {
   kind: KIND,
   tableName: TABLE,
-  loadTarget: publicDocumentViews.quoteVerificationTarget,
+  // The code goes to the customer the link was sent to, never to the one the
+  // quote was moved to while this request ran.
+  loadTarget: (tokenRow) => throughLink(tokenRow, () => publicDocumentViews.quoteVerificationTarget(tokenRow)),
 });
 
 router.get(
@@ -60,7 +75,7 @@ router.get(
     if (!tokenRow) return undefined;
 
     if (!verification.hasValidGrant(req, KIND, tokenRow, req.params.token)) {
-      const target = await publicDocumentViews.quoteVerificationTarget(tokenRow);
+      const target = await throughLink(tokenRow, () => publicDocumentViews.quoteVerificationTarget(tokenRow));
       if (!target) return res.status(404).json({ error: 'Quote not found' });
       // Before the code is confirmed the link says who sent it and where the
       // code will go, and nothing else: no number, status or amounts, no
@@ -75,7 +90,7 @@ router.get(
       });
     }
 
-    const view = await publicDocumentViews.buildQuoteView(tokenRow.quote_id);
+    const view = await throughLink(tokenRow, () => publicDocumentViews.buildQuoteView(tokenRow.quote_id));
     if (!view) return res.status(404).json({ error: 'Quote not found' });
     return successResponse(res, { quote: { ...view, verificationRequired: false } });
   }),

@@ -324,6 +324,26 @@ async function usableQuoteTokens(quoteIds) {
   return byQuote;
 }
 
+/**
+ * Run `load` (a read of a public quote link's quote) and hand back its result
+ * only if the link still stands afterwards: not expired or revoked, and the
+ * quote still with the customer it had before the read. A customer change
+ * expires the old customer's links in the same transaction, so a read that
+ * overlapped one shows nothing of the new customer. Resolves to
+ * `{ value }`, or null when the link went stale while reading.
+ */
+async function readThroughQuoteLink(tokenRow, load) {
+  const customerOf = async () => (await db('quotes').where({ id: tokenRow.quote_id }).first('customer_account_id'))
+    ?.customer_account_id;
+  const customerBefore = await customerOf();
+  const value = await load();
+  const live = await db('quote_action_tokens').where({ id: tokenRow.id }).first();
+  if (!live || live.used_action === 'revoked' || !notExpired(live, Date.now())) return null;
+  const customerAfter = await customerOf();
+  if (customerBefore == null || customerAfter == null || Number(customerAfter) !== Number(customerBefore)) return null;
+  return { value };
+}
+
 /** Same rule as the public quote view: sent, or still inside the response window. */
 function quoteAcceptsResponse(quote) {
   if (quote.status === 'sent') return true;
@@ -339,4 +359,5 @@ module.exports = {
   liveContractTokens,
   usableQuoteTokens,
   quoteAcceptsResponse,
+  readThroughQuoteLink,
 };

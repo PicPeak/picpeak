@@ -812,6 +812,14 @@ async function ownedDocument(req, res, { table, featureKey, label, notFound }) {
   return row;
 }
 
+// Whether a quote ownedDocument returned is still this customer's after a
+// read of it: a quote moved to another customer while the read ran must not
+// show this customer what it read.
+async function stillOwnedQuote(req, quoteId) {
+  return Boolean(await db('quotes').where({ id: quoteId, customer_account_id: req.customer.id })
+    .whereNot('status', 'draft').first('id'));
+}
+
 const CONTRACT = { table: 'contracts', featureKey: 'contracts', label: 'Contracts', notFound: 'Contract not found' };
 const QUOTE = { table: 'quotes', featureKey: 'quotes', label: 'Quotes', notFound: 'Quote not found' };
 
@@ -924,7 +932,7 @@ router.get('/quotes/:id', customerAuth, async (req, res) => {
     const quote = await ownedDocument(req, res, QUOTE);
     if (!quote) return;
     const view = await publicDocumentViews.buildQuoteView(quote.id);
-    if (!view) return res.status(404).json({ error: QUOTE.notFound });
+    if (!view || !(await stillOwnedQuote(req, quote.id))) return res.status(404).json({ error: QUOTE.notFound });
     const usableTokens = await publicDocumentViews.usableQuoteTokens([quote.id]);
     res.json({
       quote: view,
@@ -958,6 +966,10 @@ router.post(
         ip: clientIpForAudit(req),
         tosAccepted: req.body.tosAccepted === true,
         actor: portalActor(req),
+        // The token is looked up after the ownership check, so it may be one
+        // sent to a customer the quote moved to meanwhile: the answer counts
+        // only while the quote is this customer's.
+        customerAccountId: req.customer.id,
       });
       res.json({ status: result.status, lockedAt: result.lockedAt });
     } catch (error) {
