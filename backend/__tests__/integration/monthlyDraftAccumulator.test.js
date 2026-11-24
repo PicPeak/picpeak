@@ -436,3 +436,33 @@ describe('accumulator atomicity and totals', () => {
     }
   });
 });
+
+describe('accumulator draft creation race', () => {
+  test('a draft the same admin opened concurrently is adopted, not refused as out of reach', async () => {
+    const crmAccess = require('../../src/database/crmAccess');
+    const drafts = require('../../src/services/invoice/drafts');
+    const customerId = await accumulatorCustomer('monthly');
+    const customer = await db('customer_accounts').where({ id: customerId }).first();
+    const key = { currency: 'CHF', vatRate: 0 };
+
+    // A concurrent conversion by the same admin commits its draft between
+    // this call's own lookup (none) and its check whether the key is held.
+    let rival = null;
+    const real = crmAccess.withTrustedCrmAccess;
+    const spy = jest.spyOn(crmAccess, 'withTrustedCrmAccess').mockImplementation(async (reason, work) => {
+      if (!rival && /out of reach/.test(reason)) {
+        spy.mockImplementation(real);
+        rival = await drafts.getOrCreateMonthlyDraft(customer, adminId, db, key);
+      }
+      return real(reason, work);
+    });
+    try {
+      const result = await drafts.getOrCreateMonthlyDraft(customer, adminId, db, key);
+      expect(rival).not.toBeNull();
+      expect({ id: result.id, created: result.created }).toEqual({ id: rival.id, created: false });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await openDrafts(customerId)).toHaveLength(1);
+  });
+});
