@@ -36,9 +36,9 @@ jest.mock('../../src/services/accountingHistory', () => {
     ...real,
     auditedUpdate: async (conn, table, where, values, context = {}) => {
       const hook = global.__reassignAuditHook;
-      if (hook && table === 'quotes' && String(context.source || '').startsWith('project.')) {
+      if (hook && table === 'quotes' && context.source === 'project.assign_document') {
         global.__reassignAuditHook = null;
-        await hook();
+        await hook(conn);
       }
       return real.auditedUpdate(conn, table, where, values, context);
     },
@@ -248,16 +248,35 @@ describe('project link', () => {
     expect(Number(row.project_id)).toBe(project);
   });
 
-  test('attaching is refused when the quote moved to another customer meanwhile', async () => {
+  test('attaching is refused and rolled back when the quote moved to another customer meanwhile', async () => {
     const quoteId = await draft();
-    const project = await projectOf(customerId);
-    global.__reassignAuditHook = () => quoteService.updateQuote(quoteId, { customerAccountId: otherCustomerId }, adminId);
+    const project = await insertId('projects', {
+      name: `Inquiry ${uuid().slice(0, 8)}`, customer_account_id: null, status: 'inquiry',
+      created_by: adminId, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    });
+    // The move commits after the deal cascade checked and linked the old
+    // customer's deal, before the quote's own conditional write. Written
+    // through the connection the attach uses, so on SQLite's single
+    // connection it lands inside an attach transaction where there is one.
+    global.__reassignAuditHook = (conn) => conn('quotes').where({ id: quoteId })
+      .update({ customer_account_id: otherCustomerId, deal_uuid: uuid() });
 
     await expect(projectService.assignQuote(project, quoteId, { id: adminId }))
       .rejects.toMatchObject({ statusCode: 409, code: 'QUOTE_CHANGED' });
 
-    const row = await db('quotes').where({ id: quoteId }).first();
-    expect(Number(row.customer_account_id)).toBe(otherCustomerId);
-    expect(row.project_id).toBeNull();
+    // Nothing of the refused attach stays: the inquiry keeps no customer and
+    // its status, and the quote is in no project.
+    const after = await db('projects').where({ id: project }).first();
+    expect(after.customer_account_id).toBeNull();
+    expect(after.status).toBe('inquiry');
+    expect((await db('quotes').where({ id: quoteId }).first()).project_id).toBeNull();
+
+    // The move itself, for real, and the admin's retry attaches the quote to
+    // the inquiry, which takes the new customer.
+    await quoteService.updateQuote(quoteId, { customerAccountId: otherCustomerId }, adminId);
+    await projectService.assignQuote(project, quoteId, { id: adminId });
+    const linked = await db('projects').where({ id: project }).first();
+    expect(Number(linked.customer_account_id)).toBe(otherCustomerId);
+    expect(Number((await db('quotes').where({ id: quoteId }).first()).project_id)).toBe(project);
   });
 });
