@@ -97,23 +97,29 @@ function unknownSettingsOf(target, env) {
 }
 
 /**
- * Loads `file` (a plain dump, a private copy inside `workDir`) into the
- * database `target` names (psql connection arguments ending in `-d <db>`).
- * Header settings the server lacks are commented out first; every other
- * failing statement stops the load and rejects with psql's error.
- * `singleTransaction` wraps the load in one transaction, so a failed load
- * leaves nothing of the dump behind.
+ * Readies `file` (a plain dump, a private copy inside `workDir`) for the
+ * server `target` names (psql connection arguments ending in `-d <db>`):
+ * header settings the server lacks are commented out. It asks the server,
+ * so a caller that is about to drop the database runs this first, while a
+ * failure here still leaves the database untouched.
  *
- * Resolves to { skipped }: the header settings that were commented out.
+ * Resolves to the header settings that were commented out.
  */
-async function loadPlainDump(file, { target, env, workDir, singleTransaction = false }) {
-  const { spawnAsync } = require('./safeExec');
-  let skipped;
+async function prepareDump(file, { target, env, workDir }) {
   try {
-    skipped = await neutraliseUnknownSettings(file, workDir, unknownSettingsOf(target, env));
+    return await neutraliseUnknownSettings(file, workDir, unknownSettingsOf(target, env));
   } catch (error) {
     throw new Error(psqlErrorSummary(error));
   }
+}
+
+/**
+ * Loads a dump prepareDump has readied. Every failing statement stops the
+ * load and rejects with psql's error. `singleTransaction` wraps the load in
+ * one transaction, so a failed load leaves nothing of the dump behind.
+ */
+async function loadPreparedDump(file, { target, env, singleTransaction = false }) {
+  const { spawnAsync } = require('./safeExec');
   // -f rather than stdin, so the statement that stopped the load is named
   // in the error instead of a broken pipe.
   const args = ['-X', '-q', '-v', 'ON_ERROR_STOP=1', ...(singleTransaction ? ['--single-transaction'] : []), ...target, '-f', file];
@@ -122,7 +128,6 @@ async function loadPlainDump(file, { target, env, workDir, singleTransaction = f
   } catch (error) {
     throw new Error(psqlErrorSummary(error));
   }
-  return { skipped };
 }
 
-module.exports = { loadPlainDump, neutraliseUnknownSettings, psqlErrorSummary };
+module.exports = { prepareDump, loadPreparedDump, neutraliseUnknownSettings, psqlErrorSummary };
