@@ -6,6 +6,7 @@ const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
 const { createReadStream, createWriteStream, constants: fsConstants } = require('fs');
 const { spawnAsync, spawnToFile, spawnFromFile } = require('../utils/safeExec');
+const { liveSqliteArgs } = require('../utils/sqliteCli');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
 const logger = require('../utils/logger');
@@ -1372,7 +1373,7 @@ class RestoreService {
           const dbPath = knexConfig.connection.filename;
           // Server-generated path, but it is interpolated into a dot-command.
           assertSafeSqlitePath(dbBackupPath);
-          await spawnAsync('sqlite3', [dbPath, `.backup '${dbBackupPath}'`]);
+          await spawnAsync('sqlite3', liveSqliteArgs(dbPath, `.backup '${dbBackupPath}'`));
         } else {
           // PostgreSQL backup
           const { host, port, user, password, database } = knexConfig.connection;
@@ -1878,10 +1879,10 @@ class RestoreService {
           // command sqlite3 parses (GHSA-xfvx). Charset-validate right
           // before use as the final gate.
           assertSafeSqlitePath(restoreFile);
-          await spawnAsync('sqlite3', [dbPath, `.restore '${restoreFile}'`]);
+          await spawnAsync('sqlite3', liveSqliteArgs(dbPath, `.restore '${restoreFile}'`));
 
           // Verify integrity
-          const integrityCheck = await spawnAsync('sqlite3', [dbPath, 'PRAGMA integrity_check']);
+          const integrityCheck = await spawnAsync('sqlite3', liveSqliteArgs(dbPath, 'PRAGMA integrity_check'));
           if (!integrityCheck.stdout.includes('ok')) {
             throw new Error('Database integrity check failed after restore');
           }
@@ -2538,7 +2539,7 @@ END $$;`
           // main restore path (GHSA-xfvx), even though this path is
           // internally generated rather than manifest-controlled.
           assertSafeSqlitePath(decompressedPath);
-          await spawnAsync('sqlite3', [dbPath, `.restore '${decompressedPath}'`]);
+          await spawnAsync('sqlite3', liveSqliteArgs(dbPath, `.restore '${decompressedPath}'`));
         } else {
           const { host, port, user, password, database } = knexConfig.connection;
           const env = { ...process.env, PGPASSWORD: password };
