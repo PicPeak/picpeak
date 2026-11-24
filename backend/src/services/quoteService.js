@@ -1754,6 +1754,9 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       // action, create the invoices on HOLD (no scheduled_send_at) so they wait
       // for the explicit send_document after the review gate.
       hold: options.draft === true,
+      // A quote accumulated into the customer's running bill has no invoice
+      // of its own: its lineage row (migration 256) takes the contract.
+      sourceContractId: options.sourceContractId || null,
     });
 
     // Contract→invoice re-entry (contract/conversions.js): stamp the
@@ -1765,12 +1768,6 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
         (q) => q.where({ source_quote_id: quote.id }).whereNull('source_contract_id'),
         { source_contract_id: options.sourceContractId },
         { actor: adminId, source: 'contract.convert.invoices' });
-      // A quote accumulated into the customer's running bill has no invoice
-      // of its own: its lineage row takes the contract (migration 256).
-      if (spawnResult?.accumulated) {
-        await trx('invoice_accumulated_sources').where({ quote_id: quote.id }).whereNull('contract_id')
-          .update({ contract_id: options.sourceContractId });
-      }
     }
 
     // Mark quote `converted` without a converted_event_id so the

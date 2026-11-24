@@ -365,22 +365,9 @@ async function updateEntry(entryId, payload, adminId) {
         line_total_minor: newLineItem.line_total_minor,
         updated_at: new Date(),
       }, audit);
-      // Recompute invoice totals — same shape as appendToMonthlyDraft.
-      const allItems = await trx('invoice_line_items').where({ invoice_id: entry.invoice_id });
-      let netMinor = 0;
-      for (const li of allItems) {
-        if (li.parent_line_item_id == null) netMinor += Number(li.line_total_minor || 0);
-      }
-      const vatRate = Number(invoice.vat_rate || 0);
-      const vatMinor = Math.round(netMinor * vatRate / 100);
-      const shippingMinor = Number(invoice.shipping_amount_minor || 0);
-      const totalMinor = netMinor + vatMinor + shippingMinor;
-      await auditedUpdate(trx, 'invoices', { id: entry.invoice_id }, {
-        net_amount_minor: netMinor,
-        vat_amount_minor: vatMinor,
-        total_amount_minor: totalMinor,
-        updated_at: new Date(),
-      }, audit);
+      // Same rule as appendToMonthlyDraft and createInvoice (parents resolved,
+      // crm_invoice_round_total).
+      await require('./invoice/drafts').retotalUnissuedInvoice(trx, { ...invoice, id: entry.invoice_id }, audit);
     }
 
     await auditedUpdate(trx, 'customer_hour_entries', { id: entryId }, {
@@ -426,21 +413,9 @@ async function deleteEntry(entryId, adminId) {
       await auditedDelete(trx, 'invoice_line_items', { id: entry.invoice_line_item_id }, audit);
     }
     if (entry.invoice_id) {
-      const allItems = await trx('invoice_line_items').where({ invoice_id: entry.invoice_id });
-      let netMinor = 0;
-      for (const li of allItems) {
-        if (li.parent_line_item_id == null) netMinor += Number(li.line_total_minor || 0);
-      }
-      const vatRate = Number(invoice.vat_rate || 0);
-      const vatMinor = Math.round(netMinor * vatRate / 100);
-      const shippingMinor = Number(invoice.shipping_amount_minor || 0);
-      const totalMinor = netMinor + vatMinor + shippingMinor;
-      await auditedUpdate(trx, 'invoices', { id: entry.invoice_id }, {
-        net_amount_minor: netMinor,
-        vat_amount_minor: vatMinor,
-        total_amount_minor: totalMinor,
-        updated_at: new Date(),
-      }, audit);
+      // Same rule as appendToMonthlyDraft and createInvoice (parents resolved,
+      // crm_invoice_round_total).
+      await require('./invoice/drafts').retotalUnissuedInvoice(trx, { ...invoice, id: entry.invoice_id }, audit);
     }
 
     await auditedDelete(trx, 'customer_hour_entries', { id: entryId }, audit);

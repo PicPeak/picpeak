@@ -414,19 +414,9 @@ async function unwindBilledLine(trx, doc, adminId) {
       await auditedDelete(trx, 'invoices', { id: invoice.id }, audit);
       return;
     }
-    let netMinor = 0;
-    for (const li of allItems) {
-      if (li.parent_line_item_id == null) netMinor += Number(li.line_total_minor || 0);
-    }
-    const vatRate = Number(invoice.vat_rate || 0);
-    const vatMinor = Math.round(netMinor * vatRate / 100);
-    const shippingMinor = Number(invoice.shipping_amount_minor || 0);
-    await auditedUpdate(trx, 'invoices', { id: invoice.id }, {
-      net_amount_minor: netMinor,
-      vat_amount_minor: vatMinor,
-      total_amount_minor: netMinor + vatMinor + shippingMinor,
-      updated_at: new Date(),
-    }, audit);
+    // Same rule as appendToMonthlyDraft and createInvoice (parents resolved,
+    // crm_invoice_round_total).
+    await require('./invoice/drafts').retotalUnissuedInvoice(trx, invoice, audit);
   }
 }
 
