@@ -13,6 +13,7 @@ const { isUnitedKingdom } = require('../../utils/postalAddress');
 const { cloneInvoiceLine, composePaymentTermSnapshot, computeDueDate, computeInvoiceTotals, computeScheduledSendAt, ensureCustomerCanBill, ensureEventMatchesCustomer, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
 const { appendToMonthlyDraft } = require('./drafts');
 const { auditedInsert } = require('../accountingHistory');
+const { frozenPaymentTerm } = require('./paymentTerm');
 
 
 /**
@@ -63,9 +64,8 @@ async function createInvoice(payload, adminId, trx = db) {
   // the crm_payment_default_net_days setting (see helper). The clock
   // starts on the SEND date when the invoice is scheduled, otherwise
   // the issue date — so a future send pushes the due date out too.
+  // The due date itself follows the stored term's net days (below).
   const resolvedNetDays = await resolveNetDays(payload, trx);
-  const dueDate = payload.dueDate || computeDueDate(scheduledSendAt || new Date(issueDate), resolvedNetDays)
-    .toISOString().slice(0, 10);
 
   // Re-compute totals from line items. Migration 119 — items with a
   // non-null `parent_position` are sub-items and their line totals do
@@ -216,6 +216,16 @@ async function createInvoice(payload, adminId, trx = db) {
   // Pass trx so the sequence claim joins our outer transaction —
   // SQLite deadlocks otherwise (1-connection default).
   const invoiceNumber = await nextInvoiceNumber(trx);
+  // The term the invoice shows, resolved now: later changes to its quote
+  // or the defaults don't reach it. A reissue without a template of its
+  // own keeps the term of the invoice it replaces. The due date counts the
+  // same net days the term prints, which sendInvoice re-anchors with.
+  const frozenTerm = await frozenPaymentTerm(trx, {
+    snapshot: paymentTermSnapshot || payload._paymentTermSnapshot || null, sourceQuoteId: payload.sourceQuoteId || null, netDays: resolvedNetDays,
+  });
+  const termNetDays = ensureInt(JSON.parse(frozenTerm).net_days) || resolvedNetDays;
+  const dueDate = payload.dueDate || computeDueDate(scheduledSendAt || new Date(issueDate), termNetDays)
+    .toISOString().slice(0, 10);
   const row = {
     invoice_number: invoiceNumber,
     customer_account_id: payload.customerAccountId,
@@ -251,7 +261,7 @@ async function createInvoice(payload, adminId, trx = db) {
     payment_term_template_id: paymentTermTemplateId,
     payment_net_days_template_id: paymentNetDaysTemplateId,
     payment_timing_template_id: paymentTimingTemplateId,
-    payment_term_snapshot: paymentTermSnapshot,
+    payment_term_snapshot: frozenTerm,
     // Per-invoice Skonto opt-out (migration 126). Defaults to false
     // — invoice inherits the snapshot/global Skonto config unless
     // admin explicitly ticks "Disable Skonto" in the editor.
@@ -350,6 +360,12 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
     || 30;
   const total = installments.length;
   const acceptanceTime = new Date();
+  // One term for every instalment, resolved now (invoice/paymentTerm).
+  const frozenTerm = await frozenPaymentTerm(trx || db, {
+    snapshot: paymentTermSnapshot, sourceQuoteId: quoteId || null, netDays: resolvedNetDays,
+  });
+  // Due dates count the net days the stored term prints.
+  const termNetDays = ensureInt(JSON.parse(frozenTerm).net_days) || resolvedNetDays;
   const invoiceIds = [];
   const roundVatDown = await roundsVatDown(trx || db);
 
@@ -391,7 +407,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
     const rowScheduledSendAt = (isDeliveryTrigger || hold) ? null : scheduledSendAt;
 
     const invoiceNumber = await nextInvoiceNumber(trx);
-    const dueDate = computeDueDate(scheduledSendAt, resolvedNetDays).toISOString().slice(0, 10);
+    const dueDate = computeDueDate(scheduledSendAt, termNetDays).toISOString().slice(0, 10);
 
     const row = {
       invoice_number: invoiceNumber,
@@ -428,11 +444,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       // snapshot itself is the legal record; the FKs are convenience.
       payment_net_days_template_id: paymentNetDaysTemplateId || null,
       payment_timing_template_id: paymentTimingTemplateId || null,
-      payment_term_snapshot: paymentTermSnapshot
-        ? (typeof paymentTermSnapshot === 'string'
-          ? paymentTermSnapshot
-          : JSON.stringify(paymentTermSnapshot))
-        : null,
+      payment_term_snapshot: frozenTerm,
       // Migration 140 — every installment sibling shares one deal_uuid
       // (passed in from the converting caller, ultimately the source
       // quote's value). Defensive fallback to a fresh UUID if the

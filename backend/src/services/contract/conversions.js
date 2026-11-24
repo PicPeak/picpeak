@@ -498,6 +498,8 @@ async function convertClaimedContractToInvoice(contract, contractId, adminId, ha
     paid_amount_minor: 0,
     reminder_level: 0,
     late_fee_amount_minor: 0,
+    // Its own term (invoice/paymentTerm): the defaults and these net days.
+    payment_term_snapshot: await require('../invoice/paymentTerm').frozenPaymentTerm(db, { netDays }),
     created_by_admin_id: adminId,
     created_at: new Date(),
     updated_at: new Date(),

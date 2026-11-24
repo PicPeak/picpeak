@@ -766,6 +766,12 @@ async function updateQuote(id, payload, adminId) {
     if (existing.status === 'expired') {
       updates.pdf_path = null;
     }
+    // The term it was sent with no longer holds either: a later decline,
+    // accept or render resolves the edited one. Invoices made from the quote
+    // keep their own, frozen when each was created (invoice/paymentTerm).
+    if (existing.status === 'sent' || existing.status === 'expired') {
+      updates.payment_term_snapshot = null;
+    }
     const map = {
       eventName: 'event_name',
       eventDate: 'event_date',
@@ -824,8 +830,11 @@ async function updateQuote(id, payload, adminId) {
       }
       // An invoice or contract made from the quote stays with the customer
       // and deal it was made for, so the quote does too.
-      const madeFrom = await trx('invoices').where({ source_quote_id: id }).first('id')
-        || await trx('contracts').where({ source_quote_id: id }).first('id');
+      // Checked outside the admin's own CRM view: an invoice or contract the
+      // admin may not read still binds the quote. Only the yes/no leaves here.
+      const madeFrom = await require('../database/crmAccess').withTrustedCrmAccess('quote customer change: documents made from it',
+        async () => Boolean(await trx('invoices').where({ source_quote_id: id }).first('id')
+          || await trx('contracts').where({ source_quote_id: id }).first('id')));
       if (madeFrom) {
         throw new AppError(
           'An invoice or contract was made from this quote, so it stays with its customer. Create a new quote for the other customer.',
@@ -853,8 +862,17 @@ async function updateQuote(id, payload, adminId) {
     // Conditional on the status read above: the draft-only and lock checks
     // ran before the transaction, so a quote sent or accepted meanwhile is
     // refused instead of being changed (and reverted to draft) here.
-    const saved = await auditedUpdate(trx, 'quotes', { id, status: existing.status }, updates, history);
+    // The customer and currency it was read with too: the customer /
+    // currency decisions above (bank account, token revocation, new deal)
+    // hold only for that row, so an overlapping save is refused.
+    const saved = await auditedUpdate(trx, 'quotes', {
+      id, status: existing.status, customer_account_id: existing.customer_account_id, currency: existing.currency,
+    }, updates, history);
     if (!saved) {
+      const now = await trx('quotes').where({ id }).first('status');
+      if (now && now.status === existing.status) {
+        throw new AppError('This quote was changed by another save. Reload it and try again.', 409, 'QUOTE_CHANGED');
+      }
       throw new AppError('This quote changed status while it was being saved. Reload it and try again.', 409, 'QUOTE_NOT_DRAFT');
     }
 
@@ -1109,6 +1127,8 @@ async function renderQuotePdfFromPayload(payload) {
     payment_term_template_id: payload.paymentTermTemplateId,
     payment_net_days_template_id: payload.paymentNetDaysTemplateId,
     payment_timing_template_id: payload.paymentTimingTemplateId,
+    // The override as the saved row holds it, so the preview's term matches.
+    payment_term_installments_override: encodeInstallmentsOverride(payload.installments),
     business_bank_account_id: payload.businessBankAccountId,
     net_amount_minor: totals.netAmountMinor,
     vat_rate: ensureNumber(payload.vatRate, 0),
@@ -1187,16 +1207,12 @@ async function sendQuote(id, adminId) {
   // a send that never happened would show as an offer that went out.
   const pdfPath = await persistDocPdf(quote, buffer, '', { kind: 'sent', theme: ctx.theme, issuer: ctx.issuer, lineItems });
   await db.transaction(async (trx) => {
-    await trx('quote_action_tokens').insert({
-      quote_id: id,
-      token,
-      // ISO, like every other value a later check reads back: a bare Date
-      // from another realm is stored as "[object Object]", and an expiry
-      // nobody can read is one no check can enforce.
-      expires_at: stamp(expiresAt),
-      created_at: stamp(new Date()),
-    });
-    await auditedUpdate(trx, 'quotes', { id }, {
+    // Conditional on the quote as it was read and rendered: a save that
+    // changed its customer or currency meanwhile (or another send) wins,
+    // and this send records nothing, mints no link and emails no one.
+    const recorded = await auditedUpdate(trx, 'quotes', {
+      id, status: quote.status, customer_account_id: quote.customer_account_id, currency: quote.currency,
+    }, {
       status: 'sent',
       sent_at: new Date(),
       pdf_path: toStoredPath(pdfPath),
@@ -1224,6 +1240,18 @@ async function sendQuote(id, adminId) {
       workflow_response_emitted_at: null,
       updated_at: new Date(),
     }, { actor: adminId, source: 'quote.send' });
+    if (!recorded) {
+      throw new AppError('This quote changed while it was being sent. Reload it and send it again.', 409, 'QUOTE_CHANGED');
+    }
+    await trx('quote_action_tokens').insert({
+      quote_id: id,
+      token,
+      // ISO, like every other value a later check reads back: a bare Date
+      // from another realm is stored as "[object Object]", and an expiry
+      // nobody can read is one no check can enforce.
+      expires_at: stamp(expiresAt),
+      created_at: stamp(new Date()),
+    });
   }).catch(async (err) => {
     await discardUnsentVersion(id, pdfPath);
     throw err;
@@ -1936,10 +1964,20 @@ async function recordResponse({
     // without a message keeps the earlier one.
     const message = isAccept && customerMessage ? String(customerMessage).trim().slice(0, 2000) : '';
     if (message) updates.customer_message = message;
-    // Conditional on the status this request read: a conversion committing
-    // between the checks above and here would otherwise be flipped back to
-    // accepted or declined by an answer that never saw it.
-    const applied = await auditedUpdate(trx, 'quotes', { id: quote.id, status: quote.status }, updates, history);
+    // The link again, inside the transaction: a customer change after it was
+    // read above expires every link the old customer holds.
+    const liveToken = await trx('quote_action_tokens').where({ id: tokenRow.id }).first();
+    const liveExpires = toMillis(liveToken?.expires_at);
+    if (!liveToken || liveToken.used_action === 'revoked' || liveExpires == null || liveExpires < Date.now()) {
+      throw new AppError('Token expired', 410);
+    }
+    // Conditional on the status and customer this request read: a conversion
+    // committing between the checks above and here would otherwise be
+    // flipped back to accepted or declined by an answer that never saw it,
+    // and a quote moved to another customer is not this link's to answer.
+    const applied = await auditedUpdate(trx, 'quotes', {
+      id: quote.id, status: quote.status, customer_account_id: quote.customer_account_id,
+    }, updates, history);
     if (!applied) {
       throw new AppError('This quote changed while you were answering it. Reload the page.', 409, 'QUOTE_CHANGED');
     }
@@ -2016,9 +2054,35 @@ async function adminAcceptQuote(id, adminId) {
   const acceptedLines = await loadQuoteLinesWithParentPosition(id);
   const hasChoices = offeredOptionalPositions(acceptedLines).length > 0 || acceptedLines.some(li => li.configuration_definition);
   const selection = hasChoices ? await totalsForSelection(quote, acceptedLines, currentOptionalSelection(acceptedLines)) : null;
+  // A quote accepted without a send since its last edit (a draft) freezes its
+  // current term now: the accepted PDF and the invoices made from it show the
+  // conditions the admin last saved. A sent quote keeps the term it was sent
+  // with. Invoices already made from the quote keep their own (frozen when
+  // each was created, invoice/paymentTerm).
+  const termUpdate = storedPaymentTerm(quote) ? {} : {
+    payment_term_snapshot: await resolvePaymentTerm(quote).then(t => (t ? JSON.stringify(t) : null)),
+  };
+  // Conditional on the term inputs as read: a save that picked other terms
+  // meanwhile must not be accepted under the term resolved from this read.
+  const asRead = {
+    id,
+    status: quote.status,
+    payment_term_template_id: quote.payment_term_template_id,
+    payment_net_days_template_id: quote.payment_net_days_template_id,
+    payment_timing_template_id: quote.payment_timing_template_id,
+  };
+  const overrideOf = (row) => {
+    const value = row?.payment_term_installments_override;
+    if (typeof value !== 'string') return JSON.stringify(value ?? null);
+    try { return JSON.stringify(JSON.parse(value)); } catch (_) { return value; }
+  };
   await db.transaction(async trx => {
-    const applied = await auditedUpdate(trx, 'quotes', { id, status: quote.status }, { status: 'accepted', responded_at: stamp(now), response_locked_at: stamp(responseLockedAt), accepted_at: stamp(now), updated_at: now }, history);
-    if (!applied) throw new AppError('The quote changed; reload it', 409, 'QUOTE_CHANGED');
+    const applied = await auditedUpdate(trx, 'quotes', asRead, { status: 'accepted', responded_at: stamp(now), response_locked_at: stamp(responseLockedAt), accepted_at: stamp(now), updated_at: now, ...termUpdate }, history);
+    // The override is a json column (no `=` on PostgreSQL): compared once
+    // the update holds the row.
+    if (!applied || overrideOf(await trx('quotes').where({ id }).first('payment_term_installments_override')) !== overrideOf(quote)) {
+      throw new AppError('The quote changed; reload it', 409, 'QUOTE_CHANGED');
+    }
     if (selection) await writeAcceptedSelection(trx, quote, acceptedLines, selection, 'admin', now, { history });
   });
 
@@ -3253,7 +3317,9 @@ async function composeSnapshotFromSplitFks(row) {
     ? JSON.parse(timing.installments)
     : timing.installments;
   return {
-    description: timing.description || netDays.description || null,
+    // The timing template's text describes its own schedule; with an
+    // override it no longer matches the installments, so it is left out.
+    description: (override ? null : timing.description) || netDays.description || null,
     net_days: netDays.net_days,
     skonto_percent: netDays.skonto_percent,
     skonto_within_days: netDays.skonto_within_days,
