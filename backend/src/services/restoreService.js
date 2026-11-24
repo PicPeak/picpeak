@@ -5,7 +5,8 @@ const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
 const { createReadStream, createWriteStream, constants: fsConstants } = require('fs');
-const { spawnAsync, spawnToFile, spawnFromFile } = require('../utils/safeExec');
+const { spawnAsync, spawnToFile } = require('../utils/safeExec');
+const { loadPlainDump } = require('../utils/pgDumpLoad');
 const { liveSqliteArgs } = require('../utils/sqliteCli');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
@@ -584,6 +585,9 @@ class RestoreService {
     this.preservedMetaSnapshot = [];  // reset per run
     this.remoteStageDir = null;
     this.preRestoreBackupPath = null;
+    // Set when the rollback failed: the safety backup is then the operator's
+    // way back, so the cleanup below leaves it in place.
+    let keepPreRestoreBackup = false;
     this.generationIndexSnapshot = null;
     this.portableRuntimeSnapshot = null;
     // A run started from the admin API is known by the start time it was
@@ -1087,6 +1091,7 @@ class RestoreService {
           this.log('info', 'Rollback completed');
         } catch (rbErr) {
           rollbackError = rbErr.message;
+          keepPreRestoreBackup = true;
           this.log('error', 'Rollback FAILED — install may be in a partial state',
             { error: rbErr.message, stack: rbErr.stack });
         }
@@ -1110,13 +1115,17 @@ class RestoreService {
               ? `${error.message} (rolled back successfully to pre-restore state)`
               : `${error.message} | ROLLBACK ALSO FAILED: ${rollbackError} — destination is in a partial state, inspect before retrying`)
             : `${error.message} (no pre-restore backup available — destination may be partial)`;
+        // After a failed rollback the database can be empty (no
+        // restore_runs table): the restore's own error still goes out.
         await persistRestoreRun(restoreRun, {
           completed_at: new Date().toISOString(),
           status: destinationTouched ? 'failed' : 'blocked',
           error_message: failureMessage,
           was_rollback_attempted: rollbackAttempted,
           restore_log: JSON.stringify(this.restoreLog)
-        });
+        }).catch(recordError => this.log('error', 'Could not record the failed restore run', {
+          error: recordError.message, failure: failureMessage,
+        }));
       }
 
       // Send failure notification
@@ -1140,7 +1149,15 @@ class RestoreService {
       
       // Clean up temp directory
       try {
-        await fs.rmdir(this.tempDir, { recursive: true });
+        if (keepPreRestoreBackup) {
+          const kept = path.basename(this.preRestoreBackupPath);
+          for (const entry of await fs.readdir(this.tempDir)) {
+            if (entry !== kept) await fs.rm(path.join(this.tempDir, entry), { recursive: true, force: true });
+          }
+          this.log('warn', `Pre-restore safety backup kept for a manual restore: ${this.preRestoreBackupPath}`);
+        } else {
+          await fs.rmdir(this.tempDir, { recursive: true });
+        }
       } catch (err) {
         // Ignore cleanup errors
       }
@@ -1962,83 +1979,18 @@ class RestoreService {
           this.log('warn', `Could not snapshot restore-meta settings (continuing): ${err.message}`);
         }
 
-        // `psql` with no `-d` defaults to a database whose name matches
-        // the connecting user, NOT a maintenance DB. So on installs
-        // where the user's home DB doesn't exist (e.g. user=`picpeak`,
-        // target DB=`picpeak_prod`, no `picpeak` DB), the next two
-        // statements failed with:
-        //   FATAL: database "picpeak" does not exist
-        // even though the actual target DB was alive and connectable.
-        //
-        // Fix: explicitly connect to `postgres` (the maintenance DB
-        // every PG cluster ships with) for the DROP/CREATE. We can't
-        // connect to the target DB itself anyway — DROP DATABASE
-        // refuses to run while a connection is open to it.
-        //
-        // Use `DB_CHECK_DB` env var as an override hook (matches the
-        // pattern wait-for-db.sh already exposes) for installs where
-        // the `postgres` DB is restricted to superusers.
-        const maintenanceDb = process.env.DB_CHECK_DB || 'postgres';
+        await this.recreatePostgresDatabase(knexConfig.connection, env);
 
-        // The backend's own knex pool holds N active connections to
-        // the target database (default 5-25 per knexfile.js). PostgreSQL
-        // refuses DROP DATABASE while any session is connected:
-        //   ERROR: database "X" is being accessed by other users
-        //   DETAIL: There are N other sessions using the database.
-        // We have to evict those sessions ourselves before issuing the
-        // DROP. Two-step approach:
-        //   1. Close knex's own pool so we don't fight ourselves.
-        //   2. pg_terminate_backend() the rest (other server replicas,
-        //      pg_stat_activity stragglers, leftover idle txns).
-        //
-        // After CREATE DATABASE, knex will lazily re-open the pool on
-        // the next query — handled by db.js's connection retry logic.
-        this.log('warn', 'Closing knex pool before dropping target database...');
-        try { await db.destroy(); } catch (poolErr) {
-          this.log('warn', `Pool destroy threw (continuing): ${poolErr.message}`);
-        }
-
-        this.log('warn', 'Terminating any remaining sessions on target database...', {
-          target: database,
-        });
-        // pg_terminate_backend takes a pid. Kill every session against
-        // the target DB except our own connection (which is to the
-        // maintenance DB anyway). Wrapped in `SELECT ... FROM ... WHERE`
-        // so we get one psql round-trip instead of N.
-        await spawnAsync('psql', [
-          '-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb,
-          '-c',
-          'SELECT pg_terminate_backend(pid) FROM pg_stat_activity ' +
-          `WHERE datname = '${database.replace(/'/g, '\'\'')}' AND pid <> pg_backend_pid()`,
-        ], { env });
-
-        // Drop and recreate database (extremely dangerous!)
-        this.log('warn', 'Dropping and recreating PostgreSQL database...', {
-          target: database, via: maintenanceDb,
-        });
-
-        // WITH (FORCE) on Postgres 13+ kills any remaining connections
-        // atomically with the DROP. On older Postgres the FORCE option
-        // doesn't exist, so we fall back to plain DROP IF EXISTS — by
-        // which point pg_terminate_backend should have cleared the
-        // table. Try FORCE first, fall back to plain on syntax error.
+        // Restore from backup — this one DOES connect to the target DB. One
+        // transaction that stops at the first failing statement: a dump that
+        // does not load leaves the new database empty and fails the restore
+        // (which rolls back to the safety backup), instead of counting a
+        // partial load as a success.
         try {
-          await spawnAsync('psql', ['-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb,
-            '-c', `DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`], { env });
-        } catch (forceErr) {
-          // PG < 13: WITH (FORCE) is a syntax error. Plain DROP after
-          // our pg_terminate_backend pass should now succeed.
-          this.log('info', 'DROP DATABASE WITH (FORCE) not supported — falling back to plain DROP', {
-            error: forceErr.message,
-          });
-          await spawnAsync('psql', ['-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb,
-            '-c', `DROP DATABASE IF EXISTS "${database}"`], { env });
+          await this.loadPostgresDump(restoreFile, knexConfig.connection, env);
+        } catch (error) {
+          throw new Error(`The database dump did not load, nothing of it was kept: ${error.message}`);
         }
-
-        await spawnAsync('psql', ['-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb, '-c', `CREATE DATABASE "${database}"`], { env });
-
-        // Restore from backup — this one DOES connect to the target DB.
-        await spawnFromFile('psql', ['-h', host, '-p', String(port), '-U', user, '-d', database], restoreFile, { env });
 
         // Re-sync every SERIAL / IDENTITY sequence in the public schema
         // to MAX(id)+1 of its owning table. pg_dump emits setval()
@@ -2158,6 +2110,108 @@ END $$;`
         await fs.unlink(restoreFile).catch(() => {});
       }
       await staged.cleanup();
+    }
+  }
+
+  /**
+   * Drops the target PostgreSQL database and creates it again, empty. Closes
+   * this process's pool and ends every other session on it first. Used by the
+   * restore and by the rollback, which loads its safety dump into an empty
+   * database too: that dump is written without --clean and would otherwise
+   * meet the tables it is about to create.
+   */
+  async recreatePostgresDatabase(connection, env) {
+    const { host, port, user, database } = connection;
+    // `psql` with no `-d` defaults to a database whose name matches
+    // the connecting user, NOT a maintenance DB. So on installs
+    // where the user's home DB doesn't exist (e.g. user=`picpeak`,
+    // target DB=`picpeak_prod`, no `picpeak` DB), the next two
+    // statements failed with:
+    //   FATAL: database "picpeak" does not exist
+    // even though the actual target DB was alive and connectable.
+    //
+    // Fix: explicitly connect to `postgres` (the maintenance DB
+    // every PG cluster ships with) for the DROP/CREATE. We can't
+    // connect to the target DB itself anyway — DROP DATABASE
+    // refuses to run while a connection is open to it.
+    //
+    // Use `DB_CHECK_DB` env var as an override hook (matches the
+    // pattern wait-for-db.sh already exposes) for installs where
+    // the `postgres` DB is restricted to superusers.
+    const maintenanceDb = process.env.DB_CHECK_DB || 'postgres';
+
+    // The backend's own knex pool holds N active connections to
+    // the target database (default 5-25 per knexfile.js). PostgreSQL
+    // refuses DROP DATABASE while any session is connected:
+    //   ERROR: database "X" is being accessed by other users
+    //   DETAIL: There are N other sessions using the database.
+    // We have to evict those sessions ourselves before issuing the
+    // DROP. Two-step approach:
+    //   1. Close knex's own pool so we don't fight ourselves.
+    //   2. pg_terminate_backend() the rest (other server replicas,
+    //      pg_stat_activity stragglers, leftover idle txns).
+    //
+    // After CREATE DATABASE, knex will lazily re-open the pool on
+    // the next query — handled by db.js's connection retry logic.
+    this.log('warn', 'Closing knex pool before dropping target database...');
+    try { await db.destroy(); } catch (poolErr) {
+      this.log('warn', `Pool destroy threw (continuing): ${poolErr.message}`);
+    }
+
+    this.log('warn', 'Terminating any remaining sessions on target database...', {
+      target: database,
+    });
+    // pg_terminate_backend takes a pid. Kill every session against
+    // the target DB except our own connection (which is to the
+    // maintenance DB anyway). Wrapped in `SELECT ... FROM ... WHERE`
+    // so we get one psql round-trip instead of N.
+    await spawnAsync('psql', [
+      '-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb,
+      '-c',
+      'SELECT pg_terminate_backend(pid) FROM pg_stat_activity ' +
+      `WHERE datname = '${database.replace(/'/g, '\'\'')}' AND pid <> pg_backend_pid()`,
+    ], { env });
+
+    // Drop and recreate database (extremely dangerous!)
+    this.log('warn', 'Dropping and recreating PostgreSQL database...', {
+      target: database, via: maintenanceDb,
+    });
+
+    // WITH (FORCE) on Postgres 13+ kills any remaining connections
+    // atomically with the DROP. On older Postgres the FORCE option
+    // doesn't exist, so we fall back to plain DROP IF EXISTS — by
+    // which point pg_terminate_backend should have cleared the
+    // table. Try FORCE first, fall back to plain on syntax error.
+    try {
+      await spawnAsync('psql', ['-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb,
+        '-c', `DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`], { env });
+    } catch (forceErr) {
+      // PG < 13: WITH (FORCE) is a syntax error. Plain DROP after
+      // our pg_terminate_backend pass should now succeed.
+      this.log('info', 'DROP DATABASE WITH (FORCE) not supported — falling back to plain DROP', {
+        error: forceErr.message,
+      });
+      await spawnAsync('psql', ['-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb,
+        '-c', `DROP DATABASE IF EXISTS "${database}"`], { env });
+    }
+
+    await spawnAsync('psql', ['-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb, '-c', `CREATE DATABASE "${database}"`], { env });
+  }
+
+  /**
+   * Loads a plain dump into the target PostgreSQL database in one transaction
+   * that stops at the first failing statement (header settings the server
+   * lacks are skipped and logged). `file` is a private copy in the restore
+   * temp directory; its header is edited in place.
+   */
+  async loadPostgresDump(file, connection, env) {
+    const { host, port, user, database } = connection;
+    const { skipped } = await loadPlainDump(file, {
+      target: ['-h', host, '-p', String(port), '-U', user, '-d', database],
+      env, workDir: this.tempDir, singleTransaction: true,
+    });
+    if (skipped.length) {
+      this.log('warn', `Skipped dump settings this server does not have: ${skipped.join(', ')}`);
     }
   }
 
@@ -2595,9 +2649,13 @@ END $$;`
           assertSafeSqlitePath(decompressedPath);
           await spawnAsync('sqlite3', liveSqliteArgs(dbPath, `.restore '${decompressedPath}'`));
         } else {
-          const { host, port, user, password, database } = knexConfig.connection;
-          const env = { ...process.env, PGPASSWORD: password };
-          await spawnFromFile('psql', ['-h', host, '-p', String(port), '-U', user, '-d', database], decompressedPath, { env });
+          const env = { ...process.env, PGPASSWORD: knexConfig.connection.password };
+          await this.recreatePostgresDatabase(knexConfig.connection, env);
+          try {
+            await this.loadPostgresDump(decompressedPath, knexConfig.connection, env);
+          } catch (error) {
+            throw new Error(`The safety backup did not load, the database is left empty: ${error.message}`);
+          }
         }
 
         await require('../database/db').reinitPool();
@@ -2643,8 +2701,10 @@ END $$;`
       this.log('info', 'Rollback completed successfully');
 
     } catch (error) {
-      this.log('error', 'Rollback failed', { error: error.message });
-      throw new Error(`Rollback failed: ${error.message}. Manual intervention may be required.`);
+      this.log('error', 'Rollback failed', { error: error.message, safetyBackup: preRestoreBackupPath });
+      throw new Error(`Rollback failed: ${error.message}. Manual intervention may be required: `
+        + `the pre-restore safety backup is kept in ${preRestoreBackupPath} `
+        + '(copy it somewhere safe before restarting the container or starting another restore).');
     }
   }
 
