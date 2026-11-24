@@ -144,12 +144,15 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx, key = {}) {
   // one a concurrent conversion committed since (adopt it, as the unique-
   // violation path below does), or one out of the actor's reach (another
   // admin's), which is refused rather than tripping the index. The trusted
-  // read only says whether the key is taken; the draft itself is read again
-  // as the actor.
+  // read only says whether the key is taken and by which deal; the draft is
+  // read again as the actor, with a booking flow's deal fence widened to
+  // that deal (a concurrent draft has a deal of its own), so ownership and
+  // permissions decide.
   const held = await crmAccess.withTrustedCrmAccess('accumulator draft: key held by a draft out of reach',
-    () => openDraftOfKey().first('id'));
+    () => openDraftOfKey().first('id', 'deal_uuid'));
   if (held) {
-    const adopted = await openDraftOfKey().forUpdate().first();
+    const adopted = await crmAccess.withCapabilityDeals([held.deal_uuid],
+      () => openDraftOfKey().forUpdate().first());
     if (adopted) return { id: adopted.id, row: adopted, created: false };
     throw new AppError('This customer\'s running bill in this currency and VAT rate belongs to another admin.',
       403, 'MONTHLY_DRAFT_NOT_ACCESSIBLE');
@@ -250,6 +253,15 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx = db) {
   // stay in their currency and its lines keep their rate.
   const draft = await getOrCreateMonthlyDraft(customer, adminId, trx,
     { currency: payload.currency, vatRate: payload.vatRate, dealUuid: payload._draftDealUuid });
+  // The draft may be one a concurrent conversion opened under a deal other
+  // than the one a booking flow's fence was widened to: append within its
+  // own deal (a no-op outside a flow; permissions and ownership still apply).
+  return crmAccess.withCapabilityDeals([draft.row.deal_uuid],
+    () => appendLinesToDraft(payload, customer, adminId, trx, draft));
+}
+
+/** appendToMonthlyDraft past the draft lookup: lines, totals, lineage. */
+async function appendLinesToDraft(payload, customer, adminId, trx, draft) {
 
   // Load existing line items so we can compute the next `position` and
   // re-sum totals across the merged set. The migration-119 hierarchy
