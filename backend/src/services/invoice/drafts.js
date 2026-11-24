@@ -11,7 +11,8 @@ const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 const { frozenPaymentTerm } = require('./paymentTerm');
 const { getAppSetting } = require('../../utils/appSettings');
 const { cleanNetMinor } = require('../../utils/invoiceRounding');
-const { withTrustedCrmAccess, withCapabilityDeals } = require('../../database/crmAccess');
+// Called through the module, so tests can stand in a concurrent writer.
+const crmAccess = require('../../database/crmAccess');
 const { AppError } = require('../../utils/errors');
 
 /** A VAT rate as the draft key compares it (2 decimals, like the column). */
@@ -57,10 +58,10 @@ function openDraftQuery(trx, customerId, { currency, vatRate }) {
  */
 async function withAccumulatorDraftDeal(trx, customer, key, work) {
   const resolved = await resolveDraftKey(trx, customer, key);
-  const open = await withTrustedCrmAccess('accumulator draft: deal of the open draft of the key',
+  const open = await crmAccess.withTrustedCrmAccess('accumulator draft: deal of the open draft of the key',
     () => openDraftQuery(trx, customer.id, resolved).first('deal_uuid'));
   const dealUuid = open?.deal_uuid || crypto.randomUUID();
-  return withCapabilityDeals([dealUuid], () => work(dealUuid));
+  return crmAccess.withCapabilityDeals([dealUuid], () => work(dealUuid));
 }
 
 /**
@@ -162,11 +163,17 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx, key = {}) {
     return { id: existing.id, row: existing, created: false };
   }
 
-  // The key's draft may exist and be out of this actor's reach (another
-  // admin's): it holds the key, so say so rather than trip the index.
-  const hidden = await withTrustedCrmAccess('accumulator draft: key held by a draft out of reach',
+  // The key may be held by a draft this actor's lookup above did not find:
+  // one a concurrent conversion committed since (adopt it, as the unique-
+  // violation path below does), or one out of the actor's reach (another
+  // admin's), which is refused rather than tripping the index. The trusted
+  // read only says whether the key is taken; the draft itself is read again
+  // as the actor.
+  const held = await crmAccess.withTrustedCrmAccess('accumulator draft: key held by a draft out of reach',
     () => openDraftOfKey().first('id'));
-  if (hidden) {
+  if (held) {
+    const adopted = await openDraftOfKey().forUpdate().first();
+    if (adopted) return { id: adopted.id, row: adopted, created: false };
     throw new AppError('This customer\'s running bill in this currency and VAT rate belongs to another admin.',
       403, 'MONTHLY_DRAFT_NOT_ACCESSIBLE');
   }
@@ -461,11 +468,11 @@ async function accumulatedDraftIds(conn, { quoteId = null, contractId = null }) 
   if (!quoteId && !contractId) return [];
   const where = (q) => (quoteId ? q.where('invoice_accumulated_sources.quote_id', quoteId)
     : q.where('invoice_accumulated_sources.contract_id', contractId));
-  const deals = await withTrustedCrmAccess('accumulator lineage: deals of the drafts',
+  const deals = await crmAccess.withTrustedCrmAccess('accumulator lineage: deals of the drafts',
     () => where(conn('invoice_accumulated_sources')
       .join('invoices', 'invoices.id', 'invoice_accumulated_sources.invoice_id'))
       .distinct('invoices.deal_uuid'));
-  const rows = await withCapabilityDeals(deals.map((d) => d.deal_uuid),
+  const rows = await crmAccess.withCapabilityDeals(deals.map((d) => d.deal_uuid),
     () => where(conn('invoice_accumulated_sources')).orderBy('invoice_id').distinct('invoice_id'));
   return rows.map((r) => Number(r.invoice_id));
 }
