@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.210.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.3-beta.0...v3.210.4-beta.0) (2026-11-24)
+
+
+### Bug Fixes
+
+* **crm:** keep currency, VAT, shipping and lineage when quotes accumulate into the running bill ([#2656](https://github.com/PicPeak/picpeak/issues/2656)) ([3b913d0](https://github.com/PicPeak/picpeak/commit/3b913d0964decbebac3b4a9352c6f3882e781844))
+
 ## [3.210.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.2-beta.0...v3.210.3-beta.0) (2026-11-24)
 
 
