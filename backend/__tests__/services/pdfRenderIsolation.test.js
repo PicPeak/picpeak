@@ -87,12 +87,18 @@ test('a render that runs past its time is refused with PDF_RENDER_FAILED', async
 
 test('a render that outgrows its heap is refused with PDF_RENDER_FAILED', async () => {
   // The same heap renders an ordinary contract: it is the document that is
-  // refused, not the worker that failed to start.
-  await expect(renderInWorker('contract', contractContext(), { heapMb: 16 })).resolves.toHaveProperty('buffer');
+  // refused, not the worker that failed to start. Measured in the worker: the
+  // ordinary contract needs ~15 MB (it failed 1 in 10 at 16 MB under parallel
+  // load), the huge one more than 96 MB. 40 MB leaves a margin both ways.
+  const heapMb = 40;
+  await expect(renderInWorker('contract', contractContext(), { heapMb })).resolves.toHaveProperty('buffer');
+  const warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
   const huge = 'Lorem ipsum dolor sit amet. '.repeat(20000);
   const sections = [{ section: 'scope', blocks: Array.from({ length: 20 }, (_, i) => ({ name: `§${i}`, body: huge })) }];
-  await expect(renderInWorker('contract', contractContext({ sections }), { heapMb: 16 }))
+  await expect(renderInWorker('contract', contractContext({ sections }), { heapMb }))
     .rejects.toMatchObject({ statusCode: 422, code: 'PDF_RENDER_FAILED' });
+  // Refused for its heap, not for running out of time.
+  expect(warn).toHaveBeenCalledWith('PDF render worker died', expect.objectContaining({ code: 'ERR_WORKER_OUT_OF_MEMORY' }));
 });
 
 test('the renderer\'s warnings reach the server\'s logger', async () => {
