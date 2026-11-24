@@ -865,8 +865,12 @@ async function updateQuote(id, payload, adminId) {
     // The customer and currency it was read with too: the customer /
     // currency decisions above (bank account, token revocation, new deal)
     // hold only for that row, so an overlapping save is refused.
+    // And the project it was read with: the customer decision above (and the
+    // project re-check it runs) holds only for that link, so a quote attached
+    // to the old customer's project meanwhile is refused, not moved with it.
     const saved = await auditedUpdate(trx, 'quotes', {
       id, status: existing.status, customer_account_id: existing.customer_account_id, currency: existing.currency,
+      project_id: existing.project_id ?? null,
     }, updates, history);
     if (!saved) {
       const now = await trx('quotes').where({ id }).first('status');
@@ -1857,10 +1861,12 @@ const QUOTE_LINK_ACTOR = { type: 'public', id: null, name: 'quote-link' };
  *
  * `actor` names the responder in the accounting change history: the customer
  * portal passes the signed-in customer; the public link leaves the default.
+ * `customerAccountId` (portal) is the customer the answer is bound to: the
+ * quote must still be theirs when it is recorded (409 QUOTE_CHANGED).
  */
 async function recordResponse({
   token, action, ip, tosAccepted, selectedOptional, expectedTotalMinor, customerMessage, configurations,
-  actor = QUOTE_LINK_ACTOR,
+  actor = QUOTE_LINK_ACTOR, customerAccountId = null,
 }) {
   if (!['accept', 'decline'].includes(action)) {
     throw new AppError('Invalid action', 400);
@@ -1883,6 +1889,12 @@ async function recordResponse({
   }
   if (!['sent', 'accepted', 'declined'].includes(quote.status)) {
     throw new AppError(`Quote cannot be responded to in status '${quote.status}'`, 409);
+  }
+  // The portal answers as its signed-in customer: a quote moved to another
+  // customer is not theirs to answer, whichever link the lookup found. The
+  // conditional update below holds the quote to this customer too.
+  if (customerAccountId != null && Number(quote.customer_account_id) !== Number(customerAccountId)) {
+    throw new AppError('This quote changed while you were answering it. Reload the page.', 409, 'QUOTE_CHANGED');
   }
   // A reissued quote (#1451) is closed for good, whatever its response
   // window says: the customer answers the quote that replaced it.
