@@ -26,6 +26,7 @@ import { notifyDownloadQuotaChanged, showDownloadLimitReached, videoUnavailableM
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 import { usePrintSales } from '../../features/print-sales/PrintSalesContext';
 import { isPhotograph } from '../../features/print-sales/shopping';
+import { isVideoItem } from '../../utils/mediaCounts';
 import { usePhotoSales } from '../../features/photo-sales/PhotoSalesContext';
 import { PhotoPurchaseButton } from '../../features/photo-sales/PhotoPurchaseButton';
 import { lockBodyScroll } from '../../utils/scrollLock';
@@ -1496,7 +1497,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 className={`p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors${withinDownloadLimit ? '' : ' opacity-50 cursor-not-allowed'}${downloadPending ? ' cursor-wait' : ''}`}
                 aria-label={downloadPending
                   ? t('gallery.preparingDownload', 'Preparing your download…')
-                  : t('gallery.tile.downloadPhoto', 'Download photo')}
+                  : currentPhoto && isVideoItem(currentPhoto)
+                    ? t('gallery.tile.downloadVideo', 'Download video')
+                    : t('gallery.tile.downloadPhoto', 'Download photo')}
                 title={withinDownloadLimit
                   ? undefined
                   : t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.')}

@@ -582,6 +582,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       // against photo.url. src is a derivative now, so that lookup would find
       // nothing and Download would silently do nothing (#1166 review).
       photoId: photo.id,
+      // The download button names what it saves ("Download video").
+      isVideo: isVideoPhoto(photo),
       alt: photoLabels.neutral ? photoLabels.at(index, filteredPhotos.length) : photo.filename,
       width: imageDimensions[lightboxImageUrl(photo)]?.width || photo.width || 1200,
       height: imageDimensions[lightboxImageUrl(photo)]?.height || photo.height || 800,

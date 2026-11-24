@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { IconButton, useLightboxState, type Slide } from 'yet-another-react-lightbox';
 import { Loader2 } from 'lucide-react';
 import { usePhotoDownloadPending, preparingDownloadMessage } from '../../../hooks/usePhotoDownloadPending';
@@ -19,8 +20,13 @@ const DownloadGlyph = (props: React.SVGProps<SVGSVGElement>) => (
  * a repeated tap meanwhile.
  */
 export const PremiumLightboxDownloadButton: React.FC<{ onDownload: (slide: Slide) => void }> = ({ onDownload }) => {
+  const { t } = useTranslation();
   const { currentSlide } = useLightboxState();
-  const pending = usePhotoDownloadPending((currentSlide as { photoId?: number } | undefined)?.photoId);
+  const slide = currentSlide as { photoId?: number; isVideo?: boolean } | undefined;
+  const pending = usePhotoDownloadPending(slide?.photoId);
+  const downloadLabel = slide?.isVideo
+    ? t('gallery.tile.downloadVideo', 'Download video')
+    : t('gallery.tile.downloadPhoto', 'Download photo');
   return (
     <IconButton
       label="Download"
@@ -35,7 +41,12 @@ export const PremiumLightboxDownloadButton: React.FC<{ onDownload: (slide: Slide
         'aria-disabled': true,
         'aria-label': preparingDownloadMessage(),
         title: preparingDownloadMessage(),
-      } : {})}
+      } : {
+        // `label` takes only a key of the lightbox's own labels, so the
+        // translated name goes on the element (a video says "Download video").
+        'aria-label': downloadLabel,
+        title: downloadLabel,
+      })}
     />
   );
 };

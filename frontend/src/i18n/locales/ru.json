@@ -686,6 +686,7 @@
     "tile": {
       "viewFullSize": "Открыть в полном размере",
       "downloadPhoto": "Скачать фото",
+      "downloadVideo": "Скачать видео",
       "commentOnPhoto": "Прокомментировать фото",
       "likePhoto": "Отметить фото",
       "unlikePhoto": "Снять отметку с фото",

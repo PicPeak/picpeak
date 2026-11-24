@@ -630,7 +630,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                       onDownload(e);
                       hideOverlay();
                     }}
-                    aria-label={downloadPending ? preparingDownloadMessage() : t('gallery.tile.downloadPhoto', 'Download photo')}
+                    aria-label={downloadPending ? preparingDownloadMessage() : isVideo ? t('gallery.tile.downloadVideo', 'Download video') : t('gallery.tile.downloadPhoto', 'Download photo')}
                     aria-disabled={!withinDownloadLimit || downloadPending || undefined}
                     aria-busy={downloadPending || undefined}
                     title={withinDownloadLimit ? undefined : downloadLimitReachedMessage()}

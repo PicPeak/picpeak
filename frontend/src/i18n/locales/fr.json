@@ -656,6 +656,7 @@
     "tile": {
       "viewFullSize": "Afficher en plein écran",
       "downloadPhoto": "Télécharger la photo",
+      "downloadVideo": "Télécharger la vidéo",
       "commentOnPhoto": "Commenter la photo",
       "likePhoto": "Aimer la photo",
       "unlikePhoto": "Ne plus aimer la photo",
