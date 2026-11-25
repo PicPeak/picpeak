@@ -7,6 +7,8 @@ describe('photo sales admin order summaries', () => {
       buyer_email: 'buyer@example.com',
       total_cents: 3400,
       currency: 'EUR',
+      status: 'completed',
+      payment_provider: 'snipcart',
       purchased_at: '2026-01-01T00:00:00.000Z',
       expires_at: '2026-01-10T00:00:00.000Z',
       access_token: 'token-123',

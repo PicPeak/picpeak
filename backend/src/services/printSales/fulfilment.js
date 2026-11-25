@@ -213,7 +213,6 @@ function createService({ db, storage }) {
 
 /** Called inside native customer erasure; ongoing orders must be explicitly resolved first. */
 async function eraseCustomer(tx, customerId) {
-  if (!await tx.schema.hasTable('print_sales_orders')) return;
   const rows = await tx('print_sales_orders').where({ customer_account_id: customerId }).forUpdate();
   if (rows.some(o => o.accepted_at && !['cancelled', 'dispatched', 'resolved'].includes(o.status)))
     throw new ConflictError('Resolve active print orders before erasing this customer');

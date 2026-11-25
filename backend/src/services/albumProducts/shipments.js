@@ -256,7 +256,6 @@ async function forCustomer(conn, customerId) {
  * parcels recorded for them, and any on an order still released to them.
  */
 async function forgetCustomer(tx, customerId) {
-  if (!(await tx.schema.hasTable('album_shipments'))) return;
   const id = Number(customerId);
   await tx('album_shipments')
     .where({ customer_account_id: id })
@@ -265,5 +264,5 @@ async function forgetCustomer(tx, customerId) {
 }
 
 module.exports = {
-  CARRIERS, trackingUrl, orderCustomerId, list, create, remove, forCustomer, forgetCustomer,
+  trackingUrl, list, create, remove, forCustomer, forgetCustomer,
 };

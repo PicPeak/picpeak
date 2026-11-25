@@ -237,7 +237,7 @@ describe('installation payment settings', () => {
     await checking;
     try {
       const [photo] = await db('photos').insert({ event_id: gallery.id, filename: 'race.jpg', path: 'events/race.jpg', type: 'individual', visibility: 'visible', media_type: 'image', processing_status: 'complete' }).returning('id');
-      await require('../../src/modules/photoSales/stripeCheckout').reserveCheckout(gallery, { photoIds: [photo.id], checkoutKey: crypto.randomUUID(), browserKey: crypto.randomBytes(32).toString('hex') });
+      await require('../../src/modules/photoSales/checkoutReservation').reserveCheckout(gallery, { photoIds: [photo.id], checkoutKey: crypto.randomUUID(), browserKey: crypto.randomBytes(32).toString('hex') });
     } finally { release({ id: 'acct_picpeak_test' }); }
     expect((await update).status).toBe(409);
     expect((await payments.settings()).test_mode).toBe(true);
@@ -245,7 +245,8 @@ describe('installation payment settings', () => {
   test('saved credentials power real checkout and signed fulfilment routes without environment keys', async () => {
     await save();
     const [photo] = await db('photos').insert({ event_id: gallery.id, filename: 'purchase.jpg', path: 'events/purchase.jpg', type: 'individual', visibility: 'visible', media_type: 'image', processing_status: 'complete' }).returning('id');
-    const { reserveCheckout, checkoutSession } = require('../../src/modules/photoSales/stripeCheckout');
+    const { reserveCheckout } = require('../../src/modules/photoSales/checkoutReservation');
+    const { checkoutSession } = require('../../src/modules/photoSales/stripeCheckout');
     const pending = await reserveCheckout(gallery, { photoIds: [photo.id], checkoutKey: crypto.randomUUID(), browserKey: crypto.randomBytes(32).toString('hex') });
     mockCreate.mockImplementationOnce(async (body) => ({ id: 'cs_test_saved', url: 'https://checkout.stripe.com/c/pay/cs_test_saved', mode: 'payment', metadata: body.metadata, livemode: false }));
     const session = await checkoutSession(pending);

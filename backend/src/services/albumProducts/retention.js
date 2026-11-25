@@ -28,8 +28,6 @@ async function retain(tx, kind, id, lines) {
  * data, and a locked one is the studio's order record.
  */
 async function forgetCustomer(tx, customerId) {
-  if (!(await tx.schema.hasColumn('album_product_choice_history', 'customer_account_id')))
-    return;
   await tx('album_product_choice_history')
     .where('actor_type', 'client')
     .where((q) =>
