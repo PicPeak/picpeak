@@ -7,7 +7,7 @@
  * in those browsers, so a failed read is treated as "nothing stored" and a
  * failed write is dropped; callers keep the value in memory for the page view.
  */
-type StorageKind = 'local' | 'session';
+export type StorageKind = 'local' | 'session';
 
 const resolve = (kind: StorageKind): Storage =>
   kind === 'local' ? window.localStorage : window.sessionStorage;
@@ -20,11 +20,14 @@ export function safeGetItem(kind: StorageKind, key: string): string | null {
   }
 }
 
-export function safeSetItem(kind: StorageKind, key: string, value: string): void {
+/** Returns whether the write was stored, for callers that must know. */
+export function safeSetItem(kind: StorageKind, key: string, value: string): boolean {
   try {
     resolve(kind).setItem(key, value);
+    return true;
   } catch {
     // Storage unavailable: the caller's in-memory state covers this page view.
+    return false;
   }
 }
 

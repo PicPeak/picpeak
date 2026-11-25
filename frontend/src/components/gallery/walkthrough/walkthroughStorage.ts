@@ -1,3 +1,4 @@
+import { safeGetItem, safeSetItem } from '../../../utils/safeStorage';
 import type { WalkthroughScope } from './walkthroughSteps';
 
 /**
@@ -18,21 +19,14 @@ export const walkthroughStorageKey = (slug: string, scope: WalkthroughScope): st
 export function hasSeenWalkthrough(slug: string, scope: WalkthroughScope): boolean {
   const key = walkthroughStorageKey(slug, scope);
   if (seenInMemory.has(key)) return true;
-  try {
-    return window.localStorage.getItem(key) === '1';
-  } catch {
-    return false;
-  }
+  return safeGetItem('local', key) === '1';
 }
 
 export function markWalkthroughSeen(slug: string, scope: WalkthroughScope): void {
   const key = walkthroughStorageKey(slug, scope);
+  // Storage unavailable: the in-memory flag covers this page load.
   seenInMemory.add(key);
-  try {
-    window.localStorage.setItem(key, '1');
-  } catch {
-    // Storage unavailable: the in-memory flag covers this page load.
-  }
+  safeSetItem('local', key, '1');
 }
 
 /** Tests only. */

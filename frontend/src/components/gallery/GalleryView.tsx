@@ -116,6 +116,7 @@ import { GalleryWalkthroughHost } from './walkthrough/GalleryWalkthroughHost';
 import { WalkthroughHelpButton } from './walkthrough/WalkthroughHelpButton';
 import { isAdminPreviewUrl, useGalleryWalkthrough } from './walkthrough/useGalleryWalkthrough';
 import { buildWalkthroughSteps, layoutFeedbackActions, type WalkthroughScope } from './walkthrough/walkthroughSteps';
+import { safeGetItem, safeSetItem } from '../../utils/safeStorage';
 
 interface GalleryViewProps {
   slug: string;
@@ -265,20 +266,13 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const [showPeopleSheet, setShowPeopleSheet] = useState(false);
   // Dismissal is per gallery: a guest who hides the bar in one gallery has
   // said nothing about the next one.
-  const [peopleCollapsed, setPeopleCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(`picpeak_people_collapsed_${slug}`) === '1';
-    } catch {
-      return false;
-    }
-  });
+  const [peopleCollapsed, setPeopleCollapsed] = useState<boolean>(
+    () => safeGetItem('local', `picpeak_people_collapsed_${slug}`) === '1',
+  );
   const handlePeopleCollapsedChange = (collapsed: boolean) => {
+    // A dropped write (private mode) leaves the in-memory state in charge.
     setPeopleCollapsed(collapsed);
-    try {
-      localStorage.setItem(`picpeak_people_collapsed_${slug}`, collapsed ? '1' : '0');
-    } catch {
-      // Private-mode Safari throws on setItem; the in-memory state still works.
-    }
+    safeSetItem('local', `picpeak_people_collapsed_${slug}`, collapsed ? '1' : '0');
   };
   const togglePerson = (personId: number) => {
     setSelectedPersonIds((prev) => {

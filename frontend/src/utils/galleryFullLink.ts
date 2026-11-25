@@ -7,28 +7,20 @@
  * every photo. sessionStorage, not localStorage: the token is a credential
  * and should not outlive the tab on a shared device.
  */
+import { safeGetItem, safeRemoveItem, safeSetItem } from './safeStorage';
+
 const key = (slug: string) => `gallery_full_link_${slug}`;
 
 export function getFullLinkToken(slug: string): string | null {
-  try {
-    return sessionStorage.getItem(key(slug));
-  } catch {
-    return null;
-  }
+  return safeGetItem('session', key(slug));
 }
 
+// Private mode: the write is dropped and the visitor gets the selection, as
+// with the ordinary link.
 export function setFullLinkToken(slug: string, token: string): void {
-  try {
-    sessionStorage.setItem(key(slug), token);
-  } catch {
-    // Private mode: the visitor gets the selection, as with the ordinary link.
-  }
+  safeSetItem('session', key(slug), token);
 }
 
 export function clearFullLinkToken(slug: string): void {
-  try {
-    sessionStorage.removeItem(key(slug));
-  } catch {
-    // nothing stored
-  }
+  safeRemoveItem('session', key(slug));
 }
