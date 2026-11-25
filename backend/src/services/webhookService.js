@@ -277,11 +277,8 @@ module.exports = {
   generateSecret,
   signPayload,
   verifySignature,
-  payloadMatchesFilter,
   renderTemplate,
   validateTemplate,
-  getByPath,
   buildEventSubject,
   EVENT_TYPES,
-  SECRET_PREFIX,
 };

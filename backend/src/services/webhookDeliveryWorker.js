@@ -24,7 +24,8 @@ const DELIVERY_HEADER = 'X-PicPeak-Delivery';
 //   attempt 2 fails → wait 5m
 //   attempt 3 fails → wait 30m
 //   attempt 4 fails → wait 2h
-//   attempt 5 fails → wait 12h THEN give up (max 5 attempts total)
+//   attempt 5 fails → give up (MAX_ATTEMPTS, default 5); the 12h step is
+//   only used when WEBHOOK_MAX_ATTEMPTS is raised above 5
 const BACKOFF_MS = [
   60_000,            // 1 min
   5 * 60_000,        // 5 min

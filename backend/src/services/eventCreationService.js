@@ -21,7 +21,7 @@ const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../utils/gal
 const { clampIntOrUndefined } = require('../utils/numericHelpers');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const {
-  notifyGalleryRecipients, resolveGalleryRecipients, reachableAccountsByIds, hasPasswordGeneratedColumn,
+  notifyGalleryRecipients, resolveGalleryRecipients, reachableAccountsByIds,
   galleryLinkFor,
 } = require('./galleryNotificationService');
 const { resolveEventFeedbackDefaults, applyFeedbackDefaults } = require('./feedbackDefaults');
@@ -502,7 +502,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
       ...(requirePassword && password ? { password } : {}),
       ...(client_access_enabled && client_password ? { clientPassword: client_password } : {}),
     })),
-    ...(await hasPasswordGeneratedColumn() ? { password_generated: formatBoolean(passwordGenerated) } : {}),
+    password_generated: formatBoolean(passwordGenerated),
     welcome_message,
     color_theme,
     share_link: shareLinkToStore,

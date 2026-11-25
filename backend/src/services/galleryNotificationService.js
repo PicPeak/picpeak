@@ -20,7 +20,6 @@ const logger = require('../utils/logger');
 const { queueEmail } = require('./emailProcessor');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { formatBoolean } = require('../utils/dbCompat');
 const { parseBooleanInput } = require('../utils/parsers');
 const customerContactsService = require('./customerContactsService');
@@ -351,32 +350,22 @@ function recipientSummary({ inlineEmail, accounts }, { withIdentities = false } 
   return parts.join(', ');
 }
 
-/** Whether the event row can record a generated password (migration 264). */
-async function hasPasswordGeneratedColumn() {
-  return hasColumnCached('events', 'password_generated');
-}
-
 /**
  * Columns to write alongside a password an admin typed or was shown: from
  * then on somebody knows it, so it is no longer the generated one.
  */
 async function passwordKnownColumns() {
-  return (await hasPasswordGeneratedColumn()) ? { password_generated: formatBoolean(false) } : {};
+  return { password_generated: formatBoolean(false) };
 }
 
 module.exports = {
-  canReceiveGalleryNotice,
   reachableAccountsByIds,
   resolveGalleryRecipients,
-  hasGalleryEmailOnlyContent,
   galleryCreatedEmailData,
   galleryLinkFor,
   notifyGalleryRecipients,
   notifyGalleryCompleted,
-  accountsAnnounceable,
-  portalEventLink,
   describeRecipients,
   recipientSummary,
-  hasPasswordGeneratedColumn,
   passwordKnownColumns,
 };

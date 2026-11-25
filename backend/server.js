@@ -1403,8 +1403,9 @@ async function startServerInternal() {
     }
     startEmailQueueProcessor();
 
-    // Start WhatsApp queue processor — no-ops each cycle unless the
-    // `whatsapp` flag is on and a config exists (migration 136, #640D).
+    // Start WhatsApp queue processor — no-ops each cycle unless an enabled
+    // whatsapp_configs row exists (migration 136, #640D). It does not read
+    // the `whatsapp` feature flag.
     try {
       const { startWhatsAppQueueProcessor } = require('./src/services/whatsappProcessor');
       startWhatsAppQueueProcessor();

@@ -3205,7 +3205,6 @@
     "emailTemplates": "Modelos de E-mail",
     "smtpSettings": "Configurações SMTP",
     "testEmailSuccess": "E-mail de teste enviado com sucesso",
-    "saveSmtpSettings": "Salvar Ajustes SMTP",
     "testEmailSection": "E-mail de Teste",
     "beforeTesting": "Antes de testar:",
     "saveSmtpFirst": "Salve suas configurações SMTP primeiro",
@@ -3232,7 +3231,6 @@
     "brandingDescription": "Personalize as cores usadas nos modelos de email. As alterações se aplicam à barra de cabeçalho, botões, links e fundo do rodapé.",
     "primaryColor": "Cor Primária",
     "secondaryColor": "Fundo do Rodapé",
-    "saveEmailColors": "Salvar Cores do Email",
     "editor": {
       "bold": "Negrito",
       "italic": "Itálico",

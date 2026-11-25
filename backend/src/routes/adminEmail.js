@@ -1018,10 +1018,7 @@ router.get('/templates', adminAuth, requirePermission('email.view'), async (req,
         template_key: template.template_key,
         variables: parseVariables(template),
         translations,
-        // Categorisation + feature-flag link added by migration 098.
-        // Older installs that haven't run the migration yet return
-        // 'core' / null fall-backs so the frontend keeps working
-        // without a hard dependency on the new columns.
+        // Categorisation + feature-flag link (migration 098).
         category: template.category || 'core',
         subcategory: template.subcategory || null,
         feature_flag: template.feature_flag || null,
@@ -1196,9 +1193,9 @@ router.post('/templates', [
     // table still see something sensible.
     const masterRow = { template_key: templateKey };
     if (variables && 'variables' in cols) masterRow.variables = JSON.stringify(variables);
-    if (category && 'category' in cols) masterRow.category = category;
-    if (subcategory && 'subcategory' in cols) masterRow.subcategory = subcategory;
-    if (featureFlag && 'feature_flag' in cols) masterRow.feature_flag = featureFlag;
+    if (category) masterRow.category = category;
+    if (subcategory) masterRow.subcategory = subcategory;
+    if (featureFlag) masterRow.feature_flag = featureFlag;
     if ('created_at' in cols) masterRow.created_at = new Date();
     if ('updated_at' in cols) masterRow.updated_at = new Date();
     for (const colName of Object.keys(cols)) {
@@ -1215,8 +1212,7 @@ router.post('/templates', [
     const templateId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
     // Per-language rows in email_template_translations.
-    const hasTranslations = await db.schema.hasTable('email_template_translations');
-    if (hasTranslations && templateId) {
+    if (templateId) {
       for (const [language, content] of Object.entries(translations)) {
         if (!content || typeof content !== 'object') continue;
         await db('email_template_translations').insert({

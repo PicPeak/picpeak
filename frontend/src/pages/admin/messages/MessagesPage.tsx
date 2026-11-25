@@ -42,7 +42,6 @@ const TYPE_LABELS: Record<string, string> = {
   invoice_sent: 'Invoice sent',
   invoice_reminder_first: 'Payment reminder',
   invoice_reminder_second: 'Payment reminder',
-  invoice_reminder_final: 'Final reminder',
   invoice_payment_check: 'Payment check',
   invoice_collections_handoff: 'Collections handoff',
   invoice_paid_admin_notification: 'Payment received',
