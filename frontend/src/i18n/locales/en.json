@@ -1863,6 +1863,7 @@
     "tile": {
       "viewFullSize": "View full size",
       "downloadPhoto": "Download photo",
+      "downloadVideo": "Download video",
       "commentOnPhoto": "Comment on photo",
       "likePhoto": "Like photo",
       "unlikePhoto": "Unlike photo",

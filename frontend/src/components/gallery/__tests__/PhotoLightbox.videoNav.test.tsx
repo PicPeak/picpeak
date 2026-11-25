@@ -82,7 +82,8 @@ describe('PhotoLightbox download of a video (issue 2263)', () => {
   it('hands isVideo to the save path for a video', async () => {
     svc.savePhotoToDevice.mockReset().mockResolvedValue(undefined);
     renderLightbox([video]);
-    fireEvent.click(screen.getByRole('button', { name: /Download/ }));
+    // The button names what it saves.
+    fireEvent.click(screen.getByRole('button', { name: 'Download video' }));
     await waitFor(() => expect(svc.savePhotoToDevice).toHaveBeenCalledTimes(1));
     expect(svc.savePhotoToDevice.mock.calls[0][5]).toBe(true);
   });

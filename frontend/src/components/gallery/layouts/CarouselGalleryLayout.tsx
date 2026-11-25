@@ -19,6 +19,7 @@ import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { downloadLimitReachedMessage } from '../../../utils/downloadLimit';
 import { usePhotoDownloadPending, preparingDownloadMessage } from '../../../hooks/usePhotoDownloadPending';
 import { withFocalPosition } from '../../../utils/focalPoint';
+import { isVideoItem } from '../../../utils/mediaCounts';
 import { lightboxImageUrl } from '../imageTiers';
 import { useViewerLikes } from './optimisticLikes';
 
@@ -209,7 +210,9 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 aria-disabled={currentPhotoAtLimit || undefined}
                 title={currentPhotoAtLimit
                   ? downloadLimitReachedMessage()
-                  : downloadPending ? preparingDownloadMessage() : t('gallery.tile.downloadPhoto', 'Download photo')}
+                  : downloadPending ? preparingDownloadMessage()
+                  : isVideoItem(currentPhoto) ? t('gallery.tile.downloadVideo', 'Download video')
+                  : t('gallery.tile.downloadPhoto', 'Download photo')}
               >
                 {downloadPending ? null : <Download className="w-5 h-5" />}
               </Button>

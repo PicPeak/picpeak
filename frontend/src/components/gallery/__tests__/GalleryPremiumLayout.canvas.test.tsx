@@ -178,7 +178,7 @@ describe('Premium lightbox canvas rendering (#1325)', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }));
     await readyCanvas(dialog, 2);
     expect(within(dialog).getByText('original-2.jpg')).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Download' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'gallery.tile.downloadPhoto' }));
     expect(download).toHaveBeenCalledWith({ slug: 'demo', photoId: 2, filename: 'photo-2.jpg', isVideo: false });
   });
 });

@@ -10,7 +10,7 @@ import { useDownloadPhoto } from '../../hooks/useGallery';
 import { PhotoLightbox } from './PhotoLightbox';
 import { Button, AuthenticatedImage } from '../common';
 import { analyticsService } from '../../services/analytics.service';
-import { hasVideoItems, selectLabel } from '../../utils/mediaCounts';
+import { hasVideoItems, isVideoItem, selectLabel } from '../../utils/mediaCounts';
 import { withFocalPosition } from '../../utils/focalPoint';
 
 interface PhotoGridProps {
@@ -323,7 +323,7 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
                       e.stopPropagation();
                       onDownload(e);
                     }}
-                    aria-label={t('gallery.tile.downloadPhoto', 'Download photo')}
+                    aria-label={isVideoItem(photo) ? t('gallery.tile.downloadVideo', 'Download video') : t('gallery.tile.downloadPhoto', 'Download photo')}
                   >
                     <Download className="w-5 h-5 text-theme" />
                   </button>
