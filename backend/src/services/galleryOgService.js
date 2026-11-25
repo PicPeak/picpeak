@@ -1,4 +1,5 @@
 const { db } = require('../database/db');
+const { parseSettingValue } = require('../utils/appSettings');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { ensureThumbnail } = require('./imageProcessor');
@@ -72,15 +73,6 @@ function isSocialCrawler(userAgent) {
   return SOCIAL_CRAWLER_PATTERNS.some((re) => re.test(userAgent));
 }
 
-function parseSettingValue(value) {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'object') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
 
 async function fetchBranding() {
   const rows = await db('app_settings')

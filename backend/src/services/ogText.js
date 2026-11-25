@@ -1,4 +1,5 @@
 const { db } = require('../database/db');
+const { parseSettingValue } = require('../utils/appSettings');
 
 // The link-preview pages (gallery and transfer) are read by crawlers, which
 // send no useful Accept-Language, and a gallery has no language of its own.
@@ -107,11 +108,8 @@ function normaliseLanguage(value) {
 async function previewLanguage() {
   try {
     const row = await db('app_settings').where('setting_key', 'general_default_language').first();
-    let value = row && row.setting_value;
-    if (typeof value === 'string') {
-      try { value = JSON.parse(value); } catch (_) { /* stored unquoted */ }
-    }
-    return normaliseLanguage(value);
+    // Stored unquoted is fine too: the raw string comes back.
+    return normaliseLanguage(parseSettingValue(row && row.setting_value));
   } catch (_) {
     return 'en';
   }

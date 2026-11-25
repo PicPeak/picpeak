@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const sanitizeHtml = require('sanitize-html');
 const { NON_TEXT_TAGS } = require('../utils/sanitizeHtmlOptions');
 const { db } = require('../database/db');
+const { parseSettingValue } = require('../utils/appSettings');
 const logger = require('../utils/logger');
 const { sanitizeCss, sanitizeCssColor } = require('../utils/cssSanitizer');
 const {
@@ -25,16 +26,6 @@ const ALLOWED_HTML_TAGS = [
 
 const COMMON_ATTRIBUTES = ['class', 'id', 'role', 'aria-label', 'aria-hidden'];
 
-function parseSettingValue(value) {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  try {
-    return JSON.parse(value);
-  } catch (error) {
-    return value;
-  }
-}
 
 async function fetchPublicSiteSettings() {
   const rows = await db('app_settings')
