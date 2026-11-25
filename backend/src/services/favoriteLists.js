@@ -188,7 +188,6 @@ async function touch(listId, executor = db) {
  * the favourites, so a photo in both same-named lists ends up once.
  */
 async function mergeGuests(trx, survivor, sourceGuestIds) {
-  if (!(await trx.schema.hasTable('favorite_lists'))) return;
   const lists = await trx('favorite_lists')
     .where({ event_id: survivor.event_id })
     .whereIn('guest_id', [survivor.id, ...sourceGuestIds])
@@ -220,7 +219,6 @@ async function mergeGuests(trx, survivor, sourceGuestIds) {
  * (feedbackService.anonymizeGuestFeedback keeps the rows, clears guest_id).
  */
 async function anonymizeGuest(guestId, executor = db) {
-  if (!(await executor.schema.hasTable('favorite_lists'))) return;
   await executor('favorite_lists').where({ guest_id: guestId }).update({ guest_id: null });
 }
 
@@ -228,7 +226,6 @@ async function anonymizeGuest(guestId, executor = db) {
  * Every list of a gallery by id, for the admin exports and the guest detail.
  */
 async function namesForEvent(eventId, executor = db) {
-  if (!(await executor.schema.hasTable('favorite_lists'))) return new Map();
   const rows = await executor('favorite_lists').where({ event_id: eventId }).select('id', 'name');
   return new Map(rows.map((row) => [Number(row.id), row.name]));
 }

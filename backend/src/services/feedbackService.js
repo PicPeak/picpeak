@@ -78,14 +78,6 @@ const SINGLE_VALUE_COLUMNS = {
   decision: 'decision',
 };
 
-/**
- * Is this write the identity-less shared colour tag (#1197)?
- *
- * Narrow on purpose. 'shared' is a mode for the colour tag, not for the event:
- * a like or a rating in a shared-mode gallery is still that guest's own, so
- * only feedback_type='color_label' takes the reserved slot. Everything else
- * falls through to the per-guest path unchanged.
- */
 // Set once the settings table has been seen. Module scope on purpose: the
 // answer is a property of the schema, not of a request.
 let settingsTableKnownToExist = false;
@@ -97,6 +89,14 @@ let decisionColumnsKnownToExist = false;
 // migration test builds a bare photos table; asked once, like the above.
 let commentCountColumnKnownToExist = false;
 
+/**
+ * Is this write the identity-less shared colour tag (#1197)?
+ *
+ * Narrow on purpose. 'shared' is a mode for the colour tag, not for the event:
+ * a like or a rating in a shared-mode gallery is still that guest's own, so
+ * only feedback_type='color_label' takes the reserved slot. Everything else
+ * falls through to the per-guest path unchanged.
+ */
 function isSharedColorLabel(identityMode, feedbackType) {
   return identityMode === 'shared' && feedbackType === 'color_label';
 }
@@ -185,10 +185,6 @@ class FeedbackService {
         };
       }
 
-      // Back-compat: rows created before migration 078 have NULL identity_mode.
-      if (!settings.identity_mode) {
-        settings.identity_mode = 'simple';
-      }
       // Rows created before migration 180 have NULL keybind_mode. An
       // unrecognised value gets the same treatment — the lightbox switches on
       // this string and must never receive something it has no scheme for.
@@ -256,9 +252,6 @@ class FeedbackService {
     }
   }
 
-  /**
-   * Submit feedback for a photo
-   */
   /**
    * Count how many existing feedback rows of `feedback_type` a single guest
    * has on a given event, matching the same guest-key shape submitFeedback's
@@ -500,6 +493,9 @@ class FeedbackService {
     return byPhoto;
   }
 
+  /**
+   * Submit feedback for a photo
+   */
   async submitFeedback(photoId, eventId, feedbackData, guestIdentifier) {
     const { feedback_type, guest_id } = feedbackData;
     const lockable = Boolean(selectionSubmissions.kindLocking(feedback_type));
@@ -1476,41 +1472,6 @@ class FeedbackService {
   }
 
   /**
-   * Get feedback requiring moderation
-   */
-  async getPendingModeration(eventId = null, ownedEventIds = null) {
-    try {
-      let query = db('photo_feedback')
-        .modify(joinLivePhotos, 'photo_feedback.photo_id', 'photos.id')
-        .join('events', 'photo_feedback.event_id', 'events.id')
-        .where('photo_feedback.is_approved', false)
-        .where('photo_feedback.is_hidden', false)
-        .where('photo_feedback.feedback_type', 'comment');
-
-      if (eventId) {
-        query = query.where('photo_feedback.event_id', eventId);
-      } else if (Array.isArray(ownedEventIds)) {
-        // Scope to the caller's owned events (GHSA-3335) — an empty set
-        // matches nothing, so a restricted admin sees only their own.
-        query = query.whereIn('photo_feedback.event_id', ownedEventIds.length ? ownedEventIds : [-1]);
-      }
-      
-      const pending = await query
-        .select(
-          'photo_feedback.*',
-          'photos.filename as photo_filename',
-          'events.event_name'
-        )
-        .orderBy('photo_feedback.created_at', 'desc');
-      
-      return pending.map(withParsedAnnotation);
-    } catch (error) {
-      logger.error('Error getting pending moderation:', error);
-      throw error;
-    }
-  }
-
-  /**
    * Export feedback data for an event — long-form (one row per individual
    * feedback action: favourite, like, rating, or comment). Backward-compatible
    * with archives and any external integrations that consume the existing CSV.
@@ -1677,76 +1638,6 @@ class FeedbackService {
   }
 
   /**
-   * Get filtered photos based on feedback criteria
-   * @param {number} eventId - Event ID
-   * @param {string} guestIdentifier - Guest identifier
-   * @param {object} filters - Filter criteria
-   * @param {boolean} filters.liked - Include liked photos
-   * @param {boolean} filters.favorited - Include favorited photos
-   * @param {string} filters.operator - 'AND' or 'OR' for multiple filters
-   * @returns {Promise<number[]>} Array of photo IDs that match criteria
-   */
-  async getFilteredPhotos(eventId, guestIdentifier, filters = {}) {
-    try {
-      const { liked, favorited, operator = 'OR' } = filters;
-      
-      // If no filters specified, return all photos
-      if (!liked && !favorited) {
-        const allPhotos = await livePhotos(db)
-          .where('event_id', eventId)
-          .select('id');
-        return allPhotos.map(p => p.id);
-      }
-      
-      // Build query based on filters
-      let query = db('photo_feedback')
-        .where('event_id', eventId)
-        .where('guest_identifier', guestIdentifier)
-        .where('is_hidden', false);
-      
-      // Apply filter logic
-      if (operator === 'AND' && liked && favorited) {
-        // For AND operation, we need photos that have both types of feedback
-        const likedPhotos = await db('photo_feedback')
-          .where('event_id', eventId)
-          .where('guest_identifier', guestIdentifier)
-          .where('feedback_type', 'like')
-          .where('is_hidden', false)
-          .select('photo_id');
-        
-        const favoritedPhotos = await db('photo_feedback')
-          .where('event_id', eventId)
-          .where('guest_identifier', guestIdentifier)
-          .where('feedback_type', 'favorite')
-          .where('is_hidden', false)
-          .select('photo_id');
-        
-        const likedIds = new Set(likedPhotos.map(p => p.photo_id));
-        const favoritedIds = new Set(favoritedPhotos.map(p => p.photo_id));
-        
-        // Return intersection of both sets
-        return Array.from(likedIds).filter(id => favoritedIds.has(id));
-      } else {
-        // OR operation or single filter
-        const feedbackTypes = [];
-        if (liked) feedbackTypes.push('like');
-        if (favorited) feedbackTypes.push('favorite');
-        
-        query.whereIn('feedback_type', feedbackTypes);
-      }
-      
-      const filteredPhotos = await query
-        .distinct('photo_id')
-        .select('photo_id');
-      
-      return filteredPhotos.map(p => p.photo_id);
-    } catch (error) {
-      logger.error('Error getting filtered photos:', error);
-      throw error;
-    }
-  }
-
-  /**
    * Anonymize feedback belonging to a guest — sets guest_id to NULL on all
    * their feedback rows and clears guest_name/guest_email for privacy, then
    * recomputes denormalized photo counts on affected photos.
@@ -1844,10 +1735,8 @@ class FeedbackService {
         // The lists first (issue 2303): same-named lists fold into one, so the
         // dedupe below sees the favourites under the list they end up in.
         await favoriteLists.mergeGuests(trx, survivor, sources);
-        const hasListColumn = await trx.schema.hasColumn('photo_feedback', 'favorite_list_id');
         const rows = await scope().select(
-          'id', 'photo_id', 'guest_id', 'feedback_type', 'is_hidden', 'created_at', 'updated_at',
-          ...(hasListColumn ? ['favorite_list_id'] : []),
+          'id', 'photo_id', 'guest_id', 'feedback_type', 'is_hidden', 'created_at', 'updated_at', 'favorite_list_id',
         );
         // In id order: each recount below locks its photo until the commit.
         const photoIds = [...new Set(rows.map((row) => Number(row.photo_id)))].sort((a, b) => a - b);

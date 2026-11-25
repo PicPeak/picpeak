@@ -1005,7 +1005,6 @@
         "DELETE /feedback/:feedbackId",
         "GET /events/:eventId/feedback-analytics",
         "GET /events/:eventId/feedback/export",
-        "GET /feedback/pending-moderation",
         "GET /word-filters",
         "POST /word-filters",
         "PUT /word-filters/:id",

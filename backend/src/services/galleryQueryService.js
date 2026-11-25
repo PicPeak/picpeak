@@ -208,13 +208,6 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     photosQuery = photosQuery.orderBy('photos.uploaded_at', sortOrder).orderBy('photos.id', sortOrder);
   }
 
-  // Reveal mode (#838): while the gallery is hidden, plain guests get
-  // the event shell with an empty photo/category set plus the
-  // hidden_until_reveal flag — the frontend renders the upload-only view
-  // from it. Slideshow, client access and the admin preview bypass
-  // (guestBlockedByReveal). Enforced here, not just in the UI.
-
-
   const limit = query.limit === undefined ? null : Math.min(250, Math.max(1, parseInt(query.limit, 10) || 100));
   const page = Math.max(1, parseInt(query.page, 10) || 1);
   // Read before the list (issue 2263): media that finishes between the two

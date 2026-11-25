@@ -207,9 +207,10 @@ describe('drawn annotations on a comment (issue 1733)', () => {
     const res = await comment('A', ANNOTATION);
     expect(res.status).toBe(200);
     expect(await commentsFor('B')).toHaveLength(0);
-    const pending = await require('../../src/services/feedbackService').getPendingModeration(eventId);
+    const pending = await rows();
     expect(pending).toHaveLength(1);
-    expect(pending[0].annotation).toEqual(ANNOTATION);
+    expect(Boolean(pending[0].is_approved)).toBe(false);
+    expect(JSON.parse(pending[0].annotation)).toEqual(ANNOTATION);
   });
 
   it('never ships a stored value that does not parse', async () => {

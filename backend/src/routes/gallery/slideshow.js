@@ -297,14 +297,4 @@ router.get('/:slug/show/:token/state', noStoreCache, handleAsync(async (req, res
   });
 }));
 
-// Get all photos.
-//
-// no-store (B6): the payload is private and per-guest — it carries the
-// viewer's own likes/favorites/ratings and, for a client token, photos hidden
-// from plain guests. With no Cache-Control at all a browser applies heuristic
-// freshness and may reuse a body it stored on disk, on a shared device, for a
-// gallery whose password has since been rotated. Express still computes its
-// weak ETag, so a caller that does revalidate (React Query's own in-memory
-// cache is unaffected either way) still gets a correct 304.
-
 module.exports = router;

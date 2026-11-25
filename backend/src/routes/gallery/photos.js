@@ -336,6 +336,4 @@ router.patch('/:slug/photos/visibility/bulk', verifyGalleryAccess, async (req, r
   }
 });
 
-// Download single photo
-
 module.exports = router;

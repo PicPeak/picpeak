@@ -30,6 +30,4 @@ router.get('/:slug/stats', verifyGalleryAccess, denySlideshowToken, blockHiddenG
   }
 });
 
-// User photo upload endpoint
-
 module.exports = router;
