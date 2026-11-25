@@ -19,7 +19,7 @@ import { GallerySkeleton } from '../components/gallery/GallerySkeleton';
 import { PasswordChangeRequiredNotice } from '../components/gallery/PasswordChangeRequiredNotice';
 import { analyticsService } from '../services/analytics.service';
 import { galleryService } from '../services';
-import { GALLERY_THEME_PRESETS } from '../types/theme.types';
+import { resolveEventTheme } from '../utils/resolveEventTheme';
 import { buildResourceUrl } from '../utils/url';
 import { isGalleryPublic, normalizeRequirePassword } from '../utils/accessControl';
 import { detectInAppBrowser } from '../utils/inAppBrowser';
@@ -165,36 +165,11 @@ export const GalleryPage: React.FC = () => {
   // Apply theme for gallery (both login page and authenticated view)
   React.useEffect(() => {
     if (galleryInfo && settingsData) {
-      let themeToApply = null;
-
-      if (galleryInfo.color_theme) {
-        try {
-          // Check if it's a valid JSON string
-          if (galleryInfo.color_theme.startsWith('{')) {
-            themeToApply = JSON.parse(galleryInfo.color_theme);
-          } else {
-            // Handle legacy theme names - check if it's a preset
-            const preset = GALLERY_THEME_PRESETS[galleryInfo.color_theme];
-            if (preset) {
-              themeToApply = preset.config;
-            } else {
-              // Unknown theme name, fall back to global theme
-              if (settingsData.theme_config) {
-                themeToApply = settingsData.theme_config;
-              }
-            }
-          }
-        } catch (e) {
-          console.error('Failed to parse event theme:', e);
-          // Fall back to global theme
-          if (settingsData.theme_config) {
-            themeToApply = settingsData.theme_config;
-          }
-        }
-      } else if (settingsData.theme_config) {
-        // No event theme, use global theme
-        themeToApply = settingsData.theme_config;
-      }
+      const themeToApply = resolveEventTheme(
+        galleryInfo.color_theme,
+        settingsData.theme_config,
+        (e) => console.error('Failed to parse event theme:', e),
+      );
 
       // The hero photo ID is injected into gallerySettings by GalleryView,
       // which reads it off the /photos response. /info doesn't carry it.

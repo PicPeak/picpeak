@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../common';
 import { useGalleryDialog } from '../hooks/useGalleryDialog';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import type { WalkthroughStep } from './walkthroughSteps';
 
 interface GalleryWalkthroughProps {
@@ -24,25 +25,6 @@ const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 const MARGIN = 16;
 const GAP = 12;
 const RING_PADDING = 6;
-
-function mediaMatches(query: string): boolean {
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia(query).matches;
-}
-
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => mediaMatches(query));
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const list = window.matchMedia(query);
-    const update = () => setMatches(list.matches);
-    update();
-    list.addEventListener?.('change', update);
-    return () => list.removeEventListener?.('change', update);
-  }, [query]);
-  return matches;
-}
 
 /** The first element of the selectors that is actually on screen. */
 export function findWalkthroughAnchor(selectors: string[]): HTMLElement | null {

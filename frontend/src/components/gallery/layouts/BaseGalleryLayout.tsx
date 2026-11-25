@@ -109,7 +109,6 @@ export interface BaseGalleryLayoutProps {
   downloadChoices?: DownloadResolutionChoice[];
   onPickResolution?: (photoIds: number[]) => void;
   protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
-  useEnhancedProtection?: boolean;
   /** Canvas rendering applies to the lightbox only; tiles always render <img>. */
   useCanvasRendering?: boolean;
   feedbackEnabled?: boolean;

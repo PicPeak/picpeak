@@ -16,6 +16,7 @@ import type { Photo } from '../../types';
 import { AuthenticatedImage } from '../common';
 import { usePhotoLabels } from './PhotoLabels';
 import { withFocalPosition } from '../../utils/focalPoint';
+import { useMediaQuery } from './hooks/useMediaQuery';
 
 /** Thumbnails mounted on each side of the open photo. */
 export const FILM_STRIP_REACH = 10;
@@ -30,25 +31,6 @@ const DESKTOP_QUERY = '(min-width: 768px) and (min-height: 600px) and (hover: ho
 const PLACEHOLDER_STYLE: React.CSSProperties = { backgroundColor: 'rgba(255, 255, 255, 0.1)' };
 
 const EDGE_FADE = 'linear-gradient(to right, transparent, #000 10%, #000 90%, transparent)';
-
-function useDesktopViewport(): boolean {
-  const [matches, setMatches] = useState(() => (
-    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-      ? window.matchMedia(DESKTOP_QUERY).matches
-      : false
-  ));
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const query = window.matchMedia(DESKTOP_QUERY);
-    const onChange = () => setMatches(query.matches);
-    onChange();
-    // Optional calls: a media query list that cannot notify (older Safari)
-    // has neither method, and the strip must not take the lightbox down.
-    query.addEventListener?.('change', onChange);
-    return () => query.removeEventListener?.('change', onChange);
-  }, []);
-  return matches;
-}
 
 interface LightboxFilmStripProps {
   photos: Photo[];
@@ -67,7 +49,7 @@ export const LightboxFilmStrip: React.FC<LightboxFilmStripProps> = ({
   showFilenames = false,
 }) => {
   const { t } = useTranslation();
-  const isDesktop = useDesktopViewport();
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
 
   // The photo the strip last loaded thumbnails around: one commit behind the
   // open one. The strip sits ahead of the slides in the document, so its

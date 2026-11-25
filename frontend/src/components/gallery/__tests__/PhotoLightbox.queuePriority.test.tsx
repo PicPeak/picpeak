@@ -30,6 +30,7 @@ vi.mock('../../common', () => ({
 }));
 
 import { PhotoLightbox } from '../PhotoLightbox';
+import { LightboxQueryWrapper } from './lightboxQueryWrapper';
 
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
 
@@ -38,7 +39,7 @@ const priorityOf = (filename: string) => screen.getByAltText(filename).getAttrib
 
 describe('PhotoLightbox image queue priority', () => {
   it('fetches the slide on screen as high and its neighbours as prefetch', () => {
-    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" />);
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
 
     expect(priorityOf('photo-2')).toBe('high');
     expect(priorityOf('photo-1')).toBe('prefetch');
@@ -46,7 +47,7 @@ describe('PhotoLightbox image queue priority', () => {
   });
 
   it('follows the opening index, not the slot order', () => {
-    render(<PhotoLightbox photos={photos} initialIndex={0} onClose={vi.fn()} slug="g" />);
+    render(<PhotoLightbox photos={photos} initialIndex={0} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
 
     expect(priorityOf('photo-1')).toBe('high');
     expect(priorityOf('photo-2')).toBe('prefetch');
@@ -57,7 +58,7 @@ describe('PhotoLightbox image queue priority', () => {
   // picture. That only holds while React keeps the same image instance: a
   // remount aborts the fetch (or drops the loaded blob) and starts over.
   it('keeps a prefetched neighbour mounted when it becomes the slide on screen', () => {
-    render(<PhotoLightbox photos={photos} initialIndex={0} onClose={vi.fn()} slug="g" />);
+    render(<PhotoLightbox photos={photos} initialIndex={0} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
     const next = screen.getByAltText('photo-2');
     const current = screen.getByAltText('photo-1');
 

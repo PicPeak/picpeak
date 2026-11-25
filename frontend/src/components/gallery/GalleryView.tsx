@@ -108,7 +108,10 @@ import { PhotoSalesProvider } from '../../features/photo-sales/PhotoSalesContext
 import { PhotoSalesCartButton } from '../../features/photo-sales/PhotoSalesCartButton';
 import { PhotoSalesPromoBanner } from '../../features/photo-sales/PhotoSalesPromoBanner';
 import type { Photo } from '../../types';
-import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
+import { resolveEventTheme } from '../../utils/resolveEventTheme';
+import { useGalleryFeedbackSettings } from '../../hooks/useGalleryFeedbackSettings';
+import { useBlockContextMenu } from './hooks/useBlockContextMenu';
+import { useLastDefined } from './hooks/useLastDefined';
 import { useQueryClient } from '@tanstack/react-query';
 import { FavoriteListsContext, favoriteRowInList, useFavoriteListsState } from '../../contexts/FavoriteListsContext';
 import { FavoriteListsDialog } from './FavoriteListsDialog';
@@ -225,19 +228,16 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const [sortBy, setSortBy] = useState<'date' | 'name' | 'size' | 'rating' | 'capture_date'>('date');
   const [sortDesc, setSortDesc] = useState(true);
   const [defaultSortApplied, setDefaultSortApplied] = useState(false);
-  const [brandingSettings, setBrandingSettings] = useState<any>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showClientAccess, setShowClientAccess] = useState(false);
   const sidebarToggleRef = useRef<HTMLButtonElement>(null);
-  const [feedbackEnabled, setFeedbackEnabled] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const { watermarkEnabled } = useWatermarkSettings();
 
   // Load and inject custom CSS for this gallery
   useGalleryCustomCss(slug);
 
-  const [protectionLevel, setProtectionLevel] = useState<'basic' | 'standard' | 'enhanced' | 'maximum'>('standard');
   // Multi-select feedback filters (#889): OR-combined; empty = "All".
   // Clicking a filter toggles it, clicking "All" clears the set.
   const [activeFilters, setActiveFilters] = useState<FeedbackFilterType[]>([]);
@@ -331,12 +331,12 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const handleFeedbackChange = useFeedbackChange(slug, refetch, { patchRows: !isClient });
   const { isSelectionMode, setIsSelectionMode, selectedPhotos, setSelectedPhotos } = useGallerySelection(data?.photos);
   
-  // Set protection level when data is available
-  useEffect(() => {
-    if (data?.event?.protection_level) {
-      setProtectionLevel(data.event.protection_level);
-    }
-  }, [data?.event?.protection_level]);
+  // Protection level from the payload; keeps its last value while the
+  // payload lacks the field.
+  const protectionLevel = useLastDefined<'basic' | 'standard' | 'enhanced' | 'maximum'>(
+    data?.event?.protection_level || undefined,
+    'standard',
+  );
 
   // Apply default photo sort from event settings
   useEffect(() => {
@@ -407,20 +407,9 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     redirectUrl: '/'
   });
 
-  // Right-click blocking - separate from DevTools protection
-  useEffect(() => {
-    if (!disableRightClick) return;
-
-    const handleContextMenu = (e: MouseEvent) => {
-      e.preventDefault();
-      return false;
-    };
-
-    document.addEventListener('contextmenu', handleContextMenu);
-    return () => {
-      document.removeEventListener('contextmenu', handleContextMenu);
-    };
-  }, [disableRightClick]);
+  // Right-click blocking - separate from DevTools protection. Document-wide,
+  // so it covers the lightbox too.
+  useBlockContextMenu(disableRightClick);
   
   // Data updates are handled by React Query
   const downloadAllMutation = useDownloadAllPhotos();
@@ -475,21 +464,8 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     snipcartPublicKey: settingsData?.snipcart_api_key,
   }), [slug, data?.event, settingsData]);
 
-  // Fetch feedback settings
-  const { data: feedbackSettings } = useQuery({
-    queryKey: ['gallery-feedback-settings', event.id],
-    queryFn: async () => {
-      try {
-        // Use public endpoint to get feedback settings
-        return await feedbackService.getGalleryFeedbackSettings(slug);
-      } catch (error) {
-        console.error('Error fetching feedback settings:', error);
-        // If endpoint doesn't exist or returns error, default to disabled
-        return { feedback_enabled: false };
-      }
-    },
-    enabled: !!event.id,
-  });
+  // Fetch feedback settings; a failed request reads as feedback disabled.
+  const { data: feedbackSettings } = useGalleryFeedbackSettings(slug, { enabled: !!event.id });
 
   // Uploader names (#1561): the upload dialog's name step, from the /photos
   // payload.
@@ -686,12 +662,11 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
   }, [scanProgress, peopleEnabled, slug, queryClient]);
 
-  // Update feedbackEnabled when settings change
-  useEffect(() => {
-    if (feedbackSettings) {
-      setFeedbackEnabled(feedbackSettings.feedback_enabled || false);
-    }
-  }, [feedbackSettings]);
+  // From the feedback settings; keeps its last value while they load.
+  const feedbackEnabled = useLastDefined(
+    feedbackSettings ? feedbackSettings.feedback_enabled || false : undefined,
+    false,
+  );
 
   // The feedback filters this gallery's settings allow (issue 2505): a
   // "Rated" chip in a gallery without ratings could only ever show nothing.
@@ -798,40 +773,39 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     return sets;
   }, [myFeedbackRows, favoriteLists]);
 
-  // Apply branding settings
-  useEffect(() => {
-    if (settingsData) {
-      setBrandingSettings({
-        company_name: settingsData.branding_company_name || '',
-        company_tagline: settingsData.branding_company_tagline || '',
-        support_email: settingsData.branding_support_email || '',
-        footer_text: settingsData.branding_footer_text || '',
-        watermark_enabled: settingsData.branding_watermark_enabled || false,
-        logo_url: settingsData.branding_logo_url || null,
-        logo_url_dark: settingsData.branding_logo_url_dark || null,
-        logo_size: settingsData.branding_logo_size || 'medium',
-        logo_max_height: settingsData.branding_logo_max_height || 48,
-        logo_position: settingsData.branding_logo_position || 'left',
-        logo_display_header: settingsData.branding_logo_display_header !== false,
-        logo_display_hero: settingsData.branding_logo_display_hero !== false,
-        logo_display_mode: settingsData.branding_logo_display_mode || 'logo_and_text',
-        // Footer overhaul (#441 + #440). All five socials are optional;
-        // empty strings → that icon is hidden. promo_markdown is the
-        // global default; per-event override happens in GalleryLayout.
-        facebook_url: settingsData.branding_facebook_url || '',
-        instagram_url: settingsData.branding_instagram_url || '',
-        whatsapp_url: settingsData.branding_whatsapp_url || '',
-        twitter_url: settingsData.branding_twitter_url || '',
-        youtube_url: settingsData.branding_youtube_url || '',
-        promo_markdown: settingsData.branding_promo_markdown || '',
-        info_markdown: settingsData.branding_info_markdown || '',
-        promo_position: settingsData.branding_promo_position === 'below_footer' ? 'below_footer' : 'above_footer',
-        // Promo alignment (#482). Defaults to 'center' to match the
-        // gallery footer; see GalleryLayout.
-        promo_alignment: settingsData.branding_promo_alignment || 'center',
-      });
-    }
-  }, [settingsData]);
+  // Branding from the public settings; keeps its last value while they load.
+  // Typed loosely as before: logo_url is null when unset, which
+  // GalleryLayout's prop type does not spell out.
+  const brandingFromSettings = useMemo(() => (settingsData ? {
+    company_name: settingsData.branding_company_name || '',
+    company_tagline: settingsData.branding_company_tagline || '',
+    support_email: settingsData.branding_support_email || '',
+    footer_text: settingsData.branding_footer_text || '',
+    watermark_enabled: settingsData.branding_watermark_enabled || false,
+    logo_url: settingsData.branding_logo_url || null,
+    logo_url_dark: settingsData.branding_logo_url_dark || null,
+    logo_size: settingsData.branding_logo_size || 'medium',
+    logo_max_height: settingsData.branding_logo_max_height || 48,
+    logo_position: settingsData.branding_logo_position || 'left',
+    logo_display_header: settingsData.branding_logo_display_header !== false,
+    logo_display_hero: settingsData.branding_logo_display_hero !== false,
+    logo_display_mode: settingsData.branding_logo_display_mode || 'logo_and_text',
+    // Footer overhaul (#441 + #440). All five socials are optional;
+    // empty strings → that icon is hidden. promo_markdown is the
+    // global default; per-event override happens in GalleryLayout.
+    facebook_url: settingsData.branding_facebook_url || '',
+    instagram_url: settingsData.branding_instagram_url || '',
+    whatsapp_url: settingsData.branding_whatsapp_url || '',
+    twitter_url: settingsData.branding_twitter_url || '',
+    youtube_url: settingsData.branding_youtube_url || '',
+    promo_markdown: settingsData.branding_promo_markdown || '',
+    info_markdown: settingsData.branding_info_markdown || '',
+    promo_position: settingsData.branding_promo_position === 'below_footer' ? 'below_footer' : 'above_footer',
+    // Promo alignment (#482). Defaults to 'center' to match the
+    // gallery footer; see GalleryLayout.
+    promo_alignment: settingsData.branding_promo_alignment || 'center',
+  } : undefined), [settingsData]);
+  const brandingSettings = useLastDefined<any>(brandingFromSettings, null);
 
   // Scoped (#1160): a Video chip offered at root for a video that only exists
   // inside a folder filters to an empty grid.
@@ -896,38 +870,8 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Apply theme when settings are loaded
   useEffect(() => {
     if (settingsData && data?.event) {
-      let themeToApply = null;
       const fullEvent = data.event; // Use the full event data from API
-
-      if (fullEvent.color_theme) {
-        try {
-          // Check if it's a valid JSON string
-          if (fullEvent.color_theme.startsWith('{')) {
-            const eventTheme = JSON.parse(fullEvent.color_theme);
-            themeToApply = eventTheme;
-          } else {
-            // Handle legacy theme names - check if it's a preset
-            const preset = GALLERY_THEME_PRESETS[fullEvent.color_theme];
-            if (preset) {
-              themeToApply = preset.config;
-            } else {
-              // Unknown theme name, fall back to global theme
-              if (settingsData.theme_config) {
-                themeToApply = settingsData.theme_config;
-              }
-            }
-          }
-        } catch {
-          // Invalid theme format - use default
-          // Fall back to global theme
-          if (settingsData.theme_config) {
-            themeToApply = settingsData.theme_config;
-          }
-        }
-      } else if (settingsData.theme_config) {
-        // No event theme, use global theme
-        themeToApply = settingsData.theme_config;
-      }
+      const themeToApply = resolveEventTheme(fullEvent.color_theme, settingsData.theme_config);
 
       // Apply theme with a small delay to ensure it overrides any global theme.
       // Instance-wide force color mode is enforced inside ThemeContext.applyTheme,
@@ -1746,6 +1690,66 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }} />
   ) : null;
 
+  // Dialogs every layout branch renders in the same place: one element each,
+  // like clearLikesDialog. The reveal-mode branch closes its upload modal
+  // without the refresh and renders its own.
+  // Download size picker (#858): "download all", or a selection.
+  const downloadResolutionDialog = (showResolutionPicker || resolutionPickerIds || resumeJobToken) && (
+    <DownloadResolutionModal
+      slug={slug}
+      choices={downloadChoices}
+      standardResolution={data?.event?.download_resolution?.standard}
+      zipReady={data?.event?.download_zip_ready && !data?.event?.is_priced}
+      photoIds={resolutionPickerIds || undefined}
+      quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
+      resumeToken={resumeJobToken || undefined}
+      onDownloaded={handlePickerDownloaded}
+      onClose={() => {
+        setShowResolutionPicker(false);
+        setResolutionPickerIds(null);
+        setPickerForSelection(false);
+        setResumeJobToken(null);
+        clearDownloadJobParam();
+      }}
+    />
+  );
+  const uploadDialog = showUploadModal && allowUploads && (
+    <UserPhotoUpload
+      eventId={data?.event?.id || event?.id}
+      categoryId={data?.event?.upload_category_id || event?.upload_category_id}
+      {...uploaderNameProps}
+      onUploadComplete={handleUploadComplete}
+      onClose={() => setShowUploadModal(false)}
+    />
+  );
+  // Filename list for a RAW editor search (issue 1733, A3d).
+  const copyFilenamesDialog = showCopyFilenames && (
+    <CopyFilenamesDialog
+      photos={copyFilenames.photos}
+      source={copyFilenames.source}
+      onClose={() => setShowCopyFilenames(false)}
+    />
+  );
+  const peopleSheet = peopleEnabled && (
+    <PeopleSheet
+      open={showPeopleSheet}
+      onClose={() => setShowPeopleSheet(false)}
+      people={people}
+      photos={scopedPhotos}
+      slug={slug}
+      selectedPersonIds={selectedPersonIds}
+      onToggle={togglePerson}
+    />
+  );
+  const selfieSearchDialog = selfieSearchEnabled && (
+    <SelfieSearchDialog
+      open={showSelfieSearch}
+      onClose={() => setShowSelfieSearch(false)}
+      slug={slug}
+      onResult={setSelfiePhotoIds}
+    />
+  );
+
   // Determine controls style (sidebar vs classic inline filter bar).
   // Decoupled from layout — only an explicit controlsStyle === 'sidebar' on
   // the theme renders the sidebar. Default (unset or 'classic') is the inline
@@ -2026,25 +2030,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
 
         {/* Download size picker (#858) — "download all", or a selection. */}
-        {(showResolutionPicker || resolutionPickerIds || resumeJobToken) && (
-          <DownloadResolutionModal
-            slug={slug}
-            choices={downloadChoices}
-            standardResolution={data?.event?.download_resolution?.standard}
-            zipReady={data?.event?.download_zip_ready && !data?.event?.is_priced}
-            photoIds={resolutionPickerIds || undefined}
-            quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
-            resumeToken={resumeJobToken || undefined}
-            onDownloaded={handlePickerDownloaded}
-            onClose={() => {
-              setShowResolutionPicker(false);
-              setResolutionPickerIds(null);
-              setPickerForSelection(false);
-              setResumeJobToken(null);
-              clearDownloadJobParam();
-            }}
-          />
-        )}
+        {downloadResolutionDialog}
       </GalleryLayout>
     );
   }
@@ -2214,27 +2200,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             checkoutReady: photoSalesValue.checkoutReady,
           }}
         >
-        {selfieSearchEnabled && (
-          <SelfieSearchDialog
-            open={showSelfieSearch}
-            onClose={() => setShowSelfieSearch(false)}
-            slug={slug}
-            onResult={setSelfiePhotoIds}
-          />
-        )}
+        {selfieSearchDialog}
         {/* "Show all" people from the toolbox (issue 2543). Outside the
             layout, so Story's dark row does not restyle it. */}
-        {peopleEnabled && (
-          <PeopleSheet
-            open={showPeopleSheet}
-            onClose={() => setShowPeopleSheet(false)}
-            people={people}
-            photos={scopedPhotos}
-            slug={slug}
-            selectedPersonIds={selectedPersonIds}
-            onToggle={togglePerson}
-          />
-        )}
+        {peopleSheet}
 
         {/* #1160: these layouts return early and render edge-to-edge, but they
             still get `filteredPhotos`, so without this the foldered photos
@@ -2391,8 +2360,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           downloadChoices={downloadChoices}
           downloadStandard={data?.event?.download_resolution?.standard}
           protectionLevel={protectionLevel}
-          useEnhancedProtection={protectionLevel !== 'basic'}
-          disableRightClick={disableRightClick}
           enableDevtoolsProtection={enableDevtoolsProtection}
           useCanvasRendering={useCanvasRendering}
           heroLogoVisible={data?.event?.hero_logo_visible !== false}
@@ -2435,50 +2402,18 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         <GalleryWalkthroughHost walkthrough={walkthrough} ready={walkthroughReady} albumLinkPending={walkthroughAlbumPending} steps={walkthroughSteps} anchored={false} />
 
         {/* Upload Modal for full-page layouts */}
-        {showUploadModal && allowUploads && (
-          <UserPhotoUpload
-            eventId={data?.event?.id || event?.id}
-            categoryId={data?.event?.upload_category_id || event?.upload_category_id}
-            {...uploaderNameProps}
-            onUploadComplete={handleUploadComplete}
-            onClose={() => setShowUploadModal(false)}
-          />
-        )}
+        {uploadDialog}
         {uploadProcessingNotice}
         {newPhotosPill}
 
         {/* Download size picker (#858) — "download all", or a selection. */}
-        {(showResolutionPicker || resolutionPickerIds || resumeJobToken) && (
-          <DownloadResolutionModal
-            slug={slug}
-            choices={downloadChoices}
-            standardResolution={data?.event?.download_resolution?.standard}
-            zipReady={data?.event?.download_zip_ready && !data?.event?.is_priced}
-            photoIds={resolutionPickerIds || undefined}
-            quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
-            resumeToken={resumeJobToken || undefined}
-            onDownloaded={handlePickerDownloaded}
-            onClose={() => {
-              setShowResolutionPicker(false);
-              setResolutionPickerIds(null);
-              setPickerForSelection(false);
-              setResumeJobToken(null);
-              clearDownloadJobParam();
-            }}
-          />
-        )}
+        {downloadResolutionDialog}
         </PhotoSalesProvider>
 
         <PrintShopEntry />
 
         {/* Filename list for a RAW editor search (issue 1733, A3d). */}
-        {showCopyFilenames && (
-          <CopyFilenamesDialog
-            photos={copyFilenames.photos}
-            source={copyFilenames.source}
-            onClose={() => setShowCopyFilenames(false)}
-          />
-        )}
+        {copyFilenamesDialog}
       </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
       </GuestIdentityProvider>
@@ -2866,8 +2801,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             downloadChoices={downloadChoices}
             downloadStandard={data?.event?.download_resolution?.standard}
             protectionLevel={protectionLevel}
-            useEnhancedProtection={protectionLevel !== 'basic'}
-            disableRightClick={disableRightClick}
             enableDevtoolsProtection={enableDevtoolsProtection}
             useCanvasRendering={useCanvasRendering}
             heroLogoVisible={data?.event?.hero_logo_visible !== false}
@@ -2886,70 +2819,21 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         </div>
 
         {/* Filename list for a RAW editor search (issue 1733, A3d). */}
-        {showCopyFilenames && (
-          <CopyFilenamesDialog
-            photos={copyFilenames.photos}
-            source={copyFilenames.source}
-            onClose={() => setShowCopyFilenames(false)}
-          />
-        )}
+        {copyFilenamesDialog}
 
         {clearLikesDialog}
 
         {/* Upload Modal */}
-        {showUploadModal && allowUploads && (
-          <UserPhotoUpload
-            eventId={data?.event?.id || event?.id}
-            categoryId={data?.event?.upload_category_id || event?.upload_category_id}
-            {...uploaderNameProps}
-            onUploadComplete={handleUploadComplete}
-            onClose={() => setShowUploadModal(false)}
-          />
-        )}
+        {uploadDialog}
         {uploadProcessingNotice}
         {newPhotosPill}
 
         {/* Download size picker (#858) — "download all", or a selection. */}
-        {(showResolutionPicker || resolutionPickerIds || resumeJobToken) && (
-          <DownloadResolutionModal
-            slug={slug}
-            choices={downloadChoices}
-            standardResolution={data?.event?.download_resolution?.standard}
-            zipReady={data?.event?.download_zip_ready && !data?.event?.is_priced}
-            photoIds={resolutionPickerIds || undefined}
-            quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
-            resumeToken={resumeJobToken || undefined}
-            onDownloaded={handlePickerDownloaded}
-            onClose={() => {
-              setShowResolutionPicker(false);
-              setResolutionPickerIds(null);
-              setPickerForSelection(false);
-              setResumeJobToken(null);
-              clearDownloadJobParam();
-            }}
-          />
-        )}
+        {downloadResolutionDialog}
 
         {/* "Show all" people (#1074) — a bottom sheet on mobile. */}
-        {peopleEnabled && (
-          <PeopleSheet
-            open={showPeopleSheet}
-            onClose={() => setShowPeopleSheet(false)}
-            people={people}
-            photos={scopedPhotos}
-            slug={slug}
-            selectedPersonIds={selectedPersonIds}
-            onToggle={togglePerson}
-          />
-        )}
-        {selfieSearchEnabled && (
-          <SelfieSearchDialog
-            open={showSelfieSearch}
-            onClose={() => setShowSelfieSearch(false)}
-            slug={slug}
-            onResult={setSelfiePhotoIds}
-          />
-        )}
+        {peopleSheet}
+        {selfieSearchDialog}
       </GalleryLayout>
       </PhotoSalesProvider>
       </GridDensityOffered.Provider>

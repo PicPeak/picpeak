@@ -246,27 +246,19 @@ describe('PhotoLightbox — Select / Annotate bar (issue 1733, E1)', () => {
     expect(await screen.findByRole('button', { name: 'Add to favorites' })).toBeTruthy();
   });
 
-  it('opens the comment form for a drawing finished before the panel had loaded', async () => {
-    let settle!: (value: unknown) => void;
-    vi.mocked(feedbackService.getGalleryFeedbackSettings)
-      .mockResolvedValueOnce(SETTINGS as never)
-      .mockImplementationOnce(() => new Promise((resolve) => { settle = resolve; }) as never);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <PhotoLightbox photos={photos} initialIndex={0} onClose={onClose} slug="g" feedbackEnabled />
-      </QueryClientProvider>,
-    );
+  // The panel reads the lightbox's own feedback-settings query (one cache
+  // entry per gallery), so it is never a load behind the drawing tools.
+  it('opens the comment form for a drawing as soon as it is done', async () => {
+    open();
     await screen.findByRole('radiogroup', { name: 'Mode' });
 
     fireEvent.click(radio('Annotate'));
     drag(screen.getByTestId('annotation-overlay'));
     fireEvent.click(within(tools()!).getByRole('button', { name: 'Done' }));
-    expect(screen.queryByPlaceholderText('Write a comment...')).toBeNull();
 
-    await act(async () => { settle(SETTINGS); });
     expect(await screen.findByPlaceholderText('Write a comment...')).toBeTruthy();
     expect(screen.getByText('Drawing attached')).toBeTruthy();
+    expect(feedbackService.getGalleryFeedbackSettings).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the saved favourite over a load that went out while it was being saved', async () => {

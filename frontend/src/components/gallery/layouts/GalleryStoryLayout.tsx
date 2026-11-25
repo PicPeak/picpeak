@@ -112,7 +112,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   downloadChoices,
   onPickResolution,
   protectionLevel = 'standard',
-  useEnhancedProtection = false,
   useCanvasRendering = false,
   feedbackEnabled = false,
   feedbackOptions,
@@ -945,7 +944,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           feedbackEnabled={feedbackEnabled}
           allowDownloads={allowDownloads}
           protectionLevel={protectionLevel}
-          useEnhancedProtection={useEnhancedProtection}
           useCanvasRendering={useCanvasRendering}
           onFeedbackChange={handleLightboxFeedbackChange}
           showOriginalFilename={showOriginalFilename}

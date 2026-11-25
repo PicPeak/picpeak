@@ -63,6 +63,7 @@ vi.mock('../PhotoFeedback', () => ({
 }));
 
 import { PhotoLightbox } from '../PhotoLightbox';
+import { LightboxQueryWrapper } from './lightboxQueryWrapper';
 import { galleryService } from '../../../services/gallery.service';
 import { feedbackService } from '../../../services/feedback.service';
 import { SCRUB_IDLE_RELEASE_MS } from '../hooks/useLightboxScrub';
@@ -96,7 +97,7 @@ beforeEach(() => {
 
 describe('lightbox film strip', () => {
   it('mounts only the window around the open photo, thumbnails only', () => {
-    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={250} onClose={vi.fn()} slug="g" />);
+    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={250} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
 
     const buttons = within(strip()).getAllByRole('button');
     expect(buttons).toHaveLength(21);
@@ -113,14 +114,14 @@ describe('lightbox film strip', () => {
   });
 
   it('does not wrap the window around the ends of the list', () => {
-    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={0} onClose={vi.fn()} slug="g" />);
+    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={0} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
     expect(within(strip()).getAllByRole('button')).toHaveLength(11);
   });
 
   it('shows a placeholder for a photo without a thumbnail, never its original', () => {
     const photos = makePhotos(5);
     photos[3] = { ...photos[3], thumbnail_url: undefined };
-    render(<PhotoLightbox photos={photos} initialIndex={0} onClose={vi.fn()} slug="g" />);
+    render(<PhotoLightbox photos={photos} initialIndex={0} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
 
     const button = within(strip()).getByRole('button', { name: 'Photo 4 of 5' });
     expect(within(button).getByTestId('film-strip-placeholder')).toBeInTheDocument();
@@ -131,13 +132,13 @@ describe('lightbox film strip', () => {
   it('names a photo by its filename when the lightbox shows filenames', () => {
     const photos = makePhotos(3);
     photos[1] = { ...photos[1], original_filename: 'IMG_0042.CR3' };
-    render(<PhotoLightbox photos={photos} initialIndex={0} onClose={vi.fn()} slug="g" showOriginalFilename />);
+    render(<PhotoLightbox photos={photos} initialIndex={0} onClose={vi.fn()} slug="g" showOriginalFilename />, { wrapper: LightboxQueryWrapper });
     expect(within(strip()).getByRole('button', { name: 'Photo 2 of 3: IMG_0042.CR3' })).toBeInTheDocument();
   });
 
   it('jumps to the clicked photo without taking focus', () => {
     const onCurrentPhotoChange = vi.fn();
-    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={250} onClose={vi.fn()} slug="g" onCurrentPhotoChange={onCurrentPhotoChange} />);
+    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={250} onClose={vi.fn()} slug="g" onCurrentPhotoChange={onCurrentPhotoChange} />, { wrapper: LightboxQueryWrapper });
 
     const target = within(strip()).getByRole('button', { name: 'Photo 257 of 500' });
     expect(target).toHaveAttribute('tabindex', '-1');
@@ -155,7 +156,7 @@ describe('lightbox film strip', () => {
   });
 
   it('asks for the open photo before any of its own thumbnails', () => {
-    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={250} onClose={vi.fn()} slug="g" />);
+    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={250} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
     // The strip is ahead of the slides in the document, so its effects run
     // first; six thumbnails would take every fetch slot.
     expect(fetchOrder.filter((src) => src.startsWith('/thumb/'))).toHaveLength(21);
@@ -172,7 +173,7 @@ describe('lightbox film strip', () => {
 
   it('is not mounted on a small or touch screen', () => {
     stubViewport(false);
-    render(<PhotoLightbox photos={makePhotos(50)} initialIndex={5} onClose={vi.fn()} slug="g" />);
+    render(<PhotoLightbox photos={makePhotos(50)} initialIndex={5} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
     expect(screen.queryByTestId('lightbox-film-strip')).toBeNull();
     expect(requested().some((src) => src.startsWith('/thumb/'))).toBe(false);
   });
@@ -195,7 +196,7 @@ describe('lightbox hold-to-scrub', () => {
   };
 
   const open = (onCurrentPhotoChange = vi.fn()) => {
-    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={100} onClose={vi.fn()} slug="g" onCurrentPhotoChange={onCurrentPhotoChange} />);
+    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={100} onClose={vi.fn()} slug="g" onCurrentPhotoChange={onCurrentPhotoChange} />, { wrapper: LightboxQueryWrapper });
     return onCurrentPhotoChange;
   };
 
@@ -277,7 +278,7 @@ describe('lightbox hold-to-scrub', () => {
   });
 
   it('keeps the open feedback panel on the photo the scrub started from until it lands', () => {
-    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={100} onClose={vi.fn()} slug="g" initialShowFeedback />);
+    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={100} onClose={vi.fn()} slug="g" initialShowFeedback />, { wrapper: LightboxQueryWrapper });
     const panelPhoto = () => screen.getByTestId('feedback-panel').getAttribute('data-photo-id');
     expect(panelPhoto()).toBe('101');
 
@@ -300,7 +301,7 @@ describe('lightbox hold-to-scrub', () => {
     } as never);
     const submitFeedback = vi.mocked(feedbackService.submitFeedback);
     submitFeedback.mockClear();
-    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={100} onClose={vi.fn()} slug="g" feedbackEnabled />);
+    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={100} onClose={vi.fn()} slug="g" feedbackEnabled />, { wrapper: LightboxQueryWrapper });
     await act(async () => {});
     const stars = () => screen.getByLabelText('Rate photo');
 
@@ -322,7 +323,7 @@ describe('lightbox hold-to-scrub', () => {
 
   it('leaves the carousel centred and swipeable when a scrub interrupts a committing swipe', () => {
     stubViewport(false);
-    const { container } = render(<PhotoLightbox photos={makePhotos(50)} initialIndex={10} onClose={vi.fn()} slug="g" />);
+    const { container } = render(<PhotoLightbox photos={makePhotos(50)} initialIndex={10} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
     const track = () => container.querySelector('[style*="width: 300%"]') as HTMLElement;
     const surface = track().parentElement as HTMLElement;
     Object.defineProperty(surface, 'offsetWidth', { value: 800 });
@@ -381,7 +382,7 @@ describe('lightbox hold-to-scrub', () => {
   });
 
   it('does not scrub a gallery of one: there is nowhere to go, and a video would lose its place', () => {
-    render(<PhotoLightbox photos={makePhotos(1)} initialIndex={0} onClose={vi.fn()} slug="g" />);
+    render(<PhotoLightbox photos={makePhotos(1)} initialIndex={0} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
     const slide = document.querySelector('[data-src^="/preview/1?"]');
     holdKey('ArrowRight', 5);
     expect(screen.queryByTestId('lightbox-scrub-stand-in')).toBeNull();
@@ -389,7 +390,7 @@ describe('lightbox hold-to-scrub', () => {
   });
 
   it('does not count a photo twice when a scrub ends where it began', () => {
-    render(<PhotoLightbox photos={makePhotos(2)} initialIndex={0} onClose={vi.fn()} slug="g" />);
+    render(<PhotoLightbox photos={makePhotos(2)} initialIndex={0} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
     // Two steps, 110 ms apart: on to the other photo and back again.
     holdKey('ArrowRight', 5);
     expect(counter('1 / 2')).toBeInTheDocument();
