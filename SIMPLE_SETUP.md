@@ -378,9 +378,6 @@ sudo systemctl restart picpeak-backend
 | `JWT_SECRET` | Token signing secret | Auto-generated |
 | `ADMIN_EMAIL` | Admin email | admin@example.com |
 | `ADMIN_PASSWORD` | Admin password | Auto-generated |
-| `PHOTOS_DIR` | Photo storage path | Varies by method |
-| `SMTP_ENABLED` | Email notifications | false |
-| `DEFAULT_EXPIRY_DAYS` | Gallery expiration | 30 |
 
 ## 📧 Email Configuration
 
@@ -389,13 +386,11 @@ sudo systemctl restart picpeak-backend
 2. Generate App Password
 3. Configure:
 ```env
-SMTP_ENABLED=true
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=your-email@gmail.com
 SMTP_PASS=your-app-password
-SMTP_FROM=noreply@yourdomain.com
 ```
 
 ### SendGrid Setup
@@ -403,12 +398,10 @@ SMTP_FROM=noreply@yourdomain.com
 2. Create API key
 3. Configure:
 ```env
-SMTP_ENABLED=true
 SMTP_HOST=smtp.sendgrid.net
 SMTP_PORT=587
 SMTP_USER=apikey
 SMTP_PASS=your-sendgrid-api-key
-SMTP_FROM=verified-sender@yourdomain.com
 ```
 
 ## 🔄 Maintenance

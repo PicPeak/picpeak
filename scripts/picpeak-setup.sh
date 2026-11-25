@@ -1289,12 +1289,10 @@ DATABASE_PATH=$NATIVE_APP_DIR/app/backend/data/photo_sharing.db
 STORAGE_PATH=$NATIVE_APP_DIR/storage
 
 # Email
-SMTP_ENABLED=${SMTP_HOST:+true}
 SMTP_HOST=$SMTP_HOST
 SMTP_PORT=$SMTP_PORT
 SMTP_USER=$SMTP_USER
 SMTP_PASS=$SMTP_PASS
-SMTP_FROM=${SMTP_USER:-noreply@localhost}
 
 # URLs
 FRONTEND_URL=${DOMAIN_NAME:+https://$DOMAIN_NAME}
@@ -1304,12 +1302,6 @@ ADMIN_URL=${DOMAIN_NAME:+https://$DOMAIN_NAME}
 # the origin to loopback and fail closed on cookies and transport policy.
 COOKIE_SECURE=$cookie_secure
 ENABLE_HSTS=$enable_hsts
-
-# Features
-ENABLE_FILE_WATCHER=true
-ENABLE_EXPIRATION_CHECKER=true
-ENABLE_EMAIL_SERVICE=true
-DEFAULT_EXPIRY_DAYS=30
 
 # Logging
 LOG_DIR=$NATIVE_APP_DIR/logs
