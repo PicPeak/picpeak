@@ -9,11 +9,11 @@ const {
   resolveGuest, requireGuest, signGuestToken, signGuestDownloadTicket, GUEST_IDENTITY_REQUIRED,
 } = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
-const selectionSubmissions = require('../services/selectionSubmissions');
 const guestRecovery = require('../services/guestRecoveryService');
 const { sanitizeName } = require('../utils/personName');
 const { parseBooleanInput } = require('../utils/parsers');
-const { guestNameModeOf, clearGuestCredits } = require('../services/photoCredit');
+const { guestNameModeOf } = require('../services/photoCredit');
+const { removeGuest } = require('../services/guestRemoval');
 
 const MAX_EMAIL_LEN = 255;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -28,29 +28,37 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // budget under this one doesn't help: the only device signal here is the
 // User-Agent, which a script rotates and which a room of phones on the same
 // OS version shares.
-const registrationAttempts = new Map();
-const REGISTRATION_WINDOW_MS = 60 * 60 * 1000;
-const REGISTRATION_MAX = 400;
-let registrationSweptAt = 0;
+//
+// Networks that stopped registering leave their entry behind; `sweep` drops
+// the expired ones once per window.
+const checkRegistrationRate = fixedWindowCounter(60 * 60 * 1000, 400, { sweep: true });
 
-function checkRegistrationRate(ip) {
-  const now = Date.now();
-  // Networks that stopped registering leave their entry behind; drop the
-  // expired ones once per window.
-  if (now - registrationSweptAt > REGISTRATION_WINDOW_MS) {
-    registrationSweptAt = now;
-    for (const [key, entry] of registrationAttempts) {
-      if (now - entry.windowStart > REGISTRATION_WINDOW_MS) registrationAttempts.delete(key);
+/**
+ * An in-memory fixed-window counter per key: the returned function counts one
+ * attempt for `key` and answers whether it is still within `max` per
+ * `windowMs`. With `sweep`, expired entries of other keys are dropped once
+ * per window.
+ */
+function fixedWindowCounter(windowMs, max, { sweep = false } = {}) {
+  const attempts = new Map();
+  let sweptAt = 0;
+  return (key) => {
+    const now = Date.now();
+    if (sweep && now - sweptAt > windowMs) {
+      sweptAt = now;
+      for (const [k, entry] of attempts) {
+        if (now - entry.windowStart > windowMs) attempts.delete(k);
+      }
     }
-  }
-  const entry = registrationAttempts.get(ip) || { count: 0, windowStart: now };
-  if (now - entry.windowStart > REGISTRATION_WINDOW_MS) {
-    entry.count = 0;
-    entry.windowStart = now;
-  }
-  entry.count += 1;
-  registrationAttempts.set(ip, entry);
-  return entry.count <= REGISTRATION_MAX;
+    const entry = attempts.get(key) || { count: 0, windowStart: now };
+    if (now - entry.windowStart > windowMs) {
+      entry.count = 0;
+      entry.windowStart = now;
+    }
+    entry.count += 1;
+    attempts.set(key, entry);
+    return entry.count <= max;
+  };
 }
 
 /**
@@ -61,6 +69,28 @@ function checkRegistrationRate(ip) {
  */
 function guestTokenScope(settings) {
   return settings.feedback_enabled && settings.identity_mode === 'guest' ? {} : { scope: 'upload' };
+}
+
+/**
+ * What register, verify and redeem answer with: the guest and a fresh token
+ * for this gallery, scoped by the gallery's feedback settings.
+ */
+function guestSession(guest, eventId, settings) {
+  return {
+    guest: {
+      id: guest.id,
+      name: guest.name,
+      email: guest.email,
+      identifier: guest.identifier,
+    },
+    token: signGuestToken({
+      guestId: guest.id,
+      eventId,
+      identifier: guest.identifier,
+      name: guest.name,
+      ...guestTokenScope(settings),
+    }),
+  };
 }
 
 function sanitizeEmail(value) {
@@ -128,13 +158,7 @@ router.post('/:slug/guest', verifyGalleryAccess, denySlideshowToken, async (req,
       })
       .returning(['id', 'name', 'email', 'identifier', 'created_at']);
 
-    const token = signGuestToken({
-      guestId: row.id,
-      eventId: event.id,
-      identifier: row.identifier,
-      name: row.name,
-      ...guestTokenScope(settings),
-    });
+    const session = guestSession(row, event.id, settings);
 
     logger.info('Guest registered', {
       eventId: event.id,
@@ -142,15 +166,7 @@ router.post('/:slug/guest', verifyGalleryAccess, denySlideshowToken, async (req,
       name: row.name,
     });
 
-    return res.json({
-      guest: {
-        id: row.id,
-        name: row.name,
-        email: row.email,
-        identifier: row.identifier,
-      },
-      token,
-    });
+    return res.json(session);
   } catch (error) {
     logger.error('Guest registration failed', { error: error.message });
     return res.status(500).json({ error: 'Failed to register guest' });
@@ -194,30 +210,9 @@ router.get('/:slug/guest/me', verifyGalleryAccess, resolveGuest, requireGuest, a
  */
 router.delete('/:slug/guest/me', verifyGalleryAccess, resolveGuest, requireGuest, async (req, res) => {
   try {
-    await feedbackService.anonymizeGuestFeedback(req.guest.id);
-
-    await db('gallery_guests')
-      .where({ id: req.guest.id })
-      .update({
-        is_deleted: true,
-        name: 'Removed',
-        email: null,
-        last_seen_at: db.fn.now(),
-      });
-    // Their views and downloads once more, now that the guest is marked
-    // removed (issue 2503): a row written while the anonymisation above
-    // ran still named the guest. A row written after this sees the mark
-    // (guestAuth.settleLoggedGuest).
-    await db('access_logs').where('guest_id', req.guest.id).update({ guest_id: null });
-    // Their "mail me when the download is ready" requests (issue 1733).
-    await require('../services/downloadJobNotifier')
-      .forgetGuest({ id: req.guest.id, event_id: req.event.id, email: req.guest.email });
-    // Their name on the photos they uploaded goes with them (#1561). After
-    // the soft delete, so an upload still in flight sees it.
-    await clearGuestCredits(req.guest.id);
-    // Again after the soft delete, for the same reason: a hand-over that got
-    // in before it was stored with the guest's name (issue 1733).
-    await selectionSubmissions.anonymizeGuest(req.guest.id);
+    // req.guest names its gallery `eventId`; removeGuest (forgetGuest) reads
+    // the row's `event_id`, so hand it the three fields it needs.
+    await removeGuest({ id: req.guest.id, event_id: req.event.id, email: req.guest.email });
 
     logger.info('Guest self-forgot', {
       eventId: req.event.id,
@@ -255,21 +250,8 @@ router.post('/:slug/guest/download-ticket', verifyGalleryAccess, denySlideshowTo
 // Phase 3.2 — Email-based identity recovery
 // ---------------------------------------------------------------------------
 
-// Simple in-memory rate limit for recover/verify (5 per hour per IP).
-const recoveryAttempts = new Map();
-const VERIFY_WINDOW_MS = 60 * 60 * 1000;
-const VERIFY_MAX = 20;
-function checkRecoveryRate(ip) {
-  const now = Date.now();
-  const entry = recoveryAttempts.get(ip) || { count: 0, windowStart: now };
-  if (now - entry.windowStart > VERIFY_WINDOW_MS) {
-    entry.count = 0;
-    entry.windowStart = now;
-  }
-  entry.count += 1;
-  recoveryAttempts.set(ip, entry);
-  return entry.count <= VERIFY_MAX;
-}
+// Simple in-memory rate limit for recover/verify (20 per hour per IP).
+const checkRecoveryRate = fixedWindowCounter(60 * 60 * 1000, 20);
 
 /**
  * POST /gallery/:slug/guest/recover
@@ -360,25 +342,11 @@ router.post('/:slug/guest/verify', verifyGalleryAccess, async (req, res) => {
         ip_address_last: (req.ip || '').substring(0, 45),
       });
 
-    const token = signGuestToken({
-      guestId: guest.id,
-      eventId: event.id,
-      identifier: guest.identifier,
-      name: guest.name,
-      ...guestTokenScope(await feedbackService.getEventFeedbackSettings(event.id)),
-    });
+    const session = guestSession(guest, event.id, await feedbackService.getEventFeedbackSettings(event.id));
 
     logger.info('Guest recovered via email', { eventId: event.id, guestId: guest.id });
 
-    return res.json({
-      guest: {
-        id: guest.id,
-        name: guest.name,
-        email: guest.email,
-        identifier: guest.identifier,
-      },
-      token,
-    });
+    return res.json(session);
   } catch (error) {
     logger.error('Guest verify failed', { error: error.message });
     return res.status(500).json({ error: 'Failed to verify code' });
@@ -470,25 +438,11 @@ router.post('/:slug/guest/redeem', verifyGalleryAccess, async (req, res) => {
       return res.status(statusMap[result.error] || 400).json(body);
     }
 
-    const token = signGuestToken({
-      guestId: result.guest.id,
-      eventId: event.id,
-      identifier: result.guest.identifier,
-      name: result.guest.name,
-      ...guestTokenScope(await feedbackService.getEventFeedbackSettings(event.id)),
-    });
+    const session = guestSession(result.guest, event.id, await feedbackService.getEventFeedbackSettings(event.id));
 
     logger.info('Invite redeemed', { eventId: event.id, guestId: result.guest.id });
 
-    return res.json({
-      guest: {
-        id: result.guest.id,
-        name: result.guest.name,
-        email: result.guest.email,
-        identifier: result.guest.identifier,
-      },
-      token,
-    });
+    return res.json(session);
   } catch (error) {
     logger.error('Invite redemption failed', { error: error.message });
     return res.status(500).json({ error: 'Failed to redeem invite' });

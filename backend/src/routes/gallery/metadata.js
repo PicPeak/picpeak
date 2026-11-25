@@ -1,8 +1,9 @@
-const { isTrue, isGalleryExpired, assertGalleryEnabled } = require('../../utils/galleryLifecycle');
+const {
+  isTrue, isFalse, isGalleryExpired, assertGalleryEnabled, requiresGalleryPassword, publishedEventFilter,
+} = require('../../utils/galleryLifecycle');
 const { publicThemeFields } = require('../../services/galleryTheme');
 const express = require('express');
 const { db } = require('../../database/db');
-const { formatBoolean } = require('../../utils/dbCompat');
 const { getAppSetting } = require('../../utils/appSettings');
 const { timingSafeEqualStr } = require('../../utils/timingSafe');
 const router = express.Router();
@@ -96,7 +97,7 @@ router.get('/resolve/:identifier', noStoreCache, handleAsync(async (req, res) =>
     if (!adminPreview) throwIfPasswordChangeRequired(req);
     assertGalleryEnabled(event, { adminPreview });
   }
-  const requiresPassword = !(event.require_password === false || event.require_password === 0 || event.require_password === '0');
+  const requiresPassword = requiresGalleryPassword(event);
 
   // The share_token is a bearer secret. Only return it (and the share
   // links/URLs that embed it) when the caller already proved they hold it —
@@ -128,7 +129,8 @@ router.get('/:slug/verify-token/:token', noStoreCache, handleAsync(async (req, r
   const { slug, token } = req.params;
 
   const event = await db('events')
-    .where({ slug, is_active: formatBoolean(true), is_archived: formatBoolean(false) })
+    // Drafts too, for a verified admin preview only: checked below.
+    .where({ slug, ...publishedEventFilter({ includeDrafts: true }) })
     .select('id', 'share_link', 'share_token', 'is_draft', 'is_active', 'is_archived', 'expires_at', 'temporarily_disabled')
     .first();
 
@@ -266,7 +268,7 @@ router.get('/:slug/info', noStoreCache, async (req, res) => {
     // (#868) — the admin already sees every photo through the admin routes.
     const requiresPassword = adminPreview
       ? false
-      : !(event.require_password === false || event.require_password === 0 || event.require_password === '0');
+      : requiresGalleryPassword(event);
     const globalHeroLogoVisible = await getAppSetting('branding_logo_display_hero', true);
     const globalLogoSize = await getAppSetting('branding_logo_size', 'medium');
 
@@ -286,25 +288,25 @@ router.get('/:slug/info', noStoreCache, async (req, res) => {
       is_expired: !event.is_active || isGalleryExpired(event),
       requires_password: requiresPassword,
       color_theme: theme.color_theme,
-      allow_downloads: !(event.allow_downloads === false || event.allow_downloads === 0 || event.allow_downloads === '0'),
-      is_priced: event.is_priced === true || event.is_priced === 1 || event.is_priced === '1',
+      allow_downloads: !isFalse(event.allow_downloads),
+      is_priced: isTrue(event.is_priced),
       free_photo_count: Number(event.free_photo_count || 0),
       photo_price: event.photo_price != null ? Number(event.photo_price) : null,
       purchase_access_days: Number(event.purchase_access_days || 30),
-      allow_user_uploads: event.allow_user_uploads === true || event.allow_user_uploads === 1 || event.allow_user_uploads === '1',
+      allow_user_uploads: isTrue(event.allow_user_uploads),
       // Reveal mode (#838): effective hidden state (computed, time-exact) so
       // the landing page can hint at the reveal before login too.
       hidden_until_reveal: isGalleryHidden(event),
       reveal_at: isGalleryHidden(event) ? (event.reveal_at || null) : null,
-      disable_right_click: event.disable_right_click === true || event.disable_right_click === 1 || event.disable_right_click === '1',
-      watermark_downloads: event.watermark_downloads === true || event.watermark_downloads === 1 || event.watermark_downloads === '1',
+      disable_right_click: isTrue(event.disable_right_click),
+      watermark_downloads: isTrue(event.watermark_downloads),
       watermark_text: event.watermark_text,
-      enable_devtools_protection: event.enable_devtools_protection === true || event.enable_devtools_protection === 1 || event.enable_devtools_protection === '1',
-      use_canvas_rendering: event.use_canvas_rendering === true || event.use_canvas_rendering === 1 || event.use_canvas_rendering === '1',
+      enable_devtools_protection: isTrue(event.enable_devtools_protection),
+      use_canvas_rendering: isTrue(event.use_canvas_rendering),
       hero_logo_visible: resolveHeroLogoVisible(event.hero_logo_visible, globalHeroLogoVisible),
       // #894: only an explicit false hides the logo on the password page;
       // NULL keeps the default (show).
-      login_logo_visible: !(event.login_logo_visible === false || event.login_logo_visible === 0 || event.login_logo_visible === '0'),
+      login_logo_visible: !isFalse(event.login_logo_visible),
       // #756: NULL per-event size inherits the global branding_logo_size.
       hero_logo_size: event.hero_logo_size || globalLogoSize || 'medium',
       hero_logo_position: event.hero_logo_position || 'top',

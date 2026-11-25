@@ -21,6 +21,8 @@ const { resolveHeroLogoVisible, originalNeedsPreview } = require('./galleryModel
 const { heroAnchorQuery } = require('../utils/heroAnchor');
 const { focalPointOf, focalQuery } = require('../utils/focalPoint');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
+const { isPinEntryEnabled } = require('./galleryPinEntryService');
+const { scopeToViewer } = require('./selectionSubmissions');
 const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
 const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
 const { SLIDESHOW_QUERY_PARAM } = require('../utils/tokenUtils');
@@ -260,11 +262,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     // had hidden still showed as liked on a photo whose like_count was 0.
       .where({ event_id: event.id, feedback_type: 'like', is_hidden: formatBoolean(false) })
       .whereIn('photo_id', photos.map(p => p.id));
-    if (identity.guestId) {
-      likeQuery.where('guest_id', identity.guestId);
-    } else {
-      likeQuery.where('guest_identifier', identity.guestIdentifier);
-    }
+    scopeToViewer(likeQuery, identity);
     const likedRows = await likeQuery.select('photo_id');
     likedRows.forEach(row => likedPhotoIds.add(row.photo_id));
   }
@@ -283,11 +281,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     const ratingQuery = db('photo_feedback')
       .where({ event_id: event.id, feedback_type: 'rating', is_hidden: formatBoolean(false) })
       .whereIn('photo_id', photos.map(p => p.id));
-    if (identity.guestId) {
-      ratingQuery.where('guest_id', identity.guestId);
-    } else {
-      ratingQuery.where('guest_identifier', identity.guestIdentifier);
-    }
+    scopeToViewer(ratingQuery, identity);
     // submitFeedback's check-then-insert is not atomic, so one viewer can own
     // two rating rows for a photo. The row mutated last wins (updated_at,
     // created_at, id) — the same rule getPhotoFeedback applies for the
@@ -322,11 +316,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     // Same rule as the heart above (#1150).
       .where({ event_id: event.id, feedback_type: 'color_label', is_hidden: formatBoolean(false) })
       .whereIn('photo_id', photos.map(p => p.id));
-    if (identity.guestId) {
-      colorQuery.where('guest_id', identity.guestId);
-    } else {
-      colorQuery.where('guest_identifier', identity.guestIdentifier);
-    }
+    scopeToViewer(colorQuery, identity);
     const colorRows = await colorQuery.select('photo_id', 'color_label');
     colorRows.forEach(row => {
       if (row.color_label) myColorLabelByPhoto[row.photo_id] = row.color_label;
@@ -344,11 +334,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     const decisionQuery = db('photo_feedback')
       .where({ event_id: event.id, feedback_type: 'decision', is_hidden: formatBoolean(false) })
       .whereIn('photo_id', photos.map(p => p.id));
-    if (identity.guestId) {
-      decisionQuery.where('guest_id', identity.guestId);
-    } else {
-      decisionQuery.where('guest_identifier', identity.guestIdentifier);
-    }
+    scopeToViewer(decisionQuery, identity);
     const decisionRows = await decisionQuery.select('id', 'photo_id', 'decision', 'comment_text', 'created_at', 'updated_at');
     Array.from(decisionRows).sort(feedbackService.lastMutatedFirst).forEach(row => {
       if (row.decision && myDecisionByPhoto[row.photo_id] === undefined) {
@@ -497,11 +483,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     // Only folders holding a photo this viewer may see: a folder with
     // nothing but hidden or still-processing photos must not ship its name
     // (and its ancestors' names) to guests. Same rules as the photo list.
-    let directQuery = livePhotos(db)
+    let directQuery = wherePhotoProcessed(livePhotos(db)
       .where('event_id', event.id)
-      .whereNotNull('folder_id')
-      .where((q) => q.where('processing_status', 'complete').orWhereNull('processing_status'))
-      .whereNull('unavailable_reason');
+      .whereNotNull('folder_id'));
     directQuery = applyPhotoVisibilityFilter(directQuery, { accessLevel, fullView });
     const direct = await directQuery.distinct('folder_id').pluck('folder_id');
     for (const id of direct) {
@@ -610,18 +594,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   // any preview has actually been generated.
   let lightboxPreviewEnabled = false;
   try {
-    const setting = await db('app_settings')
-      .where('setting_key', 'lightbox_preview_enabled')
-      .first();
-    if (setting) {
-      const raw = setting.setting_value;
-      // setting_value is JSON-stringified per migration 104; tolerate
-      // raw boolean/string for forward-compat.
-      const parsed = typeof raw === 'string' ? (() => {
-        try { return JSON.parse(raw); } catch { return raw; }
-      })() : raw;
-      lightboxPreviewEnabled = parsed === true || parsed === 'true' || parsed === 1;
-    }
+    // setting_value is JSON-stringified per migration 104; getAppSetting
+    // tolerates a raw string too.
+    const parsed = await getAppSetting('lightbox_preview_enabled', false);
+    lightboxPreviewEnabled = parsed === true || parsed === 'true' || parsed === 1;
   } catch (e) {
     // Setting missing / DB blip → fall back to off so the lightbox
     // keeps working with the original. logger.debug to avoid noise.
@@ -699,8 +675,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       event_name: event.event_name,
       event_type: event.event_type,
       // Capability only: the private client link and PIN hash stay server-side.
-      client_pin_entry_available: !adminPreview && accessLevel !== 'slideshow' && parseBooleanInput(event.client_access_enabled, false)
-        && parseBooleanInput(event.client_pin_entry_enabled, false) && !!event.client_password_hash,
+      client_pin_entry_available: !adminPreview && accessLevel !== 'slideshow' && isPinEntryEnabled(event),
       // Calendar date, like /info and the login responses: GalleryAuthContext
       // refreshes its cached event from this payload, so a pg Date here
       // would reintroduce the previous-day shift west of UTC.
@@ -919,9 +894,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // installs that haven't opted in keep loading the original
         // (current behaviour). Skipped for videos since they don't
         // get a preview tier; lightbox will use the original .url.
-        preview_url: (lightboxPreviewEnabled || originalNeedsPreview(photo) || originalWithheld)
-            && photo.media_type !== 'video'
-            && (!photo.mime_type || !photo.mime_type.startsWith('video/'))
+        preview_url: (lightboxPreviewEnabled || originalNeedsPreview(photo) || originalWithheld) && !isVideo
           ? previewUrl
           : null,
         // Slideshow source (#1015). Same preview tier, but emitted
@@ -931,8 +904,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // "no crop" fit letterbox an already-cropped frame. The preview
         // route generates lazily and redirects to the original on any
         // failure, so this is safe even where no preview exists yet.
-        slideshow_url: photo.media_type !== 'video'
-            && (!photo.mime_type || !photo.mime_type.startsWith('video/'))
+        slideshow_url: !isVideo
           ? previewUrl
           : null,
         // Full-resolution zoom (issue 1733): where the lightbox may load the

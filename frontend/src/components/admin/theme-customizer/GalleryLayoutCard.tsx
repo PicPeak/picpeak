@@ -39,6 +39,28 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
   const masonryMode: MasonryPickerMode = masonryModeOf(localTheme.gallerySettings?.masonryMode);
   const isPremium = localTheme.galleryLayout === 'gallery-premium';
   const premium = premiumColumns(localTheme.gallerySettings);
+  // The same control for grid, masonry columns and mosaic.
+  const thumbnailScaleField = (
+    <div>
+      <label className="block text-sm font-medium text-body mb-2">
+        {t('branding.thumbnailScale', 'Thumbnail Scale')}
+      </label>
+      <select
+        value={localTheme.gallerySettings?.thumbnailScale || 'md'}
+        onChange={(e) => updateGallerySettings('thumbnailScale', e.target.value)}
+        className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
+      >
+        <option value="xs">{t('branding.thumbnailScaleOptions.xs', 'XS — Most photos')}</option>
+        <option value="sm">{t('branding.thumbnailScaleOptions.sm', 'SM — More photos')}</option>
+        <option value="md">{t('branding.thumbnailScaleOptions.md', 'MD — Default')}</option>
+        <option value="lg">{t('branding.thumbnailScaleOptions.lg', 'LG — Larger photos')}</option>
+        <option value="xl">{t('branding.thumbnailScaleOptions.xl', 'XL — Largest photos')}</option>
+      </select>
+      <p className="text-xs text-muted mt-1">
+        {t('branding.thumbnailScaleHint', 'Adjusts column count relative to the base grid columns')}
+      </p>
+    </div>
+  );
 
   return (
     <Card className="p-6">
@@ -171,25 +193,7 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
                   </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-body mb-2">
-                  {t('branding.thumbnailScale', 'Thumbnail Scale')}
-                </label>
-                <select
-                  value={localTheme.gallerySettings?.thumbnailScale || 'md'}
-                  onChange={(e) => updateGallerySettings('thumbnailScale', e.target.value)}
-                  className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
-                >
-                  <option value="xs">{t('branding.thumbnailScaleOptions.xs', 'XS — Most photos')}</option>
-                  <option value="sm">{t('branding.thumbnailScaleOptions.sm', 'SM — More photos')}</option>
-                  <option value="md">{t('branding.thumbnailScaleOptions.md', 'MD — Default')}</option>
-                  <option value="lg">{t('branding.thumbnailScaleOptions.lg', 'LG — Larger photos')}</option>
-                  <option value="xl">{t('branding.thumbnailScaleOptions.xl', 'XL — Largest photos')}</option>
-                </select>
-                <p className="text-xs text-muted mt-1">
-                  {t('branding.thumbnailScaleHint', 'Adjusts column count relative to the base grid columns')}
-                </p>
-              </div>
+              {thumbnailScaleField}
             </>
           )}
 
@@ -311,27 +315,7 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
               </div>
 
               {/* Thumbnail scale - only for columns mode */}
-              {masonryMode === 'columns' && (
-                <div>
-                  <label className="block text-sm font-medium text-body mb-2">
-                    {t('branding.thumbnailScale', 'Thumbnail Scale')}
-                  </label>
-                  <select
-                    value={localTheme.gallerySettings?.thumbnailScale || 'md'}
-                    onChange={(e) => updateGallerySettings('thumbnailScale', e.target.value)}
-                    className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
-                  >
-                    <option value="xs">{t('branding.thumbnailScaleOptions.xs', 'XS — Most photos')}</option>
-                    <option value="sm">{t('branding.thumbnailScaleOptions.sm', 'SM — More photos')}</option>
-                    <option value="md">{t('branding.thumbnailScaleOptions.md', 'MD — Default')}</option>
-                    <option value="lg">{t('branding.thumbnailScaleOptions.lg', 'LG — Larger photos')}</option>
-                    <option value="xl">{t('branding.thumbnailScaleOptions.xl', 'XL — Largest photos')}</option>
-                  </select>
-                  <p className="text-xs text-muted mt-1">
-                    {t('branding.thumbnailScaleHint', 'Adjusts column count relative to the base grid columns')}
-                  </p>
-                </div>
-              )}
+              {masonryMode === 'columns' && thumbnailScaleField}
 
               {/* Row-specific settings - show for all row-based modes */}
               {(masonryMode === 'rows' || masonryMode === 'flickr') && (
@@ -427,27 +411,7 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
             </>
           )}
 
-          {localTheme.galleryLayout === 'mosaic' && (
-            <div>
-              <label className="block text-sm font-medium text-body mb-2">
-                {t('branding.thumbnailScale', 'Thumbnail Scale')}
-              </label>
-              <select
-                value={localTheme.gallerySettings?.thumbnailScale || 'md'}
-                onChange={(e) => updateGallerySettings('thumbnailScale', e.target.value)}
-                className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
-              >
-                <option value="xs">{t('branding.thumbnailScaleOptions.xs', 'XS — Most photos')}</option>
-                <option value="sm">{t('branding.thumbnailScaleOptions.sm', 'SM — More photos')}</option>
-                <option value="md">{t('branding.thumbnailScaleOptions.md', 'MD — Default')}</option>
-                <option value="lg">{t('branding.thumbnailScaleOptions.lg', 'LG — Larger photos')}</option>
-                <option value="xl">{t('branding.thumbnailScaleOptions.xl', 'XL — Largest photos')}</option>
-              </select>
-              <p className="text-xs text-muted mt-1">
-                {t('branding.thumbnailScaleHint', 'Adjusts column count relative to the base grid columns')}
-              </p>
-            </div>
-          )}
+          {localTheme.galleryLayout === 'mosaic' && thumbnailScaleField}
         </div>
       )}
     </Card>

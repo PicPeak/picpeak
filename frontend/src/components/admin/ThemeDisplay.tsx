@@ -2,17 +2,11 @@ import React from 'react';
 import {
   Palette,
   Type,
-  Grid3X3,
-  Layers,
-  Play,
-  Clock,
-  LayoutGrid,
   Layout,
-  Columns,
-  Film
 } from 'lucide-react';
-import { ThemeConfig, GalleryLayoutType, GALLERY_THEME_PRESETS } from '../../types/theme.types';
+import { ThemeConfig, GALLERY_THEME_PRESETS } from '../../types/theme.types';
 import { useTranslation } from 'react-i18next';
+import { layoutIconComponents } from './theme-customizer/icons';
 
 interface ThemeDisplayProps {
   theme: ThemeConfig | string;
@@ -20,16 +14,6 @@ interface ThemeDisplayProps {
   className?: string;
   showDetails?: boolean;
 }
-
-const layoutIcons: Record<GalleryLayoutType, React.ReactNode> = {
-  grid: <Grid3X3 className="w-4 h-4" />,
-  masonry: <Layers className="w-4 h-4" />,
-  carousel: <Play className="w-4 h-4" />,
-  timeline: <Clock className="w-4 h-4" />,
-  mosaic: <LayoutGrid className="w-4 h-4" />,
-  'gallery-premium': <Columns className="w-4 h-4" />,
-  'gallery-story': <Film className="w-4 h-4" />
-};
 
 export const ThemeDisplay: React.FC<ThemeDisplayProps> = ({ 
   theme, 
@@ -76,6 +60,7 @@ export const ThemeDisplay: React.FC<ThemeDisplayProps> = ({
   }
   
   const galleryLayout = themeConfig.galleryLayout || 'grid';
+  const LayoutIcon = layoutIconComponents[galleryLayout];
   
   return (
     <div className={`space-y-3 ${className}`}>
@@ -86,7 +71,7 @@ export const ThemeDisplay: React.FC<ThemeDisplayProps> = ({
           <span className="text-sm font-medium text-body">{themeName}</span>
         </div>
         <div className="flex items-center gap-2 text-sm text-body">
-          {layoutIcons[galleryLayout]}
+          {LayoutIcon && <LayoutIcon className="w-4 h-4" />}
           <span className="capitalize">{t(`branding.layoutDescriptions.${galleryLayout}`)}</span>
         </div>
       </div>

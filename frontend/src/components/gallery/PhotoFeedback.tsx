@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { feedbackService } from '../../services/feedback.service';
+import { FEEDBACK_SETTINGS_STALE_TIME, useGalleryFeedbackSettings } from '../../hooks/useGalleryFeedbackSettings';
 import { PhotoReactions } from './PhotoReactions';
 import { PhotoComments } from './PhotoComments';
 import { Skeleton } from '../common';
@@ -21,13 +22,8 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
   onFeedbackUpdate
 }) => {
   // Fetch feedback settings for the gallery
-  const { data: settings, isLoading: settingsLoading } = useQuery({
-    queryKey: ['gallery-feedback-settings', gallerySlug],
-    queryFn: async () => {
-      const data = await feedbackService.getGalleryFeedbackSettings(gallerySlug);
-      return data;
-    },
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  const { data: settings, isLoading: settingsLoading } = useGalleryFeedbackSettings(gallerySlug, {
+    staleTime: FEEDBACK_SETTINGS_STALE_TIME,
   });
 
   // Fetch feedback data for the photo

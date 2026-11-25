@@ -19,6 +19,7 @@ import { boxStyle, ghostBox, gridBoxStyle, useMeasuredWindow } from './measuredW
 import { densityColumnDelta, densitySizeFactor, useGridDensity } from '../gridDensity';
 import { masonryModeOf } from './masonryMode';
 import { useViewerLikes } from './optimisticLikes';
+import { CollageChip } from './TileChips';
 
 const NO_ITEMS: WindowItem[] = [];
 
@@ -74,6 +75,15 @@ const FeedbackCountIndicators: React.FC<{ photo: Photo; withTitles?: boolean; in
     </div>
   );
 };
+
+// The placeholder grid while the container is being measured.
+const MeasuringSkeleton: React.FC<{ photos: Photo[] }> = ({ photos }) => (
+  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+    {photos.slice(0, 8).map((photo) => (
+      <div key={photo.id} className="aspect-square bg-border-token rounded-lg animate-pulse" />
+    ))}
+  </div>
+);
 
 /** Four 36px action buttons (view, download, comment, like) and their three 8px gaps. */
 const MIN_TILE_WIDTH_FOR_ACTION_ROW = 168;
@@ -211,13 +221,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
         feedbackEnabled ? <FeedbackCountIndicators photo={photo} withTitles inline={Boolean(visibilityToggle)} /> : undefined,
       )}
     >
-      {photo.type === 'collage' && (
-        <div className="absolute bottom-2 left-2">
-          <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">
-            Collage
-          </span>
-        </div>
-      )}
+      {photo.type === 'collage' && <CollageChip />}
     </PhotoCard>
   );
 };
@@ -512,6 +516,57 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     mode === 'columns' && largeGallery && containerWidth <= 0,
   );
 
+  // One absolutely placed tile at the layout's own px box: rows and flickr.
+  const renderAbsoluteTile = (
+    photo: Photo,
+    index: number,
+    box: { x: number; y: number; width: number; height: number },
+    children?: React.ReactNode,
+  ) => (
+    <PhotoCard
+      key={photo.id}
+      firstLookClassName={firstLookAboveChips(photo.type === 'collage' ? 1 : 0)}
+      photo={photo}
+      isSelected={selectedPhotos.has(photo.id)}
+      isSelectionMode={isSelectionMode}
+      onClick={() => onPhotoClick(index)}
+      onDownload={(e) => onDownload(photo, e)}
+      onToggleSelect={() => onPhotoSelect && onPhotoSelect(photo.id)}
+      className="photo-card absolute group cursor-pointer transition-all duration-300 hover:z-10"
+      style={{
+        left: box.x,
+        top: box.y,
+        width: box.width,
+        height: box.height,
+        // Issue 1733: the box is the layout's own px result, so a
+        // skipped tile occupies exactly what a rendered one would.
+        contentVisibility: 'auto',
+        containIntrinsicSize: `${box.width}px ${box.height}px`,
+      }}
+      // Lazy mount + release with Grid's bands (issue 1733); the
+      // absolute px box holds the tile either way.
+      lazy
+      inViewRootMargin={bands.load}
+      releaseRootMargin={bands.keep}
+      imageProps={{
+        src: photo.thumbnail_url || photo.url,
+        alt: photo.filename,
+        className: `w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]${dimClass(photo)}`,
+        loading: 'lazy',
+        isGallery: true,
+      }}
+      actionVariant="dark"
+      allowDownloads={allowDownloads}
+      {...tileFeedbackProps(photo, index, box.width)}
+      {...cornerProps(
+        visibilityToggle(photo),
+        feedbackEnabled ? <FeedbackCountIndicators photo={photo} inline={showVisibilityToggle} /> : undefined,
+      )}
+    >
+      {children}
+    </PhotoCard>
+  );
+
   // ROWS MODE - Google Photos style justified layout
   if (mode === 'rows') {
     // Show loading state while measuring container width
@@ -528,58 +583,12 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
       >
         {isCalculating ? (
           // Render a simple grid while calculating to get container width
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {photos.slice(0, 8).map((photo) => (
-              <div key={photo.id} className="aspect-square bg-border-token rounded-lg animate-pulse" />
-            ))}
-          </div>
+          <MeasuringSkeleton photos={photos} />
         ) : visibleItems.map((layoutItem) => {
           const index = photoIndexById.get(layoutItem.photoId);
           if (index === undefined) return null;
-          const photo = photos[index];
-
-          return (
-            <PhotoCard
-              key={photo.id}
-              firstLookClassName={firstLookAboveChips(photo.type === 'collage' ? 1 : 0)}
-              photo={photo}
-              isSelected={selectedPhotos.has(photo.id)}
-              isSelectionMode={isSelectionMode}
-              onClick={() => onPhotoClick(index)}
-              onDownload={(e) => onDownload(photo, e)}
-              onToggleSelect={() => onPhotoSelect && onPhotoSelect(photo.id)}
-              className="photo-card absolute group cursor-pointer transition-all duration-300 hover:z-10"
-              style={{
-                left: layoutItem.x,
-                top: layoutItem.y,
-                width: layoutItem.width,
-                height: layoutItem.height,
-                // Issue 1733: the box is the layout's own px result, so a
-                // skipped tile occupies exactly what a rendered one would.
-                contentVisibility: 'auto',
-                containIntrinsicSize: `${layoutItem.width}px ${layoutItem.height}px`,
-              }}
-              // Lazy mount + release with Grid's bands (issue 1733); the
-              // absolute px box holds the tile either way.
-              lazy
-              inViewRootMargin={bands.load}
-              releaseRootMargin={bands.keep}
-              imageProps={{
-                src: photo.thumbnail_url || photo.url,
-                alt: photo.filename,
-                className: `w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]${dimClass(photo)}`,
-                loading: 'lazy',
-                isGallery: true,
-              }}
-              actionVariant="dark"
-              allowDownloads={allowDownloads}
-              {...tileFeedbackProps(photo, index, layoutItem.width)}
-              {...cornerProps(
-                visibilityToggle(photo),
-                feedbackEnabled ? <FeedbackCountIndicators photo={photo} inline={showVisibilityToggle} /> : undefined,
-              )}
-            />
-          );
+          // No Collage chip in this mode, unlike flickr.
+          return renderAbsoluteTile(photos[index], index, layoutItem);
         })}
       </div>
     );
@@ -599,61 +608,12 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
         }}
       >
         {isCalculating ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {photos.slice(0, 8).map((photo) => (
-              <div key={photo.id} className="aspect-square bg-border-token rounded-lg animate-pulse" />
-            ))}
-          </div>
+          <MeasuringSkeleton photos={photos} />
         ) : visibleItems.map((box) => {
           const index = photoIndexById.get(box.photoId);
           if (index === undefined) return null;
           const photo = photos[index];
-
-          return (
-            <PhotoCard
-              key={photo.id}
-              firstLookClassName={firstLookAboveChips(photo.type === 'collage' ? 1 : 0)}
-              photo={photo}
-              isSelected={selectedPhotos.has(photo.id)}
-              isSelectionMode={isSelectionMode}
-              onClick={() => onPhotoClick(index)}
-              onDownload={(e) => onDownload(photo, e)}
-              onToggleSelect={() => onPhotoSelect && onPhotoSelect(photo.id)}
-              className="photo-card absolute group cursor-pointer transition-all duration-300 hover:z-10"
-              style={{
-                left: box.x,
-                top: box.y,
-                width: box.width,
-                height: box.height,
-                // Issue 1733, as in rows mode above.
-                contentVisibility: 'auto',
-                containIntrinsicSize: `${box.width}px ${box.height}px`,
-              }}
-              lazy
-              inViewRootMargin={bands.load}
-              releaseRootMargin={bands.keep}
-              imageProps={{
-                src: photo.thumbnail_url || photo.url,
-                alt: photo.filename,
-                className: `w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]${dimClass(photo)}`,
-                loading: 'lazy',
-                isGallery: true,
-              }}
-              actionVariant="dark"
-              allowDownloads={allowDownloads}
-              {...tileFeedbackProps(photo, index, box.width)}
-              {...cornerProps(
-                visibilityToggle(photo),
-                feedbackEnabled ? <FeedbackCountIndicators photo={photo} inline={showVisibilityToggle} /> : undefined,
-              )}
-            >
-              {photo.type === 'collage' && (
-                <div className="absolute bottom-2 left-2">
-                  <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">Collage</span>
-                </div>
-              )}
-            </PhotoCard>
-          );
+          return renderAbsoluteTile(photo, index, box, photo.type === 'collage' && <CollageChip />);
         })}
       </div>
     );
@@ -735,11 +695,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 feedbackEnabled ? <FeedbackCountIndicators photo={photo} inline={showVisibilityToggle} /> : undefined,
               )}
             >
-              {photo.type === 'collage' && (
-                <div className="absolute bottom-2 left-2">
-                  <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">Collage</span>
-                </div>
-              )}
+              {photo.type === 'collage' && <CollageChip />}
             </PhotoCard>
           );
         })}
@@ -763,11 +719,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
         // — and since #1095 each mount picks a tier from its own width, the two
         // mounts request two DIFFERENT urls. On a 1440px desktop that was 45 of
         // 62 photos downloading twice, plus 17 left on the larger file.
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {photos.slice(0, 8).map((photo) => (
-            <div key={photo.id} className="aspect-square bg-border-token rounded-lg animate-pulse" />
-          ))}
-        </div>
+        <MeasuringSkeleton photos={photos} />
       ) : photoColumns.map((column, columnIndex) => (
         <div
           key={columnIndex}

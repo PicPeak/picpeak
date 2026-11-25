@@ -23,6 +23,7 @@
  * the theme's own size.
  */
 import { createContext, useContext, useSyncExternalStore } from 'react';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '../../utils/safeStorage';
 
 export type GridDensity = 'compact' | 'default' | 'large';
 
@@ -51,13 +52,8 @@ export function layoutHasDensity(layout: string | undefined): boolean {
 }
 
 function readStored(): GridDensity {
-  try {
-    const raw = window.localStorage.getItem(GRID_DENSITY_STORAGE_KEY);
-    if (raw === 'compact' || raw === 'large') return raw;
-  } catch {
-    // ignore — fall through to the theme default
-  }
-  return 'default';
+  const raw = safeGetItem('local', GRID_DENSITY_STORAGE_KEY);
+  return raw === 'compact' || raw === 'large' ? raw : 'default';
 }
 
 let current: GridDensity | null = null;
@@ -75,12 +71,9 @@ function subscribe(notify: () => void) {
 
 export function setGridDensity(density: GridDensity): void {
   current = density;
-  try {
-    if (density === 'default') window.localStorage.removeItem(GRID_DENSITY_STORAGE_KEY);
-    else window.localStorage.setItem(GRID_DENSITY_STORAGE_KEY, density);
-  } catch {
-    // ignore — quota / disabled storage; the choice still holds for this page
-  }
+  // A dropped write (quota, disabled storage) still holds for this page.
+  if (density === 'default') safeRemoveItem('local', GRID_DENSITY_STORAGE_KEY);
+  else safeSetItem('local', GRID_DENSITY_STORAGE_KEY, density);
   subscribers.forEach((notify) => notify());
 }
 

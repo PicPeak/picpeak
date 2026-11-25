@@ -56,6 +56,26 @@ function findValidPhotoPurchaseAccess({ galleryId, photoId, accessToken, rows = 
   return null;
 }
 
+/**
+ * The valid purchase access this gallery request holds for one photo: the
+ * `access_token` (or `accessToken`) query parameter, looked up among the
+ * photo's purchases. Null without a token or without a valid purchase.
+ */
+async function requestPhotoPurchaseAccess(req, photo) {
+  const accessToken = req.query?.access_token || req.query?.accessToken || null;
+  if (!accessToken) return null;
+  // Loaded here, not at the top: the rest of this module is pure.
+  const { db } = require('../../database/db');
+  return findValidPhotoPurchaseAccess({
+    galleryId: req.event.id,
+    photoId: photo.id,
+    accessToken,
+    rows: await db('photo_purchases')
+      .where({ access_token: accessToken, gallery_id: req.event.id, photo_id: photo.id })
+      .select('id', 'gallery_id', 'photo_id', 'access_token', 'expires_at'),
+  });
+}
+
 function buildPurchasedDownloadUrl({ baseUrl = '', accessToken } = {}) {
   const normalized = String(baseUrl || '').replace(/\/$/, '');
   const path = `/purchased-downloads/${accessToken}`;
@@ -69,5 +89,6 @@ module.exports = {
   isPurchaseAccessActive,
   verifyPurchaseAccess,
   findValidPhotoPurchaseAccess,
+  requestPhotoPurchaseAccess,
   buildPurchasedDownloadUrl,
 };

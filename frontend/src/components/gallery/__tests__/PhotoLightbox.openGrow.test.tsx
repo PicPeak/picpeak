@@ -44,6 +44,7 @@ vi.mock('../../common', () => ({
 vi.mock('../VideoPlayer', () => ({ VideoPlayer: () => <div data-testid="video-player" /> }));
 
 import { PhotoLightbox } from '../PhotoLightbox';
+import { LightboxQueryWrapper } from './lightboxQueryWrapper';
 
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
 
@@ -93,20 +94,20 @@ const finger = (x: number) => ({ clientX: x, clientY: 300 });
 
 describe('PhotoLightbox opening', () => {
   it('opens as it did without a tile to grow from (a `?photo=` link)', () => {
-    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" />);
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
     expect(grow()).toBeNull();
     expect(standIn()).toBeNull();
   });
 
   it('lets the tile image go when the preview does not decode', () => {
-    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />, { wrapper: LightboxQueryWrapper });
     fireEvent.error(preview());
     expect(grow()).toBeNull();
     expect(standIn()).toBeNull();
   });
 
   it('grows the tile image from the tile to the photo, until the preview has loaded', () => {
-    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />, { wrapper: LightboxQueryWrapper });
 
     // The tile's own decoded image, in place for the first paint: nothing
     // to fetch.
@@ -133,7 +134,7 @@ describe('PhotoLightbox opening', () => {
 
   it('fades the loaded slide in over the tile image once the grow is over', () => {
     vi.useFakeTimers();
-    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />, { wrapper: LightboxQueryWrapper });
     // Laid out and clickable, but transparent over the tile image meanwhile.
     expect(preview().style.opacity).toBe('0');
 
@@ -156,13 +157,13 @@ describe('PhotoLightbox opening', () => {
     // An 800 x 533 original: its preview is 800 px wide, smaller than the
     // 1000 px stage, and the slide shows it at that size.
     const small = photos.map((photo) => ({ ...photo, width: 800, height: 533 } as Photo));
-    render(<PhotoLightbox photos={small} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    render(<PhotoLightbox photos={small} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />, { wrapper: LightboxQueryWrapper });
     expect(grow()!.style.width).toBe('800px');
     expect(grow()!.style.left).toBe('100px');
   });
 
   it('ends with a swipe, not with a tap', () => {
-    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />, { wrapper: LightboxQueryWrapper });
     fireEvent.touchStart(touchSurface(), { touches: [finger(200)] });
     fireEvent.touchEnd(touchSurface(), { touches: [], changedTouches: [finger(200)] });
     expect(grow()).not.toBeNull();
@@ -176,14 +177,14 @@ describe('PhotoLightbox opening', () => {
   });
 
   it('ends with a zoom', () => {
-    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />, { wrapper: LightboxQueryWrapper });
     fireEvent.keyDown(document, { key: '+' });
     expect(grow()).toBeNull();
   });
 
   it('with reduced motion, puts the tile image in place without the animation', () => {
     reducedMotion = true;
-    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />, { wrapper: LightboxQueryWrapper });
     expect(grow()!.style.width).toBe('1000px');
     expect(grow()!.style.visibility).toBe('');
     expect(animate).not.toHaveBeenCalled();
@@ -195,7 +196,7 @@ describe('PhotoLightbox opening', () => {
   });
 
   it('falls back to the fetched thumbnail when the tile image is gone', () => {
-    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />, { wrapper: LightboxQueryWrapper });
     fireEvent.error(grow()!);
     expect(grow()).toBeNull();
     const shown = standIn()!.querySelector('[data-priority="high"]');
@@ -205,7 +206,7 @@ describe('PhotoLightbox opening', () => {
   });
 
   it('adds no thumbnail when the tile image goes after the preview has loaded', () => {
-    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />, { wrapper: LightboxQueryWrapper });
     fireEvent.load(preview());
     fireEvent.error(grow()!);
     expect(grow()).toBeNull();
@@ -213,7 +214,7 @@ describe('PhotoLightbox opening', () => {
   });
 
   it('is for the opening photo only', () => {
-    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />, { wrapper: LightboxQueryWrapper });
     fireEvent.keyDown(document, { key: 'ArrowRight' });
     expect(grow()).toBeNull();
     expect(standIn()).toBeNull();
@@ -224,7 +225,7 @@ describe('PhotoLightbox opening', () => {
 
   it('leaves videos as they were', () => {
     const withVideo = photos.map((photo) => (photo.id === 2 ? { ...photo, media_type: 'video' } as Photo : photo));
-    render(<PhotoLightbox photos={withVideo} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    render(<PhotoLightbox photos={withVideo} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />, { wrapper: LightboxQueryWrapper });
     expect(grow()).toBeNull();
     expect(standIn()).toBeNull();
   });

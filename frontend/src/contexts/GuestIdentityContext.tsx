@@ -8,6 +8,7 @@ import {
   storeGuestIdentity,
 } from '../utils/guestIdentityStorage';
 import { isGalleryMountHeld, setDownloadIdentityGate } from '../utils/downloadIdentity';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '../utils/safeStorage';
 
 type IdentityMode = 'simple' | 'guest';
 
@@ -79,13 +80,13 @@ const TERMINAL_INVITE_STATUSES = new Set([400, 404, 409, 410]);
 // history entry, which the URL alone cannot do once a photo entry is pushed.
 const pendingInviteKey = (slug: string) => `picpeak:pending-invite:${slug}`;
 function readPendingInvite(slug: string): string | null {
-  try { return window.sessionStorage.getItem(pendingInviteKey(slug)); } catch { return null; }
+  return safeGetItem('session', pendingInviteKey(slug));
 }
+// Private mode or blocked storage drops the write: the URL copy was already
+// consumed; nothing to keep.
 function writePendingInvite(slug: string, token: string | null): void {
-  try {
-    if (token === null) window.sessionStorage.removeItem(pendingInviteKey(slug));
-    else window.sessionStorage.setItem(pendingInviteKey(slug), token);
-  } catch { /* private mode or blocked storage: the URL copy was already consumed; nothing to keep */ }
+  if (token === null) safeRemoveItem('session', pendingInviteKey(slug));
+  else safeSetItem('session', pendingInviteKey(slug), token);
 }
 
 interface GuestIdentityProviderProps {
@@ -353,7 +354,6 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
           redeemedInviteRef.current = null;
         }
         // Otherwise fail silently; the visitor falls back to the normal prompt.
-        // eslint-disable-next-line no-console
         console.warn('Failed to redeem invite token', error);
       } finally {
         invitePromiseRef.current = null;

@@ -82,7 +82,6 @@ interface PhotoCardProps {
   isLiked: boolean;
   slug: string;
   allowDownloads?: boolean;
-  useEnhancedProtection?: boolean;
   feedbackEnabled?: boolean;
   // #506: track the per-event "allow likes" toggle so the per-photo
   // Like button respects it. `feedbackEnabled` alone isn't enough —
@@ -307,7 +306,6 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   downloadChoices,
   onPickResolution,
   protectionLevel = 'standard',
-  useEnhancedProtection = false,
   useCanvasRendering = false,
   feedbackEnabled = false,
   feedbackOptions,
@@ -552,7 +550,6 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         isLiked={likedPhotoIds.has(originalPhoto.id)}
         slug={slug}
         allowDownloads={allowDownloads}
-        useEnhancedProtection={useEnhancedProtection}
         feedbackEnabled={feedbackEnabled}
         allowLikes={!!feedbackOptions?.allowLikes}
         index={photoIndex}

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { feedbackService, type FavoriteList } from '../services/feedback.service';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '../utils/safeStorage';
 
 /**
  * Named favourite lists (issue 2303): which list the bookmark saves to, the
@@ -37,22 +38,15 @@ export const favoriteListsQueryKey = (slug: string) => ['favorite-lists', slug] 
 const storageKey = (slug: string) => `picpeak:favorite-list:${slug}`;
 
 function readStoredListId(slug: string): number | null {
-  try {
-    const raw = window.localStorage.getItem(storageKey(slug));
-    const id = raw === null ? NaN : Number(raw);
-    return Number.isSafeInteger(id) && id > 0 ? id : null;
-  } catch {
-    return null;
-  }
+  const raw = safeGetItem('local', storageKey(slug));
+  const id = raw === null ? NaN : Number(raw);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
+// A dropped write is not remembered; the choice still holds for this visit.
 function writeStoredListId(slug: string, listId: number | null) {
-  try {
-    if (listId === null) window.localStorage.removeItem(storageKey(slug));
-    else window.localStorage.setItem(storageKey(slug), String(listId));
-  } catch {
-    // Not remembered; the choice still holds for this visit.
-  }
+  if (listId === null) safeRemoveItem('local', storageKey(slug));
+  else safeSetItem('local', storageKey(slug), String(listId));
 }
 
 /** Is the photo in the active list, from the photo's my_feedback? */

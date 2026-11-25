@@ -1,3 +1,5 @@
+const { eventWatermarksDownloads } = require('../../utils/watermarkDownloads');
+
 function isGalleryPriced(event) {
   return !!(event && (event.is_priced === true || event.is_priced === 1 || event.is_priced === '1'));
 }
@@ -84,9 +86,7 @@ async function resolvePhotoSalesWatermarkSettings(event, _photo) {
     };
   }
 
-  const eventEnabled = event.watermark_downloads === true
-    || event.watermark_downloads === 1
-    || event.watermark_downloads === '1';
+  const eventEnabled = eventWatermarksDownloads(event);
   const shouldApply = (settings && settings.enabled) || eventEnabled;
   if (!shouldApply) return null;
   return {

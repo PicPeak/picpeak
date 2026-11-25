@@ -12,6 +12,7 @@ import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { PhotoFeedback } from './PhotoFeedback';
 import { lightboxImageLongEdge, lightboxImageUrl } from './imageTiers';
 import { feedbackService, type ColorLabel, type KeybindMode, type PhotoDecision as Decision } from '../../services/feedback.service';
+import { FEEDBACK_SETTINGS_STALE_TIME, useGalleryFeedbackSettings } from '../../hooks/useGalleryFeedbackSettings';
 import { PhotoColorLabels } from './PhotoColorLabels';
 import { PhotoDecision } from './PhotoDecision';
 import { resolveFeedbackKey, colorShortcutHints, isTypingTarget } from '../../utils/feedbackKeybinds';
@@ -55,11 +56,9 @@ interface PhotoLightboxProps {
   feedbackEnabled?: boolean;
   allowDownloads?: boolean;
   protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
-  useEnhancedProtection?: boolean;
   useCanvasRendering?: boolean;
   initialShowFeedback?: boolean;
   onFeedbackChange?: (toggledPhotoId?: number) => void;
-  disableRightClick?: boolean;
   enableDevtoolsProtection?: boolean;
   // When true, surface each photo's original camera filename in the
   // bottom toolbar — useful for photographers matching guest selections
@@ -103,11 +102,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   feedbackEnabled = false,
   allowDownloads = true,
   protectionLevel = 'standard',
-  useEnhancedProtection = false,
   useCanvasRendering = false,
   initialShowFeedback = false,
   onFeedbackChange,
-  disableRightClick = false,
   enableDevtoolsProtection = false,
   showOriginalFilename = false,
   people,
@@ -147,20 +144,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const [commitDirection, setCommitDirection] = useState<-1 | 1>(1);
   const [showFeedback, setShowFeedback] = useState(initialShowFeedback);
   const [isSmallScreen, setIsSmallScreen] = useState<boolean>(typeof window !== 'undefined' ? window.innerWidth < 640 : false);
-  const [feedbackSettings, setFeedbackSettings] = useState<{
-    feedback_enabled?: boolean;
-    allow_likes?: boolean;
-    allow_favorites?: boolean;
-    allow_ratings?: boolean;
-    allow_comments?: boolean;
-    allow_annotations?: boolean;
-    allow_reactions?: boolean;
-    allow_color_labels?: boolean;
-    allow_decisions?: boolean;
-    keybind_mode?: KeybindMode;
-    show_feedback_to_guests?: boolean;
-    require_name_email?: boolean;
-  } | null>(null);
+  const { data: feedbackSettings } = useGalleryFeedbackSettings(slug, {
+    staleTime: FEEDBACK_SETTINGS_STALE_TIME,
+  });
   // The photo whose slide shows its fallback thumbnail instead of itself.
   const [fallbackPhotoId, setFallbackPhotoId] = useState<Photo['id'] | null>(null);
   // Annotate mode (issue 1733): drawing on the photo for a comment. While it
@@ -456,7 +442,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const downloadRef = useRef<() => void>(() => {});
   
   // DevTools protection - enabled by individual setting OR legacy protection level
-  const devToolsEnabled = enableDevtoolsProtection || (useEnhancedProtection && (protectionLevel === 'enhanced' || protectionLevel === 'maximum'));
+  const devToolsEnabled = enableDevtoolsProtection || protectionLevel === 'enhanced' || protectionLevel === 'maximum';
 
   useDevToolsProtection({
     enabled: devToolsEnabled,
@@ -474,21 +460,6 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     },
     redirectOnDetection: false, // Don't redirect, just close lightbox
   });
-
-  // Right-click blocking in lightbox
-  useEffect(() => {
-    if (!disableRightClick) return;
-
-    const handleContextMenu = (e: MouseEvent) => {
-      e.preventDefault();
-      return false;
-    };
-
-    document.addEventListener('contextmenu', handleContextMenu);
-    return () => {
-      document.removeEventListener('contextmenu', handleContextMenu);
-    };
-  }, [disableRightClick]);
 
   // The keydown effect below is registered with [currentIndex] deps, so its
   // closure would still hold the settings from the moment the lightbox
@@ -604,20 +575,6 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       document.body.classList.remove('protection-maximum', 'protection-enhanced');
     };
   }, [currentIndex]);
-
-  // Load feedback settings once
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const settings = await feedbackService.getGalleryFeedbackSettings(slug);
-        if (mounted) setFeedbackSettings(settings as any);
-      } catch {
-        // ignore
-      }
-    })();
-    return () => { mounted = false; };
-  }, [slug]);
 
   // Seed from the list payload (issue 1733): a rating given on the tile is
   // already in the gallery-photos cache, so the stars are right before the
@@ -1255,7 +1212,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     : null;
 
   // Apply protection class to the lightbox container
-  const lightboxClass = useEnhancedProtection ? 
+  const lightboxClass = protectionLevel !== 'basic' ?
     `fixed inset-0 bg-black z-50 flex items-center justify-center protected-image protection-${protectionLevel}` :
     'fixed inset-0 bg-black z-50 flex items-center justify-center';
 

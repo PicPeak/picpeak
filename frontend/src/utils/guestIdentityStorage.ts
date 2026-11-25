@@ -24,6 +24,7 @@
  */
 
 import type { GuestIdentity } from '../services/guests.service';
+import { safeGetItem, safeRemoveItem, safeSetItem, type StorageKind } from './safeStorage';
 
 const TOKEN_KEY_PREFIX = 'guest_token_';
 const IDENTITY_KEY_PREFIX = 'guest_identity_';
@@ -44,33 +45,23 @@ const isBrowser = typeof window !== 'undefined';
  * failure, the visitor would try again, and the retry would insert the second
  * gallery_guests row this whole change exists to prevent.
  */
-function isUsable(storage: Storage): boolean {
+function isUsable(kind: StorageKind): boolean {
   const probe = '__picpeak_probe__';
-  try {
-    storage.setItem(probe, '1');
-    storage.removeItem(probe);
-    return true;
-  } catch {
-    return false;
-  }
+  if (!safeSetItem(kind, probe, '1')) return false;
+  safeRemoveItem(kind, probe);
+  return true;
 }
 
 // Resolved once. getGuestToken() runs on every API request through the axios
 // interceptor, and probing a write each time would be wasteful.
-let resolvedStorage: Storage | null | undefined;
+let resolvedStorage: StorageKind | null | undefined;
 
-const getStorage = (): Storage | null => {
+const getStorage = (): StorageKind | null => {
   if (!isBrowser) return null;
   if (resolvedStorage !== undefined) return resolvedStorage;
 
-  for (const pick of [() => window.localStorage, () => window.sessionStorage]) {
-    let candidate: Storage;
-    try {
-      candidate = pick();
-    } catch {
-      continue;
-    }
-    if (candidate && isUsable(candidate)) {
+  for (const candidate of ['local', 'session'] as const) {
+    if (isUsable(candidate)) {
       resolvedStorage = candidate;
       return resolvedStorage;
     }
@@ -120,14 +111,8 @@ function isExpired(token: string): boolean {
  * reads are resolved against. Two things can live there — a pre-#1265
  * identity the previous build wrote, and the quota fallback below.
  */
-function secondaryStore(primary: Storage): Storage | null {
-  if (!isBrowser) return null;
-  try {
-    const candidate = window.sessionStorage;
-    return candidate && candidate !== primary ? candidate : null;
-  } catch {
-    return null;
-  }
+function secondaryStore(primary: StorageKind): StorageKind | null {
+  return primary === 'session' ? null : 'session';
 }
 
 /**
@@ -139,22 +124,20 @@ function secondaryStore(primary: Storage): Storage | null {
  * a token is inert. Anything half-written is removed again before reporting
  * failure, so a store either holds the whole pair or none of it.
  */
-function writePair(target: Storage, slug: string, identityRaw: string, token: string): boolean {
+function writePair(target: StorageKind, slug: string, identityRaw: string, token: string): boolean {
   const tokenKey = `${TOKEN_KEY_PREFIX}${slug}`;
   const identityKey = `${IDENTITY_KEY_PREFIX}${slug}`;
-  try {
-    target.setItem(identityKey, identityRaw);
-    target.setItem(tokenKey, token);
+  if (safeSetItem(target, identityKey, identityRaw) && safeSetItem(target, tokenKey, token)) {
     return true;
-  } catch {
-    try {
-      target.removeItem(tokenKey);
-      target.removeItem(identityKey);
-    } catch {
-      // Nothing more to do.
-    }
-    return false;
   }
+  removePair(target, slug);
+  return false;
+}
+
+/** Best-effort: storage that refuses the removal held nothing to remove. */
+function removePair(target: StorageKind, slug: string): void {
+  safeRemoveItem(target, `${TOKEN_KEY_PREFIX}${slug}`);
+  safeRemoveItem(target, `${IDENTITY_KEY_PREFIX}${slug}`);
 }
 
 // Slugs whose pair could not be promoted into the primary store on this page
@@ -188,49 +171,27 @@ function readPair(slug: string): { token: string | null; identityRaw: string | n
   const tokenKey = `${TOKEN_KEY_PREFIX}${slug}`;
   const identityKey = `${IDENTITY_KEY_PREFIX}${slug}`;
 
-  let token: string | null = null;
-  let identityRaw: string | null = null;
-  try {
-    token = primary.getItem(tokenKey);
-    identityRaw = primary.getItem(identityKey);
-  } catch {
-    return { token: null, identityRaw: null };
-  }
+  const token = safeGetItem(primary, tokenKey);
+  const identityRaw = safeGetItem(primary, identityKey);
 
   const secondary = secondaryStore(primary);
   if (!secondary) return { token, identityRaw };
 
-  let secondaryToken: string | null = null;
-  let secondaryIdentity: string | null = null;
-  try {
-    secondaryToken = secondary.getItem(tokenKey);
-    secondaryIdentity = secondary.getItem(identityKey);
-  } catch {
-    return { token, identityRaw };
-  }
+  const secondaryToken = safeGetItem(secondary, tokenKey);
+  const secondaryIdentity = safeGetItem(secondary, identityKey);
 
   if (token) {
     // Primary wins. Drop the leftover so it can never be promoted later.
-    if (secondaryToken || secondaryIdentity) {
-      try {
-        secondary.removeItem(tokenKey);
-        secondary.removeItem(identityKey);
-      } catch {
-        // Best-effort.
-      }
-    }
+    if (secondaryToken || secondaryIdentity) removePair(secondary, slug);
     return { token, identityRaw };
   }
 
   if (!secondaryToken) return { token: null, identityRaw };
 
   if (!promotionFailed.has(slug) && secondaryIdentity && writePair(primary, slug, secondaryIdentity, secondaryToken)) {
-    try {
-      secondary.removeItem(tokenKey);
-      secondary.removeItem(identityKey);
-    } catch {
-      // The copy stays behind; the primary now wins on every later read.
-    }
+    // A refused removal leaves the copy behind; the primary now wins on
+    // every later read.
+    removePair(secondary, slug);
   } else if (secondaryIdentity) {
     promotionFailed.add(slug);
   }
@@ -245,14 +206,7 @@ export function storeGuestIdentity(slug: string, identity: GuestIdentity, token:
   if (writePair(storage, slug, identityRaw, token)) {
     // A fresh registration supersedes anything the secondary store holds.
     const secondary = secondaryStore(storage);
-    if (secondary) {
-      try {
-        secondary.removeItem(`${TOKEN_KEY_PREFIX}${slug}`);
-        secondary.removeItem(`${IDENTITY_KEY_PREFIX}${slug}`);
-      } catch {
-        // Best-effort.
-      }
-    }
+    if (secondary) removePair(secondary, slug);
     return;
   }
 
@@ -307,26 +261,9 @@ export function clearGuestIdentity(slug: string): void {
   promotionFailed.delete(slug);
   // Clear BOTH stores: a copy left behind in sessionStorage would be migrated
   // straight back on the next read, silently undoing "forget me".
-  const stores: Storage[] = [];
   const primary = getStorage();
-  if (primary) stores.push(primary);
-  if (isBrowser) {
-    try {
-      if (window.sessionStorage && !stores.includes(window.sessionStorage)) {
-        stores.push(window.sessionStorage);
-      }
-    } catch {
-      // sessionStorage unavailable — nothing to clear there.
-    }
-  }
-  for (const storage of stores) {
-    try {
-      storage.removeItem(`${TOKEN_KEY_PREFIX}${slug}`);
-      storage.removeItem(`${IDENTITY_KEY_PREFIX}${slug}`);
-    } catch {
-      // Best-effort.
-    }
-  }
+  if (primary) removePair(primary, slug);
+  if (isBrowser && primary !== 'session') removePair('session', slug);
 
   // `storage` events fire only in OTHER documents, so a clear triggered inside
   // this tab (the axios interceptor dropping a server-rejected identity) would

@@ -2,7 +2,6 @@ const express = require('express');
 const { db, logActivity } = require('../../database/db');
 const { originalAssetDenial } = require('../../services/galleryAssetPolicy');
 const archiver = require('archiver');
-const path = require('path');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
 const { parsePositiveInt32 } = require('../../utils/parsers');
 const router = express.Router();
@@ -32,7 +31,7 @@ const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../../services
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
 const downloadZipService = require('../../services/downloadZipService');
-const { findValidPhotoPurchaseAccess } = require('../../modules/photoSales/purchaseAccess');
+const { requestPhotoPurchaseAccess } = require('../../modules/photoSales/purchaseAccess');
 const { isGalleryPriced, resolveForcedWatermarkSettingsForPhoto } = require('../../modules/photoSales/priceRules');
 const folderTree = require('../../services/folderTreeService');
 const {
@@ -49,19 +48,20 @@ const {
   parseResolution,
 } = require('../../utils/downloadResolutions');
 const {
-  applyPhotoVisibilityFilter, canSeeHiddenPhotos, seesWholeSource, isPhotoHiddenFromViewer, livePhotos, wherePhotoProcessed, viewerOf,
+  canSeeHiddenPhotos, seesWholeSource, isPhotoHiddenFromViewer, livePhotos, wherePhotoProcessed, viewerOf,
 } = require('../../utils/photoVisibility');
 const {
   getUseOriginalFilenames,
   pickRawDownloadName,
   getZipEntryNames,
+  zipEntryPath,
 } = require('../../services/downloadFilenameService');
 const { buildContentDisposition, uniquifyZipNames } = require('../../utils/filenameSanitizer');
 const { getStorage } = require('../../services/storage');
 const { createArchiveStreamGuard, streamingArchiveAdmission, paceArchive } = require('../../utils/archiveStreamGuard');
 const {
   downloadLimitOf, currentDownloadLimit, grantDownloads, checkDownloads, downloadLimitError,
-  settleWhenDone, responseDelivered, refuseDownload, isPreviewOnly, clientOnlyError,
+  settleWhenDone, responseDelivered, refuseDownload, isPreviewOnly, clientOnlyError, galleryActor,
 } = require('../../services/downloadQuota');
 const fs = require('fs');
 
@@ -144,13 +144,6 @@ function parseByteRange(header, size) {
   if (start > end || start >= size) return null;
   return { start, end: Math.min(end, size - 1) };
 }
-function galleryActor(req) {
-  // Portal tokens run as accessLevel 'guest' but carry via:'customer'
-  // (req.viaCustomer); PIN-client logins carry accessLevel 'client'.
-  // Both are customers, not guests (codex review of #849, final round).
-  const isCustomer = !!(req && (req.viaCustomer || req.accessLevel === 'client'));
-  return { type: isCustomer ? 'customer' : 'guest' };
-}
 // The guest a download is logged under (issue 2503): set by guestDownloadGate
 // only while the gallery asks for the guest's identity before downloading.
 // Spread into each access_logs row, so with the setting off the row is
@@ -224,29 +217,18 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     const photoDenial = await originalAssetDenial(req, photo);
     if (photoDenial) return res.status(403).json(photoDenial);
 
-    const accessToken = req.query?.access_token || req.query?.accessToken || null;
-    const purchasedAccess = accessToken
-      ? findValidPhotoPurchaseAccess({
-        galleryId: req.event.id,
-        photoId: photo.id,
-        accessToken,
-        rows: await db('photo_purchases')
-          .where({ access_token: accessToken, gallery_id: req.event.id, photo_id: photo.id })
-          .select('id', 'gallery_id', 'photo_id', 'access_token', 'expires_at'),
-      })
-      : null;
+    const purchasedAccess = await requestPhotoPurchaseAccess(req, photo);
 
     // Download resolution (#858). Resolved BEFORE the counters below: a
     // rejected resolution must not inflate download stats, which a guest
     // could otherwise do by replaying ?resolution=bogus.
-    const isVideo = photo.media_type === 'video'
-      || (photo.mime_type && photo.mime_type.startsWith('video/'));
+    const photoIsVideo = isVideo(photo);
     const policy = await resolveEventDownloadPolicy(req.event);
     const requested = pickRequestedResolution(policy, req.query.resolution);
     if (requested === null) {
       return res.status(400).json({ error: 'Resolution not available for this gallery' });
     }
-    const box = isVideo ? null : parseResolution(requested);
+    const box = photoIsVideo ? null : parseResolution(requested);
 
     // Download limit (issue 1560): a share-link guest of a limited gallery
     // gets the preview-size copy and never draws on the quota; a video has
@@ -255,14 +237,14 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     // the server before the checkout: the free tier is only downloadable
     // through the cart, so without a valid purchase access every photo
     // (free and paid) ships as the watermarked low-quality preview.
-    const photoSalesLocked = purchasedAccess ? false : (isGalleryPriced(req.event) && !isVideo);
+    const photoSalesLocked = purchasedAccess ? false : (isGalleryPriced(req.event) && !photoIsVideo);
     if (await isPreviewOnly(req) || photoSalesLocked) {
       const previewSettings = photoSalesLocked
         ? await resolveForcedWatermarkSettingsForPhoto(req.event, photo)
         : await resolveWatermarkSettingsForPhoto(req.event, photo);
       const preview = await renderPreviewForDownload(photo, previewSettings);
       if (!preview) {
-        return isVideo
+        return photoIsVideo
           ? res.status(403).json(clientOnlyError())
           : res.status(404).json({ error: 'Preview not available' });
       }
@@ -390,10 +372,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       // getToFile timed out, the tmp filesystem filled up, or sharp failed —
       // and reporting an operational failure as 404 tells the guest their
       // photo does not exist and tells us nothing.
-      const gone = renderError.code === 'ENOENT'
-        || renderError.name === 'NoSuchKey'
-        || renderError.name === 'NotFound'
-        || renderError.$metadata?.httpStatusCode === 404;
+      const gone = isStorageNotFoundError(renderError);
       logger.error('Failed to render photo for download', {
         slug: req.params.slug,
         photoId,
@@ -499,10 +478,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
           ? await storage.getRange(storageKey, range.start, range.end)
           : await storage.get(storageKey);
       } catch (fetchError) {
-        const gone = fetchError.code === 'ENOENT'
-          || fetchError.name === 'NoSuchKey'
-          || fetchError.name === 'NotFound'
-          || fetchError.$metadata?.httpStatusCode === 404;
+        const gone = isStorageNotFoundError(fetchError);
         logger.error('Failed to open photo stream for download', {
           slug: req.params.slug,
           photoId,
@@ -842,20 +818,11 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // Fetch photos — exclude photos in categories that disabled downloads (#640).
     // Uncategorised photos are always included, as is a photo whose
     // category_id points at a deleted category (the LEFT JOIN's null).
-    const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
     // Only what the gallery list shows: no photo still processing (or failed).
-    const photos = await applyPhotoVisibilityFilter(
-      wherePhotoProcessed(livePhotos(db))
-        .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
-        .where('photos.event_id', req.event.id)
-        .where(function () {
-          this.whereNull('photos.category_id')
-            .orWhere('photo_categories.allow_downloads', true)
-            .orWhereNull('photo_categories.allow_downloads');
-        })
-        .where(folderTree.whereFolderAllowsDownload(blockedFolders)),
-      viewerOf(req)
-    )
+    // The same set a download job of this viewer would package.
+    const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
+    const photos = await downloadJobService
+      .photoQuery(req.event.id, null, viewerOf(req), blockedFolders)
       .select('photos.*')
       .orderBy('photos.type', 'asc')
       .orderBy('photos.uploaded_at', 'desc');
@@ -959,13 +926,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       const photo = photos[i];
       const storageKey = resolvePhotoStorageKey(req.event, photo);
       const entryName = bulkEntryNames[i];
-      let archiveName;
-      if (hasMultipleTypes) {
-        const folderName = photo.type === 'individual' ? 'Individual Photos' : 'Collages';
-        archiveName = path.join(folderName, entryName);
-      } else {
-        archiveName = entryName;
-      }
+      const archiveName = zipEntryPath(photo, entryName, hasMultipleTypes);
 
       try {
         // Verify the source exists BEFORE appending — but only for local
@@ -1116,21 +1077,10 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     if (photoIds.length > MAX_SELECTED_PHOTOS) return refuseTooManyPhotos(res);
 
     // Fetch photos — exclude photos in categories that disabled downloads (#640).
-    // Same LEFT JOIN pattern as the download-all endpoint.
+    // The same set as the download-all endpoint, narrowed to the selection.
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
-    const photos = await applyPhotoVisibilityFilter(
-      wherePhotoProcessed(livePhotos(db))
-        .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
-        .where('photos.event_id', req.event.id)
-        .whereIn('photos.id', photoIds)
-        .where(function () {
-          this.whereNull('photos.category_id')
-            .orWhere('photo_categories.allow_downloads', true)
-            .orWhereNull('photo_categories.allow_downloads');
-        })
-        .where(folderTree.whereFolderAllowsDownload(blockedFolders)),
-      viewerOf(req)
-    )
+    const photos = await downloadJobService
+      .photoQuery(req.event.id, photoIds, viewerOf(req), blockedFolders)
       .select('photos.*')
       .orderBy('photos.uploaded_at', 'desc');
 

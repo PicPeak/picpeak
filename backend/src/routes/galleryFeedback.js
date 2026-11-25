@@ -8,6 +8,7 @@ const { resolveGuest, scopeGuestToFeedback, downloadIdentityRequired } = require
 const feedbackService = require('../services/feedbackService');
 const feedbackModeration = require('../services/feedbackModeration');
 const selectionSubmissions = require('../services/selectionSubmissions');
+const { scopeToViewer } = selectionSubmissions;
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const {
@@ -28,12 +29,54 @@ const favoriteLists = require('../services/favoriteLists');
 // Most photos one bulk rating request may name (issue 1733).
 const BULK_RATING_MAX_PHOTOS = 200;
 
+// The 401 a write gets without the guest identity it needs, or for a guest
+// merged away or deleted while the request ran: the answer resolveGuest
+// gives the next request from that token.
+const GUEST_IDENTITY_REQUIRED_BODY = Object.freeze({ error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' });
+
+// Handed in (issue 1733, A1): the picks, or the approve / reject, are frozen
+// until an admin reopens the submission. 409 with a code the UI explains.
+function lockedBody(result) {
+  return {
+    error: result.kind === 'approval'
+      ? 'The edited photos are approved; the decisions are locked'
+      : 'The selection is finished; the picks are locked',
+    code: result.kind === 'approval' ? 'APPROVAL_LOCKED' : 'SELECTION_LOCKED',
+    kind: result.kind,
+    submitted_at: result.submitted_at,
+  };
+}
+
 /**
- * The event-level checks every feedback write passes before a photo is looked
- * at, shared by the single and the bulk route so they cannot drift. Returns
- * the refusal to send, or null.
+ * Charge `count` units of the `actionType` budget. Awaits the middleware
+ * itself: a rejected request gets its 429 and next() is not called. True
+ * when that answer has been sent and the route must stop.
  */
-function feedbackWriteRefusal(req, settings, feedbackType) {
+async function rateLimited(req, res, actionType, count) {
+  await feedbackRateLimit(actionType, count)(req, res, (err) => { if (err) throw err; });
+  return res.headersSent;
+}
+
+/**
+ * This event's photo, if this viewer may give or read feedback on it. A
+ * client-hidden photo does not exist for a viewer who cannot see it: no
+ * reading its comments and counts, no adding to them. Nor does one the worker
+ * has not finished or failed on: the gallery list leaves it out
+ * (wherePhotoProcessed). Null otherwise; the routes answer 404.
+ */
+async function viewablePhoto(req, photoId) {
+  const photo = await livePhotos(db)
+    .where({ id: photoId, event_id: req.event.id })
+    .first();
+  if (!photo || isPhotoHiddenFromViewer(photo, viewerOf(req)) || !isPhotoProcessed(photo)) return null;
+  return photo;
+}
+
+/**
+ * Feedback on, and in guest identity mode a guest: the first checks of every
+ * feedback write and of a hand-over. Returns the refusal to send, or null.
+ */
+function feedbackIdentityRefusal(req, settings) {
   if (!settings.feedback_enabled) {
     return { status: 403, body: { error: 'Feedback is not enabled for this event' } };
   }
@@ -44,9 +87,20 @@ function feedbackWriteRefusal(req, settings, feedbackType) {
   // already dropped a guest of another gallery).
   if (settings.identity_mode === 'guest') {
     if (!req.guest) {
-      return { status: 401, body: { error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' } };
+      return { status: 401, body: GUEST_IDENTITY_REQUIRED_BODY };
     }
   }
+  return null;
+}
+
+/**
+ * The event-level checks every feedback write passes before a photo is looked
+ * at, shared by the single and the bulk route so they cannot drift. Returns
+ * the refusal to send, or null.
+ */
+function feedbackWriteRefusal(req, settings, feedbackType) {
+  const identityRefusal = feedbackIdentityRefusal(req, settings);
+  if (identityRefusal) return identityRefusal;
 
   // Check if specific feedback type is allowed
   const typeAllowed = {
@@ -158,16 +212,8 @@ router.get('/:slug/photos/:photoId/feedback',
         return res.status(403).json({ error: 'Feedback is not enabled for this event' });
       }
       
-      // Verify photo belongs to event
-      const photo = await livePhotos(db)
-        .where({ id: photoId, event_id: event.id })
-        .first();
-      
-      // A client-hidden photo does not exist for a viewer who cannot see it:
-      // no reading its comments and counts, no adding to them. Nor does one
-      // the worker has not finished or failed on: the gallery list leaves it
-      // out (wherePhotoProcessed).
-      if (!photo || isPhotoHiddenFromViewer(photo, viewerOf(req)) || !isPhotoProcessed(photo)) {
+      const photo = await viewablePhoto(req, photoId);
+      if (!photo) {
         return res.status(404).json({ error: 'Photo not found' });
       }
       
@@ -355,16 +401,7 @@ router.post('/:slug/photos/:photoId/feedback',
         }
       }
 
-      // Verify photo belongs to event
-      const photo = await livePhotos(db)
-        .where({ id: photoId, event_id: event.id })
-        .first();
-
-      // A client-hidden photo does not exist for a viewer who cannot see it:
-      // no reading its comments and counts, no adding to them. Nor does one
-      // the worker has not finished or failed on: the gallery list leaves it
-      // out (wherePhotoProcessed).
-      if (!photo || isPhotoHiddenFromViewer(photo, viewerOf(req)) || !isPhotoProcessed(photo)) {
+      if (!(await viewablePhoto(req, photoId))) {
         return res.status(404).json({ error: 'Photo not found' });
       }
 
@@ -381,12 +418,7 @@ router.post('/:slug/photos/:photoId/feedback',
       }
 
       // Apply rate limiting based on feedback type
-      const rateLimitMiddleware = feedbackRateLimit(feedbackType);
-      // Await the middleware itself: a rejected response does not call next().
-      await rateLimitMiddleware(req, res, (err) => { if (err) throw err; });
-
-      // If we got here and response was sent (rate limited), return
-      if (res.headersSent) return;
+      if (await rateLimited(req, res, feedbackType)) return;
 
       // Prepare feedback data.
       const feedbackData = {
@@ -458,10 +490,7 @@ router.post('/:slug/photos/:photoId/feedback',
       // The guest was merged away or deleted while this request was running.
       // Same answer resolveGuest gives the next request from that token.
       if (result && result.guest_missing) {
-        return res.status(401).json({
-          error: 'Guest identity required',
-          code: 'GUEST_IDENTITY_REQUIRED'
-        });
+        return res.status(401).json(GUEST_IDENTITY_REQUIRED_BODY);
       }
 
       // Not one of this guest's lists in this gallery, or deleted meanwhile.
@@ -469,18 +498,9 @@ router.post('/:slug/photos/:photoId/feedback',
         return res.status(404).json({ error: 'Favorite list not found', code: 'FAVORITE_LIST_NOT_FOUND' });
       }
 
-      // Handed in (issue 1733, A1): the picks, or the approve / reject, are
-      // frozen until an admin reopens the submission. 409 with a code the UI
-      // explains; nothing was written.
+      // Handed in: nothing was written.
       if (result && result.locked) {
-        return res.status(409).json({
-          error: result.kind === 'approval'
-            ? 'The edited photos are approved; the decisions are locked'
-            : 'The selection is finished; the picks are locked',
-          code: result.kind === 'approval' ? 'APPROVAL_LOCKED' : 'SELECTION_LOCKED',
-          kind: result.kind,
-          submitted_at: result.submitted_at,
-        });
+        return res.status(409).json(lockedBody(result));
       }
 
       // Per-guest cap reached (#655). Surface as a structured 403 so the
@@ -577,8 +597,7 @@ router.post('/:slug/feedback/bulk',
 
       // One unit per photo that will be rated, reserved before any write.
       if (rateable.size > 0) {
-        await feedbackRateLimit('rating', rateable.size)(req, res, (err) => { if (err) throw err; });
-        if (res.headersSent) return;
+        if (await rateLimited(req, res, 'rating', rateable.size)) return;
       }
 
       const guestIdentifier = await generateGuestIdentifier(req);
@@ -606,10 +625,7 @@ router.post('/:slug/feedback/bulk',
         }
         // The guest was merged away or deleted while this request was running.
         if (result && result.guest_missing) {
-          return res.status(401).json({
-            error: 'Guest identity required',
-            code: 'GUEST_IDENTITY_REQUIRED'
-          });
+          return res.status(401).json(GUEST_IDENTITY_REQUIRED_BODY);
         }
         results.push({ photo_id: photoId, success: true, ...result });
       }
@@ -758,12 +774,11 @@ router.get('/:slug/my-feedback',
 
       // Prefer guest_id lookup when a verified guest token is present
       // (per-person identity). Fall back to the device hash otherwise.
-      if (req.guest?.id) {
-        query.where('photo_feedback.guest_id', req.guest.id);
-      } else {
-        const guestIdentifier = await generateGuestIdentifier(req);
-        query.where('photo_feedback.guest_identifier', guestIdentifier);
-      }
+      // The identifier is only derived when there is no guest to go by.
+      scopeToViewer(query, {
+        guestId: req.guest?.id,
+        guestIdentifier: req.guest?.id ? null : await generateGuestIdentifier(req),
+      }, 'photo_feedback');
 
       // The list of each favourite (issue 2303), only while the gallery has
       // lists: without them the rows read as they always did.
@@ -820,20 +835,15 @@ router.delete('/:slug/my-feedback/likes',
       if (refusal) return res.status(refusal.status).json(refusal.body);
 
       // One unit of the like budget for the whole request.
-      await feedbackRateLimit('like')(req, res, (err) => { if (err) throw err; });
-      if (res.headersSent) return;
+      if (await rateLimited(req, res, 'like')) return;
 
       const result = await feedbackService.clearOwnLikes(event.id, await selectionViewer(req));
       if (result.guest_missing) {
-        return res.status(401).json({ error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' });
+        return res.status(401).json(GUEST_IDENTITY_REQUIRED_BODY);
       }
+      // Likes lock with the selection, so kind is always 'selection' here.
       if (result.locked) {
-        return res.status(409).json({
-          error: 'The selection is finished; the picks are locked',
-          code: 'SELECTION_LOCKED',
-          kind: result.kind,
-          submitted_at: result.submitted_at,
-        });
+        return res.status(409).json(lockedBody(result));
       }
       res.json({ success: true, removed: result.removed, photo_ids: result.photo_ids });
     } catch (error) {
@@ -898,13 +908,10 @@ router.post('/:slug/selection/submit',
     try {
       const event = req.event;
       const settings = await feedbackService.getEventFeedbackSettings(event.id);
-      if (!settings.feedback_enabled) {
-        return res.status(403).json({ error: 'Feedback is not enabled for this event' });
-      }
-      // As for feedback: guest identity mode takes a verified guest only.
-      if (settings.identity_mode === 'guest' && (!req.guest || req.guest.eventId !== event.id)) {
-        return res.status(401).json({ error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' });
-      }
+      // As for feedback: feedback on, and guest identity mode takes a
+      // verified guest only.
+      const refusal = feedbackIdentityRefusal(req, settings);
+      if (refusal) return res.status(refusal.status).json(refusal.body);
 
       const { kind } = req.body;
       const note = req.body.note || null;
@@ -947,7 +954,7 @@ router.post('/:slug/selection/submit',
       // Merged away or deleted while this request was running: the answer
       // resolveGuest gives the next request from that token.
       if (result.guest_missing) {
-        return res.status(401).json({ error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' });
+        return res.status(401).json(GUEST_IDENTITY_REQUIRED_BODY);
       }
       if (result.disabled) {
         return res.status(403).json({ error: `${kind} cannot be submitted in this gallery`, code: 'SUBMISSION_DISABLED' });
@@ -993,16 +1000,11 @@ function favoriteListRefusal(req, settings) {
 // The shared answers of the list writes; null when the result is a success.
 function favoriteListWriteError(res, result) {
   if (result.guest_missing) {
-    return res.status(401).json({ error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' });
+    return res.status(401).json(GUEST_IDENTITY_REQUIRED_BODY);
   }
   if (result.locked) {
     // The same answer a favourite gets: the lists are part of the selection.
-    return res.status(409).json({
-      error: 'The selection is finished; the picks are locked',
-      code: 'SELECTION_LOCKED',
-      kind: result.kind,
-      submitted_at: result.submitted_at,
-    });
+    return res.status(409).json(lockedBody(result));
   }
   if (result.not_found) {
     return res.status(404).json({ error: 'Favorite list not found', code: 'FAVORITE_LIST_NOT_FOUND' });
@@ -1054,8 +1056,7 @@ router.post('/:slug/favorite-lists',
       const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
       const refusal = favoriteListRefusal(req, settings);
       if (refusal) return res.status(refusal.status).json(refusal.body);
-      await feedbackRateLimit('favorite_list')(req, res, (err) => { if (err) throw err; });
-      if (res.headersSent) return;
+      if (await rateLimited(req, res, 'favorite_list')) return;
       const result = await favoriteLists.create(req.event.id, await selectionViewer(req), req.body?.name);
       if (favoriteListWriteError(res, result)) return;
       res.status(201).json({ success: true, list: result.list });
@@ -1073,8 +1074,7 @@ router.patch('/:slug/favorite-lists/:listId',
       const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
       const refusal = favoriteListRefusal(req, settings);
       if (refusal) return res.status(refusal.status).json(refusal.body);
-      await feedbackRateLimit('favorite_list')(req, res, (err) => { if (err) throw err; });
-      if (res.headersSent) return;
+      if (await rateLimited(req, res, 'favorite_list')) return;
       const result = await favoriteLists.rename(req.event.id, await selectionViewer(req), req.params.listId, req.body?.name);
       if (favoriteListWriteError(res, result)) return;
       res.json({ success: true, list: result.list });
@@ -1093,8 +1093,7 @@ router.delete('/:slug/favorite-lists/:listId',
       const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
       const refusal = favoriteListRefusal(req, settings);
       if (refusal) return res.status(refusal.status).json(refusal.body);
-      await feedbackRateLimit('favorite_list')(req, res, (err) => { if (err) throw err; });
-      if (res.headersSent) return;
+      if (await rateLimited(req, res, 'favorite_list')) return;
       const result = await favoriteLists.remove(req.event.id, await selectionViewer(req), req.params.listId);
       if (favoriteListWriteError(res, result)) return;
       // After the commit, as for a favourite: favorite_count is per guest.

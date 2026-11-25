@@ -1,16 +1,21 @@
 import React from 'react';
-import { Layout, LayoutTemplate, Grid3X3, Layers, Play, Clock, Image, LayoutGrid, Minimize2, EyeOff, Columns, Film } from 'lucide-react';
+import { Layout, LayoutTemplate, Grid3X3, Layers, Play, Clock, Image, LayoutGrid, Minimize2, EyeOff, Columns, Film, type LucideIcon } from 'lucide-react';
 import { GalleryLayoutType, HeaderStyleType, HeroDividerStyle } from '../../../types/theme.types';
 
-export const layoutIcons: Record<GalleryLayoutType, React.ReactNode> = {
-  grid: <Grid3X3 className="w-5 h-5" />,
-  masonry: <Layers className="w-5 h-5" />,
-  carousel: <Play className="w-5 h-5" />,
-  timeline: <Clock className="w-5 h-5" />,
-  mosaic: <LayoutGrid className="w-5 h-5" />,
-  'gallery-premium': <Columns className="w-5 h-5" />,
-  'gallery-story': <Film className="w-5 h-5" />
+/** One icon per gallery layout; each caller picks the size. */
+export const layoutIconComponents: Record<GalleryLayoutType, LucideIcon> = {
+  grid: Grid3X3,
+  masonry: Layers,
+  carousel: Play,
+  timeline: Clock,
+  mosaic: LayoutGrid,
+  'gallery-premium': Columns,
+  'gallery-story': Film,
 };
+
+export const layoutIcons = Object.fromEntries(
+  Object.entries(layoutIconComponents).map(([layout, Icon]) => [layout, <Icon className="w-5 h-5" />]),
+) as Record<GalleryLayoutType, React.ReactNode>;
 
 export const headerStyleIcons: Record<HeaderStyleType, React.ReactNode> = {
   hero: <Image className="w-5 h-5" />,

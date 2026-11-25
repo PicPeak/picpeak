@@ -5,6 +5,7 @@ import { api } from '../../config/api';
 import { authService } from '../../services/auth.service';
 import { clearGalleryToken } from '../../utils/galleryAuthStorage';
 import { setFullLinkToken } from '../../utils/galleryFullLink';
+import { safeRemoveItem } from '../../utils/safeStorage';
 
 /**
  * Entry point of the full link (issue 2356): keeps the token, ends a session
@@ -29,12 +30,8 @@ export function FullLinkPage() {
         await authService.galleryLogout(slug);
       }
       clearGalleryToken(slug);
-      try {
-        sessionStorage.removeItem(`gallery_event_${slug}`);
-        sessionStorage.removeItem(`gallery_access_level_${slug}`);
-      } catch {
-        // nothing cached
-      }
+      safeRemoveItem('session', `gallery_event_${slug}`);
+      safeRemoveItem('session', `gallery_access_level_${slug}`);
       if (live) navigate(`/gallery/${encodeURIComponent(slug)}`, { replace: true });
     })();
     return () => { live = false; };

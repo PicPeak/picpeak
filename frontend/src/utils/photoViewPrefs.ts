@@ -14,6 +14,8 @@
  * throws on read.
  */
 
+import { safeGetItem, safeSetItem } from './safeStorage';
+
 const VIEW_KEY = 'picpeak.adminPhotos.view';
 
 export type PhotoViewMode = 'grid' | 'list';
@@ -25,14 +27,9 @@ const ALLOWED_VIEWS: ReadonlyArray<PhotoViewMode> = ['grid', 'list'];
  * Safe to call before localStorage exists (SSR / test envs).
  */
 export function getPhotoViewMode(): PhotoViewMode {
-  if (typeof window === 'undefined' || !window.localStorage) return 'grid';
-  try {
-    const raw = window.localStorage.getItem(VIEW_KEY);
-    if (raw && (ALLOWED_VIEWS as readonly string[]).includes(raw)) {
-      return raw as PhotoViewMode;
-    }
-  } catch (_) {
-    // ignore — fall through to default
+  const raw = safeGetItem('local', VIEW_KEY);
+  if (raw && (ALLOWED_VIEWS as readonly string[]).includes(raw)) {
+    return raw as PhotoViewMode;
   }
   return 'grid';
 }
@@ -42,13 +39,8 @@ export function getPhotoViewMode(): PhotoViewMode {
  * unavailable.
  */
 export function setPhotoViewMode(view: PhotoViewMode): void {
-  if (typeof window === 'undefined' || !window.localStorage) return;
   if (!(ALLOWED_VIEWS as readonly string[]).includes(view)) return;
-  try {
-    window.localStorage.setItem(VIEW_KEY, view);
-  } catch (_) {
-    // ignore — quota / disabled storage
-  }
+  safeSetItem('local', VIEW_KEY, view);
 }
 
 // The list view's optional columns (issue 1739). The photo name, the
@@ -67,7 +59,7 @@ const PREFS_KEY = 'picpeak.adminPhotos.prefs';
  */
 export function getHiddenPhotoColumns(): PhotoListColumn[] {
   try {
-    const raw = window.localStorage.getItem(PREFS_KEY);
+    const raw = safeGetItem('local', PREFS_KEY);
     const hidden = raw ? JSON.parse(raw)?.hiddenColumns : null;
     if (!Array.isArray(hidden)) return [];
     return PHOTO_LIST_COLUMNS.filter((column) => hidden.includes(column));
@@ -78,17 +70,13 @@ export function getHiddenPhotoColumns(): PhotoListColumn[] {
 
 /** Persist the hidden columns, keeping any other key in the prefs object. */
 export function setHiddenPhotoColumns(hidden: readonly PhotoListColumn[]): void {
+  let prefs: Record<string, unknown> = {};
   try {
-    let prefs: Record<string, unknown> = {};
-    try {
-      const parsed = JSON.parse(window.localStorage.getItem(PREFS_KEY) || '{}');
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) prefs = parsed;
-    } catch {
-      // malformed — start over
-    }
-    prefs.hiddenColumns = PHOTO_LIST_COLUMNS.filter((column) => hidden.includes(column));
-    window.localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    const parsed = JSON.parse(safeGetItem('local', PREFS_KEY) || '{}');
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) prefs = parsed;
   } catch {
-    // ignore — quota / disabled storage
+    // malformed — start over
   }
+  prefs.hiddenColumns = PHOTO_LIST_COLUMNS.filter((column) => hidden.includes(column));
+  safeSetItem('local', PREFS_KEY, JSON.stringify(prefs));
 }

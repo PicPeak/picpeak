@@ -23,6 +23,7 @@ const sharp = require('./isolatedSharp');
 const { isRawFilename } = require('../utils/rawFormats');
 const watermarkService = require('./watermarkService');
 const { isGalleryPriced, resolvePhotoSalesWatermarkSettings } = require('../modules/photoSales/priceRules');
+const { eventWatermarksDownloads } = require('../utils/watermarkDownloads');
 const fs = require('fs');
 const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
 const { resolvePhotoContentType } = require('../utils/photoContentType');
@@ -191,7 +192,8 @@ async function resolveWatermarkSettings(event) {
   // null is a failed lookup, not "no watermark": whether one applies, and
   // what it draws, is unknown, so the download is refused.
   if (settings === null) throw new Error('The watermark settings could not be read');
-  const eventEnabled = event.watermark_downloads === true || event.watermark_downloads === 1;
+  // The same test as the photo route and the photo-sales rules: true, 1 or '1'.
+  const eventEnabled = eventWatermarksDownloads(event);
   const shouldApply = (settings && settings.enabled) || eventEnabled;
   if (!shouldApply) return null;
   return {

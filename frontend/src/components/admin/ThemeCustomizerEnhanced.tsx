@@ -6,6 +6,8 @@ import { fontsService, type FontDefinition } from '../../services/fonts.service'
 import { useQuery } from '@tanstack/react-query';
 import { ThemePresetsCard } from './theme-customizer/ThemePresetsCard';
 import { GalleryLayoutCard } from './theme-customizer/GalleryLayoutCard';
+import { BETA_LAYOUTS } from './theme-customizer/layoutWireframes';
+import { DARK_SURFACE_DEFAULTS, LIGHT_SURFACE_DEFAULTS } from '../../utils/themeMigration';
 import { HeaderStyleCard } from './theme-customizer/HeaderStyleCard';
 import { ControlsStyleCard } from './theme-customizer/ControlsStyleCard';
 import { ColorCustomizationCard } from './theme-customizer/ColorCustomizationCard';
@@ -83,7 +85,6 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
   const [selectedPreset, setSelectedPreset] = useState(presetName);
   const [customCss, setCustomCss] = useState(value.customCss || '');
 
-  const BETA_LAYOUTS: GalleryLayoutType[] = ['gallery-premium', 'gallery-story'];
   const MIN_RECOMMENDED_THUMBNAIL_SIZE = 500;
 
   // Fetch thumbnail settings to warn about low resolution with beta themes
@@ -174,12 +175,7 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
       const updated: ThemeConfig = {
         ...localTheme,
         colorMode: mode,
-        backgroundColor: '#0f0f0f',
-        surfaceColor: '#1a1a1a',
-        elevatedColor: '#242424',
-        surfaceBorderColor: '#2e2e2e',
-        textColor: '#e5e5e5',
-        mutedTextColor: '#a3a3a3',
+        ...DARK_SURFACE_DEFAULTS,
       };
       setLocalTheme(updated);
       onChange({ ...updated, customCss });
@@ -187,12 +183,7 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
       const updated: ThemeConfig = {
         ...localTheme,
         colorMode: mode,
-        backgroundColor: '#fafafa',
-        surfaceColor: '#ffffff',
-        elevatedColor: '#f5f5f5',
-        surfaceBorderColor: '#e5e5e5',
-        textColor: '#171717',
-        mutedTextColor: '#737373',
+        ...LIGHT_SURFACE_DEFAULTS,
       };
       setLocalTheme(updated);
       onChange({ ...updated, customCss });

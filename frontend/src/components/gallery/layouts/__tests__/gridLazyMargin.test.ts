@@ -159,10 +159,11 @@ describe('grid lazy pre-load band', () => {
     }
     expect(read('MosaicGalleryLayout.tsx')).not.toMatch(/contentVisibility/);
 
-    // Masonry: three of four modes (rows, flickr, quilted); the columns-mode
-    // card (`MasonryPhoto`) must not.
+    // Masonry: three of four modes (rows and flickr through their shared
+    // renderAbsoluteTile, and quilted); the columns-mode card (`MasonryPhoto`)
+    // must not.
     const masonry = read('MasonryGalleryLayout.tsx');
-    expect(masonry.match(/contentVisibility: 'auto'/g)).toHaveLength(3);
+    expect(masonry.match(/contentVisibility: 'auto'/g)).toHaveLength(2);
     const masonryPhoto = masonry.slice(masonry.indexOf('const MasonryPhoto'), masonry.indexOf('export const MasonryGalleryLayout'));
     expect(masonryPhoto).not.toMatch(/contentVisibility/);
   });

@@ -1,17 +1,9 @@
+import { safeGetItem, safeRemoveItem, safeSetItem } from './safeStorage';
+
 const TOKEN_STORAGE_PREFIX = 'gallery_token_';
 const ACTIVE_SLUG_KEY = 'gallery_active_slug';
 
 const isBrowser = typeof window !== 'undefined';
-
-const getSessionStorage = (): Storage | null => {
-  if (!isBrowser) return null;
-  try {
-    return window.sessionStorage;
-  } catch (error) {
-    console.warn('Session storage unavailable', error);
-    return null;
-  }
-};
 
 const extractSlugFromPath = (path: string): string | null => {
   if (!path) return null;
@@ -25,53 +17,39 @@ export const inferGallerySlugFromLocation = (): string | null => {
 };
 
 export const setActiveGallerySlug = (slug: string | null) => {
-  const storage = getSessionStorage();
-  if (!storage) return;
   if (slug) {
-    storage.setItem(ACTIVE_SLUG_KEY, slug);
+    safeSetItem('session', ACTIVE_SLUG_KEY, slug);
   } else {
-    storage.removeItem(ACTIVE_SLUG_KEY);
+    safeRemoveItem('session', ACTIVE_SLUG_KEY);
   }
 };
 
-export const getActiveGallerySlug = (): string | null => {
-  const storage = getSessionStorage();
-  if (!storage) return null;
-  return storage.getItem(ACTIVE_SLUG_KEY);
-};
+export const getActiveGallerySlug = (): string | null => safeGetItem('session', ACTIVE_SLUG_KEY);
 
 export const clearActiveGallerySlug = () => {
-  const storage = getSessionStorage();
-  if (!storage) return;
-  storage.removeItem(ACTIVE_SLUG_KEY);
+  safeRemoveItem('session', ACTIVE_SLUG_KEY);
 };
 
 export const storeGalleryToken = (slug: string, token: string) => {
-  const storage = getSessionStorage();
-  if (!storage || !slug) return;
-  storage.setItem(`${TOKEN_STORAGE_PREFIX}${slug}`, token);
+  if (!slug) return;
+  safeSetItem('session', `${TOKEN_STORAGE_PREFIX}${slug}`, token);
 };
 
 export const getGalleryToken = (slug?: string | null): string | null => {
-  const storage = getSessionStorage();
-  if (!storage) return null;
   const resolvedSlug = slug || getActiveGallerySlug() || inferGallerySlugFromLocation();
   if (!resolvedSlug) return null;
-  return storage.getItem(`${TOKEN_STORAGE_PREFIX}${resolvedSlug}`);
+  return safeGetItem('session', `${TOKEN_STORAGE_PREFIX}${resolvedSlug}`);
 };
 
 export const clearGalleryToken = (slug?: string | null) => {
-  const storage = getSessionStorage();
-  if (!storage) return;
-
   if (slug) {
-    storage.removeItem(`${TOKEN_STORAGE_PREFIX}${slug}`);
+    safeRemoveItem('session', `${TOKEN_STORAGE_PREFIX}${slug}`);
     return;
   }
 
-  const active = storage.getItem(ACTIVE_SLUG_KEY);
+  const active = safeGetItem('session', ACTIVE_SLUG_KEY);
   if (active) {
-    storage.removeItem(`${TOKEN_STORAGE_PREFIX}${active}`);
+    safeRemoveItem('session', `${TOKEN_STORAGE_PREFIX}${active}`);
   }
 };
 
@@ -83,7 +61,7 @@ export const resolveSlugFromRequestUrl = (url?: string | null): string | null =>
     if (url.startsWith('http://') || url.startsWith('https://')) {
       pathname = new URL(url).pathname;
     }
-  } catch (error) {
+  } catch {
     // Leave pathname as provided if URL parsing fails
   }
 

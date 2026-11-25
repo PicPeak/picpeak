@@ -29,6 +29,7 @@ vi.mock('../../common', () => ({
 }));
 
 import { PhotoLightbox } from '../PhotoLightbox';
+import { LightboxQueryWrapper } from './lightboxQueryWrapper';
 
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
 
@@ -44,7 +45,7 @@ const transformTransitionEnd = (el: Element) => {
 };
 
 const setup = () => {
-  const { container } = render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" />);
+  const { container } = render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" />, { wrapper: LightboxQueryWrapper });
   const image = () => screen.getByAltText('photo-2');
   // image → slide → track → the container carrying the touch handlers.
   const track = image().parentElement!.parentElement as HTMLElement;

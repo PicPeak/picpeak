@@ -8,8 +8,8 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
 const feedbackService = require('../services/feedbackService');
-const selectionSubmissions = require('../services/selectionSubmissions');
-const { clearGuestCredits, reassignGuestCredits } = require('../services/photoCredit');
+const { reassignGuestCredits } = require('../services/photoCredit');
+const { removeGuest } = require('../services/guestRemoval');
 const logger = require('../utils/logger');
 const { errorResponse } = require('../utils/routeHelpers');
 const { ValidationError } = require('../utils/errors');
@@ -814,28 +814,9 @@ router.delete(
       const guest = await loadGuestOr404(eventId, guestId, res);
       if (!guest) return;
 
-      const result = await feedbackService.anonymizeGuestFeedback(guestId);
-
-      await db('gallery_guests').where({ id: guestId }).update({
-        is_deleted: true,
-        name: 'Removed',
-        email: null,
-        last_seen_at: db.fn.now(),
-      });
-      // Their views and downloads once more, now that the guest is marked
-      // removed (issue 2503): a row written while the anonymisation above
-      // ran still named the guest. A row written after this sees the mark
-      // (guestAuth.settleLoggedGuest).
-      await db('access_logs').where('guest_id', guestId).update({ guest_id: null });
-      // Their "mail me when the download is ready" requests (issue 1733).
-      await require('../services/downloadJobNotifier').forgetGuest(guest);
-      // The denormalised uploader name must not outlive the guest (#1561).
-      // After the soft delete: an upload still in flight checks for it once
-      // its row is in (photoCredit.settleGuestCredit).
-      const creditsCleared = await clearGuestCredits(guestId);
-      // Again after the soft delete, for the same reason: a hand-over that got
-      // in before it was stored with the guest's name (issue 1733).
-      await selectionSubmissions.anonymizeGuest(guestId);
+      // The full gallery_guests row: it carries the id, event_id and email
+      // removeGuest (forgetGuest) reads.
+      const { feedback: result, creditsCleared } = await removeGuest(guest);
 
       await logActivity(
         'guest_deleted',

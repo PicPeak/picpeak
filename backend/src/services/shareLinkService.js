@@ -1,5 +1,5 @@
 const { db } = require('../database/db');
-const { formatBoolean } = require('../utils/dbCompat');
+const { publishedEventFilter } = require('../utils/galleryLifecycle');
 const { extractShareToken, isPotentialShareToken, buildSharePath } = require('../utils/shareLinkUtils');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const logger = require('../utils/logger');
@@ -105,19 +105,6 @@ const getEventShareToken = (event) => {
   return extractShareToken(event.share_link);
 };
 
-const ACTIVE_EVENT_FILTER = {
-  is_active: formatBoolean(true),
-  is_archived: formatBoolean(false),
-  is_draft: formatBoolean(false)
-};
-
-// Same filter minus the draft gate, for admin preview only (#1386). Callers
-// MUST authorize before returning anything it matched — see the /resolve
-// route, which only reaches for it after a verified admin preview.
-const UNPUBLISHED_EVENT_FILTER = {
-  is_active: formatBoolean(true),
-  is_archived: formatBoolean(false)
-};
 
 const resolveShareIdentifier = async (identifier, { includeDrafts = false } = {}) => {
   if (!identifier) {
@@ -145,7 +132,9 @@ const resolveShareIdentifier = async (identifier, { includeDrafts = false } = {}
       'temporarily_disabled',
       'is_draft'
     )
-    .where(includeDrafts ? UNPUBLISHED_EVENT_FILTER : ACTIVE_EVENT_FILTER);
+    // With drafts for admin preview only (#1386): the /resolve route reaches
+    // for it only after a verified admin preview.
+    .where(publishedEventFilter({ includeDrafts }));
 
   let event = await baseQuery.clone().where({ slug: trimmed }).first();
   if (event) {

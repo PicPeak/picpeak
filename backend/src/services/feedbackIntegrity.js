@@ -19,8 +19,16 @@
 const BY_GUEST_ID = 'photo_feedback_rating_guest_id_unique';
 const BY_IDENTIFIER = 'photo_feedback_rating_guest_identifier_unique';
 
-// Copy of feedbackService's lastMutatedFirst: a migration must not load the
-// service (and its db connection) to pick a survivor.
+// The one copy of these two, here rather than in feedbackService because a
+// migration must not load the service (and its db connection) to pick a
+// survivor; feedbackService imports them from this file. Keep this file free
+// of requires for the same reason.
+
+/**
+ * When a feedback row last changed, in ms. SQLite holds epoch ms where a
+ * Date was bound and SQL / ISO text otherwise (the column default); PostgreSQL
+ * returns Dates. A zone-less SQL timestamp is UTC, as CURRENT_TIMESTAMP writes it.
+ */
 function feedbackTime(value) {
   if (value === null || value === undefined) return 0;
   if (typeof value === 'number') return value;
@@ -29,6 +37,11 @@ function feedbackTime(value) {
   return new Date(text).getTime() || 0;
 }
 
+/**
+ * Sort comparator: the row mutated last first — updated_at, then created_at,
+ * then id. Done in JS rather than ORDER BY because of the mixed SQLite
+ * shapes above (every number sorts below every text there).
+ */
 function lastMutatedFirst(a, b) {
   return (feedbackTime(b.updated_at) || feedbackTime(b.created_at)) - (feedbackTime(a.updated_at) || feedbackTime(a.created_at))
     || feedbackTime(b.created_at) - feedbackTime(a.created_at)
@@ -128,6 +141,8 @@ async function backfillCommentCounts(knex) {
 module.exports = {
   BY_GUEST_ID,
   BY_IDENTIFIER,
+  feedbackTime,
+  lastMutatedFirst,
   ratingIndexesSupported,
   dedupeRatings,
   createRatingIndexes,

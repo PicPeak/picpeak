@@ -138,7 +138,7 @@ export const masonryModeWireframes: Record<MasonryPickerMode, React.ReactNode> =
   ),
 };
 
-const BETA_LAYOUTS: GalleryLayoutType[] = ['gallery-premium', 'gallery-story'];
+export const BETA_LAYOUTS: GalleryLayoutType[] = ['gallery-premium', 'gallery-story'];
 
 /** The gallery layouts as LayoutPicker options, in the picker's order. */
 export function useGalleryLayoutOptions(): LayoutPickerOption<GalleryLayoutType>[] {

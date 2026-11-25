@@ -12,7 +12,7 @@
  *  - a touch device is not asked to decode an original over the pixel budget
  */
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Photo } from '../../../types';
 
@@ -49,6 +49,8 @@ vi.mock('../../common', async () => {
 });
 
 import { PhotoLightbox } from '../PhotoLightbox';
+import { LightboxQueryWrapper } from './lightboxQueryWrapper';
+import { useBlockContextMenu } from '../hooks/useBlockContextMenu';
 
 // The preview reporting a (new) load, as after a refetched photo list.
 let previewLoaded: () => void = () => {};
@@ -119,7 +121,7 @@ afterEach(() => {
 
 const setup = (photos: Photo[], props: Partial<React.ComponentProps<typeof PhotoLightbox>> = {}) => {
   const onClose = vi.fn();
-  const { container, rerender } = render(<PhotoLightbox photos={photos} initialIndex={1} onClose={onClose} slug="g" {...props} />);
+  const { container, rerender } = render(<PhotoLightbox photos={photos} initialIndex={1} onClose={onClose} slug="g" {...props} />, { wrapper: LightboxQueryWrapper });
   const update = (next: Photo[]) => rerender(<PhotoLightbox photos={next} initialIndex={1} onClose={onClose} slug="g" {...props} />);
   const image = () => screen.getByAltText(photos[1].filename);
   const surface = image().parentElement!.parentElement!.parentElement as HTMLElement;
@@ -439,11 +441,13 @@ describe('PhotoLightbox with a full resolution', () => {
   });
 
   it('keeps the right-click block on the zoomed original', async () => {
-    const { image, surface, overlay } = setup([zoomable(1), zoomable(2), zoomable(3)], { disableRightClick: true });
+    // GalleryView's document-wide block, which the lightbox mounts under.
+    renderHook(() => useBlockContextMenu(true));
+    const { image, surface, overlay } = setup([zoomable(1), zoomable(2), zoomable(3)]);
     fireEvent.click(screen.getByLabelText('Zoom in'));
     await finishDecode();
     // The original takes no pointer events, so a right-click lands on the
-    // preview below it; the lightbox blocks the menu for the whole document.
+    // preview below it; the block covers the whole document.
     expect(overlay()!.className).toContain('pointer-events-none');
     for (const target of [overlay()!, image(), surface]) {
       expect(fireEvent.contextMenu(target)).toBe(false);

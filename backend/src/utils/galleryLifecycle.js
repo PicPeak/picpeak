@@ -1,10 +1,13 @@
 const { toTimestamp } = require('./dateNormalize');
 const { AppError } = require('./errors');
 const logger = require('./logger');
+const { formatBoolean } = require('./dbCompat');
 
 const warnedExpiry = new Set();
 
 const isTrue = (value) => value === true || value === 1 || value === '1';
+// An explicit off, for flags whose NULL / unset means on.
+const isFalse = (value) => value === false || value === 0 || value === '0';
 
 function isGalleryExpired(event, now = Date.now()) {
   if (event.expires_at == null || event.expires_at === '') return false;
@@ -21,7 +24,23 @@ function isGalleryExpired(event, now = Date.now()) {
 }
 
 function requiresGalleryPassword(event) {
-  return !(event.require_password === false || event.require_password === 0 || event.require_password === '0');
+  return !isFalse(event.require_password);
+}
+
+/**
+ * The events-row filter a token-only surface (share link, slideshow, embed)
+ * looks a gallery up with: active, not archived and, unless `includeDrafts`,
+ * not a draft. A where-object for knex, built per call (formatBoolean depends
+ * on the database client). Drafts are for a verified admin preview only
+ * (#1386): a caller passing `includeDrafts` must authorize before returning
+ * anything it matched.
+ */
+function publishedEventFilter({ includeDrafts = false } = {}) {
+  return {
+    is_active: formatBoolean(true),
+    is_archived: formatBoolean(false),
+    ...(includeDrafts ? {} : { is_draft: formatBoolean(false) }),
+  };
 }
 
 function isGalleryAvailable(event, { adminPreview = false, allowTemporarilyDisabled = false } = {}) {
@@ -46,4 +65,4 @@ function assertGalleryAvailable(event, { adminPreview = false } = {}) {
   }
 }
 
-module.exports = { isTrue, isGalleryAvailable, assertGalleryAvailable, assertGalleryEnabled, isGalleryExpired, requiresGalleryPassword };
+module.exports = { isTrue, isFalse, publishedEventFilter, isGalleryAvailable, assertGalleryAvailable, assertGalleryEnabled, isGalleryExpired, requiresGalleryPassword };
