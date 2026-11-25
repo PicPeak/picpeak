@@ -4,7 +4,7 @@
  * chokidar fires 'add' once per file — with no ignoreInitial option the boot
  * scan fires it for every existing file, and a bulk drop fires it for every
  * new one at once. Unbounded handlers each run DB lookups plus a full sharp
- * pipeline (sharp.concurrency(2) only caps libvips threads WITHIN one
+ * pipeline (the sharp workers only cap libvips threads WITHIN one
  * operation), which can OOM small hosts. Both 'add' and 'unlink' must go
  * through the shared p-limit gate.
  *

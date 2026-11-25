@@ -174,8 +174,8 @@ function stop() {
   if (stopping) return stopping;
   if (!running) return Promise.resolve();
   running = false;
+  // Abort a transcode in flight, then interrupt idle waits.
   mediaAttempts.cancel('web');
-  // Interrupt idle waits only; a transcode in flight finishes first.
   waits.cancel();
   stopping = Promise.all([...workerHandles, janitorHandle].filter(Boolean)).then(() => mediaAttempts.assertDrained('web')).finally(() => {
     workerHandles = [];
