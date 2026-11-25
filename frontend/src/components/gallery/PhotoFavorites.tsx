@@ -94,7 +94,7 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       else queryClient.invalidateQueries({ queryKey: ['gallery-photos', gallerySlug] });
       // In guest identity mode the Favorited filter and the filename list
       // read the guest's own rows from my-feedback, so refresh it now that
-      // the toggle is accepted (as PhotoRating does).
+      // the toggle is accepted.
       queryClient.invalidateQueries({ queryKey: ['my-feedback', gallerySlug] });
       if (variables.favoriteListId !== undefined) {
         queryClient.invalidateQueries({ queryKey: favoriteListsQueryKey(gallerySlug) });

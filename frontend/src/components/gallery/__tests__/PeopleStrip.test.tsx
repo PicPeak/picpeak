@@ -111,10 +111,10 @@ describe('PeopleStrip (#1074)', () => {
 
   it('offers "show all" only when people overflow the inline strip', () => {
     const many = Array.from({ length: 14 }, (_, i) => person(i + 1));
-    const { rerender } = render(<PeopleStrip {...baseProps} people={many} maxInline={12} />);
+    const { rerender } = render(<PeopleStrip {...baseProps} people={many} />);
     expect(screen.getByText('Show all 14')).toBeInTheDocument();
 
-    rerender(<PeopleStrip {...baseProps} people={many.slice(0, 5)} maxInline={12} />);
+    rerender(<PeopleStrip {...baseProps} people={many.slice(0, 5)} />);
     expect(screen.queryByText(/Show all/)).not.toBeInTheDocument();
   });
 

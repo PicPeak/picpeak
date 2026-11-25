@@ -1,24 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { feedbackService } from '../../services/feedback.service';
-import { PhotoRating } from './PhotoRating';
-import { PhotoLikes } from './PhotoLikes';
-import { PhotoFavorites } from './PhotoFavorites';
 import { PhotoReactions } from './PhotoReactions';
 import { PhotoComments } from './PhotoComments';
 import { Skeleton } from '../common';
-import { FavoriteListSwitcher } from './FavoriteListSwitcher';
-import { inActiveList, useFavoriteListsOptional } from '../../contexts/FavoriteListsContext';
 
 interface PhotoFeedbackProps {
   photoId: string;
   gallerySlug: string;
   className?: string;
-  showComments?: boolean;
   // The lightbox bar has the rating, like and favourite buttons (issue
-  // 1733): the panel leaves them out rather than show them twice.
-  proofingInToolbar?: boolean;
-  // A like or favourite toggle passes the photo id once the server accepted it.
+  // 1733); the panel holds reactions and comments.
   onFeedbackUpdate?: (toggledPhotoId?: number) => void;
 }
 
@@ -26,8 +18,6 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
   photoId,
   gallerySlug,
   className = '',
-  showComments = true,
-  proofingInToolbar = false,
   onFeedbackUpdate
 }) => {
   // Fetch feedback settings for the gallery
@@ -48,66 +38,16 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
   });
 
   // Local state for optimistic updates
-  const [currentRating, setCurrentRating] = useState(0);
-  const [isLiked, setIsLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
-  const [isFavorited, setIsFavorited] = useState(false);
-  // Named lists (issue 2303): the bookmark shows the active list.
-  const favoriteLists = useFavoriteListsOptional();
-  const [favoriteListIds, setFavoriteListIds] = useState<Array<number | null> | null>(null);
-  const bookmarkFilled = favoriteLists && favoriteListIds
-    ? inActiveList(favoriteListIds, favoriteLists.activeListId)
-    : isFavorited;
-  const [favoriteCount, setFavoriteCount] = useState(0);
   const [myReaction, setMyReaction] = useState<string | null>(null);
   const [reactionCounts, setReactionCounts] = useState<Record<string, number>>({});
 
   // Update local state when data loads
   useEffect(() => {
     if (feedbackData) {
-      setCurrentRating(feedbackData.my_feedback.rating || 0);
-      setIsLiked(Boolean(feedbackData.my_feedback.liked));
-      setLikeCount(Number(feedbackData.summary.like_count) || 0);
-      setIsFavorited(Boolean(feedbackData.my_feedback.favorited));
-      setFavoriteListIds(feedbackData.my_feedback.favorite_list_ids ?? null);
-      setFavoriteCount(Number(feedbackData.summary.favorite_count) || 0);
       setMyReaction(feedbackData.my_feedback.reaction || null);
       setReactionCounts(feedbackData.reactions || {});
     }
   }, [feedbackData]);
-
-  // Handle optimistic updates
-  const handleRatingChange = (rating: number) => {
-    setCurrentRating(rating);
-    if (onFeedbackUpdate) onFeedbackUpdate();
-  };
-
-  const handleLikeChange = (liked: boolean) => {
-    setIsLiked(liked);
-    setLikeCount(prev => liked ? prev + 1 : Math.max(0, prev - 1));
-  };
-
-  const handleFavoriteChange = (favorited: boolean) => {
-    setIsFavorited(favorited);
-    if (favoriteLists) {
-      const active = favoriteLists.activeListId;
-      setFavoriteListIds((ids) => {
-        const rest = (ids ?? []).filter((id) => id !== active);
-        return favorited ? [...rest, active] : rest;
-      });
-    }
-    setFavoriteCount(prev => favorited ? prev + 1 : Math.max(0, prev - 1));
-  };
-
-  // The gallery list is told once the server has the toggle, not from the
-  // optimistic update above: it refreshes that one row from the server.
-  // The id comes from the toggle itself: by the time it is saved the panel
-  // may already show the next photo.
-  // Only handed down when a parent refreshes the row: without one the
-  // buttons fall back to invalidating the list themselves.
-  const handleToggleSaved = (savedPhotoId: string) => {
-    if (onFeedbackUpdate) onFeedbackUpdate(Number(savedPhotoId));
-  };
 
   // Optimistic reaction switch: decrement the old emoji, increment the new.
   const handleReactionChange = (reaction: string | null) => {
@@ -144,54 +84,6 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
 
   return (
     <div className={`space-y-4 ${className}`}>
-      {/* Rating Section */}
-      {settings.allow_ratings && !proofingInToolbar && (
-        <PhotoRating
-          photoId={photoId}
-          gallerySlug={gallerySlug}
-          currentRating={currentRating}
-          averageRating={Number(feedbackData?.summary?.average_rating) || 0}
-          totalRatings={Number(feedbackData?.summary?.total_ratings) || 0}
-          isEnabled={true}
-          requireNameEmail={settings.require_name_email || false}
-          onRatingChange={handleRatingChange}
-        />
-      )}
-
-      {/* Action Buttons */}
-      {(settings.allow_likes || settings.allow_favorites) && !proofingInToolbar && (
-        <div className="flex flex-wrap items-center gap-2">
-          {settings.allow_likes && (
-            <PhotoLikes
-              photoId={photoId}
-              gallerySlug={gallerySlug}
-              isLiked={isLiked}
-              likeCount={likeCount}
-              isEnabled={true}
-              requireNameEmail={settings.require_name_email || false}
-              onLikeChange={handleLikeChange}
-              onSaved={onFeedbackUpdate ? handleToggleSaved : undefined}
-            />
-          )}
-
-          {settings.allow_favorites && (
-            <>
-              <PhotoFavorites
-                photoId={photoId}
-                gallerySlug={gallerySlug}
-                isFavorited={bookmarkFilled}
-                favoriteCount={favoriteCount}
-                isEnabled={true}
-                requireNameEmail={settings.require_name_email || false}
-                onFavoriteChange={handleFavoriteChange}
-                onSaved={onFeedbackUpdate ? handleToggleSaved : undefined}
-              />
-              <FavoriteListSwitcher />
-            </>
-          )}
-        </div>
-      )}
-
       {/* Emoji reactions (#839) */}
       {settings.allow_reactions && (
         <PhotoReactions
@@ -206,7 +98,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
       )}
 
       {/* Comments Section */}
-      {settings.allow_comments && showComments && (
+      {settings.allow_comments && (
         <div className="border-t border-border-token pt-4">
           <PhotoComments
             photoId={photoId}

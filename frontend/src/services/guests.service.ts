@@ -123,11 +123,6 @@ class GuestsService {
     return response.data;
   }
 
-  async getGuestMe(slug: string): Promise<{ guest: GuestIdentity }> {
-    const response = await api.get(`/gallery/${slug}/guest/me`);
-    return response.data;
-  }
-
   // A short-lived ticket naming this guest on a download the browser
   // navigates to (issue 2503): such a request carries no x-guest-token.
   async getDownloadTicket(slug: string): Promise<string> {

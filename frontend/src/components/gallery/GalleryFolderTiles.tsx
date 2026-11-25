@@ -19,13 +19,6 @@ interface GalleryFolderTilesProps {
   /** Gallery slug — the cover is an authenticated image like any other photo. */
   slug?: string;
   /**
-   * Image-protection settings (#1160). A folder cover is a real gallery photo,
-   * so a gallery configured for canvas rendering or maximum protection must not
-   * get an ordinary blob-backed <img> here just because it is a cover.
-   */
-  useEnhancedProtection?: boolean;
-  allowDownloads?: boolean;
-  /**
    * Compact chip row instead of cover cards. Used by the full-bleed layouts
    * (Premium, Story), where a block of cards above the hero would break the
    * edge-to-edge opening those layouts exist for — but where the folders still

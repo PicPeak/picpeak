@@ -1,7 +1,7 @@
 import type { AxiosResponse } from 'axios';
 import { api } from '../config/api';
 import type {
-  GalleryInfo, GalleryData, GalleryStats, ResolvedGalleryIdentifier,
+  GalleryInfo, GalleryData, ResolvedGalleryIdentifier,
   DownloadJobStatus, DownloadJobState, GalleryPeopleResponse,
 } from '../types';
 import { normalizeRequirePassword } from '../utils/accessControl';
@@ -128,19 +128,8 @@ export const galleryService = {
   },
 
   // Get gallery photos (requires auth)
-  async getGalleryPhotos(
-    slug: string,
-    filter?: 'liked' | 'favorited' | 'commented' | 'rated' | 'all',
-    guestId?: string,
-    signal?: AbortSignal
-  ): Promise<GalleryData> {
+  async getGalleryPhotos(slug: string, signal?: AbortSignal): Promise<GalleryData> {
     const params: Record<string, string | number> = { limit: 250, page: 1 };
-    if (filter && filter !== 'all') {
-      params.filter = filter;
-      if (guestId) {
-        params.guest_id = guestId;
-      }
-    }
     const response = await api.get<GalleryData>(`/gallery/${slug}/photos`, { params: { ...params }, signal });
     const data = response.data;
     // Existing filter/folder/lightbox consumers require the complete set.
@@ -352,9 +341,10 @@ export const galleryService = {
     link.remove();
   },
 
-  // Download single photo — kept as the canonical name for the existing
-  // grid + lightbox-action callers that haven't been migrated to the
-  // share-aware savePhotoToDevice path yet.
+  // Download a single photo as a plain browser download, through
+  // useDownloadPhoto: the tiles' download button and Gallery Premium's
+  // lightbox. The gallery lightbox saves through the share-aware
+  // savePhotoToDevice instead.
   //
   // `isVideo` (issue 2263): a video in a gallery without a limit navigates
   // straight at the download URL, so the bytes stream and the tile's spinner
@@ -509,12 +499,6 @@ export const galleryService = {
   // and whether media is still processing for it (issue 2263).
   async getPhotoState(slug: string, signal?: AbortSignal): Promise<{ count: number; max_id: number | null; processing?: boolean }> {
     const response = await api.get<{ count: number; max_id: number | null; processing?: boolean }>(`/gallery/${slug}/photos/state`, { signal });
-    return response.data;
-  },
-
-  // Get gallery statistics
-  async getGalleryStats(slug: string): Promise<GalleryStats> {
-    const response = await api.get<GalleryStats>(`/gallery/${slug}/stats`);
     return response.data;
   },
 

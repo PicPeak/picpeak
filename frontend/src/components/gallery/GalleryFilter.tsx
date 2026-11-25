@@ -23,8 +23,6 @@ interface GalleryFilterProps {
   favoriteCount?: number;
   ratedCount?: number;
   className?: string;
-  isMobile?: boolean;
-  variant?: 'default' | 'compact';
 }
 
 export const GalleryFilter: React.FC<GalleryFilterProps> = ({
@@ -32,12 +30,7 @@ export const GalleryFilter: React.FC<GalleryFilterProps> = ({
   onFilterChange,
   feedbackEnabled,
   available,
-  likeCount = 0,
-  favoriteCount = 0,
-  ratedCount = 0,
   className = '',
-  isMobile = false,
-  variant = 'default'
 }) => {
   const { t } = useTranslation();
 
@@ -50,212 +43,69 @@ export const GalleryFilter: React.FC<GalleryFilterProps> = ({
     return null;
   }
 
-  // Compact icon-only vertical variant (used in sidebar and tight spaces)
-  if (variant === 'compact') {
-    return (
-      <div className={`${className}`}>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-theme whitespace-nowrap">
-            {t('gallery.feedbackFilter', 'Feedback Filter')}
-          </span>
-          <div className="flex items-center gap-1">
-            <Button
-              variant={isActive('all') ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => onFilterChange('all')}
-              className="p-1 w-8 h-8 flex items-center justify-center"
-              aria-label={t('gallery.all', 'All')}
-            >
-              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-current"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 8v-8h8v8h-8z"/></svg>
-            </Button>
-            {shows('liked') && (
-              <Button
-                variant={isActive('liked') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('liked')}
-                className="p-1 w-8 h-8 flex items-center justify-center"
-                aria-label={t('feedback.likes', 'Likes')}
-              >
-                <Heart className="w-3.5 h-3.5" />
-              </Button>
-            )}
-            {shows('favorited') && (
-              <Button
-                variant={isActive('favorited') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('favorited')}
-                className="p-1 w-8 h-8 flex items-center justify-center"
-                aria-label={t('gallery.favorited', 'Saved')}
-              >
-                <Bookmark className="w-3.5 h-3.5" />
-              </Button>
-            )}
-            {shows('rated') && (
-              <Button
-                variant={isActive('rated') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('rated')}
-                className="p-1 w-8 h-8 flex items-center justify-center"
-                aria-label={t('gallery.rated', 'Rated')}
-              >
-                <Star className="w-3.5 h-3.5" />
-              </Button>
-            )}
-            {shows('commented') && (
-              <Button
-                variant={isActive('commented') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('commented')}
-                className="p-1 w-8 h-8 flex items-center justify-center"
-                aria-label={t('gallery.commented', 'Commented')}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-              </Button>
-            )}
-          </div>
-        </div>
-        {/* Named lists (issue 2303); absent without them. */}
-        <FavoriteListSwitcher className="mt-2" />
-      </div>
-    );
-  }
-
+  // Compact icon-only row (the gallery sidebar)
   return (
     <div className={`${className}`}>
-      {/* Mobile-optimized vertical layout */}
-      {isMobile ? (
-        <div className="space-y-2">
-          <div className="text-xs text-muted-theme font-medium">
-            {t('gallery.feedbackFilter', 'Feedback Filter')}
-          </div>
-          <div className="flex flex-wrap gap-2">
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-muted-theme whitespace-nowrap">
+          {t('gallery.feedbackFilter', 'Feedback Filter')}
+        </span>
+        <div className="flex items-center gap-1">
+          <Button
+            variant={isActive('all') ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => onFilterChange('all')}
+            className="p-1 w-8 h-8 flex items-center justify-center"
+            aria-label={t('gallery.all', 'All')}
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-current"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 8v-8h8v8h-8z"/></svg>
+          </Button>
+          {shows('liked') && (
             <Button
-              variant={isActive('all') ? 'primary' : 'outline'}
+              variant={isActive('liked') ? 'primary' : 'outline'}
               size="sm"
-              onClick={() => onFilterChange('all')}
-              className="text-xs flex-1 min-w-[80px]"
+              onClick={() => onFilterChange('liked')}
+              className="p-1 w-8 h-8 flex items-center justify-center"
+              aria-label={t('feedback.likes', 'Likes')}
             >
-              {t('gallery.all', 'All')}
+              <Heart className="w-3.5 h-3.5" />
             </Button>
-            
-            {shows('liked') && (
-              <Button
-                variant={isActive('liked') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('liked')}
-                className="text-xs flex-1 min-w-[80px] flex items-center justify-center gap-1"
-              >
-                <Heart className="w-3 h-3" />
-                <span>{likeCount > 0 ? likeCount : t('gallery.liked', 'Liked')}</span>
-              </Button>
-            )}
-
-            {shows('favorited') && (
-              <Button
-                variant={isActive('favorited') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('favorited')}
-                className="text-xs flex-1 min-w-[80px] flex items-center justify-center gap-1"
-              >
-                <Bookmark className="w-3 h-3" />
-                <span>{favoriteCount > 0 ? favoriteCount : t('gallery.favorited', 'Saved')}</span>
-              </Button>
-            )}
-            
-            {shows('rated') && (
-              <Button
-                variant={isActive('rated') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('rated')}
-                className="text-xs flex-1 min-w-[80px] flex items-center justify-center gap-1"
-              >
-                <Star className="w-3 h-3" />
-                <span>{ratedCount > 0 ? ratedCount : t('gallery.rated', 'Rated')}</span>
-              </Button>
-            )}
-          </div>
-        </div>
-      ) : (
-        /* Desktop layout - inline with categories */
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-muted-theme font-medium whitespace-nowrap">
-            {t('gallery.feedbackFilter', 'Feedback Filter')}:
-          </span>
-          <div className="flex gap-2">
+          )}
+          {shows('favorited') && (
             <Button
-              variant={isActive('all') ? 'primary' : 'outline'}
+              variant={isActive('favorited') ? 'primary' : 'outline'}
               size="sm"
-              onClick={() => onFilterChange('all')}
-              className="text-xs sm:text-sm"
+              onClick={() => onFilterChange('favorited')}
+              className="p-1 w-8 h-8 flex items-center justify-center"
+              aria-label={t('gallery.favorited', 'Saved')}
             >
-              {t('gallery.all', 'All')}
+              <Bookmark className="w-3.5 h-3.5" />
             </Button>
-            
-            {shows('liked') && (
-              <Button
-                variant={isActive('liked') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('liked')}
-                className="text-xs sm:text-sm flex items-center gap-1"
-              >
-                <Heart className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">{t('gallery.liked', 'Liked')}</span>
-                {likeCount > 0 && (
-                  <span className="bg-accent-soft text-theme px-1.5 rounded">
-                    {likeCount}
-                  </span>
-                )}
-              </Button>
-            )}
-
-            {shows('favorited') && (
-              <Button
-                variant={isActive('favorited') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('favorited')}
-                className="text-xs sm:text-sm flex items-center gap-1"
-              >
-                <Bookmark className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">{t('gallery.favorited', 'Saved')}</span>
-                {favoriteCount > 0 && (
-                  <span className="bg-accent-soft text-theme px-1.5 rounded">
-                    {favoriteCount}
-                  </span>
-                )}
-              </Button>
-            )}
-            
-            {shows('rated') && (
-              <Button
-                variant={isActive('rated') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('rated')}
-                className="text-xs sm:text-sm flex items-center gap-1"
-              >
-                <Star className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">{t('gallery.rated', 'Rated')}</span>
-                {ratedCount > 0 && (
-                  <span className="bg-accent-soft text-theme px-1.5 rounded">
-                    {ratedCount}
-                  </span>
-                )}
-              </Button>
-            )}
-
-            {shows('commented') && (
-              <Button
-                variant={isActive('commented') ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => onFilterChange('commented')}
-                className="text-xs sm:text-sm flex items-center gap-1"
-              >
-                <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">{t('gallery.commented', 'Commented')}</span>
-              </Button>
-            )}
-          </div>
+          )}
+          {shows('rated') && (
+            <Button
+              variant={isActive('rated') ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => onFilterChange('rated')}
+              className="p-1 w-8 h-8 flex items-center justify-center"
+              aria-label={t('gallery.rated', 'Rated')}
+            >
+              <Star className="w-3.5 h-3.5" />
+            </Button>
+          )}
+          {shows('commented') && (
+            <Button
+              variant={isActive('commented') ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => onFilterChange('commented')}
+              className="p-1 w-8 h-8 flex items-center justify-center"
+              aria-label={t('gallery.commented', 'Commented')}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+            </Button>
+          )}
         </div>
-      )}
+      </div>
       {/* Named lists (issue 2303); absent without them. */}
       <FavoriteListSwitcher className="mt-2" />
     </div>

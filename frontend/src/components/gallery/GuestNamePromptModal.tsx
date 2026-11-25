@@ -9,8 +9,6 @@ interface GuestNamePromptModalProps {
   requireEmail?: boolean;
   /** The photographer's note on why the name is asked (issue 2503). Plain text. */
   privacyText?: string | null;
-  allowCancel?: boolean;
-  onCancel?: () => void;
 }
 
 /**
@@ -24,8 +22,6 @@ interface GuestNamePromptModalProps {
 export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
   requireEmail = false,
   privacyText = null,
-  allowCancel = true,
-  onCancel,
 }) => {
   const { t } = useTranslation();
   const { promptOpen, promptReason, closePrompt, register, switchToRecovery } = useGuestIdentity();
@@ -42,11 +38,9 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
     setErrors({});
     setSubmitError(null);
     closePrompt();
-    onCancel?.();
   };
 
-  // Escape closes only when the prompt may be cancelled at all.
-  useGalleryDialog({ open: promptOpen, onClose: handleClose, panelRef, dismissible: allowCancel });
+  useGalleryDialog({ open: promptOpen, onClose: handleClose, panelRef });
 
   if (!promptOpen) return null;
 
@@ -83,7 +77,7 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
     // Above the download dialog (z-[10000]): a download can ask for the name
     // while it is open (issue 2503).
     <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black/50" onClick={allowCancel ? handleClose : undefined} />
+      <div className="fixed inset-0 bg-black/50" onClick={handleClose} />
       <div
         ref={panelRef}
         role="dialog"
@@ -91,16 +85,14 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
         aria-labelledby="guest-prompt-title"
         className="relative bg-surface border border-border-token text-theme rounded-lg shadow-xl max-w-md w-full p-6"
       >
-        {allowCancel && (
-          <button
-            type="button"
-            onClick={handleClose}
-            aria-label={t('common.close', 'Close')}
-            className="absolute top-4 right-4 p-1 hover-surface rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5 text-muted-theme" />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleClose}
+          aria-label={t('common.close', 'Close')}
+          className="absolute top-4 right-4 p-1 hover-surface rounded-lg transition-colors"
+        >
+          <X className="w-5 h-5 text-muted-theme" />
+        </button>
 
         <h2 id="guest-prompt-title" className="text-lg font-semibold text-theme mb-2">
           {t('gallery.guestPrompt.title', "Welcome — what's your name?")}
@@ -161,11 +153,9 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
                 ? t('common.submitting', 'Submitting...')
                 : t('gallery.guestPrompt.submit', 'Continue')}
             </Button>
-            {allowCancel && (
-              <Button type="button" variant="ghost" onClick={handleClose} disabled={submitting}>
-                {t('common.cancel', 'Cancel')}
-              </Button>
-            )}
+            <Button type="button" variant="ghost" onClick={handleClose} disabled={submitting}>
+              {t('common.cancel', 'Cancel')}
+            </Button>
           </div>
 
           {/* A returning guest who fills the form in again becomes a second

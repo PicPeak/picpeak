@@ -34,8 +34,6 @@ export function setDownloadIdentityGate(slug: string, gate: DownloadIdentityGate
   else gates.delete(slug);
 }
 
-export const isDownloadIdentityRequired = (slug: string): boolean => !!gates.get(slug)?.required;
-
 // A download in progress holds the gallery mounted. Replacing a refused guest
 // identity mid-download rebuilds the gallery for the new guest (their likes,
 // favourites and labels, not the previous guest's), but not while a download

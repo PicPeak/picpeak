@@ -610,10 +610,6 @@ export interface GalleryData {
   reveal_at?: string | null;
 }
 
-export interface GalleryStats {
-  total_photos: number;
-}
-
 export interface ResolvedGalleryIdentifier {
   slug: string;
   token: string;

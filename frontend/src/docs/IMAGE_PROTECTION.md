@@ -143,22 +143,6 @@ import { AuthenticatedImage } from '../components/common/AuthenticatedImage';
 />
 ```
 
-### useCSSProtection Hook
-
-Applies CSS-based protection layers:
-
-```typescript
-import { useCSSProtection } from '../hooks/useCSSProtection';
-
-const containerRef = useCSSProtection({
-  enabled: true,
-  protectionLevel: 'enhanced',
-  applyWatermark: true,
-  watermarkText: 'Protected',
-  antiScreenshot: true
-});
-```
-
 ## CSS Protection Layers
 
 The system includes comprehensive CSS protection located in `src/styles/image-protection.css`:
@@ -174,7 +158,7 @@ The system includes comprehensive CSS protection located in `src/styles/image-pr
 ### Gallery Implementation
 
 ```typescript
-// In PhotoGrid component
+// In a gallery tile
 <AuthenticatedImage
   src={photo.thumbnail_url}
   alt={photo.filename}

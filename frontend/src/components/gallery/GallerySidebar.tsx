@@ -461,7 +461,6 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                 favoriteCount={favoriteCount}
                 ratedCount={ratedCount}
                 className="w-full"
-                variant="compact"
               />
               {/* Undo many likes at once (issue 2561); the container confirms. */}
               {clearOwnLikes && clearOwnLikes.count > 0 && (
