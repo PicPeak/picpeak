@@ -20,7 +20,9 @@ const { collectLegacyStoredFiles, storedPathMap, storedPathChecksums } = require
 const S3StorageAdapter = require('./storage/s3Storage');
 const recoveryFiles = require('./recoveryFiles');
 const { getStorage } = require('./storage');
-const { backupS3Access } = require('../utils/s3EndpointPolicy');
+// readBackupBoolean is this module's normalizeBoolean (exported below).
+const { backupS3Settings, readBackupBoolean: normalizeBoolean } = require('../utils/s3EndpointPolicy');
+const { sha256File } = require('../utils/fileChecksum');
 const { standaloneSnapshotOfRun, removeLocalSnapshot, removeS3Snapshot, RSYNC_MIRROR_LAYOUT } = require('../utils/backupRestorePoint');
 const packageJson = require('../../package.json');
 const { withTrustedCrmAccess } = require('../database/crmAccess');
@@ -87,22 +89,6 @@ const { getStoragePath } = require('../config/storage');
 const backupManifestKey = require('../utils/backupManifestKey');
 const { localDestinationHint } = require('../utils/localBackupDestination');
 
-function normalizeBoolean(value) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim().toLowerCase();
-    if (trimmed === 'true') {
-      return true;
-    }
-    if (trimmed === 'false') {
-      return false;
-    }
-  }
-  return Boolean(value);
-}
-
 function parseSettingValue(raw) {
   if (raw === null || raw === undefined) {
     return raw;
@@ -134,14 +120,7 @@ function parseSettingValue(raw) {
 }
 
 async function calculateChecksum(filePath) {
-  const hash = crypto.createHash('sha256');
-  const stream = fsSync.createReadStream(filePath);
-
-  return new Promise((resolve, reject) => {
-    stream.on('data', data => hash.update(data));
-    stream.on('end', () => resolve(hash.digest('hex')));
-    stream.on('error', reject);
-  });
+  return sha256File(filePath);
 }
 
 async function getCurrentSchemaVersion() {
@@ -1131,18 +1110,10 @@ async function performS3Backup(config, files, verifiedDatabaseInfo) {
       throw new Error('S3 backup configuration incomplete: bucket, access key, and secret key are required');
     }
 
-    const s3Config = {
-      bucket,
-      region: config.backup_s3_region || 'us-east-1',
-      endpoint: config.backup_s3_endpoint,
-      accessKeyId: config.backup_s3_access_key,
-      secretAccessKey: config.backup_s3_secret_key,
-      forcePathStyle: normalizeBoolean(config.backup_s3_force_path_style),
-      sslEnabled: config.backup_s3_ssl_enabled === undefined ? true : normalizeBoolean(config.backup_s3_ssl_enabled),
+    const s3Config = backupS3Settings(config, {
       maxRetries: config.backup_s3_max_retries || 3,
       retryDelay: config.backup_s3_retry_delay || 1000,
-      ...backupS3Access(config)
-    };
+    });
 
     s3Client = new S3StorageAdapter(s3Config);
     await s3Client.testConnection();
@@ -1807,9 +1778,6 @@ function resolveScheduleCron(config) {
     if (config && Object.prototype.hasOwnProperty.call(config, key)) {
       return String(config[key] ?? '').trim();
     }
-    if (config?.__raw && Object.prototype.hasOwnProperty.call(config.__raw, key)) {
-      return String(parseSettingValue(config.__raw[key]) ?? '').trim();
-    }
     return '';
   };
 
@@ -2026,16 +1994,8 @@ async function loadManifestFromAnywhere(manifestPath, config) {
   }
 
   const cfg = config || (await resolveConfigWithFallback());
-  const accessKey = cfg?.backup_s3_access_key
-    ?? (cfg?.__raw && Object.prototype.hasOwnProperty.call(cfg.__raw, 'backup_s3_access_key')
-      ? parseSettingValue(cfg.__raw.backup_s3_access_key)
-      : undefined)
-    ?? process.env.BACKUP_S3_ACCESS_KEY;
-  const secretKey = cfg?.backup_s3_secret_key
-    ?? (cfg?.__raw && Object.prototype.hasOwnProperty.call(cfg.__raw, 'backup_s3_secret_key')
-      ? parseSettingValue(cfg.__raw.backup_s3_secret_key)
-      : undefined)
-    ?? process.env.BACKUP_S3_SECRET_KEY;
+  const accessKey = cfg?.backup_s3_access_key ?? process.env.BACKUP_S3_ACCESS_KEY;
+  const secretKey = cfg?.backup_s3_secret_key ?? process.env.BACKUP_S3_SECRET_KEY;
 
   if (!accessKey || !secretKey) {
     throw new Error('S3 credentials not configured for manifest retrieval');
@@ -2053,18 +2013,11 @@ async function loadManifestFromAnywhere(manifestPath, config) {
   const ext = path.extname(key) || '.json';
   const tempPath = path.join(tempDir, `manifest-${Date.now()}${ext}`);
 
-  const s3Client = new S3StorageAdapter({
+  const s3Client = new S3StorageAdapter(backupS3Settings(cfg, {
     bucket,
-    region: (cfg && cfg.backup_s3_region) || 'us-east-1',
-    endpoint: cfg && cfg.backup_s3_endpoint,
     accessKeyId: accessKey,
     secretAccessKey: secretKey,
-    forcePathStyle: cfg ? normalizeBoolean(cfg.backup_s3_force_path_style) : false,
-    sslEnabled: cfg && cfg.backup_s3_ssl_enabled !== undefined
-      ? normalizeBoolean(cfg.backup_s3_ssl_enabled)
-      : true,
-    ...backupS3Access(cfg),
-  });
+  }));
 
   try {
     await s3Client.download(key, tempPath);
@@ -2129,17 +2082,8 @@ async function getBackupManifest(backupRunId) {
   }
 
   const config = await resolveConfigWithFallback();
-  const accessKey = config?.backup_s3_access_key
-    ?? (config?.__raw && Object.prototype.hasOwnProperty.call(config.__raw, 'backup_s3_access_key')
-      ? parseSettingValue(config.__raw.backup_s3_access_key)
-      : undefined)
-    ?? process.env.BACKUP_S3_ACCESS_KEY;
-
-  const secretKey = config?.backup_s3_secret_key
-    ?? (config?.__raw && Object.prototype.hasOwnProperty.call(config.__raw, 'backup_s3_secret_key')
-      ? parseSettingValue(config.__raw.backup_s3_secret_key)
-      : undefined)
-    ?? process.env.BACKUP_S3_SECRET_KEY;
+  const accessKey = config?.backup_s3_access_key ?? process.env.BACKUP_S3_ACCESS_KEY;
+  const secretKey = config?.backup_s3_secret_key ?? process.env.BACKUP_S3_SECRET_KEY;
 
   if (!accessKey || !secretKey) {
     throw new Error('S3 credentials not configured for manifest retrieval');
@@ -2152,18 +2096,11 @@ async function getBackupManifest(backupRunId) {
 
   const [, bucket, key] = match;
 
-  const s3Client = new S3StorageAdapter({
+  const s3Client = new S3StorageAdapter(backupS3Settings(config, {
     bucket,
-    region: (config && config.backup_s3_region) || 'us-east-1',
-    endpoint: config && config.backup_s3_endpoint,
     accessKeyId: accessKey,
     secretAccessKey: secretKey,
-    forcePathStyle: config ? normalizeBoolean(config.backup_s3_force_path_style) : false,
-    sslEnabled: config && config.backup_s3_ssl_enabled !== undefined
-      ? normalizeBoolean(config.backup_s3_ssl_enabled)
-      : true,
-    ...backupS3Access(config)
-  });
+  }));
 
   const manifest = await loadManifestFromS3Bounded(s3Client, key, backupRunId, { inspect: true });
 
@@ -2190,16 +2127,7 @@ async function validateBackupManifest(manifestPath) {
         throw new Error('S3 credentials not configured for manifest validation');
       }
 
-      const s3Client = new S3StorageAdapter({
-        bucket,
-        region: config.backup_s3_region || 'us-east-1',
-        endpoint: config.backup_s3_endpoint,
-        accessKeyId: config.backup_s3_access_key,
-        secretAccessKey: config.backup_s3_secret_key,
-        forcePathStyle: normalizeBoolean(config.backup_s3_force_path_style),
-        sslEnabled: config.backup_s3_ssl_enabled === undefined ? true : normalizeBoolean(config.backup_s3_ssl_enabled),
-        ...backupS3Access(config)
-      });
+      const s3Client = new S3StorageAdapter(backupS3Settings(config, { bucket }));
 
       manifest = await loadManifestFromS3Bounded(s3Client, key, `validate-${Date.now()}`, { inspect: true });
     } else {

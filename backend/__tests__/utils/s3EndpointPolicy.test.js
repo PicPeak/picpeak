@@ -198,3 +198,172 @@ describe('S3StorageAdapter constructor (production)', () => {
     expect(make('http://169.254.169.254', true)).toThrow(/S3_ENDPOINT_FORBIDDEN/);
   });
 });
+
+describe('readBackupBoolean', () => {
+  // The table backupService.normalizeBoolean and the admin routes' reader
+  // both followed before they were merged (issue 2615).
+  it.each([
+    [true, true], [false, false],
+    ['true', true], ['false', false], [' TRUE ', true], ['False', false],
+    ['yes', true], ['no', true], ['0', true], ['', false], ['  ', true],
+    [1, true], [0, false], [null, false], [undefined, false], [{}, true],
+  ])('reads %p as %p', (value, expected) => {
+    expect(policy.readBackupBoolean(value)).toBe(expected);
+  });
+
+  it('is what backupS3Ssl applies once a value is set, and on when unset or null', () => {
+    expect(policy.backupS3Ssl({})).toBe(true);
+    expect(policy.backupS3Ssl({ backup_s3_ssl_enabled: null })).toBe(true);
+    expect(policy.backupS3Ssl(null)).toBe(true);
+    for (const value of [true, false, 'true', 'false', 'no', 0, 1, '']) {
+      expect(policy.backupS3Ssl({ backup_s3_ssl_enabled: value })).toBe(policy.readBackupBoolean(value));
+    }
+  });
+});
+
+describe('backupS3Settings', () => {
+  const config = {
+    backup_s3_bucket: 'bkt',
+    backup_s3_region: 'eu-central-1',
+    backup_s3_endpoint: 'https://s3.example.com',
+    backup_s3_access_key: 'ak',
+    backup_s3_secret_key: 'sk',
+  };
+
+  it('maps the backup settings onto adapter options', () => {
+    expect(policy.backupS3Settings({ ...config, backup_s3_force_path_style: true })).toEqual({
+      bucket: 'bkt',
+      region: 'eu-central-1',
+      endpoint: 'https://s3.example.com',
+      accessKeyId: 'ak',
+      secretAccessKey: 'sk',
+      forcePathStyle: true,
+      sslEnabled: true,
+      allowPrivateEndpoint: false,
+    });
+  });
+
+  it('defaults the region and tolerates a missing config', () => {
+    expect(policy.backupS3Settings({}).region).toBe('us-east-1');
+    expect(policy.backupS3Settings(null)).toEqual({
+      bucket: undefined, region: 'us-east-1', endpoint: undefined, accessKeyId: undefined,
+      secretAccessKey: undefined, forcePathStyle: false, sslEnabled: true, allowPrivateEndpoint: false,
+    });
+  });
+
+  it('reads the flags as a backup run does by default', () => {
+    const read = (extra) => policy.backupS3Settings({ ...config, ...extra });
+    expect(read({ backup_s3_force_path_style: 'false' }).forcePathStyle).toBe(false);
+    expect(read({ backup_s3_force_path_style: 'TRUE' }).forcePathStyle).toBe(true);
+    expect(read({}).forcePathStyle).toBe(false);
+    expect(read({}).sslEnabled).toBe(true);
+    // Only an absent value means on; an explicit null reads as off.
+    expect(read({ backup_s3_ssl_enabled: null }).sslEnabled).toBe(false);
+    expect(read({ backup_s3_ssl_enabled: 'false' }).sslEnabled).toBe(false);
+  });
+
+  it('reads the flags as the admin routes do with routeFlags', () => {
+    const read = (extra) => policy.backupS3Settings({ ...config, ...extra }, {}, { routeFlags: true });
+    // Path style passes through as stored.
+    expect(read({ backup_s3_force_path_style: 'false' }).forcePathStyle).toBe('false');
+    expect(read({ backup_s3_force_path_style: 0 }).forcePathStyle).toBe(false);
+    expect(read({ backup_s3_force_path_style: true }).forcePathStyle).toBe(true);
+    // SSL through backupS3Ssl: null reads as on.
+    expect(read({ backup_s3_ssl_enabled: null }).sslEnabled).toBe(true);
+    expect(read({ backup_s3_ssl_enabled: 'false' }).sslEnabled).toBe(false);
+  });
+
+  it('applies overrides but always derives the private-endpoint access from the settings', () => {
+    const approved = {
+      ...config,
+      backup_s3_endpoint: 'http://10.0.0.5:9000',
+      backup_s3_ssl_enabled: false,
+      [policy.APPROVAL_SETTING]: 'http://10.0.0.5:9000',
+    };
+    const settings = policy.backupS3Settings(approved, {
+      bucket: 'other', accessKeyId: 'env-ak', maxRetries: 3, retryDelay: 1000, allowPrivateEndpoint: false,
+    });
+    expect(settings).toMatchObject({
+      bucket: 'other', accessKeyId: 'env-ak', secretAccessKey: 'sk', maxRetries: 3, retryDelay: 1000,
+      sslEnabled: false, allowPrivateEndpoint: true,
+    });
+  });
+});
+
+describe('backupS3Settings parity with the copies it replaced (issue 2615)', () => {
+  const { readBackupBoolean: nb, backupS3Ssl, backupS3Access } = policy;
+  // The literal builders as they stood in backupService (runs, manifests)
+  // and adminBackup (routes) before the merge. performS3Backup and
+  // validateBackupManifest always had a config:
+  const serviceCopy = (config) => ({
+    bucket: config.backup_s3_bucket,
+    region: config.backup_s3_region || 'us-east-1',
+    endpoint: config.backup_s3_endpoint,
+    accessKeyId: config.backup_s3_access_key,
+    secretAccessKey: config.backup_s3_secret_key,
+    forcePathStyle: nb(config.backup_s3_force_path_style),
+    sslEnabled: config.backup_s3_ssl_enabled === undefined ? true : nb(config.backup_s3_ssl_enabled),
+    ...backupS3Access(config),
+  });
+  // loadManifestFromAnywhere and getBackupManifest tolerated a missing one
+  // and took bucket and credentials from elsewhere:
+  const manifestCopy = (cfg, bucket, accessKey, secretKey) => ({
+    bucket,
+    region: (cfg && cfg.backup_s3_region) || 'us-east-1',
+    endpoint: cfg && cfg.backup_s3_endpoint,
+    accessKeyId: accessKey,
+    secretAccessKey: secretKey,
+    forcePathStyle: cfg ? nb(cfg.backup_s3_force_path_style) : false,
+    sslEnabled: cfg && cfg.backup_s3_ssl_enabled !== undefined ? nb(cfg.backup_s3_ssl_enabled) : true,
+    ...backupS3Access(cfg),
+  });
+  const routeCopy = (config) => ({
+    endpoint: config.backup_s3_endpoint,
+    bucket: config.backup_s3_bucket,
+    accessKeyId: config.backup_s3_access_key,
+    secretAccessKey: config.backup_s3_secret_key,
+    region: config.backup_s3_region || 'us-east-1',
+    forcePathStyle: config.backup_s3_force_path_style || false,
+    sslEnabled: backupS3Ssl(config),
+    ...backupS3Access(config),
+  });
+
+  const flagValues = [undefined, null, true, false, 'true', 'false', ' True ', 'yes', '', 0, 1];
+  const configs = [];
+  for (const pathStyle of flagValues) {
+    for (const ssl of flagValues) {
+      const cfg = {
+        backup_s3_bucket: 'bkt', backup_s3_access_key: 'ak', backup_s3_secret_key: 'sk',
+        backup_s3_endpoint: 'http://10.0.0.5:9000', [policy.APPROVAL_SETTING]: 'http://10.0.0.5:9000',
+      };
+      if (pathStyle !== undefined) cfg.backup_s3_force_path_style = pathStyle;
+      if (ssl !== undefined) cfg.backup_s3_ssl_enabled = ssl;
+      configs.push(cfg);
+    }
+  }
+
+  it('matches the service copies for every flag combination', () => {
+    for (const cfg of [...configs, {}]) {
+      expect(policy.backupS3Settings(cfg)).toEqual(serviceCopy(cfg));
+      expect(policy.backupS3Settings(cfg, { bucket: 'b2', accessKeyId: 'x', secretAccessKey: 'y' }))
+        .toEqual(manifestCopy(cfg, 'b2', 'x', 'y'));
+    }
+  });
+
+  it('matches the manifest copies without a config, up to a null vs undefined endpoint', () => {
+    for (const cfg of [null, undefined]) {
+      const merged = policy.backupS3Settings(cfg, { bucket: 'b2', accessKeyId: 'x', secretAccessKey: 'y' });
+      const { endpoint: before, ...rest } = manifestCopy(cfg, 'b2', 'x', 'y');
+      // S3StorageAdapter only tests the endpoint for truthiness.
+      expect(merged.endpoint).toBeUndefined();
+      expect(before == null).toBe(true);
+      expect(merged).toEqual({ ...rest, endpoint: undefined });
+    }
+  });
+
+  it('matches the route copies with routeFlags', () => {
+    for (const cfg of [...configs, {}]) {
+      expect(policy.backupS3Settings(cfg, {}, { routeFlags: true })).toEqual(routeCopy(cfg));
+    }
+  });
+});

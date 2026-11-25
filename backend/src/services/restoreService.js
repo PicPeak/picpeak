@@ -1,10 +1,10 @@
 const fs = require('fs').promises;
 const path = require('path');
-const crypto = require('crypto');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
 const { createReadStream, createWriteStream, constants: fsConstants } = require('fs');
+const { sha256File } = require('../utils/fileChecksum');
 const { spawnAsync, spawnToFile } = require('../utils/safeExec');
 const { prepareDump, loadPreparedDump } = require('../utils/pgDumpLoad');
 const { liveSqliteArgs } = require('../utils/sqliteCli');
@@ -101,13 +101,7 @@ async function verifyDatabaseDumpChecksum(dumpPath, expectedChecksum, warn = () 
     warn('Backup manifest records no database dump checksum; the dump was restored without verification');
     return { verified: false };
   }
-  const actual = await new Promise((resolve, reject) => {
-    const hash = crypto.createHash('sha256');
-    createReadStream(dumpPath)
-      .on('data', (chunk) => hash.update(chunk))
-      .on('end', () => resolve(hash.digest('hex')))
-      .on('error', reject);
-  });
+  const actual = await sha256File(dumpPath);
   if (actual !== expected) {
     throw new Error(
       'The database dump does not match the checksum recorded in the backup manifest. ' +
@@ -2751,14 +2745,7 @@ END $$;`
    * Calculate file checksum
    */
   async calculateChecksum(filePath) {
-    const hash = crypto.createHash('sha256');
-    const stream = createReadStream(filePath);
-    
-    return new Promise((resolve, reject) => {
-      stream.on('data', data => hash.update(data));
-      stream.on('end', () => resolve(hash.digest('hex')));
-      stream.on('error', reject);
-    });
+    return sha256File(filePath);
   }
 
   /**
