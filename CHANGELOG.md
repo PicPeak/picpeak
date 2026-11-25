@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.210.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.4-beta.0...v3.210.5-beta.0) (2026-11-25)
+
+
+### Bug Fixes
+
+* **gallery:** label a video's download button "Download video" ([#2660](https://github.com/PicPeak/picpeak/issues/2660)) ([1ebc703](https://github.com/PicPeak/picpeak/commit/1ebc703811064680d8aa43b18d368b91fe4bb846))
+* **restore:** stop a PostgreSQL restore at the first failing statement ([#2661](https://github.com/PicPeak/picpeak/issues/2661)) ([5aa5cf4](https://github.com/PicPeak/picpeak/commit/5aa5cf4b03df342069395031205c73bdabd5a6ab))
+
 ## [3.210.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.3-beta.0...v3.210.4-beta.0) (2026-11-24)
 
 
