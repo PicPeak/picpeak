@@ -371,7 +371,7 @@ async function externalRelpathIndexExists(knex) {
  *
  * Deliberately carries no `code`. run-migrations-safe.js treats 23505, 42P07,
  * 42701 and 42710 as "schema already exists" and marks the migration applied
- * (run-migrations-safe.js:138) — and a CREATE UNIQUE INDEX that finds
+ * (`schemaExistsErrors` in run-migrations-safe.js) — and a CREATE UNIQUE INDEX that finds
  * duplicate rows raises exactly 23505 on Postgres. Letting the driver's error
  * through would therefore record 186 as done on an install that never got the
  * index, with nothing to trigger a retry: the precise outcome the throw

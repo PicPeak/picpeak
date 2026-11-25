@@ -53,9 +53,10 @@ jobs:
           file: ./backend/Dockerfile
           load: true
           tags: picpeak-backend:smoke
-          cache-from: type=gha,scope=install-smoke
-          # ignore-error: a flaky GHA cache write must not fail the build.
-          cache-to: type=gha,mode=max,scope=install-smoke,ignore-error=true
+          # Reads the cache docker-build.yml fills for this platform. No
+          # cache-to: that build passes its own CACHEBUST, so writing the same
+          # scope from here would overwrite its cache index.
+          cache-from: type=gha,scope=backend-linux-amd64
 
       - name: Create Docker network
         run: docker network create picpeak-smoke
