@@ -49,8 +49,7 @@ async function resolveConfigWithFallback() {
   }
 
   const hasEnabled = config && Object.prototype.hasOwnProperty.call(config, 'backup_enabled');
-  const hasSchedule = config && (Object.prototype.hasOwnProperty.call(config, 'backup_schedule')
-    || (config.__raw && Object.prototype.hasOwnProperty.call(config.__raw, 'backup_schedule')));
+  const hasSchedule = config && Object.prototype.hasOwnProperty.call(config, 'backup_schedule');
 
   if (!config || !hasEnabled || !hasSchedule) {
     const fallback = await getBackupConfigInternal();
