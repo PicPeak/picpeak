@@ -566,30 +566,19 @@ class DatabaseBackupService {
    * Validate backup integrity
    */
   async validateBackup(backupPath, _originalChecksums) {
-    const tempDbPath = `${backupPath}.validate`;
-    
-    try {
-      if (this.dbType === 'sqlite') {
-        // For SQLite, we can directly check integrity
-        const result = await spawnAsync('sqlite3', [backupPath, 'PRAGMA integrity_check']);
-        if (!result.stdout.includes('ok')) {
-          throw new Error('Backup integrity check failed');
-        }
-      } else {
-        // For PostgreSQL, we'd need to restore to a temp database
-        // This is more complex and might not be feasible in production
-        logger.info('PostgreSQL backup validation would require restore test');
+    if (this.dbType === 'sqlite') {
+      // For SQLite, we can directly check integrity
+      const result = await spawnAsync('sqlite3', [backupPath, 'PRAGMA integrity_check']);
+      if (!result.stdout.includes('ok')) {
+        throw new Error('Backup integrity check failed');
       }
-      
-      return { valid: true };
-    } finally {
-      // Cleanup
-      try {
-        await fs.unlink(tempDbPath);
-      } catch (e) {
-        // Ignore
-      }
+    } else {
+      // For PostgreSQL, we'd need to restore to a temp database
+      // This is more complex and might not be feasible in production
+      logger.info('PostgreSQL backup validation would require restore test');
     }
+
+    return { valid: true };
   }
 
   /**
@@ -998,70 +987,6 @@ class DatabaseBackupService {
       logger.error('Failed to get schema version:', error);
       return 'unknown';
     }
-  }
-
-  /**
-   * Check version compatibility for restore
-   */
-  async checkVersionCompatibility(backupInfo) {
-    const currentAppVersion = packageJson.version;
-    const currentNodeVersion = process.version;
-    const currentSchemaVersion = await this.getCurrentSchemaVersion();
-    
-    const compatibility = {
-      compatible: true,
-      warnings: [],
-      errors: []
-    };
-
-    // Check app version
-    if (backupInfo.app_version !== currentAppVersion) {
-      const backupMajor = backupInfo.app_version?.split('.')[0];
-      const currentMajor = currentAppVersion.split('.')[0];
-      
-      if (backupMajor !== currentMajor) {
-        compatibility.errors.push(
-          `Major version mismatch: backup v${backupInfo.app_version}, current v${currentAppVersion}`
-        );
-        compatibility.compatible = false;
-      } else {
-        compatibility.warnings.push(
-          `Minor version difference: backup v${backupInfo.app_version}, current v${currentAppVersion}`
-        );
-      }
-    }
-
-    // Check Node.js version
-    if (backupInfo.node_version !== currentNodeVersion) {
-      const backupNodeMajor = backupInfo.node_version?.split('.')[0];
-      const currentNodeMajor = currentNodeVersion.split('.')[0];
-      
-      if (backupNodeMajor !== currentNodeMajor) {
-        compatibility.warnings.push(
-          `Node.js major version difference: backup ${backupInfo.node_version}, current ${currentNodeVersion}`
-        );
-      }
-    }
-
-    // Check schema version
-    if (backupInfo.db_schema_version && backupInfo.db_schema_version !== currentSchemaVersion) {
-      compatibility.warnings.push(
-        `Database schema difference: backup migration '${backupInfo.db_schema_version}', current '${currentSchemaVersion}'`
-      );
-      compatibility.warnings.push(
-        'You may need to run migrations after restore'
-      );
-    }
-
-    return compatibility;
-  }
-
-  /**
-   * Restore from backup (with version checking)
-   */
-  async restore(backupPath, _options = {}) {
-    // This is a dangerous operation and should be used with extreme caution
-    throw new Error('Restore functionality not implemented for safety. Please use restore service or restore manually.');
   }
 }
 

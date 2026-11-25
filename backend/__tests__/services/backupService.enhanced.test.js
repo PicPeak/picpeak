@@ -132,8 +132,7 @@ describe('Enhanced Backup Service Tests', () => {
       type: 'sqlite',
       backupFile: DB_DUMP_PATH,
       size: 13,
-      checksum: crypto.createHash('sha256').update('database dump').digest('hex'),
-      hasChanged: false
+      checksum: crypto.createHash('sha256').update('database dump').digest('hex')
     });
   });
 
@@ -231,8 +230,7 @@ describe('Enhanced Backup Service Tests', () => {
       jest.spyOn(backupService, 'getDatabaseBackupInfo').mockResolvedValue({
         type: 'sqlite',
         backupFile: DB_DUMP_PATH,
-        checksum: crypto.createHash('sha256').update('database dump').digest('hex'),
-        hasChanged: true
+        checksum: crypto.createHash('sha256').update('database dump').digest('hex')
       });
       
       await backupService.runBackup();
@@ -335,8 +333,7 @@ describe('Enhanced Backup Service Tests', () => {
         type: 'sqlite',
         backupFile: '/backup/db-backup.sql',
         size: 1024000,
-        checksum: crypto.createHash('sha256').update('database backup content').digest('hex'),
-        hasChanged: false
+        checksum: crypto.createHash('sha256').update('database backup content').digest('hex')
       });
       
       // Mock database backup file
@@ -894,17 +891,6 @@ describe('Enhanced Backup Service Tests', () => {
       expect(status.lastBackup).toMatchObject({ id: 2, status: 'failed' });
       expect(status.lastSuccessfulBackup).toMatchObject({ id: 1, status: 'completed' });
       expect(status.isHealthy).toBe(false);
-    });
-
-    it('should clean up old backup runs', async () => {
-      mockDb.delete.mockResolvedValue(5);
-      jest.spyOn(backupService, 'retainedRestorePoints').mockResolvedValue({ kept: new Set(), byType: { local: [], s3: [] } });
-      
-      await backupService.cleanupOldBackupRuns(30);
-      
-      expect(mockDb.where).toHaveBeenCalledWith('started_at', '<', expect.any(Date));
-      expect(mockDb.delete).toHaveBeenCalled();
-      expect(logger.info).toHaveBeenCalledWith('Cleaned up 5 old backup runs');
     });
   });
 

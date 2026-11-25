@@ -91,7 +91,6 @@ describe('complete standalone backup restore points', () => {
     jest.spyOn(service, 'getDatabaseBackupInfo').mockResolvedValue({
       type: 'sqlite', backupFile: dump, size: 25,
       checksum: crypto.createHash('sha256').update('independent database dump').digest('hex'),
-      hasChanged: true,
     });
     for (const [key, value] of Object.entries({
       backup_enabled: true, backup_destination_type: 'local',

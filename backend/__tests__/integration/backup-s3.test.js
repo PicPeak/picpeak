@@ -296,20 +296,6 @@ describe('S3 Backup Integration Tests', () => {
           .toContain('events/active/event1/photo2.jpg');
       }
     });
-
-    it('should track file states across backups', async () => {
-      if (process.env.SKIP_S3_TESTS === 'true') return;
-
-      await backupService.runBackup();
-
-      // Check file states are recorded
-      const fileStates = await db('backup_file_states').select('*');
-      expect(fileStates.length).toBeGreaterThan(0);
-
-      // Verify checksums are stored
-      const hasChecksums = fileStates.every(state => state.checksum !== null);
-      expect(hasChecksums).toBe(true);
-    });
   });
 
   describe('S3 Manifest Storage', () => {

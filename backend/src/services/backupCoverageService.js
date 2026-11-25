@@ -113,7 +113,6 @@ async function readBackupConfig() {
 
 async function listConfiguredPaths() {
   try {
-    if (!(await db.schema.hasTable('backup_paths'))) return null;
     return await db('backup_paths')
       .orderBy('display_order', 'asc')
       .select('path', 'include_in_default', 'feature_flag', 'display_order', 'description');
@@ -160,12 +159,10 @@ async function buildDatabaseStatus(config) {
 
   let recent = null;
   try {
-    if (await db.schema.hasTable('database_backup_runs')) {
-      recent = await db('database_backup_runs')
-        .where('status', 'completed')
-        .orderBy('completed_at', 'desc')
-        .first();
-    }
+    recent = await db('database_backup_runs')
+      .where('status', 'completed')
+      .orderBy('completed_at', 'desc')
+      .first();
   } catch (err) {
     logger.warn(`backup-coverage: could not read database_backup_runs — ${err.message}`);
   }
@@ -300,7 +297,7 @@ async function getCoverageReport() {
   const configuredRows = await listConfiguredPaths();
   const diskDirs = await listTopLevelStorageDirs();
 
-  // Fallback when the table doesn't exist yet (migration 108 hasn't
+  // Fallback when the table doesn't exist yet (migration 109 hasn't
   // run for some reason). Mirrors the walker's LEGACY_BACKUP_PATHS
   // contract — every other layer of this system uses the same
   // belt-and-suspenders fallback.
@@ -362,8 +359,3 @@ module.exports = {
   EXPECTED_NON_BACKUP_DIRS,
   DB_DUMP_STALE_AFTER_MS,
 };
-
-// Silence unused import lint warning — backupService is required so
-// the module-graph cache primes (some tests jest.mock it before
-// requiring this service).
-void backupService;

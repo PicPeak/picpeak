@@ -182,12 +182,17 @@ describe('private S3 backup endpoints (issue 1641)', () => {
   });
 
   describe('management routes', () => {
-    it('browse an approved endpoint over the scheme backups use, with SSL off', async () => {
+    it('reach an approved endpoint over the scheme backups use, with SSL off', async () => {
       const origin = `http://127.0.0.1:${port}`;
       await setBackupSettings({
         ...s3(`127.0.0.1:${port}`), backup_s3_ssl_enabled: false, [APPROVAL]: origin,
       });
-      await request(app).get('/api/admin/backup/s3/files').set('Authorization', `Bearer ${superToken}`);
+      // Deleting an S3 run lists its manifest objects at the endpoint.
+      const id = await insertId('backup_runs', {
+        started_at: new Date().toISOString(), status: 'completed', backup_type: 'full',
+        manifest_path: 's3://backups/backups/2026/09/01/backup-1756692000000/manifests/m.json',
+      });
+      await request(app).delete(`/api/admin/backup/runs/${id}`).set('Authorization', `Bearer ${superToken}`);
       // Reached over HTTP: an HTTPS client would never produce a request here.
       expect(s3Requests).toBeGreaterThan(0);
     });

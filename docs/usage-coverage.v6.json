@@ -318,24 +318,10 @@
         "POST /verifications",
         "POST /run",
         "GET /picpeak/export",
-        "GET /runs/:id",
         "DELETE /runs/:id",
-        "GET /files",
-        "DELETE /cleanup",
         "POST /test-connection",
-        "GET /manifest/:backupRunId",
-        "POST /manifest/validate",
-        "GET /manifest/:backupRunId/download",
-        "GET /manifests/:backupId",
-        "GET /manifests/:backupId/download",
-        "POST /manifests/validate",
-        "GET /s3/buckets",
-        "GET /s3/files",
-        "DELETE /s3/cleanup",
         "POST /s3/test-upload",
-        "GET /download/:backupId",
-        "GET /checksums",
-        "POST /estimate"
+        "GET /download/:backupId"
       ]
     },
     "adminBusinessProfile.js": {
