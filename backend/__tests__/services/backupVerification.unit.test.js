@@ -220,6 +220,13 @@ describe('drill: settings a newer pg_dump writes that the target server lacks', 
     expect(after.endsWith(body.join('\n'))).toBe(true);
   });
 
+  it('edits a private copy that arrived read-only (an rsync dump keeps the remote mode)', async () => {
+    const file = await write([...HEADER, 'CREATE TABLE public.t (id integer);', '']);
+    await fs.chmod(file, 0o444);
+    expect(await neutraliseUnknownSettings(file, workDir, unknownTo(PG15))).toEqual(['transaction_timeout']);
+    expect(await fs.readFile(file, 'utf8')).toContain('\n--  transaction_timeout = 0;\n');
+  });
+
   it('changes nothing when the server knows every setting', async () => {
     const file = await write([...HEADER, 'CREATE TABLE public.t (id integer);', '']);
     const before = await fs.readFile(file);
