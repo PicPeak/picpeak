@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { RefreshCw, Tags } from 'lucide-react';
 
-import { Button, Card, Loading } from '../common';
+import { Button, Loading } from '../common';
 import { api } from '../../config/api';
 
 interface TaggingPayload {
@@ -29,11 +29,9 @@ interface TaggingPayload {
 interface AutoTaggingCardProps {
   eventId: number;
   isArchived?: boolean;
-  /** Without its own card frame, for a host that already draws one. */
-  bare?: boolean;
 }
 
-export const AutoTaggingCard: React.FC<AutoTaggingCardProps> = ({ eventId, isArchived, bare = false }) => {
+export const AutoTaggingCard: React.FC<AutoTaggingCardProps> = ({ eventId, isArchived }) => {
   const { t } = useTranslation();
   const [saving, setSaving] = useState(false);
 
@@ -59,13 +57,12 @@ export const AutoTaggingCard: React.FC<AutoTaggingCardProps> = ({ eventId, isArc
     }
   };
 
-  const Frame = bare ? 'div' : Card;
-  if (isLoading) return <Frame><Loading /></Frame>;
+  if (isLoading) return <div><Loading /></div>;
   if (!data) return null;
   const { status } = data;
 
   return (
-    <Frame>
+    <div>
       <div className="flex items-start gap-3 mb-4">
         <Tags className="text-faint mt-0.5" size={20} />
         <div>
@@ -127,7 +124,7 @@ export const AutoTaggingCard: React.FC<AutoTaggingCardProps> = ({ eventId, isArc
           </div>
         </>
       )}
-    </Frame>
+    </div>
   );
 };
 

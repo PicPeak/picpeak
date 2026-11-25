@@ -24,7 +24,7 @@ const faceClustering = require('../../services/faceClustering');
 const facePeopleService = require('../../services/facePeopleService');
 const faceClient = require('../../services/faceClient');
 
-const requireFaces = requireFeatureFlag('faces', 'FACES_DISABLED');
+const requireFaces = requireFeatureFlag(faceSettings.FLAG_KEY, 'FACES_DISABLED');
 
 /** Cap on one person's face list. Surfaced so the UI can say when it bites. */
 const PERSON_FACES_LIMIT = 500;
@@ -446,12 +446,8 @@ module.exports = (router) => {
     });
 
   /**
-   * Read/write the global auto-category setting.
-   *
-   * The migration seeds it false and nothing else ever wrote it, so the whole
-   * rule engine — and its undo endpoint — were unreachable in normal product
-   * flows: every call returned `skipped: disabled`. A feature with no way to
-   * turn it on is not shipped.
+   * Read/write the global auto-category setting. The migration seeds it
+   * false; while it is off every categorize call returns `skipped: disabled`.
    */
   router.get('/faces/auto-categories', adminAuth, requirePermission('settings.view'), requireFaces,
     async (req, res) => {

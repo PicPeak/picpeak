@@ -20,7 +20,7 @@ const { ensurePreviewImage } = require('./imageProcessor');
 // faceQueue, which is the only layer that knows to retry rather than fail.
 const { detectFaces } = require('./faceClient');
 const {
-  assignFaces, lockEventPeople, packEmbedding, recomputeCentroid,
+  assignFaces, lockEventPeople, packEmbedding, recomputeCentroid, refreshSeparationSnapshots,
 } = require('./faceClustering');
 const { getThresholds, isEnabledForEvent } = require('./faceSettings');
 
@@ -496,10 +496,9 @@ async function purgePhotoFaces(photoId, trx = db) {
   const removed = await trx('photo_faces').where({ photo_id: photoId }).del();
   if (!removed) return { removed: 0 };
 
-  const { recomputeCentroid: recompute, refreshSeparationSnapshots } = require('./faceClustering');
   for (const personId of affected) {
     // Deletes the person outright when it has no members left.
-    await recompute(personId, trx);
+    await recomputeCentroid(personId, trx);
   }
 
   // A separation row carries a COPY of each side's centroid (#1132), derived
@@ -513,6 +512,6 @@ async function purgePhotoFaces(photoId, trx = db) {
 }
 
 module.exports = {
-  processPhotoFaces, claimGuard, enqueueEvent, purgeEvent, purgePhotoFaces, StaleScanError,
+  processPhotoFaces, claimGuard, enqueueEvent, purgeEvent, purgePhotoFaces,
   TransientSourceError, externalSourceUnreachable,
 };

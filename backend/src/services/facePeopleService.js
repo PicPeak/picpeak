@@ -138,19 +138,6 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, fullVie
     // A person with no visible photos, or too few to be worth a face in the
     // strip, simply does not exist for this audience.
     if (!forAdmin && (count < minClusterSize || !cover)) continue;
-    if (forAdmin && !cover && count === 0) {
-      out.push({
-        id: person.id,
-        label: person.label || null,
-        face_count: 0,
-        total_face_count: person.face_count_total,
-        is_hidden: !!person.is_hidden,
-        is_ignored: !!person.is_ignored,
-        cover: null,
-      });
-      continue;
-    }
-
     const entry = {
       id: person.id,
       label: person.label || null,
@@ -267,5 +254,4 @@ module.exports = {
   listPeople,
   getPersonIdsByPhoto,
   getScanStatus,
-  applyVisibilityScope,
 };
