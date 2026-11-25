@@ -21,15 +21,9 @@ const { errorResponse } = require('../../utils/routeHelpers');
 const { guestBlockedByReveal } = require('../../utils/revealMode');
 const { parseBooleanInput, parsePositiveInt32 } = require('../../utils/parsers');
 const downloadZipService = require('../../services/downloadZipService');
+const { galleryActor } = require('../../services/downloadQuota');
 const GALLERY_OPENED_DEBOUNCE_MS = 6 * 60 * 60 * 1000;
 const galleryOpenedNotifiedAt = new Map();
-function galleryActor(req) {
-  // Portal tokens run as accessLevel 'guest' but carry via:'customer'
-  // (req.viaCustomer); PIN-client logins carry accessLevel 'client'.
-  // Both are customers, not guests (codex review of #849, final round).
-  const isCustomer = !!(req && (req.viaCustomer || req.accessLevel === 'client'));
-  return { type: isCustomer ? 'customer' : 'guest' };
-}
 function notifyGalleryOpened(event, req) {
   // Customer-PORTAL opens already log `customer_event_access` on the
   // access-token mint — a second `gallery_opened` per portal click would

@@ -349,6 +349,16 @@ function drawsOnQuota(req) {
 }
 
 /**
+ * The activity-log actor of a gallery request. Portal tokens run as
+ * accessLevel 'guest' but carry via:'customer' (req.viaCustomer); PIN-client
+ * logins carry accessLevel 'client'. Both are customers, not guests (codex
+ * review of #849, final round): the sessions drawsOnQuota names.
+ */
+function galleryActor(req) {
+  return { type: drawsOnQuota(req) ? 'customer' : 'guest' };
+}
+
+/**
  * Whether this request gets preview-size copies instead of originals: a
  * share-link guest of a gallery with a download limit. They never consume
  * the pool. Admin previews and unlimited galleries are unaffected.
@@ -398,6 +408,7 @@ module.exports = {
   downloadLimitError,
   refuseDownload,
   drawsOnQuota,
+  galleryActor,
   isPreviewOnly,
   clientOnlyError,
   resetGrants,

@@ -11,6 +11,7 @@
  * download/zip-entry name changes when the setting is on.
  */
 
+const path = require('path');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const {
@@ -96,10 +97,22 @@ function getZipEntryNames(photos, useOriginal) {
   return uniquifyZipNames(raw);
 }
 
+/**
+ * Where a photo sits inside a gallery archive: under `Individual Photos/` or
+ * `Collages/` when the archive holds both types, at the top otherwise. The
+ * streamed download-all and the prebuilt archive serve the same URL, so they
+ * must lay the zip out alike.
+ */
+function zipEntryPath(photo, entryName, hasMultipleTypes) {
+  if (!hasMultipleTypes) return entryName;
+  return path.join(photo.type === 'individual' ? 'Individual Photos' : 'Collages', entryName);
+}
+
 module.exports = {
   SETTING_KEY,
   clearCache,
   getUseOriginalFilenames,
   pickRawDownloadName,
   getZipEntryNames,
+  zipEntryPath,
 };

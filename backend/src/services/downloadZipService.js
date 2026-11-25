@@ -23,7 +23,7 @@ const { db } = require('../database/db');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getStorage } = require('./storage');
-const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
+const { getUseOriginalFilenames, getZipEntryNames, zipEntryPath } = require('./downloadFilenameService');
 const { uniquifyZipNames } = require('../utils/filenameSanitizer');
 const {
   renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, renderedDownloadType, resolveWatermarkSettings, isVideo,
@@ -388,13 +388,7 @@ class DownloadZipService {
             }
 
             const entryName = entryNames[i];
-            let archiveName;
-            if (hasMultipleTypes) {
-              const folderName = photo.type === 'individual' ? 'Individual Photos' : 'Collages';
-              archiveName = path.join(folderName, entryName);
-            } else {
-              archiveName = entryName;
-            }
+            const archiveName = zipEntryPath(photo, entryName, hasMultipleTypes);
 
             // External-mode photos still live on local disk; managed photos go
             // through the storage backend. resolvePhotoStorageKey returns null
