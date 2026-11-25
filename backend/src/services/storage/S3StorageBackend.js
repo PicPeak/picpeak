@@ -115,20 +115,15 @@ class S3StorageBackend {
   async put(relPath, body, options = {}) {
     this._assertWritable();
     const key = this._key(relPath);
+    let stream = null;
     if (Buffer.isBuffer(body)) {
       const { Readable } = require('stream');
-      const stream = Readable.from(body);
-      await this.adapter.uploadStream(stream, key, {
-        contentType: options.contentType,
-        contentDisposition: options.contentDisposition,
-        cacheControl: options.cacheControl,
-        metadata: options.metadata,
-        ...(options.signal ? { signal: options.signal } : {}),
-      });
-      return;
+      stream = Readable.from(body);
+    } else if (body && typeof body.pipe === 'function') {
+      stream = body;
     }
-    if (body && typeof body.pipe === 'function') {
-      await this.adapter.uploadStream(body, key, {
+    if (stream) {
+      await this.adapter.uploadStream(stream, key, {
         contentType: options.contentType,
         contentDisposition: options.contentDisposition,
         cacheControl: options.cacheControl,

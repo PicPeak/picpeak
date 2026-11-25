@@ -1,16 +1,10 @@
 const os = require('os');
-const { configuration: imageConfiguration, effectiveMemory, refusal: imageRefusal, isTransient, isResourceError } = require('./imageResourcePolicy');
-const MiB = 1024 * 1024;
+const {
+  configuration: imageConfiguration, effectiveMemory, refusal: imageRefusal, isTransient, isResourceError,
+  MiB, SHARP_MAX_PIXELS, positive, optionalMiB,
+} = require('./imageResourcePolicy');
 // 503 for "not now" codes, 422 otherwise; the list lives with the image codes.
 function refusal(message, code = 'MEDIA_RESOURCE_LIMIT', detail) { return imageRefusal(message, code, detail); }
-function positive(name, fallback, maximum) {
-  const raw = process.env[name];
-  const value = raw === undefined || raw === '' ? fallback : Number(raw);
-  if (value === null) return null;
-  if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) throw new Error(`Invalid ${name}`);
-  return value;
-}
-const optionalMiB = (name, maximum) => { const value = positive(name, null, maximum); return value === null ? null : value * MiB; };
 function configuration() {
   const image = imageConfiguration();
   // Address-space limit for ffprobe, exiftool and a single poster frame under
@@ -30,7 +24,7 @@ function configuration() {
     threads: positive('MEDIA_FFMPEG_THREADS', Math.max(1, Math.min(cpus || 1, 4)), 64),
     snapshotBytes: Math.min(positive('MEDIA_MAX_SNAPSHOT_MIB', 1024, 1048576) * MiB, Math.floor(effectiveMemory() / 2)),
     outputBytes: optionalMiB('MEDIA_MAX_VIDEO_OUTPUT_MIB', 1048576),
-    maxPixels: Math.min(positive('MEDIA_MAX_VIDEO_PIXELS', 40000000, 268402689), Math.floor(decodedBytes / 8)),
+    maxPixels: Math.min(positive('MEDIA_MAX_VIDEO_PIXELS', 40000000, SHARP_MAX_PIXELS), Math.floor(decodedBytes / 8)),
     maxDimension: positive('MEDIA_MAX_VIDEO_DIMENSION', 16384, 65535),
     maxStreams: positive('MEDIA_MAX_VIDEO_STREAMS', 16, 64),
     maxDuration: positive('MEDIA_MAX_VIDEO_DURATION_SECONDS', null, 604800),
