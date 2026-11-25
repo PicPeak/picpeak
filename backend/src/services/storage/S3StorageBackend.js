@@ -1,5 +1,4 @@
 const path = require('path');
-const fs = require('fs');
 const fsp = require('fs').promises;
 const crypto = require('crypto');
 const { HeadObjectCommand } = require('@aws-sdk/client-s3');
@@ -18,8 +17,7 @@ const generationIndex = require('./generationIndex');
  * can host multiple deployments without collisions.
  *
  * Atomicity: S3 has no rename. `rename()` is implemented as `copy()` + `delete()`.
- * If the process crashes between the two, the source object remains until the
- * next list-and-prune sweep — see `cleanupAbandonedTempUploads()` callers.
+ * If the process crashes between the two, the source object remains.
  */
 class S3StorageBackend {
   constructor(config) {
@@ -404,10 +402,6 @@ class S3StorageBackend {
   // silently constructing a bad path.
   resolveLocalPath(_relPath) {
     return null;
-  }
-
-  static fileStreamFromPath(localPath) {
-    return fs.createReadStream(localPath);
   }
 }
 

@@ -76,7 +76,7 @@ router.delete('/sources/:sourceId', adminAuth, requireSuperAdmin(), async (req, 
   }
 });
 
-// POST /api/admin/events/:id/import-external
+// POST /api/admin/external-media/events/:id/import-external
 // Body: { external_path?: string, recursive?: boolean, map?: { individual?: string, collages?: string } }
 //
 // Without `external_path` this imports, or rescans, the folder the gallery's

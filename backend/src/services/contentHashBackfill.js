@@ -249,4 +249,4 @@ function pause() {
   return maintenanceJobs.requestPause(JOB);
 }
 
-module.exports = { start, status, pause, hashOriginal, __test: { run, pending } };
+module.exports = { start, status, pause, __test: { run, pending } };
