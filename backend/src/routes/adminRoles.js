@@ -11,8 +11,6 @@
  * team_photographer/customer_support) are protected in the service layer: they can't be deleted
  * or renamed, and super_admin's permission set is immutable (the boot self-heal
  * keeps it complete regardless).
- *
- * See project_permission_gating.
  */
 const express = require('express');
 const { body, param } = require('express-validator');

@@ -11,7 +11,6 @@ const { NotFoundError, ConflictError, ValidationError } = require('../utils/erro
 const { setAdminAuthCookie, clearAdminAuthCookie } = require('../utils/tokenUtils');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
 const { formatBoolean } = require('../utils/dbCompat');
-const { hasColumnCached } = require('../utils/schemaCache');
 const mfaService = require('../services/mfaService');
 const passkeyService = require('../services/passkeyService');
 const { accountCreditName } = require('../services/photoCredit');
@@ -21,7 +20,7 @@ const router = express.Router();
 router.get('/profile', adminAuth, handleAsync(async (req, res) => {
   const columns = ['id', 'username', 'email', 'last_login', 'last_login_ip', 'created_at', 'updated_at', 'must_change_password as mustChangePassword'];
   // Photo credit for this account's uploads (issue 743, migration 269).
-  if (await hasColumnCached('admin_users', 'credit_name')) columns.push('credit_name as creditName');
+  columns.push('credit_name as creditName');
   const admin = await db('admin_users')
     .where('id', req.admin.id)
     .select(columns)
@@ -78,8 +77,7 @@ router.put('/profile', [
   const updates = { username, email, updated_at: new Date() };
   // The name this account's uploads are credited with when a file carries no
   // EXIF name (issue 743). Optional; absent leaves it as it is.
-  if (Object.prototype.hasOwnProperty.call(req.body, 'credit_name')
-    && await hasColumnCached('admin_users', 'credit_name')) {
+  if (Object.prototype.hasOwnProperty.call(req.body, 'credit_name')) {
     const credit = accountCreditName(req.body.credit_name);
     if (credit.error) throw new ValidationError(credit.error);
     updates.credit_name = credit.value;
@@ -88,8 +86,7 @@ router.put('/profile', [
   // a later SSO login link to this account by email (oidcService,
   // migration 227). A super_admin's own change stays trusted.
   const current = await db('admin_users').where('id', adminId).select('email').first();
-  if (current && String(current.email || '').toLowerCase() !== email && req.admin.roleName !== 'super_admin'
-      && await hasColumnCached('admin_users', 'email_link_eligible')) {
+  if (current && String(current.email || '').toLowerCase() !== email && req.admin.roleName !== 'super_admin') {
     updates.email_link_eligible = formatBoolean(false);
   }
 
@@ -104,7 +101,7 @@ router.put('/profile', [
   );
 
   const updatedColumns = ['id', 'username', 'email', 'must_change_password as mustChangePassword'];
-  if (await hasColumnCached('admin_users', 'credit_name')) updatedColumns.push('credit_name as creditName');
+  updatedColumns.push('credit_name as creditName');
   const updatedAdmin = await db('admin_users')
     .where('id', adminId)
     .select(updatedColumns)

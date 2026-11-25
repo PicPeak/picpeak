@@ -1468,7 +1468,7 @@ async function startServerInternal() {
     // Self-heal the RBAC catalog: ensure super_admin holds every permission
     // (the "Admin tracks all" guarantee) and the solo_photographer preset
     // exists. New perms never need a compensation migration. See
-    // _permissionsBoot.js + project_permission_gating.
+    // _permissionsBoot.js.
     try {
       const { seedPermissionsAtBoot } = require('./src/services/_permissionsBoot');
       await seedPermissionsAtBoot(db, logger);

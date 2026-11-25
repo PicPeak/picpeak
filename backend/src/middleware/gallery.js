@@ -23,13 +23,10 @@ function readAdminPreview(req) {
   return null;
 }
 
-function decodeAdminPreview(req) {
-  return readAdminPreview(req)?.decoded || null;
-}
-
-// Signature-only predicate retained for UI-intent callers. It never authorizes.
+// Signature-only predicate. No route calls it; galleryAdminPreview.test.js
+// uses it to pin readAdminPreview's fail-closed rules. It never authorizes.
 function isAdminPreview(req) {
-  return decodeAdminPreview(req) !== null;
+  return readAdminPreview(req) !== null;
 }
 
 function attachAccess(req, event, grant) {

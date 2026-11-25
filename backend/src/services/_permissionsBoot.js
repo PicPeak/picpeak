@@ -6,7 +6,6 @@
  * whenever a future release adds a permission (via its migration), this boot
  * pass grants it to super_admin automatically, so a new perm never needs a
  * compensation migration and the owner is never locked out of a new feature.
- * See feedback_self_heal_pattern + project_permission_gating.
  *
  * Deliberately NARROW: it only ever backfills `super_admin`. All other roles —
  * admin, editor, viewer, the solo_photographer preset, and any custom roles an

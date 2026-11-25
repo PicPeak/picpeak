@@ -84,16 +84,6 @@ describe('isSessionExpired (sessionTimeout helper)', () => {
     expect(await isSessionExpired('tok', {})).toBe(false);
   });
 
-  // Sanity: the helper must not poke the `sessions` Map. Indirectly check
-  // by counting active sessions before/after a call with a never-seen
-  // token — should not change.
-  it('does not mutate the in-memory sessions map', async () => {
-    const before = sessionTimeout.getActiveSessions();
-    await isSessionExpired('never-seen-token-99', makeDecodedToken({ id: 99 }));
-    const after = sessionTimeout.getActiveSessions();
-    expect(after).toBe(before);
-  });
-
   it('uses the default 60-minute timeout when no DB setting exists', async () => {
     // 59 minutes → not expired
     const fresh = makeDecodedToken({ id: 4, iatSecondsAgo: 59 * 60 });

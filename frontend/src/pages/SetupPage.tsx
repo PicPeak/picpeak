@@ -189,7 +189,7 @@ export const SetupPage: React.FC = () => {
         mustChangePassword: false,
         role: { name: user.role.name, displayName: user.role.displayName ?? user.role.name },
       };
-      login('', adminUser);
+      login(adminUser);
       // Persist the origin the admin is standing on as the public site URL
       // (#705). Doing it HERE, not in the optional config step, means an
       // install that skips the rest of the wizard still has a usable origin
