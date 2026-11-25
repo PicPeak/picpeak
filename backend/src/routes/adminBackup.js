@@ -467,10 +467,10 @@ router.get('/picpeak/export', adminAuth, requireSuperAdmin(), async (req, res) =
 // anything in the request. A standalone run (backup-<uuid>) is a complete
 // copy nothing else depends on, so its whole validated snapshot directory or
 // prefix goes with it. For a legacy run it is the run's own
-// metadata, never its data files: a legacy incremental run only stores files
-// that changed since the previous one (hasFileChanged against the shared
-// backup_file_states table), so a later run's manifest points at files that
-// exist only under an earlier run. Removing those would take the only copy.
+// metadata, never its data files: the old incremental runs stored only the
+// files that changed since the run before, so a later run's manifest
+// references files kept under earlier runs. Removing those would take the
+// only copy.
 //   s3     the manifest objects under <run prefix>/manifests/ and the run's
 //          backup-summary.json, with the prefix derived from the recorded
 //          manifest_path (<base>/<date>/backup-<ts>/manifests/<file>) and
