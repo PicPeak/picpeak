@@ -22,6 +22,31 @@ const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFIL
 
 const { startLeaseKeeper } = maintenanceJobs;
 
+// Query modifiers (`.modify(...)`) shared by the jobs below.
+
+// Not a video, by all three markers, because no single one is reliable.
+// fileWatcher's auto-import sets type='video' and a video/* mime but never
+// media_type, so those rows keep the 'image' default from migration 048.
+function whereNotVideo(q) {
+  q.where(function () {
+    this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
+  })
+    .where(function () {
+      this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
+    })
+    .where(function () {
+      this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
+    });
+}
+
+// The photo's event is not archived (needs the `events` join). Archiving
+// deletes the originals from storage but keeps the photos rows.
+function whereEventNotArchived(q) {
+  q.where(function () {
+    this.where('events.is_archived', false).orWhereNull('events.is_archived');
+  });
+}
+
 // Repair photo dimensions (background job)
 //
 // system.manage, not photos.edit: the query below is unscoped, so this walks
@@ -278,22 +303,12 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
         // default from migration 048 and a media_type-only filter queues them
         // forever: extractCaptureDate returns null for a video, captured_at
         // stays null, and every run picks it up again.
-        .where(function () {
-          this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
-        })
-        .where(function () {
-          this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
-        })
-        .where(function () {
-          this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
-        })
+        .modify(whereNotVideo)
         // Archiving deletes the originals from storage but keeps the photos
         // rows (archiveService.js:166,199). Those files are inside the zip and
         // nothing here can read them, so including them would fail every row
         // on every run and leave the button permanently lit.
-        .where(function () {
-          this.where('events.is_archived', false).orWhereNull('events.is_archived');
-        })
+        .modify(whereEventNotArchived)
         .select(
           'photos.id', 'photos.path', 'photos.filename',
           'photos.source_origin', 'photos.external_relpath', 'photos.event_id',
@@ -508,18 +523,8 @@ router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.
     // a permanent backlog the button can never clear.
     const scoped = () => db('photos')
       .join('events', 'photos.event_id', 'events.id')
-      .where(function () {
-        this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
-      })
-      .where(function () {
-        this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
-      })
-      .where(function () {
-        this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
-      })
-      .where(function () {
-        this.where('events.is_archived', false).orWhereNull('events.is_archived');
-      });
+      .modify(whereNotVideo)
+      .modify(whereEventNotArchived);
 
     // One query, two aggregates. As two separate counts an import committing a
     // dated photo between them could be counted by the second and not the
@@ -594,9 +599,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
         // Archiving deletes the originals and keeps the rows, so every archived
         // photo would fail its read and add nothing but noise to a run that
         // already walks the whole library.
-        .where(function () {
-          this.where('events.is_archived', false).orWhereNull('events.is_archived');
-        })
+        .modify(whereEventNotArchived)
         .modify((q) => {
           if (!force) q.whereNull('photos.orientation_checked_at');
         })
@@ -1008,19 +1011,9 @@ function creditCandidates() {
     })
     // Same three video markers as the capture-date backfill: EXIF credits are
     // read from images only.
-    .where(function () {
-      this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
-    })
-    .where(function () {
-      this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
-    })
-    .where(function () {
-      this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
-    })
+    .modify(whereNotVideo)
     // Archived originals are inside the zip, not on storage.
-    .where(function () {
-      this.where('events.is_archived', false).orWhereNull('events.is_archived');
-    });
+    .modify(whereEventNotArchived);
 }
 
 router.post('/repair-credits', adminAuth, requirePermission('system.manage'), async (req, res) => {
@@ -1197,9 +1190,7 @@ function thumbHashCandidates() {
     .join('events', 'photos.event_id', 'events.id')
     .whereNotNull('photos.thumbnail_path')
     // An archived event's renditions are gone with the archive.
-    .where(function () {
-      this.where('events.is_archived', false).orWhereNull('events.is_archived');
-    });
+    .modify(whereEventNotArchived);
 }
 
 router.post('/repair-thumb-hashes', adminAuth, requirePermission('system.manage'), async (req, res) => {

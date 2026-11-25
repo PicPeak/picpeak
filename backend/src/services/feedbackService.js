@@ -12,6 +12,7 @@ const { scopeToViewer } = selectionSubmissions;
 const favoriteLists = require('./favoriteLists');
 const { serializeAnnotation, withParsedAnnotation } = require('../utils/photoAnnotation');
 const { feedbackTime, lastMutatedFirst } = require('./feedbackIntegrity');
+const { scopeColorLabelsToMode } = require('../utils/photoFilterBuilder');
 
 // The camera-original name, for the feedback exports (#1224). Both exports
 // used to carry only `photos.filename` — the sanitized stored name
@@ -101,30 +102,6 @@ let commentCountColumnKnownToExist = false;
  */
 function isSharedColorLabel(identityMode, feedbackType) {
   return identityMode === 'shared' && feedbackType === 'color_label';
-}
-
-/**
- * Narrow a colour-label query to the rows the event's current mode actually
- * uses (#1197).
- *
- * Switching modes is deliberately non-destructive: per-guest labels are kept
- * when an event moves to shared, and the shared row is kept when it moves
- * back. That leaves both sets in the table at once with only one of them live,
- * so every read has to say which it means. Without this the dormant set is
- * still counted, still tallied in the lightbox, still matches the admin colour
- * filter and can still decide the exported dominant colour — the labels would
- * be "hidden" only on the badge, which is not what the settings panel promises.
- *
- * The NULL arm matters: rows written before migration 078 carry no identifier
- * at all, and they are per-guest rows, so they belong to the non-shared set.
- */
-function scopeColorLabelsToMode(query, identityMode, column = 'guest_identifier') {
-  if (identityMode === 'shared') {
-    return query.where(column, SHARED_COLOR_LABEL_IDENTITY);
-  }
-  return query.where(function () {
-    this.whereNot(column, SHARED_COLOR_LABEL_IDENTITY).orWhereNull(column);
-  });
 }
 
 /**
@@ -406,6 +383,7 @@ class FeedbackService {
         trx('photo_feedback')
           .where({ event_id: eventId, feedback_type: 'color_label', is_hidden: false }),
         identityMode,
+        'guest_identifier',
       )
         .groupBy('photo_id')
         .select('photo_id')
@@ -983,7 +961,7 @@ class FeedbackService {
           this.whereNot('feedback_type', 'color_label');
           this.orWhere(function () {
             this.where('feedback_type', 'color_label');
-            scopeColorLabelsToMode(this, options.identity_mode);
+            scopeColorLabelsToMode(this, options.identity_mode, 'guest_identifier');
           });
         });
       }
@@ -1141,6 +1119,7 @@ class FeedbackService {
           .where({ photo_id: photoId, feedback_type: 'color_label' })
           .where('is_hidden', false),
         mode,
+        'guest_identifier',
       )
         .groupBy('color_label')
         .select('color_label')
@@ -1175,6 +1154,7 @@ class FeedbackService {
           .where({ event_id: eventId, feedback_type: 'color_label' })
           .where('is_hidden', false),
         mode,
+        'guest_identifier',
       )
         .groupBy('photo_id', 'color_label')
         .select('photo_id', 'color_label')
