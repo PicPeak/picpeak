@@ -1,5 +1,4 @@
 import React from 'react';
-import { Heart } from 'lucide-react';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { PhotoCard } from '../PhotoCard';
 import { firstLookAboveChips } from '../GalleryTileBadges';
@@ -14,6 +13,7 @@ import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { boxStyle, ghostBox, gridBoxStyle, useMeasuredWindow, type TileBox } from './measuredWindow';
 import { useViewerLikes } from './optimisticLikes';
 import { premiumTileSize } from './premiumGeometry';
+import { CollageChip, LikedChip } from './TileChips';
 
 /**
  * Mosaic Gallery Layout
@@ -164,21 +164,11 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
       likeBeforeComment
       checkboxTestId
       topLeftControl={visibilityToggle}
-      afterOverlay={((photo.like_count ?? 0) > 0 || liked) ? (
-        <div className={`absolute ${photo.type === 'collage' ? 'bottom-8' : 'bottom-2'} left-2 z-10`}>
-          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Liked">
-            <Heart className="w-3.5 h-3.5 text-danger" fill="currentColor" />
-          </span>
-        </div>
-      ) : undefined}
+      afterOverlay={((photo.like_count ?? 0) > 0 || liked)
+        ? <LikedChip aboveCollage={photo.type === 'collage'} />
+        : undefined}
     >
-      {photo.type === 'collage' && (
-        <div className="absolute bottom-2 left-2">
-          <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">
-            Collage
-          </span>
-        </div>
-      )}
+      {photo.type === 'collage' && <CollageChip />}
     </PhotoCard>
   );
 };

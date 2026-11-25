@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Calendar, Heart } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 import { format, startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { PhotoCard } from '../PhotoCard';
@@ -16,6 +16,7 @@ import { toDisplayDate, useLocalizedDate } from '../../../hooks/useLocalizedDate
 import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { GRID_TILE_ATTR, TIMELINE_GROUP_WINDOW_MIN_PHOTOS, useGridWindow } from './gridWindow';
 import { useViewerLikes } from './optimisticLikes';
+import { LikedChip } from './TileChips';
 
 const GRID_TILE_PROPS = { [GRID_TILE_ATTR]: '' } as React.HTMLAttributes<HTMLDivElement>;
 
@@ -225,13 +226,9 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                         {fmtTime(photo.uploaded_at)}
                       </div>
                     }
-                    afterOverlay={((photo.like_count ?? 0) > 0 || likedIds.has(photo.id)) ? (
-                      <div className={`absolute ${photo.type === 'collage' ? 'bottom-8' : 'bottom-2'} left-2 z-10`}>
-                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Liked">
-                          <Heart className="w-3.5 h-3.5 text-danger" fill="currentColor" />
-                        </span>
-                      </div>
-                    ) : undefined}
+                    afterOverlay={((photo.like_count ?? 0) > 0 || likedIds.has(photo.id))
+                      ? <LikedChip aboveCollage={photo.type === 'collage'} />
+                      : undefined}
                   />
                 );
               }}

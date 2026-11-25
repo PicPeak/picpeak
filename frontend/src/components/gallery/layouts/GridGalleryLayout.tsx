@@ -16,6 +16,7 @@ import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { GRID_TILE_ATTR, useGridWindow } from './gridWindow';
 import { useViewerLikes } from './optimisticLikes';
 import { feedbackLockKind } from '../../../utils/feedbackLock';
+import { CollageChip } from './TileChips';
 
 interface GridPhotoProps {
   photo: Photo;
@@ -217,13 +218,7 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
         </div>
       )}
 
-      {photo.type === 'collage' && (
-        <div className="absolute bottom-2 right-2">
-          <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">
-            Collage
-          </span>
-        </div>
-      )}
+      {photo.type === 'collage' && <CollageChip corner="right" />}
     </PhotoCard>
   );
 };

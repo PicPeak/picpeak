@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import type { ReactNode } from 'react';
 import { ThemeConfig, EventTheme, GALLERY_THEME_PRESETS } from '../types/theme.types';
 import { fontsService, extractFamilyName, type FontDefinition } from '../services/fonts.service';
-import { applyForceColorMode } from '../utils/themeMigration';
+import { applyForceColorMode, DARK_SURFACE_DEFAULTS, LIGHT_SURFACE_DEFAULTS } from '../utils/themeMigration';
 import { getReadableForeground, readableAccentText } from '../utils/contrast';
 import { applyStatusColors, normalizeStatusColors } from '../utils/statusColors';
 import { usePublicSettings } from '../hooks/usePublicSettings';
@@ -156,7 +156,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
       // Same fallback as --color-surface below: a dark theme without its own
       // surface colour paints #1a1a1a, not white.
       const surface = themeConfig.surfaceColor
-        || (resolveColorMode(themeConfig.colorMode) === 'dark' ? '#1a1a1a' : '#ffffff');
+        || (resolveColorMode(themeConfig.colorMode) === 'dark' ? DARK_SURFACE_DEFAULTS : LIGHT_SURFACE_DEFAULTS).surfaceColor;
       const page = themeConfig.backgroundColor || surface;
       root.style.setProperty('--color-accent-text', readableAccentText(readableAccentText(themeConfig.accentColor, surface), page));
       root.style.setProperty('--ui-accent-text-light', readableAccentText(themeConfig.accentColor, '#ffffff'));
@@ -246,41 +246,14 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
     // Apply surface colors
     const effectiveMode = resolveColorMode(themeConfig.colorMode);
     setResolvedColorMode(effectiveMode);
-
-    if (themeConfig.surfaceColor) {
-      root.style.setProperty('--color-surface', themeConfig.surfaceColor);
-    } else if (effectiveMode === 'dark') {
-      // Auto-derive dark surface if not explicitly set
-      root.style.setProperty('--color-surface', '#1a1a1a');
-    } else {
-      root.style.setProperty('--color-surface', '#ffffff');
-    }
-
-    // Elevated: raised panels, image placeholders. Falls back to a slight
+    // A theme without its own surface tokens gets the mode's defaults.
+    // Elevated (raised panels, image placeholders) falls back to a slight
     // shift from surface so the layering still reads on legacy themes.
-    if (themeConfig.elevatedColor) {
-      root.style.setProperty('--color-elevated', themeConfig.elevatedColor);
-    } else if (effectiveMode === 'dark') {
-      root.style.setProperty('--color-elevated', '#242424');
-    } else {
-      root.style.setProperty('--color-elevated', '#f5f5f5');
-    }
-
-    if (themeConfig.surfaceBorderColor) {
-      root.style.setProperty('--color-surface-border', themeConfig.surfaceBorderColor);
-    } else if (effectiveMode === 'dark') {
-      root.style.setProperty('--color-surface-border', '#2e2e2e');
-    } else {
-      root.style.setProperty('--color-surface-border', '#e5e5e5');
-    }
-
-    if (themeConfig.mutedTextColor) {
-      root.style.setProperty('--color-muted-text', themeConfig.mutedTextColor);
-    } else if (effectiveMode === 'dark') {
-      root.style.setProperty('--color-muted-text', '#a3a3a3');
-    } else {
-      root.style.setProperty('--color-muted-text', '#737373');
-    }
+    const surfaceDefaults = effectiveMode === 'dark' ? DARK_SURFACE_DEFAULTS : LIGHT_SURFACE_DEFAULTS;
+    root.style.setProperty('--color-surface', themeConfig.surfaceColor || surfaceDefaults.surfaceColor);
+    root.style.setProperty('--color-elevated', themeConfig.elevatedColor || surfaceDefaults.elevatedColor);
+    root.style.setProperty('--color-surface-border', themeConfig.surfaceBorderColor || surfaceDefaults.surfaceBorderColor);
+    root.style.setProperty('--color-muted-text', themeConfig.mutedTextColor || surfaceDefaults.mutedTextColor);
 
     // Adjust shadow intensity for dark mode
     if (themeConfig.shadowStyle) {
