@@ -671,41 +671,6 @@ class PhotosService {
   // Photo Filtering & Export Methods
   // ============================================
 
-  async getFilteredPhotos(
-    eventId: number,
-    filters: FeedbackFilters
-  ): Promise<FilteredPhotosResponse> {
-    const params = new URLSearchParams();
-
-    if (filters.minRating !== undefined && filters.minRating !== null) {
-      params.append('min_rating', filters.minRating.toString());
-    }
-    if (filters.hasLikes) params.append('has_likes', 'true');
-    if (filters.hasFavorites) params.append('has_favorites', 'true');
-    if (filters.hasComments) params.append('has_comments', 'true');
-    if (filters.colorLabels && filters.colorLabels.length > 0) {
-      params.append('color_labels', filters.colorLabels.join(','));
-    }
-    if (filters.myColorLabels && filters.myColorLabels.length > 0) {
-      params.append('my_color_labels', filters.myColorLabels.join(','));
-    }
-    if (filters.decisions && filters.decisions.length > 0) {
-      params.append('decisions', filters.decisions.join(','));
-    }
-    if (filters.categoryId) params.append('category_id', filters.categoryId.toString());
-    if (filters.logic) params.append('logic', filters.logic);
-    if (filters.sort) params.append('sort', filters.sort);
-    if (filters.order) params.append('order', filters.order);
-    if (filters.page) params.append('page', filters.page.toString());
-    if (filters.limit) params.append('limit', filters.limit.toString());
-
-    const queryString = params.toString();
-    const url = `/admin/photo-export/${eventId}/filtered${queryString ? `?${queryString}` : ''}`;
-
-    const response = await api.get(url);
-    return response.data.data;
-  }
-
   async getFilterSummary(eventId: number): Promise<FilterSummary> {
     const response = await api.get(`/admin/photo-export/${eventId}/filter-summary`);
     return response.data.data;
@@ -770,11 +735,6 @@ class PhotosService {
     const content = await blob.text();
     return { content, filename };
   }
-
-  async getExportFormats(): Promise<ExportFormat[]> {
-    const response = await api.get('/admin/photo-export/export-formats');
-    return response.data.data;
-  }
 }
 
 // Types for filtering and export
@@ -824,18 +784,6 @@ export interface FilterSummary {
   withDecisions?: number;
 }
 
-export interface FilteredPhotosResponse {
-  photos: AdminPhoto[];
-  pagination: {
-    total: number;
-    filtered: number;
-    page: number;
-    limit: number;
-    pages: number;
-  };
-  summary: FilterSummary;
-}
-
 /**
  * Wire shape of the export `filter` block. The export endpoint feeds it
  * straight into the backend's PhotoFilterBuilder, which reads snake_case
@@ -876,12 +824,6 @@ export interface ExportOptions {
     /** Whose marks the export reads: the guests' ('client') or the admin's own ('mine'). */
     mark_source?: 'client' | 'mine';
   };
-}
-
-export interface ExportFormat {
-  value: string;
-  label: string;
-  description: string;
 }
 
 export const photosService = new PhotosService();

@@ -149,7 +149,6 @@ export const CreateEventPage: React.FC = () => {
   // one of which 500'd on `events_slug_unique` (QA 7.03).
   const isSubmittingRef = useRef(false);
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
-  // const [showPreview, setShowPreview] = useState(false);
   
   // Re-arm on every effect run so React Strict Mode's mount→cleanup→mount
   // cycle does not leave the ref permanently false (no toast / redirect, and
@@ -916,8 +915,6 @@ export const CreateEventPage: React.FC = () => {
             )}
           </div>
         </Card>
-
-        {/* Theme Selection */}
 
 {/* Photo source: upload, or an external folder imported right away,
             so a gallery is ready from this form alone. */}

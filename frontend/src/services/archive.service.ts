@@ -15,24 +15,6 @@ export interface Archive {
   archivePath?: string;
 }
 
-export interface ArchiveDetails extends Archive {
-  adminEmail: string;
-  welcomeMessage?: string;
-  colorTheme?: string;
-  createdAt: string;
-  photos: Array<{
-    filename: string;
-    type: string;
-    size_bytes: number;
-    uploaded_at: string;
-  }>;
-  archiveFile?: {
-    size: number;
-    createdAt: string;
-    path: string;
-  };
-}
-
 export type ArchiveSortBy = 'date' | 'name' | 'size';
 
 export interface ArchivesResponse {
@@ -65,12 +47,6 @@ export const archiveService = {
     const response = await api.get<ArchivesResponse>('/admin/archives', {
       params: { page, limit, search: search || undefined, type: type || undefined, sortBy }
     });
-    return response.data;
-  },
-
-  // Get single archive details
-  async getArchiveDetails(id: number): Promise<ArchiveDetails> {
-    const response = await api.get<ArchiveDetails>(`/admin/archives/${id}`);
     return response.data;
   },
 

@@ -7,7 +7,6 @@ export type EventDetailsTab = 'overview' | 'photos' | 'guests' | 'orders' | 'set
 
 export type EditFormState = {
   welcome_message: string;
-  color_theme: string;
   css_template_id: number | null;
   expires_at: string;
   allow_user_uploads: boolean;
