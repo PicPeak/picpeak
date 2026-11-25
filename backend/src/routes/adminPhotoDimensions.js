@@ -10,16 +10,14 @@ const applicationWork = require('../services/activeApplicationWork');
 const { resolvePhotoFilePath } = require('../services/photoResolver');
 const maintenanceJobs = require('../services/maintenanceJobState');
 
-// Run state for both sweeps lives in the database, not in this process
-// (#1181). It used to be a module-level object per job, which is correct on a
-// single replica and wrong behind a load balancer: the status poll answers
-// from whichever process it reaches, so an idle replica reports isRunning
-// false while another is mid-run, the UI re-enables the button, and the next
-// POST starts a duplicate pass over the entire library.
+// Run state for every sweep lives in the database, not in this process
+// (#1181): the status poll answers from whichever replica it reaches, so a
+// per-process flag would let an idle replica report isRunning false while
+// another is mid-run, and the next POST would start a duplicate pass over the
+// entire library.
 //
-// Two separate rows, for the same reason the two objects were separate: the
-// jobs walk the same photos but read different things out of them, and one
-// running must not block or report for the other.
+// One row per job: the jobs walk the same photos but read different things
+// out of them, and one running must not block or report for another.
 const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFILL, JOB_CREDIT_BACKFILL, JOB_THUMB_HASH_BACKFILL } = maintenanceJobs;
 
 const { startLeaseKeeper } = maintenanceJobs;
@@ -29,7 +27,7 @@ const { startLeaseKeeper } = maintenanceJobs;
 // system.manage, not photos.edit: the query below is unscoped, so this walks
 // every event in the install, reads every original off S3 or the NAS mount, and
 // rewrites their metadata. photos.edit is held by the team_photographer preset
-// (175_granular_permissions_and_presets.js:106), which exists for a contributing
+// (migration 175_granular_permissions_and_presets.js), which exists for a contributing
 // second shooter — someone who should be able to edit the photos they work on,
 // not start a whole-library scan or touch another owner's events.
 router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'), async (req, res) => {
@@ -185,7 +183,7 @@ router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'),
 // The same permission as the POST, not the read-only system.view. The two are
 // independent grants, and StatusTab has no permission gate of its own — a
 // successful status payload is what renders the card and its enabled button
-// (StatusTab.tsx:558). system.view alone would therefore show a live Repair
+// (StatusTab.tsx). system.view alone would therefore show a live Repair
 // button whose every click 403s with no error surfaced.
 router.get('/repair-dimensions/status', adminAuth, requirePermission('system.manage'), async (req, res) => {
   try {
@@ -242,7 +240,7 @@ router.get('/repair-dimensions/status', adminAuth, requirePermission('system.man
  */
 // system.manage, not photos.edit: this walks every event in the install and
 // rewrites their metadata. photos.edit is held by the team_photographer preset
-// (175_granular_permissions_and_presets.js:106), which exists precisely for a
+// (migration 175_granular_permissions_and_presets.js), which exists precisely for a
 // contributing shooter who should not be able to start a whole-library S3/NAS
 // scan or touch another owner's photos. The dimension repair above had the same
 // exposure and predates this; it is brought in line separately in #1182.
@@ -320,7 +318,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
       count: photos.length
     });
 
-    applicationWork.defer('dimension repair', async () => {
+    applicationWork.defer('capture date backfill', async () => {
       const { extractCapture, withLocalCopy } = require('../services/imageProcessor');
       const { extractPhotoExif } = require('../services/photoExif');
       const { resolvePhotoStorageKey } = require('../services/photoResolver');
@@ -500,7 +498,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
 // The same permission as the POST, not the read-only system.view. system.view
 // and system.manage are independent grants, and StatusTab has no permission
 // gate of its own — a successful status payload is what renders the card and
-// its enabled button (StatusTab.tsx:637). Gating this on system.view therefore
+// its enabled button (StatusTab.tsx). Gating this on system.view therefore
 // handed a system.view-only role a live button whose every click 403s with no
 // error surfaced. Requiring system.manage makes the card appear only for
 // someone who can actually run it, which is what this comment always claimed.

@@ -90,7 +90,6 @@ describe('named favourite lists (issue 2303)', () => {
     app.use('/api/gallery', require('../../src/routes/galleryFeedback'));
     app.use('/api/admin', require('../../src/routes/adminGuests'));
     app.use('/api/admin/feedback', require('../../src/routes/adminFeedback'));
-    app.use('/api/admin/photos', require('../../src/routes/adminPhotoExport'));
     app.use('/api/admin/photos', require('../../src/routes/adminPhotos'));
   }, 180000);
 
@@ -410,7 +409,7 @@ describe('named favourite lists (issue 2303)', () => {
       for (const list of detail.body.favorite_lists) expect(list.updated_at).toMatch(ISO);
     });
 
-    it('filters the admin photo list and the filtered view by list', async () => {
+    it('filters the admin photo list by list', async () => {
       const ids = (res) => res.body.photos.map((p) => p.id).sort();
       expect(ids(await admin('get', `/photos/${eventId}/photos?favorite_list=${listId}`)))
         .toEqual([photoIds[0], photoIds[1]].sort());
@@ -419,9 +418,6 @@ describe('named favourite lists (issue 2303)', () => {
       expect(ids(await admin('get', `/photos/${eventId}/photos?favorite_guest=${guests[1].id}`))).toEqual([]);
       // Unfiltered, all three.
       expect(ids(await admin('get', `/photos/${eventId}/photos`))).toHaveLength(3);
-
-      const filtered = await admin('get', `/photos/${eventId}/filtered?sort=filename&favorite_list=${listId}`);
-      expect(filtered.body.data.photos.map((p) => p.id).sort()).toEqual([photoIds[0], photoIds[1]].sort());
     });
   });
 });

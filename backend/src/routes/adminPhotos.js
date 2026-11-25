@@ -4,7 +4,6 @@ const path = require('path');
 const fs = require('fs').promises;
 const { db, logActivity } = require('../database/db');
 const { livePhotos } = require('../utils/photoVisibility');
-const { RECOVERABLE_PASSWORD_COLUMNS } = require('./adminEvents/helpers');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { ensureThumbnail } = require('../services/imageProcessor');
@@ -61,9 +60,6 @@ const router = express.Router();
 
 // Filename order for the photo list: digit runs compare as numbers.
 const NATURAL_NAME_ORDER = new Intl.Collator('en', { numeric: true });
-
-// Get storage path from environment or default
-const { getStoragePath } = require('../config/storage');
 
 // Category ids are resolved within one event's scope (#500 / #525); shared
 // with the gallery upload route.
@@ -182,13 +178,6 @@ const validateUploadContent = async (req, res, next) => {
 // Both mounted admin aliases share this raw-body and persistent admission.
 router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), requireEventOwnership, resolveAllowedTypes, requireCapability('uploads.new'), async (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!/^\d+$/.test(req.params.eventId) || !Number.isSafeInteger(eventId) || eventId < 1) {
-    if (!req.readableEnded) res.set('Connection', 'close');
-    return res.status(404).json({ error: 'Event not found' });
-  }
-  // SQLite accepts exponential numeric strings in a lookup, while parseInt
-  // interprets them differently. Every downstream consumer must use one id.
-  req.params.eventId = String(eventId);
   let maxFilesPerUpload;
   try {
     [maxFilesPerUpload, req.maxFileSizeBytes, req.maxVideoSizeBytes] = await Promise.all([
@@ -341,7 +330,7 @@ async function handleAdminPhotoUpload(req, res) {
     if (placementError) {
       return res.status(400).json(placementError);
     }
-    if (parsedCategoryId && !isNaN(parsedCategoryId)) {
+    if (parsedCategoryId) {
       const category = resolvedCategory;
       categoryName = category.slug || category.name.toLowerCase().replace(/\s+/g, '_');
       // Use category slug for type determination
@@ -594,20 +583,19 @@ async function handleAdminPhotoUpload(req, res) {
     // Include any files that were invalid from the validation middleware
     const totalInvalidFiles = (req.invalidFiles || []).concat(errors);
 
-    // Prepare response. The new fields (upload_id, count, photo_ids)
-    // are what the new frontend uses to poll for processing status; the
-    // existing fields (successCount, replacedCount, ...) are kept for
-    // back-compat with older clients that haven't upgraded yet.
+    // Prepare response. upload_id, count and photo_ids let the uploader poll
+    // for processing status; the remaining fields summarise the request
+    // (the uploader reads replacedCount, errors and duplicates).
     const totalAttempted = req.files.length + (req.invalidFiles ? req.invalidFiles.length : 0);
     const uploadMsg = uploadedPhotos.length > 0 ? `${uploadedPhotos.length} queued` : '';
     const replaceMsg = replacedPhotos.length > 0 ? `${replacedPhotos.length} replaced` : '';
     const parts = [uploadMsg, replaceMsg].filter(Boolean).join(', ');
     const response = {
-      // New async-processing fields
+      // Processing status
       upload_id: uploadId,
       count: uploadedPhotos.length,
       photo_ids: uploadedPhotos.map((p) => p.id),
-      // Existing back-compat fields
+      // Request summary
       message: parts ? `Successfully ${parts}` : 'No photos processed',
       photos: uploadedPhotos,
       replaced: replacedPhotos,
@@ -906,10 +894,10 @@ router.put('/:eventId/photos/:photoId/mark', adminAuth, requirePermission('photo
 
     const mark = {};
     if (Object.prototype.hasOwnProperty.call(req.body, 'rating')) {
-      mark.rating = req.body.rating === null ? null : req.body.rating;
+      mark.rating = req.body.rating;
     }
     if (Object.prototype.hasOwnProperty.call(req.body, 'color_label')) {
-      mark.colorLabel = req.body.color_label === null ? null : req.body.color_label;
+      mark.colorLabel = req.body.color_label;
     }
     if (Object.keys(mark).length === 0) {
       return res.status(400).json({ error: 'Send rating and/or color_label' });
@@ -1528,7 +1516,6 @@ router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission(
       }
       return trashed;
     });
-    const failedIds = [];
 
     // As the bulk delete: one photo.deleted per photo, one activity entry.
     try {
@@ -1552,7 +1539,7 @@ router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission(
     res.json({
       trashed: gone.length,
       photo_ids: gone.map((photo) => photo.id),
-      failed: failedIds,
+      failed: [],
       retention_days: retentionDays,
     });
   } catch (error) {
@@ -2526,33 +2513,6 @@ router.get('/:eventId/preview/:photoId', adminAuth, requirePermission('photos.vi
     if (answerVanished(res, error, 'Preview not found')) return;
     logger.error('Error serving admin preview:', error);
     errorResponse(res, error, 500, 'Failed to serve preview');
-  }
-});
-
-// Debug endpoint to check photo existence
-router.get('/:eventId/debug', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
-  try {
-    const { eventId } = req.params;
-    
-    const eventRow = await db('events').where({ id: eventId }).first();
-    const photoCount = await livePhotos(db).where({ event_id: eventId }).count('id as count').first();
-    const photos = await livePhotos(db).where({ event_id: eventId }).limit(5);
-    // Never hand out the hashes or the recoverable copies (#1271) — this is
-    // a photos.view surface, not an events.edit one.
-    let event = eventRow;
-    if (eventRow) {
-      event = { ...eventRow };
-      for (const column of ['password_hash', 'client_password_hash', ...RECOVERABLE_PASSWORD_COLUMNS]) delete event[column];
-    }
-    
-    res.json({
-      event: event || 'Not found',
-      photoCount: photoCount.count,
-      samplePhotos: photos,
-      storagePath: getStoragePath()
-    });
-  } catch (error) {
-    errorResponse(res, error, 500, 'Failed to fetch photo debug data');
   }
 });
 

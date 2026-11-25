@@ -57,7 +57,6 @@ const ALL_ROWS = {
   'services/photoCredit.js': [7, 'guest erasure and merge treat trashed photos like any other'],
   'services/photoProcessor.js': [8, 'filename counters, inserts and the run in flight; a failed upload keeps any file a row still names, trashed or not'],
   'services/photoReplacementService.js': [6, 'writes to the replacement target found live just before; a preview or hero a trashed photo shares is kept too; a lost commit acknowledgement is detected on the row itself'],
-  'services/photoService.js': [1, 'hard delete by id'],
   'services/picpeakImportService.js': [1, 'portable import: the flag travels with the row'],
   'services/portableImportMaintenance.js': [1, 'portable import: re-queues every imported row'],
   'services/publicUploadQuota.js': [2, 'guest upload quota is storage; the pending-hold reconcile names the flag on its next line'],
@@ -73,7 +72,7 @@ const ALL_ROWS = {
   'services/videoRenditionQueue.js': [1, 'state of a rendition in flight'],
   'services/videoRenditionService.js': [2, 'queues every video (the queue skips trashed rows); rendition in flight'],
   'services/watermarkGeneratorService.js': [10, 'watermarks are made, renewed and cleared for trashed photos too: a restore must not serve one from old settings'],
-  'routes/adminThumbnails.js': [6, 'thumbnail and preview regeneration covers trashed photos too: a restore must not bring back stale renditions; a superseded thumbnail or preview another row still uses (trashed or not) is kept'],
+  'routes/adminThumbnails.js': [4, 'thumbnail and preview regeneration covers trashed photos too: a restore must not bring back stale renditions; a superseded thumbnail or preview another row still uses (trashed or not) is kept'],
 };
 
 // Tables that name a photo by id keep their rows while the photo is in the
@@ -84,7 +83,7 @@ const ALL_ROWS = {
 // reference changes a number here; check it the same way before raising it.
 const CHILD_TABLES = /\(\s*['"`](?:photo_feedback|photo_admin_marks|transfer_files|photo_faces|event_download_grants)(?: as \w+)?['"`]/g;
 const CHILD_REFERENCES = {
-  'routes/adminArchives.js': 3, 'routes/adminEvents/faces.js': 2, 'routes/adminEvents/helpers.js': 3,
+  'routes/adminArchives.js': 2, 'routes/adminEvents/faces.js': 2, 'routes/adminEvents/helpers.js': 2,
   'routes/adminFeedback.js': 7, 'routes/adminGuests.js': 4, 'routes/adminPhotos.js': 3,
   'routes/galleryFeedback.js': 4, 'services/downloadQuota.js': 10, 'services/externalPhotoDedupe.js': 4,
   'services/faceAutoCategories.js': 1, 'services/faceClustering.js': 8, 'services/faceSearch.js': 1, 'services/faceFocalPoint.js': 1, 'services/facePeopleService.js': 3,

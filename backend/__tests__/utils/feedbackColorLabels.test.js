@@ -248,8 +248,6 @@ describe('dominant colour + XMP round-trip (#1044)', () => {
     // No label: unchanged legacy behaviour, so existing exports don't move.
     expect(generator.mapLabel({ average_rating: 5 })).toBe('Red');
     expect(generator.mapLabel({ average_rating: 0 })).toBeNull();
-    // Tolerates the pre-#1044 call shape (a bare average rating).
-    expect(generator.mapLabel(4.6)).toBe('Red');
   });
 
   it('writes the label into the sidecar and adds a searchable keyword', () => {
