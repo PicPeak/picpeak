@@ -61,7 +61,7 @@ function transformCampaign(c) {
     recipientCount: Number(c.recipient_count || 0),
     sentCount: Number(c.sent_count || 0),
     failedCount: Number(c.failed_count || 0),
-    sendRatePerMinute: Number(c.send_rate_per_minute || 20),
+    sendRatePerMinute: Number(c.send_rate_per_minute),
     createdByAdminId: c.created_by_admin_id,
     testSentAt: c.test_sent_at,
     queuedAt: c.queued_at,

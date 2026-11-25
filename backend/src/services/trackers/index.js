@@ -67,9 +67,4 @@ async function resolveAdapter() {
 
 module.exports = {
   resolveAdapter,
-  VALID_PROVIDERS,
-  // Exported for tests + direct injection in unit-level scenarios where
-  // resolveAdapter's getAppSetting calls would be overkill.
-  buildUmamiAdapter: umami.buildAdapter,
-  buildRybbitAdapter: rybbit.buildAdapter,
 };

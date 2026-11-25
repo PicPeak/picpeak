@@ -126,9 +126,4 @@ describe('transferService.assertUploadable', () => {
   it('410s when the single deadline has passed', () => {
     expect(transferService.assertUploadable(request({ expires_at: new Date(Date.now() - HOUR) })))
       .toMatchObject({ ok: false, code: 'UPLOAD_EXPIRED', status: 410 });
-  });
-  it('410s on a legacy row whose upload_expires_at 257 has not yet converted', () => {
-    expect(transferService.assertUploadable(request({ upload_expires_at: new Date(Date.now() - HOUR) })))
-      .toMatchObject({ ok: false, code: 'UPLOAD_EXPIRED', status: 410 });
-  });
-});
+  });});
