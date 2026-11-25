@@ -130,6 +130,18 @@ const readBooleanSetting = async (key) => {
  * falls through to the column default, exactly as before this existed.
  */
 const PROTECTION_LEVELS = ['basic', 'standard', 'enhanced', 'maximum'];
+// The other event enums the create and edit validators accept.
+const HERO_LOGO_SIZES = ['small', 'medium', 'large', 'xlarge'];
+const HERO_LOGO_POSITIONS = ['top', 'center', 'bottom'];
+const HEADER_STYLES = ['hero', 'standard', 'banner', 'minimal', 'none'];
+const HERO_DIVIDER_STYLES = ['wave', 'straight', 'angle', 'curve', 'none'];
+// promo_mode and info_mode (#440 / #932).
+const BANNER_MODES = ['inherit', 'custom', 'off'];
+const PHOTO_SORT_ORDERS = [
+  'upload_date_desc', 'upload_date_asc',
+  'capture_date_desc', 'capture_date_asc',
+  'filename_asc', 'filename_desc'
+];
 
 // parseInt would rescue malformed settings instead of rejecting them:
 // parseInt('72oops') is 72, parseInt(72.5) is 72, parseInt([72]) is 72.
@@ -317,6 +329,13 @@ const normalizeSlideshowFit = (value, fallback = DEFAULT_SLIDESHOW_FIT) =>
   (SLIDESHOW_FITS.includes(value) ? value : fallback);
 module.exports = {
   RECOVERABLE_PASSWORD_COLUMNS,
+  PROTECTION_LEVELS,
+  HERO_LOGO_SIZES,
+  HERO_LOGO_POSITIONS,
+  HEADER_STYLES,
+  HERO_DIVIDER_STYLES,
+  BANNER_MODES,
+  PHOTO_SORT_ORDERS,
   validateHeroImageAnchor,
   getStoragePath,
   getEventFieldRequirements,

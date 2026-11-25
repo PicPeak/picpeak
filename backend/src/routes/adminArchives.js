@@ -4,7 +4,6 @@ const fs = require('fs').promises;
 const os = require('os');
 const { db } = require('../database/db');
 const { leftJoinLivePhotos, livePhotos } = require('../utils/photoVisibility');
-const { deleteWithAccountingHistory } = require('../services/accountingHistory');
 const { formatBoolean } = require('../utils/dbCompat');
 const { slugify } = require('../utils/slug');
 const { adminAuth } = require('../middleware/auth');
@@ -26,7 +25,8 @@ const {
   claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives, legacyArchiveKeys,
 } = require('../services/archiveService');
 const { pipeStreamToResponse, answerVanished } = require('../utils/streamResponse');
-const { DEFAULT_STALE_MS } = require('../services/maintenanceJobState');
+const { deleteEventRows } = require('./adminEvents/helpers');
+const { getStoragePath } = require('../config/storage');
 const router = express.Router();
 
 // external_relpath and selection_hidden of a rebuilt photo row, from its
@@ -982,7 +982,7 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
 
     // Delete thumbnails for this event
     const photos = await db('photos').where('event_id', req.params.id).select('thumbnail_path');
-    const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+    const storagePath = getStoragePath();
     
     for (const photo of photos) {
       if (photo.thumbnail_path) {
@@ -996,66 +996,16 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
     }
 
     // The child rows, explicitly, then the event. This used to delete the
-    // event row alone and rely on the FK cascade, but activity_logs,
-    // access_logs and email_queue reference events WITHOUT ON DELETE CASCADE
-    // (db.js), so on PostgreSQL the delete failed on the foreign key. SQLite
-    // never enforces the keys (PicPeak does not set `PRAGMA foreign_keys =
-    // ON`), which is why it went unnoticed there — and why the declared
-    // cascades on photo_faces, event_download_grants and feedback_rate_limits
-    // are inert there too. Same table list and order as deleteEventCascade
-    // (adminEvents/helpers.js), which carries the reasons for each one; not
-    // reused because it sweeps and audits as an event delete, and this is an
-    // archive delete.
+    // event row alone and rely on the FK cascade, which failed on PostgreSQL
+    // (see deleteEventRows). The same rows as deleteEventCascade; not that
+    // function, because it sweeps and audits as an event delete, and this is
+    // an archive delete. It leaves the bell dismissals alone and removes only
+    // an archive claim nobody holds.
     await db.transaction(async (trx) => {
-      // Event row first (issue 1560): the download-limit grants lock the
-      // event row and then grant/photo rows, so taking them here in the
-      // opposite order could deadlock on PostgreSQL.
-      if (trx.client.config.client === 'pg') {
-        await trx('events').where({ id: req.params.id }).forUpdate().first();
-        // Then its photos (issue 2069): a face scan locks its photo before
-        // the photo's faces, so deleting the faces below first could wait for
-        // a scan that waits for the photo delete at the end.
-        await trx('photos').where('event_id', req.params.id).orderBy('id').forUpdate().pluck('id');
-      }
-      await trx('activity_logs').where('event_id', req.params.id).del();
-      await trx('access_logs').where('event_id', req.params.id).del();
-      await trx('email_queue').where('event_id', req.params.id).del();
-      // Face data (#1074, #1132): archiveEvent's purge step is deliberately
-      // nonfatal, so an event can still be carrying it here.
-      await trx('photo_faces').where('event_id', req.params.id).del();
-      await trx('event_people').where('event_id', req.params.id).del();
-      await trx('event_people_merge_dismissals').where('event_id', req.params.id).del();
-      await trx('event_download_grants').where('event_id', req.params.id).del();
-      await trx('event_admin_assignments').where('event_id', req.params.id).del();
-      await trx('event_category_chapters').where('event_id', req.params.id).del();
-      await trx('content_translations').where('event_id', req.params.id).del();
-      await trx('download_job_recipients')
-        .whereIn('job_id', trx('download_jobs').where('event_id', req.params.id).select('id')).del();
-      await trx('feedback_rate_limits').where('event_id', req.params.id).del();
-      await trx('selection_submissions').where('event_id', req.params.id).del();
-      // SQLite does not enable FK cascades: erase client names/session
-      // digests on this deletion path too, with history before its offers.
-      await trx('print_sales_orders').where({ event_id: Number(req.params.id) }).update({ event_id: null });
-      await trx('album_product_choice_history')
-        .whereIn('offer_id', trx('event_album_products').where('event_id', req.params.id).select('id')).del();
-      await trx('album_shipments')
-        .whereIn('offer_id', trx('event_album_products').where('event_id', req.params.id).select('id')).del();
-      await trx('event_album_products').where('event_id', req.params.id).del();
-      await trx('photos').where('event_id', req.params.id).del();
-      // Favourite lists (issue 2303), for the reason deleteEventCascade gives.
-      await trx('favorite_lists').where('event_id', req.params.id).del();
-      // Scene tags (issue 1733) stay with an archived gallery's photo rows.
-      // After the photos: a tagging worker locks the photo row first, and
-      // taking the two in the other order can deadlock on PostgreSQL.
-      await trx('photo_tags').where('event_id', req.params.id).del();
-      // Only a claim nobody holds, on claim()'s own terms: a restore that
-      // took the gallery after the check above still needs its row.
-      const cutoff = new Date(Date.now() - DEFAULT_STALE_MS).toISOString();
-      await trx('maintenance_jobs').where({ job_name: `event_archive:${Number(req.params.id)}` })
-        .where(function () { this.where('is_running', false).orWhere('heartbeat_at', '<', cutoff); })
-        .del();
-      await deleteWithAccountingHistory(trx, 'events', { id: req.params.id },
-        { actor: req.admin.id, source: 'archive.delete' });
+      await deleteEventRows(trx, req.params.id, {
+        staleArchiveClaimOnly: true,
+        history: { actor: req.admin.id, source: 'archive.delete' },
+      });
     });
 
     // Log activity

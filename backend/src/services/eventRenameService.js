@@ -13,6 +13,7 @@ const { queueEmail } = require('./emailProcessor');
 const { getStorage } = require('./storage');
 const { findSlugHolder } = require('./slugRedirects');
 const { slugify } = require('../utils/slug');
+const { getStoragePath } = require('../config/storage');
 
 /**
  * Run `fn` over `items` with at most `limit` in flight. On the first failure
@@ -54,7 +55,9 @@ const busyMessage = (eventId) => (renamingIds.has(eventId)
 
 class EventRenameService {
   constructor() {
-    this.storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+    // Read once, when the singleton is built, as before: a test that sets
+    // STORAGE_PATH after requiring this module still sees the old root.
+    this.storagePath = getStoragePath();
   }
 
   /**
