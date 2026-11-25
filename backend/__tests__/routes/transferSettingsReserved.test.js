@@ -65,8 +65,11 @@ describe('transfer upload policy keys are reserved from the generic settings wri
     // calling it reopens the bypass for its own route.
     const writers = [...SOURCE.matchAll(/router\.put\(\s*'\/(general|analytics|seo|security)'/g)].map((m) => m[1]);
     expect(writers.sort()).toEqual(['analytics', 'general', 'security', 'seo']);
-    // One call per generic writer.
-    const strips = SOURCE.match(/stripReservedSettingKeys\(/g) || [];
-    expect(strips.length).toBeGreaterThanOrEqual(writers.length);
+    // Every generic writer goes through writeGenericSettings, which strips
+    // before anything is validated or written.
+    const throughShared = [...SOURCE.matchAll(/router\.put\(\s*'\/(general|analytics|seo|security)'[^\n]*writeGenericSettings\(req, res,/g)];
+    expect(throughShared).toHaveLength(writers.length);
+    const shared = SOURCE.slice(SOURCE.indexOf('async function writeGenericSettings('));
+    expect(shared.slice(0, shared.indexOf('upsertSettingValue('))).toMatch(/stripReservedSettingKeys\(/);
   });
 });

@@ -738,6 +738,8 @@ const {
   isSocialCrawler,
   handleGalleryOgRequest,
   handleGalleryOgCover,
+  buildOgMetadata,
+  renderOgHtml,
 } = require('./src/services/galleryOgService');
 app.get('/og/gallery/:slug', handleGalleryOgRequest);
 // Public hero-photo cover served as og:image when the admin has flipped
@@ -765,7 +767,6 @@ app.get('/og/transfer-upload/:token', handleTransferOgRequest('request'));
 //   - Soft-deleted → 410 Gone so the admin can tell their delete worked
 //     vs. a typo'd unknown slug (which returns 404).
 const galleryShortUrlService = require('./src/services/galleryShortUrlService');
-const { buildOgMetadata, renderOgHtml } = require('./src/services/galleryOgService');
 app.get('/s/:shortSlug', async (req, res) => {
   try {
     const row = await galleryShortUrlService.findByShortSlug(req.params.shortSlug);
@@ -781,7 +782,7 @@ app.get('/s/:shortSlug', async (req, res) => {
     // target_path so a future migration that adds new target shapes
     // (slideshow, client-access) doesn't need to rewrite the URL parser.
     if (isSocialCrawler(req.get('user-agent'))) {
-      const event = await require('./src/database/db').db('events')
+      const event = await db('events')
         .where({ id: row.event_id })
         .first('slug');
       if (event?.slug) {

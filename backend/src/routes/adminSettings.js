@@ -178,6 +178,91 @@ const parseStoredSetting = (row) => {
   if (!row) return undefined;
   try { return JSON.parse(row.setting_value); } catch (_) { return row.setting_value; }
 };
+// app_settings rows as the { key: value } object the generic reads return.
+const rowsToSettingsObject = (rows) => {
+  const settingsObject = {};
+  rows.forEach(setting => {
+    // Check for null/undefined explicitly to handle boolean false and 0 values
+    // PostgreSQL json column returns parsed values (false as boolean, not string)
+    if (setting.setting_value !== null && setting.setting_value !== undefined) {
+      // If the value is already parsed (from json column), use it directly
+      if (typeof setting.setting_value !== 'string') {
+        settingsObject[setting.setting_key] = setting.setting_value;
+      } else {
+        try {
+          // Try to parse as JSON first
+          settingsObject[setting.setting_key] = JSON.parse(setting.setting_value);
+        } catch (e) {
+          // If it's not valid JSON, use the raw value
+          settingsObject[setting.setting_key] = setting.setting_value;
+        }
+      }
+    } else {
+      settingsObject[setting.setting_key] = null;
+    }
+  });
+  return settingsObject;
+};
+// Secrets the generic reads mask when set:
+//   security_recaptcha_secret_key
+//   backup_s3_secret_key, backup_rsync_ssh_key — the S3 secret key and the
+//     rsync SSH PRIVATE KEY were returned in plaintext to any settings.view
+//     holder; the dedicated /admin/backup/config endpoints handle the edit
+//     round-trip.
+//   analytics_umami_api_key (#661 Bug C) — read-write secret that
+//     authenticates outbound calls to the operator's Umami instance for the
+//     device breakdown.
+//   analytics_rybbit_api_key (#663 Phase 1) — same pattern.
+const MASKED_SECRET_KEYS = [
+  'security_recaptcha_secret_key',
+  'backup_s3_secret_key',
+  'backup_rsync_ssh_key',
+  'analytics_umami_api_key',
+  'analytics_rybbit_api_key',
+];
+const maskSecrets = (settingsObject) => {
+  for (const key of MASKED_SECRET_KEYS) {
+    if (settingsObject[key]) settingsObject[key] = SECRET_MASK;
+  }
+  return settingsObject;
+};
+// The upsert of the routes in this file: on conflict only the value and
+// updated_at change, the stored setting_type stays (upsertAppSetting would
+// overwrite it).
+const upsertSettingValue = (key, value, type) => db('app_settings')
+  .insert({
+    setting_key: key,
+    setting_value: JSON.stringify(value),
+    setting_type: type,
+    updated_at: new Date()
+  })
+  .onConflict('setting_key')
+  .merge({
+    setting_value: JSON.stringify(value),
+    updated_at: new Date()
+  });
+// The boolean spellings the General tab's switches accept. Narrower than
+// parseBooleanInput on purpose: anything else stores false.
+const isTrueInput = (raw) => raw === true || raw === 'true' || raw === 1 || raw === '1';
+// The three upload limits share one range check: an integer from 1 to the
+// cap, a fractional value floored first. Normalises settings[key] in place;
+// returns the 400 message when the value is out of range.
+const UPLOAD_LIMIT_KEYS = [
+  ['general_max_files_per_upload', MAX_ALLOWED_FILES_PER_UPLOAD],
+  ['general_max_file_size_mb', MAX_ALLOWED_FILE_SIZE_MB],
+  ['general_max_video_size_mb', MAX_ALLOWED_FILE_SIZE_MB],
+];
+const normaliseUploadLimit = (settings, key, max) => {
+  const rawValue = Number(settings[key]);
+  const normalizedValue = Number.isFinite(rawValue) ? Math.floor(rawValue) : NaN;
+
+  if (!Number.isInteger(normalizedValue) || normalizedValue < 1 || normalizedValue > max) {
+    return `${key} must be an integer between 1 and ${max}`;
+  }
+
+  settings[key] = normalizedValue;
+  return null;
+};
 // What a protected key reads as when it has no row yet, so a save that sends
 // the effective value back unchanged is not treated as a change. The provider
 // falls back to the legacy umami flag exactly like the Analytics tab does.
@@ -357,6 +442,57 @@ async function galleryPasswordPurgePlan(settings) {
   return purgePlanForSettingWrite(settings[GALLERY_PASSWORD_SETTING]);
 }
 
+/**
+ * The shared body of the generic writers PUT /general, /security, /analytics
+ * and /seo: strip reserved and uploaded-logo-url keys, refuse route-owned
+ * keys (400) and protected keys the caller may not change (403), run the
+ * route's own checks, then purge plan, upsert, purge, the route's follow-ups
+ * and the activity row. The activity row is a direct insert on purpose: a
+ * failure answers 500, where logActivity would swallow it.
+ *
+ *   prepare(settings, ctx)     checks and normalises (and may write, as
+ *                              /analytics does); returns the 400 body
+ *                              when a value is invalid. Runs before the
+ *                              purge plan, so it sees the stored values.
+ *   afterUpsert(settings, ctx) right after the upsert, before the after-purge
+ *   after(settings, ctx)       after the after-purge, before the activity row
+ */
+async function writeGenericSettings(req, res, { type, message, errorMessage, prepare, afterUpsert, after }) {
+  try {
+    const settings = stripUploadedLogoUrlKeys(stripReservedSettingKeys({ ...req.body }));
+    if (rejectDedicatedRouteOwnedKeys(settings, res)) return;
+    if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
+
+    const ctx = {};
+    const invalid = prepare ? await prepare(settings, ctx) : null;
+    if (invalid) return res.status(400).json(invalid);
+
+    // Update or insert each setting
+    const galleryPasswordPurge = await galleryPasswordPurgePlan(settings);
+    if (galleryPasswordPurge.before) await purgeRecoverablePasswords();
+    for (const [key, value] of Object.entries(settings)) {
+      await upsertSettingValue(key, value, type);
+    }
+
+    if (afterUpsert) afterUpsert(settings, ctx);
+    if (galleryPasswordPurge.after) await purgeRecoverablePasswords();
+    if (after) await after(settings, ctx);
+
+    // Log activity
+    await db('activity_logs').insert({
+      activity_type: `${type}_settings_updated`,
+      actor_type: 'admin',
+      actor_id: req.admin.id,
+      actor_name: req.admin.username,
+      metadata: JSON.stringify({ settings_count: Object.keys(settings).length })
+    });
+
+    res.json({ message });
+  } catch (error) {
+    errorResponse(res, error, 500, errorMessage);
+  }
+}
+
 // Get all settings, or a subset when ?keys=k1,k2,… is supplied.
 // Many caller pages only need a handful of keys (e.g. ReminderTemplates
 // reads 2 of the ~100 rows). The keys filter is allowlist-bounded by
@@ -375,28 +511,7 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
     }
     const settings = await query;
 
-    // Convert to object format
-    const settingsObject = {};
-    settings.forEach(setting => {
-      // Check for null/undefined explicitly to handle boolean false and 0 values
-      // PostgreSQL json column returns parsed values (false as boolean, not string)
-      if (setting.setting_value !== null && setting.setting_value !== undefined) {
-        // If the value is already parsed (from json column), use it directly
-        if (typeof setting.setting_value !== 'string') {
-          settingsObject[setting.setting_key] = setting.setting_value;
-        } else {
-          try {
-            // Try to parse as JSON first
-            settingsObject[setting.setting_key] = JSON.parse(setting.setting_value);
-          } catch (e) {
-            // If it's not valid JSON, use the raw value
-            settingsObject[setting.setting_key] = setting.setting_value;
-          }
-        }
-      } else {
-        settingsObject[setting.setting_key] = null;
-      }
-    });
+    const settingsObject = rowsToSettingsObject(settings);
 
     // Reserved bootstrap/credential keys are NEVER readable through the
     // generic settings reads — oidc_client_secret (#798) is stored encrypted
@@ -413,29 +528,7 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
     }
 
     // Mask sensitive secrets before sending to client
-    if (settingsObject.security_recaptcha_secret_key) {
-      settingsObject.security_recaptcha_secret_key = '••••••••';
-    }
-    // Backup credentials — the S3 secret key and the rsync SSH PRIVATE KEY
-    // were returned in plaintext to any settings.view holder. Same masking
-    // pattern as the recaptcha/umami/rybbit keys; the dedicated
-    // /admin/backup/config endpoints handle the edit round-trip.
-    if (settingsObject.backup_s3_secret_key) {
-      settingsObject.backup_s3_secret_key = '••••••••';
-    }
-    if (settingsObject.backup_rsync_ssh_key) {
-      settingsObject.backup_rsync_ssh_key = '••••••••';
-    }
-    // Umami v2 API key (#661 Bug C) — read-write secret that authenticates
-    // outbound calls to the operator's Umami instance for the device
-    // breakdown. Masked on GET, same pattern as the recaptcha secret.
-    if (settingsObject.analytics_umami_api_key) {
-      settingsObject.analytics_umami_api_key = '••••••••';
-    }
-    // Rybbit API key (#663 Phase 1) — same pattern.
-    if (settingsObject.analytics_rybbit_api_key) {
-      settingsObject.analytics_rybbit_api_key = '••••••••';
-    }
+    maskSecrets(settingsObject);
 
     // The general API rate limiter falls back to code defaults when a key has
     // no row, which is every fresh install. Surface those so the Security tab
@@ -474,22 +567,7 @@ router.get('/customer-surface', adminAuth, requirePermission('settings.view'), a
       .where('setting_type', 'customer_surface')
       .select('setting_key', 'setting_value');
 
-    const settings = {};
-    for (const r of rows) {
-      let value = r.setting_value;
-      if (value === null || value === undefined) {
-        settings[r.setting_key] = null;
-        continue;
-      }
-      if (typeof value !== 'string') {
-        settings[r.setting_key] = value;
-      } else {
-        try { settings[r.setting_key] = JSON.parse(value); }
-        catch { settings[r.setting_key] = value; }
-      }
-    }
-
-    res.json(settings);
+    res.json(rowsToSettingsObject(rows));
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to fetch customer surface settings');
   }
@@ -1178,28 +1256,7 @@ router.get('/:type', adminAuth, requirePermission('settings.view'), async (req, 
       .where('setting_type', type)
       .select('*');
 
-    // Convert to object format
-    const settingsObject = {};
-    settings.forEach(setting => {
-      // Check for null/undefined explicitly to handle boolean false and 0 values
-      // PostgreSQL json column returns parsed values (false as boolean, not string)
-      if (setting.setting_value !== null && setting.setting_value !== undefined) {
-        // If the value is already parsed (from json column), use it directly
-        if (typeof setting.setting_value !== 'string') {
-          settingsObject[setting.setting_key] = setting.setting_value;
-        } else {
-          try {
-            // Try to parse as JSON first
-            settingsObject[setting.setting_key] = JSON.parse(setting.setting_value);
-          } catch (e) {
-            // If it's not valid JSON, use the raw value
-            settingsObject[setting.setting_key] = setting.setting_value;
-          }
-        }
-      } else {
-        settingsObject[setting.setting_key] = null;
-      }
-    });
+    const settingsObject = rowsToSettingsObject(settings);
 
     // Reserved bootstrap/credential keys are NEVER readable through the
     // generic settings reads — oidc_client_secret (#798) is stored encrypted
@@ -1217,29 +1274,7 @@ router.get('/:type', adminAuth, requirePermission('settings.view'), async (req, 
     }
 
     // Mask sensitive secrets before sending to client
-    if (settingsObject.security_recaptcha_secret_key) {
-      settingsObject.security_recaptcha_secret_key = '••••••••';
-    }
-    // Backup credentials — the S3 secret key and the rsync SSH PRIVATE KEY
-    // were returned in plaintext to any settings.view holder. Same masking
-    // pattern as the recaptcha/umami/rybbit keys; the dedicated
-    // /admin/backup/config endpoints handle the edit round-trip.
-    if (settingsObject.backup_s3_secret_key) {
-      settingsObject.backup_s3_secret_key = '••••••••';
-    }
-    if (settingsObject.backup_rsync_ssh_key) {
-      settingsObject.backup_rsync_ssh_key = '••••••••';
-    }
-    // Umami v2 API key (#661 Bug C) — read-write secret that authenticates
-    // outbound calls to the operator's Umami instance for the device
-    // breakdown. Masked on GET, same pattern as the recaptcha secret.
-    if (settingsObject.analytics_umami_api_key) {
-      settingsObject.analytics_umami_api_key = '••••••••';
-    }
-    // Rybbit API key (#663 Phase 1) — same pattern.
-    if (settingsObject.analytics_rybbit_api_key) {
-      settingsObject.analytics_rybbit_api_key = '••••••••';
-    }
+    maskSecrets(settingsObject);
 
     res.json(settingsObject);
   } catch (error) {
@@ -1421,14 +1456,7 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
         .first();
       
       if (currentFaviconSetting && currentFaviconSetting.setting_value) {
-        let currentFaviconUrl;
-        try {
-          // Try to parse as JSON first
-          currentFaviconUrl = JSON.parse(currentFaviconSetting.setting_value);
-        } catch (e) {
-          // If it's not valid JSON, use the raw value
-          currentFaviconUrl = currentFaviconSetting.setting_value;
-        }
+        const currentFaviconUrl = parseStoredSetting(currentFaviconSetting);
         
         // Containment: the stored URL is admin-writable, so only the leaf
         // name is used and it is joined onto the fixed favicon directory. A
@@ -1455,14 +1483,7 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
         .first();
       
       if (currentLogoSetting && currentLogoSetting.setting_value) {
-        let currentLogoUrl;
-        try {
-          // Try to parse as JSON first
-          currentLogoUrl = JSON.parse(currentLogoSetting.setting_value);
-        } catch (e) {
-          // If it's not valid JSON, use the raw value
-          currentLogoUrl = currentLogoSetting.setting_value;
-        }
+        const currentLogoUrl = parseStoredSetting(currentLogoSetting);
         
         // Same containment as the favicon branch above.
         const logoPath = uploadedAssetPath(currentLogoUrl, 'logos', getStoragePath());
@@ -1479,18 +1500,7 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
 
     // Update or insert each setting
     for (const [key, value] of Object.entries(brandingSettings)) {
-      await db('app_settings')
-        .insert({
-          setting_key: `branding_${key}`,
-          setting_value: JSON.stringify(value),
-          setting_type: 'branding',
-          updated_at: new Date()
-        })
-        .onConflict('setting_key')
-        .merge({
-          setting_value: JSON.stringify(value),
-          updated_at: new Date()
-        });
+      await upsertSettingValue(`branding_${key}`, value, 'branding');
     }
 
     // Log activity
@@ -1580,32 +1590,10 @@ router.post('/logo', adminAuth, requirePermission('settings.edit'), upload.singl
     const logoPath = req.file.path;
     const publicPath = `/uploads/logos/${req.file.filename}`;
 
-    await db('app_settings')
-      .insert({
-        setting_key: pathKey,
-        setting_value: JSON.stringify(logoPath),
-        setting_type: 'branding',
-        updated_at: new Date()
-      })
-      .onConflict('setting_key')
-      .merge({
-        setting_value: JSON.stringify(logoPath),
-        updated_at: new Date()
-      });
+    await upsertSettingValue(pathKey, logoPath, 'branding');
 
     // Save public URL
-    await db('app_settings')
-      .insert({
-        setting_key: urlKey,
-        setting_value: JSON.stringify(publicPath),
-        setting_type: 'branding',
-        updated_at: new Date()
-      })
-      .onConflict('setting_key')
-      .merge({
-        setting_value: JSON.stringify(publicPath),
-        updated_at: new Date()
-      });
+    await upsertSettingValue(urlKey, publicPath, 'branding');
 
     capabilityEvidence(res, 'branding_editing');
     res.json({ 
@@ -1661,14 +1649,7 @@ router.post('/branding/watermark-logo', adminAuth, requirePermission('settings.e
       .first();
 
     if (oldWatermarkLogoSetting && oldWatermarkLogoSetting.setting_value) {
-      let oldPath;
-      try {
-        // Try to parse as JSON first (for JSON-stringified paths)
-        oldPath = JSON.parse(oldWatermarkLogoSetting.setting_value);
-      } catch (e) {
-        // If it's not valid JSON, use the raw value
-        oldPath = oldWatermarkLogoSetting.setting_value;
-      }
+      const oldPath = parseStoredSetting(oldWatermarkLogoSetting);
 
       if (oldPath && typeof oldPath === 'string') {
         try {
@@ -1683,32 +1664,10 @@ router.post('/branding/watermark-logo', adminAuth, requirePermission('settings.e
     const logoPath = req.file.path;
     const publicPath = `/uploads/logos/${req.file.filename}`;
 
-    await db('app_settings')
-      .insert({
-        setting_key: 'branding_watermark_logo_path',
-        setting_value: JSON.stringify(logoPath),
-        setting_type: 'branding',
-        updated_at: new Date()
-      })
-      .onConflict('setting_key')
-      .merge({
-        setting_value: JSON.stringify(logoPath),
-        updated_at: new Date()
-      });
+    await upsertSettingValue('branding_watermark_logo_path', logoPath, 'branding');
 
     // Save public URL
-    await db('app_settings')
-      .insert({
-        setting_key: 'branding_watermark_logo_url',
-        setting_value: JSON.stringify(publicPath),
-        setting_type: 'branding',
-        updated_at: new Date()
-      })
-      .onConflict('setting_key')
-      .merge({
-        setting_value: JSON.stringify(publicPath),
-        updated_at: new Date()
-      });
+    await upsertSettingValue('branding_watermark_logo_url', publicPath, 'branding');
 
     // Trigger watermark regeneration since the logo changed
     watermarkService.clearCache();
@@ -1747,8 +1706,7 @@ router.delete('/branding/watermark-logo', adminAuth, requirePermission('settings
       .first();
 
     if (setting && setting.setting_value) {
-      let oldPath = setting.setting_value;
-      try { oldPath = JSON.parse(oldPath); } catch (_) { /* raw value */ }
+      const oldPath = parseStoredSetting(setting);
       if (oldPath && typeof oldPath === 'string') {
         try { await fs.unlink(oldPath); } catch (error) {
           logger.warn('Failed to delete old watermark logo file:', error);
@@ -1775,18 +1733,7 @@ router.put('/theme', adminAuth, requirePermission('settings.edit'), async (req, 
     const themeChanged = await settingsChanged(db, { theme_config: themeSettings }, ['theme_config']);
 
     // Save theme settings
-    await db('app_settings')
-      .insert({
-        setting_key: 'theme_config',
-        setting_value: JSON.stringify(themeSettings),
-        setting_type: 'theme',
-        updated_at: new Date()
-      })
-      .onConflict('setting_key')
-      .merge({
-        setting_value: JSON.stringify(themeSettings),
-        updated_at: new Date()
-      });
+    await upsertSettingValue('theme_config', themeSettings, 'theme');
 
     // Log activity
     await db('activity_logs').insert({
@@ -1806,363 +1753,296 @@ router.put('/theme', adminAuth, requirePermission('settings.edit'), async (req, 
   }
 });
 
-// Update general settings
-router.put('/general', adminAuth, requirePermission('settings.edit'), async (req, res) => {
-  try {
-    const settings = stripUploadedLogoUrlKeys(stripReservedSettingKeys({ ...req.body }));
-    if (rejectDedicatedRouteOwnedKeys(settings, res)) return;
-    let uploadLimitTouched = false;
+// PUT /general. Checks and normalises the General tab's values before the
+// write; returns the 400 body when one is invalid.
+async function prepareGeneralSettings(settings, ctx) {
+  ctx.uploadLimitTouched = false;
 
-    // Migration 174: drop any protected key (site URL / security / accounting)
-    // the caller isn't permitted to write, so the settings.edit bucket can't be
-    // used to repoint the install via this generic writer. See
-    // rejectUnauthorizedProtectedKeys (403s when a protected key is denied).
-    if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
-
-    // The public origin is no longer just an email link: it feeds the CORS
-    // allowlist (server.js) since #705. A schemeless value like
-    // "gallery.example.com" therefore produces both links that don't resolve
-    // AND an allowlist entry no browser origin can ever match, so validate it
-    // server-side rather than trusting the input type (#1104). require_tld is
-    // off on purpose: LAN and NAS installs legitimately run on http://nas:3000
-    // or a bare IP. Same validator as oidc_issuer_url above.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_site_url')) {
-      const siteUrl = typeof settings.general_site_url === 'string'
-        ? settings.general_site_url.trim().replace(/\/+$/, '')
-        : '';
-      // allow_underscores for the same reason require_tld is off: this has to
-      // accept the addresses LAN and NAS installs actually run on. Browsers
-      // resolve http://my_nas.local happily and the client-side check accepts
-      // it, so rejecting it here only produced a mismatch between the two
-      // validators — and the wizard has no way to show a 400 it did not
-      // predict (#1104 review round 2).
-      const looksValid = validator.isURL(siteUrl, {
-        protocols: ['http', 'https'],
-        require_protocol: true,
-        require_tld: false,
-        allow_underscores: true,
-      });
-      if (siteUrl && !looksValid) {
-        return res.status(400).json({
-          error: 'general_site_url must be an absolute http(s) URL, for example https://gallery.example.com'
-        });
-      }
-      settings.general_site_url = siteUrl;
-    }
-
-    // Customer documents (#1444): checked and normalised before storing.
-    const documentSettingsError = require('../utils/customerDocumentSettings')
-      .normaliseCustomerDocumentSettings(settings);
-    if (documentSettingsError) return res.status(400).json({ error: documentSettingsError });
-
-    const publicSiteKeysTouched = Object.keys(settings).some((key) => key.startsWith('general_public_site_'));
-
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_max_files_per_upload')) {
-      uploadLimitTouched = true;
-      const rawValue = Number(settings.general_max_files_per_upload);
-      const normalizedValue = Number.isFinite(rawValue) ? Math.floor(rawValue) : NaN;
-
-      if (!Number.isInteger(normalizedValue) || normalizedValue < 1 || normalizedValue > MAX_ALLOWED_FILES_PER_UPLOAD) {
-        return res.status(400).json({
-          error: `general_max_files_per_upload must be an integer between 1 and ${MAX_ALLOWED_FILES_PER_UPLOAD}`
-        });
-      }
-
-      settings.general_max_files_per_upload = normalizedValue;
-    }
-
-    // Per-file size limit (MB). Validate/clamp on save, mirroring the count
-    // above, so an out-of-range value can't be persisted — otherwise the public
-    // endpoint would advertise the raw value while getMaxFileSizeMb() normalizes
-    // it, and the guest UI would reject files the backend actually accepts.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_max_file_size_mb')) {
-      uploadLimitTouched = true;
-      const rawValue = Number(settings.general_max_file_size_mb);
-      const normalizedValue = Number.isFinite(rawValue) ? Math.floor(rawValue) : NaN;
-
-      if (!Number.isInteger(normalizedValue) || normalizedValue < 1 || normalizedValue > MAX_ALLOWED_FILE_SIZE_MB) {
-        return res.status(400).json({
-          error: `general_max_file_size_mb must be an integer between 1 and ${MAX_ALLOWED_FILE_SIZE_MB}`
-        });
-      }
-
-      settings.general_max_file_size_mb = normalizedValue;
-    }
-
-    // Per-file size limit for videos (MB). Same bounds and same reasoning as
-    // the photo cap above — videos just get their own value so a 50MB photo
-    // limit doesn't also block every clip.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_max_video_size_mb')) {
-      uploadLimitTouched = true;
-      const rawValue = Number(settings.general_max_video_size_mb);
-      const normalizedValue = Number.isFinite(rawValue) ? Math.floor(rawValue) : NaN;
-
-      if (!Number.isInteger(normalizedValue) || normalizedValue < 1 || normalizedValue > MAX_ALLOWED_FILE_SIZE_MB) {
-        return res.status(400).json({
-          error: `general_max_video_size_mb must be an integer between 1 and ${MAX_ALLOWED_FILE_SIZE_MB}`
-        });
-      }
-
-      settings.general_max_video_size_mb = normalizedValue;
-    }
-
-    // Photo trash retention in days (issue 1733); 0 deletes photos at once.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_photo_trash_retention_days')) {
-      const { MAX_RETENTION_DAYS } = require('../services/photoTrash');
-      const days = Number(settings.general_photo_trash_retention_days);
-      if (!Number.isInteger(days) || days < 0 || days > MAX_RETENTION_DAYS) {
-        return res.status(400).json({
-          error: `general_photo_trash_retention_days must be an integer between 0 and ${MAX_RETENTION_DAYS}`
-        });
-      }
-      settings.general_photo_trash_retention_days = days;
-    }
-
-    // Browser-playable video copies (issue 1430, item 8): a plain boolean.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_web_rendition')) {
-      const raw = settings.general_video_web_rendition;
-      settings.general_video_web_rendition = raw === true || raw === 'true' || raw === 1 || raw === '1';
-    }
-    // Adaptive video streaming (issue 1733): a plain boolean too.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_adaptive_streaming')) {
-      const raw = settings.general_video_adaptive_streaming;
-      settings.general_video_adaptive_streaming = raw === true || raw === 'true' || raw === 1 || raw === '1';
-    }
-    // Metadata-free copies of played videos (issue 2102): a boolean as well.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_strip_metadata')) {
-      const raw = settings.general_video_strip_metadata;
-      settings.general_video_strip_metadata = raw === true || raw === 'true' || raw === 1 || raw === '1';
-    }
-
-    // Default download limit for new events (issue 1560). Empty, 0 or null
-    // clears it (unlimited); anything else must be a positive integer.
-    if (Object.prototype.hasOwnProperty.call(settings, 'event_default_download_limit')) {
-      const raw = settings.event_default_download_limit;
-      if (raw === null || raw === '' || raw === 0 || raw === '0') {
-        settings.event_default_download_limit = null;
-      } else {
-        const normalized = normaliseDownloadLimit(raw);
-        if (normalized === null) {
-          return res.status(400).json({
-            error: 'event_default_download_limit must be a positive integer, or empty for unlimited'
-          });
-        }
-        settings.event_default_download_limit = normalized;
-      }
-    }
-
-    // Uploader-name defaults for new events (#1561).
-    if (Object.prototype.hasOwnProperty.call(settings, 'event_default_guest_name_mode')
-      && !GUEST_NAME_MODES.includes(settings.event_default_guest_name_mode)) {
-      return res.status(400).json({
-        error: `event_default_guest_name_mode must be one of: ${GUEST_NAME_MODES.join(', ')}`
-      });
-    }
-    if (Object.prototype.hasOwnProperty.call(settings, 'event_default_show_credits_to_guests')) {
-      const raw = settings.event_default_show_credits_to_guests;
-      settings.event_default_show_credits_to_guests = raw === true || raw === 'true' || raw === 1 || raw === '1';
-    }
-    // First-visit walkthrough default for new galleries (issue 2551).
-    if (Object.prototype.hasOwnProperty.call(settings, 'event_default_walkthrough_enabled')) {
-      const raw = settings.event_default_walkthrough_enabled;
-      settings.event_default_walkthrough_enabled = raw === true || raw === 'true' || raw === 1 || raw === '1';
-    }
-
-    // Folders (issue 1786) and two-stage delivery (issue 1562).
-    for (const key of ['event_default_folder_structure', 'first_look_keyword_detection']) {
-      if (Object.prototype.hasOwnProperty.call(settings, key)) {
-        const raw = settings[key];
-        settings[key] = raw === true || raw === 'true' || raw === 1 || raw === '1';
-      }
-    }
-    if (Object.prototype.hasOwnProperty.call(settings, 'first_look_folder_keywords')) {
-      const raw = settings.first_look_folder_keywords;
-      const list = (Array.isArray(raw) ? raw : String(raw || '').split(','))
-        .map((k) => String(k).replace(/\s+/g, ' ').trim())
-        .filter(Boolean);
-      // Refused, not trimmed: a keyword dropped silently is a folder that
-      // quietly stops starting a first look.
-      if (list.length > 20 || list.some((k) => k.length > 60 || k.replace(/[^\p{L}\p{N}]/gu, '').length < 3)) {
-        return res.status(400).json({ error: 'first_look_folder_keywords: at most 20 keywords, each with at least 3 letters or digits and at most 60 characters' });
-      }
-      settings.first_look_folder_keywords = [...new Set(list)];
-    }
-    // Maximum lightbox zoom (issue 2281), in percent of the original's pixels.
-    if (Object.prototype.hasOwnProperty.call(settings, LIGHTBOX_MAX_ZOOM_KEY)) {
-      const percent = parseLightboxMaxZoomPercent(settings[LIGHTBOX_MAX_ZOOM_KEY]);
-      if (percent === null) {
-        return res.status(400).json({
-          error: `${LIGHTBOX_MAX_ZOOM_KEY} must be an integer between ${MIN_LIGHTBOX_ZOOM_PERCENT} and ${MAX_LIGHTBOX_ZOOM_PERCENT}`
-        });
-      }
-      settings[LIGHTBOX_MAX_ZOOM_KEY] = percent;
-    }
-    if (Object.prototype.hasOwnProperty.call(settings, 'event_default_delivery_days')) {
-      const days = Number(settings.event_default_delivery_days);
-      if (!Number.isInteger(days) || days < 1 || days > 365) {
-        return res.status(400).json({ error: 'event_default_delivery_days must be an integer between 1 and 365' });
-      }
-      settings.event_default_delivery_days = days;
-    }
-
-    if (publicSiteKeysTouched) {
-      if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_custom_css')) {
-        settings.general_public_site_custom_css = sanitizeCss(settings.general_public_site_custom_css || '');
-      }
-
-      if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_html') && typeof settings.general_public_site_html === 'string') {
-        settings.general_public_site_html = settings.general_public_site_html.trim();
-      }
-
-      if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_enabled')) {
-        settings.general_public_site_enabled = formatBoolean(settings.general_public_site_enabled);
-      }
-
-      const enableToggle = settings.general_public_site_enabled;
-      if (enableToggle === true) {
-        let htmlValue = settings.general_public_site_html;
-
-        if (htmlValue === undefined) {
-          const currentSettings = await getRawPublicSiteSettings();
-          htmlValue = currentSettings.general_public_site_html;
-        }
-
-        if (!htmlValue || !String(htmlValue).trim()) {
-          return res.status(400).json({
-            error: 'Public site HTML must be provided before enabling the public landing page.'
-          });
-        }
-      }
-    }
-
-    // Update or insert each setting
-    const galleryPasswordPurge = await galleryPasswordPurgePlan(settings);
-    if (galleryPasswordPurge.before) await purgeRecoverablePasswords();
-    for (const [key, value] of Object.entries(settings)) {
-      await db('app_settings')
-        .insert({
-          setting_key: key,
-          setting_value: JSON.stringify(value),
-          setting_type: 'general',
-          updated_at: new Date()
-        })
-        .onConflict('setting_key')
-        .merge({
-          setting_value: JSON.stringify(value),
-          updated_at: new Date()
-        });
-    }
-    
-    if (galleryPasswordPurge.after) await purgeRecoverablePasswords();
-
-    // Clear maintenance mode cache if it was updated
-    if ('general_maintenance_mode' in settings) {
-      clearMaintenanceCache();
-    }
-
-    if (publicSiteKeysTouched) {
-      clearPublicSiteCache();
-    }
-    if (uploadLimitTouched) {
-      clearMaxFilesPerUploadCache();
-      clearMaxFileSizeCache();
-      clearMaxVideoSizeCache();
-    }
-    // The allowed-types list is cached for a minute like the caps above, but
-    // nothing was dropping it. An admin who added a format to accept a batch
-    // of files got a full minute of "Invalid file type. Check allowed file
-    // types in system settings." on the setting they had just changed.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_allowed_file_types')) {
-      clearAllowedTypesCache();
-    }
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_short_gallery_urls')) {
-      clearShareLinkSettingsCache();
-    }
-    // Switching the video copies on queues the back catalogue: every video
-    // never looked at, deferred while they were off, or whose last attempt
-    // failed. The queue probes each one and skips what already plays. Off leaves the rows as they are; the
-    // workers idle until it is on again.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_web_rendition')) {
-      const videoRendition = require('../services/videoRenditionService');
-      videoRendition.clearCache();
-      if (settings.general_video_web_rendition) {
-        try {
-          const queued = await videoRendition.backfillPending();
-          if (queued > 0) logger.info(`videoRendition: queued ${queued} existing video(s) after the setting was enabled`);
-        } catch (e) {
-          logger.warn('videoRendition: failed to queue existing videos:', e.message);
-        }
-      }
-    }
-    // Switching metadata stripping on queues the videos skipped because they
-    // played as they were, and those never looked at, for their remux, with
-    // or without the transcodes. Off keeps the remuxes already written: they
-    // go on playing, and only videos decided from now on are skipped again.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_strip_metadata')) {
-      const videoRendition = require('../services/videoRenditionService');
-      videoRendition.clearCache();
-      if (settings.general_video_strip_metadata) {
-        try {
-          const queued = await videoRendition.queueForMetadataStrip();
-          if (queued > 0) logger.info(`videoRendition: queued ${queued} existing video(s) for a metadata-free copy`);
-        } catch (e) {
-          logger.warn('videoRendition: failed to queue videos for a metadata-free copy:', e.message);
-        }
-      }
-    }
-    // Adaptive streaming: the queue marks the videos nobody has looked at by
-    // itself; switching it on also gives the failed ones another try.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_adaptive_streaming')) {
-      const videoHls = require('../services/videoHlsService');
-      videoHls.clearCache();
-      if (settings.general_video_adaptive_streaming) {
-        await videoHls.queuePending({ retryFailed: true })
-          .catch(e => logger.warn('videoHls: failed to queue existing videos:', e.message));
-      }
-    }
-    // The public origin is cached (it now sits in per-request CORS paths and
-    // in a synchronous accessor); drop it immediately on write so a corrected
-    // site URL takes effect without waiting out the TTL.
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_site_url')) {
-      invalidateSiteUrlCache();
-    }
-    // Toggling the original-filenames setting (#493) requires busting the
-    // per-event pre-generated zips so the next download-all rebuilds with the
-    // new entry names. Single-photo downloads pick up the change as soon as
-    // the in-memory cache TTL in downloadFilenameService expires (cleared
-    // here for immediacy).
-    if (Object.prototype.hasOwnProperty.call(settings, 'general_use_original_filenames_for_downloads')) {
-      try {
-        require('../services/downloadFilenameService').clearCache();
-        require('../services/downloadZipService').invalidateAll();
-      } catch (e) {
-        logger.warn('Failed to invalidate download caches after filename setting change:', e.message);
-      }
-    }
-
-    // Log activity
-    await db('activity_logs').insert({
-      activity_type: 'general_settings_updated',
-      actor_type: 'admin',
-      actor_id: req.admin.id,
-      actor_name: req.admin.username,
-      metadata: JSON.stringify({ settings_count: Object.keys(settings).length })
+  // The public origin is no longer just an email link: it feeds the CORS
+  // allowlist (server.js) since #705. A schemeless value like
+  // "gallery.example.com" therefore produces both links that don't resolve
+  // AND an allowlist entry no browser origin can ever match, so validate it
+  // server-side rather than trusting the input type (#1104). require_tld is
+  // off on purpose: LAN and NAS installs legitimately run on http://nas:3000
+  // or a bare IP. Same validator as oidc_issuer_url above.
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_site_url')) {
+    const siteUrl = typeof settings.general_site_url === 'string'
+      ? settings.general_site_url.trim().replace(/\/+$/, '')
+      : '';
+    // allow_underscores for the same reason require_tld is off: this has to
+    // accept the addresses LAN and NAS installs actually run on. Browsers
+    // resolve http://my_nas.local happily and the client-side check accepts
+    // it, so rejecting it here only produced a mismatch between the two
+    // validators — and the wizard has no way to show a 400 it did not
+    // predict (#1104 review round 2).
+    const looksValid = validator.isURL(siteUrl, {
+      protocols: ['http', 'https'],
+      require_protocol: true,
+      require_tld: false,
+      allow_underscores: true,
     });
-
-    res.json({ message: 'General settings updated successfully' });
-  } catch (error) {
-    errorResponse(res, error, 500, 'Failed to update general settings');
+    if (siteUrl && !looksValid) {
+      return {
+        error: 'general_site_url must be an absolute http(s) URL, for example https://gallery.example.com'
+      };
+    }
+    settings.general_site_url = siteUrl;
   }
-});
+
+  // Customer documents (#1444): checked and normalised before storing.
+  const documentSettingsError = require('../utils/customerDocumentSettings')
+    .normaliseCustomerDocumentSettings(settings);
+  if (documentSettingsError) return { error: documentSettingsError };
+
+  ctx.publicSiteKeysTouched = Object.keys(settings).some((key) => key.startsWith('general_public_site_'));
+
+  // Per-file size limits (MB) are validated on save like the count, so an
+  // out-of-range value can't be persisted — otherwise the public endpoint
+  // would advertise the raw value while getMaxFileSizeMb() normalizes it,
+  // and the guest UI would reject files the backend actually accepts.
+  // Videos get their own value with the same bounds, so a 50MB photo limit
+  // doesn't also block every clip.
+  for (const [key, max] of UPLOAD_LIMIT_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(settings, key)) {
+      ctx.uploadLimitTouched = true;
+      const error = normaliseUploadLimit(settings, key, max);
+      if (error) return { error };
+    }
+  }
+
+  // Photo trash retention in days (issue 1733); 0 deletes photos at once.
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_photo_trash_retention_days')) {
+    const { MAX_RETENTION_DAYS } = require('../services/photoTrash');
+    const days = Number(settings.general_photo_trash_retention_days);
+    if (!Number.isInteger(days) || days < 0 || days > MAX_RETENTION_DAYS) {
+      return {
+        error: `general_photo_trash_retention_days must be an integer between 0 and ${MAX_RETENTION_DAYS}`
+      };
+    }
+    settings.general_photo_trash_retention_days = days;
+  }
+
+  // Browser-playable video copies (issue 1430, item 8): a plain boolean.
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_video_web_rendition')) {
+    settings.general_video_web_rendition = isTrueInput(settings.general_video_web_rendition);
+  }
+  // Adaptive video streaming (issue 1733): a plain boolean too.
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_video_adaptive_streaming')) {
+    settings.general_video_adaptive_streaming = isTrueInput(settings.general_video_adaptive_streaming);
+  }
+  // Metadata-free copies of played videos (issue 2102): a boolean as well.
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_video_strip_metadata')) {
+    settings.general_video_strip_metadata = isTrueInput(settings.general_video_strip_metadata);
+  }
+
+  // Default download limit for new events (issue 1560). Empty, 0 or null
+  // clears it (unlimited); anything else must be a positive integer.
+  if (Object.prototype.hasOwnProperty.call(settings, 'event_default_download_limit')) {
+    const raw = settings.event_default_download_limit;
+    if (raw === null || raw === '' || raw === 0 || raw === '0') {
+      settings.event_default_download_limit = null;
+    } else {
+      const normalized = normaliseDownloadLimit(raw);
+      if (normalized === null) {
+        return {
+          error: 'event_default_download_limit must be a positive integer, or empty for unlimited'
+        };
+      }
+      settings.event_default_download_limit = normalized;
+    }
+  }
+
+  // Uploader-name defaults for new events (#1561).
+  if (Object.prototype.hasOwnProperty.call(settings, 'event_default_guest_name_mode')
+    && !GUEST_NAME_MODES.includes(settings.event_default_guest_name_mode)) {
+    return {
+      error: `event_default_guest_name_mode must be one of: ${GUEST_NAME_MODES.join(', ')}`
+    };
+  }
+  if (Object.prototype.hasOwnProperty.call(settings, 'event_default_show_credits_to_guests')) {
+    settings.event_default_show_credits_to_guests = isTrueInput(settings.event_default_show_credits_to_guests);
+  }
+  // First-visit walkthrough default for new galleries (issue 2551).
+  if (Object.prototype.hasOwnProperty.call(settings, 'event_default_walkthrough_enabled')) {
+    settings.event_default_walkthrough_enabled = isTrueInput(settings.event_default_walkthrough_enabled);
+  }
+
+  // Folders (issue 1786) and two-stage delivery (issue 1562).
+  for (const key of ['event_default_folder_structure', 'first_look_keyword_detection']) {
+    if (Object.prototype.hasOwnProperty.call(settings, key)) {
+      settings[key] = isTrueInput(settings[key]);
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(settings, 'first_look_folder_keywords')) {
+    const raw = settings.first_look_folder_keywords;
+    const list = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .map((k) => String(k).replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    // Refused, not trimmed: a keyword dropped silently is a folder that
+    // quietly stops starting a first look.
+    if (list.length > 20 || list.some((k) => k.length > 60 || k.replace(/[^\p{L}\p{N}]/gu, '').length < 3)) {
+      return { error: 'first_look_folder_keywords: at most 20 keywords, each with at least 3 letters or digits and at most 60 characters' };
+    }
+    settings.first_look_folder_keywords = [...new Set(list)];
+  }
+  // Maximum lightbox zoom (issue 2281), in percent of the original's pixels.
+  if (Object.prototype.hasOwnProperty.call(settings, LIGHTBOX_MAX_ZOOM_KEY)) {
+    const percent = parseLightboxMaxZoomPercent(settings[LIGHTBOX_MAX_ZOOM_KEY]);
+    if (percent === null) {
+      return {
+        error: `${LIGHTBOX_MAX_ZOOM_KEY} must be an integer between ${MIN_LIGHTBOX_ZOOM_PERCENT} and ${MAX_LIGHTBOX_ZOOM_PERCENT}`
+      };
+    }
+    settings[LIGHTBOX_MAX_ZOOM_KEY] = percent;
+  }
+  if (Object.prototype.hasOwnProperty.call(settings, 'event_default_delivery_days')) {
+    const days = Number(settings.event_default_delivery_days);
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      return { error: 'event_default_delivery_days must be an integer between 1 and 365' };
+    }
+    settings.event_default_delivery_days = days;
+  }
+
+  if (ctx.publicSiteKeysTouched) {
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_custom_css')) {
+      settings.general_public_site_custom_css = sanitizeCss(settings.general_public_site_custom_css || '');
+    }
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_html') && typeof settings.general_public_site_html === 'string') {
+      settings.general_public_site_html = settings.general_public_site_html.trim();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_enabled')) {
+      settings.general_public_site_enabled = formatBoolean(settings.general_public_site_enabled);
+    }
+
+    const enableToggle = settings.general_public_site_enabled;
+    if (enableToggle === true) {
+      let htmlValue = settings.general_public_site_html;
+
+      if (htmlValue === undefined) {
+        const currentSettings = await getRawPublicSiteSettings();
+        htmlValue = currentSettings.general_public_site_html;
+      }
+
+      if (!htmlValue || !String(htmlValue).trim()) {
+        return {
+          error: 'Public site HTML must be provided before enabling the public landing page.'
+        };
+      }
+    }
+  }
+}
+
+// PUT /general: caches and queues that follow the written values.
+async function afterGeneralSettings(settings, ctx) {
+  // Clear maintenance mode cache if it was updated
+  if ('general_maintenance_mode' in settings) {
+    clearMaintenanceCache();
+  }
+
+  if (ctx.publicSiteKeysTouched) {
+    clearPublicSiteCache();
+  }
+  if (ctx.uploadLimitTouched) {
+    clearMaxFilesPerUploadCache();
+    clearMaxFileSizeCache();
+    clearMaxVideoSizeCache();
+  }
+  // The allowed-types list is cached for a minute like the caps above, but
+  // nothing was dropping it. An admin who added a format to accept a batch
+  // of files got a full minute of "Invalid file type. Check allowed file
+  // types in system settings." on the setting they had just changed.
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_allowed_file_types')) {
+    clearAllowedTypesCache();
+  }
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_short_gallery_urls')) {
+    clearShareLinkSettingsCache();
+  }
+  // Switching the video copies on queues the back catalogue: every video
+  // never looked at, deferred while they were off, or whose last attempt
+  // failed. The queue probes each one and skips what already plays. Off leaves the rows as they are; the
+  // workers idle until it is on again.
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_video_web_rendition')) {
+    const videoRendition = require('../services/videoRenditionService');
+    videoRendition.clearCache();
+    if (settings.general_video_web_rendition) {
+      try {
+        const queued = await videoRendition.backfillPending();
+        if (queued > 0) logger.info(`videoRendition: queued ${queued} existing video(s) after the setting was enabled`);
+      } catch (e) {
+        logger.warn('videoRendition: failed to queue existing videos:', e.message);
+      }
+    }
+  }
+  // Switching metadata stripping on queues the videos skipped because they
+  // played as they were, and those never looked at, for their remux, with
+  // or without the transcodes. Off keeps the remuxes already written: they
+  // go on playing, and only videos decided from now on are skipped again.
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_video_strip_metadata')) {
+    const videoRendition = require('../services/videoRenditionService');
+    videoRendition.clearCache();
+    if (settings.general_video_strip_metadata) {
+      try {
+        const queued = await videoRendition.queueForMetadataStrip();
+        if (queued > 0) logger.info(`videoRendition: queued ${queued} existing video(s) for a metadata-free copy`);
+      } catch (e) {
+        logger.warn('videoRendition: failed to queue videos for a metadata-free copy:', e.message);
+      }
+    }
+  }
+  // Adaptive streaming: the queue marks the videos nobody has looked at by
+  // itself; switching it on also gives the failed ones another try.
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_video_adaptive_streaming')) {
+    const videoHls = require('../services/videoHlsService');
+    videoHls.clearCache();
+    if (settings.general_video_adaptive_streaming) {
+      await videoHls.queuePending({ retryFailed: true })
+        .catch(e => logger.warn('videoHls: failed to queue existing videos:', e.message));
+    }
+  }
+  // The public origin is cached (it now sits in per-request CORS paths and
+  // in a synchronous accessor); drop it immediately on write so a corrected
+  // site URL takes effect without waiting out the TTL.
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_site_url')) {
+    invalidateSiteUrlCache();
+  }
+  // Toggling the original-filenames setting (#493) requires busting the
+  // per-event pre-generated zips so the next download-all rebuilds with the
+  // new entry names. Single-photo downloads pick up the change as soon as
+  // the in-memory cache TTL in downloadFilenameService expires (cleared
+  // here for immediacy).
+  if (Object.prototype.hasOwnProperty.call(settings, 'general_use_original_filenames_for_downloads')) {
+    try {
+      require('../services/downloadFilenameService').clearCache();
+      require('../services/downloadZipService').invalidateAll();
+    } catch (e) {
+      logger.warn('Failed to invalidate download caches after filename setting change:', e.message);
+    }
+  }
+}
+
+// Update general settings
+// Migration 174: a protected key (site URL / security / accounting) the
+// caller isn't permitted to change is refused (403) by writeGenericSettings,
+// so the settings.edit bucket can't be used to repoint the install via this
+// generic writer. See rejectUnauthorizedProtectedKeys.
+router.put('/general', adminAuth, requirePermission('settings.edit'), (req, res) => writeGenericSettings(req, res, {
+  type: 'general',
+  message: 'General settings updated successfully',
+  errorMessage: 'Failed to update general settings',
+  prepare: prepareGeneralSettings,
+  after: afterGeneralSettings,
+}));
 
 // Update security settings
-router.put('/security', adminAuth, requirePermission('settings.security'), async (req, res) => {
-  try {
-    const settings = stripUploadedLogoUrlKeys(stripReservedSettingKeys({ ...req.body }));
-    if (rejectDedicatedRouteOwnedKeys(settings, res)) return;
-    // A settings.security holder still can't write domain/accounting keys here.
-    if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
-
+// A settings.security holder still can't write domain/accounting keys here
+// (rejectUnauthorizedProtectedKeys in writeGenericSettings).
+router.put('/security', adminAuth, requirePermission('settings.security'), (req, res) => writeGenericSettings(req, res, {
+  type: 'security',
+  message: 'Security settings updated successfully',
+  errorMessage: 'Failed to update security settings',
+  prepare: (settings) => {
     // The reCAPTCHA secret goes out masked on GET, and the Security tab sends
     // every security_* key back on save, mask included. Writing the mask
     // would replace the stored secret with eight bullets and every
@@ -2172,58 +2052,24 @@ router.put('/security', adminAuth, requirePermission('settings.security'), async
     if (settings.security_recaptcha_secret_key === SECRET_MASK) {
       delete settings.security_recaptcha_secret_key;
     }
-
-    // Update or insert each setting
-    const galleryPasswordPurge = await galleryPasswordPurgePlan(settings);
-    if (galleryPasswordPurge.before) await purgeRecoverablePasswords();
-    for (const [key, value] of Object.entries(settings)) {
-      await db('app_settings')
-        .insert({
-          setting_key: key,
-          setting_value: JSON.stringify(value),
-          setting_type: 'security',
-          updated_at: new Date()
-        })
-        .onConflict('setting_key')
-        .merge({
-          setting_value: JSON.stringify(value),
-          updated_at: new Date()
-        });
-    }
-
-    resetSecurityConfigCache();
-    if (galleryPasswordPurge.after) await purgeRecoverablePasswords();
-
-    // Log activity
-    await db('activity_logs').insert({
-      activity_type: 'security_settings_updated',
-      actor_type: 'admin',
-      actor_id: req.admin.id,
-      actor_name: req.admin.username,
-      metadata: JSON.stringify({ settings_count: Object.keys(settings).length })
-    });
-
-    res.json({ message: 'Security settings updated successfully' });
-  } catch (error) {
-    errorResponse(res, error, 500, 'Failed to update security settings');
-  }
-});
+  },
+  afterUpsert: () => resetSecurityConfigCache(),
+}));
 
 // Update analytics settings
-router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (req, res) => {
-  try {
-    const settings = stripUploadedLogoUrlKeys(stripReservedSettingKeys({ ...req.body }));
-    if (rejectDedicatedRouteOwnedKeys(settings, res)) return;
-    if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
-
+router.put('/analytics', adminAuth, requirePermission('settings.edit'), (req, res) => writeGenericSettings(req, res, {
+  type: 'analytics',
+  message: 'Analytics settings updated successfully',
+  errorMessage: 'Failed to update analytics settings',
+  prepare: async (settings) => {
     // Validate the provider switch (#663 Phase 1). Reject unknown values
     // so the dashboard route's factory doesn't have to defensively guard.
     if (Object.prototype.hasOwnProperty.call(settings, 'analytics_tracker_provider')) {
       const valid = ['none', 'umami', 'rybbit'];
       if (!valid.includes(settings.analytics_tracker_provider)) {
-        return res.status(400).json({
+        return {
           error: `analytics_tracker_provider must be one of: ${valid.join(', ')}`,
-        });
+        };
       }
     }
 
@@ -2236,112 +2082,49 @@ router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (r
         .where({ setting_key: 'analytics_custom_head_html' })
         .update({ setting_value: JSON.stringify('') });
     }
-
-    // Update or insert each setting
-    const galleryPasswordPurge = await galleryPasswordPurgePlan(settings);
-    if (galleryPasswordPurge.before) await purgeRecoverablePasswords();
-    for (const [key, value] of Object.entries(settings)) {
-      await db('app_settings')
-        .insert({
-          setting_key: key,
-          setting_value: JSON.stringify(value),
-          setting_type: 'analytics',
-          updated_at: new Date()
-        })
-        .onConflict('setting_key')
-        .merge({
-          setting_value: JSON.stringify(value),
-          updated_at: new Date()
-        });
-    }
-
-    if (galleryPasswordPurge.after) await purgeRecoverablePasswords();
-
-    // Log activity
-    await db('activity_logs').insert({
-      activity_type: 'analytics_settings_updated',
-      actor_type: 'admin',
-      actor_id: req.admin.id,
-      actor_name: req.admin.username,
-      metadata: JSON.stringify({ settings_count: Object.keys(settings).length })
-    });
-
-    res.json({ message: 'Analytics settings updated successfully' });
-  } catch (error) {
-    errorResponse(res, error, 500, 'Failed to update analytics settings');
-  }
-});
+  },
+}));
 
 // Update SEO settings
-router.put('/seo', adminAuth, requirePermission('settings.edit'), async (req, res) => {
-  try {
-    const settings = stripUploadedLogoUrlKeys(stripReservedSettingKeys({ ...req.body }));
-    if (rejectDedicatedRouteOwnedKeys(settings, res)) return;
-    if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
-
+router.put('/seo', adminAuth, requirePermission('settings.edit'), (req, res) => writeGenericSettings(req, res, {
+  type: 'seo',
+  message: 'SEO settings updated successfully',
+  errorMessage: 'Failed to update SEO settings',
+  prepare: async (settings, ctx) => {
     // Validate seo_blocked_ai_agents is an array of strings
     if (settings.seo_blocked_ai_agents !== undefined) {
       if (!Array.isArray(settings.seo_blocked_ai_agents) ||
           !settings.seo_blocked_ai_agents.every(a => typeof a === 'string')) {
-        return res.status(400).json({ error: 'seo_blocked_ai_agents must be an array of strings' });
+        return { error: 'seo_blocked_ai_agents must be an array of strings' };
       }
     }
 
     // Validate seo_custom_rules structure
     if (settings.seo_custom_rules !== undefined) {
       if (!Array.isArray(settings.seo_custom_rules)) {
-        return res.status(400).json({ error: 'seo_custom_rules must be an array' });
+        return { error: 'seo_custom_rules must be an array' };
       }
       for (const rule of settings.seo_custom_rules) {
         if (!rule.userAgent || typeof rule.userAgent !== 'string') {
-          return res.status(400).json({ error: 'Each custom rule must have a userAgent string' });
+          return { error: 'Each custom rule must have a userAgent string' };
         }
         if (!Array.isArray(rule.disallow) || !rule.disallow.every(d => typeof d === 'string')) {
-          return res.status(400).json({ error: 'Each custom rule must have a disallow array of strings' });
+          return { error: 'Each custom rule must have a disallow array of strings' };
         }
       }
     }
 
-    const seoChanged = await settingsChanged(db, settings, SEO_USAGE_KEYS);
-    // Update or insert each setting
-    const galleryPasswordPurge = await galleryPasswordPurgePlan(settings);
-    if (galleryPasswordPurge.before) await purgeRecoverablePasswords();
-    for (const [key, value] of Object.entries(settings)) {
-      await db('app_settings')
-        .insert({
-          setting_key: key,
-          setting_value: JSON.stringify(value),
-          setting_type: 'seo',
-          updated_at: new Date()
-        })
-        .onConflict('setting_key')
-        .merge({
-          setting_value: JSON.stringify(value),
-          updated_at: new Date()
-        });
-    }
-
-    if (galleryPasswordPurge.after) await purgeRecoverablePasswords();
-
+    ctx.seoChanged = await settingsChanged(db, settings, SEO_USAGE_KEYS);
+  },
+  after: (settings, ctx) => {
     // Clear robots.txt cache
     const { clearRobotsTxtCache } = require('../services/robotsTxtService');
     clearRobotsTxtCache();
-
-    // Log activity
-    await db('activity_logs').insert({
-      activity_type: 'seo_settings_updated',
-      actor_type: 'admin',
-      actor_id: req.admin.id,
-      actor_name: req.admin.username,
-      metadata: JSON.stringify({ settings_count: Object.keys(settings).length })
-    });
-
-    if (seoChanged) capabilityEvidence(res, 'seo_editing');
-    res.json({ message: 'SEO settings updated successfully' });
-  } catch (error) {
-    errorResponse(res, error, 500, 'Failed to update SEO settings');
-  }
-});
+    // Usage evidence is recorded only for a 2xx answer, so setting it before
+    // the activity row is the same as setting it after.
+    if (ctx.seoChanged) capabilityEvidence(res, 'seo_editing');
+  },
+}));
 
 // Get storage info
 router.get('/storage/info', adminAuth, requirePermission('settings.view'), async (req, res) => {
@@ -2491,14 +2274,7 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
         .select('setting_key', 'setting_value');
 
       storageSettings.forEach((setting) => {
-        let parsedValue = null;
-        if (setting.setting_value) {
-          try {
-            parsedValue = JSON.parse(setting.setting_value);
-          } catch (error) {
-            parsedValue = setting.setting_value;
-          }
-        }
+        const parsedValue = setting.setting_value ? parseStoredSetting(setting) : null;
 
         switch (setting.setting_key) {
         case 'general_storage_soft_limit_bytes':
@@ -2617,18 +2393,7 @@ router.post('/favicon', adminAuth, requirePermission('settings.edit'), faviconUp
     const faviconUrl = `/uploads/favicons/${req.file.filename}`;
     
     // Save to database
-    await db('app_settings')
-      .insert({
-        setting_key: 'branding_favicon_url',
-        setting_value: JSON.stringify(faviconUrl),
-        setting_type: 'branding',
-        updated_at: new Date()
-      })
-      .onConflict('setting_key')
-      .merge({
-        setting_value: JSON.stringify(faviconUrl),
-        updated_at: new Date()
-      });
+    await upsertSettingValue('branding_favicon_url', faviconUrl, 'branding');
 
     // Log activity
     await logActivity('favicon_uploaded', 
@@ -2682,18 +2447,7 @@ router.put('/security/rate-limit', adminAuth, requirePermission('settings.securi
     // plain update matched nothing there — the route answered 200 and
     // changed nothing (#1337).
     for (const { key, value } of settings) {
-      await db('app_settings')
-        .insert({
-          setting_key: key,
-          setting_value: JSON.stringify(value),
-          setting_type: 'security',
-          updated_at: new Date()
-        })
-        .onConflict('setting_key')
-        .merge({
-          setting_value: JSON.stringify(value),
-          updated_at: new Date()
-        });
+      await upsertSettingValue(key, value, 'security');
     }
 
     // Clear the rate limit settings cache to apply changes immediately
@@ -2755,18 +2509,7 @@ router.post('/public-site/reset', adminAuth, requirePermission('settings.edit'),
     ];
 
     for (const { key, value } of entries) {
-      await db('app_settings')
-        .insert({
-          setting_key: key,
-          setting_value: JSON.stringify(value),
-          setting_type: 'general',
-          updated_at: new Date()
-        })
-        .onConflict('setting_key')
-        .merge({
-          setting_value: JSON.stringify(value),
-          updated_at: new Date()
-        });
+      await upsertSettingValue(key, value, 'general');
     }
 
     clearPublicSiteCache();
