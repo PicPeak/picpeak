@@ -354,7 +354,6 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
           redeemedInviteRef.current = null;
         }
         // Otherwise fail silently; the visitor falls back to the normal prompt.
-        // eslint-disable-next-line no-console
         console.warn('Failed to redeem invite token', error);
       } finally {
         invitePromiseRef.current = null;

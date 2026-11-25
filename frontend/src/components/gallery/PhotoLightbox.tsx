@@ -12,7 +12,7 @@ import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { PhotoFeedback } from './PhotoFeedback';
 import { lightboxImageLongEdge, lightboxImageUrl } from './imageTiers';
 import { feedbackService, type ColorLabel, type KeybindMode, type PhotoDecision as Decision } from '../../services/feedback.service';
-import { useGalleryFeedbackSettings } from '../../hooks/useGalleryFeedbackSettings';
+import { FEEDBACK_SETTINGS_STALE_TIME, useGalleryFeedbackSettings } from '../../hooks/useGalleryFeedbackSettings';
 import { PhotoColorLabels } from './PhotoColorLabels';
 import { PhotoDecision } from './PhotoDecision';
 import { resolveFeedbackKey, colorShortcutHints, isTypingTarget } from '../../utils/feedbackKeybinds';
@@ -144,7 +144,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const [commitDirection, setCommitDirection] = useState<-1 | 1>(1);
   const [showFeedback, setShowFeedback] = useState(initialShowFeedback);
   const [isSmallScreen, setIsSmallScreen] = useState<boolean>(typeof window !== 'undefined' ? window.innerWidth < 640 : false);
-  const { data: feedbackSettings } = useGalleryFeedbackSettings(slug);
+  const { data: feedbackSettings } = useGalleryFeedbackSettings(slug, {
+    staleTime: FEEDBACK_SETTINGS_STALE_TIME,
+  });
   // The photo whose slide shows its fallback thumbnail instead of itself.
   const [fallbackPhotoId, setFallbackPhotoId] = useState<Photo['id'] | null>(null);
   // Annotate mode (issue 1733): drawing on the photo for a comment. While it

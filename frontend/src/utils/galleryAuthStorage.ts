@@ -61,7 +61,7 @@ export const resolveSlugFromRequestUrl = (url?: string | null): string | null =>
     if (url.startsWith('http://') || url.startsWith('https://')) {
       pathname = new URL(url).pathname;
     }
-  } catch (error) {
+  } catch {
     // Leave pathname as provided if URL parsing fails
   }
 
