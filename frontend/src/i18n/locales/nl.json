@@ -154,7 +154,6 @@
     "selected": "Geselecteerd",
     "chunk": "Deel",
     "optional": "optioneel",
-    "tryAgain": "Opnieuw proberen",
     "active": "Actief",
     "inactive": "Inactief",
     "create": "Aanmaken",
@@ -169,7 +168,6 @@
     "retry": "Opnieuw proberen",
     "characters": "tekens",
     "saveChanges": "Wijzigingen opslaan",
-    "resetChanges": "Wijzigingen ongedaan maken",
     "dismiss": "Sluiten",
     "discard": "Verwerpen",
     "poweredBy": "Mogelijk gemaakt door"
@@ -272,13 +270,7 @@
     "events": "Evenementen",
     "settings": "Instellingen",
     "archives": "Archieven",
-    "emailSettings": "E-mailinstellingen",
-    "branding": "Huisstijl",
-    "eventTypes": "Evenementtypes",
-    "backup": "Back-up en herstel",
-    "cmsPages": "CMS-pagina's",
     "users": "Gebruikers",
-    "calendar": "Agenda",
     "clients": "Klanten",
     "automation": "Automatisering",
     "sharing": "Delen"
@@ -959,7 +951,6 @@
     "loadingPhotos": "Foto's laden...",
     "photoCategories": "Fotocategorieen",
     "organizeCategoriesInfo": "Organiseer uw foto's in categorieen. Categorieen helpen gasten om specifieke soorten foto's te vinden.",
-    "categoriesTip": "Tip: Categorieen zijn specifiek per evenement. U kunt aangepaste categorieen aanmaken zoals \"Ceremonie\", \"Receptie\", \"Portretten\", etc.",
     "galleryPassword": "Galerijwachtwoord",
     "requirePasswordToggle": "Wachtwoord vereisen voor deze galerij",
     "requirePasswordToggleHelp": "Schakel dit uit als u de galerij zonder wachtwoord wilt delen. Iedereen met de link kan de foto's bekijken.",
@@ -1401,8 +1392,6 @@
     }
   },
   "settings": {
-    "title": "Systeeminstellingen",
-    "subtitle": "Configureer systeembrede instellingen en voorkeuren",
     "loadingSettings": "Instellingen laden...",
     "general": {
       "title": "Algemeen",
@@ -1434,7 +1423,6 @@
       "maintenanceMode": "Onderhoudsmodus inschakelen",
       "language": "Taal",
       "defaultLanguageHelp": "Taal die aan gasten wordt getoond voor het inloggen",
-      "saveGeneralSettings": "Algemene instellingen opslaan",
       "dateTimeFormat": "Datum- & Tijdnotatie",
       "dateFormat": "Datumnotatie",
       "dateFormatHelp": "Hoe datums worden weergegeven in e-mails en door de hele applicatie",
@@ -1447,7 +1435,6 @@
       "accountEmailHelp": "Wordt gebruikt voor inloggen en het ontvangen van beveiligingsmeldingen.",
       "accountEmailRequired": "E-mailadres is verplicht",
       "accountEmailInvalid": "Voer een geldig e-mailadres in",
-      "accountSaveButton": "Accountgegevens opslaan",
       "accountSaveSuccess": "Accountgegevens bijgewerkt",
       "adminLanguage": "Jouw beheertaal",
       "adminLanguageHelp": "Geldt voor het beheergedeelte, alleen voor jou op dit apparaat. Werkt direct — opslaan is niet nodig.",
@@ -1470,8 +1457,6 @@
       "cssLabel": "Aangepaste CSS",
       "cssPlaceholder": "Optionele CSS-overschrijvingen om lay-out, kleuren of typografie aan te passen.",
       "cssHelp": "Imports en JavaScript-URL's worden verwijderd. Gebruik standaard CSS-selectors om de standaard styling te overschrijven.",
-      "saveCta": "Openbare site opslaan",
-      "saving": "Opslaan...",
       "saveSuccess": "Instellingen openbare site opgeslagen.",
       "saveError": "Kan instellingen openbare site niet opslaan.",
       "resetCta": "Standaardwaarden herstellen",
@@ -1501,7 +1486,6 @@
       "applyRecommended": "Aanbevolen gebruiken",
       "applyAvailable": "Beschikbare ruimte gebruiken",
       "invalidSoftLimit": "Voer een geldig getal in voor de limiet.",
-      "saveSoftLimit": "Limiet opslaan",
       "limitNotEnforced": "Deze limiet is alleen adviserend en wordt niet automatisch afgedwongen.",
       "overrideTitle": "Handmatige capaciteitsoverschrijving",
       "diskOverrideEnvNote": "Schijfcapaciteit wordt beheerd door omgevingsvariabelen en kan hier niet worden bewerkt.",
@@ -1510,7 +1494,6 @@
       "overrideCapacityHelper": "Laat leeg om de automatische meting te gebruiken.",
       "overrideAvailableLabel": "Beschikbare ruimte (GB)",
       "overrideAvailableHelper": "Optioneel. Laat leeg om te berekenen op basis van totale capaciteit minus gebruikte opslag.",
-      "saveOverride": "Capaciteitsoverschrijving opslaan",
       "capacityRequiredForAvailable": "Voer een totale capaciteit in voordat u beschikbare ruimte instelt.",
       "availableExceedsCapacity": "Beschikbare ruimte kan de totale capaciteit niet overschrijden.",
       "storageUsage": "Opslaggebruik",
@@ -1624,7 +1607,6 @@
       "requireExpiration": "Vervaldatum verplicht",
       "requireExpirationHelp": "Galerijen moeten een vervaldatum hebben",
       "expirationWarning": "Galerijen zonder vervaldatum blijven actief totdat ze handmatig worden gearchiveerd",
-      "saveSettings": "Evenementinstellingen opslaan",
       "noteTitle": "Opmerking",
       "noteText": "Deze instellingen zijn alleen van toepassing op het aanmaken van nieuwe evenementen. Bestaande evenementen worden niet beinvloed. Standaard zijn alle velden verplicht.",
       "defaultRequirePassword": "Standaard wachtwoord vereisen",
@@ -1668,17 +1650,6 @@
       "protectionLevel": "Standaard beveiligingsniveau",
       "enableDevtools": "Standaard DevTools-detectie inschakelen",
       "enableCanvas": "Standaard canvas-rendering inschakelen (geavanceerde beveiliging)",
-      "rateLimiting": "Snelheidsbeperking",
-      "rateLimitingHelp": "Beperk het aantal beeldaanvragen om scraping te voorkomen.",
-      "requestsPerMinute": "Aanvragen per minuut",
-      "requestsPer5Minutes": "Aanvragen per 5 min",
-      "requestsPerHour": "Aanvragen per uur",
-      "securityMonitoring": "Beveiligingsmonitoring",
-      "suspiciousThreshold": "Drempel verdachte activiteit",
-      "autoBlockThreshold": "Drempel automatisch blokkeren",
-      "enableMonitoring": "Beveiligingsmonitoring inschakelen",
-      "blockSuspiciousIps": "Verdachte IP-adressen automatisch blokkeren",
-      "logEvents": "Beveiligingsgebeurtenissen loggen in database",
       "infoTitle": "Over afbeeldingsbeveiliging",
       "infoText": "Deze beveiligingsfuncties helpen bij het voorkomen van ongewenst downloaden en kopieren, maar kunnen niet alle methoden blokkeren. Vastberaden gebruikers kunnen mogelijk nog steeds manieren vinden om afbeeldingen vast te leggen. Overweeg watermerken en juridische overeenkomsten voor uitgebreide bescherming."
     },
@@ -1768,23 +1739,16 @@
       "ruleAgentPlaceholder": "User-agent",
       "rulePathPlaceholder": "Disallow-pad",
       "showPreview": "robots.txt-voorbeeld tonen",
-      "hidePreview": "robots.txt-voorbeeld verbergen",
-      "saveSettings": "SEO-instellingen opslaan"
+      "hidePreview": "robots.txt-voorbeeld verbergen"
     },
     "analytics": {
       "title": "Statistieken",
-      "umamiIntegration": "Umami Analytics-integratie",
-      "enableUmami": "Umami Analytics inschakelen",
       "umamiUrl": "Umami-URL",
       "umamiUrlHelp": "De URL van uw Umami-instantie (bijv. https://analytics.uwdomein.nl)",
       "websiteId": "Website-ID",
       "websiteIdHelp": "Uw Umami website-ID (te vinden in het Umami-dashboard)",
       "shareUrl": "Deel-URL (optioneel)",
       "shareUrlHelp": "Openbare deel-URL voor het insluiten van het volledige dashboard (aanmaken in Umami)",
-      "umamiInfo": "Over Umami Analytics",
-      "umamiInfoText": "Umami is een privacygericht, open-source analyticsplatform. Het houdt paginaweergaven, unieke bezoekers en aangepaste gebeurtenissen bij zonder cookies te gebruiken.",
-      "learnMore": "Meer informatie over Umami",
-      "saveAnalyticsSettings": "Statistiekinstellingen opslaan",
       "backendAnalytics": "Backend-statistieken",
       "backendAnalyticsText": "Het systeem houdt ook basisstatistieken bij op de server voor beveiligings- en prestatiemonitoring.",
       "tracked": "Bijgehouden metrieken",
@@ -1797,7 +1761,6 @@
     },
     "groups": {
       "general": "Algemeen",
-      "display": "Weergave",
       "privacySecurity": "Privacy & Beveiliging",
       "integrations": "Integraties",
       "system": "Systeem",
@@ -1847,8 +1810,6 @@
       "existing": "Bestaande webhooks",
       "empty": "Nog geen webhooks. Maak er een aan hierboven om evenementmeldingen te ontvangen."
     },
-    "sectionLabel": "Instellingensectie",
-    "navAriaLabel": "Instellingennavigatie",
     "eventTypes": {
       "title": "Evenementtypes"
     },
@@ -3448,23 +3409,12 @@
         "thumbnails": "Miniaturen",
         "thumbnailsHelp": "Gegenereerde miniatuurafbeeldingen (kunnen opnieuw worden aangemaakt)"
       },
-      "advancedOptions": {
-        "title": "Geavanceerde opties",
-        "compression": "Compressie inschakelen",
-        "compressionHelp": "Comprimeer back-upbestanden om opslagruimte te besparen",
-        "encryption": "Versleuteling inschakelen",
-        "encryptionHelp": "Versleutel back-ups voor extra beveiliging",
-        "encryptionPassphrase": "Versleutelingswachtwoord",
-        "encryptionPassphraseHelp": "Sterk wachtwoord voor back-upversleuteling"
-      },
       "messages": {
         "requiredFields": "Vul alle verplichte velden in",
         "connectionSuccess": "Verbindingstest geslaagd!",
         "connectionFailed": "Verbindingstest mislukt"
       },
-      "testingConnection": "Verbinding testen...",
-      "saveSettings": "Configuratie opslaan",
-      "savingSettings": "Opslaan..."
+      "testingConnection": "Verbinding testen..."
     },
     "history": {
       "searchPlaceholder": "Back-ups zoeken...",
@@ -3512,8 +3462,7 @@
         },
         "upload": {
           "name": "Back-up uploaden",
-          "description": "Een back-upbestand uploaden",
-          "comingSoon": "Uploadfunctionaliteit binnenkort beschikbaar"
+          "description": "Een back-upbestand uploaden"
         },
         "configuration": {
           "s3": "S3-configuratie",
@@ -3527,9 +3476,6 @@
         "title": "Back-up kiezen om te herstellen",
         "subtitle": "Selecteer uit beschikbare back-ups",
         "noBackupsFound": "Geen back-ups gevonden in geselecteerde bron",
-        "encrypted": "Versleutelde back-up",
-        "encryptedMessage": "U moet het versleutelingswachtwoord opgeven om deze back-up te herstellen.",
-        "enterPassphrase": "Voer versleutelingswachtwoord in",
         "at": "om"
       },
       "restoreTypes": {
@@ -3779,8 +3725,6 @@
       "guestPrivacyTextPlaceholder": "bijv. We gebruiken uw naam alleen om te zien wie welke foto's heeft gedownload. U kunt ons altijd vragen deze te verwijderen.",
       "guestPrivacyTextHint": "Optioneel. Wordt aan gasten getoond wanneer om hun naam wordt gevraagd."
     },
-    "settingsUpdated": "Feedbackinstellingen bijgewerkt",
-    "settingsUpdateError": "Bijwerken instellingen mislukt",
     "moderated": "Feedback gemodereerd",
     "deleted": "Feedback verwijderd",
     "exported": "Feedback geëxporteerd",
@@ -3788,7 +3732,6 @@
     "exportCSV": "CSV exporteren",
     "exportJSON": "JSON exporteren",
     "tabs": {
-      "settings": "Instellingen",
       "feedback": "Feedback",
       "analytics": "Statistieken",
       "moderation": "Moderatie"
@@ -4260,12 +4203,10 @@
       "body": "Aankomende shoots, leverdata van galerijen en andere shoot-gerelateerde gebeurtenissen verschijnen hier. We laten je weten wanneer dit klaar is."
     },
     "quotes": {
-      "title": "Offertes",
-      "body": "Bekijk en accepteer offertes voor aankomende shoots op één plek. We werken er nog aan — je fotograaf blijft tot dan offertes op de gebruikelijke manier sturen."
+      "title": "Offertes"
     },
     "bills": {
-      "title": "Facturen",
-      "body": "Facturen en betaalgeschiedenis voor je shoots verschijnen hier. We sturen een e-mail wanneer dit live is."
+      "title": "Facturen"
     },
     "profile": {
       "title": "Klantprofiel",

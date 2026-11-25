@@ -40,38 +40,3 @@ export const Loading: React.FC<LoadingProps> = ({
 
   return content;
 };
-
-interface LoadingSkeletonProps {
-  className?: string;
-  count?: number;
-  type?: 'text' | 'card' | 'image';
-}
-
-export const LoadingSkeleton: React.FC<LoadingSkeletonProps> = ({
-  className,
-  count = 1,
-  type = 'text',
-}) => {
-  const baseStyles = 'skeleton';
-  
-  const typeStyles = {
-    text: 'h-4 w-full rounded',
-    card: 'h-32 w-full rounded-xl',
-    image: 'aspect-square w-full rounded-lg',
-  };
-
-  return (
-    <>
-      {Array.from({ length: count }).map((_, index) => (
-        <div
-          key={index}
-          className={clsx(
-            baseStyles,
-            typeStyles[type],
-            className
-          )}
-        />
-      ))}
-    </>
-  );
-};

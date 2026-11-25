@@ -191,10 +191,10 @@ export const SettingsPage: React.FC = () => {
     // never run again — leaving a deep-linked tab the role cannot see open
     // with nothing highlighted in the sidebar.
     if (flagsLoading || permissionsLoading) return;
-    if ((activeTab !== 'payments' || isSuperAdmin) && hasAnyPermission(TAB_PERMISSIONS[activeTab] ?? ['settings.view'])) return;
+    if ((activeTab !== 'payments' || isSuperAdmin) && hasAnyPermission(TAB_PERMISSIONS[activeTab])) return;
     const flagOff = settingsTabGatedOff(flags);
     const firstVisible = ALL_SETTINGS_TABS.find(
-      (k) => !flagOff[k] && (k !== 'payments' || isSuperAdmin) && hasAnyPermission(TAB_PERMISSIONS[k] ?? ['settings.view'])
+      (k) => !flagOff[k] && (k !== 'payments' || isSuperAdmin) && hasAnyPermission(TAB_PERMISSIONS[k])
     );
     if (firstVisible && firstVisible !== activeTab) setActiveTab(firstVisible);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -281,7 +281,6 @@ export const SettingsPage: React.FC = () => {
 
           {activeTab === 'status' && (
             <StatusTab
-              isActive={activeTab === 'status'}
               handleSaveSoftLimit={handleSaveSoftLimit}
               handleSaveCapacityOverride={handleSaveCapacityOverride}
               saveSoftLimitMutation={saveSoftLimitMutation}

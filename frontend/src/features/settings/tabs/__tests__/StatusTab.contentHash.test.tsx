@@ -30,7 +30,6 @@ function open() {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <StatusTab
-        isActive
         handleSaveSoftLimit={noop}
         handleSaveCapacityOverride={noop}
         saveSoftLimitMutation={{ isPending: false }}

@@ -828,7 +828,6 @@
     "selected": "Izbrano",
     "chunk": "Del",
     "optional": "neobvezno",
-    "tryAgain": "Poskusi znova",
     "active": "Aktivno",
     "inactive": "Neaktivno",
     "create": "Ustvari",
@@ -843,7 +842,6 @@
     "retry": "Ponovi",
     "characters": "znakov",
     "saveChanges": "Shrani spremembe",
-    "resetChanges": "Ponastavi spremembe",
     "dismiss": "Zapri",
     "discard": "Zavrzi",
     "preview": "Predogled",
@@ -1000,13 +998,7 @@
     "transfers": "PicTransfer",
     "messages": "Sporočila",
     "settings": "Nastavitve",
-    "eventTypes": "Vrste dogodkov",
-    "branding": "Blagovna znamka",
-    "emailSettings": "Nastavitve e-pošte",
-    "backup": "Varnostne kopije in obnovitev",
-    "cmsPages": "CMS strani",
     "users": "Uporabniki",
-    "calendar": "Koledar",
     "clients": "Stranke",
     "accounting": "Računovodstvo",
     "workflows": "Delovni tokovi",
@@ -2018,7 +2010,6 @@
     "loadingPhotos": "Nalaganje fotografij...",
     "photoCategories": "Kategorije fotografij",
     "organizeCategoriesInfo": "Organizirajte fotografije v kategorije. Kategorije gostom pomagajo pri iskanju določenih vrst fotografij.",
-    "categoriesTip": "Namig: kategorije so vezane na posamezen dogodek. Ustvarite lahko kategorije, kot so »Ceremonija«, »Sprejem«, »Portreti« itd.",
     "galleryPassword": "Geslo galerije",
     "requirePasswordToggle": "Zahtevaj geslo za to galerijo",
     "requirePasswordToggleHelp": "Izklopite to možnost, če želite galerijo deliti brez gesla. Vsakdo s povezavo si bo lahko ogledal fotografije.",
@@ -2562,8 +2553,6 @@
     }
   },
   "settings": {
-    "title": "Sistemske nastavitve",
-    "subtitle": "Konfiguracija sistemskih nastavitev in možnosti",
     "loadingSettings": "Nalaganje nastavitev...",
     "general": {
       "title": "Splošno",
@@ -2602,7 +2591,6 @@
       "maintenanceMode": "Omogoči vzdrževalni način",
       "language": "Jezik",
       "defaultLanguageHelp": "Jezik, prikazan gostom pred prijavo",
-      "saveGeneralSettings": "Shrani splošne nastavitve",
       "dateTimeFormat": "Oblika datuma in časa",
       "dateFormat": "Oblika datuma",
       "dateFormatHelp": "Kako so datumi prikazani v e-pošti in po aplikaciji",
@@ -2615,7 +2603,6 @@
       "accountEmailHelp": "Uporablja se za prijavo in prejemanje varnostnih obvestil.",
       "accountEmailRequired": "E-poštni naslov je obvezen",
       "accountEmailInvalid": "Vnesite veljaven e-poštni naslov",
-      "accountSaveButton": "Shrani podatke računa",
       "accountSaveSuccess": "Podatki računa so posodobljeni",
       "siteUrlInvalid": "Vnesite celoten naslov z http:// ali https://, na primer https://gallery.example.com",
       "timeFormat": "Oblika časa",
@@ -2643,8 +2630,6 @@
       "cssLabel": "CSS po meri",
       "cssPlaceholder": "Neobvezne CSS preglasitve za prilagoditev postavitve, barv ali tipografije.",
       "cssHelp": "Uvozi in JavaScript URL-ji se odstranijo. Za preglasitev privzetega sloga uporabite standardne CSS selektorje.",
-      "saveCta": "Shrani javno stran",
-      "saving": "Shranjevanje...",
       "saveSuccess": "Nastavitve javne strani so shranjene.",
       "saveError": "Nastavitev javne strani ni bilo mogoče shraniti.",
       "resetCta": "Ponastavi na privzeto",
@@ -2674,7 +2659,6 @@
       "applyRecommended": "Uporabi priporočeno",
       "applyAvailable": "Uskladi z razpoložljivim",
       "invalidSoftLimit": "Vnesite veljavno številko za omejitev.",
-      "saveSoftLimit": "Shrani omejitev",
       "limitNotEnforced": "Ta omejitev je samo informativna in se ne uveljavlja samodejno.",
       "overrideTitle": "Ročni prepis kapacitete",
       "diskOverrideEnvNote": "Kapaciteto diska nadzorujejo okoljske spremenljivke in je tukaj ni mogoče urejati.",
@@ -2683,7 +2667,6 @@
       "overrideCapacityHelper": "Pustite prazno za uporabo samodejnega odčitka.",
       "overrideAvailableLabel": "Razpoložljiv prostor (GB)",
       "overrideAvailableHelper": "Neobvezno. Pustite prazno za izračun iz skupne kapacitete minus uporabljen prostor.",
-      "saveOverride": "Shrani prepis kapacitete",
       "capacityRequiredForAvailable": "Pred nastavitvijo razpoložljivega prostora vnesite skupno kapaciteto.",
       "availableExceedsCapacity": "Razpoložljiv prostor ne sme presegati skupne kapacitete.",
       "storageUsage": "Poraba prostora",
@@ -2822,7 +2805,6 @@
       "requireExpiration": "Zahtevaj datum poteka",
       "requireExpirationHelp": "Galerije morajo imeti datum poteka",
       "expirationWarning": "Galerije brez poteka bodo ostale aktivne, dokler jih ročno ne arhivirate",
-      "saveSettings": "Shrani nastavitve dogodkov",
       "noteTitle": "Opomba",
       "noteText": "Te nastavitve vplivajo samo na ustvarjanje novih dogodkov. Obstoječi dogodki niso prizadeti. Privzeto vedenje zahteva vsa polja.",
       "defaultRequirePassword": "Privzeto zahtevaj geslo",
@@ -2868,21 +2850,8 @@
       "protectionLevel": "Privzeta raven zaščite",
       "enableDevtools": "Privzeto omogoči zaznavanje DevTools",
       "enableCanvas": "Privzeto omogoči izris prek canvas v pregledovalniku (napredna zaščita)",
-      "rateLimiting": "Omejevanje hitrosti",
-      "rateLimitingHelp": "Omejite, koliko slik je mogoče zahtevati, da preprečite množično pobiranje.",
-      "requestsPerMinute": "Zahtev na minuto",
-      "requestsPer5Minutes": "Zahtev na 5 minut",
-      "requestsPerHour": "Zahtev na uro",
-      "securityMonitoring": "Varnostni nadzor",
-      "suspiciousThreshold": "Prag sumljive aktivnosti",
-      "autoBlockThreshold": "Prag samodejne blokade",
-      "enableMonitoring": "Omogoči varnostni nadzor",
-      "blockSuspiciousIps": "Samodejno blokiraj sumljive IP-je",
-      "logEvents": "Zapisuj varnostne dogodke v bazo",
       "infoTitle": "O zaščiti slik",
-      "infoText": "Te zaščitne funkcije pomagajo preprečiti priložnostno prenašanje in kopiranje, vendar ne morejo blokirati vseh metod. Odločeni uporabniki lahko še vedno najdejo načine za zajem slik. Za celovito zaščito razmislite o vodnih žigih in pravnih dogovorih.",
-      "suspiciousActivityThresholdHelp": "Število kršitev pred označitvijo kot sumljivo",
-      "autoBlockThresholdHelp": "Število kršitev pred samodejno blokado IP-ja"
+      "infoText": "Te zaščitne funkcije pomagajo preprečiti priložnostno prenašanje in kopiranje, vendar ne morejo blokirati vseh metod. Odločeni uporabniki lahko še vedno najdejo načine za zajem slik. Za celovito zaščito razmislite o vodnih žigih in pravnih dogovorih."
     },
     "moderation": {
       "title": "Moderiranje",
@@ -2980,8 +2949,7 @@
       "ruleAgentPlaceholder": "User-agent",
       "rulePathPlaceholder": "Pot Disallow",
       "showPreview": "Prikaži predogled robots.txt",
-      "hidePreview": "Skrij predogled robots.txt",
-      "saveSettings": "Shrani SEO nastavitve"
+      "hidePreview": "Skrij predogled robots.txt"
     },
     "analytics": {
       "title": "Analitika",
@@ -2997,28 +2965,18 @@
       "providerNoneInfo": "Zunanji sledilnik ni vstavljen. Skrbniška nadzorna plošča še vedno prikazuje povzetke in dnevni graf iz PicPeakovega access_logs; graf naprav uporablja grobo oceno iz user-agenta.",
       "proxiedNotice": "Postreženo z vaše domene",
       "proxiedNoticeText": "PicPeak naloži skript sledilnika in njegove dogodke posreduje prek lastne domene, zato sprememba Content-Security-Policy ali reverse proxyja ni potrebna — blokatorji oglasov pa vidijo zahteve prve strani. Sledilnik še vedno prejme IP in user-agent obiskovalca (posredovana kot X-Forwarded-For), zato poročanje o napravah in lokacijah deluje. URL mora biti dosegljiv s strežnika PicPeak in se razrešiti v javni naslov.",
-      "customOnlyCspWarningText": "PicPeak uporablja strogo CSP (`script-src 'self'; connect-src 'self'`). Za razliko od možnosti Umami in Rybbit prilepljen izsek ni posredovan prek PicPeaka — domeno sledilnika dodajte v OBE direktivi `script-src` (za nalaganje skripta) in `connect-src` (za dogodke, ki jih pošilja) v konfiguraciji CSP vašega reverse proxyja ali nginxa, sicer ga brskalnik tiho blokira.",
       "rybbitUrl": "URL Rybbit",
       "rybbitUrlHelp": "URL vaše instance Rybbit — `https://app.rybbit.io` za SaaS ali `https://rybbit.yourdomain.com` za lastno gostovanje.",
       "rybbitWebsiteId": "ID spletnega mesta",
       "rybbitWebsiteIdHelp": "Najdete v Rybbit → Sites → vaše mesto → Tracking script.",
       "rybbitApiKey": "API-ključ",
       "rybbitApiKeyHelp": "Neobvezno. Potreben samo za graf razčlenitve po napravah. Ustvarite ga v Rybbit → Account → Settings → API Keys. Po shranjevanju je prikazan zakrit kot ••••••••.",
-      "customHeadHtml": "HTML po meri v <head>",
-      "customHeadHtmlHelp": "Prilepite `<head>` izsek sledilnika (Plausible, Matomo, Pirsch, GA4, GoatCounter, Fathom, Cloudflare Web Analytics, …). Ob shranjevanju se očisti: ohranijo se samo `<script>`, `<noscript>`, `<link rel=\"preconnect|dns-prefetch\">` in `<meta>`, atributi obdelovalnikov dogodkov pa se odstranijo. Graf naprav na skrbniški nadzorni plošči v tem načinu uporablja strežniško grobo oceno iz user-agenta — za podatke sledilnika izberite Umami ali Rybbit.",
-      "customCspWarning": "Opomnik za Content-Security-Policy",
-      "umamiIntegration": "Integracija Umami Analytics",
-      "enableUmami": "Omogoči Umami Analytics",
       "umamiUrl": "URL Umami",
       "umamiUrlHelp": "URL vaše Umami instance (npr. https://analytics.vasadomena.si)",
       "websiteId": "ID spletnega mesta",
       "websiteIdHelp": "ID vašega spletnega mesta v Umami (najdete ga na nadzorni plošči Umami)",
       "shareUrl": "URL za deljenje (neobvezno)",
       "shareUrlHelp": "Javni URL za vdelavo celotne nadzorne plošče (ustvarite v Umami)",
-      "umamiInfo": "O Umami Analytics",
-      "umamiInfoText": "Umami je odprtokodna analitična platforma s poudarkom na zasebnosti. Spremlja oglede strani, edinstvene obiskovalce in dogodke po meri brez uporabe piškotkov.",
-      "learnMore": "Več o Umami",
-      "saveAnalyticsSettings": "Shrani nastavitve analitike",
       "backendAnalytics": "Zaledna analitika",
       "backendAnalyticsText": "Sistem za varnost in spremljanje zmogljivosti spremlja tudi osnovno analitiko na strani strežnika.",
       "tracked": "Spremljane metrike",
@@ -3033,7 +2991,6 @@
     },
     "groups": {
       "general": "Splošno",
-      "display": "Prikaz",
       "privacySecurity": "Zasebnost in varnost",
       "integrations": "Integracije",
       "system": "Sistem",
@@ -3156,8 +3113,6 @@
         }
       }
     },
-    "sectionLabel": "Razdelek nastavitev",
-    "navAriaLabel": "Navigacija nastavitev",
     "eventTypes": {
       "title": "Vrste dogodkov"
     },
@@ -4181,7 +4136,6 @@
       "channelBeta": "Beta",
       "beta": "BETA",
       "viewReleaseNotes": "Ogled opomb ob izdaji",
-      "viewOnGithub": "Odpri PicPeak na GitHubu",
       "updateAvailableShort": "Na voljo v{{version}}",
       "upToDate": "Uporabljate najnovejšo različico",
       "updateNow": "Posodobi zdaj",
@@ -5634,17 +5588,10 @@
       "includePhotos": "Vključi izvirne fotografije galerij (večja datoteka)",
       "secretsWarning": "Ta datoteka vsebuje skrivnosti v navadnem besedilu (geslo e-pošte, skrbniške poverilnice, API-ključe). Hranite jo varno in prenašajte samo po zaupanja vrednih kanalih.",
       "download": "Prenesi .picpeak",
-      "externalPathsFailed": "Varnostna kopija je obnovljena, vendar zunanjih poti fotografij ni bilo mogoče pretvoriti — ti izvirniki se ne bodo naložili, dokler postopka ne ponovite.",
-      "restoreDone": "Varnostna kopija obnovljena.",
-      "reloginRequired": "Obnova končana — znova se prijavite.",
-      "restoreFailed": "Obnova ni uspela.",
       "restoreTitle": "Obnovi iz .picpeak",
       "chooseFile": "Izberite datoteko .picpeak…",
       "restoreSummary": "Obnovljenih {{tables}} tabel in {{files}} datotek.",
-      "externalPathsFailedDetail": "Zunanje poti fotografij niso bile pretvorjene, zato so vsi sklicevani izvirniki trenutno nedosegljivi. Ko odpravite vzrok, ponovno zaženite obnovo ali čakajoče migracije.",
       "externalMediaNote": "Ta varnostna kopija se sklicuje na knjižnico external-media. Preverite, da je usmerjanje external-media v tej namestitvi nastavljeno.",
-      "externalMediaLink": "Navodila za nastavitev",
-      "reload": "Znova naloži aplikacijo",
       "confirmTitle": "Obnova bo izbrisala vse trenutne podatke",
       "confirmBody": "To trajno zamenja VSE podatke v tej namestitvi z naloženo varnostno kopijo, razen vašega trenutnega računa. Tega ni mogoče razveljaviti.",
       "confirmRestore": "Izbriši in obnovi"
@@ -5874,15 +5821,6 @@
         "thumbnails": "Sličice",
         "thumbnailsHelp": "Ustvarjene sličice (lahko se ponovno ustvarijo)"
       },
-      "advancedOptions": {
-        "title": "Napredne možnosti",
-        "compression": "Omogoči stiskanje",
-        "compressionHelp": "Stisni datoteke varnostnih kopij za prihranek prostora",
-        "encryption": "Omogoči šifriranje",
-        "encryptionHelp": "Šifriraj varnostne kopije za dodatno varnost",
-        "encryptionPassphrase": "Šifrirna fraza",
-        "encryptionPassphraseHelp": "Močna fraza za šifriranje varnostnih kopij"
-      },
       "messages": {
         "requiredFields": "Izpolnite vsa obvezna polja",
         "connectionSuccess": "Preizkus povezave je uspel!",
@@ -5890,8 +5828,6 @@
         "invalidCron": "Vnesite veljaven izraz cron (5 polj)"
       },
       "testingConnection": "Preizkušanje povezave...",
-      "saveSettings": "Shrani konfiguracijo",
-      "savingSettings": "Shranjevanje...",
       "destinationSuperAdminOnly": "Samo glavni skrbnik lahko spremeni, kam se shranjujejo varnostne kopije ali ali vključujejo zbirko podatkov."
     },
     "history": {
@@ -5944,7 +5880,6 @@
         "upload": {
           "name": "Naloži varnostno kopijo",
           "description": "Naloži datoteko varnostne kopije",
-          "comingSoon": "Funkcija nalaganja bo kmalu na voljo",
           "manifestComingSoon": "Nalaganje manifesta bo na voljo kmalu",
           "picpeak": {
             "name": "Varnostna kopija .picpeak",
@@ -5967,9 +5902,6 @@
         "title": "Izberite varnostno kopijo za obnovitev",
         "subtitle": "Izberite med razpoložljivimi varnostnimi kopijami",
         "noBackupsFound": "V izbranem viru ni najdenih varnostnih kopij",
-        "encrypted": "Šifrirana varnostna kopija",
-        "encryptedMessage": "Za obnovitev te varnostne kopije boste morali vnesti šifrirno frazo.",
-        "enterPassphrase": "Vnesite šifrirno frazo",
         "at": "ob",
         "filesOnlyHint": "Ta varnostna kopija nima izvoza zbirke podatkov — obnova NE bo povrnila zbirke podatkov (podatki CRM, stranke, ponudbe, računi in pogodbe bodo po obnovi prazni).",
         "filesOnlyBadge": "Brez DB",
@@ -6103,11 +6035,6 @@
     "title": "Vzdrževanje sistema",
     "message": "Trenutno izvajamo načrtovano vzdrževanje za izboljšanje storitve. Kmalu bomo znova dosegljivi.",
     "urgentMatters": "Za nujne zadeve se obrnite na"
-  },
-  "migrationBanner": {
-    "title": "PicPeakov register slik je bil prestavljen",
-    "body": "Posodobite docker-compose.yml tako, da bo prenašal iz {{newPath}} — stara pot se ne posodablja več.",
-    "link": "Oglejte si navodila za selitev"
   },
   "passwordChange": {
     "title": "Sprememba gesla",
@@ -6244,8 +6171,6 @@
       "guestPrivacyTextPlaceholder": "npr. Vaše ime uporabljamo samo zato, da vidimo, kdo je prenesel katere fotografije. Kadar koli lahko zahtevate izbris.",
       "guestPrivacyTextHint": "Neobvezno. Prikaže se gostom, ko jih vprašamo za ime."
     },
-    "settingsUpdated": "Nastavitve povratnih informacij posodobljene",
-    "settingsUpdateError": "Nastavitev ni bilo mogoče posodobiti",
     "moderated": "Povratne informacije moderirane",
     "deleted": "Povratne informacije izbrisane",
     "exported": "Povratne informacije izvožene",
@@ -6253,7 +6178,6 @@
     "exportCSV": "Izvozi CSV",
     "exportJSON": "Izvozi JSON",
     "tabs": {
-      "settings": "Nastavitve",
       "feedback": "Povratne informacije",
       "analytics": "Analitika",
       "moderation": "Moderiranje"
@@ -6427,7 +6351,6 @@
   },
   "setup": {
     "title": "Dobrodošli v PicPeaku",
-    "subtitle": "Za začetek ustvarite skrbniški račun",
     "tokenStepSubtitle": "Najprej vnesite enkratni žeton za nastavitev",
     "accountStepSubtitle": "Zdaj ustvarite svoj skrbniški račun",
     "usageSubtitle": "Kako boste uporabljali PicPeak?",
@@ -6500,7 +6423,6 @@
       "mutualDesc": "Sodelujoči lahko pregledajo skupne kombinacije funkcij ter skupno število galerij/fotografij, tudi skupine z enim članom. Razkritje privolitve pojasnjuje celoten obseg.",
       "feedbackTitle": "Delite povratne informacije neposredno",
       "feedbackDesc": "Pošljite kratke povratne informacije ali predloge funkcij neposredno vzdrževalcu kar iz Nastavitev.",
-      "consentCheck": "Strinjam se s sodelovanjem — kadar koli ga lahko izklopim v Nastavitve → Uporaba izdelka.",
       "enable": "Da, sodeloval/-a bom",
       "skip": "Morda pozneje",
       "enabled": "Hvala za sodelovanje!",
@@ -6529,7 +6451,6 @@
     "tokenCommandLabel": "Ne najdete žetona? V imeniku projekta zaženite:",
     "copyCommand": "Kopiraj ukaz",
     "tokenRotatedLink": "Dnevniki so že rotirani? Preberite navodila za nastavitev",
-    "tokenLocationHint": "Ga ne najdete? Zaženite: docker compose exec backend cat /app/data/SETUP_TOKEN",
     "invalidToken": "Ta žeton za nastavitev ni veljaven.",
     "passwordRequirements": "Uporabite vsaj 8 znakov, veliko in malo črko ter številko.",
     "emailLabel": "E-poštni naslov",
@@ -6539,7 +6460,6 @@
     "passwordLabel": "Geslo",
     "passwordPlaceholder": "Izberite močno geslo",
     "passwordRequired": "Geslo je obvezno",
-    "passwordMinLength": "Geslo mora imeti najmanj 8 znakov",
     "confirmLabel": "Potrdite geslo",
     "confirmPlaceholder": "Ponovno vnesite geslo",
     "passwordMismatch": "Gesli se ne ujemata",
@@ -9299,7 +9219,6 @@
   },
   "eventReminderOverride": {
     "title": "Opomnik pred dogodkom",
-    "save": "Shrani preglasitev",
     "help": "Preglasitev opomnika za stranko za posamezen dogodek. Globalni vklop/izklop in privzeti zamik sta v Nastavitve → E-poštni opomniki. Kar pustite prazno, podeduje globalno nastavitev oziroma razrešeno predlogo.",
     "disabledLabel": "Onemogoči opomnik za ta dogodek (e-pošta ne bo poslana)",
     "offsetLabel": "Dni pred dogodkom (preglasitev) — pustite prazno za dedovanje",

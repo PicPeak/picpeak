@@ -695,17 +695,6 @@ export interface GalleryAuthResponse {
   full_view?: boolean;
 }
 
-// API Error type
-export interface ApiError {
-  error: string;
-  errors?: Array<{
-    type: string;
-    msg: string;
-    path: string;
-    location: string;
-  }>;
-}
-
 // Role and Permission types
 export interface AdminRole {
   id: number;
@@ -732,6 +721,3 @@ export interface AdminInvitation {
   expiresAt: string;
   createdAt: string;
 }
-
-// Export protection types
-export * from './protection';

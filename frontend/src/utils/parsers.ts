@@ -74,93 +74,6 @@ export const toNumber = (
 };
 
 /**
- * Parse string input with trimming and null handling
- *
- * @param value - Input value
- * @param defaultValue - Default if empty
- * @returns string or null
- *
- * @example
- * toString('  hello  ') // 'hello'
- * toString('') // null
- * toString(null, 'default') // 'default'
- */
-export const toString = (value: unknown, defaultValue: string | null = null): string | null => {
-  if (value === undefined || value === null) {
-    return defaultValue;
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed || defaultValue;
-  }
-  return String(value);
-};
-
-/**
- * Parse JSON string safely
- *
- * @param value - JSON string or already parsed value
- * @param defaultValue - Default if parsing fails
- * @returns parsed value or default
- */
-export const parseJson = <T>(value: unknown, defaultValue: T): T => {
-  if (value === undefined || value === null) {
-    return defaultValue;
-  }
-  if (typeof value !== 'string') {
-    return value as T;
-  }
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return defaultValue;
-  }
-};
-
-/**
- * Parse date input to Date object
- *
- * @param value - Date string, Date object, or timestamp
- * @returns Date object or null if invalid
- */
-export const toDate = (value: unknown): Date | null => {
-  if (value === undefined || value === null || value === '') {
-    return null;
-  }
-  if (value instanceof Date) {
-    return isNaN(value.getTime()) ? null : value;
-  }
-  const date = new Date(value as string | number);
-  return isNaN(date.getTime()) ? null : date;
-};
-
-/**
- * Parse array input (handles JSON strings and arrays)
- *
- * @param value - Array or JSON string
- * @param defaultValue - Default if invalid
- * @returns array result
- */
-export const toArray = <T>(value: unknown, defaultValue: T[] = []): T[] => {
-  if (value === undefined || value === null) {
-    return defaultValue;
-  }
-  if (Array.isArray(value)) {
-    return value as T[];
-  }
-  if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : defaultValue;
-    } catch {
-      // Try comma-separated for string arrays
-      return value.split(',').map(s => s.trim()).filter(Boolean) as T[];
-    }
-  }
-  return defaultValue;
-};
-
-/**
  * Locale-tolerant decimal parser. Accepts strings using either '.' or
  * ',' as the decimal separator and either thousand-separator
  * convention (German "1.234,50" or English "1,234.50"). Crucially, this
@@ -260,8 +173,3 @@ export const parseDuration = (value: unknown): number | null => {
   if (!Number.isFinite(hours) || hours <= 0) return null;
   return Math.round(hours * 60);
 };
-
-// Re-export with alternative names for backwards compatibility
-export const parseBooleanInput = toBoolean;
-export const parseNumberInput = toNumber;
-export const parseStringInput = toString;

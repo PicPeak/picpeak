@@ -84,17 +84,6 @@ const SURFACE_STYLE: React.CSSProperties = {
 };
 
 // Common skeleton patterns
-export const SkeletonCard: React.FC<{ className?: string }> = ({ className }) => (
-  <div className={cn('rounded-lg shadow-sm p-6', className)} style={SURFACE_STYLE}>
-    <Skeleton height={24} width="60%" className="mb-4" />
-    <SkeletonGroup count={3} />
-    <div className="flex gap-3 mt-6">
-      <Skeleton width={100} height={36} />
-      <Skeleton width={100} height={36} />
-    </div>
-  </div>
-);
-
 export const SkeletonTable: React.FC<{ rows?: number; className?: string }> = ({
   rows = 5,
   className

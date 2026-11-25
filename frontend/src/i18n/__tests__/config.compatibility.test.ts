@@ -3,7 +3,7 @@ import i18n from '../config';
 import en from '../locales/en.json';
 import de from '../locales/de.json';
 
-describe('bundled translations with the patched HTTP backend', () => {
+describe('bundled translations', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });

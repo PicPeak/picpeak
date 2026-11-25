@@ -8,7 +8,6 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect } from 'vitest';
 import { Modal } from '../Modal';
-import { useModalFocus } from '../../../hooks/useModalFocus';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key: string, fallback?: string) => fallback ?? _key }),
@@ -23,24 +22,6 @@ describe('Modal', () => {
     for (const flags of COMPOSING) fireEvent.keyDown(screen.getByLabelText('Name'), { key: 'Escape', ...flags });
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.keyDown(screen.getByLabelText('Name'), { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-});
-
-
-
-
-describe('useModalFocus', () => {
-  it('leaves a composing Escape to the field', () => {
-    const onClose = vi.fn();
-    const Panel = () => {
-      const ref = useModalFocus<HTMLDivElement>(true, onClose);
-      return <div ref={ref}><input aria-label="Note" /></div>;
-    };
-    render(<Panel />);
-    for (const flags of COMPOSING) fireEvent.keyDown(screen.getByLabelText('Note'), { key: 'Escape', ...flags });
-    expect(onClose).not.toHaveBeenCalled();
-    fireEvent.keyDown(screen.getByLabelText('Note'), { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

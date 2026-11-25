@@ -61,7 +61,6 @@ const GbField: React.FC<{
 };
 
 interface StatusTabProps {
-  isActive: boolean;
   handleSaveSoftLimit: () => void;
   handleSaveCapacityOverride: () => void;
   saveSoftLimitMutation: { isPending: boolean };
@@ -79,7 +78,6 @@ interface StatusTabProps {
 }
 
 export const StatusTab: React.FC<StatusTabProps> = ({
-  isActive,
   handleSaveSoftLimit,
   handleSaveCapacityOverride,
   saveSoftLimitMutation,
@@ -97,7 +95,7 @@ export const StatusTab: React.FC<StatusTabProps> = ({
 }) => {
   const { t } = useTranslation();
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
-  const { storageInfo, systemStatus } = useStatusTab(isActive);
+  const { storageInfo, systemStatus } = useStatusTab();
   const queryClient = useQueryClient();
 
   // Gated on the same permission the endpoint requires, so a role without it
@@ -118,7 +116,7 @@ export const StatusTab: React.FC<StatusTabProps> = ({
       const res = await api.get('/admin/photos/repair-dimensions/status');
       return res.data;
     },
-    enabled: isActive && canRepairDimensions,
+    enabled: canRepairDimensions,
     refetchInterval: 10000,
   });
 
@@ -147,7 +145,7 @@ export const StatusTab: React.FC<StatusTabProps> = ({
       const res = await api.get('/admin/photos/repair-capture-dates/status');
       return res.data;
     },
-    enabled: isActive && canManageSystem,
+    enabled: canManageSystem,
     refetchInterval: 10000,
   });
   // What a run would read: photos without a capture date or without camera
@@ -164,7 +162,7 @@ export const StatusTab: React.FC<StatusTabProps> = ({
       const res = await api.get('/admin/photos/repair-orientation/status');
       return res.data;
     },
-    enabled: isActive && canManageSystem,
+    enabled: canManageSystem,
     refetchInterval: 10000,
   });
 
@@ -185,7 +183,7 @@ export const StatusTab: React.FC<StatusTabProps> = ({
       const res = await api.get('/admin/photos/repair-credits/status');
       return res.data;
     },
-    enabled: isActive && canManageSystem,
+    enabled: canManageSystem,
     refetchInterval: 10000,
   });
 
@@ -206,7 +204,7 @@ export const StatusTab: React.FC<StatusTabProps> = ({
       const res = await api.get('/admin/photos/repair-thumb-hashes/status');
       return res.data;
     },
-    enabled: isActive && canManageSystem,
+    enabled: canManageSystem,
     refetchInterval: 10000,
   });
 
@@ -229,7 +227,7 @@ export const StatusTab: React.FC<StatusTabProps> = ({
       const res = await api.get('/admin/photos/repair-content-hashes/status');
       return res.data;
     },
-    enabled: isActive && canManageSystem,
+    enabled: canManageSystem,
     refetchInterval: 10000,
   });
 

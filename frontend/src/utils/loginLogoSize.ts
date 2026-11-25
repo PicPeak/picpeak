@@ -47,5 +47,3 @@ export function resolveLoginLogoClasses(size: LoginLogoSize | string | undefined
   if (size && size in SIZE_MAP) return SIZE_MAP[size as LoginLogoSize];
   return SIZE_MAP.medium;
 }
-
-export const LOGIN_LOGO_SIZES: LoginLogoSize[] = ['small', 'medium', 'large', 'xlarge'];

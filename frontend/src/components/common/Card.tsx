@@ -35,38 +35,6 @@ export const Card: React.FC<CardProps> = ({
   );
 };
 
-interface CardHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
-  title: string;
-  subtitle?: string;
-  action?: React.ReactNode;
-}
-
-export const CardHeader: React.FC<CardHeaderProps> = ({
-  title,
-  subtitle,
-  action,
-  className,
-  ...props
-}) => {
-  return (
-    <div
-      className={clsx(
-        'flex items-start justify-between mb-4',
-        className
-      )}
-      {...props}
-    >
-      <div>
-        <h3 className="text-lg font-semibold text-heading">{title}</h3>
-        {subtitle && (
-          <p className="mt-1 text-sm text-muted">{subtitle}</p>
-        )}
-      </div>
-      {action && <div className="ml-4">{action}</div>}
-    </div>
-  );
-};
-
 interface CardContentProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
 }
@@ -78,28 +46,6 @@ export const CardContent: React.FC<CardContentProps> = ({
 }) => {
   return (
     <div className={clsx('', className)} {...props}>
-      {children}
-    </div>
-  );
-};
-
-interface CardFooterProps extends React.HTMLAttributes<HTMLDivElement> {
-  children: React.ReactNode;
-}
-
-export const CardFooter: React.FC<CardFooterProps> = ({
-  className,
-  children,
-  ...props
-}) => {
-  return (
-    <div
-      className={clsx(
-        'mt-6 pt-6 border-t border-line',
-        className
-      )}
-      {...props}
-    >
       {children}
     </div>
   );
