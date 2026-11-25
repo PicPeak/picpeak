@@ -411,7 +411,7 @@ describe('separations survive re-derivation (#1132)', () => {
       const src = fs.readFileSync(
         path.join(__dirname, '..', '..', 'src', 'routes', 'adminArchives.js'), 'utf8'
       );
-      expect(src).toMatch(/db\.transaction\(async \(trx\) => \{\s*await deleteEventRows\(trx, req\.params\.id,/);
+      expect(src).toMatch(/db\.transaction\(async \(trx\) => \{\s*await deleteEventRows\(trx, archive\.id,/);
       const helpers = fs.readFileSync(
         path.join(__dirname, '..', '..', 'src', 'routes', 'adminEvents', 'helpers.js'), 'utf8'
       );
