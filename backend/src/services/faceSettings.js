@@ -141,8 +141,12 @@ async function getThresholds() {
  */
 async function isEnabledForEvent(event) {
   if (!(await isFeatureEnabled())) return false;
-  if (!event) return false;
-  return event.face_recognition_enabled === true || event.face_recognition_enabled === 1;
+  return isSwitchedOnForEvent(event);
+}
+
+/** The gallery's own detection switch, without the global flag. */
+function isSwitchedOnForEvent(event) {
+  return !!event && (event.face_recognition_enabled === true || event.face_recognition_enabled === 1);
 }
 
 /**
@@ -179,6 +183,7 @@ module.exports = {
   getSidecarToken,
   getThresholds,
   isEnabledForEvent,
+  isSwitchedOnForEvent,
   areFacesVisibleToGuests,
   isSelfieSearchEnabled,
 };

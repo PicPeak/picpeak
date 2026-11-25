@@ -45,6 +45,8 @@ jest.mock('../../src/middleware/ownership', () => ({
 }));
 jest.mock('../../src/services/faceSettings', () => ({
   isEnabledForEvent: jest.fn(() => Promise.resolve(true)),
+  isSwitchedOnForEvent: (event) => !!event
+    && (event.face_recognition_enabled === true || event.face_recognition_enabled === 1),
 }));
 jest.mock('../../src/services/faceProcessor', () => ({
   enqueueEvent: jest.fn(() => Promise.resolve(3)),

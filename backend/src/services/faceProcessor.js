@@ -23,6 +23,7 @@ const {
   assignFaces, lockEventPeople, packEmbedding, recomputeCentroid, refreshSeparationSnapshots,
 } = require('./faceClustering');
 const { getThresholds, isEnabledForEvent } = require('./faceSettings');
+const { streamToBuffer, isVideoPhoto } = require('./sidecarImage');
 
 /**
  * Thrown when a scan finishes but the photo is no longer the row we claimed —
@@ -126,15 +127,6 @@ async function externalSourceUnreachable(photo) {
   }
 }
 
-async function streamToBuffer(stream) {
-  if (Buffer.isBuffer(stream)) return stream;
-  const chunks = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
-}
-
 /**
  * The row as long as it still belongs to this claim (issue 2069).
  * `face_attempt_id` is written by the claim and cleared by everything that
@@ -175,9 +167,7 @@ async function processPhotoFaces(claimed) {
   }
 
   // Videos have no preview tier and no meaningful single frame to scan.
-  const isVideo = photo.media_type === 'video'
-    || (photo.mime_type && photo.mime_type.startsWith('video/'));
-  if (isVideo) {
+  if (isVideoPhoto(photo)) {
     await claimGuard(claimed).update({
       face_status: 'skipped', face_started_at: null, face_attempt_id: null, face_count: 0,
     });
