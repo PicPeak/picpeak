@@ -35,6 +35,7 @@ const { ensureContractEmailTemplatesSeeded } = require('./contractEmailTemplates
 const { ensureEventReminderTemplatesSeeded } = require('./eventReminderTemplates');
 const { ensureGalleryDeliveryTemplatesSeeded } = require('./galleryDeliveryTemplates');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
+const { EMAIL_MAX_ATTEMPTS } = require('../utils/emailQueueRetry');
 
 /**
  * Run all four template seeders, then recover any email_queue rows
@@ -84,7 +85,7 @@ async function seedEmailTemplatesAndRecoverQueue(db, logger) {
     try {
       recovered = await db('email_queue')
         .whereIn('status', ['pending', PROTECTED_PENDING_STATUS])
-        .where('retry_count', '>=', 3)
+        .where('retry_count', '>=', EMAIL_MAX_ATTEMPTS)
         .whereIn('email_type', seeded)
         // Like a manual retry, this starts the outage allowance again too.
         .update({

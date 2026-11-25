@@ -34,6 +34,7 @@ const {
 const { parseEmailData } = require('../utils/emailSecretRedaction');
 const { db, logActivity } = require('../database/db');
 const { mayReachQueuedEmail, queuedEmailListScope } = require('../middleware/emailQueueOwnership');
+const { EMAIL_MAX_ATTEMPTS } = require('../utils/emailQueueRetry');
 
 const router = express.Router();
 const PENDING_EMAIL_STATUSES = ['pending', PROTECTED_PENDING_STATUS];
@@ -273,8 +274,8 @@ const mapEmailRow = (r) => ({
  * Surfaces background failures that would otherwise go unnoticed. v1
  * covers stuck/failed outbound emails: rows the queue processor has
  * given up on (status='failed') or exhausted its retries on
- * (status='pending' AND retry_count >= 3 — the processor only picks up
- * retry_count < 3). Trigger: a 14h window where 'quote_sent' template
+ * (status='pending' AND retry_count >= EMAIL_MAX_ATTEMPTS — the processor
+ * only picks up retry_count below it). Trigger: a 14h window where 'quote_sent' template
  * errors left invoices unsent with no admin-visible signal.
  *
  * #1262 added the other half. A queue nobody is working produces no failures
@@ -296,7 +297,7 @@ router.get(
       .where(function () {
         this.where('status', 'failed')
           .orWhere(function () {
-            this.whereIn('status', PENDING_EMAIL_STATUSES).andWhere('retry_count', '>=', 3);
+            this.whereIn('status', PENDING_EMAIL_STATUSES).andWhere('retry_count', '>=', EMAIL_MAX_ATTEMPTS);
           });
       })
       .orderBy('created_at', 'desc')
@@ -338,7 +339,7 @@ router.get(
       // eslint-disable-next-line no-await-in-loop
       const page = await scope(db('email_queue'))
         .whereIn('status', PENDING_EMAIL_STATUSES)
-        .where('retry_count', '<', 3)
+        .where('retry_count', '<', EMAIL_MAX_ATTEMPTS)
         .orderBy('id', 'asc')
         .offset(offset)
         .limit(WAITING_PAGE_SIZE)
