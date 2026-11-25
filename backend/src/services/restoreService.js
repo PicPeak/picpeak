@@ -5,6 +5,7 @@ const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
 const { createReadStream, createWriteStream, constants: fsConstants } = require('fs');
 const { sha256File } = require('../utils/fileChecksum');
+const { getStoragePath } = require('../config/storage');
 const { spawnAsync, spawnToFile } = require('../utils/safeExec');
 const { prepareDump, loadPreparedDump } = require('../utils/pgDumpLoad');
 const { liveSqliteArgs } = require('../utils/sqliteCli');
@@ -925,7 +926,6 @@ class RestoreService {
       if (manifest.metadata && manifest.metadata.stored_path_map) {
         try {
           const { applyStoredPathMap, holdsBytes } = require('../utils/legacyStoredFiles');
-          const { getStoragePath } = require('../config/storage');
           const root = getStoragePath();
           const sums = manifest.metadata.stored_path_sha256 || {};
           // Only where the backed-up bytes are actually there: after a partial
@@ -1325,7 +1325,7 @@ class RestoreService {
    */
   async checkDiskSpace(manifest, options) {
     try {
-      const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+      const storagePath = getStoragePath();
 
       // Calculate required space (with 20% buffer)
       let requiredBytes = 0;
@@ -1433,7 +1433,7 @@ class RestoreService {
       // Backup files
       if (options.restoreType === 'full' || options.restoreType === 'files' || options.restoreType === 'selective') {
         this.log('info', 'Backing up current files...');
-        const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+        const storagePath = getStoragePath();
         const filesBackupPath = path.join(backupPath, 'files.tar.gz');
 
         if (options.restoreType === 'selective') {
@@ -1526,7 +1526,7 @@ class RestoreService {
     remoteStage.space = await rsyncRestore.assertStagingSpace(remoteStage.dir, plan.bytes + plan.largestMedia,
       bytes => this.formatBytes(bytes), {
         restoredBytes: plan.localMediaBytes,
-        storagePath: process.env.STORAGE_PATH || path.join(__dirname, '../../../storage'),
+        storagePath: getStoragePath(),
       });
   }
 
@@ -2345,7 +2345,7 @@ END $$;`
   async performFilesRestore(backupPath, manifest, options) {
     this.updateProgress('Restoring files...');
 
-    const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+    const storagePath = getStoragePath();
     const filesToRestore = resolveRestoreFiles(manifest, options);
 
     let restoredCount = 0;
@@ -2589,7 +2589,7 @@ END $$;`
       // entries used to be sampled "for performance", so a crafted manifest
       // only had to order the bad entry after them to pass.
       if (options.restoreType === 'full' || options.restoreType === 'files' || options.restoreType === 'selective') {
-        const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+        const storagePath = getStoragePath();
         const filesToVerify = resolveRestoreFiles(manifest, options);
 
         for (const file of filesToVerify) {
@@ -2725,7 +2725,7 @@ END $$;`
       }
       const filesBackupPath = path.join(preRestoreBackupPath, 'files.tar.gz');
       if (await fs.access(filesBackupPath).then(() => true).catch(() => false)) {
-        const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+        const storagePath = getStoragePath();
         await spawnAsync('tar', ['-xzf', filesBackupPath, '-C', path.dirname(storagePath)]);
       }
 
@@ -2865,7 +2865,7 @@ END $$;`
    * Calculate current storage usage
    */
   async calculateCurrentStorageUsage() {
-    const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+    const storagePath = getStoragePath();
     
     let totalSize = 0;
     async function calculateDirSize(dirPath) {

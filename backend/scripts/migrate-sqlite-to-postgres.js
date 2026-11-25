@@ -133,15 +133,6 @@ async function phaseExport() {
   }
 }
 
-// Tables that are EMPTY on a freshly migrated schema, so any row in them means
-// a human has used this install. Used to protect the target from being wiped
-// and to decide whether the source is worth migrating (#1038 review). Tables
-// missing on a given branch are skipped.
-const USER_DATA_TABLES = [
-  'events', 'photos', 'photo_feedback', 'admin_users', 'customer_accounts',
-  'quotes', 'invoices', 'projects', 'expenses', 'inbound_documents',
-];
-
 async function tablesWithData(db, tables, { ignoreBootstrapAdmins = false } = {}) {
   const { adminsIndicateUse } = require('../src/utils/databaseEngine');
   const found = {};
@@ -163,8 +154,14 @@ async function tablesWithData(db, tables, { ignoreBootstrapAdmins = false } = {}
   return found;
 }
 
+// USER_DATA_TABLES (utils/databaseEngine): tables that are EMPTY on a freshly
+// migrated schema, so any row in them means a human has used this install.
+// Used to protect the target from being wiped and to decide whether the source
+// is worth migrating (#1038 review). Tables missing on a given branch are
+// skipped.
 async function phaseUserData(ignoreBootstrapAdmins) {
   const { db } = require('../src/database/db');
+  const { USER_DATA_TABLES } = require('../src/utils/databaseEngine');
   return JSON.stringify(await tablesWithData(db, USER_DATA_TABLES, { ignoreBootstrapAdmins }));
 }
 
