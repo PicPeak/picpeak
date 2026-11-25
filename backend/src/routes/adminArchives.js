@@ -1002,7 +1002,7 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
     // an archive delete. It leaves the bell dismissals alone and removes only
     // an archive claim nobody holds.
     await db.transaction(async (trx) => {
-      await deleteEventRows(trx, req.params.id, {
+      await deleteEventRows(trx, archive.id, {
         staleArchiveClaimOnly: true,
         history: { actor: req.admin.id, source: 'archive.delete' },
       });
