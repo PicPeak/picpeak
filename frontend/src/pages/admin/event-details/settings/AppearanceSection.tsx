@@ -405,8 +405,6 @@ export const AppearanceSection: React.FC<FieldsProps & {
                 setPresetName('custom');
                 toast.success(t('events.settingsTab.copiedBranding', 'Copied the global theme. Save to keep it.'));
               }}
-              showGalleryLayouts={true}
-              hideActions={true}
               cssTemplates={cssTemplates}
               cssTemplateId={f.css_template_id}
               onCssTemplateChange={(css_template_id) => set({ css_template_id })}

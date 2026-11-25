@@ -83,8 +83,8 @@ export interface ThemeConfig {
   //   accentColor       → links, icons, focus rings, hover
   //   accentDarkColor   → primary CTA fill / filled states
   //
-  // primaryColor is retained as a legacy alias and migrated to accentDarkColor
-  // by frontend/src/utils/themeMigration.ts. Do not surface it in new UI.
+  // primaryColor is retained as a legacy alias: accentDarkColor falls back to
+  // it when unset. Do not surface it in new UI.
   primaryColor?: string;
   accentColor?: string;
   accentDarkColor?: string;
@@ -125,8 +125,6 @@ export interface ThemeConfig {
   // Legacy Header/Footer (kept for backward compatibility)
   legacyHeaderStyle?: 'minimal' | 'standard' | 'full';
   footerStyle?: 'minimal' | 'standard' | 'full';
-  showEventInfo?: boolean;
-  showBranding?: boolean;
   
   // Advanced
   logoUrl?: string;

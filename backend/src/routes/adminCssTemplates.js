@@ -50,37 +50,6 @@ router.get('/enabled', adminAuth, requirePermission('branding.view'), async (req
 });
 
 /**
- * GET /admin/css-templates/:slotNumber
- * Get a specific template by slot number
- */
-router.get('/:slotNumber', adminAuth, requirePermission('branding.view'), [
-  param('slotNumber').isInt({ min: 1, max: 3 })
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: safeValidationErrors(errors) });
-    }
-
-    const { slotNumber } = req.params;
-    const template = await withRetry(() =>
-      db('css_templates')
-        .where({ slot_number: parseInt(slotNumber) })
-        .first()
-    );
-
-    if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
-    }
-
-    res.json({ success: true, template });
-  } catch (error) {
-    logger.error('Get template error:', error);
-    res.status(500).json({ error: 'Failed to fetch template' });
-  }
-});
-
-/**
  * PUT /admin/css-templates/:slotNumber
  * Update a template
  */

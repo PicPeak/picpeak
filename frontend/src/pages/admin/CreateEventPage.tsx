@@ -1536,8 +1536,6 @@ export const CreateEventPage: React.FC = () => {
                     presetName={formData.theme_preset}
                     onPresetChange={handlePresetChange}
                     forceColorMode={publicSettings?.branding_force_color_mode ?? null}
-                    showGalleryLayouts={true}
-                    hideActions={true}
                     onSyncFromBranding={() => {
                       // Pull the 8 colour tokens (+ legacy primary alias) from
                       // the global Branding theme into the current event theme.

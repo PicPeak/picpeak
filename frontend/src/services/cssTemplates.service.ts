@@ -33,14 +33,6 @@ class CssTemplatesService {
   }
 
   /**
-   * Get a specific template by slot number
-   */
-  async getTemplate(slotNumber: number): Promise<CssTemplate> {
-    const response = await api.get(`/admin/css-templates/${slotNumber}`);
-    return response.data.template;
-  }
-
-  /**
    * Get only enabled templates (for event form dropdown)
    */
   async getEnabledTemplates(): Promise<EnabledTemplate[]> {

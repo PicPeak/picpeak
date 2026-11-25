@@ -722,25 +722,6 @@ function validateCSS(cssContent) {
   return { valid: true };
 }
 
-/**
- * Scope CSS to gallery page
- * @param {string} cssContent - CSS content
- * @returns {string} - Scoped CSS
- */
-function scopeToGalleryPage(cssContent) {
-  if (!cssContent || cssContent.trim() === '') {
-    return '';
-  }
-
-  // If the CSS already uses .gallery-page, return as-is
-  if (cssContent.includes('.gallery-page')) {
-    return cssContent;
-  }
-
-  // Simple scoping: wrap entire content in .gallery-page
-  return `.gallery-page {\n${cssContent}\n}`;
-}
-
 module.exports = {
   sanitizeCss,
   sanitizeCSS,
@@ -749,6 +730,5 @@ module.exports = {
   stripDisallowedUrls,
   stripDisallowedAtRules,
   validateCSS,
-  scopeToGalleryPage,
   MAX_CSS_SIZE
 };

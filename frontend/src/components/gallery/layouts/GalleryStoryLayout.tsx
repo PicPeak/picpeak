@@ -825,8 +825,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         stats={stats}
         photo={heroPhoto}
         slug={slug}
-        allowDownloads={allowDownloads}
-        useEnhancedProtection={useEnhancedProtection}
       />
 
       {/* Below the hero, so the fixed nav keeps the hero behind it (issue 2355). */}
@@ -860,8 +858,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   onToggleFavorite={handleToggleFavorite}
                   onPhotoClick={handleOpenLightbox}
                   slug={slug}
-                  allowDownloads={allowDownloads}
-                  useEnhancedProtection={useEnhancedProtection}
                   naturalAspect={naturalGrid}
                   isSelectionMode={isSelectionMode}
                   selectedPhotos={selected}
@@ -878,8 +874,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   onToggleFavorite={handleToggleFavorite}
                   onPhotoClick={handleOpenLightbox}
                   slug={slug}
-                  allowDownloads={allowDownloads}
-                  useEnhancedProtection={useEnhancedProtection}
                   isSelectionMode={isSelectionMode}
                   selectedPhotos={selected}
                   onPhotoSelect={cardSelect}
@@ -897,8 +891,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   onToggleFavorite={handleToggleFavorite}
                   onPhotoClick={handleOpenLightbox}
                   slug={slug}
-                  allowDownloads={allowDownloads}
-                  useEnhancedProtection={useEnhancedProtection}
                   isSelectionMode={isSelectionMode}
                   selectedPhotos={selected}
                   onPhotoSelect={cardSelect}

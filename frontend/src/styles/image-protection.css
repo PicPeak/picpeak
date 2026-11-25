@@ -250,43 +250,9 @@
   }
 }
 
-/* DevTools detection styles */
-.devtools-detected {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: #000;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 999999;
-  font-size: 2rem;
-  text-align: center;
-}
-
-.devtools-detected::before {
-  content: '⚠️ Developer Tools Detected';
-  animation: pulse 1s ease-in-out infinite alternate;
-}
-
 @keyframes pulse {
   0% { opacity: 0.5; }
   100% { opacity: 1; }
-}
-
-/* Overlay protection for canvas elements */
-.canvas-overlay-protection {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: transparent;
-  z-index: 999;
-  cursor: default;
 }
 
 /* Watermark styles */
@@ -320,18 +286,6 @@
   white-space: nowrap;
   pointer-events: none;
   user-select: none;
-}
-
-/* Loading states for protected images */
-.protected-image-loading {
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-  background-size: 200% 100%;
-  animation: loading-shimmer 2s infinite;
-}
-
-@keyframes loading-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
 }
 
 /* Error states */

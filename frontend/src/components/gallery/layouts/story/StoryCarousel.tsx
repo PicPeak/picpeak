@@ -14,8 +14,6 @@ interface StoryCarouselProps {
   onPhotoClick: (photo: Photo) => void;
   slug: string;
   id: string;
-  allowDownloads?: boolean;
-  useEnhancedProtection?: boolean;
   /** Issue 1709: size each slide from the photo's aspect ratio instead of a fixed box. */
   naturalAspect?: boolean;
   isSelectionMode?: boolean;
@@ -34,8 +32,6 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
   onPhotoClick,
   slug,
   id,
-  allowDownloads = true,
-  useEnhancedProtection = false,
   naturalAspect = false,
   isSelectionMode = false,
   selectedPhotos,
@@ -69,9 +65,6 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
                 onToggleFavorite={onToggleFavorite}
                 onClick={() => onPhotoClick(photo)}
                 slug={slug}
-                galleryId={id}
-                allowDownloads={allowDownloads}
-                useEnhancedProtection={useEnhancedProtection}
                 isSelectionMode={isSelectionMode}
                 isSelected={selectedPhotos?.has(photo.id) ?? false}
                 onSelect={onPhotoSelect}

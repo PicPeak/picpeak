@@ -494,7 +494,6 @@
       "route_signatures": [
         "GET /",
         "GET /enabled",
-        "GET /:slotNumber",
         "PUT /:slotNumber",
         "POST /:slotNumber/reset"
       ]

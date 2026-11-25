@@ -70,12 +70,9 @@ function resolveColorMode(mode: 'light' | 'dark' | 'auto' | undefined): 'light' 
 
 interface ThemeContextType {
   theme: ThemeConfig;
-  themeName: string;
   resolvedColorMode: 'light' | 'dark';
   setTheme: (theme: ThemeConfig) => void;
-  setThemeByName: (themeName: string) => void;
   applyTheme: (theme: ThemeConfig) => void;
-  resetTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -246,17 +243,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
       root.style.setProperty('--font-size-base', sizeMap[themeConfig.fontSize]);
     }
     
-    // Apply shadow style
-    if (themeConfig.shadowStyle) {
-      const shadowMap = {
-        none: 'none',
-        subtle: '0 1px 3px rgba(0,0,0,0.12)',
-        normal: '0 4px 6px rgba(0,0,0,0.1)',
-        dramatic: '0 10px 25px rgba(0,0,0,0.15)',
-      };
-      root.style.setProperty('--shadow-default', shadowMap[themeConfig.shadowStyle]);
-    }
-    
     // Apply surface colors
     const effectiveMode = resolveColorMode(themeConfig.colorMode);
     setResolvedColorMode(effectiveMode);
@@ -345,19 +331,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
     applyTheme(newTheme);
   }, [applyTheme]);
 
-  const setThemeByName = useCallback((name: string) => {
-    const presetTheme = GALLERY_THEME_PRESETS[name];
-    if (presetTheme) {
-      setThemeName(name);
-      setTheme(presetTheme.config);
-      applyTheme(presetTheme.config);
-    }
-  }, [applyTheme]);
-
-  const resetTheme = useCallback(() => {
-    setThemeByName('default');
-  }, [setThemeByName]);
-
   // Apply theme when it changes, OR when force-mode changes (so an admin
   // toggling Force dark / light in Branding flips every open tab on the
   // next public-settings refetch tick — no reload needed).
@@ -409,13 +382,10 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
 
   const contextValue = useMemo(() => ({
     theme,
-    themeName,
     resolvedColorMode,
     setTheme: setThemeConfig,
-    setThemeByName,
     applyTheme,
-    resetTheme
-  }), [theme, themeName, resolvedColorMode, setThemeConfig, setThemeByName, applyTheme, resetTheme]);
+  }), [theme, resolvedColorMode, setThemeConfig, applyTheme]);
 
   return (
     <ThemeContext.Provider value={contextValue}>

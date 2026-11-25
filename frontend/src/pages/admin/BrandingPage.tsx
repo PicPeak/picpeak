@@ -1250,8 +1250,6 @@ export const BrandingPage: React.FC = () => {
                 onChange={handleThemeChange}
                 presetName={currentThemeName}
                 onPresetChange={handlePresetChange}
-                showGalleryLayouts={true}
-                hideActions={true}
                 forceColorMode={brandingSettings.force_color_mode ?? null}
                 onForceColorModeChange={handleForceColorModeChange}
                 statusColors={brandingSettings.status_colors || {}}
