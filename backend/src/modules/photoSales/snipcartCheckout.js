@@ -1,5 +1,6 @@
 'use strict';
 
+const { toMinorUnits } = require('./priceRules');
 const { db } = require('../../database/db');
 const { quoteOf, checkoutError, OPEN } = require('./checkoutReservation');
 const { signPhotoSale, sellablePhotos, isGalleryOnSale } = require('./sellable');
@@ -61,7 +62,7 @@ async function grantReservation(local, remote, gallery, photoIds) {
       || JSON.stringify(expectedIds) !== JSON.stringify(suppliedIds)
       || (quote.promoCode ? discounts.length !== 1 || discounts[0] !== quote.promoCode : discounts.length > 0)
       || !buyerEmail || String(remote.currency).toUpperCase() !== quote.currency
-      || Math.round(Number(remote.total) * 100) !== quote.totalCents) return false;
+      || toMinorUnits(Number(remote.total)) !== quote.totalCents) return false;
   const result = await db.transaction(async (trx) => {
     // Same event-first lock as gallery pause compensation (#2296).
     const eventQuery = trx('events').where({ id: gallery.id });

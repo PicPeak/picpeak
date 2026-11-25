@@ -5,7 +5,7 @@ const { reservationExpiry, purchaseRows, sendPurchaseEmail } = require('./fulfil
 const { isGalleryOnSale, sellablePhotos } = require('./sellable');
 const { stripeClient, stripeConfiguration } = require('./stripeClient');
 const { quoteOf, checkoutError, OPEN } = require('./checkoutReservation');
-const REFUSING = ['refund_pending', 'refund_failed'];
+const { REFUSING } = require('./orderStatus');
 function idOf(value) { return typeof value === 'string' ? value : value?.id; }
 
 async function checkoutSession(order, client = stripeClient()) {

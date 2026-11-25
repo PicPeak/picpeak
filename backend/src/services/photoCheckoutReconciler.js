@@ -5,6 +5,7 @@ const lease = require('./maintenanceJobState');
 const { stripeClient, stripeConfiguration } = require('../modules/photoSales/stripeClient');
 const { checkoutSession, reconcileSession } = require('../modules/photoSales/stripeCheckout');
 const { quoteOf, OPEN } = require('../modules/photoSales/checkoutReservation');
+const { REFUSING } = require('../modules/photoSales/orderStatus');
 const { sendPurchaseEmail } = require('../modules/photoSales/fulfilment');
 const logger = require('../utils/logger');
 const JOB = 'photo_checkout_recovery';
@@ -59,7 +60,7 @@ async function reconcilePhotoCheckouts() {
             await sendPurchaseEmail(order, quote.galleryName, quote.lines.length);
             continue;
           }
-          if (['refund_pending', 'refund_failed'].includes(order.status)) {
+          if (REFUSING.includes(order.status)) {
             await db('photo_purchase_orders').where({ id: order.id }).update({ recovery_needs_attention: true, recovery_error: 'REFUND_UNCONFIRMED', recovery_next_at: new Date(Date.now() + 86400000).toISOString() });
             continue;
           }

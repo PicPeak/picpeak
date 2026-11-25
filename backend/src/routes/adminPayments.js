@@ -10,6 +10,7 @@ const { rateLimitKey } = require('../utils/rateLimitKey');
 const { getFrontendBaseUrl, getApiBaseUrl, isLoopbackBase } = require('../utils/frontendUrl');
 const { db } = require('../database/db');
 const { summarisePurchaseOrder } = require('../modules/photoSales/adminOrders');
+const { REFUSING } = require('../modules/photoSales/orderStatus');
 const { logActivity } = require('../database/db');
 const payments = require('../modules/photoSales/paymentSettings');
 const snipcart = require('../modules/photoSales/snipcartSettings');
@@ -78,7 +79,7 @@ router.get('/orders', async (req, res) => {
   if (!Number.isSafeInteger(page) || page < 1) return res.status(400).json({ error: 'Invalid page.' });
   try {
     const rows = await db('photo_purchase_orders').where((q) => q.whereNull('gallery_id')
-      .orWhere({ recovery_needs_attention: true }).orWhereIn('status', ['refund_pending', 'refund_failed']))
+      .orWhere({ recovery_needs_attention: true }).orWhereIn('status', REFUSING))
       .orderBy('id', 'desc').limit(51).offset((page - 1) * 50);
     return res.json({ orders: rows.slice(0, 50).map((order) => ({ ...summarisePurchaseOrder(order),
       id: order.id, gallery_id: order.gallery_id, orphaned: order.gallery_id == null })), has_more: rows.length > 50 });

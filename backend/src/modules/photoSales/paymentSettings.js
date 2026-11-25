@@ -5,6 +5,7 @@ const Stripe = require('stripe');
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
 const logger = require('../../utils/logger');
+const { OPEN, REFUSING } = require('./orderStatus');
 
 const KEY = 'payments_stripe_credentials';
 const WEBHOOK_STATUS_KEY = 'payments_stripe_webhook_status';
@@ -151,7 +152,7 @@ async function save(input) {
     }
     if (orders.some((order) => {
       const quote = readOrderQuote(order);
-      return quote.testMode !== testMode && (!quote.testMode || ['pending', 'creation_unknown', 'processing', 'refund_pending', 'refund_failed'].includes(order.status));
+      return quote.testMode !== testMode && (!quote.testMode || [...OPEN, ...REFUSING].includes(order.status));
     })) throw problem('Resolve outstanding checkouts before changing mode. An installation with live orders must retain live payment access.', 409);
     if (fresh) {
       await trx('app_settings').where({ setting_key: KEY }).update({ setting_value: JSON.stringify(next), updated_at: new Date().toISOString() });
