@@ -87,7 +87,7 @@ export function buildPhotoSalesConfig(args: {
     ? Math.max(0, Math.floor(Number(event?.free_photo_count ?? 0)))
     : 0;
   return {
-    providers: args.providers || [],
+    providers: args.providers || (checkoutConfigured ? ['stripe'] : []),
     snipcartPublicKey: args.snipcartPublicKey || null,
     enabled: isPriced && Number.isFinite(price) && price > 0,
     slug,

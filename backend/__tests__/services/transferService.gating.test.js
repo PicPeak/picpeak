@@ -126,4 +126,5 @@ describe('transferService.assertUploadable', () => {
   it('410s when the single deadline has passed', () => {
     expect(transferService.assertUploadable(request({ expires_at: new Date(Date.now() - HOUR) })))
       .toMatchObject({ ok: false, code: 'UPLOAD_EXPIRED', status: 410 });
-  });});
+  });
+});

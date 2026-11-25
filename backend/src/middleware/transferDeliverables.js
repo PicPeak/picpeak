@@ -115,8 +115,8 @@ async function runAdminUpload(req, res, fieldLimits, options) {
     }
     // Multer's own message is not echoed: a filesystem failure inside the
     // temp-file destination carries the server path (EACCES /app/storage/...),
-    // and an API token holder need not see it. The size case is the only one worth
-    // naming, because it tells the client something actionable.
+    // and neither an admin session nor an API token holder need see it. The
+    // size case is the only one worth naming, because it tells the client something actionable.
     const msg = err && err.code === 'LIMIT_FILE_SIZE'
       ? `Each file must be ${policy.maxSizeMb} MB or smaller`
       : 'Upload failed';

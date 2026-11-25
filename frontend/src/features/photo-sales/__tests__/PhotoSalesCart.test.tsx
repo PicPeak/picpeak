@@ -13,7 +13,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (_key: string, fal
 const { api } = await import('../../../config/api');
 const { openSnipcartCheckout } = await import('../snipcartCheckout');
 const photo = { id: 1, filename: 'Portrait.jpg', sale_token: 'proof', photo_price: 5 };
-const config = (slug = 'one') => buildPhotoSalesConfig({ slug, event: { is_priced: true, photo_price: 5, free_photo_count: 1, promo_code: 'FOTO-ONCE' }, checkoutConfigured: true, providers: ['stripe'] });
+const config = (slug = 'one') => buildPhotoSalesConfig({ slug, event: { is_priced: true, photo_price: 5, free_photo_count: 1, promo_code: 'FOTO-ONCE' }, checkoutConfigured: true });
 function ExtraPhoto() {
   const sales = usePhotoSales();
   return <button onClick={() => sales.addToCart({ ...photo, id: 2, filename: 'Landscape.jpg' })}>Add landscape</button>;
