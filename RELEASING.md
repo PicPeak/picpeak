@@ -58,7 +58,7 @@ The actual mechanics, in order:
    ```
    The `Release-As:` footer forces release-please to cut exactly `X.Y.Z`. Without it, release-please computes the next MINOR from the *previous stable* tag (e.g. `3.45.0` → `3.46.0`) while `main` is already at `3.84.x`, so the stable number drifts ever further behind for the same code.
 
-6. **Wait for CI on the PR.** All ten checks (the original eight plus `merge-backend` and `merge-frontend`) must be green. If anything fails, fix on the release branch (NOT on `main` — `main` has already moved on).
+6. **Wait for CI on the PR.** All checks must be green, including the per-image `build-*` and `merge-*` jobs of the Docker build. If anything fails, fix on the release branch (NOT on `main` — `main` has already moved on).
 
 7. **Merge.** Standard merge commit, not squash — the PR's history (the individual feature commits) carries forward into `stable`'s log.
 

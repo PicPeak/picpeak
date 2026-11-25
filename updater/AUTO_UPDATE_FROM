@@ -1,6 +1,6 @@
 # Oldest PicPeak version that may update to this release with the in-app
 # updater. CI bakes it into the backend image as the
-# io.picpeak.update.auto-from label (.github/workflows/docker-build.yml).
+# io.picpeak.update.auto-from label (.github/workflows/_docker-image-build.yml).
 #
 # Leave it empty while every release can be reached by `pull && up -d`.
 # When a release needs manual operator steps (a compose file change, a new

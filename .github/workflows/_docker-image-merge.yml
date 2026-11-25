@@ -1,0 +1,170 @@
+name: Merge image manifest
+
+# Reusable job called by docker-build.yml once per image after its
+# _docker-image-build.yml job. Combines the per-arch digests into one
+# multi-arch manifest and applies the human-readable tags, on GHCR and (on
+# the canonical repo) Docker Hub. Vulnerability scanning happens per arch in
+# the build job (#476), so this job needs no security-events permission.
+#
+# The caller job owns the job condition (push intent, the ML gate) and
+# grants the permissions. No concurrency group here: one in a called workflow
+# can block on the caller's group.
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: 'Image short name: backend, frontend, aio or ml (also the docker.io/picpeak/<image> repository)'
+        required: true
+        type: string
+      display-name:
+        description: 'Name used in step titles (Backend, Frontend, AIO, ML)'
+        required: true
+        type: string
+      title:
+        description: 'org.opencontainers.image.title label'
+        required: true
+        type: string
+      description:
+        description: 'org.opencontainers.image.description label'
+        required: true
+        type: string
+
+# Workflow-level env does not reach a called workflow, so the registry is
+# repeated here (docker-build.yml sets the same value).
+env:
+  REGISTRY: ghcr.io
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    # The caller job grants the same set; a called job cannot get more.
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Compute image name (lowercase for GHCR)
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        # GHCR requires all-lowercase repository names, but GITHUB_REPOSITORY
+        # keeps the owner's casing; ${VAR,,} keeps forks working.
+        repo_lc="${GITHUB_REPOSITORY,,}"
+        echo "IMAGE_NAME=${repo_lc}/${IMAGE}" >> "$GITHUB_ENV"
+        # Mirror manifests to Docker Hub (picpeak/<image>) only on the
+        # canonical org repo, where the DOCKERHUB_* secrets live. Forks (and any
+        # other owner) fall back to GHCR-only: the Docker Hub image line and login
+        # are gated on this flag so their builds keep working unchanged.
+        if [[ "$GITHUB_REPOSITORY" == "PicPeak/picpeak" ]]; then
+          echo "DOCKERHUB_ENABLED=true" >> "$GITHUB_ENV"
+        else
+          echo "DOCKERHUB_ENABLED=false" >> "$GITHUB_ENV"
+        fi
+
+    - name: Download digest artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: /tmp/digests
+        pattern: digests-${{ inputs.image }}-*
+        merge-multiple: true
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+    - name: Log in to Container Registry
+      id: login-ghcr
+      continue-on-error: true
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Determine build context
+      id: context
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/v*-beta* ]] || [[ "${{ github.ref }}" == refs/heads/main ]]; then
+          # Active-dev branch (`main`, renamed from `beta` per #669) produces
+          # prereleases; the `-beta.N` version-suffix scheme is unchanged.
+          echo "channel=beta" >> $GITHUB_OUTPUT
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+        else
+          echo "channel=stable" >> $GITHUB_OUTPUT
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+        fi
+
+    # DOCKERHUB_USERNAME / DOCKERHUB_TOKEN reach this workflow through the
+    # caller's `secrets: inherit`.
+    - name: Log in to Docker Hub
+      if: env.DOCKERHUB_ENABLED == 'true'
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      with:
+        registry: docker.io
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    # Same tag scheme for every image: the ml sidecar's API contract is
+    # versioned with the backend that calls it, and aio mirrors backend, so
+    # PICPEAK_CHANNEL resolves the same string across all of them.
+    - name: Extract metadata for ${{ inputs.display-name }}
+      id: meta
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+      with:
+        # GHCR always; Docker Hub (picpeak/<image>) added on the canonical repo so
+        # the same tag scheme is mirrored to both registries. metadata-action drops
+        # the blank second line on forks, so they stay GHCR-only.
+        images: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          ${{ env.DOCKERHUB_ENABLED == 'true' && format('docker.io/picpeak/{0}', inputs.image) || '' }}
+        labels: |
+          org.opencontainers.image.title=${{ inputs.title }}
+          org.opencontainers.image.description=${{ inputs.description }}
+          org.opencontainers.image.vendor=PicPeak
+          maintainer=${{ github.repository_owner }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
+          type=semver,pattern={{major}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
+          # #668/#783: publish the git-tag name verbatim (v3.45.0 / v3.84.0-beta.0)
+          # so users can pin the same string as the GitHub release. metadata-action's
+          # `pattern=v{{version}}` silently dropped it on prereleases, so use type=ref.
+          type=ref,event=tag
+          type=sha,format=short
+          # `:latest` + `:stable` follow the stable channel (the `stable` branch +
+          # stable release tags). The default branch is now `main` (active dev),
+          # so `is_default_branch` no longer maps to "stable", be explicit.
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
+          type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
+          # `:beta` follows the active development branch. This used to happen
+          # for free via `type=ref,event=branch` back when that branch was
+          # literally named `beta`; the rename to `main` silently retired the
+          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
+          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
+          # on. The ml sidecar was added after the rename and so never had a
+          # `:beta` at all, which left docker-compose.production.yml unable to
+          # resolve the image for any documented channel.
+          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
+          # So a `main` push publishes both `:main` (type=ref,event=branch) and
+          # `:beta` (the line above); PICPEAK_CHANNEL=main and =beta resolve to
+          # the same build.
+
+    - name: Create and push multi-arch manifest
+      working-directory: /tmp/digests
+      run: |
+        docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          $(printf "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s " *)
+
+    - name: Inspect manifest (GHCR)
+      run: |
+        docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+
+    - name: Inspect manifest (Docker Hub)
+      if: env.DOCKERHUB_ENABLED == 'true'
+      run: |
+        docker buildx imagetools inspect docker.io/picpeak/${{ inputs.image }}:${{ steps.meta.outputs.version }}
