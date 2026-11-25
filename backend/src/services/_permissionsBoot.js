@@ -22,6 +22,7 @@
  */
 
 const { CUSTOMER_SUPPORT } = require('../../migrations/core/259_gallery_admin_cleanup');
+const { TEAM_PHOTOGRAPHER } = require('../../migrations/core/175_granular_permissions_and_presets');
 
 // Preset roles shipped with the app. `permissions: 'ALL'` = every current perm.
 // Kept in sync with migration 175 (PRESET_ROLES) and 259 (customer_support). This boot pass only ensures a
@@ -36,18 +37,7 @@ const PRESETS = [
     priority: 90,
     permissions: 'ALL',
   },
-  {
-    name: 'team_photographer',
-    display_name: 'Team Photographer',
-    description: 'Contributing photographer (second/festival shooter) — view events, upload and manage photos, and see read-only client context. Not the customer contact: no settings, user management, billing edits or event configuration. A preset starting point.',
-    is_system: true,
-    priority: 40,
-    permissions: [
-      'events.view',
-      'photos.view', 'photos.upload', 'photos.edit', 'photos.download',
-      'customers.view', 'quotes.view', 'bills.view',
-    ],
-  },
+  TEAM_PHOTOGRAPHER,
   CUSTOMER_SUPPORT,
 ];
 

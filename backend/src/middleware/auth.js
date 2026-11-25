@@ -33,10 +33,8 @@ async function adminAuth(req, res, next) {
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET, {
         algorithms: ['HS256'],
-        issuer: 'picpeak-auth',
-        complete: true
+        issuer: 'picpeak-auth'
       });
-      decoded = decoded.payload;
     } catch (err) {
       if (err.name === 'TokenExpiredError') {
         return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });

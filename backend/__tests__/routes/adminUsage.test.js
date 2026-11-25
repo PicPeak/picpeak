@@ -56,6 +56,7 @@ beforeAll(async () => {
   await mockDb.schema.createTable('roles', (t) => {
     t.increments('id');
     t.string('name');
+    t.string('display_name');
   });
   await mockDb.schema.createTable('admin_users', (t) => {
     t.increments('id');
