@@ -1112,7 +1112,7 @@ module.exports = (router) => {
         // Chapter markers are part of the gallery's look (issue 2548).
         ...(eventColumns.has('chapter_marker_style') ? { chapter_marker_style: chapterStyleOf(source) } : {}),
         // So are its languages (issue 2550); the texts are copied below.
-        ...languageSettingsOf(source),
+        ...(eventColumns.has('text_language_mode') ? languageSettingsOf(source) : {}),
       }).returning('id');
 
       const newEventId = insertResult[0]?.id || insertResult[0];

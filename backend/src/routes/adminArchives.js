@@ -1071,7 +1071,9 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       }
       await trx('photos').where('event_id', req.params.id).del();
       // Favourite lists (issue 2303), for the reason deleteEventCascade gives.
-      await trx('favorite_lists').where('event_id', req.params.id).del();
+      if (await trx.schema.hasTable('favorite_lists')) {
+        await trx('favorite_lists').where('event_id', req.params.id).del();
+      }
       // Scene tags (issue 1733) stay with an archived gallery's photo rows.
       // After the photos: a tagging worker locks the photo row first, and
       // taking the two in the other order can deadlock on PostgreSQL.
