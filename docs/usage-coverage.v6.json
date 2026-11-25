@@ -1388,7 +1388,6 @@
         "POST /updates/self-update",
         "DELETE /updates/self-update",
         "GET /status",
-        "GET /database",
         "GET /updates/notifications",
         "PUT /updates/notifications",
         "POST /updates/notifications/send",

@@ -401,15 +401,13 @@ router.get(
     // row: a key that changed part-way through leaves older rows under the
     // old id, and looking only at the newest name_enc reported "all fine"
     // while most of the evidence on the install was unreadable.
-    if (evidenceKey.keyId && await db.schema.hasTable('contract_signers')) {
+    if (evidenceKey.keyId) {
       Object.assign(evidenceKey, await evidenceKeyUsage(evidenceKey.keyId));
     }
 
     // Enumeration and replay signals on the signing links, last 24 hours
     // (#1446): counts per kind and the alerts that went out. No addresses.
-    const signingSignals = await db.schema.hasTable('contract_signing_signals')
-      ? await require('../services/contract/signingSignals').summary()
-      : null;
+    const signingSignals = await require('../services/contract/signingSignals').summary();
 
     return successResponse(res, {
       backupAuthentication,

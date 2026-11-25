@@ -389,21 +389,6 @@ function getBcryptRounds() {
 }
 
 /**
- * Log password validation failures for security monitoring
- * @param {string} context - Context of validation failure
- * @param {Array} errors - Validation errors
- * @param {Object} metadata - Additional metadata
- */
-function logPasswordValidationFailure(context, errors, metadata = {}) {
-  logger.warn('Password validation failed', {
-    context,
-    errorCount: errors.length,
-    errors: errors.slice(0, 3), // Log first 3 errors only
-    ...metadata
-  });
-}
-
-/**
  * Customer-account password policy (customer portal, invitations, resets):
  * 8 characters, one uppercase letter, one digit. No special-character
  * requirement, no breach-list lookup, no dictionary check — those tripped up
@@ -440,7 +425,6 @@ module.exports = {
   validatePasswordInContext,
   generateSecurePassword,
   getBcryptRounds,
-  logPasswordValidationFailure,
   getPasswordComplexitySettings,
   getPasswordConfigForComplexity,
   PASSWORD_CONFIG

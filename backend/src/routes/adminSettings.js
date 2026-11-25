@@ -134,7 +134,7 @@ const stripUploadedLogoUrlKeys = (settings) => {
 //                                 restore_allow_force and
 //                                 restore_require_pre_backup gate restore-start)
 const DEDICATED_ROUTE_KEY_PREFIXES = [
-  'backup_', 'database_backup_', 'rate_limit_', 'max_image_requests_', 'ledger_', 'restore_', 'payments_',
+  'backup_', 'database_backup_', 'rate_limit_', 'max_image_requests_', 'ledger_', 'restore_',
 ];
 const isDedicatedRouteOwnedKey = (key) => DEDICATED_ROUTE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
 // 400 (naming the keys) when a generic write carries route-owned keys, rather
@@ -342,11 +342,6 @@ const faviconUpload = multer({
   }
 });
 
-// Get all settings, or a subset when ?keys=k1,k2,… is supplied.
-// Many caller pages only need a handful of keys (e.g. ReminderTemplates
-// reads 2 of the ~100 rows). The keys filter is allowlist-bounded by
-// what's stored, so passing unknown keys just returns them as `null`
-// — no enumeration risk beyond what GET / returned already.
 /**
  * Recoverable gallery passwords (#1271): every transition of the setting
  * starts from a clean vault. Off is a promise that nothing reversible is
@@ -362,6 +357,11 @@ async function galleryPasswordPurgePlan(settings) {
   return purgePlanForSettingWrite(settings[GALLERY_PASSWORD_SETTING]);
 }
 
+// Get all settings, or a subset when ?keys=k1,k2,… is supplied.
+// Many caller pages only need a handful of keys (e.g. ReminderTemplates
+// reads 2 of the ~100 rows). The keys filter is allowlist-bounded by
+// what's stored, so passing unknown keys just returns them as `null`
+// — no enumeration risk beyond what GET / returned already.
 router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) => {
   try {
     const keysParam = typeof req.query.keys === 'string' ? req.query.keys : null;
@@ -928,7 +928,6 @@ router.put('/downloads', adminAuth, requirePermission('settings.edit'), async (r
   }
 });
 
-// Get settings by type
 // ──────────────────────────────────────────────────────────────────────────
 // OIDC SSO settings (#798). Dedicated endpoints — NOT the generic upsert —
 // because the client secret must be encrypted at rest and never echoed back.
@@ -1171,6 +1170,7 @@ router.post('/sso/test', adminAuth, requirePermission('settings.security'), asyn
 
 router.use('/payments', require('./adminPayments'));
 
+// Get settings by type
 router.get('/:type', adminAuth, requirePermission('settings.view'), async (req, res) => {
   try {
     const { type } = req.params;

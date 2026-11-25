@@ -180,12 +180,6 @@ async function trackFailedAttempt(identifier, ipAddress, userAgent) {
  */
 async function trackSuccessfulLogin(identifier, ipAddress, userAgent) {
   try {
-    // Check if table exists first
-    const tableExists = await db.schema.hasTable('login_attempts');
-    if (!tableExists) {
-      return;
-    }
-
     const { attemptWindowMs } = await getSecurityConfig();
     
     await db('login_attempts').insert({
@@ -265,12 +259,6 @@ async function checkAccountLockout(identifier, ipAddress) {
  */
 async function checkSuspiciousActivity(identifier, ipAddress) {
   try {
-    // Check if table exists first
-    const tableExists = await db.schema.hasTable('login_attempts');
-    if (!tableExists) {
-      return false;
-    }
-    
     // Check for rapid attempts from different IPs
     const recentWindow = new Date(Date.now() - 5 * 60 * 1000); // 5 minutes
     
@@ -310,13 +298,6 @@ function getGenericAuthError() {
  */
 async function cleanupOldAttempts() {
   try {
-    // Check if table exists first
-    const tableExists = await db.schema.hasTable('login_attempts');
-    if (!tableExists) {
-      // Table doesn't exist, skip cleanup
-      return;
-    }
-    
     const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days
     
     const deleted = await db('login_attempts')

@@ -111,29 +111,6 @@ async function isTokenRevoked(decodedToken) {
 }
 
 /**
- * Revoke all tokens for a user
- * @param {number} userId - User ID
- * @param {string} reason - Reason for revocation
- */
-async function revokeAllUserTokens(userId, reason) {
-  try {
-    // This effectively revokes all tokens by setting a revocation time
-    // Any token issued before this time will be considered revoked
-    await db('user_token_revocations').insert({
-      user_id: userId,
-      revoked_at: new Date().toISOString(),
-      reason
-    }).onConflict('user_id').merge();
-    
-    logger.info('All user tokens revoked', { userId, reason });
-    return true;
-  } catch (error) {
-    logger.error('Failed to revoke user tokens', error);
-    return false;
-  }
-}
-
-/**
  * Clean up expired revoked tokens
  * Should be run periodically
  */
@@ -163,7 +140,6 @@ module.exports = { buildTokenId,
   stopRevocationCleanup,
   revokeToken,
   isTokenRevoked,
-  revokeAllUserTokens,
   cleanupExpiredRevocations,
   initializeRevocationCleanup
 };

@@ -1,7 +1,6 @@
 const { body, param, validationResult } = require('express-validator');
 const { safeValidationErrors } = require('./routeHelpers');
 const validator = require('validator');
-const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('./emailNormalization');
 const { REACTION_EMOJIS } = require('../constants/reactions');
 const { COLOR_LABELS } = require('../constants/colorLabels');
 const { PHOTO_DECISIONS, DECISION_REASON_MAX_LENGTH } = require('../constants/photoDecisions');
@@ -36,77 +35,6 @@ function checkGuestName(value) {
 }
 
 /**
- * Validation rules for feedback submission
- */
-const feedbackValidationRules = {
-  rating: [
-    body('feedback_type').equals('rating'),
-    body('rating')
-      .isInt({ min: 1, max: 5 })
-      .withMessage('Rating must be between 1 and 5'),
-    body('guest_name')
-      .optional()
-      .trim()
-      .isLength({ max: 100 })
-      .withMessage('Name must be less than 100 characters'),
-    body('guest_email')
-      .optional()
-      .trim()
-      .isEmail()
-      .normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL)
-      .withMessage('Invalid email address')
-  ],
-  
-  like: [
-    body('feedback_type').equals('like'),
-    body('guest_name')
-      .optional()
-      .trim()
-      .isLength({ max: 100 }),
-    body('guest_email')
-      .optional()
-      .trim()
-      .isEmail()
-      .normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL)
-  ],
-  
-  favorite: [
-    body('feedback_type').equals('favorite'),
-    body('guest_name')
-      .optional()
-      .trim()
-      .isLength({ max: 100 }),
-    body('guest_email')
-      .optional()
-      .trim()
-      .isEmail()
-      .normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL)
-  ],
-  
-  comment: [
-    body('feedback_type').equals('comment'),
-    body('comment_text')
-      .trim()
-      .notEmpty()
-      .withMessage('Comment cannot be empty')
-      .isLength({ min: 1, max: 1000 })
-      .withMessage('Comment must be between 1 and 1000 characters')
-      .customSanitizer(value => sanitizeComment(value)),
-    body('guest_name')
-      .optional()
-      .trim()
-      .isLength({ max: 100 })
-      .withMessage('Name must be less than 100 characters'),
-    body('guest_email')
-      .optional()
-      .trim()
-      .isEmail()
-      .normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL)
-      .withMessage('Invalid email address')
-  ]
-};
-
-/**
  * Sanitize comment text
  */
 function sanitizeComment(text) {
@@ -135,13 +63,6 @@ function sanitizeComment(text) {
 }
 
 /**
- * Validate feedback type parameter
- */
-const validateFeedbackType = param('feedbackType')
-  .isIn(['rating', 'like', 'comment', 'favorite'])
-  .withMessage('Invalid feedback type');
-
-/**
  * Validate photo ID parameter
  */
 const validatePhotoId = param('photoId')
@@ -154,13 +75,6 @@ const validatePhotoId = param('photoId')
 const validateEventId = param('eventId')
   .isInt({ min: 1, max: 2147483647 })
   .withMessage('Invalid event ID');
-
-/**
- * Get validation rules based on feedback type
- */
-function getValidationRules(feedbackType) {
-  return feedbackValidationRules[feedbackType] || [];
-}
 
 /**
  * Validation middleware for feedback submission
@@ -351,15 +265,12 @@ async function validateGuestRequirements(settings, guestData) {
 }
 
 module.exports = {
-  feedbackValidationRules,
-  validateFeedbackType,
   validatePhotoId,
   validateEventId,
   validateFeedbackSubmission,
   validateFeedbackSettings,
   validateWordFilter,
   checkValidation,
-  getValidationRules,
   sanitizeComment,
   validateGuestRequirements,
   checkGuestName,

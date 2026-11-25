@@ -7,7 +7,6 @@ const { configuration } = require('../modules/photoSales/providers');
 const { parseLightboxMaxZoomPercent, DEFAULT_LIGHTBOX_ZOOM_PERCENT } = require('../utils/lightboxZoom');
 const router = express.Router();
 
-// Get public settings (branding and theme)
 // nginx uses an internal subrequest so gallery HTML gets exactly one policy.
 router.get('/photo-sales-policy', require('../modules/photoSales/galleryCsp').galleryPolicy, (req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -34,6 +33,7 @@ router.get('/embed-frame-policy', async (req, res) => {
   }
 });
 
+// Get public settings (branding and theme)
 router.get('/', async (req, res) => {
   try {
     // Fetch branding, theme, general, security, analytics, and event settings
