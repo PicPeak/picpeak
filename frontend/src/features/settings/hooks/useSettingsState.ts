@@ -179,6 +179,151 @@ export interface SeoSettings {
   sitemap_url: string;
 }
 
+// One mapper per settings group: the load effect applies it to the stored
+// settings and the initial state applies it to `{}`, so each default is
+// written once.
+const generalFromSettings = (settings: Record<string, any>): GeneralSettings => ({
+  site_url: settings.general_site_url_env_pinned
+    ? (settings.general_site_url_effective || '')
+    : (settings.general_site_url || ''),
+  site_url_env_pinned: Boolean(settings.general_site_url_env_pinned),
+  site_url_stored: settings.general_site_url || '',
+  default_expiration_days: toNumber(settings.general_default_expiration_days, 30),
+  max_file_size_mb: toNumber(settings.general_max_file_size_mb, 50),
+  max_video_size_mb: toNumber(settings.general_max_video_size_mb, 500),
+  video_web_rendition: toBoolean(settings.general_video_web_rendition, false),
+  video_strip_metadata: toBoolean(settings.general_video_strip_metadata, true),
+  video_adaptive_streaming: toBoolean(settings.general_video_adaptive_streaming, false),
+  max_files_per_upload: Math.min(
+    MAX_FILES_PER_UPLOAD_LIMIT,
+    Math.max(1, toNumber(settings.general_max_files_per_upload, 500))
+  ),
+  photo_trash_retention_days: Math.min(365, Math.max(0, toNumber(settings.general_photo_trash_retention_days, 30))),
+  allowed_file_types: settings.general_allowed_file_types || 'jpg,jpeg,png,gif,webp',
+  max_upload_batch_size_mb: toNumber(settings.general_max_upload_batch_size_mb, 95),
+  enable_analytics: toBoolean(settings.general_enable_analytics, true),
+  enable_registration: toBoolean(settings.general_enable_registration, false),
+  maintenance_mode: toBoolean(settings.general_maintenance_mode, false),
+  short_gallery_urls: toBoolean(settings.general_short_gallery_urls, false),
+  event_codes_enabled: toBoolean(settings.general_event_codes_enabled, false),
+  root_event_code_page: toBoolean(settings.general_root_event_code_page, false),
+  use_original_filenames_for_downloads: toBoolean(
+    settings.general_use_original_filenames_for_downloads,
+    false
+  ),
+  default_language: settings.general_default_language || 'en',
+  date_format: settings.general_date_format
+    ? (typeof settings.general_date_format === 'string'
+        ? { format: settings.general_date_format, locale: settings.general_date_format.includes('MM/dd') ? 'en-US' : 'en-GB' }
+        : settings.general_date_format)
+    : { format: 'dd/MM/yyyy', locale: 'en-GB' },
+  time_format: settings.general_time_format === '12h' ? '12h' : '24h'
+});
+
+const securityFromSettings = (settings: Record<string, any>): SecuritySettings => ({
+  password_min_length: toNumber(settings.security_password_min_length, 8),
+  password_complexity: settings.security_password_complexity ?? 'moderate',
+  session_timeout_minutes: toNumber(settings.security_session_timeout_minutes, 60),
+  max_login_attempts: toNumber(settings.security_max_login_attempts, 5),
+  attempt_window_minutes: toNumber(settings.security_attempt_window_minutes, 15),
+  lockout_duration_minutes: toNumber(settings.security_lockout_duration_minutes, 30),
+  enable_recaptcha: toBoolean(settings.security_enable_recaptcha, false),
+  recaptcha_site_key: settings.security_recaptcha_site_key ?? '',
+  recaptcha_secret_key: settings.security_recaptcha_secret_key ?? '',
+  gallery_password_recoverable: toBoolean(settings.security_gallery_password_recoverable, false)
+});
+
+const rateLimitFromSettings = (settings: Record<string, any>): RateLimitSettings => ({
+  rate_limit_enabled: toBoolean(settings.rate_limit_enabled, true),
+  rate_limit_window_minutes: toNumber(settings.rate_limit_window_minutes, 15),
+  rate_limit_max_requests: toNumber(settings.rate_limit_max_requests, 300),
+  rate_limit_auth_max_requests: toNumber(settings.rate_limit_auth_max_requests, 5),
+  rate_limit_skip_authenticated: toBoolean(settings.rate_limit_skip_authenticated, true),
+  rate_limit_public_endpoints_only: toBoolean(settings.rate_limit_public_endpoints_only, false)
+});
+
+const analyticsFromSettings = (settings: Record<string, any>): AnalyticsSettings => {
+  // Tracker provider: prefer explicit setting; fall back to legacy
+  // umami_enabled flag for installs that haven't picked yet (#663).
+  const explicitProvider = settings.analytics_tracker_provider;
+  const provider: TrackerProvider = (
+    explicitProvider === 'none' || explicitProvider === 'umami'
+    || explicitProvider === 'rybbit' || explicitProvider === 'custom'
+  )
+    ? explicitProvider
+    : (toBoolean(settings.analytics_umami_enabled, false) ? 'umami' : 'none');
+
+  return {
+    tracker_provider: provider,
+    honor_do_not_track: toBoolean(settings.analytics_honor_do_not_track, true),
+    umami_enabled: toBoolean(settings.analytics_umami_enabled, false),
+    umami_url: settings.analytics_umami_url || '',
+    umami_website_id: settings.analytics_umami_website_id || '',
+    umami_share_url: settings.analytics_umami_share_url || '',
+    umami_api_key: settings.analytics_umami_api_key || '',
+    rybbit_url: settings.analytics_rybbit_url || '',
+    rybbit_website_id: settings.analytics_rybbit_website_id || '',
+    rybbit_api_key: settings.analytics_rybbit_api_key || '',
+    custom_head_html: settings.analytics_custom_head_html || ''
+  };
+};
+
+const eventFromSettings = (settings: Record<string, any>): EventSettings => ({
+  event_require_customer_name: toBoolean(settings.event_require_customer_name, true),
+  event_require_customer_email: toBoolean(settings.event_require_customer_email, true),
+  event_require_admin_email: toBoolean(settings.event_require_admin_email, true),
+  event_require_event_date: toBoolean(settings.event_require_event_date, true),
+  event_require_expiration: toBoolean(settings.event_require_expiration, true),
+  event_default_require_password: toBoolean(settings.event_default_require_password, true),
+  event_default_feedback_enabled: toBoolean(settings.event_default_feedback_enabled, false),
+  // Fallbacks mirror FEEDBACK_TOGGLES in backend
+  // services/feedbackDefaults.js — keep the two in step.
+  event_default_allow_ratings: toBoolean(settings.event_default_allow_ratings, true),
+  event_default_allow_likes: toBoolean(settings.event_default_allow_likes, true),
+  event_default_allow_favorites: toBoolean(settings.event_default_allow_favorites, true),
+  event_default_allow_comments: toBoolean(settings.event_default_allow_comments, true),
+  event_default_allow_reactions: toBoolean(settings.event_default_allow_reactions, true),
+  event_default_allow_color_labels: toBoolean(settings.event_default_allow_color_labels, false),
+  event_default_allow_decisions: toBoolean(settings.event_default_allow_decisions, false),
+  event_default_allow_favorite_lists: toBoolean(settings.event_default_allow_favorite_lists, false),
+  event_default_keybind_mode: settings.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors',
+  event_default_download_limit: Number(settings.event_default_download_limit) > 0
+    ? Number(settings.event_default_download_limit)
+    : 0,
+  event_default_guest_name_mode: ['optional', 'required'].includes(settings.event_default_guest_name_mode)
+    ? settings.event_default_guest_name_mode
+    : 'off',
+  event_default_show_credits_to_guests: toBoolean(settings.event_default_show_credits_to_guests, false),
+  event_default_walkthrough_enabled: toBoolean(settings.event_default_walkthrough_enabled, false),
+  // Fallbacks mirror the backend (eventCreationService, deliveryService,
+  // folderTreeService.getFirstLookKeywords).
+  event_default_folder_structure: toBoolean(settings.event_default_folder_structure, true),
+  event_default_delivery_days: Number(settings.event_default_delivery_days) > 0
+    ? Number(settings.event_default_delivery_days)
+    : 7,
+  first_look_keyword_detection: toBoolean(settings.first_look_keyword_detection, true),
+  first_look_folder_keywords: Array.isArray(settings.first_look_folder_keywords)
+    ? settings.first_look_folder_keywords.map(String)
+    : ['FirstLook', 'Sneak Peek'],
+  gallery_show_filter_bar: toBoolean(settings.gallery_show_filter_bar, true),
+  // Same range and fallback as the backend (utils/lightboxZoom.js): a
+  // stored value out of range shows the 100 the gallery actually uses.
+  gallery_lightbox_max_zoom_percent: lightboxMaxZoomPercent(settings.gallery_lightbox_max_zoom_percent),
+  event_phone_field_enabled: toBoolean(settings.event_phone_field_enabled, false)
+});
+
+const seoFromSettings = (settings: Record<string, any>): SeoSettings => ({
+  allow_indexing: toBoolean(settings.seo_allow_indexing, false),
+  block_ai_crawlers: toBoolean(settings.seo_block_ai_crawlers, true),
+  block_social_bots: toBoolean(settings.seo_block_social_bots, false),
+  blocked_ai_agents: Array.isArray(settings.seo_blocked_ai_agents) ? settings.seo_blocked_ai_agents : [],
+  custom_rules: Array.isArray(settings.seo_custom_rules) ? settings.seo_custom_rules : [],
+  meta_noindex: toBoolean(settings.seo_meta_noindex, true),
+  meta_nofollow: toBoolean(settings.seo_meta_nofollow, false),
+  meta_noai: toBoolean(settings.seo_meta_noai, true),
+  sitemap_url: settings.seo_sitemap_url || ''
+});
+
 export function useSettingsState() {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
@@ -196,115 +341,23 @@ export function useSettingsState() {
   });
 
   // General settings state
-  const [generalSettings, setGeneralSettings] = useState<GeneralSettings>({
-    site_url: '',
-    site_url_env_pinned: false,
-    site_url_stored: '',
-    default_expiration_days: 30,
-    max_file_size_mb: 50,
-    max_video_size_mb: 500,
-    video_web_rendition: false,
-    video_strip_metadata: true,
-    video_adaptive_streaming: false,
-    max_files_per_upload: 500,
-    photo_trash_retention_days: 30,
-    allowed_file_types: 'jpg,jpeg,png,gif,webp',
-    max_upload_batch_size_mb: 95,
-    enable_analytics: true,
-    enable_registration: false,
-    maintenance_mode: false,
-    short_gallery_urls: false,
-    event_codes_enabled: false,
-    root_event_code_page: false,
-    use_original_filenames_for_downloads: false,
-    default_language: 'en',
-    date_format: { format: 'dd/MM/yyyy', locale: 'en-GB' },
-    time_format: '24h'
-  });
+  const [generalSettings, setGeneralSettings] = useState<GeneralSettings>(() => generalFromSettings({}));
 
   // Security settings state
-  const [securitySettings, setSecuritySettings] = useState<SecuritySettings>({
-    password_min_length: 8,
-    password_complexity: 'moderate',
-    session_timeout_minutes: 60,
-    max_login_attempts: 5,
-    attempt_window_minutes: 15,
-    lockout_duration_minutes: 30,
-    enable_recaptcha: false,
-    recaptcha_site_key: '',
-    recaptcha_secret_key: '',
-    gallery_password_recoverable: false
-  });
+  const [securitySettings, setSecuritySettings] = useState<SecuritySettings>(() => securityFromSettings({}));
 
   // Rate limiter state. The fallbacks mirror the backend's defaults, but the
   // settings read fills every key, so they only matter before the first load.
-  const [rateLimitSettings, setRateLimitSettings] = useState<RateLimitSettings>({
-    rate_limit_enabled: true,
-    rate_limit_window_minutes: 15,
-    rate_limit_max_requests: 300,
-    rate_limit_auth_max_requests: 5,
-    rate_limit_skip_authenticated: true,
-    rate_limit_public_endpoints_only: false
-  });
+  const [rateLimitSettings, setRateLimitSettings] = useState<RateLimitSettings>(() => rateLimitFromSettings({}));
 
   // Analytics settings state
-  const [analyticsSettings, setAnalyticsSettings] = useState<AnalyticsSettings>({
-    tracker_provider: 'none',
-    honor_do_not_track: true,
-    umami_enabled: false,
-    umami_url: '',
-    umami_website_id: '',
-    umami_share_url: '',
-    umami_api_key: '',
-    rybbit_url: '',
-    rybbit_website_id: '',
-    rybbit_api_key: '',
-    custom_head_html: ''
-  });
+  const [analyticsSettings, setAnalyticsSettings] = useState<AnalyticsSettings>(() => analyticsFromSettings({}));
 
   // Event creation settings state
-  const [eventSettings, setEventSettings] = useState<EventSettings>({
-    event_require_customer_name: true,
-    event_require_customer_email: true,
-    event_require_admin_email: true,
-    event_require_event_date: true,
-    event_require_expiration: true,
-    event_default_require_password: true,
-    event_default_feedback_enabled: false,
-    event_default_allow_ratings: true,
-    event_default_allow_likes: true,
-    event_default_allow_favorites: true,
-    event_default_allow_comments: true,
-    event_default_allow_reactions: true,
-    event_default_allow_color_labels: false,
-    event_default_allow_decisions: false,
-    event_default_allow_favorite_lists: false,
-    event_default_keybind_mode: 'colors',
-    event_default_download_limit: 0,
-    event_default_guest_name_mode: 'off',
-    event_default_show_credits_to_guests: false,
-    event_default_walkthrough_enabled: false,
-    event_default_folder_structure: true,
-    event_default_delivery_days: 7,
-    first_look_keyword_detection: true,
-    first_look_folder_keywords: ['FirstLook', 'Sneak Peek'],
-    gallery_show_filter_bar: true,
-    gallery_lightbox_max_zoom_percent: 100,
-    event_phone_field_enabled: false
-  });
+  const [eventSettings, setEventSettings] = useState<EventSettings>(() => eventFromSettings({}));
 
   // SEO settings state
-  const [seoSettings, setSeoSettings] = useState<SeoSettings>({
-    allow_indexing: false,
-    block_ai_crawlers: true,
-    block_social_bots: false,
-    blocked_ai_agents: [],
-    custom_rules: [],
-    meta_noindex: true,
-    meta_nofollow: false,
-    meta_noai: true,
-    sitemap_url: ''
-  });
+  const [seoSettings, setSeoSettings] = useState<SeoSettings>(() => seoFromSettings({}));
 
   // Account form state
   // What the server last sent, in draft shape, so each tab can tell whether
@@ -350,150 +403,17 @@ export function useSettingsState() {
   // Initialize settings from API
   useEffect(() => {
     if (settings) {
-      const generalLoaded: GeneralSettings = {
-        site_url: settings.general_site_url_env_pinned
-          ? (settings.general_site_url_effective || '')
-          : (settings.general_site_url || ''),
-        site_url_env_pinned: Boolean(settings.general_site_url_env_pinned),
-        site_url_stored: settings.general_site_url || '',
-        default_expiration_days: toNumber(settings.general_default_expiration_days, 30),
-        max_file_size_mb: toNumber(settings.general_max_file_size_mb, 50),
-        max_video_size_mb: toNumber(settings.general_max_video_size_mb, 500),
-        video_web_rendition: toBoolean(settings.general_video_web_rendition, false),
-        video_strip_metadata: toBoolean(settings.general_video_strip_metadata, true),
-        video_adaptive_streaming: toBoolean(settings.general_video_adaptive_streaming, false),
-        max_files_per_upload: Math.min(
-          MAX_FILES_PER_UPLOAD_LIMIT,
-          Math.max(1, toNumber(settings.general_max_files_per_upload, 500))
-        ),
-        photo_trash_retention_days: Math.min(365, Math.max(0, toNumber(settings.general_photo_trash_retention_days, 30))),
-        allowed_file_types: settings.general_allowed_file_types || 'jpg,jpeg,png,gif,webp',
-        max_upload_batch_size_mb: toNumber(settings.general_max_upload_batch_size_mb, 95),
-        enable_analytics: toBoolean(settings.general_enable_analytics, true),
-        enable_registration: toBoolean(settings.general_enable_registration, false),
-        maintenance_mode: toBoolean(settings.general_maintenance_mode, false),
-        short_gallery_urls: toBoolean(settings.general_short_gallery_urls, false),
-        event_codes_enabled: toBoolean(settings.general_event_codes_enabled, false),
-        root_event_code_page: toBoolean(settings.general_root_event_code_page, false),
-        use_original_filenames_for_downloads: toBoolean(
-          settings.general_use_original_filenames_for_downloads,
-          false
-        ),
-        default_language: settings.general_default_language || 'en',
-        date_format: settings.general_date_format
-          ? (typeof settings.general_date_format === 'string'
-              ? { format: settings.general_date_format, locale: settings.general_date_format.includes('MM/dd') ? 'en-US' : 'en-GB' }
-              : settings.general_date_format)
-          : { format: 'dd/MM/yyyy', locale: 'en-GB' },
-        time_format: settings.general_time_format === '12h' ? '12h' : '24h'
-      };
+      const generalLoaded = generalFromSettings(settings);
       setGeneralSettings(generalLoaded);
-
-      const securityLoaded: SecuritySettings = {
-        password_min_length: toNumber(settings.security_password_min_length, 8),
-        password_complexity: settings.security_password_complexity ?? 'moderate',
-        session_timeout_minutes: toNumber(settings.security_session_timeout_minutes, 60),
-        max_login_attempts: toNumber(settings.security_max_login_attempts, 5),
-        attempt_window_minutes: toNumber(settings.security_attempt_window_minutes, 15),
-        lockout_duration_minutes: toNumber(settings.security_lockout_duration_minutes, 30),
-        enable_recaptcha: toBoolean(settings.security_enable_recaptcha, false),
-        recaptcha_site_key: settings.security_recaptcha_site_key ?? '',
-        recaptcha_secret_key: settings.security_recaptcha_secret_key ?? '',
-        gallery_password_recoverable: toBoolean(settings.security_gallery_password_recoverable, false)
-      };
+      const securityLoaded = securityFromSettings(settings);
       setSecuritySettings(securityLoaded);
-
-      const rateLimitLoaded: RateLimitSettings = {
-        rate_limit_enabled: toBoolean(settings.rate_limit_enabled, true),
-        rate_limit_window_minutes: toNumber(settings.rate_limit_window_minutes, 15),
-        rate_limit_max_requests: toNumber(settings.rate_limit_max_requests, 300),
-        rate_limit_auth_max_requests: toNumber(settings.rate_limit_auth_max_requests, 5),
-        rate_limit_skip_authenticated: toBoolean(settings.rate_limit_skip_authenticated, true),
-        rate_limit_public_endpoints_only: toBoolean(settings.rate_limit_public_endpoints_only, false)
-      };
+      const rateLimitLoaded = rateLimitFromSettings(settings);
       setRateLimitSettings(rateLimitLoaded);
-
-      // Tracker provider: prefer explicit setting; fall back to legacy
-      // umami_enabled flag for installs that haven't picked yet (#663).
-      const explicitProvider = settings.analytics_tracker_provider;
-      const provider: TrackerProvider = (
-        explicitProvider === 'none' || explicitProvider === 'umami'
-        || explicitProvider === 'rybbit' || explicitProvider === 'custom'
-      )
-        ? explicitProvider
-        : (toBoolean(settings.analytics_umami_enabled, false) ? 'umami' : 'none');
-
-      const analyticsLoaded: AnalyticsSettings = {
-        tracker_provider: provider,
-        honor_do_not_track: toBoolean(settings.analytics_honor_do_not_track, true),
-        umami_enabled: toBoolean(settings.analytics_umami_enabled, false),
-        umami_url: settings.analytics_umami_url || '',
-        umami_website_id: settings.analytics_umami_website_id || '',
-        umami_share_url: settings.analytics_umami_share_url || '',
-        umami_api_key: settings.analytics_umami_api_key || '',
-        rybbit_url: settings.analytics_rybbit_url || '',
-        rybbit_website_id: settings.analytics_rybbit_website_id || '',
-        rybbit_api_key: settings.analytics_rybbit_api_key || '',
-        custom_head_html: settings.analytics_custom_head_html || ''
-      };
+      const analyticsLoaded = analyticsFromSettings(settings);
       setAnalyticsSettings(analyticsLoaded);
-
-      const eventLoaded: EventSettings = {
-        event_require_customer_name: toBoolean(settings.event_require_customer_name, true),
-        event_require_customer_email: toBoolean(settings.event_require_customer_email, true),
-        event_require_admin_email: toBoolean(settings.event_require_admin_email, true),
-        event_require_event_date: toBoolean(settings.event_require_event_date, true),
-        event_require_expiration: toBoolean(settings.event_require_expiration, true),
-        event_default_require_password: toBoolean(settings.event_default_require_password, true),
-        event_default_feedback_enabled: toBoolean(settings.event_default_feedback_enabled, false),
-        // Fallbacks mirror FEEDBACK_TOGGLES in backend
-        // services/feedbackDefaults.js — keep the two in step.
-        event_default_allow_ratings: toBoolean(settings.event_default_allow_ratings, true),
-        event_default_allow_likes: toBoolean(settings.event_default_allow_likes, true),
-        event_default_allow_favorites: toBoolean(settings.event_default_allow_favorites, true),
-        event_default_allow_comments: toBoolean(settings.event_default_allow_comments, true),
-        event_default_allow_reactions: toBoolean(settings.event_default_allow_reactions, true),
-        event_default_allow_color_labels: toBoolean(settings.event_default_allow_color_labels, false),
-        event_default_allow_decisions: toBoolean(settings.event_default_allow_decisions, false),
-        event_default_allow_favorite_lists: toBoolean(settings.event_default_allow_favorite_lists, false),
-        event_default_keybind_mode: settings.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors',
-        event_default_download_limit: Number(settings.event_default_download_limit) > 0
-          ? Number(settings.event_default_download_limit)
-          : 0,
-        event_default_guest_name_mode: ['optional', 'required'].includes(settings.event_default_guest_name_mode)
-          ? settings.event_default_guest_name_mode
-          : 'off',
-        event_default_show_credits_to_guests: toBoolean(settings.event_default_show_credits_to_guests, false),
-        event_default_walkthrough_enabled: toBoolean(settings.event_default_walkthrough_enabled, false),
-        // Fallbacks mirror the backend (eventCreationService, deliveryService,
-        // folderTreeService.getFirstLookKeywords).
-        event_default_folder_structure: toBoolean(settings.event_default_folder_structure, true),
-        event_default_delivery_days: Number(settings.event_default_delivery_days) > 0
-          ? Number(settings.event_default_delivery_days)
-          : 7,
-        first_look_keyword_detection: toBoolean(settings.first_look_keyword_detection, true),
-        first_look_folder_keywords: Array.isArray(settings.first_look_folder_keywords)
-          ? settings.first_look_folder_keywords.map(String)
-          : ['FirstLook', 'Sneak Peek'],
-        gallery_show_filter_bar: toBoolean(settings.gallery_show_filter_bar, true),
-        // Same range and fallback as the backend (utils/lightboxZoom.js): a
-        // stored value out of range shows the 100 the gallery actually uses.
-        gallery_lightbox_max_zoom_percent: lightboxMaxZoomPercent(settings.gallery_lightbox_max_zoom_percent),
-        event_phone_field_enabled: toBoolean(settings.event_phone_field_enabled, false)
-      };
+      const eventLoaded = eventFromSettings(settings);
       setEventSettings(eventLoaded);
-
-      const seoLoaded: SeoSettings = {
-        allow_indexing: toBoolean(settings.seo_allow_indexing, false),
-        block_ai_crawlers: toBoolean(settings.seo_block_ai_crawlers, true),
-        block_social_bots: toBoolean(settings.seo_block_social_bots, false),
-        blocked_ai_agents: Array.isArray(settings.seo_blocked_ai_agents) ? settings.seo_blocked_ai_agents : [],
-        custom_rules: Array.isArray(settings.seo_custom_rules) ? settings.seo_custom_rules : [],
-        meta_noindex: toBoolean(settings.seo_meta_noindex, true),
-        meta_nofollow: toBoolean(settings.seo_meta_nofollow, false),
-        meta_noai: toBoolean(settings.seo_meta_noai, true),
-        sitemap_url: settings.seo_sitemap_url || ''
-      };
+      const seoLoaded = seoFromSettings(settings);
       setSeoSettings(seoLoaded);
       setLoaded({ general: generalLoaded, security: securityLoaded, rateLimit: rateLimitLoaded, analytics: analyticsLoaded, event: eventLoaded, seo: seoLoaded });
     }

@@ -19,6 +19,7 @@ import { Button, Input, Card, Loading, Notice } from '../../components/common';
 import { customerService } from '../../services/customer.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
+import { pickThemedLogo } from '../../utils/themedLogo';
 
 export const CustomerResetPasswordPage: React.FC = () => {
   const { t } = useTranslation();
@@ -41,7 +42,7 @@ export const CustomerResetPasswordPage: React.FC = () => {
   const companyName = settingsData?.branding_company_name?.trim() || 'PicPeak';
   const lightLogo = settingsData?.branding_logo_url?.trim();
   const darkLogo = settingsData?.branding_logo_url_dark?.trim();
-  const logoUrl = isDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+  const logoUrl = pickThemedLogo(isDark, lightLogo, darkLogo);
   const resolvedLogoUrl = logoUrl || '/picpeak-logo-transparent.png';
 
   // Pre-flight token validation. Same pattern as the invite page — if the

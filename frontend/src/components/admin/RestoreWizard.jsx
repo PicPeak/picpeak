@@ -30,6 +30,7 @@ import { Button, Card, Input, Loading } from '../common';
 import { api } from '../../config/api';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
+import { formatBytesShort } from '../../utils/fileSize';
 import {
   clearRestoreRun, isRunOf, readRestoreRun, rearmRestoreRedirect, rememberRestoreRun, RESTORE_RUN_GRACE_MS,
 } from '../../utils/restoreRelogin';
@@ -486,7 +487,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
                       {fmtDate(backup.created_at)} {t('backup.restore.backup.at')} {fmtTime(backup.created_at)}
                     </p>
                     <p className="text-sm text-muted">
-                      {t('backup.dashboard.backupType', { type: backup.backup_type })} • {formatBytes(backup.total_size || 0)}
+                      {t('backup.dashboard.backupType', { type: backup.backup_type })} • {formatBytesShort(backup.total_size || 0)}
                     </p>
                   </div>
                 </div>
@@ -705,14 +706,14 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
                 <div className="flex justify-between">
                   <span className="text-soft">{t('backup.restore.confirmation.spaceCheck.required')}:</span>
                   <span className="font-medium text-heading">
-                    {validationResult.spaceCheck.requiredFormatted || formatBytes(validationResult.spaceCheck.required || 0)}
+                    {validationResult.spaceCheck.requiredFormatted || formatBytesShort(validationResult.spaceCheck.required || 0)}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-soft">{t('backup.restore.confirmation.spaceCheck.available')}:</span>
                   <span className="font-medium text-heading">
                     {validationResult.spaceCheck.availableFormatted ||
-                     (validationResult.spaceCheck.available != null ? formatBytes(validationResult.spaceCheck.available) : t('common.unknown', 'Unknown'))}
+                     (validationResult.spaceCheck.available != null ? formatBytesShort(validationResult.spaceCheck.available) : t('common.unknown', 'Unknown'))}
                   </span>
                 </div>
                 {validationResult.spaceCheck.sufficient === false && (
@@ -1060,14 +1061,6 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
         )}
       </div>
     );
-  };
-
-  const formatBytes = (bytes) => {
-    if (!bytes) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
   };
 
   return (

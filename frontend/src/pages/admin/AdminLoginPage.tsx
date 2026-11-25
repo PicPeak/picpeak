@@ -18,6 +18,7 @@ import { resolveLoginLogoClasses } from '../../utils/loginLogoSize';
 import { buildResourceUrl } from '../../utils/url';
 import { api } from '../../config/api';
 import { takeRestoreRedirect, RESTORE_RESULT_PATH } from '../../utils/restoreRelogin';
+import { pickThemedLogo } from '../../utils/themedLogo';
 
 export const AdminLoginPage: React.FC = () => {
   const { t } = useTranslation();
@@ -67,7 +68,7 @@ export const AdminLoginPage: React.FC = () => {
   const lightLogo = settingsData?.branding_logo_url?.trim();
   const darkLogo = settingsData?.branding_logo_url_dark?.trim();
   const loginFrameEnabled = settingsData?.branding_login_logo_frame_enabled !== false;
-  const themedLogo = isDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+  const themedLogo = pickThemedLogo(isDark, lightLogo, darkLogo);
   const logoUrl = loginFrameEnabled ? (lightLogo || darkLogo) : themedLogo;
   const resolvedLogoUrl = logoUrl || '/picpeak-logo-transparent.png';
 

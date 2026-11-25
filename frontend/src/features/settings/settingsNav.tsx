@@ -242,13 +242,16 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
   const { t } = useTranslation();
   const { flags } = useFeatureFlags();
   const { hasAnyPermission, isSuperAdmin } = usePermissions();
+  const gatedOff = settingsTabGatedOff(flags);
 
+  // Tabs behind a feature flag are listed unconditionally and dropped below
+  // by settingsTabGatedOff, the one statement of that gating.
   const groups: SettingsNavGroup[] = [
     {
       label: t('settings.groups.general', 'General'),
       items: [
-        ...(flags.printSales ? [{key:'printSales' as const,label:t('printSales.adminTitle','Print sales'),icon:ImageIcon}] : []),
-        ...(flags.albumProducts ? [{key:'albumProducts' as const,label:t('albumProducts.catalogue','Product catalogue'),icon:ImageIcon}] : []),
+        { key: 'printSales',    label: t('printSales.adminTitle', 'Print sales'),          icon: ImageIcon },
+        { key: 'albumProducts', label: t('albumProducts.catalogue', 'Product catalogue'),  icon: ImageIcon },
         { key: 'features',   label: t('settings.features.title',   'Features'),       icon: ToggleRight },
         { key: 'general',    label: t('settings.general.title'),                       icon: Sliders },
         { key: 'events',     label: t('settings.events.title',     'Event Creation'),  icon: CalendarPlus },
@@ -262,9 +265,7 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
       // exactly as the sidebar entry did.
       label: t('settings.groups.people', 'People & access'),
       items: [
-        ...(flags.userManagement
-          ? [{ key: 'users' as const, label: t('navigation.users', 'Users'), icon: Users }]
-          : []),
+        { key: 'users', label: t('navigation.users', 'Users'), icon: Users },
       ],
     },
     {
@@ -277,9 +278,7 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
         { key: 'downloads',  label: t('settings.downloads.title',  'Download resolutions'), icon: DownloadIcon },
         { key: 'styling',    label: t('settings.styling.title',    'Custom CSS'),  icon: Code },
         { key: 'cms',        label: t('settings.cms.title',        'CMS Pages'),   icon: FileText },
-        ...(flags.slideshow
-          ? [{ key: 'slideshow' as const, label: t('settings.slideshow.title', 'Slideshow'), icon: MonitorPlay }]
-          : []),
+        { key: 'slideshow',  label: t('settings.slideshow.title',  'Slideshow'),   icon: MonitorPlay },
       ],
     },
     {
@@ -287,14 +286,12 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
       items: [
         { key: 'email',      label: t('settings.email.title',      'Email Settings'), icon: Mail },
         { key: 'moderation', label: t('settings.moderation.title', 'Moderation'),     icon: Flag },
-        ...(flags.transfers
-          ? [{
-            key: 'transfers' as const,
-            label: t('settings.transfers.title', 'PicTransfer'),
-            icon: SendIcon,
-            description: t('settings.transfers.description', 'Which file types clients may send you, and how large.'),
-          }]
-          : []),
+        {
+          key: 'transfers',
+          label: t('settings.transfers.title', 'PicTransfer'),
+          icon: SendIcon,
+          description: t('settings.transfers.description', 'Which file types clients may send you, and how large.'),
+        },
       ],
     },
     {
@@ -318,22 +315,14 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
       // CRM group. businessProfile is always relevant (the issuer block
       // feeds every PDF, gallery hero, footer, etc — even with zero
       // CRM features). The remaining items hide when their matching
-      // master flag is off.
+      // master flag is off (settingsTabGatedOff).
       label: t('settings.groups.crm', 'CRM-Settings'),
       items: [
         { key: 'businessProfile', label: t('settings.businessProfile.title', 'Business profile'), icon: Briefcase },
-        ...(flags.quotes || flags.bills || flags.contracts || flags.documents
-          ? [{ key: 'crm' as const,               label: t('settings.crm.title',               'CRM behaviour'),   icon: Receipt }]
-          : []),
-        ...(flags.contracts
-          ? [{ key: 'contracts' as const,         label: t('settings.contracts.title',         'Contracts'),       icon: ScrollText }]
-          : []),
-        ...(flags.accounting
-          ? [{ key: 'accounting' as const,        label: t('settings.accounting.title',        'Accounting'),      icon: Landmark }]
-          : []),
-        ...(flags.whatsapp
-          ? [{ key: 'whatsapp' as const,          label: t('settings.whatsapp.title',          'WhatsApp'),        icon: Smartphone }]
-          : []),
+        { key: 'crm',             label: t('settings.crm.title',             'CRM behaviour'),    icon: Receipt },
+        { key: 'contracts',       label: t('settings.contracts.title',       'Contracts'),        icon: ScrollText },
+        { key: 'accounting',      label: t('settings.accounting.title',      'Accounting'),       icon: Landmark },
+        { key: 'whatsapp',        label: t('settings.whatsapp.title',        'WhatsApp'),         icon: Smartphone },
       ],
     },
     {
@@ -362,7 +351,7 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
     .map((g) => ({
       ...g,
       items: g.items
-        .filter((i) => hasAnyPermission(SETTINGS_TAB_PERMISSIONS[i.key]))
+        .filter((i) => !gatedOff[i.key] && hasAnyPermission(SETTINGS_TAB_PERMISSIONS[i.key]))
         // Search terms are attached here rather than written into every item
         // literal above: they are search-only metadata, and threading them
         // through 35 declarations would bury the navigation in them.
