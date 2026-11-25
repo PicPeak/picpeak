@@ -581,23 +581,6 @@
   .dark .chip {
     @apply bg-neutral-700 text-neutral-200 border-neutral-600;
   }
-
-  /* Alert/info boxes for admin dark mode */
-  .dark .alert-info {
-    @apply bg-blue-900/30 border-blue-800 text-blue-200;
-  }
-
-  .dark .alert-warning {
-    @apply bg-amber-900/30 border-amber-800 text-amber-200;
-  }
-
-  .dark .alert-success {
-    @apply bg-green-900/30 border-green-800 text-green-200;
-  }
-
-  .dark .alert-danger {
-    @apply bg-red-900/30 border-red-800 text-red-200;
-  }
 }
 
 @layer utilities {

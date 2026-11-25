@@ -11,8 +11,6 @@ interface StoryJustifiedGridProps {
   onToggleFavorite: (id: number) => void;
   onPhotoClick: (photo: Photo) => void;
   slug: string;
-  allowDownloads?: boolean;
-  useEnhancedProtection?: boolean;
   isSelectionMode?: boolean;
   selectedPhotos?: Set<number>;
   onPhotoSelect?: (id: number) => void;
@@ -49,8 +47,6 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
   onToggleFavorite,
   onPhotoClick,
   slug,
-  allowDownloads = true,
-  useEnhancedProtection = false,
   isSelectionMode = false,
   selectedPhotos,
   onPhotoSelect,
@@ -144,9 +140,6 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
               onToggleFavorite={onToggleFavorite}
               onClick={() => onPhotoClick(photo)}
               slug={slug}
-              galleryId={id}
-              allowDownloads={allowDownloads}
-              useEnhancedProtection={useEnhancedProtection}
               fit={clamped ? 'contain' : 'cover'}
               isSelectionMode={isSelectionMode}
               isSelected={selectedPhotos?.has(photo.id) ?? false}

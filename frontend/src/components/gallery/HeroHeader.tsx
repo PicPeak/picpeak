@@ -25,9 +25,6 @@ interface HeroHeaderProps {
   heroLogoSize?: 'small' | 'medium' | 'large' | 'xlarge';
   heroLogoPosition?: 'top' | 'center' | 'bottom';
   dividerStyle?: HeroDividerStyle;
-  allowDownloads?: boolean;
-  useEnhancedProtection?: boolean;
-  onScrollToContent?: () => void;
   // Hero image anchor position (#162) – keyword or "X% Y%" focal point
   heroImageAnchor?: string;
 }
@@ -44,7 +41,6 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   heroLogoSize = 'medium',
   heroLogoPosition = 'top',
   dividerStyle = 'wave',
-  onScrollToContent,
   heroImageAnchor = 'center'
 }) => {
   const { t } = useTranslation();
@@ -86,20 +82,10 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
     }
   };
 
+  // Scroll down by the hero section's height.
   const handleScrollToContent = useCallback(() => {
-    if (onScrollToContent) {
-      onScrollToContent();
-    } else {
-      // Default: scroll to gallery grid section
-      const gridSection = document.getElementById('gallery-grid-section');
-      if (gridSection) {
-        gridSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else {
-        // Fallback: scroll down by hero section height
-        window.scrollBy({ top: window.innerHeight * 0.9, behavior: 'smooth' });
-      }
-    }
-  }, [onScrollToContent]);
+    window.scrollBy({ top: window.innerHeight * 0.9, behavior: 'smooth' });
+  }, []);
 
   // If an override is provided, always use it and skip initialization logic
   useEffect(() => {

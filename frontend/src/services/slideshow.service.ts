@@ -37,7 +37,6 @@ export const SLIDESHOW_ORDERS: SlideshowOrder[] = ['chronological', 'random'];
 
 export const SLIDESHOW_TRANSITIONS: SlideshowTransition[] = ['crossfade', 'cut', 'slide', 'kenburns', 'dipwhite', 'dipblack'];
 export const SLIDESHOW_COLORFILTERS: SlideshowColorFilter[] = ['none', 'bw', 'sepia', 'warm', 'cool', 'vignette'];
-export const SLIDESHOW_WATERMARK_SOURCES: SlideshowWatermarkSource[] = ['logo', 'logo_dark', 'favicon', 'event'];
 export const SLIDESHOW_WATERMARK_POSITIONS: SlideshowWatermarkPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 
 // Per-event editable style (the override). The picpeak-wide DEFAULT for these

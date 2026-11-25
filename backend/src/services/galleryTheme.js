@@ -20,9 +20,10 @@ const DEFAULT_HEADER_STYLE = 'standard';
 const DEFAULT_HERO_DIVIDER_STYLE = 'wave';
 
 /**
- * Whether the gallery uses its own theme. A row read before migration 259
- * (no custom_theme_enabled key) keeps the old rule: any stored theme or CSS
- * template is the gallery's own.
+ * Whether the gallery uses its own theme. Every row has custom_theme_enabled
+ * since migration 259; a caller whose select leaves the column out (no key
+ * on the row) keeps the old rule: any stored theme or CSS template is the
+ * gallery's own.
  */
 function usesCustomTheme(event) {
   if (!event) return false;

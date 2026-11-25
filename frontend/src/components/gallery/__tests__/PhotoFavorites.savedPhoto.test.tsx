@@ -23,11 +23,9 @@ vi.mock('../../../services/feedback.service', () => ({
   feedbackService: { submitFeedback: (...args: unknown[]) => submitFeedback(...args) },
 }));
 
-import { PhotoLikes } from '../PhotoLikes';
 import { PhotoFavorites } from '../PhotoFavorites';
 
 describe.each([
-  ['PhotoLikes', PhotoLikes, { likeCount: 0, isLiked: false }],
   ['PhotoFavorites', PhotoFavorites, { favoriteCount: 0, isFavorited: false }],
 ] as const)('%s', (_name, Component, state) => {
   it('reports the photo it was submitted for, not the one shown when the answer arrives', async () => {

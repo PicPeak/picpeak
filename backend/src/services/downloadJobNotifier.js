@@ -43,7 +43,7 @@ const HOUR_MS = 60 * 60 * 1000;
 // Carried on the gallery link; the gallery reads it and offers the job.
 const LINK_PARAM = 'download_job';
 // pg_advisory_xact_lock class for the per-address cap. 1074 and 1075 are
-// taken, and 1076 by the guest-upload notice in the open PR 1949.
+// taken, and 1076 by the guest-upload bell entry (uploadReviewService.js).
 const ADDRESS_LOCK = 1077;
 
 const normalise = (email) => String(email || '').trim().toLowerCase();

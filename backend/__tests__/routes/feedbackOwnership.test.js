@@ -1,8 +1,7 @@
 /**
- * GHSA-2qc2 / GHSA-32h4 / GHSA-3335 — feedback moderation, deletion, and the
- * pending-moderation list are by-feedback-id (or global) and lacked ownership
- * scoping, so a restricted editor could act on / enumerate feedback for events
- * it does not own. super_admin keeps global access.
+ * GHSA-2qc2 / GHSA-32h4 — feedback moderation and deletion are by-feedback-id
+ * and lacked ownership scoping, so a restricted editor could act on feedback
+ * for events it does not own. super_admin keeps global access.
  */
 const path = require('path');
 const fs = require('fs');
@@ -86,15 +85,7 @@ describe('feedback ownership scoping', () => {
     expect(await db('photo_feedback').where({ id: foreignFeedbackId }).first()).toBeDefined();
   });
 
-  it('editor sees no foreign feedback in pending-moderation', async () => {
-    const res = await auth(request(app).get('/api/admin/feedback/feedback/pending-moderation'), editorTok);
-    expect(res.status).toBe(200);
-    expect(res.body.find((f) => f.id === foreignFeedbackId)).toBeUndefined();
-  });
-
-  it('super_admin CAN moderate and see it', async () => {
-    const pending = await auth(request(app).get('/api/admin/feedback/feedback/pending-moderation'), superTok);
-    expect(pending.body.find((f) => f.id === foreignFeedbackId)).toBeDefined();
+  it('super_admin CAN moderate it', async () => {
     const res = await auth(request(app).put(`/api/admin/feedback/feedback/${foreignFeedbackId}/approve`), superTok);
     expect(res.status).toBe(200);
   });

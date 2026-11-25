@@ -19,10 +19,7 @@ interface StoryPhotoCardProps {
   onToggleFavorite: (id: number) => void;
   onClick?: () => void;
   slug: string;
-  allowDownloads?: boolean;
-  useEnhancedProtection?: boolean;
   featured?: boolean;
-  galleryId: string;
   /**
    * Issue 1709: 'contain' when the box could not take the photo's own aspect
    * ratio (justified-layout clamps a lone very wide or very tall row), so the
@@ -71,10 +68,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   caption = 'none',
   style,
   revealed,
-  galleryId: _galleryId
 }) => {
-  // galleryId is kept for potential PhotoSwipe integration but not currently used
-  void _galleryId;
   const [revealedBefore] = useState(() => revealed?.has(photo.id) ?? false);
   const [isLoaded, setIsLoaded] = useState(revealedBefore);
 

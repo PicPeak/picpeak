@@ -26,30 +26,17 @@ export const useGalleryInfo = (slug?: string, token?: string, enabled: boolean =
 
 export const useGalleryPhotos = (
   slug: string,
-  filter?: 'liked' | 'favorited' | 'commented' | 'rated' | 'all',
-  guestId?: string,
   enabled: boolean = true,
   accessScope: string = 'guest'
 ) => {
   return useQuery({
-    queryKey: ['gallery-photos', slug, filter, guestId, accessScope],
-    // Pass guestId so backend can filter per-guest views when needed
-    queryFn: ({ signal }) => galleryService.getGalleryPhotos(slug, filter, guestId, signal),
+    queryKey: ['gallery-photos', slug, accessScope],
+    queryFn: ({ signal }) => galleryService.getGalleryPhotos(slug, signal),
     enabled,
     retry: 1,
     staleTime: 5 * 60 * 1000, // 5 minutes
     // Add a small delay to ensure auth token is properly set
     retryDelay: 100,
-  });
-};
-
-export const useGalleryStats = (slug: string, enabled: boolean = true) => {
-  return useQuery({
-    queryKey: ['gallery-stats', slug],
-    queryFn: () => galleryService.getGalleryStats(slug),
-    enabled,
-    retry: 1,
-    staleTime: 60 * 1000, // 1 minute
   });
 };
 

@@ -1,7 +1,7 @@
 /**
  * The grid on its own (no gallery state handed in): leaving selection mode
  * through the layout's own control drops the selection, as GalleryView's
- * toggle and the classic PhotoGrid do.
+ * toggle does.
  */
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';

@@ -75,21 +75,6 @@ export const clearGalleryToken = (slug?: string | null) => {
   }
 };
 
-export const clearAllGalleryTokens = () => {
-  const storage = getSessionStorage();
-  if (!storage) return;
-
-  const keysToRemove: string[] = [];
-  for (let i = 0; i < storage.length; i += 1) {
-    const key = storage.key(i);
-    if (key && key.startsWith(TOKEN_STORAGE_PREFIX)) {
-      keysToRemove.push(key);
-    }
-  }
-
-  keysToRemove.forEach((key) => storage.removeItem(key));
-};
-
 export const resolveSlugFromRequestUrl = (url?: string | null): string | null => {
   if (!url) return null;
   let pathname = url;

@@ -9,7 +9,6 @@ export type IdentityMode = 'simple' | 'guest' | 'shared';
 // Emoji reactions (#839): the fixed curated set. Mirrored in
 // backend/src/constants/reactions.js — update both together.
 export const REACTION_EMOJIS = ['❤️', '😂', '😍', '👏', '🎉'] as const;
-export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
 
 // Colour labels (#1044): Lightroom's colour set, so a client's proofing
 // selection round-trips into the photographer's catalogue through xmp:Label.
@@ -356,11 +355,6 @@ class FeedbackService {
     return response.data;
   }
 
-  async getPendingModeration() {
-    const response = await api.get('/admin/feedback/feedback/pending-moderation');
-    return response.data;
-  }
-
   // Word filter management
   async getWordFilters() {
     const response = await api.get('/admin/feedback/word-filters');
@@ -452,11 +446,6 @@ class FeedbackService {
   }): Promise<SelectionSubmission> {
     const response = await api.post(`/gallery/${slug}/selection/submit`, { kind, note: note || undefined, ...identity });
     return response.data.submission;
-  }
-
-  async getGalleryFeedbackSummary(slug: string) {
-    const response = await api.get(`/gallery/${slug}/feedback-summary`);
-    return response.data;
   }
 
   async getMyFeedback(slug: string) {

@@ -24,7 +24,6 @@ export { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 export { AdminAuthenticatedVideo } from './AdminAuthenticatedVideo';
 export { ThemeCustomizerEnhanced } from './ThemeCustomizerEnhanced';
 export { ThemeDisplay } from './ThemeDisplay';
-export { ThemeEditorModal } from './ThemeEditorModal';
 export { HeroPhotoSelector } from './HeroPhotoSelector';
 export { FocalPointPicker } from './FocalPointPicker';
 export { PhotoUploadModal } from './PhotoUploadModal';

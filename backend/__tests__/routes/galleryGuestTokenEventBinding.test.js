@@ -98,6 +98,7 @@ describe('guest token event binding', () => {
     app.use(cookieParser());
     app.use('/api/gallery', require('../../src/routes/gallery'));
     app.use('/api/gallery', require('../../src/routes/galleryFeedback'));
+    app.use('/api/gallery', require('../../src/routes/galleryGuests'));
   }, 180000);
 
   afterAll(async () => { if (cleanup) await cleanup(); });
@@ -150,5 +151,43 @@ describe('guest token event binding', () => {
     const rows = await db('photo_feedback').where({ photo_id: photoA, feedback_type: 'like' });
     expect(rows).toHaveLength(1);
     expect(rows[0].guest_id).toBe(guestA);
+  });
+
+  // The guest routes rely on resolveGuest dropping a guest of another
+  // gallery; these pin that for the routes that act on the guest. Forget-me
+  // runs last: had it gone through, the cases after it would see no guest.
+  it('issues no download ticket for the foreign guest in another gallery', async () => {
+    const res = await request(app)
+      .post(`/api/gallery/${SLUG_B}/guest/download-ticket`)
+      .set('Authorization', `Bearer ${galleryToken(eventB, SLUG_B)}`)
+      .set('x-guest-token', guestTokenA);
+
+    expect(res.status).toBe(403);
+    expect(res.body.ticket).toBeUndefined();
+  });
+
+  it('still issues the download ticket in the guest\'s own gallery', async () => {
+    const res = await request(app)
+      .post(`/api/gallery/${SLUG_A}/guest/download-ticket`)
+      .set('Authorization', `Bearer ${galleryToken(eventA, SLUG_A)}`)
+      .set('x-guest-token', guestTokenA);
+
+    expect(res.status).toBe(200);
+    expect(typeof res.body.ticket).toBe('string');
+  });
+
+  it('does not forget the foreign guest through another gallery', async () => {
+    const res = await request(app)
+      .delete(`/api/gallery/${SLUG_B}/guest/me`)
+      .set('Authorization', `Bearer ${galleryToken(eventB, SLUG_B)}`)
+      .set('x-guest-token', guestTokenA);
+
+    expect(res.status).toBe(401);
+    const guest = await db('gallery_guests').where({ id: guestA }).first();
+    expect(Boolean(guest.is_deleted)).toBe(false);
+    expect(guest.name).toBe('Guest Of A');
+    expect(guest.email).toBe('guest-a@example.com');
+    const ownLike = await db('photo_feedback').where({ photo_id: photoA, feedback_type: 'like' }).first();
+    expect(ownLike.guest_id).toBe(guestA);
   });
 });

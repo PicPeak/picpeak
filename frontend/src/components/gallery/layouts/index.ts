@@ -6,5 +6,3 @@ export { MosaicGalleryLayout } from './MosaicGalleryLayout';
 export { GalleryPremiumLayout } from './GalleryPremiumLayout';
 export { GalleryStoryLayout } from './GalleryStoryLayout';
 export type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
-// Note: HeroGalleryLayout has been deprecated in favor of HeroHeader component
-// which can be used with any layout via the headerStyle setting

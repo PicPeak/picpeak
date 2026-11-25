@@ -94,13 +94,6 @@
   }
 }
 
-.gallery-premium-hero-location {
-  font-size: 0.875rem;
-  font-weight: 300;
-  letter-spacing: 0.25em;
-  opacity: 0.9;
-}
-
 /* Sticky Navigation */
 .gallery-premium-nav {
   position: sticky;
@@ -520,22 +513,6 @@
 
 .gallery-premium-footer p:first-child {
   margin-bottom: 0.5rem;
-}
-
-/* Animation */
-@keyframes galleryPremiumFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.gallery-premium-animate-in {
-  animation: galleryPremiumFadeIn 0.4s ease forwards;
 }
 
 /* Emoji reaction bar over the lightbox (#839). Sits above YARL's container

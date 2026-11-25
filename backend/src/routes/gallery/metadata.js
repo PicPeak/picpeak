@@ -15,13 +15,9 @@ const { handleAsync, errorResponse } = require('../../utils/routeHelpers');
 const { isGalleryHidden } = require('../../utils/revealMode');
 const { NotFoundError } = require('../../utils/errors');
 const { toDateOnly } = require('../../utils/dateOnly');
-const { hasColumnCached } = require('../../utils/schemaCache');
 const { languageSettingsOf, publicTranslationsFor } = require('../../services/contentTranslations');
 async function checkSlugRedirect(slug) {
   try {
-    const hasTable = await db.schema.hasTable('slug_redirects');
-    if (!hasTable) return null;
-
     const redirect = await db('slug_redirects')
       .where({ old_slug: slug })
       .first();
@@ -221,8 +217,7 @@ router.get('/:slug/info', noStoreCache, async (req, res) => {
         'info_mode',
         'info_markdown',
         // Multilingual texts (issue 2550, migration 373).
-        ...(await hasColumnCached('events', 'text_language_mode')
-          ? ['text_language_mode', 'text_primary_language', 'text_secondary_language'] : [])
+        'text_language_mode', 'text_primary_language', 'text_secondary_language'
       )
       .first();
 
@@ -334,17 +329,5 @@ router.get('/:slug/info', noStoreCache, async (req, res) => {
     errorResponse(res, error, 500, 'Failed to fetch gallery info');
   }
 });
-
-// ---------------------------------------------------------------------------
-// Live Slideshow ("Diashow") — token-only fullscreen kiosk surface
-// (migration 138). The token in the URL IS the secret (no gallery password),
-// so these routes are unauthenticated except for the token match itself. The
-// slideshow shows ALL public/visible, finished photos — exactly the guest
-// set — so once /session mints a short-lived `accessLevel:'slideshow'` JWT,
-// the page reuses the normal /photos + image endpoints unchanged.
-// ---------------------------------------------------------------------------
-
-// Photos a slideshow may display: published, finished, non-hidden. Mirrors the
-// guest filter in GET /:slug/photos so the live count matches the rendered set.
 
 module.exports = router;

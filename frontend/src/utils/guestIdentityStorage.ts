@@ -341,25 +341,6 @@ export function clearGuestIdentity(slug: string): void {
   }
 }
 
-/**
- * Extract the gallery slug from a request URL path like "/gallery/:slug/...".
- * Matches the axios interceptor logic in api.ts.
- */
-export function extractGuestSlugFromUrl(url: string): string | null {
-  if (!url) return null;
-  const pathOnly = url.startsWith('http://') || url.startsWith('https://')
-    ? (() => {
-        try {
-          return new URL(url).pathname;
-        } catch {
-          return url;
-        }
-      })()
-    : url;
-  const match = pathOnly.match(/\/gallery\/([^/?#]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
 function extractSlugFromLocation(): string | null {
   if (!isBrowser) return null;
   const match = window.location.pathname.match(/\/gallery\/([^/?#]+)/);

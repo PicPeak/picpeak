@@ -116,11 +116,6 @@ import { GalleryWalkthroughHost } from './walkthrough/GalleryWalkthroughHost';
 import { WalkthroughHelpButton } from './walkthrough/WalkthroughHelpButton';
 import { isAdminPreviewUrl, useGalleryWalkthrough } from './walkthrough/useGalleryWalkthrough';
 import { buildWalkthroughSteps, layoutFeedbackActions, type WalkthroughScope } from './walkthrough/walkthroughSteps';
-import { safeGetItem, safeSetItem } from '../../utils/safeStorage';
-
-// Guest id for this page view when localStorage is unavailable, so a remount
-// does not mint a second guest.
-let pageViewGuestId: string | null = null;
 
 interface GalleryViewProps {
   slug: string;
@@ -306,25 +301,11 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
   };
   const [mediaFilter, setMediaFilter] = useState<'all' | 'photo' | 'video'>('all');
-  const [guestId, setGuestId] = useState<string>('');
   const [staticHeroPhoto, setStaticHeroPhoto] = useState<Photo | null>(null);
 
-  // Generate a unique guest ID for this session
-  useEffect(() => {
-    // Use existing guest ID from localStorage or generate new one. Without
-    // usable storage the module-level copy keeps it stable for this page view.
-    let storedGuestId = safeGetItem('local', 'gallery_guest_id') || pageViewGuestId;
-    if (!storedGuestId) {
-      storedGuestId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      safeSetItem('local', 'gallery_guest_id', storedGuestId);
-    }
-    pageViewGuestId = storedGuestId;
-    setGuestId(storedGuestId);
-  }, []);
-  
   // Fetch photos WITHOUT filter (always get all photos, filter on frontend)
   // This ensures counts are always calculated from the full dataset
-  const { data: galleryData, isLoading, error, refetch } = useGalleryPhotos(slug, 'all', guestId, !isSwitchingClientMode, accessScope);
+  const { data: galleryData, isLoading, error, refetch } = useGalleryPhotos(slug, !isSwitchingClientMode, accessScope);
   // Multilingual texts (issue 2550): every category name and chapter text
   // below is the one this visitor reads, resolved once here; the title and
   // the welcome message are resolved next to the props that carry them.
@@ -2163,8 +2144,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onOpen={openFolderBySlug}
           compact={compact}
           slug={slug}
-          useEnhancedProtection={protectionLevel !== 'basic'}
-          allowDownloads={allowDownloads}
         />
       )}
     </div>

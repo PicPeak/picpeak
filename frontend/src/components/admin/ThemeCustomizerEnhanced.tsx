@@ -1,12 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Palette, RotateCcw } from 'lucide-react';
-import { Button } from '../common';
 import { ThemeConfig, GALLERY_THEME_PRESETS, GalleryLayoutType } from '../../types/theme.types';
 import type { EnabledTemplate } from '../../services/cssTemplates.service';
 import { settingsService } from '../../services/settings.service';
 import { fontsService, type FontDefinition } from '../../services/fonts.service';
 import { useQuery } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
 import { ThemePresetsCard } from './theme-customizer/ThemePresetsCard';
 import { GalleryLayoutCard } from './theme-customizer/GalleryLayoutCard';
 import { HeaderStyleCard } from './theme-customizer/HeaderStyleCard';
@@ -23,10 +20,6 @@ interface ThemeCustomizerEnhancedProps {
   onChange: (theme: ThemeConfig) => void;
   presetName?: string;
   onPresetChange?: (presetName: string) => void;
-  showGalleryLayouts?: boolean;
-  hideActions?: boolean;
-  onApply?: (theme: ThemeConfig, metadata: { presetName: string }) => Promise<void> | void;
-  isApplying?: boolean;
   // CSS Template props
   cssTemplates?: EnabledTemplate[];
   cssTemplateId?: number | null;
@@ -65,10 +58,6 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
   onChange,
   presetName = 'default',
   onPresetChange,
-  showGalleryLayouts = true,
-  hideActions = false,
-  onApply,
-  isApplying = false,
   cssTemplates,
   cssTemplateId,
   onCssTemplateChange,
@@ -81,7 +70,6 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
   onColorFocus,
   slotAfterColors,
 }) => {
-  const { t } = useTranslation();
   // A force lock (instance-wide light/dark) overrides the per-theme color
   // mode. On the Branding page (where the Force control lives —
   // onForceColorModeChange is provided) we hide only the now-redundant
@@ -171,42 +159,6 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
     }
   };
 
-  const handleApply = async () => {
-    const themeWithCss = { ...localTheme, customCss };
-    onChange(themeWithCss);
-
-    if (onApply) {
-      await onApply(themeWithCss, { presetName: selectedPreset });
-    }
-  };
-
-  const handleReset = () => {
-    const defaultPreset = GALLERY_THEME_PRESETS['default'];
-    if (defaultPreset) {
-      setSelectedPreset('default');
-      setLocalTheme(defaultPreset.config);
-      setCustomCss('');
-      onChange(defaultPreset.config);
-      if (onPresetChange) {
-        onPresetChange('default');
-      }
-    }
-  };
-
-  // const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  //   const file = e.target.files?.[0];
-  //   if (file) {
-  //     try {
-  //       const logoUrl = await settingsService.uploadLogo(file);
-  //       handleChange('logoUrl', logoUrl);
-  //       toast.success('Logo uploaded successfully');
-  //     } catch (error) {
-  //       console.error('Failed to upload logo:', error);
-  //       toast.error('Failed to upload logo');
-  //     }
-  //   }
-  // };
-
   const updateGallerySettings = (key: string, value: any) => {
     const updatedSettings = {
       ...localTheme.gallerySettings,
@@ -264,7 +216,13 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
       <ThemePresetsCard
         selectedPreset={selectedPreset}
         handlePresetSelect={handlePresetSelect}
-        showGalleryLayouts={showGalleryLayouts}
+      />
+
+      {/* Gallery Layout */}
+      <GalleryLayoutCard
+        localTheme={localTheme}
+        handleChange={handleChange}
+        updateGallerySettings={updateGallerySettings}
         isBetaLayout={isBetaLayout}
         isThumbnailTooSmall={isThumbnailTooSmall}
         thumbnailWidth={thumbnailWidth}
@@ -272,29 +230,11 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
         minRecommendedThumbnailSize={MIN_RECOMMENDED_THUMBNAIL_SIZE}
       />
 
-      {/* Gallery Layout */}
-      {showGalleryLayouts && (
-        <GalleryLayoutCard
-          localTheme={localTheme}
-          handleChange={handleChange}
-          updateGallerySettings={updateGallerySettings}
-          isBetaLayout={isBetaLayout}
-          isThumbnailTooSmall={isThumbnailTooSmall}
-          thumbnailWidth={thumbnailWidth}
-          thumbnailHeight={thumbnailHeight}
-          minRecommendedThumbnailSize={MIN_RECOMMENDED_THUMBNAIL_SIZE}
-        />
-      )}
-
       {/* Header Style - Decoupled from Layout */}
-      {showGalleryLayouts && (
-        <HeaderStyleCard localTheme={localTheme} handleChange={handleChange} />
-      )}
+      <HeaderStyleCard localTheme={localTheme} handleChange={handleChange} />
 
       {/* Controls Style */}
-      {showGalleryLayouts && (
-        <ControlsStyleCard localTheme={localTheme} handleChange={handleChange} />
-      )}
+      <ControlsStyleCard localTheme={localTheme} handleChange={handleChange} />
 
       {/* Color Customization */}
       <ColorCustomizationCard
@@ -341,27 +281,6 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
         customCss={customCss}
         onCustomCssChange={handleCustomCssChange}
       />
-
-      {/* Actions */}
-      {!hideActions && (
-        <div className="flex items-center justify-end gap-3">
-          <Button
-            variant="outline"
-            leftIcon={<RotateCcw className="w-4 h-4" />}
-            onClick={handleReset}
-          >
-            {t('branding.resetToDefault')}
-          </Button>
-          <Button
-            variant="primary"
-            leftIcon={<Palette className="w-4 h-4" />}
-            onClick={handleApply}
-            disabled={isApplying}
-          >
-            {isApplying ? t('common.applying', 'Applying...') : t('branding.applyTheme')}
-          </Button>
-        </div>
-      )}
     </div>
   );
 };

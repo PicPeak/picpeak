@@ -40,9 +40,10 @@ function feedbackWriteRefusal(req, settings, feedbackType) {
 
   // In guest identity mode, a valid guest token is required. The server
   // never trusts guest_name/guest_email from the body in this mode — it
-  // reads them from the verified token via req.guest.
+  // reads them from the verified token via req.guest (resolveGuest has
+  // already dropped a guest of another gallery).
   if (settings.identity_mode === 'guest') {
-    if (!req.guest || req.guest.eventId !== req.event.id) {
+    if (!req.guest) {
       return { status: 401, body: { error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' } };
     }
   }
@@ -404,9 +405,6 @@ router.post('/:slug/photos/:photoId/feedback',
       
       // For comments, check moderation
       if (feedbackType === 'comment') {
-        // Check user reputation
-        const reputation = await feedbackModeration.checkUserReputation(guestIdentifier, event.id);
-        
         // Moderate the comment
         const moderationResult = await feedbackModeration.moderateText(req.body.comment_text);
         
@@ -432,13 +430,8 @@ router.post('/:slug/photos/:photoId/feedback',
             reason: moderationResult.reason,
             violations: moderationResult.violations
           });
-        } else if (reputation.autoApprove) {
-          // Trusted user, auto-approve
-          feedbackData.is_approved = true;
-        } else if (settings.moderate_comments) {
-          // Default moderation setting
-          feedbackData.is_approved = false;
         }
+        // Otherwise feedbackService applies the event's moderate_comments.
       }
       
       // A decision's reason (issue 744) is read only by the photographer, so

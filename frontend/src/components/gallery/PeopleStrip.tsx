@@ -133,13 +133,14 @@ interface PeopleStripProps {
   /** Persisted per-slug so a guest who dismisses it stays dismissed. */
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
-  /** Avatars shown inline; the rest live behind "Show all". */
-  maxInline?: number;
 }
+
+/** Avatars shown inline; the rest live behind "Show all". */
+const MAX_INLINE = 12;
 
 export const PeopleStrip: React.FC<PeopleStripProps> = ({
   people, photos, slug, selectedPersonIds, onToggle, onShowAll,
-  scan, collapsed, onCollapsedChange, maxInline = 12,
+  scan, collapsed, onCollapsedChange,
 }) => {
   const { t } = useTranslation();
   const [avatarSize] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 640 ? 56 : 64));
@@ -174,7 +175,7 @@ export const PeopleStrip: React.FC<PeopleStripProps> = ({
     );
   }
 
-  const inline = people.slice(0, maxInline);
+  const inline = people.slice(0, MAX_INLINE);
   const hasMore = people.length > inline.length;
 
   return (

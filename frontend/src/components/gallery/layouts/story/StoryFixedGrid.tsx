@@ -67,8 +67,6 @@ interface StoryFixedGridProps {
   onToggleFavorite: (id: number) => void;
   onPhotoClick: (photo: Photo) => void;
   slug: string;
-  allowDownloads?: boolean;
-  useEnhancedProtection?: boolean;
   isSelectionMode?: boolean;
   selectedPhotos: Set<number>;
   onPhotoSelect?: (id: number) => void;
@@ -92,8 +90,6 @@ export const StoryFixedGrid: React.FC<StoryFixedGridProps> = ({
   onToggleFavorite,
   onPhotoClick,
   slug,
-  allowDownloads,
-  useEnhancedProtection,
   isSelectionMode,
   selectedPhotos,
   onPhotoSelect,
@@ -167,9 +163,6 @@ export const StoryFixedGrid: React.FC<StoryFixedGridProps> = ({
             onToggleFavorite={onToggleFavorite}
             onClick={() => onPhotoClick(photo)}
             slug={slug}
-            galleryId={id}
-            allowDownloads={allowDownloads}
-            useEnhancedProtection={useEnhancedProtection}
             // Mark first photo in each grid as featured, and every highlight (issue 2549)
             featured={storyFeatured(photo, index, featured)}
             isSelectionMode={isSelectionMode}

@@ -44,14 +44,7 @@ const parseSettingValue = (rawValue) => {
     }
   }
 
-  if (typeof rawValue === 'object') {
-    try {
-      return parseSettingValue(JSON.parse(JSON.stringify(rawValue)));
-    } catch {
-      return null;
-    }
-  }
-
+  // Objects and arrays are not a setting value.
   return null;
 };
 

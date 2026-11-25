@@ -494,7 +494,6 @@
       "route_signatures": [
         "GET /",
         "GET /enabled",
-        "GET /:slotNumber",
         "PUT /:slotNumber",
         "POST /:slotNumber/reset"
       ]
@@ -1005,7 +1004,6 @@
         "DELETE /feedback/:feedbackId",
         "GET /events/:eventId/feedback-analytics",
         "GET /events/:eventId/feedback/export",
-        "GET /feedback/pending-moderation",
         "GET /word-filters",
         "POST /word-filters",
         "PUT /word-filters/:id",

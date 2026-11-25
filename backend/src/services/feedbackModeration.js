@@ -254,69 +254,6 @@ class FeedbackModerationService {
       throw error;
     }
   }
-
-  /**
-   * Sanitize text for display (remove but don't reject)
-   */
-  sanitizeText(text) {
-    // Remove excessive whitespace
-    text = text.replace(/\s+/g, ' ').trim();
-    
-    // Remove zero-width characters
-    text = text.replace(/[\u200B-\u200D\uFEFF]/g, '');
-    
-    // Limit consecutive special characters
-    text = text.replace(/([!?.]){3,}/g, '$1$1');
-    
-    return text;
-  }
-
-  /**
-   * Check if user should be rate limited based on previous violations
-   */
-  async checkUserReputation(guestIdentifier, eventId) {
-    try {
-      // Count recent violations
-      const recentViolations = await db('photo_feedback')
-        .where('guest_identifier', guestIdentifier)
-        .where('event_id', eventId)
-        .where('is_hidden', true)
-        .where('created_at', '>', new Date(Date.now() - 24 * 60 * 60 * 1000)) // Last 24 hours
-        .count('id as count')
-        .first();
-      
-      // If user has multiple violations, they might be problematic
-      if (recentViolations && recentViolations.count > 3) {
-        return {
-          trusted: false,
-          reason: 'Multiple recent violations'
-        };
-      }
-      
-      // Check total approved comments
-      const approvedComments = await db('photo_feedback')
-        .where('guest_identifier', guestIdentifier)
-        .where('event_id', eventId)
-        .where('feedback_type', 'comment')
-        .where('is_approved', true)
-        .where('is_hidden', false)
-        .count('id as count')
-        .first();
-      
-      // User with many approved comments is trusted
-      if (approvedComments && approvedComments.count > 10) {
-        return {
-          trusted: true,
-          autoApprove: true
-        };
-      }
-      
-      return { trusted: true };
-    } catch (error) {
-      logger.error('Error checking user reputation:', error);
-      return { trusted: true }; // Default to trusting in case of error
-    }
-  }
 }
 
 module.exports = new FeedbackModerationService();

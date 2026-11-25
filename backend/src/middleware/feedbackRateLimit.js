@@ -1,4 +1,3 @@
-const cleanupTimers = new Set();
 const crypto = require('crypto');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
@@ -174,71 +173,9 @@ function feedbackRateLimit(actionType, count = 1) {
   };
 }
 
-/**
- * IP-based rate limiting for more strict control
- */
-function strictRateLimit(options = {}) {
-  const {
-    windowMs = 15 * 60 * 1000, // 15 minutes
-    max = 100, // limit each IP to 100 requests per windowMs
-    message = 'Too many requests from this IP, please try again later.',
-    skipSuccessfulRequests = false
-  } = options;
-  
-  const store = new Map();
-  
-  // Clean up old entries periodically
-  const cleanupTimer = setInterval(() => {
-    const now = Date.now();
-    for (const [key, data] of store.entries()) {
-      if (data.resetTime < now) {
-        store.delete(key);
-      }
-    }
-  }, windowMs);
-  cleanupTimer.unref();
-  cleanupTimers.add(cleanupTimer);
-  
-  return (req, res, next) => {
-    // An IPv6 /64 is one client; see utils/rateLimitKey.js.
-    const ip = rateLimitKey(req) || req.connection?.remoteAddress;
-    const now = Date.now();
-    const resetTime = now + windowMs;
-    
-    let data = store.get(ip);
-    if (!data || data.resetTime < now) {
-      data = {
-        count: 0,
-        resetTime
-      };
-      store.set(ip, data);
-    }
-    
-    if (data.count >= max) {
-      return res.status(429).json({
-        error: 'Too many requests',
-        message,
-        retryAfter: Math.ceil((data.resetTime - now) / 1000)
-      });
-    }
-    
-    if (!skipSuccessfulRequests || res.statusCode >= 400) {
-      data.count++;
-    }
-    
-    res.setHeader('X-RateLimit-Limit', max);
-    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - data.count));
-    res.setHeader('X-RateLimit-Reset', new Date(data.resetTime).toISOString());
-    
-    next();
-  };
-}
-
 module.exports = {
-  dispose() { cleanupTimers.forEach(clearInterval); cleanupTimers.clear(); },
   DEFAULT_RATE_LIMITS,
   feedbackRateLimit,
-  strictRateLimit,
   generateGuestIdentifier,
   consumeFeedbackLimit,
   sweepStaleFeedbackRateLimits

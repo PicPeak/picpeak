@@ -641,7 +641,8 @@ class DownloadJobService {
    * Fail rows left mid-build by a previous process. Without this they linger
    * as 'pending'/'building' until the TTL, and although findReusable now skips
    * them, the client that owns such a token would poll a job that can never
-   * finish. Called once at startup.
+   * finish. Called at startup for every event, before a new build of one
+   * event (createJob), and by getStatus when a job's lease has gone stale.
    */
   async recoverOrphanedJobs(eventId) {
     // Only rows whose LEASE has expired. A live worker heartbeats while it

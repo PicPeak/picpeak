@@ -10,8 +10,6 @@
  */
 const fs = require('fs');
 const path = require('path');
-const express = require('express');
-const request = require('supertest');
 
 jest.mock('../../src/database/db', () => ({ db: jest.fn() }));
 jest.mock('../../src/utils/logger', () => ({
@@ -19,7 +17,6 @@ jest.mock('../../src/utils/logger', () => ({
 }));
 
 const { db } = require('../../src/database/db');
-const { strictRateLimit, dispose } = require('../../src/middleware/feedbackRateLimit');
 const { loadActionToken, _internal } = require('../../src/utils/publicTokenGuards');
 
 const SRC = path.join(__dirname, '..', '..', 'src');
@@ -49,8 +46,6 @@ function rateLimitCalls(source) {
   return calls;
 }
 
-afterAll(() => dispose());
-
 describe('every express-rate-limit instance picks its key explicitly', () => {
   const files = jsFiles(SRC).filter((f) => /require\(['"]express-rate-limit['"]\)/.test(fs.readFileSync(f, 'utf8')));
 
@@ -67,32 +62,6 @@ describe('every express-rate-limit instance picks its key explicitly', () => {
       const keyGen = args.slice(args.indexOf('keyGenerator:')).split('\n')[0];
       expect(keyGen).not.toMatch(/req\.ip\b/);
     }
-  });
-});
-
-describe('strictRateLimit (feedbackRateLimit.js)', () => {
-  function buildApp() {
-    const app = express();
-    app.set('trust proxy', true);
-    app.use(strictRateLimit({ max: 3 }));
-    app.get('/x', (req, res) => res.sendStatus(200));
-    return app;
-  }
-
-  it('counts an IPv6 /64 as one client', async () => {
-    const app = buildApp();
-    for (let i = 1; i <= 3; i++) {
-      expect((await request(app).get('/x').set('X-Forwarded-For', `2001:db8:1:2::${i}`)).status).toBe(200);
-    }
-    expect((await request(app).get('/x').set('X-Forwarded-For', '2001:db8:1:2::ff')).status).toBe(429);
-    expect((await request(app).get('/x').set('X-Forwarded-For', '2001:db8:1:3::1')).status).toBe(200);
-  });
-
-  it('still counts IPv4 one address at a time', async () => {
-    const app = buildApp();
-    for (let i = 0; i < 3; i++) await request(app).get('/x').set('X-Forwarded-For', '203.0.113.7');
-    expect((await request(app).get('/x').set('X-Forwarded-For', '203.0.113.7')).status).toBe(429);
-    expect((await request(app).get('/x').set('X-Forwarded-For', '203.0.113.8')).status).toBe(200);
   });
 });
 

@@ -1,7 +1,6 @@
 /**
  * The public gallery in a browser whose Web Storage throws (private window,
- * blocked site data, Safari with storage disabled): no crash, and the guest
- * id stays the same for the whole page view.
+ * blocked site data, Safari with storage disabled) still renders.
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -10,7 +9,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 type PhotosResult = { data: unknown; isLoading: boolean; error: unknown; refetch: () => void };
 let photos: PhotosResult;
-const guestIds: string[] = [];
 
 // Hooks hand back the same objects on every render, as the real ones do;
 // fresh ones each time would re-run the view's effects without end.
@@ -29,7 +27,7 @@ vi.mock('../../../contexts', () => ({
 }));
 
 vi.mock('../../../hooks/useGallery', () => ({
-  useGalleryPhotos: (_slug: string, _filter: string, guestId: string) => { guestIds.push(guestId); return photos; },
+  useGalleryPhotos: () => photos,
   useDownloadAllPhotos: () => stable.download,
 }));
 
@@ -92,28 +90,17 @@ function show() {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  guestIds.length = 0;
 });
 
 // Private windows, blocked site data and Safari with storage disabled throw on
 // every storage call. The gallery must still render for that page view.
 describe('GalleryView without usable storage', () => {
-  it('renders and keeps one guest id for the visit when getItem/setItem throw', () => {
+  it('renders when getItem/setItem throw', () => {
     const denied = () => { throw new DOMException('The operation is insecure.', 'SecurityError'); };
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(denied);
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(denied);
 
     show();
     expect(screen.getByTestId('photo-grid')).toBeInTheDocument();
-    const first = guestIds.filter(Boolean);
-    expect(first.length).toBeGreaterThan(0);
-    expect(new Set(first).size).toBe(1);
-
-    // A remount within the same page view (route change back to the gallery)
-    // reuses the same id instead of minting a new guest.
-    cleanup();
-    show();
-    expect(screen.getByTestId('photo-grid')).toBeInTheDocument();
-    expect(new Set(guestIds.filter(Boolean))).toEqual(new Set(first));
   });
 });

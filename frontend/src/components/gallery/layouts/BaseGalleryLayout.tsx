@@ -137,7 +137,3 @@ export interface BaseGalleryLayoutProps {
   // lightbox by layouts that mount their own (story/premium).
   showOriginalFilename?: boolean;
 }
-
-export abstract class BaseGalleryLayout<T extends BaseGalleryLayoutProps = BaseGalleryLayoutProps> extends React.Component<T> {
-  abstract render(): React.ReactNode;
-}

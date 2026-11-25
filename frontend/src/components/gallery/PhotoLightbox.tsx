@@ -1988,9 +1988,6 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               <PhotoFeedback
                 photoId={String(feedbackPhotoIdRef.current ?? currentPhoto.id)}
                 gallerySlug={slug}
-                showComments={true}
-                // Rating, like and favourite are in the bar (issue 1733).
-                proofingInToolbar
                 className="space-y-4"
                 // Only when someone above refreshes the row; otherwise the
                 // panel's buttons invalidate the list themselves.

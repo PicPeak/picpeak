@@ -23,7 +23,6 @@ const sharp = require('./isolatedSharp');
 const { isRawFilename } = require('../utils/rawFormats');
 const watermarkService = require('./watermarkService');
 const { isGalleryPriced, resolvePhotoSalesWatermarkSettings } = require('../modules/photoSales/priceRules');
-const { getStorage } = require('./storage');
 const fs = require('fs');
 const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
 const { resolvePhotoContentType } = require('../utils/photoContentType');
@@ -225,5 +224,4 @@ module.exports = {
   resolveWatermarkSettings,
   resolveWatermarkSettingsForPhoto,
   isVideo,
-  getStorage,
 };

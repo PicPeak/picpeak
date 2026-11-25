@@ -2,33 +2,21 @@ import { useEffect, useState } from 'react';
 import { cssTemplatesService } from '../services/cssTemplates.service';
 
 /**
- * Hook to load and inject custom CSS for a gallery
+ * Loads a gallery's custom CSS and injects it into the document.
  * @param slug - Gallery slug
- * @returns Object with customCss content and loading state
  */
-export function useGalleryCustomCss(slug: string) {
+export function useGalleryCustomCss(slug: string): void {
   const [customCss, setCustomCss] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!slug) {
-      setLoading(false);
-      return;
-    }
+    if (!slug) return;
 
     const loadCustomCss = async () => {
       try {
-        setLoading(true);
-        setError(null);
-
         const css = await cssTemplatesService.getGalleryCss(slug);
         setCustomCss(css);
       } catch (err) {
         console.error('Failed to load custom CSS:', err);
-        setError('Failed to load custom styles');
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -59,8 +47,6 @@ export function useGalleryCustomCss(slug: string) {
       }
     };
   }, [customCss]);
-
-  return { customCss, loading, error };
 }
 
 export default useGalleryCustomCss;

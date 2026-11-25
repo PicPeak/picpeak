@@ -118,17 +118,12 @@ router.post('/:eventId/upload', selectEventGalleryCookie, verifyGalleryAccess, d
     const multer = require('multer');
     const {
       getAllowedMimeTypes, getMaxFilesPerUpload, getMaxFileSizeBytes, getMaxVideoSizeBytes,
-      DEFAULT_MAX_FILE_SIZE_MB, DEFAULT_MAX_VIDEO_SIZE_MB,
     } = require('../../services/uploadSettings');
     const { validateFileType, normalizeUploadMimeType } = require('../../utils/fileSecurityUtils');
 
-    // Resolve allowed MIME types from settings
-    let allowedMimeTypes;
-    try {
-      allowedMimeTypes = await getAllowedMimeTypes();
-    } catch {
-      allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    }
+    // Resolve allowed MIME types from settings. Each getter in
+    // uploadSettings catches a failed read and returns its default.
+    const allowedMimeTypes = await getAllowedMimeTypes();
 
     // #613 — per-batch file count was hardcoded to 10 here, so the admin's
     // Settings → General → "Max Files per Upload" value silently didn't
@@ -136,38 +131,22 @@ router.post('/:eventId/upload', selectEventGalleryCookie, verifyGalleryAccess, d
     // adminPhotos.js:131). Zszywany reported uploading 16 files succeeded
     // even with the limit set to 10. Mirror the admin path: resolve from
     // settings (cached for 60s in the service) and feed multer both
-    // `limits.files` and the `.array(...)` cap. Fall back to the service's
-    // default if the read fails.
-    let maxFilesPerUpload;
-    try {
-      maxFilesPerUpload = await getMaxFilesPerUpload();
-    } catch {
-      maxFilesPerUpload = 500;
-    }
+    // `limits.files` and the `.array(...)` cap.
+    const maxFilesPerUpload = await getMaxFilesPerUpload();
 
     // Per-file size cap was hardcoded to 50MB here, so the admin's Settings →
     // General → "Max File Size (MB)" value (general_max_file_size_mb) never
     // applied to guest uploads — a guest could not upload a large video even
     // when the admin allowed it (reported on #613 by mat1990dj). Resolve it from
-    // settings like the count above; fall back to the 50MB default on read error.
-    let maxFileSizeBytes;
-    try {
-      maxFileSizeBytes = await getMaxFileSizeBytes();
-    } catch {
-      maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024;
-    }
+    // settings like the count above.
+    const maxFileSizeBytes = await getMaxFileSizeBytes();
     // Videos have their own limit (general_max_video_size_mb), as on the admin
     // upload (issue 2315). Multer and the request budget take the larger of
     // the two, but only while a video type is allowed at all: this is a public
     // route, and its body ceiling should not grow for a type nobody may send.
     // Each file is then held to its own type's limit by the guard, which reads
     // the container header before granting a video the larger one.
-    let maxVideoSizeBytes;
-    try {
-      maxVideoSizeBytes = await getMaxVideoSizeBytes();
-    } catch {
-      maxVideoSizeBytes = DEFAULT_MAX_VIDEO_SIZE_MB * 1024 * 1024;
-    }
+    const maxVideoSizeBytes = await getMaxVideoSizeBytes();
     const maxUploadBytes = allowedMimeTypes.some((type) => type.startsWith('video/'))
       ? Math.max(maxFileSizeBytes, maxVideoSizeBytes) : maxFileSizeBytes;
 
@@ -581,10 +560,5 @@ router.get('/:slug/uploads/status', verifyGalleryAccess, denySlideshowToken, noS
     errorResponse(res, error, 500, 'Failed to read upload status');
   }
 });
-
-/**
- * GET /:slug/css-template
- * Get custom CSS template for gallery (public endpoint)
- */
 
 module.exports = router;

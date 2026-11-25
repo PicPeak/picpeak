@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Check, AlertTriangle } from 'lucide-react';
+import { Sparkles, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '../../common';
 import { GALLERY_THEME_PRESETS } from '../../../types/theme.types';
@@ -8,23 +8,11 @@ import { layoutIcons } from './icons';
 interface ThemePresetsCardProps {
   selectedPreset: string;
   handlePresetSelect: (presetKey: string) => void;
-  showGalleryLayouts: boolean;
-  isBetaLayout: boolean;
-  isThumbnailTooSmall: boolean;
-  thumbnailWidth: number;
-  thumbnailHeight: number;
-  minRecommendedThumbnailSize: number;
 }
 
 export const ThemePresetsCard: React.FC<ThemePresetsCardProps> = ({
   selectedPreset,
   handlePresetSelect,
-  showGalleryLayouts,
-  isBetaLayout,
-  isThumbnailTooSmall,
-  thumbnailWidth,
-  thumbnailHeight,
-  minRecommendedThumbnailSize
 }) => {
   const { t } = useTranslation();
 
@@ -87,33 +75,6 @@ export const ThemePresetsCard: React.FC<ThemePresetsCardProps> = ({
           </button>
         ))}
       </div>
-
-      {/* Warning: Beta preset with low thumbnail resolution */}
-      {isBetaLayout && isThumbnailTooSmall && !showGalleryLayouts && (
-        <div className="mt-4 p-4 bg-warning-soft border border-warning-line rounded-lg">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-warning-text flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-warning-text">
-                {t('branding.betaThumbnailWarningTitle')}
-              </p>
-              <p className="text-sm text-warning-text mt-1">
-                {t('branding.betaThumbnailWarningText', { width: thumbnailWidth, height: thumbnailHeight, recommended: minRecommendedThumbnailSize })}
-              </p>
-              <a
-                href="/admin/settings"
-                className="inline-flex items-center gap-1 mt-2 text-sm font-medium text-warning-text hover:underline"
-                onClick={(e) => {
-                  e.preventDefault();
-                  window.location.href = '/admin/settings';
-                }}
-              >
-                {t('branding.betaThumbnailWarningLink')} →
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
     </Card>
   );
 };

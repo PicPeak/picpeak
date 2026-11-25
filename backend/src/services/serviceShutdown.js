@@ -8,7 +8,6 @@ const resources = [
   ['./printSales/worker', 'stop', 'start'],
   ['../middleware/sessionTimeout', 'dispose', 'startSessionCleanup'], ['./chunkedUploadService', 'stop', 'start'],
   ['../utils/cleanupTempUploads', 'stopTempUploadCleanup', 'startTempUploadCleanup'],
-  ['../middleware/feedbackRateLimit', 'dispose'],
   ['./downloadZipService', 'stop'],
   ['./fileWatcher', 'stopFileWatcher', 'startFileWatcher'], ['./externalMediaWatcher', 'stopExternalMediaWatcher', 'startExternalMediaWatcher'],
   ['./expirationChecker', 'stopExpirationChecker', 'startExpirationChecker'], ['./transferCleanupService', 'stopTransferCleanup', 'startTransferCleanup'],

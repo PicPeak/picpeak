@@ -15,7 +15,7 @@ jest.mock('../../src/services/photoProcessor', () => ({
 }));
 jest.mock('../../src/database/db', () => ({ db: Object.assign(jest.fn(), { client: { config: { client: 'sqlite3' } } }) }));
 jest.mock('../../src/services/mediaAttemptService', () => ({ MAX_ATTEMPTS: 5, claimNext: jest.fn(), execute: jest.fn(), recover: jest.fn(), cancel: jest.fn() }));
-jest.mock('../../src/services/publicUploadQuota', () => ({ releasePending: jest.fn(async () => {}) }));
+jest.mock('../../src/services/publicUploadQuota', () => ({ processingComplete: jest.fn(async () => {}) }));
 
 const mediaAttempts = require('../../src/services/mediaAttemptService');
 const publicUploadQuota = require('../../src/services/publicUploadQuota');
@@ -34,13 +34,13 @@ describe('backgroundProcessor.claimNextPhoto', () => {
   it('returns null when there are no pending photos', async () => {
     mediaAttempts.claimNext.mockResolvedValue(null);
     expect(await bg.claimNextPhoto()).toBeNull();
-    expect(publicUploadQuota.releasePending).not.toHaveBeenCalled();
+    expect(publicUploadQuota.processingComplete).not.toHaveBeenCalled();
   });
 
   it('frees the pending upload hold of a photo that used up its attempts, and claims nothing', async () => {
     mediaAttempts.claimNext.mockResolvedValue({ exhausted: 7 });
     expect(await bg.claimNextPhoto()).toBeNull();
-    expect(publicUploadQuota.releasePending).toHaveBeenCalledWith(7);
+    expect(publicUploadQuota.processingComplete).toHaveBeenCalledWith(7);
   });
 });
 

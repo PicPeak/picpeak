@@ -27,7 +27,6 @@ interface GridPhotoProps {
   animationType?: string;
   allowDownloads?: boolean;
   slug?: string;
-  useEnhancedProtection?: boolean;
   feedbackEnabled?: boolean;
   feedbackOptions?: {
     allowLikes?: boolean;
@@ -263,7 +262,6 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   isSelectionMode = false,
   onPhotoSelect,
   allowDownloads = true,
-  useEnhancedProtection = false,
   feedbackEnabled = false,
   feedbackOptions,
   isClient = false,
@@ -303,7 +301,6 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               animationType={animation}
               allowDownloads={allowDownloads}
               slug={slug}
-              useEnhancedProtection={useEnhancedProtection}
               feedbackEnabled={feedbackEnabled}
               feedbackOptions={feedbackOptions}
               savedIdentity={savedIdentity}

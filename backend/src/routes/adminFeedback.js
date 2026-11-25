@@ -15,7 +15,7 @@ const {
   validateWordFilter,
   checkValidation
 } = require('../utils/feedbackValidation');
-const { requireEventOwnership, canAccessEvent, scopeEventsQuery } = require('../middleware/ownership');
+const { requireEventOwnership, canAccessEvent } = require('../middleware/ownership');
 const { withParsedAnnotation } = require('../utils/photoAnnotation');
 const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
 
@@ -430,27 +430,6 @@ router.get('/events/:eventId/feedback/export',
     } catch (error) {
       logger.error('Error exporting feedback:', error);
       res.status(500).json({ error: 'Failed to export feedback' });
-    }
-  }
-);
-
-// Get pending moderation items (across all events)
-router.get('/feedback/pending-moderation',
-  adminAuth,
-  requirePermission('events.view'),
-  async (req, res) => {
-    try {
-      // Scope to the caller's owned events unless super_admin (GHSA-3335).
-      let ownedEventIds = null;
-      if (req.admin.roleName !== 'super_admin') {
-        const rows = await scopeEventsQuery(db('events'), req.admin).select('id');
-        ownedEventIds = rows.map((r) => r.id);
-      }
-      const pending = await feedbackService.getPendingModeration(null, ownedEventIds);
-      res.json(pending);
-    } catch (error) {
-      logger.error('Error getting pending moderation:', error);
-      res.status(500).json({ error: 'Failed to get pending moderation' });
     }
   }
 );

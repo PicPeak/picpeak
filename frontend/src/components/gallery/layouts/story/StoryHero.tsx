@@ -13,8 +13,6 @@ interface StoryHeroProps {
   stats: string;
   photo?: Photo | null;
   slug: string;
-  allowDownloads?: boolean;
-  useEnhancedProtection?: boolean;
 }
 
 export const StoryHero: React.FC<StoryHeroProps> = ({
