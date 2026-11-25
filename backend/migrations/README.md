@@ -33,8 +33,11 @@ If you're upgrading from an older version:
 # Development (run-migrations.js)
 npm run migrate
 
-# Production (run-migrations-safe.js)
+# Safe runner (run-migrations-safe.js), from a checkout with npm
 npm run migrate:safe
+
+# Inside the production image (it ships no npm)
+node migrations/run-migrations-safe.js
 ```
 
 The container entrypoint (`wait-for-db.sh`) runs the safe runner with `node migrations/run-migrations-safe.js` when `NODE_ENV=production` and `run-migrations.js` otherwise. The safe runner also detects a schema created before migrations were tracked and tolerates "already exists" errors.

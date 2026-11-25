@@ -492,7 +492,9 @@ async function parseManifestMetadata(filePath) {
 
   // Backup manifests 2.0 and 3.0 both write { manifest: { version },
   // backup: { id, timestamp }, files: { count, total_size }, database }.
-  // A top-level files array is the shape of a .picpeak manifest.json.
+  // Of those only backup.id is read; the row takes its time and size from
+  // the file itself. A top-level files array is the shape of a .picpeak
+  // manifest.json.
   const manifestId = parsed?.backup?.id || null;
 
   const completed = stats.mtime;
@@ -524,7 +526,7 @@ router.post('/list-backups', requirePermission('backup.view'), async (req, res) 
   try {
     const { source } = req.body; // 'local', 's3', or undefined for all
 
-    // Use the same disk-first discovery the GET endpoint uses so that
+    // Use the disk-first discovery (discoverAllBackups) so that
     // a fresh post-`docker compose down -v` install (empty backup_runs
     // table) can still see what's on disk. The whole point of restore
     // is "the DB is broken, rebuild it from disk" — a wizard that
