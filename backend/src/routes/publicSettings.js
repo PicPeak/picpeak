@@ -242,10 +242,10 @@ router.get('/', async (req, res) => {
       enable_recaptcha: settingsObject.security_enable_recaptcha === true || settingsObject.security_enable_recaptcha === 'true',
       recaptcha_site_key: settingsObject.security_recaptcha_site_key || null,
       maintenance_mode: settingsObject.general_maintenance_mode === true || settingsObject.general_maintenance_mode === 'true',
-      // Legacy Umami flag. Kept for back-compat: on pre-#663 installs without
-      // `analytics_tracker_provider` the data-only client still reads it. The
-      // collector URLs and site IDs stay server-side; the client only needs
-      // to know which provider is on.
+      // Legacy Umami flag. Part of the public response, so it stays; the
+      // bundled client reads the resolved `analytics_tracker_provider` below
+      // instead. The collector URLs and site IDs stay server-side; the client
+      // only needs to know which provider is on.
       umami_enabled: settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true',
       // The share URL is the bearer link to the whole Umami dashboard, not
       // tracker bootstrap; the admin analytics page reads it from
