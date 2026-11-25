@@ -1,0 +1,243 @@
+name: Build image (per-arch)
+
+# Reusable job called by docker-build.yml once per image (backend, frontend,
+# aio, ml). Builds the image once per architecture on a native runner, pushes
+# each leg by digest to GHCR, uploads the digest for the merge job
+# (_docker-image-merge.yml) and scans each leg with Trivy.
+#
+# The caller job owns the job conditions (the ML FACENET_ONNX_URL gate) and
+# grants the permissions. No concurrency group here: one in a called workflow
+# can block on the caller's group.
+#
+# Everything per image is derived from `image`: the GHCR repository
+# (<owner>/<repo>/<image>), the cache scope (<image>-<platform pair>), the
+# digest artifact (digests-<image>-<pair>), the SARIF file and the Security
+# tab category (<image>-vulnerabilities-<pair>).
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: 'Image short name: backend, frontend, aio or ml'
+        required: true
+        type: string
+      display-name:
+        description: 'Name used in step titles (Backend, Frontend, AIO, ML)'
+        required: true
+        type: string
+      title:
+        description: 'org.opencontainers.image.title label'
+        required: true
+        type: string
+      description:
+        description: 'org.opencontainers.image.description label'
+        required: true
+        type: string
+      context:
+        description: 'Docker build context'
+        required: true
+        type: string
+      file:
+        description: 'Dockerfile path'
+        required: true
+        type: string
+      extra-build-args:
+        description: 'Build args appended after the common ones, one per line'
+        required: false
+        default: ''
+        type: string
+      auto-update-floor:
+        description: 'Read updater/AUTO_UPDATE_FROM and add the io.picpeak.update.auto-from label'
+        required: false
+        default: false
+        type: boolean
+      platforms:
+        description: 'JSON list of {platform, runner} matrix entries'
+        required: false
+        default: '[{"platform":"linux/amd64","runner":"ubuntu-latest"},{"platform":"linux/arm64","runner":"ubuntu-24.04-arm"}]'
+        type: string
+
+# Workflow-level env does not reach a called workflow, so the registry is
+# repeated here (docker-build.yml sets the same value).
+env:
+  REGISTRY: ghcr.io
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.platforms) }}
+    runs-on: ${{ matrix.runner }}
+    # The caller job grants the same set; a called job cannot get more.
+    permissions:
+      contents: read
+      packages: write
+      # Trivy uploads its SARIF to the Security tab from this job, see the
+      # "Run Trivy" step below. Scanning per-arch by digest (#476) is
+      # reliable; scanning the multi-arch index by tag from the merge job
+      # was not.
+      security-events: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Compute image name (lowercase for GHCR)
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        # GHCR requires all-lowercase repository names, but GITHUB_REPOSITORY
+        # keeps the owner's casing; ${VAR,,} keeps forks working.
+        repo_lc="${GITHUB_REPOSITORY,,}"
+        echo "IMAGE_NAME=${repo_lc}/${IMAGE}" >> "$GITHUB_ENV"
+
+    - name: Prepare platform pair
+      run: |
+        platform="${{ matrix.platform }}"
+        echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
+      id: login-ghcr
+      continue-on-error: true
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Determine if pushing
+      id: push-decision
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.inputs.push }}" != "true" ]]; then
+          echo "push=false" >> "$GITHUB_OUTPUT"
+        elif [[ "${{ steps.login-ghcr.outcome }}" != "success" ]]; then
+          echo "push=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "push=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    # The in-app updater refuses a release whose label names a version newer
+    # than the running one (manual steps needed). See updater/AUTO_UPDATE_FROM.
+    # Only the backend image carries the label.
+    - name: Read the updater's auto-update floor
+      if: inputs.auto-update-floor
+      run: |
+        # The first non-comment, non-blank line counts, as the file says.
+        floor=$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' updater/AUTO_UPDATE_FROM | head -n 1 | tr -d '[:space:]' || true)
+        if [[ -n "$floor" && ! "$floor" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
+          echo "::error file=updater/AUTO_UPDATE_FROM::'$floor' is not a version like 3.160.0 or 3.160.0-beta.1"
+          exit 1
+        fi
+        echo "AUTO_UPDATE_FROM=$floor" >> "$GITHUB_ENV"
+
+    # The last label line is empty unless auto-update-floor is set;
+    # metadata-action drops empty lines.
+    - name: Extract metadata for ${{ inputs.display-name }} (labels only)
+      id: meta
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        labels: |
+          org.opencontainers.image.title=${{ inputs.title }}
+          org.opencontainers.image.description=${{ inputs.description }}
+          org.opencontainers.image.vendor=PicPeak
+          maintainer=${{ github.repository_owner }}
+          ${{ inputs.auto-update-floor && format('io.picpeak.update.auto-from={0}', env.AUTO_UPDATE_FROM) || '' }}
+
+    # extra-build-args is empty for every image but ml; build-push-action
+    # drops empty lines.
+    - name: Build ${{ inputs.display-name }} image (push by digest)
+      id: build
+      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.file }}
+        platforms: ${{ matrix.platform }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha,scope=${{ inputs.image }}-${{ env.PLATFORM_PAIR }}
+        # ignore-error: a flaky GitHub Actions cache write ("error writing
+        # layer blob: not_found") must not fail an otherwise-successful build
+        # that already pushed the image.
+        cache-to: type=gha,mode=max,scope=${{ inputs.image }}-${{ env.PLATFORM_PAIR }},ignore-error=true
+        outputs: ${{ steps.push-decision.outputs.push == 'true' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.IMAGE_NAME) || 'type=cacheonly' }}
+        build-args: |
+          CACHEBUST=${{ github.run_number }}
+          BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          VCS_REF=${{ github.sha }}
+          VERSION=${{ steps.meta.outputs.version }}
+          ${{ inputs.extra-build-args }}
+
+    - name: Export digest
+      if: steps.push-decision.outputs.push == 'true'
+      run: |
+        mkdir -p /tmp/digests
+        digest="${{ steps.build.outputs.digest }}"
+        touch "/tmp/digests/${digest#sha256:}"
+
+    - name: Upload digest artifact
+      if: steps.push-decision.outputs.push == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: digests-${{ inputs.image }}-${{ env.PLATFORM_PAIR }}
+        path: /tmp/digests/*
+        if-no-files-found: error
+        retention-days: 1
+
+    # Per-arch vulnerability scan (#476). Scanning the multi-arch
+    # manifest from the merge job by tag is unreliable: Trivy's
+    # remote resolver crashes intermittently with "no child with
+    # platform linux/amd64 in index". The fix is to scan each leg
+    # by its single-platform digest right here, where it just landed
+    # in GHCR. Tag pinned (was @master) so the action + bundled
+    # Trivy binary don't float between runs.
+    #
+    # exit-code is left unset (=0) for now: Trivy reports findings
+    # to the Security tab but doesn't fail the build. Flipping that
+    # to '1' to actually gate CI is a deliberate follow-up, which needs
+    # an audit pass first so the next beta build doesn't surprise red.
+    - name: Run Trivy vulnerability scanner (per-arch, by digest)
+      if: steps.push-decision.outputs.push == 'true'
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      env:
+        # docker/build-push-action wraps every push in an OCI index
+        # (carries the SLSA provenance attestation alongside the
+        # actual image). Trivy's remote backend defaults to
+        # linux/amd64 regardless of host arch when resolving an
+        # index, which makes the arm64 leg crash with "no child
+        # with platform linux/amd64". Telling Trivy which child to
+        # scan keeps the provenance attestation intact and fixes
+        # the resolver crash. Pin to matrix.platform so each leg
+        # scans its own arch.
+        TRIVY_PLATFORM: ${{ matrix.platform }}
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        format: 'sarif'
+        output: 'trivy-${{ inputs.image }}-${{ env.PLATFORM_PAIR }}.sarif'
+        severity: 'CRITICAL,HIGH'
+        # Base-image CVEs with no released fix are not actionable: the
+        # Dockerfiles already run `apt-get upgrade -y` behind a CACHEBUST,
+        # so a fix lands in the next build automatically. Reporting them
+        # buries the findings someone can actually do something about --
+        # the ML image alone contributed 123 unfixable alerts. Dropping
+        # them is also the precondition for ever setting exit-code: 1,
+        # which the comment above flags as a deliberate follow-up.
+        ignore-unfixed: true
+        timeout: '10m'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      if: steps.push-decision.outputs.push == 'true'
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: 'trivy-${{ inputs.image }}-${{ env.PLATFORM_PAIR }}.sarif'
+        # Distinct category per image and arch so the Security tab surfaces
+        # per-platform findings independently: an amd64-only CVE in a base
+        # layer doesn't get masked by the arm64 scan.
+        category: '${{ inputs.image }}-vulnerabilities-${{ env.PLATFORM_PAIR }}'

@@ -9,12 +9,14 @@ name: Build and Push Docker Images
 # - Manual workflow dispatch
 #
 # Multi-arch strategy:
-#   Each image (backend, frontend) is built once per architecture on a
-#   native runner — linux/amd64 on ubuntu-latest, linux/arm64 on
+#   Each image (backend, frontend, aio, ml) is built once per architecture
+#   on a native runner — linux/amd64 on ubuntu-latest, linux/arm64 on
 #   ubuntu-24.04-arm. Each leg pushes by digest to GHCR. A follow-up
 #   merge job combines the digests into a multi-arch manifest and applies
 #   the human-readable tags. This is the pattern documented at
 #   https://docs.docker.com/build/ci/github-actions/multi-platform/
+#   Both jobs live in reusable workflows (_docker-image-build.yml,
+#   _docker-image-merge.yml) that this file calls once per image.
 #
 #   Native runners are used instead of QEMU because npm install under
 #   QEMU was previously too slow/unreliable for regular branch builds.
@@ -50,11 +52,12 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  # BACKEND_IMAGE_NAME and FRONTEND_IMAGE_NAME are computed per job in the
-  # "Compute image names" step. GHCR requires all-lowercase repository names,
-  # but ${{ github.repository }} preserves the original case (e.g. "Luca-Timo/...").
-  # Computing them with bash parameter expansion (${VAR,,}) keeps the workflow
-  # working on forks regardless of the owner's name casing.
+  # Image names are computed per job in a "Compute image name(s)" step. GHCR
+  # requires all-lowercase repository names, but ${{ github.repository }}
+  # preserves the original case (e.g. "Luca-Timo/..."). Computing them with
+  # bash parameter expansion (${VAR,,}) keeps the workflow working on forks
+  # regardless of the owner's name casing. The reusable workflows do not see
+  # this env block and set REGISTRY themselves.
 
 # Default GITHUB_TOKEN to read-only at the workflow level. Each job that
 # needs to publish to GHCR sets `packages: write` explicitly. This keeps
@@ -65,586 +68,86 @@ permissions:
 
 jobs:
   # -----------------------------------------------------------------------------
+  # Per-image build and merge
+  # -----------------------------------------------------------------------------
+  # Each image is built by _docker-image-build.yml (per-arch, push by digest,
+  # Trivy per arch) and published by _docker-image-merge.yml (multi-arch
+  # manifest + tags). The job conditions stay here: a condition inside the
+  # called workflow would leave this job "success" when it skips, and the
+  # summary and dockerhub-descriptions jobs read these results.
+  #
+  # Called workflows get neither this file's env nor its secrets on their own:
+  # REGISTRY is repeated there, and the merge calls pass `secrets: inherit` for
+  # the Docker Hub credentials (the builds only need GITHUB_TOKEN, which a
+  # called workflow always gets). The permissions below are the most the
+  # called job can use.
+  #
+  # GitHub names these checks "<job id> / <called job>", for example
+  # "build-backend / build (linux/amd64, ubuntu-latest)".
+
+  # -----------------------------------------------------------------------------
   # Backend: per-arch build, then merge into a multi-arch manifest
   # -----------------------------------------------------------------------------
   build-backend:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-latest
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
-      # Trivy uploads its SARIF to the Security tab from this job — see
-      # the "Run Trivy" step below. Scanning per-arch by digest (#476)
-      # is reliable; scanning the multi-arch index by tag from the
-      # merge-* job was not.
       security-events: write
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Compute image names (lowercase for GHCR)
-      run: |
-        repo_lc="${GITHUB_REPOSITORY,,}"
-        echo "BACKEND_IMAGE_NAME=${repo_lc}/backend" >> "$GITHUB_ENV"
-        echo "FRONTEND_IMAGE_NAME=${repo_lc}/frontend" >> "$GITHUB_ENV"
-        # Mirror manifests to Docker Hub (picpeak/{backend,frontend}) only on the
-        # canonical org repo, where the DOCKERHUB_* secrets live. Forks (and any
-        # other owner) fall back to GHCR-only — the Docker Hub image line and login
-        # are gated on this flag so their builds keep working unchanged.
-        if [[ "$GITHUB_REPOSITORY" == "PicPeak/picpeak" ]]; then
-          echo "DOCKERHUB_ENABLED=true" >> "$GITHUB_ENV"
-        else
-          echo "DOCKERHUB_ENABLED=false" >> "$GITHUB_ENV"
-        fi
-
-    - name: Prepare platform pair
-      run: |
-        platform="${{ matrix.platform }}"
-        echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-    - name: Log in to Container Registry
-      if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
-      id: login-ghcr
-      continue-on-error: true
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Determine if pushing
-      id: push-decision
-      run: |
-        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.inputs.push }}" != "true" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        elif [[ "${{ steps.login-ghcr.outcome }}" != "success" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "push=true" >> "$GITHUB_OUTPUT"
-        fi
-
-    # The in-app updater refuses a release whose label names a version newer
-    # than the running one (manual steps needed). See updater/AUTO_UPDATE_FROM.
-    - name: Read the updater's auto-update floor
-      run: |
-        # The first non-comment, non-blank line counts, as the file says.
-        floor=$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' updater/AUTO_UPDATE_FROM | head -n 1 | tr -d '[:space:]' || true)
-        if [[ -n "$floor" && ! "$floor" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
-          echo "::error file=updater/AUTO_UPDATE_FROM::'$floor' is not a version like 3.160.0 or 3.160.0-beta.1"
-          exit 1
-        fi
-        echo "AUTO_UPDATE_FROM=$floor" >> "$GITHUB_ENV"
-
-    - name: Extract metadata for Backend (labels only)
-      id: meta-backend
-      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
-        labels: |
-          org.opencontainers.image.title=PicPeak Backend
-          org.opencontainers.image.description=PicPeak photo sharing platform backend service
-          org.opencontainers.image.vendor=PicPeak
-          maintainer=${{ github.repository_owner }}
-          io.picpeak.update.auto-from=${{ env.AUTO_UPDATE_FROM }}
-
-    - name: Build Backend image (push by digest)
-      id: build
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
-      with:
-        context: ./backend
-        file: ./backend/Dockerfile
-        platforms: ${{ matrix.platform }}
-        labels: ${{ steps.meta-backend.outputs.labels }}
-        cache-from: type=gha,scope=backend-${{ env.PLATFORM_PAIR }}
-        # ignore-error: a flaky GitHub Actions cache write ("error writing
-        # layer blob: not_found") must not fail an otherwise-successful build
-        # that already pushed the image.
-        cache-to: type=gha,mode=max,scope=backend-${{ env.PLATFORM_PAIR }},ignore-error=true
-        outputs: ${{ steps.push-decision.outputs.push == 'true' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.BACKEND_IMAGE_NAME) || 'type=cacheonly' }}
-        build-args: |
-          CACHEBUST=${{ github.run_number }}
-          BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          VCS_REF=${{ github.sha }}
-          VERSION=${{ steps.meta-backend.outputs.version }}
-
-    - name: Export digest
-      if: steps.push-decision.outputs.push == 'true'
-      run: |
-        mkdir -p /tmp/digests
-        digest="${{ steps.build.outputs.digest }}"
-        touch "/tmp/digests/${digest#sha256:}"
-
-    - name: Upload digest artifact
-      if: steps.push-decision.outputs.push == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: digests-backend-${{ env.PLATFORM_PAIR }}
-        path: /tmp/digests/*
-        if-no-files-found: error
-        retention-days: 1
-
-    # Per-arch vulnerability scan (#476). Scanning the multi-arch
-    # manifest from the merge-* job by tag is unreliable — Trivy's
-    # remote resolver crashes intermittently with "no child with
-    # platform linux/amd64 in index". The fix is to scan each leg
-    # by its single-platform digest right here, where it just landed
-    # in GHCR. Tag pinned (was @master) so the action + bundled
-    # Trivy binary don't float between runs.
-    #
-    # exit-code is left unset (=0) for now: Trivy reports findings
-    # to the Security tab but doesn't fail the build. Flipping that
-    # to '1' to actually gate CI is a deliberate follow-up — needs an
-    # audit pass first so the next beta build doesn't surprise red.
-    - name: Run Trivy vulnerability scanner (per-arch, by digest)
-      if: steps.push-decision.outputs.push == 'true'
-      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-      env:
-        # docker/build-push-action wraps every push in an OCI index
-        # (carries the SLSA provenance attestation alongside the
-        # actual image). Trivy's remote backend defaults to
-        # linux/amd64 regardless of host arch when resolving an
-        # index, which makes the arm64 leg crash with "no child
-        # with platform linux/amd64". Telling Trivy which child to
-        # scan keeps the provenance attestation intact and fixes
-        # the resolver crash. Pin to matrix.platform so each leg
-        # scans its own arch.
-        TRIVY_PLATFORM: ${{ matrix.platform }}
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}@${{ steps.build.outputs.digest }}
-        format: 'sarif'
-        output: 'trivy-backend-${{ env.PLATFORM_PAIR }}.sarif'
-        severity: 'CRITICAL,HIGH'
-        # Base-image CVEs with no released fix are not actionable: the
-        # Dockerfiles already run `apt-get upgrade -y` behind a CACHEBUST,
-        # so a fix lands in the next build automatically. Reporting them
-        # buries the findings someone can actually do something about --
-        # the ML image alone contributed 123 unfixable alerts. Dropping
-        # them is also the precondition for ever setting exit-code: 1,
-        # which build-backend's comment flags as a deliberate follow-up.
-        ignore-unfixed: true
-        timeout: '10m'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      if: steps.push-decision.outputs.push == 'true'
-      uses: github/codeql-action/upload-sarif@v4
-      with:
-        sarif_file: 'trivy-backend-${{ env.PLATFORM_PAIR }}.sarif'
-        # Distinct category per arch so the Security tab surfaces
-        # per-platform findings independently — an amd64-only CVE in
-        # a base layer doesn't get masked by the arm64 scan.
-        category: 'backend-vulnerabilities-${{ env.PLATFORM_PAIR }}'
+    uses: ./.github/workflows/_docker-image-build.yml
+    with:
+      image: backend
+      display-name: Backend
+      title: PicPeak Backend
+      description: PicPeak photo sharing platform backend service
+      context: ./backend
+      file: ./backend/Dockerfile
+      auto-update-floor: true
 
   merge-backend:
     needs: build-backend
-    runs-on: ubuntu-latest
-    # No security-events permission here — vulnerability scanning moved
-    # to per-arch build-backend jobs (#476). This job's only job is to
-    # combine the per-arch digests into a multi-arch manifest.
+    # Only run when at least one digest was pushed (i.e. not on PRs without push intent).
+    if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
     permissions:
       contents: read
       packages: write
-    # Only run when at least one digest was pushed (i.e. not on PRs without push intent).
-    if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
-
-    steps:
-    - name: Compute image names (lowercase for GHCR)
-      run: |
-        repo_lc="${GITHUB_REPOSITORY,,}"
-        echo "BACKEND_IMAGE_NAME=${repo_lc}/backend" >> "$GITHUB_ENV"
-        echo "FRONTEND_IMAGE_NAME=${repo_lc}/frontend" >> "$GITHUB_ENV"
-        # Mirror manifests to Docker Hub (picpeak/{backend,frontend}) only on the
-        # canonical org repo, where the DOCKERHUB_* secrets live. Forks (and any
-        # other owner) fall back to GHCR-only — the Docker Hub image line and login
-        # are gated on this flag so their builds keep working unchanged.
-        if [[ "$GITHUB_REPOSITORY" == "PicPeak/picpeak" ]]; then
-          echo "DOCKERHUB_ENABLED=true" >> "$GITHUB_ENV"
-        else
-          echo "DOCKERHUB_ENABLED=false" >> "$GITHUB_ENV"
-        fi
-
-    - name: Download digest artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: /tmp/digests
-        pattern: digests-backend-*
-        merge-multiple: true
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-    - name: Log in to Container Registry
-      id: login-ghcr
-      continue-on-error: true
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Determine build context
-      id: context
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/v*-beta* ]] || [[ "${{ github.ref }}" == refs/heads/main ]]; then
-          # Active-dev branch (`main`, renamed from `beta` per #669) produces
-          # prereleases; the `-beta.N` version-suffix scheme is unchanged.
-          echo "channel=beta" >> $GITHUB_OUTPUT
-          echo "is_prerelease=true" >> $GITHUB_OUTPUT
-        else
-          echo "channel=stable" >> $GITHUB_OUTPUT
-          echo "is_prerelease=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Log in to Docker Hub
-      if: env.DOCKERHUB_ENABLED == 'true'
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: docker.io
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Extract metadata for Backend
-      id: meta-backend
-      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
-      with:
-        # GHCR always; Docker Hub (picpeak/backend) added on the canonical repo so
-        # the same tag scheme is mirrored to both registries. metadata-action drops
-        # the blank second line on forks → GHCR-only there.
-        images: |
-          ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
-          ${{ env.DOCKERHUB_ENABLED == 'true' && 'docker.io/picpeak/backend' || '' }}
-        labels: |
-          org.opencontainers.image.title=PicPeak Backend
-          org.opencontainers.image.description=PicPeak photo sharing platform backend service
-          org.opencontainers.image.vendor=PicPeak
-          maintainer=${{ github.repository_owner }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          type=semver,pattern={{major}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          # #668/#783: publish the git-tag name verbatim (v3.45.0 / v3.84.0-beta.0)
-          # so users can pin the same string as the GitHub release. metadata-action's
-          # `pattern=v{{version}}` silently dropped it on prereleases, so use type=ref.
-          type=ref,event=tag
-          type=sha,format=short
-          # `:latest` + `:stable` follow the stable channel (the `stable` branch +
-          # stable release tags). The default branch is now `main` (active dev),
-          # so `is_default_branch` no longer maps to "stable" — be explicit.
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          # `:beta` follows the active development branch. This used to happen
-          # for free via `type=ref,event=branch` back when that branch was
-          # literally named `beta`; the rename to `main` silently retired the
-          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
-          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
-          # on. The ml sidecar was added after the rename and so never had a
-          # `:beta` at all, which left docker-compose.production.yml unable to
-          # resolve the image for any documented channel.
-          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
-          # `:beta` is RETIRED post-rename (Option B / #669). Active-dev pulls
-          # are `:main` (auto via type=ref,event=branch). The pre-rename `:beta`
-          # tag remains frozen at its last build — operators should update.
-
-    - name: Create and push multi-arch manifest
-      working-directory: /tmp/digests
-      run: |
-        docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-          $(printf "${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}@sha256:%s " *)
-
-    - name: Inspect manifest (GHCR)
-      run: |
-        docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:${{ steps.meta-backend.outputs.version }}
-
-    - name: Inspect manifest (Docker Hub)
-      if: env.DOCKERHUB_ENABLED == 'true'
-      run: |
-        docker buildx imagetools inspect docker.io/picpeak/backend:${{ steps.meta-backend.outputs.version }}
+    uses: ./.github/workflows/_docker-image-merge.yml
+    secrets: inherit
+    with:
+      image: backend
+      display-name: Backend
+      title: PicPeak Backend
+      description: PicPeak photo sharing platform backend service
 
   # -----------------------------------------------------------------------------
   # Frontend: per-arch build, then merge into a multi-arch manifest
   # -----------------------------------------------------------------------------
   build-frontend:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-latest
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
-      # See build-backend for the rationale (#476). Same pattern: per-arch
-      # vulnerability scan by digest, SARIF uploaded to the Security tab.
       security-events: write
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Compute image names (lowercase for GHCR)
-      run: |
-        repo_lc="${GITHUB_REPOSITORY,,}"
-        echo "BACKEND_IMAGE_NAME=${repo_lc}/backend" >> "$GITHUB_ENV"
-        echo "FRONTEND_IMAGE_NAME=${repo_lc}/frontend" >> "$GITHUB_ENV"
-        # Mirror manifests to Docker Hub (picpeak/{backend,frontend}) only on the
-        # canonical org repo, where the DOCKERHUB_* secrets live. Forks (and any
-        # other owner) fall back to GHCR-only — the Docker Hub image line and login
-        # are gated on this flag so their builds keep working unchanged.
-        if [[ "$GITHUB_REPOSITORY" == "PicPeak/picpeak" ]]; then
-          echo "DOCKERHUB_ENABLED=true" >> "$GITHUB_ENV"
-        else
-          echo "DOCKERHUB_ENABLED=false" >> "$GITHUB_ENV"
-        fi
-
-    - name: Prepare platform pair
-      run: |
-        platform="${{ matrix.platform }}"
-        echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-    - name: Log in to Container Registry
-      if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
-      id: login-ghcr
-      continue-on-error: true
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Determine if pushing
-      id: push-decision
-      run: |
-        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.inputs.push }}" != "true" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        elif [[ "${{ steps.login-ghcr.outcome }}" != "success" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "push=true" >> "$GITHUB_OUTPUT"
-        fi
-
-    - name: Extract metadata for Frontend (labels only)
-      id: meta-frontend
-      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
-        labels: |
-          org.opencontainers.image.title=PicPeak Frontend
-          org.opencontainers.image.description=PicPeak photo sharing platform frontend application
-          org.opencontainers.image.vendor=PicPeak
-          maintainer=${{ github.repository_owner }}
-
-    - name: Build Frontend image (push by digest)
-      id: build
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
-      with:
-        context: ./frontend
-        file: ./frontend/Dockerfile
-        platforms: ${{ matrix.platform }}
-        labels: ${{ steps.meta-frontend.outputs.labels }}
-        cache-from: type=gha,scope=frontend-${{ env.PLATFORM_PAIR }}
-        # ignore-error: a flaky GitHub Actions cache write ("error writing
-        # layer blob: not_found") must not fail an otherwise-successful build
-        # that already pushed the image.
-        cache-to: type=gha,mode=max,scope=frontend-${{ env.PLATFORM_PAIR }},ignore-error=true
-        outputs: ${{ steps.push-decision.outputs.push == 'true' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.FRONTEND_IMAGE_NAME) || 'type=cacheonly' }}
-        build-args: |
-          CACHEBUST=${{ github.run_number }}
-          BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          VCS_REF=${{ github.sha }}
-          VERSION=${{ steps.meta-frontend.outputs.version }}
-
-    - name: Export digest
-      if: steps.push-decision.outputs.push == 'true'
-      run: |
-        mkdir -p /tmp/digests
-        digest="${{ steps.build.outputs.digest }}"
-        touch "/tmp/digests/${digest#sha256:}"
-
-    - name: Upload digest artifact
-      if: steps.push-decision.outputs.push == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: digests-frontend-${{ env.PLATFORM_PAIR }}
-        path: /tmp/digests/*
-        if-no-files-found: error
-        retention-days: 1
-
-    # Per-arch vulnerability scan (#476). See build-backend for the
-    # full rationale; identical pattern here, only the image-ref +
-    # SARIF filename + category change.
-    - name: Run Trivy vulnerability scanner (per-arch, by digest)
-      if: steps.push-decision.outputs.push == 'true'
-      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-      env:
-        # See build-backend for the rationale — pin Trivy's platform
-        # to the matrix arch so its remote-index resolver picks the
-        # right child instead of defaulting to linux/amd64 and
-        # crashing on the arm64 leg.
-        TRIVY_PLATFORM: ${{ matrix.platform }}
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}@${{ steps.build.outputs.digest }}
-        format: 'sarif'
-        output: 'trivy-frontend-${{ env.PLATFORM_PAIR }}.sarif'
-        severity: 'CRITICAL,HIGH'
-        # Base-image CVEs with no released fix are not actionable: the
-        # Dockerfiles already run `apt-get upgrade -y` behind a CACHEBUST,
-        # so a fix lands in the next build automatically. Reporting them
-        # buries the findings someone can actually do something about --
-        # the ML image alone contributed 123 unfixable alerts. Dropping
-        # them is also the precondition for ever setting exit-code: 1,
-        # which build-backend's comment flags as a deliberate follow-up.
-        ignore-unfixed: true
-        timeout: '10m'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      if: steps.push-decision.outputs.push == 'true'
-      uses: github/codeql-action/upload-sarif@v4
-      with:
-        sarif_file: 'trivy-frontend-${{ env.PLATFORM_PAIR }}.sarif'
-        category: 'frontend-vulnerabilities-${{ env.PLATFORM_PAIR }}'
+    uses: ./.github/workflows/_docker-image-build.yml
+    with:
+      image: frontend
+      display-name: Frontend
+      title: PicPeak Frontend
+      description: PicPeak photo sharing platform frontend application
+      context: ./frontend
+      file: ./frontend/Dockerfile
 
   merge-frontend:
     needs: build-frontend
-    runs-on: ubuntu-latest
-    # See merge-backend — vulnerability scanning moved to the per-arch
-    # build-frontend matrix (#476). This job only publishes the manifest.
+    if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
     permissions:
       contents: read
       packages: write
-    if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
-
-    steps:
-    - name: Compute image names (lowercase for GHCR)
-      run: |
-        repo_lc="${GITHUB_REPOSITORY,,}"
-        echo "BACKEND_IMAGE_NAME=${repo_lc}/backend" >> "$GITHUB_ENV"
-        echo "FRONTEND_IMAGE_NAME=${repo_lc}/frontend" >> "$GITHUB_ENV"
-        # Mirror manifests to Docker Hub (picpeak/{backend,frontend}) only on the
-        # canonical org repo, where the DOCKERHUB_* secrets live. Forks (and any
-        # other owner) fall back to GHCR-only — the Docker Hub image line and login
-        # are gated on this flag so their builds keep working unchanged.
-        if [[ "$GITHUB_REPOSITORY" == "PicPeak/picpeak" ]]; then
-          echo "DOCKERHUB_ENABLED=true" >> "$GITHUB_ENV"
-        else
-          echo "DOCKERHUB_ENABLED=false" >> "$GITHUB_ENV"
-        fi
-
-    - name: Download digest artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: /tmp/digests
-        pattern: digests-frontend-*
-        merge-multiple: true
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-    - name: Log in to Container Registry
-      id: login-ghcr
-      continue-on-error: true
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Determine build context
-      id: context
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/v*-beta* ]] || [[ "${{ github.ref }}" == refs/heads/main ]]; then
-          # Active-dev branch (`main`, renamed from `beta` per #669) produces
-          # prereleases; the `-beta.N` version-suffix scheme is unchanged.
-          echo "channel=beta" >> $GITHUB_OUTPUT
-          echo "is_prerelease=true" >> $GITHUB_OUTPUT
-        else
-          echo "channel=stable" >> $GITHUB_OUTPUT
-          echo "is_prerelease=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Log in to Docker Hub
-      if: env.DOCKERHUB_ENABLED == 'true'
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: docker.io
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Extract metadata for Frontend
-      id: meta-frontend
-      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
-      with:
-        # GHCR always; Docker Hub (picpeak/frontend) added on the canonical repo so
-        # the same tag scheme is mirrored to both registries. metadata-action drops
-        # the blank second line on forks → GHCR-only there.
-        images: |
-          ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
-          ${{ env.DOCKERHUB_ENABLED == 'true' && 'docker.io/picpeak/frontend' || '' }}
-        labels: |
-          org.opencontainers.image.title=PicPeak Frontend
-          org.opencontainers.image.description=PicPeak photo sharing platform frontend application
-          org.opencontainers.image.vendor=PicPeak
-          maintainer=${{ github.repository_owner }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          type=semver,pattern={{major}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          # #668/#783: publish the git-tag name verbatim (v3.45.0 / v3.84.0-beta.0)
-          # so users can pin the same string as the GitHub release. metadata-action's
-          # `pattern=v{{version}}` silently dropped it on prereleases, so use type=ref.
-          type=ref,event=tag
-          type=sha,format=short
-          # `:latest` + `:stable` follow the stable channel (the `stable` branch +
-          # stable release tags). The default branch is now `main` (active dev),
-          # so `is_default_branch` no longer maps to "stable" — be explicit.
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          # `:beta` follows the active development branch. This used to happen
-          # for free via `type=ref,event=branch` back when that branch was
-          # literally named `beta`; the rename to `main` silently retired the
-          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
-          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
-          # on. The ml sidecar was added after the rename and so never had a
-          # `:beta` at all, which left docker-compose.production.yml unable to
-          # resolve the image for any documented channel.
-          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
-          # `:beta` is RETIRED post-rename (Option B / #669). Active-dev pulls
-          # are `:main` (auto via type=ref,event=branch). The pre-rename `:beta`
-          # tag remains frozen at its last build — operators should update.
-
-    - name: Create and push multi-arch manifest
-      working-directory: /tmp/digests
-      run: |
-        docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-          $(printf "${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}@sha256:%s " *)
-
-    - name: Inspect manifest (GHCR)
-      run: |
-        docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ steps.meta-frontend.outputs.version }}
-
-    - name: Inspect manifest (Docker Hub)
-      if: env.DOCKERHUB_ENABLED == 'true'
-      run: |
-        docker buildx imagetools inspect docker.io/picpeak/frontend:${{ steps.meta-frontend.outputs.version }}
+    uses: ./.github/workflows/_docker-image-merge.yml
+    secrets: inherit
+    with:
+      image: frontend
+      display-name: Frontend
+      title: PicPeak Frontend
+      description: PicPeak photo sharing platform frontend application
 
   # -----------------------------------------------------------------------------
   # All-in-one (#1042): backend + built frontend in one container, SQLite default.
@@ -652,245 +155,34 @@ jobs:
   # the repo root (Dockerfile.aio needs backend/ AND frontend/).
   # -----------------------------------------------------------------------------
   build-aio:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-latest
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
-      # Per-arch Trivy scan by digest, same rationale as build-backend (#476).
       security-events: write
+    uses: ./.github/workflows/_docker-image-build.yml
+    with:
+      image: aio
+      display-name: AIO
+      title: PicPeak All-in-one
+      description: PicPeak backend + frontend in a single container (SQLite default)
+      context: .
+      file: ./Dockerfile.aio
 
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Compute image name (lowercase for GHCR)
-      run: |
-        repo_lc="${GITHUB_REPOSITORY,,}"
-        echo "AIO_IMAGE_NAME=${repo_lc}/aio" >> "$GITHUB_ENV"
-
-    - name: Prepare platform pair
-      run: |
-        platform="${{ matrix.platform }}"
-        echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-    - name: Log in to Container Registry
-      if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
-      id: login-ghcr
-      continue-on-error: true
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Determine if pushing
-      id: push-decision
-      run: |
-        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.inputs.push }}" != "true" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        elif [[ "${{ steps.login-ghcr.outcome }}" != "success" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "push=true" >> "$GITHUB_OUTPUT"
-        fi
-
-    - name: Extract metadata for AIO (labels only)
-      id: meta-aio
-      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}
-        labels: |
-          org.opencontainers.image.title=PicPeak All-in-one
-          org.opencontainers.image.description=PicPeak backend + frontend in a single container (SQLite default)
-          org.opencontainers.image.vendor=PicPeak
-          maintainer=${{ github.repository_owner }}
-
-    - name: Build AIO image (push by digest)
-      id: build
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
-      with:
-        context: .
-        file: ./Dockerfile.aio
-        platforms: ${{ matrix.platform }}
-        labels: ${{ steps.meta-aio.outputs.labels }}
-        cache-from: type=gha,scope=aio-${{ env.PLATFORM_PAIR }}
-        # ignore-error: a flaky GitHub Actions cache write must not fail an
-        # otherwise-successful build that already pushed the image.
-        cache-to: type=gha,mode=max,scope=aio-${{ env.PLATFORM_PAIR }},ignore-error=true
-        outputs: ${{ steps.push-decision.outputs.push == 'true' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.AIO_IMAGE_NAME) || 'type=cacheonly' }}
-        build-args: |
-          CACHEBUST=${{ github.run_number }}
-          BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          VCS_REF=${{ github.sha }}
-          VERSION=${{ steps.meta-aio.outputs.version }}
-
-    - name: Export digest
-      if: steps.push-decision.outputs.push == 'true'
-      run: |
-        mkdir -p /tmp/digests
-        digest="${{ steps.build.outputs.digest }}"
-        touch "/tmp/digests/${digest#sha256:}"
-
-    - name: Upload digest artifact
-      if: steps.push-decision.outputs.push == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: digests-aio-${{ env.PLATFORM_PAIR }}
-        path: /tmp/digests/*
-        if-no-files-found: error
-        retention-days: 1
-
-    - name: Run Trivy vulnerability scanner (per-arch, by digest)
-      if: steps.push-decision.outputs.push == 'true'
-      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-      env:
-        # See build-backend — pin Trivy's platform to the matrix arch so its
-        # remote-index resolver picks the right child.
-        TRIVY_PLATFORM: ${{ matrix.platform }}
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}@${{ steps.build.outputs.digest }}
-        format: 'sarif'
-        output: 'trivy-aio-${{ env.PLATFORM_PAIR }}.sarif'
-        severity: 'CRITICAL,HIGH'
-        # Base-image CVEs with no released fix are not actionable: the
-        # Dockerfiles already run `apt-get upgrade -y` behind a CACHEBUST,
-        # so a fix lands in the next build automatically. Reporting them
-        # buries the findings someone can actually do something about --
-        # the ML image alone contributed 123 unfixable alerts. Dropping
-        # them is also the precondition for ever setting exit-code: 1,
-        # which build-backend's comment flags as a deliberate follow-up.
-        ignore-unfixed: true
-        timeout: '10m'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      if: steps.push-decision.outputs.push == 'true'
-      uses: github/codeql-action/upload-sarif@v4
-      with:
-        sarif_file: 'trivy-aio-${{ env.PLATFORM_PAIR }}.sarif'
-        category: 'aio-vulnerabilities-${{ env.PLATFORM_PAIR }}'
-
+  # Every Release Please version publishes a matching aio image, mirrored to
+  # Docker Hub (docker.io/picpeak/aio) on the canonical org repo (#1042).
   merge-aio:
     needs: build-aio
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
     permissions:
       contents: read
       packages: write
-    if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
-
-    steps:
-    - name: Compute image name (lowercase for GHCR)
-      run: |
-        repo_lc="${GITHUB_REPOSITORY,,}"
-        echo "AIO_IMAGE_NAME=${repo_lc}/aio" >> "$GITHUB_ENV"
-        # Mirror manifests to Docker Hub (picpeak/aio) only on the canonical org
-        # repo, where the DOCKERHUB_* secrets live. Forks (and any other owner)
-        # fall back to GHCR-only — the Docker Hub image line and login are gated
-        # on this flag so their builds keep working unchanged.
-        if [[ "$GITHUB_REPOSITORY" == "PicPeak/picpeak" ]]; then
-          echo "DOCKERHUB_ENABLED=true" >> "$GITHUB_ENV"
-        else
-          echo "DOCKERHUB_ENABLED=false" >> "$GITHUB_ENV"
-        fi
-
-    - name: Download digest artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: /tmp/digests
-        pattern: digests-aio-*
-        merge-multiple: true
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-    - name: Log in to Container Registry
-      id: login-ghcr
-      continue-on-error: true
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Determine build context
-      id: context
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/v*-beta* ]] || [[ "${{ github.ref }}" == refs/heads/main ]]; then
-          echo "channel=beta" >> $GITHUB_OUTPUT
-          echo "is_prerelease=true" >> $GITHUB_OUTPUT
-        else
-          echo "channel=stable" >> $GITHUB_OUTPUT
-          echo "is_prerelease=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Log in to Docker Hub
-      if: env.DOCKERHUB_ENABLED == 'true'
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: docker.io
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    # Same per-version tag scheme as backend/frontend/ml: every Release Please
-    # version publishes a matching aio image, mirrored to Docker Hub
-    # (docker.io/picpeak/aio) on the canonical org repo (#1042).
-    - name: Extract metadata for AIO
-      id: meta-aio
-      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
-      with:
-        images: |
-          ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}
-          ${{ env.DOCKERHUB_ENABLED == 'true' && 'docker.io/picpeak/aio' || '' }}
-        labels: |
-          org.opencontainers.image.title=PicPeak All-in-one
-          org.opencontainers.image.description=PicPeak backend + frontend in a single container (SQLite default)
-          org.opencontainers.image.vendor=PicPeak
-          maintainer=${{ github.repository_owner }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          type=semver,pattern={{major}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          # #668/#783: publish the git-tag name verbatim, same as backend/frontend.
-          type=ref,event=tag
-          type=sha,format=short
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          # `:beta` follows the active development branch. This used to happen
-          # for free via `type=ref,event=branch` back when that branch was
-          # literally named `beta`; the rename to `main` silently retired the
-          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
-          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
-          # on. The ml sidecar was added after the rename and so never had a
-          # `:beta` at all, which left docker-compose.production.yml unable to
-          # resolve the image for any documented channel.
-          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
-
-    - name: Create and push multi-arch manifest
-      working-directory: /tmp/digests
-      run: |
-        docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-          $(printf "${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}@sha256:%s " *)
-
-    - name: Inspect manifest (GHCR)
-      run: |
-        docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}:${{ steps.meta-aio.outputs.version }}
-
-    - name: Inspect manifest (Docker Hub)
-      if: env.DOCKERHUB_ENABLED == 'true'
-      run: |
-        docker buildx imagetools inspect docker.io/picpeak/aio:${{ steps.meta-aio.outputs.version }}
+    uses: ./.github/workflows/_docker-image-merge.yml
+    secrets: inherit
+    with:
+      image: aio
+      display-name: AIO
+      title: PicPeak All-in-one
+      description: PicPeak backend + frontend in a single container (SQLite default)
 
   # Boot-level verification of the AIO image on every PR: build for the
   # runner's arch, run it with no DB env (SQLite default), and assert the
@@ -1139,244 +431,42 @@ jobs:
   #   FACENET_ONNX_URL     https://github.com/PicPeak/picpeak/releases/download/<tag>/facenet512.onnx
   #   FACENET_ONNX_SHA256  <sha256 of that file>
   # See ml/README.md for producing them.
+  #
+  # This image carries a Python/Debian dependency surface the others don't,
+  # so its Trivy results get their own Security-tab category (ml-*).
   build-ml:
     if: vars.FACENET_ONNX_URL != ''
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-latest
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
       security-events: write
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Compute image names (lowercase for GHCR)
-      run: |
-        repo_lc="${GITHUB_REPOSITORY,,}"
-        echo "ML_IMAGE_NAME=${repo_lc}/ml" >> "$GITHUB_ENV"
-
-    - name: Prepare platform pair
-      run: |
-        platform="${{ matrix.platform }}"
-        echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-    - name: Log in to Container Registry
-      if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
-      id: login-ghcr
-      continue-on-error: true
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Determine if pushing
-      id: push-decision
-      run: |
-        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.inputs.push }}" != "true" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        elif [[ "${{ steps.login-ghcr.outcome }}" != "success" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "push=true" >> "$GITHUB_OUTPUT"
-        fi
-
-    - name: Extract metadata for ML (labels only)
-      id: meta-ml
-      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}
-        labels: |
-          org.opencontainers.image.title=PicPeak ML
-          org.opencontainers.image.description=PicPeak face detection and embedding sidecar
-          org.opencontainers.image.vendor=PicPeak
-          maintainer=${{ github.repository_owner }}
-
-    - name: Build ML image (push by digest)
-      id: build
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
-      with:
-        context: ./ml
-        file: ./ml/Dockerfile
-        platforms: ${{ matrix.platform }}
-        labels: ${{ steps.meta-ml.outputs.labels }}
-        cache-from: type=gha,scope=ml-${{ env.PLATFORM_PAIR }}
-        cache-to: type=gha,mode=max,scope=ml-${{ env.PLATFORM_PAIR }},ignore-error=true
-        outputs: ${{ steps.push-decision.outputs.push == 'true' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.ML_IMAGE_NAME) || 'type=cacheonly' }}
-        build-args: |
-          CACHEBUST=${{ github.run_number }}
-          BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          VCS_REF=${{ github.sha }}
-          VERSION=${{ steps.meta-ml.outputs.version }}
-          FACENET_ONNX_URL=${{ vars.FACENET_ONNX_URL }}
-          FACENET_ONNX_SHA256=${{ vars.FACENET_ONNX_SHA256 }}
-          TAG_ENCODER_ONNX_URL=${{ vars.TAG_ENCODER_ONNX_URL }}
-          TAG_ENCODER_ONNX_SHA256=${{ vars.TAG_ENCODER_ONNX_SHA256 }}
-
-    - name: Export digest
-      if: steps.push-decision.outputs.push == 'true'
-      run: |
-        mkdir -p /tmp/digests
-        digest="${{ steps.build.outputs.digest }}"
-        touch "/tmp/digests/${digest#sha256:}"
-
-    - name: Upload digest artifact
-      if: steps.push-decision.outputs.push == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: digests-ml-${{ env.PLATFORM_PAIR }}
-        path: /tmp/digests/*
-        if-no-files-found: error
-        retention-days: 1
-
-    # Per-arch scan by digest, same reasoning as the backend leg (#476).
-    # This image carries a Python/Debian dependency surface the other two
-    # don't, so it gets its own Security-tab category.
-    - name: Run Trivy vulnerability scanner (per-arch, by digest)
-      if: steps.push-decision.outputs.push == 'true'
-      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-      env:
-        TRIVY_PLATFORM: ${{ matrix.platform }}
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}@${{ steps.build.outputs.digest }}
-        format: 'sarif'
-        output: 'trivy-ml-${{ env.PLATFORM_PAIR }}.sarif'
-        severity: 'CRITICAL,HIGH'
-        # Base-image CVEs with no released fix are not actionable: the
-        # Dockerfiles already run `apt-get upgrade -y` behind a CACHEBUST,
-        # so a fix lands in the next build automatically. Reporting them
-        # buries the findings someone can actually do something about --
-        # the ML image alone contributed 123 unfixable alerts. Dropping
-        # them is also the precondition for ever setting exit-code: 1,
-        # which build-backend's comment flags as a deliberate follow-up.
-        ignore-unfixed: true
-        timeout: '10m'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      if: steps.push-decision.outputs.push == 'true'
-      uses: github/codeql-action/upload-sarif@v4
-      with:
-        sarif_file: 'trivy-ml-${{ env.PLATFORM_PAIR }}.sarif'
-        category: 'ml-vulnerabilities-${{ env.PLATFORM_PAIR }}'
+    uses: ./.github/workflows/_docker-image-build.yml
+    with:
+      image: ml
+      display-name: ML
+      title: PicPeak ML
+      description: PicPeak face detection and embedding sidecar
+      context: ./ml
+      file: ./ml/Dockerfile
+      extra-build-args: |
+        FACENET_ONNX_URL=${{ vars.FACENET_ONNX_URL }}
+        FACENET_ONNX_SHA256=${{ vars.FACENET_ONNX_SHA256 }}
+        TAG_ENCODER_ONNX_URL=${{ vars.TAG_ENCODER_ONNX_URL }}
+        TAG_ENCODER_ONNX_SHA256=${{ vars.TAG_ENCODER_ONNX_SHA256 }}
 
   merge-ml:
     needs: build-ml
-    runs-on: ubuntu-latest
+    if: vars.FACENET_ONNX_URL != '' && (github.event_name != 'pull_request' || github.event.inputs.push == 'true')
     permissions:
       contents: read
       packages: write
-    if: vars.FACENET_ONNX_URL != '' && (github.event_name != 'pull_request' || github.event.inputs.push == 'true')
-
-    steps:
-    - name: Compute image names (lowercase for GHCR)
-      run: |
-        repo_lc="${GITHUB_REPOSITORY,,}"
-        echo "ML_IMAGE_NAME=${repo_lc}/ml" >> "$GITHUB_ENV"
-        if [[ "$GITHUB_REPOSITORY" == "PicPeak/picpeak" ]]; then
-          echo "DOCKERHUB_ENABLED=true" >> "$GITHUB_ENV"
-        else
-          echo "DOCKERHUB_ENABLED=false" >> "$GITHUB_ENV"
-        fi
-
-    - name: Download digest artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: /tmp/digests
-        pattern: digests-ml-*
-        merge-multiple: true
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-    - name: Log in to Container Registry
-      id: login-ghcr
-      continue-on-error: true
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Determine build context
-      id: context
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/v*-beta* ]] || [[ "${{ github.ref }}" == refs/heads/main ]]; then
-          echo "channel=beta" >> $GITHUB_OUTPUT
-          echo "is_prerelease=true" >> $GITHUB_OUTPUT
-        else
-          echo "channel=stable" >> $GITHUB_OUTPUT
-          echo "is_prerelease=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Log in to Docker Hub
-      if: env.DOCKERHUB_ENABLED == 'true'
-      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-      with:
-        registry: docker.io
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Extract metadata for ML
-      id: meta-ml
-      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
-      with:
-        images: |
-          ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}
-          ${{ env.DOCKERHUB_ENABLED == 'true' && 'docker.io/picpeak/ml' || '' }}
-        labels: |
-          org.opencontainers.image.title=PicPeak ML
-          org.opencontainers.image.description=PicPeak face detection and embedding sidecar
-          org.opencontainers.image.vendor=PicPeak
-          maintainer=${{ github.repository_owner }}
-        # Identical tag scheme to backend/frontend: the sidecar's API contract
-        # is versioned with the backend that calls it, so PICPEAK_CHANNEL
-        # resolves the same string across all three images.
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          type=semver,pattern={{major}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          type=ref,event=tag
-          type=sha,format=short
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          # `:beta` follows the active development branch. This used to happen
-          # for free via `type=ref,event=branch` back when that branch was
-          # literally named `beta`; the rename to `main` silently retired the
-          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
-          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
-          # on. The ml sidecar was added after the rename and so never had a
-          # `:beta` at all, which left docker-compose.production.yml unable to
-          # resolve the image for any documented channel.
-          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
-
-    - name: Create and push multi-arch manifest
-      working-directory: /tmp/digests
-      run: |
-        docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-          $(printf "${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}@sha256:%s " *)
-
-    - name: Inspect manifest (GHCR)
-      run: |
-        docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}:${{ steps.meta-ml.outputs.version }}
-
-    - name: Inspect manifest (Docker Hub)
-      if: env.DOCKERHUB_ENABLED == 'true'
-      run: |
-        docker buildx imagetools inspect docker.io/picpeak/ml:${{ steps.meta-ml.outputs.version }}
+    uses: ./.github/workflows/_docker-image-merge.yml
+    secrets: inherit
+    with:
+      image: ml
+      display-name: ML
+      title: PicPeak ML
+      description: PicPeak face detection and embedding sidecar
 
   # ---------------------------------------------------------------------------
   # Docker Hub repository pages
@@ -1550,6 +640,5 @@ jobs:
         echo "- PR number (for pull requests, when push is enabled)" >> $GITHUB_STEP_SUMMARY
         echo "- Version tags (for releases)" >> $GITHUB_STEP_SUMMARY
         echo "- Short SHA" >> $GITHUB_STEP_SUMMARY
-        echo "- \`latest\` (for main branch)" >> $GITHUB_STEP_SUMMARY
-        echo "- \`stable\` (for main branch and stable releases)" >> $GITHUB_STEP_SUMMARY
-        echo "- \`beta\` (for beta branch and pre-releases)" >> $GITHUB_STEP_SUMMARY
+        echo "- \`latest\` and \`stable\` (for the stable branch and stable releases)" >> $GITHUB_STEP_SUMMARY
+        echo "- \`beta\` (for the main branch, alongside \`main\`)" >> $GITHUB_STEP_SUMMARY
