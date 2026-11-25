@@ -2,6 +2,11 @@ import { api } from '../config/api';
 import type { PhotoExif } from '../types';
 import { parseContentDispositionFilename } from '../utils/contentDisposition';
 import { uploadMultipartBudget } from '../utils/uploadMultipartBudget';
+import { formatBytes } from '../utils/formatBytes';
+import { saveBlob } from '../utils/saveBlob';
+
+// The photo copy never had 'TB'; keep its list so the output stays the same.
+const PHOTO_BYTE_UNITS = ['Bytes', 'KB', 'MB', 'GB'] as const;
 
 export type PhotoVisibility = 'visible' | 'hidden';
 
@@ -533,22 +538,11 @@ class PhotosService {
       response.headers['content-disposition'] || response.headers['Content-Disposition'];
     const serverFilename = parseContentDispositionFilename(headerName);
 
-    const url = window.URL.createObjectURL(response.data);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = serverFilename || filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    saveBlob(response.data, serverFilename || filename);
   }
 
   formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return formatBytes(bytes, PHOTO_BYTE_UNITS);
   }
 
   // Chunked upload methods for large files (videos up to 10GB).
@@ -676,17 +670,18 @@ class PhotosService {
     return response.data.data;
   }
 
-  async exportPhotos(
+  // POST the export and read the filename from Content-Disposition. Keeps
+  // its own plain `filename=` match rather than parseContentDispositionFilename.
+  private async requestExport(
     eventId: number,
     options: ExportOptions
-  ): Promise<void> {
+  ): Promise<{ blob: Blob; filename: string }> {
     const response = await api.post(
       `/admin/photo-export/${eventId}/export`,
       options,
       { responseType: 'blob' }
     );
 
-    // Get filename from Content-Disposition header
     const contentDisposition = response.headers['content-disposition'];
     let filename = `export_${Date.now()}`;
     if (contentDisposition) {
@@ -695,16 +690,15 @@ class PhotosService {
         filename = filenameMatch[1];
       }
     }
+    return { blob: response.data as Blob, filename };
+  }
 
-    // Download the file
-    const url = window.URL.createObjectURL(response.data);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+  async exportPhotos(
+    eventId: number,
+    options: ExportOptions
+  ): Promise<void> {
+    const { blob, filename } = await this.requestExport(eventId, options);
+    saveBlob(blob, filename);
   }
 
   // Same endpoint as `exportPhotos` but returns the text content + filename
@@ -716,22 +710,7 @@ class PhotosService {
     eventId: number,
     options: ExportOptions
   ): Promise<{ content: string; filename: string }> {
-    const response = await api.post(
-      `/admin/photo-export/${eventId}/export`,
-      options,
-      { responseType: 'blob' }
-    );
-
-    const contentDisposition = response.headers['content-disposition'];
-    let filename = `export_${Date.now()}`;
-    if (contentDisposition) {
-      const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/);
-      if (filenameMatch) {
-        filename = filenameMatch[1];
-      }
-    }
-
-    const blob = response.data as Blob;
+    const { blob, filename } = await this.requestExport(eventId, options);
     const content = await blob.text();
     return { content, filename };
   }

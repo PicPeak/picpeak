@@ -5,6 +5,7 @@ import { Loading } from '../../../../components/common';
 import { INHERIT, type DownloadsDraft } from './draft';
 import type { DownloadResolutionsPayload } from './useEventSettingsDraft';
 import { SectionCard, checkboxClass, inputClass, labelClass, type FieldsProps } from './sections';
+import { DEFAULT_PHOTO_SORT_OPTIONS } from '../../../../constants/photoSort';
 
 const ORIGINAL = 'original';
 
@@ -92,12 +93,9 @@ export const DownloadsSection: React.FC<FieldsProps & {
               onChange={(e) => set({ default_photo_sort: e.target.value })}
               className={inputClass}
             >
-              <option value="upload_date_desc">{t('photoSort.uploadDateNewest', 'Upload Date (Newest First)')}</option>
-              <option value="upload_date_asc">{t('photoSort.uploadDateOldest', 'Upload Date (Oldest First)')}</option>
-              <option value="capture_date_desc">{t('photoSort.captureDateNewest', 'Date Taken (Newest First)')}</option>
-              <option value="capture_date_asc">{t('photoSort.captureDateOldest', 'Date Taken (Oldest First)')}</option>
-              <option value="filename_asc">{t('photoSort.filenameAZ', 'Filename (A-Z)')}</option>
-              <option value="filename_desc">{t('photoSort.filenameZA', 'Filename (Z-A)')}</option>
+              {DEFAULT_PHOTO_SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{t(o.labelKey, o.fallback)}</option>
+              ))}
             </select>
             {/* Videos ahead of photos, the sort above within each (issue 2263). */}
             <label className="flex items-center mt-2">

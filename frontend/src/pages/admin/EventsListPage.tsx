@@ -40,6 +40,7 @@ import { archiveInProgressError } from '../../utils/archiveErrors';
 import { isGalleryPublic } from '../../utils/accessControl';
 import { mediaSplitLabel, splitMediaCount } from '../../utils/mediaCounts';
 import { buildShareLinkUrl } from '../../utils/url';
+import { copyText } from '../../utils/clipboard';
 import { useViewGalleryUrl } from '../../hooks/useViewGalleryUrl';
 import { usePublicBaseUrl } from '../../hooks/usePublicBaseUrl';
 import type { Event } from '../../types';
@@ -75,19 +76,7 @@ export const EventsListPage: React.FC = () => {
       return;
     }
     try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(url);
-      } else {
-        const textArea = document.createElement('textarea');
-        textArea.value = url;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-999999px';
-        document.body.appendChild(textArea);
-        textArea.select();
-        const ok = document.execCommand('copy');
-        document.body.removeChild(textArea);
-        if (!ok) throw new Error('Copy failed');
-      }
+      await copyText(url);
       setCopiedEventId(event.id);
       toast.success(t('events.linkCopied', 'Gallery link copied'));
       setTimeout(() => setCopiedEventId((current) => (current === event.id ? null : current)), 2000);

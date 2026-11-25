@@ -3,6 +3,7 @@ import { Copy, Check, Download } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { Button, Modal } from '../common';
+import { saveBlob } from '../../utils/saveBlob';
 
 interface ExportPreviewModalProps {
   format: 'txt' | 'csv';
@@ -54,14 +55,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     const blob = new Blob([content], {
       type: format === 'csv' ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8',
     });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    saveBlob(blob, filename);
   };
 
   const titleKey = format === 'csv' ? 'export.preview.titleCsv' : 'export.preview.titleTxt';
