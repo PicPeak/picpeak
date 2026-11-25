@@ -448,9 +448,10 @@ async function buildArchive(event, lease) {
             name: FEEDBACK_JSON_FILE,
             buffer: Buffer.from(JSON.stringify(feedbackData, null, 2), 'utf8'),
           });
+          // Quoting and formula neutralisation (GHSA-q82f) are the shared csvCell.
           feedbackEntries.push({
             name: FEEDBACK_CSV_FILE,
-            buffer: Buffer.from(convertToCSV(feedbackData), 'utf8'),
+            buffer: Buffer.from(objectsToCsv(feedbackData), 'utf8'),
           });
           const summary = await feedbackService.getEventFeedbackSummary(event.id);
           feedbackEntries.push({
@@ -814,12 +815,6 @@ async function buildArchive(event, lease) {
   } finally {
     await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
-}
-
-// Feedback rows to CSV; quoting and formula neutralisation (GHSA-q82f)
-// are the shared csvCell.
-function convertToCSV(data) {
-  return objectsToCsv(data);
 }
 
 module.exports = {

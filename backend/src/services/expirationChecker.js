@@ -35,17 +35,15 @@ async function checkExpirations() {
     const now = new Date();
     const warningDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
 
-    // Mutual exclusion with the workflow engine: when the matching built-in flow
-    // is enabled, the engine sends the email (via notify_gallery_* actions). We
-    // still EMIT the trigger every pass (for the built-in AND any custom flows),
-    // but skip the LEGACY email so the two never double-send. State transitions
+    // Mutual exclusion with the workflow engine: the legacy email stands down
+    // only when the matching built-in flow is ENABLED (then its
+    // notify_gallery_* action sends the identical mail), so the two never
+    // double-send. A disabled built-in leaves the legacy send running — so the
+    // flows can ship disabled without galleries going un-notified, and
+    // disabling a flow reverts to legacy. The trigger is still EMITTED every
+    // pass (for the built-in AND any custom flows). State transitions
     // (is_active=false, archive) always run regardless — they're the expiry
     // mechanic, not the notification.
-    // Enabled-based mutual exclusion: the legacy email stands down only when the
-    // matching built-in is ENABLED (then its action sends the identical mail). A
-    // disabled built-in leaves the legacy send running — so the flows can ship
-    // disabled without galleries going un-notified, and disabling a flow reverts
-    // to legacy. The trigger is still emitted regardless (for any custom flows).
     const { isBuiltinFlowActive } = require('./workflows');
     const warningFlowOwns = await isBuiltinFlowActive('gallery_expiring');
     const expiredFlowOwns = await isBuiltinFlowActive('gallery_expired');

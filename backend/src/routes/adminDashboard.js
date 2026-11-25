@@ -33,8 +33,8 @@ function normaliseDateKey(value) {
 }
 
 /**
- * Event ids the caller's dashboard may aggregate over, or `null` when the
- * caller is unrestricted (GHSA-c2jj / gqx7 / jhcf).
+ * Whether the caller's dashboard is limited to some events (GHSA-c2jj / gqx7 /
+ * jhcf).
  *
  * These endpoints are gated only by `analytics.view`, which scoped roles such
  * as `editor` hold — yet the events *list* restricts those roles to their own
@@ -46,7 +46,7 @@ function normaliseDateKey(value) {
  * Scoped with seesAllEvents to mirror the events list exactly, so the
  * super_admin and `admin` dashboards stay instance-wide.
  *
- * @returns {Promise<number[]|null>} ids to restrict to, or null for no limit
+ * @returns {boolean} true when the dashboard is limited to some events
  */
 function isScopedAdmin(admin) {
   // Mirrors the events list: every role except super_admin and admin is

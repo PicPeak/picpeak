@@ -105,13 +105,6 @@ const readBooleanSetting = async (key) => {
   }
 };
 
-// Helper to read the global "enable_devtools_protection" admin setting so
-// new events inherit it instead of always falling back to the DB column default
-// (#317 — admin disabled it globally but new events still got it ON).
-const getDownloadProtectionDefaults = async () => {
-  return { enable_devtools_protection: await readBooleanSetting('enable_devtools_protection') };
-};
-
 /**
  * The rest of Settings → Image security, as creation defaults (#1296).
  *
@@ -254,53 +247,6 @@ const resolveImageSecurityColumns = (body = {}, defaults = {}) => {
   return columns;
 };
 
-// Helper to get branding defaults for new events (Feature 7: Branding Inheritance).
-//
-// Note: `branding_logo_position` (header bar — left/center/right) is a
-// different concept from `hero_logo_position` (hero block — top/center/
-// bottom) and must NOT be mapped here. A previous version copied the
-// branding value over, which wrote 'left'/'right' into per-event
-// hero_logo_position columns and broke any subsequent PUT validation
-// (#357). Migration 084 heals existing rows.
-const getBrandingDefaults = async () => {
-  try {
-    const settings = await db('app_settings')
-      .whereIn('setting_key', [
-        'branding_logo_display_hero',
-        'branding_logo_size'
-      ])
-      .select('setting_key', 'setting_value');
-
-    const defaults = {
-      hero_logo_visible: true,
-      hero_logo_size: 'medium',
-      hero_logo_position: 'top'
-    };
-
-    settings.forEach(s => {
-      let value = s.setting_value;
-      if (typeof value === 'string') {
-        try { value = JSON.parse(value); } catch (e) { /* use as-is */ }
-      }
-      if (s.setting_key === 'branding_logo_display_hero') {
-        defaults.hero_logo_visible = value !== false;
-      }
-      if (s.setting_key === 'branding_logo_size' && value) {
-        defaults.hero_logo_size = value;
-      }
-    });
-
-    return defaults;
-  } catch (error) {
-    logger.error('Failed to get branding defaults', { error: error.message });
-    return {
-      hero_logo_visible: true,
-      hero_logo_size: 'medium',
-      hero_logo_position: 'top'
-    };
-  }
-};
-
 // Use parseStringInput from shared parsers for customer data extraction
 const getCustomerNameFromPayload = (payload = {}) => parseStringInput(payload.customer_name);
 const getCustomerEmailFromPayload = (payload = {}) => parseStringInput(payload.customer_email);
@@ -354,24 +300,6 @@ const mapEventForApi = (event) => {
   };
 };
 
-let customerColumnCache = null;
-const hasCustomerContactColumns = async () => {
-  if (customerColumnCache === true) {
-    return true;
-  }
-
-  try {
-    const hasColumn = await db.schema.hasColumn('events', 'customer_email');
-    if (hasColumn) {
-      customerColumnCache = true;
-    }
-    return hasColumn;
-  } catch (error) {
-    logger.debug('Failed to detect customer_email column', { error: error.message });
-    return false;
-  }
-};
-
 // Allowed slide transition styles (kept in sync with the SlideshowPage).
 // dipwhite/dipblack = fade through highlights / lowlights between images.
 const SLIDESHOW_TRANSITIONS = ['crossfade', 'cut', 'slide', 'kenburns', 'dipwhite', 'dipblack'];
@@ -394,16 +322,13 @@ module.exports = {
   getEventFieldRequirements,
   readBooleanSetting,
   decodeSettingValue,
-  getDownloadProtectionDefaults,
   getImageSecurityDefaults,
   resolveImageSecurityColumns,
-  getBrandingDefaults,
   getCustomerNameFromPayload,
   getCustomerEmailFromPayload,
   getCustomerPhoneFromPayload,
   isPhoneFieldEnabled,
   mapEventForApi,
-  hasCustomerContactColumns,
   SLIDESHOW_ORDERS,
   SLIDESHOW_FITS,
   DEFAULT_SLIDESHOW_FIT,
