@@ -1286,10 +1286,6 @@
         "GET /status",
         "POST /validate",
         "POST /start",
-        "GET /progress",
-        "GET /run/:id",
-        "GET /run/:id/report",
-        "GET /available-backups",
         "POST /list-backups",
         "GET /settings",
         "PUT /settings"

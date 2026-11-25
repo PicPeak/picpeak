@@ -305,11 +305,6 @@ async function captureAdapter(key, maxBytes = DEFAULT_MAX_BYTES) {
   } catch (error) { await captured.cleanup(); throw error; }
 }
 
-async function checksumAdapter(key, maxBytes = DEFAULT_MAX_BYTES) {
-  const captured = await captureAdapter(key, maxBytes);
-  try { return captured.checksum; } finally { await captured.cleanup(); }
-}
-
 async function verifyAdapter(key, checksum, metadata, maxBytes = DEFAULT_MAX_BYTES) {
   const captured = await captureAdapter(key, maxBytes);
   try {
@@ -368,4 +363,4 @@ async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES, refer
 
 module.exports = { MANAGED_ROOTS, DEFAULT_MAX_BYTES, REFERENCES_SUFFIX, validKey, managedKey, remoteDestination, objectOptions,
   printTemporaryKey, discardedPrintFile, retainedPrintKey, localPrintInventory,
-  restoreObjectOptions, selectedManifestFiles, adapterInventory, requiredKeys, captureStream, captureAdapter, checksumAdapter, verifyAdapter, materialize };
+  restoreObjectOptions, selectedManifestFiles, adapterInventory, requiredKeys, captureStream, captureAdapter, verifyAdapter, materialize };

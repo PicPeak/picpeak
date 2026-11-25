@@ -53,7 +53,8 @@ const SEEDS = [
     setting_type: 'restore',
     rationale: 'Default ON so fresh installs can recover from disaster '
       + 'without a SQL incantation. Admins who want to require manual '
-      + 'intervention can disable via the admin UI.',
+      + 'intervention can turn it off with PUT /admin/restore/settings '
+      + '(no admin UI page writes it).',
   },
 ];
 

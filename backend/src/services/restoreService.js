@@ -517,7 +517,7 @@ const os = require('os');
  * - Detailed logging of every action
  * - Dry-run mode for testing
  * - Multiple restore options (full, database-only, files-only, selective)
- * - S3 support with resume capability
+ * - Local, S3 and rsync restore sources
  * - Post-restore verification
  * 
  * @class RestoreService
@@ -869,8 +869,8 @@ class RestoreService {
       // Not acceptable per the "backup must restore completely even
       // when new features have been added in the meantime" contract.
       //
-      // Implementation: shell out to `npm run migrate:safe`, which is
-      // the EXACT script wait-for-db.sh runs on boot. Running it as a
+      // Implementation: run migrations/run-migrations-safe.js (the
+      // `migrate:safe` script) in a `node` subprocess. Running it as a
       // subprocess means no risk to our reinit'd pool (subprocess gets
       // its own knex instance, destroys it on exit; our parent pool
       // is untouched). Idempotent — migrations already applied are
@@ -1732,7 +1732,8 @@ class RestoreService {
         this.log('info', `Requeued ${requeued} photo(s) for face detection after restore`);
       }
     } catch (err) {
-      // Pre-migration-177 backups have no such column; not an error.
+      // Runs only after the post-restore migrations, so the column exists;
+      // a failure here only leaves the restored face state as it was.
       this.log('info', `Face state reset skipped: ${err.message}`);
     }
   }
@@ -1967,8 +1968,8 @@ class RestoreService {
         // needed the SQL workaround again. With this snapshot/replay,
         // the operator's policy persists across restores.
         //
-        // PRESERVED_META_KEYS is declared above the SQLite/PG split
-        // (~L820). The snapshot READ happens here in the PG branch
+        // PRESERVED_META_KEYS is declared above the SQLite/PG split.
+        // The snapshot READ happens here in the PG branch
         // (must run before DROP), but is stashed on
         // `this.preservedMetaSnapshot` for the parent `restore()`
         // method to consume AFTER verification — see the round-3
@@ -2083,7 +2084,7 @@ END $$;`
       // exports — so `db.migrate.latest()` throws
       //   Invalid migration: helpers.js must have both an up and down function
       // every time it runs in this codebase. The production code path
-      // uses `npm run migrate:safe` (run-migrations-safe.js) which
+      // runs run-migrations-safe.js (`migrate:safe`) which
       // knows to skip helpers.js + walks core/ explicitly.
       //
       // The safe runner gets invoked AFTER verification in restore()
@@ -2699,7 +2700,7 @@ END $$;`
         await portableRuntime.restore(db, targetRuntime);
 
         await fs.unlink(decompressedPath);
-        // The identity tables changed again; see step 6b in restore().
+        // The identity tables changed again; see step 7a in restore().
         await invalidateSessionsIssuedSoFar();
       }
 
@@ -2996,49 +2997,6 @@ END $$;`
     return await db('restore_runs')
       .orderBy('started_at', 'desc')
       .limit(limit);
-  }
-
-  /**
-   * Generate restore report
-   */
-  generateRestoreReport(restoreResult) {
-    const report = [];
-    
-    report.push('=== RESTORE OPERATION REPORT ===');
-    report.push(`Status: ${restoreResult.success ? 'SUCCESS' : 'FAILED'}`);
-    report.push(`Duration: ${restoreResult.duration}s`);
-    report.push(`Dry Run: ${restoreResult.dryRun ? 'Yes' : 'No'}`);
-    
-    if (restoreResult.result) {
-      report.push('\n--- Restore Results ---');
-      report.push(`Database Restored: ${restoreResult.result.databaseRestored ? 'Yes' : 'No'}`);
-      report.push(`Files Restored: ${restoreResult.result.filesRestored || 0}`);
-      if (restoreResult.result.errors && restoreResult.result.errors.length > 0) {
-        report.push(`Errors: ${restoreResult.result.errors.length}`);
-        restoreResult.result.errors.forEach(err => report.push(`  - ${err}`));
-      }
-    }
-    
-    if (restoreResult.verification) {
-      report.push('\n--- Verification Results ---');
-      report.push(`Valid: ${restoreResult.verification.isValid ? 'Yes' : 'No'}`);
-      if (restoreResult.verification.errors.length > 0) {
-        report.push('Errors:');
-        restoreResult.verification.errors.forEach(err => report.push(`  - ${err}`));
-      }
-    }
-    
-    if (restoreResult.preRestoreBackup) {
-      report.push('\n--- Safety Backup ---');
-      report.push(`Location: ${restoreResult.preRestoreBackup}`);
-    }
-    
-    report.push('\n--- Operation Log ---');
-    restoreResult.logs.forEach(log => {
-      report.push(`[${log.timestamp}] ${log.level.toUpperCase()}: ${log.message}`);
-    });
-    
-    return report.join('\n');
   }
 }
 

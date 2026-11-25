@@ -256,145 +256,6 @@ router.post('/start', requireSuperAdmin(), [
 });
 
 /**
- * Get current restore progress
- */
-router.get('/progress', requirePermission('backup.view'), async (req, res) => {
-  try {
-    const progress = restoreService.getProgress();
-    const logs = restoreService.restoreLog.slice(-50); // Last 50 log entries
-    
-    res.json({
-      success: true,
-      data: {
-        isRunning: restoreService.isRunning,
-        progress: progress,
-        logs: logs
-      }
-    });
-  } catch (error) {
-    logger.error('Failed to get restore progress:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to get restore progress'
-    });
-  }
-});
-
-/**
- * Get restore run details
- */
-router.get('/run/:id', requirePermission('backup.view'), async (req, res) => {
-  try {
-    const run = await db('restore_runs')
-      .where('id', req.params.id)
-      .first();
-    
-    if (!run) {
-      return res.status(404).json({
-        success: false,
-        error: 'Restore run not found'
-      });
-    }
-    
-    // Parse JSON fields
-    if (run.statistics) run.statistics = JSON.parse(run.statistics);
-    if (run.restore_log) run.restore_log = JSON.parse(run.restore_log);
-    if (run.metadata) run.metadata = JSON.parse(run.metadata);
-    
-    // Get validation results
-    const validations = await db('restore_validation_results')
-      .where('restore_run_id', run.id)
-      .select('*');
-    
-    validations.forEach(v => {
-      if (v.errors) v.errors = JSON.parse(v.errors);
-      if (v.warnings) v.warnings = JSON.parse(v.warnings);
-      if (v.checksums) v.checksums = JSON.parse(v.checksums);
-    });
-    
-    // Get file operations summary
-    const fileOps = await db('restore_file_operations')
-      .where('restore_run_id', run.id)
-      .select('status', db.raw('COUNT(*) as count'))
-      .groupBy('status');
-    
-    res.json({
-      success: true,
-      data: {
-        run: run,
-        validations: validations,
-        fileOperations: fileOps
-      }
-    });
-  } catch (error) {
-    logger.error('Failed to get restore run details:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to get restore run details'
-    });
-  }
-});
-
-/**
- * Get restore run report
- */
-router.get('/run/:id/report', requirePermission('backup.view'), async (req, res) => {
-  try {
-    const run = await db('restore_runs')
-      .where('id', req.params.id)
-      .first();
-    
-    if (!run) {
-      return res.status(404).json({
-        success: false,
-        error: 'Restore run not found'
-      });
-    }
-    
-    // Parse JSON fields
-    if (run.statistics) run.statistics = JSON.parse(run.statistics);
-    if (run.restore_log) run.restore_log = JSON.parse(run.restore_log);
-    
-    // Generate report
-    const report = restoreService.generateRestoreReport({
-      success: run.status === 'completed',
-      duration: run.duration_seconds,
-      dryRun: run.is_dry_run,
-      result: run.statistics,
-      logs: run.restore_log || []
-    });
-    
-    res.type('text/plain').send(report);
-  } catch (error) {
-    logger.error('Failed to generate restore report:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate restore report'
-    });
-  }
-});
-
-/**
- * List available backups for restore
- */
-router.get('/available-backups', requirePermission('backup.view'), async (req, res) => {
-  try {
-    const { backups, remoteError } = await discoverAllBackups();
-    res.json({
-      success: true,
-      data: backups,
-      remoteError
-    });
-  } catch (error) {
-    logger.error('Failed to list available backups:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to list available backups'
-    });
-  }
-});
-
-/**
  * Discover restorable backups by walking the configured destination
  * directory + harvesting the backup_runs table.
  *
@@ -614,8 +475,6 @@ function isManifestFilename(name) {
 
 /**
  * Parse a manifest file and pull out the fields the wizard wants.
- * Tolerates schema drift across manifest versions (v1, v2) by
- * checking multiple shapes.
  */
 async function parseManifestMetadata(filePath) {
   const raw = await fs.readFile(filePath, 'utf8');
@@ -631,36 +490,21 @@ async function parseManifestMetadata(filePath) {
 
   const stats = await fs.stat(filePath);
 
-  // v2 shape: { manifest: { id, timestamp }, backup: { ... }, files: [...], database: { ... } }
-  // v1 shape: { backup_id, started_at, files: [...] }  (older)
-  const manifestId =
-    parsed?.manifest?.id
-    || parsed?.backup?.id
-    || parsed?.backup_id
-    || null;
+  // Backup manifests 2.0 and 3.0 both write { manifest: { version },
+  // backup: { id, timestamp }, files: { count, total_size }, database }.
+  // A top-level files array is the shape of a .picpeak manifest.json.
+  const manifestId = parsed?.backup?.id || null;
 
-  const completed =
-    parsed?.backup?.completed_at
-    || parsed?.manifest?.timestamp
-    || parsed?.completed_at
-    || stats.mtime;
+  const completed = stats.mtime;
 
-  const filesCount =
-    (Array.isArray(parsed?.files) ? parsed.files.length : null)
-    ?? parsed?.backup?.total_files
-    ?? null;
-
-  const totalSizeBytes =
-    parsed?.backup?.total_size_bytes
-    ?? parsed?.total_size_bytes
-    ?? null;
+  const filesCount = Array.isArray(parsed?.files) ? parsed.files.length : null;
 
   return {
     type: 'local',
     name: path.basename(filePath),
     path: filePath,
     manifestId,
-    size: totalSizeBytes ?? stats.size,
+    size: stats.size,
     filesCount,
     completed,
     source: 'disk',
@@ -668,7 +512,7 @@ async function parseManifestMetadata(filePath) {
     // Helpful for the UI: lets it show "This backup has no DB" warning
     // — exactly the surface that would have caught Ralf's original
     // four files-only manifests if it had existed.
-    schemaVersion: parsed?.manifest?.version || parsed?.version || '1.0',
+    schemaVersion: parsed?.manifest?.version || '1.0',
   };
 }
 
