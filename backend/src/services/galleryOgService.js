@@ -73,7 +73,6 @@ function isSocialCrawler(userAgent) {
   return SOCIAL_CRAWLER_PATTERNS.some((re) => re.test(userAgent));
 }
 
-
 async function fetchBranding() {
   const rows = await db('app_settings')
     .whereIn('setting_key', [

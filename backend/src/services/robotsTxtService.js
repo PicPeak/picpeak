@@ -5,7 +5,6 @@ let cachedRobotsTxt = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds
 
-
 async function getSeoSettings() {
   const rows = await db('app_settings')
     .where('setting_type', 'seo')

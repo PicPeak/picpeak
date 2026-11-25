@@ -79,8 +79,9 @@ async function claimDiscountCreation(eventId, current) {
 /** The Snipcart credentials when checkout through Snipcart is on, else null. */
 async function snipcartCredentials() {
   if (!(await require('./providers').preferences()).snipcart) return null;
-  const value = await require('./snipcartSettings').credentials();
-  return require('./snipcartSettings').configurationOf(value).checkout_configured ? value : null;
+  const settings = require('./snipcartSettings');
+  const value = await settings.credentials();
+  return settings.configurationOf(value).checkout_configured ? value : null;
 }
 
 /**

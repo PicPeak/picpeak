@@ -26,7 +26,6 @@ const ALLOWED_HTML_TAGS = [
 
 const COMMON_ATTRIBUTES = ['class', 'id', 'role', 'aria-label', 'aria-hidden'];
 
-
 async function fetchPublicSiteSettings() {
   const rows = await db('app_settings')
     .whereIn('setting_key', [
