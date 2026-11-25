@@ -14,7 +14,6 @@
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const {
-  sanitizeForContentDisposition,
   sanitizeForZipEntry,
   uniquifyZipNames,
 } = require('../utils/filenameSanitizer');
@@ -85,16 +84,6 @@ function pickRawDownloadName(photo, useOriginal) {
 }
 
 /**
- * Header-safe filename for `Content-Disposition`. Pair with
- * `buildContentDisposition()` from filenameSanitizer when the caller wants
- * RFC 5987 unicode support; this helper returns only the ASCII fallback for
- * routes that already construct the header by hand.
- */
-function getDownloadFilenameForHeader(photo, useOriginal) {
-  return sanitizeForContentDisposition(pickRawDownloadName(photo, useOriginal));
-}
-
-/**
  * Build a list of unique, zip-safe entry names for an ordered list of photos.
  *
  * @param {Array} photos – photos in zip order
@@ -112,6 +101,5 @@ module.exports = {
   clearCache,
   getUseOriginalFilenames,
   pickRawDownloadName,
-  getDownloadFilenameForHeader,
   getZipEntryNames,
 };

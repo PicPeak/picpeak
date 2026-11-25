@@ -840,8 +840,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     }
 
     // Fetch photos — exclude photos in categories that disabled downloads (#640).
-    // Uncategorised photos are always included; categories without the column
-    // (pre-migration-135) fall through the LEFT JOIN's null and are included.
+    // Uncategorised photos are always included, as is a photo whose
+    // category_id points at a deleted category (the LEFT JOIN's null).
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
     // Only what the gallery list shows: no photo still processing (or failed).
     const photos = await applyPhotoVisibilityFilter(
@@ -938,7 +938,6 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     const { standardBox: bulkBox } = await resolveEventDownloadPolicy(req.event);
 
     // Add photos to archive — managed photos via storage backend, external via local path.
-    const { resolvePhotoStorageKey } = require('../../services/photoResolver');
     const storage = getStorage();
     // #493: resolve a unique display filename per photo up-front so collisions
     // get a deterministic `_1` suffix before the entries hit the archive.
@@ -1199,7 +1198,6 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // Global setting OR the gallery's own flag, with the gallery's text.
     const effectiveSettings = await resolveWatermarkSettings(req.event);
 
-    const { resolvePhotoStorageKey: resolveSelectedKey } = require('../../services/photoResolver');
     const selectedStorage = getStorage();
     // #493: same display-name resolution as bulk download, with dedup.
     const useOriginalSelected = await getUseOriginalFilenames();
@@ -1215,7 +1213,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       if (!await pacer.room()) break;
       const photo = photos[i];
       const name = selectedEntryNames[i] || `photo-${photo.id}.jpg`;
-      const storageKey = resolveSelectedKey(req.event, photo);
+      const storageKey = resolvePhotoStorageKey(req.event, photo);
       try {
         // Same pre-append source check as download-all (#895 review),
         // local backend only: a lazy fs stream's async error would kill
@@ -1659,17 +1657,6 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     errorResponse(res, error, 500, 'Failed to serve prepared download');
   }
 });
-
-// Explicit per-photo view beacon (#895). Counting views on the image-
-// serving routes is wrong in both directions: the lightbox preloads the
-// prev/next neighbours (three fetches per open), while a preloaded
-// neighbour that becomes the current slide is never re-fetched (#505
-// keeps the DOM node alive across the swipe) — so request-level counters
-// overcount preloads AND undercount swipe-throughs. Instead the lightbox
-// pings this endpoint exactly when a photo becomes the visible slide.
-// This also covers enhanced/maximum-protection galleries, whose bytes
-// were served by the removed /api/secure-images routes and never passed the routes below.
-// The slideshow kiosk is excluded (denySlideshowToken; migration 138).
 
 module.exports = router;
 module.exports._internal = { statsWriteFailed };

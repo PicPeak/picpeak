@@ -617,7 +617,7 @@ function stopMaintenance() {
 }
 
 module.exports = {
-  begin, reserveFile, recheckStaging, growRate, prepareObject, commitObject, failedObject, unfinishedKeys, finish, releasePending, processingComplete: releasePending,
+  begin, reserveFile, recheckStaging, growRate, prepareObject, commitObject, failedObject, unfinishedKeys, finish, processingComplete: releasePending,
   reconcilePending, heartbeat, cleanupAbandoned, retryRetainedObjects, startMaintenance, stopMaintenance, requestBudget, configuration, refusal, forAdmin,
   STALE_MS, LATE_WRITE_MS, _legacyCache: legacyCache,
 };

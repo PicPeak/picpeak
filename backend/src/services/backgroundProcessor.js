@@ -99,7 +99,7 @@ async function claimNextPhoto() {
 function releasePendingHold(photoId) {
   // A failed photo is no longer queued work: free its public-upload
   // pending hold (the lifetime charge for its original stays).
-  return require('./publicUploadQuota').releasePending(photoId).catch((releaseErr) => {
+  return require('./publicUploadQuota').processingComplete(photoId).catch((releaseErr) => {
     logger.warn(`backgroundProcessor: pending hold of photo ${photoId} not released`, { error: releaseErr.message });
   });
 }

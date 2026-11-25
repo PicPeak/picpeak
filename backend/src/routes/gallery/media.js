@@ -51,7 +51,12 @@ const { pipeStreamToResponse, answerVanished } = require('../../utils/streamResp
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
 const { isPhotoHiddenFromViewer, isPhotoProcessed, livePhotos, viewerOf } = require('../../utils/photoVisibility');
-const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../../services/imageProcessor');
+const {
+  ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy,
+  THUMBNAIL_WIDTHS, PREVIEW_WIDTHS, normalizeTierWidth, ensureThumbnailAtWidth, ensurePreviewImageAtWidth,
+  isThumbnailValid, queueVideoThumbnail, videoPlaceholderImage,
+} = require('../../services/imageProcessor');
+const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../../services/photoResolver');
 const { isStorageUnavailableError, isStorageNotFoundError } = require('../../services/storage/storageErrors');
 const { heroQueryRedirect } = require('../../utils/heroAnchor');
 const { focalQuery } = require('../../utils/focalPoint');
@@ -307,7 +312,6 @@ router.get('/:slug/photo/:photoId',
       // we go through the storage abstraction so S3 deployments work too
       // (#432 — previously this route did fs.* directly and 500'd in S3
       // mode because the file wasn't on the container's local fs).
-      const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../../services/photoResolver');
       const storage = getStorage();
       const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
       const useStorageBackend = !isExternal;
@@ -659,9 +663,8 @@ async function requireAdaptiveStreaming(req, res, next) {
  * applies to a video; null once it has answered the request itself.
  */
 async function loadStreamedVideo(req, res) {
-  const photo = /^\d+$/.test(req.params.photoId)
-    ? await livePhotos(db).where({ id: req.params.photoId, event_id: req.event.id }).first()
-    : null;
+  // router.param('photoId') has already answered 404 for a malformed id.
+  const photo = await livePhotos(db).where({ id: req.params.photoId, event_id: req.event.id }).first();
   if (!photo) {
     res.status(404).json({ error: 'Photo not found' });
     return null;
@@ -846,10 +849,6 @@ router.get('/:slug/thumbnail/:photoId',
       // Responsive tier (#1095), whitelisted the same way the preview route's
       // is. Unrecognised or absent falls through to the canonical 300px
       // thumbnail, so existing clients are untouched.
-      const {
-        THUMBNAIL_WIDTHS, normalizeTierWidth, ensureThumbnailAtWidth,
-        isThumbnailValid, queueVideoThumbnail, videoPlaceholderImage,
-      } = require('../../services/imageProcessor');
       const thumbTier = normalizeTierWidth(req.query.w, THUMBNAIL_WIDTHS);
 
       let thumbnailPath;
@@ -1198,8 +1197,6 @@ router.get('/:slug/preview/:photoId',
       // anyone fill the disk with renditions nobody asked for. An unrecognised
       // or absent value falls through to the canonical 1920 preview, so old
       // clients and hand-typed URLs behave exactly as before.
-      const { PREVIEW_WIDTHS, normalizeTierWidth, ensurePreviewImageAtWidth } =
-        require('../../services/imageProcessor');
       const tierWidth = normalizeTierWidth(req.query.w, PREVIEW_WIDTHS);
 
       // Lazy generation: ensurePreviewImage returns null when it cannot
@@ -1349,8 +1346,5 @@ router.get('/:slug/preview/:photoId',
 // galleryFeedback it shadowed the real handler — dropping the per-guest caps
 // (#655) from the guest payload, so the gallery could never render the
 // favorite/like limits or their counters (#1030).
-
-// Get photo stats. no-store: view/download/visitor counters are private
-// gallery analytics and change on every request.
 
 module.exports = router;
