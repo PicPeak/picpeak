@@ -423,6 +423,11 @@
     @apply grid gap-2 sm:gap-3 md:gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6;
   }
 
+  /* Modal overlay */
+  .modal-overlay {
+    @apply fixed inset-0 bg-black/50 backdrop-blur-sm animate-fade-in;
+  }
+
   /* Badge */
   .badge {
     @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
@@ -588,6 +593,11 @@
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+
+  /* Smooth scroll */
+  .smooth-scroll {
+    scroll-behavior: smooth;
   }
 
   /* Custom range slider styles - Updated */
