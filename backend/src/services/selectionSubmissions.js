@@ -37,7 +37,11 @@ function kindLocking(feedbackType) {
   return KINDS.find((kind) => LOCKED_TYPES[kind].includes(feedbackType)) || null;
 }
 
-/** Narrow a query to one viewer, as photo_feedback reads do. */
+/**
+ * Narrow a query to one viewer, as photo_feedback reads do: the registered
+ * guest by guest_id, anyone else by the anonymous browser identity. The one
+ * rule for "this viewer's rows"; `table` qualifies the columns in a join.
+ */
 function scopeToViewer(query, { guestId, guestIdentifier }, table = null) {
   const column = (name) => (table ? `${table}.${name}` : name);
   return guestId
@@ -398,6 +402,7 @@ module.exports = {
   notifySubmitted,
   KINDS,
   NOTE_MAX_LENGTH,
+  scopeToViewer,
   LOCKED_TYPES,
   kindLocking,
   withViewerLock,

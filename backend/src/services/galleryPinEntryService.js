@@ -19,10 +19,18 @@ function validateEnrollment({ enabled, clientAccessEnabled, wasEnabled = false, 
   }
 }
 
+/**
+ * Can this gallery's PIN be entered at the gallery to become its client?
+ * Client access on, PIN entry on, and a PIN set.
+ */
+function isPinEntryEnabled(event) {
+  return parseBooleanInput(event.client_access_enabled, false)
+    && parseBooleanInput(event.client_pin_entry_enabled, false) && !!event.client_password_hash;
+}
+
 function assertEnabled(event) {
   assertGalleryAvailable(event);
-  if (!parseBooleanInput(event.client_access_enabled, false)
-    || !parseBooleanInput(event.client_pin_entry_enabled, false) || !event.client_password_hash)
+  if (!isPinEntryEnabled(event))
     throw new AppError('Gallery PIN entry is not enabled', 403, 'CLIENT_ACCESS_UNAVAILABLE');
 }
 
@@ -112,4 +120,4 @@ async function complete(attempt, valid) {
   });
 }
 
-module.exports = { MIN_PIN_LENGTH, validateEnrollment, reserve, complete, identifierFor };
+module.exports = { MIN_PIN_LENGTH, validateEnrollment, isPinEntryEnabled, reserve, complete, identifierFor };

@@ -8,8 +8,10 @@ const { isValidDecision } = require('../constants/photoDecisions');
 const { resolveEventFeedbackDefaults, DEFAULT_KEYBIND_MODE, KEYBIND_MODES } = require('./feedbackDefaults');
 const { applyPhotoVisibilityFilter, joinLivePhotos, livePhotos, wherePhotoLive, wherePhotoProcessed, wherePhotoProcessedById } = require('../utils/photoVisibility');
 const selectionSubmissions = require('./selectionSubmissions');
+const { scopeToViewer } = selectionSubmissions;
 const favoriteLists = require('./favoriteLists');
 const { serializeAnnotation, withParsedAnnotation } = require('../utils/photoAnnotation');
+const { feedbackTime, lastMutatedFirst } = require('./feedbackIntegrity');
 
 // The camera-original name, for the feedback exports (#1224). Both exports
 // used to carry only `photos.filename` — the sanitized stored name
@@ -282,11 +284,7 @@ class FeedbackService {
         livePhotos(executor).select('photos.id').where('photos.event_id', eventId), viewer,
       ));
     }
-    if (guestId) {
-      query.where('guest_id', guestId);
-    } else {
-      query.where('guest_identifier', guestIdentifier);
-    }
+    scopeToViewer(query, { guestId, guestIdentifier });
     // A photo counts once, in however many of the guest's favourite lists it
     // sits (issue 2303).
     if (feedbackType === 'favorite') {
@@ -615,6 +613,19 @@ class FeedbackService {
 
       const recount = () => (executor.isTransaction ? undefined : this.updatePhotoFeedbackStats(photoId));
 
+      // This guest's visible rows of one type on this photo: the duplicate
+      // check, the rating clear and collapse, the single-value toggle, the
+      // cap's "already picked" check and the lost-insert lookup all read the
+      // same set. Hidden rows stay out of it (#1150): they are the admin's
+      // moderation record, never the guest's to toggle or delete.
+      const viewer = { guestId: guest_id, guestIdentifier };
+      const ownVisible = (type) => scopeToViewer(executor('photo_feedback').where({
+        photo_id: photoId,
+        event_id: eventId,
+        feedback_type: type,
+        is_hidden: false,
+      }), viewer);
+
       // The reason on a decision row. `undefined` means the caller did not
       // send one, which is what lets the same decision again toggle off; an
       // empty string is an explicit "no reason" and is stored as NULL.
@@ -632,24 +643,13 @@ class FeedbackService {
       // When a per-person guest_id is present, scope the check to that guest
       // so two guests on the same device can independently like a photo.
       if (feedback_type !== 'comment') {
-        const duplicateQuery = executor('photo_feedback')
-          .where({
-            photo_id: photoId,
-            event_id: eventId,
-            feedback_type,
-            // A hidden row is not there (#1150). Without this the guest saw an
-            // empty heart — every read surface treats hidden as absent — and
-            // clicking it found the hidden row and TOGGLED IT OFF, so the
-            // click appeared to do nothing and it took two more to get back to
-            // a filled heart. Skipping it makes the click create a fresh,
-            // visible row, which is what the guest is asking for.
-            is_hidden: false,
-          });
-        if (guest_id) {
-          duplicateQuery.where('guest_id', guest_id);
-        } else {
-          duplicateQuery.where('guest_identifier', guestIdentifier);
-        }
+        // A hidden row is not there (#1150). Without that the guest saw an
+        // empty heart — every read surface treats hidden as absent — and
+        // clicking it found the hidden row and TOGGLED IT OFF, so the
+        // click appeared to do nothing and it took two more to get back to
+        // a filled heart. Skipping it makes the click create a fresh,
+        // visible row, which is what the guest is asking for.
+        const duplicateQuery = ownVisible(feedback_type);
         // Per list (issue 2303): one photo can sit in several of a guest's
         // lists, so the same photo in another list is not a duplicate.
         scopeFavoriteList(duplicateQuery, feedback_type, favoriteListId);
@@ -667,15 +667,7 @@ class FeedbackService {
             // the guest's replacement, and it is the admin's moderation
             // record — clearing a rating must not destroy it, or there is
             // nothing left to review or unhide.
-            const clearScope = executor('photo_feedback').where({
-              photo_id: photoId,
-              event_id: eventId,
-              feedback_type: 'rating',
-              is_hidden: false,
-            });
-            if (guest_id) clearScope.where('guest_id', guest_id);
-            else clearScope.where('guest_identifier', guestIdentifier);
-            await clearScope.delete();
+            await ownVisible('rating').delete();
 
             await recount();
             return { removed: true };
@@ -692,17 +684,7 @@ class FeedbackService {
             // average. The survivor is the row the readers already show
             // (lastMutatedFirst). Visible rows only (#1150): a hidden one is
             // the admin's record.
-            const ownRatings = () => {
-              const q = executor('photo_feedback').where({
-                photo_id: photoId,
-                event_id: eventId,
-                feedback_type: 'rating',
-                is_hidden: false,
-              });
-              if (guest_id) q.where('guest_id', guest_id);
-              else q.where('guest_identifier', guestIdentifier);
-              return q;
-            };
+            const ownRatings = () => ownVisible('rating');
             const rows = Array.from(await ownRatings().select('id', 'rating', 'created_at', 'updated_at'))
               .sort(lastMutatedFirst);
             const survivor = rows[0] || existing;
@@ -744,17 +726,7 @@ class FeedbackService {
             // toggle-off and the duplicate collapse below both DELETE over
             // this scope, and a hidden original is the admin's record rather
             // than a racy duplicate of the guest's own.
-            const singleValueScope = () => {
-              const q = executor('photo_feedback').where({
-                photo_id: photoId,
-                event_id: eventId,
-                feedback_type,
-                is_hidden: false,
-              });
-              if (guest_id) q.where('guest_id', guest_id);
-              else q.where('guest_identifier', guestIdentifier);
-              return q;
-            };
+            const singleValueScope = () => ownVisible(feedback_type);
 
             // A decision re-sent WITH a reason edits the reason (issue 744)
             // rather than toggling the decision off: the guest is still
@@ -788,12 +760,10 @@ class FeedbackService {
           if (feedback_type === 'like' || feedback_type === 'favorite') {
             // Older guest merges could leave several visible copies. One
             // click must clear the selection, while preserving hidden rows.
-            const selection = executor('photo_feedback').where({
+            const selection = scopeToViewer(executor('photo_feedback').where({
               photo_id: photoId, event_id: eventId, feedback_type,
               is_hidden: formatBoolean(false),
-            });
-            if (guest_id) selection.where('guest_id', guest_id);
-            else selection.where('guest_identifier', guestIdentifier);
+            }), viewer);
             // Only this list's copy (issue 2303); the photo stays in the others.
             scopeFavoriteList(selection, feedback_type, favoriteListId);
             await selection.delete();
@@ -820,10 +790,7 @@ class FeedbackService {
         // (issue 2303), as the selection counter does: a photo already in
         // another list takes no new slot.
         const pickedElsewhere = feedback_type === 'favorite' && cap && cap > 0
-          && await executor('photo_feedback')
-            .where({ photo_id: photoId, event_id: eventId, feedback_type, is_hidden: false })
-            .where(guest_id ? { guest_id } : { guest_identifier: guestIdentifier })
-            .first('id');
+          && await ownVisible(feedback_type).first('id');
         if (cap && cap > 0 && !pickedElsewhere) {
           const currentCount = await this.countGuestFeedback(
             eventId, feedback_type, guest_id, guestIdentifier, executor, feedbackData.viewer || null,
@@ -911,12 +878,7 @@ class FeedbackService {
       if (!id && feedback_type === 'rating') {
         // The insert lost the race to the guest's other request: their row
         // exists now, so this submission changes its value instead.
-        const own = executor('photo_feedback').where({
-          photo_id: photoId, event_id: eventId, feedback_type: 'rating', is_hidden: false,
-        });
-        if (guest_id) own.where('guest_id', guest_id);
-        else own.where('guest_identifier', guestIdentifier);
-        const winner = await own.first('id', 'rating');
+        const winner = await ownVisible('rating').first('id', 'rating');
         if (!winner) return { id: null, exists: true };
         if (Number(winner.rating) === Number(rating)) return { id: winner.id, exists: true };
         await executor('photo_feedback')
@@ -964,8 +926,7 @@ class FeedbackService {
           .where('photo_feedback.is_hidden', formatBoolean(false)),
         { accessLevel, fullView },
       );
-      if (guestId) own.where('photo_feedback.guest_id', guestId);
-      else own.where('photo_feedback.guest_identifier', guestIdentifier);
+      scopeToViewer(own, viewer, 'photo_feedback');
       const rows = Array.from(await own.select('photo_feedback.id', 'photo_feedback.photo_id'));
 
       // The visibility is asked again on delete, as the toggle-off does: an
@@ -978,7 +939,7 @@ class FeedbackService {
           .whereIn('id', ids.slice(i, i + 500))
           .where('is_hidden', formatBoolean(false))
           // Still this viewer's: a guest merge may have reassigned a row meanwhile.
-          .where(guestId ? { guest_id: guestId } : { guest_identifier: guestIdentifier })
+          .modify(scopeToViewer, viewer)
           .delete()) || 0;
       }
       return {
@@ -1404,8 +1365,7 @@ class FeedbackService {
               is_hidden: false,
             })
             .whereNot('id', feedbackId);
-          if (feedback.guest_id) superseded.where('guest_id', feedback.guest_id);
-          else superseded.where('guest_identifier', feedback.guest_identifier);
+          scopeToViewer(superseded, { guestId: feedback.guest_id, guestIdentifier: feedback.guest_identifier });
           await superseded.delete();
         }
 
@@ -1745,13 +1705,7 @@ class FeedbackService {
 
         // SQLite may return epoch milliseconds or SQL/ISO strings; PostgreSQL
         // returns Dates. Compare actual times, with id as a deterministic tie.
-        const timestamp = (row) => {
-          const value = row.updated_at ?? row.created_at;
-          if (typeof value === 'number') return value;
-          const text = typeof value === 'string' && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(value)
-            ? `${value.replace(' ', 'T')}Z` : value;
-          return new Date(text).getTime() || 0;
-        };
+        const timestamp = (row) => feedbackTime(row.updated_at ?? row.created_at);
         rows.sort((a, b) => timestamp(b) - timestamp(a) || b.id - a.id);
         const seen = new Set();
         const duplicates = [];
@@ -1787,30 +1741,6 @@ class FeedbackService {
       throw error;
     }
   }
-}
-
-/**
- * When a feedback row last changed, in ms. SQLite holds epoch ms where a
- * Date was bound and SQL / ISO text otherwise (the column default); PostgreSQL
- * returns Dates. A zone-less SQL timestamp is UTC, as CURRENT_TIMESTAMP writes it.
- */
-function feedbackTime(value) {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === 'number') return value;
-  const text = typeof value === 'string' && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(value)
-    ? `${value.replace(' ', 'T')}Z` : value;
-  return new Date(text).getTime() || 0;
-}
-
-/**
- * Sort comparator: the row mutated last first — updated_at, then created_at,
- * then id. Done in JS rather than ORDER BY because of the mixed SQLite
- * shapes above (every number sorts below every text there).
- */
-function lastMutatedFirst(a, b) {
-  return (feedbackTime(b.updated_at) || feedbackTime(b.created_at)) - (feedbackTime(a.updated_at) || feedbackTime(a.created_at))
-    || feedbackTime(b.created_at) - feedbackTime(a.created_at)
-    || Number(b.id) - Number(a.id);
 }
 
 module.exports = new FeedbackService();

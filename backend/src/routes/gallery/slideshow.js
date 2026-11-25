@@ -1,11 +1,10 @@
-const { isGalleryAvailable } = require('../../utils/galleryLifecycle');
+const { isGalleryAvailable, isTrue, publishedEventFilter } = require('../../utils/galleryLifecycle');
 const { publicThemeFields } = require('../../services/galleryTheme');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { db } = require('../../database/db');
-const { applyPhotoVisibilityFilter, livePhotos, whereNotVideo } = require('../../utils/photoVisibility');
-const { formatBoolean } = require('../../utils/dbCompat');
+const { applyPhotoVisibilityFilter, livePhotos, whereNotVideo, wherePhotoProcessed } = require('../../utils/photoVisibility');
 
 const router = express.Router();
 const { noStoreCache } = require('../../middleware/noStoreCache');
@@ -20,13 +19,10 @@ const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
 const { slideshowCredentialClaim } = require('../../utils/galleryCredentialCutoff');
 
 function slideshowPhotosQuery(eventId, categoryId = null) {
-  const q = livePhotos(db)
-    .where('photos.event_id', eventId)
-    .where(function() {
-      this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
-    })
-    // A file gone from the share (migration 312) is in no gallery view.
-    .whereNull('photos.unavailable_reason');
+  // Processed, and not a file gone from the share (migration 312): what any
+  // gallery view shows.
+  const q = wherePhotoProcessed(livePhotos(db)
+    .where('photos.event_id', eventId));
   // What an ordinary guest sees: the selection only (issue 2356).
   applyPhotoVisibilityFilter(q, 'guest');
   // No videos, as the list the kiosk renders has none (issue 2285).
@@ -51,9 +47,7 @@ async function resolveSlideshow(slug, token) {
     .where({
       slug,
       show_share_token: token,
-      is_active: formatBoolean(true),
-      is_archived: formatBoolean(false),
-      is_draft: formatBoolean(false)
+      ...publishedEventFilter(),
     })
     .first();
   if (!isGalleryAvailable(event)) return null;
@@ -76,7 +70,7 @@ async function slideshowSettings(event, req) {
   // enabled flag, true/false force it on/off.
   const wm = event.show_watermark;
   const inherit = (wm === null || wm === undefined);
-  const enabled = inherit ? g.watermark_enabled : (wm === true || wm === 1 || wm === '1');
+  const enabled = inherit ? g.watermark_enabled : isTrue(wm);
   let watermark = null;
   if (enabled) {
     // Resolve the chosen logo to a URL. Branding assets come from settings;
@@ -107,7 +101,7 @@ async function slideshowSettings(event, req) {
   // slideshow client needs no QR library and no extra authenticated endpoint.
   const qrOverride = event.show_qr;
   const qrInherit = (qrOverride === null || qrOverride === undefined);
-  const qrEnabled = qrInherit ? g.qr_enabled : (qrOverride === true || qrOverride === 1 || qrOverride === '1');
+  const qrEnabled = qrInherit ? g.qr_enabled : isTrue(qrOverride);
   let qr = null;
   if (qrEnabled) {
     const dataUrl = await slideshowQrDataUrl(event, req);

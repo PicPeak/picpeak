@@ -26,12 +26,7 @@ const NAME_MAX_LENGTH = 60;
 // translated label ("Saved"); a spreadsheet column needs one stable word.
 const DEFAULT_LIST_EXPORT_NAME = 'Default';
 
-function scopeToViewer(query, { guestId, guestIdentifier }, table = null) {
-  const column = (name) => (table ? `${table}.${name}` : name);
-  return guestId
-    ? query.where(column('guest_id'), guestId)
-    : query.where(column('guest_identifier'), guestIdentifier);
-}
+const { scopeToViewer } = selectionSubmissions;
 
 /**
  * The name as stored: trimmed, inner whitespace collapsed, control characters

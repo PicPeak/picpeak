@@ -16,8 +16,7 @@
  * X-Frame-Options: SAMEORIGIN.
  */
 const { db } = require('../database/db');
-const { formatBoolean } = require('../utils/dbCompat');
-const { isGalleryAvailable, requiresGalleryPassword } = require('../utils/galleryLifecycle');
+const { isGalleryAvailable, requiresGalleryPassword, publishedEventFilter } = require('../utils/galleryLifecycle');
 const { isGalleryHidden } = require('../utils/revealMode');
 const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { followSlugRedirect } = require('./slugRedirects');
@@ -40,9 +39,7 @@ async function resolveEmbed(slug, token) {
     .where({
       ...where,
       embed_token: token,
-      is_active: formatBoolean(true),
-      is_archived: formatBoolean(false),
-      is_draft: formatBoolean(false),
+      ...publishedEventFilter(),
     })
     .first();
   let event = await live({ slug });

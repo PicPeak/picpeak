@@ -95,8 +95,26 @@ router.get('/events/:eventId/feedback',
       const { eventId } = req.params;
       const { type, status, photoId, page = 1, limit = 50 } = req.query;
       
+      // The type / status / photo filters, the same on the list and its count.
+      const applyFilters = (q) => {
+        if (type) {
+          q.where('photo_feedback.feedback_type', type);
+        }
+        if (status === 'pending') {
+          q.where('photo_feedback.is_approved', false)
+            .where('photo_feedback.is_hidden', false);
+        } else if (status === 'approved') {
+          q.where('photo_feedback.is_approved', true);
+        } else if (status === 'hidden') {
+          q.where('photo_feedback.is_hidden', true);
+        }
+        if (photoId) {
+          q.where('photo_feedback.photo_id', photoId);
+        }
+      };
+
       // Build query
-      let query = db('photo_feedback')
+      const query = db('photo_feedback')
         .modify(joinLivePhotos, 'photo_feedback.photo_id', 'photos.id')
         .where('photo_feedback.event_id', eventId)
         .select(
@@ -104,49 +122,17 @@ router.get('/events/:eventId/feedback',
           'photos.filename',
           'photos.path',
           ...ADMIN_THUMBNAIL_COLUMNS
-        );
-      
-      if (type) {
-        query = query.where('photo_feedback.feedback_type', type);
-      }
-      
-      if (status === 'pending') {
-        query = query.where('photo_feedback.is_approved', false)
-          .where('photo_feedback.is_hidden', false);
-      } else if (status === 'approved') {
-        query = query.where('photo_feedback.is_approved', true);
-      } else if (status === 'hidden') {
-        query = query.where('photo_feedback.is_hidden', true);
-      }
-      
-      if (photoId) {
-        query = query.where('photo_feedback.photo_id', photoId);
-      }
+        )
+        .modify(applyFilters);
       
       // Pagination
       const offset = (page - 1) * limit;
       
       // Create a separate count query
-      let countQuery = db('photo_feedback')
+      const countQuery = db('photo_feedback')
         .modify(wherePhotoLive, 'photo_feedback.photo_id')
-        .where('photo_feedback.event_id', eventId);
-      
-      if (type) {
-        countQuery = countQuery.where('photo_feedback.feedback_type', type);
-      }
-      
-      if (status === 'pending') {
-        countQuery = countQuery.where('photo_feedback.is_approved', false)
-          .where('photo_feedback.is_hidden', false);
-      } else if (status === 'approved') {
-        countQuery = countQuery.where('photo_feedback.is_approved', true);
-      } else if (status === 'hidden') {
-        countQuery = countQuery.where('photo_feedback.is_hidden', true);
-      }
-      
-      if (photoId) {
-        countQuery = countQuery.where('photo_feedback.photo_id', photoId);
-      }
+        .where('photo_feedback.event_id', eventId)
+        .modify(applyFilters);
       
       const totalCount = await countQuery.count('photo_feedback.id as count').first();
       

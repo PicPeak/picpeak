@@ -2,7 +2,6 @@ const router = require('express').Router();
 const bcrypt = require('bcrypt');
 const { body, validationResult } = require('express-validator');
 const { verifyGalleryAccess } = require('../middleware/gallery');
-const { parseBooleanInput } = require('../utils/parsers');
 const { MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
 const pinEntry = require('../services/galleryPinEntryService');
 const { getClientIp } = require('../utils/requestIp');
@@ -26,8 +25,7 @@ router.post('/:slug/client-elevate', verifyGalleryAccess, requireGallerySession,
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
     const event = req.event;
-    if (!parseBooleanInput(event.client_access_enabled, false)
-      || !parseBooleanInput(event.client_pin_entry_enabled, false) || !event.client_password_hash) {
+    if (!pinEntry.isPinEntryEnabled(event)) {
       return res.status(403).json({ error: 'Gallery PIN entry is not enabled', code: 'CLIENT_ACCESS_UNAVAILABLE' });
     }
     const ip = getClientIp(req);

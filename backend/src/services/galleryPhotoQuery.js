@@ -1,6 +1,7 @@
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { COLOR_LABELS, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
+const { scopeToViewer } = require('./selectionSubmissions');
 /** Apply the same own/shared feedback visibility before pagination and counts. */
 function applyFeedbackFilter(query, { filter, event, identity, sharedColorMode, showFeedbackToGuests }) {
   if (!filter) return query;
@@ -9,7 +10,7 @@ function applyFeedbackFilter(query, { filter, event, identity, sharedColorMode, 
   if (tokens.has('saved') || tokens.has('favorite')) tokens.add('favorited');
   const feedback = type => db('photo_feedback').where({ event_id: event.id, feedback_type: type,
     is_hidden: formatBoolean(false) }).select('photo_id');
-  const own = q => identity.guestId ? q.where('guest_id', identity.guestId) : q.where('guest_identifier', identity.guestIdentifier);
+  const own = q => scopeToViewer(q, identity);
   return query.where(function () {
     this.whereRaw('1 = 0');
     for (const [token, type, column] of [['liked', 'like', 'like_count'], ['favorited', 'favorite', 'favorite_count'], ['rated', 'rating', 'average_rating'], ['commented', 'comment', null]]) {
