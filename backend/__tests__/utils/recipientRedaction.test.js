@@ -68,6 +68,31 @@ describe('redactKnownAddresses', () => {
       new Set(['o\'brien@studio.example']))).toBe('<p>o\'brien@studio.example</p>');
   });
 
+  it('compares a carried value without the prose punctuation after it', () => {
+    expect(redactKnownAddresses('<p>Write to help@studio.example.</p>', ['Contact help@studio.example.'],
+      new Set(['help@studio.example']))).toBe('<p>Write to help@studio.example.</p>');
+    expect(redactKnownAddresses('<p>anna@kunde.example</p>', ['Reply to anna@kunde.example!'])).toBe('<p>…</p>');
+  });
+
+  it('never cuts a kept address written with an HTML entity', () => {
+    expect(redactKnownAddresses('<p>o&#39;connor@studio.example and connor@studio.example</p>',
+      ['connor@studio.example'], new Set(['o\'connor@studio.example'])))
+      .toBe('<p>o&#39;connor@studio.example and …</p>');
+    expect(redactKnownAddresses('<p>tom&amp;jerry@studio.example</p>', ['jerry@studio.example'],
+      new Set(['tom&jerry@studio.example']))).toBe('<p>tom&amp;jerry@studio.example</p>');
+    // The other way round: the customer's escaped address ends in a kept one.
+    expect(redactKnownAddresses('<p>o&#39;connor@studio.example, connor@studio.example</p>',
+      ['o\'connor@studio.example'], new Set(['connor@studio.example'])))
+      .toBe('<p>…, connor@studio.example</p>');
+  });
+
+  it('takes =, ? and / before an address as delimiters', () => {
+    expect(redactKnownAddresses(
+      '<a href="mailto:hello@studio.example?cc=anna@kunde.example">x</a><p title=anna@kunde.example>/anna@kunde.example</p>',
+      ['anna@kunde.example'], new Set(['hello@studio.example']),
+    )).toBe('<a href="mailto:hello@studio.example?cc=…">x</a><p title=…>/…</p>');
+  });
+
   it('leaves the body alone when the mail carries no address', () => {
     expect(redactKnownAddresses('<p>hello@studio.example</p>', [null, { name: 'Anna' }])).toBe('<p>hello@studio.example</p>');
     expect(redactKnownAddresses(null, ['anna@kunde.example'])).toBeNull();
