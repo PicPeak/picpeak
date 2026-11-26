@@ -24,7 +24,8 @@ import {
 /** A row of the editor: the field plus a key that survives reordering. */
 type Row = BriefTemplateField & { key: string };
 
-const GLOBAL = 'global';
+// The list every brief shows. Not a valid slug, so no event type can clash.
+const GLOBAL = '*';
 const strip = (rows: Row[]): BriefTemplateField[] => rows.map(({ key: _key, ...field }) => field);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 let newKey = 0;

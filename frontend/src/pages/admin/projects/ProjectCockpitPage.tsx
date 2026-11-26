@@ -177,6 +177,9 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
   const saveAll = async () => {
     const saved = (job: () => Promise<unknown>) => job().then(() => true, () => false);
     const briefSaved = brief.dirty ? await saved(() => brief.save.mutateAsync()) : true;
+    // A new occasion would void the brief edits that just failed: the project
+    // data then waits as well, both stay unsaved, and the brief's error said why.
+    if (!briefSaved && dirtyKeys.includes('eventType')) throw new Error('Save failed');
     const projectSaved = projectDirty ? await saved(() => save.mutateAsync()) : true;
     if (!briefSaved || !projectSaved) throw new Error('Save failed');
   };

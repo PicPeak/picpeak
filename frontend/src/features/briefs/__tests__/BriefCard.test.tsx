@@ -199,6 +199,28 @@ describe('BriefCard on a project', () => {
     await waitFor(() => expect(state.save).toHaveBeenCalledWith({ kind: 'projects', id: 7 }, { title: 'Anna & Ben' }));
   });
 
+  it('puts a save answer that arrives after a switch to another project on its own project only', async () => {
+    const withName = (name: string) => projectBrief({ fields: projectBrief().fields.map((f) => (f.id === 1 ? { ...f, value: name } : f)) });
+    state.get.mockImplementation(async ({ id }: { id: number }) => (id === 7 ? projectBrief() : withName('Clara')));
+    let finish: (brief: unknown) => void = () => {};
+    state.save.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (id: number) => (
+      <QueryClientProvider client={client}><MemoryRouter><Harness id={id} /></MemoryRouter></QueryClientProvider>
+    );
+    const { rerender } = render(tree(7));
+    fireEvent.change(await screen.findByLabelText('Name der Braut'), { target: { value: 'Anna Maria' } });
+    fireEvent.click(screen.getByRole('button', { name: 'page save' }));
+    await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1));
+    rerender(tree(8));
+    await waitFor(() => expect(screen.getByLabelText('Name der Braut')).toHaveValue('Clara'));
+    await act(async () => { finish(withName('Anna Maria')); });
+    expect(screen.getByLabelText('Name der Braut')).toHaveValue('Clara');
+    expect(screen.queryByText('not saved yet')).toBeNull();
+    expect((client.getQueryData(['brief', 'projects', 8]) as ReturnType<typeof projectBrief>).fields[0].value).toBe('Clara');
+    expect((client.getQueryData(['brief', 'projects', 7]) as ReturnType<typeof projectBrief>).fields[0].value).toBe('Anna Maria');
+  });
+
   it('says why a project without a customer cannot notify', async () => {
     state.get.mockResolvedValue(projectBrief({ hasCustomer: false, pendingChanges: [{ fieldId: 1, label: 'x', labels: {}, change: 'added' }] }));
     mount();

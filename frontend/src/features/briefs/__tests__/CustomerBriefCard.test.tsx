@@ -23,6 +23,8 @@ vi.mock('../../../services/eventTypes.service', () => ({
 }));
 
 import { CustomerBriefCard } from '../CustomerBriefCard';
+import { ConfirmDialogProvider } from '../../../components/common';
+import { UnsavedChangesProvider, useLeaveGuard } from '../../../contexts/UnsavedChangesContext';
 
 const customerBrief = projectBrief({
   occasion: null,
@@ -99,4 +101,18 @@ it('locks the old occasion\'s fields once another occasion is picked', async () 
   expect(screen.getByLabelText('Contact on the day')).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Save brief' }));
   await waitFor(() => expect(state.save).toHaveBeenCalledWith({ kind: 'customers', id: 12 }, { occasion: 'birthday' }));
+});
+
+const Guard = () => <p>{useLeaveGuard().isAnyDirty ? 'leave guarded' : 'free to leave'}</p>;
+
+it('arms the leave guard while the brief has unsaved edits', async () => {
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MemoryRouter><ConfirmDialogProvider><UnsavedChangesProvider>
+      <CustomerBriefCard customerId={12} canEdit /><Guard />
+    </UnsavedChangesProvider></ConfirmDialogProvider></MemoryRouter>
+  </QueryClientProvider>);
+  fireEvent.change(await screen.findByLabelText('Contact on the day'), { target: { value: 'Clara' } });
+  expect(screen.getByText('leave guarded')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+  expect(screen.getByText('free to leave')).toBeInTheDocument();
 });

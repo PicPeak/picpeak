@@ -43,7 +43,10 @@ vi.mock('../../../../services/briefs.service', async (importOriginal) => ({
   },
 }));
 vi.mock('../../../../services/eventTypes.service', () => ({
-  eventTypesService: { getActiveEventTypes: vi.fn(async () => []), getEventTypes: vi.fn(async () => []) },
+  eventTypesService: {
+    getActiveEventTypes: vi.fn(async () => [{ id: 2, name: 'Birthday', slug_prefix: 'birthday' }]),
+    getEventTypes: vi.fn(async () => []),
+  },
 }));
 vi.mock('../../../../contexts/FeatureFlagsContext', () => ({
   useFeatureFlags: () => ({ flags: { projects: true } }),
@@ -82,5 +85,30 @@ it('saves the brief before the project data, so a new occasion cannot void the b
   await waitFor(() => expect(calls.save).toHaveBeenCalledTimes(1));
   expect(calls.update).not.toHaveBeenCalled();
   await act(async () => { finish(projectBrief()); });
+  await waitFor(() => expect(calls.update).toHaveBeenCalledWith(1, { location: 'Lake House' }));
+});
+
+it('keeps a new occasion unsaved when the brief edits for the old one fail to save', async () => {
+  calls.save.mockReset().mockRejectedValue(new Error('refused'));
+  calls.update.mockReset().mockResolvedValue({});
+  mount();
+  fireEvent.change(await screen.findByLabelText("Bride's name"), { target: { value: 'Anna Maria' } });
+  await screen.findByRole('option', { name: 'Birthday' });
+  fireEvent.change(screen.getByLabelText('Occasion'), { target: { value: 'birthday' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(calls.save).toHaveBeenCalledTimes(1));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(calls.update).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Bride's name")).toHaveValue('Anna Maria');
+  expect(screen.getByLabelText('Occasion')).toHaveValue('birthday');
+});
+
+it('still saves other project data when only the brief fails', async () => {
+  calls.save.mockReset().mockRejectedValue(new Error('refused'));
+  calls.update.mockReset().mockResolvedValue({});
+  mount();
+  fireEvent.change(await screen.findByLabelText("Bride's name"), { target: { value: 'Anna Maria' } });
+  fireEvent.change(screen.getByDisplayValue('Castle Hill'), { target: { value: 'Lake House' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
   await waitFor(() => expect(calls.update).toHaveBeenCalledWith(1, { location: 'Lake House' }));
 });

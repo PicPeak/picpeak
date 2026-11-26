@@ -26,6 +26,7 @@ vi.mock('../../../services/eventTypes.service', () => ({
     getEventTypes: vi.fn(async (includeInactive?: boolean) => [
       { id: 1, name: 'Wedding', slug_prefix: 'wedding', is_active: true },
       ...(includeInactive ? [{ id: 2, name: 'Ball', slug_prefix: 'ball', is_active: false }] : []),
+      { id: 3, name: 'Global gala', slug_prefix: 'global', is_active: true },
     ]),
   },
 }));
@@ -127,4 +128,17 @@ it('lists inactive occasions too, marked, since their briefs still use the templ
   fireEvent.change(await screen.findByLabelText('Template'), { target: { value: 'ball' } });
   expect(await screen.findByRole('option', { name: 'Ball (inactive)' })).toBeInTheDocument();
   expect(screen.getByLabelText('Template')).toHaveValue('ball');
+});
+
+it('saves an occasion whose slug is "global" as that occasion, not as the shared list', async () => {
+  mount();
+  await screen.findByRole('option', { name: 'Global gala' });
+  fireEvent.change(screen.getByLabelText('Template'), { target: { value: 'global' } });
+  expect(screen.getByText('No fields yet.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+  fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'Gala table' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(state.saveTemplate).toHaveBeenCalledWith('global', [
+    { label: 'Gala table', labels: {}, type: 'short_text', visibleDefault: true },
+  ]));
 });

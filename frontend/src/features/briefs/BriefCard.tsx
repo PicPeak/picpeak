@@ -48,23 +48,28 @@ export function useBriefEditor(owner: BriefOwner, { enabled = true }: { enabled?
   const dirty = Object.keys(payload).length > 0;
 
   const save = useMutationWithToast({
+    // The owner it was made for travels with the request: the page may show
+    // another project or customer by the time the answer arrives.
     mutationFn: async () => {
-      const sent = draft;
-      return { sent, saved: await briefsService.save(owner, payload) };
+      const origin = { ownerKey, queryKey, sent: draft };
+      return { origin, saved: await briefsService.save(owner, payload) };
     },
     successMessage: t('briefs.saved', 'Brief saved') as string,
     errorMessage: t('briefs.saveFailed', 'Could not save the brief') as string,
     // The saved brief becomes the baseline; what was done while the request
     // ran (anything that differs from what was sent, a removal not in it)
-    // stays a local edit.
-    onSuccess: ({ sent, saved }) => {
+    // stays a local edit. The draft of another owner is left alone.
+    onSuccess: ({ origin, saved }) => {
+      qc.setQueryData(origin.queryKey, saved);
+      if (origin.ownerKey !== ownerKey) return;
+      const { sent } = origin;
       const savedBase = draftFromBrief(saved);
       setHeld((h) => {
+        if (h.ownerKey !== origin.ownerKey) return h;
         const current = resolve(h);
         const cleared = current.cleared.filter((id) => !sent.cleared.includes(id));
         return { ownerKey, base: savedBase, draft: { ...rebaseBriefDraft(current, sent, savedBase), cleared } };
       });
-      qc.setQueryData(queryKey, saved);
     },
   });
   const notify = useMutationWithToast({

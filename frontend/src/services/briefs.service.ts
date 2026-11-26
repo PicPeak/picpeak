@@ -79,11 +79,11 @@ export const briefsService = {
     const { data } = await api.get<{ templates: BriefTemplates }>('/admin/briefs/templates');
     return data.templates;
   },
-  /** `occasion` null saves the global template. */
+  /** `occasion` null saves the template every brief shows; a slug (which may
+   *  be `global`) that occasion's. */
   async saveTemplate(occasion: string | null, fields: BriefTemplateField[]): Promise<BriefTemplateField[]> {
-    const { data } = await api.put<{ fields: BriefTemplateField[] }>(
-      `/admin/briefs/templates/${encodeURIComponent(occasion ?? 'global')}`, { fields },
-    );
+    const path = occasion == null ? 'global' : `occasion/${encodeURIComponent(occasion)}`;
+    const { data } = await api.put<{ fields: BriefTemplateField[] }>(`/admin/briefs/templates/${path}`, { fields });
     return data.fields;
   },
   async get(owner: BriefOwner): Promise<Brief> {
