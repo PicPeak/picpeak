@@ -115,7 +115,7 @@ export const SentEmailsPanel: React.FC = () => {
                 <tbody>
                   {data.items.map((m) => (
                     <tr key={m.id} className="border-t border-neutral-200 dark:border-neutral-700 align-top">
-                      <td className="px-3 py-2 break-all">{m.recipientEmail}</td>
+                      <td className="px-3 py-2 break-all">{m.recipientEmail || '—'}</td>
                       <td className="px-3 py-2 font-mono text-xs">{m.emailType}</td>
                       <td className="px-3 py-2">
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusClass(m.status)}`}>

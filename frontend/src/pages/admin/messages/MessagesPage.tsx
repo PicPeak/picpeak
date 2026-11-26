@@ -446,7 +446,7 @@ const MessageList: React.FC<{
     sortKey: m.sentAt || m.createdAt || '',
     onClick: () => onSelect({ kind: 'queue', id: m.id }),
     active: selection?.kind === 'queue' && selection.id === m.id,
-    who: m.recipientEmail,
+    who: m.recipientEmail || '—',
     subject: friendlyType(m.emailType),
     when: fmt(m.sentAt || m.createdAt),
     status: m.status,
@@ -600,7 +600,7 @@ const QueueDetail: React.FC<{ d: import('../../../services/email.service').Email
     <div className="mt-3 pb-4 border-b border-neutral-200 dark:border-neutral-800 text-sm">
       <div className="text-neutral-600 dark:text-neutral-300">
         {t('messages.from', 'from')} <span className="font-mono text-xs">{fromAddr || '—'}</span> · {t('messages.to', 'to')}{' '}
-        <span className="font-semibold text-neutral-800 dark:text-neutral-100">{d.recipientEmail}</span>
+        <span className="font-semibold text-neutral-800 dark:text-neutral-100">{d.recipientEmail || '—'}</span>
       </div>
       {d.cc && <div className="text-neutral-500 dark:text-neutral-400 text-xs mt-0.5">cc {d.cc}</div>}
       <div className="text-neutral-400 dark:text-neutral-500 text-xs mt-0.5 tabular-nums">{fmt(d.sentAt || d.createdAt)}</div>

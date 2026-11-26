@@ -17,6 +17,7 @@ const projectService = require('../services/projectService');
 const { db } = require('../database/db');
 const { ownedProjectsSubquery, requireProjectOwnership, filterOwnedEventIds } = require('../middleware/ownership');
 const { ForbiddenError } = require('../utils/errors');
+const { redactAddresses } = require('../utils/recipientRedaction');
 
 const router = express.Router();
 
@@ -57,9 +58,6 @@ async function assertMayLinkCustomer(req) {
     throw new ForbiddenError('The customers.view permission is required to link a customer to a project');
   }
 }
-
-// Anything shaped like an address, for blanking delivery errors.
-const EMAIL_ADDRESS = /[^\s<>"'(),;:]+@[^\s<>"'(),;:]+/g;
 
 function withoutCustomer(project) {
   if (!project) return project;
@@ -229,7 +227,7 @@ router.get('/:id/overview', requirePermission('events.view'), requireProjectOwne
     overview.emails = (overview.emails || []).map((e) => ({
       ...e,
       recipient: null,
-      error: e.error ? e.error.replace(EMAIL_ADDRESS, '…') : e.error,
+      error: redactAddresses(e.error),
     }));
   }
   return successResponse(res, overview);
@@ -268,6 +266,9 @@ async function requireOwnedQueuedEmail(req, res, next) {
 router.get('/email/:emailId/preview', requirePermission('events.view'), [param('emailId').isInt({ min: 1 })], requireOwnedQueuedEmail, handleAsync(async (req, res) => {
   validateRequest(req);
   const preview = await projectService.getEmailPreview(parseInt(req.params.emailId, 10));
+  // The recipient is a customer address, as in the overview. The body is
+  // the mail as sent and stays as is.
+  if (!(await mayViewCustomers(req))) preview.recipient = null;
   return successResponse(res, preview);
 }));
 

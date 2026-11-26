@@ -1,10 +1,11 @@
 const express = require('express');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { seesAllEvents } = require('../middleware/ownership');
 const logger = require('../utils/logger');
 const { toUtcIso } = require('../utils/queueTimestamps');
+const { redactAddresses } = require('../utils/recipientRedaction');
 const router = express.Router();
 
 /**
@@ -83,6 +84,15 @@ router.get('/', adminAuth, requirePermission(['settings.view', 'notifications.vi
       isRead: !!notification.read_at
     }));
 
+    // Activity carries customer addresses (a customer actor's name, the
+    // recipient of a mail) that are customers.view data: without it they
+    // leave the metadata and the actor name, the rest of the text stays.
+    const visible = (await userHasAnyPermission(req.admin.id, ['customers.view']))
+      ? formattedNotifications
+      : formattedNotifications.map((n) => ({
+        ...n, actorName: redactAddresses(n.actorName), metadata: redactAddresses(n.metadata),
+      }));
+
     // Get unread count
     const unreadCount = await bellRows(req.admin)
       .whereNull('activity_logs.read_at')
@@ -90,7 +100,7 @@ router.get('/', adminAuth, requirePermission(['settings.view', 'notifications.vi
       .first();
 
     res.json({
-      notifications: formattedNotifications,
+      notifications: visible,
       unreadCount: unreadCount.count || 0
     });
   } catch (error) {
