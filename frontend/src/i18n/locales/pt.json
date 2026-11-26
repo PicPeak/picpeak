@@ -4881,6 +4881,7 @@
     "discard": "Descartar",
     "occasion": "Ocasião",
     "noOccasion": "Nenhuma (apenas os campos para toda ocasião)",
+    "occasionLocked": "Salve as alterações nos campos desta ocasião antes de escolher outra ocasião.",
     "occasionAfterSave": "Os campos da nova ocasião aparecem depois de salvar.",
     "noFields": "Ainda não há campos de briefing para esta ocasião.",
     "setUpTemplates": "Configurar modelos de briefing",

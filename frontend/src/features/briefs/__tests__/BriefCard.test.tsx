@@ -169,6 +169,27 @@ describe('BriefCard on a project', () => {
     await waitFor(() => expect(state.save).toHaveBeenCalledWith({ kind: 'projects', id: 7 }, { sharedArrangements: 'Typed meanwhile' }));
   });
 
+  it('keeps a removal made while a save runs', async () => {
+    const twoRemoved = projectBrief({ fields: [...projectBrief().fields,
+      { ...projectBrief().fields[4], id: 10, label: 'Old note', value: 'Note' }] });
+    state.get.mockResolvedValue(twoRemoved);
+    let finish: (brief: unknown) => void = () => {};
+    state.save.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    mount();
+    await screen.findByText('Note');
+    const [removeGroom] = screen.getAllByRole('button', { name: 'Remove' });
+    fireEvent.click(removeGroom);
+    fireEvent.click(screen.getByRole('button', { name: 'page save' }));
+    await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1));
+    expect(state.save).toHaveBeenLastCalledWith({ kind: 'projects', id: 7 }, { values: { 9: { value: null } } });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await act(async () => { finish(projectBrief({ fields: twoRemoved.fields.filter((f) => f.id !== 9) })); });
+    expect(screen.queryByText('Note')).toBeNull();
+    state.save.mockClear().mockResolvedValue(projectBrief({ fields: twoRemoved.fields.filter((f) => f.id < 9) }));
+    fireEvent.click(screen.getByRole('button', { name: 'page save' }));
+    await waitFor(() => expect(state.save).toHaveBeenCalledWith({ kind: 'projects', id: 7 }, { values: { 10: { value: null } } }));
+  });
+
   it('says why a project without a customer cannot notify', async () => {
     state.get.mockResolvedValue(projectBrief({ hasCustomer: false, pendingChanges: [{ fieldId: 1, label: 'x', labels: {}, change: 'added' }] }));
     mount();

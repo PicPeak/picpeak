@@ -9517,6 +9517,7 @@
     "discard": "Discard",
     "occasion": "Occasion",
     "noOccasion": "None (only the fields for every occasion)",
+    "occasionLocked": "Save the changes to this occasion's fields before picking another occasion.",
     "occasionAfterSave": "The fields of the new occasion appear after saving.",
     "noFields": "No brief fields for this occasion yet.",
     "setUpTemplates": "Set up brief templates",

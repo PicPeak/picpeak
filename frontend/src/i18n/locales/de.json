@@ -9482,6 +9482,7 @@
     "discard": "Verwerfen",
     "occasion": "Anlass",
     "noOccasion": "Keiner (nur die Felder für jeden Anlass)",
+    "occasionLocked": "Speichern Sie die Änderungen an den Feldern dieses Anlasses, bevor Sie einen anderen Anlass wählen.",
     "occasionAfterSave": "Die Felder des neuen Anlasses erscheinen nach dem Speichern.",
     "noFields": "Für diesen Anlass gibt es noch keine Briefing-Felder.",
     "setUpTemplates": "Briefing-Vorlagen einrichten",

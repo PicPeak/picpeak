@@ -4681,6 +4681,7 @@
     "discard": "Annuler",
     "occasion": "Occasion",
     "noOccasion": "Aucune (seulement les champs communs à toutes les occasions)",
+    "occasionLocked": "Enregistrez les modifications des champs de cette occasion avant d'en choisir une autre.",
     "occasionAfterSave": "Les champs de la nouvelle occasion apparaissent après l'enregistrement.",
     "noFields": "Aucun champ de brief pour cette occasion pour l'instant.",
     "setUpTemplates": "Configurer les modèles de brief",

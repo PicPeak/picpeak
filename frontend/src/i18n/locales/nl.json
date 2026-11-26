@@ -4608,6 +4608,7 @@
     "discard": "Verwerpen",
     "occasion": "Gelegenheid",
     "noOccasion": "Geen (alleen de velden voor elke gelegenheid)",
+    "occasionLocked": "Sla de wijzigingen in de velden van deze gelegenheid op voordat u een andere gelegenheid kiest.",
     "occasionAfterSave": "De velden van de nieuwe gelegenheid verschijnen na het opslaan.",
     "noFields": "Nog geen briefingvelden voor deze gelegenheid.",
     "setUpTemplates": "Briefingsjablonen instellen",

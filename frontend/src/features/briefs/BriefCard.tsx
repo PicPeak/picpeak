@@ -54,11 +54,16 @@ export function useBriefEditor(owner: BriefOwner, { enabled = true }: { enabled?
     },
     successMessage: t('briefs.saved', 'Brief saved') as string,
     errorMessage: t('briefs.saveFailed', 'Could not save the brief') as string,
-    // The saved brief becomes the baseline; what was typed while the request
-    // ran (anything that differs from what was sent) stays a local edit.
+    // The saved brief becomes the baseline; what was done while the request
+    // ran (anything that differs from what was sent, a removal not in it)
+    // stays a local edit.
     onSuccess: ({ sent, saved }) => {
       const savedBase = draftFromBrief(saved);
-      setHeld((h) => ({ ownerKey, base: savedBase, draft: { ...rebaseBriefDraft(resolve(h), sent, savedBase), cleared: [] } }));
+      setHeld((h) => {
+        const current = resolve(h);
+        const cleared = current.cleared.filter((id) => !sent.cleared.includes(id));
+        return { ownerKey, base: savedBase, draft: { ...rebaseBriefDraft(current, sent, savedBase), cleared } };
+      });
       qc.setQueryData(queryKey, saved);
     },
   });
@@ -74,7 +79,7 @@ export function useBriefEditor(owner: BriefOwner, { enabled = true }: { enabled?
   });
 
   return {
-    owner, query, brief, draft, setDraft, dirty, save, notify,
+    owner, query, brief, draft, setDraft, payload, dirty, save, notify,
     discard: () => setDraft(() => base),
   };
 }
@@ -93,7 +98,7 @@ export const BriefCard: React.FC<{
   const { formatDateTime } = useLocalizedDate();
   const valueText = useBriefValueText();
   const confirm = useConfirm();
-  const { owner, query, brief, draft, setDraft, dirty, save, notify } = editor;
+  const { owner, query, brief, draft, setDraft, payload, dirty, save, notify } = editor;
   const isCustomerBrief = owner.kind === 'customers';
   const { data: occasions = [] } = useQuery({
     queryKey: ['event-types', 'active'],
@@ -125,6 +130,13 @@ export const BriefCard: React.FC<{
   }
 
   const label = (field: { label: string; labels?: Partial<Record<string, string>> }) => briefLabel(field, i18n.language);
+  // A save takes the occasion and the values together, and the server checks
+  // the values against the new occasion's fields. So the occasion waits while
+  // its own fields have unsaved edits, and those fields wait once another
+  // occasion is picked.
+  const occasionFieldEdited = Object.keys(payload.values || {})
+    .some((id) => brief.fields.some((f) => f.id === Number(id) && f.source === 'occasion'));
+  const occasionPending = draft.occasion !== brief.occasion;
   const fields = brief.fields.filter((f) => f.source !== 'removed');
   const removed = brief.fields.filter((f) => f.source === 'removed' && !draft.cleared.includes(f.id));
   const setValue = (id: number, value: BriefDraftValue) => setDraft((d) => ({ ...d, values: { ...d.values, [id]: value } }));
@@ -165,12 +177,16 @@ export const BriefCard: React.FC<{
               id="brief-occasion"
               value={draft.occasion ?? ''}
               onChange={(e) => setDraft((d) => ({ ...d, occasion: e.target.value || null }))}
+              disabled={occasionFieldEdited}
               className="input w-full"
             >
               <option value="">{t('briefs.noOccasion', 'None (only the fields for every occasion)')}</option>
               {occasions.map((o) => <option key={o.slug_prefix} value={o.slug_prefix}>{o.name}</option>)}
             </select>
-            {draft.occasion !== brief.occasion && (
+            {occasionFieldEdited && (
+              <p className="text-xs text-muted mt-1">{t('briefs.occasionLocked', 'Save the changes to this occasion\'s fields before picking another occasion.')}</p>
+            )}
+            {occasionPending && (
               <p className="text-xs text-muted mt-1">{t('briefs.occasionAfterSave', 'The fields of the new occasion appear after saving.')}</p>
             )}
           </div>
@@ -187,7 +203,11 @@ export const BriefCard: React.FC<{
               const shown = draft.visible[field.id] ?? field.visibleDefault;
               const wide = ['long_text', 'place', 'place_time'].includes(field.type);
               return (
-                <div key={field.id} className={wide ? 'md:col-span-2' : undefined}>
+                <fieldset
+                  key={field.id}
+                  disabled={occasionPending && field.source === 'occasion'}
+                  className={`min-w-0 ${wide ? 'md:col-span-2' : ''}`}
+                >
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <label htmlFor={`brief-field-${field.id}`} className="text-sm font-medium text-body">{label(field)}</label>
                     <button
@@ -210,7 +230,7 @@ export const BriefCard: React.FC<{
                   ) : (
                     <BriefInput field={field} value={draft.values[field.id] ?? null} onChange={(v) => setValue(field.id, v)} />
                   )}
-                </div>
+                </fieldset>
               );
             })}
           </div>

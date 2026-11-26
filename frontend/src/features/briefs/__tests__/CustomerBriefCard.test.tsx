@@ -29,6 +29,14 @@ const customerBrief = projectBrief({
   fields: [field({ id: 5, label: 'Contact on the day', type: 'short_text', source: 'global' })],
   sharedArrangements: '',
 });
+const weddingBrief = projectBrief({
+  occasion: 'wedding',
+  fields: [
+    field({ id: 5, label: 'Contact on the day', type: 'short_text', source: 'global' }),
+    field({ id: 6, label: 'Dress code', type: 'short_text', source: 'occasion' }),
+  ],
+  sharedArrangements: '',
+});
 
 function mount(canEdit = true) {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -66,4 +74,29 @@ it('offers no save or notify to a role that may only read customers', async () =
   mount(false);
   expect(await screen.findByLabelText('Occasion')).toBeDisabled();
   expect(screen.queryByRole('button', { name: 'Notify customer' })).toBeNull();
+});
+
+it('keeps the occasion until edits to its own fields are saved', async () => {
+  state.get.mockResolvedValue(weddingBrief);
+  mount();
+  const occasion = await screen.findByLabelText('Occasion');
+  await screen.findByRole('option', { name: 'Birthday' });
+  // A field for every occasion does not hold it.
+  fireEvent.change(screen.getByLabelText('Contact on the day'), { target: { value: 'Clara' } });
+  expect(occasion).toBeEnabled();
+  fireEvent.change(screen.getByLabelText('Dress code'), { target: { value: 'Black tie' } });
+  expect(occasion).toBeDisabled();
+  expect(screen.getByText('Save the changes to this occasion\'s fields before picking another occasion.')).toBeInTheDocument();
+});
+
+it('locks the old occasion\'s fields once another occasion is picked', async () => {
+  state.get.mockResolvedValue(weddingBrief);
+  mount();
+  const occasion = await screen.findByLabelText('Occasion');
+  await screen.findByRole('option', { name: 'Birthday' });
+  fireEvent.change(occasion, { target: { value: 'birthday' } });
+  expect(screen.getByLabelText('Dress code')).toBeDisabled();
+  expect(screen.getByLabelText('Contact on the day')).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Save brief' }));
+  await waitFor(() => expect(state.save).toHaveBeenCalledWith({ kind: 'customers', id: 12 }, { occasion: 'birthday' }));
 });

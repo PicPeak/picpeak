@@ -7944,6 +7944,7 @@
     "discard": "Zavrzi",
     "occasion": "Priložnost",
     "noOccasion": "Brez (samo polja za vsako priložnost)",
+    "occasionLocked": "Shranite spremembe polj te priložnosti, preden izberete drugo priložnost.",
     "occasionAfterSave": "Polja nove priložnosti se prikažejo po shranjevanju.",
     "noFields": "Za to priložnost še ni polj briefa.",
     "setUpTemplates": "Nastavi predloge briefa",
