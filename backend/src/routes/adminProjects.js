@@ -377,6 +377,10 @@ router.get('/:id/overview', requirePermission('events.view'), requireProjectOwne
       }
     } else {
       overview.project = withoutCustomer(overview.project);
+      // Mail without a gallery (quote, contract, invoice, storno) is matched
+      // by the customer's address, so its recipient is that address too.
+      // Gallery mail keeps its recipient: events.view already shows it.
+      overview.emails = (overview.emails || []).map((e) => (e.eventId == null ? { ...e, recipient: null } : e));
     }
   }
   return successResponse(res, overview);
