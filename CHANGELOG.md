@@ -5,6 +5,21 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.211.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.7-beta.0...v3.211.0-beta.0) (2026-11-26)
+
+
+### Features
+
+* **crm:** project brief with per-occasion templates and a read-only Agreements view in the customer portal ([#2679](https://github.com/PicPeak/picpeak/issues/2679)) ([81d0214](https://github.com/PicPeak/picpeak/commit/81d02147c8c4fbf607b8fbac517933cdb5cf99ae))
+
+
+### Bug Fixes
+
+* **email:** keep customer addresses from admins without customers.view on the admin mail surfaces ([#2685](https://github.com/PicPeak/picpeak/issues/2685)) ([f8f2016](https://github.com/PicPeak/picpeak/commit/f8f201632edaa2a1d58cfbba9d502e0a4fe35a50))
+* **portal:** clear the cached Recent activity feed when the customer session ends ([#2680](https://github.com/PicPeak/picpeak/issues/2680)) ([95c9ba9](https://github.com/PicPeak/picpeak/commit/95c9ba941469d91790da2d03cedc6a0affe034da))
+* **projects:** hide the customer address on document mail in the project overview without customers.view ([#2681](https://github.com/PicPeak/picpeak/issues/2681)) ([37ced0c](https://github.com/PicPeak/picpeak/commit/37ced0c7c93b6096c91d7bd9b540fe562625bbff))
+* **projects:** search the customer address only for admins with customers.view ([#2683](https://github.com/PicPeak/picpeak/issues/2683)) ([e38126b](https://github.com/PicPeak/picpeak/commit/e38126b797fca7bdb4204dcc0916e0e1fa7eaee6))
+
 ## [3.210.7-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.6-beta.0...v3.210.7-beta.0) (2026-11-26)
 
 
