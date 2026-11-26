@@ -8,8 +8,9 @@
  * and loses the address.
  */
 
-// Anything shaped like an address.
-const EMAIL_ADDRESS = /[^\s<>"'(),;:]+@[^\s<>"'(),;:]+/g;
+// Anything shaped like an address, including a quoted local part
+// ("anna meier"@kunde.example), which the app accepts as valid.
+const EMAIL_ADDRESS = /(?:"[^"\r\n]*"|[^\s<>"'(),;:]+)@[^\s<>"'(),;:]+/g;
 
 /**
  * `value` with every address-shaped substring replaced by `…`: a string, or
