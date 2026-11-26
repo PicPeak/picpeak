@@ -23,11 +23,11 @@ import { settingsTabHref } from '../settings/settingsNav';
 import { briefLabel, useBriefValueText } from './briefFields';
 import { briefPayload, draftFromBrief, rebaseBriefDraft, type BriefDraft, type BriefDraftValue } from './briefDraft';
 
-export function useBriefEditor(owner: BriefOwner, { enabled = true }: { enabled?: boolean } = {}) {
+export function useBriefEditor(owner: BriefOwner) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const queryKey = useMemo(() => ['brief', owner.kind, owner.id], [owner.kind, owner.id]);
-  const query = useQuery({ queryKey, queryFn: () => briefsService.get(owner), enabled });
+  const query = useQuery({ queryKey, queryFn: () => briefsService.get(owner) });
   const brief = query.data;
   const withOccasion = owner.kind === 'customers';
 
@@ -90,7 +90,7 @@ export function useBriefEditor(owner: BriefOwner, { enabled = true }: { enabled?
   };
 }
 
-export type BriefEditor = ReturnType<typeof useBriefEditor>;
+type BriefEditor = ReturnType<typeof useBriefEditor>;
 
 export const BriefCard: React.FC<{
   editor: BriefEditor;

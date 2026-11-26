@@ -42,7 +42,7 @@ export interface BriefField extends Required<Pick<BriefTemplateField, 'id'>>, Om
   fromProject: boolean;
 }
 
-export interface BriefPendingChange {
+interface BriefPendingChange {
   /** null: the shared arrangements. */
   fieldId: number | null;
   label: string | null;
