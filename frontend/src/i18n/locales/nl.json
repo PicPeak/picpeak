@@ -1994,6 +1994,10 @@
         "sso_account": "Je account logt in via single sign-on en kan daarom geen passkeys gebruiken.",
         "unsupported": "Deze browser ondersteunt geen passkeys."
       }
+    },
+    "briefTemplates": {
+      "title": "Briefingsjablonen",
+      "description": "De velden van een projectbriefing: voor elke gelegenheid en per evenementtype."
     }
   },
   "analytics": {
@@ -4158,6 +4162,7 @@
     "nav": {
       "galleries": "Galerijen",
       "calendar": "Agenda",
+      "agreements": "Afspraken",
       "quotes": "Offertes",
       "bills": "Facturen",
       "profile": "Profiel"
@@ -4252,6 +4257,22 @@
       "title": "Activiteit",
       "loadError": "De activiteit kon niet worden geladen. Probeer het opnieuw.",
       "empty": "Er is nog niets gebeurd."
+    },
+    "agreements": {
+      "title": "Afspraken",
+      "subtitle": "Wat u met uw fotograaf hebt afgesproken. Klopt er iets niet, neem dan contact op.",
+      "disabled": "Er zijn nog geen afspraken voor uw account.",
+      "loadError": "Uw afspraken konden niet worden geladen.",
+      "empty": "Nog geen afspraken.",
+      "untitled": "Uw boeking",
+      "updated": "Bijgewerkt op {{date}}",
+      "shared": "Afspraken",
+      "price": "Prijs",
+      "fromQuote": "Offerte {{number}}",
+      "deposit": "Aanbetaling",
+      "paid": "Betaald",
+      "due": "Te betalen op {{date}}",
+      "open": "Open"
     }
   },
   "customers": {
@@ -4376,6 +4397,11 @@
       "removedN": "{{count}} verwijderd",
       "error": "Toewijzingen konden niet worden bijgewerkt",
       "clearSearchAria": "Zoekopdracht wissen"
+    },
+    "contacts": {
+      "area": {
+        "agreements": "Afspraken"
+      }
     }
   },
   "clients": {
@@ -4573,6 +4599,91 @@
       "slate": "Leisteen",
       "square": "Vierkant",
       "type": "Album"
+    }
+  },
+  "briefs": {
+    "title": "Briefing",
+    "help": "De afgesproken details van deze opdracht. De klant ziet de velden met een oog zodra u hem op de hoogte brengt.",
+    "readOnly": "U kunt deze briefing zien, maar niet wijzigen.",
+    "titleLabel": "Titel die de klant ziet",
+    "titleHint": "Leeg gelaten is de gelegenheid de titel. De projectnaam blijft intern.",
+    "notSaved": "nog niet opgeslagen",
+    "loadFailed": "De briefing kon niet worden geladen.",
+    "saved": "Briefing opgeslagen",
+    "saveFailed": "De briefing kon niet worden opgeslagen",
+    "save": "Briefing opslaan",
+    "discard": "Verwerpen",
+    "occasion": "Gelegenheid",
+    "noOccasion": "Geen (alleen de velden voor elke gelegenheid)",
+    "occasionLocked": "Sla de wijzigingen in de velden van deze gelegenheid op voordat u een andere gelegenheid kiest.",
+    "occasionAfterSave": "De velden van de nieuwe gelegenheid verschijnen na het opslaan.",
+    "noFields": "Nog geen briefingvelden voor deze gelegenheid.",
+    "setUpTemplates": "Briefingsjablonen instellen",
+    "visible": "Klant ziet het",
+    "hidden": "Verborgen",
+    "visibilityOverride": "Wijkt af van het sjabloon",
+    "fromProject": "Uit de projectgegevens",
+    "shared": "Gedeelde afspraken",
+    "sharedHint": "De klant ziet deze tekst. Interne notities blijven in het notitieveld.",
+    "removed": "Niet meer in het sjabloon",
+    "removedHint": "Blijft op deze briefing en wordt nooit aan de klant getoond.",
+    "removeValue": "Verwijderen",
+    "yes": "Ja",
+    "no": "Nee",
+    "input": {
+      "time": "Tijd",
+      "place": "Plaats",
+      "address": "Adres (optioneel)",
+      "notSet": "Niet ingesteld"
+    },
+    "notify": {
+      "button": "Klant informeren",
+      "pending": "Nog niet verzonden wijzigingen: {{count}}",
+      "upToDate": "De klant heeft de actuele stand.",
+      "last": "Laatste update verzonden {{date}}",
+      "noCustomer": "Koppel een klant aan het project om updates te versturen.",
+      "saveFirst": "Sla eerst uw wijzigingen op.",
+      "confirmTitle": "Klant informeren",
+      "confirmMessage": "De klant de wijzigingen sinds de laatste update ({{count}}) mailen? In het klantenportaal ziet hij de nieuwe stand ook.",
+      "sent": "Update voor de klant in de wachtrij gezet.",
+      "suppressed": "Portaal bijgewerkt. De klant ontvangt geen administratieve e-mails, dus er is geen e-mail verzonden.",
+      "failed": "De update kon niet worden verzonden"
+    },
+    "templates": {
+      "occasion": "Sjabloon",
+      "global": "Elke gelegenheid",
+      "inactive": "{{name}} (inactief)",
+      "globalHint": "Deze velden staan op elke briefing, vóór de velden van de gelegenheid.",
+      "occasionHint": "Op een briefing voor {{occasion}} volgen deze velden op de velden voor elke gelegenheid.",
+      "empty": "Nog geen velden.",
+      "label": "Label",
+      "type": "Type",
+      "typeFixed": "Opgeslagen velden behouden hun type.",
+      "visibleDefault": "De klant ziet het",
+      "moveUp": "Omhoog",
+      "moveDown": "Omlaag",
+      "remove": "Veld verwijderen",
+      "add": "Veld toevoegen",
+      "removeHint": "Een verwijderd veld blijft leesbaar op bestaande briefings, gemarkeerd als niet meer in het sjabloon, en de klant ziet het niet meer.",
+      "labelMissing": "Elk veld heeft een label nodig.",
+      "saved": "Briefingsjablonen opgeslagen",
+      "saveFailed": "Niet opgeslagen: {{lists}}",
+      "loadFailed": "De briefingsjablonen konden niet worden geladen.",
+      "readOnly": "U kunt deze sjablonen zien, maar niet wijzigen."
+    },
+    "types": {
+      "short_text": "Korte tekst",
+      "long_text": "Lange tekst",
+      "date": "Datum",
+      "time": "Tijd",
+      "datetime": "Datum en tijd",
+      "place": "Plaats",
+      "place_time": "Plaats en tijd",
+      "number": "Getal",
+      "yes_no": "Ja / nee",
+      "project_date": "Evenementdatum (uit het project)",
+      "project_location": "Locatie (uit het project)",
+      "project_guests": "Aantal gasten (uit het project)"
     }
   }
 }

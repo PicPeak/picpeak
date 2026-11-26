@@ -47,6 +47,8 @@ const RIGHTS = {
   bills: ['none', 'view'],
   documents: ['none', 'view', 'act'],
   company: ['none', 'act'],
+  // The briefs the studio sent (issue 2678): names, places, arrangements.
+  agreements: ['none', 'view'],
 };
 
 const AREAS = Object.keys(RIGHTS);
@@ -89,6 +91,7 @@ function applyRights(features, rights) {
     hoursLogging: !!features.hoursLogging && hasRight(rights, 'bills'),
     contracts: !!features.contracts && hasRight(rights, 'contracts'),
     documents: !!features.documents && hasRight(rights, 'documents'),
+    agreements: !!features.agreements && hasRight(rights, 'agreements'),
   };
 }
 

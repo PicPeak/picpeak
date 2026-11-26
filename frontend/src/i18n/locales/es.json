@@ -1767,6 +1767,10 @@
       "galleryPasswordScopesWarning": "Estos scopes entregan contraseñas de galería. No forman parte de admin: márcalos solo en un token que los necesite. Cada uso queda registrado a tu nombre.",
       "scopeGalleryPasswordsRead": "Muestra la contraseña guardada de una galería. Solo funciona mientras «Guardar contraseñas de galería recuperables» esté activado.",
       "scopeGalleryPasswordsReset": "Restablece la contraseña de una galería y puede enviar la nueva al cliente por correo. Los invitados deben volver a iniciar sesión."
+    },
+    "briefTemplates": {
+      "title": "Plantillas de briefing",
+      "description": "Los campos de un briefing de proyecto: para toda ocasión y por tipo de evento."
     }
   },
   "analytics": {
@@ -3678,6 +3682,25 @@
       "title": "Actividad",
       "loadError": "No se pudo cargar la actividad. Inténtalo de nuevo.",
       "empty": "Todavía no ha pasado nada."
+    },
+    "nav": {
+      "agreements": "Acuerdos"
+    },
+    "agreements": {
+      "title": "Acuerdos",
+      "subtitle": "Lo que acordó con su fotógrafo. Si algo no es correcto, póngase en contacto.",
+      "disabled": "Aún no hay acuerdos para su cuenta.",
+      "loadError": "No se pudieron cargar sus acuerdos.",
+      "empty": "Aún no hay acuerdos.",
+      "untitled": "Su reserva",
+      "updated": "Actualizado el {{date}}",
+      "shared": "Acuerdos",
+      "price": "Precio",
+      "fromQuote": "Presupuesto {{number}}",
+      "deposit": "Anticipo",
+      "paid": "Pagado",
+      "due": "Vence el {{date}}",
+      "open": "Pendiente"
     }
   },
   "products": {
@@ -3721,6 +3744,98 @@
       "slate": "Pizarra",
       "square": "Cuadrado",
       "type": "Álbum"
+    }
+  },
+  "briefs": {
+    "title": "Briefing",
+    "help": "Los detalles acordados de este trabajo. El cliente ve los campos marcados con un ojo cuando le notifica.",
+    "readOnly": "Puede ver este briefing, pero no modificarlo.",
+    "titleLabel": "Título que ve el cliente",
+    "titleHint": "Si se deja vacío, la ocasión es el título. El nombre del proyecto sigue siendo interno.",
+    "notSaved": "sin guardar",
+    "loadFailed": "No se pudo cargar el briefing.",
+    "saved": "Briefing guardado",
+    "saveFailed": "No se pudo guardar el briefing",
+    "save": "Guardar briefing",
+    "discard": "Descartar",
+    "occasion": "Ocasión",
+    "noOccasion": "Ninguna (solo los campos para toda ocasión)",
+    "occasionLocked": "Guarde los cambios en los campos de esta ocasión antes de elegir otra ocasión.",
+    "occasionAfterSave": "Los campos de la nueva ocasión aparecen después de guardar.",
+    "noFields": "Aún no hay campos de briefing para esta ocasión.",
+    "setUpTemplates": "Configurar plantillas de briefing",
+    "visible": "El cliente lo ve",
+    "hidden": "Oculto",
+    "visibilityOverride": "Difiere de la plantilla",
+    "fromProject": "De los datos del proyecto",
+    "shared": "Acuerdos compartidos",
+    "sharedHint": "El cliente ve este texto. Las notas internas quedan en el campo de notas.",
+    "removed": "Ya no está en la plantilla",
+    "removedHint": "Se conserva en este briefing y nunca se muestra al cliente.",
+    "removeValue": "Quitar",
+    "yes": "Sí",
+    "no": "No",
+    "input": {
+      "time": "Hora",
+      "place": "Lugar",
+      "address": "Dirección (opcional)",
+      "notSet": "Sin definir"
+    },
+    "notify": {
+      "button": "Notificar al cliente",
+      "pending": "Cambios aún no enviados: {{count}}",
+      "upToDate": "El cliente tiene el estado actual.",
+      "last": "Última actualización enviada {{date}}",
+      "noCustomer": "Vincule un cliente al proyecto para enviar actualizaciones.",
+      "saveFirst": "Guarde primero sus cambios.",
+      "confirmTitle": "Notificar al cliente",
+      "confirmMessage": "¿Enviar al cliente por correo los cambios desde la última actualización ({{count}})? También verá el nuevo estado en su portal.",
+      "sent": "Actualización puesta en cola para el cliente.",
+      "suppressed": "Portal actualizado. El cliente no recibe correos administrativos, así que no se envió ningún correo.",
+      "failed": "No se pudo enviar la actualización"
+    },
+    "templates": {
+      "occasion": "Plantilla",
+      "global": "Toda ocasión",
+      "inactive": "{{name}} (inactivo)",
+      "globalHint": "Estos campos aparecen en cada briefing, antes de los campos de su ocasión.",
+      "occasionHint": "En un briefing de {{occasion}}, estos campos siguen a los campos para toda ocasión.",
+      "empty": "Aún no hay campos.",
+      "label": "Etiqueta",
+      "type": "Tipo",
+      "typeFixed": "Los campos guardados conservan su tipo.",
+      "visibleDefault": "El cliente lo ve",
+      "moveUp": "Subir",
+      "moveDown": "Bajar",
+      "remove": "Quitar campo",
+      "add": "Añadir campo",
+      "removeHint": "Al quitar un campo, lo que los briefings ya contienen se conserva: sigue legible allí, marcado como fuera de la plantilla, y el cliente deja de verlo.",
+      "labelMissing": "Cada campo necesita una etiqueta.",
+      "saved": "Plantillas de briefing guardadas",
+      "saveFailed": "No guardado: {{lists}}",
+      "loadFailed": "No se pudieron cargar las plantillas de briefing.",
+      "readOnly": "Puede ver estas plantillas, pero no modificarlas."
+    },
+    "types": {
+      "short_text": "Texto corto",
+      "long_text": "Texto largo",
+      "date": "Fecha",
+      "time": "Hora",
+      "datetime": "Fecha y hora",
+      "place": "Lugar",
+      "place_time": "Lugar y hora",
+      "number": "Número",
+      "yes_no": "Sí / no",
+      "project_date": "Fecha del evento (del proyecto)",
+      "project_location": "Lugar (del proyecto)",
+      "project_guests": "Número de invitados (del proyecto)"
+    }
+  },
+  "customers": {
+    "contacts": {
+      "area": {
+        "agreements": "Acuerdos"
+      }
     }
   }
 }

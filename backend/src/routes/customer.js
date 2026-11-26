@@ -32,6 +32,7 @@ const customerDocumentNotifications = require('../services/customerDocumentNotif
 const customerDocumentAbuse = require('../services/customerDocumentAbuse');
 const customerDocumentRequestsService = require('../services/customerDocumentRequestsService');
 const customerPortalService = require('../services/customerPortalService');
+const briefService = require('../services/briefService');
 const { isInvoiceEditable, orPaidAwaitingDelivery } = require('../services/invoice/helpers');
 const publicDocumentViews = require('../services/publicDocumentViews');
 const { clientIpForAudit } = require('../utils/clientIp');
@@ -44,14 +45,14 @@ const { toDateOnly } = require('../utils/dateOnly');
 // override AND a contact's own right — getEffectiveFeaturesForSession combines
 // them, so an admin disabling e.g. Bills globally is honoured even when
 // feature_bills=true on the row. Sends the 403 and returns false on denial;
-// true if allowed.
+// the session's features (truthy) if allowed.
 async function customerFeatureAllowed(req, res, featureKey, label) {
   const eff = await customerAccountsService.getEffectiveFeaturesForSession(req.customer);
   if (!eff || !eff[featureKey]) {
     res.status(403).json({ error: `${label} are disabled for this account`, code: 'CUSTOMER_FEATURE_DISABLED' });
     return false;
   }
-  return true;
+  return eff;
 }
 
 // A contact's right to change something, on top of the read gate a route
@@ -1256,6 +1257,24 @@ router.get('/activity', customerAuth, async (req, res) => {
     res.json(await customerPortalService.getActivity(req.customer.id, req.customer));
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to load activity');
+  }
+});
+
+/**
+ * GET /agreements
+ *
+ * The project briefs the studio sent to this customer (issue 2678), as sent:
+ * only the fields marked visible and the shared arrangements, plus price and
+ * deposit from the project's quote and invoice where the session may see
+ * quotes and invoices. Behind the projects flag.
+ */
+router.get('/agreements', customerAuth, async (req, res) => {
+  try {
+    const features = await customerFeatureAllowed(req, res, 'agreements', 'Agreements');
+    if (!features) return;
+    res.json({ agreements: await briefService.listForCustomer(req.customer.id, features) });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to load agreements');
   }
 });
 

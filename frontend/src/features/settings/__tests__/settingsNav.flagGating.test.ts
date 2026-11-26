@@ -27,7 +27,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 const FLAG_NAMES = ['printSales', 'albumProducts', 'userManagement', 'slideshow', 'transfers',
-  'quotes', 'bills', 'contracts', 'documents', 'accounting', 'whatsapp'];
+  'quotes', 'bills', 'contracts', 'documents', 'accounting', 'whatsapp', 'projects'];
 
 // The navigation as the spreads wrote it: group order, item order, and the
 // condition each gated item was listed under.
@@ -40,6 +40,7 @@ const expected = (f: Record<string, boolean>, isSuperAdmin: boolean): string[][]
   [...(isSuperAdmin ? ['payments'] : []), 'apiTokens', 'webhooks'],
   ['businessProfile',
     ...(f.quotes || f.bills || f.contracts || f.documents ? ['crm'] : []),
+    ...(f.projects ? ['briefTemplates'] : []),
     ...(f.contracts ? ['contracts'] : []),
     ...(f.accounting ? ['accounting'] : []),
     ...(f.whatsapp ? ['whatsapp'] : [])],

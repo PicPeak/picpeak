@@ -31,10 +31,11 @@ const AREAS: { key: keyof ContactRights; levels: ContactLevel[]; labelKey: strin
   { key: 'bills', levels: ['none', 'view'], labelKey: 'customers.contacts.area.bills', fallback: 'Invoices' },
   { key: 'documents', levels: ['none', 'view', 'act'], labelKey: 'customers.contacts.area.documents', fallback: 'Documents' },
   { key: 'company', levels: ['none', 'act'], labelKey: 'customers.contacts.area.company', fallback: 'Company data' },
+  { key: 'agreements', levels: ['none', 'view'], labelKey: 'customers.contacts.area.agreements', fallback: 'Agreements' },
 ];
 
 const NO_RIGHTS: ContactRights = {
-  galleries: 'none', quotes: 'none', contracts: 'none', bills: 'none', documents: 'none', company: 'none',
+  galleries: 'none', quotes: 'none', contracts: 'none', bills: 'none', documents: 'none', company: 'none', agreements: 'none',
 };
 
 const PRESETS: { key: string; labelKey: string; fallback: string; rights: ContactRights }[] = [
@@ -42,7 +43,7 @@ const PRESETS: { key: string; labelKey: string; fallback: string; rights: Contac
     key: 'admin',
     labelKey: 'customers.contacts.preset.admin',
     fallback: 'Admin',
-    rights: { galleries: 'act', quotes: 'act', contracts: 'act', bills: 'view', documents: 'act', company: 'act' },
+    rights: { galleries: 'act', quotes: 'act', contracts: 'act', bills: 'view', documents: 'act', company: 'act', agreements: 'view' },
   },
   {
     key: 'accounting',

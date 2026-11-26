@@ -26,9 +26,11 @@ vi.mock('../../../hooks/useLocalizedDate', () => ({
 }));
 
 const listContacts = vi.fn();
+const updateContact = vi.fn();
 vi.mock('../../../services/customerAdmin.service', () => ({
   customerAdminService: {
     listContacts: (...a: unknown[]) => listContacts(...a),
+    updateContact: (...a: unknown[]) => updateContact(...a),
   },
 }));
 
@@ -38,7 +40,7 @@ import { CustomerContactsCard } from '../CustomerContactsCard';
 const contact = (id: number, email: string, hasLogin: boolean) => ({
   id, customerAccountId: 7, email, firstName: 'Mia', lastName: null, displayName: null,
   isActive: true, receivesMail: true, hasLogin, invitationPending: false, lastLogin: null,
-  rights: { galleries: 'view', quotes: 'none', contracts: 'none', bills: 'none', documents: 'none', company: 'none' },
+  rights: { galleries: 'view', quotes: 'none', contracts: 'none', bills: 'none', documents: 'none', company: 'none', agreements: 'none' },
 });
 
 const WARNING = /The login and password move to the new address/;
@@ -79,5 +81,20 @@ describe('CustomerContactsCard', () => {
     await user.clear(screen.getByLabelText('Email'));
     await user.type(screen.getByLabelText('Email'), 'tom@example.test');
     expect(screen.queryByText(WARNING)).not.toBeInTheDocument();
+  });
+
+  it('grants a contact the agreements (project briefs) right, which starts at no access', async () => {
+    listContacts.mockResolvedValue([contact(1, 'mia@example.test', true)]);
+    updateContact.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    const agreements = screen.getByLabelText('Agreements');
+    expect(agreements).toHaveValue('none');
+    await user.selectOptions(agreements, 'view');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(updateContact).toHaveBeenCalledWith(7, 1, expect.objectContaining({
+      rights: expect.objectContaining({ agreements: 'view', galleries: 'view' }),
+    }));
   });
 });

@@ -48,6 +48,7 @@ const ADMINISTRATIVE_EMAIL_TYPES = new Set([
   'customer_document_reviewed',
   'customer_document_requested',
   'customer_document_request_reminder',
+  'project_brief_updated',
 ]);
 
 function isAdministrativeEmailType(emailType) {
@@ -57,14 +58,15 @@ function isAdministrativeEmailType(emailType) {
 const asFlag = (value) => value === true || value === 1;
 const norm = (value) => String(value || '').trim().toLowerCase();
 
-/** The customer row the decisions need, or null (unknown id). */
-async function loadCustomer(customerOrId) {
+/** The customer row the decisions need, or null (unknown id). `conn`: the
+ *  caller's transaction, when it holds the connection (queueEmail's trx). */
+async function loadCustomer(customerOrId, conn = db) {
   if (customerOrId == null) return null;
   if (typeof customerOrId === 'object') {
     if ('no_admin_emails' in customerOrId) return customerOrId;
     customerOrId = customerOrId.id;
   }
-  return db('customer_accounts').where({ id: customerOrId })
+  return conn('customer_accounts').where({ id: customerOrId })
     .first('id', 'email', 'billing_email', 'no_admin_emails');
 }
 
@@ -80,8 +82,8 @@ async function customerTakesNoAdminEmails(customerOrId) {
  * Used for the queue gate and for every signer-level decision (first
  * invitation, resend, reminder sweep, the signer card).
  */
-async function isHeldBackFor(customerOrId, address) {
-  const customer = await loadCustomer(customerOrId);
+async function isHeldBackFor(customerOrId, address, conn = db) {
+  const customer = await loadCustomer(customerOrId, conn);
   if (!customer || !asFlag(customer.no_admin_emails)) return false;
   const to = norm(address);
   return !!to && (to === norm(customer.email) || to === norm(customer.billing_email));
@@ -93,12 +95,12 @@ async function isHeldBackFor(customerOrId, address) {
  * address alone decides, and only when EVERY account at it opted out, so one
  * customer's switch never silences another's mail.
  */
-async function isSuppressedForRecipient(recipientEmail, emailType, customerAccountId = null) {
+async function isSuppressedForRecipient(recipientEmail, emailType, customerAccountId = null, conn = db) {
   if (!isAdministrativeEmailType(emailType)) return false;
-  if (customerAccountId != null) return isHeldBackFor(customerAccountId, recipientEmail);
+  if (customerAccountId != null) return isHeldBackFor(customerAccountId, recipientEmail, conn);
   const address = norm(recipientEmail);
   if (!address) return false;
-  const matches = await db('customer_accounts')
+  const matches = await conn('customer_accounts')
     .where((q) => {
       q.whereRaw('LOWER(email) = ?', [address]).orWhereRaw('LOWER(billing_email) = ?', [address]);
     })

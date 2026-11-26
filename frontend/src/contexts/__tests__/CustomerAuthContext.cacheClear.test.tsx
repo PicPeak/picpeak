@@ -60,12 +60,14 @@ vi.mock('../../i18n/config', () => ({
 
 const sessionSpy = vi.fn();
 const dashboardSpy = vi.fn();
+const agreementsSpy = vi.fn();
 
 vi.mock('../../services/customer.service', () => ({
   customerService: {
     session: (...a: unknown[]) => sessionSpy(...a),
     logout: vi.fn(async () => undefined),
     getDashboard: (...a: unknown[]) => dashboardSpy(...a),
+    listAgreements: (...a: unknown[]) => agreementsSpy(...a),
   },
   DEFAULT_CUSTOMER_FEATURES: {
     calendar: false, quotes: false, bills: false, contracts: false, documents: false,
@@ -74,6 +76,7 @@ vi.mock('../../services/customer.service', () => ({
 
 import { CustomerAuthProvider, useCustomerAuth } from '../CustomerAuthContext';
 import { CustomerDashboardPage } from '../../pages/customer/CustomerDashboardPage';
+import { CustomerAgreementsPage } from '../../pages/customer/CustomerAgreementsPage';
 
 const features = { calendar: false, quotes: false, bills: false, contracts: false, documents: false };
 const branding = { showLogo: true, showCompanyName: true };
@@ -99,19 +102,19 @@ function dashboardWith(eventName: string): CustomerDashboard {
 }
 
 /** Mirrors CustomerLayout's own gate: no dashboard mounted while logged out. */
-function TestApp() {
+function TestApp({ page = <CustomerDashboardPage /> }: { page?: React.ReactElement }) {
   const { isAuthenticated, isLoading } = useCustomerAuth();
   if (isLoading) return <div>auth-loading</div>;
   if (!isAuthenticated) return <div>login-page</div>;
-  return <CustomerDashboardPage />;
+  return page;
 }
 
-function renderApp(qc: QueryClient) {
+function renderApp(qc: QueryClient, page?: React.ReactElement) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
         <CustomerAuthProvider>
-          <TestApp />
+          <TestApp page={page} />
         </CustomerAuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -122,7 +125,34 @@ describe('customer portal query cache clears on session loss (#1594)', () => {
   beforeEach(() => {
     sessionSpy.mockReset();
     dashboardSpy.mockReset();
+    agreementsSpy.mockReset();
     sessionStorage.clear();
+  });
+
+  it('drops the cached agreements (issue 2678), so the next customer never sees them', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const agreement = (title: string) => [{
+      id: 1, title, updatedAt: '2027-01-01T10:00:00Z', fields: [], sharedArrangements: '', price: null, deposit: null,
+    }];
+    sessionSpy.mockResolvedValue({ customer: customerA, features: { ...features, agreements: true }, branding });
+    agreementsSpy.mockResolvedValue(agreement('Alpha Agreement'));
+    renderApp(qc, <CustomerAgreementsPage />);
+    expect(await screen.findByText('Alpha Agreement')).toBeInTheDocument();
+
+    sessionSpy.mockResolvedValue(null);
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    await waitFor(() => expect(screen.getByText('login-page')).toBeInTheDocument());
+    expect(qc.getQueryData(['customer-agreements'])).toBeUndefined();
+
+    let resolveB: (value: unknown) => void = () => {};
+    agreementsSpy.mockReturnValue(new Promise((resolve) => { resolveB = resolve; }));
+    sessionSpy.mockResolvedValue({ customer: customerB, features: { ...features, agreements: true }, branding });
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    // While B's own list loads, nothing of A's is on screen.
+    await waitFor(() => expect(screen.queryByText('login-page')).not.toBeInTheDocument());
+    expect(screen.queryByText('Alpha Agreement')).not.toBeInTheDocument();
+    await act(async () => { resolveB(agreement('Beta Agreement')); });
+    expect(await screen.findByText('Beta Agreement')).toBeInTheDocument();
   });
 
   it('drops the cached dashboard when the session is revoked, so the next customer never sees it', async () => {

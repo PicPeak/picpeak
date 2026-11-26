@@ -493,6 +493,8 @@ async function deleteProject(id, actor = null, { checked = null } = {}) {
     }
     await trx('events').where({ project_id: id }).update({ project_id: null });
     await trx('customer_documents').where({ project_id: id }).update({ project_id: null });
+    // The brief is the project's own data and goes with it (issue 2678).
+    await require('./briefService').deleteForProject(trx, id);
     await deleteWithAccountingHistory(trx, 'projects', { id },
       { actor: actor?.id ?? null, source: 'project.delete' });
   });
@@ -1311,7 +1313,19 @@ async function getProjectOverview(id, perms = {}, admin = null) {
       if (candidates.some((n) => n != null && docNumbers.has(String(n)))) emailRows.push(r);
     }
   }
-  // Merge both sources, newest first, capped.
+  // Brief updates (issue 2678) carry the project in their data.
+  if (customerEmail) {
+    const briefMails = await db('email_queue')
+      .where({ recipient_email: customerEmail, email_type: 'project_brief_updated' })
+      .whereNull('event_id')
+      .select([...selectCols, 'email_data'])
+      .orderBy('created_at', 'desc')
+      .limit(200);
+    for (const r of briefMails) {
+      if (Number((parseEmailData(r.email_data) || {}).__projectId) === Number(id)) emailRows.push(r);
+    }
+  }
+  // Merge all sources, newest first, capped.
   emailRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   out.emails = emailRows.slice(0, 200).map(mapEmail);
 
@@ -1474,6 +1488,7 @@ module.exports = {
   SKIPPABLE_STAGES,
   listProjects,
   getProjectById,
+  invoicesForProjects,
   createProject,
   updateProject,
   deleteProject,

@@ -215,7 +215,8 @@ const updateEventType = async (id, updates, actor = null) => {
 
   // A slug_prefix rename must CASCADE, or it silently orphans everything keyed on
   // the old slug: existing events/quotes (their event_type), and the per-type
-  // pre-event reminder template (event_reminder_<slug>). Re-point them so a
+  // pre-event reminder template (event_reminder_<slug>), projects, and the
+  // brief templates and briefs of the occasion. Re-point them so a
   // rename behaves like a rename, not a detach. Atomic.
   const oldSlug = eventType.slug_prefix;
   const newSlug = updateData.slug_prefix;
@@ -232,6 +233,11 @@ const updateEventType = async (id, updates, actor = null) => {
     const evCount = await trx('events').where('event_type', oldSlug).update({ event_type: newSlug });
     const qCount = await auditedUpdate(trx, 'quotes', { event_type: oldSlug }, { event_type: newSlug },
       { actor, source: 'event_type.rename' });
+    // Projects carry the occasion too; with them, the occasion's brief template
+    // and the customer briefs that picked it (issue 2678).
+    await trx('projects').where('event_type', oldSlug).update({ event_type: newSlug });
+    await trx('project_brief_fields').where('occasion', oldSlug).update({ occasion: newSlug });
+    await trx('project_briefs').where('occasion', oldSlug).update({ occasion: newSlug });
     // Carry the authored per-type reminder template along (subject/body follow the
     // rename). Guard: never clobber an existing target template for the new slug.
     const oldKey = `event_reminder_${oldSlug}`;
@@ -329,8 +335,23 @@ const deleteEventType = async (id) => {
     throw error;
   }
 
+  // Briefs (issue 2678): a customer brief that picked this occasion, or the
+  // brief of a project that has it. Their fields would vanish with it.
+  const briefsUsingType = await db('project_briefs as b')
+    .leftJoin('projects as p', 'p.id', 'b.project_id')
+    .where((q) => q.where('b.occasion', eventType.slug_prefix).orWhere('p.event_type', eventType.slug_prefix))
+    .count('b.id as count')
+    .first();
+  if (briefsUsingType && parseInt(briefsUsingType.count) > 0) {
+    const error = new Error(`Cannot delete: ${briefsUsingType.count} project briefs are using this type. Deactivate it instead.`);
+    error.code = 'IN_USE';
+    throw error;
+  }
+
   await db.transaction(async (trx) => {
     await trx('event_types').where('id', id).del();
+    // Its brief template goes with it; no brief uses it (checked above).
+    await trx('project_brief_fields').where({ occasion: eventType.slug_prefix }).del();
     // Drop the per-type reminder template with the type, or it lingers as an
     // orphan (invisible in the Reminder Emails tab, which derives its rows
     // from the live catalog).

@@ -31,6 +31,7 @@ import {
   Users,
   HeartPulse,
   CreditCard,
+  ClipboardList,
   type LucideIcon,
 } from 'lucide-react';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
@@ -80,6 +81,8 @@ export type SettingsTab =
   // CRM behaviour toggles.
   | 'businessProfile'
   | 'crm'
+  // Project brief field templates (issue 2678), behind the projects flag.
+  | 'briefTemplates'
   | 'contracts'
   | 'accounting'
   | 'whatsapp'
@@ -119,7 +122,7 @@ export const ALL_SETTINGS_TABS: SettingsTab[] = [
   'security', 'sso', 'imageSecurity', 'seo',
   'apiTokens', 'webhooks', 'payments',
   'status', 'health', 'analytics', 'backup',
-  'businessProfile', 'crm', 'contracts', 'accounting', 'whatsapp',
+  'businessProfile', 'crm', 'briefTemplates', 'contracts', 'accounting', 'whatsapp',
   'slideshow',
 ];
 
@@ -171,6 +174,7 @@ export const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, string[]> = {
   backup:            ['settings.view', 'backup.view'],
   businessProfile:   ['settings.view', 'settings.banking'],
   crm:               ['settings.view'],
+  briefTemplates:    ['settings.view'],
   contracts:         ['settings.view', 'contracts.view', 'contracts.manage'],
   accounting:        ['settings.view', 'settings.banking', 'accounting.view', 'accounting.manage'],
   whatsapp:          ['settings.view', 'whatsapp.view', 'whatsapp.manage'],
@@ -224,6 +228,7 @@ export function settingsTabGatedOff(flags: Flags): Partial<Record<SettingsTab, b
     albumProducts: !flags.albumProducts,
     printSales: !flags.printSales,
     crm: !(flags.quotes || flags.bills || flags.contracts || flags.documents),
+    briefTemplates: !flags.projects,
     contracts: !flags.contracts,
     accounting: !flags.accounting,
     whatsapp: !flags.whatsapp,
@@ -320,6 +325,10 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
       items: [
         { key: 'businessProfile', label: t('settings.businessProfile.title', 'Business profile'), icon: Briefcase },
         { key: 'crm',             label: t('settings.crm.title',             'CRM behaviour'),    icon: Receipt },
+        {
+          key: 'briefTemplates', label: t('settings.briefTemplates.title', 'Brief templates'), icon: ClipboardList,
+          description: t('settings.briefTemplates.description', 'The fields of a project brief: for every occasion, and per event type.'),
+        },
         { key: 'contracts',       label: t('settings.contracts.title',       'Contracts'),        icon: ScrollText },
         { key: 'accounting',      label: t('settings.accounting.title',      'Accounting'),       icon: Landmark },
         { key: 'whatsapp',        label: t('settings.whatsapp.title',        'WhatsApp'),         icon: Smartphone },
