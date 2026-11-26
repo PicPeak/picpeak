@@ -155,4 +155,14 @@ describe('ProjectCockpitPage email controls (#969)', () => {
     expect(screen.queryByText('Preview')).toBeNull();
     expect(screen.queryByText('Resend')).toBeNull();
   });
+
+  it('shows no "null" when the server blanked a document mail recipient (no customers.view)', async () => {
+    currentOverview = {
+      ...OVERVIEW,
+      emails: [{ ...OVERVIEW.emails[1], recipient: null, error: 'Mailbox full' }],
+    };
+    await renderPage();
+    expect(screen.queryByText(/null/)).not.toBeInTheDocument();
+    expect(screen.getByText('Mailbox full')).toBeInTheDocument();
+  });
 });
