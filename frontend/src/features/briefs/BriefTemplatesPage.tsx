@@ -39,7 +39,8 @@ export const BriefTemplatesPage: React.FC = () => {
   const { hasPermission } = usePermissions();
   const canEdit = hasPermission('settings.edit');
   const templatesQuery = useQuery({ queryKey: ['brief-templates'], queryFn: () => briefsService.templates() });
-  const { data: eventTypes = [] } = useQuery({ queryKey: ['event-types', 'all'], queryFn: () => eventTypesService.getEventTypes() });
+  // Inactive types too: their projects' briefs still use the template.
+  const { data: eventTypes = [] } = useQuery({ queryKey: ['event-types', 'with-inactive'], queryFn: () => eventTypesService.getEventTypes(true) });
   const templates = templatesQuery.data;
 
   const [occasion, setOccasion] = useState<string>(GLOBAL);
@@ -62,9 +63,12 @@ export const BriefTemplatesPage: React.FC = () => {
     [next[index], next[index + by]] = [next[index + by], next[index]];
     setRows(next);
   };
-  const occasionName = (key: string) => (key === GLOBAL
-    ? t('briefs.templates.global', 'Every occasion')
-    : eventTypes.find((e) => e.slug_prefix === key)?.name || key);
+  const occasionName = (key: string) => {
+    if (key === GLOBAL) return t('briefs.templates.global', 'Every occasion');
+    const type = eventTypes.find((e) => e.slug_prefix === key);
+    if (!type) return key;
+    return type.is_active ? type.name : t('briefs.templates.inactive', '{{name}} (inactive)', { name: type.name });
+  };
 
   const save = async () => {
     const missing = dirtyKeys.find((key) => drafts[key].some((r) => !r.label.trim()));

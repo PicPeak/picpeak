@@ -234,6 +234,7 @@ export interface ContactRights {
   bills: ContactLevel;
   documents: ContactLevel;
   company: ContactLevel;
+  agreements: ContactLevel;
 }
 
 export interface CustomerContact {

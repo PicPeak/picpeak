@@ -22,7 +22,12 @@ vi.mock('../../../components/admin/SettingsSaveBar', () => ({
   ),
 }));
 vi.mock('../../../services/eventTypes.service', () => ({
-  eventTypesService: { getEventTypes: vi.fn(async () => [{ id: 1, name: 'Wedding', slug_prefix: 'wedding' }]) },
+  eventTypesService: {
+    getEventTypes: vi.fn(async (includeInactive?: boolean) => [
+      { id: 1, name: 'Wedding', slug_prefix: 'wedding', is_active: true },
+      ...(includeInactive ? [{ id: 2, name: 'Ball', slug_prefix: 'ball', is_active: false }] : []),
+    ]),
+  },
 }));
 vi.mock('../../../services/briefs.service', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -115,4 +120,11 @@ it('is read-only without settings.edit', async () => {
   expect(await screen.findByDisplayValue('Contact on the day')).toBeDisabled();
   expect(screen.getByText('You can see these templates but not change them.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+});
+
+it('lists inactive occasions too, marked, since their briefs still use the template', async () => {
+  mount();
+  fireEvent.change(await screen.findByLabelText('Template'), { target: { value: 'ball' } });
+  expect(await screen.findByRole('option', { name: 'Ball (inactive)' })).toBeInTheDocument();
+  expect(screen.getByLabelText('Template')).toHaveValue('ball');
 });

@@ -20,6 +20,8 @@ export interface CustomerRights {
   bills: 'none' | 'view';
   documents: 'none' | 'view' | 'act';
   company: 'none' | 'act';
+  /** The project briefs the studio sent (issue 2678). */
+  agreements: 'none' | 'view';
 }
 
 export interface CustomerProfile {

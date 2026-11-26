@@ -172,12 +172,13 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
     invalidateKeys: [['project-overview', projectId], ['projects'], ['brief', 'projects', projectId]],
   });
   // Each changed slice saves on its own; a failed one stays dirty (UX.md › Saving).
+  // The brief goes first: the server checks its values against the project's
+  // occasion as saved, which the project data may be about to change.
   const saveAll = async () => {
-    const results = await Promise.allSettled([
-      ...(projectDirty ? [save.mutateAsync()] : []),
-      ...(brief.dirty ? [brief.save.mutateAsync()] : []),
-    ]);
-    if (results.some((r) => r.status === 'rejected')) throw new Error('Save failed');
+    const saved = (job: () => Promise<unknown>) => job().then(() => true, () => false);
+    const briefSaved = brief.dirty ? await saved(() => brief.save.mutateAsync()) : true;
+    const projectSaved = projectDirty ? await saved(() => save.mutateAsync()) : true;
+    if (!briefSaved || !projectSaved) throw new Error('Save failed');
   };
   const isSaving = save.isPending || brief.save.isPending;
 

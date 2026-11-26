@@ -8990,7 +8990,8 @@
         "contracts": "Contracts",
         "bills": "Invoices",
         "documents": "Documents",
-        "company": "Company data"
+        "company": "Company data",
+        "agreements": "Agreements"
       },
       "level": {
         "none": "No access",
@@ -9509,6 +9510,8 @@
     "title": "Brief",
     "help": "The agreed details of this job. The customer sees the fields marked with an eye once you notify them.",
     "readOnly": "You can see this brief but not change it.",
+    "titleLabel": "Title the customer sees",
+    "titleHint": "Left empty, the occasion is the title. The project name stays internal.",
     "notSaved": "not saved yet",
     "loadFailed": "Could not load the brief.",
     "saved": "Brief saved",
@@ -9554,6 +9557,7 @@
     "templates": {
       "occasion": "Template",
       "global": "Every occasion",
+      "inactive": "{{name}} (inactive)",
       "globalHint": "These fields appear on every brief, before the fields of its occasion.",
       "occasionHint": "These fields follow the fields for every occasion on a {{occasion}} brief.",
       "empty": "No fields yet.",

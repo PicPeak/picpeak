@@ -4397,6 +4397,11 @@
       "removedN": "{{count}} verwijderd",
       "error": "Toewijzingen konden niet worden bijgewerkt",
       "clearSearchAria": "Zoekopdracht wissen"
+    },
+    "contacts": {
+      "area": {
+        "agreements": "Afspraken"
+      }
     }
   },
   "clients": {
@@ -4600,6 +4605,8 @@
     "title": "Briefing",
     "help": "De afgesproken details van deze opdracht. De klant ziet de velden met een oog zodra u hem op de hoogte brengt.",
     "readOnly": "U kunt deze briefing zien, maar niet wijzigen.",
+    "titleLabel": "Titel die de klant ziet",
+    "titleHint": "Leeg gelaten is de gelegenheid de titel. De projectnaam blijft intern.",
     "notSaved": "nog niet opgeslagen",
     "loadFailed": "De briefing kon niet worden geladen.",
     "saved": "Briefing opgeslagen",
@@ -4645,6 +4652,7 @@
     "templates": {
       "occasion": "Sjabloon",
       "global": "Elke gelegenheid",
+      "inactive": "{{name}} (inactief)",
       "globalHint": "Deze velden staan op elke briefing, vóór de velden van de gelegenheid.",
       "occasionHint": "Op een briefing voor {{occasion}} volgen deze velden op de velden voor elke gelegenheid.",
       "empty": "Nog geen velden.",

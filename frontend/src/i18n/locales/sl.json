@@ -7673,6 +7673,11 @@
     "statusFilter": {
       "label": "Stanje",
       "all": "Vsa stanja"
+    },
+    "contacts": {
+      "area": {
+        "agreements": "Dogovori"
+      }
     }
   },
   "clients": {
@@ -7936,6 +7941,8 @@
     "title": "Brief",
     "help": "Dogovorjene podrobnosti tega naročila. Polja z očesom stranka vidi, ko jo obvestite.",
     "readOnly": "Ta brief lahko vidite, ne morete pa ga spreminjati.",
+    "titleLabel": "Naslov, ki ga vidi stranka",
+    "titleHint": "Če ostane prazno, je naslov priložnost. Ime projekta ostane interno.",
     "notSaved": "še ni shranjeno",
     "loadFailed": "Briefa ni bilo mogoče naložiti.",
     "saved": "Brief je shranjen",
@@ -7981,6 +7988,7 @@
     "templates": {
       "occasion": "Predloga",
       "global": "Vsaka priložnost",
+      "inactive": "{{name}} (neaktivno)",
       "globalHint": "Ta polja so v vsakem briefu, pred polji njegove priložnosti.",
       "occasionHint": "V briefu za {{occasion}} ta polja sledijo poljem za vsako priložnost.",
       "empty": "Še ni polj.",

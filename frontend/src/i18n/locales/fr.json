@@ -4470,6 +4470,11 @@
       "removedN": "{{count}} supprimé",
       "error": "Impossible de mettre à jour les assignations",
       "clearSearchAria": "Effacer la recherche"
+    },
+    "contacts": {
+      "area": {
+        "agreements": "Accords"
+      }
     }
   },
   "clients": {
@@ -4673,6 +4678,8 @@
     "title": "Brief",
     "help": "Les détails convenus pour ce travail. Le client voit les champs marqués d'un œil dès que vous le notifiez.",
     "readOnly": "Vous pouvez voir ce brief, mais pas le modifier.",
+    "titleLabel": "Titre vu par le client",
+    "titleHint": "Laissé vide, l'occasion sert de titre. Le nom du projet reste interne.",
     "notSaved": "pas encore enregistré",
     "loadFailed": "Impossible de charger le brief.",
     "saved": "Brief enregistré",
@@ -4718,6 +4725,7 @@
     "templates": {
       "occasion": "Modèle",
       "global": "Toutes les occasions",
+      "inactive": "{{name}} (inactif)",
       "globalHint": "Ces champs apparaissent dans chaque brief, avant les champs de son occasion.",
       "occasionHint": "Dans un brief {{occasion}}, ces champs suivent les champs communs à toutes les occasions.",
       "empty": "Aucun champ pour l'instant.",

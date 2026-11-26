@@ -190,6 +190,15 @@ describe('BriefCard on a project', () => {
     await waitFor(() => expect(state.save).toHaveBeenCalledWith({ kind: 'projects', id: 7 }, { values: { 10: { value: null } } }));
   });
 
+  it('edits the title the customer sees, offering the occasion as the default', async () => {
+    mount();
+    const title = await screen.findByLabelText('Title the customer sees');
+    expect(title).toHaveAttribute('placeholder', 'Wedding');
+    fireEvent.change(title, { target: { value: 'Anna & Ben' } });
+    fireEvent.click(screen.getByRole('button', { name: 'page save' }));
+    await waitFor(() => expect(state.save).toHaveBeenCalledWith({ kind: 'projects', id: 7 }, { title: 'Anna & Ben' }));
+  });
+
   it('says why a project without a customer cannot notify', async () => {
     state.get.mockResolvedValue(projectBrief({ hasCustomer: false, pendingChanges: [{ fieldId: 1, label: 'x', labels: {}, change: 'added' }] }));
     mount();

@@ -3750,6 +3750,8 @@
     "title": "Briefing",
     "help": "Los detalles acordados de este trabajo. El cliente ve los campos marcados con un ojo cuando le notifica.",
     "readOnly": "Puede ver este briefing, pero no modificarlo.",
+    "titleLabel": "Título que ve el cliente",
+    "titleHint": "Si se deja vacío, la ocasión es el título. El nombre del proyecto sigue siendo interno.",
     "notSaved": "sin guardar",
     "loadFailed": "No se pudo cargar el briefing.",
     "saved": "Briefing guardado",
@@ -3795,6 +3797,7 @@
     "templates": {
       "occasion": "Plantilla",
       "global": "Toda ocasión",
+      "inactive": "{{name}} (inactivo)",
       "globalHint": "Estos campos aparecen en cada briefing, antes de los campos de su ocasión.",
       "occasionHint": "En un briefing de {{occasion}}, estos campos siguen a los campos para toda ocasión.",
       "empty": "Aún no hay campos.",
@@ -3826,6 +3829,13 @@
       "project_date": "Fecha del evento (del proyecto)",
       "project_location": "Lugar (del proyecto)",
       "project_guests": "Número de invitados (del proyecto)"
+    }
+  },
+  "customers": {
+    "contacts": {
+      "area": {
+        "agreements": "Acuerdos"
+      }
     }
   }
 }

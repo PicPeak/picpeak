@@ -4670,6 +4670,11 @@
       "removedN": "{{count}} removida(s)",
       "error": "Não foi possível atualizar as atribuições",
       "clearSearchAria": "Limpar pesquisa"
+    },
+    "contacts": {
+      "area": {
+        "agreements": "Combinados"
+      }
     }
   },
   "clients": {
@@ -4873,6 +4878,8 @@
     "title": "Briefing",
     "help": "Os detalhes combinados deste trabalho. O cliente vê os campos marcados com um olho quando você o notifica.",
     "readOnly": "Você pode ver este briefing, mas não alterá-lo.",
+    "titleLabel": "Título que o cliente vê",
+    "titleHint": "Se ficar vazio, a ocasião é o título. O nome do projeto continua interno.",
     "notSaved": "ainda não salvo",
     "loadFailed": "Não foi possível carregar o briefing.",
     "saved": "Briefing salvo",
@@ -4918,6 +4925,7 @@
     "templates": {
       "occasion": "Modelo",
       "global": "Toda ocasião",
+      "inactive": "{{name}} (inativo)",
       "globalHint": "Estes campos aparecem em todo briefing, antes dos campos da sua ocasião.",
       "occasionHint": "Num briefing de {{occasion}}, estes campos vêm depois dos campos para toda ocasião.",
       "empty": "Ainda não há campos.",

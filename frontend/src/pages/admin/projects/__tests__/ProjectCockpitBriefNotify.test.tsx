@@ -3,7 +3,7 @@
  * carries the project's own data, so unsaved project edits block it as much
  * as unsaved brief edits do.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { vi, it, expect } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
@@ -20,6 +20,7 @@ vi.mock('react-i18next', async () => {
   };
 });
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const calls = vi.hoisted(() => ({ update: vi.fn(), save: vi.fn() }));
 vi.mock('../../../../services/projects.service', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   projectsService: {
@@ -31,14 +32,14 @@ vi.mock('../../../../services/projects.service', async (importOriginal) => ({
       events: [], quotes: [], contracts: [], invoices: [], emails: [],
       hours: { entries: [], totalMinutes: 0 }, valuation: { byCurrency: [] },
     })),
-    update: vi.fn(),
+    update: calls.update,
   },
 }));
 vi.mock('../../../../services/briefs.service', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   briefsService: {
     get: vi.fn(async () => projectBrief({ pendingChanges: [{ fieldId: 1, label: "Bride's name", labels: {}, change: 'changed' }] })),
-    save: vi.fn(), notify: vi.fn(),
+    save: calls.save, notify: vi.fn(),
   },
 }));
 vi.mock('../../../../services/eventTypes.service', () => ({
@@ -53,17 +54,33 @@ vi.mock('../../../../contexts/PermissionsContext', () => ({
 
 import { ProjectCockpitPage } from '../ProjectCockpitPage';
 
-it('keeps Notify off while the project data has unsaved edits', async () => {
-  render(
+const mount = () => render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter initialEntries={['/admin/projects/1']}>
         <Routes><Route path="/admin/projects/:id" element={<ProjectCockpitPage />} /></Routes>
       </MemoryRouter>
     </QueryClientProvider>,
-  );
+);
+
+it('keeps Notify off while the project data has unsaved edits', async () => {
+  mount();
   const notify = await screen.findByRole('button', { name: 'Notify customer' });
   expect(notify).toBeEnabled();
   fireEvent.change(screen.getByDisplayValue('Castle Hill'), { target: { value: 'Lake House' } });
   expect(screen.getByRole('button', { name: 'Notify customer' })).toBeDisabled();
   expect(screen.getByText('Save your changes first.')).toBeInTheDocument();
+});
+
+it('saves the brief before the project data, so a new occasion cannot void the brief edits', async () => {
+  let finish: (brief: unknown) => void = () => {};
+  calls.save.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  calls.update.mockResolvedValue({});
+  mount();
+  fireEvent.change(await screen.findByLabelText("Bride's name"), { target: { value: 'Anna Maria' } });
+  fireEvent.change(screen.getByDisplayValue('Castle Hill'), { target: { value: 'Lake House' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(calls.save).toHaveBeenCalledTimes(1));
+  expect(calls.update).not.toHaveBeenCalled();
+  await act(async () => { finish(projectBrief()); });
+  await waitFor(() => expect(calls.update).toHaveBeenCalledWith(1, { location: 'Lake House' }));
 });

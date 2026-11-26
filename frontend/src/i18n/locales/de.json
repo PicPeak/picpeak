@@ -8955,7 +8955,8 @@
         "contracts": "Verträge",
         "bills": "Rechnungen",
         "documents": "Dokumente",
-        "company": "Firmendaten"
+        "company": "Firmendaten",
+        "agreements": "Vereinbarungen"
       },
       "level": {
         "none": "Kein Zugriff",
@@ -9474,6 +9475,8 @@
     "title": "Briefing",
     "help": "Die vereinbarten Details dieses Auftrags. Felder mit Auge sieht der Kunde, sobald Sie ihn benachrichtigen.",
     "readOnly": "Sie können dieses Briefing sehen, aber nicht ändern.",
+    "titleLabel": "Titel für den Kunden",
+    "titleHint": "Leer gelassen ist der Anlass der Titel. Der Projektname bleibt intern.",
     "notSaved": "noch nicht gespeichert",
     "loadFailed": "Das Briefing konnte nicht geladen werden.",
     "saved": "Briefing gespeichert",
@@ -9519,6 +9522,7 @@
     "templates": {
       "occasion": "Vorlage",
       "global": "Jeder Anlass",
+      "inactive": "{{name}} (inaktiv)",
       "globalHint": "Diese Felder erscheinen in jedem Briefing, vor den Feldern seines Anlasses.",
       "occasionHint": "Diese Felder folgen in einem Briefing für {{occasion}} auf die Felder für jeden Anlass.",
       "empty": "Noch keine Felder.",

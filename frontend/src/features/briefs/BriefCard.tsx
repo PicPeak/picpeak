@@ -170,6 +170,17 @@ export const BriefCard: React.FC<{
       {!canEdit && <p className="text-xs text-muted mb-3">{t('briefs.readOnly', 'You can see this brief but not change it.')}</p>}
 
       <fieldset disabled={!canEdit} className="space-y-4">
+        <div>
+          <label htmlFor="brief-title" className="block text-sm font-medium text-body mb-1">{t('briefs.titleLabel', 'Title the customer sees')}</label>
+          <Input
+            id="brief-title"
+            value={draft.title}
+            onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+            placeholder={brief.defaultTitle || undefined}
+            maxLength={200}
+          />
+          <p className="text-xs text-muted mt-1">{t('briefs.titleHint', 'Left empty, the occasion is the title. The project name stays internal.')}</p>
+        </div>
         {isCustomerBrief && (
           <div>
             <label htmlFor="brief-occasion" className="block text-sm font-medium text-body mb-1">{t('briefs.occasion', 'Occasion')}</label>

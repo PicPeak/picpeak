@@ -47,12 +47,16 @@ export interface BriefPendingChange {
   fieldId: number | null;
   label: string | null;
   labels: Partial<Record<string, string>>;
-  /** `renamed`: the same value under a corrected label. */
-  change: 'added' | 'changed' | 'removed' | 'renamed';
+  /** `renamed`: the same value under a corrected label; `reordered`: the
+   *  fields the customer sees are in a new order (fieldId null). */
+  change: 'added' | 'changed' | 'removed' | 'renamed' | 'reordered';
 }
 
 export interface Brief {
   occasion: string | null;
+  /** The title the customer sees; null uses defaultTitle (the occasion's name). */
+  title: string | null;
+  defaultTitle: string | null;
   fields: BriefField[];
   sharedArrangements: string;
   notifiedAt: string | null;
@@ -63,6 +67,7 @@ export interface Brief {
 export interface BriefSavePayload {
   values?: Record<number, { value?: BriefValue; visible?: boolean | null }>;
   sharedArrangements?: string | null;
+  title?: string | null;
   /** Customer briefs only. */
   occasion?: string | null;
 }

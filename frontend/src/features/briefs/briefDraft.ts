@@ -16,6 +16,7 @@ export interface BriefDraft {
   /** Removed fields whose value is to be cleared. */
   cleared: number[];
   sharedArrangements: string;
+  title: string;
   occasion: string | null;
 }
 
@@ -55,11 +56,12 @@ function apiValue(type: BriefFieldType, value: BriefDraftValue): BriefValue {
 }
 
 export function draftFromBrief(brief: Brief | undefined): BriefDraft {
-  const draft: BriefDraft = { values: {}, visible: {}, cleared: [], sharedArrangements: '', occasion: null };
+  const draft: BriefDraft = { values: {}, visible: {}, cleared: [], sharedArrangements: '', title: '', occasion: null };
   if (!brief) return draft;
   for (const field of editableFields(brief)) draft.values[field.id] = draftValue(field.type, field.value);
   for (const field of brief.fields) if (field.source !== 'removed') draft.visible[field.id] = field.visible;
   draft.sharedArrangements = brief.sharedArrangements || '';
+  draft.title = brief.title || '';
   draft.occasion = brief.occasion;
   return draft;
 }
@@ -84,6 +86,7 @@ export function briefPayload(draft: BriefDraft, base: BriefDraft, brief: Brief |
   }
   if (Object.keys(values).length) out.values = values;
   if (draft.sharedArrangements.trim() !== base.sharedArrangements.trim()) out.sharedArrangements = draft.sharedArrangements;
+  if (draft.title.trim() !== base.title.trim()) out.title = draft.title.trim() || null;
   if (withOccasion && draft.occasion !== base.occasion) out.occasion = draft.occasion;
   return out;
 }
@@ -102,6 +105,7 @@ export function rebaseBriefDraft(draft: BriefDraft, oldBase: BriefDraft, newBase
     visible: merge(draft.visible, oldBase.visible, newBase.visible),
     cleared: draft.cleared,
     sharedArrangements: pick(draft.sharedArrangements, oldBase.sharedArrangements, newBase.sharedArrangements),
+    title: pick(draft.title, oldBase.title, newBase.title),
     occasion: pick(draft.occasion, oldBase.occasion, newBase.occasion),
   };
 }

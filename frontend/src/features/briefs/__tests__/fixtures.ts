@@ -6,6 +6,8 @@ export const field = (patch: Partial<BriefField> & Pick<BriefField, 'id' | 'labe
 
 export const projectBrief = (patch: Partial<Brief> = {}): Brief => ({
   occasion: 'wedding',
+  title: null,
+  defaultTitle: 'Wedding',
   fields: [
     field({ id: 1, label: "Bride's name", labels: { de: 'Name der Braut' }, type: 'short_text', value: 'Anna' }),
     field({ id: 2, label: 'Wedding date', type: 'project_date', value: '2027-06-12', fromProject: true }),
