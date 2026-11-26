@@ -98,3 +98,34 @@ describe('redactKnownAddresses', () => {
     expect(redactKnownAddresses(null, ['anna@kunde.example'])).toBeNull();
   });
 });
+
+describe('long text', () => {
+  // Generous bound against slow CI runners: the bounded scan takes about
+  // 50 ms here, the unbounded one it replaces took 3 s for 40,000
+  // characters and grows with the square of the length.
+  const timed = (fn) => {
+    const start = process.hrtime.bigint();
+    const out = fn();
+    return { out, ms: Number(process.hrtime.bigint() - start) / 1e6 };
+  };
+  const welcome = 'x'.repeat(200000);
+  const withAddress = `${'x'.repeat(100000)} anna@kunde.example ${'y'.repeat(99980)}`;
+
+  it('scans 200,000 characters without an address quickly', () => {
+    const free = timed(() => redactAddresses(welcome));
+    expect(free.out).toBe(welcome);
+    expect(free.ms).toBeLessThan(1000);
+    const body = timed(() => redactKnownAddresses('<p>anna@kunde.example</p>', [{ welcome_message: welcome }, 'anna@kunde.example']));
+    expect(body.out).toBe('<p>…</p>');
+    expect(body.ms).toBeLessThan(1000);
+  });
+
+  it('scans 200,000 characters with one address quickly and still finds it', () => {
+    const free = timed(() => redactAddresses(withAddress));
+    expect(free.out).toBe(`${'x'.repeat(100000)} … ${'y'.repeat(99980)}`);
+    expect(free.ms).toBeLessThan(1000);
+    const body = timed(() => redactKnownAddresses(`<p>${withAddress}</p>`, [{ welcome_message: withAddress }]));
+    expect(body.out).toBe(`<p>${'x'.repeat(100000)} … ${'y'.repeat(99980)}</p>`);
+    expect(body.ms).toBeLessThan(1000);
+  });
+});
