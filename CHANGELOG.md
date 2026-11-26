@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.211.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.211.0-beta.0...v3.211.1-beta.0) (2026-11-26)
+
+
+### Bug Fixes
+
+* **email:** keep customer addresses out of webhook deliveries, workflow run data and mail bodies without customers.view ([#2688](https://github.com/PicPeak/picpeak/issues/2688)) ([1ed6471](https://github.com/PicPeak/picpeak/commit/1ed64711f074d28b989de859a8c919626f9728e8))
+
 ## [3.211.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.7-beta.0...v3.211.0-beta.0) (2026-11-26)
 
 
