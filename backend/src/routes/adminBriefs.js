@@ -31,15 +31,17 @@ router.get('/templates', requirePermission('settings.view'), handleAsync(async (
   successResponse(res, { templates: await briefService.listTemplates() });
 }));
 
-// :occasion is an event type's slug, or `global` for the fields every brief shows.
-router.put('/templates/:occasion',
+// The fields every brief shows, and an occasion's (an event type's slug, which
+// may be any slug, `global` included: the two paths keep them apart).
+const saveTemplate = (occasionOf) => handleAsync(async (req, res) => {
+  validateRequest(req);
+  successResponse(res, { fields: await briefService.saveTemplate(occasionOf(req), req.body.fields) });
+});
+router.put('/templates/global', requirePermission('settings.edit'), [body('fields').isArray()], saveTemplate(() => null));
+router.put('/templates/occasion/:occasion',
   requirePermission('settings.edit'),
   [param('occasion').matches(/^[a-z0-9-]{1,50}$/i), body('fields').isArray()],
-  handleAsync(async (req, res) => {
-    validateRequest(req);
-    const occasion = req.params.occasion === 'global' ? null : req.params.occasion;
-    successResponse(res, { fields: await briefService.saveTemplate(occasion, req.body.fields) });
-  }));
+  saveTemplate((req) => req.params.occasion));
 
 const project = (req) => ({ kind: 'project', id: Number(req.params.id) });
 const customer = (req) => ({ kind: 'customer', id: Number(req.params.id) });

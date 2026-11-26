@@ -392,7 +392,8 @@
       "reason": "Project brief templates and briefs: field labels, names, places, arrangements and notify actions are customer content, not product usage.",
       "route_signatures": [
         "GET /templates",
-        "PUT /templates/:occasion",
+        "PUT /templates/global",
+        "PUT /templates/occasion/:occasion",
         "GET /projects/:id",
         "PUT /projects/:id",
         "POST /projects/:id/notify",

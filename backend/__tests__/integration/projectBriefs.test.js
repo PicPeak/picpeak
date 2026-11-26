@@ -134,7 +134,7 @@ describe('with the projects flag on', () => {
       const [field] = (await admin('get', '/templates')).body.templates.global;
       expect((await admin('put', '/templates/global').send({ fields: [{ ...field, type: 'number' }] })).status).toBe(400);
       expect((await admin('put', '/templates/global').send({ fields: [{ label: 'X', type: 'script' }] })).status).toBe(400);
-      expect((await admin('put', '/templates/nope').send({ fields: [] })).status).toBe(404);
+      expect((await admin('put', '/templates/occasion/nope').send({ fields: [] })).status).toBe(404);
       const many = Array.from({ length: 51 }, (_, i) => ({ label: `F${i}`, type: 'short_text' }));
       expect((await admin('put', '/templates/global').send({ fields: many })).status).toBe(400);
       const wedding = await weddingFields();
@@ -264,7 +264,7 @@ describe('with the projects flag on', () => {
       const wedding = await weddingFields();
       const groom = wedding.find((f) => f.label === 'Groom\'s name');
       const kept = wedding.filter((f) => f.id !== groom.id).map((f) => (f.label === 'Bride\'s name' ? { ...f, label: 'Partner 1' } : f));
-      expect((await admin('put', '/templates/wedding').send({ fields: kept })).status).toBe(200);
+      expect((await admin('put', '/templates/occasion/wedding').send({ fields: kept })).status).toBe(200);
 
       const { fields } = (await admin('get', `/projects/${projectId}`)).body.brief;
       expect(fields.find((f) => f.label === 'Partner 1').value).toBe('Anna Maria');
@@ -591,14 +591,28 @@ describe('with the projects flag on', () => {
       const before = (await portal(kim)).body.agreements[0].fields.map((f) => f.label);
 
       const wedding = await weddingFields();
-      expect((await admin('put', '/templates/wedding').send({ fields: [...wedding].reverse() })).status).toBe(200);
+      expect((await admin('put', '/templates/occasion/wedding').send({ fields: [...wedding].reverse() })).status).toBe(200);
       expect((await admin('get', `/projects/${p}`)).body.brief.pendingChanges).toEqual([expect.objectContaining({ change: 'reordered' })]);
       await admin('post', `/projects/${p}/notify`);
       const email = (await db('customer_accounts').where({ id: kim }).first()).email;
       expect(JSON.parse((await mails(email).orderBy('id', 'desc').first()).email_data).brief_changes_text)
         .toBe('- The order of the overview changed');
       expect((await portal(kim)).body.agreements[0].fields.map((f) => f.label)).toEqual([...before].reverse());
-      await admin('put', '/templates/wedding').send({ fields: wedding });
+      await admin('put', '/templates/occasion/wedding').send({ fields: wedding });
+    });
+  });
+
+  describe('review round 5', () => {
+    it('keeps the shared template apart from an occasion whose slug is "global"', async () => {
+      await db('event_types').insert({ name: 'Global gala', slug_prefix: 'global', is_active: true });
+      const shared = (await admin('get', '/templates')).body.templates.global;
+      const res = await admin('put', '/templates/occasion/global').send({ fields: [{ label: 'Gala table', type: 'short_text' }] });
+      expect(res.status).toBe(200);
+      const templates = (await admin('get', '/templates')).body.templates;
+      expect(templates.occasions.global.map((f) => f.label)).toEqual(['Gala table']);
+      expect(templates.global).toEqual(shared);
+      expect((await admin('put', '/templates/global').send({ fields: shared })).status).toBe(200);
+      expect((await admin('put', '/templates/occasion/nope').send({ fields: [] })).status).toBe(404);
     });
   });
 });
