@@ -38,6 +38,8 @@ async function role(name, permissions) {
   for (const p of await db('permissions').whereIn('name', permissions)) {
     await db('role_permissions').insert({ role_id: roleId, permission_id: p.id });
   }
+  // Roles are cached; a role made mid-suite must be seen.
+  require('../../src/middleware/permissions').clearPermissionCache();
   return roleId;
 }
 async function adminWith(roleId) {
@@ -723,6 +725,63 @@ describe('with the projects flag on', () => {
       const { fields } = await briefService.getBrief(owner);
       expect(fields.find((f) => f.id === bride.id).value).toBe('First');
       expect(fields.find((f) => f.id === plusOne.id).value).toBe('2027-05-01');
+    });
+  });
+
+  describe('challenge round', () => {
+    const queued = async (to) => (await mails(to).orderBy('id', 'desc').first());
+
+    it('does not deliver a queued update to a customer the project has left', async () => {
+      const transport = require('../../src/services/emailWebhookTransport');
+      const enabled = jest.spyOn(transport, 'isEnabled').mockReturnValue(true);
+      const send = jest.spyOn(transport, 'send').mockResolvedValue({ messageId: 'test' });
+      process.env.EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@example.com';
+      try {
+        const anna = await customer();
+        const bert = await customer();
+        const p = await project(anna);
+        await admin('put', `/projects/${p}`).send({ sharedArrangements: 'Only for Anna' });
+        await admin('post', `/projects/${p}/notify`);
+        const annaEmail = (await db('customer_accounts').where({ id: anna }).first()).email;
+        const row = await queued(annaEmail);
+        await db('projects').where({ id: p }).update({ customer_account_id: bert });
+
+        await require('../../src/services/emailProcessor').processEmailQueue({ onlyId: row.id, ignoreSchedule: true });
+        expect(send).not.toHaveBeenCalled();
+        expect(await db('email_queue').where({ id: row.id }).first())
+          .toMatchObject({ status: 'cancelled', error_message: 'The project moved to another customer after this mail was queued' });
+      } finally {
+        enabled.mockRestore();
+        send.mockRestore();
+      }
+    });
+
+    it('withdraws a pending update when its project is deleted', async () => {
+      const cora = await customer();
+      const p = await project(cora);
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'Soon gone' });
+      await admin('post', `/projects/${p}/notify`);
+      const email = (await db('customer_accounts').where({ id: cora }).first()).email;
+      await require('../../src/services/projectService').deleteProject(p);
+      expect(await queued(email)).toMatchObject({ status: 'cancelled', error_message: 'The brief was deleted after this mail was queued' });
+    });
+
+    it('hides the recipient of brief mail in the project overview from an admin without customers.view', async () => {
+      const eventsOnly = await adminWith(await role('project-viewer-2678', ['events.view']));
+      const dina = await customer();
+      const p = await project(dina, { created_by: eventsOnly });
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'Hi' });
+      await admin('post', `/projects/${p}/notify`);
+      const projectsApp = buildRouteApp('/api/admin/projects', require('../../src/routes/adminProjects'));
+      const view = async (id) => {
+        const res = await request(projectsApp).get(`/api/admin/projects/${p}/overview`).set('Authorization', `Bearer ${mintAdminToken(id)}`);
+        expect(res.status).toBe(200);
+        return res.body;
+      };
+      const hidden = (await view(eventsOnly)).emails.find((e) => e.type === 'project_brief_updated');
+      expect(hidden.recipient).toBeNull();
+      const shown = (await view(superAdmin)).emails.find((e) => e.type === 'project_brief_updated');
+      expect(shown.recipient).toBe((await db('customer_accounts').where({ id: dina }).first()).email);
     });
   });
 });

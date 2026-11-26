@@ -26,6 +26,7 @@ const { escapeHtml } = require('../utils/formatters');
 const { formatDate } = require('../utils/dateFormatter');
 const { adminActivityActor } = require('../utils/activityActor');
 const { toDateOnly } = require('../utils/dateOnly');
+const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
 const logger = require('../utils/logger');
 const { orPaidAwaitingDelivery } = require('./invoice/helpers');
 const projectService = require('./projectService');
@@ -590,6 +591,8 @@ async function notify(owner, adminId) {
     // A passive customer (no password) cannot sign in to the portal.
     portal_link: customer.password_hash ? `${await frontendBase()}/customer/agreements` : '',
     __language: customer.preferred_language || undefined,
+    // Checked again when the queue sends it (staleMailReason).
+    __briefId: brief.id,
     // The project's email history picks the mail up by this, as CRM document
     // mail by its number (projectService.getProjectOverview).
     ...(owner.kind === 'project' ? { __projectId: owner.id } : {}),
@@ -653,7 +656,7 @@ async function projectDeposit(projectId, customerId) {
     .where('invoices.installment_total', '>', 1)
     .where((q) => orPaidAwaitingDelivery(q.whereNotIn('invoices.status', ['scheduled', 'pending_delivery', 'skipped', 'cancelled'])))
     .orderBy('invoices.id', 'desc')
-    .first('invoice_number', 'total_amount_minor', 'currency', 'due_date', 'status', 'paid_at');
+    .first('invoice_number', 'total_amount_minor', 'currency', 'due_date', 'status');
   if (!invoice) return null;
   return {
     invoiceNumber: invoice.invoice_number,
@@ -708,8 +711,41 @@ async function listForCustomer(customerId, { quotes = false, bills = false } = {
 // Removal
 // ---------------------------------------------------------------------------
 
+const STALE_MAIL = {
+  deleted: 'The brief was deleted after this mail was queued',
+  moved: 'The project moved to another customer after this mail was queued',
+};
+
+/**
+ * Why a queued update must not go out any more (the queue's send-time check,
+ * emailProcessor): its brief is gone, or no longer belongs to the customer it
+ * was sent to. Null when it may go, or for a mail without a brief id.
+ */
+async function staleMailReason(emailData) {
+  const briefId = emailData?.__briefId;
+  if (briefId == null) return null;
+  const brief = await db('project_briefs as b')
+    .leftJoin('projects as p', 'p.id', 'b.project_id')
+    .where('b.id', briefId)
+    .first('b.project_id', 'b.customer_account_id', 'p.customer_account_id as project_customer_id');
+  if (!brief) return STALE_MAIL.deleted;
+  const owner = brief.project_id ? brief.project_customer_id : brief.customer_account_id;
+  return owner != null && Number(owner) === Number(emailData.__customerAccountId) ? null : STALE_MAIL.moved;
+}
+
 async function deleteBriefs(trx, briefIds) {
   if (!briefIds.length) return;
+  // Their updates not sent yet go with them; sent ones stay in the log.
+  const pending = await trx('email_queue')
+    .where({ email_type: 'project_brief_updated' })
+    .whereIn('status', ['pending', PROTECTED_PENDING_STATUS])
+    .select('id', 'email_data');
+  const withdrawn = pending
+    .filter((row) => briefIds.map(Number).includes(Number(parseJson(row.email_data, {})?.__briefId)))
+    .map((row) => row.id);
+  if (withdrawn.length) {
+    await trx('email_queue').whereIn('id', withdrawn).update({ status: 'cancelled', error_message: STALE_MAIL.deleted });
+  }
   await trx('project_brief_values').whereIn('brief_id', briefIds).del();
   await trx('project_briefs').whereIn('id', briefIds).del();
 }
@@ -738,6 +774,7 @@ module.exports = {
   getBrief,
   saveBrief,
   notify,
+  staleMailReason,
   customerHasAgreements,
   listForCustomer,
   deleteForProject,

@@ -1656,9 +1656,13 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         // logs at error level.
         // The "your download is ready" mail (issue 1733) gets the same
         // re-check: the archive can be gone by the time the queue is here.
+        // A brief update (issue 2678) likewise: its brief can be gone, or its
+        // project with another customer by now.
         const staleDocumentReason = await staleDocumentNotificationReason(email.email_type, emailData)
           || (email.email_type === 'download_ready'
-            ? await require('./downloadJobNotifier').staleMailReason(emailData, email.recipient_email) : null);
+            ? await require('./downloadJobNotifier').staleMailReason(emailData, email.recipient_email) : null)
+          || (email.email_type === 'project_brief_updated'
+            ? await require('./briefService').staleMailReason(emailData) : null);
         if (staleDocumentReason) {
           await db('email_queue').where('id', email.id).update({
             status: 'cancelled',

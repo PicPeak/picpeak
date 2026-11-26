@@ -377,6 +377,9 @@ router.get('/:id/overview', requirePermission('events.view'), requireProjectOwne
       }
     } else {
       overview.project = withoutCustomer(overview.project);
+      // A brief update's recipient is the customer's address (issue 2678).
+      // The other mail rows are left as they were.
+      overview.emails = overview.emails.map((e) => (e.type === 'project_brief_updated' ? { ...e, recipient: null } : e));
     }
   }
   return successResponse(res, overview);

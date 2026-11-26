@@ -165,9 +165,32 @@ async function seedWeddingTemplate(knex) {
   })));
 }
 
+// Each translation on its own: a run that stopped part-way (SQLite runs a
+// migration without a transaction) gets the missing languages on the next
+// run, and a language that exists, edited or not, is left as it is.
+async function seedTranslations(knex, templateId) {
+  if (!(await knex.schema.hasTable('email_template_translations'))) return;
+  for (const [language, content] of Object.entries(TRANSLATIONS)) {
+    if (await knex('email_template_translations').where({ template_id: templateId, language }).first('id')) continue;
+    await knex('email_template_translations').insert({
+      template_id: templateId,
+      language,
+      subject: content.subject,
+      body_html: content.body_html,
+      body_text: content.body_text,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+}
+
 async function seedEmailTemplate(knex) {
   if (!(await knex.schema.hasTable('email_templates'))) return;
-  if (await knex('email_templates').where({ template_key: TEMPLATE_KEY }).first('id')) return;
+  const existing = await knex('email_templates').where({ template_key: TEMPLATE_KEY }).first('id');
+  if (existing) {
+    await seedTranslations(knex, existing.id);
+    return;
+  }
 
   const cols = await knex('email_templates').columnInfo();
   const en = TRANSLATIONS.en;
@@ -186,20 +209,18 @@ async function seedEmailTemplate(knex) {
 
   const inserted = await knex('email_templates').insert(row).returning('id');
   const templateId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
-  if (templateId && await knex.schema.hasTable('email_template_translations')) {
-    for (const [language, content] of Object.entries(TRANSLATIONS)) {
-      await knex('email_template_translations').insert({
-        template_id: templateId,
-        language,
-        subject: content.subject,
-        body_html: content.body_html,
-        body_text: content.body_text,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-    }
-  }
+  if (templateId) await seedTranslations(knex, templateId);
 }
+
+// Created on their own, after the tables and whether or not this run created
+// them: a run that stopped between a table and its indexes gets them on the
+// next one. The names are the ones knex gives these indexes.
+const INDEXES = [
+  'CREATE INDEX IF NOT EXISTS project_brief_fields_occasion_position_index ON project_brief_fields (occasion, "position")',
+  'CREATE UNIQUE INDEX IF NOT EXISTS project_briefs_project_id_unique ON project_briefs (project_id)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS project_briefs_customer_account_id_unique ON project_briefs (customer_account_id)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS project_brief_values_brief_id_field_id_unique ON project_brief_values (brief_id, field_id)',
+];
 
 exports.up = async function up(knex) {
   if (!(await knex.schema.hasTable('projects')) || !(await knex.schema.hasTable('customer_accounts'))) return;
@@ -215,16 +236,15 @@ exports.up = async function up(knex) {
       t.integer('position').notNullable().defaultTo(0);
       t.timestamp('created_at').defaultTo(knex.fn.now());
       t.timestamp('updated_at').defaultTo(knex.fn.now());
-      t.index(['occasion', 'position']);
     });
   }
 
   if (!(await knex.schema.hasTable('project_briefs'))) {
     await knex.schema.createTable('project_briefs', (t) => {
       t.increments('id').primary();
-      t.integer('project_id').unsigned().nullable().unique()
+      t.integer('project_id').unsigned().nullable()
         .references('id').inTable('projects').onDelete('CASCADE');
-      t.integer('customer_account_id').unsigned().nullable().unique()
+      t.integer('customer_account_id').unsigned().nullable()
         .references('id').inTable('customer_accounts').onDelete('CASCADE');
       t.string('occasion', 50).nullable();
       t.string('title', 200).nullable();
@@ -251,9 +271,9 @@ exports.up = async function up(knex) {
       t.text('value').nullable();
       t.boolean('visible').nullable();
       t.timestamp('updated_at').defaultTo(knex.fn.now());
-      t.unique(['brief_id', 'field_id']);
     });
   }
+  for (const sql of INDEXES) await knex.raw(sql);
 
   if ((await knex.schema.hasTable('customer_contacts')) && !(await knex.schema.hasColumn('customer_contacts', 'right_agreements'))) {
     await knex.schema.alterTable('customer_contacts', (t) => {
