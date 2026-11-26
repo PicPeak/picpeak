@@ -1473,6 +1473,7 @@ module.exports = {
   SKIPPABLE_STAGES,
   listProjects,
   getProjectById,
+  invoicesForProjects,
   createProject,
   updateProject,
   deleteProject,

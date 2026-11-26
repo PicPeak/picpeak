@@ -599,7 +599,8 @@ async function notify(owner, adminId) {
 // The portal
 // ---------------------------------------------------------------------------
 
-/** The newest accepted quote of the project, as its price. */
+/** The newest accepted quote of the project, as its price. Quotes join a
+ *  project only through project_id, as on the cockpit. */
 async function projectPrice(projectId, customerId) {
   const quote = await db('quotes')
     .where({ project_id: projectId, customer_account_id: customerId })
@@ -609,11 +610,16 @@ async function projectPrice(projectId, customerId) {
   return quote ? { quoteNumber: quote.quote_number, totalMinor: Number(quote.total_amount_minor), currency: quote.currency } : null;
 }
 
-/** The first instalment of the project's split invoice, as its deposit, once
- *  the customer has it (the portal's own invoice rule). */
+/** The first instalment (index 0, invoice/installmentPlan.js) of a split
+ *  invoice of the project, as its deposit, once the customer has it (the
+ *  portal's own invoice rule). The project's invoices are the cockpit's:
+ *  through the gallery, the project or the deal (invoicesForProjects). */
 async function projectDeposit(projectId, customerId) {
+  const ids = (await projectService.invoicesForProjects([projectId], ['id'])).map((row) => row.id);
+  if (!ids.length) return null;
   const invoice = await db('invoices')
-    .where({ 'invoices.project_id': projectId, 'invoices.customer_account_id': customerId, 'invoices.installment_index': 1 })
+    .whereIn('invoices.id', ids)
+    .where({ 'invoices.customer_account_id': customerId, 'invoices.installment_index': 0 })
     .where('invoices.installment_total', '>', 1)
     .where((q) => orPaidAwaitingDelivery(q.whereNotIn('invoices.status', ['scheduled', 'pending_delivery', 'skipped', 'cancelled'])))
     .orderBy('invoices.id', 'desc')

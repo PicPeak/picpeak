@@ -381,17 +381,18 @@ describe('with the projects flag on', () => {
         net_amount_minor: 450000, vat_amount_minor: 0, shipping_amount_minor: 0, total_amount_minor: 450000,
         deal_uuid: deal, project_id: projectId, created_by_admin_id: superAdmin, accepted_at: new Date().toISOString(),
       });
-      for (const [index, status] of [[1, 'paid'], [2, 'scheduled']]) {
+      // Instalments are numbered from 0 (invoice/installmentPlan.js): 0 is the deposit, 1 the balance.
+      for (const [index, status, total] of [[0, 'paid', 135000], [1, 'sent', 315000]]) {
         await db('invoices').insert({
           invoice_number: `I-2678-${index}`, customer_account_id: anna, issue_date: '2027-01-02', due_date: '2027-01-31',
-          status, currency: 'CHF', net_amount_minor: 135000, vat_amount_minor: 0, total_amount_minor: 135000,
+          status, currency: 'CHF', net_amount_minor: total, vat_amount_minor: 0, total_amount_minor: total,
           created_by_admin_id: superAdmin, deal_uuid: deal, project_id: projectId,
           installment_index: index, installment_total: 2,
         });
       }
       const [agreement] = (await portal(anna)).body.agreements;
       expect(agreement.price).toEqual({ quoteNumber: 'Q-2678', totalMinor: 450000, currency: 'CHF' });
-      expect(agreement.deposit).toEqual({ invoiceNumber: 'I-2678-1', totalMinor: 135000, currency: 'CHF', dueDate: '2027-01-31', paid: true });
+      expect(agreement.deposit).toEqual({ invoiceNumber: 'I-2678-0', totalMinor: 135000, currency: 'CHF', dueDate: '2027-01-31', paid: true });
 
       // A login without the quotes right sees no price.
       await db('customer_accounts').where({ id: anna }).update({ feature_quotes: 0 });
@@ -503,6 +504,35 @@ describe('with the projects flag on', () => {
       expect(data.brief_changes_text).toBe('- Contact person -> Contact on the day: Uncle Joe');
       expect(data.brief_changes_html).toContain('<s>Contact person</s> &rarr; <strong>Contact on the day</strong>: Uncle Joe');
       expect((await portal(fiona)).body.agreements[0].fields.map((f) => f.label)).toEqual(['Contact on the day']);
+    });
+  });
+
+  describe('review round 3', () => {
+    it('finds the deposit of a project whose invoices hang on its deal only, as the cockpit does', async () => {
+      await setFeatureFlags(db, { quotes: true, bills: true });
+      const { upsertAppSetting } = require('../../src/utils/appSettings');
+      await upsertAppSetting('customer_feature_quotes_enabled', 'true', 'customer_surface');
+      await upsertAppSetting('customer_feature_bills_enabled', 'true', 'customer_surface');
+      const gina = await customer();
+      const p = await project(gina);
+      const deal = uuid();
+      await db('quotes').insert({
+        quote_number: 'Q-DEAL', customer_account_id: gina, status: 'converted', currency: 'EUR', issue_date: '2027-01-01',
+        net_amount_minor: 200000, vat_amount_minor: 0, shipping_amount_minor: 0, total_amount_minor: 200000,
+        deal_uuid: deal, project_id: p, created_by_admin_id: superAdmin, accepted_at: new Date().toISOString(),
+      });
+      // The quote conversion links the instalments through the deal, not project_id.
+      for (const [index, status] of [[0, 'sent'], [1, 'scheduled']]) {
+        await db('invoices').insert({
+          invoice_number: `I-DEAL-${index}`, customer_account_id: gina, issue_date: '2027-01-02', due_date: '2027-02-15',
+          status, currency: 'EUR', net_amount_minor: 100000, vat_amount_minor: 0, total_amount_minor: 100000,
+          created_by_admin_id: superAdmin, deal_uuid: deal, installment_index: index, installment_total: 2,
+        });
+      }
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'Deal only' });
+      await admin('post', `/projects/${p}/notify`);
+      const [agreement] = (await portal(gina)).body.agreements;
+      expect(agreement.deposit).toEqual({ invoiceNumber: 'I-DEAL-0', totalMinor: 100000, currency: 'EUR', dueDate: '2027-02-15', paid: false });
     });
   });
 });
