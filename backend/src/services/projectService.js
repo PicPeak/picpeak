@@ -60,7 +60,8 @@ function transformProject(p) {
 
 /** List projects with customer email + event count + rolled-up value.
  *  `perms` gates which document types feed the value (matches the cockpit):
- *  invoices need bills.view, quotes need quotes.view. */
+ *  invoices need bills.view, quotes need quotes.view. The search matches
+ *  the customer's email only with `perms.customers === true` (customers.view). */
 async function listProjects({ search = '', status = null, perms = {}, projectIds = null } = {}) {
   let q = db('projects')
     .leftJoin('customer_accounts', 'customer_accounts.id', 'projects.customer_account_id')
@@ -78,8 +79,10 @@ async function listProjects({ search = '', status = null, perms = {}, projectIds
   if (status) q = q.where('projects.status', status);
   if (search) {
     q = q.where(function () {
-      this.where('projects.name', 'like', `%${search}%`)
-        .orWhere('customer_accounts.email', 'like', `%${search}%`);
+      this.where('projects.name', 'like', `%${search}%`);
+      // The customer's address is customers.view data: a match would confirm
+      // it to a caller whose list does not show it.
+      if (perms.customers === true) this.orWhere('customer_accounts.email', 'like', `%${search}%`);
     });
   }
   const rows = await q;
