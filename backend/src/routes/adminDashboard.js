@@ -2,7 +2,7 @@ const express = require('express');
 const { db } = require('../database/db');
 const { livePhotos } = require('../utils/photoVisibility');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { seesAllEvents, scopeEventsQuery } = require('../middleware/ownership');
 const { sanitizeDays } = require('../utils/sqlSecurity');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -17,6 +17,7 @@ const {
   DOWNLOAD_ACTIONS, DOWNLOAD_ACTIONS_SQL, whereActiveEvent, whereExpiringEvent,
 } = require('../utils/eventListFilters');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
+const { redactAddresses } = require('../utils/recipientRedaction');
 const dependencyHealth = require('../services/dependencyHealth');
 const router = express.Router();
 
@@ -274,7 +275,15 @@ router.get('/activity', adminAuth, requirePermission('analytics.view'), async (r
       createdAt: toUtcIso(activity.created_at)
     }));
 
-    res.json(await withDocumentNumbers(formattedActivities));
+    await withDocumentNumbers(formattedActivities);
+    // Customer addresses (a customer actor's name, a mail recipient) are
+    // customers.view data, as in the notification bell.
+    const visible = (await userHasAnyPermission(req.admin.id, ['customers.view']))
+      ? formattedActivities
+      : formattedActivities.map((a) => ({
+        ...a, actorName: redactAddresses(a.actorName), metadata: redactAddresses(a.metadata),
+      }));
+    res.json(visible);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to fetch activity log');
   }
@@ -545,7 +554,6 @@ router.get('/crm-stats', adminAuth, async (req, res) => {
     // attached to req.admin synchronously; we have to ask the DB
     // via userHasAnyPermission so our inline check matches the
     // behaviour of the requirePermission middleware used elsewhere.
-    const { userHasAnyPermission } = require('../middleware/permissions');
     const canSeeBills  = await userHasAnyPermission(req.admin.id, ['bills.view']);
     const canSeeQuotes = await userHasAnyPermission(req.admin.id, ['quotes.view']);
     if (!canSeeBills && !canSeeQuotes) {

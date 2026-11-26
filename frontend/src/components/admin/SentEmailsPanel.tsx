@@ -120,7 +120,7 @@ export const SentEmailsPanel: React.FC = () => {
               <TableBody>
                 {data.items.map((m) => (
                   <TableRow key={m.id} className="align-top">
-                    <TableCell className="px-3 py-2 break-all">{m.recipientEmail}</TableCell>
+                    <TableCell className="px-3 py-2 break-all">{m.recipientEmail || '—'}</TableCell>
                     <TableCell className="px-3 py-2 font-mono text-xs">{m.emailType}</TableCell>
                     <TableCell className="px-3 py-2">
                       <Badge tone={statusTone(m.status)}>

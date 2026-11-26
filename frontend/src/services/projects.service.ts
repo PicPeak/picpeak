@@ -177,7 +177,8 @@ export type ProjectWritePayload = Partial<ProjectInquiryFields> & {
 
 export interface EmailPreview {
   id: number;
-  recipient: string;
+  /** null when the caller lacks customers.view. */
+  recipient: string | null;
   type: string;
   status: string;
   available: boolean;

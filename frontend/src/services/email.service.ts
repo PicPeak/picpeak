@@ -4,7 +4,8 @@ export type EmailQueueStatus = 'pending' | 'sent' | 'failed' | 'suppressed';
 
 export interface EmailQueueItem {
   id: number;
-  recipientEmail: string;
+  /** null when the caller lacks customers.view. */
+  recipientEmail: string | null;
   emailType: string;
   status: EmailQueueStatus;
   createdAt: string;

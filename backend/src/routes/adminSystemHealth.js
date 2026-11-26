@@ -19,7 +19,7 @@
 const express = require('express');
 const { body, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { verifyDocumentArtefacts } = require('../services/backupIntegrityService');
@@ -28,6 +28,7 @@ const { getQueueProcessorStatus } = require('../services/emailProcessor');
 const dependencyHealth = require('../services/dependencyHealth');
 const { CAPABILITIES, isCapability } = require('../services/capabilities');
 const { toMillis } = require('../utils/queueTimestamps');
+const { redactAddresses } = require('../utils/recipientRedaction');
 const {
   isEncryptedEmailData, isProtectedEmailType, PROTECTED_PENDING_STATUS,
 } = require('../utils/emailQueueEncryption');
@@ -258,13 +259,15 @@ const WAITING_PAGE_SIZE = 500;
 const WAITING_SCAN_MAX = 10000;
 const WAITING_REPORT_LIMIT = 200;
 
-const mapEmailRow = (r) => ({
+// Recipients are customer addresses (customers.view data): without that
+// permission they are blanked, also inside delivery errors.
+const mapEmailRow = (r, seesRecipients) => ({
   id: r.id,
-  recipientEmail: r.recipient_email,
+  recipientEmail: seesRecipients ? r.recipient_email : null,
   emailType: r.email_type,
   status: r.status === PROTECTED_PENDING_STATUS ? 'pending' : r.status,
   retryCount: r.retry_count,
-  errorMessage: r.error_message,
+  errorMessage: seesRecipients ? r.error_message : redactAddresses(r.error_message),
   createdAt: r.created_at,
 });
 
@@ -409,14 +412,15 @@ router.get(
     // Enumeration and replay signals on the signing links, last 24 hours
     // (#1446): counts per kind and the alerts that went out. No addresses.
     const signingSignals = await require('../services/contract/signingSignals').summary();
+    const seesRecipients = await userHasAnyPermission(req.admin.id, ['customers.view']);
 
     return successResponse(res, {
       backupAuthentication,
       // Restore tests (null with the backupRestoreTest flag off).
       backupVerification: backupStatus.verification || null,
       signingSignals,
-      stuckEmails: stuckEmails.map(mapEmailRow),
-      waitingEmails: waitingEmails.map(mapEmailRow),
+      stuckEmails: stuckEmails.map((r) => mapEmailRow(r, seesRecipients)),
+      waitingEmails: waitingEmails.map((r) => mapEmailRow(r, seesRecipients)),
       processor: getQueueProcessorStatus(),
       customerDocuments,
       evidenceKey,
