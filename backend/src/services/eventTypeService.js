@@ -335,8 +335,23 @@ const deleteEventType = async (id) => {
     throw error;
   }
 
+  // Briefs (issue 2678): a customer brief that picked this occasion, or the
+  // brief of a project that has it. Their fields would vanish with it.
+  const briefsUsingType = await db('project_briefs as b')
+    .leftJoin('projects as p', 'p.id', 'b.project_id')
+    .where((q) => q.where('b.occasion', eventType.slug_prefix).orWhere('p.event_type', eventType.slug_prefix))
+    .count('b.id as count')
+    .first();
+  if (briefsUsingType && parseInt(briefsUsingType.count) > 0) {
+    const error = new Error(`Cannot delete: ${briefsUsingType.count} project briefs are using this type. Deactivate it instead.`);
+    error.code = 'IN_USE';
+    throw error;
+  }
+
   await db.transaction(async (trx) => {
     await trx('event_types').where('id', id).del();
+    // Its brief template goes with it; no brief uses it (checked above).
+    await trx('project_brief_fields').where({ occasion: eventType.slug_prefix }).del();
     // Drop the per-type reminder template with the type, or it lingers as an
     // orphan (invisible in the Reminder Emails tab, which derives its rows
     // from the live catalog).

@@ -615,4 +615,70 @@ describe('with the projects flag on', () => {
       expect((await admin('put', '/templates/occasion/nope').send({ fields: [] })).status).toBe(404);
     });
   });
+
+  describe('review round 6', () => {
+    const briefService = require('../../src/services/briefService');
+    const emailProcessor = require('../../src/services/emailProcessor');
+    const eventTypeService = require('../../src/services/eventTypeService');
+
+    it('never loses an update when a failed mail meets a second notify', async () => {
+      const lena = await customer();
+      const p = await project(lena);
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'v0' });
+      await admin('post', `/projects/${p}/notify`);
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'FIRST-REVISION' });
+      const bride = (await weddingFields()).find((f) => f.type === 'short_text').id;
+
+      const real = emailProcessor.queueEmail;
+      let release;
+      const gate = new Promise((resolve) => { release = resolve; });
+      const spy = jest.spyOn(emailProcessor, 'queueEmail')
+        .mockImplementationOnce(async () => { await gate; throw new Error('mail store down'); })
+        .mockImplementation((...args) => real(...args));
+      const first = briefService.notify({ kind: 'project', id: p }, superAdmin).catch((err) => err);
+      while (!spy.mock.calls.length) await new Promise((resolve) => setImmediate(resolve));
+      // A second admin edits and sends while the first mail is still being queued.
+      const second = briefService.saveBrief({ kind: 'project', id: p }, { values: { [bride]: { value: 'SECOND-REVISION' } } })
+        .then(() => briefService.notify({ kind: 'project', id: p }, superAdmin));
+      const deadline = Date.now() + 300;
+      while (spy.mock.calls.length < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+      release();
+      expect(await first).toMatchObject({ code: 'BRIEF_MAIL_FAILED' });
+      await second;
+      spy.mockRestore();
+
+      const email = (await db('customer_accounts').where({ id: lena }).first()).email;
+      const sent = (await mails(email)).map((m) => JSON.parse(m.email_data).brief_changes_text).join('\n');
+      const pending = (await admin('get', `/projects/${p}`)).body.brief.pendingChanges;
+      // The first revision reached the customer, or is still waiting to.
+      expect(sent.includes('FIRST-REVISION') || pending.some((c) => c.fieldId === null)).toBe(true);
+      expect(sent).toContain('SECOND-REVISION');
+    });
+
+    it('keeps an occasion that briefs use, and takes its template along when it goes', async () => {
+      const [usedId] = await db('event_types').insert({ name: 'Christening', slug_prefix: 'christening', is_active: true });
+      const mia = await customer();
+      await admin('put', `/customers/${mia}`).send({ occasion: 'christening' });
+      await expect(eventTypeService.deleteEventType(usedId)).rejects.toMatchObject({ code: 'IN_USE' });
+
+      const [projectTypeId] = await db('event_types').insert({ name: 'Baptism', slug_prefix: 'baptism', is_active: true });
+      const p = await project(mia, { event_type: 'baptism' });
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'x' });
+      await expect(eventTypeService.deleteEventType(projectTypeId)).rejects.toMatchObject({ code: 'IN_USE' });
+
+      const [unusedId] = await db('event_types').insert({ name: 'Picnic', slug_prefix: 'picnic', is_active: true });
+      await db('project_brief_fields').insert({ occasion: 'picnic', label: 'Blanket', field_type: 'short_text', position: 0 });
+      await eventTypeService.deleteEventType(unusedId);
+      expect(await db('project_brief_fields').where({ occasion: 'picnic' }).first()).toBeUndefined();
+    });
+
+    it('takes an occasion slug that names an Object property', async () => {
+      await db('event_types').insert({ name: 'Builders', slug_prefix: 'constructor', is_active: true });
+      const res = await admin('put', '/templates/occasion/constructor').send({ fields: [{ label: 'Crane', type: 'short_text' }] });
+      expect(res.status).toBe(200);
+      expect(res.body.fields.map((f) => f.label)).toEqual(['Crane']);
+      const templates = (await admin('get', '/templates')).body.templates;
+      expect(templates.occasions.constructor.map((f) => f.label)).toEqual(['Crane']);
+    });
+  });
 });

@@ -168,7 +168,8 @@ async function occasionExists(occasion) {
 /** Every template: the global list and one per occasion, in their order. */
 async function listTemplates() {
   const rows = await db('project_brief_fields').orderBy('position').orderBy('id');
-  const out = { global: [], occasions: {} };
+  // Keyed by slug without a prototype: a slug may be `constructor`.
+  const out = { global: [], occasions: Object.create(null) };
   for (const row of rows) {
     if (row.occasion == null) out.global.push(shapeField(row));
     else (out.occasions[row.occasion] = out.occasions[row.occasion] || []).push(shapeField(row));
@@ -553,9 +554,10 @@ async function occasionName(occasion) {
 
 /**
  * Send the customer one update: every visible change since the last one.
- * The snapshot moves forward first, guarded on the one the changes were
- * computed from, so two clicks cannot send the same changes twice; a mail
- * that cannot be queued puts it back. A customer who takes no administrative
+ * The snapshot moves forward and the mail is queued in one transaction,
+ * guarded on the snapshot the changes were computed from: two clicks cannot
+ * send the same changes twice, and a mail that cannot be queued leaves the
+ * snapshot where it was, so no change is lost. A customer who takes no administrative
  * email gets no mail but the portal still shows the update, as with every
  * other notice held back for them (_adminEmailOptOut); `mail` says which.
  */
@@ -568,7 +570,6 @@ async function notify(owner, adminId) {
   // its first save.
   const brief = seen || await ensureBrief(db, owner);
   const sent = {
-    notified_at: seen?.notified_at ?? null,
     notified_snapshot: seen?.notified_snapshot ?? null,
     notified_customer_account_id: seen?.notified_customer_account_id ?? null,
   };
@@ -577,40 +578,44 @@ async function notify(owner, adminId) {
     .first('id', 'email', 'display_name', 'first_name', 'last_name', 'preferred_language', 'password_hash');
   if (!customer || !customer.email) throw new AppError('The customer has no email address', 422, 'BRIEF_NO_CUSTOMER');
 
-  const notifiedAt = now();
-  const claimed = await db('project_briefs')
-    .where({ id: brief.id })
-    .where((q) => {
-      for (const column of ['notified_snapshot', 'notified_customer_account_id']) {
-        if (sent[column] == null) q.whereNull(column); else q.where(column, sent[column]);
-      }
-    })
-    .update({ notified_at: notifiedAt, notified_snapshot: JSON.stringify(state), notified_customer_account_id: customerId });
-  if (claimed !== 1) throw new AppError('The brief changed meanwhile; reload and send again', 409, 'BRIEF_CHANGED');
-
+  // Everything the mail needs is read before the transaction, which on
+  // SQLite holds the only connection.
   const emailProcessor = require('./emailProcessor');
   const { customerDisplayName, businessName, frontendBase } = require('./customerDocumentNotifications');
   const language = String(customer.preferred_language || await emailProcessor.getRecipientLanguage(customer.email)).slice(0, 2);
   const rendered = await renderChanges(changes, LANGUAGES.includes(language) ? language : 'en');
+  const variables = {
+    customer_name: customerDisplayName(customer),
+    business_name: await businessName(),
+    brief_title: state.title || '',
+    brief_changes_html: rendered.html,
+    brief_changes_text: rendered.text,
+    // A passive customer (no password) cannot sign in to the portal.
+    portal_link: customer.password_hash ? `${await frontendBase()}/customer/agreements` : '',
+    __language: customer.preferred_language || undefined,
+  };
+
+  const notifiedAt = now();
   let result;
   try {
-    result = await emailProcessor.queueEmail(null, customer.email, 'project_brief_updated', {
-      customer_name: customerDisplayName(customer),
-      business_name: await businessName(),
-      brief_title: state.title || '',
-      brief_changes_html: rendered.html,
-      brief_changes_text: rendered.text,
-      // A passive customer (no password) cannot sign in to the portal.
-      portal_link: customer.password_hash ? `${await frontendBase()}/customer/agreements` : '',
-      __language: customer.preferred_language || undefined,
-    }, { customerAccountId: customer.id });
+    result = await db.transaction(async (trx) => {
+      const claimed = await trx('project_briefs')
+        .where({ id: brief.id })
+        .where((q) => {
+          for (const column of ['notified_snapshot', 'notified_customer_account_id']) {
+            if (sent[column] == null) q.whereNull(column); else q.where(column, sent[column]);
+          }
+        })
+        .update({ notified_at: notifiedAt, notified_snapshot: JSON.stringify(state), notified_customer_account_id: customerId });
+      if (claimed !== 1) throw new AppError('The brief changed meanwhile; reload and send again', 409, 'BRIEF_CHANGED');
+      const queued = await emailProcessor.queueEmail(null, customer.email, 'project_brief_updated', variables,
+        { customerAccountId: customer.id, trx });
+      if (!queued) throw new Error('nothing queued');
+      return queued;
+    });
   } catch (err) {
+    if (err.code === 'BRIEF_CHANGED') throw err;
     logger.warn('Could not queue the brief update mail', { briefId: brief.id, error: err.message });
-    result = false;
-  }
-  if (!result) {
-    await db('project_briefs').where({ id: brief.id, notified_snapshot: JSON.stringify(state) })
-      .update(sent);
     throw new AppError('The update mail could not be queued', 502, 'BRIEF_MAIL_FAILED');
   }
   const mail = result === 'suppressed' ? 'suppressed' : 'queued';

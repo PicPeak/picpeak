@@ -1935,9 +1935,12 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
     // button and the late fee read the same customer flag. Returns
     // 'suppressed' (truthy, so `if (queued)` callers carry on) for callers
     // that report what happened.
-    if (await require('./_adminEmailOptOut').isSuppressedForRecipient(recipientEmail, emailType, options.customerAccountId)) {
+    // Read and written on the caller's transaction when there is one: on
+    // SQLite a second connection would wait for it forever.
+    const conn = options.trx || db;
+    if (await require('./_adminEmailOptOut').isSuppressedForRecipient(recipientEmail, emailType, options.customerAccountId, conn)) {
       row.status = 'suppressed';
-      await db('email_queue').insert(row);
+      await conn('email_queue').insert(row);
       logger.info(`Email suppressed: ${emailType} (customer opted out of administrative emails)`);
       return 'suppressed';
     }
@@ -1969,7 +1972,7 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
     // back together with its own write (downloadJobNotifier's claim).
     // options.onQueued: gets the row's id, for a caller that may have to
     // withdraw the mail while it is still pending (album shipments).
-    const insert = (options.trx || db)('email_queue').insert(row);
+    const insert = conn('email_queue').insert(row);
     if (options.onQueued) {
       const inserted = await insert.returning('id');
       options.onQueued(inserted[0]?.id ?? inserted[0]);
