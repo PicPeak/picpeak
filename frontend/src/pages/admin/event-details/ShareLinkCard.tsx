@@ -7,44 +7,13 @@ import type { Event } from '../../../types';
 import { Button, Card } from '../../../components/common';
 import { eventsService } from '../../../services/events.service';
 import { buildShareLinkUrl } from '../../../utils/url';
+import { copyText } from '../../../utils/clipboard';
+import { saveBlob } from '../../../utils/saveBlob';
 import { isGalleryPublic } from '../../../utils/accessControl';
 import { useAnyPermission } from '../../../hooks/usePermission';
 import { WhatsAppInviteDialog } from './WhatsAppInviteDialog';
 import { useWhatsAppConfigured } from '../../../hooks/useWhatsAppConfigured';
 import { usePublicBaseUrl } from '../../../hooks/usePublicBaseUrl';
-
-// Clipboard with the textarea/execCommand fallback for non-HTTPS installs
-// (the documented http://host:3000/admin setup has no navigator.clipboard).
-const copyText = async (text: string) => {
-  if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const textArea = document.createElement('textarea');
-  textArea.value = text;
-  textArea.style.position = 'fixed';
-  textArea.style.left = '-999999px';
-  textArea.style.top = '-999999px';
-  document.body.appendChild(textArea);
-  textArea.focus();
-  textArea.select();
-  const successful = document.execCommand('copy');
-  document.body.removeChild(textArea);
-  if (!successful) {
-    throw new Error('Copy failed');
-  }
-};
-
-const saveBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
 
 interface ShareLinkCardProps {
   event: Event;

@@ -4,6 +4,8 @@ const path = require('path');
 const logger = require('../../utils/logger');
 const settings = require('../../services/eventSettings');
 const { deleteWithAccountingHistory } = require('../../services/accountingHistory');
+const { DEFAULT_STALE_MS } = require('../../services/maintenanceJobState');
+const { getStoragePath } = require('../../config/storage');
 
 function eventNotFound() {
   const err = new Error('Event not found');
@@ -183,13 +185,11 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
   // timeout: the race costs one orphaned object, this cost the whole suite.
   if (event.download_zip_path) storageKeys.add(event.download_zip_path);
   try {
-    if (await db.schema.hasTable('download_jobs')) {
-      const jobs = await db('download_jobs')
-        .where('event_id', eventId)
-        .whereNotNull('zip_path')
-        .select('zip_path');
-      for (const job of jobs) storageKeys.add(job.zip_path);
-    }
+    const jobs = await db('download_jobs')
+      .where('event_id', eventId)
+      .whereNotNull('zip_path')
+      .select('zip_path');
+    for (const job of jobs) storageKeys.add(job.zip_path);
   } catch (jobErr) {
     logger.warn('Could not enumerate download job archives before cascade delete', {
       eventId, error: jobErr.message
@@ -197,112 +197,10 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
   }
 
   await db.transaction(async (trx) => {
-    // Event row first (issue 1560): the download-limit grants lock the event
-    // row and then grant/photo rows, so taking them here in the opposite
-    // order could deadlock against a download on PostgreSQL. SQLite
-    // serialises writers anyway.
-    if (trx.client.config.client === 'pg') {
-      await trx('events').where({ id: eventId }).forUpdate().first();
-      // Then its photos (issue 2069): a face scan locks its photo before
-      // the photo's faces, so deleting the faces below first could wait for
-      // a scan that waits for the photo delete at the end.
-      await trx('photos').where('event_id', eventId).orderBy('id').forUpdate().pluck('id');
-    }
-    // 1. Delete activity logs (audit trail) — and the per-admin bell
-    // dismissals that point at them (migration 261). On PostgreSQL the FK
-    // cascade removes them with the activity rows; deleting them first here
-    // would take the locks in the opposite order to the download-summary
-    // bump (activity row, then its dismissals) and could deadlock with it.
-    // SQLite runs without PRAGMA foreign_keys, so there it is explicit.
-    if (trx.client.config.client !== 'pg') {
-      await trx('notification_dismissals')
-        .whereIn('activity_log_id', trx('activity_logs').where('event_id', eventId).select('id'))
-        .del();
-    }
-    await trx('activity_logs').where('event_id', eventId).del();
-    // 2. Delete access logs
-    await trx('access_logs').where('event_id', eventId).del();
-    // 3. Delete email queue entries
-    await trx('email_queue').where('event_id', eventId).del();
-    // 4. Delete photos (also handles hero_photo_id foreign key)
-    // Face data (#1074). The FK declares ON DELETE CASCADE, but SQLite only
-    // honours that when `PRAGMA foreign_keys = ON`, which PicPeak does not set
-    // — so on the SQLite path the cascade is inert and biometric embeddings
-    // would outlive the gallery they belong to. Delete explicitly, before the
-    // photos, so the guarantee holds on both engines.
-    await trx('photo_faces').where('event_id', eventId).del();
-    await trx('event_people').where('event_id', eventId).del();
-    // Separations carry a COPY of each side's centroid since #1132, so this
-    // table holds biometric data too — and it deliberately has no event FK, so
-    // nothing else would ever reach it. hasTable rather than a catch: a failed
-    // statement aborts the surrounding transaction on Postgres, which would
-    // take the whole delete down on a pre-migration install.
-    if (await trx.schema.hasTable('event_people_merge_dismissals')) {
-      await trx('event_people_merge_dismissals').where('event_id', eventId).del();
-    }
-    // Download-limit grants (issue 1560): the same inert-cascade reason.
-    if (await trx.schema.hasTable('event_download_grants')) {
-      await trx('event_download_grants').where('event_id', eventId).del();
-    }
-    // Team assignments (migration 269): the same inert-cascade reason.
-    if (await trx.schema.hasTable('event_admin_assignments')) {
-      await trx('event_admin_assignments').where('event_id', eventId).del();
-    }
-    // Chapter markers (migration 369): the same inert-cascade reason.
-    if (await trx.schema.hasTable('event_category_chapters')) {
-      await trx('event_category_chapters').where('event_id', eventId).del();
-    }
-    // Translated texts (migration 373): the same inert-cascade reason.
-    if (await trx.schema.hasTable('content_translations')) {
-      await trx('content_translations').where('event_id', eventId).del();
-    }
-    // "Mail me when the download is ready" requests (migration 293) hold
-    // addresses and hang off download_jobs: the same inert-cascade reason.
-    if (await trx.schema.hasTable('download_job_recipients')) {
-      await trx('download_job_recipients')
-        .whereIn('job_id', trx('download_jobs').where('event_id', eventId).select('id')).del();
-    }
-    // feedback_rate_limits.event_id is also ON DELETE CASCADE (#1585), same
-    // SQLite caveat as photo_faces above — delete explicitly so an event's
-    // rate-limit tracking rows don't outlive it on the SQLite path.
-    await trx('feedback_rate_limits').where('event_id', eventId).del();
-    // Finished selections and approvals (migration 291): the same reason.
-    if (await trx.schema.hasTable('selection_submissions')) {
-      await trx('selection_submissions').where('event_id', eventId).del();
-    }
-
-    // Choices contain client names and session digests; SQLite FK cascades are off.
-    if (await trx.schema.hasTable('print_sales_orders'))
-      await trx('print_sales_orders').where({ event_id: eventId }).update({ event_id: null });
-    if (await trx.schema.hasTable('event_album_products')) {
-      if (await trx.schema.hasTable('album_product_choice_history')) {
-        await trx('album_product_choice_history').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();
-      }
-      if (await trx.schema.hasTable('album_shipments')) {
-        await trx('album_shipments').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();
-      }
-      await trx('event_album_products').where({ event_id: eventId }).del();
-    }
-
-    await trx('photos').where('event_id', eventId).del();
-    // Favourite lists (issue 2303) carry the names guests gave them: the same
-    // inert-cascade reason. After the photos, whose delete takes the
-    // favourites in the lists with it on PostgreSQL.
-    if (await trx.schema.hasTable('favorite_lists')) {
-      await trx('favorite_lists').where('event_id', eventId).del();
-    }
-    // Scene tags (issue 1733): the same inert-cascade reason. After the
-    // photos, not with the face data above: a tagging worker locks the photo
-    // row before its tags, and the reverse order can deadlock on PostgreSQL.
-    await trx('photo_tags').where('event_id', eventId).del();
-    // The archive claim row (event_archive:<id>) has no FK to the event, so
-    // it would outlive it. Guarded for a pre-migration install.
-    if (await trx.schema.hasTable('maintenance_jobs')) {
-      await trx('maintenance_jobs').where({ job_name: `event_archive:${eventId}` }).del();
-    }
-    // 5. Finally delete the event row
-    await deleteWithAccountingHistory(trx, 'events', { id: eventId },
-      { actor: adminContext?.id ?? null, source: 'event.delete' });
+    await deleteEventRows(trx, eventId, {
+      notificationDismissals: true,
+      history: { actor: adminContext?.id ?? null, source: 'event.delete' },
+    });
 
     // Best-effort filesystem cleanup. Failures are logged but don't unwind
     // the transaction — the canonical state lives in the DB; orphan files
@@ -323,7 +221,7 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
     // `event.slug` is NOT NULL on the events table and is slugify-sanitized
     // on every write (lower-case ASCII + dashes only via utils/slug.js),
     // so path-traversal isn't a concern.
-    const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../../storage');
+    const storagePath = getStoragePath();
     for (const sub of ['active', 'archived']) {
       const eventFolderPath = path.join(storagePath, 'events', sub, event.slug);
       try {
@@ -420,4 +318,114 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
   return { id: event.id, name: event.event_name };
 }
 
-module.exports = { ...settings, deleteEventCascade, claimEventArchive };
+/**
+ * The rows of an event and the event itself, in one transaction: the gallery
+ * delete (deleteClaimedEvent) and the archive delete (adminArchives.js
+ * DELETE /:id). The child rows go explicitly: activity_logs, access_logs and
+ * email_queue reference events WITHOUT ON DELETE CASCADE (db.js), so on
+ * PostgreSQL the event row alone would fail on the foreign key, and SQLite
+ * never enforces the declared cascades (PicPeak does not set
+ * `PRAGMA foreign_keys = ON`).
+ *
+ * @param {import('knex').Knex.Transaction} trx
+ * @param {number|string} eventId
+ * @param {object} opts
+ * @param {boolean} [opts.notificationDismissals] also delete, on SQLite, the
+ *   bell dismissals of the event's activity rows (the gallery delete does).
+ * @param {boolean} [opts.staleArchiveClaimOnly] delete the archive claim row
+ *   only when nobody holds it (the archive delete), instead of always.
+ * @param {{actor: (number|null), source: string}} opts.history the context
+ *   deleteWithAccountingHistory records for the event row.
+ */
+async function deleteEventRows(trx, eventId, { notificationDismissals = false, staleArchiveClaimOnly = false, history }) {
+  // Event row first (issue 1560): the download-limit grants lock the event
+  // row and then grant/photo rows, so taking them here in the opposite
+  // order could deadlock against a download on PostgreSQL. SQLite
+  // serialises writers anyway.
+  if (trx.client.config.client === 'pg') {
+    await trx('events').where({ id: eventId }).forUpdate().first();
+    // Then its photos (issue 2069): a face scan locks its photo before
+    // the photo's faces, so deleting the faces below first could wait for
+    // a scan that waits for the photo delete at the end.
+    await trx('photos').where('event_id', eventId).orderBy('id').forUpdate().pluck('id');
+  }
+  // 1. Delete activity logs (audit trail) — and, for a gallery delete, the
+  // per-admin bell dismissals that point at them (migration 261). On
+  // PostgreSQL the FK cascade removes them with the activity rows; deleting
+  // them first here would take the locks in the opposite order to the
+  // download-summary bump (activity row, then its dismissals) and could
+  // deadlock with it. SQLite runs without PRAGMA foreign_keys, so there it is
+  // explicit.
+  if (notificationDismissals && trx.client.config.client !== 'pg') {
+    await trx('notification_dismissals')
+      .whereIn('activity_log_id', trx('activity_logs').where('event_id', eventId).select('id'))
+      .del();
+  }
+  await trx('activity_logs').where('event_id', eventId).del();
+  // 2. Delete access logs
+  await trx('access_logs').where('event_id', eventId).del();
+  // 3. Delete email queue entries
+  await trx('email_queue').where('event_id', eventId).del();
+  // 4. Delete photos (also handles hero_photo_id foreign key)
+  // Face data (#1074). The FK declares ON DELETE CASCADE, but SQLite only
+  // honours that when `PRAGMA foreign_keys = ON`, which PicPeak does not set
+  // — so on the SQLite path the cascade is inert and biometric embeddings
+  // would outlive the gallery they belong to. Delete explicitly, before the
+  // photos, so the guarantee holds on both engines. An archived gallery can
+  // still carry them too: archiveEvent's purge step is deliberately nonfatal.
+  await trx('photo_faces').where('event_id', eventId).del();
+  await trx('event_people').where('event_id', eventId).del();
+  // Separations carry a COPY of each side's centroid since #1132, so this
+  // table holds biometric data too — and it deliberately has no event FK, so
+  // nothing else would ever reach it.
+  await trx('event_people_merge_dismissals').where('event_id', eventId).del();
+  // Download-limit grants (issue 1560): the same inert-cascade reason.
+  await trx('event_download_grants').where('event_id', eventId).del();
+  // Team assignments (migration 269): the same inert-cascade reason.
+  await trx('event_admin_assignments').where('event_id', eventId).del();
+  // Chapter markers (migration 369): the same inert-cascade reason.
+  await trx('event_category_chapters').where('event_id', eventId).del();
+  // Translated texts (migration 373): the same inert-cascade reason.
+  await trx('content_translations').where('event_id', eventId).del();
+  // "Mail me when the download is ready" requests (migration 293) hold
+  // addresses and hang off download_jobs: the same inert-cascade reason.
+  await trx('download_job_recipients')
+    .whereIn('job_id', trx('download_jobs').where('event_id', eventId).select('id')).del();
+  // feedback_rate_limits.event_id is also ON DELETE CASCADE (#1585), same
+  // SQLite caveat as photo_faces above — delete explicitly so an event's
+  // rate-limit tracking rows don't outlive it on the SQLite path.
+  await trx('feedback_rate_limits').where('event_id', eventId).del();
+  // Finished selections and approvals (migration 291): the same reason.
+  await trx('selection_submissions').where('event_id', eventId).del();
+
+  // Choices contain client names and session digests; SQLite FK cascades are
+  // off. History before its offers.
+  await trx('print_sales_orders').where({ event_id: eventId }).update({ event_id: null });
+  await trx('album_product_choice_history').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();
+  await trx('album_shipments').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();
+  await trx('event_album_products').where({ event_id: eventId }).del();
+
+  await trx('photos').where('event_id', eventId).del();
+  // Favourite lists (issue 2303) carry the names guests gave them: the same
+  // inert-cascade reason. After the photos, whose delete takes the
+  // favourites in the lists with it on PostgreSQL.
+  await trx('favorite_lists').where('event_id', eventId).del();
+  // Scene tags (issue 1733): the same inert-cascade reason. After the
+  // photos, not with the face data above: a tagging worker locks the photo
+  // row before its tags, and the reverse order can deadlock on PostgreSQL.
+  await trx('photo_tags').where('event_id', eventId).del();
+  // The archive claim row (event_archive:<id>) has no FK to the event, so
+  // it would outlive it. The archive delete removes only a claim nobody
+  // holds, on claim()'s own terms: a restore that took the gallery after its
+  // check still needs its row.
+  const claim = trx('maintenance_jobs').where({ job_name: `event_archive:${eventId}` });
+  if (staleArchiveClaimOnly) {
+    const cutoff = new Date(Date.now() - DEFAULT_STALE_MS).toISOString();
+    claim.where(function () { this.where('is_running', false).orWhere('heartbeat_at', '<', cutoff); });
+  }
+  await claim.del();
+  // 5. Finally delete the event row
+  await deleteWithAccountingHistory(trx, 'events', { id: eventId }, history);
+}
+
+module.exports = { ...settings, deleteEventCascade, deleteEventRows, claimEventArchive };

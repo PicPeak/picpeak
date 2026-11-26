@@ -4,6 +4,10 @@ const sharp = require('../services/isolatedSharp');
 const logger = require('../utils/logger');
 const { LIBRARY_UNAVAILABLE } = require('../services/imageResourcePolicy');
 
+// Extensions whose files are decoded with Sharp to prove they are images.
+// Includes .gif, unlike externalMediaTypes.IMAGE_EXTENSIONS.
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+
 // Whether Sharp reads the file as an image with dimensions. A busy image
 // worker says nothing about the file, so it passes; a resource limit is
 // thrown, as the decode check below throws one.
@@ -45,9 +49,7 @@ async function validateUploadedFile(filePath, extension, queueing = {}, { passBu
     // A public upload is staged under an extension-less name; the caller
     // passes the extension of the original filename then.
     const ext = (extension || path.extname(filePath)).toLowerCase();
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-    
-    if (imageExtensions.includes(ext)) {
+    if (IMAGE_EXTENSIONS.includes(ext)) {
       // Try to read metadata - this will fail if image is corrupted
       let metadata;
       try {
@@ -115,19 +117,18 @@ async function validateUploadedFiles(req, res, next) {
   
   const validFiles = [];
   const invalidFiles = [];
-  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
   // The declared type decides when the name carries no image extension: the
   // v1 upload takes any image/* type under any filename.
   const DECODABLE_TYPES = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp' };
   const extOf = (file) => {
     const ext = (path.extname(file.path) || path.extname(file.originalname || '')).toLowerCase();
-    return imageExtensions.includes(ext) ? ext : (DECODABLE_TYPES[file.mimetype] || ext);
+    return IMAGE_EXTENSIONS.includes(ext) ? ext : (DECODABLE_TYPES[file.mimetype] || ext);
   };
   // A dropped upload stops its decode. Not interactive: a full queue would
   // answer "busy", which keeps the file unchecked (see below), so flooding
   // the queue would skip the check. The check waits for a worker instead.
   const queueing = { signal: req.publicUploadReservation?.signal };
-  const entries = req.files.filter(file => imageExtensions.includes(extOf(file))).map(file => file.path);
+  const entries = req.files.filter(file => IMAGE_EXTENSIONS.includes(extOf(file))).map(file => file.path);
   let validated = null;
   if (entries.length >= 8) {
     try { validated = new Map((await sharp.metadataBatch(entries, { validate: true, ...queueing })).map(result => [result.input, result])); }

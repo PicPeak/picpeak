@@ -129,7 +129,6 @@ async function setAssignedAdmins(eventId, adminIds, assignedBy, trx = db) {
 }
 
 module.exports = {
-  MAX_ASSIGNED_ADMINS,
   listAssignableAdmins,
   listAssignedAdmins,
   resolveAssignableIds,

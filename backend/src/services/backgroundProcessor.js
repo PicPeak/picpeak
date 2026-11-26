@@ -8,12 +8,10 @@
  * died, pod restarted, etc.).
  *
  * Concurrency model: N independent worker loops per backend instance.
- * Multi-pod safe via:
- *   - Postgres: SELECT ... FOR UPDATE SKIP LOCKED — pods race for rows,
- *     only one wins, the others move on.
- *   - SQLite:   SELECT then UPDATE-with-status-guard — second writer
- *     loses the guard and tries again (single-pod typical; the guard
- *     is enough for the rare two-process case during dev).
+ * The claim lives in mediaAttemptService.claimNext, shared with the video
+ * queues: FOR UPDATE SKIP LOCKED on Postgres, and on both engines an
+ * UPDATE guarded on status = 'pending', so a writer that loses the race
+ * moves on.
  *
  * Tunables (env, all optional):
  *   UPLOAD_PROCESSOR_CONCURRENCY        default 2 on hosts with ≥3GB RAM,
@@ -42,8 +40,9 @@ const RETRY_BACKOFF_MS = 15000;
 
 const POLL_INTERVAL_MS = parseInt(process.env.UPLOAD_PROCESSOR_POLL_MS || '1000', 10);
 
-// Soft default: two worker loops × sharp.concurrency(2) means up to four
-// libvips threads can decode full-resolution photos in parallel. Each decode
+// Soft default: two worker loops can decode two full-resolution photos in
+// parallel (each image runs in a sharp worker with one libvips thread, at
+// most imageResourcePolicy.configuration().workers of them). Each decode
 // holds the full uncompressed frame in RAM — a 24MP photo is ~96MB before
 // resize. On a 2GB VPS (the documented but barely-viable minimum) one busy
 // batch is enough to OOM-kill the backend and surface as 503s on thumbnails

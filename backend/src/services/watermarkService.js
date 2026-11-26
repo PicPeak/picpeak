@@ -227,9 +227,8 @@ class WatermarkService {
   }
 
   /**
-   * Apply watermark to an image
-   */
-  /**
+   * Apply watermark to an image.
+   *
    * `imagePath` may be a path OR an in-memory Buffer (#858). Buffers let the
    * download paths resize first and watermark second without a second tmp
    * file — which matters because the mark is sized relative to the input's

@@ -1159,10 +1159,8 @@
       ],
       "reason": "Admin export initiation only; export filters, selected files, sizes and contents excluded. v3 adds only: photo_xmp_export. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
-        "GET /:eventId/filtered",
         "GET /:eventId/filter-summary",
-        "POST /:eventId/export",
-        "GET /export-formats"
+        "POST /:eventId/export"
       ]
     },
     "adminPhotos.js": {
@@ -1209,7 +1207,6 @@
         "GET /:eventId/photo/:photoId",
         "GET /:eventId/thumbnail/:photoId",
         "GET /:eventId/preview/:photoId",
-        "GET /:eventId/debug",
         "POST /:eventId/chunked-upload/init",
         "POST /:eventId/chunked-upload/:uploadId/chunk/:chunkIndex",
         "POST /:eventId/chunked-upload/:uploadId/complete",
@@ -1451,8 +1448,7 @@
         "GET /settings",
         "PUT /settings",
         "POST /regenerate",
-        "POST /regenerate-previews",
-        "GET /regenerate/status"
+        "POST /regenerate-previews"
       ]
     },
     "adminTransfers.js": {

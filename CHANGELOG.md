@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.210.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.5-beta.0...v3.210.6-beta.0) (2026-11-25)
+
+
+### Bug Fixes
+
+* **gallery:** guard the remaining Web Storage calls through safeStorage ([12ea932](https://github.com/PicPeak/picpeak/commit/12ea932d14a660488a0de7c82b2aebf22be6c576))
+* **gallery:** treat watermark_downloads '1' as on for downloads too ([12ea932](https://github.com/PicPeak/picpeak/commit/12ea932d14a660488a0de7c82b2aebf22be6c576))
+
 ## [3.210.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.4-beta.0...v3.210.5-beta.0) (2026-11-25)
 
 

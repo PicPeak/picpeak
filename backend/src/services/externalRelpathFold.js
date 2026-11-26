@@ -331,4 +331,4 @@ async function foldExternalRelpaths(knex, log = () => {}) {
 }
 
 
-module.exports = { foldExternalRelpaths, claimOrderFor, MARKER };
+module.exports = { foldExternalRelpaths, claimOrderFor };

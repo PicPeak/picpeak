@@ -206,46 +206,14 @@ async function generatePosterCandidates(videoPath, { duration = null, size = '32
 }
 
 /**
- * Validate that a file is a valid video
- * @param {string} videoPath - Path to the video file
- * @returns {Promise<boolean>} - True if valid video
- */
-async function isValidVideo(videoPath) {
-  try {
-    const metadata = await extractVideoMetadata(videoPath);
-    return metadata.duration > 0 && metadata.width > 0 && metadata.height > 0;
-  } catch (error) {
-    if (isResourceError(error)) throw error;
-    logger.error('Video validation failed', { error: error.message, videoPath });
-    return false;
-  }
-}
-
-/**
- * Get video duration in seconds
- * @param {string} videoPath - Path to the video file
- * @returns {Promise<number>} - Duration in seconds
- */
-async function getVideoDuration(videoPath) {
-  try {
-    const metadata = await extractVideoMetadata(videoPath);
-    return metadata.duration;
-  } catch (error) {
-    if (isResourceError(error)) throw error;
-    logger.error('Error getting video duration', { error: error.message });
-    return 0;
-  }
-}
-
-/**
  * Process an uploaded video: extract metadata and produce a thumbnail through
  * the storage backend.
  *
  * Metadata extraction and thumbnail generation are independent, best-effort
  * steps — mirroring how the image pipeline treats thumbnail/dimension/EXIF
  * failures (log a warning, keep the upload). This used to gate everything
- * behind isValidVideo(), which rejects the whole video if ffprobe can't read
- * even one of duration/width/height — common on some iPhone/Lightroom-
+ * behind a validity check that rejected the whole video if ffprobe couldn't
+ * read even one of duration/width/height — common on some iPhone/Lightroom-
  * exported MP4s (#1370). Callers (photoProcessor.js's processPhoto and
  * processUploadedPhotos) already catch that throw and fall back to a static
  * placeholder thumbnail plus a metadata-only retry (codex review of #845),
@@ -332,9 +300,7 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
       } = require('./imageProcessor');
       const placeholderFilename = path.basename(thumbnailKey).replace(/^thumb_/, '');
       // Explicit width/height make generateVideoPlaceholder skip its
-      // configured-thumbnail-size DB lookup (see its own comment) — this
-      // call can run from inside processUploadedPhotos' open per-file
-      // SQLite transaction, where that lookup would otherwise deadlock.
+      // configured-thumbnail-size DB lookup.
       const placeholderKey = await generateVideoPlaceholder(placeholderFilename, {
         width: DEFAULT_THUMBNAIL_WIDTH,
         height: DEFAULT_THUMBNAIL_HEIGHT
@@ -388,17 +354,6 @@ function posterFrameError(reason) {
 }
 
 /**
- * Get video thumbnail at specific time
- * @param {string} videoPath - Path to video file
- * @param {string} outputPath - Output path for thumbnail
- * @param {number} timeInSeconds - Time in seconds to capture thumbnail
- * @returns {Promise<string>} - Path to thumbnail
- */
-async function getThumbnailAtTime(videoPath, outputPath, timeInSeconds = DEFAULT_POSTER_OFFSET_SECONDS) {
-  return generateVideoThumbnail(videoPath, outputPath, { offsetSeconds: timeInSeconds });
-}
-
-/**
  * Check if file is a video based on MIME type
  * @param {string} mimeType - MIME type of the file
  * @returns {boolean} - True if video MIME type
@@ -410,11 +365,8 @@ function isVideoMimeType(mimeType) {
 module.exports = {
   extractVideoMetadata,
   generateVideoThumbnail,
-  isValidVideo,
-  getVideoDuration,
   processUploadedVideo,
   posterFrameError,
-  getThumbnailAtTime,
   generatePosterCandidates,
   posterCandidateOffsets,
   posterSeekSeconds,

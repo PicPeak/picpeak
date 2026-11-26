@@ -86,18 +86,6 @@ const isValidEventType = async (slugPrefix) => {
 };
 
 /**
- * Get all valid slug prefixes (for validation)
- * @returns {Promise<string[]>}
- */
-const getValidSlugPrefixes = async () => {
-  const types = await db('event_types')
-    .where('is_active', formatBoolean(true))
-    .select('slug_prefix');
-
-  return types.map(t => t.slug_prefix);
-};
-
-/**
  * Create a new event type
  * @param {Object} eventTypeData - Event type data
  * @returns {Promise<Object>} - Created event type
@@ -341,10 +329,6 @@ const deleteEventType = async (id) => {
     throw error;
   }
 
-  // Resolve schema lookups BEFORE opening the transaction — a global-db read
-  // inside a SQLite transaction (single connection) deadlocks.
-  const hasTranslations = await db.schema.hasTable('email_template_translations');
-
   await db.transaction(async (trx) => {
     await trx('event_types').where('id', id).del();
     // Drop the per-type reminder template with the type, or it lingers as an
@@ -354,9 +338,7 @@ const deleteEventType = async (id) => {
       .where({ template_key: `event_reminder_${eventType.slug_prefix}` })
       .first('id');
     if (tpl) {
-      if (hasTranslations) {
-        await trx('email_template_translations').where({ template_id: tpl.id }).del();
-      }
+      await trx('email_template_translations').where({ template_id: tpl.id }).del();
       await trx('email_templates').where({ id: tpl.id }).del();
     }
   });
@@ -379,45 +361,6 @@ const reorderEventTypes = async (orderedIds) => {
   });
 
   return getAllEventTypes();
-};
-
-/**
- * Get event type info for slug generation
- * Returns the slug_prefix to use for a given event type identifier
- * @param {string} eventTypeIdentifier - Either an ID or slug_prefix
- * @returns {Promise<Object>} - Event type with slug_prefix and theme_preset
- */
-const getEventTypeForSlug = async (eventTypeIdentifier) => {
-  // Try to find by slug_prefix first
-  let eventType = await getEventTypeBySlugPrefix(eventTypeIdentifier);
-
-  if (eventType) {
-    return eventType;
-  }
-
-  // Try by ID if numeric
-  if (!isNaN(eventTypeIdentifier)) {
-    eventType = await getEventTypeById(parseInt(eventTypeIdentifier));
-    if (eventType) {
-      return eventType;
-    }
-  }
-
-  // Fallback for legacy types - return a compatible object
-  const legacyDefaults = {
-    wedding: { slug_prefix: 'wedding', theme_preset: 'elegantWedding', emoji: '💒' },
-    birthday: { slug_prefix: 'birthday', theme_preset: 'birthdayFun', emoji: '🎂' },
-    corporate: { slug_prefix: 'corporate', theme_preset: 'corporateTimeline', emoji: '🏢' },
-    other: { slug_prefix: 'other', theme_preset: 'default', emoji: '📸' }
-  };
-
-  const normalized = eventTypeIdentifier.toLowerCase();
-  if (legacyDefaults[normalized]) {
-    return legacyDefaults[normalized];
-  }
-
-  // Default fallback
-  return { slug_prefix: 'event', theme_preset: 'default', emoji: '📷' };
 };
 
 /**
@@ -448,11 +391,9 @@ module.exports = {
   getEventTypeById,
   getEventTypeBySlugPrefix,
   isValidEventType,
-  getValidSlugPrefixes,
   createEventType,
   updateEventType,
   deleteEventType,
   reorderEventTypes,
-  getEventTypeForSlug,
   resolveDefaultEventType
 };

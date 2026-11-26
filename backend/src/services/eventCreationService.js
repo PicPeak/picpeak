@@ -15,20 +15,19 @@ const { buildShareLinkVariants } = require('./shareLinkService');
 const { ensureAccessCode } = require('./eventAccessCode');
 const { parseBooleanInput } = require('../utils/parsers');
 const { normaliseEventTimeTriple } = require('./eventService');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { getAppSetting } = require('../utils/appSettings');
 const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../utils/galleryPasswordVault');
 const { clampIntOrUndefined } = require('../utils/numericHelpers');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const {
   notifyGalleryRecipients, resolveGalleryRecipients, reachableAccountsByIds,
-  galleryLinkFor,
+  galleryLinkFor, galleryCreatedEmailData,
 } = require('./galleryNotificationService');
 const { resolveEventFeedbackDefaults, applyFeedbackDefaults } = require('./feedbackDefaults');
-const { getStoragePath, getEventFieldRequirements, readBooleanSetting, getDownloadProtectionDefaults,
-  getImageSecurityDefaults, resolveImageSecurityColumns, getBrandingDefaults, getCustomerNameFromPayload,
-  getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, hasCustomerContactColumns,
-  SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS } = require('./eventSettings');
+const { getStoragePath, getEventFieldRequirements, readBooleanSetting,
+  getImageSecurityDefaults, resolveImageSecurityColumns, getCustomerNameFromPayload,
+  getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled,
+  SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS, BANNER_MODES } = require('./eventSettings');
 const { validateCreationInput } = require('./eventCreationValidation');
 const { normaliseDownloadLimit } = require('./downloadQuota');
 const { guestNameModeOf } = require('./photoCredit');
@@ -39,6 +38,48 @@ function creationError(body) {
   const error = new AppError(body.error || 'Invalid event', 400, 'EVENT_INVALID');
   error.responseBody = body;
   return error;
+}
+
+/**
+ * A flag a new gallery takes from the request body, else from its boolean
+ * app setting (Settings > Event defaults), else `defaultValue`. The setting
+ * is only read when the body leaves the flag out.
+ */
+async function bodyOrSettingBoolean(value, settingKey, defaultValue) {
+  let fallback = defaultValue;
+  if (value === undefined) {
+    const setting = await readBooleanSetting(settingKey);
+    if (setting !== undefined) fallback = setting;
+  }
+  return parseBooleanInput(value, fallback);
+}
+
+/**
+ * A free slug for a new gallery: `<type>-<name>-<date or random>`, with a
+ * counter appended while it is taken. Uses the shared slugify so accented
+ * names (Família, Decoração, etc.) are transliterated instead of dropped
+ * (#525). A renamed gallery's old slug counts as taken: its links still lead
+ * to it.
+ */
+async function mintEventSlug(eventType, eventName, eventDate) {
+  const processedEventName = slugify(eventName);
+  // Use event_date in slug if provided, otherwise use random suffix
+  const slugSuffix = eventDate || crypto.randomBytes(3).toString('hex');
+  const baseSlug = `${eventType}-${processedEventName}-${slugSuffix}`;
+  let slug = baseSlug;
+  let counter = 1;
+  while (await findSlugHolder(slug)) {
+    slug = `${baseSlug}-${counter}`;
+    counter++;
+  }
+  return slug;
+}
+
+/** The storage folders every new gallery starts with. */
+async function createEventFolders(slug) {
+  const eventPath = path.join(getStoragePath(), 'events/active', slug);
+  await fs.mkdir(path.join(eventPath, 'collages'), { recursive: true });
+  await fs.mkdir(path.join(eventPath, 'individual'), { recursive: true });
 }
 
 /** Shared creation operation. v1 publishes immediately unless it sends
@@ -169,12 +210,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   // external imports. New galleries follow Settings → Event defaults (on
   // unless turned off); an explicit body value wins. Existing galleries were
   // pinned off by migration 265.
-  let folderStructureFallback = true;
-  if (input.folder_structure === undefined) {
-    const setting = await readBooleanSetting('event_default_folder_structure');
-    if (setting !== undefined) folderStructureFallback = setting;
-  }
-  const folderStructure = parseBooleanInput(input.folder_structure, folderStructureFallback);
+  const folderStructure = await bodyOrSettingBoolean(input.folder_structure, 'event_default_folder_structure', true);
 
   const customerName = getCustomerNameFromPayload(input);
   const customerEmail = getCustomerEmailFromPayload(input);
@@ -183,8 +219,6 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   // bypass.
   const phoneEnabled = await isPhoneFieldEnabled();
   const customerPhone = phoneEnabled ? getCustomerPhoneFromPayload(input) : null;
-
-  const customerColumnsAvailable = await hasCustomerContactColumns();
 
   // Customer accounts to assign (#354) — only while the customer portal is
   // on; the frontend hides the picker otherwise, but a stale tab could still
@@ -236,23 +270,13 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
 
   // Default require_password from global "event_default_require_password"
   // setting when the body omits it (#317 — admins want to flip the default).
-  let requirePasswordFallback = true;
-  if (requirePasswordInput === undefined) {
-    const setting = await readBooleanSetting('event_default_require_password');
-    if (setting !== undefined) requirePasswordFallback = setting;
-  }
-  const requirePassword = parseBooleanInput(requirePasswordInput, requirePasswordFallback);
+  const requirePassword = await bodyOrSettingBoolean(requirePasswordInput, 'event_default_require_password', true);
 
   // Default feedback_enabled from global "event_default_feedback_enabled"
   // setting when the body omits it (#520 — same pattern as require_password
   // above, lets admins make Guest Feedback ON the out-of-box default for
   // new events instead of toggling it on every time).
-  let feedbackEnabledFallback = false;
-  if (feedbackEnabledInput === undefined) {
-    const setting = await readBooleanSetting('event_default_feedback_enabled');
-    if (setting !== undefined) feedbackEnabledFallback = setting;
-  }
-  const feedback_enabled = parseBooleanInput(feedbackEnabledInput, feedbackEnabledFallback);
+  const feedback_enabled = await bodyOrSettingBoolean(feedbackEnabledInput, 'event_default_feedback_enabled', false);
 
   // Default download limit from Settings > Event Defaults when the body omits
   // it (issue 1560). An explicit null still means unlimited.
@@ -267,21 +291,11 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
       ? await getAppSetting('event_default_guest_name_mode', 'off')
       : guestNameModeInput,
   });
-  let showCreditsFallback = false;
-  if (showCreditsInput === undefined) {
-    const setting = await readBooleanSetting('event_default_show_credits_to_guests');
-    if (setting !== undefined) showCreditsFallback = setting;
-  }
-  const show_credits_to_guests = parseBooleanInput(showCreditsInput, showCreditsFallback);
+  const show_credits_to_guests = await bodyOrSettingBoolean(showCreditsInput, 'event_default_show_credits_to_guests', false);
 
   // First-visit walkthrough (issue 2551): Settings > Events default when the
   // body omits it, off when that is unset too.
-  let walkthroughFallback = false;
-  if (walkthroughInput === undefined) {
-    const setting = await readBooleanSetting('event_default_walkthrough_enabled');
-    if (setting !== undefined) walkthroughFallback = setting;
-  }
-  const walkthrough_enabled = parseBooleanInput(walkthroughInput, walkthroughFallback);
+  const walkthrough_enabled = await bodyOrSettingBoolean(walkthroughInput, 'event_default_walkthrough_enabled', false);
 
   // Sub-toggle defaults from the global Settings > Events values (#1044).
   // One batched read; an explicitly-sent body value still wins.
@@ -325,23 +339,8 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     }
   }
     
-  // Generate unique slug. Uses the shared util so accented names
-  // (Família, Decoração, etc.) get transliterated instead of dropped
-  // — see backend/src/utils/slug.js for the why (#525).
-  const processedEventName = slugify(event_name);
+  const slug = await mintEventSlug(event_type, event_name, event_date);
 
-  // Use event_date in slug if provided, otherwise use random suffix
-  const slugSuffix = event_date || crypto.randomBytes(3).toString('hex');
-  const baseSlug = `${event_type}-${processedEventName}-${slugSuffix}`;
-  let slug = baseSlug;
-  let counter = 1;
-
-  // A renamed gallery's old slug counts as taken: its links still lead to it.
-  while (await findSlugHolder(slug)) {
-    slug = `${baseSlug}-${counter}`;
-    counter++;
-  }
-    
   // Generate share link respecting configured format
   const shareToken = crypto.randomBytes(16).toString('hex');
   const { shareUrl, shareLinkToStore } = await buildShareLinkVariants({ slug, shareToken });
@@ -381,11 +380,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     }
   }
     
-  // Create folder structure
-  const storagePath = getStoragePath();
-  const eventPath = path.join(storagePath, 'events/active', slug);
-  await fs.mkdir(path.join(eventPath, 'collages'), { recursive: true });
-  await fs.mkdir(path.join(eventPath, 'individual'), { recursive: true });
+  await createEventFolders(slug);
     
   // Sync header_style / hero_divider_style from color_theme JSON when not
   // explicitly provided in the request body (#158).
@@ -407,8 +402,6 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     }
   }
 
-  // Get branding defaults for hero logo settings (Feature 7: Branding Inheritance)
-  const brandingDefaults = await getBrandingDefaults();
   // hero_logo_visible: store NULL ("inherit") unless the admin explicitly
   // set it, so the global branding_logo_display_hero toggle keeps
   // controlling this gallery afterwards (#756). Only an explicit per-event
@@ -421,12 +414,12 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   // NULL = inherit the global branding_logo_size (#756), resolved at read
   // time. Only an explicit per-event size overrides it.
   const effectiveHeroLogoSize = input.hero_logo_size || null;
-  const effectiveHeroLogoPosition = input.hero_logo_position || brandingDefaults.hero_logo_position;
+  const effectiveHeroLogoPosition = input.hero_logo_position || 'top';
 
   // Inherit "Detect dev tools" from the global Image Security setting unless
   // the request explicitly overrides it (#317 — admin disabled it globally
   // but new events still got it ON because the column default is true).
-  const protectionDefaults = await getDownloadProtectionDefaults();
+  const devtoolsProtectionDefault = await readBooleanSetting('enable_devtools_protection');
   // #1296 — the other four Image-security settings, which were written,
   // rendered as controls, and read by nothing. Same inheritance rule as
   // the devtools setting below. Creation-time only; see
@@ -438,8 +431,8 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   const effectiveEnableDevtoolsProtection =
       enableDevtoolsProtectionInput !== undefined
         ? enableDevtoolsProtectionInput
-        : protectionDefaults.enable_devtools_protection !== undefined
-          ? protectionDefaults.enable_devtools_protection
+        : devtoolsProtectionDefault !== undefined
+          ? devtoolsProtectionDefault
           : true;
 
   // Migration 137 — normalise calendar time triple. Throws AppError
@@ -447,36 +440,32 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   const calendarTriple = normaliseEventTimeTriple({
     event_time_start, event_time_end, is_full_day,
   });
-  const calendarColumnsExist = await hasColumnCached('events', 'is_full_day');
 
   // Insert into database
   // Seed the new event's Live Slideshow display style from the PICPEAK-WIDE
   // preset (app_settings, Settings → Slideshow). New events inherit it and the
   // admin can still override per event. Watermark is left NULL = inherit the
-  // global watermark; the share token is minted on demand, not seeded. Guarded
-  // so un-migrated installs (mid-branch) don't reference missing columns.
+  // global watermark; the share token is minted on demand, not seeded.
   let slideshowSeed = {};
-  if (await hasColumnCached('events', 'show_interval_ms')) {
-    try {
-      // parseInt-first: the previous `Number.isFinite(+v)` pre-check let
-      // NaN through for null/''/true (+null is 0, parseInt(null) is NaN),
-      // producing show_interval_ms=NaN in the INSERT — PG rejects that
-      // with "invalid input syntax for type integer" while SQLite
-      // silently stores NULL, so event creation 500'd on PG whenever the
-      // slideshow app_settings rows were absent.
-      const intP = (v, min, max) => clampIntOrUndefined(v, min, max);
-      const oneOf = (v, allowed) => (allowed.includes(v) ? v : undefined);
-      const i = intP(await getAppSetting('slideshow_interval_ms', undefined), 1000, 120000);
-      const tr = oneOf(await getAppSetting('slideshow_transition', undefined), SLIDESHOW_TRANSITIONS);
-      const tms = intP(await getAppSetting('slideshow_transition_ms', undefined), 100, 5000);
-      const cf = oneOf(await getAppSetting('slideshow_colorfilter', undefined), SLIDESHOW_COLORFILTERS);
-      if (i !== undefined) slideshowSeed.show_interval_ms = i;
-      if (tr) slideshowSeed.show_transition = tr;
-      if (tms !== undefined) slideshowSeed.show_transition_ms = tms;
-      if (cf) slideshowSeed.show_colorfilter = cf;
-    } catch (e) {
-      logger.warn('Failed to seed slideshow settings from global preset', { error: e.message });
-    }
+  try {
+    // parseInt-first: the previous `Number.isFinite(+v)` pre-check let
+    // NaN through for null/''/true (+null is 0, parseInt(null) is NaN),
+    // producing show_interval_ms=NaN in the INSERT — PG rejects that
+    // with "invalid input syntax for type integer" while SQLite
+    // silently stores NULL, so event creation 500'd on PG whenever the
+    // slideshow app_settings rows were absent.
+    const intP = (v, min, max) => clampIntOrUndefined(v, min, max);
+    const oneOf = (v, allowed) => (allowed.includes(v) ? v : undefined);
+    const i = intP(await getAppSetting('slideshow_interval_ms', undefined), 1000, 120000);
+    const tr = oneOf(await getAppSetting('slideshow_transition', undefined), SLIDESHOW_TRANSITIONS);
+    const tms = intP(await getAppSetting('slideshow_transition_ms', undefined), 100, 5000);
+    const cf = oneOf(await getAppSetting('slideshow_colorfilter', undefined), SLIDESHOW_COLORFILTERS);
+    if (i !== undefined) slideshowSeed.show_interval_ms = i;
+    if (tr) slideshowSeed.show_transition = tr;
+    if (tms !== undefined) slideshowSeed.show_transition_ms = tms;
+    if (cf) slideshowSeed.show_colorfilter = cf;
+  } catch (e) {
+    logger.warn('Failed to seed slideshow settings from global preset', { error: e.message });
   }
 
   const insertData = {
@@ -485,12 +474,11 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     event_name,
     ...slideshowSeed,
     event_date: event_date || null,
-    ...(calendarColumnsExist ? {
-      event_time_start: calendarTriple.event_time_start,
-      event_time_end: calendarTriple.event_time_end,
-      is_full_day: formatBoolean(calendarTriple.is_full_day),
-    } : {}),
-    ...(customerColumnsAvailable ? { customer_name: customerName, customer_email: customerEmail } : {}),
+    event_time_start: calendarTriple.event_time_start,
+    event_time_end: calendarTriple.event_time_end,
+    is_full_day: formatBoolean(calendarTriple.is_full_day),
+    customer_name: customerName,
+    customer_email: customerEmail,
     ...(customerPhone ? { customer_phone: customerPhone } : {}),
     host_name: customerName || null,
     host_email: customerEmail || null,
@@ -538,10 +526,10 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     // then dropped here, so an API client could POST info_mode:'off' or a
     // custom banner, get 201, and find the row still on 'inherit'.
     // Markdown is only stored for 'custom' — same rule the PUT applies.
-    promo_mode: ['inherit', 'custom', 'off'].includes(promo_mode) ? promo_mode : 'inherit',
+    promo_mode: BANNER_MODES.includes(promo_mode) ? promo_mode : 'inherit',
     promo_markdown: promo_mode === 'custom' && typeof promo_markdown === 'string' && promo_markdown.trim()
       ? promo_markdown.trim() : null,
-    info_mode: ['inherit', 'custom', 'off'].includes(info_mode) ? info_mode : 'inherit',
+    info_mode: BANNER_MODES.includes(info_mode) ? info_mode : 'inherit',
     info_markdown: info_mode === 'custom' && typeof info_markdown === 'string' && info_markdown.trim()
       ? info_markdown.trim() : null,
     header_style: effectiveHeaderStyle || 'standard',
@@ -674,17 +662,15 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
 
   if (!isDraft) {
     const buildInlineEmailData = async (recipient) => {
-      const emailData = {
-        customer_name: customerName,
-        customer_email: recipient,
-        host_name: customerName || recipient.split('@')[0],
-        event_name,
-        event_date: event_date,  // Pass raw date - will be formatted by email processor
-        gallery_link: shareUrl,
-        gallery_password: requirePassword ? password : 'No password required',
-        expiry_date: expires_at ? expires_at.toISOString() : null,  // Pass ISO string - will be formatted by email processor
-        welcome_message: welcome_message || ''
-      };
+      // Dates go out raw / as ISO; the email processor formats them.
+      const emailData = await galleryCreatedEmailData({
+        customer_name: customerName, host_name: customerName, event_name, event_date,
+        expires_at, welcome_message,
+      }, {
+        recipientEmail: recipient,
+        shareUrl,
+        galleryPassword: requirePassword ? password : 'No password required',
+      });
 
       // Include client access info in email when enabled (#172)
       if (client_access_enabled && client_password) {
@@ -858,4 +844,4 @@ function startInitialImport(eventId, externalPath, actor) {
   });
 }
 
-module.exports = { createEvent };
+module.exports = { createEvent, mintEventSlug, createEventFolders };

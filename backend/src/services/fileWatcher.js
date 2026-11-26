@@ -17,6 +17,7 @@ const mime = require('mime-types');
 const { isRawFilename } = require('../utils/rawFormats');
 const { normalizeUploadMimeType } = require('../utils/fileSecurityUtils');
 const { getAllowedExtensions } = require('./uploadSettings');
+const { IMAGE_EXTENSIONS } = require('./externalMediaTypes');
 const downloadZipService = require('./downloadZipService');
 const { promotionSettled } = require('./watchFolderClaims');
 const { unfinishedKeys } = require('./publicUploadQuota');
@@ -29,8 +30,8 @@ const WATCH_PATH = () => path.join(getStoragePath(), 'events/active');
 // ignoreInitial option the boot scan fires it for EVERY existing file, and a
 // bulk drop into the watch folder fires it for every new one at once. Each
 // handler runs DB lookups and (for new files) a full sharp pipeline;
-// sharp.concurrency(2) only caps libvips threads WITHIN one operation, not the
-// number of parallel pipelines, so unbounded handlers can OOM small hosts.
+// the sharp workers cap libvips threads WITHIN one operation, not the number
+// of parallel pipelines, so unbounded handlers can OOM small hosts.
 // 'unlink' shares the limiter: mass deletes otherwise burst DB work and
 // ZIP-cache invalidation the same way.
 const configuredConcurrency = Number.parseInt(process.env.FILE_WATCHER_CONCURRENCY || '2', 10);
@@ -225,7 +226,7 @@ async function processNewPhoto(filePath) {
   const detectedMime = mime.lookup(filePath) || '';
   const isVideo = isVideoMimeType(detectedMime, filePath) || ['.mp4', '.mov', '.webm'].includes(ext);
   const isRaw = !isVideo && isRawFilename(filePath);
-  if (!isVideo && !isRaw && !['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) return;
+  if (!isVideo && !isRaw && !IMAGE_EXTENSIONS.includes(ext)) return;
   
   // Skip temporary upload files
   const filename = path.basename(filePath);

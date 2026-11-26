@@ -49,12 +49,6 @@ function getExternalMediaRoot() {
   return cachedRoot;
 }
 
-function isUnderRoot(p) {
-  const root = path.resolve(getExternalMediaRoot());
-  const resolved = path.resolve(p);
-  return resolved === root || resolved.startsWith(root + path.sep);
-}
-
 async function list(relativePath = '', actor = null) {
   const access = require('./externalMediaAccess');
   const admin = await access.principal(actor?.id, 'photos.view');
@@ -146,7 +140,6 @@ function resolveExternalPhotoPath(photo) {
 
 module.exports = {
   getExternalMediaRoot,
-  isUnderRoot,
   list,
   resolveExternalPath,
   resolveExternalPhotoPath,

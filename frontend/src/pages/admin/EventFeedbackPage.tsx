@@ -28,6 +28,7 @@ import { eventsService } from '../../services/events.service';
 import { feedbackService } from '../../services/feedback.service';
 import type { PhotoFeedback, FeedbackAnalytics, FeedbackResponse } from '../../services/feedback.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { saveBlob } from '../../utils/saveBlob';
 import { useAnyPermission, usePermission } from '../../hooks/usePermission';
 
 /**
@@ -109,19 +110,9 @@ export const EventFeedbackPanel: React.FC<{ eventId: string }> = ({ eventId }) =
       const eventSlug = event?.slug || id;
       const filename = `feedback-${exportShape}-${eventSlug}.${format}`;
       if (format === 'csv') {
-        const blob = new Blob([data], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
+        saveBlob(new Blob([data], { type: 'text/csv' }), filename);
       } else {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
+        saveBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), filename);
       }
       toast.success(t('feedback.exported', 'Feedback exported'));
     } catch (error) {

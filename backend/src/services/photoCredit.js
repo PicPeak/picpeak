@@ -28,7 +28,6 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { sanitizeName } = require('../utils/personName');
 const { parseBooleanInput } = require('../utils/parsers');
-const { hasColumnCached } = require('../utils/schemaCache');
 
 // 'account': the uploading admin account's credit name (issue 743), used when
 // the file carries no EXIF name. EXIF found later still replaces it.
@@ -186,7 +185,7 @@ function creditOpenForExif(photo) {
  * replaces it. Empty when the account has none: never the login handle.
  */
 async function accountCreditFields(adminId) {
-  if (!adminId || !(await hasColumnCached('admin_users', 'credit_name'))) return {};
+  if (!adminId) return {};
   const row = await db('admin_users').where({ id: adminId }).first('credit_name');
   const name = row && row.credit_name ? creditName(row.credit_name) : '';
   return name ? { credit_name: name, credit_source: 'account' } : {};

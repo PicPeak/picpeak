@@ -154,30 +154,52 @@ async function resolveGalleryRecipients(event, { includeAccounts = true, preferP
 }
 
 /**
- * The standard gallery_created payload for an event row. `password` is the
- * plaintext the admin just typed (#627); without one the mail carries the
- * legacy sentinel, as an API-only publish always has.
+ * The standard gallery_created payload for an event row (its variable names
+ * are the template's contract). `password` is the plaintext the admin just
+ * typed (#627); without one the mail carries the legacy sentinel, as an
+ * API-only publish always has.
+ *
+ * Creation and resend build the same mail with their own rules:
+ * - `galleryPassword`: the exact password text, instead of the rule above
+ *   (even when undefined, if the key is given);
+ * - `recipientEmail`: the address it goes to, as customer_email and for the
+ *   name fallback, instead of the row's customer/host email;
+ * - `nameFromAddress`: customer_name falls back to the address too, and
+ *   host_name equals it (resend);
+ * - `shareUrl`: the gallery link the caller already built;
+ * - `rawExpiry`: expires_at as stored, for the email processor to format;
+ * - `extra`: keys appended after the standard ones.
  */
-async function galleryCreatedEmailData(event, { password, requirePassword } = {}) {
-  const customerEmail = event.customer_email || event.host_email;
+async function galleryCreatedEmailData(event, options = {}) {
+  const { password, requirePassword, recipientEmail, nameFromAddress = false, rawExpiry = false, extra } = options;
+  const customerEmail = recipientEmail !== undefined ? recipientEmail : (event.customer_email || event.host_email);
   const customerName = event.customer_name || event.host_name;
-  const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
+  const shareUrl = options.shareUrl !== undefined
+    ? options.shareUrl
+    : (await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token })).shareUrl;
 
   let galleryPassword;
-  if (!requirePassword) galleryPassword = 'No password required';
+  if (Object.prototype.hasOwnProperty.call(options, 'galleryPassword')) galleryPassword = options.galleryPassword;
+  else if (!requirePassword) galleryPassword = 'No password required';
   else if (password) galleryPassword = password;
   else galleryPassword = '(set at creation)';
 
+  const addressName = nameFromAddress
+    ? customerName || (customerEmail ? customerEmail.split('@')[0] : null)
+    : null;
   return {
-    customer_name: customerName,
+    customer_name: nameFromAddress ? addressName : customerName,
     customer_email: customerEmail,
-    host_name: customerName || customerEmail.split('@')[0],
+    host_name: nameFromAddress ? addressName : customerName || customerEmail.split('@')[0],
     event_name: event.event_name,
     event_date: event.event_date,
     gallery_link: shareUrl || `${await getFrontendBaseUrl()}/gallery/${event.slug}`,
     gallery_password: galleryPassword,
-    expiry_date: event.expires_at ? new Date(event.expires_at).toISOString() : null,
+    expiry_date: rawExpiry
+      ? event.expires_at
+      : (event.expires_at ? new Date(event.expires_at).toISOString() : null),
     welcome_message: event.welcome_message || '',
+    ...extra,
   };
 }
 

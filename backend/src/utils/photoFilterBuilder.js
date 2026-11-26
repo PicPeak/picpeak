@@ -6,11 +6,26 @@
 const { COLOR_LABELS, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const { livePhotos, wherePhotoLive } = require('./photoVisibility');
 
-// The colour-label rows the event's current mode actually uses (#1197).
-// Switching identity_mode is non-destructive, so an event can hold a dormant
-// set alongside the live one; a filter that ignored the distinction would
-// match photos on labels the mode does not show.
-function scopeColorLabelsToMode(query, identityMode, column = 'photo_feedback.guest_identifier') {
+/**
+ * Narrow a colour-label query to the rows the event's current mode actually
+ * uses (#1197).
+ *
+ * Switching modes is deliberately non-destructive: per-guest labels are kept
+ * when an event moves to shared, and the shared row is kept when it moves
+ * back. That leaves both sets in the table at once with only one of them live,
+ * so every read has to say which it means. Without this the dormant set is
+ * still counted, still tallied in the lightbox, still matches the admin colour
+ * filter and can still decide the exported dominant colour — the labels would
+ * be "hidden" only on the badge, which is not what the settings panel promises.
+ *
+ * The NULL arm matters: rows written before migration 078 carry no identifier
+ * at all, and they are per-guest rows, so they belong to the non-shared set.
+ *
+ * `column` has no default: a joined query needs the qualified name
+ * (`photo_feedback.guest_identifier`), a bare `photo_feedback` query may use
+ * either, so every caller says which it means.
+ */
+function scopeColorLabelsToMode(query, identityMode, column) {
   if (identityMode === 'shared') {
     return query.where(column, SHARED_COLOR_LABEL_IDENTITY);
   }
@@ -114,6 +129,178 @@ function whereInFavoriteList(builder, eventId, { listId, guestId }) {
   });
 }
 
+/**
+ * The feedback conditions of a filter object, in order, as functions of a
+ * query builder: ratings, likes, favourites, comments, colour labels (scoped
+ * to `identityMode`), decisions and the caller's own marks (`admin_id`). Not
+ * the event, favourite list or category: those belong to the caller. The
+ * export filter and the admin photo list both combine these with
+ * combineConditions.
+ */
+function feedbackConditions(filters, identityMode) {
+  const {
+    min_rating,
+    max_rating,
+    has_likes,
+    min_likes,
+    has_favorites,
+    min_favorites,
+    has_comments,
+    color_labels,
+    my_color_labels,
+    decisions,
+    my_min_rating,
+    marked_only,
+    mark_source = 'either',
+    admin_id,
+  } = filters;
+
+  const conditions = [];
+
+  if (min_rating !== undefined && min_rating !== null) {
+    conditions.push(builder => builder.where('photos.average_rating', '>=', min_rating));
+  }
+
+  if (max_rating !== undefined && max_rating !== null) {
+    conditions.push(builder => builder.where('photos.average_rating', '<=', max_rating));
+  }
+
+  if (has_likes === true || has_likes === 'true') {
+    conditions.push(builder => builder.where('photos.like_count', '>', 0));
+  }
+
+  if (min_likes !== undefined && min_likes !== null) {
+    conditions.push(builder => builder.where('photos.like_count', '>=', min_likes));
+  }
+
+  if (has_favorites === true || has_favorites === 'true') {
+    conditions.push(builder => builder.where('photos.favorite_count', '>', 0));
+  }
+
+  if (min_favorites !== undefined && min_favorites !== null) {
+    conditions.push(builder => builder.where('photos.favorite_count', '>=', min_favorites));
+  }
+
+  if (has_comments === true || has_comments === 'true') {
+    conditions.push(builder => builder.where('photos.comment_count', '>', 0));
+  }
+
+  // Colour labels (#1044): "only the greens". Can't read a denormalized
+  // count — "has any label" and "has a GREEN label" are different questions
+  // — so this is an EXISTS over photo_feedback, covered by the
+  // photo_feedback_color_label_idx index from migration 180.
+  const requestedColors = normalizeColorLabels(color_labels);
+  if (requestedColors.length > 0) {
+    conditions.push(builder => builder.whereExists(function () {
+      scopeColorLabelsToMode(
+        this.select('*')
+          .from('photo_feedback')
+          .whereRaw('photo_feedback.photo_id = photos.id')
+          .where('photo_feedback.feedback_type', 'color_label')
+          .where('photo_feedback.is_hidden', false)
+          .whereIn('photo_feedback.color_label', requestedColors),
+        identityMode,
+        'photo_feedback.guest_identifier',
+      );
+    }));
+  }
+
+  const requestedDecisions = normalizeDecisionFilter(decisions);
+  if (requestedDecisions.length > 0) {
+    conditions.push(builder => whereDecision(builder, requestedDecisions));
+  }
+
+  // The same question against the caller's own marks (#1044 follow-up).
+  // Requires admin_id: without one this would filter by every admin's marks
+  // at once, so it is skipped rather than silently widened.
+  const requestedMyColors = normalizeColorLabels(my_color_labels);
+  if (requestedMyColors.length > 0 && admin_id) {
+    conditions.push(builder => builder.whereExists(function () {
+      this.select('*')
+        .from('photo_admin_marks')
+        .whereRaw('photo_admin_marks.photo_id = photos.id')
+        .where('photo_admin_marks.admin_id', admin_id)
+        .whereIn('photo_admin_marks.color_label', requestedMyColors);
+    }));
+  }
+
+  // The caller's own star rating (#745). Same admin_id requirement as the
+  // colour filter above, and skipped rather than widened without one.
+  if (my_min_rating !== undefined && my_min_rating !== null && admin_id) {
+    conditions.push(builder => builder.whereExists(function () {
+      this.select('*')
+        .from('photo_admin_marks')
+        .whereRaw('photo_admin_marks.photo_id = photos.id')
+        .where('photo_admin_marks.admin_id', admin_id)
+        .where('photo_admin_marks.rating', '>=', my_min_rating);
+    }));
+  }
+
+  // "Only the photos somebody actually marked" — the Lightroom round-trip's
+  // import scope (#745). This is ONE condition that ORs internally rather
+  // than several pushed conditions, so it still behaves as a single clause
+  // when the caller asked for `logic: 'AND'` alongside other filters.
+  //
+  // `mark_source` decides whose marks count: the client's proofing verdict,
+  // the photographer's own triage, or either. 'mine' and 'either' need an
+  // admin_id for the same reason the filters above do; without one the
+  // admin half is dropped instead of matching every admin's marks.
+  if (marked_only === true || marked_only === 'true') {
+    const wantsClient = mark_source === 'client' || mark_source === 'either';
+    const wantsMine = (mark_source === 'mine' || mark_source === 'either') && Boolean(admin_id);
+
+    conditions.push(builder => builder.where(function () {
+      if (wantsClient) {
+        this.orWhere('photos.color_label_count', '>', 0);
+        this.orWhere('photos.average_rating', '>', 0);
+      }
+      if (wantsMine) {
+        this.orWhereExists(function () {
+          this.select('*')
+            .from('photo_admin_marks')
+            .whereRaw('photo_admin_marks.photo_id = photos.id')
+            .where('photo_admin_marks.admin_id', admin_id)
+            .where(function () {
+              this.whereNotNull('photo_admin_marks.color_label')
+                .orWhereNotNull('photo_admin_marks.rating');
+            });
+        });
+      }
+      // Neither half available (mark_source 'mine' with no admin_id) —
+      // match nothing rather than silently returning the whole event.
+      if (!wantsClient && !wantsMine) {
+        this.whereRaw('1 = 0');
+      }
+    }));
+  }
+
+  return conditions;
+}
+
+/**
+ * Add conditions to a query: each one ANDed (default), or with logic 'OR'
+ * all of them as one grouped OR clause.
+ */
+function combineConditions(query, conditions, logic) {
+  if (conditions.length === 0) return;
+  if (logic === 'OR') {
+    query.where(builder => {
+      conditions.forEach((condition, index) => {
+        if (index === 0) {
+          condition(builder);
+        } else {
+          builder.orWhere(subBuilder => condition(subBuilder));
+        }
+      });
+    });
+  } else {
+    // AND logic (default)
+    conditions.forEach(condition => {
+      query.where(builder => condition(builder));
+    });
+  }
+}
+
 class PhotoFilterBuilder {
   constructor(queryBuilder, eventId, identityMode = 'simple') {
     this.query = queryBuilder;
@@ -128,24 +315,7 @@ class PhotoFilterBuilder {
    * Apply all filters from a filter object
    */
   applyFilters(filters = {}) {
-    const {
-      min_rating,
-      max_rating,
-      has_likes,
-      min_likes,
-      has_favorites,
-      min_favorites,
-      has_comments,
-      color_labels,
-      my_color_labels,
-      decisions,
-      my_min_rating,
-      marked_only,
-      mark_source = 'either',
-      admin_id,
-      category_id,
-      logic = 'AND'
-    } = filters;
+    const { category_id, logic = 'AND' } = filters;
 
     // Always filter by event
     this.query.where('photos.event_id', this.eventId);
@@ -153,149 +323,14 @@ class PhotoFilterBuilder {
     const favoriteList = normalizeFavoriteListFilter(filters);
     if (favoriteList) whereInFavoriteList(this.query, this.eventId, favoriteList);
 
-    // Build conditions array
-    const conditions = [];
-
-    if (min_rating !== undefined && min_rating !== null) {
-      conditions.push(builder => builder.where('photos.average_rating', '>=', min_rating));
-    }
-
-    if (max_rating !== undefined && max_rating !== null) {
-      conditions.push(builder => builder.where('photos.average_rating', '<=', max_rating));
-    }
-
-    if (has_likes === true || has_likes === 'true') {
-      conditions.push(builder => builder.where('photos.like_count', '>', 0));
-    }
-
-    if (min_likes !== undefined && min_likes !== null) {
-      conditions.push(builder => builder.where('photos.like_count', '>=', min_likes));
-    }
-
-    if (has_favorites === true || has_favorites === 'true') {
-      conditions.push(builder => builder.where('photos.favorite_count', '>', 0));
-    }
-
-    if (min_favorites !== undefined && min_favorites !== null) {
-      conditions.push(builder => builder.where('photos.favorite_count', '>=', min_favorites));
-    }
-
-    if (has_comments === true || has_comments === 'true') {
-      conditions.push(builder => builder.where('photos.comment_count', '>', 0));
-    }
-
-    // Colour labels (#1044): "only the greens". Can't read a denormalized
-    // count — "has any label" and "has a GREEN label" are different questions
-    // — so this is an EXISTS over photo_feedback, covered by the
-    // photo_feedback_color_label_idx index from migration 180.
-    const requestedColors = normalizeColorLabels(color_labels);
-    if (requestedColors.length > 0) {
-      const identityMode = this.identityMode;
-      conditions.push(builder => builder.whereExists(function () {
-        scopeColorLabelsToMode(
-          this.select('*')
-            .from('photo_feedback')
-            .whereRaw('photo_feedback.photo_id = photos.id')
-            .where('photo_feedback.feedback_type', 'color_label')
-            .where('photo_feedback.is_hidden', false)
-            .whereIn('photo_feedback.color_label', requestedColors),
-          identityMode,
-        );
-      }));
-    }
-
-    const requestedDecisions = normalizeDecisionFilter(decisions);
-    if (requestedDecisions.length > 0) {
-      conditions.push(builder => whereDecision(builder, requestedDecisions));
-    }
-
-    // The same question against the caller's own marks (#1044 follow-up).
-    // Requires admin_id: without one this would filter by every admin's marks
-    // at once, so it is skipped rather than silently widened.
-    const requestedMyColors = normalizeColorLabels(my_color_labels);
-    if (requestedMyColors.length > 0 && admin_id) {
-      conditions.push(builder => builder.whereExists(function () {
-        this.select('*')
-          .from('photo_admin_marks')
-          .whereRaw('photo_admin_marks.photo_id = photos.id')
-          .where('photo_admin_marks.admin_id', admin_id)
-          .whereIn('photo_admin_marks.color_label', requestedMyColors);
-      }));
-    }
-
-    // The caller's own star rating (#745). Same admin_id requirement as the
-    // colour filter above, and skipped rather than widened without one.
-    if (my_min_rating !== undefined && my_min_rating !== null && admin_id) {
-      conditions.push(builder => builder.whereExists(function () {
-        this.select('*')
-          .from('photo_admin_marks')
-          .whereRaw('photo_admin_marks.photo_id = photos.id')
-          .where('photo_admin_marks.admin_id', admin_id)
-          .where('photo_admin_marks.rating', '>=', my_min_rating);
-      }));
-    }
-
-    // "Only the photos somebody actually marked" — the Lightroom round-trip's
-    // import scope (#745). This is ONE condition that ORs internally rather
-    // than several pushed conditions, so it still behaves as a single clause
-    // when the caller asked for `logic: 'AND'` alongside other filters.
-    //
-    // `mark_source` decides whose marks count: the client's proofing verdict,
-    // the photographer's own triage, or either. 'mine' and 'either' need an
-    // admin_id for the same reason the filters above do; without one the
-    // admin half is dropped instead of matching every admin's marks.
-    if (marked_only === true || marked_only === 'true') {
-      const wantsClient = mark_source === 'client' || mark_source === 'either';
-      const wantsMine = (mark_source === 'mine' || mark_source === 'either') && Boolean(admin_id);
-
-      conditions.push(builder => builder.where(function () {
-        if (wantsClient) {
-          this.orWhere('photos.color_label_count', '>', 0);
-          this.orWhere('photos.average_rating', '>', 0);
-        }
-        if (wantsMine) {
-          this.orWhereExists(function () {
-            this.select('*')
-              .from('photo_admin_marks')
-              .whereRaw('photo_admin_marks.photo_id = photos.id')
-              .where('photo_admin_marks.admin_id', admin_id)
-              .where(function () {
-                this.whereNotNull('photo_admin_marks.color_label')
-                  .orWhereNotNull('photo_admin_marks.rating');
-              });
-          });
-        }
-        // Neither half available (mark_source 'mine' with no admin_id) —
-        // match nothing rather than silently returning the whole event.
-        if (!wantsClient && !wantsMine) {
-          this.whereRaw('1 = 0');
-        }
-      }));
-    }
+    const conditions = feedbackConditions(filters, this.identityMode);
 
     if (category_id) {
       conditions.push(builder => builder.where('photos.category_id', category_id));
     }
 
     // Apply conditions with AND/OR logic
-    if (conditions.length > 0) {
-      if (logic === 'OR') {
-        this.query.where(builder => {
-          conditions.forEach((condition, index) => {
-            if (index === 0) {
-              condition(builder);
-            } else {
-              builder.orWhere(subBuilder => condition(subBuilder));
-            }
-          });
-        });
-      } else {
-        // AND logic (default)
-        conditions.forEach(condition => {
-          this.query.where(builder => condition(builder));
-        });
-      }
-    }
+    combineConditions(this.query, conditions, logic);
 
     return this;
   }
@@ -375,6 +410,7 @@ class PhotoFilterBuilder {
         .where({ event_id: eventId, feedback_type: 'color_label' })
         .where('is_hidden', false),
       identityMode,
+      'photo_feedback.guest_identifier',
     )
       .groupBy('color_label')
       .select('color_label')
@@ -403,5 +439,6 @@ class PhotoFilterBuilder {
 
 module.exports = {
   PhotoFilterBuilder, normalizeColorLabels, normalizeDecisionFilter, whereDecision,
-  normalizeFavoriteListFilter, whereInFavoriteList,
+  normalizeFavoriteListFilter, whereInFavoriteList, scopeColorLabelsToMode,
+  feedbackConditions, combineConditions,
 };
