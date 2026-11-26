@@ -63,17 +63,21 @@ function redactKnownAddresses(html, values, keep = new Set()) {
     if (typeof value === 'string') {
       if (!value.includes('@')) return;
       for (const match of value.match(EMAIL_ADDRESS) || []) {
-        const address = match.replace(TRAILING_PROSE, '').toLowerCase();
-        if (!keep.has(address)) carried.add(address);
+        const address = match.replace(TRAILING_PROSE, '');
+        if (!keep.has(address.toLowerCase())) carried.add(address);
       }
     } else if (value && typeof value === 'object') Object.values(value).forEach(collect);
   };
   collect(values);
   if (!carried.size) return html;
-  const formsOf = (address) => [address, escapeHtml(address).toLowerCase()];
+  const formsOf = (address) => [address, escapeHtml(address)];
   const keptForms = new Set([...keep].filter((address) => address.includes('@')).flatMap(formsOf));
+  // A carried address is matched as written too: lower-casing can change it
+  // beyond what the case-insensitive match folds ('İ' becomes 'i' and a
+  // combining dot).
+  const carriedForms = [...carried].flatMap((address) => [...formsOf(address), ...formsOf(address.toLowerCase())]);
   // Longest first: of two forms starting at the same place, the longer wins.
-  const forms = [...new Set([...[...carried].flatMap(formsOf), ...keptForms])].sort((a, b) => b.length - a.length);
+  const forms = [...new Set([...carriedForms, ...keptForms])].sort((a, b) => b.length - a.length);
   const pattern = new RegExp(`${WHOLE_BEFORE}(?:${forms.map(escapeRegExp).join('|')})${WHOLE_AFTER}`, 'gi');
   return String(html).replace(pattern, (match) => (keptForms.has(match.toLowerCase()) ? match : '…'));
 }
