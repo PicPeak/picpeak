@@ -19,12 +19,13 @@
 const express = require('express');
 const { query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { verifyDocumentArtefacts } = require('../services/backupIntegrityService');
 const { getCoverageReport } = require('../services/backupCoverageService');
 const { getQueueProcessorStatus } = require('../services/emailProcessor');
 const { toMillis } = require('../utils/queueTimestamps');
+const { redactAddresses } = require('../utils/recipientRedaction');
 const {
   isEncryptedEmailData, isProtectedEmailType, PROTECTED_PENDING_STATUS,
 } = require('../utils/emailQueueEncryption');
@@ -129,13 +130,15 @@ const WAITING_PAGE_SIZE = 500;
 const WAITING_SCAN_MAX = 10000;
 const WAITING_REPORT_LIMIT = 200;
 
-const mapEmailRow = (r) => ({
+// Recipients are customer addresses (customers.view data): without that
+// permission they are blanked, also inside delivery errors.
+const mapEmailRow = (r, seesRecipients) => ({
   id: r.id,
-  recipientEmail: r.recipient_email,
+  recipientEmail: seesRecipients ? r.recipient_email : null,
   emailType: r.email_type,
   status: r.status === PROTECTED_PENDING_STATUS ? 'pending' : r.status,
   retryCount: r.retry_count,
-  errorMessage: r.error_message,
+  errorMessage: seesRecipients ? r.error_message : redactAddresses(r.error_message),
   createdAt: r.created_at,
 });
 
@@ -241,10 +244,11 @@ router.get(
       signingKey: backupStatus.signingKey || require('../utils/backupManifestKey').keyStatus(),
       latestManifest: backupStatus.manifestAuthentication || { authenticated: false, state: 'unavailable' },
     };
+    const seesRecipients = await userHasAnyPermission(req.admin.id, ['customers.view']);
     return successResponse(res, {
       backupAuthentication,
-      stuckEmails: stuckEmails.map(mapEmailRow),
-      waitingEmails: waitingEmails.map(mapEmailRow),
+      stuckEmails: stuckEmails.map((r) => mapEmailRow(r, seesRecipients)),
+      waitingEmails: waitingEmails.map((r) => mapEmailRow(r, seesRecipients)),
       processor: getQueueProcessorStatus(),
       counts: {
         stuckEmails: stuckEmails.length,

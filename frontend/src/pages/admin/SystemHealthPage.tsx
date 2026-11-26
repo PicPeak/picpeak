@@ -90,7 +90,7 @@ export const SystemHealthPage: React.FC = () => {
           <tbody>
             {rows.map((m) => (
               <tr key={m.id} className="border-t border-neutral-200 dark:border-neutral-700 align-top">
-                <td className="px-3 py-2 break-all">{m.recipientEmail}</td>
+                <td className="px-3 py-2 break-all">{m.recipientEmail || '—'}</td>
                 <td className="px-3 py-2 font-mono text-xs">{m.emailType}</td>
                 <td className="px-3 py-2 max-w-xs">
                   {showError ? (
