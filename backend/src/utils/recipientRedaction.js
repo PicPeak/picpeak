@@ -33,15 +33,18 @@ function redactAddresses(value) {
  * A mail body with the addresses that mail carries replaced by `…`: every
  * address-shaped part of `values` (the recipient, cc, the template
  * variables), as written and as the template engine HTML-escapes it, in any
- * case. A body is not searched for address shapes: the studio's own address
- * and its mailto: links stay unless the mail carries them as a value.
+ * case. A body is not searched for address shapes, and the addresses in
+ * `keep` (lower-cased: the studio's own, see studioAddresses) stay.
  */
-function redactKnownAddresses(html, values) {
+function redactKnownAddresses(html, values, keep = new Set()) {
   if (!html) return html;
   const found = new Set();
   const collect = (value) => {
-    if (typeof value === 'string') for (const address of value.match(EMAIL_ADDRESS) || []) found.add(address);
-    else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+    if (typeof value === 'string') {
+      for (const address of value.match(EMAIL_ADDRESS) || []) {
+        if (!keep.has(address.toLowerCase())) found.add(address);
+      }
+    } else if (value && typeof value === 'object') Object.values(value).forEach(collect);
   };
   collect(values);
   // Longest first, so a longer address is not cut by one inside it.
@@ -51,4 +54,22 @@ function redactKnownAddresses(html, values) {
   return String(html).replace(new RegExp(forms.map(escapeRegExp).join('|'), 'gi'), '…');
 }
 
-module.exports = { redactAddresses, redactKnownAddresses };
+/**
+ * The studio's own addresses, lower-cased: the support address, the sender,
+ * the business contact address and every admin user's. Templates pass them
+ * as variables too ({{support_email}}, a gallery's admin_email); they are no
+ * customer's address.
+ */
+async function studioAddresses() {
+  // Required here: the mail and profile services load the database.
+  const { getSupportEmail, resolveFromIdentity } = require('../services/emailProcessor');
+  const { getProfile } = require('../services/businessProfileService');
+  const { db } = require('../database/db');
+  const [support, sender, { profile }, admins] = await Promise.all([
+    getSupportEmail(), resolveFromIdentity(), getProfile(), db('admin_users').pluck('email'),
+  ]);
+  return new Set([support, sender?.fromEmail, profile?.email, ...admins]
+    .filter(Boolean).map((address) => String(address).trim().toLowerCase()));
+}
+
+module.exports = { redactAddresses, redactKnownAddresses, studioAddresses };

@@ -18,7 +18,7 @@ const { AppError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { auditedUpdate } = require('./accountingHistory');
 const { redactBearerLinks, hasMaskedRecoveryLink, parseEmailData, MASK } = require('../utils/emailSecretRedaction');
-const { redactKnownAddresses } = require('../utils/recipientRedaction');
+const { redactKnownAddresses, studioAddresses } = require('../utils/recipientRedaction');
 const {
   isEncryptedEmailData, isProtectedEmailType, maskSecretFields, PROTECTED_PENDING_STATUS,
 } = require('../utils/emailQueueEncryption');
@@ -763,8 +763,12 @@ async function getEmailPreview(emailId, { hideAddresses = false } = {}) {
     .select('id', 'recipient_email', 'email_type', 'status', 'rendered_html', 'email_data')
     .first();
   if (!row) throw new AppError('Email not found', 404);
-  const forCaller = (preview) => (hideAddresses
-    ? { ...preview, recipient: null, html: redactKnownAddresses(preview.html, [row.recipient_email, parseEmailData(row.email_data)]) }
+  const forCaller = async (preview) => (hideAddresses
+    ? {
+      ...preview,
+      recipient: null,
+      html: redactKnownAddresses(preview.html, [row.recipient_email, parseEmailData(row.email_data)], await studioAddresses()),
+    }
     : preview);
 
   if (row.rendered_html) {

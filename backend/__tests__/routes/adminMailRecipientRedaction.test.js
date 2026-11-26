@@ -8,7 +8,8 @@
  * log's search matched on the address, which answers "did we ever mail this
  * address?" without showing it. The mail bodies quote the addresses the mail
  * carries (the recipient, cc, template variables such as customer_email);
- * those, and only those, leave the body too. For such an admin recipients come back as
+ * those leave the body too, except the studio's own addresses (the support
+ * address, an admin's) that a template also passes as a variable. For such an admin recipients come back as
  * null and address-shaped text inside free text as `…`; a Super Admin and a
  * role holding customers.view keep everything.
  */
@@ -31,6 +32,8 @@ const { clearPermissionCache } = require('../../src/middleware/permissions');
 
 const ADDRESS = 'anna@kunde.example';
 const STUDIO_LINK = '<p><a href="mailto:hello@studio.example">hello@studio.example</a></p>';
+// The gallery's admin_email is the seeded admin user's address (tester@example.com).
+const ADMIN_LINE = '<p>Gallery admin Tester@Example.com</p>';
 
 describe('admin mail surfaces — recipients need customers.view', () => {
   let db; let cleanup;
@@ -69,6 +72,9 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     for (const key of ['projects', 'messaging']) {
       await db('feature_flags').insert({ key, value: 1 }).onConflict('key').merge({ value: 1 });
     }
+    await db('app_settings').insert({
+      setting_key: 'branding_support_email', setting_value: JSON.stringify('hello@studio.example'), setting_type: 'branding',
+    });
 
     // An ownerless gallery: every role reaches its mail and its activity.
     const eventId = await insertId('events', {
@@ -79,8 +85,12 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     });
     mailId = await insertId('email_queue', {
       recipient_email: ADDRESS, email_type: 'gallery_created', status: 'failed',
-      email_data: JSON.stringify({ cc: ['cc@kunde.example'], contact: '"anna meier"@kunde.example' }), event_id: eventId,
-      rendered_html: `<p>Hello ANNA@KUNDE.EXAMPLE, copy cc@kunde.example, &quot;anna meier&quot;@kunde.example</p>${STUDIO_LINK}`,
+      email_data: JSON.stringify({
+        cc: ['cc@kunde.example'], contact: '"anna meier"@kunde.example',
+        support_email: 'hello@studio.example', admin_email: 'Tester@Example.com',
+      }),
+      event_id: eventId,
+      rendered_html: `<p>Hello ANNA@KUNDE.EXAMPLE, copy cc@kunde.example, &quot;anna meier&quot;@kunde.example</p>${ADMIN_LINE}${STUDIO_LINK}`,
       error_message: `550 5.1.1 <${ADDRESS}>: mailbox unavailable`,
       created_at: new Date().toISOString(),
     });
@@ -221,8 +231,8 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     }
   });
 
-  it('removes the addresses the mail carries from its stored body, and only those', async () => {
-    const redacted = '<p>Hello …, copy …, …</p>' + STUDIO_LINK;
+  it('removes the addresses the mail carries from its stored body, but not the studio\'s own', async () => {
+    const redacted = `<p>Hello …, copy …, …</p>${ADMIN_LINE}${STUDIO_LINK}`;
     expect((await preview(readerTok)).body.html).toBe(redacted);
     expect((await queueItem(readerTok)).body.renderedHtml).toBe(redacted);
 

@@ -32,6 +32,12 @@ describe('redactKnownAddresses', () => {
       .toBe('mail … and …');
   });
 
+  it('keeps the addresses it is told to keep, in any case', () => {
+    expect(redactKnownAddresses('<p>help@Studio.example, anna@kunde.example</p>',
+      ['anna@kunde.example', 'HELP@studio.example'], new Set(['help@studio.example'])))
+      .toBe('<p>help@Studio.example, …</p>');
+  });
+
   it('leaves the body alone when the mail carries no address', () => {
     expect(redactKnownAddresses('<p>hello@studio.example</p>', [null, { name: 'Anna' }])).toBe('<p>hello@studio.example</p>');
     expect(redactKnownAddresses(null, ['anna@kunde.example'])).toBeNull();
