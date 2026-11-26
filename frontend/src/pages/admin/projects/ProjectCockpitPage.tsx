@@ -121,19 +121,32 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
   const baseRef = useRef(base);
   useEffect(() => {
     // A refetch changed the saved state: keep the admin's edits, take the rest.
-    setDraft((d) => rebaseDraft(d, baseRef.current, base));
+    // The old state is read now: the updater runs later, after the ref moved.
+    const oldBase = baseRef.current;
+    setDraft((d) => rebaseDraft(d, oldBase, base));
     baseRef.current = base;
   }, [base]);
   const savedCustomer = useMemo(() => customerFromProject(data), [data]);
   const [customer, setCustomer] = useState<CustomerChoice>(savedCustomer);
   const savedCustomerRef = useRef(savedCustomer);
   useEffect(() => {
-    setCustomer((c) => (c.id === savedCustomerRef.current.id ? savedCustomer : c));
+    const oldCustomerId = savedCustomerRef.current.id;
+    setCustomer((c) => (c.id === oldCustomerId ? savedCustomer : c));
     savedCustomerRef.current = savedCustomer;
   }, [savedCustomer]);
 
   // The brief (issue 2678) is the project's data too: one save bar for both.
   const brief = useBriefEditor({ kind: 'projects', id: projectId });
+  // It shows the project's customer state and data (occasion, date, location,
+  // guests). Whatever changed them (a save, attaching a customer's document,
+  // a step), the brief reloads when the project does.
+  const briefInputs = JSON.stringify([project.customerAccountId, project.eventType, project.eventDate, project.location, project.guestCount]);
+  const briefInputsRef = useRef(briefInputs);
+  useEffect(() => {
+    if (briefInputsRef.current === briefInputs) return;
+    briefInputsRef.current = briefInputs;
+    qc.invalidateQueries({ queryKey: ['brief', 'projects', projectId] });
+  }, [briefInputs, qc, projectId]);
 
   const dirtyKeys = changedKeys(draft, base);
   const customerDirty = customer.id !== savedCustomer.id;
@@ -168,8 +181,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
       if (res?.code === 'PROJECT_CUSTOMER_MISMATCH') return t('projects.error.customerMismatch', 'That belongs to a different customer than this project.') as string;
       return res?.error || (t('projects.toast.saveFailed', 'Save failed') as string);
     },
-    // The brief shows the project's date, location and guest count.
-    invalidateKeys: [['project-overview', projectId], ['projects'], ['brief', 'projects', projectId]],
+    invalidateKeys: [['project-overview', projectId], ['projects']],
   });
   // Each changed slice saves on its own; a failed one stays dirty (UX.md › Saving).
   // The brief goes first: the server checks its values against the project's

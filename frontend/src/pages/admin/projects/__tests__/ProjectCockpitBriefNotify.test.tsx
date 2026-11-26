@@ -4,7 +4,7 @@
  * as unsaved brief edits do.
  */
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { vi, it, expect } from 'vitest';
+import { beforeEach, vi, it, expect } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { projectBrief } from '../../../../features/briefs/__tests__/fixtures';
@@ -20,26 +20,27 @@ vi.mock('react-i18next', async () => {
   };
 });
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-const calls = vi.hoisted(() => ({ update: vi.fn(), save: vi.fn() }));
+const calls = vi.hoisted(() => ({ update: vi.fn(), save: vi.fn(), notify: vi.fn(), overview: vi.fn(), get: vi.fn() }));
+const overview = (customerAccountId: number | null) => ({
+  project: {
+    id: 1, name: 'Hochzeit Müller', customerAccountId, customerEmail: customerAccountId ? 'kunde@example.com' : null, status: 'active',
+    location: 'Castle Hill', createdAt: '2026-07-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+  },
+  events: [], quotes: [], contracts: [], invoices: [], emails: [],
+  hours: { entries: [], totalMinutes: 0 }, valuation: { byCurrency: [] },
+});
 vi.mock('../../../../services/projects.service', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   projectsService: {
-    overview: vi.fn(async () => ({
-      project: {
-        id: 1, name: 'Hochzeit Müller', customerAccountId: 1, customerEmail: 'kunde@example.com', status: 'active',
-        location: 'Castle Hill', createdAt: '2026-07-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
-      },
-      events: [], quotes: [], contracts: [], invoices: [], emails: [],
-      hours: { entries: [], totalMinutes: 0 }, valuation: { byCurrency: [] },
-    })),
+    overview: calls.overview,
     update: calls.update,
   },
 }));
 vi.mock('../../../../services/briefs.service', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   briefsService: {
-    get: vi.fn(async () => projectBrief({ pendingChanges: [{ fieldId: 1, label: "Bride's name", labels: {}, change: 'changed' }] })),
-    save: calls.save, notify: vi.fn(),
+    get: calls.get,
+    save: calls.save, notify: calls.notify,
   },
 }));
 vi.mock('../../../../services/eventTypes.service', () => ({
@@ -57,8 +58,16 @@ vi.mock('../../../../contexts/PermissionsContext', () => ({
 
 import { ProjectCockpitPage } from '../ProjectCockpitPage';
 
+const pending = [{ fieldId: 1, label: "Bride's name", labels: {}, change: 'changed' as const }];
+let client: QueryClient;
+beforeEach(() => {
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  calls.overview.mockReset().mockResolvedValue(overview(1));
+  calls.get.mockReset().mockResolvedValue(projectBrief({ pendingChanges: pending }));
+});
+
 const mount = () => render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={['/admin/projects/1']}>
         <Routes><Route path="/admin/projects/:id" element={<ProjectCockpitPage />} /></Routes>
       </MemoryRouter>
@@ -111,4 +120,25 @@ it('still saves other project data when only the brief fails', async () => {
   fireEvent.change(screen.getByDisplayValue('Castle Hill'), { target: { value: 'Lake House' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
   await waitFor(() => expect(calls.update).toHaveBeenCalledWith(1, { location: 'Lake House' }));
+});
+
+it('reloads the brief when the project gains a customer through any path, e.g. attaching a quote', async () => {
+  calls.overview.mockResolvedValue(overview(null));
+  calls.get.mockResolvedValue(projectBrief({ hasCustomer: false, pendingChanges: pending }));
+  mount();
+  expect(await screen.findByText('Link a customer to the project to send updates.')).toBeInTheDocument();
+  // What AttachDocumentDialog does after attaching a quote of a customer.
+  calls.overview.mockResolvedValue(overview(1));
+  calls.get.mockResolvedValue(projectBrief({ pendingChanges: pending }));
+  await act(async () => { await client.invalidateQueries({ queryKey: ['project-overview', 1] }); });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Notify customer' })).toBeEnabled());
+});
+
+it('refreshes the project\'s emails after Notify', async () => {
+  calls.notify.mockResolvedValue({ notifiedAt: '2027-01-01T10:00:00Z', changes: 1, mail: 'queued' });
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'Notify customer' }));
+  await waitFor(() => expect(calls.notify).toHaveBeenCalled());
+  await waitFor(() => expect(calls.overview.mock.calls.length).toBeGreaterThan(1));
 });

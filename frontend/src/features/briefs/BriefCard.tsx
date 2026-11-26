@@ -80,7 +80,8 @@ export function useBriefEditor(owner: BriefOwner, { enabled = true }: { enabled?
       ? t('briefs.notify.suppressed', 'Portal updated. The customer takes no administrative email, so no email was sent.')
       : t('briefs.notify.sent', 'Update queued to the customer.')) as string,
     errorMessage: t('briefs.notify.failed', 'Could not send the update') as string,
-    invalidateKeys: [queryKey],
+    // A project's update appears in its email history.
+    invalidateKeys: owner.kind === 'projects' ? [queryKey, ['project-overview', owner.id]] : [queryKey],
   });
 
   return {
