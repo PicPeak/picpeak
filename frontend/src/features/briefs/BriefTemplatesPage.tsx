@@ -30,8 +30,12 @@ const strip = (rows: Row[]): BriefTemplateField[] => rows.map(({ key: _key, ...f
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 let newKey = 0;
 
+// Slugs are keys of plain objects here and may be `constructor` or `toString`:
+// only own properties count.
+const own = <T,>(record: Record<string, T> | undefined, key: string): T | undefined =>
+  (record && Object.hasOwn(record, key) ? record[key] : undefined);
 const savedList = (templates: BriefTemplates | undefined, occasion: string): BriefTemplateField[] =>
-  (occasion === GLOBAL ? templates?.global : templates?.occasions[occasion]) || [];
+  (occasion === GLOBAL ? templates?.global : own(templates?.occasions, occasion)) || [];
 const rowsOf = (fields: BriefTemplateField[]): Row[] => fields.map((f) => ({ ...f, key: `saved-${f.id}` }));
 
 export const BriefTemplatesPage: React.FC = () => {
@@ -54,9 +58,13 @@ export const BriefTemplatesPage: React.FC = () => {
     return <ErrorState title={t('briefs.templates.loadFailed', 'Could not load the brief templates.')} onRetry={() => { void templatesQuery.refetch(); }} />;
   }
 
-  const isDirty = (key: string) => !!drafts[key] && !same(strip(drafts[key]), savedList(templates, key));
+  const draftOf = (key: string) => own(drafts, key);
+  const isDirty = (key: string) => {
+    const draft = draftOf(key);
+    return !!draft && !same(strip(draft), savedList(templates, key));
+  };
   const dirtyKeys = Object.keys(drafts).filter(isDirty);
-  const rows = drafts[occasion] ?? rowsOf(savedList(templates, occasion));
+  const rows = draftOf(occasion) ?? rowsOf(savedList(templates, occasion));
   const setRows = (next: Row[]) => setDrafts((d) => ({ ...d, [occasion]: next }));
   const update = (index: number, patch: Partial<Row>) => setRows(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   const move = (index: number, by: number) => {
@@ -72,7 +80,7 @@ export const BriefTemplatesPage: React.FC = () => {
   };
 
   const save = async () => {
-    const missing = dirtyKeys.find((key) => drafts[key].some((r) => !r.label.trim()));
+    const missing = dirtyKeys.find((key) => draftOf(key)?.some((r) => !r.label.trim()));
     if (missing) {
       setOccasion(missing);
       toast.error(t('briefs.templates.labelMissing', 'Every field needs a label.'));
@@ -82,7 +90,7 @@ export const BriefTemplatesPage: React.FC = () => {
     const failed: string[] = [];
     for (const key of dirtyKeys) {
       try {
-        const fields = await briefsService.saveTemplate(key === GLOBAL ? null : key, strip(drafts[key]));
+        const fields = await briefsService.saveTemplate(key === GLOBAL ? null : key, strip(draftOf(key) || []));
         qc.setQueryData<BriefTemplates>(['brief-templates'], (old) => (old && (key === GLOBAL
           ? { ...old, global: fields }
           : { ...old, occasions: { ...old.occasions, [key]: fields } })));

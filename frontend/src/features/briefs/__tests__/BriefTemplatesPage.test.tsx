@@ -27,6 +27,7 @@ vi.mock('../../../services/eventTypes.service', () => ({
       { id: 1, name: 'Wedding', slug_prefix: 'wedding', is_active: true },
       ...(includeInactive ? [{ id: 2, name: 'Ball', slug_prefix: 'ball', is_active: false }] : []),
       { id: 3, name: 'Global gala', slug_prefix: 'global', is_active: true },
+      { id: 4, name: 'Builders', slug_prefix: 'constructor', is_active: true },
     ]),
   },
 }));
@@ -141,4 +142,18 @@ it('saves an occasion whose slug is "global" as that occasion, not as the shared
   await waitFor(() => expect(state.saveTemplate).toHaveBeenCalledWith('global', [
     { label: 'Gala table', labels: {}, type: 'short_text', visibleDefault: true },
   ]));
+});
+
+it('takes an occasion whose slug names an Object property', async () => {
+  mount();
+  await screen.findByRole('option', { name: 'Builders' });
+  fireEvent.change(screen.getByLabelText('Template'), { target: { value: 'constructor' } });
+  expect(screen.getByText('No fields yet.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+  fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'Crane' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(state.saveTemplate).toHaveBeenCalledWith('constructor', [
+    { label: 'Crane', labels: {}, type: 'short_text', visibleDefault: true },
+  ]));
+  expect(await screen.findByDisplayValue('Crane')).toBeInTheDocument();
 });
