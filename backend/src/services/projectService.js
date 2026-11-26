@@ -246,7 +246,8 @@ async function invoicesForProjects(projectIds, columns) {
 
 /** List projects with customer email + event count + rolled-up value.
  *  `perms` gates which document types feed the value (matches the cockpit):
- *  invoices need bills.view, quotes need quotes.view. */
+ *  invoices need bills.view, quotes need quotes.view. `perms.customers`
+ *  false keeps the search off the customer's email (customers.view). */
 async function listProjects({ search = '', status = null, perms = {}, projectIds = null, withStages = false } = {}) {
   let q = db('projects')
     .leftJoin('customer_accounts', 'customer_accounts.id', 'projects.customer_account_id')
@@ -265,8 +266,10 @@ async function listProjects({ search = '', status = null, perms = {}, projectIds
   else if (status && !Array.isArray(status)) q = q.where('projects.status', status);
   if (search) {
     q = q.where(function () {
-      this.where('projects.name', 'like', `%${search}%`)
-        .orWhere('customer_accounts.email', 'like', `%${search}%`);
+      this.where('projects.name', 'like', `%${search}%`);
+      // The customer's address is customers.view data: a match would confirm
+      // it to a caller whose list does not show it.
+      if (perms.customers !== false) this.orWhere('customer_accounts.email', 'like', `%${search}%`);
     });
   }
   const rows = await q;
