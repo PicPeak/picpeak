@@ -108,7 +108,7 @@ describe('projects — customer fields need customers.view', () => {
     expect(overview.body.project).not.toHaveProperty('customerEmail');
   });
 
-  it('blanks the customer address on document mail in the overview without customers.view', async () => {
+  it('blanks every mail recipient, also inside delivery errors, in the overview without customers.view', async () => {
     // A role that may see the project and its quotes, but not customers.
     const ins = await db('roles').insert({ name: 'project-quotes', display_name: 'project-quotes' }).returning('id');
     const roleId = ins[0]?.id ?? ins[0];
@@ -132,9 +132,22 @@ describe('projects — customer fields need customers.view', () => {
       issue_date: '2027-01-10', project_id: projectId,
     });
     await insertId('email_queue', {
-      recipient_email: 'customer@example.com', email_type: 'quote_sent', status: 'sent',
+      recipient_email: 'customer@example.com', email_type: 'quote_sent', status: 'failed',
       email_data: JSON.stringify({ quote_number: 'Q-RED-1' }), event_id: null,
+      error_message: '550 5.1.1 <Customer@Example.com>: mailbox unavailable',
       created_at: new Date().toISOString(),
+    });
+    // Gallery mail of the project can go to another customer address (an
+    // event-linked invoice uses the billing address): it is blanked too.
+    const eventId = await insertId('events', {
+      slug: 'quoted-gallery', share_link: 'quoted-gallery', event_type: 'wedding', event_name: 'Quoted', event_date: '2027-01-10',
+      customer_email: 'gallery@example.com', admin_email: 'admin@example.com',
+      password_hash: 'x', expires_at: '2028-01-01T00:00:00.000Z', project_id: projectId,
+      created_by: quoterId, created_at: new Date().toISOString(),
+    });
+    await insertId('email_queue', {
+      recipient_email: 'billing@example.com', email_type: 'invoice_sent', status: 'sent',
+      email_data: JSON.stringify({}), event_id: eventId, created_at: new Date().toISOString(),
     });
 
     const overview = await auth(request(app).get(`/api/admin/projects/${projectId}/overview`), quoterTok);
@@ -142,7 +155,13 @@ describe('projects — customer fields need customers.view', () => {
     const mail = overview.body.emails.find((e) => e.type === 'quote_sent');
     expect(mail).toBeDefined();
     expect(mail.recipient).toBeNull();
-    expect(JSON.stringify(overview.body)).not.toContain('customer@example.com');
+    expect(mail.error).toBe('550 5.1.1 <…>: mailbox unavailable');
+    const galleryMail = overview.body.emails.find((e) => e.type === 'invoice_sent');
+    expect(galleryMail).toBeDefined();
+    expect(galleryMail.recipient).toBeNull();
+    const body = JSON.stringify(overview.body).toLowerCase();
+    expect(body).not.toContain('customer@example.com');
+    expect(body).not.toContain('billing@example.com');
 
     const asSuper = await auth(request(app).get(`/api/admin/projects/${projectId}/overview`), superTok);
     expect(asSuper.body.emails.find((e) => e.type === 'quote_sent').recipient).toBe('customer@example.com');

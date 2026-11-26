@@ -66,7 +66,11 @@ const OVERVIEW_SUPER = {
   emails: OVERVIEW.emails.map((e) => ({ ...e, canAct: true })),
 };
 
-let currentOverview: typeof OVERVIEW = OVERVIEW;
+// Rows may carry recipient null (blanked for a caller without customers.view).
+type OverviewFixture = Omit<typeof OVERVIEW, 'emails'> & {
+  emails: Array<Omit<(typeof OVERVIEW)['emails'][number], 'recipient'> & { recipient: string | null }>;
+};
+let currentOverview: OverviewFixture = OVERVIEW;
 
 vi.mock('../../../../services/projects.service', () => ({
   projectsService: {
