@@ -6,6 +6,7 @@ const { liveSqliteArgs } = require('../utils/sqliteCli');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { createReadStream, createWriteStream, realpathSync, constants: fsConstants } = require('fs');
+const { sha256File } = require('../utils/fileChecksum');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
 const logger = require('../utils/logger');
@@ -226,14 +227,7 @@ class DatabaseBackupService {
    * Calculate checksum for a file
    */
   async calculateChecksum(filePath) {
-    const hash = crypto.createHash('sha256');
-    const stream = createReadStream(filePath);
-    
-    return new Promise((resolve, reject) => {
-      stream.on('data', data => hash.update(data));
-      stream.on('end', () => resolve(hash.digest('hex')));
-      stream.on('error', reject);
-    });
+    return sha256File(filePath);
   }
 
   /**

@@ -30,6 +30,7 @@ import {
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import { SALUTATION_OPTIONS } from './salutation';
+import { pickThemedLogo } from '../../utils/themedLogo';
 
 interface FormState {
   display_name: string;
@@ -78,7 +79,7 @@ export const CustomerAcceptInvitePage: React.FC = () => {
   const companyName = settingsData?.branding_company_name?.trim() || 'PicPeak';
   const lightLogo = settingsData?.branding_logo_url?.trim();
   const darkLogo = settingsData?.branding_logo_url_dark?.trim();
-  const logoUrl = isDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+  const logoUrl = pickThemedLogo(isDark, lightLogo, darkLogo);
   const resolvedLogoUrl = logoUrl || '/picpeak-logo-transparent.png';
 
   // Pre-flight invitation lookup. The response carries any prefill data

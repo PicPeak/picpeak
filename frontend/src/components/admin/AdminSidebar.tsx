@@ -44,6 +44,7 @@ import { useSharingNavItems, SHARING_PATHS } from './sharingNav';
 import { useAutomationNavItems } from './AutomationLayout';
 import { isImeComposing } from '../../utils/imeComposition';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { pickThemedLogo } from '../../utils/themedLogo';
 
 // A section that takes over the sidebar while the admin is inside it:
 // the main menu is replaced by the section's own navigation, with a
@@ -310,7 +311,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
   // Theme-aware logo with symmetric fallback (one logo serves both modes).
   const lightLogo = publicSettings?.branding_logo_url?.trim();
   const darkLogo = publicSettings?.branding_logo_url_dark?.trim();
-  const rawLogoUrl = isDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+  const rawLogoUrl = pickThemedLogo(isDark, lightLogo, darkLogo);
   const rawFaviconUrl = publicSettings?.branding_favicon_url?.trim();
   const resolvedLogoUrl = rawLogoUrl
     ? (rawLogoUrl.startsWith('http') ? rawLogoUrl : buildResourceUrl(rawLogoUrl))

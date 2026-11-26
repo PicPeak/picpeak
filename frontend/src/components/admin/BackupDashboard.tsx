@@ -21,6 +21,7 @@ import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { Card, Button, Badge, Notice } from '../common';
 import type { BadgeTone } from '../common';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
+import { formatBytesShort } from '../../utils/fileSize';
 
 export type HealthStatus = 'excellent' | 'good' | 'warning' | 'critical';
 export type BackupDestinationType = 's3' | 'rsync' | 'local';
@@ -102,14 +103,6 @@ const StatCard: React.FC<StatCardProps> = ({ icon: Icon, label, value, color = '
     </div>
   </Card>
 );
-
-const formatBytes = (bytes: number): string => {
-  if (!bytes) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-};
 
 const healthColors: Record<HealthStatus, { badge: BadgeTone; ring: string }> = {
   excellent: { badge: 'success', ring: 'text-success' },
@@ -296,7 +289,7 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
         <StatCard
           icon={HardDrive}
           label={t('backup.dashboard.stats.backupSize')}
-          value={formatBytes(statistics.total_size || 0)}
+          value={formatBytesShort(statistics.total_size || 0)}
           color="green"
           subtext={`${statistics.files_processed || 0} ${t('backup.dashboard.stats.files')}`}
         />
@@ -344,7 +337,7 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-medium text-heading">
-                    {formatBytes(backup.statistics?.total_size || 0)}
+                    {formatBytesShort(backup.statistics?.total_size || 0)}
                   </p>
                   <p className="text-sm text-muted">
                     {backup.statistics?.files_processed || 0} files

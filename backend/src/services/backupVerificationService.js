@@ -47,7 +47,7 @@ const { getStoragePath } = require('../config/storage');
 const { formatBoolean } = require('../utils/dbCompat');
 const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { standaloneSnapshotOfRun } = require('../utils/backupRestorePoint');
-const { backupS3Access } = require('../utils/s3EndpointPolicy');
+const { backupS3Settings } = require('../utils/s3EndpointPolicy');
 const rsyncRestore = require('../utils/rsyncRestore');
 const { toTimestamp } = require('../utils/dateNormalize');
 const {
@@ -414,17 +414,13 @@ async function dropDrillDatabase(name) {
 
 // ---------------------------------------------------------------- plans --
 
+// The flags go through toBool (also accepts 1/yes/on), as this service
+// always read them.
 function s3Settings(config) {
-  return {
-    bucket: config.backup_s3_bucket,
-    region: config.backup_s3_region || 'us-east-1',
-    endpoint: config.backup_s3_endpoint,
-    accessKeyId: config.backup_s3_access_key,
-    secretAccessKey: config.backup_s3_secret_key,
+  return backupS3Settings(config, {
     forcePathStyle: toBool(config.backup_s3_force_path_style, false),
     sslEnabled: config.backup_s3_ssl_enabled === undefined ? true : toBool(config.backup_s3_ssl_enabled, true),
-    ...backupS3Access(config),
-  };
+  });
 }
 
 /**

@@ -13,6 +13,7 @@ import { useShowAgbLink } from '../hooks/useShowAgbLink';
 import { buildResourceUrl } from '../utils/url';
 import { isGalleryTemporarilyDisabled } from '../utils/galleryAvailability';
 import { GalleryUnavailableNotice } from '../components/gallery/GalleryUnavailableNotice';
+import { pickThemedLogo } from '../utils/themedLogo';
 
 export const ClientAccessPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -38,7 +39,7 @@ export const ClientAccessPage: React.FC = () => {
   const { isDark } = usePublicDarkMode();
   const lightLogo = settingsData?.branding_logo_url?.trim();
   const darkLogo = settingsData?.branding_logo_url_dark?.trim();
-  const brandLogo = isDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+  const brandLogo = pickThemedLogo(isDark, lightLogo, darkLogo);
 
   // If already authenticated as client, redirect to gallery
   React.useEffect(() => {

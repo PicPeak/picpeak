@@ -33,6 +33,7 @@ import { useMutationWithToast } from '../../hooks';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
+import { formatBytesOneDecimal, formatBytesShort } from '../../utils/fileSize';
 import { BACKUP_VERIFICATIONS_QUERY_KEY, backupVerificationService } from '../../services/backupVerification.service';
 import { RestoreTestRunBadge } from './RestoreTestStatus';
 
@@ -46,14 +47,6 @@ const statusIcons = {
 // Codes DELETE /admin/backup/runs/:id answers with (issue 1711); each has a
 // translated message under backup.history.deleteErrors.
 const DELETE_ERROR_CODES = ['BACKUP_NOT_FOUND', 'BACKUP_RUNNING', 'ARTIFACT_OUT_OF_SCOPE', 'ARTIFACT_DELETE_FAILED', 'FORBIDDEN'];
-
-const formatBytes = (bytes) => {
-  if (!bytes) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-};
 
 // restoreTestEnabled: the `backupRestoreTest` feature flag, passed in by
 // BackupManagement. When on, each row shows whether its restore test passed.
@@ -278,7 +271,7 @@ export const BackupHistory = ({ restoreTestEnabled = false } = {}) => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <p className="text-sm text-heading">
-                            {formatBytes(stats.total_size || 0)}
+                            {formatBytesShort(stats.total_size || 0)}
                           </p>
                           <p className="text-xs text-muted">
                             {stats.files_processed || 0} {t('backup.dashboard.stats.files')}
@@ -367,12 +360,6 @@ export const BackupHistory = ({ restoreTestEnabled = false } = {}) => {
                                     // Per-path breakdown when present
                                     const perPath = stats.per_path || stats.perPath;
                                     if (perPath && Object.keys(perPath).length > 0) {
-                                      const formatSize = (bytes) => {
-                                        if (!bytes) return '0 B';
-                                        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-                                        const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-                                        return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-                                      };
                                       // Sort by path string so the order is stable across renders;
                                       // backend uses backup_paths.display_order to drive the walker
                                       // but doesn't carry order into per_path map — alphabetic is
@@ -387,7 +374,7 @@ export const BackupHistory = ({ restoreTestEnabled = false } = {}) => {
                                                 {pathKey}
                                               </span>
                                               <span className="text-sm text-muted ml-auto">
-                                                {info.count} {info.size ? `(${formatSize(info.size)})` : ''}
+                                                {info.count} {info.size ? `(${formatBytesOneDecimal(info.size)})` : ''}
                                               </span>
                                             </div>
                                           ))}

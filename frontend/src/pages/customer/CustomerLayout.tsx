@@ -39,6 +39,7 @@ import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import { useEscapeClose } from '../../components/common/useEscapeClose';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { pickThemedLogo } from '../../utils/themedLogo';
 
 interface NavItem {
   to: string;
@@ -130,7 +131,7 @@ export const CustomerLayout: React.FC = () => {
   const { isDark: customerIsDark } = usePublicDarkMode();
   const lightLogo = settingsData?.branding_logo_url?.trim();
   const darkLogo = settingsData?.branding_logo_url_dark?.trim();
-  const logoUrl = customerIsDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+  const logoUrl = pickThemedLogo(customerIsDark, lightLogo, darkLogo);
   const resolvedLogoUrl = logoUrl || '/picpeak-logo-transparent.png';
 
   // Filter out feature-gated entries the customer can't see. Galleries +

@@ -16,6 +16,7 @@ import { customerService } from '../../services/customer.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import { resolveLoginLogoClasses } from '../../utils/loginLogoSize';
+import { pickThemedLogo } from '../../utils/themedLogo';
 
 /**
  * Where to go after login. Only paths inside the authenticated customer
@@ -53,7 +54,7 @@ export const CustomerLoginPage: React.FC = () => {
   const lightLogo = settingsData?.branding_logo_url?.trim();
   const darkLogo = settingsData?.branding_logo_url_dark?.trim();
   const loginFrameEnabled = settingsData?.branding_login_logo_frame_enabled !== false;
-  const themedLogo = isDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+  const themedLogo = pickThemedLogo(isDark, lightLogo, darkLogo);
   const logoUrl = loginFrameEnabled ? (lightLogo || darkLogo) : themedLogo;
   const resolvedLogoUrl = logoUrl || '/picpeak-logo-transparent.png';
 

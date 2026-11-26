@@ -15,6 +15,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 // Locale-aware formatters per [[feedback_respect_general_format_settings]].
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { formatBytesOneDecimal } from '../../utils/fileSize';
 
 import {
   Card, Button, Badge, Notice, ErrorState,
@@ -213,7 +214,7 @@ const DatabaseStatusCard: React.FC<{
             />
             <Row
               label={t('backup.coverage.database.lastDumpSize', 'Size')}
-              value={formatBytes(database.lastDumpSizeBytes)}
+              value={formatBytesOneDecimal(database.lastDumpSizeBytes)}
             />
           </>
         ) : (
@@ -430,13 +431,6 @@ const TONE_BADGE: Record<Tone, BadgeTone> = {
   amber: 'warning',
   red: 'danger',
 };
-
-function formatBytes(bytes: number): string {
-  if (!bytes) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
 
 function formatAge(ms: number): string {
   const sec = Math.floor(ms / 1000);

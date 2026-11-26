@@ -28,6 +28,7 @@ import { SUPPORTED_LANGUAGES } from '../common';
 import { notificationsService } from '../../services/notifications.service';
 import { toast } from 'react-toastify';
 import { buildResourceUrl } from '../../utils/url';
+import { pickThemedLogo } from '../../utils/themedLogo';
 import { useHasVisibleSettings } from '../../features/settings/settingsNav';
 
 interface AdminHeaderProps {
@@ -62,7 +63,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
   // use it for both modes (dark → dark||light, light → light||dark).
   const lightLogo = brandingSettings?.branding_logo_url?.trim();
   const darkLogo = brandingSettings?.branding_logo_url_dark?.trim();
-  const logoUrl = isDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+  const logoUrl = pickThemedLogo(isDark, lightLogo, darkLogo);
   const logoDisplayMode = brandingSettings?.branding_logo_display_mode || 'logo_and_text';
   // Logo placement honours the same Branding > Logo Position setting
   // the gallery does. 'sidepanel' moves the logo into the AdminSidebar

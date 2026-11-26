@@ -601,9 +601,10 @@ describe('the marker is bound to the target it describes (#1038 review r15)', ()
     const cli = fs.readFileSync(
       path.resolve(__dirname, '..', '..', 'scripts', 'migrate-sqlite-to-postgres.js'), 'utf8',
     );
-    for (const text of [src, cli]) {
-      expect(text).toContain("'inbound_documents'");
-      expect(text).not.toContain("'incoming_invoices'");
-    }
+    expect(src).toContain("'inbound_documents'");
+    expect(src).not.toContain("'incoming_invoices'");
+    // The CLI reads the same list instead of keeping a copy.
+    expect(cli).toMatch(/\{ USER_DATA_TABLES \} = require\('\.\.\/src\/utils\/databaseEngine'\)/);
+    expect(cli).not.toContain("'incoming_invoices'");
   });
 });

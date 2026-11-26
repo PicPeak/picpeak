@@ -48,8 +48,7 @@
  *     once we have runtime data on large installs)
  */
 
-const fs = require('fs');
-const crypto = require('crypto');
+const { sha256File: hashFile } = require('../utils/fileChecksum');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { resolveStoredPathStrict } = require('../utils/safePath');
@@ -69,16 +68,6 @@ const CHECKS = [
   { table: 'invoices',  pathColumn: 'imported_pdf_path',              shaColumn: null,                  scope: 'invoice' },
 ];
 
-/** Stream-hash a file to sha256 hex without buffering the whole thing. */
-function hashFile(absPath) {
-  return new Promise((resolve, reject) => {
-    const hash = crypto.createHash('sha256');
-    const stream = fs.createReadStream(absPath);
-    stream.on('error', reject);
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('end', () => resolve(hash.digest('hex')));
-  });
-}
 
 /**
  * @param {object} [options]

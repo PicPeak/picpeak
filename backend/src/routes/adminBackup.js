@@ -17,12 +17,12 @@ const {
 } = require('../utils/backupRestorePoint');
 const {
   APPROVAL_SETTING: S3_APPROVAL_SETTING,
-  backupS3Access,
-  backupS3Ssl,
+  backupS3Settings,
   classifyS3Endpoint,
   endpointOrigin,
   isPrivateEndpointApproved,
   policyApplies: s3PolicyApplies,
+  readBackupBoolean,
 } = require('../utils/s3EndpointPolicy');
 
 const backupVerification = require('../services/backupVerificationService');
@@ -50,19 +50,6 @@ const isSshKeyPath = (value) => typeof value === 'string'
   && value.length <= 1024
   && /^\/[a-zA-Z0-9._/@:-]+$/.test(value);
 
-// Read like backupService.normalizeBoolean, which decides what a backup
-// actually does: booleans as they are, 'true'/'false' strings, and anything
-// else by truthiness.
-function readBackupBoolean(value) {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
-    const trimmed = value.trim().toLowerCase();
-    if (trimmed === 'true') return true;
-    if (trimmed === 'false') return false;
-  }
-  return Boolean(value);
-}
-
 function comparableBackupSetting(key, value) {
   if (key === 'backup_include_database') return readBackupBoolean(value);
   if (key === 'backup_database_inline_dump') {
@@ -79,18 +66,8 @@ async function changedRestrictedBackupSettings(updates) {
     (DESTINATION_SETTING_RE.test(key) || DATABASE_SETTING_KEYS.has(key)) && updates[key] !== SECRET_MASK
   ));
   if (keys.length === 0) return [];
-  const rows = await db('app_settings')
-    .where('setting_type', 'backup')
-    .whereIn('setting_key', keys)
-    .select('setting_key', 'setting_value');
-  const stored = new Map(rows.map((row) => {
-    try {
-      return [row.setting_key, JSON.parse(row.setting_value)];
-    } catch {
-      return [row.setting_key, row.setting_value];
-    }
-  }));
-  return keys.filter((key) => comparableBackupSetting(key, updates[key]) !== comparableBackupSetting(key, stored.get(key)));
+  const stored = await readBackupSettings();
+  return keys.filter((key) => comparableBackupSetting(key, updates[key]) !== comparableBackupSetting(key, stored[key]));
 }
 
 const S3_ERROR_MESSAGES = {
@@ -151,18 +128,7 @@ async function checkS3EndpointUpdate(updates) {
 // Get backup configuration
 router.get('/config', adminAuth, requirePermission('backup.view'), async (req, res) => {
   try {
-    const settings = await db('app_settings')
-      .where('setting_type', 'backup')
-      .select('setting_key', 'setting_value');
-    
-    const config = {};
-    settings.forEach(setting => {
-      try {
-        config[setting.setting_key] = JSON.parse(setting.setting_value);
-      } catch (e) {
-        config[setting.setting_key] = setting.setting_value;
-      }
-    });
+    const config = await readBackupSettings();
 
     // Never return the stored credentials — mask like the email/WhatsApp
     // config endpoints do. The PUT below skips the mask sentinel, so the
@@ -579,16 +545,7 @@ async function deleteS3BackupRun(config, manifestPath) {
     throw new ArtifactOutOfScopeError('The recorded manifest location is outside the configured backup prefix');
   }
 
-  const s3Adapter = new S3StorageAdapter({
-    endpoint: config.backup_s3_endpoint,
-    bucket: config.backup_s3_bucket,
-    accessKeyId: config.backup_s3_access_key,
-    secretAccessKey: config.backup_s3_secret_key,
-    region: config.backup_s3_region || 'us-east-1',
-    forcePathStyle: config.backup_s3_force_path_style || false,
-    sslEnabled: backupS3Ssl(config),
-    ...backupS3Access(config)
-  });
+  const s3Adapter = new S3StorageAdapter(backupS3Settings(config, {}, { routeFlags: true }));
 
   // A standalone snapshot goes whole; of a legacy run only the metadata
   // objects (see the comment above the route).
@@ -890,16 +847,7 @@ router.post('/s3/test-upload', adminAuth, requirePermission('backup.create'), as
       return res.status(400).json({ error: 'S3 backup not configured' });
     }
     
-    const s3Adapter = new S3StorageAdapter({
-      endpoint: config.backup_s3_endpoint,
-      bucket: config.backup_s3_bucket,
-      accessKeyId: config.backup_s3_access_key,
-      secretAccessKey: config.backup_s3_secret_key,
-      region: config.backup_s3_region || 'us-east-1',
-      forcePathStyle: config.backup_s3_force_path_style || false,
-      sslEnabled: backupS3Ssl(config),
-      ...backupS3Access(config)
-    });
+    const s3Adapter = new S3StorageAdapter(backupS3Settings(config, {}, { routeFlags: true }));
     
     // Create test content
     const testKey = `test/backup-test-${Date.now()}.txt`;
@@ -1009,16 +957,7 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
         source: 's3', manifestPath: backupRun.manifest_path
       }, config);
       const selected = parseS3Location(location);
-      const s3Adapter = new S3StorageAdapter({
-        endpoint: config.backup_s3_endpoint,
-        bucket: selected.bucket,
-        accessKeyId: config.backup_s3_access_key,
-        secretAccessKey: config.backup_s3_secret_key,
-        region: config.backup_s3_region || 'us-east-1',
-        forcePathStyle: config.backup_s3_force_path_style || false,
-        sslEnabled: backupS3Ssl(config),
-        ...backupS3Access(config)
-      });
+      const s3Adapter = new S3StorageAdapter(backupS3Settings(config, { bucket: selected.bucket }, { routeFlags: true }));
         
       // The adapter returns AWS Contents, not an objects property. Follow
       // every page within this exact point; never return a truncated backup.
@@ -1069,23 +1008,31 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
   }
 });
 
-// Helper function to get backup configuration
+// The backup settings as stored: each value JSON-parsed, kept as the raw
+// string when it is not JSON. Throws when the read fails. Deliberately not
+// backupService.getBackupConfig, whose parser also coerces non-JSON values
+// ('TRUE', '.5', whitespace-only); these routes show and compare them as
+// stored.
+async function readBackupSettings() {
+  const settings = await db('app_settings')
+    .where('setting_type', 'backup')
+    .select('setting_key', 'setting_value');
+
+  const config = {};
+  settings.forEach(setting => {
+    try {
+      config[setting.setting_key] = JSON.parse(setting.setting_value);
+    } catch (e) {
+      config[setting.setting_key] = setting.setting_value;
+    }
+  });
+  return config;
+}
+
+// Helper function to get backup configuration ({} when the read fails)
 async function getBackupConfig() {
   try {
-    const settings = await db('app_settings')
-      .where('setting_type', 'backup')
-      .select('setting_key', 'setting_value');
-    
-    const config = {};
-    settings.forEach(setting => {
-      try {
-        config[setting.setting_key] = JSON.parse(setting.setting_value);
-      } catch (e) {
-        config[setting.setting_key] = setting.setting_value;
-      }
-    });
-    
-    return config;
+    return await readBackupSettings();
   } catch (error) {
     logger.error('Failed to get backup configuration:', error);
     return {};

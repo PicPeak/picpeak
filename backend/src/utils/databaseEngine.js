@@ -171,7 +171,7 @@ function hasMigrationInProgress(sqlitePath = resolveSqlitePath()) {
 // means a human has used this install. Deliberately wider than `events`:
 // judging occupancy by galleries alone would abandon an install whose galleries
 // were all deleted but whose admins, customers and accounting records remain.
-// Mirrors USER_DATA_TABLES in scripts/migrate-sqlite-to-postgres.js.
+// scripts/migrate-sqlite-to-postgres.js reads the same list.
 const USER_DATA_TABLES = [
   'events', 'photos', 'photo_feedback', 'admin_users', 'customer_accounts',
   'quotes', 'invoices', 'projects', 'expenses', 'inbound_documents',
@@ -431,6 +431,7 @@ ${'='.repeat(78)}
 }
 
 module.exports = {
+  USER_DATA_TABLES,
   resolveSqlitePath,
   pgConnectionFromEnv,
   isUntouchedBootstrapRow,

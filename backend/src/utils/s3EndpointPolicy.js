@@ -128,13 +128,12 @@ function isPrivateEndpointApproved(endpoint, sslEnabled, approval) {
 }
 
 /**
- * backup_s3_ssl_enabled as a backup run reads it (backupService
- * normalizeBoolean), defaulting to on when unset — the approval origin and
- * the scheme a client connects with must never disagree.
+ * A boolean backup setting as a backup run reads it: booleans as they are,
+ * 'true'/'false' strings (trimmed, any case), and anything else by
+ * truthiness. Shared by backupService and the admin backup routes, so the
+ * admin side compares settings the way a run acts on them.
  */
-function backupS3Ssl(config) {
-  const value = config ? config.backup_s3_ssl_enabled : undefined;
-  if (value === undefined || value === null) return true;
+function readBackupBoolean(value) {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
     const trimmed = value.trim().toLowerCase();
@@ -144,12 +143,61 @@ function backupS3Ssl(config) {
   return Boolean(value);
 }
 
+/**
+ * backup_s3_ssl_enabled as a backup run reads it (readBackupBoolean),
+ * defaulting to on when unset — the approval origin and the scheme a client
+ * connects with must never disagree.
+ */
+function backupS3Ssl(config) {
+  const value = config ? config.backup_s3_ssl_enabled : undefined;
+  if (value === undefined || value === null) return true;
+  return readBackupBoolean(value);
+}
+
 /** The allowPrivateEndpoint flag for an S3 client built from backup settings. */
 function backupS3Access(config) {
   if (!config) return { allowPrivateEndpoint: false };
   const sslEnabled = backupS3Ssl(config);
   return {
     allowPrivateEndpoint: isPrivateEndpointApproved(config.backup_s3_endpoint, sslEnabled, config[APPROVAL_SETTING]),
+  };
+}
+
+/**
+ * S3StorageAdapter options for the backup destination in the backup settings.
+ *
+ * The flags are read two ways, kept apart on purpose:
+ *  - default (backup runs, manifest reads): backup_s3_force_path_style
+ *    through readBackupBoolean; SSL on only when backup_s3_ssl_enabled is
+ *    absent (an explicit null reads as off).
+ *  - routeFlags (the admin backup routes): backup_s3_force_path_style as
+ *    stored (`|| false`); SSL through backupS3Ssl (null reads as on).
+ *
+ * `overrides` replace any field (a bucket parsed from an s3:// URI,
+ * credentials with an env fallback, retry options, other flag readings);
+ * allowPrivateEndpoint always comes from the settings.
+ */
+function backupS3Settings(config, overrides = {}, { routeFlags = false } = {}) {
+  const cfg = config || {};
+  let forcePathStyle;
+  let sslEnabled;
+  if (routeFlags) {
+    forcePathStyle = cfg.backup_s3_force_path_style || false;
+    sslEnabled = backupS3Ssl(cfg);
+  } else {
+    forcePathStyle = readBackupBoolean(cfg.backup_s3_force_path_style);
+    sslEnabled = cfg.backup_s3_ssl_enabled === undefined ? true : readBackupBoolean(cfg.backup_s3_ssl_enabled);
+  }
+  return {
+    bucket: cfg.backup_s3_bucket,
+    region: cfg.backup_s3_region || 'us-east-1',
+    endpoint: cfg.backup_s3_endpoint,
+    accessKeyId: cfg.backup_s3_access_key,
+    secretAccessKey: cfg.backup_s3_secret_key,
+    forcePathStyle,
+    sslEnabled,
+    ...overrides,
+    ...backupS3Access(config),
   };
 }
 
@@ -223,7 +271,9 @@ module.exports = {
   classifyS3Endpoint,
   isPrivateEndpointApproved,
   backupS3Access,
+  backupS3Settings,
   backupS3Ssl,
+  readBackupBoolean,
   assertS3EndpointAllowed,
   assertLiteralEndpointAllowed,
   s3EndpointAgents,
