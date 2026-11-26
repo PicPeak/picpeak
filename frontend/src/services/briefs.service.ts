@@ -47,7 +47,8 @@ export interface BriefPendingChange {
   fieldId: number | null;
   label: string | null;
   labels: Partial<Record<string, string>>;
-  change: 'added' | 'changed' | 'removed';
+  /** `renamed`: the same value under a corrected label. */
+  change: 'added' | 'changed' | 'removed' | 'renamed';
 }
 
 export interface Brief {

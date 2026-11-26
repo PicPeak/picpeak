@@ -52,6 +52,7 @@ const PORTAL_ONLY_QUERY_KEYS = new Set([
   'customer-quote',
   'customer-contract',
   'customer-event-overview',
+  'customer-agreements',
 ]);
 const PORTAL_SHARED_NAME_QUERY_KEYS = new Set([
   'customer-quotes',

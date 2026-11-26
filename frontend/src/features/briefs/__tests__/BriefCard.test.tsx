@@ -1,7 +1,7 @@
 /** The brief card on the project cockpit (issue 2678). */
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -143,6 +143,30 @@ describe('BriefCard on a project', () => {
     await waitFor(() => expect(screen.getByLabelText('Name der Braut')).toHaveValue('Clara'));
     expect(screen.queryByText('not saved yet')).toBeNull();
     expect(screen.getByRole('button', { name: 'page save' })).toBeDisabled();
+  });
+
+  it('takes the saved brief as its baseline: a later refetch wins, an edit made during the save stays', async () => {
+    const withName = (name: string) => projectBrief({ fields: projectBrief().fields.map((f) => (f.id === 1 ? { ...f, value: name } : f)) });
+    let finish: (brief: unknown) => void = () => {};
+    state.save.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter><Harness /></MemoryRouter></QueryClientProvider>);
+    fireEvent.change(await screen.findByLabelText('Name der Braut'), { target: { value: 'Anna Maria' } });
+    fireEvent.click(screen.getByRole('button', { name: 'page save' }));
+    await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1));
+    // Typed while the request runs.
+    fireEvent.change(screen.getByLabelText('Shared arrangements'), { target: { value: 'Typed meanwhile' } });
+    await act(async () => { finish(withName('Anna Maria')); });
+    expect(screen.getByLabelText('Shared arrangements')).toHaveValue('Typed meanwhile');
+
+    // Another admin changes the name; the refetch brings it.
+    state.get.mockResolvedValue(withName('Clara'));
+    await act(async () => { await client.invalidateQueries({ queryKey: ['brief'] }); });
+    await waitFor(() => expect(screen.getByLabelText('Name der Braut')).toHaveValue('Clara'));
+    expect(screen.getByLabelText('Shared arrangements')).toHaveValue('Typed meanwhile');
+    state.save.mockClear().mockResolvedValue(withName('Clara'));
+    fireEvent.click(screen.getByRole('button', { name: 'page save' }));
+    await waitFor(() => expect(state.save).toHaveBeenCalledWith({ kind: 'projects', id: 7 }, { sharedArrangements: 'Typed meanwhile' }));
   });
 
   it('says why a project without a customer cannot notify', async () => {
