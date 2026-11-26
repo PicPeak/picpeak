@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.136.4](https://github.com/PicPeak/picpeak/compare/v3.136.3...v3.136.4) (2026-11-25)
+
+
+### Bug Fixes
+
+* **restore:** stop a PostgreSQL restore at the first failing statement (stable) ([#2662](https://github.com/PicPeak/picpeak/issues/2662)) ([7f0ecfa](https://github.com/PicPeak/picpeak/commit/7f0ecfaa11d4a1f40fd073972269b4666ec9275f))
+
 ## [3.136.3](https://github.com/PicPeak/picpeak/compare/v3.136.2...v3.136.3) (2026-11-24)
 
 
