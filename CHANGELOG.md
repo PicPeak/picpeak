@@ -5,6 +5,16 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.136.5](https://github.com/PicPeak/picpeak/compare/v3.136.4...v3.136.5) (2026-11-26)
+
+
+### Bug Fixes
+
+* **email:** keep customer addresses from admins without customers.view on the admin mail surfaces (stable) ([#2686](https://github.com/PicPeak/picpeak/issues/2686)) ([cac28ac](https://github.com/PicPeak/picpeak/commit/cac28acaabc661ea423d9b577d380a40c4c73bf6))
+* **email:** keep customer addresses out of webhook deliveries, workflow run data and mail bodies without customers.view (stable) ([#2689](https://github.com/PicPeak/picpeak/issues/2689)) ([a708f93](https://github.com/PicPeak/picpeak/commit/a708f9398ee889e1ff2650f2f13bea8611a94dbd))
+* **projects:** hide the customer address on document mail in the project overview without customers.view (stable) ([#2682](https://github.com/PicPeak/picpeak/issues/2682)) ([c6c2724](https://github.com/PicPeak/picpeak/commit/c6c27241d7f664287e7ac0d90cc714954b45d2f8))
+* **projects:** search the customer address only for admins with customers.view (stable) ([#2684](https://github.com/PicPeak/picpeak/issues/2684)) ([aada91e](https://github.com/PicPeak/picpeak/commit/aada91e31b8c1816028d5d4d4fe0d9b934ed602a))
+
 ## [3.136.4](https://github.com/PicPeak/picpeak/compare/v3.136.3...v3.136.4) (2026-11-25)
 
 
