@@ -3788,6 +3788,10 @@
     "crm": {
       "title": "CRM behaviour"
     },
+    "briefTemplates": {
+      "title": "Brief templates",
+      "description": "The fields of a project brief: for every occasion, and per event type."
+    },
     "accounting": {
       "title": "Accounting",
       "subtitle": "Default rates, VAT settings and the proof requirement.",
@@ -8191,6 +8195,7 @@
     "nav": {
       "galleries": "Galleries",
       "calendar": "Calendar",
+      "agreements": "Agreements",
       "quotes": "Quotes",
       "bills": "Invoices",
       "profile": "Profile",
@@ -8422,6 +8427,22 @@
         "selected": "This upload answers: {{title}}",
         "clear": "Not for this request"
       }
+    },
+    "agreements": {
+      "title": "Agreements",
+      "subtitle": "What you and your photographer agreed. If something is not right, please get in touch.",
+      "disabled": "There are no agreements for your account yet.",
+      "loadError": "Could not load your agreements.",
+      "empty": "No agreements yet.",
+      "untitled": "Your booking",
+      "updated": "Updated on {{date}}",
+      "shared": "Arrangements",
+      "price": "Price",
+      "fromQuote": "Quote {{number}}",
+      "deposit": "Deposit",
+      "paid": "Paid",
+      "due": "Due {{date}}",
+      "open": "Open"
     },
     "event": {
       "notFound": "This event was not found, or you no longer have access to it.",
@@ -9482,6 +9503,86 @@
       "takeOutFailed": "Could not take it out of the project",
       "takeOut": "Take out of the project",
       "takeOutNamed": "Take {{number}} out of the project"
+    }
+  },
+  "briefs": {
+    "title": "Brief",
+    "help": "The agreed details of this job. The customer sees the fields marked with an eye once you notify them.",
+    "readOnly": "You can see this brief but not change it.",
+    "notSaved": "not saved yet",
+    "loadFailed": "Could not load the brief.",
+    "saved": "Brief saved",
+    "saveFailed": "Could not save the brief",
+    "save": "Save brief",
+    "discard": "Discard",
+    "occasion": "Occasion",
+    "noOccasion": "None (only the fields for every occasion)",
+    "occasionAfterSave": "The fields of the new occasion appear after saving.",
+    "noFields": "No brief fields for this occasion yet.",
+    "setUpTemplates": "Set up brief templates",
+    "visible": "Customer sees it",
+    "hidden": "Hidden",
+    "visibilityOverride": "Differs from the template",
+    "fromProject": "From the project data",
+    "shared": "Shared arrangements",
+    "sharedHint": "The customer sees this text. Internal notes stay in the notes field.",
+    "removed": "No longer in the template",
+    "removedHint": "Kept on this brief and never shown to the customer.",
+    "removeValue": "Remove",
+    "yes": "Yes",
+    "no": "No",
+    "input": {
+      "time": "Time",
+      "place": "Place",
+      "address": "Address (optional)",
+      "notSet": "Not set"
+    },
+    "notify": {
+      "button": "Notify customer",
+      "pending": "Changes not sent yet: {{count}}",
+      "upToDate": "The customer has the current state.",
+      "last": "Last update sent {{date}}",
+      "noCustomer": "Link a customer to the project to send updates.",
+      "saveFirst": "Save your changes first.",
+      "confirmTitle": "Notify customer",
+      "confirmMessage": "Email the customer the changes since the last update ({{count}})? They also see the new state in their portal.",
+      "sent": "Update queued to the customer.",
+      "failed": "Could not send the update"
+    },
+    "templates": {
+      "occasion": "Template",
+      "global": "Every occasion",
+      "globalHint": "These fields appear on every brief, before the fields of its occasion.",
+      "occasionHint": "These fields follow the fields for every occasion on a {{occasion}} brief.",
+      "empty": "No fields yet.",
+      "label": "Label",
+      "type": "Type",
+      "typeFixed": "Saved fields keep their type.",
+      "visibleDefault": "The customer sees it",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "remove": "Remove field",
+      "add": "Add field",
+      "removeHint": "Removing a field keeps what briefs already hold: it stays readable there, marked as no longer in the template, and the customer no longer sees it.",
+      "labelMissing": "Every field needs a label.",
+      "saved": "Brief templates saved",
+      "saveFailed": "Not saved: {{lists}}",
+      "loadFailed": "Could not load the brief templates.",
+      "readOnly": "You can see these templates but not change them."
+    },
+    "types": {
+      "short_text": "Short text",
+      "long_text": "Long text",
+      "date": "Date",
+      "time": "Time",
+      "datetime": "Date and time",
+      "place": "Place",
+      "place_time": "Place and time",
+      "number": "Number",
+      "yes_no": "Yes / no",
+      "project_date": "Event date (from the project)",
+      "project_location": "Location (from the project)",
+      "project_guests": "Guest count (from the project)"
     }
   },
   "calendar": {

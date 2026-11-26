@@ -3279,6 +3279,10 @@
     "crm": {
       "title": "Vedenje CRM"
     },
+    "briefTemplates": {
+      "title": "Predloge briefa",
+      "description": "Polja briefa projekta: za vsako priložnost in za vsako vrsto dogodka."
+    },
     "accounting": {
       "title": "Računovodstvo",
       "subtitle": "Privzete cene, nastavitve DDV in zahteva za dokazila.",
@@ -6917,6 +6921,7 @@
     "nav": {
       "galleries": "Galerije",
       "calendar": "Koledar",
+      "agreements": "Dogovori",
       "quotes": "Ponudbe",
       "bills": "Računi",
       "profile": "Profil",
@@ -7143,6 +7148,22 @@
         "selected": "To nalaganje odgovarja na: {{title}}",
         "clear": "Ni za to zahtevo"
       }
+    },
+    "agreements": {
+      "title": "Dogovori",
+      "subtitle": "Kar ste se dogovorili s svojim fotografom. Če kaj ni prav, se oglasite.",
+      "disabled": "Za vaš račun še ni dogovorov.",
+      "loadError": "Vaših dogovorov ni bilo mogoče naložiti.",
+      "empty": "Še ni dogovorov.",
+      "untitled": "Vaša rezervacija",
+      "updated": "Posodobljeno {{date}}",
+      "shared": "Dogovori",
+      "price": "Cena",
+      "fromQuote": "Ponudba {{number}}",
+      "deposit": "Ara",
+      "paid": "Plačano",
+      "due": "Zapade {{date}}",
+      "open": "Odprto"
     },
     "event": {
       "notFound": "Ta dogodek ni bil najden ali do njega nimate več dostopa.",
@@ -7909,6 +7930,86 @@
     "status": {
       "active": "Aktivno",
       "archived": "Arhiviran"
+    }
+  },
+  "briefs": {
+    "title": "Brief",
+    "help": "Dogovorjene podrobnosti tega naročila. Polja z očesom stranka vidi, ko jo obvestite.",
+    "readOnly": "Ta brief lahko vidite, ne morete pa ga spreminjati.",
+    "notSaved": "še ni shranjeno",
+    "loadFailed": "Briefa ni bilo mogoče naložiti.",
+    "saved": "Brief je shranjen",
+    "saveFailed": "Briefa ni bilo mogoče shraniti",
+    "save": "Shrani brief",
+    "discard": "Zavrzi",
+    "occasion": "Priložnost",
+    "noOccasion": "Brez (samo polja za vsako priložnost)",
+    "occasionAfterSave": "Polja nove priložnosti se prikažejo po shranjevanju.",
+    "noFields": "Za to priložnost še ni polj briefa.",
+    "setUpTemplates": "Nastavi predloge briefa",
+    "visible": "Stranka vidi",
+    "hidden": "Skrito",
+    "visibilityOverride": "Odstopa od predloge",
+    "fromProject": "Iz podatkov projekta",
+    "shared": "Skupni dogovori",
+    "sharedHint": "To besedilo vidi stranka. Interne opombe ostanejo v polju z opombami.",
+    "removed": "Ni več v predlogi",
+    "removedHint": "Ostane v tem briefu in se stranki nikoli ne prikaže.",
+    "removeValue": "Odstrani",
+    "yes": "Da",
+    "no": "Ne",
+    "input": {
+      "time": "Čas",
+      "place": "Kraj",
+      "address": "Naslov (neobvezno)",
+      "notSet": "Ni nastavljeno"
+    },
+    "notify": {
+      "button": "Obvesti stranko",
+      "pending": "Še neposlane spremembe: {{count}}",
+      "upToDate": "Stranka ima trenutno stanje.",
+      "last": "Zadnja posodobitev poslana {{date}}",
+      "noCustomer": "Za pošiljanje posodobitev projektu dodelite stranko.",
+      "saveFirst": "Najprej shranite spremembe.",
+      "confirmTitle": "Obvesti stranko",
+      "confirmMessage": "Stranki po e-pošti poslati spremembe od zadnje posodobitve ({{count}})? Novo stanje vidi tudi v svojem portalu.",
+      "sent": "Posodobitev za stranko je v čakalni vrsti.",
+      "failed": "Posodobitve ni bilo mogoče poslati"
+    },
+    "templates": {
+      "occasion": "Predloga",
+      "global": "Vsaka priložnost",
+      "globalHint": "Ta polja so v vsakem briefu, pred polji njegove priložnosti.",
+      "occasionHint": "V briefu za {{occasion}} ta polja sledijo poljem za vsako priložnost.",
+      "empty": "Še ni polj.",
+      "label": "Oznaka",
+      "type": "Vrsta",
+      "typeFixed": "Shranjena polja ohranijo svojo vrsto.",
+      "visibleDefault": "Stranka vidi",
+      "moveUp": "Premakni gor",
+      "moveDown": "Premakni dol",
+      "remove": "Odstrani polje",
+      "add": "Dodaj polje",
+      "removeHint": "Odstranjeno polje ostane berljivo v obstoječih briefih, označeno, da ni več v predlogi, stranka pa ga ne vidi več.",
+      "labelMissing": "Vsako polje potrebuje oznako.",
+      "saved": "Predloge briefa so shranjene",
+      "saveFailed": "Ni shranjeno: {{lists}}",
+      "loadFailed": "Predlog briefa ni bilo mogoče naložiti.",
+      "readOnly": "Te predloge lahko vidite, ne morete pa jih spreminjati."
+    },
+    "types": {
+      "short_text": "Kratko besedilo",
+      "long_text": "Dolgo besedilo",
+      "date": "Datum",
+      "time": "Čas",
+      "datetime": "Datum in čas",
+      "place": "Kraj",
+      "place_time": "Kraj in čas",
+      "number": "Število",
+      "yes_no": "Da / ne",
+      "project_date": "Datum dogodka (iz projekta)",
+      "project_location": "Kraj (iz projekta)",
+      "project_guests": "Število gostov (iz projekta)"
     }
   },
   "calendar": {

@@ -10,6 +10,7 @@ import type { AxiosProgressEvent } from 'axios';
 import { api } from '../config/api';
 import type { ContractStatus, PublicContractView } from './contracts.service';
 import type { PublicQuoteView, QuoteStatus } from './quotes.service';
+import type { BriefFieldType, BriefValue } from './briefs.service';
 
 /** What this login may do. The account holder has every right. */
 export interface CustomerRights {
@@ -45,10 +46,12 @@ export interface CustomerFeatures {
   bills: boolean;
   contracts: boolean;
   documents: boolean;
+  /** A brief the studio sent (issue 2678). */
+  agreements: boolean;
 }
 
 export const DEFAULT_CUSTOMER_FEATURES: CustomerFeatures = {
-  calendar: false, quotes: false, bills: false, contracts: false, documents: false,
+  calendar: false, quotes: false, bills: false, contracts: false, documents: false, agreements: false,
 };
 
 export interface CustomerBranding {
@@ -93,6 +96,19 @@ export interface CustomerProfilePrefill {
 }
 
 /** Gallery state, decided by the server (#1444). */
+/** A brief as the studio last sent it: only the fields the customer sees. */
+export interface CustomerAgreement {
+  id: number;
+  title: string | null;
+  updatedAt: string;
+  fields: Array<{ id: number; label: string; labels: Partial<Record<string, string>>; type: BriefFieldType; value: BriefValue }>;
+  sharedArrangements: string;
+  /** From the project's accepted quote; null without one (or without quotes). */
+  price: { quoteNumber: string; totalMinor: number; currency: string } | null;
+  /** The first instalment invoice; null without one (or without invoices). */
+  deposit: { invoiceNumber: string; totalMinor: number; currency: string; dueDate: string | null; paid: boolean } | null;
+}
+
 export type GalleryAvailability = 'active' | 'expired' | 'paused' | 'unavailable';
 
 export interface CustomerEvent {
@@ -466,6 +482,12 @@ export const customerService = {
       `/customer/events/${encodeURIComponent(slug)}/access-token`
     );
     return response.data;
+  },
+
+  // ---- agreements (issue 2678) ----
+  async listAgreements(): Promise<CustomerAgreement[]> {
+    const response = await api.get<{ agreements: CustomerAgreement[] }>('/customer/agreements');
+    return response.data.agreements;
   },
 
   // ---- documents (#1444) ----

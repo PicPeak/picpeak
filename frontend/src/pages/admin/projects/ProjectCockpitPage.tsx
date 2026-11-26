@@ -40,6 +40,7 @@ import { AttachDocumentDialog, type AttachKind } from './AttachDocumentDialog';
 import { ProjectCustomerCard, ProjectDataCard, ProjectValueCard, type CustomerChoice } from './ProjectSideCards';
 import { ProjectSettingsTab } from './ProjectSettingsTab';
 import { projectSteps, type ProjectStep } from './projectSteps';
+import { BriefCard, useBriefEditor } from '../../../features/briefs/BriefCard';
 import { StepIcon, useRunStep, useStepLabel } from './useProjectSteps';
 import {
   MAX_GUESTS, changedKeys, draftError, draftFromProject, rebaseDraft, updatePayload, type ProjectDraft,
@@ -131,10 +132,14 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
     savedCustomerRef.current = savedCustomer;
   }, [savedCustomer]);
 
+  // The brief (issue 2678) is the project's data too: one save bar for both.
+  const brief = useBriefEditor({ kind: 'projects', id: projectId });
+
   const dirtyKeys = changedKeys(draft, base);
   const customerDirty = customer.id !== savedCustomer.id;
-  const isDirty = dirtyKeys.length > 0 || customerDirty;
-  const discard = () => { setDraft(base); setCustomer(savedCustomer); };
+  const projectDirty = dirtyKeys.length > 0 || customerDirty;
+  const isDirty = projectDirty || brief.dirty;
+  const discard = () => { setDraft(base); setCustomer(savedCustomer); brief.discard(); };
 
   // A budget is stored with its currency: the business profile's when the
   // admin did not pick one (as on New inquiry).
@@ -163,8 +168,18 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
       if (res?.code === 'PROJECT_CUSTOMER_MISMATCH') return t('projects.error.customerMismatch', 'That belongs to a different customer than this project.') as string;
       return res?.error || (t('projects.toast.saveFailed', 'Save failed') as string);
     },
-    invalidateKeys: [['project-overview', projectId], ['projects']],
+    // The brief shows the project's date, location and guest count.
+    invalidateKeys: [['project-overview', projectId], ['projects'], ['brief', 'projects', projectId]],
   });
+  // Each changed slice saves on its own; a failed one stays dirty (UX.md › Saving).
+  const saveAll = async () => {
+    const results = await Promise.allSettled([
+      ...(projectDirty ? [save.mutateAsync()] : []),
+      ...(brief.dirty ? [brief.save.mutateAsync()] : []),
+    ]);
+    if (results.some((r) => r.status === 'rejected')) throw new Error('Save failed');
+  };
+  const isSaving = save.isPending || brief.save.isPending;
 
   const rename = useMutationWithToast({
     mutationFn: (name: string) => projectsService.update(projectId, { name }),
@@ -226,7 +241,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
         toast.error(blockedText(blocked));
         return;
       }
-      try { await save.mutateAsync(); } catch { return; }
+      try { await saveAll(); } catch { return; }
       // The page still holds the pre-save state until the refetch renders;
       // what was unsaved is saved now, so leaving needs no question.
       await qc.refetchQueries({ queryKey: ['project-overview', projectId] });
@@ -329,7 +344,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
             <ActionMenu items={menuItems} align="right" size="icon-sm" label={t('projects.menu.more', 'More actions') as string} className="hidden sm:block" />
           )}
           {main && (
-            <Button variant="primary" size="sm" leftIcon={<StepIcon kind={main.kind} />} isLoading={isRunning || save.isPending} onClick={() => { void runStep(main); }}>
+            <Button variant="primary" size="sm" leftIcon={<StepIcon kind={main.kind} />} isLoading={isRunning || isSaving} onClick={() => { void runStep(main); }}>
               {stepLabel(main.kind)}
             </Button>
           )}
@@ -346,7 +361,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
               main={main}
               later={later}
               onRun={(step) => { void runStep(step); }}
-              busy={isRunning || save.isPending || skipStage.isPending}
+              busy={isRunning || isSaving || skipStage.isPending}
               onSkip={canEdit && !closed ? (stage) => skipStage.mutate({ stage, skip: true }) : undefined}
               onRestore={canEdit && !closed ? (stage) => skipStage.mutate({ stage, skip: false }) : undefined}
             />
@@ -361,6 +376,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
               onAdd={setAdding}
             />
             <AttachDocumentDialog kind={adding} data={data} onClose={() => setAdding(null)} />
+            <BriefCard editor={brief} canEdit={canEdit} />
           </div>
           <div className="space-y-6 min-w-0">
             <ProjectValueCard valuation={data.valuation} quotedMinor={quotedMinor} />
@@ -393,7 +409,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
       {canEdit && (
         <SettingsSaveBar
           isDirty={isDirty}
-          isSaving={save.isPending}
+          isSaving={isSaving}
           onSave={() => {
             const blocked = draftError(draft);
             if (blocked) {
@@ -401,7 +417,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
               toast.error(blockedText(blocked));
               return;
             }
-            save.mutate();
+            saveAll().catch(() => { /* the failed slice toasted and stays dirty */ });
           }}
           onDiscard={discard}
         />

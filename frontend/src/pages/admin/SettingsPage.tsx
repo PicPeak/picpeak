@@ -38,6 +38,7 @@ import { CMSPage } from './CMSPage';
 // CRM (#TBD)
 import { SettingsBusinessProfilePage } from './settings/SettingsBusinessProfilePage';
 import { CrmSettingsPage } from './settings/CrmSettingsPage';
+import { BriefTemplatesPage } from '../../features/briefs/BriefTemplatesPage';
 // Reminder templates moved to the Automation section (it authors the emails
 // the Pre-event reminder workflow sends). The ?tab=reminderTemplates redirect
 // lives in App.tsx's SettingsRoute, above this page: done here it raced the
@@ -179,7 +180,7 @@ export const SettingsPage: React.FC = () => {
       setActiveTab(DEFAULT_SETTINGS_TAB);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flagsLoading, flags.quotes, flags.bills, flags.contracts, flags.documents, flags.userManagement, flags.accounting, flags.whatsapp, flags.slideshow, activeTab]);
+  }, [flagsLoading, flags.quotes, flags.bills, flags.contracts, flags.documents, flags.userManagement, flags.accounting, flags.whatsapp, flags.slideshow, flags.projects, activeTab]);
 
   // Permission snap-back: if the active tab isn't permitted for this role (e.g.
   // a deep-linked ?tab=security a photographer can't access), move to the first
@@ -198,7 +199,7 @@ export const SettingsPage: React.FC = () => {
     );
     if (firstVisible && firstVisible !== activeTab) setActiveTab(firstVisible);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flagsLoading, permissionsLoading, isSuperAdmin, activeTab, flags.quotes, flags.bills, flags.contracts, flags.documents, flags.userManagement, flags.accounting, flags.whatsapp, flags.slideshow]);
+  }, [flagsLoading, permissionsLoading, isSuperAdmin, activeTab, flags.quotes, flags.bills, flags.contracts, flags.documents, flags.userManagement, flags.accounting, flags.whatsapp, flags.slideshow, flags.projects]);
 
   // Wait for the permissions context too: on a fresh/hard mount it starts out
   // empty, which filters every nav group down to nothing and left `activeItem`
@@ -274,6 +275,7 @@ export const SettingsPage: React.FC = () => {
           {activeTab === 'health' && <SystemHealthPage />}
           {activeTab === 'businessProfile' && <SettingsBusinessProfilePage />}
           {activeTab === 'crm' && <CrmSettingsPage />}
+          {activeTab === 'briefTemplates' && <BriefTemplatesPage />}
           {activeTab === 'contracts' && <BlockLibraryPage />}
           {activeTab === 'accounting' && <AccountingTab />}
           {activeTab === 'whatsapp' && <WhatsAppTab />}
