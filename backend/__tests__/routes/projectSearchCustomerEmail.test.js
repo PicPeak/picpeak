@@ -69,6 +69,13 @@ describe('project search — customer address needs customers.view', () => {
     expect(await search(editorTok, 'Summer')).toContain(projectId);
   });
 
+  it('does not match the customer address when the caller passes no customers decision', async () => {
+    // The service default is "not allowed": a future caller that forgets the
+    // flag must not reopen the address oracle.
+    const rows = await require('../../src/services/projectService').listProjects({ search: 'customer@example' });
+    expect(Array.from(rows, (p) => Number(p.id))).not.toContain(Number(projectId));
+  });
+
   it('matches the customer address with customers.view', async () => {
     expect(await search(superTok, 'customer@example')).toContain(projectId);
     expect(await search(superTok, 'Summer')).toContain(projectId);
