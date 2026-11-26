@@ -23,7 +23,7 @@ const { parseEmailData, secretValues, redactRenderedHtml, redactBearerLinks } = 
 const { isMaskedOrBlank, sameSmtpTarget, sameImapTarget } = require('../utils/mailCredentialTarget');
 const { queueTimestamp } = require('../utils/queueTimestamps');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
-const { redactAddresses, redactKnownAddresses } = require('../utils/recipientRedaction');
+const { redactAddresses, redactKnownAddresses, studioAddresses } = require('../utils/recipientRedaction');
 
 // Shared wording for a masked password that may not follow a changed server.
 const PASSWORD_FOR_NEW_SERVER = (kind) => `Enter the ${kind} password again: the server, port, username or encryption changed, and the saved password is only used for the server it was saved for.`;
@@ -863,7 +863,9 @@ router.get('/queue/:id', adminAuth, messagingGate, requirePermission('email.view
     // Recipients are customers.view data, as in the list; the body loses the
     // addresses the mail carries.
     const seesRecipients = await userHasAnyPermission(req.admin.id, ['customers.view']);
-    const renderedHtml = seesRecipients ? storedHtml : redactKnownAddresses(storedHtml, [row.recipient_email, data]);
+    const renderedHtml = seesRecipients
+      ? storedHtml
+      : redactKnownAddresses(storedHtml, [row.recipient_email, data], await studioAddresses());
 
     res.json({
       id: row.id,
