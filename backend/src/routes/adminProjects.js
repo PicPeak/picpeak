@@ -61,6 +61,9 @@ async function assertMayLinkCustomer(req) {
   }
 }
 
+// Anything shaped like an address, for blanking delivery errors.
+const EMAIL_ADDRESS = /[^\s<>"'(),;:]+@[^\s<>"'(),;:]+/g;
+
 function withoutCustomer(project) {
   if (!project) return project;
   const copy = { ...project };
@@ -379,6 +382,15 @@ router.get('/:id/overview', requirePermission('events.view'), requireProjectOwne
       }
     } else {
       overview.project = withoutCustomer(overview.project);
+      // Mail recipients are customer addresses: document mail is matched by
+      // the customer's address, and gallery mail can go to a billing address
+      // or belong to a gallery the caller does not own. They leave the list,
+      // also from delivery errors, which often quote the address.
+      overview.emails = (overview.emails || []).map((e) => ({
+        ...e,
+        recipient: null,
+        error: e.error ? e.error.replace(EMAIL_ADDRESS, '…') : e.error,
+      }));
     }
   }
   return successResponse(res, overview);
