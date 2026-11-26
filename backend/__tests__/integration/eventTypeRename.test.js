@@ -62,6 +62,20 @@ describe('event type slug rename cascade', () => {
     expect((await db('project_briefs').where({ customer_account_id: customerId }).first()).occasion).toBe('dance');
   });
 
+  it('keeps a project brief on its occasion through a rename', async () => {
+    const [typeId] = await db('event_types').insert({ name: 'Prom', slug_prefix: 'prom', is_active: true });
+    const [fieldId] = await db('project_brief_fields').insert({ occasion: 'prom', label: 'Theme', field_type: 'short_text', position: 0 });
+    const [projectId] = await db('projects').insert({ name: 'Prom night', status: 'active', event_type: 'prom' });
+    const [briefId] = await db('project_briefs').insert({ project_id: projectId });
+    await db('project_brief_values').insert({ brief_id: briefId, field_id: fieldId, label: 'Theme', field_type: 'short_text', value: JSON.stringify('Disco') });
+
+    await eventTypeService.updateEventType(typeId, { slug_prefix: 'formal' });
+
+    expect((await db('projects').where({ id: projectId }).first()).event_type).toBe('formal');
+    const brief = await require('../../src/services/briefService').getBrief({ kind: 'project', id: projectId });
+    expect(brief.fields.find((f) => f.id === fieldId)).toMatchObject({ source: 'occasion', value: 'Disco' });
+  });
+
   it('does not clobber an existing template for the new slug', async () => {
     const [typeId] = await db('event_types').insert({ name: 'Gala', slug_prefix: 'gala', is_active: true });
     await db('email_templates').insert({ template_key: 'event_reminder_gala', subject_en: 'old gala' });

@@ -270,8 +270,9 @@ describe('with the projects flag on', () => {
       expect(fields.find((f) => f.id === groom.id)).toMatchObject({ source: 'removed', value: 'Ben', label: 'Groom\'s name' });
       expect((await admin('put', `/projects/${projectId}`).send({ values: { [groom.id]: { value: 'Benjamin' } } })).status).toBe(400);
       // The customer stops seeing it: the next update lists it as removed.
-      expect((await admin('get', `/projects/${projectId}`)).body.brief.pendingChanges)
-        .toEqual([expect.objectContaining({ fieldId: groom.id, change: 'removed' })]);
+      // ... and the relabelled field as renamed.
+      expect((await admin('get', `/projects/${projectId}`)).body.brief.pendingChanges.map((c) => [c.label, c.change]))
+        .toEqual([['Partner 1', 'renamed'], ['Groom\'s name', 'removed']]);
       expect((await admin('put', `/projects/${projectId}`).send({ values: { [groom.id]: { value: null } } })).status).toBe(200);
       expect((await admin('get', `/projects/${projectId}`)).body.brief.fields.some((f) => f.id === groom.id)).toBe(false);
     });
@@ -468,6 +469,40 @@ describe('with the projects flag on', () => {
       expect((await mails(email)).map((m) => m.status)).toEqual(['suppressed']);
       // The portal has the update all the same.
       expect((await portal(ella)).body.agreements[0].sharedArrangements).toBe('Quiet');
+    });
+  });
+
+  describe('review round 2', () => {
+    it('forgets what was sent to an erased customer, also on a project that moved on', async () => {
+      const anna = await customer();
+      const carl = await customer();
+      const p = await project(anna);
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'ANNA-SENT' });
+      await admin('post', `/projects/${p}/notify`);
+      await db('projects').where({ id: p }).update({ customer_account_id: carl });
+      await require('../../src/services/customerAccountsService').eraseCustomer(anna, superAdmin);
+      const brief = await db('project_briefs').where({ project_id: p }).first();
+      expect(brief).toMatchObject({ notified_at: null, notified_snapshot: null, notified_customer_account_id: null });
+      expect(brief.shared_arrangements).toBe('ANNA-SENT');
+    });
+
+    it('sends a corrected label of a visible field as a rename, and the portal shows the new one', async () => {
+      const fiona = await customer();
+      const global = (await admin('get', '/templates')).body.templates.global;
+      const contact = global.find((f) => f.label === 'Contact person');
+      await admin('put', `/customers/${fiona}`).send({ values: { [contact.id]: { value: 'Uncle Joe' } } });
+      await admin('post', `/customers/${fiona}/notify`);
+
+      const renamed = global.map((f) => (f.id === contact.id ? { ...f, label: 'Contact on the day' } : f));
+      expect((await admin('put', '/templates/global').send({ fields: renamed })).status).toBe(200);
+      expect((await admin('get', `/customers/${fiona}`)).body.brief.pendingChanges)
+        .toEqual([expect.objectContaining({ fieldId: contact.id, label: 'Contact on the day', change: 'renamed' })]);
+      expect((await admin('post', `/customers/${fiona}/notify`)).status).toBe(200);
+      const email = (await db('customer_accounts').where({ id: fiona }).first()).email;
+      const data = JSON.parse((await mails(email).orderBy('id', 'desc').first()).email_data);
+      expect(data.brief_changes_text).toBe('- Contact person -> Contact on the day: Uncle Joe');
+      expect(data.brief_changes_html).toContain('<s>Contact person</s> &rarr; <strong>Contact on the day</strong>: Uncle Joe');
+      expect((await portal(fiona)).body.agreements[0].fields.map((f) => f.label)).toEqual(['Contact on the day']);
     });
   });
 });

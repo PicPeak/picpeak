@@ -322,7 +322,8 @@ function visibleState(fields, sharedArrangements) {
   };
 }
 
-/** What changed for the customer between two visible states. */
+/** What changed for the customer between two visible states. A field the
+ *  customer sees under a corrected label (or translation) is "renamed". */
 function diffStates(before, after) {
   const prev = new Map((before?.fields || []).map((f) => [f.id, f]));
   const next = new Map(after.fields.map((f) => [f.id, f]));
@@ -331,6 +332,9 @@ function diffStates(before, after) {
     const old = prev.get(field.id);
     if (!old) changes.push({ field, change: 'added', before: null, after: field.value });
     else if (!sameValue(old.value, field.value)) changes.push({ field, change: 'changed', before: old.value, after: field.value });
+    else if (old.label !== field.label || !sameValue(old.labels, field.labels)) {
+      changes.push({ field, previous: old, change: 'renamed', before: old.value, after: field.value });
+    }
   }
   for (const old of before?.fields || []) {
     if (!next.has(old.id)) changes.push({ field: old, change: 'removed', before: old.value, after: null });
@@ -492,7 +496,7 @@ async function renderChanges(changes, language) {
   const words = TEXT[language] || TEXT.en;
   const html = [];
   const lines = [];
-  for (const { field, change, before, after } of changes) {
+  for (const { field, previous, change, before, after } of changes) {
     const label = field ? labelIn(field, language) : words.shared;
     const type = field ? field.type : 'long_text';
     const from = await displayValue(type, before, language);
@@ -501,6 +505,10 @@ async function renderChanges(changes, language) {
     if (change === 'added') {
       html.push(`<li><strong>${esc(label)}</strong>: ${esc(to)} <em>(${esc(words.added)})</em></li>`);
       lines.push(`- ${label}: ${to} (${words.added})`);
+    } else if (change === 'renamed') {
+      const old = labelIn(previous, language);
+      html.push(`<li><s>${esc(old)}</s> &rarr; <strong>${esc(label)}</strong>: ${esc(to)}</li>`);
+      lines.push(`- ${old} -> ${label}: ${to}`);
     } else if (change === 'removed') {
       html.push(`<li><strong>${esc(label)}</strong>: <s>${esc(from)}</s> <em>(${esc(words.removed)})</em></li>`);
       lines.push(`- ${label}: ${from} (${words.removed})`);
@@ -675,7 +683,8 @@ async function deleteForProject(trx, projectId) {
   await deleteBriefs(trx, await trx('project_briefs').where({ project_id: projectId }).pluck('id'));
 }
 
-/** Customer erasure: the customer's own brief and those of its projects. */
+/** Customer erasure: the customer's own brief and those of its projects go;
+ *  what was sent to them on a project that has moved on is forgotten. */
 async function eraseForCustomer(trx, customerId) {
   const projectIds = trx('projects').where({ customer_account_id: customerId }).select('id');
   const ids = await trx('project_briefs')
@@ -683,6 +692,8 @@ async function eraseForCustomer(trx, customerId) {
     .orWhereIn('project_id', projectIds)
     .pluck('id');
   await deleteBriefs(trx, ids);
+  await trx('project_briefs').where({ notified_customer_account_id: customerId })
+    .update({ notified_at: null, notified_snapshot: null, notified_customer_account_id: null });
 }
 
 module.exports = {
