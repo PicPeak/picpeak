@@ -6,7 +6,7 @@ const { smtpConnectionOptions, mailHostRejection } = require('../utils/mailConne
 const { body, query, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const {
   mayReachQueuedEmail, requireOwnedQueuedEmail, queuedEmailListScope, sentByColumns,
 } = require('../middleware/emailQueueOwnership');
@@ -23,6 +23,7 @@ const { parseEmailData, secretValues, redactRenderedHtml, redactBearerLinks } = 
 const { isMaskedOrBlank, sameSmtpTarget, sameImapTarget } = require('../utils/mailCredentialTarget');
 const { queueTimestamp } = require('../utils/queueTimestamps');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
+const { redactAddresses } = require('../utils/recipientRedaction');
 
 // Shared wording for a masked password that may not follow a changed server.
 const PASSWORD_FOR_NEW_SERVER = (kind) => `Enter the ${kind} password again: the server, port, username or encryption changed, and the saved password is only used for the server it was saved for.`;
@@ -744,6 +745,10 @@ router.get('/queue', adminAuth, requirePermission('email.view'), [
     // Only mail the caller may reach: its own messages and the mail of the
     // galleries it may act on (all of it for a Super Admin).
     const scope = await queuedEmailListScope(req.admin);
+    // Recipients are customer addresses (customers.view data): without that
+    // permission they are blanked, and the search skips them, since a match
+    // would confirm an address the list does not show.
+    const seesRecipients = await userHasAnyPermission(req.admin.id, ['customers.view']);
     const applyFilters = (qb) => {
       scope(qb);
       if (req.query.status === 'pending') {
@@ -762,8 +767,8 @@ router.get('/queue', adminAuth, requirePermission('email.view'), [
       if (req.query.q) {
         const term = `%${String(req.query.q).trim()}%`;
         qb.where(function () {
-          this.where('email_queue.recipient_email', 'like', term)
-            .orWhere('email_queue.email_type', 'like', term);
+          if (seesRecipients) this.orWhere('email_queue.recipient_email', 'like', term);
+          this.orWhere('email_queue.email_type', 'like', term);
         });
       }
       return qb;
@@ -797,13 +802,13 @@ router.get('/queue', adminAuth, requirePermission('email.view'), [
 
     const items = rows.map((r) => ({
       id: r.id,
-      recipientEmail: r.recipient_email,
+      recipientEmail: seesRecipients ? r.recipient_email : null,
       emailType: r.email_type,
       status: r.status === PROTECTED_PENDING_STATUS ? 'pending' : r.status,
       createdAt: r.created_at,
       scheduledAt: r.scheduled_at,
       sentAt: r.sent_at,
-      errorMessage: r.error_message,
+      errorMessage: seesRecipients ? r.error_message : redactAddresses(r.error_message),
       retryCount: r.retry_count,
       origin: r.origin || 'system',
       eventId: r.event_id,
@@ -855,21 +860,25 @@ router.get('/queue/:id', adminAuth, messagingGate, requirePermission('email.view
       }
     } catch (_) { /* malformed email_data → no cc/attachments, still return the body */ }
 
+    // Recipients are customers.view data, as in the list. The body is the
+    // mail as sent and stays as is.
+    const seesRecipients = await userHasAnyPermission(req.admin.id, ['customers.view']);
+
     res.json({
       id: row.id,
-      recipientEmail: row.recipient_email,
+      recipientEmail: seesRecipients ? row.recipient_email : null,
       emailType: row.email_type,
       status: row.status === PROTECTED_PENDING_STATUS ? 'pending' : row.status,
       createdAt: row.created_at,
       scheduledAt: row.scheduled_at,
       sentAt: row.sent_at,
-      errorMessage: row.error_message,
+      errorMessage: seesRecipients ? row.error_message : redactAddresses(row.error_message),
       retryCount: row.retry_count,
       eventId: row.event_id,
       eventName: row.event_name || null,
       eventSlug: row.event_slug || null,
       renderedHtml,
-      cc,
+      cc: seesRecipients ? cc : null,
       attachments,
     });
   } catch (error) {
