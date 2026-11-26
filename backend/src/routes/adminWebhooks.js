@@ -42,6 +42,7 @@ function maskShareLinks(value) {
 const { validateExternalUrlAsync } = require('../utils/networkValidation');
 const webhookService = require('../services/webhookService');
 const logger = require('../utils/logger');
+const { redactAddresses } = require('../utils/recipientRedaction');
 
 const router = express.Router();
 
@@ -336,8 +337,12 @@ router.get(
         .orderBy('created_at', 'desc')
         .limit(limit)
         .offset(offset);
+      // The error may quote a customer's address (customers.view data).
+      const deliveries = (await userHasAnyPermission(req.admin.id, ['customers.view']))
+        ? rows
+        : rows.map((row) => ({ ...row, last_error: redactAddresses(row.last_error) }));
 
-      res.json({ deliveries: rows, pagination: { page, limit, total } });
+      res.json({ deliveries, pagination: { page, limit, total } });
     } catch (err) {
       logger.error('deliveries list failed', { error: err.message });
       res.status(500).json({ error: 'Failed to list deliveries' });
@@ -359,9 +364,15 @@ router.get(
       const payload = typeof row.payload === 'string' ? safeJson(row.payload, row.payload) : row.payload;
       const mayManage = req.admin?.roleName === 'super_admin'
         || await userHasAnyPermission(req.admin.id, ['settings.integrations']);
+      const shown = { ...row, payload: mayManage ? payload : maskShareLinks(payload) };
+      // A payload can carry a customer's address (event.customer_email), and
+      // the receiver's answer or the error may quote it: customers.view data.
+      if (await userHasAnyPermission(req.admin.id, ['customers.view'])) return res.json(shown);
       res.json({
-        ...row,
-        payload: mayManage ? payload : maskShareLinks(payload),
+        ...shown,
+        payload: redactAddresses(shown.payload),
+        response_body: redactAddresses(row.response_body),
+        last_error: redactAddresses(row.last_error),
       });
     } catch (err) {
       logger.error('delivery detail failed', { error: err.message });
