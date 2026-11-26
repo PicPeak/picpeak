@@ -11,7 +11,8 @@ import type { BackupVerificationSummary } from './backupVerification.service';
 
 export interface StuckEmail {
   id: number;
-  recipientEmail: string;
+  /** null when the caller lacks customers.view. */
+  recipientEmail: string | null;
   emailType: string;
   status: 'pending' | 'failed';
   retryCount: number;

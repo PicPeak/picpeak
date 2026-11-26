@@ -3,7 +3,8 @@
  *
  * The project overview already blanks them for an admin without that
  * permission. The project email preview, the global email log (list, search
- * and reading pane) and the notification bell returned them in full, and the
+ * and reading pane), the notification bell, the dashboard activity feed and
+ * System health's stuck and waiting mail returned them in full, and the
  * log's search matched on the address, which answers "did we ever mail this
  * address?" without showing it. For such an admin recipients come back as
  * null and address-shaped text inside free text as `…`; a Super Admin and a
@@ -30,7 +31,7 @@ const ADDRESS = 'anna@kunde.example';
 
 describe('admin mail surfaces — recipients need customers.view', () => {
   let db; let cleanup;
-  let projectsApp; let emailApp; let notificationsApp;
+  let projectsApp; let emailApp; let notificationsApp; let dashboardApp; let healthApp;
   let superTok; let readerTok; let customerReaderTok;
   let mailId;
 
@@ -57,7 +58,7 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     await assignAdminRole(db, superId, 'super_admin');
     superTok = mintAdminToken(superId);
 
-    const perms = ['events.view', 'email.view', 'notifications.view'];
+    const perms = ['events.view', 'email.view', 'notifications.view', 'analytics.view', 'system.view'];
     readerTok = await adminWithPermissions('mail-reader', perms);
     customerReaderTok = await adminWithPermissions('mail-customer-reader', [...perms, 'customers.view']);
     clearPermissionCache();
@@ -78,6 +79,12 @@ describe('admin mail surfaces — recipients need customers.view', () => {
       error_message: `550 5.1.1 <${ADDRESS}>: mailbox unavailable`,
       created_at: new Date().toISOString(),
     });
+    // Due an hour ago and never picked up: System health lists it as waiting.
+    const anHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await insertId('email_queue', {
+      recipient_email: 'waiting@kunde.example', email_type: 'gallery_created', status: 'pending',
+      email_data: '{}', event_id: eventId, retry_count: 0, created_at: anHourAgo, scheduled_at: anHourAgo,
+    });
     await insertId('activity_logs', {
       activity_type: 'customer_login', actor_type: 'customer', actor_name: ADDRESS,
       metadata: JSON.stringify({ email: ADDRESS, nested: { to: [`Anna <${ADDRESS}>`] }, count: 2 }),
@@ -87,6 +94,8 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     projectsApp = buildRouteApp('/api/admin/projects', require('../../src/routes/adminProjects'));
     emailApp = buildRouteApp('/api/admin/email', require('../../src/routes/adminEmail'));
     notificationsApp = buildRouteApp('/api/admin/notifications', require('../../src/routes/adminNotifications'));
+    dashboardApp = buildRouteApp('/api/admin/dashboard', require('../../src/routes/adminDashboard'));
+    healthApp = buildRouteApp('/api/admin/system-health', require('../../src/routes/adminSystemHealth'));
   }, 120000);
 
   afterAll(async () => { if (cleanup) await cleanup(); });
@@ -95,6 +104,8 @@ describe('admin mail surfaces — recipients need customers.view', () => {
   const queue = (tok, q = '') => auth(request(emailApp).get('/api/admin/email/queue').query(q ? { q } : {}), tok);
   const queueItem = (tok) => auth(request(emailApp).get(`/api/admin/email/queue/${mailId}`), tok);
   const bell = (tok) => auth(request(notificationsApp).get('/api/admin/notifications'), tok);
+  const activity = (tok) => auth(request(dashboardApp).get('/api/admin/dashboard/activity'), tok);
+  const failures = (tok) => auth(request(healthApp).get('/api/admin/system-health/failures'), tok);
 
   it('blanks the recipient of the project email preview', async () => {
     const res = await preview(readerTok);
@@ -160,6 +171,40 @@ describe('admin mail surfaces — recipients need customers.view', () => {
       const full = (await bell(tok)).body.notifications.find((x) => x.type === 'customer_login');
       expect(full.actorName).toBe(ADDRESS);
       expect(full.metadata.email).toBe(ADDRESS);
+    }
+  });
+
+  it('removes addresses from the dashboard activity feed', async () => {
+    const res = await activity(readerTok);
+    expect(res.status).toBe(200);
+    const a = res.body.find((x) => x.type === 'customer_login');
+    expect(a).toBeDefined();
+    expect(a.actorName).toBe('…');
+    expect(a.metadata).toEqual({ email: '…', nested: { to: ['Anna <…>'] }, count: 2 });
+    expect(JSON.stringify(res.body)).not.toContain(ADDRESS);
+
+    for (const tok of [superTok, customerReaderTok]) {
+      const full = (await activity(tok)).body.find((x) => x.type === 'customer_login');
+      expect(full.actorName).toBe(ADDRESS);
+      expect(full.metadata.email).toBe(ADDRESS);
+    }
+  });
+
+  it('blanks recipients and addresses in errors in System health', async () => {
+    const res = await failures(readerTok);
+    expect(res.status).toBe(200);
+    const stuck = res.body.stuckEmails.find((e) => e.id === mailId);
+    expect(stuck.recipientEmail).toBeNull();
+    expect(stuck.errorMessage).toBe('550 5.1.1 <…>: mailbox unavailable');
+    expect(res.body.waitingEmails).toHaveLength(1);
+    expect(res.body.waitingEmails[0].recipientEmail).toBeNull();
+    expect(JSON.stringify(res.body)).not.toContain('kunde.example');
+
+    for (const tok of [superTok, customerReaderTok]) {
+      const full = (await failures(tok)).body;
+      expect(full.stuckEmails.find((e) => e.id === mailId).recipientEmail).toBe(ADDRESS);
+      expect(full.stuckEmails.find((e) => e.id === mailId).errorMessage).toContain(ADDRESS);
+      expect(full.waitingEmails[0].recipientEmail).toBe('waiting@kunde.example');
     }
   });
 });
