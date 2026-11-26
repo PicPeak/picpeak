@@ -9,7 +9,6 @@ import {
   resetSection,
   slideshowFromEvent,
   slideshowPayload,
-  usesCustomTheme,
   type EventSettingsDraft,
 } from '../draft';
 
@@ -116,11 +115,6 @@ describe('event settings draft', () => {
   it('starts the editor from Branding when the gallery has no theme', () => {
     const fields = eventFieldsFromEvent({ ...EVENT, color_theme: undefined } as Event, branding);
     expect(fields.theme).toEqual(branding);
-  });
-
-  it('reads the old meaning when the row predates the switch', () => {
-    expect(usesCustomTheme({ ...EVENT, custom_theme_enabled: undefined } as Event)).toBe(true);
-    expect(usesCustomTheme({ ...EVENT, custom_theme_enabled: undefined, color_theme: undefined } as Event)).toBe(false);
   });
 
   it('refuses to turn the password on without a new one', () => {

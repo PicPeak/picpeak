@@ -62,7 +62,6 @@ export const EventsListPage: React.FC = () => {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEvents, setSelectedEvents] = useState<number[]>([]);
-  // const [showFilters, setShowFilters] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<number | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const bulkArchiveModal = useModal();

@@ -359,13 +359,6 @@ class EventRenameService {
    * @param {string} newSlug - New slug
    */
   async createSlugRedirect(trx, eventId, oldSlug, newSlug) {
-    // Check if table exists
-    const hasTable = await trx.schema.hasTable('slug_redirects');
-    if (!hasTable) {
-      logger.warn('slug_redirects table does not exist, skipping redirect creation');
-      return;
-    }
-
     // Check if redirect already exists
     const existingRedirect = await trx('slug_redirects')
       .where({ old_slug: oldSlug })

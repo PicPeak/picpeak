@@ -1006,13 +1006,6 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
     // (adminEvents/helpers.js), which carries the reasons for each one; not
     // reused because it sweeps and audits as an event delete, and this is an
     // archive delete.
-    const hasMergeDismissals = await db.schema.hasTable('event_people_merge_dismissals');
-    const hasDownloadGrants = await db.schema.hasTable('event_download_grants');
-    const hasAdminAssignments = await db.schema.hasTable('event_admin_assignments');
-    const hasChapters = await db.schema.hasTable('event_category_chapters');
-    const hasTranslations = await db.schema.hasTable('content_translations');
-    const hasDownloadRecipients = await db.schema.hasTable('download_job_recipients');
-    const hasSelectionSubmissions = await db.schema.hasTable('selection_submissions');
     await db.transaction(async (trx) => {
       // Event row first (issue 1560): the download-limit grants lock the
       // event row and then grant/photo rows, so taking them here in the
@@ -1031,61 +1024,36 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       // nonfatal, so an event can still be carrying it here.
       await trx('photo_faces').where('event_id', req.params.id).del();
       await trx('event_people').where('event_id', req.params.id).del();
-      if (hasMergeDismissals) {
-        await trx('event_people_merge_dismissals').where('event_id', req.params.id).del();
-      }
-      if (hasDownloadGrants) {
-        await trx('event_download_grants').where('event_id', req.params.id).del();
-      }
-      if (hasAdminAssignments) {
-        await trx('event_admin_assignments').where('event_id', req.params.id).del();
-      }
-      if (hasChapters) {
-        await trx('event_category_chapters').where('event_id', req.params.id).del();
-      }
-      if (hasTranslations) {
-        await trx('content_translations').where('event_id', req.params.id).del();
-      }
-      if (hasDownloadRecipients) {
-        await trx('download_job_recipients')
-          .whereIn('job_id', trx('download_jobs').where('event_id', req.params.id).select('id')).del();
-      }
+      await trx('event_people_merge_dismissals').where('event_id', req.params.id).del();
+      await trx('event_download_grants').where('event_id', req.params.id).del();
+      await trx('event_admin_assignments').where('event_id', req.params.id).del();
+      await trx('event_category_chapters').where('event_id', req.params.id).del();
+      await trx('content_translations').where('event_id', req.params.id).del();
+      await trx('download_job_recipients')
+        .whereIn('job_id', trx('download_jobs').where('event_id', req.params.id).select('id')).del();
       await trx('feedback_rate_limits').where('event_id', req.params.id).del();
-      if (hasSelectionSubmissions) {
-        await trx('selection_submissions').where('event_id', req.params.id).del();
-      }
+      await trx('selection_submissions').where('event_id', req.params.id).del();
       // SQLite does not enable FK cascades: erase client names/session
       // digests on this deletion path too, with history before its offers.
-      if (await trx.schema.hasTable('print_sales_orders'))
-        await trx('print_sales_orders').where({ event_id: Number(req.params.id) }).update({ event_id: null });
-      if (await trx.schema.hasTable('event_album_products')) {
-        if (await trx.schema.hasTable('album_product_choice_history')) {
-          await trx('album_product_choice_history')
-            .whereIn('offer_id', trx('event_album_products').where('event_id', req.params.id).select('id')).del();
-        }
-        if (await trx.schema.hasTable('album_shipments')) {
-          await trx('album_shipments')
-            .whereIn('offer_id', trx('event_album_products').where('event_id', req.params.id).select('id')).del();
-        }
-        await trx('event_album_products').where('event_id', req.params.id).del();
-      }
+      await trx('print_sales_orders').where({ event_id: Number(req.params.id) }).update({ event_id: null });
+      await trx('album_product_choice_history')
+        .whereIn('offer_id', trx('event_album_products').where('event_id', req.params.id).select('id')).del();
+      await trx('album_shipments')
+        .whereIn('offer_id', trx('event_album_products').where('event_id', req.params.id).select('id')).del();
+      await trx('event_album_products').where('event_id', req.params.id).del();
       await trx('photos').where('event_id', req.params.id).del();
       // Favourite lists (issue 2303), for the reason deleteEventCascade gives.
-      if (await trx.schema.hasTable('favorite_lists')) {
-        await trx('favorite_lists').where('event_id', req.params.id).del();
-      }
+      await trx('favorite_lists').where('event_id', req.params.id).del();
       // Scene tags (issue 1733) stay with an archived gallery's photo rows.
       // After the photos: a tagging worker locks the photo row first, and
       // taking the two in the other order can deadlock on PostgreSQL.
       await trx('photo_tags').where('event_id', req.params.id).del();
-      if (await trx.schema.hasTable('maintenance_jobs')) {
-        // Only a claim nobody holds, on claim()'s own terms: a restore that
-        // took the gallery after the check above still needs its row.
-        const cutoff = new Date(Date.now() - DEFAULT_STALE_MS).toISOString();
-        await trx('maintenance_jobs').where({ job_name: `event_archive:${Number(req.params.id)}` })
-          .where(function () { this.where('is_running', false).orWhere('heartbeat_at', '<', cutoff); })
-          .del();
-      }
+      // Only a claim nobody holds, on claim()'s own terms: a restore that
+      // took the gallery after the check above still needs its row.
+      const cutoff = new Date(Date.now() - DEFAULT_STALE_MS).toISOString();
+      await trx('maintenance_jobs').where({ job_name: `event_archive:${Number(req.params.id)}` })
+        .where(function () { this.where('is_running', false).orWhere('heartbeat_at', '<', cutoff); })
+        .del();
       await deleteWithAccountingHistory(trx, 'events', { id: req.params.id },
         { actor: req.admin.id, source: 'archive.delete' });
     });

@@ -29,6 +29,8 @@ describe('external media watcher shutdown ownership', () => {
     jest.doMock('../../src/services/externalMediaAccess', () => ({ authorizeImport: async () => ({ target: '/fixture/nas' }) }));
     jest.doMock('../../src/services/externalImportService', () => ({
       importExternalFolder: imported, ImportInProgressError: class extends Error {},
+    }));
+    jest.doMock('../../src/services/externalMediaTypes', () => ({
       IMAGE_EXTENSIONS: ['.jpg'], VIDEO_EXTENSIONS: ['.mp4'],
     }));
     jest.doMock('fs', () => ({ promises: { stat: jest.fn().mockResolvedValue({ isDirectory: () => true }) } }));

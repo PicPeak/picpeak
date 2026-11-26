@@ -19,12 +19,6 @@ const { deleteCategoryTranslations } = require('../services/contentTranslations'
 const router = express.Router();
 
 /**
- * A per-event category belongs to its event, so creating, editing or deleting
- * one needs access to that event: the rule requireEventOwnership applies.
- * Global categories are shared and stay on settings.edit alone. Answers the
- * refusal itself and returns true when the caller may not continue.
- */
-/**
  * Folders (issue 1786) are edited with folders.manage, on top of the
  * settings.edit these routes already require. Answers the refusal itself.
  */
@@ -64,6 +58,12 @@ async function siblingRaceError(err, eventId, name, excludeId = null) {
   return null;
 }
 
+/**
+ * A per-event category belongs to its event, so creating, editing or deleting
+ * one needs access to that event: the rule requireEventOwnership applies.
+ * Global categories are shared and stay on settings.edit alone. Answers the
+ * refusal itself and returns true when the caller may not continue.
+ */
 async function refuseForeignCategoryEvent(req, res, eventId) {
   if (eventId === null || eventId === undefined) return false;
   const event = await db('events').where('id', eventId).first();
@@ -479,10 +479,8 @@ router.put('/event/:eventId/:id/chapter', adminAuth, requirePermission('settings
       // the same transaction, so a removal never leaves them showing.
       await db.transaction(async (trx) => {
         await trx('event_category_chapters').where({ event_id: eventId, category_id: categoryId }).del();
-        if (await trx.schema.hasTable('content_translations')) {
-          await trx('content_translations')
-            .where({ event_id: eventId, entity_type: 'chapter', entity_id: categoryId }).del();
-        }
+        await trx('content_translations')
+          .where({ event_id: eventId, entity_type: 'chapter', entity_id: categoryId }).del();
       });
     } else {
       await db('event_category_chapters')
@@ -540,9 +538,7 @@ router.delete('/:id', adminAuth, requirePermission('settings.edit'), async (req,
     // Only photos in the trash are left in it: they come back uncategorised.
     await db('photos').where('category_id', id).update({ category_id: null });
     // Chapter markers in every event (migration 369): SQLite leaves the FK cascade inert.
-    if (await db.schema.hasTable('event_category_chapters')) {
-      await db('event_category_chapters').where('category_id', id).del();
-    }
+    await db('event_category_chapters').where('category_id', id).del();
     // Its translated names and chapter texts (migration 373), the same reason.
     await deleteCategoryTranslations(db, id);
     await db('photo_categories').where('id', id).delete();

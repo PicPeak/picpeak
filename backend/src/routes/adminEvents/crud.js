@@ -30,7 +30,7 @@ const externalAccess = require('../../services/externalMediaAccess');
 const eventTypeService = require('../../services/eventTypeService');
 const { normaliseEventTimeTriple } = require('../../services/eventService');
 const { findSlugHolder } = require('../../services/slugRedirects');
-const { hasColumnCached, columnNamesCached } = require('../../utils/schemaCache');
+const { columnNamesCached } = require('../../utils/schemaCache');
 const { requireEventOwnership, requireEventOwner, scopeEventsListQuery, withoutForeignEventSecrets, scopeEventsQuery, ownsEvent, canLinkCrmToEvent } = require('../../middleware/ownership');
 const eventAdminAssignments = require('../../services/eventAdminAssignmentsService');
 const { mayReviewUploads, holdsForReview } = require('../../services/uploadReviewService');
@@ -53,7 +53,7 @@ const downloadZipService = require('../../services/downloadZipService');
 const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { GUEST_NAME_MODES } = require('../../services/photoCredit');
 const { GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, isGuestUploadMaxEdge } = require('../../services/guestUploadDownscale');
-const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, claimEventArchive } = require('./helpers');
+const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, deleteEventCascade, claimEventArchive } = require('./helpers');
 // One stored form per name (NFC): a decomposed "Jörg" must match a precomposed search.
 const nfcName = (v) => (typeof v === 'string' ? v.normalize('NFC') : v);
 
@@ -985,7 +985,7 @@ module.exports = (router) => {
 
       // Random-placeholder password hash. When the admin publishes via the
       // PublishGalleryDialog (#627), the dialog re-hashes whatever they type and
-      // overwrites this. Pattern matches the create path at line ~606.
+      // overwrites this.
       const password_hash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), getBcryptRounds());
 
       // Create the storage folder structure (same as create path).
@@ -994,17 +994,12 @@ module.exports = (router) => {
       await fs.mkdir(path.join(eventPath, 'collages'), { recursive: true });
       await fs.mkdir(path.join(eventPath, 'individual'), { recursive: true });
 
-      const customerColumnsAvailable = await hasCustomerContactColumns();
-      const calendarColumnsExist = await hasColumnCached('events', 'is_full_day');
       // The Live Slideshow style is gallery configuration too (issue 2189).
-      // Its columns come from five migrations (138/139/158/163/323), so copy the
-      // ones this schema has. The share token stays behind: a copy gets its
-      // own link. show_category_id is mapped after the categories are cloned,
-      // with upload_category_id.
-      const eventColumns = await columnNamesCached('events');
+      // The share token stays behind: a copy gets its own link.
+      // show_category_id is mapped after the categories are cloned, with
+      // upload_category_id.
       const slideshowStyle = Object.fromEntries(
         ['show_interval_ms', 'show_transition', 'show_transition_ms', 'show_watermark', 'show_qr', 'show_colorfilter', 'show_order', 'show_fit']
-          .filter((column) => eventColumns.has(column))
           .map((column) => [column, source[column]])
       );
 
@@ -1015,15 +1010,11 @@ module.exports = (router) => {
         event_type: source.event_type,
         event_name,
         event_date: event_date || null,
-        ...(calendarColumnsExist ? {
-          event_time_start: source.event_time_start,
-          event_time_end: source.event_time_end,
-          is_full_day: source.is_full_day,
-        } : {}),
-        ...(customerColumnsAvailable ? {
-          customer_name: customer_name || null,
-          customer_email: customer_email || null,
-        } : {}),
+        event_time_start: source.event_time_start,
+        event_time_end: source.event_time_end,
+        is_full_day: source.is_full_day,
+        customer_name: customer_name || null,
+        customer_email: customer_email || null,
         host_name: customer_name || null,
         host_email: customer_email || null,
         admin_email: source.admin_email || null,
@@ -1070,7 +1061,7 @@ module.exports = (router) => {
         require_password: source.require_password,
         // Nobody knows the placeholder above until publish or an edit sets a
         // real one (migration 264).
-        ...(await hasColumnCached('events', 'password_generated') ? { password_generated: formatBoolean(true) } : {}),
+        password_generated: formatBoolean(true),
         css_template_id: source.css_template_id || null,
         hero_logo_visible: source.hero_logo_visible,
         hero_logo_size: source.hero_logo_size,
@@ -1110,9 +1101,9 @@ module.exports = (router) => {
         og_image_share_enabled: formatBoolean(false),
         ...slideshowStyle,
         // Chapter markers are part of the gallery's look (issue 2548).
-        ...(eventColumns.has('chapter_marker_style') ? { chapter_marker_style: chapterStyleOf(source) } : {}),
+        chapter_marker_style: chapterStyleOf(source),
         // So are its languages (issue 2550); the texts are copied below.
-        ...(eventColumns.has('text_language_mode') ? languageSettingsOf(source) : {}),
+        ...languageSettingsOf(source),
       }).returning('id');
 
       const newEventId = insertResult[0]?.id || insertResult[0];
@@ -1159,32 +1150,30 @@ module.exports = (router) => {
       // they apply to every event already). Mapping by name; photo_categories
       // has no foreign key into photos here so we just clone the rows.
       const newIdByOld = new Map();
-      if (await db.schema.hasTable('photo_categories')) {
-        const sourceCategories = await db('photo_categories')
-          .where({ event_id: id })
-          .where(function () { this.whereNull('is_global').orWhere('is_global', formatBoolean(false)); })
-          .select('id', 'name', 'slug', 'is_global', 'is_folder', 'parent_id', 'source_path');
-        // Parents before children so each clone can point at its parent's
-        // clone (issue 1786: nested folders keep their tree).
-        const pending = [...sourceCategories];
-        while (pending.length > 0) {
-          const index = pending.findIndex((c) => !c.parent_id || newIdByOld.has(Number(c.parent_id))
-            || !sourceCategories.some((o) => Number(o.id) === Number(c.parent_id)));
-          const c = pending.splice(index === -1 ? 0 : index, 1)[0];
-          const inserted = await db('photo_categories').insert({
-            event_id: newEventId,
-            name: c.name,
-            slug: c.slug,
-            is_global: formatBoolean(false),
-            // #1160: carry folder-ness across. Without this the clone silently
-            // falls back to the column default and a duplicated gallery turns
-            // every folder back into a filter.
-            is_folder: formatBoolean(parseBooleanInput(c.is_folder, false)),
-            parent_id: c.parent_id ? (newIdByOld.get(Number(c.parent_id)) ?? null) : null,
-            source_path: c.source_path || null,
-          }).returning('id');
-          newIdByOld.set(Number(c.id), Number(inserted[0]?.id ?? inserted[0]));
-        }
+      const sourceCategories = await db('photo_categories')
+        .where({ event_id: id })
+        .where(function () { this.whereNull('is_global').orWhere('is_global', formatBoolean(false)); })
+        .select('id', 'name', 'slug', 'is_global', 'is_folder', 'parent_id', 'source_path');
+      // Parents before children so each clone can point at its parent's
+      // clone (issue 1786: nested folders keep their tree).
+      const pending = [...sourceCategories];
+      while (pending.length > 0) {
+        const index = pending.findIndex((c) => !c.parent_id || newIdByOld.has(Number(c.parent_id))
+          || !sourceCategories.some((o) => Number(o.id) === Number(c.parent_id)));
+        const c = pending.splice(index === -1 ? 0 : index, 1)[0];
+        const inserted = await db('photo_categories').insert({
+          event_id: newEventId,
+          name: c.name,
+          slug: c.slug,
+          is_global: formatBoolean(false),
+          // #1160: carry folder-ness across. Without this the clone silently
+          // falls back to the column default and a duplicated gallery turns
+          // every folder back into a filter.
+          is_folder: formatBoolean(parseBooleanInput(c.is_folder, false)),
+          parent_id: c.parent_id ? (newIdByOld.get(Number(c.parent_id)) ?? null) : null,
+          source_path: c.source_path || null,
+        }).returning('id');
+        newIdByOld.set(Number(c.id), Number(inserted[0]?.id ?? inserted[0]));
       }
 
       // The guest-upload default and the slideshow category filter (issue
@@ -1200,10 +1189,10 @@ module.exports = (router) => {
           .first('id');
         return globalCategory ? sourceId : null;
       };
-      const categoryFields = { upload_category_id: await copiedCategoryId(source.upload_category_id) };
-      if (eventColumns.has('show_category_id')) {
-        categoryFields.show_category_id = await copiedCategoryId(source.show_category_id);
-      }
+      const categoryFields = {
+        upload_category_id: await copiedCategoryId(source.upload_category_id),
+        show_category_id: await copiedCategoryId(source.show_category_id),
+      };
       if (Object.values(categoryFields).some((value) => value !== null)) {
         await db('events').where({ id: newEventId }).update(categoryFields);
       }
@@ -1596,14 +1585,12 @@ module.exports = (router) => {
 
       // Strip identity/provenance/secret columns from the mass-assigned
       // body (GHSA-3rqx). The handler spreads req.body straight into the
-      // events UPDATE, so without this an events.edit holder could rewrite
-      // ownership (created_by), routing identity (slug/share_link), the
-      // share/client tokens, or the password hashes directly. Plaintext
-      // `password`/`client_password` inputs are NOT stripped — those are the
-      // supported way to change credentials and get hashed below; the
-      // tokens are regenerated internally where needed.
-      // The handler spreads req.body straight into the events UPDATE, so any
-      // column an events.edit holder names is writable unless blocked here.
+      // events UPDATE, so any column an events.edit holder names is writable
+      // unless blocked here: ownership (created_by), routing identity
+      // (slug/share_link), the share/client tokens, the password hashes.
+      // Plaintext `password`/`client_password` inputs are NOT stripped —
+      // those are the supported way to change credentials and get hashed
+      // below; the tokens are regenerated internally where needed.
       // This is a COMPLETE deny-set of every server-managed / permission-gated
       // events column (enumerated from the schema); everything else is a
       // legitimate edit-form field and passes through, including input-only
@@ -1675,8 +1662,6 @@ module.exports = (router) => {
         if (denied.has(key.toLowerCase())) delete updates[key];
       }
 
-      const customerColumnsAvailable = await hasCustomerContactColumns();
-
       if (Object.prototype.hasOwnProperty.call(updates, 'host_name') || Object.prototype.hasOwnProperty.call(updates, 'host_email')) {
         return res.status(400).json({ error: 'host_name and host_email are no longer supported. Use customer_name and customer_email instead.' });
       }
@@ -1704,20 +1689,12 @@ module.exports = (router) => {
       }
 
       if (hasNameUpdate) {
-        if (customerColumnsAvailable) {
-          updates.customer_name = nextName || null;
-        } else {
-          delete updates.customer_name;
-        }
+        updates.customer_name = nextName || null;
         updates.host_name = nextName || null;
       }
 
       if (hasEmailUpdate) {
-        if (customerColumnsAvailable) {
-          updates.customer_email = nextEmail || null;
-        } else {
-          delete updates.customer_email;
-        }
+        updates.customer_email = nextEmail || null;
         updates.host_email = nextEmail || null;
       }
 
@@ -1893,27 +1870,21 @@ module.exports = (router) => {
       // Migration 137 — calendar time triple. Renormalise only when at
       // least one of the three fields was supplied; otherwise leave the
       // row's current values alone. is_full_day=true forces both times
-      // to null. Drop the fields silently on un-migrated installs.
+      // to null.
       const timeFieldsTouched = (
         Object.prototype.hasOwnProperty.call(updates, 'event_time_start')
       || Object.prototype.hasOwnProperty.call(updates, 'event_time_end')
       || Object.prototype.hasOwnProperty.call(updates, 'is_full_day')
       );
       if (timeFieldsTouched) {
-        if (await hasColumnCached('events', 'is_full_day')) {
-          const triple = normaliseEventTimeTriple({
-            event_time_start: updates.event_time_start,
-            event_time_end: updates.event_time_end,
-            is_full_day: updates.is_full_day,
-          });
-          updates.event_time_start = triple.event_time_start;
-          updates.event_time_end = triple.event_time_end;
-          updates.is_full_day = formatBoolean(triple.is_full_day);
-        } else {
-          delete updates.event_time_start;
-          delete updates.event_time_end;
-          delete updates.is_full_day;
-        }
+        const triple = normaliseEventTimeTriple({
+          event_time_start: updates.event_time_start,
+          event_time_end: updates.event_time_end,
+          is_full_day: updates.is_full_day,
+        });
+        updates.event_time_start = triple.event_time_start;
+        updates.event_time_end = triple.event_time_end;
+        updates.is_full_day = formatBoolean(triple.is_full_day);
       }
 
       // Log the update request for debugging
@@ -2066,13 +2037,9 @@ module.exports = (router) => {
         updates.og_image_share_enabled = formatBoolean(updates.og_image_share_enabled === true);
       }
 
-      // Per-event promotional override (#440). Normalize promo_markdown to
-      // NULL when mode is anything other than 'custom' so we don't carry
-      // stale text after the admin switches modes. Empty markdown also
-      // becomes NULL.
       // Banner overrides (#440 promo / #932 info). Markdown is stored ONLY
       // while the mode is 'custom', so switching modes can't leave stale copy
-      // that reappears later.
+      // that reappears later. Empty markdown becomes NULL.
       //
       // The mode must be resolved against the STORED row when a partial PUT
       // sends only the markdown: reading updates.promo_mode alone leaves it
@@ -2427,7 +2394,6 @@ module.exports = (router) => {
     }
   });
 
-  // Delete event
   // Reveal now (#838): stamp revealed_at so the gallery opens for guests
   // immediately. Idempotent — revealing an already-revealed event no-ops.
   router.post('/:id/reveal', adminAuth, requirePermission('events.edit'), requireEventOwnership, async (req, res) => {

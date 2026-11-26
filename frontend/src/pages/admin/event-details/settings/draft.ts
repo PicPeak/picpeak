@@ -212,9 +212,6 @@ export function themeFromEvent(event: Event, branding: ThemeConfig | null | unde
 }
 
 export function usesCustomTheme(event: Event): boolean {
-  if (event.custom_theme_enabled === undefined) {
-    return Boolean(event.color_theme) || event.css_template_id != null;
-  }
   return truthy(event.custom_theme_enabled);
 }
 
@@ -249,7 +246,6 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
   };
   return {
     welcome_message: event.welcome_message || '',
-    color_theme: event.color_theme || '',
     css_template_id: event.css_template_id ?? null,
     expires_at: expiryDateField(event.expires_at, event.expiry_time_zone),
     allow_user_uploads: truthy(event.allow_user_uploads),
@@ -408,7 +404,6 @@ export const SECTION_OF_FIELD: Record<keyof EventFields, SettingsSectionKey> = {
   info_markdown: 'appearance',
   custom_theme_enabled: 'appearance',
   theme: 'appearance',
-  color_theme: 'appearance',
   css_template_id: 'appearance',
   source_mode: 'source',
   external_path: 'source',

@@ -18,17 +18,12 @@ import { useModal } from '../../hooks';
 
 interface FeedbackModerationPanelProps {
   eventId: number;
-  className?: string;
-  compact?: boolean;
-  maxItems?: number;
 }
 
-export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = ({
-  eventId,
-  className = '',
-  compact = false,
-  maxItems = 5
-}) => {
+// Pending comments shown before "Show all".
+const MAX_ITEMS = 3;
+
+export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = ({ eventId }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const { formatDateTime } = useLocalizedDate();
@@ -41,7 +36,7 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
     queryFn: () => feedbackService.getEventFeedback(eventId.toString(), {
       type: 'comment',
       status: 'pending',
-      limit: showAllModal.isOpen ? 100 : maxItems
+      limit: showAllModal.isOpen ? 100 : MAX_ITEMS
     }),
     refetchInterval: 30000 // Refresh every 30 seconds
   });
@@ -67,7 +62,7 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
 
   if (isLoading) {
     return (
-      <Card className={className}>
+      <Card>
         <div className="p-6">
           <Loading />
         </div>
@@ -79,8 +74,8 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
   const hasPending = pendingComments.length > 0;
 
   return (
-    <Card className={className}>
-      <div className={compact ? 'p-4' : 'p-6'}>
+    <Card>
+      <div className="p-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-heading">
             {t('feedback.pendingModeration', 'Pending Moderation')}
@@ -101,7 +96,7 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
           </div>
         ) : (
           <div className="space-y-3">
-            {pendingComments.slice(0, showAllModal.isOpen ? undefined : maxItems).map((item) => (
+            {pendingComments.slice(0, showAllModal.isOpen ? undefined : MAX_ITEMS).map((item) => (
               <div key={item.id} className="border border-line rounded-lg p-4 hover:bg-hover-soft">
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0">
@@ -198,7 +193,7 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
               </div>
             ))}
 
-            {pendingComments.length > maxItems && !showAllModal.isOpen && (
+            {pendingComments.length > MAX_ITEMS && !showAllModal.isOpen && (
               <button
                 onClick={showAllModal.open}
                 className="w-full text-center py-2 text-sm text-accent hover:opacity-80 font-medium"

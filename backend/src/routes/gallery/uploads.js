@@ -289,7 +289,6 @@ async function acceptGuestFiles(req, res, { eventId, credit, photoCap, uploadRes
     // thumbnails / EXIF / dimensions off the request thread (#357).
     const result = await queueFilesForProcessing(req.files, {
       eventId,
-      photoType: 'individual',
       categoryId: numericCategoryId,
       folderId: numericFolderId,
       photoCap,

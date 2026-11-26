@@ -416,7 +416,6 @@ module.exports = {
   dedupeExternalPhotos,
   externalRelpathIndexExists,
   deleteDuplicatePhotos,
-  planDedupe,
   createExternalRelpathIndex,
   dropExternalRelpathIndex,
   INDEX_NAME,

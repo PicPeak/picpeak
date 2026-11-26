@@ -350,9 +350,6 @@ function sharp(input, options = {}) {
   chain.toFile = target => submit({ input, options: nativeOptions, steps, terminal: 'toFile', target }, queueing);
   return chain;
 }
-// Existing call sites set these soft settings. They cannot weaken the child.
-sharp.cache = () => false;
-sharp.concurrency = () => 1;
 // Bounded header admission batches avoid one job per small upload.
 sharp.metadataBatch = (entries, { signal, interactive, validate = false } = {}) =>
   submit({ entries, validate, terminal: 'metadataBatch' }, { signal, interactive });

@@ -183,13 +183,11 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
   // timeout: the race costs one orphaned object, this cost the whole suite.
   if (event.download_zip_path) storageKeys.add(event.download_zip_path);
   try {
-    if (await db.schema.hasTable('download_jobs')) {
-      const jobs = await db('download_jobs')
-        .where('event_id', eventId)
-        .whereNotNull('zip_path')
-        .select('zip_path');
-      for (const job of jobs) storageKeys.add(job.zip_path);
-    }
+    const jobs = await db('download_jobs')
+      .where('event_id', eventId)
+      .whereNotNull('zip_path')
+      .select('zip_path');
+    for (const job of jobs) storageKeys.add(job.zip_path);
   } catch (jobErr) {
     logger.warn('Could not enumerate download job archives before cascade delete', {
       eventId, error: jobErr.message
@@ -234,72 +232,45 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
     await trx('event_people').where('event_id', eventId).del();
     // Separations carry a COPY of each side's centroid since #1132, so this
     // table holds biometric data too — and it deliberately has no event FK, so
-    // nothing else would ever reach it. hasTable rather than a catch: a failed
-    // statement aborts the surrounding transaction on Postgres, which would
-    // take the whole delete down on a pre-migration install.
-    if (await trx.schema.hasTable('event_people_merge_dismissals')) {
-      await trx('event_people_merge_dismissals').where('event_id', eventId).del();
-    }
+    // nothing else would ever reach it.
+    await trx('event_people_merge_dismissals').where('event_id', eventId).del();
     // Download-limit grants (issue 1560): the same inert-cascade reason.
-    if (await trx.schema.hasTable('event_download_grants')) {
-      await trx('event_download_grants').where('event_id', eventId).del();
-    }
+    await trx('event_download_grants').where('event_id', eventId).del();
     // Team assignments (migration 269): the same inert-cascade reason.
-    if (await trx.schema.hasTable('event_admin_assignments')) {
-      await trx('event_admin_assignments').where('event_id', eventId).del();
-    }
+    await trx('event_admin_assignments').where('event_id', eventId).del();
     // Chapter markers (migration 369): the same inert-cascade reason.
-    if (await trx.schema.hasTable('event_category_chapters')) {
-      await trx('event_category_chapters').where('event_id', eventId).del();
-    }
+    await trx('event_category_chapters').where('event_id', eventId).del();
     // Translated texts (migration 373): the same inert-cascade reason.
-    if (await trx.schema.hasTable('content_translations')) {
-      await trx('content_translations').where('event_id', eventId).del();
-    }
+    await trx('content_translations').where('event_id', eventId).del();
     // "Mail me when the download is ready" requests (migration 293) hold
     // addresses and hang off download_jobs: the same inert-cascade reason.
-    if (await trx.schema.hasTable('download_job_recipients')) {
-      await trx('download_job_recipients')
-        .whereIn('job_id', trx('download_jobs').where('event_id', eventId).select('id')).del();
-    }
+    await trx('download_job_recipients')
+      .whereIn('job_id', trx('download_jobs').where('event_id', eventId).select('id')).del();
     // feedback_rate_limits.event_id is also ON DELETE CASCADE (#1585), same
     // SQLite caveat as photo_faces above — delete explicitly so an event's
     // rate-limit tracking rows don't outlive it on the SQLite path.
     await trx('feedback_rate_limits').where('event_id', eventId).del();
     // Finished selections and approvals (migration 291): the same reason.
-    if (await trx.schema.hasTable('selection_submissions')) {
-      await trx('selection_submissions').where('event_id', eventId).del();
-    }
+    await trx('selection_submissions').where('event_id', eventId).del();
 
     // Choices contain client names and session digests; SQLite FK cascades are off.
-    if (await trx.schema.hasTable('print_sales_orders'))
-      await trx('print_sales_orders').where({ event_id: eventId }).update({ event_id: null });
-    if (await trx.schema.hasTable('event_album_products')) {
-      if (await trx.schema.hasTable('album_product_choice_history')) {
-        await trx('album_product_choice_history').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();
-      }
-      if (await trx.schema.hasTable('album_shipments')) {
-        await trx('album_shipments').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();
-      }
-      await trx('event_album_products').where({ event_id: eventId }).del();
-    }
+    await trx('print_sales_orders').where({ event_id: eventId }).update({ event_id: null });
+    await trx('album_product_choice_history').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();
+    await trx('album_shipments').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();
+    await trx('event_album_products').where({ event_id: eventId }).del();
 
     await trx('photos').where('event_id', eventId).del();
     // Favourite lists (issue 2303) carry the names guests gave them: the same
     // inert-cascade reason. After the photos, whose delete takes the
     // favourites in the lists with it on PostgreSQL.
-    if (await trx.schema.hasTable('favorite_lists')) {
-      await trx('favorite_lists').where('event_id', eventId).del();
-    }
+    await trx('favorite_lists').where('event_id', eventId).del();
     // Scene tags (issue 1733): the same inert-cascade reason. After the
     // photos, not with the face data above: a tagging worker locks the photo
     // row before its tags, and the reverse order can deadlock on PostgreSQL.
     await trx('photo_tags').where('event_id', eventId).del();
     // The archive claim row (event_archive:<id>) has no FK to the event, so
-    // it would outlive it. Guarded for a pre-migration install.
-    if (await trx.schema.hasTable('maintenance_jobs')) {
-      await trx('maintenance_jobs').where({ job_name: `event_archive:${eventId}` }).del();
-    }
+    // it would outlive it.
+    await trx('maintenance_jobs').where({ job_name: `event_archive:${eventId}` }).del();
     // 5. Finally delete the event row
     await deleteWithAccountingHistory(trx, 'events', { id: eventId },
       { actor: adminContext?.id ?? null, source: 'event.delete' });

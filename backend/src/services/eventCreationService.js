@@ -15,19 +15,18 @@ const { buildShareLinkVariants } = require('./shareLinkService');
 const { ensureAccessCode } = require('./eventAccessCode');
 const { parseBooleanInput } = require('../utils/parsers');
 const { normaliseEventTimeTriple } = require('./eventService');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { getAppSetting } = require('../utils/appSettings');
 const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../utils/galleryPasswordVault');
 const { clampIntOrUndefined } = require('../utils/numericHelpers');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const {
-  notifyGalleryRecipients, resolveGalleryRecipients, reachableAccountsByIds, hasPasswordGeneratedColumn,
+  notifyGalleryRecipients, resolveGalleryRecipients, reachableAccountsByIds,
   galleryLinkFor,
 } = require('./galleryNotificationService');
 const { resolveEventFeedbackDefaults, applyFeedbackDefaults } = require('./feedbackDefaults');
-const { getStoragePath, getEventFieldRequirements, readBooleanSetting, getDownloadProtectionDefaults,
-  getImageSecurityDefaults, resolveImageSecurityColumns, getBrandingDefaults, getCustomerNameFromPayload,
-  getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, hasCustomerContactColumns,
+const { getStoragePath, getEventFieldRequirements, readBooleanSetting,
+  getImageSecurityDefaults, resolveImageSecurityColumns, getCustomerNameFromPayload,
+  getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled,
   SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS } = require('./eventSettings');
 const { validateCreationInput } = require('./eventCreationValidation');
 const { normaliseDownloadLimit } = require('./downloadQuota');
@@ -183,8 +182,6 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   // bypass.
   const phoneEnabled = await isPhoneFieldEnabled();
   const customerPhone = phoneEnabled ? getCustomerPhoneFromPayload(input) : null;
-
-  const customerColumnsAvailable = await hasCustomerContactColumns();
 
   // Customer accounts to assign (#354) — only while the customer portal is
   // on; the frontend hides the picker otherwise, but a stale tab could still
@@ -407,8 +404,6 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     }
   }
 
-  // Get branding defaults for hero logo settings (Feature 7: Branding Inheritance)
-  const brandingDefaults = await getBrandingDefaults();
   // hero_logo_visible: store NULL ("inherit") unless the admin explicitly
   // set it, so the global branding_logo_display_hero toggle keeps
   // controlling this gallery afterwards (#756). Only an explicit per-event
@@ -421,12 +416,12 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   // NULL = inherit the global branding_logo_size (#756), resolved at read
   // time. Only an explicit per-event size overrides it.
   const effectiveHeroLogoSize = input.hero_logo_size || null;
-  const effectiveHeroLogoPosition = input.hero_logo_position || brandingDefaults.hero_logo_position;
+  const effectiveHeroLogoPosition = input.hero_logo_position || 'top';
 
   // Inherit "Detect dev tools" from the global Image Security setting unless
   // the request explicitly overrides it (#317 — admin disabled it globally
   // but new events still got it ON because the column default is true).
-  const protectionDefaults = await getDownloadProtectionDefaults();
+  const devtoolsProtectionDefault = await readBooleanSetting('enable_devtools_protection');
   // #1296 — the other four Image-security settings, which were written,
   // rendered as controls, and read by nothing. Same inheritance rule as
   // the devtools setting below. Creation-time only; see
@@ -438,8 +433,8 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   const effectiveEnableDevtoolsProtection =
       enableDevtoolsProtectionInput !== undefined
         ? enableDevtoolsProtectionInput
-        : protectionDefaults.enable_devtools_protection !== undefined
-          ? protectionDefaults.enable_devtools_protection
+        : devtoolsProtectionDefault !== undefined
+          ? devtoolsProtectionDefault
           : true;
 
   // Migration 137 — normalise calendar time triple. Throws AppError
@@ -447,36 +442,32 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   const calendarTriple = normaliseEventTimeTriple({
     event_time_start, event_time_end, is_full_day,
   });
-  const calendarColumnsExist = await hasColumnCached('events', 'is_full_day');
 
   // Insert into database
   // Seed the new event's Live Slideshow display style from the PICPEAK-WIDE
   // preset (app_settings, Settings → Slideshow). New events inherit it and the
   // admin can still override per event. Watermark is left NULL = inherit the
-  // global watermark; the share token is minted on demand, not seeded. Guarded
-  // so un-migrated installs (mid-branch) don't reference missing columns.
+  // global watermark; the share token is minted on demand, not seeded.
   let slideshowSeed = {};
-  if (await hasColumnCached('events', 'show_interval_ms')) {
-    try {
-      // parseInt-first: the previous `Number.isFinite(+v)` pre-check let
-      // NaN through for null/''/true (+null is 0, parseInt(null) is NaN),
-      // producing show_interval_ms=NaN in the INSERT — PG rejects that
-      // with "invalid input syntax for type integer" while SQLite
-      // silently stores NULL, so event creation 500'd on PG whenever the
-      // slideshow app_settings rows were absent.
-      const intP = (v, min, max) => clampIntOrUndefined(v, min, max);
-      const oneOf = (v, allowed) => (allowed.includes(v) ? v : undefined);
-      const i = intP(await getAppSetting('slideshow_interval_ms', undefined), 1000, 120000);
-      const tr = oneOf(await getAppSetting('slideshow_transition', undefined), SLIDESHOW_TRANSITIONS);
-      const tms = intP(await getAppSetting('slideshow_transition_ms', undefined), 100, 5000);
-      const cf = oneOf(await getAppSetting('slideshow_colorfilter', undefined), SLIDESHOW_COLORFILTERS);
-      if (i !== undefined) slideshowSeed.show_interval_ms = i;
-      if (tr) slideshowSeed.show_transition = tr;
-      if (tms !== undefined) slideshowSeed.show_transition_ms = tms;
-      if (cf) slideshowSeed.show_colorfilter = cf;
-    } catch (e) {
-      logger.warn('Failed to seed slideshow settings from global preset', { error: e.message });
-    }
+  try {
+    // parseInt-first: the previous `Number.isFinite(+v)` pre-check let
+    // NaN through for null/''/true (+null is 0, parseInt(null) is NaN),
+    // producing show_interval_ms=NaN in the INSERT — PG rejects that
+    // with "invalid input syntax for type integer" while SQLite
+    // silently stores NULL, so event creation 500'd on PG whenever the
+    // slideshow app_settings rows were absent.
+    const intP = (v, min, max) => clampIntOrUndefined(v, min, max);
+    const oneOf = (v, allowed) => (allowed.includes(v) ? v : undefined);
+    const i = intP(await getAppSetting('slideshow_interval_ms', undefined), 1000, 120000);
+    const tr = oneOf(await getAppSetting('slideshow_transition', undefined), SLIDESHOW_TRANSITIONS);
+    const tms = intP(await getAppSetting('slideshow_transition_ms', undefined), 100, 5000);
+    const cf = oneOf(await getAppSetting('slideshow_colorfilter', undefined), SLIDESHOW_COLORFILTERS);
+    if (i !== undefined) slideshowSeed.show_interval_ms = i;
+    if (tr) slideshowSeed.show_transition = tr;
+    if (tms !== undefined) slideshowSeed.show_transition_ms = tms;
+    if (cf) slideshowSeed.show_colorfilter = cf;
+  } catch (e) {
+    logger.warn('Failed to seed slideshow settings from global preset', { error: e.message });
   }
 
   const insertData = {
@@ -485,12 +476,11 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     event_name,
     ...slideshowSeed,
     event_date: event_date || null,
-    ...(calendarColumnsExist ? {
-      event_time_start: calendarTriple.event_time_start,
-      event_time_end: calendarTriple.event_time_end,
-      is_full_day: formatBoolean(calendarTriple.is_full_day),
-    } : {}),
-    ...(customerColumnsAvailable ? { customer_name: customerName, customer_email: customerEmail } : {}),
+    event_time_start: calendarTriple.event_time_start,
+    event_time_end: calendarTriple.event_time_end,
+    is_full_day: formatBoolean(calendarTriple.is_full_day),
+    customer_name: customerName,
+    customer_email: customerEmail,
     ...(customerPhone ? { customer_phone: customerPhone } : {}),
     host_name: customerName || null,
     host_email: customerEmail || null,
@@ -502,7 +492,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
       ...(requirePassword && password ? { password } : {}),
       ...(client_access_enabled && client_password ? { clientPassword: client_password } : {}),
     })),
-    ...(await hasPasswordGeneratedColumn() ? { password_generated: formatBoolean(passwordGenerated) } : {}),
+    password_generated: formatBoolean(passwordGenerated),
     welcome_message,
     color_theme,
     share_link: shareLinkToStore,

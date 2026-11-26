@@ -84,9 +84,6 @@ const STATUS_RANK = {
 
 const EXPIRING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** The keys a client may pass as `sortBy`. Exported for validation + tests. */
-const SORTABLE_KEYS = Object.keys(SORTABLE);
-
 /**
  * Normalises untrusted query input to a key/direction pair. Anything
  * unrecognised falls back to the historical default rather than erroring, so
@@ -189,9 +186,4 @@ function applyEventListSort(query, sortBy, sortOrder) {
 
 module.exports = {
   applyEventListSort,
-  resolveEventSort,
-  SORTABLE_KEYS,
-  STATUS_RANK,
-  DEFAULT_SORT_BY,
-  DEFAULT_SORT_ORDER,
 };

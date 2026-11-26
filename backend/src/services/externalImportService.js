@@ -641,14 +641,12 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   // only to free the memory sooner (this process; others age them out).
   const watermarkService = require('./watermarkService');
   watermarkService.forgetSource(f.full);
-  if (typeof storage.resolveLocalPath === 'function') {
-    const derivativeKeys = [
-      ...DERIVATIVE_COLUMNS.map((column) => row[column]).filter(Boolean),
-      ...previewTierKeys(row), ...thumbnailTierKeys(row),
-    ];
-    for (const key of derivativeKeys) {
-      try { watermarkService.forgetSource(storage.resolveLocalPath(key)); } catch (_) { /* not a local key */ }
-    }
+  const derivativeKeys = [
+    ...DERIVATIVE_COLUMNS.map((column) => row[column]).filter(Boolean),
+    ...previewTierKeys(row), ...thumbnailTierKeys(row),
+  ];
+  for (const key of derivativeKeys) {
+    try { watermarkService.forgetSource(storage.resolveLocalPath(key)); } catch (_) { /* not a local key */ }
   }
   return 'refreshed';
 }
@@ -1539,12 +1537,9 @@ function importFailureCode(error) {
 module.exports = {
   externalPlacement,
   importExternalFolder,
-  importFailureCode,
   recordExclusions,
   ImportInProgressError,
   EventNotFoundError,
   jobNameFor,
   MAX_SCAN_WEBHOOK_ENTRIES,
-  IMAGE_EXTENSIONS,
-  VIDEO_EXTENSIONS,
 };

@@ -400,8 +400,6 @@ describe('separations survive re-derivation (#1132)', () => {
       );
       const body = src.slice(src.indexOf('async function deleteEventCascade'));
       expect(body).toContain('event_people_merge_dismissals\').where(\'event_id\', eventId).del()');
-      // Guarded, not caught: a failed statement aborts the transaction on PG.
-      expect(body).toContain('hasTable(\'event_people_merge_dismissals\')');
     });
 
     it('permanent archive deletion clears the face data too', () => {

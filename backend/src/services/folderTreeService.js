@@ -572,32 +572,13 @@ async function deleteFolder(eventId, folderId, conn = db) {
     await trx('folder_requests').where({ event_id: eventId, fallback_folder_id: folder.id }).update({ fallback_folder_id: parentId });
     await trx('event_category_order').where({ category_id: folder.id }).del();
     // Chapter markers (migration 369): SQLite leaves the FK cascade inert.
-    if (await trx.schema.hasTable('event_category_chapters')) {
-      await trx('event_category_chapters').where({ category_id: folder.id }).del();
-    }
+    await trx('event_category_chapters').where({ category_id: folder.id }).del();
     // Translated names (migration 373): the same reason.
     await require('./contentTranslations').deleteCategoryTranslations(trx, folder.id);
     await trx('photo_categories').where('id', folder.id).del();
     return moved;
   };
   return conn.isTransaction ? run(conn) : conn.transaction(run);
-}
-
-/** Move photos into a folder (null = gallery root). Only photos of this event. */
-async function movePhotos(eventId, photoIds, folderId, conn = db) {
-  const ids = [...new Set((photoIds || []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
-  if (ids.length === 0) return 0;
-  if (folderId != null && !(await findEventFolder(eventId, folderId, conn))) {
-    throw new FolderError('Folder not found', 404, 'FOLDER_NOT_FOUND');
-  }
-  let moved = 0;
-  for (let i = 0; i < ids.length; i += 500) {
-    moved += await livePhotos(conn)
-      .where('event_id', eventId)
-      .whereIn('id', ids.slice(i, i + 500))
-      .update({ folder_id: folderId == null ? null : Number(folderId), pending_folder_request_id: null });
-  }
-  return moved;
 }
 
 /** The tree for the admin UI: folders with direct photo counts, ordered. */
@@ -632,7 +613,6 @@ async function folderTree(eventId, conn = db) {
 module.exports = {
   MAX_FOLDER_DEPTH,
   FOLDER_LIMITS,
-  DEFAULT_FIRST_LOOK_KEYWORDS,
   FolderError,
   folderExistsError,
   countEventFolders,
@@ -646,10 +626,8 @@ module.exports = {
   mapDirectories,
   eventFolders,
   findEventFolder,
-  depthOf,
   indexById,
   subtreeIds,
-  subtreeIdsFrom,
   blockedFolderIdsFrom,
   downloadBlockedFolderIds,
   whereFolderAllowsDownload,
@@ -658,6 +636,5 @@ module.exports = {
   renameFolder,
   moveFolder,
   deleteFolder,
-  movePhotos,
   folderTree,
 };
