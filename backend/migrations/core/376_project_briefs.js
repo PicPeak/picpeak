@@ -24,10 +24,11 @@
  *                          owner). A customer brief picks its occasion itself;
  *                          a project brief takes projects.event_type.
  *     shared_arrangements  free text the customer sees
- *     notified_at / notified_snapshot   the last update sent to the customer:
- *                          when, and the customer-visible state it carried
- *                          (what the portal shows, and the base of the next
- *                          "what changed" list)
+ *     notified_at / notified_snapshot / notified_customer_account_id
+ *                          the last update sent: when, the customer-visible
+ *                          state it carried (what the portal shows, and the
+ *                          base of the next "what changed" list) and to whom
+ *                          (a project that changes customer starts unsent)
  *
  *   project_brief_values   the values, per brief and field. field_id has no
  *                          foreign key on purpose: a value outlives its
@@ -223,6 +224,8 @@ exports.up = async function up(knex) {
       t.text('shared_arrangements').nullable();
       t.timestamp('notified_at').nullable();
       t.text('notified_snapshot').nullable();
+      t.integer('notified_customer_account_id').unsigned().nullable()
+        .references('id').inTable('customer_accounts').onDelete('SET NULL');
       t.timestamp('created_at').defaultTo(knex.fn.now());
       t.timestamp('updated_at').defaultTo(knex.fn.now());
       // Exactly one owner: a project, or a customer without a project.

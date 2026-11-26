@@ -347,7 +347,10 @@ async function current(owner) {
   const ctx = await loadOwner(owner);
   const fields = assemble(await fieldsFor(ctx.occasion), await valueRows(ctx.brief), ctx.project);
   const sharedArrangements = ctx.brief?.shared_arrangements || '';
-  const snapshot = parseJson(ctx.brief?.notified_snapshot, null);
+  // What was sent counts only for the customer it was sent to: a project that
+  // changed customer starts unsent for the new one.
+  const sentTo = ctx.brief?.notified_customer_account_id;
+  const snapshot = sentTo != null && Number(sentTo) === ctx.customerId ? parseJson(ctx.brief.notified_snapshot, null) : null;
   return { ...ctx, fields, sharedArrangements, snapshot, state: visibleState(fields, sharedArrangements) };
 }
 
@@ -517,18 +520,25 @@ async function occasionName(occasion) {
 
 /**
  * Send the customer one update: every visible change since the last one.
- * The snapshot moves forward first, guarded on the one it replaces, so two
- * clicks cannot send the same changes twice; a mail that cannot be queued
- * puts it back.
+ * The snapshot moves forward first, guarded on the one the changes were
+ * computed from, so two clicks cannot send the same changes twice; a mail
+ * that cannot be queued puts it back. A customer who takes no administrative
+ * email gets no mail but the portal still shows the update, as with every
+ * other notice held back for them (_adminEmailOptOut); `mail` says which.
  */
 async function notify(owner, adminId) {
-  const { project, customerId, occasion, snapshot, state } = await current(owner);
+  const { brief: seen, project, customerId, occasion, snapshot, state } = await current(owner);
   if (customerId == null) throw new AppError('This project has no customer to notify', 422, 'BRIEF_NO_CUSTOMER');
   const changes = diffStates(snapshot, state);
   if (changes.length === 0) throw new AppError('There are no changes to send', 409, 'BRIEF_NOTHING_TO_SEND');
   // A project brief can have something to send (the project data) before
   // its first save.
-  const brief = await ensureBrief(db, owner);
+  const brief = seen || await ensureBrief(db, owner);
+  const sent = {
+    notified_at: seen?.notified_at ?? null,
+    notified_snapshot: seen?.notified_snapshot ?? null,
+    notified_customer_account_id: seen?.notified_customer_account_id ?? null,
+  };
 
   const customer = await db('customer_accounts').where({ id: customerId })
     .first('id', 'email', 'display_name', 'first_name', 'last_name', 'preferred_language', 'password_hash');
@@ -537,10 +547,12 @@ async function notify(owner, adminId) {
   const notifiedAt = now();
   const claimed = await db('project_briefs')
     .where({ id: brief.id })
-    .where((q) => (brief.notified_snapshot == null
-      ? q.whereNull('notified_snapshot')
-      : q.where('notified_snapshot', brief.notified_snapshot)))
-    .update({ notified_at: notifiedAt, notified_snapshot: JSON.stringify(state) });
+    .where((q) => {
+      for (const column of ['notified_snapshot', 'notified_customer_account_id']) {
+        if (sent[column] == null) q.whereNull(column); else q.where(column, sent[column]);
+      }
+    })
+    .update({ notified_at: notifiedAt, notified_snapshot: JSON.stringify(state), notified_customer_account_id: customerId });
   if (claimed !== 1) throw new AppError('The brief changed meanwhile; reload and send again', 409, 'BRIEF_CHANGED');
 
   const emailProcessor = require('./emailProcessor');
@@ -565,13 +577,14 @@ async function notify(owner, adminId) {
   }
   if (!result) {
     await db('project_briefs').where({ id: brief.id, notified_snapshot: JSON.stringify(state) })
-      .update({ notified_at: brief.notified_at, notified_snapshot: brief.notified_snapshot });
+      .update(sent);
     throw new AppError('The update mail could not be queued', 502, 'BRIEF_MAIL_FAILED');
   }
+  const mail = result === 'suppressed' ? 'suppressed' : 'queued';
   await logActivity('project_brief_notified', {
-    [owner.kind === 'project' ? 'projectId' : 'customerId']: owner.id, changes: changes.length,
+    [owner.kind === 'project' ? 'projectId' : 'customerId']: owner.id, changes: changes.length, mail,
   }, null, adminActivityActor(adminId));
-  return { notifiedAt, changes: changes.length };
+  return { notifiedAt, changes: changes.length, mail };
 }
 
 // ---------------------------------------------------------------------------
@@ -607,12 +620,14 @@ async function projectDeposit(projectId, customerId) {
   };
 }
 
+/** The briefs sent to this customer that are still theirs: a project that
+ *  moved to another customer takes its brief along, unsent for the new one. */
 function briefsOfCustomer(customerId) {
   return db('project_briefs as b')
     .leftJoin('projects as p', 'p.id', 'b.project_id')
+    .where('b.notified_customer_account_id', customerId)
     .where((q) => q.where('b.customer_account_id', customerId)
-      .orWhere((viaProject) => viaProject.whereNotNull('b.project_id').where('p.customer_account_id', customerId)))
-    .whereNotNull('b.notified_at');
+      .orWhere((viaProject) => viaProject.whereNotNull('b.project_id').where('p.customer_account_id', customerId)));
 }
 
 /** Whether the customer has a brief to look at (the portal's nav entry). */

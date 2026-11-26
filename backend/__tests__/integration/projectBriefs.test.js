@@ -411,4 +411,63 @@ describe('with the projects flag on', () => {
       expect(await db('project_briefs').where({ project_id: p }).orWhere({ customer_account_id: carla }).first()).toBeUndefined();
     });
   });
+
+  describe('review round 1', () => {
+    const projectService = require('../../src/services/projectService');
+    const briefService = require('../../src/services/briefService');
+
+    it('does not hand a reassigned project\'s sent brief to the new customer, nor keep it for the old one', async () => {
+      const anna = await customer();
+      const carl = await customer();
+      const p = await project(anna);
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'FOR-ANNA-ONLY' });
+      expect((await admin('post', `/projects/${p}/notify`)).status).toBe(200);
+      expect((await portal(anna)).body.agreements).toHaveLength(1);
+
+      await db('projects').where({ id: p }).update({ customer_account_id: carl });
+      expect((await portal(carl)).status).toBe(403);
+      expect((await portal(anna)).status).toBe(403);
+      // For Carl nothing has been sent: everything visible is pending again.
+      const pending = (await admin('get', `/projects/${p}`)).body.brief.pendingChanges;
+      expect(pending).toContainEqual(expect.objectContaining({ fieldId: null, change: 'added' }));
+      expect((await admin('post', `/projects/${p}/notify`)).status).toBe(200);
+      const carlEmail = (await db('customer_accounts').where({ id: carl }).first()).email;
+      expect(JSON.parse((await mails(carlEmail).first()).email_data).brief_changes_text).toContain('FOR-ANNA-ONLY (added)');
+      expect((await portal(carl)).body.agreements).toHaveLength(1);
+      expect((await portal(anna)).status).toBe(403);
+    });
+
+    it('lets only one of two overlapping notifies send', async () => {
+      const dora = await customer();
+      const p = await project(dora);
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'Race' });
+      const email = (await db('customer_accounts').where({ id: dora }).first()).email;
+      const real = projectService.getProjectById;
+      let release;
+      const gate = new Promise((resolve) => { release = resolve; });
+      // The first notify reads the brief, then waits while the second runs.
+      const spy = jest.spyOn(projectService, 'getProjectById')
+        .mockImplementationOnce(async (id) => { await gate; return real(id); });
+      const first = briefService.notify({ kind: 'project', id: p }, superAdmin);
+      while (!spy.mock.calls.length) await new Promise((resolve) => setImmediate(resolve));
+      await briefService.notify({ kind: 'project', id: p }, superAdmin);
+      release();
+      await expect(first).rejects.toMatchObject({ code: 'BRIEF_CHANGED' });
+      spy.mockRestore();
+      expect(await mails(email)).toHaveLength(1);
+    });
+
+    it('holds the mail back for a customer who takes no administrative email, and says so', async () => {
+      const ella = await customer({ no_admin_emails: true });
+      const p = await project(ella);
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'Quiet' });
+      const res = await admin('post', `/projects/${p}/notify`);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ mail: 'suppressed' });
+      const email = (await db('customer_accounts').where({ id: ella }).first()).email;
+      expect((await mails(email)).map((m) => m.status)).toEqual(['suppressed']);
+      // The portal has the update all the same.
+      expect((await portal(ella)).body.agreements[0].sharedArrangements).toBe('Quiet');
+    });
+  });
 });

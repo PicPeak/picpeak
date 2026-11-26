@@ -48,6 +48,7 @@ const ADMINISTRATIVE_EMAIL_TYPES = new Set([
   'customer_document_reviewed',
   'customer_document_requested',
   'customer_document_request_reminder',
+  'project_brief_updated',
 ]);
 
 function isAdministrativeEmailType(emailType) {

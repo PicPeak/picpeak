@@ -215,7 +215,8 @@ const updateEventType = async (id, updates, actor = null) => {
 
   // A slug_prefix rename must CASCADE, or it silently orphans everything keyed on
   // the old slug: existing events/quotes (their event_type), and the per-type
-  // pre-event reminder template (event_reminder_<slug>). Re-point them so a
+  // pre-event reminder template (event_reminder_<slug>), the brief templates
+  // and briefs of the occasion. Re-point them so a
   // rename behaves like a rename, not a detach. Atomic.
   const oldSlug = eventType.slug_prefix;
   const newSlug = updateData.slug_prefix;
@@ -232,6 +233,9 @@ const updateEventType = async (id, updates, actor = null) => {
     const evCount = await trx('events').where('event_type', oldSlug).update({ event_type: newSlug });
     const qCount = await auditedUpdate(trx, 'quotes', { event_type: oldSlug }, { event_type: newSlug },
       { actor, source: 'event_type.rename' });
+    // The occasion's brief template and the customer briefs that picked it (issue 2678).
+    await trx('project_brief_fields').where('occasion', oldSlug).update({ occasion: newSlug });
+    await trx('project_briefs').where('occasion', oldSlug).update({ occasion: newSlug });
     // Carry the authored per-type reminder template along (subject/body follow the
     // rename). Guard: never clobber an existing target template for the new slug.
     const oldKey = `event_reminder_${oldSlug}`;

@@ -50,6 +50,18 @@ describe('event type slug rename cascade', () => {
     expect(moved.subject_en).toBe('Party reminder');
   });
 
+  it('carries brief templates and customer briefs over to the new slug', async () => {
+    const [typeId] = await db('event_types').insert({ name: 'Ball', slug_prefix: 'ball', is_active: true });
+    await db('project_brief_fields').insert({ occasion: 'ball', label: 'Dress code', field_type: 'short_text', position: 0 });
+    await db('project_briefs').insert({ customer_account_id: customerId, occasion: 'ball' });
+
+    await eventTypeService.updateEventType(typeId, { slug_prefix: 'dance' });
+
+    expect(await db('project_brief_fields').where({ occasion: 'ball' }).first()).toBeUndefined();
+    expect((await db('project_brief_fields').where({ occasion: 'dance' }).first()).label).toBe('Dress code');
+    expect((await db('project_briefs').where({ customer_account_id: customerId }).first()).occasion).toBe('dance');
+  });
+
   it('does not clobber an existing template for the new slug', async () => {
     const [typeId] = await db('event_types').insert({ name: 'Gala', slug_prefix: 'gala', is_active: true });
     await db('email_templates').insert({ template_key: 'event_reminder_gala', subject_en: 'old gala' });
