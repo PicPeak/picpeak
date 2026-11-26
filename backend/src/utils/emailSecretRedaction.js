@@ -199,4 +199,4 @@ function redactBearerLinks(html) {
 
 module.exports = {
   replaceMaskedSecrets, MASK, isSecretKey, isRealSecret, secretValues, redactEmailData, redactRenderedHtml, redactDocumentLinks, parseEmailData,
-  redactRecoveryLinks, redactRecoveryLinksInData, hasMaskedRecoveryLink, redactBearerLinks };
+  redactRecoveryLinks, redactRecoveryLinksInData, hasMaskedRecoveryLink, redactBearerLinks, escapeRegExp };
