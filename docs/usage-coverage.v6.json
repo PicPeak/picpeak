@@ -382,6 +382,21 @@
         "POST /:scope/preview"
       ]
     },
+    "adminBriefs.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Project brief templates and briefs: field labels, names, places, arrangements and notify actions are customer content, not product usage.",
+      "route_signatures": [
+        "GET /templates",
+        "PUT /templates/:occasion",
+        "GET /projects/:id",
+        "PUT /projects/:id",
+        "POST /projects/:id/notify",
+        "GET /customers/:id",
+        "PUT /customers/:id",
+        "POST /customers/:id/notify"
+      ]
+    },
     "adminCalendar.js": {
       "decision": "partial",
       "signals": [
@@ -1624,6 +1639,7 @@
         "POST /quotes/:id/respond",
         "GET /dashboard",
         "GET /activity",
+        "GET /agreements",
         "GET /events/:slug/overview",
         "GET /documents",
         "POST /documents",

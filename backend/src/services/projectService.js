@@ -490,6 +490,8 @@ async function deleteProject(id, actor = null, { checked = null } = {}) {
     }
     await trx('events').where({ project_id: id }).update({ project_id: null });
     await trx('customer_documents').where({ project_id: id }).update({ project_id: null });
+    // The brief is the project's own data and goes with it (issue 2678).
+    await require('./briefService').deleteForProject(trx, id);
     await deleteWithAccountingHistory(trx, 'projects', { id },
       { actor: actor?.id ?? null, source: 'project.delete' });
   });

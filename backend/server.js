@@ -994,6 +994,8 @@ app.use('/api/admin/contract-templates', require('./src/routes/adminContractTemp
 // The attachment library for contract templates and contracts (#1445).
 app.use('/api/admin/document-attachments', require('./src/routes/adminDocumentAttachments'));
 app.use('/api/admin/projects',   require('./src/routes/adminProjects'));
+// Project briefs (issue 2678): templates, project and customer briefs.
+app.use('/api/admin/briefs',     require('./src/routes/adminBriefs'));
 app.use('/api/admin/calendar',   require('./src/routes/adminCalendar'));
 // Client booking requests (#2440): admin side and the public booking page.
 app.use('/api/admin/booking', require('./src/routes/adminBooking'));

@@ -856,6 +856,9 @@ const HTML_PASSTHROUGH_KEYS = new Set([
   // trusted DB rows (event_name comes from admin-owned events; the date
   // is server-rendered) — escaping it here would double-escape the markup.
   'gallery_list_html',
+  // project_brief_updated (issue 2678): server-rendered <ul> of the changed
+  // brief fields; briefService.renderChanges escapes every label and value.
+  'brief_changes_html',
 ]);
 
 const { escapeHtml } = require('../utils/formatters');
@@ -2011,5 +2014,6 @@ module.exports = {
   buildSignatureTextFor,
   safeTemplateReplace,
   getSupportEmail,
+  getRecipientLanguage,
   htmlToText
 };

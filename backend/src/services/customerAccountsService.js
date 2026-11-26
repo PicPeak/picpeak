@@ -1547,6 +1547,10 @@ async function eraseCustomer(id, erasedByAdminId) {
     // keep its groups undeletable.
     await trx('customer_group_members').where('customer_account_id', id).del();
 
+    // Briefs (issue 2678) hold names, places and arrangements: the customer's
+    // own and those of its projects go.
+    await require('./briefService').eraseForCustomer(trx, id);
+
     // The name a client typed on a product choice (issue 2320).
     await require('./albumProducts/retention').forgetCustomer(trx, id);
     // Tracking numbers of their parcels lead to their address (issue 2422).
@@ -2107,7 +2111,7 @@ async function getEffectiveFeaturesForCustomer(customerOrId) {
     ? await db('customer_accounts').where('id', customerOrId).first()
     : customerOrId;
   if (!customer) {
-    return { calendar: false, quotes: false, bills: false, hoursLogging: false, contracts: false, documents: false };
+    return { calendar: false, quotes: false, bills: false, hoursLogging: false, contracts: false, documents: false, agreements: false };
   }
   const globals = await getCustomerSurfaceGlobals();
   // SQLite returns booleans as 0/1; Postgres returns true/false. The
@@ -2116,9 +2120,9 @@ async function getEffectiveFeaturesForCustomer(customerOrId) {
   // customer toggle on. Normalise both shapes here so the Quotes /
   // Invoices tabs appear consistently.
   const truthy = (v) => v === true || v === 1 || v === '1' || v === 't';
-  // One read of the five master rows; a missing row reads as undefined.
+  // One read of the master rows; a missing row reads as undefined.
   const masterRows = await db('feature_flags')
-    .whereIn('key', ['hoursLogging', 'contracts', 'documents', 'quotes', 'bills'])
+    .whereIn('key', ['hoursLogging', 'contracts', 'documents', 'quotes', 'bills', 'projects'])
     .select('key', 'value');
   const master = Object.fromEntries(masterRows.map((row) => [row.key, row]));
   // Hours logging gates on the master feature_flags row (Settings →
@@ -2147,6 +2151,10 @@ async function getEffectiveFeaturesForCustomer(customerOrId) {
     hoursLogging: hoursLoggingMaster && truthy(customer.feature_hours_logging),
     contracts: contractsEnabled && truthy(customer.feature_contracts),
     documents: documentsEnabled && truthy(customer.feature_documents),
+    // Agreements (issue 2678): the briefs the studio sent, behind the
+    // projects flag, and only once there is one to show.
+    agreements: !!master.projects && truthy(master.projects.value)
+      && await require('./briefService').customerHasAgreements(customer.id),
   };
 }
 
