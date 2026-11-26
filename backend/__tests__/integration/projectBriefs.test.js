@@ -63,6 +63,8 @@ async function project(customerId, extra = {}) {
 const weddingFields = async () => (await admin('get', '/templates')).body.templates.occasions.wedding;
 const fieldId = async (label) => (await weddingFields()).find((f) => f.label === label).id;
 const mails = (to) => db('email_queue').where({ email_type: 'project_brief_updated', recipient_email: to });
+// email_data is text on SQLite and JSON on PostgreSQL.
+const dataOf = (row) => (typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data);
 
 beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
@@ -220,15 +222,15 @@ describe('with the projects flag on', () => {
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ changes: 5 });
       const [mail] = await mails(email);
-      const data = JSON.parse(mail.email_data);
+      const data = dataOf(mail);
       expect(Object.keys(data).filter((k) => !k.startsWith('__') && k !== 'eventId').sort())
         .toEqual([...migration.TEMPLATE_VARIABLES].sort());
       // The project name is admin-only; the title defaults to the occasion.
       expect(data).toMatchObject({ brief_title: 'Wedding', customer_name: 'Anna', portal_link: expect.stringMatching(/\/customer\/agreements$/) });
       expect(data.brief_changes_html).toContain('Hotel Rose');
       expect(data.brief_changes_text).toContain('- Bride\'s name: Anna (added)');
-      expect(mail.email_data).not.toContain('HIDDEN-REMARK');
-      expect(mail.email_data).not.toContain('INTERNAL-PROJECT-NOTE');
+      expect(JSON.stringify(data)).not.toContain('HIDDEN-REMARK');
+      expect(JSON.stringify(data)).not.toContain('INTERNAL-PROJECT-NOTE');
 
       const after = (await admin('get', `/projects/${projectId}`)).body.brief;
       expect(after.pendingChanges).toEqual([]);
@@ -253,7 +255,7 @@ describe('with the projects flag on', () => {
       ]);
       const email = (await db('customer_accounts').where({ id: customerId }).first()).email;
       await admin('post', `/projects/${projectId}/notify`);
-      const data = JSON.parse((await mails(email).orderBy('id', 'desc').first()).email_data);
+      const data = dataOf(await mails(email).orderBy('id', 'desc').first());
       expect(data.brief_changes_text.split('\n')).toEqual([
         '- Bride\'s name: Anna -> Anna Maria', '- Groom\'s name: Ben (added)', '- Plus-one allowed until: 01/05/2027 (removed)',
       ]);
@@ -320,7 +322,7 @@ describe('with the projects flag on', () => {
     it('mails in the customer\'s language', async () => {
       const email = (await db('customer_accounts').where({ id: customerId }).first()).email;
       expect((await admin('post', `/customers/${customerId}/notify`)).status).toBe(200);
-      const data = JSON.parse((await mails(email).first()).email_data);
+      const data = dataOf(await mails(email).first());
       expect(data.__language).toBe('de');
       expect(data.brief_title).toBe('Wedding');
       expect(data.brief_changes_text).toBe('- Hochzeitsdatum: 09.09.2027 (neu)');
@@ -435,7 +437,7 @@ describe('with the projects flag on', () => {
       expect(pending).toContainEqual(expect.objectContaining({ fieldId: null, change: 'added' }));
       expect((await admin('post', `/projects/${p}/notify`)).status).toBe(200);
       const carlEmail = (await db('customer_accounts').where({ id: carl }).first()).email;
-      expect(JSON.parse((await mails(carlEmail).first()).email_data).brief_changes_text).toContain('FOR-ANNA-ONLY (added)');
+      expect(dataOf(await mails(carlEmail).first()).brief_changes_text).toContain('FOR-ANNA-ONLY (added)');
       expect((await portal(carl)).body.agreements).toHaveLength(1);
       expect((await portal(anna)).status).toBe(403);
     });
@@ -501,7 +503,7 @@ describe('with the projects flag on', () => {
         .toEqual([expect.objectContaining({ fieldId: contact.id, label: 'Contact on the day', change: 'renamed' })]);
       expect((await admin('post', `/customers/${fiona}/notify`)).status).toBe(200);
       const email = (await db('customer_accounts').where({ id: fiona }).first()).email;
-      const data = JSON.parse((await mails(email).orderBy('id', 'desc').first()).email_data);
+      const data = dataOf(await mails(email).orderBy('id', 'desc').first());
       expect(data.brief_changes_text).toBe('- Contact person -> Contact on the day: Uncle Joe');
       expect(data.brief_changes_html).toContain('<s>Contact person</s> &rarr; <strong>Contact on the day</strong>: Uncle Joe');
       expect((await portal(fiona)).body.agreements[0].fields.map((f) => f.label)).toEqual(['Contact on the day']);
@@ -572,8 +574,8 @@ describe('with the projects flag on', () => {
       expect(res.body.agreements[0].title).toBe('Ivo & Jo');
       const email = (await db('customer_accounts').where({ id: ivo }).first()).email;
       const [mail] = await mails(email);
-      expect(JSON.parse(mail.email_data).brief_title).toBe('Ivo & Jo');
-      for (const text of [JSON.stringify(res.body), mail.email_data]) expect(text).not.toMatch(/SECRET|INTERNAL-PROJECT/);
+      expect(dataOf(mail).brief_title).toBe('Ivo & Jo');
+      for (const text of [JSON.stringify(res.body), JSON.stringify(dataOf(mail))]) expect(text).not.toMatch(/SECRET|INTERNAL-PROJECT/);
 
       // A new title is an update of its own.
       await admin('put', `/projects/${p}`).send({ title: 'Ivo and Jo' });
@@ -595,7 +597,7 @@ describe('with the projects flag on', () => {
       expect((await admin('get', `/projects/${p}`)).body.brief.pendingChanges).toEqual([expect.objectContaining({ change: 'reordered' })]);
       await admin('post', `/projects/${p}/notify`);
       const email = (await db('customer_accounts').where({ id: kim }).first()).email;
-      expect(JSON.parse((await mails(email).orderBy('id', 'desc').first()).email_data).brief_changes_text)
+      expect(dataOf(await mails(email).orderBy('id', 'desc').first()).brief_changes_text)
         .toBe('- The order of the overview changed');
       expect((await portal(kim)).body.agreements[0].fields.map((f) => f.label)).toEqual([...before].reverse());
       await admin('put', '/templates/occasion/wedding').send({ fields: wedding });
@@ -648,7 +650,7 @@ describe('with the projects flag on', () => {
       spy.mockRestore();
 
       const email = (await db('customer_accounts').where({ id: lena }).first()).email;
-      const sent = (await mails(email)).map((m) => JSON.parse(m.email_data).brief_changes_text).join('\n');
+      const sent = (await mails(email)).map((m) => dataOf(m).brief_changes_text).join('\n');
       const pending = (await admin('get', `/projects/${p}`)).body.brief.pendingChanges;
       // The first revision reached the customer, or is still waiting to.
       expect(sent.includes('FIRST-REVISION') || pending.some((c) => c.fieldId === null)).toBe(true);
@@ -656,17 +658,17 @@ describe('with the projects flag on', () => {
     });
 
     it('keeps an occasion that briefs use, and takes its template along when it goes', async () => {
-      const [usedId] = await db('event_types').insert({ name: 'Christening', slug_prefix: 'christening', is_active: true });
+      const usedId = idOf(await db('event_types').insert({ name: 'Christening', slug_prefix: 'christening', is_active: true }).returning('id'));
       const mia = await customer();
       await admin('put', `/customers/${mia}`).send({ occasion: 'christening' });
       await expect(eventTypeService.deleteEventType(usedId)).rejects.toMatchObject({ code: 'IN_USE' });
 
-      const [projectTypeId] = await db('event_types').insert({ name: 'Baptism', slug_prefix: 'baptism', is_active: true });
+      const projectTypeId = idOf(await db('event_types').insert({ name: 'Baptism', slug_prefix: 'baptism', is_active: true }).returning('id'));
       const p = await project(mia, { event_type: 'baptism' });
       await admin('put', `/projects/${p}`).send({ sharedArrangements: 'x' });
       await expect(eventTypeService.deleteEventType(projectTypeId)).rejects.toMatchObject({ code: 'IN_USE' });
 
-      const [unusedId] = await db('event_types').insert({ name: 'Picnic', slug_prefix: 'picnic', is_active: true });
+      const unusedId = idOf(await db('event_types').insert({ name: 'Picnic', slug_prefix: 'picnic', is_active: true }).returning('id'));
       await db('project_brief_fields').insert({ occasion: 'picnic', label: 'Blanket', field_type: 'short_text', position: 0 });
       await eventTypeService.deleteEventType(unusedId);
       expect(await db('project_brief_fields').where({ occasion: 'picnic' }).first()).toBeUndefined();
@@ -700,6 +702,27 @@ describe('with the projects flag on', () => {
       expect(theirs.emails.filter((e) => e.type === 'project_brief_updated')).toHaveLength(1);
       expect(mine.emails.find((e) => e.type === 'project_brief_updated').id)
         .not.toBe(theirs.emails.find((e) => e.type === 'project_brief_updated').id);
+    });
+  });
+
+  describe('review round 8', () => {
+    it('keeps both of two concurrent first saves of a brief', async () => {
+      const briefService = require('../../src/services/briefService');
+      const olga = await customer();
+      const p = await project(olga);
+      const wedding = await weddingFields();
+      const bride = wedding.find((f) => f.type === 'short_text');
+      const plusOne = wedding.find((f) => f.type === 'date');
+      const owner = { kind: 'project', id: p };
+      const results = await Promise.allSettled([
+        briefService.saveBrief(owner, { values: { [bride.id]: { value: 'First' } } }),
+        briefService.saveBrief(owner, { values: { [plusOne.id]: { value: '2027-05-01' } } }),
+      ]);
+      expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled']);
+      expect(await db('project_briefs').where({ project_id: p })).toHaveLength(1);
+      const { fields } = await briefService.getBrief(owner);
+      expect(fields.find((f) => f.id === bride.id).value).toBe('First');
+      expect(fields.find((f) => f.id === plusOne.id).value).toBe('2027-05-01');
     });
   });
 });

@@ -20,7 +20,6 @@
 
 const { db, logActivity } = require('../database/db');
 const { AppError, NotFoundError, ValidationError } = require('../utils/errors');
-const { isUniqueViolation } = require('../utils/dbErrors');
 const { isTrue } = require('../utils/galleryLifecycle');
 const { formatBoolean } = require('../utils/dbCompat');
 const { escapeHtml } = require('../utils/formatters');
@@ -63,7 +62,6 @@ const TEXT = {
 };
 const LANGUAGES = Object.keys(TEXT);
 
-const idOf = (inserted) => (typeof inserted[0] === 'object' ? inserted[0].id : inserted[0]);
 const now = () => new Date().toISOString();
 
 function parseJson(text, fallback) {
@@ -393,17 +391,16 @@ async function getBrief(owner) {
   };
 }
 
+/** The owner's brief, created on first use. Two first saves at once: the
+ *  loser's insert does nothing (a caught unique violation would leave a
+ *  PostgreSQL transaction aborted) and both read the one row. */
 async function ensureBrief(trx, owner) {
   const column = ownerColumn(owner);
   const found = await trx('project_briefs').where({ [column]: owner.id }).first();
   if (found) return found;
-  try {
-    const id = idOf(await trx('project_briefs').insert({ [column]: owner.id, created_at: now(), updated_at: now() }).returning('id'));
-    return trx('project_briefs').where({ id }).first();
-  } catch (err) {
-    if (!isUniqueViolation(err)) throw err;
-    return trx('project_briefs').where({ [column]: owner.id }).first();
-  }
+  await trx('project_briefs').insert({ [column]: owner.id, created_at: now(), updated_at: now() })
+    .onConflict(column).ignore();
+  return trx('project_briefs').where({ [column]: owner.id }).first();
 }
 
 /**
