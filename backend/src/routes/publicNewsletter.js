@@ -18,7 +18,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { rateLimitKey } = require('../utils/rateLimitKey');
-const { param } = require('express-validator');
 
 const logger = require('../utils/logger');
 const newsletterService = require('../services/newsletterService');
@@ -96,7 +95,6 @@ const CONFIRM_MESSAGE = 'Confirm below and you will no longer receive newsletter
 router.get(
   '/unsubscribe/:token',
   unsubscribeLimiter,
-  [param('token').isString().isLength({ min: 1, max: 512 })],
   (req, res) => {
     // Rendered for ANY token, valid or not — see the file header. A scanner
     // and a real recipient must not be able to tell the difference.
@@ -113,7 +111,6 @@ router.get(
 router.post(
   '/unsubscribe/:token',
   unsubscribeLimiter,
-  [param('token').isString().isLength({ min: 1, max: 512 })],
   async (req, res) => {
     // Every branch answers identically — the anti-enumeration property.
     const respond = () => res

@@ -90,6 +90,13 @@ function normalizeKind(value) {
   return String(value || '').toLowerCase() === KIND_REQUEST ? KIND_REQUEST : KIND_SEND;
 }
 
+/** Trimmed, well-formed, de-duplicated recipient addresses. */
+function cleanEmails(emails) {
+  return [...new Set((emails || [])
+    .map((e) => String(e || '').trim())
+    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
+}
+
 function isRequestRow(row) {
   return row && normalizeKind(row.kind) === KIND_REQUEST;
 }
@@ -175,7 +182,9 @@ function newExtraFileKey(transferId) {
 
 /**
  * Derive the recipient-facing/admin status of a transfer row.
- * Never mutates — the cron sweep is what actually flips is_active/deleted_at.
+ * Never mutates — the cleanup sweep flips is_active. Nothing writes
+ * deleted_at today (deleteTransfer is a hard delete); the 'deleted' branch
+ * and the deleted_at filters are kept as defence.
  */
 function computeStatus(transfer) {
   if (transfer.deleted_at) return 'deleted';
@@ -730,7 +739,7 @@ function assertDownloadable(transfer) {
  * download counts even if the client disconnects mid-stream, which is the
  * "disable after N downloads" intent.
  */
-async function claimDownload(transfer, { kind = 'all', photoId = null, ip = null } = {}) {
+async function claimDownload(transfer, { kind = 'all', ip = null } = {}) {
   const claimed = await db('transfers')
     .where({ id: transfer.id, is_active: formatBoolean(true) })
     .whereNull('deleted_at')
@@ -742,7 +751,7 @@ async function claimDownload(transfer, { kind = 'all', photoId = null, ip = null
   await db('transfer_downloads').insert({
     transfer_id: transfer.id,
     kind,
-    photo_id: photoId,
+    photo_id: null,
     ip,
     downloaded_at: new Date(),
   });
@@ -1073,7 +1082,6 @@ async function streamUploadsArchive(transfer, res) {
   return appended;
 }
 
-/** Load the admin-uploaded deliverable files for a transfer, in order. */
 /**
  * How many files the recipient can download right now: finished photos (the
  * set getPublicView lists and the ZIP holds) plus admin-uploaded files.
@@ -1087,6 +1095,7 @@ async function countRecipientFiles(transferId) {
   return (Number(photoRow?.c) || 0) + (Number(extraRow?.c) || 0);
 }
 
+/** Load the admin-uploaded deliverable files for a transfer, in order. */
 async function loadTransferExtraFiles(transferId) {
   return db('transfer_extra_files')
     .where('transfer_id', transferId)
@@ -1095,10 +1104,6 @@ async function loadTransferExtraFiles(transferId) {
     .select('id', 'original_filename', 'stored_path', 'size_bytes', 'mime_type');
 }
 
-/**
- * Stream a single ORIGINAL file from a transfer to `res`. Returns false when
- * the file id isn't part of this transfer or the bytes are missing.
- */
 /**
  * Run the caller's pre-stream check (the download claim) for a source that is
  * already open. A refused claim or a claim that throws (a failed DB write)
@@ -1120,6 +1125,10 @@ async function allowStream(beforeStream, openStream) {
   return Boolean(allowed);
 }
 
+/**
+ * Stream a single ORIGINAL file from a transfer to `res`. Returns false when
+ * the file id isn't part of this transfer or the bytes are missing.
+ */
 async function streamTransferFile(transfer, rawFileId, res, { beforeStream = null } = {}) {
   // Public file ids are prefixed (see getPublicView): `p<id>` = referenced
   // gallery photo, `x<id>` = admin-uploaded file. Tolerate a bare number as a
@@ -1305,9 +1314,7 @@ async function removeExtraFiles(transferId) {
  * onlyUnsent always does this. Both off is the admin path, unchanged.
  */
 async function sendTransferEmails(transferId, emails, { onlyUnsent = false, trackFailures = false } = {}) {
-  let clean = [...new Set((emails || [])
-    .map((e) => String(e || '').trim())
-    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
+  let clean = cleanEmails(emails);
   if (!clean.length) return { sent: 0, recipients: [], failed: [], already_sent: [] };
 
   const transfer = await db('transfers').where({ id: transferId }).first();
@@ -1436,9 +1443,7 @@ async function recordUnsentRecipient(transferId, email) {
  * them as held throughout, with "Send again".
  */
 async function holdTransferRecipients(transferId, emails) {
-  const clean = [...new Set((emails || [])
-    .map((e) => String(e || '').trim())
-    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
+  const clean = cleanEmails(emails);
   // The hold goes on BEFORE the first held row exists: a photo of this send
   // finishing in between would otherwise find a held recipient and no hold,
   // and mail it ahead of the files (sendHeldReadyEmailsForPhotos).
@@ -1563,9 +1568,7 @@ async function sendHeldReadyEmailsForPhotosInternal(photoIds) {
  * cannot fail the create, recipients recorded either way.
  */
 async function sendTransferRequestEmails(transferId, emails) {
-  const clean = [...new Set((emails || [])
-    .map((e) => String(e || '').trim())
-    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
+  const clean = cleanEmails(emails);
   if (!clean.length) return { sent: 0, recipients: [] };
 
   const transfer = await db('transfers').where({ id: transferId }).first();
@@ -1696,10 +1699,9 @@ function assertUploadable(transfer) {
   if (!allow) return { ok: false, code: 'UPLOADS_DISABLED', status: 403 };
   const isActive = transfer.is_active === true || transfer.is_active === 1;
   if (!isActive) return { ok: false, code: 'UPLOADS_DISABLED', status: 403 };
-  // A request has one deadline (`expires_at`). `upload_expires_at` is only read
-  // for a row an older release wrote and 257 has not yet converted.
-  const exp = transfer.upload_expires_at || transfer.expires_at;
-  if (!stillInFuture(exp)) {
+  // A request has one deadline (`expires_at`); migration 257 cleared
+  // `upload_expires_at` on every row it converted and nothing writes it since.
+  if (!stillInFuture(transfer.expires_at)) {
     return { ok: false, code: 'UPLOAD_EXPIRED', status: 410 };
   }
   return { ok: true };
@@ -1808,16 +1810,12 @@ module.exports = {
   KIND_SEND,
   KIND_REQUEST,
   normalizeKind,
-  isRequestRow,
   getFrontendUrl,
-  uploadDirKey,
-  extraFilesDirKey,
   newUploadFileKey,
   newExtraFileKey,
   computeStatus,
   downloadsRemaining,
   stillInFuture,
-  truncateSafely,
   // admin CRUD
   createTransfer,
   listTransfers,
@@ -1830,7 +1828,6 @@ module.exports = {
   removeFile,
   addExtraFile,
   removeExtraFile,
-  removeExtraFiles,
   enableUploadCode,
   disableUploadCode,
   sendTransferEmails,

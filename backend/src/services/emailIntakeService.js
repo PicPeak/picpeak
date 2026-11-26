@@ -496,12 +496,10 @@ async function pollOnce() {
       processed += await pollAccountOnce(acctCfg, { accountKey: 'accounting', routeToExpenses: true });
     }
     // 2) Additional mailboxes (customers/hello@) — body captured, no expense
-    //    routing. Guarded so a pre-migration DB simply polls the accounting box.
+    //    routing. A failed read simply polls the accounting box.
     let extras = [];
     try {
-      if (await db.schema.hasTable('mail_accounts')) {
-        extras = await db('mail_accounts').where({ enabled: formatBoolean(true) });
-      }
+      extras = await db('mail_accounts').where({ enabled: formatBoolean(true) });
     } catch (_) { extras = []; }
     for (const a of extras) {
       if (!a.imap_host || !a.imap_user) continue;

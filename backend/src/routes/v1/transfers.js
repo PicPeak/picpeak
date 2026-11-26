@@ -76,7 +76,7 @@ async function withShareUrl(transfer) {
  *         kind: { type: string, enum: [send, request], description: "Only sends are created through the API. A file request made in the admin UI is readable but not writable here." }
  *         title: { type: string }
  *         message: { type: string, nullable: true }
- *         status: { type: string, description: "active, expired, exhausted, disabled or deleted" }
+ *         status: { type: string, description: "active, expired or deleted" }
  *         expires_at: { type: string, format: date-time }
  *         max_downloads: { type: integer, nullable: true }
  *         download_count: { type: integer }

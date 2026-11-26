@@ -358,18 +358,6 @@ class PhotoExportService {
       contentType: 'application/json'
     };
   }
-
-  /**
-   * Get export format display names
-   */
-  static getFormatOptions() {
-    return [
-      { value: 'txt', label: 'Filename List (TXT)', description: 'Simple text list of filenames' },
-      { value: 'csv', label: 'Filename List (CSV)', description: 'Spreadsheet with metadata' },
-      { value: 'xmp', label: 'XMP Sidecar Files (ZIP)', description: 'For Lightroom/Bridge/Capture One' },
-      { value: 'json', label: 'Metadata (JSON)', description: 'Structured data for automation' }
-    ];
-  }
 }
 
 module.exports = { PhotoExportService };

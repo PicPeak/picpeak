@@ -23,6 +23,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { authenticator } = require('otplib');
 const QRCode = require('qrcode');
+const { createSecretBox } = require('../utils/secretBox');
 
 // Standard TOTP params; window:1 tolerates ±1 step (30s) of clock drift.
 authenticator.options = { window: 1 };
@@ -32,43 +33,14 @@ const RECOVERY_CODE_COUNT = 10;
 const RECOVERY_CODE_BYTES = 10; // ~80 bits of entropy per code
 const RECOVERY_BCRYPT_ROUNDS = 10;
 
-const ENC_ALGO = 'aes-256-gcm';
-const ENC_SALT = 'picpeak-mfa-secret-v1'; // fixed: derivation must be stable
-
-function getEncryptionKey() {
-  const material = process.env.MFA_ENCRYPTION_KEY || process.env.JWT_SECRET;
-  if (!material) {
-    throw new Error('mfaService: MFA_ENCRYPTION_KEY or JWT_SECRET must be set');
-  }
-  return crypto.scryptSync(material, ENC_SALT, 32);
-}
+// Salt fixed: derivation must be stable, or stored secrets become unreadable.
+const { encryptSecret, decryptSecret } = createSecretBox({
+  envKey: 'MFA_ENCRYPTION_KEY', salt: 'picpeak-mfa-secret-v1', label: 'mfaService',
+});
 
 /** Generate a fresh base32 TOTP secret. */
 function generateSecret() {
   return authenticator.generateSecret();
-}
-
-/** AES-256-GCM encrypt a secret → "iv.tag.ciphertext" (all base64url). */
-function encryptSecret(plainSecret) {
-  const key = getEncryptionKey();
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv(ENC_ALGO, key, iv);
-  const ct = Buffer.concat([cipher.update(plainSecret, 'utf8'), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return [iv, tag, ct].map((b) => b.toString('base64url')).join('.');
-}
-
-/** Reverse of encryptSecret. Throws on tamper/wrong key. */
-function decryptSecret(stored) {
-  const key = getEncryptionKey();
-  const [ivB64, tagB64, ctB64] = String(stored).split('.');
-  if (!ivB64 || !tagB64 || !ctB64) {
-    throw new Error('mfaService: malformed encrypted secret');
-  }
-  const decipher = crypto.createDecipheriv(ENC_ALGO, key, Buffer.from(ivB64, 'base64url'));
-  decipher.setAuthTag(Buffer.from(tagB64, 'base64url'));
-  const pt = Buffer.concat([decipher.update(Buffer.from(ctB64, 'base64url')), decipher.final()]);
-  return pt.toString('utf8');
 }
 
 /** Absolute TOTP time-step for "now" (Math.floor(Date.now() / 30000)). */

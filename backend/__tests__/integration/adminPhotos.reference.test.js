@@ -157,6 +157,7 @@ describe('Admin photos in reference mode', () => {
     await db.schema.createTable('admin_users', (table) => {
       table.increments('id').primary();
       table.string('username');
+      table.string('credit_name', 100).nullable();
     });
 
     await db.schema.createTable('photo_feedback', (table) => {

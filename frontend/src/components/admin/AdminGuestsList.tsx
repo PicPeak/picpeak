@@ -13,6 +13,7 @@ import { GuestInviteDialog } from './GuestInviteDialog';
 import { toast } from 'react-toastify';
 import { toDisplayDate, useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast, useModal } from '../../hooks';
+import { saveBlob } from '../../utils/saveBlob';
 
 // The later of the guest's last profile fetch and their last logged view or
 // download (issue 2503): either can be the more recent.
@@ -79,14 +80,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
   const handleExport = async (guest: AdminGuest, format: 'txt' | 'csv' | 'json') => {
     try {
       const blob = await guestsService.exportGuest(eventId, guest.id, format);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${guest.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      saveBlob(blob, `${guest.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.${format}`);
     } catch {
       toast.error(t('admin.guests.exportError', 'Export failed'));
     }
@@ -95,14 +89,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
   const handleExportAll = async (format: 'txt' | 'csv' | 'json') => {
     try {
       const blob = await guestsService.exportAllGuests(eventId, format);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `event-${eventId}-guests.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      saveBlob(blob, `event-${eventId}-guests.zip`);
     } catch {
       toast.error(t('admin.guests.exportError', 'Export failed'));
     }

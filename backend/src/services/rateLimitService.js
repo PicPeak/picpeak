@@ -21,6 +21,18 @@ const RATE_LIMIT_DEFAULTS = Object.freeze({
   rate_limit_public_endpoints_only: false
 });
 
+/** RATE_LIMIT_DEFAULTS in the shape getRateLimitSettings returns. */
+function defaultRateLimitConfig() {
+  return {
+    enabled: RATE_LIMIT_DEFAULTS.rate_limit_enabled,
+    windowMinutes: RATE_LIMIT_DEFAULTS.rate_limit_window_minutes,
+    maxRequests: RATE_LIMIT_DEFAULTS.rate_limit_max_requests,
+    authMaxRequests: RATE_LIMIT_DEFAULTS.rate_limit_auth_max_requests,
+    skipAuthenticated: RATE_LIMIT_DEFAULTS.rate_limit_skip_authenticated,
+    publicEndpointsOnly: RATE_LIMIT_DEFAULTS.rate_limit_public_endpoints_only
+  };
+}
+
 // Cache for rate limit settings
 let settingsCache = null;
 let cacheExpiry = 0;
@@ -57,14 +69,7 @@ async function getRateLimitSettings() {
     // the password is typed; at 100, a venue wifi NAT reached 429 after
     // roughly twenty guests per window. An explicit app_settings value still
     // wins over this fallback.
-    const config = {
-      enabled: RATE_LIMIT_DEFAULTS.rate_limit_enabled,
-      windowMinutes: RATE_LIMIT_DEFAULTS.rate_limit_window_minutes,
-      maxRequests: RATE_LIMIT_DEFAULTS.rate_limit_max_requests,
-      authMaxRequests: RATE_LIMIT_DEFAULTS.rate_limit_auth_max_requests,
-      skipAuthenticated: RATE_LIMIT_DEFAULTS.rate_limit_skip_authenticated,
-      publicEndpointsOnly: RATE_LIMIT_DEFAULTS.rate_limit_public_endpoints_only
-    };
+    const config = defaultRateLimitConfig();
 
     settings.forEach(setting => {
       const value = JSON.parse(setting.setting_value);
@@ -98,14 +103,7 @@ async function getRateLimitSettings() {
   } catch (error) {
     logger.error('Failed to fetch rate limit settings:', error);
     // Return defaults on error
-    return {
-      enabled: true,
-      windowMinutes: 15,
-      maxRequests: 300,
-      authMaxRequests: 5,
-      skipAuthenticated: true,
-      publicEndpointsOnly: false
-    };
+    return defaultRateLimitConfig();
   }
 }
 
@@ -157,7 +155,6 @@ async function isAuthenticated(req) {
       return false;
     }
     req.tokenType = decoded.type;
-    req.tokenPayload = decoded;
 
     return true;
   } catch (error) {

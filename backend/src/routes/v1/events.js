@@ -1408,6 +1408,7 @@ function setOriginalHeaders(res, photo, size) {
   if (Number.isFinite(size)) res.set('Content-Length', size);
 }
 
+// The token's admin as the activity-log actor.
 const downloadActor = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
 
 // ?resolution= — `original` (the default) streams the stored bytes; `WxH`
@@ -2295,8 +2296,6 @@ const passwordReadLimiter = galleryPasswordLimiter('gallery-password-read');
 const passwordResetLimiter = galleryPasswordLimiter('gallery-password-reset');
 
 const tokenAudit = (req) => ({ via: 'api_token', apiTokenId: req.apiToken.id, apiTokenName: req.apiToken.name });
-const tokenActor = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
-
 /**
  * @openapi
  * /events/{id}/password:
@@ -2352,7 +2351,7 @@ router.get(
       const event = await scopeEventsQuery(db('events').where('id', id), req.admin, 'created_by', { assignments: false }).first('id', 'event_name');
       if (!event) return res.status(404).json({ error: 'Event not found' });
 
-      const stored = await revealGalleryPassword(id, event, tokenActor(req), tokenAudit(req));
+      const stored = await revealGalleryPassword(id, event, downloadActor(req), tokenAudit(req));
       const available = Boolean(stored.password || stored.clientPassword);
       res.json({
         available,
@@ -2441,7 +2440,7 @@ router.post(
       const result = await resetGalleryPassword(id, event, {
         password: req.body.password,
         sendEmail: req.body.send_email !== false
-      }, tokenActor(req), tokenAudit(req));
+      }, downloadActor(req), tokenAudit(req));
       if (result.rejected) return res.status(400).json(result.rejected);
       res.json({ password: result.newPassword, email_sent: result.emailSent });
     } catch (error) {

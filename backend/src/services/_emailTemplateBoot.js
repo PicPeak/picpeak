@@ -1,12 +1,14 @@
 /**
- * Boot-time wiring for the three self-heal seeders that own the
+ * Boot-time wiring for the four self-heal seeders that own the
  * CRM-era email templates (quotes / invoices / Storno / payment
- * reminders / contract send + signed / event reminders).
+ * reminders / contract send + signed / event reminders / gallery
+ * delivery).
  *
  * **Why this lives outside the individual services**
  *
  * The seeders themselves (`crmEmailTemplates.js`,
- * `contractEmailTemplates.js`, `eventReminderTemplates.js`) are
+ * `contractEmailTemplates.js`, `eventReminderTemplates.js`,
+ * `galleryDeliveryTemplates.js`) are
  * idempotent and module-cached, but they were never called at boot.
  * contractEmailTemplates is called lazily by every contractService
  * send; eventReminderTemplates by the admin email-templates list
@@ -15,10 +17,9 @@
  * quote_sent / invoice_sent / storno_issued send with
  * `Email template '<key>' not found`. The queue processor retries 3
  * times then leaves the row in `status='pending', retry_count=3`,
- * silently dead with no admin surface — exactly the failure flagged
- * in [[feedback_observable_failure_state]] and [[feedback_self_heal_pattern]].
+ * silently dead with no admin surface.
  *
- * Wiring all three into the boot path fixes new installs at first
+ * Wiring all of them into the boot path fixes new installs at first
  * start AND retroactively fixes already-deployed installs whose
  * queue is full of retry-exhausted rows: after we seed the missing
  * template we reset retry_count on rows whose `email_type` matches
@@ -34,9 +35,10 @@ const { ensureContractEmailTemplatesSeeded } = require('./contractEmailTemplates
 const { ensureEventReminderTemplatesSeeded } = require('./eventReminderTemplates');
 const { ensureGalleryDeliveryTemplatesSeeded } = require('./galleryDeliveryTemplates');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
+const { EMAIL_MAX_ATTEMPTS } = require('../utils/emailQueueRetry');
 
 /**
- * Run all three template seeders, then recover any email_queue rows
+ * Run all four template seeders, then recover any email_queue rows
  * that exhausted their retries because the template they needed didn't
  * exist yet.
  *
@@ -44,7 +46,7 @@ const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
  * @param {object} logger  app logger (must expose .info / .warn)
  * @returns {Promise<{ seeded: string[], recovered: number }>}
  *   `seeded` — flat list of template_keys newly inserted across all
- *              three seeders.
+ *              four seeders.
  *   `recovered` — count of email_queue rows whose retry_count was
  *                 reset to 0 because their template now exists.
  */
@@ -83,7 +85,7 @@ async function seedEmailTemplatesAndRecoverQueue(db, logger) {
     try {
       recovered = await db('email_queue')
         .whereIn('status', ['pending', PROTECTED_PENDING_STATUS])
-        .where('retry_count', '>=', 3)
+        .where('retry_count', '>=', EMAIL_MAX_ATTEMPTS)
         .whereIn('email_type', seeded)
         // Like a manual retry, this starts the outage allowance again too.
         .update({

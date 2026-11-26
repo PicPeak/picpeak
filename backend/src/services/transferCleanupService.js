@@ -153,9 +153,4 @@ async function deleteRetiredTransfers() {
 module.exports = {
   stopTransferCleanup,
   startTransferCleanup,
-  // exported for tests / manual invocation
-  runTransferCleanup,
-  expireTransfers,
-  notifyExpiredTransfers,
-  deleteRetiredTransfers,
 };

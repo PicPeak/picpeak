@@ -1,5 +1,5 @@
 'use strict';
-jest.mock('../../src/database/db', () => ({ db: { schema: { hasTable: jest.fn(async () => true) }, transaction: jest.fn(async () => null) } }));
+jest.mock('../../src/database/db', () => ({ db: { transaction: jest.fn(async () => null) } }));
 jest.mock('../../src/services/storage', () => ({ getStorage: () => ({}) }));
 jest.mock('../../src/services/printSales/files', () => ({ sweepDownloads: jest.fn(async () => { throw Object.assign(new Error('Private temporary directory unavailable'), { code: 'EACCES' }); }) }));
 jest.mock('../../src/services/printSales/fulfilment', () => ({ createService: () => ({ cleanup: mockRetention }) }));

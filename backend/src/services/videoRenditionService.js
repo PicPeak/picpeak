@@ -41,6 +41,7 @@ const logger = require('../utils/logger');
 const { getStorage } = require('./storage');
 const { IS_VIDEO_SQL } = require('../utils/mediaTypeSql');
 const mediaAttempts = require('./mediaAttemptService');
+const { createCachedBooleanSetting } = require('./cachedBooleanSetting');
 
 const WEB_KEY_BASENAME_MAX = 100;
 
@@ -62,26 +63,10 @@ const CACHE_TTL_MS = 60_000;
 const MAX_EDGE = Math.min(4096, Math.max(240, parseInt(process.env.VIDEO_RENDITION_MAX_EDGE || '1920', 10) || 1920));
 const CRF = Math.min(51, Math.max(0, parseInt(process.env.VIDEO_RENDITION_CRF || '23', 10) || 23));
 
-let cachedEnabled = false;
-let cacheExpiresAt = 0;
+const webRenditionSetting = createCachedBooleanSetting(SETTING_KEY, 'video web rendition');
 
 /** The setting, cached 60 s like the other upload settings. */
-async function isEnabled({ fresh = false } = {}) {
-  if (!fresh && Date.now() < cacheExpiresAt) return cachedEnabled;
-  try {
-    const row = await db('app_settings').where({ setting_key: SETTING_KEY }).first();
-    let value = row ? row.setting_value : null;
-    if (typeof value === 'string') {
-      try { value = JSON.parse(value); } catch { /* keep the string */ }
-    }
-    cachedEnabled = value === true || value === 'true' || value === 1 || value === '1';
-  } catch (error) {
-    logger.error('Failed to read the video web rendition setting:', error.message);
-    cachedEnabled = false;
-  }
-  cacheExpiresAt = Date.now() + CACHE_TTL_MS;
-  return cachedEnabled;
-}
+const isEnabled = webRenditionSetting.get;
 
 let cachedStrip = true;
 let stripExpiresAt = 0;
@@ -107,7 +92,7 @@ async function isStripEnabled({ fresh = false } = {}) {
 }
 
 function clearCache() {
-  cacheExpiresAt = 0;
+  webRenditionSetting.clear();
   stripExpiresAt = 0;
 }
 

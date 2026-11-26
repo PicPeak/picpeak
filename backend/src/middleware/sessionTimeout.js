@@ -108,33 +108,19 @@ async function sessionTimeoutMiddleware(req, res, next) {
       return next();
     }
 
-    const now = Date.now();
-    const lastActivity = sessions.get(token);
-    const timeout = await getSessionTimeout();
-
-    if (lastActivity) {
-      // Existing session — check if idle too long
-      if (now - lastActivity > timeout) {
-        sessions.delete(token);
-        return res.status(401).json({
-          error: 'Session expired',
-          code: 'SESSION_TIMEOUT'
-        });
-      }
-    } else {
-      // First request with this token — check if token was issued longer ago than the timeout
-      // This prevents old/stolen tokens from bypassing session timeout after server restart
-      const tokenIssuedAt = (decoded.iat || 0) * 1000; // iat is in seconds
-      if (now - tokenIssuedAt > timeout) {
-        return res.status(401).json({
-          error: 'Session expired',
-          code: 'SESSION_TIMEOUT'
-        });
-      }
+    // Idle too long since the last request, or — first request with this
+    // token, e.g. after a restart — issued longer ago than the timeout, so an
+    // old or stolen token cannot skip the timeout.
+    if (await isSessionExpired(token, decoded)) {
+      sessions.delete(token);
+      return res.status(401).json({
+        error: 'Session expired',
+        code: 'SESSION_TIMEOUT'
+      });
     }
 
     // Update last activity
-    sessions.set(token, now);
+    sessions.set(token, Date.now());
     
     // Clean up old token if user has a new one
     // This prevents memory leaks from token renewals
@@ -167,7 +153,7 @@ async function sessionTimeoutMiddleware(req, res, next) {
 // 401 SESSION_TIMEOUT, producing the /admin/login → /admin/dashboard →
 // /admin/login redirect loop reported on v3.39.1-beta.0 (issue #350).
 //
-// Mirrors the middleware's logic exactly:
+// The middleware calls this too, so the two cannot disagree:
 //   - If we have an in-memory lastActivity for this token, return whether
 //     the gap exceeds the timeout.
 //   - Otherwise (post-restart, or first request with this token), return
@@ -204,20 +190,6 @@ function endSession(token) {
   sessions.delete(token);
 }
 
-// Function to get active sessions count
-function getActiveSessions() {
-  const now = Date.now();
-  let active = 0;
-  
-  for (const lastActivity of sessions.values()) {
-    if (now - lastActivity <= DEFAULT_SESSION_TIMEOUT) {
-      active++;
-    }
-  }
-  
-  return active;
-}
-
 module.exports = {
   dispose: () => { clearInterval(cleanupTimer); cleanupTimer = null; sessions.clear(); cachedTimeout = null; cacheExpiry = 0; },
   startSessionCleanup,
@@ -225,5 +197,4 @@ module.exports = {
   isSessionExpired,
   touchSession,
   endSession,
-  getActiveSessions
 };

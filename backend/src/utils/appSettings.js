@@ -10,6 +10,21 @@
 const { db } = require('../database/db');
 
 /**
+ * A stored app_settings value: JSON when it parses, the raw string when it
+ * does not (hand-edited plain strings), null when absent. For callers that
+ * read several keys in one query instead of one getAppSetting per key.
+ */
+function parseSettingValue(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch (_) {
+    return value;
+  }
+}
+
+/**
  * Read a single app_settings row by key. Returns the parsed value or
  * `defaultValue` when the key doesn't exist.
  *
@@ -24,11 +39,7 @@ async function getAppSetting(key, defaultValue = null, conn = db) {
   // the single-connection SQLite pool while the trx holds it → deadlock.
   const row = await conn('app_settings').where({ setting_key: key }).first();
   if (!row || row.setting_value == null) return defaultValue;
-  try {
-    return JSON.parse(row.setting_value);
-  } catch (_) {
-    return row.setting_value;
-  }
+  return parseSettingValue(row.setting_value);
 }
 
 /**
@@ -49,4 +60,4 @@ async function upsertAppSetting(setting_key, setting_value, setting_type, conn =
   }
 }
 
-module.exports = { getAppSetting, upsertAppSetting };
+module.exports = { getAppSetting, parseSettingValue, upsertAppSetting };

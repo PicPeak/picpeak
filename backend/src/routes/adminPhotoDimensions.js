@@ -10,26 +10,49 @@ const applicationWork = require('../services/activeApplicationWork');
 const { resolvePhotoFilePath } = require('../services/photoResolver');
 const maintenanceJobs = require('../services/maintenanceJobState');
 
-// Run state for both sweeps lives in the database, not in this process
-// (#1181). It used to be a module-level object per job, which is correct on a
-// single replica and wrong behind a load balancer: the status poll answers
-// from whichever process it reaches, so an idle replica reports isRunning
-// false while another is mid-run, the UI re-enables the button, and the next
-// POST starts a duplicate pass over the entire library.
+// Run state for every sweep lives in the database, not in this process
+// (#1181): the status poll answers from whichever replica it reaches, so a
+// per-process flag would let an idle replica report isRunning false while
+// another is mid-run, and the next POST would start a duplicate pass over the
+// entire library.
 //
-// Two separate rows, for the same reason the two objects were separate: the
-// jobs walk the same photos but read different things out of them, and one
-// running must not block or report for the other.
+// One row per job: the jobs walk the same photos but read different things
+// out of them, and one running must not block or report for another.
 const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFILL, JOB_CREDIT_BACKFILL, JOB_THUMB_HASH_BACKFILL } = maintenanceJobs;
 
 const { startLeaseKeeper } = maintenanceJobs;
+
+// Query modifiers (`.modify(...)`) shared by the jobs below.
+
+// Not a video, by all three markers, because no single one is reliable.
+// fileWatcher's auto-import sets type='video' and a video/* mime but never
+// media_type, so those rows keep the 'image' default from migration 048.
+function whereNotVideo(q) {
+  q.where(function () {
+    this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
+  })
+    .where(function () {
+      this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
+    })
+    .where(function () {
+      this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
+    });
+}
+
+// The photo's event is not archived (needs the `events` join). Archiving
+// deletes the originals from storage but keeps the photos rows.
+function whereEventNotArchived(q) {
+  q.where(function () {
+    this.where('events.is_archived', false).orWhereNull('events.is_archived');
+  });
+}
 
 // Repair photo dimensions (background job)
 //
 // system.manage, not photos.edit: the query below is unscoped, so this walks
 // every event in the install, reads every original off S3 or the NAS mount, and
 // rewrites their metadata. photos.edit is held by the team_photographer preset
-// (175_granular_permissions_and_presets.js:106), which exists for a contributing
+// (migration 175_granular_permissions_and_presets.js), which exists for a contributing
 // second shooter — someone who should be able to edit the photos they work on,
 // not start a whole-library scan or touch another owner's events.
 router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'), async (req, res) => {
@@ -185,7 +208,7 @@ router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'),
 // The same permission as the POST, not the read-only system.view. The two are
 // independent grants, and StatusTab has no permission gate of its own — a
 // successful status payload is what renders the card and its enabled button
-// (StatusTab.tsx:558). system.view alone would therefore show a live Repair
+// (StatusTab.tsx). system.view alone would therefore show a live Repair
 // button whose every click 403s with no error surfaced.
 router.get('/repair-dimensions/status', adminAuth, requirePermission('system.manage'), async (req, res) => {
   try {
@@ -242,7 +265,7 @@ router.get('/repair-dimensions/status', adminAuth, requirePermission('system.man
  */
 // system.manage, not photos.edit: this walks every event in the install and
 // rewrites their metadata. photos.edit is held by the team_photographer preset
-// (175_granular_permissions_and_presets.js:106), which exists precisely for a
+// (migration 175_granular_permissions_and_presets.js), which exists precisely for a
 // contributing shooter who should not be able to start a whole-library S3/NAS
 // scan or touch another owner's photos. The dimension repair above had the same
 // exposure and predates this; it is brought in line separately in #1182.
@@ -280,22 +303,12 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
         // default from migration 048 and a media_type-only filter queues them
         // forever: extractCaptureDate returns null for a video, captured_at
         // stays null, and every run picks it up again.
-        .where(function () {
-          this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
-        })
-        .where(function () {
-          this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
-        })
-        .where(function () {
-          this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
-        })
+        .modify(whereNotVideo)
         // Archiving deletes the originals from storage but keeps the photos
         // rows (archiveService.js:166,199). Those files are inside the zip and
         // nothing here can read them, so including them would fail every row
         // on every run and leave the button permanently lit.
-        .where(function () {
-          this.where('events.is_archived', false).orWhereNull('events.is_archived');
-        })
+        .modify(whereEventNotArchived)
         .select(
           'photos.id', 'photos.path', 'photos.filename',
           'photos.source_origin', 'photos.external_relpath', 'photos.event_id',
@@ -320,7 +333,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
       count: photos.length
     });
 
-    applicationWork.defer('dimension repair', async () => {
+    applicationWork.defer('capture date backfill', async () => {
       const { extractCapture, withLocalCopy } = require('../services/imageProcessor');
       const { extractPhotoExif } = require('../services/photoExif');
       const { resolvePhotoStorageKey } = require('../services/photoResolver');
@@ -500,7 +513,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
 // The same permission as the POST, not the read-only system.view. system.view
 // and system.manage are independent grants, and StatusTab has no permission
 // gate of its own — a successful status payload is what renders the card and
-// its enabled button (StatusTab.tsx:637). Gating this on system.view therefore
+// its enabled button (StatusTab.tsx). Gating this on system.view therefore
 // handed a system.view-only role a live button whose every click 403s with no
 // error surfaced. Requiring system.manage makes the card appear only for
 // someone who can actually run it, which is what this comment always claimed.
@@ -510,18 +523,8 @@ router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.
     // a permanent backlog the button can never clear.
     const scoped = () => db('photos')
       .join('events', 'photos.event_id', 'events.id')
-      .where(function () {
-        this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
-      })
-      .where(function () {
-        this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
-      })
-      .where(function () {
-        this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
-      })
-      .where(function () {
-        this.where('events.is_archived', false).orWhereNull('events.is_archived');
-      });
+      .modify(whereNotVideo)
+      .modify(whereEventNotArchived);
 
     // One query, two aggregates. As two separate counts an import committing a
     // dated photo between them could be counted by the second and not the
@@ -596,9 +599,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
         // Archiving deletes the originals and keeps the rows, so every archived
         // photo would fail its read and add nothing but noise to a run that
         // already walks the whole library.
-        .where(function () {
-          this.where('events.is_archived', false).orWhereNull('events.is_archived');
-        })
+        .modify(whereEventNotArchived)
         .modify((q) => {
           if (!force) q.whereNull('photos.orientation_checked_at');
         })
@@ -1010,19 +1011,9 @@ function creditCandidates() {
     })
     // Same three video markers as the capture-date backfill: EXIF credits are
     // read from images only.
-    .where(function () {
-      this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
-    })
-    .where(function () {
-      this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
-    })
-    .where(function () {
-      this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
-    })
+    .modify(whereNotVideo)
     // Archived originals are inside the zip, not on storage.
-    .where(function () {
-      this.where('events.is_archived', false).orWhereNull('events.is_archived');
-    });
+    .modify(whereEventNotArchived);
 }
 
 router.post('/repair-credits', adminAuth, requirePermission('system.manage'), async (req, res) => {
@@ -1199,9 +1190,7 @@ function thumbHashCandidates() {
     .join('events', 'photos.event_id', 'events.id')
     .whereNotNull('photos.thumbnail_path')
     // An archived event's renditions are gone with the archive.
-    .where(function () {
-      this.where('events.is_archived', false).orWhereNull('events.is_archived');
-    });
+    .modify(whereEventNotArchived);
 }
 
 router.post('/repair-thumb-hashes', adminAuth, requirePermission('system.manage'), async (req, res) => {

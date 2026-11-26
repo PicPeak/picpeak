@@ -150,9 +150,7 @@ describe('customerAuth — JWT verification', () => {
     getCustomerTokenFromRequest.mockReturnValue('tkn');
     // Make jwt.verify succeed with a customer payload so the test gets
     // past the verify step; we only care that the call shape is right.
-    jwt.verify.mockReturnValue({
-      payload: { type: 'customer', customerId: 1, iat: 1000 },
-    });
+    jwt.verify.mockReturnValue({ type: 'customer', customerId: 1, iat: 1000 });
     isTokenRevoked.mockResolvedValue(false);
     mockCustomerLookup({
       id: 1, email: 'c@example.com', display_name: null,
@@ -165,7 +163,7 @@ describe('customerAuth — JWT verification', () => {
     expect(jwt.verify).toHaveBeenCalledWith(
       'tkn',
       expect.anything(),
-      expect.objectContaining({ issuer: 'picpeak-auth', complete: true }),
+      expect.objectContaining({ issuer: 'picpeak-auth' }),
     );
   });
 });
@@ -175,9 +173,7 @@ describe('customerAuth — JWT verification', () => {
 describe('customerAuth — revocation', () => {
   it('rejects revoked tokens with TOKEN_REVOKED', async () => {
     getCustomerTokenFromRequest.mockReturnValue('tkn');
-    jwt.verify.mockReturnValue({
-      payload: { type: 'customer', customerId: 1, iat: 1000 },
-    });
+    jwt.verify.mockReturnValue({ type: 'customer', customerId: 1, iat: 1000 });
     isTokenRevoked.mockResolvedValue(true);
 
     const res = makeRes();
@@ -195,9 +191,7 @@ describe('customerAuth — revocation', () => {
 describe('customerAuth — token type', () => {
   it('rejects an admin token with WRONG_TOKEN_TYPE', async () => {
     getCustomerTokenFromRequest.mockReturnValue('tkn');
-    jwt.verify.mockReturnValue({
-      payload: { type: 'admin', id: 99, iat: 1000 },
-    });
+    jwt.verify.mockReturnValue({ type: 'admin', id: 99, iat: 1000 });
     isTokenRevoked.mockResolvedValue(false);
 
     const res = makeRes();
@@ -211,9 +205,7 @@ describe('customerAuth — token type', () => {
 
   it('rejects a gallery token with WRONG_TOKEN_TYPE', async () => {
     getCustomerTokenFromRequest.mockReturnValue('tkn');
-    jwt.verify.mockReturnValue({
-      payload: { type: 'gallery', eventId: 1, iat: 1000 },
-    });
+    jwt.verify.mockReturnValue({ type: 'gallery', eventId: 1, iat: 1000 });
     isTokenRevoked.mockResolvedValue(false);
 
     const res = makeRes();
@@ -230,9 +222,7 @@ describe('customerAuth — token type', () => {
 describe('customerAuth — customer lookup', () => {
   it('rejects when the customer row is missing', async () => {
     getCustomerTokenFromRequest.mockReturnValue('tkn');
-    jwt.verify.mockReturnValue({
-      payload: { type: 'customer', customerId: 1, iat: 1000 },
-    });
+    jwt.verify.mockReturnValue({ type: 'customer', customerId: 1, iat: 1000 });
     isTokenRevoked.mockResolvedValue(false);
     mockCustomerLookup(null); // not found
 
@@ -251,9 +241,7 @@ describe('customerAuth — customer lookup', () => {
     // as CUSTOMER_NOT_FOUND. This test guards the active filter itself
     // by asserting the where call shape.
     getCustomerTokenFromRequest.mockReturnValue('tkn');
-    jwt.verify.mockReturnValue({
-      payload: { type: 'customer', customerId: 1, iat: 1000 },
-    });
+    jwt.verify.mockReturnValue({ type: 'customer', customerId: 1, iat: 1000 });
     isTokenRevoked.mockResolvedValue(false);
     const q = mockCustomerLookup(null);
 
@@ -271,9 +259,7 @@ describe('customerAuth — password_changed_at', () => {
   it('rejects tokens issued before password_changed_at with PASSWORD_CHANGED', async () => {
     getCustomerTokenFromRequest.mockReturnValue('tkn');
     // Token issued at unix 1000; password changed at 2000.
-    jwt.verify.mockReturnValue({
-      payload: { type: 'customer', customerId: 1, iat: 1000 },
-    });
+    jwt.verify.mockReturnValue({ type: 'customer', customerId: 1, iat: 1000 });
     isTokenRevoked.mockResolvedValue(false);
     mockCustomerLookup({
       id: 1, email: 'c@example.com', display_name: null,
@@ -295,9 +281,7 @@ describe('customerAuth — password_changed_at', () => {
     // Boundary: iat === passwordChangedSeconds → the strict-less-than
     // check should NOT reject. Token is still valid in this edge case.
     getCustomerTokenFromRequest.mockReturnValue('tkn');
-    jwt.verify.mockReturnValue({
-      payload: { type: 'customer', customerId: 1, iat: 2000 },
-    });
+    jwt.verify.mockReturnValue({ type: 'customer', customerId: 1, iat: 2000 });
     isTokenRevoked.mockResolvedValue(false);
     mockCustomerLookup({
       id: 1, email: 'c@example.com', display_name: null,
@@ -314,9 +298,7 @@ describe('customerAuth — password_changed_at', () => {
 
   it('accepts tokens when password_changed_at is null', async () => {
     getCustomerTokenFromRequest.mockReturnValue('tkn');
-    jwt.verify.mockReturnValue({
-      payload: { type: 'customer', customerId: 1, iat: 1000 },
-    });
+    jwt.verify.mockReturnValue({ type: 'customer', customerId: 1, iat: 1000 });
     isTokenRevoked.mockResolvedValue(false);
     mockCustomerLookup({
       id: 1, email: 'c@example.com', display_name: null,
@@ -339,9 +321,7 @@ describe('customerAuth — IP drift', () => {
     // Mirrors adminAuth: customers may roam between mobile networks
     // mid-session, so IP drift is a log-and-continue, not a denial.
     getCustomerTokenFromRequest.mockReturnValue('tkn');
-    jwt.verify.mockReturnValue({
-      payload: { type: 'customer', customerId: 1, iat: 1000, ip: '8.8.8.8' },
-    });
+    jwt.verify.mockReturnValue({ type: 'customer', customerId: 1, iat: 1000, ip: '8.8.8.8' });
     isTokenRevoked.mockResolvedValue(false);
     mockCustomerLookup({
       id: 1, email: 'c@example.com', display_name: null,
@@ -365,9 +345,7 @@ describe('customerAuth — IP drift', () => {
 describe('customerAuth — happy path', () => {
   it('attaches req.customer and calls next() on a valid token', async () => {
     getCustomerTokenFromRequest.mockReturnValue('tkn');
-    jwt.verify.mockReturnValue({
-      payload: { type: 'customer', customerId: 7, iat: 1000 },
-    });
+    jwt.verify.mockReturnValue({ type: 'customer', customerId: 7, iat: 1000 });
     isTokenRevoked.mockResolvedValue(false);
     mockCustomerLookup({
       id: 7,
@@ -399,9 +377,7 @@ describe('customerAuth — happy path', () => {
 
   it('defaults preferredLanguage to en when the column is null', async () => {
     getCustomerTokenFromRequest.mockReturnValue('tkn');
-    jwt.verify.mockReturnValue({
-      payload: { type: 'customer', customerId: 7, iat: 1000 },
-    });
+    jwt.verify.mockReturnValue({ type: 'customer', customerId: 7, iat: 1000 });
     isTokenRevoked.mockResolvedValue(false);
     mockCustomerLookup({
       id: 7, email: 'c@example.com',

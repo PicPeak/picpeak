@@ -269,8 +269,8 @@ def _blur_score(aligned: np.ndarray) -> float:
 
     Computed on the ALIGNED crop, not the original frame, so the number is
     comparable between a face that fills the frame and one in the background:
-    both arrive here at the same pixel size. The backend's quality floor
-    compares against it directly.
+    both arrive here at the same pixel size. Part of the wire contract; the
+    backend stores it but its quality floor reads only det_score and box size.
     """
     grey = cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY)
     return float(cv2.Laplacian(grey, cv2.CV_64F).var())
@@ -280,10 +280,9 @@ def _pose_from_landmarks(landmarks: np.ndarray) -> tuple[float, float]:
     """Rough head pose in degrees from the five landmarks.
 
     An approximation, deliberately: a real 3-D pose estimate needs a face
-    model and solvePnP, and the only consumers are a quality floor and the
-    "candid" auto-category rule, neither of which needs better than
-    "clearly turned away vs. not". Returned as degrees so the admin-facing
-    threshold reads in a familiar unit.
+    model and solvePnP, and "clearly turned away vs. not" is all a pose
+    reading needs. Part of the wire contract; the backend stores yaw and
+    pitch on photo_faces but nothing reads them yet.
 
     yaw   negative = turned toward the subject's right, positive = left
     pitch negative = looking down, positive = looking up

@@ -5,7 +5,6 @@
  * This service is responsible for:
  * - Generating watermarks for newly uploaded photos
  * - Regenerating all watermarks when settings change
- * - Tracking regeneration progress
  */
 
 const pLimit = require('p-limit');
@@ -18,8 +17,6 @@ const applicationWork = require('./activeApplicationWork');
 
 class WatermarkGeneratorService {
   constructor() {
-    // Track active regeneration jobs
-    this.activeJobs = new Map();
     // Batch size for processing (to manage memory)
     this.batchSize = 10;
     // Concurrent processing limit
@@ -187,10 +184,9 @@ class WatermarkGeneratorService {
   /**
    * Generate watermarks for all photos in an event
    * @param {number} eventId - The event ID
-   * @param {Function} onProgress - Optional callback for progress updates
    * @returns {Object} Result with success count and errors
    */
-  async generateForEvent(eventId, onProgress = null) {
+  async generateForEvent(eventId) {
     const results = { total: 0, success: 0, failed: 0, errors: [] };
 
     try {
@@ -244,16 +240,6 @@ class WatermarkGeneratorService {
               results.errors.push(`Photo ${result.photoId}: ${result.error}`);
             }
           }
-        }
-
-        // Progress callback
-        if (onProgress) {
-          onProgress({
-            total: results.total,
-            processed: results.success + results.failed,
-            success: results.success,
-            failed: results.failed
-          });
         }
       }
 
@@ -309,21 +295,17 @@ class WatermarkGeneratorService {
 
   /**
    * Regenerate watermarks for all photos in the system
-   * @param {Function} onProgress - Optional callback for progress updates
    * @returns {Object} Result with success count and errors
    */
-  regenerateAll(onProgress = null) {
+  regenerateAll() {
     return applicationWork.track('watermark regeneration',
-      () => this.regenerateAllInternal(onProgress));
+      () => this.regenerateAllInternal());
   }
 
-  async regenerateAllInternal(onProgress = null) {
-    const jobId = Date.now().toString();
-    const results = { jobId, total: 0, success: 0, failed: 0, errors: [], status: 'running' };
+  async regenerateAllInternal() {
+    const results = { total: 0, success: 0, failed: 0, errors: [], status: 'running' };
 
     try {
-      this.activeJobs.set(jobId, results);
-
       // Get watermark settings
       const settings = await watermarkService.getWatermarkSettings();
       if (!settings || !settings.enabled) {
@@ -331,9 +313,6 @@ class WatermarkGeneratorService {
         results.errors.push('Watermarking is disabled');
         return results;
       }
-
-      // First, clear existing watermarks from DB (the files will be overwritten)
-      // This ensures stale paths don't persist if regeneration fails
 
       // Get all image photos (exclude videos)
       const photos = await db('photos')
@@ -361,12 +340,6 @@ class WatermarkGeneratorService {
       // Process in batches, capped at concurrentLimit parallel sharp
       // pipelines via the shared instance limiter (see generateForEvent).
       for (let i = 0; i < photos.length; i += this.batchSize) {
-        // Check if job was cancelled
-        if (!this.activeJobs.has(jobId)) {
-          results.status = 'cancelled';
-          return results;
-        }
-
         const batch = photos.slice(i, i + this.batchSize);
 
         // Process batch with limited concurrency
@@ -386,21 +359,6 @@ class WatermarkGeneratorService {
           }
         }
 
-        // Update job status
-        this.activeJobs.set(jobId, { ...results });
-
-        // Progress callback
-        if (onProgress) {
-          onProgress({
-            jobId,
-            total: results.total,
-            processed: results.success + results.failed,
-            success: results.success,
-            failed: results.failed,
-            percentComplete: Math.round(((results.success + results.failed) / results.total) * 100)
-          });
-        }
-
         // Small delay between batches to prevent CPU saturation
         await new Promise(resolve => setTimeout(resolve, 100));
       }
@@ -414,11 +372,6 @@ class WatermarkGeneratorService {
       results.status = 'failed';
       results.errors.push(error.message);
       return results;
-    } finally {
-      // Clean up job tracking after a delay
-      setTimeout(() => {
-        this.activeJobs.delete(jobId);
-      }, 60000); // Keep for 1 minute for status queries
     }
   }
 
@@ -456,36 +409,6 @@ class WatermarkGeneratorService {
       logger.error('Error clearing watermarks:', error);
       return { success: false, error: error.message };
     }
-  }
-
-  /**
-   * Get status of an active regeneration job
-   */
-  getJobStatus(jobId) {
-    return this.activeJobs.get(jobId) || null;
-  }
-
-  /**
-   * Cancel an active regeneration job
-   */
-  cancelJob(jobId) {
-    if (this.activeJobs.has(jobId)) {
-      this.activeJobs.delete(jobId);
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Check if there's an active regeneration job
-   */
-  hasActiveJob() {
-    for (const [, job] of this.activeJobs) {
-      if (job.status === 'running') {
-        return true;
-      }
-    }
-    return false;
   }
 
   /**

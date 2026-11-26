@@ -119,7 +119,26 @@ async function establishAdminSession(res, admin, ipAddress, userAgent, lockoutKe
   };
 }
 
-async function completeAdminLogin(req, res, admin, ipAddress, userAgent, lockoutKey, { rememberMe = false } = {}) {
+/** An admin row with its role's name and display name, for a login. */
+function adminWithRole() {
+  return db('admin_users')
+    .leftJoin('roles', 'roles.id', 'admin_users.role_id')
+    .select('admin_users.*', 'roles.name as role_name', 'roles.display_name as role_display_name');
+}
+
+const LOCAL_LOGIN_DISABLED = { error: 'Local login is disabled — sign in through SSO', code: 'LOCAL_LOGIN_DISABLED' };
+
+const MFA_SESSION_EXPIRED = {
+  error: 'Your verification session expired. Please sign in again.',
+  code: 'MFA_SESSION_EXPIRED'
+};
+
+/** The 423 body of a locked account or code. */
+function lockedBody(error, lockoutStatus) {
+  return { error, retryAfter: lockoutStatus.remainingTime };
+}
+
+async function completeAdminLogin(res, admin, ipAddress, userAgent, lockoutKey, { rememberMe = false } = {}) {
   const user = await establishAdminSession(res, admin, ipAddress, userAgent, lockoutKey, { rememberMe });
   return res.json({ user });
 }
@@ -152,7 +171,7 @@ router.post('/admin/login', [
     // OIDC_BREAK_GLASS=true (checked inside) always re-opens local login.
     if (await require('../services/oidcService').isLocalLoginDisabled()) {
       logger.warn('Local admin login refused — disabled by SSO policy', { username, ipAddress });
-      return res.status(403).json({ error: 'Local login is disabled — sign in through SSO', code: 'LOCAL_LOGIN_DISABLED' });
+      return res.status(403).json(LOCAL_LOGIN_DISABLED);
     }
 
     // Check account lockout first. Scoped to identifier + source IP like the
@@ -161,10 +180,7 @@ router.post('/admin/login', [
     const lockoutStatus = await checkAccountLockout(username, ipAddress);
     if (lockoutStatus.isLocked) {
       logger.warn('Login attempt on locked account', { username, ipAddress });
-      return res.status(423).json({ 
-        error: 'Account temporarily locked due to too many failed attempts',
-        retryAfter: lockoutStatus.remainingTime
-      });
+      return res.status(423).json(lockedBody('Account temporarily locked due to too many failed attempts', lockoutStatus));
     }
     
     // Verify reCAPTCHA
@@ -182,15 +198,9 @@ router.post('/admin/login', [
     }
     
     // Fetch admin with role information
-    const admin = await db('admin_users')
-      .leftJoin('roles', 'roles.id', 'admin_users.role_id')
+    const admin = await adminWithRole()
       .where('admin_users.username', username)
       .orWhere('admin_users.email', username)
-      .select(
-        'admin_users.*',
-        'roles.name as role_name',
-        'roles.display_name as role_display_name'
-      )
       .first();
 
     // Use generic error to prevent user enumeration. OIDC-owned accounts
@@ -242,7 +252,7 @@ router.post('/admin/login', [
       return res.json({ mfaRequired: true, mfaToken, passkeyAvailable });
     }
 
-    return await completeAdminLogin(req, res, admin, ipAddress, userAgent, username, { rememberMe });
+    return await completeAdminLogin(res, admin, ipAddress, userAgent, username, { rememberMe });
   } catch (error) {
     errorResponse(res, error, 500, 'Login failed');
   }
@@ -269,7 +279,7 @@ router.post('/admin/login/mfa', [
     // a local session through this second step.
     if (await require('../services/oidcService').isLocalLoginDisabled()) {
       logger.warn('Local admin MFA completion refused — disabled by SSO policy', { ipAddress });
-      return res.status(403).json({ error: 'Local login is disabled — sign in through SSO', code: 'LOCAL_LOGIN_DISABLED' });
+      return res.status(403).json(LOCAL_LOGIN_DISABLED);
     }
 
     let decoded;
@@ -279,10 +289,7 @@ router.post('/admin/login/mfa', [
         issuer: 'picpeak-auth'
       });
     } catch (err) {
-      return res.status(401).json({
-        error: 'Your verification session expired. Please sign in again.',
-        code: 'MFA_SESSION_EXPIRED'
-      });
+      return res.status(401).json(MFA_SESSION_EXPIRED);
     }
 
     if (decoded.type !== 'mfa_pending') {
@@ -299,21 +306,10 @@ router.post('/admin/login/mfa', [
     const mfaLockoutKey = `mfa:${decoded.id}`;
     const lockoutStatus = await checkAccountLockout(mfaLockoutKey);
     if (lockoutStatus.isLocked) {
-      return res.status(423).json({
-        error: 'Account temporarily locked due to too many failed attempts',
-        retryAfter: lockoutStatus.remainingTime
-      });
+      return res.status(423).json(lockedBody('Account temporarily locked due to too many failed attempts', lockoutStatus));
     }
 
-    const admin = await db('admin_users')
-      .leftJoin('roles', 'roles.id', 'admin_users.role_id')
-      .where('admin_users.id', decoded.id)
-      .select(
-        'admin_users.*',
-        'roles.name as role_name',
-        'roles.display_name as role_display_name'
-      )
-      .first();
+    const admin = await adminWithRole().where('admin_users.id', decoded.id).first();
 
     if (!admin || !admin.is_active || !mfaService.isEnrolled(admin)) {
       return res.status(401).json({ error: getGenericAuthError() });
@@ -388,7 +384,7 @@ router.post('/admin/login/mfa', [
     // Taken from the signed mfa_pending token, not from this request: the
     // choice belongs to the password step, and reading it back out of the
     // token stops the verify leg asking for a longer session than was agreed.
-    return await completeAdminLogin(req, res, admin, ipAddress, userAgent, lockoutKey, {
+    return await completeAdminLogin(res, admin, ipAddress, userAgent, lockoutKey, {
       rememberMe: decoded.rememberMe === true,
     });
   } catch (error) {
@@ -424,11 +420,6 @@ function readMfaPendingToken(mfaToken) {
   }
 }
 
-const MFA_SESSION_EXPIRED = {
-  error: 'Your verification session expired. Please sign in again.',
-  code: 'MFA_SESSION_EXPIRED'
-};
-
 router.post('/admin/passkey/options', [
   body('mfaToken').optional().isString().isLength({ max: 2048 }),
   body('remember_me').optional().isBoolean().toBoolean()
@@ -440,7 +431,7 @@ router.post('/admin/passkey/options', [
     }
     // SSO-only mode disables every local login, this one included.
     if (await require('../services/oidcService').isLocalLoginDisabled()) {
-      return res.status(403).json({ error: 'Local login is disabled — sign in through SSO', code: 'LOCAL_LOGIN_DISABLED' });
+      return res.status(403).json(LOCAL_LOGIN_DISABLED);
     }
 
     let admin = null;
@@ -482,7 +473,7 @@ router.post('/admin/passkey/verify', [
 
     if (await require('../services/oidcService').isLocalLoginDisabled()) {
       logger.warn('Passkey login refused — disabled by SSO policy', { ipAddress });
-      return res.status(403).json({ error: 'Local login is disabled — sign in through SSO', code: 'LOCAL_LOGIN_DISABLED' });
+      return res.status(403).json(LOCAL_LOGIN_DISABLED);
     }
 
     let pending = null;
@@ -505,11 +496,8 @@ router.post('/admin/passkey/verify', [
     }
 
     const credential = await passkeyService.findCredential(response.id);
-    const admin = credential ? await db('admin_users')
-      .leftJoin('roles', 'roles.id', 'admin_users.role_id')
-      .where('admin_users.id', credential.admin_user_id)
-      .select('admin_users.*', 'roles.name as role_name', 'roles.display_name as role_display_name')
-      .first() : null;
+    const admin = credential
+      ? await adminWithRole().where('admin_users.id', credential.admin_user_id).first() : null;
 
     // Same buckets as the steps this replaces: the password step's
     // identifier + address bucket for a primary login, the account-wide
@@ -526,10 +514,7 @@ router.post('/admin/passkey/verify', [
         ? await checkAccountLockout(failureKey)
         : await checkAccountLockout(failureKey, ipAddress);
       if (lockoutStatus.isLocked) {
-        return res.status(423).json({
-          error: 'Account temporarily locked due to too many failed attempts',
-          retryAfter: lockoutStatus.remainingTime
-        });
+        return res.status(423).json(lockedBody('Account temporarily locked due to too many failed attempts', lockoutStatus));
       }
     }
 
@@ -563,7 +548,7 @@ router.post('/admin/passkey/verify', [
       { type: 'admin', id: admin.id, name: admin.username }
     );
 
-    return await completeAdminLogin(req, res, admin, ipAddress, userAgent,
+    return await completeAdminLogin(res, admin, ipAddress, userAgent,
       pending ? (pending.loginId || pending.username) : admin.username,
       { rememberMe: challenge.rememberMe });
   } catch (error) {
@@ -667,10 +652,7 @@ router.post('/gallery/verify', [
       const lockoutStatus = await checkAccountLockout(`gallery:${slug}`, ipAddress);
       if (lockoutStatus.isLocked) {
         logger.warn('Gallery access attempt on locked gallery', { slug, ipAddress });
-        return res.status(423).json({ 
-          error: 'Too many failed attempts. Please try again later.',
-          retryAfter: lockoutStatus.remainingTime
-        });
+        return res.status(423).json(lockedBody('Too many failed attempts. Please try again later.', lockoutStatus));
       }
 
       const recaptchaValid = await verifyRecaptcha(recaptchaToken);
@@ -796,10 +778,7 @@ router.post('/gallery/:slug/client-login', [
 
     const lockoutStatus = await checkAccountLockout(`client:${slug}`, ipAddress);
     if (lockoutStatus.isLocked) {
-      return res.status(423).json({
-        error: 'Too many failed attempts. Please try again later.',
-        retryAfter: lockoutStatus.remainingTime
-      });
+      return res.status(423).json(lockedBody('Too many failed attempts. Please try again later.', lockoutStatus));
     }
 
     const validLinkToken = typeof clientShareToken === 'string'
@@ -880,10 +859,7 @@ router.post('/gallery/share-login', [
     const lockoutStatus = await checkAccountLockout(shareIdentifier, ipAddress);
     if (lockoutStatus.isLocked) {
       logger.warn('Share link login attempt on locked gallery', { slug, ipAddress });
-      return res.status(423).json({
-        error: 'Too many failed attempts. Please try again later.',
-        retryAfter: lockoutStatus.remainingTime
-      });
+      return res.status(423).json(lockedBody('Too many failed attempts. Please try again later.', lockoutStatus));
     }
 
     let event = await db('events')
@@ -1125,16 +1101,10 @@ router.post('/password-strength', [
 
     const { password, context = 'gallery' } = req.body;
 
-    // Get user data if available (for context-aware validation)
-    const userData = {};
-    if (context === 'admin' && req.admin) {
-      userData.username = req.admin.username;
-      userData.email = req.admin.email;
-    }
-
-    // validatePasswordInContext is async; unawaited this resolved to a Promise
-    // and every field below came back undefined.
-    const validation = await validatePasswordInContext(password, context, userData);
+    // Public route: no admin session is attached here, so there is no user
+    // data for the context-aware checks. validatePasswordInContext is async;
+    // unawaited this resolved to a Promise and every field came back undefined.
+    const validation = await validatePasswordInContext(password, context, {});
 
     res.json({
       valid: validation.valid,
@@ -1258,11 +1228,7 @@ router.get('/admin/sso/callback', async (req, res) => {
     const resolved = await oidcService.resolveAdminFromClaims(claims);
 
     // Reload with role info so the session payload matches a local login.
-    const admin = await db('admin_users')
-      .leftJoin('roles', 'roles.id', 'admin_users.role_id')
-      .where('admin_users.id', resolved.id)
-      .select('admin_users.*', 'roles.name as role_name', 'roles.display_name as role_display_name')
-      .first();
+    const admin = await adminWithRole().where('admin_users.id', resolved.id).first();
 
     const ipAddress = getClientIp(req);
     const userAgent = req.headers['user-agent'] || '';

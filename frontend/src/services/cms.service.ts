@@ -33,12 +33,6 @@ export const cmsService = {
     return response.data;
   },
 
-  // Get a single CMS page
-  async getPage(slug: string): Promise<CMSPage> {
-    const response = await api.get<CMSPage>(`/admin/cms/pages/${slug}`);
-    return response.data;
-  },
-
   // Update a CMS page
   async updatePage(slug: string, data: Partial<CMSPage>): Promise<CMSPage> {
     const response = await api.put<CMSPage>(`/admin/cms/pages/${slug}`, data);

@@ -20,9 +20,10 @@ const { ensurePreviewImage } = require('./imageProcessor');
 // faceQueue, which is the only layer that knows to retry rather than fail.
 const { detectFaces } = require('./faceClient');
 const {
-  assignFaces, lockEventPeople, packEmbedding, recomputeCentroid,
+  assignFaces, lockEventPeople, packEmbedding, recomputeCentroid, refreshSeparationSnapshots,
 } = require('./faceClustering');
 const { getThresholds, isEnabledForEvent } = require('./faceSettings');
+const { streamToBuffer, isVideoPhoto } = require('./sidecarImage');
 
 /**
  * Thrown when a scan finishes but the photo is no longer the row we claimed —
@@ -126,15 +127,6 @@ async function externalSourceUnreachable(photo) {
   }
 }
 
-async function streamToBuffer(stream) {
-  if (Buffer.isBuffer(stream)) return stream;
-  const chunks = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
-}
-
 /**
  * The row as long as it still belongs to this claim (issue 2069).
  * `face_attempt_id` is written by the claim and cleared by everything that
@@ -175,9 +167,7 @@ async function processPhotoFaces(claimed) {
   }
 
   // Videos have no preview tier and no meaningful single frame to scan.
-  const isVideo = photo.media_type === 'video'
-    || (photo.mime_type && photo.mime_type.startsWith('video/'));
-  if (isVideo) {
+  if (isVideoPhoto(photo)) {
     await claimGuard(claimed).update({
       face_status: 'skipped', face_started_at: null, face_attempt_id: null, face_count: 0,
     });
@@ -496,10 +486,9 @@ async function purgePhotoFaces(photoId, trx = db) {
   const removed = await trx('photo_faces').where({ photo_id: photoId }).del();
   if (!removed) return { removed: 0 };
 
-  const { recomputeCentroid: recompute, refreshSeparationSnapshots } = require('./faceClustering');
   for (const personId of affected) {
     // Deletes the person outright when it has no members left.
-    await recompute(personId, trx);
+    await recomputeCentroid(personId, trx);
   }
 
   // A separation row carries a COPY of each side's centroid (#1132), derived
@@ -513,6 +502,6 @@ async function purgePhotoFaces(photoId, trx = db) {
 }
 
 module.exports = {
-  processPhotoFaces, claimGuard, enqueueEvent, purgeEvent, purgePhotoFaces, StaleScanError,
+  processPhotoFaces, claimGuard, enqueueEvent, purgeEvent, purgePhotoFaces,
   TransientSourceError, externalSourceUnreachable,
 };

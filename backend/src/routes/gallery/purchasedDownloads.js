@@ -17,7 +17,7 @@ const { toIso } = require('../../utils/dateNormalize');
 
 const router = express.Router();
 
-const isTrue = (value) => value === true || value === 1 || value === '1';
+const { isTrue } = require('../../utils/galleryLifecycle');
 
 /**
  * A granted order (not refunded, charged back or cancelled — the webhook

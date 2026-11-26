@@ -72,12 +72,6 @@ class XmpGenerator {
    * @returns {string|null} XMP label colour
    */
   mapLabel(photo) {
-    // Tolerate being handed a bare rating: this used to take one, and
-    // callers outside the export service may still do so.
-    if (typeof photo === 'number' || photo === null || photo === undefined) {
-      return this.mapRatingToLabel(photo);
-    }
-
     const colorLabel = photo.dominant_color_label
       || dominantColorLabel(photo.color_labels);
     if (colorLabel && COLOR_LABEL_TO_XMP[colorLabel]) {

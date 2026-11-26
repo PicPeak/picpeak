@@ -154,7 +154,7 @@ export const AdminLoginPage: React.FC = () => {
         setStep('mfa');
         return;
       }
-      login(response.token, response.user);
+      login(response.user);
       toast.success(t('adminLogin.loginSuccess'));
       setLoginSuccess(true);
       } catch (error: any) {
@@ -215,7 +215,7 @@ export const AdminLoginPage: React.FC = () => {
       const response = await passkeyService.login(
         secondFactor ? { mfaToken } : { rememberMe }
       );
-      login(response.token, response.user);
+      login(response.user);
       toast.success(t('adminLogin.loginSuccess'));
       setLoginSuccess(true);
     } catch (error: any) {
@@ -260,7 +260,7 @@ export const AdminLoginPage: React.FC = () => {
 
     try {
       const response = await authService.adminLoginMfa({ mfaToken, code });
-      login(response.token, response.user);
+      login(response.user);
       toast.success(t('adminLogin.loginSuccess'));
       setLoginSuccess(true);
     } catch (error: any) {

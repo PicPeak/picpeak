@@ -5,7 +5,8 @@ const rateLimit = require('express-rate-limit');
 const { db } = require('../database/db');
 const { noStoreCache } = require('../middleware/noStoreCache');
 const { rateLimitKey } = require('../utils/rateLimitKey');
-const { checkoutSession, reconcileSession, OPEN, quoteOf, verifyCheckoutBrowser } = require('../modules/photoSales/stripeCheckout');
+const { checkoutSession, reconcileSession } = require('../modules/photoSales/stripeCheckout');
+const { OPEN, quoteOf, verifyCheckoutBrowser } = require('../modules/photoSales/checkoutReservation');
 const { stripeClient } = require('../modules/photoSales/stripeClient');
 const logger = require('../utils/logger');
 

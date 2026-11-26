@@ -78,9 +78,8 @@ function mockResolveSlug(event) {
   const row = event ? { is_active: true, ...event } : null;
   db.mockImplementationOnce(() => chain({ first: row }));
   if (!event) {
-    // slug_redirects fallback — unused here, return null.
-    db.schema = db.schema || {};
-    db.schema.hasTable = jest.fn().mockResolvedValue(false);
+    // slug_redirects fallback — no redirect.
+    db.mockImplementationOnce(() => chain({ first: null }));
   }
 }
 
@@ -271,7 +270,7 @@ describe('buildOgMetadata — share-token fallback', () => {
     };
     // First db() — events.where('slug', token) returns null.
     db.mockImplementationOnce(() => chain({ first: null }));
-    db.schema = { hasTable: jest.fn().mockResolvedValue(false) };
+    db.mockImplementationOnce(() => chain({ first: null })); // no slug redirect
     // Second db() — events.where('share_token', token) returns the event.
     db.mockImplementationOnce(() => chain({ first: event }));
     mockBranding();
@@ -302,7 +301,7 @@ describe('buildOgMetadata — share-token fallback', () => {
       og_image_share_enabled: false,
     };
     db.mockImplementationOnce(() => chain({ first: null }));
-    db.schema = { hasTable: jest.fn().mockResolvedValue(false) };
+    db.mockImplementationOnce(() => chain({ first: null })); // no slug redirect
     db.mockImplementationOnce(() => chain({ first: event }));
     mockBranding();
 
@@ -317,7 +316,7 @@ describe('buildOgMetadata — share-token fallback', () => {
     // event info — it must look identical to the generic fallback path.
     const token = '00000000000000000000000000000002';
     db.mockImplementationOnce(() => chain({ first: null }));
-    db.schema = { hasTable: jest.fn().mockResolvedValue(false) };
+    db.mockImplementationOnce(() => chain({ first: null })); // no slug redirect
     db.mockImplementationOnce(() => chain({ first: null })); // share_token also misses
     mockBranding();
 
@@ -331,14 +330,14 @@ describe('buildOgMetadata — share-token fallback', () => {
     // Real slugs are kebab/dot/underscore mixes — never pure 32-hex.
     // Skipping the extra query keeps the un-needed-DB-hit cost off the
     // hot path for every legitimate slug.
-    mockResolveSlug(null); // events lookup misses; no redirects table
+    mockResolveSlug(null); // events lookup misses; no slug redirect
     mockBranding();
 
     await buildOgMetadata('senior-2026-06-05', '/gallery/senior-2026-06-05');
 
-    // Only 2 db() calls — events + app_settings. No share_token
-    // fallback was attempted for a non-hex slug.
-    expect(db).toHaveBeenCalledTimes(2);
+    // Only 3 db() calls — events, slug_redirects, app_settings. No
+    // share_token fallback was attempted for a non-hex slug.
+    expect(db).toHaveBeenCalledTimes(3);
   });
 });
 

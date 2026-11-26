@@ -15,7 +15,6 @@ const { queueEmail } = require('./emailProcessor');
 const logger = require('../utils/logger');
 const { accountCreditName } = require('./photoCredit');
 const { ConflictError, NotFoundError, ValidationError, ForbiddenError } = require('../utils/errors');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { capabilityTokenColumns, digestCapabilityToken } = require('../utils/capabilityToken');
 
 /**
@@ -148,9 +147,7 @@ async function acceptInvitation({ token, username, password }) {
   // that the new account's holder owns it. A first SSO login may link to the
   // account by email only after a Super Admin confirms the address (migration
   // 227, oidcService.resolveAdminFromClaims).
-  const linkEligibility = (await hasColumnCached('admin_users', 'email_link_eligible'))
-    ? { email_link_eligible: formatBoolean(false) }
-    : {};
+  const linkEligibility = { email_link_eligible: formatBoolean(false) };
 
   // Create user in transaction
   const result = await db.transaction(async (trx) => {
@@ -232,13 +229,9 @@ async function getAllAdminUsers() {
   ];
   // The Users page offers "confirm this email for SSO" on the rows this is
   // false for, so it has to travel with the list (migration 227).
-  if (await hasColumnCached('admin_users', 'email_link_eligible')) {
-    columns.push('admin_users.email_link_eligible');
-  }
+  columns.push('admin_users.email_link_eligible');
   // Photo credit for the account's uploads (issue 743, migration 269).
-  if (await hasColumnCached('admin_users', 'credit_name')) {
-    columns.push('admin_users.credit_name');
-  }
+  columns.push('admin_users.credit_name');
   return db('admin_users')
     .leftJoin('roles', 'roles.id', 'admin_users.role_id')
     .leftJoin('admin_users as creator', 'creator.id', 'admin_users.created_by')
@@ -265,13 +258,9 @@ async function getAdminUserById(id) {
     'roles.name as role_name',
     'roles.display_name as role_display_name'
   ];
-  if (await hasColumnCached('admin_users', 'email_link_eligible')) {
-    columns.push('admin_users.email_link_eligible');
-  }
+  columns.push('admin_users.email_link_eligible');
   // Photo credit for the account's uploads (issue 743, migration 269).
-  if (await hasColumnCached('admin_users', 'credit_name')) {
-    columns.push('admin_users.credit_name');
-  }
+  columns.push('admin_users.credit_name');
   const user = await db('admin_users')
     .leftJoin('roles', 'roles.id', 'admin_users.role_id')
     .where('admin_users.id', id)
@@ -363,12 +352,10 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
     // (oidcService, migration 227): an address set by a super_admin is
     // trusted — saving it unchanged is how a super_admin confirms one — while
     // a change by anyone else is not proof of ownership.
-    if (await hasColumnCached('admin_users', 'email_link_eligible')) {
-      if (actorIsSuperAdmin) {
-        allowedUpdates.email_link_eligible = formatBoolean(true);
-      } else if (!sameAddress) {
-        allowedUpdates.email_link_eligible = formatBoolean(false);
-      }
+    if (actorIsSuperAdmin) {
+      allowedUpdates.email_link_eligible = formatBoolean(true);
+    } else if (!sameAddress) {
+      allowedUpdates.email_link_eligible = formatBoolean(false);
     }
   }
 
@@ -416,7 +403,7 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
 
   // The name the account's uploads are credited with when a file carries no
   // EXIF name (issue 743).
-  if (updates.credit_name !== undefined && await hasColumnCached('admin_users', 'credit_name')) {
+  if (updates.credit_name !== undefined) {
     const credit = accountCreditName(updates.credit_name);
     if (credit.error) throw new ValidationError(credit.error);
     allowedUpdates.credit_name = credit.value;
@@ -448,21 +435,14 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
 async function assertMayManageSuperAdminTarget(target, actorId) {
   const superAdminRole = await db('roles').where('name', 'super_admin').first();
   if (!superAdminRole || target.role_id !== superAdminRole.id) return;
-  const actor = await db('admin_users')
-    .leftJoin('roles', 'roles.id', 'admin_users.role_id')
-    .where('admin_users.id', actorId)
-    .first('roles.name as role_name');
-  if (!actor || actor.role_name !== 'super_admin') {
+  if (!(await isSuperAdminActor(actorId))) {
     throw new ForbiddenError('Only Super Admins can modify a Super Admin account');
   }
 }
 
-async function isSuperAdminActor(actorId) {
-  const actor = await db('admin_users')
-    .leftJoin('roles', 'roles.id', 'admin_users.role_id')
-    .where('admin_users.id', actorId)
-    .first('roles.name as role_name');
-  return Boolean(actor && actor.role_name === 'super_admin');
+// Read lazily, like the userHasAllPermissions lookups in this file.
+function isSuperAdminActor(actorId) {
+  return require('../middleware/permissions').isSuperAdminUser(actorId);
 }
 
 /**
@@ -630,8 +610,7 @@ async function deleteAdminUser(id, deletedById) {
   await assertMayManageSuperAdminTarget(user, deletedById);
 
   // Only their creator or a super admin can fulfil a print order (migration 341).
-  if (await db.schema.hasTable('print_sales_orders')
-    && await db('print_sales_orders').where({ created_by_admin_id: id, status: 'accepted' }).first('id')) {
+  if (await db('print_sales_orders').where({ created_by_admin_id: id, status: 'accepted' }).first('id')) {
     throw new ConflictError('Close this admin\'s open print orders before deleting the account');
   }
 
@@ -673,33 +652,23 @@ async function deleteAdminUser(id, deletedById) {
     // a team save's key-share lock on the event. No-op on SQLite.
     await trx('events').where('created_by', id).orderBy('id').forNoKeyUpdate().pluck('id');
     await trx('notification_dismissals').where('admin_id', id).del();
-    if (await trx.schema.hasTable('event_admin_assignments')) {
-      // Every row the two statements below touch, locked in id order first:
-      // the order a gallery team save takes them in (setAssignedAdmins). Two
-      // statements lock their rows in two scan orders, which can deadlock
-      // with a team save on PostgreSQL (issue 1979). No-op on SQLite.
-      await trx('event_admin_assignments')
-        .where('admin_user_id', id).orWhere('assigned_by', id)
-        .orderBy('id').forUpdate().pluck('id');
-      await trx('event_admin_assignments').where('admin_user_id', id).del();
-      await trx('event_admin_assignments').where('assigned_by', id).update({ assigned_by: null });
-    }
+    // Every row the two statements below touch, locked in id order first:
+    // the order a gallery team save takes them in (setAssignedAdmins). Two
+    // statements lock their rows in two scan orders, which can deadlock
+    // with a team save on PostgreSQL (issue 1979). No-op on SQLite.
+    await trx('event_admin_assignments')
+      .where('admin_user_id', id).orWhere('assigned_by', id)
+      .orderBy('id').forUpdate().pluck('id');
+    await trx('event_admin_assignments').where('admin_user_id', id).del();
+    await trx('event_admin_assignments').where('assigned_by', id).update({ assigned_by: null });
     // The submissions this admin reopened (migration 291): SET NULL.
-    if (await trx.schema.hasTable('selection_submissions')) {
-      await trx('selection_submissions').where('reopened_by', id).update({ reopened_by: null });
-    }
+    await trx('selection_submissions').where('reopened_by', id).update({ reopened_by: null });
     // The print shops they billed (migration 341): SET NULL, which closes the shop.
-    if (await trx.schema.hasTable('print_sales_orders')) {
-      await trx('events').where('print_sales_admin_id', id).update({ print_sales_admin_id: null });
-      await trx('print_sales_orders').where('created_by_admin_id', id).update({ created_by_admin_id: null });
-    }
-    if (await trx.schema.hasColumn('photos', 'uploaded_by_admin_id')) {
-      await trx('photos').where('uploaded_by_admin_id', id).update({ uploaded_by_admin_id: null });
-    }
+    await trx('events').where('print_sales_admin_id', id).update({ print_sales_admin_id: null });
+    await trx('print_sales_orders').where('created_by_admin_id', id).update({ created_by_admin_id: null });
+    await trx('photos').where('uploaded_by_admin_id', id).update({ uploaded_by_admin_id: null });
     // Who trashed a photo (migration 294) has no foreign key; same outcome.
-    if (await trx.schema.hasColumn('photos', 'deleted_by_admin_id')) {
-      await trx('photos').where('deleted_by_admin_id', id).update({ deleted_by_admin_id: null });
-    }
+    await trx('photos').where('deleted_by_admin_id', id).update({ deleted_by_admin_id: null });
     await deleteWithAccountingHistory(trx, 'admin_users', { id },
       { actor: deletedById, source: 'admin_user.delete' });
     // Their passkeys (migration 295), for the same reason as the dismissals.
@@ -707,9 +676,7 @@ async function deleteAdminUser(id, deletedById) {
     // now, so this only does work on SQLite, and the account row was locked
     // first, the order passkey registration, removal and the password reset
     // take. Deleting them up front could deadlock against one of those.
-    if (await trx.schema.hasTable('admin_webauthn_credentials')) {
-      await trx('admin_webauthn_credentials').where('admin_user_id', id).del();
-    }
+    await trx('admin_webauthn_credentials').where('admin_user_id', id).del();
   });
 
   await logActivity('admin_user_deleted',
@@ -863,7 +830,7 @@ async function validateInvitationToken(token) {
 
 // ---------------------------------------------------------------------------
 // Role management (the role editor). Highly privileged — every mutation here is
-// gated by `roles.manage` at the route layer. See project_permission_gating.
+// gated by `roles.manage` at the route layer.
 // ---------------------------------------------------------------------------
 
 // System roles that ship with the app. Their `name` (the semantic key routes
@@ -900,12 +867,7 @@ async function resolvePermissionIds(permissionNames) {
 async function assertActorMayGrant(actorId, permissionNames) {
   const names = Array.from(new Set((permissionNames || []).filter(Boolean)));
   if (names.length === 0) return;
-  const actor = await db('admin_users')
-    .leftJoin('roles', 'roles.id', 'admin_users.role_id')
-    .where('admin_users.id', actorId)
-    .select('roles.name as role_name')
-    .first();
-  if (actor && actor.role_name === 'super_admin') return;
+  if (await isSuperAdminActor(actorId)) return;
   const { userHasAllPermissions } = require('../middleware/permissions');
   if (!(await userHasAllPermissions(actorId, names))) {
     throw new ForbiddenError('You can only grant permissions your own role already holds.');

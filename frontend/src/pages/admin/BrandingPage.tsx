@@ -5,6 +5,7 @@ import { Button, Card, Input, ErrorBoundary, Loading, MarkdownContent, Tabs } fr
 import { ThemeColorPreview, type ColorKey } from '../../components/admin/theme-customizer/ThemeColorPreview';
 import { ThemeCustomizerEnhanced, GalleryPreview } from '../../components/admin';
 import { useTheme, type ThemeConfig, GALLERY_THEME_PRESETS } from '../../contexts/ThemeContext';
+import { matchThemePreset } from '../../types/theme.types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { settingsService, type BrandingSettings } from '../../services/settings.service';
 import { businessProfileService } from '../../services/businessProfile.service';
@@ -167,20 +168,12 @@ export const BrandingPage: React.FC = () => {
           setLoadedBranding(prev => ({ ...prev, logo_url: formatted.logoUrl }));
         }
 
-        // Try to identify which preset this matches. Compare only on the
-        // fields the preset itself defines so saved themes carrying extras
-        // like a `logoUrl` (preserved through preset changes — see
-        // handlePresetChange) still match the original preset shape.
-        for (const [key, preset] of Object.entries(GALLERY_THEME_PRESETS)) {
-          const keys = Object.keys(preset.config);
-          const matches = keys.every((k) =>
-            JSON.stringify((preset.config as any)[k]) === JSON.stringify((formatted as any)[k])
-          );
-          if (matches) {
-            setCurrentThemeName(key);
-            setLoadedThemeName(key);
-            break;
-          }
+        // Try to identify which preset this matches (a `logoUrl` preserved
+        // through preset changes, see handlePresetChange, still matches).
+        const matchedPreset = matchThemePreset(formatted);
+        if (matchedPreset) {
+          setCurrentThemeName(matchedPreset);
+          setLoadedThemeName(matchedPreset);
         }
       }
     }

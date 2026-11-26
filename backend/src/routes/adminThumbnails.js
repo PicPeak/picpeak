@@ -153,26 +153,14 @@ router.put('/settings', adminAuth, requirePermission('settings.edit'), async (re
       });
     }
 
+    // Migration 040 seeds the thumbnail_* rows and 104 the lightbox one.
     for (const update of updates) {
-      const updated = await db('app_settings')
+      await db('app_settings')
         .where('setting_key', update.setting_key)
         .update({
           setting_value: update.setting_value,
           updated_at: db.fn.now()
         });
-      // Defensive insert when the row is missing — covers the case
-      // where lightbox_preview_enabled is being saved on an install
-      // that pre-dates migration 104. Existing thumbnail_* keys are
-      // seeded by migration 040 so the update path always wins for
-      // them; this only fires on the new key.
-      if (!updated) {
-        await db('app_settings').insert({
-          setting_key: update.setting_key,
-          setting_value: update.setting_value,
-          setting_type: update.setting_key === 'lightbox_preview_enabled' ? 'thumbnail' : 'thumbnail',
-          updated_at: db.fn.now(),
-        });
-      }
     }
     
     res.json({ 
@@ -510,28 +498,6 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
     if (acquired) runningJobs.previews = false;
     logger.error('Error starting preview regeneration:', error);
     res.status(500).json({ error: 'Failed to start preview regeneration' });
-  }
-});
-
-// Get regeneration status
-router.get('/regenerate/status', adminAuth, requirePermission('photos.view'), async (req, res) => {
-  try {
-    // Count photos with and without thumbnails
-    const totalPhotos = await db('photos').count('id as count').first();
-    const photosWithThumbnails = await db('photos')
-      .whereNotNull('thumbnail_path')
-      .count('id as count')
-      .first();
-    
-    res.json({
-      total: totalPhotos.count,
-      withThumbnails: photosWithThumbnails.count,
-      withoutThumbnails: totalPhotos.count - photosWithThumbnails.count,
-      percentage: Math.round((photosWithThumbnails.count / totalPhotos.count) * 100)
-    });
-  } catch (error) {
-    logger.error('Error fetching regeneration status:', error);
-    res.status(500).json({ error: 'Failed to fetch regeneration status' });
   }
 });
 

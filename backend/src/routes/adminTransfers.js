@@ -96,6 +96,13 @@ router.post('/',
     const recipientEmails = parseJsonArrayField(b.recipientEmails)
       .map((e) => String(e || '').trim()).filter(Boolean).slice(0, 100);
     const deliveryMethod = b.deliveryMethod === 'email' ? 'email' : 'link';
+    // Multer's temp copies of the uploaded files, for the paths that refuse
+    // the request before storeExtraFiles takes them over.
+    const dropTempFiles = () => {
+      for (const file of req.files || []) {
+        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+      }
+    };
     // How many of the admin's own files the page is still going to upload
     // into this send, in chunks or further requests, because they do not fit
     // this one request (a proxy's body limit, e.g. Cloudflare's 100 MB). The
@@ -107,9 +114,7 @@ router.post('/',
     // ask for (issue 1914). Multipart text, so it arrives as a string.
     const ownLimitGiven = isRequest && b.maxFilesPerUpload != null && String(b.maxFilesPerUpload).trim() !== '';
     if (ownLimitGiven && !normalizeMaxFiles(b.maxFilesPerUpload)) {
-      for (const file of req.files || []) {
-        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
-      }
+      dropTempFiles();
       return res.status(400).json({
         error: `Maximum files per upload must be a whole number between 1 and ${MAX_FILES_CEILING}`,
         code: 'BAD_FILE_COUNT',
@@ -128,9 +133,7 @@ router.post('/',
       : [];
     if (!isRequest && usablePhotoIds.length === 0 && !(req.files || []).length && pendingFiles === 0) {
       const rejectedNow = req.rejectedFiles || [];
-      for (const file of req.files || []) {
-        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
-      }
+      dropTempFiles();
       return res.status(400).json({
         error: rejectedNow.length
           ? `Nothing to send — no allowed file type among: ${rejectedNow.join(', ')}`
@@ -168,9 +171,7 @@ router.post('/',
     // counted as part of the transfer.
     let failedToStore = [];
     if (isRequest) {
-      for (const file of req.files || []) {
-        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
-      }
+      dropTempFiles();
     } else {
       ({ failed: failedToStore } = await storeExtraFiles(transfer.id, req.files));
     }

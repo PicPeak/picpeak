@@ -54,14 +54,14 @@ function transformCampaign(c) {
     language: c.language || 'en',
     status: c.status,
     recipientMode: c.recipient_mode,
-    customerIds: parseCustomerIds(c.recipient_filter),
+    customerIds: newsletterService.parseCustomerIds(c.recipient_filter),
     // The groups rule (#1443); kept beside the manual selection.
     groupIds: newsletterService.parseGroupFilter(c).groupIds,
     groupMatch: newsletterService.parseGroupFilter(c).match,
     recipientCount: Number(c.recipient_count || 0),
     sentCount: Number(c.sent_count || 0),
     failedCount: Number(c.failed_count || 0),
-    sendRatePerMinute: Number(c.send_rate_per_minute || 20),
+    sendRatePerMinute: Number(c.send_rate_per_minute),
     createdByAdminId: c.created_by_admin_id,
     testSentAt: c.test_sent_at,
     queuedAt: c.queued_at,
@@ -69,17 +69,6 @@ function transformCampaign(c) {
     createdAt: c.created_at,
     updatedAt: c.updated_at,
   };
-}
-
-function parseCustomerIds(raw) {
-  if (!raw) return [];
-  try {
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    const ids = Array.isArray(parsed) ? parsed : parsed?.customerIds;
-    return Array.isArray(ids) ? ids : [];
-  } catch (_) {
-    return [];
-  }
 }
 
 function transformRecipient(r) {
@@ -249,16 +238,7 @@ router.post(
     const subject = campaign.subject;
     const rendered = await newsletterService.renderForRecipient(
       req.body.language ? { ...campaign, language: req.body.language } : campaign,
-      customer || {
-        id: null,
-        email: 'alex@example.com',
-        salutation: 'Ms.',
-        first_name: 'Alex',
-        last_name: 'Sample',
-        display_name: 'Alex Sample',
-        company_name: 'Sample & Co',
-        preferred_language: req.body.language || campaign.language,
-      },
+      customer || newsletterService.sampleRecipient('alex@example.com', req.body.language || campaign.language),
       { unsubscribeUrl: '#preview-unsubscribe' }
     );
 

@@ -39,7 +39,8 @@ import { eventTypesService } from '../../services/eventTypes.service';
 import { userManagementService } from '../../services/userManagement.service';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
 import { useTranslation } from 'react-i18next';
-import { ThemeConfig, GALLERY_THEME_PRESETS } from '../../types/theme.types';
+import { ThemeConfig, GALLERY_THEME_PRESETS, matchThemePreset } from '../../types/theme.types';
+import { DEFAULT_PHOTO_SORT_OPTIONS } from '../../constants/photoSort';
 import { usePermission } from '../../hooks/usePermission';
 import { ExternalFolderPicker } from './event-details/ExternalFolderPicker';
 import { ThemeDisplay } from '../../components/admin';
@@ -149,7 +150,6 @@ export const CreateEventPage: React.FC = () => {
   // one of which 500'd on `events_slug_unique` (QA 7.03).
   const isSubmittingRef = useRef(false);
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
-  // const [showPreview, setShowPreview] = useState(false);
   
   // Re-arm on every effect run so React Strict Mode's mount→cleanup→mount
   // cycle does not leave the ref permanently false (no toast / redirect, and
@@ -351,70 +351,61 @@ export const CreateEventPage: React.FC = () => {
     }
   }, [settings]);
 
-  // Honour the global "Require password by default" admin setting (#317).
-  // Apply once when public settings first load, before the user has interacted.
-  const requirePasswordDefaultApplied = useRef(false);
+  // Settings defaults for a new gallery, applied once when public settings
+  // first load, before the user has interacted. The form sends every one of
+  // these fields explicitly, so seeding them here is what makes the Settings
+  // defaults reach a gallery created through the UI; the server-side
+  // fallbacks only cover callers that omit them (the v1 API).
+  // - require_password: "Require password by default" (#317)
+  // - download_limit: Settings > Events (issue 1560)
+  // - uploader names (#1561)
+  // - guest feedback: the master toggle (#520) and the per-type ones (#1044),
+  //   see feedbackDefaults.js
+  // Each key is applied once, the first time it is defined: /public/settings
+  // always sends all of them, but tests mock partial settings.
+  const settingsDefaultsApplied = useRef(new Set<string>());
   useEffect(() => {
-    if (requirePasswordDefaultApplied.current) return;
-    if (publicSettings?.event_default_require_password === undefined) return;
-    requirePasswordDefaultApplied.current = true;
-    setFormData(prev => ({
-      ...prev,
-      require_password: publicSettings.event_default_require_password !== false
-    }));
-  }, [publicSettings]);
-
-  // Download limit default from Settings > Events (issue 1560). Same one-shot
-  // apply; the form sends the field explicitly, so the server's own fallback
-  // only covers callers that omit it (the v1 API).
-  const downloadLimitDefaultApplied = useRef(false);
-  useEffect(() => {
-    if (downloadLimitDefaultApplied.current) return;
-    if (publicSettings?.event_default_download_limit === undefined) return;
-    downloadLimitDefaultApplied.current = true;
-    setFormData(prev => ({ ...prev, download_limit: publicSettings.event_default_download_limit || 0 }));
-  }, [publicSettings]);
-
-  // Honour the global guest-feedback defaults (#520 for the master toggle,
-  // #1044 for the per-type ones). Same one-shot apply pattern as
-  // require_password above. This form POSTs every sub-toggle explicitly, so
-  // seeding them here is what makes the Settings > Events defaults actually
-  // reach a gallery created through the UI — the server-side inheritance in
-  // feedbackDefaults.js only covers callers that omit them (the v1 API).
-  // Uploader-name defaults (#1561), applied once like the feedback ones below.
-  const uploaderNameDefaultsApplied = useRef(false);
-  useEffect(() => {
-    if (uploaderNameDefaultsApplied.current) return;
-    if (publicSettings?.event_default_guest_name_mode === undefined) return;
-    uploaderNameDefaultsApplied.current = true;
-    setFormData(prev => ({
-      ...prev,
-      guest_name_mode: publicSettings.event_default_guest_name_mode || 'off',
-      show_credits_to_guests: publicSettings.event_default_show_credits_to_guests === true,
-    }));
-  }, [publicSettings]);
-
-  const feedbackEnabledDefaultApplied = useRef(false);
-  useEffect(() => {
-    if (feedbackEnabledDefaultApplied.current) return;
-    if (publicSettings?.event_default_feedback_enabled === undefined) return;
-    feedbackEnabledDefaultApplied.current = true;
-    setFormData(prev => ({
-      ...prev,
-      feedback_settings: {
-        ...prev.feedback_settings,
-        feedback_enabled: publicSettings.event_default_feedback_enabled === true,
-        allow_ratings: publicSettings.event_default_allow_ratings !== false,
-        allow_likes: publicSettings.event_default_allow_likes !== false,
-        allow_favorites: publicSettings.event_default_allow_favorites !== false,
-        allow_comments: publicSettings.event_default_allow_comments !== false,
-        allow_reactions: publicSettings.event_default_allow_reactions !== false,
-        allow_color_labels: publicSettings.event_default_allow_color_labels === true,
-        allow_decisions: publicSettings.event_default_allow_decisions === true,
-        allow_favorite_lists: publicSettings.event_default_allow_favorite_lists === true,
-        keybind_mode: publicSettings.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors'
+    if (!publicSettings) return;
+    const applied = settingsDefaultsApplied.current;
+    const take = (key: keyof typeof publicSettings) => {
+      if (applied.has(key) || publicSettings[key] === undefined) return false;
+      applied.add(key);
+      return true;
+    };
+    const requirePassword = take('event_default_require_password');
+    const downloadLimit = take('event_default_download_limit');
+    const guestNameMode = take('event_default_guest_name_mode');
+    const feedbackEnabled = take('event_default_feedback_enabled');
+    if (!requirePassword && !downloadLimit && !guestNameMode && !feedbackEnabled) return;
+    setFormData(prev => {
+      const next = { ...prev };
+      if (requirePassword) {
+        next.require_password = publicSettings.event_default_require_password !== false;
       }
-    }));
+      if (downloadLimit) {
+        next.download_limit = publicSettings.event_default_download_limit || 0;
+      }
+      if (guestNameMode) {
+        next.guest_name_mode = publicSettings.event_default_guest_name_mode || 'off';
+        next.show_credits_to_guests = publicSettings.event_default_show_credits_to_guests === true;
+      }
+      if (feedbackEnabled) {
+        next.feedback_settings = {
+          ...prev.feedback_settings,
+          feedback_enabled: publicSettings.event_default_feedback_enabled === true,
+          allow_ratings: publicSettings.event_default_allow_ratings !== false,
+          allow_likes: publicSettings.event_default_allow_likes !== false,
+          allow_favorites: publicSettings.event_default_allow_favorites !== false,
+          allow_comments: publicSettings.event_default_allow_comments !== false,
+          allow_reactions: publicSettings.event_default_allow_reactions !== false,
+          allow_color_labels: publicSettings.event_default_allow_color_labels === true,
+          allow_decisions: publicSettings.event_default_allow_decisions === true,
+          allow_favorite_lists: publicSettings.event_default_allow_favorite_lists === true,
+          keybind_mode: publicSettings.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors'
+        };
+      }
+      return next;
+    });
   }, [publicSettings]);
 
   // Apply the global Branding default theme on first load so admins who set a
@@ -438,20 +429,8 @@ export const CreateEventPage: React.FC = () => {
     if (lastAppliedThemeHashRef.current === hash) return;
     lastAppliedThemeHashRef.current = hash;
 
-    // Identify which preset (if any) the Branding theme matches. Compare
-    // only on the preset's own fields so saved themes carrying extras
-    // (e.g. logoUrl preserved through preset changes) still match.
-    let matchedPreset = 'custom';
-    for (const [key, preset] of Object.entries(GALLERY_THEME_PRESETS)) {
-      const keys = Object.keys(preset.config);
-      const matches = keys.every((k) =>
-        JSON.stringify((preset.config as any)[k]) === JSON.stringify((brandingTheme as any)[k])
-      );
-      if (matches) {
-        matchedPreset = key;
-        break;
-      }
-    }
+    // Identify which preset (if any) the Branding theme matches.
+    const matchedPreset = matchThemePreset(brandingTheme) ?? 'custom';
 
     setFormData(prev => ({
       ...prev,
@@ -551,6 +530,8 @@ export const CreateEventPage: React.FC = () => {
     },
   });
 
+  const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
 
@@ -570,10 +551,10 @@ export const CreateEventPage: React.FC = () => {
     if (requireCustomerEmail) {
       if (!formData.customer_email) {
         newErrors.customer_email = t('validation.hostEmailRequired');
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customer_email)) {
+      } else if (!isEmail(formData.customer_email)) {
         newErrors.customer_email = t('validation.invalidEmailFormat');
       }
-    } else if (formData.customer_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customer_email)) {
+    } else if (formData.customer_email && !isEmail(formData.customer_email)) {
       // Still validate format if value is provided, even if optional
       newErrors.customer_email = t('validation.invalidEmailFormat');
     }
@@ -581,10 +562,10 @@ export const CreateEventPage: React.FC = () => {
     if (requireAdminEmail) {
       if (!formData.admin_email) {
         newErrors.admin_email = t('validation.adminEmailRequired');
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.admin_email)) {
+      } else if (!isEmail(formData.admin_email)) {
         newErrors.admin_email = t('validation.invalidEmailFormat');
       }
-    } else if (formData.admin_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.admin_email)) {
+    } else if (formData.admin_email && !isEmail(formData.admin_email)) {
       // Still validate format if value is provided, even if optional
       newErrors.admin_email = t('validation.invalidEmailFormat');
     }
@@ -916,8 +897,6 @@ export const CreateEventPage: React.FC = () => {
             )}
           </div>
         </Card>
-
-        {/* Theme Selection */}
 
 {/* Photo source: upload, or an external folder imported right away,
             so a gallery is ready from this form alone. */}
@@ -1383,12 +1362,9 @@ export const CreateEventPage: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, default_photo_sort: e.target.value })}
                 className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent focus:border-accent-dark"
               >
-                <option value="upload_date_desc">{t('photoSort.uploadDateNewest', 'Upload Date (Newest First)')}</option>
-                <option value="upload_date_asc">{t('photoSort.uploadDateOldest', 'Upload Date (Oldest First)')}</option>
-                <option value="capture_date_desc">{t('photoSort.captureDateNewest', 'Date Taken (Newest First)')}</option>
-                <option value="capture_date_asc">{t('photoSort.captureDateOldest', 'Date Taken (Oldest First)')}</option>
-                <option value="filename_asc">{t('photoSort.filenameAZ', 'Filename (A-Z)')}</option>
-                <option value="filename_desc">{t('photoSort.filenameZA', 'Filename (Z-A)')}</option>
+                {DEFAULT_PHOTO_SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{t(o.labelKey, o.fallback)}</option>
+                ))}
               </select>
             </div>
 

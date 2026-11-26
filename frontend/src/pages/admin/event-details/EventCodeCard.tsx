@@ -20,39 +20,14 @@ import { PUBLIC_SETTINGS_QUERY_KEY, usePublicSettings } from '../../../hooks/use
 import { usePublicBaseUrl } from '../../../hooks/usePublicBaseUrl';
 import { isGalleryPublic } from '../../../utils/accessControl';
 import { buildShareLinkUrl } from '../../../utils/url';
+import { copyText } from '../../../utils/clipboard';
+import { saveBlob } from '../../../utils/saveBlob';
 import { eventCodeUrl, formatEventCode, isValidEventCode, normalizeEventCode } from '../../../utils/eventCode';
 
 interface EventCodeCardProps {
   event: Event;
   refetchEvent?: () => void;
 }
-
-const copyText = async (text: string) => {
-  if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const textArea = document.createElement('textarea');
-  textArea.value = text;
-  textArea.style.position = 'fixed';
-  textArea.style.left = '-999999px';
-  document.body.appendChild(textArea);
-  textArea.select();
-  const ok = document.execCommand('copy');
-  document.body.removeChild(textArea);
-  if (!ok) throw new Error('Copy failed');
-};
-
-const saveBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
 
 // 409 EVENT_CODES_DISABLED: the setting was switched off after this page
 // loaded its public settings.

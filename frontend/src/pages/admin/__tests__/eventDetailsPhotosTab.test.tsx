@@ -53,7 +53,6 @@ vi.mock('../../../services/photos.service', () => ({
   photosService: {
     getEventPhotos: (...args: unknown[]) => getEventPhotos(...args),
     getFilterSummary: vi.fn().mockResolvedValue({}),
-    getExportFormats: vi.fn().mockResolvedValue([]),
     getPhotoCredits: vi.fn().mockResolvedValue({ credits: [], none: 0 }),
     getModerationCounts: vi.fn().mockResolvedValue({ pending: 0, rejected: 0 }),
     getTrash: vi.fn().mockResolvedValue({ items: [], retention_days: 30 }),

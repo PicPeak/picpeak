@@ -22,7 +22,7 @@ import { toast } from 'react-toastify';
 import { Users, RefreshCw, Trash2, AlertTriangle, ShieldCheck, SlidersHorizontal, ExternalLink } from 'lucide-react';
 import { PeopleManagerModal } from './PeopleManagerModal';
 
-import { Button, Card, Loading, Notice, useConfirm } from '../common';
+import { Button, Loading, Notice, useConfirm } from '../common';
 import { api } from '../../config/api';
 
 interface FacesPayload {
@@ -65,11 +65,9 @@ const BURNS_PHOTOS = new Set(['unauthorized', 'rejected']);
 interface FaceRecognitionCardProps {
   eventId: number;
   isArchived?: boolean;
-  /** Without its own card frame, for a host that already draws one (the gallery Settings card). */
-  bare?: boolean;
 }
 
-export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventId, isArchived, bare = false }) => {
+export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventId, isArchived }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const [saving, setSaving] = useState(false);
@@ -254,10 +252,9 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
     }
   };
 
-  const Frame = bare ? 'div' : Card;
 
   if (isLoading) {
-    return <Frame><Loading /></Frame>;
+    return <div><Loading /></div>;
   }
   if (!data) return null;
 
@@ -296,7 +293,7 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
   ) : null;
 
   return (
-    <Frame>
+    <div>
       <div className="flex items-start gap-3 mb-4">
         <Users className="text-faint mt-0.5" size={20} />
         <div>
@@ -595,7 +592,7 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
           />
         </>
       )}
-    </Frame>
+    </div>
   );
 };
 

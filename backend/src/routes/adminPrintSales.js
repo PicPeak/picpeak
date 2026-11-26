@@ -17,6 +17,7 @@ const fulfilment = () => require('../services/printSales/fulfilment').createServ
 const permissions = (...names) => requirePermission(names, { requireAll: true });
 const downloadStatus = () => require('../services/printSales/downloadStatus').createService(db);
 const requirePrintSales = requireFeatureFlag('printSales');
+const { requirePrintSalesFlags } = require('../services/printSales/flags');
 router.use(adminAuth, (req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
 router.get('/settings', permissions('products.view'), handleAsync(async (_req, res) => {
   const cat = await P.catalogue(db);
@@ -24,7 +25,7 @@ router.get('/settings', permissions('products.view'), handleAsync(async (_req, r
     presets: await db('quote_line_item_presets').where({ is_active: formatBoolean(true), price_mode: 'fixed' })
       .select('id', 'name', 'product_id', 'currency') });
 }));
-router.put('/settings', requireFeatureFlag('printSales'), requireFeatureFlag('albumProducts'), requireFeatureFlag('bills'),
+router.put('/settings', ...requirePrintSalesFlags(),
   permissions('products.manage', 'bills.manage'), handleAsync(async (req, res) => {
     const result = await P.save(db, req.body);
     await require('../database/db').logActivity('print_settings_updated', { revision: result.revision }, null, { type: 'admin', id: req.admin.id });
@@ -35,7 +36,7 @@ router.get('/events/:eventId', requireEventOwner, permissions('products.view'), 
   if (!e) throw new NotFoundError('Gallery');
   res.json({ enabled: require('../utils/galleryLifecycle').isTrue(e.print_sales_enabled) });
 }));
-router.put('/events/:eventId', requireEventOwner, requireFeatureFlag('printSales'), requireFeatureFlag('albumProducts'), requireFeatureFlag('bills'),
+router.put('/events/:eventId', requireEventOwner, ...requirePrintSalesFlags(),
   permissions('products.configure', 'bills.manage', 'customers.edit'), handleAsync(async (req, res) => {
     if (typeof req.body?.enabled !== 'boolean') throw new AppError('Choose whether gallery ordering is enabled', 400);
     const event = Number.isSafeInteger(Number(req.params.eventId)) && await db('events').where({ id: Number(req.params.eventId) }).first('id', 'created_by');
@@ -69,18 +70,18 @@ router.post('/orders/:id/actions', permissions('products.configure', 'bills.mana
   const result = await require('../services/activeApplicationWork').track('manual print fulfilment', () => fulfilment().action(req.params.id, req.admin, req.body));
   res.json({ ...O.application().shape(await fulfilment().order(req.params.id, req.admin)), ...(result?.repair ? { repair: result.repair } : {}) });
 }));
-router.post('/orders/:id/files/:kind/downloads', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
+router.post('/orders/:id/files/:kind/downloads', requirePrintSales, permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
   const result = await require('../services/activeApplicationWork').track('print download status preparation', async () => {
     await fulfilment().downloadMetadata(req.params.id, req.admin, req.params.kind);
     return downloadStatus().create(req.params.id, req.admin, req.params.kind);
   });
   res.status(201).json(result);
 }));
-router.get('/orders/:id/files/:kind/downloads/:downloadId', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
+router.get('/orders/:id/files/:kind/downloads/:downloadId', requirePrintSales, permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
   await fulfilment().order(req.params.id, req.admin);
   res.json(await downloadStatus().read(req.params.downloadId, req.params.id, req.admin, req.params.kind));
 }));
-router.get('/orders/:id/files/:kind', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
+router.get('/orders/:id/files/:kind', requirePrintSales, permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
   V.uuid(req.params.id);
   if (req.method === 'HEAD') {
     const { asset } = await fulfilment().downloadMetadata(req.params.id, req.admin, req.params.kind);

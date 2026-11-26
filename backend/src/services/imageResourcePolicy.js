@@ -29,6 +29,11 @@ function positive(name, fallback, maximum) {
   }
   return value;
 }
+// A positive MiB count from the environment, in bytes; null when unset.
+const optionalMiB = (name, maximum) => {
+  const value = positive(name, null, maximum);
+  return value === null ? null : value * MiB;
+};
 let memoryCache = null;
 function effectiveMemory() {
   // Read on every submit otherwise; the cgroup files do not change that fast.
@@ -57,10 +62,6 @@ function configuration() {
     ? configuredMemory * MiB
     : Math.min(4096 * MiB, Math.max(768 * MiB, Math.floor(memory / 4 / MiB) * MiB));
   const workers = Math.max(1, Math.min(2, Math.floor(memory / 2 / nativeBytes)));
-  const optionalMiB = (name, maximum) => {
-    const value = positive(name, null, maximum);
-    return value === null ? null : value * MiB;
-  };
   return {
     nativeBytes, workers,
     // A job that runs out of memory in a shared worker is run once more on
@@ -149,4 +150,5 @@ function uploadRefusal(refused) {
   if (!isResourceError(refused) || isTransient(refused)) return null;
   return { status: 422, body: { error: typeof refused.error === 'string' ? refused.error : refused.message, ...describe(refused) } };
 }
-module.exports = { LIBRARY_UNAVAILABLE, configuration, estimate, refusal, isResourceError, isTransient, retryTransient, describe, uploadRefusal, effectiveMemory, MiB };
+module.exports = { LIBRARY_UNAVAILABLE, configuration, estimate, refusal, isResourceError, isTransient, retryTransient, describe, uploadRefusal, effectiveMemory, MiB,
+  SHARP_MAX_PIXELS, positive, optionalMiB };

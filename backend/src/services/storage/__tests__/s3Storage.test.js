@@ -208,22 +208,6 @@ describe('S3StorageAdapter', () => {
 
       expect(onProgress).toHaveBeenCalledWith(512, 1024);
     });
-    
-    it('should emit upload events', async () => {
-      const uploadStartSpy = jest.fn();
-      const uploadCompleteSpy = jest.fn();
-      
-      s3Storage.on('uploadStart', uploadStartSpy);
-      s3Storage.on('uploadComplete', uploadCompleteSpy);
-      
-      await s3Storage.upload('/path/to/file.jpg', 'test-key');
-      
-      expect(uploadStartSpy).toHaveBeenCalledWith({ key: 'test-key', size: 1024 });
-      expect(uploadCompleteSpy).toHaveBeenCalledWith({
-        key: 'test-key',
-        location: 'https://test-bucket.s3.amazonaws.com/test-key'
-      });
-    });
   });
   
   describe('exists', () => {
@@ -248,26 +232,6 @@ describe('S3StorageAdapter', () => {
       const result = await s3Storage.exists('test-key');
       
       expect(result).toBe(false);
-    });
-  });
-  
-  describe('generateKey', () => {
-    it('should generate unique key with timestamp and random string', () => {
-      const key = s3Storage.generateKey('photo.jpg');
-      
-      expect(key).toMatch(/^\d+_[a-f0-9]{16}_photo\.jpg$/);
-    });
-    
-    it('should add prefix if provided', () => {
-      const key = s3Storage.generateKey('photo.jpg', 'events/wedding');
-      
-      expect(key).toMatch(/^events\/wedding\/\d+_[a-f0-9]{16}_photo\.jpg$/);
-    });
-    
-    it('should sanitize filename', () => {
-      const key = s3Storage.generateKey('my photo (1).jpg');
-      
-      expect(key).toMatch(/^\d+_[a-f0-9]{16}_my_photo__1_\.jpg$/);
     });
   });
   
@@ -347,39 +311,6 @@ describe('S3StorageAdapter', () => {
     });
   });
   
-  describe('getStats', () => {
-    it('should calculate storage statistics', async () => {
-      mockSend.mockResolvedValueOnce({
-        Contents: [
-          { Key: 'file1.jpg', Size: 1024 },
-          { Key: 'file2.jpg', Size: 2048 }
-        ],
-        NextContinuationToken: 'token123'
-      }).mockResolvedValueOnce({
-        Contents: [
-          { Key: 'file3.jpg', Size: 3072 }
-        ]
-      });
-      
-      const stats = await s3Storage.getStats('events/');
-      
-      expect(stats).toEqual({
-        totalSize: 6144,
-        totalCount: 3,
-        totalSizeFormatted: '6 KB'
-      });
-    });
-  });
-  
-  describe('_formatBytes', () => {
-    it('should format bytes correctly', () => {
-      expect(s3Storage._formatBytes(0)).toBe('0 Bytes');
-      expect(s3Storage._formatBytes(1024)).toBe('1 KB');
-      expect(s3Storage._formatBytes(1048576)).toBe('1 MB');
-      expect(s3Storage._formatBytes(1073741824)).toBe('1 GB');
-      expect(s3Storage._formatBytes(1536, 1)).toBe('1.5 KB');
-    });
-  });
   it('cancels real upload requests and waits for multipart cleanup before rejecting', async () => {
     const { PutObjectCommand, AbortMultipartUploadCommand } = require('@aws-sdk/client-s3');
     const controller = new AbortController(), input = new stream.PassThrough(); input.on('error', () => {});

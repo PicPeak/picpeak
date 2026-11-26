@@ -30,11 +30,6 @@ export const notificationsService = {
     return response.data;
   },
 
-  // Mark single notification as read
-  async markAsRead(notificationId: number): Promise<void> {
-    await api.put(`/admin/notifications/${notificationId}/read`);
-  },
-
   // Mark all notifications as read
   async markAllAsRead(): Promise<void> {
     await api.put('/admin/notifications/read-all');
