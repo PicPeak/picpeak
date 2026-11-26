@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import { formatBytes } from '../utils/formatBytes';
 import type { SlideshowGlobalDefaults } from './slideshow.service';
 import { normalizeStatusColors, type StatusColors } from '../utils/statusColors';
 
@@ -426,14 +427,7 @@ export const settingsService = {
     return rawSettings.theme_config || {};
   },
 
-  // Format bytes to human readable
-  formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  },
+  formatBytes,
 
   // Get password complexity settings
   async getPasswordComplexitySettings(): Promise<PasswordComplexitySettings> {

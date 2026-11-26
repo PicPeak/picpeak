@@ -17,15 +17,6 @@ const MAX_ALLOWED_FILE_SIZE_MB = 10 * 1024; // 10 GB — matches the admin path'
 // few minutes of phone footage; the same 10 GB hard ceiling applies.
 const DEFAULT_MAX_VIDEO_SIZE_MB = 500;
 
-let cachedValue = DEFAULT_MAX_FILES_PER_UPLOAD;
-let cacheExpiresAt = 0;
-
-let cachedFileSizeMb = DEFAULT_MAX_FILE_SIZE_MB;
-let fileSizeCacheExpiresAt = 0;
-
-let cachedVideoSizeMb = DEFAULT_MAX_VIDEO_SIZE_MB;
-let videoSizeCacheExpiresAt = 0;
-
 // Map of file extension to MIME type(s)
 const EXTENSION_TO_MIME = {
   'jpg': 'image/jpeg',
@@ -124,32 +115,6 @@ const normalizeLimit = (value) => {
   return intValue;
 };
 
-const getMaxFilesPerUpload = async () => {
-  if (Date.now() < cacheExpiresAt) {
-    return cachedValue;
-  }
-
-  try {
-    const setting = await db('app_settings')
-      .where({ setting_key: 'general_max_files_per_upload' })
-      .first();
-
-    const parsedValue = normalizeLimit(parseSettingValue(setting));
-    cachedValue = parsedValue;
-    cacheExpiresAt = Date.now() + CACHE_TTL_MS;
-    return parsedValue;
-  } catch (error) {
-    logger.error('Failed to read max files per upload setting:', error.message);
-    cachedValue = DEFAULT_MAX_FILES_PER_UPLOAD;
-    cacheExpiresAt = Date.now() + CACHE_TTL_MS;
-    return DEFAULT_MAX_FILES_PER_UPLOAD;
-  }
-};
-
-const clearMaxFilesPerUploadCache = () => {
-  cacheExpiresAt = 0;
-};
-
 const normalizeFileSizeMb = (value, fallbackMb = DEFAULT_MAX_FILE_SIZE_MB) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     return fallbackMb;
@@ -160,31 +125,63 @@ const normalizeFileSizeMb = (value, fallbackMb = DEFAULT_MAX_FILE_SIZE_MB) => {
   return intValue;
 };
 
+// One numeric app setting, read and clamped by `normalize`, cached for
+// CACHE_TTL_MS. A failed read logs `errorLabel`, caches `defaultValue` for the
+// same TTL and returns it. Returns the getter and a cache reset for tests.
+const createCachedNumericSetting = ({ key, defaultValue, normalize, errorLabel }) => {
+  let cached = defaultValue;
+  let expiresAt = 0;
+
+  const get = async () => {
+    if (Date.now() < expiresAt) {
+      return cached;
+    }
+
+    try {
+      const setting = await db('app_settings')
+        .where({ setting_key: key })
+        .first();
+
+      const parsedValue = normalize(parseSettingValue(setting));
+      cached = parsedValue;
+      expiresAt = Date.now() + CACHE_TTL_MS;
+      return parsedValue;
+    } catch (error) {
+      logger.error(`Failed to read ${errorLabel} setting:`, error.message);
+      cached = defaultValue;
+      expiresAt = Date.now() + CACHE_TTL_MS;
+      return defaultValue;
+    }
+  };
+
+  const clear = () => {
+    expiresAt = 0;
+  };
+
+  return { get, clear };
+};
+
+const maxFilesPerUpload = createCachedNumericSetting({
+  key: 'general_max_files_per_upload',
+  defaultValue: DEFAULT_MAX_FILES_PER_UPLOAD,
+  normalize: normalizeLimit,
+  errorLabel: 'max files per upload',
+});
+const getMaxFilesPerUpload = maxFilesPerUpload.get;
+const clearMaxFilesPerUploadCache = maxFilesPerUpload.clear;
+
 /**
  * Per-file upload size limit in MB (general_max_file_size_mb). Cached 60s, same
  * as the other upload settings. Falls back to the default on a read error.
  */
-const getMaxFileSizeMb = async () => {
-  if (Date.now() < fileSizeCacheExpiresAt) {
-    return cachedFileSizeMb;
-  }
-
-  try {
-    const setting = await db('app_settings')
-      .where({ setting_key: 'general_max_file_size_mb' })
-      .first();
-
-    const parsedValue = normalizeFileSizeMb(parseSettingValue(setting));
-    cachedFileSizeMb = parsedValue;
-    fileSizeCacheExpiresAt = Date.now() + CACHE_TTL_MS;
-    return parsedValue;
-  } catch (error) {
-    logger.error('Failed to read max file size setting:', error.message);
-    cachedFileSizeMb = DEFAULT_MAX_FILE_SIZE_MB;
-    fileSizeCacheExpiresAt = Date.now() + CACHE_TTL_MS;
-    return DEFAULT_MAX_FILE_SIZE_MB;
-  }
-};
+const maxFileSizeMb = createCachedNumericSetting({
+  key: 'general_max_file_size_mb',
+  defaultValue: DEFAULT_MAX_FILE_SIZE_MB,
+  normalize: (value) => normalizeFileSizeMb(value),
+  errorLabel: 'max file size',
+});
+const getMaxFileSizeMb = maxFileSizeMb.get;
+const clearMaxFileSizeCache = maxFileSizeMb.clear;
 
 /** Per-file upload size limit in bytes — convenience for multer `limits.fileSize`. */
 const getMaxFileSizeBytes = async () => {
@@ -192,45 +189,24 @@ const getMaxFileSizeBytes = async () => {
   return mb * 1024 * 1024;
 };
 
-const clearMaxFileSizeCache = () => {
-  fileSizeCacheExpiresAt = 0;
-};
-
 /**
  * Per-file upload size limit for videos in MB (general_max_video_size_mb).
  * Same read/cache/clamp contract as getMaxFileSizeMb(); falls back to the
  * video default (not the photo one) when the setting is absent.
  */
-const getMaxVideoSizeMb = async () => {
-  if (Date.now() < videoSizeCacheExpiresAt) {
-    return cachedVideoSizeMb;
-  }
-
-  try {
-    const setting = await db('app_settings')
-      .where({ setting_key: 'general_max_video_size_mb' })
-      .first();
-
-    const parsedValue = normalizeFileSizeMb(parseSettingValue(setting), DEFAULT_MAX_VIDEO_SIZE_MB);
-    cachedVideoSizeMb = parsedValue;
-    videoSizeCacheExpiresAt = Date.now() + CACHE_TTL_MS;
-    return parsedValue;
-  } catch (error) {
-    logger.error('Failed to read max video size setting:', error.message);
-    cachedVideoSizeMb = DEFAULT_MAX_VIDEO_SIZE_MB;
-    videoSizeCacheExpiresAt = Date.now() + CACHE_TTL_MS;
-    return DEFAULT_MAX_VIDEO_SIZE_MB;
-  }
-};
+const maxVideoSizeMb = createCachedNumericSetting({
+  key: 'general_max_video_size_mb',
+  defaultValue: DEFAULT_MAX_VIDEO_SIZE_MB,
+  normalize: (value) => normalizeFileSizeMb(value, DEFAULT_MAX_VIDEO_SIZE_MB),
+  errorLabel: 'max video size',
+});
+const getMaxVideoSizeMb = maxVideoSizeMb.get;
+const clearMaxVideoSizeCache = maxVideoSizeMb.clear;
 
 /** Per-file video size limit in bytes — convenience for multer `limits.fileSize`. */
 const getMaxVideoSizeBytes = async () => {
   const mb = await getMaxVideoSizeMb();
   return mb * 1024 * 1024;
-};
-
-const clearMaxVideoSizeCache = () => {
-  videoSizeCacheExpiresAt = 0;
 };
 
 /**

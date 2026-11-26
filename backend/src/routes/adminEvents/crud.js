@@ -5,7 +5,8 @@
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../../database/db');
 const { livePhotos } = require('../../utils/photoVisibility');
-const { formatBoolean, whereTimestamp } = require('../../utils/dbCompat');
+const { formatBoolean } = require('../../utils/dbCompat');
+const { DOWNLOAD_ACTIONS, whereActiveEvent, whereExpiringEvent } = require('../../utils/eventListFilters');
 const { getInstanceTimeZone, endOfDayInZone, addDaysToDate, expiryCalendarDate, parseExpiryInput, extendExpiry } = require('../../utils/galleryExpiry');
 const { toDateOnly } = require('../../utils/dateOnly');
 const { toTimestamp } = require('../../utils/dateNormalize');
@@ -15,8 +16,6 @@ const { requirePermission, userHasAllPermissions, userHasAnyPermission } = requi
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../../utils/emailNormalization');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
-const fs = require('fs').promises;
-const path = require('path');
 const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../../utils/sqlSecurity');
 const { validatePasswordInContext, getBcryptRounds } = require('../../utils/passwordValidation');
 const logger = require('../../utils/logger');
@@ -29,7 +28,6 @@ const { parseBooleanInput } = require('../../utils/parsers');
 const externalAccess = require('../../services/externalMediaAccess');
 const eventTypeService = require('../../services/eventTypeService');
 const { normaliseEventTimeTriple } = require('../../services/eventService');
-const { findSlugHolder } = require('../../services/slugRedirects');
 const { columnNamesCached } = require('../../utils/schemaCache');
 const { requireEventOwnership, requireEventOwner, scopeEventsListQuery, withoutForeignEventSecrets, scopeEventsQuery, ownsEvent, canLinkCrmToEvent } = require('../../middleware/ownership');
 const eventAdminAssignments = require('../../services/eventAdminAssignmentsService');
@@ -52,6 +50,10 @@ const {
 const downloadZipService = require('../../services/downloadZipService');
 const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { GUEST_NAME_MODES } = require('../../services/photoCredit');
+const {
+  PROTECTION_LEVELS, HERO_LOGO_SIZES, HERO_LOGO_POSITIONS, HEADER_STYLES, HERO_DIVIDER_STYLES,
+  BANNER_MODES, PHOTO_SORT_ORDERS,
+} = require('../../services/eventSettings');
 const { GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, isGuestUploadMaxEdge } = require('../../services/guestUploadDownscale');
 const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, deleteEventCascade, claimEventArchive } = require('./helpers');
 // One stored form per name (NFC): a decomposed "Jörg" must match a precomposed search.
@@ -127,6 +129,127 @@ async function checkGalleryPasswordPolicy(password, eventName) {
   };
 }
 
+/**
+ * Field validators POST / and PUT /:id share as written. Each is a factory,
+ * so every route gets its own chain; `sharedValidators` returns them in the
+ * order asked for, because each route reports errors in its own field order.
+ */
+const SHARED_FIELD_VALIDATORS = {
+  event_date: () => body('event_date').optional({ values: 'falsy' }).isDate(),
+  is_full_day: () => body('is_full_day').optional().isBoolean().toBoolean(),
+  // '' / null skip the format check and reach the handler (which clears the
+  // address on update, issue 1733). `values: 'falsy'` would also wave `false`
+  // and `0` through, which the handler would store as "false" / "0".
+  customer_email: () => [
+    body('customer_email').optional({ values: 'falsy' }).isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
+    body('customer_email').custom((value) => value === undefined || value === null || typeof value === 'string')
+      .withMessage('customer_email must be an address, an empty string or null'),
+  ],
+  customer_phone: () => body('customer_phone').optional({ nullable: true, checkFalsy: true })
+    .isString().trim()
+    .isLength({ max: 32 }).withMessage('Phone number must be at most 32 characters'),
+  require_password: () => body('require_password').optional().isBoolean(),
+  // Uploader names (#1561).
+  guest_name_mode: () => body('guest_name_mode').optional().isIn(GUEST_NAME_MODES),
+  allow_downloads: () => body('allow_downloads').optional().isBoolean(),
+  disable_right_click: () => body('disable_right_click').optional().isBoolean(),
+  enable_devtools_protection: () => body('enable_devtools_protection').optional().isBoolean(),
+  is_priced: () => body('is_priced').optional().isBoolean(),
+  photo_price: () => body('photo_price').optional({ nullable: true, checkFalsy: true }).isDecimal({ decimal_digits: '0,2', force_decimal: false }).toFloat(),
+  watermark_downloads: () => body('watermark_downloads').optional().isBoolean(),
+  watermark_text: () => body('watermark_text').optional().trim(),
+  css_template_id: () => body('css_template_id').optional({ nullable: true, checkFalsy: true }).isInt(),
+  // Hero logo settings
+  hero_logo_visible: () => body('hero_logo_visible').optional({ nullable: true }).isBoolean(),
+  hero_logo_size: () => body('hero_logo_size').optional({ nullable: true }).isIn(HERO_LOGO_SIZES),
+  hero_logo_position: () => body('hero_logo_position').optional().isIn(HERO_LOGO_POSITIONS),
+  // Header style settings (decoupled from layout)
+  header_style: () => body('header_style').optional().isIn(HEADER_STYLES),
+  hero_divider_style: () => body('hero_divider_style').optional().isIn(HERO_DIVIDER_STYLES),
+  // Hero image anchor position (#162) – accepts legacy keywords or "X% Y%" focal point
+  hero_image_anchor: () => body('hero_image_anchor').optional().custom(validateHeroImageAnchor),
+  // Client access settings (#172)
+  client_access_enabled: () => body('client_access_enabled').optional().isBoolean(),
+  client_pin_entry_enabled: () => body('client_pin_entry_enabled').optional().isBoolean(),
+  client_password: () => body('client_password').optional().custom(validateClientPassword),
+  default_photo_sort: () => body('default_photo_sort').optional().isIn(PHOTO_SORT_ORDERS),
+  // Per-event promotional override (#440). Three-way mode:
+  //   inherit → fall back to global branding_promo_markdown
+  //   custom  → render this event's promo_markdown verbatim
+  //   off     → suppress entirely for this event
+  promo_mode: () => body('promo_mode').optional().isIn(BANNER_MODES),
+  promo_markdown: () => body('promo_markdown').optional({ nullable: true }).isString(),
+  // Per-event info-banner override (#932). Same three-way mode as promo,
+  // but resolved against branding_info_markdown and rendered above the grid.
+  info_mode: () => body('info_mode').optional().isIn(BANNER_MODES),
+  info_markdown: () => body('info_markdown').optional({ nullable: true }).isString(),
+  // Per-event opt-in for using hero photo as the social-share preview
+  // image (#474). When false (default), galleryOgService falls back to
+  // the brand logo for og:image / Twitter Card.
+  og_image_share_enabled: () => body('og_image_share_enabled').optional().isBoolean(),
+  // Customer accounts assigned to this event (#354). Optional array of
+  // customer_accounts.id — many-to-many via event_customer_assignments.
+  customer_account_ids: () => [
+    body('customer_account_ids').optional().isArray(),
+    body('customer_account_ids.*').optional().isInt({ min: 1 }),
+  ],
+  // Team members and the review of their uploads (issue 743).
+  assigned_admin_ids: () => [
+    body('assigned_admin_ids').optional().isArray(),
+    body('assigned_admin_ids.*').optional().isInt({ min: 1 }),
+  ],
+  review_contributor_uploads: () => body('review_contributor_uploads').optional().isBoolean(),
+  // Custom styling switch (services/galleryTheme). Off keeps color_theme
+  // and css_template_id stored, so switching it on again restores them.
+  custom_theme_enabled: () => body('custom_theme_enabled').optional().isBoolean(),
+  // The photo source: upload, or reference an external folder.
+  source_mode: () => body('source_mode').optional().isIn(['managed', 'reference']),
+  external_path: () => body('external_path').optional({ nullable: true }).isString().trim(),
+  external_watch: () => body('external_watch').optional().isBoolean(),
+};
+const sharedValidators = (...fields) => fields.flatMap((field) => SHARED_FIELD_VALIDATORS[field]());
+
+// Send later and publish refuse to mail a generated password (migration 264).
+const GALLERY_PASSWORD_REQUIRED = {
+  error: 'Set a gallery password — the gallery email carries it.',
+  code: 'GALLERY_PASSWORD_REQUIRED',
+};
+
+/**
+ * Would the standard gallery email carry the "(set at creation)" sentinel? A
+ * generated password was never shown to anyone (migration 264), so that mail
+ * needs the real password in the request — the dialog asks for it.
+ */
+function mailsSentinelPassword(event, password, requirePassword) {
+  return requirePassword && !password && parseBooleanInput(event.password_generated, false);
+}
+
+/**
+ * Writes `columns` to the event, plus the password the admin re-typed (#627)
+ * when there is one: its recoverable copy and "no longer generated" always,
+ * a new hash and the credential cutoff only when it is a change. Re-entering
+ * the current password keeps the hash and the sessions opened with it — but
+ * only while that hash is still the one compared: a reset landing in between
+ * makes this a change, so the copy (and email) never disagree with the hash.
+ * `touchKept` also stamps updated_at when the hash is kept.
+ */
+async function writeEventWithPassword(id, event, password, { columns = {}, touchKept = false } = {}) {
+  const updates = { ...columns };
+  if (password) Object.assign(updates, await galleryPasswordColumns({ password }), await passwordKnownColumns());
+  const keptHash = Boolean(password) && await sameAsStored(password, event.password_hash)
+    && await db('events').where({ id, password_hash: event.password_hash })
+      .update(touchKept ? { ...updates, updated_at: new Date().toISOString() } : updates);
+  if (!keptHash) {
+    if (password) {
+      updates.password_hash = await bcrypt.hash(password, getBcryptRounds());
+      Object.assign(updates, await credentialChangeColumns('gallery'));
+    }
+    await db('events').where('id', id).update(updates);
+  }
+  // Whenever a recoverable copy was written, not only when the hash changed.
+  if (password) await dropCopiesIfStorageOff(id);
+}
+
 module.exports = (router) => {
 
   // Create new event
@@ -139,39 +262,24 @@ module.exports = (router) => {
       return true;
     }),
     body('event_name').customSanitizer(nfcName).notEmpty().trim(),
-    body('event_date').optional({ values: 'falsy' }).isDate(),
+    ...sharedValidators('event_date'),
     // Migration 137 — calendar time fields.
     body('event_time_start').optional({ values: 'falsy' }).matches(/^([01]\d|2[0-3]):[0-5]\d$/)
       .withMessage('event_time_start must be HH:MM 24h'),
     body('event_time_end').optional({ values: 'falsy' }).matches(/^([01]\d|2[0-3]):[0-5]\d$/)
       .withMessage('event_time_end must be HH:MM 24h'),
-    body('is_full_day').optional().isBoolean().toBoolean(),
+    ...sharedValidators('is_full_day'),
     body('customer_name').optional().trim(),
-    body('customer_email').optional({ values: 'falsy' }).isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
-    // `values: 'falsy'` would also wave `false` and `0` through, which the
-    // handler would store as the strings "false" / "0".
-    body('customer_email').custom((value) => value === undefined || value === null || typeof value === 'string')
-      .withMessage('customer_email must be an address, an empty string or null'),
-    body('customer_phone').optional({ nullable: true, checkFalsy: true })
-      .isString().trim()
-      .isLength({ max: 32 }).withMessage('Phone number must be at most 32 characters'),
+    ...sharedValidators('customer_email', 'customer_phone'),
     body('admin_email').optional({ values: 'falsy' }).isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
-    body('require_password').optional().isBoolean(),
+    ...sharedValidators('require_password'),
     body('password').optional().isString().custom((value, { req }) => {
       const input = req.body.require_password;
-      const normalizeBoolean = (val, defaultValue = true) => {
-        if (val === undefined || val === null) return defaultValue;
-        if (typeof val === 'boolean') return val;
-        if (typeof val === 'number') return val !== 0;
-        if (typeof val === 'string') {
-          const normalized = val.trim().toLowerCase();
-          if (['false', '0', 'no', 'off'].includes(normalized)) return false;
-          if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
-        }
-        return defaultValue;
-      };
-
-      const requirePassword = normalizeBoolean(input, true);
+      // An empty require_password (which fails isBoolean above) still asks
+      // for a password here, as it always has.
+      const requirePassword = typeof input === 'string' && input.trim() === ''
+        ? true
+        : parseBooleanInput(input, true);
       if (!requirePassword) {
         return true;
       }
@@ -185,26 +293,21 @@ module.exports = (router) => {
     body('color_theme').optional().trim(),
     body('allow_user_uploads').optional().isBoolean().toBoolean(),
     body('upload_category_id').optional({ nullable: true, checkFalsy: true }).isInt(),
-    // Uploader names (#1561).
-    body('guest_name_mode').optional().isIn(GUEST_NAME_MODES),
+    ...sharedValidators('guest_name_mode'),
     body('show_credits_to_guests').optional().isBoolean().toBoolean(),
     // First-visit walkthrough (issue 2551).
     body('walkthrough_enabled').optional().isBoolean().toBoolean(),
-    body('allow_downloads').optional().isBoolean(),
-    body('disable_right_click').optional().isBoolean(),
-    body('enable_devtools_protection').optional().isBoolean(),
-    body('is_priced').optional().isBoolean(),
+    ...sharedValidators('allow_downloads', 'disable_right_click', 'enable_devtools_protection', 'is_priced'),
     body('free_photo_count').optional().isInt({ min: 0, max: 2147483647 }).toInt(),
-    body('photo_price').optional({ nullable: true, checkFalsy: true }).isDecimal({ decimal_digits: '0,2', force_decimal: false }).toFloat(),
+    ...sharedValidators('photo_price'),
     body('purchase_access_days').optional().isInt({ min: 1, max: 2147483647 }).toInt(),
     // Image security. PUT /:id has validated these all along; create
     // accepted none of them, so a value sent here used to be dropped on the
     // floor and the column default applied instead (#1296).
-    body('protection_level').optional().not().isArray().isIn(['basic', 'standard', 'enhanced', 'maximum']),
+    body('protection_level').optional().not().isArray().isIn(PROTECTION_LEVELS),
     body('use_canvas_rendering').optional().not().isArray().isBoolean().toBoolean(),
     body('image_quality').optional().not().isArray().isInt({ min: 1, max: 100 }).toInt(),
-    body('watermark_downloads').optional().isBoolean(),
-    body('watermark_text').optional().trim(),
+    ...sharedValidators('watermark_downloads', 'watermark_text'),
     // #328 follow-up: per-event opt-in for presigned-URL "Download All".
     // Bypasses watermarks; admin must enable knowingly.
     // Feedback sub-toggles (#1044). Optional: omitting them inherits the
@@ -220,53 +323,14 @@ module.exports = (router) => {
     body('allow_selection_submit').optional().isBoolean(),
     body('allow_annotations').optional().isBoolean(),
     body('keybind_mode').optional().isIn(KEYBIND_MODES),
-    body('css_template_id').optional({ nullable: true, checkFalsy: true }).isInt(),
-    // Hero logo settings
-    body('hero_logo_visible').optional({ nullable: true }).isBoolean(),
-    body('hero_logo_size').optional({ nullable: true }).isIn(['small', 'medium', 'large', 'xlarge']),
-    body('hero_logo_position').optional().isIn(['top', 'center', 'bottom']),
-    // Header style settings (decoupled from layout)
-    body('header_style').optional().isIn(['hero', 'standard', 'banner', 'minimal', 'none']),
-    body('hero_divider_style').optional().isIn(['wave', 'straight', 'angle', 'curve', 'none']),
-    // Hero image anchor position (#162) – accepts legacy keywords or "X% Y%" focal point
-    body('hero_image_anchor').optional().custom(validateHeroImageAnchor),
-    // Client access settings (#172)
-    body('client_access_enabled').optional().isBoolean(),
-    body('client_pin_entry_enabled').optional().isBoolean(),
-    body('client_password').optional().custom(validateClientPassword),
-    body('default_photo_sort').optional().isIn([
-      'upload_date_desc', 'upload_date_asc',
-      'capture_date_desc', 'capture_date_asc',
-      'filename_asc', 'filename_desc'
-    ]),
-    // Per-event promotional override (#440). Three-way mode:
-    //   inherit → fall back to global branding_promo_markdown
-    //   custom  → render this event's promo_markdown verbatim
-    //   off     → suppress entirely for this event
-    body('promo_mode').optional().isIn(['inherit', 'custom', 'off']),
-    body('promo_markdown').optional({ nullable: true }).isString(),
-    // Per-event info-banner override (#932). Same three-way mode as promo,
-    // but resolved against branding_info_markdown and rendered above the grid.
-    body('info_mode').optional().isIn(['inherit', 'custom', 'off']),
-    body('info_markdown').optional({ nullable: true }).isString(),
-    // Per-event opt-in for using hero photo as the social-share preview
-    // image (#474). When false (default), galleryOgService falls back to
-    // the brand logo for og:image / Twitter Card.
-    body('og_image_share_enabled').optional().isBoolean(),
-    // Customer accounts assigned to this event (#354). Optional array of
-    // customer_accounts.id — many-to-many via event_customer_assignments.
-    body('customer_account_ids').optional().isArray(),
-    body('customer_account_ids.*').optional().isInt({ min: 1 }),
-    // Team members and the review of their uploads (issue 743).
-    body('assigned_admin_ids').optional().isArray(),
-    body('assigned_admin_ids.*').optional().isInt({ min: 1 }),
-    body('review_contributor_uploads').optional().isBoolean(),
-    // Custom styling switch (services/galleryTheme) and the photo source,
-    // so a gallery is complete from the create form alone.
-    body('custom_theme_enabled').optional().isBoolean(),
-    body('source_mode').optional().isIn(['managed', 'reference']),
-    body('external_path').optional({ nullable: true }).isString().trim(),
-    body('external_watch').optional().isBoolean(),
+    ...sharedValidators('css_template_id', 'hero_logo_visible', 'hero_logo_size', 'hero_logo_position',
+      'header_style', 'hero_divider_style', 'hero_image_anchor',
+      'client_access_enabled', 'client_pin_entry_enabled', 'client_password', 'default_photo_sort',
+      'promo_mode', 'promo_markdown', 'info_mode', 'info_markdown', 'og_image_share_enabled',
+      'customer_account_ids', 'assigned_admin_ids', 'review_contributor_uploads',
+      // The styling switch and the photo source, so a gallery is complete
+      // from the create form alone.
+      'custom_theme_enabled', 'source_mode', 'external_path', 'external_watch'),
     body('import_now').optional().isBoolean()
   ], async (req, res) => {
     try {
@@ -370,8 +434,7 @@ module.exports = (router) => {
 
       // Apply status filter
       if (status === 'active') {
-        query = query.where('is_active', formatBoolean(true)).where('is_archived', formatBoolean(false))
-          .where('temporarily_disabled', formatBoolean(false));
+        query = query.modify(whereActiveEvent);
       } else if (status === 'disabled') {
         query = query.where('temporarily_disabled', formatBoolean(true)).where('is_archived', formatBoolean(false));
       } else if (status === 'archived') {
@@ -383,15 +446,10 @@ module.exports = (router) => {
       } else if (status === 'expiring') {
         const sevenDaysFromNow = new Date();
         sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
-        // whereTimestamp: ISO-string binds compared the extend path's epoch-ms
-        // rows lexicographically on SQLite, the mirror image of the checker's
-        // bug (issue 1733).
+        // Paused galleries are left out here; the dashboard tile counts them.
         query = query
-          .where('is_active', formatBoolean(true))
-          .where('is_archived', formatBoolean(false))
-          .where('temporarily_disabled', formatBoolean(false))
-          .modify(whereTimestamp, 'expires_at', '<=', sevenDaysFromNow)
-          .modify(whereTimestamp, 'expires_at', '>', new Date());
+          .modify(whereExpiringEvent, sevenDaysFromNow, new Date())
+          .where('temporarily_disabled', formatBoolean(false));
       } else if (status === 'awaiting_delivery') {
         // Two-stage delivery (issue 1562): a first look is out, the full
         // gallery is not yet.
@@ -508,11 +566,11 @@ module.exports = (router) => {
         .where('action', 'view')
         .count('* as totalViews');
 
-      // One row per download event: singles AND zips (#895). Must stay in
-      // sync with adminDashboard's definition or the two surfaces disagree.
+      // One row per download event: singles AND zips (#895), the list the
+      // dashboard counts too.
       const [{ totalDownloads }] = await db('access_logs')
         .where('event_id', id)
-        .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
+        .whereIn('action', DOWNLOAD_ACTIONS)
         .count('* as totalDownloads');
 
       const [{ uniqueVisitors }] = await db('access_logs')
@@ -665,20 +723,13 @@ module.exports = (router) => {
       if (!recipients.inlineEmail && recipients.accounts.length === 0) {
         return res.status(400).json({ error: 'No customer email is set for this event' });
       }
-      // A generated password was never shown to anyone (migration 264). The
-      // standard email would carry the "(set at creation)" sentinel instead,
-      // so it needs the real password in the request — the dialog asks for it.
-      const passwordGenerated = parseBooleanInput(event.password_generated, false);
-      // Only when the standard email is certain to go out: a folded-in address
-      // is mailed by the fallback only if its portal notice is skipped, and
-      // that fallback is withheld below rather than refused here — the dialog
-      // does not ask for a password it cannot know is needed.
-      const sentinelPassword = requirePassword && !password && passwordGenerated;
+      // Refused only when the standard email is certain to go out: a
+      // folded-in address is mailed by the fallback only if its portal notice
+      // is skipped, and that fallback is withheld below rather than refused
+      // here — the dialog does not ask for a password it cannot know is needed.
+      const sentinelPassword = mailsSentinelPassword(event, password, requirePassword);
       if (sentinelPassword && recipients.inlineEmail) {
-        return res.status(400).json({
-          error: 'Set a gallery password — the gallery email carries it.',
-          code: 'GALLERY_PASSWORD_REQUIRED',
-        });
+        return res.status(400).json(GALLERY_PASSWORD_REQUIRED);
       }
 
       // Persist the password ONLY when the mail that carries it is actually
@@ -689,26 +740,7 @@ module.exports = (router) => {
       if (recipients.inlineEmail && requirePassword && password) {
         const policyError = await checkGalleryPasswordPolicy(password, event.event_name);
         if (policyError) return res.status(400).json(policyError);
-
-        // Re-entering the current password is not a change: keep the hash and
-        // the sessions opened with it. A new password ends those sessions.
-        const copyColumns = await galleryPasswordColumns({ password });
-        const knownColumns = await passwordKnownColumns();
-        // Kept only while the stored hash is still the one compared: a reset
-        // landing in between must not leave this request's copy (and email)
-        // disagreeing with the hash. Otherwise it is written as a change.
-        const keptHash = await sameAsStored(password, event.password_hash)
-          && await db('events').where({ id, password_hash: event.password_hash })
-            .update({ ...copyColumns, ...knownColumns, updated_at: new Date().toISOString() });
-        if (!keptHash) {
-          await db('events').where('id', id).update({
-            password_hash: await bcrypt.hash(password, getBcryptRounds()),
-            ...(await credentialChangeColumns('gallery')),
-            ...copyColumns,
-            ...knownColumns,
-          });
-        }
-        await dropCopiesIfStorageOff(id);
+        await writeEventWithPassword(id, event, password, { touchKept: true });
       }
 
       const sent = await notifyGalleryRecipients(event, {
@@ -786,49 +818,22 @@ module.exports = (router) => {
           includeAccounts: await userHasAnyPermission(req.admin.id, ['customers.events']),
         })
         : { inlineEmail: null, accounts: [] };
-      // A generated password was never shown to anyone (migration 264). The
-      // standard email would carry the "(set at creation)" sentinel instead,
-      // so it needs the real password in the request — the dialog asks for it.
-      const passwordGenerated = parseBooleanInput(event.password_generated, false);
-      // Only when the standard email is certain to go out: a folded-in address
-      // is mailed by the fallback only if its portal notice is skipped, and
-      // that fallback is withheld below rather than refused here — the dialog
-      // does not ask for a password it cannot know is needed.
-      const sentinelPassword = requirePassword && !password && passwordGenerated;
+      // Same rule as the send-later route above.
+      const sentinelPassword = mailsSentinelPassword(event, password, requirePassword);
       if (sentinelPassword && recipients.inlineEmail) {
-        return res.status(400).json({
-          error: 'Set a gallery password — the gallery email carries it.',
-          code: 'GALLERY_PASSWORD_REQUIRED',
-        });
+        return res.status(400).json(GALLERY_PASSWORD_REQUIRED);
       }
-      const publishUpdates = { is_draft: formatBoolean(false) };
-      let publishKeepsHash = false;
-      let publishWritesPassword = false;
-      if (requirePassword && password) {
       // Re-hash so the stored hash matches what the email carries — even if
       // the admin mistypes vs. what was set at draft creation, the gallery
       // password the customer receives is the one that actually works.
+      const writesPassword = Boolean(requirePassword && password);
+      if (writesPassword) {
         const policyError = await checkGalleryPasswordPolicy(password, event.event_name);
         if (policyError) return res.status(400).json(policyError);
-
-        Object.assign(publishUpdates, await galleryPasswordColumns({ password }), await passwordKnownColumns());
-        publishKeepsHash = await sameAsStored(password, event.password_hash);
-        publishWritesPassword = true;
       }
-      // An unchanged password keeps the hash only while it is still the one
-      // compared; a password change landing in between makes this a change.
-      const published = publishKeepsHash
-        ? await db('events').where({ id, password_hash: event.password_hash }).update(publishUpdates)
-        : 0;
-      if (!published) {
-        if (publishWritesPassword) {
-          publishUpdates.password_hash = await bcrypt.hash(password, getBcryptRounds());
-          Object.assign(publishUpdates, await credentialChangeColumns('gallery'));
-        }
-        await db('events').where('id', id).update(publishUpdates);
-      }
-      // Whenever a recoverable copy was written, not only when the hash changed.
-      if (publishWritesPassword) await dropCopiesIfStorageOff(id);
+      await writeEventWithPassword(id, event, writesPassword ? password : null, {
+        columns: { is_draft: formatBoolean(false) },
+      });
 
       // Notify the customer — unless the admin asked to publish quietly
       // (#1235). Everything else about publishing still happens: the gallery
@@ -949,18 +954,9 @@ module.exports = (router) => {
 
       const { event_name, event_date, customer_name, customer_email } = req.body;
 
-      // Generate a fresh unique slug using the same shape as the create path.
-      const slugify = require('../../utils/slug').slugify;
-      const processedEventName = slugify(event_name);
-      const slugSuffix = event_date || crypto.randomBytes(3).toString('hex');
-      const baseSlug = `${source.event_type}-${processedEventName}-${slugSuffix}`;
-      let slug = baseSlug;
-      let counter = 1;
-      // eslint-disable-next-line no-await-in-loop
-      while (await findSlugHolder(slug)) {
-        slug = `${baseSlug}-${counter}`;
-        counter += 1;
-      }
+      // A fresh unique slug, minted as the create path mints one.
+      const eventCreationService = require('../../services/eventCreationService');
+      const slug = await eventCreationService.mintEventSlug(source.event_type, event_name, event_date);
 
       // Recompute expires_at: preserve the source's expiration window (delta
       // between source.expires_at and source.event_date) so the duplicate keeps
@@ -989,10 +985,7 @@ module.exports = (router) => {
       const password_hash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), getBcryptRounds());
 
       // Create the storage folder structure (same as create path).
-      const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../../storage');
-      const eventPath = path.join(storagePath, 'events/active', slug);
-      await fs.mkdir(path.join(eventPath, 'collages'), { recursive: true });
-      await fs.mkdir(path.join(eventPath, 'individual'), { recursive: true });
+      await eventCreationService.createEventFolders(slug);
 
       // The Live Slideshow style is gallery configuration too (issue 2189).
       // The share token stays behind: a copy gets its own link.
@@ -1241,7 +1234,7 @@ module.exports = (router) => {
   // Update event
   router.put('/:id', adminAuth, requirePermission('events.edit'), requireEventOwnership, [
     body('event_name').optional().customSanitizer(nfcName).trim().notEmpty(),
-    body('event_date').optional({ values: 'falsy' }).isDate(),
+    ...sharedValidators('event_date'),
     // Migration 137 — calendar time fields. Same regex/range rule as POST.
     body('event_time_start').optional({ values: 'falsy', nullable: true })
       .matches(/^([01]\d|2[0-3]):[0-5]\d$/)
@@ -1249,7 +1242,7 @@ module.exports = (router) => {
     body('event_time_end').optional({ values: 'falsy', nullable: true })
       .matches(/^([01]\d|2[0-3]):[0-5]\d$/)
       .withMessage('event_time_end must be HH:MM 24h'),
-    body('is_full_day').optional().isBoolean().toBoolean(),
+    ...sharedValidators('is_full_day'),
     body('admin_email').optional().isEmail(),
     body('is_active').optional().isBoolean(),
     body('temporarily_disabled').optional().not().isArray().isBoolean().toBoolean(),
@@ -1273,8 +1266,7 @@ module.exports = (router) => {
     body('guest_upload_max_edge').optional({ nullable: true }).custom(isGuestUploadMaxEdge)
       .withMessage(`guest_upload_max_edge must be a whole number from ${GUEST_UPLOAD_MIN_EDGE} to ${GUEST_UPLOAD_MAX_EDGE}, or null`)
       .toInt(),
-    // Uploader names (#1561).
-    body('guest_name_mode').optional().isIn(GUEST_NAME_MODES),
+    ...sharedValidators('guest_name_mode'),
     body('show_credits_to_guests').optional().isBoolean(),
     // Live refresh of an open gallery (issue 1733, C5).
     body('live_refresh').optional().isBoolean(),
@@ -1303,15 +1295,7 @@ module.exports = (router) => {
     body('event_reminder_body_override').optional({ nullable: true, checkFalsy: true })
       .isString().isLength({ max: 10_000 }),
     body('customer_name').optional({ nullable: true, checkFalsy: true }).trim(),
-    // '' / null skip the format check and reach the handler, which clears
-    // the address (issue 1733). `values: 'falsy'` would also wave `false`
-    // and `0` through, which the handler would store as "false" / "0".
-    body('customer_email').optional({ values: 'falsy' }).isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
-    body('customer_email').custom((value) => value === undefined || value === null || typeof value === 'string')
-      .withMessage('customer_email must be an address, an empty string or null'),
-    body('customer_phone').optional({ nullable: true, checkFalsy: true })
-      .isString().trim()
-      .isLength({ max: 32 }).withMessage('Phone number must be at most 32 characters'),
+    ...sharedValidators('customer_email', 'customer_phone'),
     body('upload_category_id').optional().custom((value) => {
     // Accept null, undefined, or integer values
       if (value === null || value === undefined) return true;
@@ -1324,24 +1308,18 @@ module.exports = (router) => {
       const num = Number(value);
       return !isNaN(num) && Number.isInteger(num);
     }).withMessage('hero_photo_id must be an integer or null'),
-    body('allow_downloads').optional().isBoolean(),
-    body('is_priced').optional().isBoolean(),
+    ...sharedValidators('allow_downloads', 'is_priced'),
     body('free_photo_count').optional({ nullable: true }).isInt({ min: 0, max: 2147483647 }).toInt(),
-    body('photo_price').optional({ nullable: true, checkFalsy: true }).isDecimal({ decimal_digits: '0,2', force_decimal: false }).toFloat(),
+    ...sharedValidators('photo_price'),
     body('purchase_access_days').optional({ nullable: true }).isInt({ min: 1, max: 2147483647 }).toInt(),
     // Download limit (issue 1560). null clears it; the column is a signed
     // 32-bit int like photo_cap.
     body('download_limit').optional({ nullable: true }).isInt({ min: 1, max: 2147483647 }).toInt(),
-    body('disable_right_click').optional().isBoolean(),
-    body('watermark_downloads').optional().isBoolean(),
-    body('watermark_text').optional().trim(),
-    body('source_mode').optional().isIn(['managed', 'reference']),
-    body('external_path').optional({ nullable: true }).isString().trim(),
-    body('external_watch').optional().isBoolean(),
-    body('require_password').optional().isBoolean(),
+    ...sharedValidators('disable_right_click', 'watermark_downloads', 'watermark_text',
+      'source_mode', 'external_path', 'external_watch', 'require_password'),
     // Download protection settings
-    body('protection_level').optional().isIn(['basic', 'standard', 'enhanced', 'maximum']),
-    body('enable_devtools_protection').optional().isBoolean(),
+    body('protection_level').optional().isIn(PROTECTION_LEVELS),
+    ...sharedValidators('enable_devtools_protection'),
     body('use_canvas_rendering').optional().isBoolean(),
     body('overlay_protection').optional().isBoolean(),
     body('image_quality').optional().isInt({ min: 1, max: 100 }),
@@ -1354,28 +1332,13 @@ module.exports = (router) => {
       }
       return true;
     }),
-    body('css_template_id').optional({ nullable: true, checkFalsy: true }).isInt(),
-    // Hero logo settings
-    body('hero_logo_visible').optional({ nullable: true }).isBoolean(),
-    body('hero_logo_size').optional({ nullable: true }).isIn(['small', 'medium', 'large', 'xlarge']),
-    body('hero_logo_position').optional().isIn(['top', 'center', 'bottom']),
+    ...sharedValidators('css_template_id', 'hero_logo_visible', 'hero_logo_size', 'hero_logo_position'),
     // Password-page logo toggle (#894). null = default (show).
     body('login_logo_visible').optional({ nullable: true }).isBoolean(),
-    // Header style settings (decoupled from layout)
-    body('header_style').optional().isIn(['hero', 'standard', 'banner', 'minimal', 'none']),
-    body('hero_divider_style').optional().isIn(['wave', 'straight', 'angle', 'curve', 'none']),
-    // Hero image anchor position (#162) – accepts legacy keywords or "X% Y%" focal point
-    body('hero_image_anchor').optional().custom(validateHeroImageAnchor),
-    // Client access settings (#172)
-    body('client_access_enabled').optional().isBoolean(),
-    body('client_pin_entry_enabled').optional().isBoolean(),
-    body('client_password').optional().custom(validateClientPassword),
+    ...sharedValidators('header_style', 'hero_divider_style', 'hero_image_anchor',
+      'client_access_enabled', 'client_pin_entry_enabled', 'client_password'),
     body('regenerate_client_token').optional().isBoolean(),
-    body('default_photo_sort').optional().isIn([
-      'upload_date_desc', 'upload_date_asc',
-      'capture_date_desc', 'capture_date_asc',
-      'filename_asc', 'filename_desc'
-    ]),
+    ...sharedValidators('default_photo_sort'),
     // Videos ahead of photos in the guest gallery (issue 2263).
     body('videos_first').optional().isBoolean(),
     // Chapter markers above the categories (issue 2548).
@@ -1389,31 +1352,9 @@ module.exports = (router) => {
     // rating that makes one in 'rating' mode.
     body('highlights_mode').optional().isIn(['off', 'manual', 'rating']),
     body('highlights_threshold').optional().isInt({ min: 1, max: 5 }),
-    // Per-event promotional override (#440). Three-way mode:
-    //   inherit → fall back to global branding_promo_markdown
-    //   custom  → render this event's promo_markdown verbatim
-    //   off     → suppress entirely for this event
-    body('promo_mode').optional().isIn(['inherit', 'custom', 'off']),
-    body('promo_markdown').optional({ nullable: true }).isString(),
-    // Per-event info-banner override (#932). Same three-way mode as promo,
-    // but resolved against branding_info_markdown and rendered above the grid.
-    body('info_mode').optional().isIn(['inherit', 'custom', 'off']),
-    body('info_markdown').optional({ nullable: true }).isString(),
-    // Per-event opt-in for using hero photo as the social-share preview
-    // image (#474). When false (default), galleryOgService falls back to
-    // the brand logo for og:image / Twitter Card.
-    body('og_image_share_enabled').optional().isBoolean(),
-    // Customer accounts assigned to this event (#354). Optional array of
-    // customer_accounts.id — many-to-many via event_customer_assignments.
-    body('customer_account_ids').optional().isArray(),
-    body('customer_account_ids.*').optional().isInt({ min: 1 }),
-    // Team members and the review of their uploads (issue 743), the owner's.
-    body('assigned_admin_ids').optional().isArray(),
-    body('assigned_admin_ids.*').optional().isInt({ min: 1 }),
-    body('review_contributor_uploads').optional().isBoolean(),
-    // Custom styling switch (services/galleryTheme). Off keeps color_theme
-    // and css_template_id stored, so switching it on again restores them.
-    body('custom_theme_enabled').optional().isBoolean()
+    // Team members are the owner's to change (issue 743).
+    ...sharedValidators('promo_mode', 'promo_markdown', 'info_mode', 'info_markdown', 'og_image_share_enabled',
+      'customer_account_ids', 'assigned_admin_ids', 'review_contributor_uploads', 'custom_theme_enabled'),
   ], async (req, res) => {
     try {
       const errors = validationResult(req);
@@ -2095,34 +2036,17 @@ module.exports = (router) => {
         }
       }
 
-      if (Object.prototype.hasOwnProperty.call(updates, 'custom_theme_enabled')) {
-        updates.custom_theme_enabled = formatBoolean(parseBooleanInput(updates.custom_theme_enabled, false));
-      }
-
-      // Guest uploads with approval (issue 1733). Switching it off leaves the
-      // photos already waiting where they are: they still need a decision.
-      if (Object.prototype.hasOwnProperty.call(updates, 'moderate_guest_uploads')) {
-        updates.moderate_guest_uploads = formatBoolean(parseBooleanInput(updates.moderate_guest_uploads, false));
-      }
-
-      // Written through formatBoolean like the other event flags (#1561).
-      if (Object.prototype.hasOwnProperty.call(updates, 'show_credits_to_guests')) {
-        updates.show_credits_to_guests = formatBoolean(parseBooleanInput(updates.show_credits_to_guests, false));
-      }
-      if (Object.prototype.hasOwnProperty.call(updates, 'live_refresh')) {
-        updates.live_refresh = formatBoolean(parseBooleanInput(updates.live_refresh, false));
-      }
-      if (Object.prototype.hasOwnProperty.call(updates, 'show_exif_to_guests')) {
-        updates.show_exif_to_guests = formatBoolean(parseBooleanInput(updates.show_exif_to_guests, false));
-      }
-      if (Object.prototype.hasOwnProperty.call(updates, 'neutral_photo_labels')) {
-        updates.neutral_photo_labels = formatBoolean(parseBooleanInput(updates.neutral_photo_labels, false));
-      }
-      if (Object.prototype.hasOwnProperty.call(updates, 'walkthrough_enabled')) {
-        updates.walkthrough_enabled = formatBoolean(parseBooleanInput(updates.walkthrough_enabled, false));
-      }
-      if (Object.prototype.hasOwnProperty.call(updates, 'videos_first')) {
-        updates.videos_first = formatBoolean(parseBooleanInput(updates.videos_first, false));
+      // Plain event flags, off unless sent as true, written through
+      // formatBoolean (#1561). moderate_guest_uploads (issue 1733): switching
+      // it off leaves the photos already waiting where they are, they still
+      // need a decision. folder_structure (issue 1786): whether uploads and
+      // imports mirror subfolders.
+      for (const flag of ['custom_theme_enabled', 'moderate_guest_uploads', 'show_credits_to_guests',
+        'live_refresh', 'show_exif_to_guests', 'neutral_photo_labels', 'walkthrough_enabled', 'videos_first',
+        'folder_structure']) {
+        if (Object.prototype.hasOwnProperty.call(updates, flag)) {
+          updates[flag] = formatBoolean(parseBooleanInput(updates[flag], false));
+        }
       }
       if (Object.prototype.hasOwnProperty.call(updates, 'highlights_threshold')) {
         updates.highlights_threshold = parseInt(updates.highlights_threshold, 10);
@@ -2159,11 +2083,6 @@ module.exports = (router) => {
         if (updates.reveal_at && new Date(updates.reveal_at) > new Date() && event.revealed_at) {
           updates.revealed_at = null;
         }
-      }
-
-      // Folders (issue 1786): whether uploads and imports mirror subfolders.
-      if (Object.prototype.hasOwnProperty.call(updates, 'folder_structure')) {
-        updates.folder_structure = formatBoolean(parseBooleanInput(updates.folder_structure, false));
       }
 
       // Two-stage delivery (issue 1562). Switching to partial by hand is how

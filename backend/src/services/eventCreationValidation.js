@@ -2,6 +2,7 @@ const Joi = require('joi');
 const eventTypes = require('./eventTypeService');
 const { AppError } = require('../utils/errors');
 const { normaliseEventTimeTriple } = require('./eventService');
+const { PROTECTION_LEVELS, HERO_LOGO_SIZES, HERO_LOGO_POSITIONS } = require('./eventSettings');
 const optionalText = Joi.string().allow('', null);
 const schema = Joi.object({
   // NFC, like every other stored name: macOS input arrives decomposed.
@@ -23,9 +24,9 @@ const schema = Joi.object({
   download_limit: Joi.number().integer().min(1).max(2147483647).allow(null),
   guest_name_mode: Joi.string().valid('off', 'optional', 'required'),
   image_quality: Joi.number().integer().min(1).max(100),
-  protection_level: Joi.string().valid('basic', 'standard', 'enhanced', 'maximum'),
-  hero_logo_size: Joi.string().valid('small', 'medium', 'large', 'xlarge').allow(null),
-  hero_logo_position: Joi.string().valid('top', 'center', 'bottom'),
+  protection_level: Joi.string().valid(...PROTECTION_LEVELS),
+  hero_logo_size: Joi.string().valid(...HERO_LOGO_SIZES).allow(null),
+  hero_logo_position: Joi.string().valid(...HERO_LOGO_POSITIONS),
   customer_account_ids: Joi.array().items(Joi.number().integer().min(1)),
   // Team members (issue 743); eventAdminAssignmentsService checks they exist.
   assigned_admin_ids: Joi.array().items(Joi.number().integer().min(1)),

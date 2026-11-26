@@ -21,13 +21,13 @@ const { clampIntOrUndefined } = require('../utils/numericHelpers');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const {
   notifyGalleryRecipients, resolveGalleryRecipients, reachableAccountsByIds,
-  galleryLinkFor,
+  galleryLinkFor, galleryCreatedEmailData,
 } = require('./galleryNotificationService');
 const { resolveEventFeedbackDefaults, applyFeedbackDefaults } = require('./feedbackDefaults');
 const { getStoragePath, getEventFieldRequirements, readBooleanSetting,
   getImageSecurityDefaults, resolveImageSecurityColumns, getCustomerNameFromPayload,
   getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled,
-  SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS } = require('./eventSettings');
+  SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS, BANNER_MODES } = require('./eventSettings');
 const { validateCreationInput } = require('./eventCreationValidation');
 const { normaliseDownloadLimit } = require('./downloadQuota');
 const { guestNameModeOf } = require('./photoCredit');
@@ -38,6 +38,48 @@ function creationError(body) {
   const error = new AppError(body.error || 'Invalid event', 400, 'EVENT_INVALID');
   error.responseBody = body;
   return error;
+}
+
+/**
+ * A flag a new gallery takes from the request body, else from its boolean
+ * app setting (Settings > Event defaults), else `defaultValue`. The setting
+ * is only read when the body leaves the flag out.
+ */
+async function bodyOrSettingBoolean(value, settingKey, defaultValue) {
+  let fallback = defaultValue;
+  if (value === undefined) {
+    const setting = await readBooleanSetting(settingKey);
+    if (setting !== undefined) fallback = setting;
+  }
+  return parseBooleanInput(value, fallback);
+}
+
+/**
+ * A free slug for a new gallery: `<type>-<name>-<date or random>`, with a
+ * counter appended while it is taken. Uses the shared slugify so accented
+ * names (Família, Decoração, etc.) are transliterated instead of dropped
+ * (#525). A renamed gallery's old slug counts as taken: its links still lead
+ * to it.
+ */
+async function mintEventSlug(eventType, eventName, eventDate) {
+  const processedEventName = slugify(eventName);
+  // Use event_date in slug if provided, otherwise use random suffix
+  const slugSuffix = eventDate || crypto.randomBytes(3).toString('hex');
+  const baseSlug = `${eventType}-${processedEventName}-${slugSuffix}`;
+  let slug = baseSlug;
+  let counter = 1;
+  while (await findSlugHolder(slug)) {
+    slug = `${baseSlug}-${counter}`;
+    counter++;
+  }
+  return slug;
+}
+
+/** The storage folders every new gallery starts with. */
+async function createEventFolders(slug) {
+  const eventPath = path.join(getStoragePath(), 'events/active', slug);
+  await fs.mkdir(path.join(eventPath, 'collages'), { recursive: true });
+  await fs.mkdir(path.join(eventPath, 'individual'), { recursive: true });
 }
 
 /** Shared creation operation. v1 publishes immediately unless it sends
@@ -168,12 +210,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   // external imports. New galleries follow Settings → Event defaults (on
   // unless turned off); an explicit body value wins. Existing galleries were
   // pinned off by migration 265.
-  let folderStructureFallback = true;
-  if (input.folder_structure === undefined) {
-    const setting = await readBooleanSetting('event_default_folder_structure');
-    if (setting !== undefined) folderStructureFallback = setting;
-  }
-  const folderStructure = parseBooleanInput(input.folder_structure, folderStructureFallback);
+  const folderStructure = await bodyOrSettingBoolean(input.folder_structure, 'event_default_folder_structure', true);
 
   const customerName = getCustomerNameFromPayload(input);
   const customerEmail = getCustomerEmailFromPayload(input);
@@ -233,23 +270,13 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
 
   // Default require_password from global "event_default_require_password"
   // setting when the body omits it (#317 — admins want to flip the default).
-  let requirePasswordFallback = true;
-  if (requirePasswordInput === undefined) {
-    const setting = await readBooleanSetting('event_default_require_password');
-    if (setting !== undefined) requirePasswordFallback = setting;
-  }
-  const requirePassword = parseBooleanInput(requirePasswordInput, requirePasswordFallback);
+  const requirePassword = await bodyOrSettingBoolean(requirePasswordInput, 'event_default_require_password', true);
 
   // Default feedback_enabled from global "event_default_feedback_enabled"
   // setting when the body omits it (#520 — same pattern as require_password
   // above, lets admins make Guest Feedback ON the out-of-box default for
   // new events instead of toggling it on every time).
-  let feedbackEnabledFallback = false;
-  if (feedbackEnabledInput === undefined) {
-    const setting = await readBooleanSetting('event_default_feedback_enabled');
-    if (setting !== undefined) feedbackEnabledFallback = setting;
-  }
-  const feedback_enabled = parseBooleanInput(feedbackEnabledInput, feedbackEnabledFallback);
+  const feedback_enabled = await bodyOrSettingBoolean(feedbackEnabledInput, 'event_default_feedback_enabled', false);
 
   // Default download limit from Settings > Event Defaults when the body omits
   // it (issue 1560). An explicit null still means unlimited.
@@ -264,21 +291,11 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
       ? await getAppSetting('event_default_guest_name_mode', 'off')
       : guestNameModeInput,
   });
-  let showCreditsFallback = false;
-  if (showCreditsInput === undefined) {
-    const setting = await readBooleanSetting('event_default_show_credits_to_guests');
-    if (setting !== undefined) showCreditsFallback = setting;
-  }
-  const show_credits_to_guests = parseBooleanInput(showCreditsInput, showCreditsFallback);
+  const show_credits_to_guests = await bodyOrSettingBoolean(showCreditsInput, 'event_default_show_credits_to_guests', false);
 
   // First-visit walkthrough (issue 2551): Settings > Events default when the
   // body omits it, off when that is unset too.
-  let walkthroughFallback = false;
-  if (walkthroughInput === undefined) {
-    const setting = await readBooleanSetting('event_default_walkthrough_enabled');
-    if (setting !== undefined) walkthroughFallback = setting;
-  }
-  const walkthrough_enabled = parseBooleanInput(walkthroughInput, walkthroughFallback);
+  const walkthrough_enabled = await bodyOrSettingBoolean(walkthroughInput, 'event_default_walkthrough_enabled', false);
 
   // Sub-toggle defaults from the global Settings > Events values (#1044).
   // One batched read; an explicitly-sent body value still wins.
@@ -322,23 +339,8 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     }
   }
     
-  // Generate unique slug. Uses the shared util so accented names
-  // (Família, Decoração, etc.) get transliterated instead of dropped
-  // — see backend/src/utils/slug.js for the why (#525).
-  const processedEventName = slugify(event_name);
+  const slug = await mintEventSlug(event_type, event_name, event_date);
 
-  // Use event_date in slug if provided, otherwise use random suffix
-  const slugSuffix = event_date || crypto.randomBytes(3).toString('hex');
-  const baseSlug = `${event_type}-${processedEventName}-${slugSuffix}`;
-  let slug = baseSlug;
-  let counter = 1;
-
-  // A renamed gallery's old slug counts as taken: its links still lead to it.
-  while (await findSlugHolder(slug)) {
-    slug = `${baseSlug}-${counter}`;
-    counter++;
-  }
-    
   // Generate share link respecting configured format
   const shareToken = crypto.randomBytes(16).toString('hex');
   const { shareUrl, shareLinkToStore } = await buildShareLinkVariants({ slug, shareToken });
@@ -378,11 +380,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     }
   }
     
-  // Create folder structure
-  const storagePath = getStoragePath();
-  const eventPath = path.join(storagePath, 'events/active', slug);
-  await fs.mkdir(path.join(eventPath, 'collages'), { recursive: true });
-  await fs.mkdir(path.join(eventPath, 'individual'), { recursive: true });
+  await createEventFolders(slug);
     
   // Sync header_style / hero_divider_style from color_theme JSON when not
   // explicitly provided in the request body (#158).
@@ -528,10 +526,10 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     // then dropped here, so an API client could POST info_mode:'off' or a
     // custom banner, get 201, and find the row still on 'inherit'.
     // Markdown is only stored for 'custom' — same rule the PUT applies.
-    promo_mode: ['inherit', 'custom', 'off'].includes(promo_mode) ? promo_mode : 'inherit',
+    promo_mode: BANNER_MODES.includes(promo_mode) ? promo_mode : 'inherit',
     promo_markdown: promo_mode === 'custom' && typeof promo_markdown === 'string' && promo_markdown.trim()
       ? promo_markdown.trim() : null,
-    info_mode: ['inherit', 'custom', 'off'].includes(info_mode) ? info_mode : 'inherit',
+    info_mode: BANNER_MODES.includes(info_mode) ? info_mode : 'inherit',
     info_markdown: info_mode === 'custom' && typeof info_markdown === 'string' && info_markdown.trim()
       ? info_markdown.trim() : null,
     header_style: effectiveHeaderStyle || 'standard',
@@ -664,17 +662,15 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
 
   if (!isDraft) {
     const buildInlineEmailData = async (recipient) => {
-      const emailData = {
-        customer_name: customerName,
-        customer_email: recipient,
-        host_name: customerName || recipient.split('@')[0],
-        event_name,
-        event_date: event_date,  // Pass raw date - will be formatted by email processor
-        gallery_link: shareUrl,
-        gallery_password: requirePassword ? password : 'No password required',
-        expiry_date: expires_at ? expires_at.toISOString() : null,  // Pass ISO string - will be formatted by email processor
-        welcome_message: welcome_message || ''
-      };
+      // Dates go out raw / as ISO; the email processor formats them.
+      const emailData = await galleryCreatedEmailData({
+        customer_name: customerName, host_name: customerName, event_name, event_date,
+        expires_at, welcome_message,
+      }, {
+        recipientEmail: recipient,
+        shareUrl,
+        galleryPassword: requirePassword ? password : 'No password required',
+      });
 
       // Include client access info in email when enabled (#172)
       if (client_access_enabled && client_password) {
@@ -848,4 +844,4 @@ function startInitialImport(eventId, externalPath, actor) {
   });
 }
 
-module.exports = { createEvent };
+module.exports = { createEvent, mintEventSlug, createEventFolders };

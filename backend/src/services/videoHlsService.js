@@ -31,10 +31,10 @@ const { getStorage } = require('./storage');
 const { IS_VIDEO_SQL } = require('../utils/mediaTypeSql');
 const { displayDimensions } = require('../utils/videoProbe');
 const mediaAttempts = require('./mediaAttemptService');
+const { createCachedBooleanSetting } = require('./cachedBooleanSetting');
 const { isHdr, canToneMap, HDR_TO_SDR_FILTER } = require('./videoRenditionService');
 
 const SETTING_KEY = 'general_video_adaptive_streaming';
-const CACHE_TTL_MS = 60_000;
 
 const SEGMENT_SECONDS = 6;
 const AUDIO_BITRATE = 128000;
@@ -59,30 +59,12 @@ const SEGMENT_NAME = /^(?:init\.mp4|seg_\d{5}\.m4s)$/;
 const LADDER_PATH = /^hls\/(\d+)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CONTENT_TYPES = { '.m3u8': 'application/vnd.apple.mpegurl', '.mp4': 'video/mp4', '.m4s': 'video/iso.segment' };
 
-let cachedEnabled = false;
-let cacheExpiresAt = 0;
+const adaptiveStreamingSetting = createCachedBooleanSetting(SETTING_KEY, 'adaptive streaming');
 
-/** The setting, cached 60 s like the web copy's. */
-async function isEnabled() {
-  if (Date.now() < cacheExpiresAt) return cachedEnabled;
-  try {
-    const row = await db('app_settings').where({ setting_key: SETTING_KEY }).first();
-    let value = row ? row.setting_value : null;
-    if (typeof value === 'string') {
-      try { value = JSON.parse(value); } catch { /* keep the string */ }
-    }
-    cachedEnabled = value === true || value === 'true' || value === 1 || value === '1';
-  } catch (error) {
-    logger.error('Failed to read the adaptive streaming setting:', error.message);
-    cachedEnabled = false;
-  }
-  cacheExpiresAt = Date.now() + CACHE_TTL_MS;
-  return cachedEnabled;
-}
+/** The setting, cached 60 s like the web copy's. Always read through the cache. */
+const isEnabled = () => adaptiveStreamingSetting.get();
 
-function clearCache() {
-  cacheExpiresAt = 0;
-}
+const clearCache = adaptiveStreamingSetting.clear;
 
 /**
  * Queue every video nobody has looked at yet; with `retryFailed` (the

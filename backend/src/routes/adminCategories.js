@@ -28,7 +28,27 @@ async function refuseWithoutFolderPermission(req, res) {
   return true;
 }
 
-const sendFolderError = (res, err) => res.status(err.status).json({ error: err.message, code: err.code, ...(err.details || {}) });
+// Every call below is behind an `instanceof FolderError` check, so none
+// reaches the helper's 500 fallback.
+const { sendFolderError } = require('../utils/folderErrorResponse');
+
+// A category's slug from its name: accents dropped, lower case, dashes.
+const slugFromName = (name) => name
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .toLowerCase()
+  .replace(/[^\w\s-]/g, '')
+  .replace(/\s+/g, '-')
+  .replace(/-+/g, '-')
+  .trim();
+
+// The categories a new one sits among: the global list, or one gallery's.
+const inCategoryScope = (isGlobal, eventId) => function () {
+  if (isGlobal) {
+    this.where('is_global', formatBoolean(true));
+  } else {
+    this.where('event_id', eventId);
+  }
+};
 
 /**
  * A category becoming a top-level folder (create with is_folder, or the
@@ -170,24 +190,12 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
     }
     
     // Generate slug if not provided
-    const categorySlug = slug || name
-      .normalize('NFD').replace(/[̀-ͯ]/g, '')
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .trim();
-    
+    const categorySlug = slug || slugFromName(name);
+
     // Check if slug already exists for this scope
     const existing = await db('photo_categories')
       .where('slug', categorySlug)
-      .where(function() {
-        if (is_global) {
-          this.where('is_global', formatBoolean(true));
-        } else {
-          this.where('event_id', event_id);
-        }
-      })
+      .where(inCategoryScope(is_global, event_id))
       .first();
     
     if (existing) {
@@ -197,13 +205,7 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
     // Append to the end of its scope so a new category doesn't jump to the
     // top of an admin-defined order (#782).
     const maxRow = await db('photo_categories')
-      .where(function() {
-        if (is_global) {
-          this.where('is_global', formatBoolean(true));
-        } else {
-          this.where('event_id', event_id);
-        }
-      })
+      .where(inCategoryScope(is_global, event_id))
       .max('display_order as maxOrder')
       .first();
     const nextOrder = (maxRow?.maxOrder || 0) + 1;
@@ -307,13 +309,7 @@ router.put('/:id', adminAuth, requirePermission('settings.edit'), [
 
     const updateData = staysFolder ? {} : {
       name,
-      slug: name
-        .normalize('NFD').replace(/[̀-ͯ]/g, '')
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .trim()
+      slug: slugFromName(name)
     };
 
     // Update hero_photo_id if provided (including null to clear it). A

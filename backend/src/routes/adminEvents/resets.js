@@ -15,6 +15,7 @@ const { getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const { parseBooleanInput } = require('../../utils/parsers');
 const {
   resolveGalleryRecipients, notifyGalleryRecipients, describeRecipients, recipientSummary,
+  galleryCreatedEmailData,
 } = require('../../services/galleryNotificationService');
 
 module.exports = (router) => {
@@ -115,21 +116,16 @@ module.exports = (router) => {
 
       // Built for whichever address actually gets the standard email — the
       // inline one, or the folded-in one when its account notice is skipped.
-      const emailDataFor = (recipientEmail) => {
-        const recipientName = event.customer_name || event.host_name || (recipientEmail ? recipientEmail.split('@')[0] : null);
-        const emailData = {
-          customer_name: recipientName,
-          customer_email: recipientEmail,
-          host_name: recipientName,
-          event_name: event.event_name,
-          event_date: event.event_date,  // Pass raw date - will be formatted by email processor
-          gallery_link: shareUrl,
-          gallery_password: galleryPassword,
-          expiry_date: event.expires_at,  // Pass raw date - will be formatted by email processor
-          welcome_message: event.welcome_message || '',
-          eventId: id,
-          isResend: true // Flag to indicate this is a resend
-        };
+      // Dates go out raw; the email processor formats them for the recipient.
+      const emailDataFor = async (recipientEmail) => {
+        const emailData = await galleryCreatedEmailData(event, {
+          recipientEmail,
+          nameFromAddress: true,
+          shareUrl,
+          galleryPassword,
+          rawExpiry: true,
+          extra: { eventId: id, isResend: true },
+        });
         // The creation mail carries the client link and PIN (#172). A resend can
         // only do the same when a stored PIN exists (#1271); otherwise the client
         // section is left out rather than sent with a placeholder.

@@ -18,7 +18,7 @@ const SRC = path.join(__dirname, '../../src');
 
 // file: [bare references, why they see trashed rows too]
 const ALL_ROWS = {
-  'routes/adminArchives.js': [6, 'restoring an archive matches files to rows and inserts them, and reads the source paths every row holds (unique per event, trashed rows included); deleting one locks, then removes, every row and thumbnail'],
+  'routes/adminArchives.js': [4, 'restoring an archive matches files to rows and inserts them, and reads the source paths every row holds (unique per event, trashed rows included); deleting one removes every thumbnail (the rows go through deleteEventRows in adminEvents/helpers.js)'],
   'routes/adminCategories.js': [4, 'folder/category restructuring keeps trashed photos consistent for a restore'],
   'routes/adminDashboard.js': [1, 'storage: trashed photos still take space'],
   'routes/adminEvents/crud.js': [1, 'storage: the gallery size counts trashed photos'],
@@ -83,8 +83,8 @@ const ALL_ROWS = {
 // reference changes a number here; check it the same way before raising it.
 const CHILD_TABLES = /\(\s*['"`](?:photo_feedback|photo_admin_marks|transfer_files|photo_faces|event_download_grants)(?: as \w+)?['"`]/g;
 const CHILD_REFERENCES = {
-  'routes/adminArchives.js': 2, 'routes/adminEvents/faces.js': 2, 'routes/adminEvents/helpers.js': 2,
-  'routes/adminFeedback.js': 7, 'routes/adminGuests.js': 4, 'routes/adminPhotos.js': 3,
+  'routes/adminEvents/faces.js': 2, 'routes/adminEvents/helpers.js': 2,
+  'routes/adminFeedback.js': 7, 'routes/adminGuests.js': 4, 'routes/adminPhotos.js': 1,
   'routes/galleryFeedback.js': 4, 'services/downloadQuota.js': 10, 'services/externalPhotoDedupe.js': 4,
   'services/faceAutoCategories.js': 1, 'services/faceClustering.js': 8, 'services/faceSearch.js': 1, 'services/faceFocalPoint.js': 1, 'services/facePeopleService.js': 3,
   'services/faceProcessor.js': 7, 'services/favoriteLists.js': 4, 'services/feedbackIntegrity.js': 8,

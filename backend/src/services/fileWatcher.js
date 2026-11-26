@@ -17,6 +17,7 @@ const mime = require('mime-types');
 const { isRawFilename } = require('../utils/rawFormats');
 const { normalizeUploadMimeType } = require('../utils/fileSecurityUtils');
 const { getAllowedExtensions } = require('./uploadSettings');
+const { IMAGE_EXTENSIONS } = require('./externalMediaTypes');
 const downloadZipService = require('./downloadZipService');
 const { promotionSettled } = require('./watchFolderClaims');
 const { unfinishedKeys } = require('./publicUploadQuota');
@@ -225,7 +226,7 @@ async function processNewPhoto(filePath) {
   const detectedMime = mime.lookup(filePath) || '';
   const isVideo = isVideoMimeType(detectedMime, filePath) || ['.mp4', '.mov', '.webm'].includes(ext);
   const isRaw = !isVideo && isRawFilename(filePath);
-  if (!isVideo && !isRaw && !['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) return;
+  if (!isVideo && !isRaw && !IMAGE_EXTENSIONS.includes(ext)) return;
   
   // Skip temporary upload files
   const filename = path.basename(filePath);

@@ -470,3 +470,19 @@ export const GALLERY_THEME_PRESETS: Record<string, EventTheme> = {
     isPreset: true
   }
 };
+/**
+ * The key of the first preset the theme matches, or null. Compares only the
+ * fields the preset itself defines, so saved themes carrying extras (e.g. a
+ * `logoUrl` preserved through preset changes) still match.
+ */
+export function matchThemePreset(theme: ThemeConfig): string | null {
+  const fields = theme as Record<string, unknown>;
+  for (const [key, preset] of Object.entries(GALLERY_THEME_PRESETS)) {
+    const config = preset.config as Record<string, unknown>;
+    const matches = Object.keys(config).every((k) =>
+      JSON.stringify(config[k]) === JSON.stringify(fields[k])
+    );
+    if (matches) return key;
+  }
+  return null;
+}

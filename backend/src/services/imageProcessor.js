@@ -19,6 +19,7 @@ async function removeTempDir(dir) {
 }
 const { db } = require('../database/db');
 const { getStorage } = require('./storage');
+const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { heroAnchorPoint, normalizeHeroAnchor, heroRenditionName } = require('../utils/heroAnchor');
 const { FOCAL_COLUMNS, focalPointOf, normalizeFocalPoint, focalColumns, sameFocalPoint, sameFocalColumns, focalCoverWindow, focalQuery } = require('../utils/focalPoint');
@@ -1008,24 +1009,26 @@ async function generateThumbnail(imagePath, options = {}) {
 }
 
 /**
- * Check if a thumbnail exists and is valid. For local-fs storage we open the
+ * Check if a rendition (thumbnail, hero, preview) exists and is valid. For local-fs storage we open the
  * file with sharp to confirm it parses; for S3 we trust the byte-integrity
  * checks built into the protocol and only verify size > 0.
  *
  * Throws when the storage backend cannot be reached (issue 1785): that says
  * nothing about the thumbnail, and answering false would regenerate a healthy
- * one from the original through the backend that is failing. isHeroValid and
- * isPreviewValid follow the same rule.
+ * one from the original through the backend that is failing.
+ *
+ * The same check serves thumbnails, hero images and previews; it is exported
+ * as isThumbnailValid and isPreviewValid.
  */
-async function isThumbnailValid(thumbnailPath) {
+async function isRenditionValid(renditionPath) {
   const storage = getStorage();
   try {
-    const stat = await storage.stat(thumbnailPath);
+    const stat = await storage.stat(renditionPath);
     if (!stat || stat.size === 0) {
       return false;
     }
     if (storage.kind() === 'local') {
-      const localPath = storage.resolveLocalPath(thumbnailPath);
+      const localPath = storage.resolveLocalPath(renditionPath);
       await sharp(localPath).metadata();
     }
     return true;
@@ -1174,7 +1177,7 @@ function isLocalCopyPath(filePath) {
 const inFlightRenditions = new Map();
 
 function flightKey(rendition, photo, width) {
-  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const isExternal = isExternalSource(photo);
   const source = (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || '';
   // The version too: a request for the edited file must not join a flight
   // still rendering the old bytes and be handed that rendition.
@@ -1261,7 +1264,7 @@ async function ownDerivativeName(photo, name) {
 async function ensureThumbnail(photo, { force = false, boundVideoSource = true, checkSettings = !force, strictVideoFrame = false, posterOffsetSeconds, focalPoint } = {}) {
   // Check if thumbnail exists and is valid (works for any source).
   if (!force && photo.thumbnail_path) {
-    const isValid = await isThumbnailValid(photo.thumbnail_path);
+    const isValid = await isRenditionValid(photo.thumbnail_path);
     if (isValid) {
       return photo.thumbnail_path;
     }
@@ -1397,7 +1400,6 @@ function whereFocalColumns(query, row) {
  * load time for a 100-photo NAS-mounted gallery.
  */
 async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false, retried = false, strictVideoFrame = false, posterOffsetSeconds, focalPoint } = {}) {
-  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
   const event = await db('events').where('id', photo.event_id).first();
   if (!event) {
@@ -1405,7 +1407,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     return null;
   }
 
-  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const isExternal = isExternalSource(photo);
 
   // A lazy render (issue 2131) renders with the settings read here and keeps
   // its result only if they are still the stored ones. Otherwise one still
@@ -1486,7 +1488,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   const unchanged = async () => {
     if (retried) return null;
     const current = await db('photos').where('id', photo.id).first('thumbnail_path');
-    return current?.thumbnail_path && await isThumbnailValid(current.thumbnail_path) ? current.thumbnail_path : null;
+    return current?.thumbnail_path && await isRenditionValid(current.thumbnail_path) ? current.thumbnail_path : null;
   };
   if (keepsManual) {
     const kept = await unchanged();
@@ -1673,7 +1675,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   if ((settingsChanged || focalChanged) && !retried) {
     const current = rewriteShared || (focalChanged && focalPoint) ? null : await sourceGuard(photo).first('thumbnail_path');
     if (current?.thumbnail_path && current.thumbnail_path !== photo.thumbnail_path
-        && await isThumbnailValid(current.thumbnail_path)) return current.thumbnail_path;
+        && await isRenditionValid(current.thumbnail_path)) return current.thumbnail_path;
     return regenerateThumbnail(focalChanged ? withoutFocalColumns(photo) : photo,
       { boundVideoSource, lazy, retried: true, strictVideoFrame, posterOffsetSeconds, focalPoint });
   }
@@ -1719,7 +1721,6 @@ function videoThumbnailMaxSourceBytes() {
  * thumbnail is missing anything but the placeholder.
  */
 async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource = true, strict = false, offsetSeconds: pickedOffset } = {}) {
-  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
   const { processUploadedVideo } = require('./videoProcessor');
 
   const sourceBasename = path.basename(
@@ -1932,32 +1933,11 @@ async function generateHeroImage(imagePath, options = {}) {
 }
 
 /**
- * Check if a hero image exists and is valid
- */
-async function isHeroValid(heroPath) {
-  const storage = getStorage();
-  try {
-    const stat = await storage.stat(heroPath);
-    if (!stat || stat.size === 0) {
-      return false;
-    }
-    if (storage.kind() === 'local') {
-      const localPath = storage.resolveLocalPath(heroPath);
-      await sharp(localPath).metadata();
-    }
-    return true;
-  } catch (error) {
-    if (isStorageUnavailableError(error)) throw error;
-    return false;
-  }
-}
-
-/**
  * Ensure a hero image exists for a photo, regenerate if needed
  */
 async function ensureHeroImage(photo, { anchor } = {}) {
   if (photo.hero_path) {
-    const isValid = await isHeroValid(photo.hero_path);
+    const isValid = await isRenditionValid(photo.hero_path);
     // A readable rendition cut at another focal point is stale too (issue
     // 1737). A caller that does not know the event's anchor (undefined)
     // keeps whatever is stored; a NULL hero_anchor is the pre-258 centre crop.
@@ -2001,7 +1981,6 @@ async function dropSupersededHero(photo, newHeroPath) {
 }
 
 async function regenerateHeroImage(photo, anchor) {
-  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
   let event;
   try {
@@ -2023,7 +2002,7 @@ async function regenerateHeroImage(photo, anchor) {
   // ensurePreviewImage and nobody carried it across; it only became visible
   // when the Story hero started asking for hero_url instead of the original
   // (#1166), which on a reference-mode gallery quietly changed nothing.
-  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const isExternal = isExternalSource(photo);
 
   let newHeroPath;
   if (isExternal) {
@@ -2225,26 +2204,6 @@ async function generatePreviewImage(imagePath, options = {}) {
 }
 
 /**
- * Validate an existing preview file is non-empty + readable by Sharp.
- * Mirrors isHeroValid / isThumbnailValid.
- */
-async function isPreviewValid(previewPath) {
-  const storage = getStorage();
-  try {
-    const stat = await storage.stat(previewPath);
-    if (!stat || stat.size === 0) return false;
-    if (storage.kind() === 'local') {
-      const localPath = storage.resolveLocalPath(previewPath);
-      await sharp(localPath).metadata();
-    }
-    return true;
-  } catch (error) {
-    if (isStorageUnavailableError(error)) throw error;
-    return false;
-  }
-}
-
-/**
  * Storage keys for every responsive tier of a photo (#1095).
  *
  * Tiers live outside photos.preview_path deliberately — that column owns the
@@ -2273,7 +2232,7 @@ function previewTierKeys(photo) {
  * the cache safe to trust; it is not a tidiness choice.
  */
 function previewTierBasename(photo, { legacyTag = null } = {}) {
-  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const isExternal = isExternalSource(photo);
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
@@ -2364,7 +2323,7 @@ async function deletePreviewTiers(photo, options) {
  */
 function thumbnailTierKeys(photo) {
   if (!photo) return [];
-  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const isExternal = isExternalSource(photo);
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
@@ -2475,7 +2434,6 @@ async function ensureThumbnailAtWidth(photo, width) {
 }
 
 async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWidth) {
-  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
   const storage = getStorage();
 
   let event;
@@ -2486,7 +2444,7 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
   }
   if (!event) return null;
 
-  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const isExternal = isExternalSource(photo);
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
@@ -2590,7 +2548,6 @@ async function ensurePreviewImageAtWidth(photo, width) {
 }
 
 async function ensurePreviewImageAtWidthUnguarded(photo, width) {
-  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
   const storage = getStorage();
 
   let event;
@@ -2601,7 +2558,7 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
   }
   if (!event) return null;
 
-  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const isExternal = isExternalSource(photo);
   const outputBasename = derivativeBasename(previewTierBasename(photo), { cache: true });
 
   // Cache hit: nothing to do. This is the common path once a gallery has been
@@ -2669,7 +2626,7 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
  */
 async function ensurePreviewImage(photo, { force = false } = {}) {
   if (!force && photo.preview_path) {
-    const ok = await isPreviewValid(photo.preview_path);
+    const ok = await isRenditionValid(photo.preview_path);
     if (ok) return photo.preview_path;
     logger.warn(`Invalid preview detected for photo ${photo.id}, regenerating…`);
   }
@@ -2679,7 +2636,6 @@ async function ensurePreviewImage(photo, { force = false } = {}) {
 }
 
 async function regeneratePreviewImage(photo) {
-  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
   let event;
   try {
@@ -2694,7 +2650,7 @@ async function regeneratePreviewImage(photo) {
     return null;
   }
 
-  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const isExternal = isExternalSource(photo);
 
   let newPreviewPath;
   if (isExternal) {
@@ -2969,7 +2925,7 @@ module.exports = {
   RESIZE_PRESERVES_FORMAT,
   generateThumbnail,
   detectFocalPoint,
-  isThumbnailValid,
+  isThumbnailValid: isRenditionValid,
   ensureThumbnail,
   queueVideoThumbnail,
   stopVideoThumbnailQueue,
@@ -2981,10 +2937,9 @@ module.exports = {
   videoPlaceholderImage,
   generateVideoPlaceholder,
   generateHeroImage,
-  isHeroValid,
   ensureHeroImage,
   generatePreviewImage,
-  isPreviewValid,
+  isPreviewValid: isRenditionValid,
   ensurePreviewImage,
   extractCaptureDate,
   extractCapture,

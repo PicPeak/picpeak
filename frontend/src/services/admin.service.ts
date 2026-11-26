@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import { formatBytes } from '../utils/formatBytes';
 import i18n from '../i18n/config';
 import { mediaSplitLabel, splitMediaCount } from '../utils/mediaCounts';
 
@@ -627,14 +628,7 @@ export const adminService = {
     return messages[activity.type] || activity.type;
   },
 
-  // Format bytes to human readable
-  formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  },
+  formatBytes,
 
   // Change password
   async changePassword(data: { currentPassword: string; newPassword: string }): Promise<void> {
