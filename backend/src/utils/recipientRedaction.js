@@ -15,7 +15,10 @@ const { escapeRegExp } = require('./emailSecretRedaction');
 // ("anna meier"@kunde.example), which the app accepts as valid, and an
 // apostrophe inside the local part after a letter or digit (o'connor@…), so
 // a single-quoted 'anna@kunde.example' in free text is still the address.
-const EMAIL_ADDRESS = /(?:"[^"\r\n]*"|[^\s<>"'(),;:](?:[^\s<>"'(),;:]|(?<=[\p{L}\p{N}])')*)@[^\s<>"'(),;:]+/gu;
+// The parts are bounded (local part 64, domain 255, as RFC 5321 allows), so
+// a long unbroken text costs a linear scan, not a quadratic one; callers
+// also skip any string without an @.
+const EMAIL_ADDRESS = /(?:"[^"\r\n]{0,64}"|[^\s<>"'(),;:](?:[^\s<>"'(),;:]|(?<=[\p{L}\p{N}])'){0,63})@[^\s<>"'(),;:]{1,255}/gu;
 
 // A carried address is replaced only as a whole address: the character
 // before it is no local-part character ([A-Za-z0-9._%+-], or an apostrophe
@@ -36,7 +39,7 @@ const TRAILING_PROSE = /[.,;:!?)\]}]+$/;
  * returned as is.
  */
 function redactAddresses(value) {
-  if (typeof value === 'string') return value.replace(EMAIL_ADDRESS, '…');
+  if (typeof value === 'string') return value.includes('@') ? value.replace(EMAIL_ADDRESS, '…') : value;
   if (Array.isArray(value)) return value.map(redactAddresses);
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactAddresses(v)]));
@@ -58,6 +61,7 @@ function redactKnownAddresses(html, values, keep = new Set()) {
   const carried = new Set();
   const collect = (value) => {
     if (typeof value === 'string') {
+      if (!value.includes('@')) return;
       for (const match of value.match(EMAIL_ADDRESS) || []) {
         const address = match.replace(TRAILING_PROSE, '').toLowerCase();
         if (!keep.has(address)) carried.add(address);
@@ -75,24 +79,24 @@ function redactKnownAddresses(html, values, keep = new Set()) {
 }
 
 /**
- * The studio's own addresses, lower-cased: the support address, the mail
- * identities (sender, accounting mailbox, each further mailbox's login and
- * sender), the business contact address and every admin user's. Templates
- * pass them as variables too ({{support_email}}, a gallery's admin_email);
- * they are no customer's address.
+ * The studio's configured addresses, lower-cased: the support address, the
+ * mail identities (sender, accounting mailbox, each further mailbox's login
+ * and sender) and the business contact address. Templates pass them as
+ * variables too ({{support_email}}); they are no customer's address. Admin
+ * users' addresses are not among them: an admin sets their own without
+ * verification, and could otherwise keep a guessed customer address.
  */
 async function studioAddresses() {
   // Required here: the mail and profile services load the database.
   const { getSupportEmail, mailIdentities } = require('../services/emailProcessor');
   const { getProfile } = require('../services/businessProfileService');
-  const { db } = require('../database/db');
-  const [support, identities, { profile }, admins] = await Promise.all([
-    getSupportEmail(), mailIdentities(), getProfile(), db('admin_users').pluck('email'),
+  const [support, identities, { profile }] = await Promise.all([
+    getSupportEmail(), mailIdentities(), getProfile(),
   ]);
   return new Set([
     support, identities.automated, identities.accounting,
     ...identities.mailboxes.flatMap((mailbox) => [mailbox.login, mailbox.sender]),
-    profile?.email, ...admins,
+    profile?.email,
   ].filter(Boolean).map((address) => String(address).trim().toLowerCase()));
 }
 

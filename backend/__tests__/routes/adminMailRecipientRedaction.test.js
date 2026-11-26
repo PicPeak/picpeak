@@ -8,10 +8,11 @@
  * log's search matched on the address, which answers "did we ever mail this
  * address?" without showing it. The mail bodies quote the addresses the mail
  * carries (the recipient, cc, template variables such as customer_email);
- * those leave the body too, except the studio's own addresses (the support
- * address, an admin's) that a template also passes as a variable. For such an admin recipients come back as
- * null and address-shaped text inside free text as `…`; a Super Admin and a
- * role holding customers.view keep everything.
+ * those leave the body too, except the studio's configured addresses (the
+ * support address, the mailboxes) that a template also passes as a
+ * variable. For such an admin recipients come back as null and
+ * address-shaped text inside free text as `…`; a Super Admin and a role
+ * holding customers.view keep everything.
  */
 const path = require('path');
 const fs = require('fs');
@@ -32,7 +33,9 @@ const { clearPermissionCache } = require('../../src/middleware/permissions');
 
 const ADDRESS = 'anna@kunde.example';
 const STUDIO_LINK = '<p><a href="mailto:hello@studio.example">hello@studio.example</a></p>';
-// The gallery's admin_email is the seeded admin user's address (tester@example.com).
+// The gallery's admin_email is the seeded admin user's address
+// (tester@example.com). An admin sets their own address without
+// verification, so it is no studio address: it is blanked like a customer's.
 const ADMIN_LINE = '<p>Gallery admin Tester@Example.com</p>';
 // The studio's mailboxes: the accounting login (email_configs) and the
 // customers mailbox's sender (mail_accounts), both copied on the mail.
@@ -239,7 +242,7 @@ describe('admin mail surfaces — recipients need customers.view', () => {
   });
 
   it('removes the addresses the mail carries from its stored body, but not the studio\'s own', async () => {
-    const redacted = `<p>Hello …, copy …, …</p>${ADMIN_LINE}${MAILBOX_LINE}${STUDIO_LINK}`;
+    const redacted = `<p>Hello …, copy …, …</p><p>Gallery admin …</p>${MAILBOX_LINE}${STUDIO_LINK}`;
     expect((await preview(readerTok)).body.html).toBe(redacted);
     expect((await queueItem(readerTok)).body.renderedHtml).toBe(redacted);
 
@@ -267,5 +270,15 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     expect(res.body).toEqual({
       automated: 'noreply@studio.example', accounting: 'rechnungen@studio.example', customers: 'kontakt-login@studio.example',
     });
+  });
+
+  it('still blanks a customer address an admin has made their own', async () => {
+    await db('admin_users').where({ username: 'mail-reader' }).update({ email: ADDRESS });
+    try {
+      expect((await queueItem(readerTok)).body.renderedHtml).not.toMatch(/anna@kunde\.example/i);
+      expect((await preview(readerTok)).body.html).not.toMatch(/anna@kunde\.example/i);
+    } finally {
+      await db('admin_users').where({ username: 'mail-reader' }).update({ email: 'mail-reader@studio.example' });
+    }
   });
 });
