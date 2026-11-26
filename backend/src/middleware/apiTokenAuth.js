@@ -189,7 +189,6 @@ module.exports = {
   generateApiToken,
   hashToken,
   parseScopes,
-  isMissingRolesSchema,
   TOKEN_PREFIX,
   VALID_SCOPES,
   GALLERY_PASSWORD_READ_SCOPE,

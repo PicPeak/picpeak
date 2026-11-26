@@ -1,18 +1,9 @@
 const { db } = require('../database/db');
+const { parseSettingValue } = require('../utils/appSettings');
 
 let cachedRobotsTxt = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds
-
-function parseSetting(raw) {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw !== 'string') return raw;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw;
-  }
-}
 
 async function getSeoSettings() {
   const rows = await db('app_settings')
@@ -21,7 +12,7 @@ async function getSeoSettings() {
 
   const settings = {};
   for (const row of rows) {
-    settings[row.setting_key] = parseSetting(row.setting_value);
+    settings[row.setting_key] = parseSettingValue(row.setting_value);
   }
   return settings;
 }

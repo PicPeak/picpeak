@@ -8,13 +8,13 @@ const { configuration: providerConfiguration } = require('./providers');
 const { createPurchaseAccessToken } = require('./purchaseAccess');
 const { purchaseExpiry } = require('./fulfilment');
 const { SALES_CURRENCY, isGalleryOnSale, sellablePhotos } = require('./sellable');
-const { effectivePhotoPrice } = require('./priceRules');
+const { effectivePhotoPrice, toMinorUnits } = require('./priceRules');
 const { stripeConfiguration } = require('./stripeClient');
 const { lock: lockPaymentSettings, credentials, configurationOf } = require('./paymentSettings');
 const promoIdentity = require('./promoIdentity');
 const { browserHash } = promoIdentity;
 
-const OPEN = ['pending', 'creation_unknown', 'processing'];
+const { OPEN, REFUSING } = require('./orderStatus');
 
 function checkoutError(message, status = 400, code = 'CHECKOUT_INVALID') {
   return Object.assign(new Error(message), { statusCode: status, code });
@@ -89,11 +89,11 @@ async function reserveCheckout(gallery, body) {
     throw checkoutError('This gallery closes too soon to start a checkout.', 409, 'GALLERY_CLOSING');
   }
   let discount = promoApplied
-    ? Math.round(Math.max(0, Number(gallery.free_photo_count)) * Number(gallery.photo_price) * 100)
+    ? toMinorUnits(Math.max(0, Number(gallery.free_photo_count)) * Number(gallery.photo_price))
     : 0;
   const lines = photoIds.map((photoId) => {
     const photo = byId.get(photoId);
-    const gross = Math.round(effectivePhotoPrice(gallery, photo) * 100);
+    const gross = toMinorUnits(effectivePhotoPrice(gallery, photo));
     if (!Number.isSafeInteger(gross) || gross < 0) throw checkoutError('A photo price is invalid.', 409);
     const reduction = Math.min(discount, gross);
     discount -= reduction;
@@ -149,7 +149,7 @@ async function reserveCheckout(gallery, body) {
       // fulfilled redemptions and confirmed terminal attempts free this cap.
       if (identityHash) {
         const held = await trx('photo_purchase_orders').where({ promo_identity_hash: identityHash, promo_used: false })
-          .whereIn('status', [...OPEN, 'refund_pending', 'refund_failed']).whereNotNull('promo_gallery_id').first('gallery_id');
+          .whereIn('status', [...OPEN, ...REFUSING]).whereNotNull('promo_gallery_id').first('gallery_id');
         if (held) {
           if (Number(held.gallery_id) === Number(gallery.id)) throw checkoutError('This promo code is already reserved by another checkout.', 409, 'PROMO_UNAVAILABLE');
           throw checkoutError('Finish your existing promo checkout or wait for it to end before starting another.', 409, 'CHECKOUT_PROMO_BUSY');

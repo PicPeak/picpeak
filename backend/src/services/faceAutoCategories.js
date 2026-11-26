@@ -1,8 +1,8 @@
 /**
  * Rule-based auto-categorisation from face counts (#1074 phase 3).
  *
- * Once faces are detected, `photos.face_count` and the landmark yaw are free
- * inputs for the sorting @bluecow94 asked for in discussion #1069. This is a
+ * Once faces are detected, `photos.face_count` is a free
+ * input for the sorting @bluecow94 asked for in discussion #1069. This is a
  * small rule list, not a classifier — the point is that it is predictable and
  * explainable, which a photographer can work with.
  *
@@ -62,10 +62,10 @@ const RULES = [
  * duplication. An existing GLOBAL category with the same slug is reused when
  * present, so an operator who already has "Portraits" keeps one.
  */
-async function resolveCategory(eventId, rule, cache, trx = db) {
+async function resolveCategory(eventId, rule, cache) {
   if (cache.has(rule.slug)) return cache.get(rule.slug);
 
-  let category = await trx('photo_categories')
+  let category = await db('photo_categories')
     .where('slug', rule.slug)
     .where(function () {
       this.where('event_id', eventId).orWhere('is_global', true);
@@ -73,7 +73,7 @@ async function resolveCategory(eventId, rule, cache, trx = db) {
     .first();
 
   if (!category) {
-    const [inserted] = await trx('photo_categories').insert({
+    const [inserted] = await db('photo_categories').insert({
       name: rule.name,
       slug: rule.slug,
       is_global: false,
@@ -183,4 +183,4 @@ async function undoEvent(eventId) {
   return { cleared };
 }
 
-module.exports = { RULES, categorizeEvent, undoEvent };
+module.exports = { categorizeEvent, undoEvent };

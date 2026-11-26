@@ -86,18 +86,24 @@ function classify(err) {
  * Returns the sidecar's `{ model_version, faces: [...] }`.
  */
 async function detectFaces(buffer, filename = 'photo.jpg') {
+  // A 45MP preview is ~2MB; the cap is generous but not unbounded.
+  return postImage('/faces', buffer, filename, 64 * 1024 * 1024);
+}
+
+/**
+ * POST one image to the sidecar as multipart `image`. Node 18+ ships
+ * FormData/Blob globally, so no multipart dependency is needed.
+ */
+async function postImage(path, buffer, filename, maxContentLength) {
   const form = new FormData();
-  // Node 18+ ships FormData/Blob globally, so no multipart dependency is
-  // needed for the one endpoint that uploads anything.
   form.append('image', new Blob([buffer]), filename);
 
   try {
-    const response = await axios.post(`${getSidecarUrl()}/faces`, form, {
+    const response = await axios.post(`${getSidecarUrl()}${path}`, form, {
       headers: authHeaders(),
       timeout: REQUEST_TIMEOUT_MS,
-      // A 45MP preview is ~2MB; the cap is generous but not unbounded.
       maxBodyLength: 64 * 1024 * 1024,
-      maxContentLength: 64 * 1024 * 1024,
+      maxContentLength,
     });
     return response.data;
   } catch (err) {
@@ -112,20 +118,7 @@ async function detectFaces(buffer, filename = 'photo.jpg') {
  * model answers 503, so those photos stay queued.
  */
 async function tagImage(buffer, filename = 'photo.jpg') {
-  const form = new FormData();
-  form.append('image', new Blob([buffer]), filename);
-
-  try {
-    const response = await axios.post(`${getSidecarUrl()}/tags`, form, {
-      headers: authHeaders(),
-      timeout: REQUEST_TIMEOUT_MS,
-      maxBodyLength: 64 * 1024 * 1024,
-      maxContentLength: 1024 * 1024,
-    });
-    return response.data;
-  } catch (err) {
-    throw classify(err);
-  }
+  return postImage('/tags', buffer, filename, 1024 * 1024);
 }
 
 /**

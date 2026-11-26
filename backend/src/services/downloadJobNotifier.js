@@ -363,5 +363,5 @@ async function cancelPendingMails(jobs) {
 module.exports = {
   recipientFor, canMail, isRequested, request, notifyReady, retryUnsent, forgetCustomer, forgetGuest,
   cancelPendingMails, staleMailReason,
-  MAX_REQUESTS_PER_HOUR, LINK_PARAM,
+  MAX_REQUESTS_PER_HOUR,
 };

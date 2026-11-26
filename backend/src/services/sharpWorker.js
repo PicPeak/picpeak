@@ -3,6 +3,7 @@
  * in-process fallback. Nothing else may load it. */
 const fs = require('fs');
 const { estimate, refusal, MiB, LIBRARY_UNAVAILABLE } = require('./imageResourcePolicy');
+const { SHARP_OPERATIONS } = require('./sharpOperations');
 
 const RESPONSE_BYTES = MiB;
 // EXIF/ICC/XMP/IPTC blocks travel back base64-encoded inside one response.
@@ -144,7 +145,7 @@ async function run(job) {
     }
   };
   let pipeline = sharp(input, options);
-  const allowed = new Set(['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'tiff', 'flatten', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw']);
+  const allowed = new Set(SHARP_OPERATIONS);
   for (const [name, encodedArgs] of job.steps) {
     if (!allowed.has(name)) throw refusal('Unsupported image operation');
     const args = decode(encodedArgs);

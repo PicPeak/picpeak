@@ -4,11 +4,11 @@ const { verifyGalleryAccess, denySlideshowToken, requireContactAct } = require('
 const { blockHiddenGallery } = require('../../utils/revealMode');
 const { handleAsync } = require('../../utils/routeHelpers');
 const { ForbiddenError } = require('../../utils/errors');
-const { requireFeatureFlag } = require('../../middleware/requireFeatureFlag');
+const { requirePrintSalesFlags } = require('../../services/printSales/flags');
 const customerContactsService = require('../../services/customerContactsService');
 const service = () => require('../../services/printSales/orders').application();
 router.use('/:slug/print-sales', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery,
-  requireFeatureFlag('printSales'), requireFeatureFlag('albumProducts'), requireFeatureFlag('bills'),
+  ...requirePrintSalesFlags(),
   (req, res, next) => {
     res.set('Cache-Control', 'private, no-store');
     if (req.isAdminPreview || !req.viaCustomer || !Number.isSafeInteger(req.galleryAccess?.session?.customerId))

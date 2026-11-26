@@ -40,7 +40,7 @@ async function checkSlugRedirect(slug) {
 // however this evolves, and an unverified caller never gets so far as knowing
 // the draft exists.
 async function resolveDraftForAdminPreview(req, identifier) {
-  // decodeAdminPreview requires this flag anyway, so checking it up front costs
+  // verifyAdminPreview requires this flag anyway, so checking it up front costs
   // nothing and keeps an unknown identifier from paying for a second set of
   // lookups on the public 404 path.
   if (req.query?.admin_preview !== '1') return null;

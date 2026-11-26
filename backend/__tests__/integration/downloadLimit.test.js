@@ -1051,7 +1051,8 @@ describe('Download limit (issue 1560)', () => {
 
     it('deleteEventCascade locks the event row before deleting grants and photos', () => {
       const src = fs.readFileSync(path.join(__dirname, '../../src/routes/adminEvents/helpers.js'), 'utf8');
-      const body = src.slice(src.indexOf('await db.transaction(async (trx) => {'));
+      // The row delete deleteEventCascade and the archive delete share.
+      const body = src.slice(src.indexOf('async function deleteEventRows'));
       const lock = body.indexOf('trx(\'events\').where({ id: eventId }).forUpdate()');
       expect(lock).toBeGreaterThan(-1);
       for (const table of ['activity_logs', 'event_download_grants', 'photos']) {

@@ -99,7 +99,7 @@ router.get('/:token/download/:fileId', downloadLimiter,
     const ok = await transferService.streamTransferFile(transfer, req.params.fileId, res, {
       beforeStream: async () => {
         const claimed = await transferService.claimDownload(transfer, {
-          kind: 'single', photoId: null, ip: clientIpForAudit(req),
+          kind: 'single', ip: clientIpForAudit(req),
         });
         limitReached = !claimed;
         return claimed;

@@ -176,7 +176,6 @@ async function queueForEvent(eventId) {
 }
 
 module.exports = {
-  salesSettingsFingerprint,
   findPersistedSalesPreview,
   generateSalesPreviewForPhoto,
   queueForEvent,

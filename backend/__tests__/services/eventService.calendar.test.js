@@ -2,20 +2,12 @@
  * Unit tests for `normaliseEventTimeTriple` — the pure validator that
  * gates the migration-137 calendar time columns on events.
  *
- * The DB-bound CRUD paths (createEvent/updateEvent) inline this
- * helper and write through hasColumnCached guards; those are
- * exercised in manual QA. This file pins the contract so a future
- * tweak to the validation rules doesn't silently break it.
+ * This file pins the contract so a future tweak to the validation
+ * rules doesn't silently break it.
  */
 
 const path = require('path');
 const servicePath = path.join(__dirname, '..', '..', 'src', 'services', 'eventService');
-
-// Stub every DB-bound peer so the require chain doesn't try to open
-// a knex connection. The helper under test is pure.
-jest.mock('../../src/database/db', () => ({ db: jest.fn() }));
-jest.mock('../../src/utils/schemaCache', () => ({ hasColumnCached: jest.fn() }));
-jest.mock('bcrypt', () => ({ hash: jest.fn() }));
 
 const { normaliseEventTimeTriple } = require(servicePath);
 

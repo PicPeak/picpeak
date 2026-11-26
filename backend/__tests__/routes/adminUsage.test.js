@@ -56,6 +56,7 @@ beforeAll(async () => {
   await mockDb.schema.createTable('roles', (t) => {
     t.increments('id');
     t.string('name');
+    t.string('display_name');
   });
   await mockDb.schema.createTable('admin_users', (t) => {
     t.increments('id');
@@ -77,6 +78,11 @@ beforeAll(async () => {
   await mockDb.schema.createTable('role_permissions', (t) => {
     t.integer('role_id');
     t.integer('permission_id');
+  });
+  // adminAuth loads the principal's gallery assignments (migration 269).
+  await mockDb.schema.createTable('event_admin_assignments', (t) => {
+    t.integer('admin_user_id');
+    t.integer('event_id');
   });
   await mockDb('roles').insert([
     { id: 1, name: 'super_admin' },

@@ -103,13 +103,6 @@ function meetsQualityFloor(face, thresholds) {
 // -- clustering --------------------------------------------------------------
 
 /**
- * Assign a set of freshly-inserted faces to people within one event.
- *
- * Loads the event's people once, mutates centroids in memory across the whole
- * batch, then writes back — so a photo with five faces costs one read and one
- * write pass rather than five of each.
- */
-/**
  * Per-event serialization for cluster assignment.
  *
  * assignFaces is read-modify-write over an event's people: it loads every
@@ -166,6 +159,13 @@ async function withEventLock(eventId, trx, fn) {
   }
 }
 
+/**
+ * Assign a set of freshly-inserted faces to people within one event.
+ *
+ * Loads the event's people once, mutates centroids in memory across the whole
+ * batch, then writes back — so a photo with five faces costs one read and one
+ * write pass rather than five of each.
+ */
 async function assignFaces(eventId, faceRows, options = {}) {
   const thresholds = options.thresholds || (await getThresholds());
   const trx = options.trx || db;
@@ -325,20 +325,6 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
 }
 
 /**
- * Does this error mean the table isn't there yet, as opposed to the query
- * failing? Postgres reports SQLSTATE 42P01; SQLite says so in the message.
- * The distinction decides whether a dismissal read may fail open.
- */
-function isMissingTable(err) {
-  if (!err) return false;
-  // Postgres: undefined_table. Deliberately NOT matched on the message — its
-  // "does not exist" wording also covers a missing COLUMN, which is a broken
-  // query rather than a pre-migration install and must not fail open.
-  if (err.code === '42P01') return true;
-  return /no such table/i.test(err.message || '');
-}
-
-/**
  * One identity for a pair regardless of which order it was produced in.
  * Rows are stored the same way, so the two always agree.
  */
@@ -455,8 +441,7 @@ function separationForbids(vecX, vecY, separations, options = {}) {
  *
  * Read by BOTH the automatic pass and the suggestion list: "not the same
  * person" has to bind the thing that acts on its own even more than it binds
- * the thing that asks. Missing table (pre-migration) reads as "nothing
- * dismissed" rather than failing the merge that called this.
+ * the thing that asks.
  *
  * Returns both identities. `ids` is the exact person-id pair set, valid only
  * while those ids still mean what they meant — cheap and unambiguous within one
@@ -471,39 +456,66 @@ function separationForbids(vecX, vecY, separations, options = {}) {
  * every separation belonging to the others.
  */
 async function loadSeparations(eventId, conn = db) {
-  try {
-    const rows = await conn('event_people_merge_dismissals')
-      .where({ event_id: eventId })
-      .select('person_a_id', 'person_b_id', 'centroid_a', 'centroid_b', 'model_version');
+  const rows = await conn('event_people_merge_dismissals')
+    .where({ event_id: eventId })
+    .select('person_a_id', 'person_b_id', 'centroid_a', 'centroid_b', 'model_version');
 
-    const ids = new Set();
-    const vectors = [];
-    for (const row of rows) {
-      ids.add(pairKey(row.person_a_id, row.person_b_id));
-      // Never compare across embedding spaces — a model change makes a stored
-      // centroid meaningless rather than merely stale, the same rule assignment
-      // and consolidation already apply to event_people.centroid.
-      const a = unpackEmbedding(row.centroid_a);
-      const b = unpackEmbedding(row.centroid_b);
-      if (a && b) vectors.push({ a, b, modelVersion: row.model_version || null });
-    }
-    return { ids, vectors };
-  } catch (err) {
-    // ONLY a missing table reads as "nothing dismissed" — that is a
-    // pre-migration install, where by definition nothing has been dismissed.
-    //
-    // Everything else FAILS CLOSED. Treating a timeout or a permission error
-    // as an empty set would let the automatic pass merge pairs the
-    // photographer explicitly separated, which is precisely the decision this
-    // set exists to protect. The caller defers instead: drainConsolidation
-    // backs the event off and retries.
-    if (!isMissingTable(err)) throw err;
-    logger.warn(
-      `faceClustering: merge-dismissal table absent for event ${eventId} — treating as none`,
-      { error: err.message }
-    );
-    return { ids: new Set(), vectors: [] };
+  const ids = new Set();
+  const vectors = [];
+  for (const row of rows) {
+    ids.add(pairKey(row.person_a_id, row.person_b_id));
+    // Never compare across embedding spaces — a model change makes a stored
+    // centroid meaningless rather than merely stale, the same rule assignment
+    // and consolidation already apply to event_people.centroid.
+    const a = unpackEmbedding(row.centroid_a);
+    const b = unpackEmbedding(row.centroid_b);
+    if (a && b) vectors.push({ a, b, modelVersion: row.model_version || null });
   }
+  return { ids, vectors };
+}
+
+/** The similarity at which consolidate() merges on its own. */
+function autoMergeThreshold(thresholds) {
+  return Math.min(0.95, thresholds.face_match_threshold + 0.08);
+}
+
+/**
+ * The event's people that may take part in a merge, with their centroids
+ * unpacked. "Not a real person" must never be merged INTO one: mergePeople
+ * ORs is_ignored onto the survivor, so absorbing a false-positive cluster
+ * would mark a real person ignored and drop them out of the guest-facing
+ * strip entirely. Nor is an ignored person suggested again.
+ */
+async function loadMergeCandidates(eventId) {
+  const people = await db('event_people')
+    .where({ event_id: eventId })
+    .select('id', 'centroid', 'face_count_total', 'model_version', 'label', 'is_ignored');
+  return people
+    .filter((p) => !(p.is_ignored === true || p.is_ignored === 1))
+    .map((p) => ({ ...p, vec: unpackEmbedding(p.centroid) }))
+    .filter((p) => p.vec);
+}
+
+/** loadSeparations, with each candidate's projection stored on it as `sep`. */
+async function loadProjectedSeparations(eventId, state) {
+  const separations = await loadSeparations(eventId);
+  for (const p of state) p.sep = projectOnSeparations(p.vec, separations.vectors);
+  return separations;
+}
+
+/**
+ * May these two be merged (or suggested) at all? Same embedding model; never
+ * two people the photographer has NAMED differently, a human assertion this
+ * heuristic does not get to overrule; and not a pair separated by "not the
+ * same", by both identities: the exact pair while the ids still mean what
+ * they meant, and the embedding match that carries the decision across a
+ * re-derivation (#1132).
+ */
+function pairIsEligible(a, b, separations) {
+  if (a.model_version !== b.model_version) return false;
+  if (a.label && b.label && a.label !== b.label) return false;
+  if (separations.ids.has(pairKey(a.id, b.id))) return false;
+  return !separationForbidsProjected(a.sep, b.sep, { modelVersion: a.model_version || null });
 }
 
 /**
@@ -519,27 +531,15 @@ async function loadSeparations(eventId, conn = db) {
  */
 async function consolidate(eventId, options = {}) {
   const thresholds = options.thresholds || (await getThresholds());
-  const mergeThreshold = Math.min(0.95, thresholds.face_match_threshold + 0.08);
+  const mergeThreshold = autoMergeThreshold(thresholds);
 
-  const people = await db('event_people')
-    .where({ event_id: eventId })
-    .select('id', 'centroid', 'face_count_total', 'model_version', 'label', 'is_ignored');
-
-  const state = people
-    // "Not a real person" must never be merged INTO one. mergePeople ORs
-    // is_ignored onto the survivor, so absorbing a false-positive cluster
-    // would mark a real person ignored and drop them out of the guest-facing
-    // strip entirely. Cheap to skip, expensive to discover.
-    .filter((p) => !(p.is_ignored === true || p.is_ignored === 1))
-    .map((p) => ({ ...p, vec: unpackEmbedding(p.centroid) }))
-    .filter((p) => p.vec);
+  const state = await loadMergeCandidates(eventId);
 
   // A pair the photographer answered "not the same" about stays not the same,
   // however far the centroids drift afterwards. Without this the automatic
   // pass silently overturns an explicit human decision the moment new faces
   // push the pair over the threshold — or the moment someone tunes it.
-  const separations = await loadSeparations(eventId);
-  for (const p of state) p.sep = projectOnSeparations(p.vec, separations.vectors);
+  const separations = await loadProjectedSeparations(eventId, state);
 
   const merged = [];
   const absorbed = new Set();
@@ -556,19 +556,7 @@ async function consolidate(eventId, options = {}) {
         if (absorbed.has(state[j].id)) continue;
         const a = state[i];
         const b = state[j];
-        if (a.model_version !== b.model_version) continue;
-
-        // Never silently merge two people the photographer has NAMED
-        // differently — that is a human assertion this heuristic does not get
-        // to overrule.
-        if (a.label && b.label && a.label !== b.label) continue;
-
-        // Both identities: the exact pair while the ids still mean what they
-        // meant, and the embedding match that carries the decision across a
-        // re-derivation (#1132).
-        if (separations.ids.has(pairKey(a.id, b.id))) continue;
-        if (separationForbidsProjected(a.sep, b.sep,
-          { modelVersion: a.model_version || null })) continue;
+        if (!pairIsEligible(a, b, separations)) continue;
 
         if (dot(a.vec, b.vec) >= mergeThreshold) {
           // Re-read this one pair immediately before acting. The set above was
@@ -583,11 +571,7 @@ async function consolidate(eventId, options = {}) {
               person_a_id: Math.min(a.id, b.id),
               person_b_id: Math.max(a.id, b.id),
             })
-            .first()
-            .catch((err) => {
-              if (isMissingTable(err)) return null;
-              throw err;
-            });
+            .first();
           if (justDismissed) continue;
 
           await mergePeople(eventId, [b.id], a.id);
@@ -610,8 +594,7 @@ async function consolidate(eventId, options = {}) {
       faces_last_consolidated_count: merged.length,
       faces_last_consolidated_at: new Date().toISOString(),
     }).catch((err) => {
-      // Pre-migration installs simply do not report. Never let bookkeeping fail
-      // a merge that already happened.
+      // Never let bookkeeping fail a merge that already happened.
       logger.warn(`faceClustering: could not record consolidation for event ${eventId}`, {
         error: err.message,
       });
@@ -637,40 +620,24 @@ async function consolidate(eventId, options = {}) {
  */
 async function suggestMerges(eventId, options = {}) {
   const thresholds = options.thresholds || (await getThresholds());
-  const mergeThreshold = Math.min(0.95, thresholds.face_match_threshold + 0.08);
+  const mergeThreshold = autoMergeThreshold(thresholds);
   const floor = thresholds.face_match_threshold;
   const limit = options.limit || 20;
 
-  const people = await db('event_people')
-    .where({ event_id: eventId })
-    .select('id', 'centroid', 'face_count_total', 'model_version', 'label', 'is_ignored');
-
-  const state = people
-    // "Not a real person" is an answer already given — never ask about it again.
-    .filter((p) => !(p.is_ignored === true || p.is_ignored === 1))
-    .map((p) => ({ ...p, vec: unpackEmbedding(p.centroid) }))
-    .filter((p) => p.vec);
+  // "Not a real person" is an answer already given — never ask about it again.
+  const state = await loadMergeCandidates(eventId);
 
   if (state.length < 2) return [];
 
-  const separations = await loadSeparations(eventId);
-  for (const p of state) p.sep = projectOnSeparations(p.vec, separations.vectors);
+  const separations = await loadProjectedSeparations(eventId, state);
 
   const pairs = [];
   for (let i = 0; i < state.length; i++) {
     for (let j = i + 1; j < state.length; j++) {
       const a = state[i];
       const b = state[j];
-      if (a.model_version !== b.model_version) continue;
-      // Same rule consolidate() applies: two different names is a human
-      // assertion, not a question.
-      if (a.label && b.label && a.label !== b.label) continue;
-
-      // Exact pair while the ids still hold, plus the embedding match that
-      // carries the decision across a re-derivation (#1132).
-      if (separations.ids.has(pairKey(a.id, b.id))) continue;
-      if (separationForbidsProjected(a.sep, b.sep,
-        { modelVersion: a.model_version || null })) continue;
+      // Same rules consolidate() applies.
+      if (!pairIsEligible(a, b, separations)) continue;
 
       const score = dot(a.vec, b.vec);
       if (score < floor || score >= mergeThreshold) continue;
@@ -722,8 +689,7 @@ function isUniqueViolation(err) {
 /**
  * The centroids of two people, packed for storage on a separation row (#1132).
  *
- * Best-effort: a pre-migration install has no columns to write, and a person
- * that vanished between the click and this read leaves the row keyed on ids
+ * Best-effort: a person that vanished between the click and this read leaves the row keyed on ids
  * alone — which is exactly what it was before, so the decision is no worse off
  * than it used to be.
  */
@@ -823,7 +789,6 @@ async function refreshSeparationSnapshots(eventId, conn = db) {
       });
     }
   } catch (err) {
-    if (isMissingTable(err)) return;
     logger.warn(`faceClustering: could not refresh separations for event ${eventId}`, {
       error: err.message,
     });
@@ -851,8 +816,8 @@ async function dismissMergeSuggestion(eventId, personAId, personBId) {
     });
   } catch (err) {
     // ONLY the UNIQUE constraint doing its job — dismissing twice is a
-    // double-click, not an error. Anything else (missing table on a
-    // pre-migration install, read-only database) must reach the caller:
+    // double-click, not an error. Anything else (a read-only database,
+    // say) must reach the caller:
     // reporting "kept separate" for a decision that was never stored is worse
     // than an error, because the pair silently comes back next scan.
     if (!isUniqueViolation(err)) throw err;
@@ -918,35 +883,32 @@ async function mergePeople(eventId, sourceIds, targetId) {
     // Matched the same way the constraint is enforced, not by id. A row that
     // has already survived a recluster names people who are gone, and an
     // id-only delete walks straight past precisely those rows — the ones with
-    // a live vector-keyed constraint still in them. hasTable rather than a
-    // catch, because a failed statement aborts the transaction on Postgres.
+    // a live vector-keyed constraint still in them.
     const mergedIds = [targetId, ...ids];
-    if (await trx.schema.hasTable('event_people_merge_dismissals')) {
-      await trx('event_people_merge_dismissals')
-        .where({ event_id: eventId })
-        .whereIn('person_a_id', mergedIds)
-        .whereIn('person_b_id', mergedIds)
-        .del();
+    await trx('event_people_merge_dismissals')
+      .where({ event_id: eventId })
+      .whereIn('person_a_id', mergedIds)
+      .whereIn('person_b_id', mergedIds)
+      .del();
 
-      const mergedVecs = [target, ...sources]
-        .map((p) => unpackEmbedding(p?.centroid)).filter(Boolean);
-      if (mergedVecs.length > 1) {
-        const rows = await trx('event_people_merge_dismissals')
-          .where({ event_id: eventId })
-          .select('id', 'centroid_a', 'centroid_b');
-        for (const row of rows) {
-          const sep = [{
-            a: unpackEmbedding(row.centroid_a),
-            b: unpackEmbedding(row.centroid_b),
-          }];
-          if (!sep[0].a || !sep[0].b) continue;
-          // Would this row have forbidden the merge that was just performed?
-          // Then it is the decision being reversed.
-          const forbids = mergedVecs.some((x, i) => mergedVecs.slice(i + 1)
-            .some((y) => separationForbids(x, y, sep)));
-          if (forbids) {
-            await trx('event_people_merge_dismissals').where({ id: row.id }).del();
-          }
+    const mergedVecs = [target, ...sources]
+      .map((p) => unpackEmbedding(p?.centroid)).filter(Boolean);
+    if (mergedVecs.length > 1) {
+      const rows = await trx('event_people_merge_dismissals')
+        .where({ event_id: eventId })
+        .select('id', 'centroid_a', 'centroid_b');
+      for (const row of rows) {
+        const sep = [{
+          a: unpackEmbedding(row.centroid_a),
+          b: unpackEmbedding(row.centroid_b),
+        }];
+        if (!sep[0].a || !sep[0].b) continue;
+        // Would this row have forbidden the merge that was just performed?
+        // Then it is the decision being reversed.
+        const forbids = mergedVecs.some((x, i) => mergedVecs.slice(i + 1)
+          .some((y) => separationForbids(x, y, sep)));
+        if (forbids) {
+          await trx('event_people_merge_dismissals').where({ id: row.id }).del();
         }
       }
     }
@@ -1042,8 +1004,8 @@ async function splitPerson(eventId, personId, faceIds) {
       ...snapshot,
       created_at: new Date().toISOString(),
     }).catch((err) => {
-      // Pre-migration install, or the pair was already separated once before.
-      if (!isMissingTable(err) && !isUniqueViolation(err)) throw err;
+      // The pair was already separated once before.
+      if (!isUniqueViolation(err)) throw err;
     });
 
     return newPersonId;
@@ -1273,15 +1235,10 @@ module.exports = {
   // Exported for the tests that pin which failures may be swallowed and which
   // must stop the pass.
   isUniqueViolation,
-  isMissingTable,
   // Separation constraints (#1132) — exported so the tests can drive the
   // matching directly rather than only through a full clustering pass.
-  loadSeparations,
   separationForbids,
-  separationForbidsProjected,
-  projectOnSeparations,
   refreshSeparationSnapshots,
-  SEPARATION_MATCH_THRESHOLD,
   mergePeople,
   splitPerson,
   recomputeCentroid,

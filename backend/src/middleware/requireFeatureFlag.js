@@ -10,9 +10,6 @@
  * polls several, so a per-request DB read is wasteful. Flags change rarely and
  * only via `PUT /admin/feature-flags`, which calls invalidateFeatureFlagCache()
  * — so a short TTL is belt-and-braces against any other mutation path.
- *
- * Several route files (adminLedger, adminExpenses) predate this and define an
- * identical local `requireFlag`; new gates should import this instead.
  */
 const { db } = require('../database/db');
 

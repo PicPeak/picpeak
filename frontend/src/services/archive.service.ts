@@ -1,4 +1,6 @@
 import { api } from '../config/api';
+import { formatBytes } from '../utils/formatBytes';
+import { saveBlob } from '../utils/saveBlob';
 
 export interface Archive {
   id: number;
@@ -13,24 +15,6 @@ export interface Archive {
   originalSize: number;
   archiveSize: number;
   archivePath?: string;
-}
-
-export interface ArchiveDetails extends Archive {
-  adminEmail: string;
-  welcomeMessage?: string;
-  colorTheme?: string;
-  createdAt: string;
-  photos: Array<{
-    filename: string;
-    type: string;
-    size_bytes: number;
-    uploaded_at: string;
-  }>;
-  archiveFile?: {
-    size: number;
-    createdAt: string;
-    path: string;
-  };
 }
 
 export type ArchiveSortBy = 'date' | 'name' | 'size';
@@ -68,12 +52,6 @@ export const archiveService = {
     return response.data;
   },
 
-  // Get single archive details
-  async getArchiveDetails(id: number): Promise<ArchiveDetails> {
-    const response = await api.get<ArchiveDetails>(`/admin/archives/${id}`);
-    return response.data;
-  },
-
   // Restore archive
   async restoreArchive(id: number): Promise<void> {
     await api.post(`/admin/archives/${id}/restore`);
@@ -84,16 +62,7 @@ export const archiveService = {
     const response = await api.get(`/admin/archives/${id}/download`, {
       responseType: 'blob'
     });
-
-    // Create download link
-    const url = window.URL.createObjectURL(response.data);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    saveBlob(response.data, filename);
   },
 
   // Delete archive permanently
@@ -101,12 +70,5 @@ export const archiveService = {
     await api.delete(`/admin/archives/${id}`);
   },
 
-  // Format bytes to human readable
-  formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
+  formatBytes,
 };

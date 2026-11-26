@@ -1,4 +1,5 @@
 const { db } = require('../database/db');
+const { parseSettingValue } = require('../utils/appSettings');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { ensureThumbnail } = require('./imageProcessor');
@@ -19,8 +20,8 @@ const SOCIAL_CRAWLER_PATTERNS = [
   // WhatsApp's main app crawler is "WhatsApp/X.Y.Z"; the Business
   // API and some Cloud API senders use "WhatsAppBot" or "wa-bot/" —
   // detect both so API-driven sends get the rich preview too (#521).
+  // /WhatsApp/i also matches "WhatsAppBot".
   /WhatsApp/i,
-  /WhatsAppBot/i,
   /wa-bot/i,
   /Slackbot/i,
   /TelegramBot/i,
@@ -38,7 +39,6 @@ const SOCIAL_CRAWLER_PATTERNS = [
   /Mastodon/i,
   /Bluesky/i,
   /OpenGraph/i,
-  /opengraph/i,
   // Generic preview/scrape services commonly used in business
   // messaging stacks (Twilio, LinkPreview.net, etc.). Match the
   // canonical lowercase substring; the /i flag handles case.
@@ -73,16 +73,6 @@ function isSocialCrawler(userAgent) {
   return SOCIAL_CRAWLER_PATTERNS.some((re) => re.test(userAgent));
 }
 
-function parseSettingValue(value) {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'object') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
 async function fetchBranding() {
   const rows = await db('app_settings')
     .whereIn('setting_key', [
@@ -115,12 +105,9 @@ async function resolveSlug(slug) {
   let event = await db('events').where('slug', slug).first();
   if (event) return event;
   // Honour slug redirects so renamed galleries still get rich previews.
-  const hasRedirects = await db.schema.hasTable('slug_redirects');
-  if (hasRedirects) {
-    const redirect = await db('slug_redirects').where('old_slug', slug).first();
-    if (redirect) {
-      event = await db('events').where('slug', redirect.new_slug).first();
-    }
+  const redirect = await db('slug_redirects').where('old_slug', slug).first();
+  if (redirect) {
+    event = await db('events').where('slug', redirect.new_slug).first();
   }
   if (event) return event;
   // Fall back to share-token lookup (#699). Operators share both
@@ -159,10 +146,6 @@ function absoluteUrl(maybeRelative, base) {
   }
 }
 
-async function frontendBase() {
-  return getAbsoluteFrontendUrl();
-}
-
 // Render the event date for the OG preview card respecting the
 // admin-configured `general_date_format` (defaults to DD.MM.YYYY when
 // unset). Previously hardcoded en-US "May 20, 2026" which ignored the
@@ -189,7 +172,7 @@ async function buildOgMetadata(slug, requestPath) {
   const resolved = await resolveSlug(slug);
   const event = isGalleryAvailable(resolved) ? resolved : null;
   const branding = await fetchBranding();
-  const base = await frontendBase();
+  const base = await getAbsoluteFrontendUrl();
   const language = await previewLanguage();
   const siteName = branding.companyName || 'PicPeak';
   const logoUrl = absoluteUrl(branding.logoUrl, base) || `${base}/picpeak-logo-transparent.png`;

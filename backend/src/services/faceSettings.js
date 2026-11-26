@@ -17,10 +17,7 @@
  */
 
 const { db } = require('../database/db');
-const {
-  isFeatureEnabled: isFlagEnabled,
-  invalidateFeatureFlagCache,
-} = require('../middleware/requireFeatureFlag');
+const { isFeatureEnabled: isFlagEnabled } = require('../middleware/requireFeatureFlag');
 const logger = require('../utils/logger');
 
 // Canonical flag key. Must match the entry in adminFeatureFlags KNOWN_FLAGS
@@ -100,7 +97,7 @@ async function isFeatureEnabled() {
   try {
     return await isFlagEnabled(FLAG_KEY);
   } catch (e) {
-    // A missing table (pre-migration install) means off, not a crash.
+    // A failed flag read means off, not a crash.
     logger.debug?.('faceSettings: feature flag read failed', { error: e.message });
     return false;
   }
@@ -144,8 +141,12 @@ async function getThresholds() {
  */
 async function isEnabledForEvent(event) {
   if (!(await isFeatureEnabled())) return false;
-  if (!event) return false;
-  return event.face_recognition_enabled === true || event.face_recognition_enabled === 1;
+  return isSwitchedOnForEvent(event);
+}
+
+/** The gallery's own detection switch, without the global flag. */
+function isSwitchedOnForEvent(event) {
+  return !!event && (event.face_recognition_enabled === true || event.face_recognition_enabled === 1);
 }
 
 /**
@@ -178,11 +179,11 @@ module.exports = {
   FLAG_KEY,
   isSingleContainerImage,
   isFeatureEnabled,
-  invalidateFeatureFlagCache,
   getSidecarUrl,
   getSidecarToken,
   getThresholds,
   isEnabledForEvent,
+  isSwitchedOnForEvent,
   areFacesVisibleToGuests,
   isSelfieSearchEnabled,
 };

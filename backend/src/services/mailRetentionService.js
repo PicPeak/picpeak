@@ -348,7 +348,6 @@ const TOMBSTONE = { status: 'expired', mailbox_state: 'expired', from_address: n
 
 /** Called by the existing scheduler even while intake is disabled. */
 async function sweep({ now = new Date() } = {}) {
-  if (!(await db.schema.hasTable('mail_intake_state'))) return;
   const p = policy();
   const counts = { messages: 0, documents: 0, refusals: 0, files: 0 };
   const files = await locked(async trx => {

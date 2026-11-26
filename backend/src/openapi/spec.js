@@ -1,5 +1,5 @@
 /**
- * OpenAPI 3.1 spec for /api/v1/* (#322). Source of truth for the
+ * OpenAPI 3.0.3 spec for /api/v1/* (#322). Source of truth for the
  * picpeak-docs reference page. Built from JSDoc `@openapi` blocks
  * scattered through src/routes/v1 — those stay co-located with the
  * routes they describe so the spec can't drift in isolation.

@@ -28,10 +28,6 @@ jest.mock('../../database/db', () => {
   };
 });
 
-jest.mock('../../utils/schemaCache', () => ({
-  hasColumnCached: jest.fn().mockResolvedValue(true),
-}));
-
 jest.mock('../../middleware/auth', () => ({
   adminAuth: (_req, _res, next) => {
     _req.admin = { id: 1, username: 'admin' };

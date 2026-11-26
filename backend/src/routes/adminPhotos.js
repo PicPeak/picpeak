@@ -4,7 +4,6 @@ const path = require('path');
 const fs = require('fs').promises;
 const { db, logActivity } = require('../database/db');
 const { livePhotos } = require('../utils/photoVisibility');
-const { RECOVERABLE_PASSWORD_COLUMNS } = require('./adminEvents/helpers');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { ensureThumbnail } = require('../services/imageProcessor');
@@ -16,9 +15,9 @@ const {
   pickRawDownloadName,
 } = require('../services/downloadFilenameService');
 const { escapeLikePattern, likeWithEscape } = require('../utils/sqlSecurity');
-const { COLOR_LABELS, dominantColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
+const { dominantColorLabel } = require('../constants/colorLabels');
 const {
-  normalizeDecisionFilter, whereDecision, normalizeFavoriteListFilter, whereInFavoriteList,
+  normalizeColorLabels, normalizeFavoriteListFilter, whereInFavoriteList, feedbackConditions, combineConditions,
 } = require('../utils/photoFilterBuilder');
 const feedbackService = require('../services/feedbackService');
 const photoAdminMarksService = require('../services/photoAdminMarksService');
@@ -59,11 +58,16 @@ const uploadQuota = require('../services/publicUploadQuota');
 const logger = require('../utils/logger');
 const router = express.Router();
 
+// Is this row a video. Legacy video rows can carry media_type null/'image'
+// (issue 1739 review), so the mime type and the old `type` column count too.
+const isVideoRow = (photo) => photo.media_type === 'video'
+  || isVideoMimeType(photo.mime_type) || photo.type === 'video';
+
+// The acting admin, for logActivity and the photo trash.
+const adminActor = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
+
 // Filename order for the photo list: digit runs compare as numbers.
 const NATURAL_NAME_ORDER = new Intl.Collator('en', { numeric: true });
-
-// Get storage path from environment or default
-const { getStoragePath } = require('../config/storage');
 
 // Category ids are resolved within one event's scope (#500 / #525); shared
 // with the gallery upload route.
@@ -82,6 +86,89 @@ async function folderIdUpdate(eventId, raw) {
   const folder = await require('../services/folderTreeService').findEventFolder(eventId, id);
   if (!folder) return { error: `Unknown folder_id ${id}` };
   return { folder_id: id };
+}
+
+/**
+ * A `category_id` sent to PATCH or bulk-update (anything but undefined) as a
+ * photo column patch, or `{ errorBody }` for a 400.
+ *
+ * 'individual' / 'collage' are the legacy type-based categories: they set
+ * photos.type and clear category_id. null clears the category. 0 and
+ * negatives mean "no category", not category zero: photo_categories.id is an
+ * increments() column so it starts at 1, and a <select> whose "none" option
+ * carries value="0" is exactly how '0' reaches these routes. Storing 0 left
+ * the photo in a black hole — the grid's category filters never match it,
+ * and the "uncategorized" filter is whereNull() so it misses it too. NaN
+ * (unparseable input) clears it too.
+ */
+async function categoryAssignmentUpdate(eventId, categoryId) {
+  if (categoryId === 'individual' || categoryId === 'collage') {
+    return { patch: { type: categoryId, category_id: null } };
+  }
+  if (categoryId === null) return { patch: { category_id: null } };
+  const numericCategoryId = parseInt(categoryId, 10);
+  if (!(numericCategoryId > 0)) return { patch: { category_id: null } };
+  // Same scope check the upload route runs: without it any positive id was
+  // accepted, so a photo could be moved into another event's category (the
+  // grid then never shows it under any filter).
+  const assignment = await resolveCategoryAssignment(eventId, numericCategoryId);
+  if (!assignment) return { errorBody: outOfScopeCategoryError(numericCategoryId) };
+  // A folder sent as category_id (pre-migration-265 client) moves the photo
+  // into that folder and leaves its filter category alone.
+  if (assignment.folder_id) return { patch: { folder_id: assignment.folder_id } };
+  return { patch: { category_id: numericCategoryId } };
+}
+
+/**
+ * Whether a photo update changes which photos belong in the guest download
+ * bundle (visibility, category, folder, legacy type): the cached ZIP is then
+ * dropped so it rebuilds fresh, otherwise a hide→unhide cycle can leave the
+ * stale cache omitting photos added in between (codex review).
+ */
+function changesDownloadBundle(updateData) {
+  return updateData.visibility !== undefined
+    || Object.prototype.hasOwnProperty.call(updateData, 'category_id')
+    || Object.prototype.hasOwnProperty.call(updateData, 'folder_id')
+    || Object.prototype.hasOwnProperty.call(updateData, 'type');
+}
+
+/**
+ * Webhook (#327): one photo.deleted per photo that left the gallery (single
+ * delete, bulk delete, duplicates resolve), trashed or deleted outright.
+ * Non-fatal: a failing hook stops the remaining ones but never the delete.
+ */
+async function firePhotoDeleted(eventId, event, photos) {
+  try {
+    const webhookService = require('../services/webhookService');
+    for (const photo of photos) {
+      await webhookService.fire('photo.deleted', {
+        event: { id: eventId, slug: event?.slug, event_name: event?.event_name },
+        photo: { id: photo.id, filename: photo.filename },
+      });
+    }
+  } catch (e) { /* non-fatal */ }
+}
+
+/**
+ * Serve one stored file: stat it (404 `{ error: notFound }` when it is gone),
+ * open it, let the route stage its own headers (Content-Type, Cache-Control,
+ * Content-Length, …) from the stat, and pipe it. `headOnly` answers a HEAD
+ * from the stat without opening the object.
+ *
+ * Opened before the headers (issue 2129): a file removed since the stat makes
+ * S3's get() reject (the route's answerVanished turns that into a 404), and
+ * the lazy local stream fails in pipeStreamToResponse, both as a 404.
+ */
+async function serveStoredFile(res, storage, key, { notFound, context, stageHeaders, headOnly = false }) {
+  const stat = await storage.stat(key);
+  if (!stat) return res.status(404).json({ error: notFound });
+  if (headOnly) {
+    stageHeaders(stat);
+    return res.end();
+  }
+  const stream = await storage.get(key);
+  stageHeaders(stat);
+  pipeStreamToResponse(stream, res, { context });
 }
 const { photoCapOf, countEventPhotos, insertPhotoWithinCap, photoCapError } = require('../services/photoCap');
 const { claimPromotion } = require('../services/watchFolderClaims');
@@ -182,13 +269,6 @@ const validateUploadContent = async (req, res, next) => {
 // Both mounted admin aliases share this raw-body and persistent admission.
 router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), requireEventOwnership, resolveAllowedTypes, requireCapability('uploads.new'), async (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!/^\d+$/.test(req.params.eventId) || !Number.isSafeInteger(eventId) || eventId < 1) {
-    if (!req.readableEnded) res.set('Connection', 'close');
-    return res.status(404).json({ error: 'Event not found' });
-  }
-  // SQLite accepts exponential numeric strings in a lookup, while parseInt
-  // interprets them differently. Every downstream consumer must use one id.
-  req.params.eventId = String(eventId);
   let maxFilesPerUpload;
   try {
     [maxFilesPerUpload, req.maxFileSizeBytes, req.maxVideoSizeBytes] = await Promise.all([
@@ -262,12 +342,9 @@ async function handleAdminPhotoUpload(req, res) {
     if (uploadColumns.moderation_status) replaceByName = false;
 
     // Enforce photo cap if set (replacements don't count as new)
-    if (event.photo_cap && event.photo_cap > 0) {
-      const existingPhotoCount = await livePhotos(db)
-        .where({ event_id: eventId })
-        .count('id as count')
-        .first();
-      const currentCount = parseInt(existingPhotoCount.count) || 0;
+    const photoCap = photoCapOf(event);
+    if (photoCap) {
+      const currentCount = await countEventPhotos(eventId);
       let newFilesCount = (req.files && req.files.length) || 0;
       // Subtract likely replacements from cap calculation, and with
       // detect_duplicates the files that will be skipped as duplicates: of
@@ -294,9 +371,9 @@ async function handleAdminPhotoUpload(req, res) {
           seenHashes.add(file.contentSha256);
         }
       }
-      if (currentCount + newFilesCount > event.photo_cap) {
+      if (currentCount + newFilesCount > photoCap) {
         return res.status(400).json({
-          error: `Photo cap exceeded. This event allows a maximum of ${event.photo_cap} photos. Currently ${currentCount} photos exist, and you are trying to upload ${newFilesCount} more.`
+          error: `Photo cap exceeded. This event allows a maximum of ${photoCap} photos. Currently ${currentCount} photos exist, and you are trying to upload ${newFilesCount} more.`
         });
       }
     }
@@ -341,7 +418,7 @@ async function handleAdminPhotoUpload(req, res) {
     if (placementError) {
       return res.status(400).json(placementError);
     }
-    if (parsedCategoryId && !isNaN(parsedCategoryId)) {
+    if (parsedCategoryId) {
       const category = resolvedCategory;
       categoryName = category.slug || category.name.toLowerCase().replace(/\s+/g, '_');
       // Use category slug for type determination
@@ -575,39 +652,38 @@ async function handleAdminPhotoUpload(req, res) {
           eventName: event.event_name,
         },
         eventId,
-        { type: 'admin', id: req.admin.id, name: req.admin.username }
+        adminActor(req)
       );
     }
 
     await afterUploadPlacement(eventId, placement, uploadedPhotos.length,
-      { type: 'admin', id: req.admin.id, name: req.admin.username });
+      adminActor(req));
 
     // Log individual replacements for audit trail
     for (const rp of replacedPhotos) {
       await logActivity('photo_replaced',
         { photoId: rp.id, originalFilename: rp.original_filename, previousFilename: rp.previous_filename, eventName: event.event_name },
         eventId,
-        { type: 'admin', id: req.admin.id, name: req.admin.username }
+        adminActor(req)
       );
     }
 
     // Include any files that were invalid from the validation middleware
     const totalInvalidFiles = (req.invalidFiles || []).concat(errors);
 
-    // Prepare response. The new fields (upload_id, count, photo_ids)
-    // are what the new frontend uses to poll for processing status; the
-    // existing fields (successCount, replacedCount, ...) are kept for
-    // back-compat with older clients that haven't upgraded yet.
+    // Prepare response. upload_id, count and photo_ids let the uploader poll
+    // for processing status; the remaining fields summarise the request
+    // (the uploader reads replacedCount, errors and duplicates).
     const totalAttempted = req.files.length + (req.invalidFiles ? req.invalidFiles.length : 0);
     const uploadMsg = uploadedPhotos.length > 0 ? `${uploadedPhotos.length} queued` : '';
     const replaceMsg = replacedPhotos.length > 0 ? `${replacedPhotos.length} replaced` : '';
     const parts = [uploadMsg, replaceMsg].filter(Boolean).join(', ');
     const response = {
-      // New async-processing fields
+      // Processing status
       upload_id: uploadId,
       count: uploadedPhotos.length,
       photo_ids: uploadedPhotos.map((p) => p.id),
-      // Existing back-compat fields
+      // Request summary
       message: parts ? `Successfully ${parts}` : 'No photos processed',
       photos: uploadedPhotos,
       replaced: replacedPhotos,
@@ -852,18 +928,12 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     await logActivity('photo_deleted',
       { filename: photo.filename, eventName: event.event_name, trashed },
       eventId,
-      { type: 'admin', id: req.admin.id, name: req.admin.username }
+      adminActor(req)
     );
 
     // Webhook (#327): single-photo delete. It fires here, when the photo
     // leaves the gallery, and not again when the trash is purged.
-    try {
-      const webhookService = require('../services/webhookService');
-      await webhookService.fire('photo.deleted', {
-        event: { id: parseInt(eventId, 10), slug: event?.slug, event_name: event?.event_name },
-        photo: { id: parseInt(photoId, 10), filename: photo.filename },
-      });
-    } catch (e) { /* non-fatal */ }
+    await firePhotoDeleted(parseInt(eventId, 10), event, [{ id: parseInt(photoId, 10), filename: photo.filename }]);
 
     downloadZipService.invalidate(parseInt(eventId));
     res.json({
@@ -906,10 +976,10 @@ router.put('/:eventId/photos/:photoId/mark', adminAuth, requirePermission('photo
 
     const mark = {};
     if (Object.prototype.hasOwnProperty.call(req.body, 'rating')) {
-      mark.rating = req.body.rating === null ? null : req.body.rating;
+      mark.rating = req.body.rating;
     }
     if (Object.prototype.hasOwnProperty.call(req.body, 'color_label')) {
-      mark.colorLabel = req.body.color_label === null ? null : req.body.color_label;
+      mark.colorLabel = req.body.color_label;
     }
     if (Object.keys(mark).length === 0) {
       return res.status(400).json({ error: 'Send rating and/or color_label' });
@@ -1009,41 +1079,15 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
       }
     }
 
-    // Handle type-based categories ('individual' or 'collage')
-    // These are string values that map to the photo.type field
-    if (category_id === 'individual' || category_id === 'collage') {
-      updateData.type = category_id;
-      updateData.category_id = null; // Clear legacy category_id
-    } else if (category_id === undefined && Object.prototype.hasOwnProperty.call(req.body, 'folder_id')) {
+    if (category_id === undefined && Object.prototype.hasOwnProperty.call(req.body, 'folder_id')) {
       // A folder move alone (issue 1786) leaves the filter category alone.
-    } else if (category_id === null || category_id === undefined) {
-      // Explicitly clear category
+    } else if (category_id === undefined) {
+      // No category sent: PATCH clears it (bulk-update leaves it).
       updateData.category_id = null;
     } else {
-      // Handle numeric category IDs from photo_categories table.
-      // 0 and negatives mean "no category", not category zero: photo_categories.id
-      // is an increments() column so it starts at 1, and a <select> whose "none"
-      // option carries value="0" is exactly how '0' reaches this route. Storing 0
-      // left the photo in a black hole — the grid's category filters never match
-      // it, and the "uncategorized" filter is whereNull() so it misses it too,
-      // while the list mapper renders it as uncategorized because 0 is falsy.
-      // NaN (unparseable input) already fell through to null and still does.
-      const numericCategoryId = parseInt(category_id, 10);
-      if (numericCategoryId > 0) {
-        // Same scope check the upload route runs: without it any positive id
-        // was accepted, so a photo could be moved into another event's
-        // category (the grid then never shows it under any filter).
-        const assignment = await resolveCategoryAssignment(parseInt(eventId, 10), numericCategoryId);
-        if (!assignment) {
-          return res.status(400).json(outOfScopeCategoryError(numericCategoryId));
-        }
-        // A folder sent as category_id (pre-migration-265 client) moves the
-        // photo into that folder and leaves its filter category alone.
-        if (assignment.folder_id) updateData.folder_id = assignment.folder_id;
-        else updateData.category_id = numericCategoryId;
-      } else {
-        updateData.category_id = null;
-      }
+      const assignment = await categoryAssignmentUpdate(parseInt(eventId, 10), category_id);
+      if (assignment.errorBody) return res.status(400).json(assignment.errorBody);
+      Object.assign(updateData, assignment.patch);
     }
 
     // Folder (issue 1786): null/0 = gallery root.
@@ -1069,10 +1113,7 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
     // guest download bundle — drop the cached ZIP so it rebuilds fresh,
     // otherwise a hide→unhide cycle can leave the stale cache omitting
     // photos added in between (codex review).
-    if (updateData.visibility !== undefined
-        || Object.prototype.hasOwnProperty.call(updateData, 'category_id')
-        || Object.prototype.hasOwnProperty.call(updateData, 'folder_id')
-        || Object.prototype.hasOwnProperty.call(updateData, 'type')) {
+    if (changesDownloadBundle(updateData)) {
       downloadZipService.invalidate(parseInt(eventId, 10));
     }
 
@@ -1134,21 +1175,13 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
 
     // Webhook (#327): one photo.deleted per row in the bulk batch, trashed
     // or deleted outright.
-    try {
-      const webhookService = require('../services/webhookService');
-      for (const photo of gone) {
-        await webhookService.fire('photo.deleted', {
-          event: { id: parseInt(eventId, 10), slug: event?.slug, event_name: event?.event_name },
-          photo: { id: photo.id, filename: photo.filename },
-        });
-      }
-    } catch (e) { /* non-fatal */ }
+    await firePhotoDeleted(parseInt(eventId, 10), event, gone);
 
     // Log activity
     await logActivity('photos_bulk_deleted',
       { count: gone.length, eventName: event.event_name, trashed: trashed ? gone.length : 0 },
       eventId,
-      { type: 'admin', id: req.admin.id, name: req.admin.username }
+      adminActor(req)
     );
     
     downloadZipService.invalidate(parseInt(eventId));
@@ -1196,30 +1229,9 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
     }
 
     if (updates.category_id !== undefined) {
-      // Handle type-based categories ('individual' or 'collage')
-      // These are string values that map to the photo.type field
-      if (updates.category_id === 'individual' || updates.category_id === 'collage') {
-        updateData.type = updates.category_id;
-        updateData.category_id = null; // Clear legacy category_id
-      } else if (updates.category_id === null) {
-        // Explicitly clear category
-        updateData.category_id = null;
-      } else {
-        // Handle numeric category IDs from photo_categories table
-        // (0/negative mean "no category" — see the PATCH route above)
-        const numericCategoryId = parseInt(updates.category_id, 10);
-        if (numericCategoryId > 0) {
-          // Scope check, as on the PATCH and upload routes above.
-          const assignment = await resolveCategoryAssignment(parseInt(eventId, 10), numericCategoryId);
-          if (!assignment) {
-            return res.status(400).json(outOfScopeCategoryError(numericCategoryId));
-          }
-          if (assignment.folder_id) updateData.folder_id = assignment.folder_id;
-          else updateData.category_id = numericCategoryId;
-        } else {
-          updateData.category_id = null;
-        }
-      }
+      const assignment = await categoryAssignmentUpdate(parseInt(eventId, 10), updates.category_id);
+      if (assignment.errorBody) return res.status(400).json(assignment.errorBody);
+      Object.assign(updateData, assignment.patch);
 
       // A human just set (or cleared) this category, so it is no longer an
       // automatic assignment (#1074 phase 3). Without resetting the flag,
@@ -1279,10 +1291,7 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
 
     // Visibility/category changes alter the guest download bundle — drop the
     // cached ZIP so it rebuilds fresh (codex review).
-    if (updateData.visibility !== undefined
-        || Object.prototype.hasOwnProperty.call(updateData, 'category_id')
-        || Object.prototype.hasOwnProperty.call(updateData, 'folder_id')
-        || Object.prototype.hasOwnProperty.call(updateData, 'type')) {
+    if (changesDownloadBundle(updateData)) {
       downloadZipService.invalidate(parseInt(eventId, 10));
     }
 
@@ -1295,7 +1304,6 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
 // The gallery's trash (issue 1733): photos an admin deleted, restorable until
 // their retention runs out. Same permission and gallery scope as deleting.
 const MAX_TRASH_IDS = 500;
-const trashActor = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
 
 router.get('/:eventId/photos/trash', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
   try {
@@ -1315,16 +1323,19 @@ router.get('/:eventId/photos/trash/:photoId/thumbnail', adminAuth, requirePermis
   try {
     const photoId = parseInt(req.params.photoId, 10);
     const photo = Number.isInteger(photoId) ? await photoTrash.findTrashed(req.params.eventId, photoId) : null;
-    const stat = photo?.thumbnail_path ? await getStorage().stat(photo.thumbnail_path) : null;
-    if (!stat) return res.status(404).json({ error: 'Thumbnail not found' });
+    if (!photo?.thumbnail_path) return res.status(404).json({ error: 'Thumbnail not found' });
     // A purge can remove the file between the stat and the read (issue
     // 2129): S3's get() then rejects, before any header is staged.
-    const stream = await getStorage().get(photo.thumbnail_path);
-    res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Cache-Control', 'private, no-store');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.setHeader('Content-Length', stat.size);
-    pipeStreamToResponse(stream, res, { context: 'trashed photo thumbnail' });
+    await serveStoredFile(res, getStorage(), photo.thumbnail_path, {
+      notFound: 'Thumbnail not found',
+      context: 'trashed photo thumbnail',
+      stageHeaders: (stat) => {
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.setHeader('Content-Length', stat.size);
+      },
+    });
   } catch (error) {
     if (answerVanished(res, error, 'Thumbnail not found')) return;
     errorResponse(res, error, 500, 'Failed to serve thumbnail');
@@ -1365,7 +1376,7 @@ router.post('/:eventId/photos/trash/restore', adminAuth, requirePermission('phot
       downloadZipService.invalidate(event.id);
       await logActivity('photos_restored',
         { count: restored.length, photoIds: restored, eventName: event.event_name },
-        event.id, trashActor(req));
+        event.id, adminActor(req));
     }
     res.status(restored.length > 0 ? 200 : 409).json({
       restored: restored.length,
@@ -1402,7 +1413,7 @@ router.post('/:eventId/photos/trash/purge', adminAuth, requirePermission('photos
     }
 
     if (purged > 0) {
-      await logActivity('photos_trash_purged', { count: purged, eventName: event.event_name }, event.id, trashActor(req));
+      await logActivity('photos_trash_purged', { count: purged, eventName: event.event_name }, event.id, adminActor(req));
     }
     res.status(purged > 0 || failed.length === 0 ? 200 : 500).json({ purged, failed });
   } catch (error) {
@@ -1528,23 +1539,14 @@ router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission(
       }
       return trashed;
     });
-    const failedIds = [];
 
     // As the bulk delete: one photo.deleted per photo, one activity entry.
-    try {
-      const webhookService = require('../services/webhookService');
-      for (const photo of gone) {
-        await webhookService.fire('photo.deleted', {
-          event: { id: eventId, slug: event.slug, event_name: event.event_name },
-          photo: { id: photo.id, filename: photo.filename },
-        });
-      }
-    } catch (e) { /* non-fatal */ }
+    await firePhotoDeleted(eventId, event, gone);
     if (gone.length > 0) {
       await logActivity('photos_bulk_deleted',
         { count: gone.length, eventName: event.event_name, trashed: gone.length, duplicates: true },
         eventId,
-        { type: 'admin', id: req.admin.id, name: req.admin.username }
+        adminActor(req)
       );
       downloadZipService.invalidate(eventId);
     }
@@ -1552,7 +1554,7 @@ router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission(
     res.json({
       trashed: gone.length,
       photo_ids: gone.map((photo) => photo.id),
-      failed: failedIds,
+      failed: [],
       retention_days: retentionDays,
     });
   } catch (error) {
@@ -1605,7 +1607,7 @@ router.post('/:eventId/photos/moderation', adminAuth, requirePermission(['photos
       await logActivity(action === 'approve' ? 'photos_review_approved' : 'photos_review_rejected',
         { count: updated, photoIds: moved, eventName: event.event_name },
         event.id,
-        { type: 'admin', id: req.admin.id, name: req.admin.username }
+        adminActor(req)
       );
     }
 
@@ -1659,7 +1661,7 @@ router.put('/:eventId/photos/:photoId/credit', adminAuth, requirePermission('pho
     }
     await logActivity('photo_credit_updated', {
       photo_id: Number(photoId), cleared: creditFields.credit_name === null,
-    }, parseInt(eventId, 10), { type: 'admin', id: req.admin.id, name: req.admin.username });
+    }, parseInt(eventId, 10), adminActor(req));
     res.json({ credit_name: creditFields.credit_name, credit_source: creditFields.credit_source });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to update photo credit');
@@ -1677,7 +1679,7 @@ async function posterVideo(req, res) {
     res.status(404).json({ error: 'Photo not found' });
     return null;
   }
-  if (!(photo.media_type === 'video' || isVideoMimeType(photo.mime_type) || photo.type === 'video')) {
+  if (!isVideoRow(photo)) {
     res.status(400).json({ error: 'Only a video has a preview image to choose' });
     return null;
   }
@@ -1766,7 +1768,7 @@ router.put('/:eventId/photos/:photoId/poster', adminAuth, requirePermission('pho
     // with posterOffsetSeconds), unless another row still names it.
     await logActivity('photo_poster_updated', {
       photo_id: photo.id, offset_seconds: offset,
-    }, photo.event_id, { type: 'admin', id: req.admin.id, name: req.admin.username });
+    }, photo.event_id, adminActor(req));
     const updated = await livePhotos(db).where(fence).first();
     res.json({
       poster_offset_seconds: offset,
@@ -1800,7 +1802,7 @@ router.post('/:eventId/photos/focal-points/redetect', adminAuth, requirePermissi
       .where(function () { this.whereNull('focal_source').orWhereNot('focal_source', 'manual'); })
       .where(function () { this.whereNull('media_type').orWhereNot('media_type', 'video'); })
       .update({ focal_checked: 0 });
-    await logActivity('photo_focal_points_redetect', { queued }, event.id, { type: 'admin', id: req.admin.id, name: req.admin.username });
+    await logActivity('photo_focal_points_redetect', { queued }, event.id, adminActor(req));
     require('../services/focalPointBackfill').requestPass();
     res.json({ queued });
   } catch (error) {
@@ -1821,7 +1823,7 @@ router.put('/:eventId/photos/:photoId/focal-point', adminAuth, requirePermission
     if (!photo) {
       return res.status(404).json({ error: 'Photo not found' });
     }
-    if (photo.media_type === 'video' || isVideoMimeType(photo.mime_type) || photo.type === 'video') {
+    if (isVideoRow(photo)) {
       return res.status(400).json({ error: 'A video has no focal point to set' });
     }
     if (photo.processing_status === 'pending' || photo.processing_status === 'processing') {
@@ -1839,7 +1841,7 @@ router.put('/:eventId/photos/:photoId/focal-point', adminAuth, requirePermission
     }
     await logActivity('photo_focal_point_updated', {
       photo_id: photo.id, reset: point === null,
-    }, photo.event_id, { type: 'admin', id: req.admin.id, name: req.admin.username });
+    }, photo.event_id, adminActor(req));
     const updated = await livePhotos(db).where({ id: photo.id }).first();
     res.json({
       focal_point: focalPointOf(updated),
@@ -1877,31 +1879,19 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
     const contentDisposition = buildContentDisposition(downloadName);
 
     if (storageKey) {
-      const stat = await storage.stat(storageKey);
-      if (!stat) {
-        return res.status(404).json({ error: 'Photo file not found' });
-      }
       // HEAD (issue 2304): the app probes before a direct video download, so
       // a refusal or a missing file shows in the app. Answered from the stat,
       // without opening the object.
-      if (req.method === 'HEAD') {
-        res.set({
+      await serveStoredFile(res, storage, storageKey, {
+        notFound: 'Photo file not found',
+        context: `download of photo ${photo.id}`,
+        headOnly: req.method === 'HEAD',
+        stageHeaders: (stat) => res.set({
           'Content-Type': resolvePhotoContentType(photo),
           'Content-Length': stat.size,
           'Content-Disposition': contentDisposition,
-        });
-        return res.end();
-      }
-      // Opened before the headers (issue 2129): a file removed since the
-      // stat makes S3's get() reject here, and the lazy local stream fails
-      // in pipeStreamToResponse, both as a 404.
-      const stream = await storage.get(storageKey);
-      res.set({
-        'Content-Type': resolvePhotoContentType(photo),
-        'Content-Length': stat.size,
-        'Content-Disposition': contentDisposition,
+        }),
       });
-      pipeStreamToResponse(stream, res, { context: `download of photo ${photo.id}` });
       return;
     }
 
@@ -2053,94 +2043,31 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
     const favoriteList = normalizeFavoriteListFilter(req.query);
     if (favoriteList) whereInFavoriteList(query, Number(eventId), favoriteList);
 
-    // Feedback filters (has likes / favorites / comments / min rating) with AND/OR logic
-    const feedbackConditions = [];
-    if (has_likes === 'true' || has_likes === true) {
-      feedbackConditions.push(qb => qb.where('photos.like_count', '>', 0));
-    }
-    if (has_favorites === 'true' || has_favorites === true) {
-      feedbackConditions.push(qb => qb.where('photos.favorite_count', '>', 0));
-    }
-    if (has_comments === 'true' || has_comments === true) {
-      feedbackConditions.push(qb => qb.where('photos.comment_count', '>', 0));
-    }
-    if (min_rating !== undefined && min_rating !== null && min_rating !== '') {
-      const minRatingNum = parseFloat(min_rating);
-      if (!isNaN(minRatingNum)) {
-        feedbackConditions.push(qb => qb.where('photos.average_rating', '>=', minRatingNum));
-      }
-    }
-    // Colour-label filter (#1044). Comma-separated colours; unknown values are
-    // dropped rather than passed to the query. Unlike its siblings this can't
-    // read a denormalized count column — "any label" and "a GREEN label" are
-    // different questions — so it runs as an EXISTS over photo_feedback,
-    // which the migration-180 index covers.
-    const requestedColorLabels = String(color_label || '')
-      .split(',')
-      .map(value => value.trim().toLowerCase())
-      .filter(value => COLOR_LABELS.includes(value));
-    if (requestedColorLabels.length > 0) {
-      // Only the colour-label set the event's mode actually uses (#1197).
-      // Switching identity_mode leaves the other set in place, and a filter
-      // that matched it would return photos whose badge shows no such colour.
-      const { identity_mode: identityMode } =
-        await feedbackService.getEventFeedbackSettings(eventId);
-      feedbackConditions.push(qb => qb.whereExists(function () {
-        this.select('*')
-          .from('photo_feedback')
-          .whereRaw('photo_feedback.photo_id = photos.id')
-          .where('photo_feedback.feedback_type', 'color_label')
-          .where('photo_feedback.is_hidden', false)
-          .whereIn('photo_feedback.color_label', requestedColorLabels);
-        if (identityMode === 'shared') {
-          this.where('photo_feedback.guest_identifier', SHARED_COLOR_LABEL_IDENTITY);
-        } else {
-          this.where(function () {
-            this.whereNot('photo_feedback.guest_identifier', SHARED_COLOR_LABEL_IDENTITY)
-              .orWhereNull('photo_feedback.guest_identifier');
-          });
-        }
-      }));
-    }
-    // The same filter against the caller's OWN marks (#1044 follow-up).
-    // Scoped to req.admin.id: one photographer's triage must not filter by
-    // another's, even on a shared event.
-    const requestedMyColorLabels = String(req.query.my_color_label || '')
-      .split(',')
-      .map(value => value.trim().toLowerCase())
-      .filter(value => COLOR_LABELS.includes(value));
-    if (requestedMyColorLabels.length > 0) {
-      feedbackConditions.push(qb => qb.whereExists(function () {
-        this.select('*')
-          .from('photo_admin_marks')
-          .whereRaw('photo_admin_marks.photo_id = photos.id')
-          .where('photo_admin_marks.admin_id', req.admin.id)
-          .whereIn('photo_admin_marks.color_label', requestedMyColorLabels);
-      }));
-    }
-    // Approve / reject (issue 744): approved, rejected and/or undecided,
-    // comma-separated — the same condition the export filter applies.
-    const requestedDecisions = normalizeDecisionFilter(req.query.decision);
-    if (requestedDecisions.length > 0) {
-      feedbackConditions.push(qb => whereDecision(qb, requestedDecisions));
-    }
-    if (feedbackConditions.length > 0) {
-      if (logic === 'OR') {
-        query = query.where(builder => {
-          feedbackConditions.forEach((cond, idx) => {
-            if (idx === 0) {
-              cond(builder);
-            } else {
-              builder.orWhere(sub => cond(sub));
-            }
-          });
-        });
-      } else {
-        feedbackConditions.forEach(cond => {
-          query = query.where(builder => cond(builder));
-        });
-      }
-    }
+    // Feedback filters with AND/OR logic: the conditions the export filter
+    // applies (feedbackConditions in utils/photoFilterBuilder). Only those:
+    // the category above is always ANDed. This route's query names differ
+    // (color_label, my_color_label, decision), min_rating is parsed so a
+    // non-number is ignored, and the own-marks filter is scoped to
+    // req.admin.id: one photographer's triage must not filter by another's.
+    const minRatingNum = min_rating !== undefined && min_rating !== null && min_rating !== ''
+      ? parseFloat(min_rating)
+      : NaN;
+    const requestedColorLabels = normalizeColorLabels(String(color_label || ''));
+    // Only the colour-label set the event's mode actually uses (#1197),
+    // looked up only when a colour is asked for.
+    const identityMode = requestedColorLabels.length > 0
+      ? (await feedbackService.getEventFeedbackSettings(eventId)).identity_mode
+      : undefined;
+    combineConditions(query, feedbackConditions({
+      has_likes,
+      has_favorites,
+      has_comments,
+      min_rating: isNaN(minRatingNum) ? undefined : minRatingNum,
+      color_labels: requestedColorLabels,
+      my_color_labels: String(req.query.my_color_label || ''),
+      decisions: req.query.decision,
+      admin_id: req.admin.id,
+    }, identityMode), logic);
 
     // Sorting. Every branch ends on photos.id: a bulk import writes hundreds
     // of rows inside the same second, and without a tiebreaker the order
@@ -2208,10 +2135,6 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       photos.map(p => p.id),
     );
     
-    // Legacy video rows can carry media_type null/'image' (issue 1739 review).
-    const isVideoRow = (photo) => photo.media_type === 'video'
-      || isVideoMimeType(photo.mime_type) || photo.type === 'video';
-
     res.json({
       photos: photos.map(photo => ({
         id: photo.id,
@@ -2369,18 +2292,14 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     };
 
     if (storageKey) {
-      const storage = getStorage();
-      const stat = await storage.stat(storageKey);
-      if (!stat) {
-        return res.status(404).json({ error: 'Photo file not found' });
-      }
-      // Opened before the headers (issue 2129): a file removed since the
-      // stat makes S3's get() reject here, and the lazy local stream fails
-      // in pipeStreamToResponse, both as a 404.
-      const stream = await storage.get(storageKey);
-      stageFileHeaders();
-      res.setHeader('Content-Length', stat.size);
-      pipeStreamToResponse(stream, res, { context: `photo ${photo.id}` });
+      await serveStoredFile(res, getStorage(), storageKey, {
+        notFound: 'Photo file not found',
+        context: `photo ${photo.id}`,
+        stageHeaders: (stat) => {
+          stageFileHeaders();
+          res.setHeader('Content-Length', stat.size);
+        },
+      });
       return;
     }
 
@@ -2437,24 +2356,23 @@ router.get('/:eventId/thumbnail/:photoId', adminAuth, requirePermission('photos.
       return res.status(404).json({ error: 'Thumbnail generation failed' });
     }
 
-    const storage = getStorage();
-    const stat = await storage.stat(thumbnailPath);
-    if (!stat) {
-      return res.status(404).json({ error: 'Thumbnail not found' });
-    }
-    // Opened before the headers: a thumbnail removed since the stat, by a
-    // regeneration (issue 2129), makes S3's get() reject here, and the lazy
-    // local stream fails in pipeStreamToResponse, both as a 404.
-    const stream = await storage.get(thumbnailPath);
-    res.setHeader('Content-Type', 'image/jpeg'); // Thumbnails are always JPEG
-    // A URL naming another version than the row's (a tab with an older list)
-    // gets the current image uncached: cached under that URL it would show
-    // when the version comes back, say on picking the earlier frame again.
-    const versionAsked = typeof req.query.v === 'string' ? req.query.v : '';
-    res.setHeader('Cache-Control', versionAsked === adminThumbnailVersion(photo) ? 'private, max-age=3600' : 'no-store');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.setHeader('Content-Length', stat.size);
-    pipeStreamToResponse(stream, res, { context: `admin thumbnail for photo ${photoId}` });
+    // A thumbnail removed since the stat by a regeneration (issue 2129) is a
+    // 404 too, see serveStoredFile.
+    await serveStoredFile(res, getStorage(), thumbnailPath, {
+      notFound: 'Thumbnail not found',
+      context: `admin thumbnail for photo ${photoId}`,
+      stageHeaders: (stat) => {
+        res.setHeader('Content-Type', 'image/jpeg'); // Thumbnails are always JPEG
+        // A URL naming another version than the row's (a tab with an older
+        // list) gets the current image uncached: cached under that URL it
+        // would show when the version comes back, say on picking the earlier
+        // frame again.
+        const versionAsked = typeof req.query.v === 'string' ? req.query.v : '';
+        res.setHeader('Cache-Control', versionAsked === adminThumbnailVersion(photo) ? 'private, max-age=3600' : 'no-store');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.setHeader('Content-Length', stat.size);
+      },
+    });
   } catch (error) {
     if (answerVanished(res, error, 'Thumbnail not found')) return;
     logger.error('Error serving thumbnail:', error);
@@ -2492,7 +2410,7 @@ router.get('/:eventId/preview/:photoId', adminAuth, requirePermission('photos.vi
     // frame the thumbnail route serves, under the same version the admin
     // lists name it by. Never the generator, which would fetch the whole
     // clip from remote storage only for Sharp to fail on it.
-    if (photo.media_type === 'video' || isVideoMimeType(photo.mime_type) || photo.type === 'video') {
+    if (isVideoRow(photo)) {
       const version = adminThumbnailVersion(photo);
       return res.redirect(`${req.baseUrl}/${eventId}/thumbnail/${photo.id}${version ? `?v=${version}` : ''}`);
     }
@@ -2509,50 +2427,20 @@ router.get('/:eventId/preview/:photoId', adminAuth, requirePermission('photos.vi
       return res.status(404).json({ error: 'Preview generation failed' });
     }
 
-    const storage = getStorage();
-    const stat = await storage.stat(previewPath);
-    if (!stat) return res.status(404).json({ error: 'Preview not found' });
-    // Opened before the headers: a preview removed since the stat (issue
-    // 2129) makes S3's get() reject here, and the lazy local stream fails
-    // in pipeStreamToResponse, both as a 404.
-    const stream = await storage.get(previewPath);
-
-    res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Cache-Control', 'private, max-age=3600');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.setHeader('Content-Length', stat.size);
-    pipeStreamToResponse(stream, res, { context: `admin preview for photo ${photoId}` });
+    await serveStoredFile(res, getStorage(), previewPath, {
+      notFound: 'Preview not found',
+      context: `admin preview for photo ${photoId}`,
+      stageHeaders: (stat) => {
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'private, max-age=3600');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.setHeader('Content-Length', stat.size);
+      },
+    });
   } catch (error) {
     if (answerVanished(res, error, 'Preview not found')) return;
     logger.error('Error serving admin preview:', error);
     errorResponse(res, error, 500, 'Failed to serve preview');
-  }
-});
-
-// Debug endpoint to check photo existence
-router.get('/:eventId/debug', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
-  try {
-    const { eventId } = req.params;
-    
-    const eventRow = await db('events').where({ id: eventId }).first();
-    const photoCount = await livePhotos(db).where({ event_id: eventId }).count('id as count').first();
-    const photos = await livePhotos(db).where({ event_id: eventId }).limit(5);
-    // Never hand out the hashes or the recoverable copies (#1271) — this is
-    // a photos.view surface, not an events.edit one.
-    let event = eventRow;
-    if (eventRow) {
-      event = { ...eventRow };
-      for (const column of ['password_hash', 'client_password_hash', ...RECOVERABLE_PASSWORD_COLUMNS]) delete event[column];
-    }
-    
-    res.json({
-      event: event || 'Not found',
-      photoCount: photoCount.count,
-      samplePhotos: photos,
-      storagePath: getStoragePath()
-    });
-  } catch (error) {
-    errorResponse(res, error, 500, 'Failed to fetch photo debug data');
   }
 });
 
@@ -2790,7 +2678,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       mergedFile.uploadReservation
     );
     await afterUploadPlacement(mergedFile.eventId, placement, uploadedPhotos.length,
-      { type: 'admin', id: req.admin.id, name: req.admin.username });
+      adminActor(req));
     if (uploadedPhotos.length) acceptedUpload(res, {
       video: isVideoMimeType(fileObj.mimetype),
       raw: isRawUploadFilename(fileObj.originalname),

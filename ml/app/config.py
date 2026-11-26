@@ -35,7 +35,6 @@ MODEL_VERSION = f"{DETECTOR_NAME}+{EMBEDDER_NAME}+v1"
 # defaulting to open: an accidentally published port must not be a free
 # face-detection API.
 TOKEN = os.environ.get("FACE_ML_TOKEN", "").strip()
-TOKEN_HEADER = "X-Face-ML-Token"
 
 # ---------------------------------------------------------------------------
 # Detection

@@ -5,7 +5,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { seesAllEvents, scopeEventsQuery } = require('../middleware/ownership');
 const { sanitizeDays } = require('../utils/sqlSecurity');
-const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
+const { formatBoolean } = require('../utils/dbCompat');
 const { resolveAdapter } = require('../services/trackers');
 const logger = require('../utils/logger');
 const { withDocumentNumbers } = require('../services/activityDocumentNumbers');
@@ -13,6 +13,9 @@ const { errorResponse, getPagination } = require('../utils/routeHelpers');
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const { queueTimestamp, toUtcIso } = require('../utils/queueTimestamps');
 const { IS_VIDEO_SQL } = require('../utils/mediaTypeSql');
+const {
+  DOWNLOAD_ACTIONS, DOWNLOAD_ACTIONS_SQL, whereActiveEvent, whereExpiringEvent,
+} = require('../utils/eventListFilters');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
 const dependencyHealth = require('../services/dependencyHealth');
 const router = express.Router();
@@ -33,8 +36,8 @@ function normaliseDateKey(value) {
 }
 
 /**
- * Event ids the caller's dashboard may aggregate over, or `null` when the
- * caller is unrestricted (GHSA-c2jj / gqx7 / jhcf).
+ * Whether the caller's dashboard is limited to some events (GHSA-c2jj / gqx7 /
+ * jhcf).
  *
  * These endpoints are gated only by `analytics.view`, which scoped roles such
  * as `editor` hold — yet the events *list* restricts those roles to their own
@@ -46,7 +49,7 @@ function normaliseDateKey(value) {
  * Scoped with seesAllEvents to mirror the events list exactly, so the
  * super_admin and `admin` dashboards stay instance-wide.
  *
- * @returns {Promise<number[]|null>} ids to restrict to, or null for no limit
+ * @returns {boolean} true when the dashboard is limited to some events
  */
 function isScopedAdmin(admin) {
   // Mirrors the events list: every role except super_admin and admin is
@@ -73,9 +76,7 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
   try {
     // Get active events count
     const activeEvents = await applyEventScope(db('events'), req.admin, 'id')
-      .where('is_active', formatBoolean(true))
-      .where('is_archived', formatBoolean(false))
-      .where('temporarily_disabled', formatBoolean(false))
+      .modify(whereActiveEvent)
       .count('id as count')
       .first();
 
@@ -85,12 +86,10 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
     const now = new Date();
     
     // Same mixed-shape comparison as the events list's status=expiring
-    // (issue 1733): the tile and the list it sits next to must agree.
+    // (issue 1733): the tile and the list it sits next to must agree. Unlike
+    // the list, the tile still counts paused galleries.
     const expiringEvents = await applyEventScope(db('events'), req.admin, 'id')
-      .where('is_active', formatBoolean(true))
-      .where('is_archived', formatBoolean(false))
-      .modify(whereTimestamp, 'expires_at', '<=', sevenDaysFromNow)
-      .modify(whereTimestamp, 'expires_at', '>', now)
+      .modify(whereExpiringEvent, sevenDaysFromNow, now)
       .count('id as count')
       .first();
 
@@ -150,7 +149,7 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
 
     // Get total downloads (last 30 days) - include both single and bulk downloads
     const totalDownloads = await applyEventScope(db('access_logs'), req.admin, 'event_id')
-      .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
+      .whereIn('action', DOWNLOAD_ACTIONS)
       .where('timestamp', '>=', thirtyDaysAgo.toISOString())
       .count('id as count')
       .first();
@@ -180,7 +179,7 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
       .first();
 
     const previousDownloads = await applyEventScope(db('access_logs'), req.admin, 'event_id')
-      .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
+      .whereIn('action', DOWNLOAD_ACTIONS)
       .where('timestamp', '>=', sixtyDaysAgo.toISOString())
       .where('timestamp', '<', thirtyDaysAgo.toISOString())
       .count('id as count')
@@ -387,7 +386,7 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
     // Get downloads per day - include both single and bulk downloads
     const downloadsData = await applyEventScope(db('access_logs'), req.admin, 'event_id')
       .select(db.raw('DATE(timestamp) as date'), db.raw('COUNT(*) as count'))
-      .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
+      .whereIn('action', DOWNLOAD_ACTIONS)
       .where('timestamp', '>=', startDateStr)
       .groupByRaw('DATE(timestamp)');
 
@@ -425,7 +424,7 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
       .select('events.id', 'events.event_name', 'events.slug')
       .select(db.raw('COUNT(CASE WHEN action = \'view\' THEN 1 END) as views'))
       .select(db.raw('COUNT(DISTINCT CASE WHEN action = \'view\' THEN ip_address END) as "uniqueVisitors"'))
-      .select(db.raw('COUNT(CASE WHEN action IN (\'download\', \'download_all\', \'download_all_presigned\', \'download_selected\') THEN 1 END) as downloads'))
+      .select(db.raw(`COUNT(CASE WHEN action IN (${DOWNLOAD_ACTIONS_SQL}) THEN 1 END) as downloads`))
       .join('events', 'access_logs.event_id', 'events.id')
       .where('access_logs.timestamp', '>=', startDateStr)
       .groupBy('events.id', 'events.event_name', 'events.slug')
@@ -498,7 +497,7 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
       .first();
 
     const totalDownloadsCount = await applyEventScope(db('access_logs'), req.admin, 'event_id')
-      .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
+      .whereIn('action', DOWNLOAD_ACTIONS)
       .where('timestamp', '>=', startDateStr)
       .count('id as count')
       .first();

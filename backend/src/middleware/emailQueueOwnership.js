@@ -1,6 +1,5 @@
 const { db } = require('../database/db');
 const { canAccessEvent, canonicalId, scopeEventsQuery } = require('./ownership');
-const { hasColumnCached } = require('../utils/schemaCache');
 
 /**
  * Who may reach a row of `email_queue` (sent and queued mail), to read it or
@@ -24,10 +23,6 @@ function seesEveryQueuedEmail(admin) {
   return admin?.roleName === 'super_admin';
 }
 
-async function senderColumnReady() {
-  return hasColumnCached('email_queue', 'sent_by_admin_id');
-}
-
 /** Whether `admin` may reach a row with this sender and gallery. */
 function reachesQueuedEmailRow(admin, row, event) {
   if (!admin || !row) return false;
@@ -40,9 +35,7 @@ async function mayReachQueuedEmail(admin, emailId) {
   const id = canonicalId(emailId);
   if (id === null || !admin) return false;
   if (seesEveryQueuedEmail(admin)) return true;
-  const columns = ['event_id'];
-  if (await senderColumnReady()) columns.push('sent_by_admin_id');
-  const row = await db('email_queue').where({ id }).first(columns);
+  const row = await db('email_queue').where({ id }).first('event_id', 'sent_by_admin_id');
   if (!row) return false;
   const event = row.event_id ? await db('events').where({ id: row.event_id }).first('id', 'created_by') : null;
   return reachesQueuedEmailRow(admin, row, event);
@@ -74,26 +67,21 @@ function requireOwnedQueuedEmail(param = 'emailId') {
  */
 async function queuedEmailListScope(admin) {
   if (seesEveryQueuedEmail(admin)) return (query) => query;
-  const bySender = await senderColumnReady();
   return (query) => query.where((q) => {
     q.whereIn('email_queue.event_id',
       scopeEventsQuery(db('events').select('events.id'), admin, 'events.created_by'));
-    if (bySender) q.orWhere('email_queue.sent_by_admin_id', admin.id);
+    q.orWhere('email_queue.sent_by_admin_id', admin.id);
   });
 }
 
-/**
- * The sender stamp for a row an admin writes, or nothing before migration
- * 359 has run.
- */
+/** The sender stamp for a row an admin writes. */
 async function sentByColumns(adminId) {
-  return adminId != null && await senderColumnReady() ? { sent_by_admin_id: adminId } : {};
+  return adminId != null ? { sent_by_admin_id: adminId } : {};
 }
 
 module.exports = {
   mayReachQueuedEmail,
   reachesQueuedEmailRow,
-  senderColumnReady,
   requireOwnedQueuedEmail,
   queuedEmailListScope,
   sentByColumns,

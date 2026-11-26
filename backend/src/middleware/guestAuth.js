@@ -22,12 +22,10 @@ async function resolveGuest(req, res, next) {
 
     let decoded;
     try {
-      const verified = jwt.verify(token, process.env.JWT_SECRET, {
+      decoded = jwt.verify(token, process.env.JWT_SECRET, {
         algorithms: ['HS256'],
         issuer: 'picpeak-auth',
-        complete: true,
       });
-      decoded = verified.payload;
     } catch (err) {
       // Invalid or expired guest tokens are silently ignored so that public
       // gallery browsing continues to work even if the token is stale.

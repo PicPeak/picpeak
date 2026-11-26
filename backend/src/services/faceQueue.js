@@ -24,6 +24,11 @@
  *   FACE_PROCESSOR_POLL_MS            default 2000
  *   FACE_PROCESSOR_STUCK_TIMEOUT_MS   default 600000 (10 minutes)
  *   FACE_PROCESSOR_DISABLED           default false ('true' to opt out, e.g. CI)
+ *   FACE_PROCESSOR_BACKOFF_MS         default 30000; wait after the sidecar or
+ *                                     storage is unreachable
+ *   FACE_SOURCE_BACKOFF_MS            default 300000; how long an event whose
+ *                                     external source is unreachable is skipped
+ *   FACE_CONSOLIDATE_RETRY_MS         default 60000
  */
 
 const crypto = require('crypto');
@@ -31,9 +36,8 @@ const { db } = require('../database/db');
 const { livePhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
-const { processPhotoFaces, claimGuard } = require('./faceProcessor');
+const { processPhotoFaces, claimGuard, TransientSourceError } = require('./faceProcessor');
 const { SidecarUnavailableError } = require('./faceClient');
-const { TransientSourceError } = require('./faceProcessor');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { isFeatureEnabled, isEnabledForEvent } = require('./faceSettings');
 const loadGovernor = require('./loadGovernor');
@@ -47,10 +51,6 @@ const JANITOR_INTERVAL_MS = 60 * 1000;
 // hot loop: claim, fail, release, claim again, thousands of times a minute.
 const UNAVAILABLE_BACKOFF_MS = parseInt(process.env.FACE_PROCESSOR_BACKOFF_MS || '30000', 10);
 
-// A dropped mount hits every photo in the event, so the raw message would
-// repeat once per claim. Rate-limited the same way faceClient limits its own
-// unavailable line, and for the same reason: one warning per outage, not one
-// per photo.
 // How long an event whose storage is unreachable is left alone. Distinct from
 // the janitor's stuck timeout on purpose: the janitor exists to rescue rows a
 // crashed worker abandoned, and reusing it here meant that every sweep handed
@@ -94,6 +94,10 @@ function applySourceBackoff(query, excludeEventIds) {
   });
 }
 
+// A dropped mount hits every photo in the event, so the raw message would
+// repeat once per claim. Rate-limited the same way faceClient limits its own
+// unavailable line, and for the same reason: one warning per outage, not one
+// per photo.
 const SOURCE_LOG_INTERVAL_MS = 5 * 60 * 1000;
 let lastUnreachableLogAt = 0;
 function logUnreachableSource(message) {
@@ -413,7 +417,7 @@ async function workerLoop(workerIdx) {
       }
     } finally {
       // In a finally because the catch above returns to the loop via
-      // `continue` on two paths — a leaked count would block this event's
+      // `continue` on three paths — a leaked count would block this event's
       // consolidation for the lifetime of the process.
       markInFlight(claimed.event_id, -1);
     }

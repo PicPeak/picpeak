@@ -65,11 +65,6 @@ export const rolesService = {
     return res.data.role;
   },
 
-  async cloneRole(id: number, payload: { name: string; displayName?: string; description?: string | null }): Promise<RoleWithPermissions> {
-    const res = await api.post<RoleResponse>(`/admin/roles/${id}/clone`, payload);
-    return res.data.role;
-  },
-
   async deleteRole(id: number): Promise<void> {
     await api.delete(`/admin/roles/${id}`);
   },

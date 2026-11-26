@@ -91,4 +91,4 @@ async function sendWhatsAppMessage(recipientPhone, config, languageCode, compone
   }
 }
 
-module.exports = { normalizePhone, sendWhatsAppMessage };
+module.exports = { sendWhatsAppMessage };

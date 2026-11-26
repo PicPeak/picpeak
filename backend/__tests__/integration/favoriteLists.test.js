@@ -90,8 +90,8 @@ describe('named favourite lists (issue 2303)', () => {
     app.use('/api/gallery', require('../../src/routes/galleryFeedback'));
     app.use('/api/admin', require('../../src/routes/adminGuests'));
     app.use('/api/admin/feedback', require('../../src/routes/adminFeedback'));
-    app.use('/api/admin/photos', require('../../src/routes/adminPhotoExport'));
     app.use('/api/admin/photos', require('../../src/routes/adminPhotos'));
+    app.use('/api/admin/photo-export', require('../../src/routes/adminPhotoExport'));
   }, 180000);
 
   afterAll(async () => { if (cleanup) await cleanup(); });
@@ -410,7 +410,7 @@ describe('named favourite lists (issue 2303)', () => {
       for (const list of detail.body.favorite_lists) expect(list.updated_at).toMatch(ISO);
     });
 
-    it('filters the admin photo list and the filtered view by list', async () => {
+    it('filters the admin photo list and the export by list', async () => {
       const ids = (res) => res.body.photos.map((p) => p.id).sort();
       expect(ids(await admin('get', `/photos/${eventId}/photos?favorite_list=${listId}`)))
         .toEqual([photoIds[0], photoIds[1]].sort());
@@ -420,8 +420,11 @@ describe('named favourite lists (issue 2303)', () => {
       // Unfiltered, all three.
       expect(ids(await admin('get', `/photos/${eventId}/photos`))).toHaveLength(3);
 
-      const filtered = await admin('get', `/photos/${eventId}/filtered?sort=filename&favorite_list=${listId}`);
-      expect(filtered.body.data.photos.map((p) => p.id).sort()).toEqual([photoIds[0], photoIds[1]].sort());
+      // The export route builds its photo set through the same filter.
+      const exported = await admin('post', `/photo-export/${eventId}/export`)
+        .send({ filter: { favorite_list: String(listId) }, format: 'json' });
+      expect(exported.status).toBe(200);
+      expect(JSON.parse(exported.text).photos.map((p) => p.id).sort()).toEqual([photoIds[0], photoIds[1]].sort());
     });
   });
 });
