@@ -17,14 +17,18 @@ const { escapeRegExp } = require('./emailSecretRedaction');
 // a single-quoted 'anna@kunde.example' in free text is still the address.
 const EMAIL_ADDRESS = /(?:"[^"\r\n]*"|[^\s<>"'(),;:](?:[^\s<>"'(),;:]|(?<=[\p{L}\p{N}])')*)@[^\s<>"'(),;:]+/gu;
 
-// A match must be a whole address: no local-part character right before it,
-// no domain character (or a dot that goes on with one) right after it, so
-// ann@… never matches inside joann@… or anna@kunde.example inside
-// anna@kunde.example.au. An apostrophe belongs to the local part only after
-// a letter or digit (o'connor@…), so 'anna@kunde.example' and an attribute
-// such as title='anna@kunde.example' still match, as in EMAIL_ADDRESS.
-const BEFORE_ADDRESS = '(?<![\\p{L}\\p{N}.!#$%&*+/=?^_`{|}~-])(?<![\\p{L}\\p{N}]\')';
-const AFTER_ADDRESS = '(?![\\p{L}\\p{N}_-]|\\.[\\p{L}\\p{N}_-])';
+// A carried address is replaced only as a whole address: the character
+// before it is no local-part character ([A-Za-z0-9._%+-], or an apostrophe
+// right after a letter or digit as in o'connor@…), the one after it no
+// domain character (nor a dot that goes on with one). So ann@… never matches
+// inside joann@…, anna@kunde.example not inside studio.anna@… or
+// anna@kunde.example.au, while =, ?, /, &, ;, quotes, < and : delimit it
+// (…?cc=anna@…, title=anna@…). Known limit: = and / are valid in a local
+// part too, so a carried b@… also matches the tail of an a=b@… or a/b@….
+const WHOLE_BEFORE = '(?<![A-Za-z0-9._%+-])(?<![A-Za-z0-9]\')';
+const WHOLE_AFTER = '(?![A-Za-z0-9-]|\\.[A-Za-z0-9])';
+// Prose punctuation a template variable may carry after an address.
+const TRAILING_PROSE = /[.,;:!?)\]}]+$/;
 
 /**
  * `value` with every address-shaped substring replaced by `…`: a string, or
@@ -42,26 +46,32 @@ function redactAddresses(value) {
 
 /**
  * A mail body with the addresses that mail carries replaced by `…`: every
- * address-shaped part of `values` (the recipient, cc, the template
- * variables), as written and as the template engine HTML-escapes it, in any
- * case. A body is not searched for address shapes, and the addresses in
- * `keep` (lower-cased: the studio's own, see studioAddresses) stay.
+ * address in `values` (the recipient, cc, the template variables), as
+ * written and as the template engine HTML-escapes it, in any case. A body is
+ * not searched for address shapes. The addresses in `keep` (lower-cased: the
+ * studio's own, see studioAddresses) stay: they are matched in the same pass
+ * and written back, so a carried address never cuts into a kept one, nor a
+ * kept one into a longer carried address that ends in it.
  */
 function redactKnownAddresses(html, values, keep = new Set()) {
   if (!html) return html;
-  const found = new Set();
+  const carried = new Set();
   const collect = (value) => {
     if (typeof value === 'string') {
-      for (const address of value.match(EMAIL_ADDRESS) || []) {
-        if (!keep.has(address.toLowerCase())) found.add(address);
+      for (const match of value.match(EMAIL_ADDRESS) || []) {
+        const address = match.replace(TRAILING_PROSE, '').toLowerCase();
+        if (!keep.has(address)) carried.add(address);
       }
     } else if (value && typeof value === 'object') Object.values(value).forEach(collect);
   };
   collect(values);
-  const forms = [...new Set([...found].flatMap((address) => [address, escapeHtml(address)]))];
-  if (!forms.length) return html;
-  const whole = `${BEFORE_ADDRESS}(?:${forms.map(escapeRegExp).join('|')})${AFTER_ADDRESS}`;
-  return String(html).replace(new RegExp(whole, 'giu'), '…');
+  if (!carried.size) return html;
+  const formsOf = (address) => [address, escapeHtml(address).toLowerCase()];
+  const keptForms = new Set([...keep].filter((address) => address.includes('@')).flatMap(formsOf));
+  // Longest first: of two forms starting at the same place, the longer wins.
+  const forms = [...new Set([...[...carried].flatMap(formsOf), ...keptForms])].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(`${WHOLE_BEFORE}(?:${forms.map(escapeRegExp).join('|')})${WHOLE_AFTER}`, 'gi');
+  return String(html).replace(pattern, (match) => (keptForms.has(match.toLowerCase()) ? match : '…'));
 }
 
 /**
