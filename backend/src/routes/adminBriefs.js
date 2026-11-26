@@ -24,6 +24,7 @@ const idParam = param('id').isInt({ min: 1 });
 const briefBody = [
   body('values').optional().isObject(),
   body('sharedArrangements').optional({ values: 'null' }).isString(),
+  body('title').optional({ values: 'null' }).isString(),
 ];
 
 router.get('/templates', requirePermission('settings.view'), handleAsync(async (req, res) => {
@@ -50,8 +51,8 @@ router.get('/projects/:id', requirePermission('events.view'), [idParam], require
 
 router.put('/projects/:id', requirePermission('events.edit'), [idParam, ...briefBody], requireProjectOwnership, handleAsync(async (req, res) => {
   validateRequest(req);
-  const { values, sharedArrangements } = req.body;
-  successResponse(res, { brief: await briefService.saveBrief(project(req), { values, sharedArrangements }) });
+  const { values, sharedArrangements, title } = req.body;
+  successResponse(res, { brief: await briefService.saveBrief(project(req), { values, sharedArrangements, title }) });
 }));
 
 router.post('/projects/:id/notify', requirePermission('events.edit'), [idParam], requireProjectOwnership, handleAsync(async (req, res) => {
@@ -69,8 +70,8 @@ router.put('/customers/:id',
   [idParam, ...briefBody, body('occasion').optional({ values: 'null' }).isString().isLength({ max: 50 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const { values, sharedArrangements, occasion } = req.body;
-    successResponse(res, { brief: await briefService.saveBrief(customer(req), { values, sharedArrangements, occasion }) });
+    const { values, sharedArrangements, title, occasion } = req.body;
+    successResponse(res, { brief: await briefService.saveBrief(customer(req), { values, sharedArrangements, title, occasion }) });
   }));
 
 router.post('/customers/:id/notify', requirePermission('customers.edit'), [idParam], handleAsync(async (req, res) => {

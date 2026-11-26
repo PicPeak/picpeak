@@ -44,6 +44,7 @@ const MAX_FIELDS = 50;
 const MAX_LABEL = 120;
 const MAX_VALUES_PER_SAVE = 200;
 const MAX_SHARED = 10000;
+const MAX_TITLE = 200;
 const TEXT_MAX = { short_text: 500, long_text: 5000, project_location: 255 };
 const PLACE_MAX = 255;
 const ADDRESS_MAX = 500;
@@ -51,14 +52,14 @@ const ADDRESS_MAX = 500;
 // The few words of the update mail that are not a label or a value. Their
 // keys are the shipped languages, which label translations are limited to.
 const TEXT = {
-  en: { yes: 'Yes', no: 'No', added: 'added', removed: 'removed', shared: 'Shared arrangements' },
-  de: { yes: 'Ja', no: 'Nein', added: 'neu', removed: 'entfernt', shared: 'Gemeinsame Vereinbarungen' },
-  es: { yes: 'Sí', no: 'No', added: 'nuevo', removed: 'eliminado', shared: 'Acuerdos compartidos' },
-  fr: { yes: 'Oui', no: 'Non', added: 'nouveau', removed: 'supprimé', shared: 'Accords communs' },
-  nl: { yes: 'Ja', no: 'Nee', added: 'nieuw', removed: 'verwijderd', shared: 'Gedeelde afspraken' },
-  pt: { yes: 'Sim', no: 'Não', added: 'novo', removed: 'removido', shared: 'Combinados partilhados' },
-  ru: { yes: 'Да', no: 'Нет', added: 'новое', removed: 'удалено', shared: 'Общие договорённости' },
-  sl: { yes: 'Da', no: 'Ne', added: 'novo', removed: 'odstranjeno', shared: 'Skupni dogovori' },
+  en: { yes: 'Yes', no: 'No', added: 'added', removed: 'removed', shared: 'Shared arrangements', title: 'Title', order: 'The order of the overview changed' },
+  de: { yes: 'Ja', no: 'Nein', added: 'neu', removed: 'entfernt', shared: 'Gemeinsame Vereinbarungen', title: 'Titel', order: 'Die Reihenfolge der Übersicht hat sich geändert' },
+  es: { yes: 'Sí', no: 'No', added: 'nuevo', removed: 'eliminado', shared: 'Acuerdos compartidos', title: 'Título', order: 'El orden del resumen ha cambiado' },
+  fr: { yes: 'Oui', no: 'Non', added: 'nouveau', removed: 'supprimé', shared: 'Accords communs', title: 'Titre', order: 'L\'ordre de l\'aperçu a changé' },
+  nl: { yes: 'Ja', no: 'Nee', added: 'nieuw', removed: 'verwijderd', shared: 'Gedeelde afspraken', title: 'Titel', order: 'De volgorde van het overzicht is gewijzigd' },
+  pt: { yes: 'Sim', no: 'Não', added: 'novo', removed: 'removido', shared: 'Combinados partilhados', title: 'Título', order: 'A ordem do resumo mudou' },
+  ru: { yes: 'Да', no: 'Нет', added: 'новое', removed: 'удалено', shared: 'Общие договорённости', title: 'Название', order: 'Порядок обзора изменился' },
+  sl: { yes: 'Da', no: 'Ne', added: 'novo', removed: 'odstranjeno', shared: 'Skupni dogovori', title: 'Naslov', order: 'Vrstni red pregleda se je spremenil' },
 };
 const LANGUAGES = Object.keys(TEXT);
 
@@ -313,8 +314,9 @@ function assemble(fields, rows, project) {
 }
 
 /** What the customer may see of the brief right now. */
-function visibleState(fields, sharedArrangements) {
+function visibleState(fields, sharedArrangements, title) {
   return {
+    title: title || null,
     fields: fields
       .filter((f) => f.source !== 'removed' && (f.visible ?? f.visibleDefault) && f.value != null)
       .map((f) => ({ id: f.id, label: f.label, labels: f.labels, type: f.type, value: f.value })),
@@ -322,8 +324,17 @@ function visibleState(fields, sharedArrangements) {
   };
 }
 
+/** A change of a text the brief has once (`word` names it in the mail). */
+function textChange(word, before, after) {
+  if ((before || '') === (after || '')) return [];
+  const change = !before ? 'added' : (!after ? 'removed' : 'changed');
+  return [{ field: null, word, change, before: before || null, after: after || null }];
+}
+
 /** What changed for the customer between two visible states. A field the
- *  customer sees under a corrected label (or translation) is "renamed". */
+ *  customer sees under a corrected label (or translation) is "renamed"; a new
+ *  order of the fields shown before and after is one "reordered" change; the
+ *  title counts from the second update on (the first one carries it anyway). */
 function diffStates(before, after) {
   const prev = new Map((before?.fields || []).map((f) => [f.id, f]));
   const next = new Map(after.fields.map((f) => [f.id, f]));
@@ -339,11 +350,12 @@ function diffStates(before, after) {
   for (const old of before?.fields || []) {
     if (!next.has(old.id)) changes.push({ field: old, change: 'removed', before: old.value, after: null });
   }
-  const oldShared = before?.sharedArrangements || '';
-  if (oldShared !== after.sharedArrangements) {
-    const change = !oldShared ? 'added' : (!after.sharedArrangements ? 'removed' : 'changed');
-    changes.push({ field: null, change, before: oldShared || null, after: after.sharedArrangements || null });
+  if (before) {
+    const order = (list, other) => list.filter((f) => other.has(f.id)).map((f) => f.id).join(',');
+    if (order(before.fields, next) !== order(after.fields, prev)) changes.push({ field: null, word: 'order', change: 'reordered' });
+    changes.push(...textChange('title', before.title, after.title));
   }
+  changes.push(...textChange('shared', before?.sharedArrangements, after.sharedArrangements));
   return changes;
 }
 
@@ -355,14 +367,20 @@ async function current(owner) {
   // changed customer starts unsent for the new one.
   const sentTo = ctx.brief?.notified_customer_account_id;
   const snapshot = sentTo != null && Number(sentTo) === ctx.customerId ? parseJson(ctx.brief.notified_snapshot, null) : null;
-  return { ...ctx, fields, sharedArrangements, snapshot, state: visibleState(fields, sharedArrangements) };
+  // The customer's title: the brief's own, else the occasion's name. Never
+  // the project name, which is internal.
+  const defaultTitle = await occasionName(ctx.occasion);
+  const state = visibleState(fields, sharedArrangements, ctx.brief?.title || defaultTitle);
+  return { ...ctx, fields, sharedArrangements, defaultTitle, snapshot, state };
 }
 
 /** The brief as the studio edits it. */
 async function getBrief(owner) {
-  const { fields, sharedArrangements, snapshot, state, brief, occasion, customerId } = await current(owner);
+  const { fields, sharedArrangements, defaultTitle, snapshot, state, brief, occasion, customerId } = await current(owner);
   return {
     occasion,
+    title: brief?.title || null,
+    defaultTitle,
     fields,
     sharedArrangements,
     notifiedAt: brief?.notified_at || null,
@@ -393,12 +411,15 @@ async function ensureBrief(trx, owner) {
  * a value of null clears it, the only change a removed field takes.
  * `occasion` is a customer brief's own choice (null for none).
  */
-async function saveBrief(owner, { values = {}, sharedArrangements, occasion } = {}) {
+async function saveBrief(owner, { values = {}, sharedArrangements, title, occasion } = {}) {
   if (!values || typeof values !== 'object' || Array.isArray(values)) throw new ValidationError('Invalid values');
   const entries = Object.entries(values);
   if (entries.length > MAX_VALUES_PER_SAVE) throw new ValidationError('Too many values in one save');
   if (sharedArrangements != null && (typeof sharedArrangements !== 'string' || sharedArrangements.length > MAX_SHARED)) {
     throw new ValidationError(`Shared arrangements take at most ${MAX_SHARED} characters`);
+  }
+  if (title != null && (typeof title !== 'string' || title.trim().length > MAX_TITLE)) {
+    throw new ValidationError(`The title takes at most ${MAX_TITLE} characters`);
   }
   if (occasion !== undefined) {
     if (owner.kind !== 'customer') throw new ValidationError('A project brief takes its occasion from the project');
@@ -442,6 +463,7 @@ async function saveBrief(owner, { values = {}, sharedArrangements, occasion } = 
     const brief = await ensureBrief(trx, owner);
     const briefPatch = { updated_at: now() };
     if (sharedArrangements !== undefined) briefPatch.shared_arrangements = (sharedArrangements || '').trim() || null;
+    if (title !== undefined) briefPatch.title = (title || '').trim() || null;
     if (occasion !== undefined) briefPatch.occasion = occasion;
     await trx('project_briefs').where({ id: brief.id }).update(briefPatch);
     for (const write of writes) {
@@ -496,13 +518,16 @@ async function renderChanges(changes, language) {
   const words = TEXT[language] || TEXT.en;
   const html = [];
   const lines = [];
-  for (const { field, previous, change, before, after } of changes) {
-    const label = field ? labelIn(field, language) : words.shared;
+  for (const { field, word, previous, change, before, after } of changes) {
+    const label = field ? labelIn(field, language) : words[word];
     const type = field ? field.type : 'long_text';
     const from = await displayValue(type, before, language);
     const to = await displayValue(type, after, language);
     const esc = (s) => escapeHtml(s).replace(/\n/g, '<br>');
-    if (change === 'added') {
+    if (change === 'reordered') {
+      html.push(`<li>${esc(label)}</li>`);
+      lines.push(`- ${label}`);
+    } else if (change === 'added') {
       html.push(`<li><strong>${esc(label)}</strong>: ${esc(to)} <em>(${esc(words.added)})</em></li>`);
       lines.push(`- ${label}: ${to} (${words.added})`);
     } else if (change === 'renamed') {
@@ -535,7 +560,7 @@ async function occasionName(occasion) {
  * other notice held back for them (_adminEmailOptOut); `mail` says which.
  */
 async function notify(owner, adminId) {
-  const { brief: seen, project, customerId, occasion, snapshot, state } = await current(owner);
+  const { brief: seen, customerId, snapshot, state } = await current(owner);
   if (customerId == null) throw new AppError('This project has no customer to notify', 422, 'BRIEF_NO_CUSTOMER');
   const changes = diffStates(snapshot, state);
   if (changes.length === 0) throw new AppError('There are no changes to send', 409, 'BRIEF_NOTHING_TO_SEND');
@@ -572,7 +597,7 @@ async function notify(owner, adminId) {
     result = await emailProcessor.queueEmail(null, customer.email, 'project_brief_updated', {
       customer_name: customerDisplayName(customer),
       business_name: await businessName(),
-      brief_title: project ? project.name : (await occasionName(occasion)) || '',
+      brief_title: state.title || '',
       brief_changes_html: rendered.html,
       brief_changes_text: rendered.text,
       // A passive customer (no password) cannot sign in to the portal.
@@ -657,13 +682,13 @@ async function customerHasAgreements(customerId) {
 async function listForCustomer(customerId, { quotes = false, bills = false } = {}) {
   const rows = Array.from(await briefsOfCustomer(customerId)
     .orderBy('b.notified_at', 'desc')
-    .select('b.id', 'b.project_id', 'b.occasion', 'b.notified_at', 'b.notified_snapshot', 'p.name as project_name'));
+    .select('b.id', 'b.project_id', 'b.notified_at', 'b.notified_snapshot'));
   const out = [];
   for (const row of rows) {
     const snapshot = parseJson(row.notified_snapshot, { fields: [], sharedArrangements: '' });
     out.push({
       id: Number(row.id),
-      title: row.project_id ? row.project_name : await occasionName(row.occasion),
+      title: snapshot.title || null,
       updatedAt: row.notified_at,
       fields: (snapshot.fields || []).map((f) => ({ id: f.id, label: f.label, labels: f.labels || {}, type: f.type, value: f.value })),
       sharedArrangements: snapshot.sharedArrangements || '',

@@ -23,6 +23,8 @@
  *   project_briefs         one brief per project OR per customer (exactly one
  *                          owner). A customer brief picks its occasion itself;
  *                          a project brief takes projects.event_type.
+ *     title                the title the customer sees (NULL: the occasion's
+ *                          name); the project name stays internal
  *     shared_arrangements  free text the customer sees
  *     notified_at / notified_snapshot / notified_customer_account_id
  *                          the last update sent: when, the customer-visible
@@ -35,6 +37,10 @@
  *                          template field and stays readable (label and type
  *                          are kept with it). visible NULL = the template's
  *                          default.
+ *
+ *   customer_contacts.right_agreements   'none' | 'view': whether a contact
+ *                          login sees the briefs (the account holder always
+ *                          does). Defaults to none.
  *
  * Seeds a wedding template and the project_brief_updated mail (en and de
  * reviewed, the other languages flagged for native review). Gated by the
@@ -221,6 +227,7 @@ exports.up = async function up(knex) {
       t.integer('customer_account_id').unsigned().nullable().unique()
         .references('id').inTable('customer_accounts').onDelete('CASCADE');
       t.string('occasion', 50).nullable();
+      t.string('title', 200).nullable();
       t.text('shared_arrangements').nullable();
       t.timestamp('notified_at').nullable();
       t.text('notified_snapshot').nullable();
@@ -248,11 +255,20 @@ exports.up = async function up(knex) {
     });
   }
 
+  if ((await knex.schema.hasTable('customer_contacts')) && !(await knex.schema.hasColumn('customer_contacts', 'right_agreements'))) {
+    await knex.schema.alterTable('customer_contacts', (t) => {
+      t.string('right_agreements', 8).notNullable().defaultTo('none');
+    });
+  }
+
   await seedWeddingTemplate(knex);
   await seedEmailTemplate(knex);
 };
 
 exports.down = async function down(knex) {
+  if (await knex.schema.hasColumn('customer_contacts', 'right_agreements')) {
+    await knex.schema.alterTable('customer_contacts', (t) => { t.dropColumn('right_agreements'); });
+  }
   await knex.schema.dropTableIfExists('project_brief_values');
   await knex.schema.dropTableIfExists('project_briefs');
   await knex.schema.dropTableIfExists('project_brief_fields');

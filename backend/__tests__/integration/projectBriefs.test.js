@@ -54,7 +54,7 @@ async function customer(extra = {}) {
 }
 async function project(customerId, extra = {}) {
   return idOf(await db('projects').insert({
-    name: 'Anna & Ben', status: 'active', customer_account_id: customerId, created_by: superAdmin,
+    name: 'INTERNAL-PROJECT-NAME', status: 'active', customer_account_id: customerId, created_by: superAdmin,
     event_type: 'wedding', event_date: '2027-06-12', guest_count: 80, location: 'Castle Hill',
     notes: 'INTERNAL-PROJECT-NOTE', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     ...extra,
@@ -223,7 +223,8 @@ describe('with the projects flag on', () => {
       const data = JSON.parse(mail.email_data);
       expect(Object.keys(data).filter((k) => !k.startsWith('__') && k !== 'eventId').sort())
         .toEqual([...migration.TEMPLATE_VARIABLES].sort());
-      expect(data).toMatchObject({ brief_title: 'Anna & Ben', customer_name: 'Anna', portal_link: expect.stringMatching(/\/customer\/agreements$/) });
+      // The project name is admin-only; the title defaults to the occasion.
+      expect(data).toMatchObject({ brief_title: 'Wedding', customer_name: 'Anna', portal_link: expect.stringMatching(/\/customer\/agreements$/) });
       expect(data.brief_changes_html).toContain('Hotel Rose');
       expect(data.brief_changes_text).toContain('- Bride\'s name: Anna (added)');
       expect(mail.email_data).not.toContain('HIDDEN-REMARK');
@@ -354,7 +355,7 @@ describe('with the projects flag on', () => {
       expect(res.status).toBe(200);
       expect(res.body.agreements).toHaveLength(1);
       const [agreement] = res.body.agreements;
-      expect(agreement).toMatchObject({ title: 'Anna & Ben', sharedArrangements: 'Shared text', price: null, deposit: null });
+      expect(agreement).toMatchObject({ title: 'Wedding', sharedArrangements: 'Shared text', price: null, deposit: null });
       expect(agreement.fields.map((f) => f.label)).toEqual(['Wedding date', 'Bride pickup', 'Guest count']);
       const body = JSON.stringify(res.body);
       for (const secret of ['HIDDEN-VALUE', 'Internal remark', 'INTERNAL-PROJECT-NOTE', 'INTERNAL-CUSTOMER-NOTE', 'UNSENT-PLACE']) {
@@ -533,6 +534,71 @@ describe('with the projects flag on', () => {
       await admin('post', `/projects/${p}/notify`);
       const [agreement] = (await portal(gina)).body.agreements;
       expect(agreement.deposit).toEqual({ invoiceNumber: 'I-DEAL-0', totalMinor: 100000, currency: 'EUR', dueDate: '2027-02-15', paid: false });
+    });
+  });
+
+  describe('review round 4', () => {
+    it('shows agreements to a contact only with the agreements right; the holder always', async () => {
+      const hanna = await customer();
+      const p = await project(hanna);
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'Contacts?' });
+      await admin('post', `/projects/${p}/notify`);
+      const contactId = idOf(await db('customer_contacts').insert({
+        customer_account_id: hanna, email: 'helper@example.test', is_active: true,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).returning('id'));
+      await db('customer_logins').insert({ email: 'helper@example.test', password_hash: 'x' });
+      const asContact = () => request(customerApp).get('/api/customer/agreements').set('Cookie',
+        `customer_token=${jwt.sign({ type: 'customer', customerId: hanna, contactId, jti: uuid() }, process.env.JWT_SECRET, { issuer: 'picpeak-auth' })}`);
+
+      const denied = await asContact();
+      expect(denied.status).toBe(403);
+      expect(JSON.stringify(denied.body)).not.toContain('Contacts?');
+      await db('customer_contacts').where({ id: contactId }).update({ right_agreements: 'view' });
+      expect((await asContact()).body.agreements[0].sharedArrangements).toBe('Contacts?');
+      expect((await portal(hanna)).status).toBe(200);
+    });
+
+    it('gives the customer the brief\'s own title, never the internal project name', async () => {
+      const ivo = await customer();
+      const p = await project(ivo);
+      await db('projects').where({ id: p }).update({ name: 'SECRET-INTERNAL' });
+      expect((await admin('get', `/projects/${p}`)).body.brief).toMatchObject({ title: null, defaultTitle: 'Wedding' });
+      await admin('put', `/projects/${p}`).send({ title: 'Ivo & Jo', sharedArrangements: 'Hi' });
+      await admin('post', `/projects/${p}/notify`);
+      // A later internal rename reaches nothing the customer sees.
+      await db('projects').where({ id: p }).update({ name: 'SECRET-RENAMED' });
+      const res = await portal(ivo);
+      expect(res.body.agreements[0].title).toBe('Ivo & Jo');
+      const email = (await db('customer_accounts').where({ id: ivo }).first()).email;
+      const [mail] = await mails(email);
+      expect(JSON.parse(mail.email_data).brief_title).toBe('Ivo & Jo');
+      for (const text of [JSON.stringify(res.body), mail.email_data]) expect(text).not.toMatch(/SECRET|INTERNAL-PROJECT/);
+
+      // A new title is an update of its own.
+      await admin('put', `/projects/${p}`).send({ title: 'Ivo and Jo' });
+      expect((await admin('get', `/projects/${p}`)).body.brief.pendingChanges).toHaveLength(1);
+      await admin('post', `/projects/${p}/notify`);
+      expect((await portal(ivo)).body.agreements[0].title).toBe('Ivo and Jo');
+    });
+
+    it('sends a new order of the visible fields as one line', async () => {
+      const kim = await customer();
+      const p = await project(kim);
+      const pickup = await fieldId('Bride pickup');
+      await admin('put', `/projects/${p}`).send({ values: { [pickup]: { value: { place: 'Inn', address: '', time: '' } } } });
+      await admin('post', `/projects/${p}/notify`);
+      const before = (await portal(kim)).body.agreements[0].fields.map((f) => f.label);
+
+      const wedding = await weddingFields();
+      expect((await admin('put', '/templates/wedding').send({ fields: [...wedding].reverse() })).status).toBe(200);
+      expect((await admin('get', `/projects/${p}`)).body.brief.pendingChanges).toEqual([expect.objectContaining({ change: 'reordered' })]);
+      await admin('post', `/projects/${p}/notify`);
+      const email = (await db('customer_accounts').where({ id: kim }).first()).email;
+      expect(JSON.parse((await mails(email).orderBy('id', 'desc').first()).email_data).brief_changes_text)
+        .toBe('- The order of the overview changed');
+      expect((await portal(kim)).body.agreements[0].fields.map((f) => f.label)).toEqual([...before].reverse());
+      await admin('put', '/templates/wedding').send({ fields: wedding });
     });
   });
 });
