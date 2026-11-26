@@ -238,6 +238,17 @@ describe('BriefCard on a project', () => {
     expect(screen.getByRole('button', { name: 'page save' })).toBeDisabled();
   });
 
+  it('gives the multi-line fields their height, not the single-line input class', async () => {
+    mount();
+    for (const label of ['Internal remark', 'Shared arrangements']) {
+      const box = await screen.findByLabelText(label);
+      expect(box.tagName).toBe('TEXTAREA');
+      expect(Number(box.getAttribute('rows'))).toBeGreaterThan(1);
+      // .input carries a fixed h-10 (index.css): a textarea with it shows one line.
+      expect(box).not.toHaveClass('input');
+    }
+  });
+
   it('says why a project without a customer cannot notify', async () => {
     state.get.mockResolvedValue(projectBrief({ hasCustomer: false, pendingChanges: [{ fieldId: 1, label: 'x', labels: {}, change: 'added' }] }));
     mount();

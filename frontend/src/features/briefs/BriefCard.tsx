@@ -23,6 +23,10 @@ import { settingsTabHref } from '../settings/settingsNav';
 import { briefLabel, useBriefValueText } from './briefFields';
 import { briefPayload, draftFromBrief, rebaseBriefDraft, type BriefDraft, type BriefDraftValue } from './briefDraft';
 
+// The admin's textarea look (Settings › CRM, the quote editor). Not `.input`:
+// its fixed h-10 shows a textarea as one line.
+const TEXTAREA_CLASS = 'w-full rounded-md border border-line-strong bg-panel text-heading px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent-dark';
+
 export function useBriefEditor(owner: BriefOwner) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -263,7 +267,7 @@ export const BriefCard: React.FC<{
             onChange={(e) => setDraft((d) => ({ ...d, sharedArrangements: e.target.value }))}
             rows={4}
             maxLength={10000}
-            className="input w-full"
+            className={TEXTAREA_CLASS}
           />
           <p className="text-xs text-muted mt-1">{t('briefs.sharedHint', 'The customer sees this text. Internal notes stay in the notes field.')}</p>
         </div>
@@ -333,7 +337,7 @@ const BriefInput: React.FC<{ field: BriefField; value: BriefDraftValue; onChange
   const id = `brief-field-${field.id}`;
   switch (field.type) {
     case 'long_text':
-      return <textarea id={id} value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} rows={3} maxLength={5000} className="input w-full" />;
+      return <textarea id={id} value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} rows={3} maxLength={5000} className={TEXTAREA_CLASS} />;
     case 'date':
     case 'project_date':
       return <LocalizedDateInput ariaLabel={field.label} value={(value as string) ?? ''} onChange={onChange} />;
