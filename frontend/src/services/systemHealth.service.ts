@@ -10,7 +10,8 @@ import { api } from '../config/api';
 
 export interface StuckEmail {
   id: number;
-  recipientEmail: string;
+  /** null when the caller lacks customers.view. */
+  recipientEmail: string | null;
   emailType: string;
   status: 'pending' | 'failed';
   retryCount: number;
