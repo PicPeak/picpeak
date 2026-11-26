@@ -20,11 +20,14 @@ vi.mock('react-i18next', async () => {
   };
 });
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-const calls = vi.hoisted(() => ({ update: vi.fn(), save: vi.fn(), notify: vi.fn(), overview: vi.fn(), get: vi.fn() }));
-const overview = (customerAccountId: number | null) => ({
+const calls = vi.hoisted(() => ({
+  update: vi.fn(), save: vi.fn(), notify: vi.fn(), overview: vi.fn(), get: vi.fn(),
+  permissions: ['events.view', 'events.edit'],
+}));
+const overview = (customerAccountId: number | null, updatedAt = '2026-08-01T00:00:00Z') => ({
   project: {
     id: 1, name: 'Hochzeit Müller', customerAccountId, customerEmail: customerAccountId ? 'kunde@example.com' : null, status: 'active',
-    location: 'Castle Hill', createdAt: '2026-07-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+    location: 'Castle Hill', createdAt: '2026-07-01T00:00:00Z', updatedAt,
   },
   events: [], quotes: [], contracts: [], invoices: [], emails: [],
   hours: { entries: [], totalMinutes: 0 }, valuation: { byCurrency: [] },
@@ -53,7 +56,7 @@ vi.mock('../../../../contexts/FeatureFlagsContext', () => ({
   useFeatureFlags: () => ({ flags: { projects: true } }),
 }));
 vi.mock('../../../../contexts/PermissionsContext', () => ({
-  usePermissions: () => ({ isSuperAdmin: false, hasPermission: (p: string) => ['events.view', 'events.edit'].includes(p) }),
+  usePermissions: () => ({ isSuperAdmin: false, hasPermission: (p: string) => calls.permissions.includes(p) }),
 }));
 
 import { ProjectCockpitPage } from '../ProjectCockpitPage';
@@ -62,6 +65,7 @@ const pending = [{ fieldId: 1, label: "Bride's name", labels: {}, change: 'chang
 let client: QueryClient;
 beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  calls.permissions = ['events.view', 'events.edit'];
   calls.overview.mockReset().mockResolvedValue(overview(1));
   calls.get.mockReset().mockResolvedValue(projectBrief({ pendingChanges: pending }));
 });
@@ -127,8 +131,9 @@ it('reloads the brief when the project gains a customer through any path, e.g. a
   calls.get.mockResolvedValue(projectBrief({ hasCustomer: false, pendingChanges: pending }));
   mount();
   expect(await screen.findByText('Link a customer to the project to send updates.')).toBeInTheDocument();
-  // What AttachDocumentDialog does after attaching a quote of a customer.
-  calls.overview.mockResolvedValue(overview(1));
+  // What AttachDocumentDialog does after attaching a quote of a customer
+  // (adopting the customer moves the project's updated_at).
+  calls.overview.mockResolvedValue(overview(1, '2026-08-02T09:00:00Z'));
   calls.get.mockResolvedValue(projectBrief({ pendingChanges: pending }));
   await act(async () => { await client.invalidateQueries({ queryKey: ['project-overview', 1] }); });
   await waitFor(() => expect(screen.getByRole('button', { name: 'Notify customer' })).toBeEnabled());
@@ -141,4 +146,24 @@ it('refreshes the project\'s emails after Notify', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Notify customer' }));
   await waitFor(() => expect(calls.notify).toHaveBeenCalled());
   await waitFor(() => expect(calls.overview.mock.calls.length).toBeGreaterThan(1));
+});
+
+it('reloads the brief for an editor who may not see customers, whose overview carries no customer', async () => {
+  calls.permissions = ['events.view', 'events.edit'];
+  // adminProjects strips the customer for a caller without customers.view.
+  const redacted = (updatedAt: string) => {
+    const o = overview(null, updatedAt);
+    delete (o.project as Partial<typeof o.project>).customerAccountId;
+    delete (o.project as Partial<typeof o.project>).customerEmail;
+    return o;
+  };
+  calls.overview.mockResolvedValue(redacted('2026-08-01T00:00:00Z'));
+  calls.get.mockResolvedValue(projectBrief({ hasCustomer: false, pendingChanges: pending }));
+  mount();
+  expect(await screen.findByText('Link a customer to the project to send updates.')).toBeInTheDocument();
+  // Attaching a customer's gallery gave the project a customer.
+  calls.overview.mockResolvedValue(redacted('2026-08-02T09:00:00Z'));
+  calls.get.mockResolvedValue(projectBrief({ pendingChanges: pending }));
+  await act(async () => { await client.invalidateQueries({ queryKey: ['project-overview', 1] }); });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Notify customer' })).toBeEnabled());
 });

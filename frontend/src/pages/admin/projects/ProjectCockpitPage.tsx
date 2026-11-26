@@ -139,14 +139,16 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
   const brief = useBriefEditor({ kind: 'projects', id: projectId });
   // It shows the project's customer state and data (occasion, date, location,
   // guests). Whatever changed them (a save, attaching a customer's document,
-  // a step), the brief reloads when the project does.
-  const briefInputs = JSON.stringify([project.customerAccountId, project.eventType, project.eventDate, project.location, project.guestCount]);
-  const briefInputsRef = useRef(briefInputs);
+  // a step) moves the project's updated_at, which every caller gets (the
+  // customer itself is left out for one without customers.view): the brief
+  // reloads when it moves.
+  const projectRevision = project.updatedAt;
+  const projectRevisionRef = useRef(projectRevision);
   useEffect(() => {
-    if (briefInputsRef.current === briefInputs) return;
-    briefInputsRef.current = briefInputs;
+    if (projectRevisionRef.current === projectRevision) return;
+    projectRevisionRef.current = projectRevision;
     qc.invalidateQueries({ queryKey: ['brief', 'projects', projectId] });
-  }, [briefInputs, qc, projectId]);
+  }, [projectRevision, qc, projectId]);
 
   const dirtyKeys = changedKeys(draft, base);
   const customerDirty = customer.id !== savedCustomer.id;

@@ -34,9 +34,11 @@ export function useBriefEditor(owner: BriefOwner) {
   const base = useMemo(() => draftFromBrief(brief), [brief]);
   // The draft is held with the owner and the saved brief it was made from: a
   // draft of another project or customer (the page stayed mounted) is
-  // dropped, one made from an older saved brief is rebased (UX.md › rebaseDraft).
+  // dropped for good, so coming back starts from the saved brief; one made
+  // from an older saved brief is rebased (UX.md › rebaseDraft).
   const ownerKey = `${owner.kind}:${owner.id}`;
   const [held, setHeld] = useState({ ownerKey, base, draft: base });
+  if (held.ownerKey !== ownerKey) setHeld({ ownerKey, base, draft: base });
   const resolve = (h: typeof held): BriefDraft => {
     if (h.ownerKey !== ownerKey) return base;
     return h.base === base ? h.draft : rebaseBriefDraft(h.draft, h.base, base);

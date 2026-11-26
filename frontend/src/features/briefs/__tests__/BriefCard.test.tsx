@@ -221,6 +221,23 @@ describe('BriefCard on a project', () => {
     expect((client.getQueryData(['brief', 'projects', 7]) as ReturnType<typeof projectBrief>).fields[0].value).toBe('Anna Maria');
   });
 
+  it('starts from the saved brief when the card comes back to a project after another one', async () => {
+    const withName = (name: string) => projectBrief({ fields: projectBrief().fields.map((f) => (f.id === 1 ? { ...f, value: name } : f)) });
+    state.get.mockImplementation(async ({ id }: { id: number }) => (id === 7 ? projectBrief() : withName('Clara')));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (id: number) => (
+      <QueryClientProvider client={client}><MemoryRouter><Harness id={id} /></MemoryRouter></QueryClientProvider>
+    );
+    const { rerender } = render(tree(7));
+    fireEvent.change(await screen.findByLabelText('Name der Braut'), { target: { value: 'Discarded on leaving' } });
+    rerender(tree(8));
+    await waitFor(() => expect(screen.getByLabelText('Name der Braut')).toHaveValue('Clara'));
+    rerender(tree(7));
+    await waitFor(() => expect(screen.getByLabelText('Name der Braut')).toHaveValue('Anna'));
+    expect(screen.queryByText('not saved yet')).toBeNull();
+    expect(screen.getByRole('button', { name: 'page save' })).toBeDisabled();
+  });
+
   it('says why a project without a customer cannot notify', async () => {
     state.get.mockResolvedValue(projectBrief({ hasCustomer: false, pendingChanges: [{ fieldId: 1, label: 'x', labels: {}, change: 'added' }] }));
     mount();
