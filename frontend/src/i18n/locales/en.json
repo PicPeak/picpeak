@@ -9547,6 +9547,7 @@
       "confirmTitle": "Notify customer",
       "confirmMessage": "Email the customer the changes since the last update ({{count}})? They also see the new state in their portal.",
       "sent": "Update queued to the customer.",
+      "suppressed": "Portal updated. The customer takes no administrative email, so no email was sent.",
       "failed": "Could not send the update"
     },
     "templates": {

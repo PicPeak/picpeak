@@ -9,7 +9,7 @@
  * draft is saved (the cockpit through its save bar, the customer page with
  * the card's own buttons). Notify is an action, never behind a save.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -32,15 +32,17 @@ export function useBriefEditor(owner: BriefOwner, { enabled = true }: { enabled?
   const withOccasion = owner.kind === 'customers';
 
   const base = useMemo(() => draftFromBrief(brief), [brief]);
-  const [stored, setDraft] = useState<BriefDraft>(base);
-  const baseRef = useRef(base);
-  useEffect(() => {
-    const old = baseRef.current;
-    setDraft((d) => rebaseBriefDraft(d, old, base));
-    baseRef.current = base;
-  }, [base]);
-  // Until the effect has run, the render after a (re)load sees the rebased draft already.
-  const draft = baseRef.current === base ? stored : rebaseBriefDraft(stored, baseRef.current, base);
+  // The draft is held with the owner and the saved brief it was made from: a
+  // draft of another project or customer (the page stayed mounted) is
+  // dropped, one made from an older saved brief is rebased (UX.md › rebaseDraft).
+  const ownerKey = `${owner.kind}:${owner.id}`;
+  const [held, setHeld] = useState({ ownerKey, base, draft: base });
+  const resolve = (h: typeof held): BriefDraft => {
+    if (h.ownerKey !== ownerKey) return base;
+    return h.base === base ? h.draft : rebaseBriefDraft(h.draft, h.base, base);
+  };
+  const draft = resolve(held);
+  const setDraft = (update: (d: BriefDraft) => BriefDraft) => setHeld((h) => ({ ownerKey, base, draft: update(resolve(h)) }));
 
   const payload = briefPayload(draft, base, brief, withOccasion);
   const dirty = Object.keys(payload).length > 0;
@@ -56,25 +58,36 @@ export function useBriefEditor(owner: BriefOwner, { enabled = true }: { enabled?
   });
   const notify = useMutationWithToast({
     mutationFn: () => briefsService.notify(owner),
-    successMessage: t('briefs.notify.sent', 'Update queued to the customer.') as string,
+    // A customer who takes no administrative email gets none; the portal
+    // shows the update all the same (as with their other held-back notices).
+    successMessage: (r) => (r.mail === 'suppressed'
+      ? t('briefs.notify.suppressed', 'Portal updated. The customer takes no administrative email, so no email was sent.')
+      : t('briefs.notify.sent', 'Update queued to the customer.')) as string,
     errorMessage: t('briefs.notify.failed', 'Could not send the update') as string,
     invalidateKeys: [queryKey],
   });
 
   return {
     owner, query, brief, draft, setDraft, dirty, save, notify,
-    discard: () => setDraft(base),
+    discard: () => setDraft(() => base),
   };
 }
 
 export type BriefEditor = ReturnType<typeof useBriefEditor>;
 
-export const BriefCard: React.FC<{ editor: BriefEditor; canEdit: boolean; footer?: React.ReactNode }> = ({ editor, canEdit, footer }) => {
+export const BriefCard: React.FC<{
+  editor: BriefEditor;
+  canEdit: boolean;
+  footer?: React.ReactNode;
+  /** Other unsaved or saving edits on the page that the update would carry
+   *  (the project data on the cockpit). */
+  pageBusy?: boolean;
+}> = ({ editor, canEdit, footer, pageBusy = false }) => {
   const { t, i18n } = useTranslation();
   const { formatDateTime } = useLocalizedDate();
   const valueText = useBriefValueText();
   const confirm = useConfirm();
-  const { owner, query, brief, draft, setDraft, dirty, notify } = editor;
+  const { owner, query, brief, draft, setDraft, dirty, save, notify } = editor;
   const isCustomerBrief = owner.kind === 'customers';
   const { data: occasions = [] } = useQuery({
     queryKey: ['event-types', 'active'],
@@ -119,7 +132,7 @@ export const BriefCard: React.FC<{ editor: BriefEditor; canEdit: boolean; footer
   const pending = brief.pendingChanges.length;
   const notifyBlocked = !brief.hasCustomer
     ? t('briefs.notify.noCustomer', 'Link a customer to the project to send updates.')
-    : dirty ? t('briefs.notify.saveFirst', 'Save your changes first.') : null;
+    : dirty || save.isPending || pageBusy ? t('briefs.notify.saveFirst', 'Save your changes first.') : null;
 
   const sendUpdate = async () => {
     const ok = await confirm({

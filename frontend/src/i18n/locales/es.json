@@ -3788,6 +3788,7 @@
       "confirmTitle": "Notificar al cliente",
       "confirmMessage": "¿Enviar al cliente por correo los cambios desde la última actualización ({{count}})? También verá el nuevo estado en su portal.",
       "sent": "Actualización puesta en cola para el cliente.",
+      "suppressed": "Portal actualizado. El cliente no recibe correos administrativos, así que no se envió ningún correo.",
       "failed": "No se pudo enviar la actualización"
     },
     "templates": {

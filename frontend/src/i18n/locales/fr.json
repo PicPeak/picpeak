@@ -4711,6 +4711,7 @@
       "confirmTitle": "Notifier le client",
       "confirmMessage": "Envoyer au client par e-mail les modifications depuis la dernière mise à jour ({{count}}) ? Il voit aussi le nouvel état dans son portail.",
       "sent": "Mise à jour mise en file d'attente pour le client.",
+      "suppressed": "Portail mis à jour. Le client ne reçoit pas d'e-mails administratifs, aucun e-mail n'a donc été envoyé.",
       "failed": "Impossible d'envoyer la mise à jour"
     },
     "templates": {

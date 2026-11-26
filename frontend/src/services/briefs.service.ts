@@ -88,7 +88,8 @@ export const briefsService = {
     const { data } = await api.put<{ brief: Brief }>(`/admin/briefs/${owner.kind}/${owner.id}`, payload);
     return data.brief;
   },
-  async notify(owner: BriefOwner): Promise<{ notifiedAt: string; changes: number }> {
+  /** `suppressed`: the customer takes no administrative email; the portal has the update. */
+  async notify(owner: BriefOwner): Promise<{ notifiedAt: string; changes: number; mail: 'queued' | 'suppressed' }> {
     const { data } = await api.post(`/admin/briefs/${owner.kind}/${owner.id}/notify`);
     return data;
   },

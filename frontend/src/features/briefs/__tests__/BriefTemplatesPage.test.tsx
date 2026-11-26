@@ -78,6 +78,20 @@ it('keeps a saved field\'s type and saves each changed list in its order', async
   expect(state.saveTemplate).toHaveBeenCalledWith('wedding', [saved.occasions.wedding[1], saved.occasions.wedding[0]]);
 });
 
+it('takes no edits while a save is under way', async () => {
+  let finish: (fields: unknown[]) => void = () => {};
+  state.saveTemplate.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  mount();
+  const label = await screen.findByDisplayValue('Contact on the day');
+  fireEvent.change(label, { target: { value: 'Contact person' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(state.saveTemplate).toHaveBeenCalledTimes(1));
+  expect(screen.getByDisplayValue('Contact person')).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Add field' })).toBeDisabled();
+  finish([{ ...saved.global[0], label: 'Contact person' }]);
+  await waitFor(() => expect(screen.getByDisplayValue('Contact person')).toBeEnabled());
+});
+
 it('refuses a field without a label', async () => {
   mount();
   await screen.findByDisplayValue('Contact on the day');

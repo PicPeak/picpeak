@@ -115,7 +115,8 @@ export const BriefTemplatesPage: React.FC = () => {
         </p>
       </Card>
 
-      <fieldset disabled={!canEdit} className="space-y-3">
+      {/* Closed while saving: the save replaces each saved list's draft. */}
+      <fieldset disabled={!canEdit || saving} className="space-y-3">
         {rows.length === 0 && (
           <Card><p className="text-sm text-muted">{t('briefs.templates.empty', 'No fields yet.')}</p></Card>
         )}

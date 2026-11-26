@@ -376,7 +376,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
               onAdd={setAdding}
             />
             <AttachDocumentDialog kind={adding} data={data} onClose={() => setAdding(null)} />
-            <BriefCard editor={brief} canEdit={canEdit} />
+            <BriefCard editor={brief} canEdit={canEdit} pageBusy={projectDirty || isSaving} />
           </div>
           <div className="space-y-6 min-w-0">
             <ProjectValueCard valuation={data.valuation} quotedMinor={quotedMinor} />

@@ -4638,6 +4638,7 @@
       "confirmTitle": "Klant informeren",
       "confirmMessage": "De klant de wijzigingen sinds de laatste update ({{count}}) mailen? In het klantenportaal ziet hij de nieuwe stand ook.",
       "sent": "Update voor de klant in de wachtrij gezet.",
+      "suppressed": "Portaal bijgewerkt. De klant ontvangt geen administratieve e-mails, dus er is geen e-mail verzonden.",
       "failed": "De update kon niet worden verzonden"
     },
     "templates": {

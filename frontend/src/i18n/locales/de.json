@@ -9512,6 +9512,7 @@
       "confirmTitle": "Kunden benachrichtigen",
       "confirmMessage": "Dem Kunden die Änderungen seit der letzten Aktualisierung ({{count}}) per E-Mail senden? Im Kundenportal sieht er den neuen Stand ebenfalls.",
       "sent": "Aktualisierung an den Kunden in die Warteschlange gestellt.",
+      "suppressed": "Portal aktualisiert. Der Kunde erhält keine administrativen E-Mails, daher wurde keine E-Mail gesendet.",
       "failed": "Die Aktualisierung konnte nicht gesendet werden"
     },
     "templates": {

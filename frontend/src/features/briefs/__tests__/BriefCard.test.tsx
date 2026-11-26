@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import { projectBrief } from './fixtures';
 
 const state = vi.hoisted(() => ({
@@ -32,8 +33,8 @@ vi.mock('../../../services/eventTypes.service', () => ({ eventTypesService: { ge
 
 import { BriefCard, useBriefEditor } from '../BriefCard';
 
-const Harness: React.FC<{ canEdit?: boolean }> = ({ canEdit = true }) => {
-  const editor = useBriefEditor({ kind: 'projects', id: 7 });
+const Harness: React.FC<{ canEdit?: boolean; id?: number }> = ({ canEdit = true, id = 7 }) => {
+  const editor = useBriefEditor({ kind: 'projects', id });
   return (
     <>
       <BriefCard editor={editor} canEdit={canEdit} />
@@ -116,6 +117,32 @@ describe('BriefCard on a project', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Notify customer' }));
     await waitFor(() => expect(state.notify).toHaveBeenCalledWith({ kind: 'projects', id: 7 }));
     expect(state.confirm).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('(2)') }));
+  });
+
+  it('says when the customer takes no administrative email and only the portal was updated', async () => {
+    state.notify.mockResolvedValue({ notifiedAt: '2027-01-01T10:00:00Z', changes: 1, mail: 'suppressed' });
+    state.get.mockResolvedValue(projectBrief({ pendingChanges: [{ fieldId: 1, label: 'x', labels: {}, change: 'added' }] }));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Notify customer' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(
+      'Portal updated. The customer takes no administrative email, so no email was sent.',
+    ));
+  });
+
+  it('drops the draft when the card moves to another project', async () => {
+    state.get.mockImplementation(async ({ id }: { id: number }) => (id === 7 ? projectBrief() : projectBrief({
+      fields: projectBrief().fields.map((f) => (f.id === 1 ? { ...f, value: 'Clara' } : f)),
+    })));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (id: number) => (
+      <QueryClientProvider client={client}><MemoryRouter><Harness id={id} /></MemoryRouter></QueryClientProvider>
+    );
+    const { rerender } = render(tree(7));
+    fireEvent.change(await screen.findByLabelText('Name der Braut'), { target: { value: 'Edited on 7' } });
+    rerender(tree(8));
+    await waitFor(() => expect(screen.getByLabelText('Name der Braut')).toHaveValue('Clara'));
+    expect(screen.queryByText('not saved yet')).toBeNull();
+    expect(screen.getByRole('button', { name: 'page save' })).toBeDisabled();
   });
 
   it('says why a project without a customer cannot notify', async () => {

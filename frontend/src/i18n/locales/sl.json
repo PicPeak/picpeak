@@ -7974,6 +7974,7 @@
       "confirmTitle": "Obvesti stranko",
       "confirmMessage": "Stranki po e-pošti poslati spremembe od zadnje posodobitve ({{count}})? Novo stanje vidi tudi v svojem portalu.",
       "sent": "Posodobitev za stranko je v čakalni vrsti.",
+      "suppressed": "Portal je posodobljen. Stranka ne prejema administrativnih e-poštnih sporočil, zato ni bilo poslano nobeno sporočilo.",
       "failed": "Posodobitve ni bilo mogoče poslati"
     },
     "templates": {
