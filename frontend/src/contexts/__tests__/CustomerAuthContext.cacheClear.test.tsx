@@ -191,6 +191,25 @@ describe('customer portal query cache clears on session loss (#1594)', () => {
     expect(screen.queryByText('Alpha Wedding')).not.toBeInTheDocument();
   });
 
+  it('drops the cached Recent activity feed when the session is revoked', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    sessionSpy.mockResolvedValue({ customer: customerA, features, branding });
+    dashboardSpy.mockResolvedValue(dashboardWith('Alpha Wedding'));
+    renderApp(qc);
+    expect(await screen.findByText('Alpha Wedding')).toBeInTheDocument();
+
+    // CustomerActivityPage caches Customer A's feed under ['customer-activity'].
+    qc.setQueryData(['customer-activity'], { items: [{ title: 'Alpha contract signed' }] });
+
+    sessionSpy.mockResolvedValue(null);
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(screen.getByText('login-page')).toBeInTheDocument());
+
+    expect(qc.getQueryData(['customer-activity'])).toBeUndefined();
+  });
+
   it('drops the cached dashboard when refreshSession resolves as a different customer without an intervening 401', async () => {
     // customer_token is a single domain-wide cookie (customer.service.ts):
     // Tab B can log out customer A and log back in as customer B while Tab A

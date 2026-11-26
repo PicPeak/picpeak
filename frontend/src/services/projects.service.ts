@@ -92,7 +92,8 @@ export interface ProjectEvent {
 
 export interface ProjectEmail {
   id: number;
-  recipient: string;
+  /** null for mail matched by the customer's address when the caller lacks customers.view. */
+  recipient: string | null;
   type: string;
   status: string;
   queuedAt: string | null;

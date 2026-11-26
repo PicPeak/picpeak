@@ -157,7 +157,7 @@ export const ProjectActivityFeed: React.FC<{
       items.push({
         key: `email-${e.id}`, kind: 'email', date: e.sentAt || e.queuedAt,
         title: t(`projects.feed.email`, 'Email') + ` · ${e.type}`,
-        subtitle: e.recipient + (e.error ? ` — ${e.error}` : ''),
+        subtitle: [e.recipient, e.error].filter(Boolean).join(' — '),
         status: e.status, emailId: e.id, emailStatus: e.status, reRendered: !e.stored,
         emailCanAct: e.canAct,
       });

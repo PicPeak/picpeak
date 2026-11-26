@@ -61,6 +61,9 @@ async function assertMayLinkCustomer(req) {
   }
 }
 
+// Anything shaped like an address, for blanking delivery errors.
+const EMAIL_ADDRESS = /[^\s<>"'(),;:]+@[^\s<>"'(),;:]+/g;
+
 function withoutCustomer(project) {
   if (!project) return project;
   const copy = { ...project };
@@ -137,6 +140,8 @@ router.get('/', requirePermission('events.view'), [
   const perms = {
     bills: await userHasAnyPermission(req.admin.id, ['bills.view']),
     quotes: await userHasAnyPermission(req.admin.id, ['quotes.view']),
+    // Also keeps the search off the customer's address.
+    customers: await mayViewCustomers(req),
   };
   // Only the caller's projects (GHSA-wrg5). Passed as a SUBQUERY so a large
   // project count can't hit the driver's bind-parameter limit; null means
@@ -156,7 +161,7 @@ router.get('/', requirePermission('events.view'), [
     projectIds,
     withStages,
   });
-  const visible = (await mayViewCustomers(req)) ? projects : projects.map(withoutCustomer);
+  const visible = perms.customers ? projects : projects.map(withoutCustomer);
   return successResponse(res, { projects: visible });
 }));
 
@@ -377,9 +382,15 @@ router.get('/:id/overview', requirePermission('events.view'), requireProjectOwne
       }
     } else {
       overview.project = withoutCustomer(overview.project);
-      // A brief update's recipient is the customer's address (issue 2678).
-      // The other mail rows are left as they were.
-      overview.emails = overview.emails.map((e) => (e.type === 'project_brief_updated' ? { ...e, recipient: null } : e));
+      // Mail recipients are customer addresses: document mail is matched by
+      // the customer's address, and gallery mail can go to a billing address
+      // or belong to a gallery the caller does not own. They leave the list,
+      // also from delivery errors, which often quote the address.
+      overview.emails = (overview.emails || []).map((e) => ({
+        ...e,
+        recipient: null,
+        error: e.error ? e.error.replace(EMAIL_ADDRESS, '…') : e.error,
+      }));
     }
   }
   return successResponse(res, overview);

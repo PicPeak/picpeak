@@ -44,6 +44,7 @@ import {
  */
 const PORTAL_ONLY_QUERY_KEYS = new Set([
   'customer-dashboard',
+  'customer-activity',
   'customer-documents',
   'customer-document',
   'customer-document-requests',

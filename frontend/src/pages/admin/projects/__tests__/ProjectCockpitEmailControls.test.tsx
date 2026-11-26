@@ -66,7 +66,11 @@ const OVERVIEW_SUPER = {
   emails: OVERVIEW.emails.map((e) => ({ ...e, canAct: true })),
 };
 
-let currentOverview: typeof OVERVIEW = OVERVIEW;
+// Rows may carry recipient null (blanked for a caller without customers.view).
+type OverviewFixture = Omit<typeof OVERVIEW, 'emails'> & {
+  emails: Array<Omit<(typeof OVERVIEW)['emails'][number], 'recipient'> & { recipient: string | null }>;
+};
+let currentOverview: OverviewFixture = OVERVIEW;
 
 vi.mock('../../../../services/projects.service', () => ({
   projectsService: {
@@ -153,5 +157,15 @@ describe('ProjectCockpitPage email controls (#969)', () => {
     // Fail to hiding a live control rather than offering a dead one.
     expect(screen.queryByText('Preview')).toBeNull();
     expect(screen.queryByText('Resend')).toBeNull();
+  });
+
+  it('shows no "null" when the server blanked a document mail recipient (no customers.view)', async () => {
+    currentOverview = {
+      ...OVERVIEW,
+      emails: [{ ...OVERVIEW.emails[1], recipient: null, error: 'Mailbox full' }],
+    };
+    await renderPage();
+    expect(screen.queryByText(/null/)).not.toBeInTheDocument();
+    expect(screen.getByText('Mailbox full')).toBeInTheDocument();
   });
 });
