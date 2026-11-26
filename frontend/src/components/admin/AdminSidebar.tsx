@@ -211,14 +211,6 @@ export const adminNavigation: NavItem[] = [
 ];
 
 /**
- * Does this main-menu entry pass its declared permission and feature gates?
- *
- * Exported because the command palette indexes the same menu and must not
- * offer a destination the sidebar hides. Section entries are NOT decided here
- * — their visibility follows the item count inside the section (see
- * `sectionItemCounts`), which is narrower and cannot drift.
- */
-/**
  * Main-menu entries that open a section rather than a page.
  *
  * The sidebar decides these from the section's own contents and the command
@@ -232,6 +224,14 @@ export const SECTION_PATHS: readonly string[] = [
   '/admin/automation', '/admin/clients', '/admin/accounting',
 ];
 
+/**
+ * Does this main-menu entry pass its declared permission and feature gates?
+ *
+ * Exported because the command palette indexes the same menu and must not
+ * offer a destination the sidebar hides. Section entries are NOT decided here
+ * — their visibility follows the item count inside the section (see
+ * `sectionItemCounts`), which is narrower and cannot drift.
+ */
 export function navItemAllowed(
   item: NavItem,
   hasPermission: (p: string) => boolean,
@@ -508,7 +508,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
   // a section they drilled into from elsewhere.
   const replaceFor = (item: SidebarSectionItem) => !!item.replace && section === activeSection;
 
-  // Settings is 30 tabs in 8 groups — long enough that scanning it is the
+  // Settings is 35 tabs in 8 groups — long enough that scanning it is the
   // slow part. Only Settings gets the filter; every other section is short
   // enough to read at a glance, and a search box on a list of three would be
   // noise.

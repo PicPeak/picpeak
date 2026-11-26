@@ -28,9 +28,7 @@ const MARKER_REPAIR_MS = 30 * 1000;
 // scope (or none at all); where this build has the CRM access policy they run
 // as trusted maintenance.
 function trusted(run) {
-  let policy;
-  try { policy = require('../database/crmAccess'); } catch (_) { return run(); }
-  return policy.withTrustedCrmAccess('coordinated portable restore', run);
+  return require('../database/crmAccess').withTrustedCrmAccess('coordinated portable restore', run);
 }
 
 function duration(name, fallback) {
@@ -794,7 +792,7 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
           }
           await lifetimeLease.release();
           if (row.state !== 'restart_required') throw failure('Offline restore requires supervised recovery');
-          return { ...summary(result), restored: true, externalPathsConverted: true, externalPathError: null,
+          return { ...summary(result), restored: true,
             outcome: result.outcome, restartRequired: true, attemptId: handle.attemptId };
         }
         if (stopping) throw failure();

@@ -835,7 +835,6 @@ export function useSettingsState() {
     adminProfileLoading,
 
     // Settings data
-    settings,
     generalSettings,
     setGeneralSettings,
     securitySettings,
@@ -878,8 +877,5 @@ export function useSettingsState() {
     saveAnalyticsMutation,
     saveEventSettingsMutation,
     saveSeoMutation,
-
-    // Translation
-    t,
   };
 }

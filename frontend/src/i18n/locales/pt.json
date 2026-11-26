@@ -157,7 +157,6 @@
     "selected": "Selecionado",
     "chunk": "Fragmento",
     "optional": "opcional",
-    "tryAgain": "Tentar novamente",
     "active": "Ativo",
     "inactive": "Inativo",
     "create": "Criar",
@@ -172,7 +171,6 @@
     "retry": "Tentar novamente",
     "characters": "caracteres",
     "saveChanges": "Salvar alterações",
-    "resetChanges": "Desfazer alterações",
     "dismiss": "Dispensar",
     "discard": "Descartar",
     "preview": "Pré-visualizar",
@@ -318,13 +316,7 @@
     "events": "Eventos",
     "settings": "Configurações",
     "archives": "Arquivos",
-    "emailSettings": "Configurações de e-mail",
-    "branding": "Identidade visual",
-    "eventTypes": "Tipos de evento",
-    "backup": "Backup e Restauração",
-    "cmsPages": "Páginas CMS",
     "users": "Utilizadores",
-    "calendar": "Calendário",
     "clients": "Clientes",
     "automation": "Automação",
     "sharing": "Partilha"
@@ -1068,7 +1060,6 @@
     "loadingPhotos": "Carregando fotos...",
     "photoCategories": "Categorias de Fotos",
     "organizeCategoriesInfo": "Organize suas fotos em categorias para ajudar na navegação.",
-    "categoriesTip": "Dica: Categorias são específicas de cada evento. Crie nomes como \"Cerimônia\", \"Recepção\", etc.",
     "galleryPassword": "Senha da Galeria",
     "requirePasswordToggle": "Exigir senha para esta galeria",
     "requirePasswordToggleHelp": "Desative se quiser compartilhar a galeria sem senha. Qualquer pessoa com o link poderá ver as fotos.",
@@ -1496,8 +1487,6 @@
     }
   },
   "settings": {
-    "title": "Configurações do Sistema",
-    "subtitle": "Configurar preferências e ajustes globais do sistema",
     "loadingSettings": "Carregando configurações...",
     "general": {
       "title": "Geral",
@@ -1529,7 +1518,6 @@
       "maintenanceMode": "Ativar modo de manutenção",
       "language": "Idioma",
       "defaultLanguageHelp": "Idioma exibido aos convidados antes do login",
-      "saveGeneralSettings": "Salvar Configurações Gerais",
       "dateTimeFormat": "Formato de Data e Hora",
       "dateFormat": "Formato de Data",
       "dateFormatHelp": "Como as datas são exibidas nos e-mails e no sistema",
@@ -1542,7 +1530,6 @@
       "accountEmailHelp": "Usado para login e notificações de segurança.",
       "accountEmailRequired": "E-mail é obrigatório",
       "accountEmailInvalid": "Insira um e-mail válido",
-      "accountSaveButton": "Salvar detalhes da conta",
       "accountSaveSuccess": "Detalhes da conta atualizados",
       "adminLanguage": "O seu idioma de administração",
       "adminLanguageHelp": "Aplica-se à área de administração, apenas para si neste dispositivo. Tem efeito imediato — não é preciso guardar.",
@@ -1565,8 +1552,6 @@
       "cssLabel": "CSS Personalizado",
       "cssPlaceholder": "Ajustes de layout, cores ou tipografia via CSS.",
       "cssHelp": "Imports e URLs de JavaScript são removidos. Use seletores CSS padrão.",
-      "saveCta": "Salvar site público",
-      "saving": "Salvando...",
       "saveSuccess": "Configurações do site público salvas.",
       "saveError": "Falha ao salvar configurações do site público.",
       "resetCta": "Redefinir para o padrão",
@@ -1596,7 +1581,6 @@
       "applyRecommended": "Usar recomendado",
       "applyAvailable": "Igualar disponível",
       "invalidSoftLimit": "Insira um número válido para o limite.",
-      "saveSoftLimit": "Salvar limite",
       "limitNotEnforced": "Este limite é apenas consultivo e não é aplicado automaticamente.",
       "overrideTitle": "Substituição Manual de Capacidade",
       "diskOverrideEnvNote": "A capacidade é controlada por variáveis de ambiente e não pode ser editada aqui.",
@@ -1605,7 +1589,6 @@
       "overrideCapacityHelper": "Deixe em branco para usar a leitura automática.",
       "overrideAvailableLabel": "Espaço disponível (GB)",
       "overrideAvailableHelper": "Opcional. Deixe em branco para calcular automaticamente.",
-      "saveOverride": "Salvar substituição",
       "capacityRequiredForAvailable": "Insira a capacidade total antes de definir o espaço disponível.",
       "availableExceedsCapacity": "O espaço disponível não pode exceder a capacidade total.",
       "storageUsage": "Uso de Armazenamento",
@@ -1720,7 +1703,6 @@
       "requireExpiration": "Exigir data de expiração",
       "requireExpirationHelp": "Galerias devem ter uma data de término",
       "expirationWarning": "Galerias sem expiração ficarão ativas até arquivamento manual",
-      "saveSettings": "Salvar Configurações de Evento",
       "noteTitle": "Nota",
       "noteText": "Estas configurações afetam apenas novos eventos. O padrão exige todos os campos.",
       "defaultRequirePassword": "Exigir senha por padrão",
@@ -1764,17 +1746,6 @@
       "protectionLevel": "Nível de Proteção Padrão",
       "enableDevtools": "Ativar detecção de DevTools por padrão",
       "enableCanvas": "Ativar renderização em Canvas por padrão",
-      "rateLimiting": "Limite de Requisições",
-      "rateLimitingHelp": "Limita quantas imagens podem ser solicitadas para evitar raspagem (scraping).",
-      "requestsPerMinute": "Requisições por minuto",
-      "requestsPer5Minutes": "Requisições por 5 min",
-      "requestsPerHour": "Requisições por hora",
-      "securityMonitoring": "Monitoramento de Segurança",
-      "suspiciousThreshold": "Limite para atividade suspeita",
-      "autoBlockThreshold": "Limite para bloqueio automático",
-      "enableMonitoring": "Ativar monitoramento de segurança",
-      "blockSuspiciousIps": "Bloquear IPs suspeitos automaticamente",
-      "logEvents": "Registrar eventos de segurança no banco de dados",
       "infoTitle": "Sobre a Proteção de Imagem",
       "infoText": "Estes recursos evitam cópias fáceis, mas não bloqueiam todos os métodos. Considere marcas d'água para proteção total."
     },
@@ -1864,23 +1835,16 @@
       "ruleAgentPlaceholder": "User-agent",
       "rulePathPlaceholder": "Caminho proibido (Disallow)",
       "showPreview": "Mostrar prévia do robots.txt",
-      "hidePreview": "Ocultar prévia do robots.txt",
-      "saveSettings": "Salvar Configurações de SEO"
+      "hidePreview": "Ocultar prévia do robots.txt"
     },
     "analytics": {
       "title": "Análise",
-      "umamiIntegration": "Integração com Umami Analytics",
-      "enableUmami": "Ativar Umami Analytics",
       "umamiUrl": "URL do Umami",
       "umamiUrlHelp": "A URL da sua instância Umami (ex: https://analytics.seudominio.com)",
       "websiteId": "ID do Website",
       "websiteIdHelp": "O ID do site no painel do Umami",
       "shareUrl": "URL de Compartilhamento (Opcional)",
       "shareUrlHelp": "URL pública para incorporar o painel completo",
-      "umamiInfo": "Sobre o Umami Analytics",
-      "umamiInfoText": "Umami é uma plataforma de análise focada em privacidade e código aberto.",
-      "learnMore": "Saiba mais sobre o Umami",
-      "saveAnalyticsSettings": "Salvar Configurações de Análise",
       "backendAnalytics": "Análise de Backend",
       "backendAnalyticsText": "O sistema rastreia métricas básicas no servidor para segurança e performance.",
       "tracked": "Métricas Monitoradas",
@@ -1893,7 +1857,6 @@
     },
     "groups": {
       "general": "Geral",
-      "display": "Apresentação",
       "privacySecurity": "Privacidade e Segurança",
       "integrations": "Integrações",
       "system": "Sistema",
@@ -1943,8 +1906,6 @@
       "existing": "Webhooks existentes",
       "empty": "Ainda sem webhooks. Crie um acima para começar a receber notificações."
     },
-    "sectionLabel": "Secção de configurações",
-    "navAriaLabel": "Navegação de configurações",
     "eventTypes": {
       "title": "Tipos de Evento"
     },
@@ -3563,23 +3524,12 @@
         "thumbnails": "Miniaturas",
         "thumbnailsHelp": "Imagens de prévia geradas (podem ser recriadas)"
       },
-      "advancedOptions": {
-        "title": "Opções Avançadas",
-        "compression": "Ativar Compressão",
-        "compressionHelp": "Comprime os arquivos para economizar espaço",
-        "encryption": "Ativar Criptografia",
-        "encryptionHelp": "Criptografa os backups para maior segurança",
-        "encryptionPassphrase": "Frase de Senha da Criptografia",
-        "encryptionPassphraseHelp": "Senha forte para criptografar os backups"
-      },
       "messages": {
         "requiredFields": "Preencha todos os campos obrigatórios",
         "connectionSuccess": "Teste de conexão bem-sucedido!",
         "connectionFailed": "Teste de conexão falhou"
       },
-      "testingConnection": "Testando conexão...",
-      "saveSettings": "Salvar Configuração",
-      "savingSettings": "Salvando..."
+      "testingConnection": "Testando conexão..."
     },
     "history": {
       "searchPlaceholder": "Buscar backups...",
@@ -3627,8 +3577,7 @@
         },
         "upload": {
           "name": "Enviar Backup",
-          "description": "Fazer upload de um arquivo de backup",
-          "comingSoon": "Funcionalidade de upload disponível em breve"
+          "description": "Fazer upload de um arquivo de backup"
         },
         "configuration": {
           "s3": "Configuração S3",
@@ -3642,9 +3591,6 @@
         "title": "Escolher Backup para Restaurar",
         "subtitle": "Selecione entre os backups disponíveis",
         "noBackupsFound": "Nenhum backup encontrado na origem selecionada",
-        "encrypted": "Backup Criptografado",
-        "encryptedMessage": "Você precisará da frase de senha para restaurar este backup.",
-        "enterPassphrase": "Digite a frase de senha da criptografia",
         "at": "em"
       },
       "restoreTypes": {
@@ -3900,8 +3846,6 @@
       "guestPrivacyTextPlaceholder": "ex.: Usamos seu nome apenas para ver quem baixou quais fotos. Peça a remoção a qualquer momento.",
       "guestPrivacyTextHint": "Opcional. Exibido aos convidados quando o nome é solicitado."
     },
-    "settingsUpdated": "Configurações de feedback atualizadas",
-    "settingsUpdateError": "Falha ao atualizar as configurações",
     "moderated": "Feedback moderado",
     "deleted": "Feedback excluído",
     "exported": "Feedback exportado",
@@ -3909,7 +3853,6 @@
     "exportCSV": "Exportar CSV",
     "exportJSON": "Exportar JSON",
     "tabs": {
-      "settings": "Configurações",
       "feedback": "Feedback",
       "analytics": "Análise",
       "moderation": "Moderação"
@@ -4500,12 +4443,10 @@
       "body": "Próximas sessões, datas de entrega de galerias e outros eventos relacionados a sessões aparecerão aqui. Avisaremos quando estiver pronto."
     },
     "quotes": {
-      "title": "Orçamentos",
-      "body": "Revise e aceite orçamentos para sessões futuras em um só lugar. Ainda estamos construindo — por enquanto, seu fotógrafo continuará enviando orçamentos da maneira habitual."
+      "title": "Orçamentos"
     },
     "bills": {
-      "title": "Faturas",
-      "body": "Faturas e histórico de pagamentos das suas sessões estarão disponíveis aqui. Enviaremos um e-mail quando estiver no ar."
+      "title": "Faturas"
     },
     "profile": {
       "title": "Perfil do cliente",

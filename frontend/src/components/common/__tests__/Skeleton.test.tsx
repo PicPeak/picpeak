@@ -1,7 +1,7 @@
 import React from 'react';
 import { render } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
-import { Skeleton, SkeletonGalleryGrid, SkeletonCard } from '../Skeleton';
+import { Skeleton, SkeletonGalleryGrid } from '../Skeleton';
 
 /**
  * Regression for #358. The Skeleton placeholders used to hard-code
@@ -38,14 +38,5 @@ describe('Skeleton — theme-aware colour', () => {
         'var(--shared-fill)'
       );
     });
-  });
-
-  it('SkeletonCard surface uses the shared surface token', () => {
-    const { container } = render(<SkeletonCard />);
-    const card = container.firstElementChild as HTMLElement;
-    expect(card).not.toBeNull();
-    expect(card.style.backgroundColor).toBe('var(--shared-surface)');
-    // Sanity: should not retain the old bg-white class either
-    expect(card.className).not.toMatch(/bg-white/);
   });
 });

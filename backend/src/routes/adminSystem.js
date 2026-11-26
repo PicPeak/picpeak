@@ -502,68 +502,6 @@ router.get('/status', adminAuth, requirePermission(['settings.view', 'system.vie
   }
 });
 
-// Get database statistics
-router.get('/database', adminAuth, requirePermission(['settings.view', 'system.view']), async (req, res) => {
-  try {
-    // Get table info
-    const tables = [
-      'events', 'photos', 'admin_users', 'photo_categories', 
-      'cms_pages', 'email_templates', 'email_queue', 'activity_logs',
-      'app_settings', 'email_configs', 'access_logs', 'migrations'
-    ];
-    
-    const tableInfo = [];
-    
-    for (const table of tables) {
-      try {
-        const [count] = await db(table).count('* as count');
-        
-        // Get last update time
-        let lastUpdate = null;
-        try {
-          const lastRow = await db(table)
-            .orderBy('updated_at', 'desc')
-            .orOrderBy('created_at', 'desc')
-            .orOrderBy('timestamp', 'desc')
-            .orOrderBy('applied_at', 'desc')
-            .first();
-          
-          if (lastRow) {
-            lastUpdate = lastRow.updated_at || lastRow.created_at || lastRow.timestamp || lastRow.applied_at;
-          }
-        } catch (e) {
-          // Table might not have timestamp columns
-        }
-        
-        tableInfo.push({
-          name: table,
-          rows: count.count,
-          lastUpdate
-        });
-      } catch (error) {
-        // Table might not exist
-        logger.warn('Failed to retrieve table info', {
-          table,
-          error: error.message
-        });
-        tableInfo.push({
-          name: table,
-          rows: 0,
-          error: 'Unable to retrieve table details'
-        });
-      }
-    }
-    
-    res.json({
-      tables: tableInfo,
-      timestamp: new Date()
-    });
-  } catch (error) {
-    logger.error('Error fetching database info:', error);
-    res.status(500).json({ error: 'Failed to fetch database information' });
-  }
-});
-
 // Get update notification settings
 router.get('/updates/notifications', adminAuth, requirePermission(['settings.view', 'system.view']), async (req, res) => {
   try {

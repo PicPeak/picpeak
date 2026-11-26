@@ -107,21 +107,6 @@ function importFilePathProblem(rel) {
   return null;
 }
 
-/** Refuse an archive whose files/ entries the exporter could not have written. */
-function assertFilesEntriesAllowed(entries) {
-  for (const entry of entries || []) {
-    if (!entry || !entry.name || entry.isDirectory) continue;
-    const name = String(entry.name).replace(/\\/g, '/');
-    if (!name.startsWith('files/')) continue;
-    const problem = importFilePathProblem(name.slice('files/'.length));
-    if (problem) {
-      const err = archiveLimitError(`Archive contains a file PicPeak would not have exported (${problem}): ${name}`, 400);
-      err.code = 'UNSUPPORTED_ARCHIVE_FILE';
-      throw err;
-    }
-  }
-}
-
 // Compatibility exports share the exact bounded archive boundary used by the
 // supervised worker. Preview enumeration is also bounded before entry storage.
 function assertArchiveWithinLimits(entries, extractDir, options = {}) {
@@ -972,7 +957,6 @@ module.exports = {
   jsonColumnsFor,
   serialiseJsonColumns,
   assertContainedPaths,
-  assertFilesEntriesAllowed,
   importFilePathProblem,
   importFromPicpeak,
   readManifestFromZip,

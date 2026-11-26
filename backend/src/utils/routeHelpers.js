@@ -109,28 +109,6 @@ const errorResponse = (res, error, statusCode = 500, publicMessage) => {
 };
 
 /**
- * Creates a route handler with built-in validation.
- * Combines handleAsync and validateRequest for cleaner route definitions.
- *
- * @param {Function} fn - Async route handler function
- * @returns {Function} Express middleware function
- *
- * @example
- * router.post('/events', [
- *   body('name').notEmpty()
- * ], withValidation(async (req, res) => {
- *   const event = await eventService.create(req.body);
- *   successResponse(res, { event }, 201);
- * }));
- */
-const withValidation = (fn) => {
-  return handleAsync(async (req, res, next) => {
-    validateRequest(req);
-    return fn(req, res, next);
-  });
-};
-
-/**
  * Extracts pagination parameters from query string with defaults.
  *
  * @param {Request} req - Express request object
@@ -193,7 +171,6 @@ module.exports = {
   safeValidationErrors,
   successResponse,
   errorResponse,
-  withValidation,
   getPagination,
   paginatedResponse
 };

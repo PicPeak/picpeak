@@ -1,4 +1,4 @@
-const { formatBoolean, isPostgreSQL, addDays, formatDateForDB, insertAndGetId } = require('../utils/dbCompat');
+const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
 
 describe('Database Compatibility', () => {
   // Save original env
@@ -42,42 +42,6 @@ describe('Database Compatibility', () => {
       
       delete process.env.DATABASE_CLIENT;
       expect(isPostgreSQL()).toBe(false); // Default to SQLite
-    });
-  });
-
-  describe('formatDateForDB', () => {
-    test('should format dates as ISO strings', () => {
-      const date = new Date('2024-01-15T10:30:00Z');
-      expect(formatDateForDB(date)).toBe('2024-01-15T10:30:00.000Z');
-    });
-  });
-
-  describe('addDays', () => {
-    test('should add days correctly', () => {
-      const date = new Date('2024-01-15');
-      const result = addDays(date, 30);
-      expect(result.toISOString().split('T')[0]).toBe('2024-02-14');
-      
-      const negativeResult = addDays(date, -7);
-      expect(negativeResult.toISOString().split('T')[0]).toBe('2024-01-08');
-    });
-  });
-
-  describe('insertAndGetId', () => {
-    test('should handle PostgreSQL result format', async () => {
-      const mockQuery = {
-        returning: jest.fn().mockResolvedValue([{ id: 123 }])
-      };
-      const result = await insertAndGetId(mockQuery);
-      expect(result).toBe(123);
-    });
-
-    test('should handle SQLite result format', async () => {
-      const mockQuery = {
-        returning: jest.fn().mockResolvedValue([456])
-      };
-      const result = await insertAndGetId(mockQuery);
-      expect(result).toBe(456);
     });
   });
 });

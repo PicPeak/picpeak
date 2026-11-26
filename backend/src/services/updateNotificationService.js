@@ -196,19 +196,9 @@ async function sendTestUpdateNotification() {
       return { success: false, message: 'No recipients configured' };
     }
 
-    // checkForUpdates is best-effort here — we want the version + channel
-    // for the email body, but a transient failure shouldn't block the test
-    // send. Fall back to env-derived defaults so the email still goes out.
-    let updateInfo;
-    try {
-      updateInfo = await checkForUpdates(true);
-    } catch (error) {
-      logger.warn('checkForUpdates failed during test send, using fallbacks:', error.message);
-      updateInfo = {
-        current: process.env.npm_package_version || 'unknown',
-        channel: process.env.UPDATE_CHANNEL || 'stable'
-      };
-    }
+    // We want the version + channel for the email body. checkForUpdates
+    // never throws: a failed GitHub fetch still returns current + channel.
+    const updateInfo = await checkForUpdates(true);
 
     const channelLabel = updateInfo.channel === 'beta' ? 'Beta' : 'Stable';
 

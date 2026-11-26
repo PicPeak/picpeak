@@ -6,7 +6,7 @@ The **all-in-one image** (`<repo>/aio`, built from `Dockerfile.aio` at the repo 
 
 ## Features
 
-- 🔧 **Automatic builds** on push to main/develop branches, PRs, and releases
+- 🔧 **Automatic builds** on push to the `main` (beta) and `stable` branches, on release tags, and on PRs (build only, nothing pushed)
 - 🏗️ **Multi-architecture support** (linux/amd64 and linux/arm64)
 - 🏷️ **Smart tagging** based on branches, versions, and commits
 - 🔒 **Security scanning** with Trivy vulnerability scanner
@@ -31,11 +31,12 @@ Images are automatically tagged based on the trigger event:
 
 | Event | Tags Generated |
 |-------|---------------|
-| Push to main | `latest`, `main`, `main-<short-sha>` |
-| Push to develop | `develop`, `develop-<short-sha>` |
-| Pull Request | `pr-<number>` |
-| Release (v1.2.3) | `1.2.3`, `1.2`, `1`, `latest` |
-| Manual trigger | Based on branch + optional push |
+| Push to `main` (beta channel) | `main`, `beta`, `sha-<short-sha>` |
+| Push to `stable` | `stable`, `latest`, `sha-<short-sha>` |
+| Beta release tag (`v1.2.3-beta.4`) | `1.2.3-beta.4`, `v1.2.3-beta.4`, `sha-<short-sha>` |
+| Stable release tag (`v1.2.3`) | `1.2.3`, `1.2`, `1`, `v1.2.3`, `latest`, `stable`, `sha-<short-sha>` |
+| Pull Request | Built and scanned only; nothing is pushed |
+| Manual trigger | Same tags as a push to the selected ref |
 
 ## Usage
 

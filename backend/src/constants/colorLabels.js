@@ -33,31 +33,6 @@ const COLOR_LABEL_TO_XMP = {
  */
 const COLOR_LABEL_PRIORITY = ['green', 'yellow', 'red', 'blue', 'purple'];
 
-/**
- * Lightbox keyboard schemes. Both are data, not code, so the gallery lightbox,
- * the admin viewer and the settings preview can never drift.
- *
- * - 'colors'    the scheme requested in discussion #1027: three keys, no
- *               Lightroom knowledge needed. 1 = 1st choice, 2 = 2nd choice,
- *               3 = rejected.
- * - 'lightroom' Lightroom's own defaults: 1-5 set the star rating, 6-9 set
- *               red/yellow/green/blue. Lightroom has no default shortcut for
- *               purple, and neither do we — it stays click-only.
- *
- * In both schemes pressing the same key again clears the value, and '0'
- * clears (the rating in 'lightroom', the colour in 'colors').
- */
-const KEYBIND_SCHEMES = {
-  colors: {
-    colors: { 1: 'green', 2: 'yellow', 3: 'red' },
-    ratings: {},
-  },
-  lightroom: {
-    colors: { 6: 'red', 7: 'yellow', 8: 'green', 9: 'blue' },
-    ratings: { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 },
-  },
-};
-
 function isValidColorLabel(value) {
   return COLOR_LABELS.includes(value);
 }
@@ -105,7 +80,6 @@ module.exports = {
   COLOR_LABELS,
   COLOR_LABEL_TO_XMP,
   COLOR_LABEL_PRIORITY,
-  KEYBIND_SCHEMES,
   SHARED_COLOR_LABEL_IDENTITY,
   isValidColorLabel,
   dominantColorLabel,

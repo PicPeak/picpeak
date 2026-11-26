@@ -17,7 +17,6 @@ import {
   ChevronRight,
   ChevronLeft,
   Loader2,
-  Shield,
   Download,
   Eye,
   Calendar,
@@ -100,8 +99,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
     restoreType: 'full',
     selectedItems: [],
     skipPreBackup: false,
-    force: false,
-    encryptionPassphrase: ''
+    force: false
   });
   const [validationResult, setValidationResult] = useState(null);
 
@@ -210,7 +208,6 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
         selectedItems: restoreData.selectedItems,
         skipPreBackup: restoreData.skipPreBackup,
         force: restoreData.force,
-        encryptionPassphrase: restoreData.encryptionPassphrase,
         ...restoreData.sourceConfig
       });
       return response.data;
@@ -531,9 +528,6 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
                       {t('backup.restore.backup.corruptBadge', 'Corrupt')}
                     </span>
                   )}
-                  {backup.encrypted && (
-                    <Shield className="h-5 w-5 text-faint" />
-                  )}
                 </div>
               </div>
             </Card>
@@ -565,29 +559,6 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
         </Card>
       )}
 
-      {restoreData.selectedBackup?.encrypted && (
-        <Card className="p-4 bg-warning-soft border-warning-line">
-          <div className="flex items-start space-x-3">
-            <Shield className="h-5 w-5 text-warning-text mt-0.5" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-warning-text">{t('backup.restore.backup.encrypted')}</p>
-              <p className="text-sm text-warning-text mt-1">
-                {t('backup.restore.backup.encryptedMessage')}
-              </p>
-              <Input
-                type="password"
-                placeholder={t('backup.restore.backup.enterPassphrase')}
-                className="mt-3"
-                value={restoreData.encryptionPassphrase}
-                onChange={(e) => setRestoreData(prev => ({
-                  ...prev,
-                  encryptionPassphrase: e.target.value
-                }))}
-              />
-            </div>
-          </div>
-        </Card>
-      )}
     </div>
   );
 
@@ -1218,8 +1189,7 @@ export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
                 restoreType: 'full',
                 selectedItems: [],
                 skipPreBackup: false,
-                force: false,
-                encryptionPassphrase: ''
+                force: false
               });
               setValidationResult(null);
             }}

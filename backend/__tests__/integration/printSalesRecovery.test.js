@@ -39,7 +39,7 @@ beforeEach(async () => {
   orderId = crypto.randomUUID();
   await db('print_sales_orders').insert({ id: orderId, request_hash: hash(orderId), customer_account_id: seeded.customerId,
     created_by_admin_id: seeded.adminId, status: 'accepted', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 3600e3).toISOString() });
-  jest.spyOn(service, 'getDatabaseBackupInfo').mockResolvedValue({ type: 'sqlite', backupFile: dump, size: 16, checksum: hash('independent dump'), hasChanged: true });
+  jest.spyOn(service, 'getDatabaseBackupInfo').mockResolvedValue({ type: 'sqlite', backupFile: dump, size: 16, checksum: hash('independent dump') });
   for (const [k, value] of Object.entries({ backup_enabled: true, backup_destination_type: 'local', backup_destination_path: destination,
     backup_include_database: true, backup_database_inline_dump: false, backup_email_on_success: false, backup_email_on_failure: false,
     backup_s3_bucket: 'fixture', backup_s3_access_key: 'fixture-key', backup_s3_secret_key: 'fixture-secret' })) await setting(k, value);

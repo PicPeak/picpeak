@@ -306,8 +306,6 @@ app.use('/api/photo-sales/stripe/webhook', require('./src/routes/stripeWebhook')
 // or the rate limiter's per-IP budget.
 app.get(['/health', '/api/health'], healthHandlers.ordinary);
 
-// Initialize rate limiters (they will be created dynamically)
-
 // The stylesheet below is interpolated into a raw-text <style> element, where
 // the HTML parser ends the element at the first `</style` regardless of CSS
 // structure. Every segment — palette, base CSS, operator CSS — is settings

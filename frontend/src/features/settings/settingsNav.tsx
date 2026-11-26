@@ -185,13 +185,6 @@ export const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, string[]> = {
   health:            ['settings.view', 'system.view'],
 };
 
-// The union of every settings-tab permission — used to decide whether to show
-// the Settings entry in the sidebar for a specialised role that lacks the
-// general settings.view read but holds one specific config permission.
-export const SETTINGS_TAB_PERMISSIONS_ANY: string[] = Array.from(
-  new Set(Object.values(SETTINGS_TAB_PERMISSIONS).flat())
-);
-
 /**
  * Lowercase, strip diacritics and collapse whitespace so a search for
  * "impressum" matches "Impressum" and "buro" matches "Büro". Exported
@@ -369,10 +362,10 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
     .map((g) => ({
       ...g,
       items: g.items
-        .filter((i) => hasAnyPermission(SETTINGS_TAB_PERMISSIONS[i.key] ?? ['settings.view']))
+        .filter((i) => hasAnyPermission(SETTINGS_TAB_PERMISSIONS[i.key]))
         // Search terms are attached here rather than written into every item
         // literal above: they are search-only metadata, and threading them
-        // through 30 declarations would bury the navigation in them.
+        // through 35 declarations would bury the navigation in them.
         .map((i) => ({ ...i, keywords: tabKeywords(t, i.key) })),
     }))
     .filter((g) => g.items.length > 0);

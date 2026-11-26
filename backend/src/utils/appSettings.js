@@ -1,17 +1,10 @@
 /**
  * Small helper to read app_settings rows.
  *
- * The picpeak codebase has TWO settings services:
- *   - `src/services/settingsService.js` queries a `settings` table that
- *     doesn't actually exist on most deployments (legacy SQLite-era
- *     name). Calling getSetting() from there raises
- *     "relation \"settings\" does not exist" on Postgres.
- *   - The canonical store is `app_settings`, accessed inline by every
- *     other service (shareLinkService, customerAccountsService,
- *     authSecurity, dateFormatter, …).
- *
- * The CRM services use this helper instead of settingsService so the
- * crm_* keys seeded by migration 102 are actually readable.
+ * `app_settings` is the settings store, also read inline by other services
+ * (shareLinkService, customerAccountsService, authSecurity, dateFormatter,
+ * …). The CRM services read the crm_* keys seeded by migration 102 through
+ * this helper.
  */
 
 const { db } = require('../database/db');

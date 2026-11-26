@@ -56,15 +56,6 @@ class NotFoundError extends AppError {
 }
 
 /**
- * Unauthorized error - for missing or invalid authentication (401 Unauthorized)
- */
-class UnauthorizedError extends AppError {
-  constructor(message = 'Authentication required') {
-    super(message, 401, 'UNAUTHORIZED');
-  }
-}
-
-/**
  * Forbidden error - for insufficient permissions (403 Forbidden)
  */
 class ForbiddenError extends AppError {
@@ -91,16 +82,6 @@ class ConflictError extends AppError {
 }
 
 /**
- * Rate limit error - for too many requests (429 Too Many Requests)
- */
-class RateLimitError extends AppError {
-  constructor(message = 'Too many requests', retryAfter = null) {
-    super(message, 429, 'RATE_LIMIT_EXCEEDED');
-    this.retryAfter = retryAfter;
-  }
-}
-
-/**
  * Service unavailable error - for maintenance mode or service issues (503 Service Unavailable)
  */
 class ServiceUnavailableError extends AppError {
@@ -113,9 +94,7 @@ module.exports = {
   AppError,
   ValidationError,
   NotFoundError,
-  UnauthorizedError,
   ForbiddenError,
   ConflictError,
-  RateLimitError,
   ServiceUnavailableError
 };

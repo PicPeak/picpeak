@@ -53,7 +53,7 @@ vi.mock('../../hooks/useLocalizedDate', () => ({
 
 // CustomerAuthContext talks to i18n/config directly (not via the
 // react-i18next hook above) to apply the customer's preferred language.
-// Stub it out so the real HttpBackend/LanguageDetector init never runs.
+// Stub it out so the real LanguageDetector init never runs.
 vi.mock('../../i18n/config', () => ({
   default: { language: 'en', changeLanguage: vi.fn(() => Promise.resolve()) },
 }));

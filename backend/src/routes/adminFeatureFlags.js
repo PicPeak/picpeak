@@ -143,8 +143,7 @@ const KNOWN_FLAGS = [
   'embed',
 ];
 
-// Spec defaults for any flag missing from the DB (e.g. a row added by a
-// new release that hasn't run its migration yet on this instance).
+// Spec defaults for any flag that has no row in feature_flags.
 const DEFAULT_FLAGS = {
   albumProducts: false,
   printSales: false,

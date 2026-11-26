@@ -34,8 +34,6 @@ export const COUNTRY_CODES = [
   'VN', 'VU', 'WF', 'WS', 'YE', 'YT', 'ZA', 'ZM', 'ZW',
 ] as const;
 
-export type CountryCode = (typeof COUNTRY_CODES)[number];
-
 /** Localized country name for an ISO code, falling back to the code. */
 export function countryLabel(code: string, lang: string): string {
   if (!code) return '';

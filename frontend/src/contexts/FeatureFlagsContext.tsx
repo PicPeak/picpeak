@@ -158,18 +158,6 @@ function applyDependencyRules(flags: FeatureFlags): FeatureFlags {
   return out;
 }
 
-/**
- * Flags whose customer-side surface only renders when the customer
- * portal is on. The FeaturesTab uses this to disable the toggle on
- * child cards when customerPortal=false (with a "requires Customer
- * portal" tooltip), so the admin doesn't flip something that has no
- * visible effect.
- */
-export const CUSTOMER_PORTAL_DEPENDENT_FLAGS: FeatureKey[] = [
-  // calendarBooking is not here: the booking page is public, no portal needed.
-  'calendar', 'quotes', 'bills', 'messaging',
-];
-
 function flagsEqual(a: FeatureFlags, b: FeatureFlags): boolean {
   return (Object.keys(a) as FeatureKey[]).every((k) => a[k] === b[k]);
 }

@@ -125,15 +125,6 @@ export const buildResourceUrl = (path: string): string => {
 };
 
 /**
- * Check if we're in production mode (using relative URLs)
- * @returns True if in production mode
- */
-export const isProductionMode = (): boolean => {
-  const apiBase = getApiBaseUrl();
-  return !ABSOLUTE_URL_REGEX.test(apiBase);
-};
-
-/**
  * The address guests and customers reach this install on (issue 2630). The
  * admin panel may be open on a different, internal origin, so a link meant for
  * someone else is anchored on the configured public site URL (FRONTEND_URL or

@@ -26,13 +26,10 @@ const archive = () => require('./portableImportArchive');
 const journalPaths = () => require('./portableRestorePaths');
 
 async function withMaintenanceDatabaseAuthority(run) {
-  // Authority is established BEFORE considering compatibility with the
-  // separately introduced CRM policy. Missing request/worker authority never
-  // becomes a system actor. An immutable older build simply has no CRM layer.
+  // Authority is established BEFORE entering the trusted CRM context.
+  // Missing request/worker authority never becomes a system actor.
   await worker.assertWorkerAuthority();
-  const policyFile = path.join(__dirname, '../database/crmAccess.js');
-  if (!fs.existsSync(policyFile)) return run();
-  const { withTrustedCrmAccess } = require(policyFile);
+  const { withTrustedCrmAccess } = require('../database/crmAccess');
   if (typeof withTrustedCrmAccess !== 'function') throw new Error('Maintenance CRM capability is unavailable');
   return withTrustedCrmAccess('supervised coordinated maintenance restore', run);
 }
@@ -120,12 +117,9 @@ async function preflightRows(tables, dataDir, crossEngine, manifest) {
 }
 
 async function resetDerivedQueues(trx) {
-  const optional = path.join(__dirname, 'mediaAttemptService.js');
-  if (fs.existsSync(optional)) {
-    const { resetImportedMediaAttempts } = require(optional);
-    if (typeof resetImportedMediaAttempts !== 'function') throw new Error('Media restore admission reset is unavailable');
-    await resetImportedMediaAttempts(trx);
-  }
+  const { resetImportedMediaAttempts } = require('./mediaAttemptService');
+  if (typeof resetImportedMediaAttempts !== 'function') throw new Error('Media restore admission reset is unavailable');
+  await resetImportedMediaAttempts(trx);
   if (await trx.schema.hasColumn('photos', 'face_status') && await trx.schema.hasColumn('events', 'face_recognition_enabled')) {
     await trx('photos').whereIn('event_id', trx('events').select('id')
       .where('face_recognition_enabled', formatBoolean(true))).update({

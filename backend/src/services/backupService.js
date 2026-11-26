@@ -2,7 +2,6 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const crypto = require('crypto');
-const childProcess = require('child_process');
 const os = require('os');
 const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
@@ -31,55 +30,6 @@ let backupJob = null;
 let isRunning = false;
 // The backup_runs row the run in this process is writing (interruptedRuns.js).
 let currentRunId = null;
-
-function ensureMockableExec() {
-  const current = childProcess.exec;
-  if (current && typeof current === 'function' && current._isMockFunction) {
-    return;
-  }
-
-  const original = current ? current.bind(childProcess) : (() => { throw new Error('child_process.exec unavailable'); });
-
-  const wrapper = (...args) => {
-    if (wrapper._queue && wrapper._queue.length) {
-      const impl = wrapper._queue.shift();
-      return impl(...args);
-    }
-    if (wrapper._impl) {
-      return wrapper._impl(...args);
-    }
-    return original(...args);
-  };
-
-  wrapper.mockImplementation = (impl) => {
-    wrapper._impl = impl;
-    return wrapper;
-  };
-
-  wrapper.mockImplementationOnce = (impl) => {
-    if (!wrapper._queue) {
-      wrapper._queue = [];
-    }
-    wrapper._queue.push(impl);
-    return wrapper;
-  };
-
-  wrapper.getMockImplementation = () => wrapper._impl || null;
-
-  wrapper.mockReset = wrapper.mockClear = () => {
-    wrapper._impl = null;
-    if (wrapper._queue) {
-      wrapper._queue.length = 0;
-    }
-  };
-
-  Object.defineProperty(wrapper, '_isMockFunction', { value: true });
-
-  childProcess.exec = wrapper;
-}
-
-ensureMockableExec();
-
 
 async function resolveConfigWithFallback() {
   let config;
@@ -229,45 +179,6 @@ async function getBackupConfigInternal() {
   }
 }
 
-async function hasDatabaseChanged(sinceTime) {
-  try {
-    const tablesToCheck = [
-      'events',
-      'photos',
-      'admin_users',
-      'app_settings',
-      'email_queue',
-      'access_logs'
-    ];
-
-    for (const table of tablesToCheck) {
-      try {
-        const updated = await db(table)
-          .where('updated_at', '>', sinceTime)
-          .limit(1)
-          .first();
-        if (updated) {
-          return true;
-        }
-
-        const created = await db(table)
-          .where('created_at', '>', sinceTime)
-          .limit(1)
-          .first();
-        if (created) {
-          return true;
-        }
-      } catch (innerError) {
-        logger.debug(`Skipping change detection for table ${table}:`, innerError.message);
-      }
-    }
-    return false;
-  } catch (error) {
-    logger.error('Failed to check database changes:', error);
-    return true;
-  }
-}
-
 /**
  * Run an inline database dump (default ON) and then verify a usable dump
  * is actually on disk before letting the file-backup proceed. Returns the
@@ -374,7 +285,6 @@ async function getDatabaseBackupInfoInternal() {
       .first();
 
     if (recent && recent.file_path) {
-      const hasChanged = await hasDatabaseChanged(recent.completed_at);
       // Postgres jsonb columns come back already parsed; sqlite TEXT comes
       // back as a JSON string. Accept both.
       const parseField = (v) => {
@@ -392,7 +302,6 @@ async function getDatabaseBackupInfoInternal() {
         // adding (issue #871: "167.6 TB" dashboard size). Coerce at the source.
         size: Number(recent.file_size_bytes) || 0,
         checksum: recent.checksum,
-        hasChanged,
         backupTime: recent.completed_at,
         tables: (stats && stats.tables) || {},
         rowCounts: checksums || {},
@@ -405,7 +314,6 @@ async function getDatabaseBackupInfoInternal() {
       backupFile: null,
       size: 0,
       checksum: null,
-      hasChanged: true,
       tables: {},
       rowCounts: {}
     };
@@ -416,7 +324,6 @@ async function getDatabaseBackupInfoInternal() {
       backupFile: null,
       size: 0,
       checksum: null,
-      hasChanged: true,
       tables: {},
       rowCounts: {}
     };
@@ -652,10 +559,6 @@ const DEFAULT_EXCLUDE_PATTERNS = ['.nfs*', '.DS_Store', 'Thumbs.db', '.picpeak-m
  */
 async function loadBackupPathRows({ includeDisabled = false } = {}) {
   try {
-    if (!(await db.schema.hasTable('backup_paths'))) {
-      logger.warn('backup_paths table missing — falling back to LEGACY_BACKUP_PATHS');
-      return LEGACY_BACKUP_PATHS;
-    }
     let query = db('backup_paths')
       .orderBy('display_order', 'asc')
       .select('path', 'feature_flag', 'include_in_default');
@@ -757,12 +660,10 @@ async function computePerPathStats(backedUpRelativePaths, allFiles) {
   // off by include_in_default doesn't appear in the breakdown either.
   let configuredPaths;
   try {
-    if (await db.schema.hasTable('backup_paths')) {
-      configuredPaths = await db('backup_paths')
-        .where('include_in_default', formatBoolean(true))
-        .orderBy('display_order', 'asc')
-        .select('path');
-    }
+    configuredPaths = await db('backup_paths')
+      .where('include_in_default', formatBoolean(true))
+      .orderBy('display_order', 'asc')
+      .select('path');
   } catch (err) {
     logger.warn(`Could not load backup_paths for per-path stats — falling back to legacy: ${err.message}`);
   }
@@ -941,30 +842,6 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
   return [...files.filter(file => !recoveryFiles.managedKey(file.relativePath.split(path.sep).join('/'))), ...remote];
 }
 
-async function updateFileState(filePath, checksum, size, modified) {
-  try {
-    const existing = await db('backup_file_states')
-      .where('file_path', filePath)
-      .first();
-
-    const payload = {
-      file_path: filePath,
-      checksum,
-      size_bytes: size,
-      last_modified: modified,
-      last_backed_up: new Date()
-    };
-
-    if (existing) {
-      await db('backup_file_states').where('id', existing.id).update(payload);
-    } else {
-      await db('backup_file_states').insert(payload);
-    }
-  } catch (error) {
-    logger.error('Failed to update file state:', error);
-  }
-}
-
 // A run that fails before its manifest is written leaves no restore point,
 // only a partial copy as large as the estate. Take it away again; a failure
 // to do so must not hide why the run failed.
@@ -1023,8 +900,6 @@ async function performLocalBackup(config, files, verifiedDatabaseInfo) {
         if (file.size > maxSizeMb * 1024 * 1024) {
           throw new Error('File grew beyond the configured backup size limit');
         }
-
-        await updateFileState(file.relativePath, checksum, file.size, file.modified);
 
         backedUpFiles.push(file.relativePath);
         backedUpSize += file.size;
@@ -1199,7 +1074,6 @@ async function performRsyncBackup(config, files, sourceRoot, dumpRoot, dumpInfo)
     try {
       const checksum = await calculateChecksum(file.path);
       file.checksum = checksum;
-      await updateFileState(file.relativePath, checksum, file.size, file.modified);
       backedUpFiles.push(file.relativePath);
     } catch (error) {
       // Deleted between the walk and this hash (a photo removed mid-backup):
@@ -1303,8 +1177,6 @@ async function performS3Backup(config, files, verifiedDatabaseInfo) {
         const { checksum } = captured;
         file.checksum = checksum;
         file.size = captured.size;
-
-        await updateFileState(file.relativePath, checksum, file.size, file.modified);
 
         backedUpFiles.push(file.relativePath);
         backedUpSize += file.size;
@@ -1601,7 +1473,6 @@ async function pruneStandaloneSnapshots(config, destinationType, currentRunId, s
  * ON DELETE CASCADE the migration declares.
  */
 async function deleteVerificationsOf(knex, { backupRunIds = [], databaseBackupRunIds = [] }) {
-  if (!(await knex.schema.hasTable('backup_verifications'))) return;
   if (backupRunIds.length) await knex('backup_verifications').whereIn('backup_run_id', backupRunIds).del();
   if (databaseBackupRunIds.length) await knex('backup_verifications').whereIn('database_backup_run_id', databaseBackupRunIds).del();
 }
@@ -1795,9 +1666,7 @@ async function runBackupInternal(isManual = false) {
       }
 
       try {
-        manifestSummary = backupManifest.generateSummaryReport
-          ? backupManifest.generateSummaryReport(manifest)
-          : null;
+        manifestSummary = backupManifest.generateSummaryReport(manifest);
       } catch (error) {
         logger.warn('Failed to generate manifest summary:', error);
       }
@@ -2141,56 +2010,12 @@ function getNextScheduledRun(config) {
   }
 }
 
-async function cleanupOldBackupRuns(retentionDays = 30) {
-  try {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - retentionDays);
-
-    // Rows of restore points retention keeps (the newest ones and the
-    // monthly ones) stay: without its row, retention would never see such a
-    // snapshot again and it would sit at the destination unmanaged. When
-    // that cannot be worked out, nothing is deleted.
-    let keptIds;
-    try {
-      keptIds = [...(await service.retainedRestorePoints(await getBackupConfigInternal() || {})).kept];
-    } catch (error) {
-      logger.error(`Backup run cleanup skipped: could not work out which restore points retention keeps (${error.message})`);
-      return;
-    }
-    const old = () => {
-      const query = db('backup_runs').where('started_at', '<', cutoff);
-      return keptIds.length ? query.whereNotIn('id', keptIds) : query;
-    };
-    // Their restore-test rows go with them (SQLite does not enforce the
-    // cascade). Failing that only leaves rows naming a run that is gone.
-    try {
-      const rows = await old().select('id');
-      await deleteVerificationsOf(db, { backupRunIds: rows.map((row) => row.id) });
-    } catch (error) {
-      logger.warn(`Could not remove the restore tests of old backup runs: ${error.message}`);
-    }
-    const deleted = await old().delete();
-    const kept = keptIds.length
-      ? Number((await db('backup_runs').where('started_at', '<', cutoff).whereIn('id', keptIds).count({ c: '*' }))[0]?.c) || 0
-      : 0;
-
-    if (deleted > 0) {
-      logger.info(`Cleaned up ${deleted} old backup runs`);
-    }
-    return { deleted, kept };
-  } catch (error) {
-    logger.error('Failed to cleanup old backup runs:', error);
-    return { deleted: 0, kept: 0 };
-  }
-}
-
 /**
  * Load a backup manifest regardless of whether it lives on the local
- * filesystem or in S3. Used by both the public getBackupManifest API
- * and the incremental-manifest path in runBackupInternal — previously
- * the latter called loadManifest() with an s3:// URI directly, which
- * tried fs.readFile on the literal string and threw ENOENT, silently
- * downgrading every incremental backup to a full manifest.
+ * filesystem or in S3. Used by the incremental-manifest path in
+ * runBackupInternal — previously it called loadManifest() with an s3://
+ * URI directly, which tried fs.readFile on the literal string and threw
+ * ENOENT, silently downgrading every incremental backup to a full manifest.
  */
 async function loadManifestFromAnywhere(manifestPath, config) {
   if (!manifestPath) {
@@ -2299,9 +2124,7 @@ async function getBackupManifest(backupRunId) {
     return {
       manifest,
       authenticated: backupManifest.getAuthentication(manifest).authenticated === true,
-      summary: backupManifest.generateSummaryReport
-        ? backupManifest.generateSummaryReport(manifest)
-        : null
+      summary: backupManifest.generateSummaryReport(manifest)
     };
   }
 
@@ -2347,9 +2170,7 @@ async function getBackupManifest(backupRunId) {
   return {
     manifest,
     authenticated: backupManifest.getAuthentication(manifest).authenticated === true,
-    summary: backupManifest.generateSummaryReport
-      ? backupManifest.generateSummaryReport(manifest)
-      : null
+    summary: backupManifest.generateSummaryReport(manifest)
   };
 }
 
@@ -2385,9 +2206,7 @@ async function validateBackupManifest(manifestPath) {
       manifest = await backupManifest.loadManifest(manifestPath, { inspect: true });
     }
 
-    if (backupManifest.validateManifest) {
-      backupManifest.validateManifest(manifest, { inspect: true });
-    }
+    backupManifest.validateManifest(manifest, { inspect: true });
 
     const authentication = backupManifest.getAuthentication(manifest);
     // Intact but written before manifests were authenticated: still not
@@ -2401,78 +2220,6 @@ async function validateBackupManifest(manifestPath) {
   }
 }
 
-/**
- * Resolve a manifest file name given to the validate endpoints to a file
- * inside one of the directories manifests are written to (the configured
- * manifest directory, the default one next to the backup, the BACKUP_PATH
- * override the endpoints used to be bound to, and on a miss each local run's
- * own manifests/ folder). Every candidate goes through safePathJoin, so a
- * traversal input throws and nothing outside those directories is read.
- * Returns null when no such file exists.
- */
-async function resolveManifestFile(manifestPath, providedConfig = null) {
-  const { safePathJoin, assertRealpathUnder } = require('../utils/fileSecurityUtils');
-  const config = providedConfig || await getBackupConfigInternal().catch(() => ({})) || {};
-  const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
-  const findIn = async (bases) => {
-    let found = null;
-    for (const base of bases) {
-      // A path as the status endpoint reports it (absolute) maps to its
-      // place under the directory; anything outside stays outside and is
-      // refused by safePathJoin below.
-      let relative = manifestPath;
-      if (path.isAbsolute(manifestPath)) {
-        const rel = path.relative(path.resolve(base), manifestPath);
-        if (!rel.startsWith('..') && !path.isAbsolute(rel)) relative = rel;
-      }
-      const candidate = safePathJoin(base, relative);
-      if (!found) {
-        const stat = await fs.stat(candidate).catch(() => null);
-        if (stat && stat.isFile()) {
-          // safePathJoin is lexical: a symlink inside the directory must not
-          // lead the read outside it.
-          await assertRealpathUnder(base, candidate);
-          found = candidate;
-        }
-      }
-    }
-    return found;
-  };
-
-  const found = await findIn([
-    config.backup_manifest_path,
-    path.join(destinationRoot, 'manifests'),
-    process.env.BACKUP_PATH,
-  ].filter((base) => typeof base === 'string' && base));
-  if (found) return found;
-
-  // A local backup writes its manifest into its own run directory,
-  // <destination>/backup-<uuid>/manifests, unless backup_manifest_path is
-  // set and usable (saveManifestToLocal gets the run directory as its
-  // destination). Only asked on a miss, and only that run when the path
-  // names one, so a slow destination does not hold up the common case.
-  const named = path.isAbsolute(manifestPath)
-    ? path.relative(path.resolve(destinationRoot), manifestPath).split(path.sep) : [];
-  const runNames = named.length === 3 && named[0].startsWith('backup-') && named[1] === 'manifests'
-    ? [named[0]]
-    : (await fs.readdir(destinationRoot, { withFileTypes: true }).catch(() => []))
-      .filter((entry) => entry.isDirectory() && entry.name.startsWith('backup-'))
-      .map((entry) => entry.name);
-  const runBases = [];
-  for (const name of runNames) {
-    const base = path.join(destinationRoot, name, 'manifests');
-    // Real directories only, the run's and its manifests/: a symlink would
-    // move the base, and the realpath check with it, outside the destination.
-    const [run, manifests] = await Promise.all([
-      fs.lstat(path.join(destinationRoot, name)).catch(() => null),
-      fs.lstat(base).catch(() => null),
-    ]);
-    if (run && run.isDirectory() && manifests && manifests.isDirectory()) runBases.push(base);
-  }
-  return findIn(runBases);
-}
-
-service.resolveManifestFile = resolveManifestFile;
 service.getBackupConfig = getBackupConfigInternal;
 service.getDatabaseBackupInfo = getDatabaseBackupInfoInternal;
 service.getFilesToBackup = getFilesToBackupInternal;
@@ -2488,7 +2235,6 @@ service.triggerManualBackup = triggerManualBackup;
 service.getBackupStatus = getBackupStatus;
 service.isBackupRunning = () => isRunning;
 service.currentRunId = () => currentRunId;
-service.cleanupOldBackupRuns = cleanupOldBackupRuns;
 service.getCurrentSchemaVersion = getCurrentSchemaVersion;
 service.getBackupManifest = getBackupManifest;
 service.validateBackupManifest = validateBackupManifest;

@@ -1152,12 +1152,6 @@ async function runRound() {
 
 // ------------------------------------------------------------- reading --
 
-let tableKnown = false;
-async function hasVerificationTable() {
-  if (!tableKnown) tableKnown = await db.schema.hasTable('backup_verifications');
-  return tableKnown;
-}
-
 /**
  * Health follows the newest restore point: its latest finished test decides
  * failed vs not. An older retained backup failing its re-check is reported
@@ -1223,7 +1217,6 @@ async function getSummary({ limit = 20 } = {}) {
 /** The health part for backup status / System health; null when the flag is off. */
 async function getHealth() {
   if (!(await isFeatureEnabled(FLAG))) return null;
-  if (!(await hasVerificationTable())) return null;
   const { health, lastPassedAt, latest, staleDays } = await getSummary({ limit: 1 });
   return { health, lastPassedAt, latest, staleDays };
 }
@@ -1233,7 +1226,6 @@ async function runsUnderTest() {
   // With the feature off nothing runs, and a row a crash left at 'running'
   // (the boot sweep is off too) must not hold a restore point forever.
   if (!(await isFeatureEnabled(FLAG))) return new Set();
-  if (!(await hasVerificationTable())) return new Set();
   const rows = await db('backup_verifications').where({ status: 'running' }).whereNotNull('backup_run_id').select('backup_run_id');
   return new Set(rows.map((row) => Number(row.backup_run_id)));
 }
@@ -1301,7 +1293,6 @@ function leftByDeadProcess(row, { hostname = require('os').hostname(), pid = pro
 async function sweepStale() {
   try {
     if (!(await isFeatureEnabled(FLAG))) return;
-    if (!(await hasVerificationTable())) return;
     await jobState.ensure(JOB_NAME);
     const row = await db('maintenance_jobs').where({ job_name: JOB_NAME }).first();
     if (leftByDeadProcess(row)) {

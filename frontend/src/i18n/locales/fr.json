@@ -154,7 +154,6 @@
     "selected": "Sélectionné",
     "chunk": "Bloc",
     "optional": "optionnel",
-    "tryAgain": "Réessayer",
     "active": "Actif",
     "inactive": "Inactif",
     "create": "Créer",
@@ -169,7 +168,6 @@
     "retry": "Réessayer",
     "characters": "caractères",
     "saveChanges": "Enregistrer les modifications",
-    "resetChanges": "Réinitialiser les modifications",
     "dismiss": "Ignorer",
     "discard": "Abandonner",
     "poweredBy": "Propulsé par"
@@ -279,13 +277,7 @@
     "events": "Événements",
     "archives": "Archives",
     "settings": "Paramètres",
-    "eventTypes": "Types d'événements",
-    "branding": "Marque",
-    "emailSettings": "Paramètres e-mail",
-    "backup": "Sauvegarde & Restauration",
-    "cmsPages": "Pages CMS",
     "users": "Utilisateurs",
-    "calendar": "Calendrier",
     "clients": "Clients",
     "automation": "Automatisation",
     "sharing": "Partage"
@@ -967,7 +959,6 @@
     "loadingPhotos": "Chargement des photos...",
     "photoCategories": "Catégories de photos",
     "organizeCategoriesInfo": "Organisez vos photos en catégories. Les catégories aident les invités à naviguer et à trouver des types spécifiques de photos.",
-    "categoriesTip": "Astuce : Les catégories sont spécifiques à chaque événement. Vous pouvez créer des catégories personnalisées comme \"Cérémonie\", \"Réception\", \"Portraits\", etc.",
     "galleryPassword": "Mot de passe de la galerie",
     "requirePasswordToggle": "Exiger un mot de passe pour cette galerie",
     "requirePasswordToggleHelp": "Désactivez cette option si vous souhaitez partager la galerie sans mot de passe. Toute personne disposant du lien pourra visualiser les photos.",
@@ -1387,8 +1378,6 @@
     }
   },
   "settings": {
-    "title": "Paramètres système",
-    "subtitle": "Configurer les paramètres et préférences globaux du système",
     "loadingSettings": "Chargement des paramètres...",
     "general": {
       "title": "Général",
@@ -1424,7 +1413,6 @@
       "maintenanceMode": "Activer le mode maintenance",
       "language": "Langue",
       "defaultLanguageHelp": "Langue affichée aux invités avant la connexion",
-      "saveGeneralSettings": "Enregistrer les paramètres généraux",
       "dateTimeFormat": "Format de date et heure",
       "dateFormat": "Format de date",
       "dateFormatHelp": "Comment les dates sont affichées dans les e-mails et dans toute l'application",
@@ -1437,7 +1425,6 @@
       "accountEmailHelp": "Utilisé pour la connexion et la réception des notifications de sécurité.",
       "accountEmailRequired": "L'adresse e-mail est requise",
       "accountEmailInvalid": "Entrez une adresse e-mail valide",
-      "accountSaveButton": "Enregistrer les détails du compte",
       "accountSaveSuccess": "Détails du compte mis à jour",
       "adminLanguage": "Votre langue d’administration",
       "adminLanguageHelp": "S'applique à l'espace d'administration, pour vous sur cet appareil uniquement. L'effet est immédiat — inutile d'enregistrer.",
@@ -1460,8 +1447,6 @@
       "cssLabel": "CSS personnalisé",
       "cssPlaceholder": "Remplacements CSS optionnels pour ajuster la disposition, les couleurs ou la typographie.",
       "cssHelp": "Les imports et les URL JavaScript sont supprimés. Utilisez des sélecteurs CSS standard pour remplacer le style par défaut.",
-      "saveCta": "Enregistrer le site public",
-      "saving": "Enregistrement en cours...",
       "saveSuccess": "Paramètres du site public enregistrés.",
       "saveError": "Échec de l'enregistrement des paramètres du site public.",
       "resetCta": "Réinitialiser aux valeurs par défaut",
@@ -1491,7 +1476,6 @@
       "applyRecommended": "Utiliser la recommandation",
       "applyAvailable": "Correspondre à l'espace disponible",
       "invalidSoftLimit": "Entrez un nombre valide pour la limite.",
-      "saveSoftLimit": "Enregistrer la limite",
       "limitNotEnforced": "Cette limite est uniquement indicative et n'est pas appliquée automatiquement.",
       "overrideTitle": "Remplacement manuel de la capacité",
       "diskOverrideEnvNote": "La capacité du disque est contrôlée par des variables d'environnement et ne peut pas être modifiée ici.",
@@ -1500,7 +1484,6 @@
       "overrideCapacityHelper": "Laissez vide pour utiliser la lecture automatique.",
       "overrideAvailableLabel": "Espace disponible (Go)",
       "overrideAvailableHelper": "Optionnel. Laissez vide pour calculer à partir de la capacité totale moins le stockage utilisé.",
-      "saveOverride": "Enregistrer le remplacement de capacité",
       "capacityRequiredForAvailable": "Entrez une capacité totale avant de définir l'espace disponible.",
       "availableExceedsCapacity": "L'espace disponible ne peut pas dépasser la capacité totale.",
       "storageUsage": "Utilisation du stockage",
@@ -1614,7 +1597,6 @@
       "requireExpiration": "Date d'expiration requise",
       "requireExpirationHelp": "Les galeries doivent avoir une date d'expiration",
       "expirationWarning": "Les galeries sans expiration resteront actives jusqu'à ce qu'elles soient archivées manuellement",
-      "saveSettings": "Enregistrer les paramètres d'événement",
       "noteTitle": "Remarque",
       "noteText": "Ces paramètres n'affectent que la création de nouveaux événements. Les événements existants ne sont pas affectés. Par défaut, tous les champs sont requis.",
       "defaultRequirePassword": "Exiger un mot de passe par défaut",
@@ -1658,17 +1640,6 @@
       "protectionLevel": "Niveau de protection par défaut",
       "enableDevtools": "Activer la détection des outils DevTools par défaut",
       "enableCanvas": "Activer le rendu canvas dans la visionneuse par défaut (protection avancée)",
-      "rateLimiting": "Limitation de débit",
-      "rateLimitingHelp": "Limitez le nombre d'images qui peuvent être demandées pour éviter le scraping.",
-      "requestsPerMinute": "Requêtes par minute",
-      "requestsPer5Minutes": "Requêtes par 5 min",
-      "requestsPerHour": "Requêtes par heure",
-      "securityMonitoring": "Surveillance de la sécurité",
-      "suspiciousThreshold": "Seuil d'activité suspecte",
-      "autoBlockThreshold": "Seuil de blocage automatique",
-      "enableMonitoring": "Activer la surveillance de la sécurité",
-      "blockSuspiciousIps": "Bloquer automatiquement les IP suspectes",
-      "logEvents": "Journaliser les événements de sécurité dans la base de données",
       "infoTitle": "À propos de la protection des images",
       "infoText": "Ces fonctionnalités de protection aident à prévenir le téléchargement et la copie occasionnels mais ne peuvent pas bloquer toutes les méthodes. Les utilisateurs déterminés peuvent encore trouver des moyens de capturer des images. Envisagez d'utiliser des filigranes et des accords juridiques pour une protection complète."
     },
@@ -1766,23 +1737,16 @@
       "ruleAgentPlaceholder": "Agent utilisateur",
       "rulePathPlaceholder": "Chemin à bloquer",
       "showPreview": "Afficher l'aperçu robots.txt",
-      "hidePreview": "Masquer l'aperçu robots.txt",
-      "saveSettings": "Enregistrer les paramètres SEO"
+      "hidePreview": "Masquer l'aperçu robots.txt"
     },
     "analytics": {
       "title": "Analytique",
-      "umamiIntegration": "Intégration Umami Analytics",
-      "enableUmami": "Activer Umami Analytics",
       "umamiUrl": "URL Umami",
       "umamiUrlHelp": "L'URL de votre instance Umami (ex. : https://analytics.yourdomain.com)",
       "websiteId": "ID du site web",
       "websiteIdHelp": "Votre ID de site web Umami (trouvé dans le tableau de bord Umami)",
       "shareUrl": "URL de partage (optionnel)",
       "shareUrlHelp": "URL de partage publique pour intégrer le tableau de bord complet (créé dans Umami)",
-      "umamiInfo": "À propos d'Umami Analytics",
-      "umamiInfoText": "Umami est une plateforme d'analytique open-source axée sur la confidentialité. Elle suit les vues de pages, les visiteurs uniques et les événements personnalisés sans utiliser de cookies.",
-      "learnMore": "En savoir plus sur Umami",
-      "saveAnalyticsSettings": "Enregistrer les paramètres d'analytique",
       "backendAnalytics": "Analytique backend",
       "backendAnalyticsText": "Le système suit également des analytiques de base côté serveur pour la sécurité et la surveillance des performances.",
       "tracked": "Métriques suivies",
@@ -1795,7 +1759,6 @@
     },
     "groups": {
       "general": "Général",
-      "display": "Affichage",
       "privacySecurity": "Confidentialité & Sécurité",
       "integrations": "Intégrations",
       "system": "Système",
@@ -1845,8 +1808,6 @@
       "existing": "Webhooks existants",
       "empty": "Aucun webhook pour l'instant. Créez-en un ci-dessus pour commencer à recevoir des notifications d'événements."
     },
-    "sectionLabel": "Section des paramètres",
-    "navAriaLabel": "Navigation des paramètres",
     "eventTypes": {
       "title": "Types d'événements"
     },
@@ -3475,23 +3436,12 @@
         "thumbnails": "Miniatures",
         "thumbnailsHelp": "Images miniatures générées (peuvent être recréées)"
       },
-      "advancedOptions": {
-        "title": "Options avancées",
-        "compression": "Activer la compression",
-        "compressionHelp": "Compresser les fichiers de sauvegarde pour économiser de l'espace de stockage",
-        "encryption": "Activer le chiffrement",
-        "encryptionHelp": "Chiffrer les sauvegardes pour une sécurité supplémentaire",
-        "encryptionPassphrase": "Phrase de passe de chiffrement",
-        "encryptionPassphraseHelp": "Phrase de passe forte pour le chiffrement des sauvegardes"
-      },
       "messages": {
         "requiredFields": "Veuillez remplir tous les champs requis",
         "connectionSuccess": "Test de connexion réussi !",
         "connectionFailed": "Échec du test de connexion"
       },
-      "testingConnection": "Test de connexion en cours...",
-      "saveSettings": "Enregistrer la configuration",
-      "savingSettings": "Enregistrement en cours..."
+      "testingConnection": "Test de connexion en cours..."
     },
     "history": {
       "searchPlaceholder": "Rechercher des sauvegardes...",
@@ -3539,8 +3489,7 @@
         },
         "upload": {
           "name": "Téléverser la sauvegarde",
-          "description": "Téléverser un fichier de sauvegarde",
-          "comingSoon": "Fonctionnalité de téléversement bientôt disponible"
+          "description": "Téléverser un fichier de sauvegarde"
         },
         "configuration": {
           "s3": "Configuration S3",
@@ -3554,9 +3503,6 @@
         "title": "Choisir la sauvegarde à restaurer",
         "subtitle": "Sélectionner parmi les sauvegardes disponibles",
         "noBackupsFound": "Aucune sauvegarde trouvée dans la source sélectionnée",
-        "encrypted": "Sauvegarde chiffrée",
-        "encryptedMessage": "Vous devrez fournir la phrase de passe de chiffrement pour restaurer cette sauvegarde.",
-        "enterPassphrase": "Entrer la phrase de passe de chiffrement",
         "at": "à"
       },
       "restoreTypes": {
@@ -3806,8 +3752,6 @@
       "guestPrivacyTextPlaceholder": "p. ex. Nous utilisons votre nom uniquement pour savoir qui a téléchargé quelles photos. Vous pouvez demander sa suppression à tout moment.",
       "guestPrivacyTextHint": "Facultatif. Affiché aux invités lorsqu'on leur demande leur nom."
     },
-    "settingsUpdated": "Paramètres de commentaires mis à jour",
-    "settingsUpdateError": "Échec de la mise à jour des paramètres",
     "moderated": "Commentaire modéré",
     "deleted": "Commentaire supprimé",
     "exported": "Commentaires exportés",
@@ -3815,7 +3759,6 @@
     "exportCSV": "Exporter en CSV",
     "exportJSON": "Exporter en JSON",
     "tabs": {
-      "settings": "Paramètres",
       "feedback": "Commentaires",
       "analytics": "Analytique",
       "moderation": "Modération"
@@ -4300,12 +4243,10 @@
       "body": "Les séances à venir, les dates de livraison des galeries et autres événements liés aux séances s'afficheront ici. Nous vous préviendrons quand ce sera prêt."
     },
     "quotes": {
-      "title": "Devis",
-      "body": "Passez en revue et acceptez les devis pour les séances à venir en un seul endroit. Nous sommes encore en train de construire cela — pour l'instant, votre photographe continuera à vous envoyer les devis de la manière habituelle."
+      "title": "Devis"
     },
     "bills": {
-      "title": "Factures",
-      "body": "Les factures et l'historique de paiement pour vos séances seront disponibles ici. Nous vous enverrons un e-mail lorsque cela sera opérationnel."
+      "title": "Factures"
     },
     "profile": {
       "title": "Profil client",

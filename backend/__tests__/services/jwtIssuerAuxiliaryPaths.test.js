@@ -1,8 +1,8 @@
 /**
  * The auth middleware verifies every token with `algorithms: ['HS256']` and
- * `issuer: 'picpeak-auth'`. The auxiliary paths that hand out something on the
- * strength of a token (a rate-limit skip, the "authenticated" budget) must
- * apply the same rule, or a token adminAuth would refuse still buys that.
+ * `issuer: 'picpeak-auth'`. The auxiliary path that hands out something on the
+ * strength of a token (the "authenticated" rate-limit budget) must apply the
+ * same rule, or a token adminAuth would refuse still buys that.
  */
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'issuer-aux-secret-at-least-32-characters-long';
 jest.mock('../../src/database/db', () => ({ db: jest.fn() }));

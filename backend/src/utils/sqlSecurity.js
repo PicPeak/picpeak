@@ -83,62 +83,6 @@ function likeWithEscape(column) {
 }
 
 /**
- * Create a safe date range condition using Knex
- * @param {object} query - Knex query builder instance
- * @param {string} column - The timestamp column name
- * @param {number} days - Number of days to go back
- * @returns {object} Modified query with safe date range condition
- */
-function addDateRangeCondition(query, column, days) {
-  const safeDays = sanitizeDays(days);
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - safeDays);
-  
-  // Use Knex's built-in date comparison which handles parameterization
-  return query.where(column, '>=', startDate.toISOString());
-}
-
-/**
- * Create a safe LIKE condition using Knex
- * @param {object} query - Knex query builder instance
- * @param {string} column - The column to search
- * @param {string} pattern - The search pattern
- * @returns {object} Modified query with safe LIKE condition
- */
-function addLikeCondition(query, column, pattern) {
-  if (!pattern || typeof pattern !== 'string') {
-    return query;
-  }
-  
-  // Knex handles parameterization of the LIKE value
-  return query.whereRaw(likeWithEscape(column), [`%${escapeLikePattern(pattern)}%`]);
-}
-
-/**
- * Validate sort column against whitelist
- * @param {string} column - The column name to sort by
- * @param {string[]} allowedColumns - Array of allowed column names
- * @param {string} defaultColumn - Default column if invalid
- * @returns {string} Safe column name
- */
-function validateSortColumn(column, allowedColumns, defaultColumn) {
-  if (!column || !allowedColumns.includes(column)) {
-    return defaultColumn;
-  }
-  return column;
-}
-
-/**
- * Validate sort order
- * @param {string} order - The sort order (asc/desc)
- * @returns {string} Safe sort order
- */
-function validateSortOrder(order) {
-  const lowerOrder = (order || '').toLowerCase();
-  return lowerOrder === 'asc' ? 'asc' : 'desc';
-}
-
-/**
  * A search term in the forms a stored name has: as typed, NFC (how names
  * are stored since issue 2079) and NFD (how macOS input was saved before
  * it, with no backfill). LIKE does no Unicode normalisation, so a name
@@ -153,9 +97,5 @@ module.exports = {
   unicodeSearchForms,
   sanitizeDays,
   escapeLikePattern,
-  likeWithEscape,
-  addDateRangeCondition,
-  addLikeCondition,
-  validateSortColumn,
-  validateSortOrder
+  likeWithEscape
 };
