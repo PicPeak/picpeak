@@ -593,6 +593,9 @@ async function notify(owner, adminId) {
     // A passive customer (no password) cannot sign in to the portal.
     portal_link: customer.password_hash ? `${await frontendBase()}/customer/agreements` : '',
     __language: customer.preferred_language || undefined,
+    // The project's email history picks the mail up by this, as CRM document
+    // mail by its number (projectService.getProjectOverview).
+    ...(owner.kind === 'project' ? { __projectId: owner.id } : {}),
   };
 
   const notifiedAt = now();

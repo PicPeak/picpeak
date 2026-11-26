@@ -1310,7 +1310,19 @@ async function getProjectOverview(id, perms = {}, admin = null) {
       if (candidates.some((n) => n != null && docNumbers.has(String(n)))) emailRows.push(r);
     }
   }
-  // Merge both sources, newest first, capped.
+  // Brief updates (issue 2678) carry the project in their data.
+  if (customerEmail) {
+    const briefMails = await db('email_queue')
+      .where({ recipient_email: customerEmail, email_type: 'project_brief_updated' })
+      .whereNull('event_id')
+      .select([...selectCols, 'email_data'])
+      .orderBy('created_at', 'desc')
+      .limit(200);
+    for (const r of briefMails) {
+      if (Number((parseEmailData(r.email_data) || {}).__projectId) === Number(id)) emailRows.push(r);
+    }
+  }
+  // Merge all sources, newest first, capped.
   emailRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   out.emails = emailRows.slice(0, 200).map(mapEmail);
 

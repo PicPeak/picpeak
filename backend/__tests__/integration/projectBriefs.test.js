@@ -681,4 +681,25 @@ describe('with the projects flag on', () => {
       expect(templates.occasions.constructor.map((f) => f.label)).toEqual(['Crane']);
     });
   });
+
+  describe('review round 7', () => {
+    it('lists a sent brief update in its own project\'s emails, not in another project of the customer', async () => {
+      const nora = await customer();
+      const p = await project(nora);
+      const other = await project(nora);
+      await admin('put', `/projects/${p}`).send({ sharedArrangements: 'Overview' });
+      await admin('post', `/projects/${p}/notify`);
+      await admin('put', `/projects/${other}`).send({ sharedArrangements: 'Elsewhere' });
+      await admin('post', `/projects/${other}/notify`);
+
+      const projectService = require('../../src/services/projectService');
+      const superActor = { id: superAdmin, roleName: 'super_admin' };
+      const mine = await projectService.getProjectOverview(p, {}, superActor);
+      expect(mine.emails.filter((e) => e.type === 'project_brief_updated')).toHaveLength(1);
+      const theirs = await projectService.getProjectOverview(other, {}, superActor);
+      expect(theirs.emails.filter((e) => e.type === 'project_brief_updated')).toHaveLength(1);
+      expect(mine.emails.find((e) => e.type === 'project_brief_updated').id)
+        .not.toBe(theirs.emails.find((e) => e.type === 'project_brief_updated').id);
+    });
+  });
 });
