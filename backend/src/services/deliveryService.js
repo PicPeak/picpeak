@@ -67,14 +67,6 @@ function parseDueAtInput(value) {
 }
 
 /**
- * A first-look batch arrived (keyword folder). Switches the event to partial
- * unless it was already completed once — a late "FirstLook" upload must never
- * re-open a delivered gallery. Returns true when the state changed.
- *
- * Writes outside any transaction and logs after the update, so a SQLite
- * caller never deadlocks on the global activity write.
- */
-/**
  * The columns that put an event into the partial state. One helper for both
  * ways in (a keyword folder, the settings PUT), so both start a fresh promise
  * the same way: reminder stamps cleared, and a default due date when none is
@@ -98,6 +90,14 @@ async function enterPartialColumns(event, { dueAtGiven = false } = {}) {
   return columns;
 }
 
+/**
+ * A first-look batch arrived (keyword folder). Switches the event to partial
+ * unless it was already completed once — a late "FirstLook" upload must never
+ * re-open a delivered gallery. Returns true when the state changed.
+ *
+ * Writes outside any transaction and logs after the update, so a SQLite
+ * caller never deadlocks on the global activity write.
+ */
 async function markFirstLookArrived(eventId, { actor, source } = {}) {
   const event = await db('events').where('id', eventId).first();
   if (!event || event.delivery_completed_at || isPartial(event)) return false;
@@ -284,8 +284,6 @@ async function runDeliveryReminderPass({ now = new Date() } = {}) {
 }
 
 module.exports = {
-  DEFAULT_DELIVERY_DAYS,
-  MAX_PLACEHOLDER_TILES,
   isPartial,
   defaultDueAt,
   parseDueAtInput,

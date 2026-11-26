@@ -1,13 +1,10 @@
-const { S3Client, HeadBucketCommand, HeadObjectCommand, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, CopyObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } = require('@aws-sdk/client-s3');
+const { S3Client, HeadBucketCommand, HeadObjectCommand, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, CopyObjectCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } = require('@aws-sdk/client-s3');
 const { Upload } = require('@aws-sdk/lib-storage');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const path = require('path');
-const stream = require('stream');
-const crypto = require('crypto');
 const logger = require('../../utils/logger');
-const { formatBytes } = require('../../utils/formatBytes');
 const {
   S3EndpointError, policyApplies, assertLiteralEndpointAllowed, assertS3EndpointAllowed, s3EndpointAgents,
 } = require('../../utils/s3EndpointPolicy');
@@ -17,8 +14,8 @@ const {
  * 
  * Features:
  * - Support for S3 and S3-compatible services (MinIO, DigitalOcean Spaces, etc.)
- * - Multipart upload for large files (>100MB)
- * - Progress tracking with event emitter
+ * - Multipart upload via @aws-sdk/lib-storage
+ * - Progress callbacks
  * - Retry logic with exponential backoff
  * - Stream support for memory efficiency
  * - Path-style URL support for MinIO
@@ -27,7 +24,7 @@ const {
  * 
  * @class S3StorageAdapter
  */
-class S3StorageAdapter extends stream.EventEmitter {
+class S3StorageAdapter {
   /**
    * Creates an instance of S3StorageAdapter
    * 
@@ -39,7 +36,6 @@ class S3StorageAdapter extends stream.EventEmitter {
    * @param {string} [config.secretAccessKey] - AWS secret access key
    * @param {boolean} [config.forcePathStyle=false] - Force path-style URLs (required for MinIO)
    * @param {boolean} [config.sslEnabled=true] - Enable SSL for connections
-   * @param {number} [config.multipartThreshold=104857600] - Threshold for multipart upload (default 100MB)
    * @param {number} [config.partSize=10485760] - Part size for multipart upload (default 10MB)
    * @param {number} [config.maxRetries=3] - Maximum number of retry attempts
    * @param {number} [config.retryDelay=1000] - Initial retry delay in milliseconds
@@ -53,8 +49,6 @@ class S3StorageAdapter extends stream.EventEmitter {
    *   private endpoint origin (backup_s3_private_endpoint_approval). Production only.
    */
   constructor(config) {
-    super();
-    
     // Validate required config
     if (!config.bucket) {
       throw new Error('S3 bucket name is required');
@@ -65,7 +59,6 @@ class S3StorageAdapter extends stream.EventEmitter {
       region: 'us-east-1',
       forcePathStyle: false,
       sslEnabled: true,
-      multipartThreshold: 100 * 1024 * 1024, // 100MB
       partSize: 10 * 1024 * 1024, // 10MB
       maxRetries: 3,
       retryDelay: 1000,
@@ -176,7 +169,6 @@ class S3StorageAdapter extends stream.EventEmitter {
     this.exists = this.exists.bind(this);
     this.list = this.list.bind(this);
     this.copy = this.copy.bind(this);
-    this.move = this.move.bind(this);
     this.getSignedUrl = this.getSignedUrl.bind(this);
     this.testConnection = this.testConnection.bind(this);
   }
@@ -224,11 +216,8 @@ class S3StorageAdapter extends stream.EventEmitter {
   async upload(localPath, s3Key, options = {}) {
     let fileStream;
     try {
-      const stats = await fsPromises.stat(localPath);
-      const fileSize = stats.size;
-      
-      // Emit upload start event
-      this.emit('uploadStart', { key: s3Key, size: fileSize });
+      // Fails on a missing file before the upload starts.
+      await fsPromises.stat(localPath);
       
       // Create file stream
       fileStream = fs.createReadStream(localPath);
@@ -261,17 +250,12 @@ class S3StorageAdapter extends stream.EventEmitter {
         if (options.onProgress) {
           options.onProgress(progress.loaded, progress.total);
         }
-        this.emit('uploadProgress', { key: s3Key, loaded: progress.loaded, total: progress.total });
       });
       
       // Upload is single-use; the SDK retries its individual requests.
-      const result = await parallelUploads3.done();
-      
-      this.emit('uploadComplete', { key: s3Key, location: result.Location });
-      return result;
+      return await parallelUploads3.done();
     } catch (error) {
       logger.error(`Failed to upload file ${localPath} to S3:`, error);
-      this.emit('uploadError', { key: s3Key, error });
       throw error;
     } finally { fileStream?.destroy(); }
   }
@@ -321,7 +305,6 @@ class S3StorageAdapter extends stream.EventEmitter {
     if (options.onProgress) {
       parallelUploads3.on('httpUploadProgress', (progress) => {
         options.onProgress(progress.loaded, progress.total);
-        this.emit('uploadProgress', { key: s3Key, ...progress });
       });
     }
     
@@ -358,7 +341,6 @@ class S3StorageAdapter extends stream.EventEmitter {
       );
       
       const fileSize = headResult.ContentLength;
-      this.emit('downloadStart', { key: s3Key, size: fileSize });
       
       // Get object
       const getObjectResult = await this._retryOperation(() =>
@@ -382,7 +364,6 @@ class S3StorageAdapter extends stream.EventEmitter {
           if (options.onProgress) {
             options.onProgress(downloaded, fileSize);
           }
-          this.emit('downloadProgress', { key: s3Key, loaded: downloaded, total: fileSize });
         });
         
         bodyStream.on('error', reject);
@@ -391,11 +372,8 @@ class S3StorageAdapter extends stream.EventEmitter {
         
         bodyStream.pipe(writeStream);
       });
-      
-      this.emit('downloadComplete', { key: s3Key });
     } catch (error) {
       logger.error(`Failed to download file ${s3Key} from S3:`, error);
-      this.emit('downloadError', { key: s3Key, error });
       throw error;
     }
   }
@@ -550,24 +528,6 @@ class S3StorageAdapter extends stream.EventEmitter {
   }
   
   /**
-   * Move a file within S3 (copy then delete)
-   * 
-   * @param {string} sourceKey - Source S3 object key
-   * @param {string} targetKey - Target S3 object key
-   * @param {Object} [options={}] - Additional options
-   * @returns {Promise<Object>} - Move result
-   */
-  async move(sourceKey, targetKey, options = {}) {
-    // First copy the object
-    const copyResult = await this.copy(sourceKey, targetKey, options);
-    
-    // Then delete the original
-    await this.delete(sourceKey);
-    
-    return copyResult;
-  }
-  
-  /**
    * Get a pre-signed URL for downloading or uploading
    * 
    * @param {string} operation - Operation type ('getObject' or 'putObject')
@@ -617,128 +577,6 @@ class S3StorageAdapter extends stream.EventEmitter {
   }
   
   /**
-   * Update object metadata
-   * 
-   * @param {string} s3Key - S3 object key
-   * @param {Object} metadata - New metadata
-   * @returns {Promise<Object>} - Update result
-   */
-  async updateMetadata(s3Key, metadata) {
-    // S3 requires copying the object to itself to update metadata
-    return await this.copy(s3Key, s3Key, { metadata });
-  }
-  
-  /**
-   * Manual multipart upload for advanced use cases
-   * 
-   * @param {string} localPath - Local file path
-   * @param {string} s3Key - S3 object key
-   * @param {number} fileSize - File size in bytes
-   * @param {Object} options - Upload options
-   * @returns {Promise<Object>} - Upload result
-   * @private
-   */
-  async _manualMultipartUpload(localPath, s3Key, fileSize, options) {
-    logger.info(`Starting manual multipart upload for ${s3Key} (${fileSize} bytes)`);
-    
-    // Initiate multipart upload
-    const multipartParams = {
-      Bucket: this.bucket,
-      Key: s3Key,
-      ContentType: options.contentType || 'application/octet-stream',
-      ContentDisposition: options.contentDisposition,
-      Metadata: options.metadata || {},
-      CacheControl: options.cacheControl
-    };
-    
-    // Remove undefined values
-    Object.keys(multipartParams).forEach(key => multipartParams[key] === undefined && delete multipartParams[key]);
-    
-    const multipart = await this._retryOperation(() =>
-      this.s3Client.send(new CreateMultipartUploadCommand(multipartParams))
-    );
-    
-    const uploadId = multipart.UploadId;
-    const partSize = this.config.partSize;
-    const numParts = Math.ceil(fileSize / partSize);
-    
-    let uploaded = 0;
-    const parts = [];
-    
-    try {
-      // Upload parts
-      for (let partNum = 1; partNum <= numParts; partNum++) {
-        const start = (partNum - 1) * partSize;
-        const end = Math.min(start + partSize, fileSize);
-        
-        const partStream = fs.createReadStream(localPath, {
-          start,
-          end: end - 1
-        });
-        
-        const partParams = {
-          Bucket: this.bucket,
-          Key: s3Key,
-          PartNumber: partNum,
-          UploadId: uploadId,
-          Body: partStream
-        };
-        
-        // Upload part with retry
-        const partResult = await this._retryOperation(() =>
-          this.s3Client.send(new UploadPartCommand(partParams))
-        );
-        
-        parts.push({
-          ETag: partResult.ETag,
-          PartNumber: partNum
-        });
-        
-        uploaded += (end - start);
-        
-        if (options.onProgress) {
-          options.onProgress(uploaded, fileSize);
-        }
-        this.emit('uploadProgress', { key: s3Key, loaded: uploaded, total: fileSize });
-        
-        logger.info(`Uploaded part ${partNum}/${numParts} for ${s3Key}`);
-      }
-      
-      // Complete multipart upload
-      const completeParams = {
-        Bucket: this.bucket,
-        Key: s3Key,
-        UploadId: uploadId,
-        MultipartUpload: { Parts: parts }
-      };
-      
-      const result = await this._retryOperation(() =>
-        this.s3Client.send(new CompleteMultipartUploadCommand(completeParams))
-      );
-      
-      this.emit('uploadComplete', { key: s3Key, location: result.Location });
-      logger.info(`Completed multipart upload for ${s3Key}`);
-      
-      return result;
-    } catch (error) {
-      // Abort multipart upload on error
-      logger.error(`Multipart upload failed for ${s3Key}, aborting:`, error);
-      
-      try {
-        await this.s3Client.send(new AbortMultipartUploadCommand({
-          Bucket: this.bucket,
-          Key: s3Key,
-          UploadId: uploadId
-        }));
-      } catch (abortError) {
-        logger.error('Failed to abort multipart upload:', abortError);
-      }
-      
-      throw error;
-    }
-  }
-  
-  /**
    * Retry operation with exponential backoff
    * @private
    */
@@ -777,64 +615,6 @@ class S3StorageAdapter extends stream.EventEmitter {
       
       return this._retryOperation(operation, retryCount + 1);
     }
-  }
-  
-  /**
-   * Generate a unique S3 key for a file
-   * 
-   * @param {string} originalName - Original filename
-   * @param {string} [prefix=''] - Optional prefix for the key
-   * @returns {string} - Generated S3 key
-   */
-  generateKey(originalName, prefix = '') {
-    const timestamp = Date.now();
-    const randomStr = crypto.randomBytes(8).toString('hex');
-    const ext = path.extname(originalName);
-    const basename = path.basename(originalName, ext);
-    
-    // Sanitize basename
-    const safeName = basename.replace(/[^a-zA-Z0-9-_]/g, '_');
-    
-    const key = `${timestamp}_${randomStr}_${safeName}${ext}`;
-    
-    return prefix ? path.posix.join(prefix, key) : key;
-  }
-  
-  /**
-   * Get storage statistics
-   * 
-   * @param {string} [prefix=''] - Optional prefix to filter
-   * @returns {Promise<Object>} - Storage statistics
-   */
-  async getStats(prefix = '') {
-    let totalSize = 0;
-    let totalCount = 0;
-    let continuationToken;
-    
-    do {
-      const result = await this.list(prefix, { continuationToken });
-      
-      if (result.Contents) {
-        totalCount += result.Contents.length;
-        totalSize += result.Contents.reduce((sum, obj) => sum + (obj.Size || 0), 0);
-      }
-      
-      continuationToken = result.NextContinuationToken;
-    } while (continuationToken);
-    
-    return {
-      totalSize,
-      totalCount,
-      totalSizeFormatted: this._formatBytes(totalSize)
-    };
-  }
-  
-  /**
-   * Format bytes to human readable format
-   * @private
-   */
-  _formatBytes(bytes, decimals = 2) {
-    return formatBytes(bytes, decimals);
   }
 }
 

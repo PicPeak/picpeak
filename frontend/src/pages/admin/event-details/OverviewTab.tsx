@@ -242,7 +242,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
         {!archived && feedbackSettings?.feedback_enabled && (
           <div className="space-y-2">
-            <FeedbackModerationPanel eventId={parseInt(id!)} compact={true} maxItems={3} />
+            <FeedbackModerationPanel eventId={parseInt(id!)} />
             <button type="button" className="text-sm font-medium text-accent hover:underline" onClick={() => setActiveTab('guests')}>
               {t('events.overviewTab.openFeedback', 'Open Guests & Feedback')}
             </button>

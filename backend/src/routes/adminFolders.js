@@ -22,6 +22,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission, userHasAllPermissions } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
 const { safeValidationErrors, errorResponse } = require('../utils/routeHelpers');
+const { sendFolderError } = require('../utils/folderErrorResponse');
 const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const tree = require('../services/folderTreeService');
 const requests = require('../services/folderRequestService');
@@ -34,13 +35,6 @@ const MAX_PATH_LENGTH = 1024;
 
 const actorOf = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
 const eventIdOf = (req) => parseInt(req.params.eventId, 10);
-
-function sendFolderError(res, err, fallback) {
-  if (err instanceof tree.FolderError) {
-    return res.status(err.status).json({ error: err.message, code: err.code, ...(err.details || {}) });
-  }
-  return errorResponse(res, err, 500, fallback);
-}
 
 function invalid(req, res) {
   const errors = validationResult(req);

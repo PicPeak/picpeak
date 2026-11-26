@@ -19,12 +19,6 @@ const { deleteCategoryTranslations } = require('../services/contentTranslations'
 const router = express.Router();
 
 /**
- * A per-event category belongs to its event, so creating, editing or deleting
- * one needs access to that event: the rule requireEventOwnership applies.
- * Global categories are shared and stay on settings.edit alone. Answers the
- * refusal itself and returns true when the caller may not continue.
- */
-/**
  * Folders (issue 1786) are edited with folders.manage, on top of the
  * settings.edit these routes already require. Answers the refusal itself.
  */
@@ -34,7 +28,27 @@ async function refuseWithoutFolderPermission(req, res) {
   return true;
 }
 
-const sendFolderError = (res, err) => res.status(err.status).json({ error: err.message, code: err.code, ...(err.details || {}) });
+// Every call below is behind an `instanceof FolderError` check, so none
+// reaches the helper's 500 fallback.
+const { sendFolderError } = require('../utils/folderErrorResponse');
+
+// A category's slug from its name: accents dropped, lower case, dashes.
+const slugFromName = (name) => name
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .toLowerCase()
+  .replace(/[^\w\s-]/g, '')
+  .replace(/\s+/g, '-')
+  .replace(/-+/g, '-')
+  .trim();
+
+// The categories a new one sits among: the global list, or one gallery's.
+const inCategoryScope = (isGlobal, eventId) => function () {
+  if (isGlobal) {
+    this.where('is_global', formatBoolean(true));
+  } else {
+    this.where('event_id', eventId);
+  }
+};
 
 /**
  * A category becoming a top-level folder (create with is_folder, or the
@@ -64,6 +78,12 @@ async function siblingRaceError(err, eventId, name, excludeId = null) {
   return null;
 }
 
+/**
+ * A per-event category belongs to its event, so creating, editing or deleting
+ * one needs access to that event: the rule requireEventOwnership applies.
+ * Global categories are shared and stay on settings.edit alone. Answers the
+ * refusal itself and returns true when the caller may not continue.
+ */
 async function refuseForeignCategoryEvent(req, res, eventId) {
   if (eventId === null || eventId === undefined) return false;
   const event = await db('events').where('id', eventId).first();
@@ -170,24 +190,12 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
     }
     
     // Generate slug if not provided
-    const categorySlug = slug || name
-      .normalize('NFD').replace(/[̀-ͯ]/g, '')
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .trim();
-    
+    const categorySlug = slug || slugFromName(name);
+
     // Check if slug already exists for this scope
     const existing = await db('photo_categories')
       .where('slug', categorySlug)
-      .where(function() {
-        if (is_global) {
-          this.where('is_global', formatBoolean(true));
-        } else {
-          this.where('event_id', event_id);
-        }
-      })
+      .where(inCategoryScope(is_global, event_id))
       .first();
     
     if (existing) {
@@ -197,13 +205,7 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
     // Append to the end of its scope so a new category doesn't jump to the
     // top of an admin-defined order (#782).
     const maxRow = await db('photo_categories')
-      .where(function() {
-        if (is_global) {
-          this.where('is_global', formatBoolean(true));
-        } else {
-          this.where('event_id', event_id);
-        }
-      })
+      .where(inCategoryScope(is_global, event_id))
       .max('display_order as maxOrder')
       .first();
     const nextOrder = (maxRow?.maxOrder || 0) + 1;
@@ -307,13 +309,7 @@ router.put('/:id', adminAuth, requirePermission('settings.edit'), [
 
     const updateData = staysFolder ? {} : {
       name,
-      slug: name
-        .normalize('NFD').replace(/[̀-ͯ]/g, '')
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .trim()
+      slug: slugFromName(name)
     };
 
     // Update hero_photo_id if provided (including null to clear it). A
@@ -479,10 +475,8 @@ router.put('/event/:eventId/:id/chapter', adminAuth, requirePermission('settings
       // the same transaction, so a removal never leaves them showing.
       await db.transaction(async (trx) => {
         await trx('event_category_chapters').where({ event_id: eventId, category_id: categoryId }).del();
-        if (await trx.schema.hasTable('content_translations')) {
-          await trx('content_translations')
-            .where({ event_id: eventId, entity_type: 'chapter', entity_id: categoryId }).del();
-        }
+        await trx('content_translations')
+          .where({ event_id: eventId, entity_type: 'chapter', entity_id: categoryId }).del();
       });
     } else {
       await db('event_category_chapters')
@@ -540,9 +534,7 @@ router.delete('/:id', adminAuth, requirePermission('settings.edit'), async (req,
     // Only photos in the trash are left in it: they come back uncategorised.
     await db('photos').where('category_id', id).update({ category_id: null });
     // Chapter markers in every event (migration 369): SQLite leaves the FK cascade inert.
-    if (await db.schema.hasTable('event_category_chapters')) {
-      await db('event_category_chapters').where('category_id', id).del();
-    }
+    await db('event_category_chapters').where('category_id', id).del();
     // Its translated names and chapter texts (migration 373), the same reason.
     await deleteCategoryTranslations(db, id);
     await db('photo_categories').where('id', id).delete();

@@ -58,14 +58,6 @@ export const eventTypesService = {
   },
 
   /**
-   * Get a single event type by ID
-   */
-  async getEventType(id: number): Promise<EventType> {
-    const response = await api.get<EventType>(`/admin/event-types/${id}`);
-    return response.data;
-  },
-
-  /**
    * Create a new event type
    */
   async createEventType(data: CreateEventTypeData): Promise<EventType> {
@@ -86,15 +78,5 @@ export const eventTypesService = {
    */
   async deleteEventType(id: number): Promise<void> {
     await api.delete(`/admin/event-types/${id}`);
-  },
-
-  /**
-   * Reorder event types
-   */
-  async reorderEventTypes(orderedIds: number[]): Promise<EventType[]> {
-    const response = await api.post<{ eventTypes: EventType[] }>('/admin/event-types/reorder', {
-      orderedIds
-    });
-    return response.data.eventTypes;
   }
 };

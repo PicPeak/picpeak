@@ -30,7 +30,7 @@ async function inspect(localPath, originalName, signal, prepared) {
 async function prepareBatch(files, signal) {
   if (files.length < 8) return null;
   const entries = files.filter(file => !file.mimetype?.startsWith('video/') && !isRawFilename(file.originalname))
-    .map(file => file.path || file.filepath || file.tempFilePath).filter(Boolean);
+    .map(file => file.path).filter(Boolean);
   if (!entries.length) return null;
   try { return new Map((await sharp.metadataBatch(entries, { signal, interactive: true })).map(result => [result.input, result])); }
   catch (error) { return new Map(entries.map(input => [input, { error: { message: error.message, code: error.code || 'IMAGE_WORKER_FAILED' } }])); }

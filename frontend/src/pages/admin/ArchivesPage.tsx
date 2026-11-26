@@ -23,7 +23,6 @@ import { archiveInProgressError } from '../../utils/archiveErrors';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
-// import { useNavigate } from 'react-router-dom';
 
 export const ArchivesPage: React.FC = () => {
   const { t } = useTranslation();
@@ -34,7 +33,6 @@ export const ArchivesPage: React.FC = () => {
   const [filterType, setFilterType] = useState<string>('all');
   const [sortBy, setSortBy] = useState<ArchiveSortBy>('date');
   const [currentPage, setCurrentPage] = useState(1);
-  // const navigate = useNavigate();
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
@@ -119,11 +117,6 @@ export const ArchivesPage: React.FC = () => {
     });
     if (ok) deleteMutation.mutate(archive.id);
   };
-
-  // Details view not implemented yet
-  // const handleViewDetails = (archive: typeof archives[0]) => {
-  //   navigate(`/admin/archives/${archive.id}`);
-  // };
 
   if (isLoading) {
     return (

@@ -742,6 +742,15 @@ describe('one archive job per gallery', () => {
     }
   });
 
+  it('clears the claim row of the archive it found when the URL id is zero-padded', async () => {
+    const padded = await makeEvent('archive-row-padded', { photoCount: 0 });
+    await jobState.ensure(jobName(padded.id));
+    await db('events').where({ id: padded.id }).update({ is_archived: 1, is_active: 0 });
+    expect((await request(app).delete(`/admin/archives/0${padded.id}`)).status).toBe(200);
+    expect(await db('events').where({ id: padded.id }).first()).toBeUndefined();
+    expect(await db('maintenance_jobs').where({ job_name: jobName(padded.id) }).first()).toBeUndefined();
+  });
+
   it('removes an archive\'s unheld claim row with it, and leaves one a restore took meanwhile', async () => {
     const released = await makeEvent('archive-row-free', { photoCount: 0 });
     await jobState.ensure(jobName(released.id));

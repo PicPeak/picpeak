@@ -19,12 +19,18 @@ const {
 
 const router = express.Router();
 
+// Answers an ExternalMediaAccessError with its own status and message and
+// returns true; returns false for any other error.
+function accessError(res, error) {
+  if (!(error instanceof externalAccess.ExternalMediaAccessError)) return false;
+  res.status(error.statusCode).json({ error: error.message });
+  return true;
+}
+
 function sourceError(res, error, fallback) {
-  if (!(error instanceof externalAccess.ExternalMediaAccessError)) {
-    logger.error(fallback, { error: error.message });
-  }
-  return res.status(error instanceof externalAccess.ExternalMediaAccessError ? error.statusCode : 500)
-    .json({ error: error instanceof externalAccess.ExternalMediaAccessError ? error.message : fallback });
+  if (accessError(res, error)) return;
+  logger.error(fallback, { error: error.message });
+  res.status(500).json({ error: fallback });
 }
 
 // GET /api/admin/external-media/list?path=relative/dir
@@ -34,9 +40,7 @@ router.get('/list', adminAuth, requirePermission('photos.view'), async (req, res
     const result = await list(relPath, req.admin);
     res.json(result);
   } catch (error) {
-    if (error instanceof externalAccess.ExternalMediaAccessError) {
-      return res.status(error.statusCode).json({ error: error.message });
-    }
+    if (accessError(res, error)) return;
     logger.warn('Invalid external media path requested', {
       path: req.query.path,
       error: error.message
@@ -76,7 +80,7 @@ router.delete('/sources/:sourceId', adminAuth, requireSuperAdmin(), async (req, 
   }
 });
 
-// POST /api/admin/events/:id/import-external
+// POST /api/admin/external-media/events/:id/import-external
 // Body: { external_path?: string, recursive?: boolean, map?: { individual?: string, collages?: string } }
 //
 // Without `external_path` this imports, or rescans, the folder the gallery's
@@ -127,9 +131,7 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
       // replica mid-pass. Say so rather than walking the tree a second time.
       return res.status(409).json({ error: error.message });
     }
-    if (error instanceof externalAccess.ExternalMediaAccessError) {
-      return res.status(error.statusCode).json({ error: error.message });
-    }
+    if (accessError(res, error)) return;
     if (error.code === 'PATH_OUTSIDE_BASE') {
       // A folder that is a symlink out of EXTERNAL_MEDIA_ROOT: the caller's
       // choice, not a server fault.

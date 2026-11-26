@@ -60,12 +60,8 @@ const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 const externalAccess = require('./externalMediaAccess');
 const dependencyHealth = require('./dependencyHealth');
-const {
-  importExternalFolder,
-  ImportInProgressError,
-  IMAGE_EXTENSIONS,
-  VIDEO_EXTENSIONS,
-} = require('./externalImportService');
+const { importExternalFolder, ImportInProgressError } = require('./externalImportService');
+const { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } = require('./externalMediaTypes');
 
 const envInt = (name, fallback) => {
   const parsed = Number.parseInt(process.env[name] || '', 10);

@@ -400,21 +400,25 @@ describe('separations survive re-derivation (#1132)', () => {
       );
       const body = src.slice(src.indexOf('async function deleteEventCascade'));
       expect(body).toContain('event_people_merge_dismissals\').where(\'event_id\', eventId).del()');
-      // Guarded, not caught: a failed statement aborts the transaction on PG.
-      expect(body).toContain('hasTable(\'event_people_merge_dismissals\')');
     });
 
     it('permanent archive deletion clears the face data too', () => {
       // Same contract, second door. The FK cascade is inert on SQLite — and no
       // FK reaches the dismissals table on either engine. archiveEvent's purge
       // is nonfatal, so an event really can arrive here still holding
-      // embeddings. The deletes run inside the route's transaction (issue 1733).
+      // embeddings. The deletes run inside the route's transaction (issue 1733),
+      // through the row delete it shares with the gallery delete.
       const src = fs.readFileSync(
         path.join(__dirname, '..', '..', 'src', 'routes', 'adminArchives.js'), 'utf8'
       );
-      expect(src).toContain('event_people_merge_dismissals');
-      expect(src).toContain('trx(\'photo_faces\').where(\'event_id\', req.params.id).del()');
-      expect(src).toContain('trx(\'event_people\').where(\'event_id\', req.params.id).del()');
+      expect(src).toMatch(/db\.transaction\(async \(trx\) => \{\s*await deleteEventRows\(trx, archive\.id,/);
+      const helpers = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'src', 'routes', 'adminEvents', 'helpers.js'), 'utf8'
+      );
+      const rows = helpers.slice(helpers.indexOf('async function deleteEventRows'));
+      expect(rows).toContain('trx(\'event_people_merge_dismissals\').where(\'event_id\', eventId).del()');
+      expect(rows).toContain('trx(\'photo_faces\').where(\'event_id\', eventId).del()');
+      expect(rows).toContain('trx(\'event_people\').where(\'event_id\', eventId).del()');
     });
   });
 

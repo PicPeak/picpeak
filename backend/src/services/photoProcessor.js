@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
-const { generateThumbnail, generateVideoPlaceholder, extractCaptureDate, extractCapture, captureWallColumn, withLocalCopy, withProcessableImage } = require('./imageProcessor');
+const { generateThumbnail, generateVideoPlaceholder, extractCaptureDate, extractCapture, captureWallColumn, withLocalCopy, withProcessableImage, orientedDimensions } = require('./imageProcessor');
 const { exifColumn } = require('./photoExif');
 const { generatePhotoFilename } = require('../utils/filenameSanitizer');
 const { processUploadedVideo, extractVideoMetadata, isVideoMimeType, posterFrameError } = require('./videoProcessor');
@@ -9,7 +9,7 @@ const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const logger = require('../utils/logger');
 const uploadQuota = require('./publicUploadQuota');
-const { insertPhotoWithinCap, photoCapOf } = require('./photoCap');
+const { countEventPhotos, insertPhotoWithinCap, photoCapError, photoCapOf } = require('./photoCap');
 const { claimPromotion } = require('./watchFolderClaims');
 const { resolveCredit, creditOpenForExif, settleGuestCredit } = require('./photoCredit');
 const imageAdmission = require('./imageWorkAdmission');
@@ -20,47 +20,7 @@ const { refusal: mediaRefusal, isInterruption } = require('./mediaProcessPolicy'
 const { detectedFocalColumns, focalPointOf } = require('../utils/focalPoint');
 
 function normalizeFiles(files) {
-  // Handle null, undefined, or falsy values
-  if (!files) {
-    logger.info('[normalizeFiles] No files provided');
-    return [];
-  }
-
-  // Handle arrays
-  if (Array.isArray(files)) {
-    const validFiles = files.filter(Boolean);
-    logger.info(`[normalizeFiles] Normalized ${validFiles.length} files from array`);
-    return validFiles;
-  }
-
-  // Handle iterable objects (some multer configurations)
-  try {
-    if (typeof files === 'object' && typeof files[Symbol.iterator] === 'function') {
-      const validFiles = Array.from(files).filter(Boolean);
-      logger.info(`[normalizeFiles] Normalized ${validFiles.length} files from iterable`);
-      return validFiles;
-    }
-  } catch (err) {
-    logger.warn('[normalizeFiles] Failed to iterate files object:', err.message);
-  }
-
-  // Handle plain objects (multer fieldname mapping)
-  if (typeof files === 'object') {
-    try {
-      const validFiles = Object.values(files)
-        .flatMap((value) => (Array.isArray(value) ? value : [value]))
-        .filter(Boolean);
-      logger.info(`[normalizeFiles] Normalized ${validFiles.length} files from object`);
-      return validFiles;
-    } catch (err) {
-      logger.warn('[normalizeFiles] Failed to process files object:', err.message);
-      return [];
-    }
-  }
-
-  // Unexpected type
-  logger.warn('[normalizeFiles] Unexpected files type:', typeof files);
-  return [];
+  return Array.isArray(files) ? files.filter(Boolean) : [];
 }
 
 // `placement` (issue 1786): photo columns resolved by uploadPlacement —
@@ -80,11 +40,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
     throw new Error('Event not found');
   }
   
-  // Read the setting before any transaction opens: on SQLite the pool is one
-  // connection, and a read through `db` while `trx` holds it waits for the
-  // acquire timeout (isEnabled then logs and answers false). The value is
-  // cached for a minute, so once per batch is right. Metadata stripping
-  // (issue 2102) queues videos too.
+  // Read once per batch: the value is cached for a minute. Metadata
+  // stripping (issue 2102) queues videos too.
   const webCopyEnabled = await require('./videoRenditionService').queuesVideos();
 
   // Process each file
@@ -135,7 +92,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         extension
       );
       
-      const tempPath = file?.path || file?.filepath || file?.tempFilePath;
+      const tempPath = file?.path;
 
       if (!tempPath) {
         const fileInfo = JSON.stringify({
@@ -223,7 +180,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
             const sharp = require('./isolatedSharp');
             const metadata = await sharp(proc.path).metadata();
             // Oriented, not raw — see orientedDimensions (#1185).
-            const dims = require('./imageProcessor').orientedDimensions(metadata);
+            const dims = orientedDimensions(metadata);
             if (dims.width && dims.height) {
               imageMetadata = { width: dims.width, height: dims.height };
             }
@@ -361,9 +318,9 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       rowCommitted = true;
       releaseClaim();
 
-      // Webhook (#327) — fires for every entry path that lands in this
-      // service: guest upload + auto-import + admin upload via API. A photo
-      // held for review (issue 743) fires when it is approved instead.
+      // Webhook (#327) for the admin chunked upload; the queued paths fire
+      // from processPhoto. A photo held for review (issue 743) fires when it
+      // is approved instead.
       if (!photoData.moderation_status) {
         try {
           const webhookService = require('./webhookService');
@@ -381,16 +338,13 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       }
 
       // Face detection (#1074). processPhoto() — the ASYNC path — enqueues on
-      // completion, but this synchronous path (chunked-upload completion,
-      // watch-folder import) writes a finished photo row directly and never
+      // completion, but this synchronous path (the admin chunked-upload
+      // completion) writes a finished photo row directly and never
       // reaches it, so those photos stayed unscanned in a face-enabled event
       // until someone ran a manual re-scan.
       try {
         const { isEnabledForEvent } = require('./faceSettings');
         if (!isVideo && await isEnabledForEvent(event)) {
-          // `db`, NOT `trx`: the transaction is committed above, so a query
-          // through it throws "Transaction query already complete" — which the
-          // catch below swallowed, making this whole enqueue a silent no-op.
           await db('photos').where({ id: photoId }).update({ face_status: 'pending' });
         }
       } catch (err) {
@@ -448,7 +402,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         originalname: file.originalname,
         mimetype: file.mimetype,
         size: file.size,
-        tempPath: file?.path || file?.filepath || file?.tempFilePath
+        tempPath: file?.path
       });
 
       // Continue with other files
@@ -471,17 +425,13 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
  * thumbnails / EXIF / dimensions, then flips status to 'complete'
  * (or 'failed' with the error).
  *
- * Used by both the admin upload route and the gallery (guest) upload
- * route so they share the same fast-return semantics.
+ * Used by the gallery (guest) upload route. The admin batch upload
+ * route queues its pending rows itself.
  *
  * Options:
  *   - eventId           required
- *   - photoType         'individual' | 'collage' (default 'individual')
  *   - categoryId        numeric category id or null
  *   - folderId          folder (issue 1786) or null for the gallery root
- *   - uploadId          optional pre-generated upload id (caller can
- *                       provide it for chunked uploads that span
- *                       multiple HTTP requests)
  *   - uploadedBy        'admin' | 'guest' — who ran the upload (default 'admin')
  *   - credit            credit columns resolved by the caller (#1561); for a
  *                       guest upload that is the guest's name, and the
@@ -495,13 +445,13 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
  */
 async function queueFilesForProcessing(files, options = {}) {
   const crypto = require('crypto');
-  const { countEventPhotos, insertPhotoWithinCap, photoCapError } = require('./photoCap');
   const {
-    eventId, photoType = 'individual', categoryId = null, folderId = null, uploadId: providedUploadId, photoCap = null,
+    eventId, categoryId = null, folderId = null, photoCap = null,
     uploadedBy = 'admin', credit = {}, uploadReservation = null, heldForReview = false,
     clientCapturedAt = null,
   } = options;
-  const uploadId = providedUploadId || crypto.randomBytes(16).toString('hex');
+  const uploadId = crypto.randomBytes(16).toString('hex');
+  const photoType = 'individual';
 
   const event = await db('events').where({ id: eventId }).first();
   if (!event) throw new Error(`Event ${eventId} not found`);
@@ -525,7 +475,7 @@ async function queueFilesForProcessing(files, options = {}) {
 
   const storage = getStorage();
   const finalDestPathRel = path.posix.join('events/active', event.slug);
-  const categoryName = photoType === 'collage' ? 'collages' : 'individual';
+  const categoryName = 'individual';
 
   // Once the cap is hit, the rest of the batch is refused without storing it.
   let capReached = false;
@@ -533,7 +483,7 @@ async function queueFilesForProcessing(files, options = {}) {
   const capRefusal = () => Object.assign(new Error(photoCapError(photoCap).error), { code: 'PHOTO_CAP_REACHED' });
 
   for (const file of fileList) {
-    const tempPath = file?.path || file?.filepath || file?.tempFilePath;
+    const tempPath = file?.path;
     let storedKey = null;
     let uploadCharge = null;
     let promotionSettled = false;
@@ -576,7 +526,7 @@ async function queueFilesForProcessing(files, options = {}) {
         : null;
 
       if (uploadReservation) {
-        uploadCharge = await require('./publicUploadQuota').prepareObject(uploadReservation, finalKey, tempStats.size);
+        uploadCharge = await uploadQuota.prepareObject(uploadReservation, finalKey, tempStats.size);
       }
 
       // Move to storage first so the file is at its recorded path by the
@@ -624,7 +574,7 @@ async function queueFilesForProcessing(files, options = {}) {
         return inserted[0]?.id || inserted[0];
       };
       const inserted = uploadCharge
-        ? [await require('./publicUploadQuota').commitObject(uploadCharge, 'photo', writePhoto)]
+        ? [await uploadQuota.commitObject(uploadCharge, 'photo', writePhoto)]
         : await insertPhotoWithinCap(photoRow, photoCap);
       if (!inserted) {
         capReached = true;
@@ -644,7 +594,7 @@ async function queueFilesForProcessing(files, options = {}) {
       // An object with no photo row is invisible to every listing and every
       // cleanup, so a failure after the upload removes what it stored.
       if (!rowCommitted && uploadCharge) {
-        await require('./publicUploadQuota').failedObject(uploadCharge, { storage, settled: promotionSettled }).catch(cleanupError => {
+        await uploadQuota.failedObject(uploadCharge, { storage, settled: promotionSettled }).catch(cleanupError => {
           logger.warn('Public photo cleanup failed; quota remains charged', { error: cleanupError.message });
         });
       } else if (!rowCommitted && storedKey) await storage.delete(storedKey).catch(() => {});
@@ -827,7 +777,7 @@ async function processPhoto(photoId) {
           const sharp = require('./isolatedSharp');
           const metadata = await sharp(proc.path).metadata();
           // Oriented, not raw — see orientedDimensions (#1185).
-          const dims = require('./imageProcessor').orientedDimensions(metadata);
+          const dims = orientedDimensions(metadata);
           if (dims.width && dims.height) {
             updateData.width = dims.width;
             updateData.height = dims.height;
@@ -885,7 +835,7 @@ async function processPhoto(photoId) {
   // The result is written only while the row still carries this attempt's
   // id, in the same UPDATE. A worker that lost its claim removes what it
   // stored and writes nothing.
-  const storage = require('./storage').getStorage();
+  const storage = getStorage();
   if (await mediaAttempts.guard(attempt, db, true).update(updateData) !== 1) {
     if (updateData.thumbnail_path) await storage.delete(updateData.thumbnail_path).catch(() => {});
     throw mediaRefusal('Photo attempt was superseded', 'MEDIA_SUPERSEDED');
@@ -963,7 +913,7 @@ async function processPhoto(photoId) {
   }
 
   try {
-    await require('./publicUploadQuota').processingComplete(photoId);
+    await uploadQuota.processingComplete(photoId);
   } catch (error) {
     // Retain the pending charge, but do not turn a completed original into a
     // failed/retryable job because accounting could not release its work hold.
