@@ -11,7 +11,7 @@ const { requirePermission, userHasAnyPermission } = require('../middleware/permi
 // /email mount — the pre-existing config/queue/received endpoints stay ungated).
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const messagingGate = requireFeatureFlag('messaging');
-const { wrapEmailHtml, processEmailQueue, resolveFromIdentity, buildSignatureTextFor, htmlToText } = require('../services/emailProcessor');
+const { wrapEmailHtml, processEmailQueue, resolveFromIdentity, mailIdentities, buildSignatureTextFor, htmlToText } = require('../services/emailProcessor');
 const emailWebhookTransport = require('../services/emailWebhookTransport');
 const businessProfileService = require('../services/businessProfileService');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
@@ -392,21 +392,9 @@ router.get('/accounts', adminAuth, messagingGate, requirePermission('email.view'
 // automated stream sends from the global SMTP from-address.
 router.get('/identities', adminAuth, messagingGate, requirePermission('email.view'), async (req, res) => {
   try {
-    const cfg = await db('email_configs').first();
-    let customers = null;
-    try {
-      const cust = await db('mail_accounts').where({ account_key: 'customers' }).first();
-      customers = cust?.imap_user || cust?.from_email || null;
-    } catch (_) { customers = null; }
-    // A webhook-only install has no email_configs row (#1225), so reading the
-    // automated address from it alone shows "—" in the Messages sidebar for an
-    // instance that is sending perfectly well from EMAIL_FROM.
-    const identity = await resolveFromIdentity();
-    res.json({
-      automated: cfg?.from_email || identity?.fromEmail || null,
-      accounting: cfg?.imap_user || null,
-      customers,
-    });
+    const { automated, accounting, mailboxes } = await mailIdentities();
+    const customers = mailboxes.find((mailbox) => mailbox.accountKey === 'customers');
+    res.json({ automated, accounting, customers: customers?.login || customers?.sender || null });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to load mail identities');
   }
