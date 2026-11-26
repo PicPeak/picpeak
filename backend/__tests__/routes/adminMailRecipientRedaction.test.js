@@ -6,7 +6,9 @@
  * and reading pane), the notification bell, the dashboard activity feed and
  * System health's stuck and waiting mail returned them in full, and the
  * log's search matched on the address, which answers "did we ever mail this
- * address?" without showing it. For such an admin recipients come back as
+ * address?" without showing it. The mail bodies quote the addresses the mail
+ * carries (the recipient, cc, template variables such as customer_email);
+ * those, and only those, leave the body too. For such an admin recipients come back as
  * null and address-shaped text inside free text as `…`; a Super Admin and a
  * role holding customers.view keep everything.
  */
@@ -28,12 +30,13 @@ const {
 const { clearPermissionCache } = require('../../src/middleware/permissions');
 
 const ADDRESS = 'anna@kunde.example';
+const STUDIO_LINK = '<p><a href="mailto:hello@studio.example">hello@studio.example</a></p>';
 
 describe('admin mail surfaces — recipients need customers.view', () => {
   let db; let cleanup;
   let projectsApp; let emailApp; let notificationsApp; let dashboardApp; let healthApp;
   let superTok; let readerTok; let customerReaderTok;
-  let mailId;
+  let mailId; let reRenderedId;
 
   const auth = (req, tok) => req.set('Authorization', `Bearer ${tok}`);
   const insertId = async (table, row) => {
@@ -76,8 +79,8 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     });
     mailId = await insertId('email_queue', {
       recipient_email: ADDRESS, email_type: 'gallery_created', status: 'failed',
-      email_data: JSON.stringify({ cc: ['cc@kunde.example'] }), event_id: eventId,
-      rendered_html: '<p>Hello</p>',
+      email_data: JSON.stringify({ cc: ['cc@kunde.example'], contact: '"anna meier"@kunde.example' }), event_id: eventId,
+      rendered_html: `<p>Hello ANNA@KUNDE.EXAMPLE, copy cc@kunde.example, &quot;anna meier&quot;@kunde.example</p>${STUDIO_LINK}`,
       error_message: `550 5.1.1 <${ADDRESS}>: mailbox unavailable`,
       created_at: new Date().toISOString(),
     });
@@ -86,6 +89,14 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     await insertId('email_queue', {
       recipient_email: 'waiting@kunde.example', email_type: 'gallery_created', status: 'pending',
       email_data: '{}', event_id: eventId, retry_count: 0, created_at: anHourAgo, scheduled_at: anHourAgo,
+    });
+    // Sent before bodies were stored: the preview renders it again, from a
+    // template that prints {{customer_email}} (quote accepted, to the studio).
+    await require('../../src/services/crmEmailTemplates').ensureCrmEmailTemplatesSeeded(db);
+    reRenderedId = await insertId('email_queue', {
+      recipient_email: 'owner@studio.example', email_type: 'quote_accepted_admin', status: 'sent',
+      email_data: JSON.stringify({ customer_email: 'bert@kunde.example', quote_number: 'Q-RED-2' }),
+      event_id: eventId, created_at: new Date().toISOString(),
     });
     await insertId('activity_logs', {
       activity_type: 'customer_login', actor_type: 'customer', actor_name: ADDRESS,
@@ -102,7 +113,7 @@ describe('admin mail surfaces — recipients need customers.view', () => {
 
   afterAll(async () => { if (cleanup) await cleanup(); });
 
-  const preview = (tok) => auth(request(projectsApp).get(`/api/admin/projects/email/${mailId}/preview`), tok);
+  const preview = (tok, id = mailId) => auth(request(projectsApp).get(`/api/admin/projects/email/${id}/preview`), tok);
   const queue = (tok, q = '') => auth(request(emailApp).get('/api/admin/email/queue').query(q ? { q } : {}), tok);
   const queueItem = (tok) => auth(request(emailApp).get(`/api/admin/email/queue/${mailId}`), tok);
   const bell = (tok) => auth(request(notificationsApp).get('/api/admin/notifications'), tok);
@@ -207,6 +218,29 @@ describe('admin mail surfaces — recipients need customers.view', () => {
       expect(full.stuckEmails.find((e) => e.id === mailId).recipientEmail).toBe(ADDRESS);
       expect(full.stuckEmails.find((e) => e.id === mailId).errorMessage).toContain(ADDRESS);
       expect(full.waitingEmails[0].recipientEmail).toBe('waiting@kunde.example');
+    }
+  });
+
+  it('removes the addresses the mail carries from its stored body, and only those', async () => {
+    const redacted = '<p>Hello …, copy …, …</p>' + STUDIO_LINK;
+    expect((await preview(readerTok)).body.html).toBe(redacted);
+    expect((await queueItem(readerTok)).body.renderedHtml).toBe(redacted);
+
+    for (const tok of [superTok, customerReaderTok]) {
+      expect((await preview(tok)).body.html).toContain('ANNA@KUNDE.EXAMPLE');
+      expect((await queueItem(tok)).body.renderedHtml).toContain('cc@kunde.example');
+    }
+  });
+
+  it('removes the addresses from a body the preview renders again', async () => {
+    const res = await preview(readerTok, reRenderedId);
+    expect(res.status).toBe(200);
+    expect(res.body.exact).toBe(false);
+    expect(res.body.html).toContain('Q-RED-2');
+    expect(res.body.html).not.toContain('bert@kunde.example');
+
+    for (const tok of [superTok, customerReaderTok]) {
+      expect((await preview(tok, reRenderedId)).body.html).toContain('bert@kunde.example');
     }
   });
 });

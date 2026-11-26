@@ -18,6 +18,7 @@ const { AppError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { auditedUpdate } = require('./accountingHistory');
 const { redactBearerLinks, hasMaskedRecoveryLink, parseEmailData, MASK } = require('../utils/emailSecretRedaction');
+const { redactKnownAddresses } = require('../utils/recipientRedaction');
 const {
   isEncryptedEmailData, isProtectedEmailType, maskSecretFields, PROTECTED_PENDING_STATUS,
 } = require('../utils/emailQueueEncryption');
@@ -752,17 +753,23 @@ async function getProjectOverview(id, perms = {}, admin = null) {
  * variables (email_data) so the admin still sees the email, flagged `exact:
  * false`. Only when even re-rendering fails (template gone / no variables)
  * does `available:false` fall through to the "nothing stored" note.
+ *
+ * `hideAddresses` (a caller without customers.view): the recipient is
+ * blanked, and the body loses the addresses the mail carries.
  */
-async function getEmailPreview(emailId) {
+async function getEmailPreview(emailId, { hideAddresses = false } = {}) {
   const row = await db('email_queue')
     .where({ id: emailId })
     .select('id', 'recipient_email', 'email_type', 'status', 'rendered_html', 'email_data')
     .first();
   if (!row) throw new AppError('Email not found', 404);
+  const forCaller = (preview) => (hideAddresses
+    ? { ...preview, recipient: null, html: redactKnownAddresses(preview.html, [row.recipient_email, parseEmailData(row.email_data)]) }
+    : preview);
 
   if (row.rendered_html) {
     // Document links in the body carry the customer's contract or quote token.
-    return { id: row.id, recipient: row.recipient_email, type: row.email_type, status: row.status, available: true, exact: true, html: redactBearerLinks(row.rendered_html) };
+    return forCaller({ id: row.id, recipient: row.recipient_email, type: row.email_type, status: row.status, available: true, exact: true, html: redactBearerLinks(row.rendered_html) });
   }
 
   // Fallback: re-render from the current template + stored variables.
@@ -777,7 +784,7 @@ async function getEmailPreview(emailId) {
     html = rendered && rendered.html ? rendered.html : null;
   } catch (_) { html = null; }
 
-  return {
+  return forCaller({
     id: row.id,
     recipient: row.recipient_email,
     type: row.email_type,
@@ -785,7 +792,7 @@ async function getEmailPreview(emailId) {
     available: !!html,
     exact: false,
     html: redactBearerLinks(html),
-  };
+  });
 }
 
 // ── Email actions (from the cockpit feed) ───────────────────────────────

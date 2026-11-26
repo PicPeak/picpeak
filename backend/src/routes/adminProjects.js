@@ -265,10 +265,11 @@ async function requireOwnedQueuedEmail(req, res, next) {
 // Email preview — the ACTUAL sent HTML (or null for pre-rendered_html rows)
 router.get('/email/:emailId/preview', requirePermission('events.view'), [param('emailId').isInt({ min: 1 })], requireOwnedQueuedEmail, handleAsync(async (req, res) => {
   validateRequest(req);
-  const preview = await projectService.getEmailPreview(parseInt(req.params.emailId, 10));
-  // The recipient is a customer address, as in the overview. The body is
-  // the mail as sent and stays as is.
-  if (!(await mayViewCustomers(req))) preview.recipient = null;
+  // The recipient and the addresses in the body are customer addresses, as
+  // in the overview.
+  const preview = await projectService.getEmailPreview(parseInt(req.params.emailId, 10), {
+    hideAddresses: !(await mayViewCustomers(req)),
+  });
   return successResponse(res, preview);
 }));
 
