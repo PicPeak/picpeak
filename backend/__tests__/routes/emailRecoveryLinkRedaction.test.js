@@ -265,7 +265,8 @@ describe('admin archive of credential links', () => {
     expect(viewer.status).toBe(200);
     expect(JSON.stringify(viewer.body)).not.toContain('sharetok123');
     expect(viewer.body.payload.data.event.slug).toBe('wedding');
-    expect(viewer.body.payload.data.event.customer_email).toBe('client@example.com');
+    // Without customers.view the customer's address is blanked too.
+    expect(viewer.body.payload.data.event.customer_email).toBe('…');
 
     const integrator = await request(app).get(url).set('Authorization', `Bearer ${integratorToken}`);
     expect(integrator.status).toBe(200);

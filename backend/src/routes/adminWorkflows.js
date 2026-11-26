@@ -21,11 +21,12 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission, userHasAllPermissions } = require('../middleware/permissions');
+const { requirePermission, userHasAllPermissions, userHasAnyPermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const workflows = require('../services/workflows');
 const { parseJson, writeGraph } = require('../services/workflows/engine');
 const { executableGraph } = require('../database/crmAccess');
+const { redactAddresses } = require('../utils/recipientRedaction');
 
 router.use(adminAuth, requireFeatureFlag('workflows'));
 
@@ -114,12 +115,19 @@ async function missingDocumentPermissions(adminId, nodes) {
   return missing;
 }
 
+// Run data (context variables such as customerEmail, a step's sent_to, an
+// approval's variables) can hold customer addresses: customers.view data.
+async function withoutAddresses(req, rows, field) {
+  if (await userHasAnyPermission(req.admin.id, ['customers.view'])) return rows;
+  return rows.map((row) => ({ ...row, [field]: redactAddresses(row[field]) }));
+}
+
 // --- Approvals inbox (registered before /:id so 'approvals' isn't an id) ---
 router.get('/approvals', requirePermission('workflows.view'), async (req, res, next) => {
   try {
     const items = await workflows.listPendingForAdmin(req.admin);
     const parsed = items.map((a) => ({ ...a, payload: parseJson(a.payload, {}) }));
-    res.json(await workflows.withoutForeignRunSecrets(parsed, req.admin, 'payload'));
+    res.json(await withoutAddresses(req, await workflows.withoutForeignRunSecrets(parsed, req.admin, 'payload'), 'payload'));
   } catch (e) { next(e); }
 });
 
@@ -141,7 +149,7 @@ router.get('/runs/:runId/steps', requirePermission('workflows.view'), async (req
       return res.status(404).json({ error: 'Workflow run not found' });
     }
     const steps = await db('workflow_run_steps').where({ run_id: runId }).orderBy('id', 'asc');
-    res.json(steps.map((s) => ({ ...s, result: parseJson(s.result, null) })));
+    res.json(await withoutAddresses(req, steps.map((s) => ({ ...s, result: parseJson(s.result, null) })), 'result'));
   } catch (e) { next(e); }
 });
 
@@ -152,7 +160,7 @@ router.get('/:id/runs', requirePermission('workflows.view'), async (req, res, ne
     workflows.scopeWorkflowRunsQuery(query, req.admin, { alias: 'r', mode: 'view' });
     const runs = await workflows.runScopedWorkflowQuery(query);
     const parsed = runs.map((r) => ({ ...r, context: parseJson(r.context, {}) }));
-    res.json(await workflows.withoutForeignRunSecrets(parsed, req.admin, 'context'));
+    res.json(await withoutAddresses(req, await workflows.withoutForeignRunSecrets(parsed, req.admin, 'context'), 'context'));
   } catch (e) { next(e); }
 });
 

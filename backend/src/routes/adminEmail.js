@@ -23,7 +23,7 @@ const { parseEmailData, secretValues, redactRenderedHtml, redactBearerLinks } = 
 const { isMaskedOrBlank, sameSmtpTarget, sameImapTarget } = require('../utils/mailCredentialTarget');
 const { queueTimestamp } = require('../utils/queueTimestamps');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
-const { redactAddresses } = require('../utils/recipientRedaction');
+const { redactAddresses, redactKnownAddresses } = require('../utils/recipientRedaction');
 
 // Shared wording for a masked password that may not follow a changed server.
 const PASSWORD_FOR_NEW_SERVER = (kind) => `Enter the ${kind} password again: the server, port, username or encryption changed, and the saved password is only used for the server it was saved for.`;
@@ -850,7 +850,7 @@ router.get('/queue/:id', adminAuth, messagingGate, requirePermission('email.view
     const data = parseEmailData(row.email_data);
     // Link tokens are credentials too: documents, invitation and
     // password-reset links, and admin action links.
-    const renderedHtml = redactBearerLinks(redactRenderedHtml(row.rendered_html || null, secretValues(data)));
+    const storedHtml = redactBearerLinks(redactRenderedHtml(row.rendered_html || null, secretValues(data)));
     try {
       if (data.cc) cc = Array.isArray(data.cc) ? data.cc.join(', ') : String(data.cc);
       if (Array.isArray(data.attachments)) {
@@ -860,9 +860,10 @@ router.get('/queue/:id', adminAuth, messagingGate, requirePermission('email.view
       }
     } catch (_) { /* malformed email_data → no cc/attachments, still return the body */ }
 
-    // Recipients are customers.view data, as in the list. The body is the
-    // mail as sent and stays as is.
+    // Recipients are customers.view data, as in the list; the body loses the
+    // addresses the mail carries.
     const seesRecipients = await userHasAnyPermission(req.admin.id, ['customers.view']);
+    const renderedHtml = seesRecipients ? storedHtml : redactKnownAddresses(storedHtml, [row.recipient_email, data]);
 
     res.json({
       id: row.id,
