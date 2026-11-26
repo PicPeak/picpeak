@@ -34,6 +34,9 @@ const ADDRESS = 'anna@kunde.example';
 const STUDIO_LINK = '<p><a href="mailto:hello@studio.example">hello@studio.example</a></p>';
 // The gallery's admin_email is the seeded admin user's address (tester@example.com).
 const ADMIN_LINE = '<p>Gallery admin Tester@Example.com</p>';
+// The studio's mailboxes: the accounting login (email_configs) and the
+// customers mailbox's sender (mail_accounts), both copied on the mail.
+const MAILBOX_LINE = '<p>Copy to kontakt@studio.example and rechnungen@studio.example</p>';
 
 describe('admin mail surfaces — recipients need customers.view', () => {
   let db; let cleanup;
@@ -73,6 +76,12 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     await db('app_settings').insert({
       setting_key: 'branding_support_email', setting_value: JSON.stringify('hello@studio.example'), setting_type: 'branding',
     });
+    await db('email_configs').insert({
+      smtp_host: 'smtp.studio.example', smtp_port: 587, from_email: 'noreply@studio.example', imap_user: 'rechnungen@studio.example',
+    });
+    await db('mail_accounts').insert({
+      account_key: 'customers', imap_user: 'kontakt-login@studio.example', from_email: 'kontakt@studio.example',
+    });
 
     // An ownerless gallery: every role reaches its mail and its activity.
     const eventId = await insertId('events', {
@@ -84,11 +93,11 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     mailId = await insertId('email_queue', {
       recipient_email: ADDRESS, email_type: 'gallery_created', status: 'failed',
       email_data: JSON.stringify({
-        cc: ['cc@kunde.example'], contact: '"anna meier"@kunde.example',
+        cc: ['cc@kunde.example', 'kontakt@studio.example', 'rechnungen@studio.example'], contact: '"anna meier"@kunde.example',
         support_email: 'hello@studio.example', admin_email: 'Tester@Example.com',
       }),
       event_id: eventId,
-      rendered_html: `<p>Hello ANNA@KUNDE.EXAMPLE, copy cc@kunde.example, &quot;anna meier&quot;@kunde.example</p>${ADMIN_LINE}${STUDIO_LINK}`,
+      rendered_html: `<p>Hello ANNA@KUNDE.EXAMPLE, copy cc@kunde.example, &quot;anna meier&quot;@kunde.example</p>${ADMIN_LINE}${MAILBOX_LINE}${STUDIO_LINK}`,
       error_message: `550 5.1.1 <${ADDRESS}>: mailbox unavailable`,
       created_at: new Date().toISOString(),
     });
@@ -175,7 +184,7 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     for (const tok of [superTok, customerReaderTok]) {
       const full = (await queueItem(tok)).body;
       expect(full.recipientEmail).toBe(ADDRESS);
-      expect(full.cc).toBe('cc@kunde.example');
+      expect(full.cc).toBe('cc@kunde.example, kontakt@studio.example, rechnungen@studio.example');
     }
   });
 
@@ -230,7 +239,7 @@ describe('admin mail surfaces — recipients need customers.view', () => {
   });
 
   it('removes the addresses the mail carries from its stored body, but not the studio\'s own', async () => {
-    const redacted = `<p>Hello …, copy …, …</p>${ADMIN_LINE}${STUDIO_LINK}`;
+    const redacted = `<p>Hello …, copy …, …</p>${ADMIN_LINE}${MAILBOX_LINE}${STUDIO_LINK}`;
     expect((await preview(readerTok)).body.html).toBe(redacted);
     expect((await queueItem(readerTok)).body.renderedHtml).toBe(redacted);
 
@@ -250,5 +259,13 @@ describe('admin mail surfaces — recipients need customers.view', () => {
     for (const tok of [superTok, customerReaderTok]) {
       expect((await preview(tok, reRenderedId)).body.html).toContain('bert@kunde.example');
     }
+  });
+
+  it('names the studio\'s mail identities for the Messages sidebar', async () => {
+    const res = await auth(request(emailApp).get('/api/admin/email/identities'), superTok);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      automated: 'noreply@studio.example', accounting: 'rechnungen@studio.example', customers: 'kontakt-login@studio.example',
+    });
   });
 });

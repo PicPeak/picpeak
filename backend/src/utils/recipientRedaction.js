@@ -12,8 +12,19 @@ const { escapeRegExp } = require('./emailSecretRedaction');
  */
 
 // Anything shaped like an address, including a quoted local part
-// ("anna meier"@kunde.example), which the app accepts as valid.
-const EMAIL_ADDRESS = /(?:"[^"\r\n]*"|[^\s<>"'(),;:]+)@[^\s<>"'(),;:]+/g;
+// ("anna meier"@kunde.example), which the app accepts as valid, and an
+// apostrophe inside the local part after a letter or digit (o'connor@…), so
+// a single-quoted 'anna@kunde.example' in free text is still the address.
+const EMAIL_ADDRESS = /(?:"[^"\r\n]*"|[^\s<>"'(),;:](?:[^\s<>"'(),;:]|(?<=[\p{L}\p{N}])')*)@[^\s<>"'(),;:]+/gu;
+
+// A match must be a whole address: no local-part character right before it,
+// no domain character (or a dot that goes on with one) right after it, so
+// ann@… never matches inside joann@… or anna@kunde.example inside
+// anna@kunde.example.au. An apostrophe belongs to the local part only after
+// a letter or digit (o'connor@…), so 'anna@kunde.example' and an attribute
+// such as title='anna@kunde.example' still match, as in EMAIL_ADDRESS.
+const BEFORE_ADDRESS = '(?<![\\p{L}\\p{N}.!#$%&*+/=?^_`{|}~-])(?<![\\p{L}\\p{N}]\')';
+const AFTER_ADDRESS = '(?![\\p{L}\\p{N}_-]|\\.[\\p{L}\\p{N}_-])';
 
 /**
  * `value` with every address-shaped substring replaced by `…`: a string, or
@@ -47,29 +58,32 @@ function redactKnownAddresses(html, values, keep = new Set()) {
     } else if (value && typeof value === 'object') Object.values(value).forEach(collect);
   };
   collect(values);
-  // Longest first, so a longer address is not cut by one inside it.
-  const forms = [...new Set([...found].flatMap((address) => [address, escapeHtml(address)]))]
-    .sort((a, b) => b.length - a.length);
+  const forms = [...new Set([...found].flatMap((address) => [address, escapeHtml(address)]))];
   if (!forms.length) return html;
-  return String(html).replace(new RegExp(forms.map(escapeRegExp).join('|'), 'gi'), '…');
+  const whole = `${BEFORE_ADDRESS}(?:${forms.map(escapeRegExp).join('|')})${AFTER_ADDRESS}`;
+  return String(html).replace(new RegExp(whole, 'giu'), '…');
 }
 
 /**
- * The studio's own addresses, lower-cased: the support address, the sender,
- * the business contact address and every admin user's. Templates pass them
- * as variables too ({{support_email}}, a gallery's admin_email); they are no
- * customer's address.
+ * The studio's own addresses, lower-cased: the support address, the mail
+ * identities (sender, accounting mailbox, each further mailbox's login and
+ * sender), the business contact address and every admin user's. Templates
+ * pass them as variables too ({{support_email}}, a gallery's admin_email);
+ * they are no customer's address.
  */
 async function studioAddresses() {
   // Required here: the mail and profile services load the database.
-  const { getSupportEmail, resolveFromIdentity } = require('../services/emailProcessor');
+  const { getSupportEmail, mailIdentities } = require('../services/emailProcessor');
   const { getProfile } = require('../services/businessProfileService');
   const { db } = require('../database/db');
-  const [support, sender, { profile }, admins] = await Promise.all([
-    getSupportEmail(), resolveFromIdentity(), getProfile(), db('admin_users').pluck('email'),
+  const [support, identities, { profile }, admins] = await Promise.all([
+    getSupportEmail(), mailIdentities(), getProfile(), db('admin_users').pluck('email'),
   ]);
-  return new Set([support, sender?.fromEmail, profile?.email, ...admins]
-    .filter(Boolean).map((address) => String(address).trim().toLowerCase()));
+  return new Set([
+    support, identities.automated, identities.accounting,
+    ...identities.mailboxes.flatMap((mailbox) => [mailbox.login, mailbox.sender]),
+    profile?.email, ...admins,
+  ].filter(Boolean).map((address) => String(address).trim().toLowerCase()));
 }
 
 module.exports = { redactAddresses, redactKnownAddresses, studioAddresses };

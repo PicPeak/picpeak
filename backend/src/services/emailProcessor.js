@@ -96,6 +96,29 @@ async function resolveFromIdentity() {
   return null;
 }
 
+/**
+ * The studio's mail identities: the automated sender, the primary
+ * (accounting) mailbox login and each further mailbox (mail_accounts) with
+ * its login and sender address. The Messages sidebar names them, and a mail
+ * body shown without customers.view keeps them (utils/recipientRedaction).
+ */
+async function mailIdentities() {
+  const cfg = await db('email_configs').first();
+  // A webhook-only install has no email_configs row (#1225), so reading the
+  // automated address from it alone would name none for an instance that is
+  // sending perfectly well from EMAIL_FROM.
+  const identity = await resolveFromIdentity();
+  let mailboxes = [];
+  try {
+    mailboxes = await db('mail_accounts').select('account_key', 'imap_user', 'from_email');
+  } catch (_) { mailboxes = []; }
+  return {
+    automated: cfg?.from_email || identity?.fromEmail || null,
+    accounting: cfg?.imap_user || null,
+    mailboxes: mailboxes.map((m) => ({ accountKey: m.account_key, login: m.imap_user || null, sender: m.from_email || null })),
+  };
+}
+
 let transporter = null;
 let lastConfigHash = null;
 
@@ -1998,6 +2021,7 @@ async function stopEmailQueueProcessor() {
 module.exports = {
   initializeTransporter,
   resolveFromIdentity,
+  mailIdentities,
   startEmailQueueProcessor,
   sendTemplateEmail,
   sendRawEmail,
