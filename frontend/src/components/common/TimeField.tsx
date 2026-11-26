@@ -50,6 +50,8 @@ interface TimeFieldProps {
   /** Tailwind width/extra classes for the input; defaults to w-full. */
   className?: string;
   disabled?: boolean;
+  /** Blank on blur clears the value (emits '') instead of restoring it. */
+  allowEmpty?: boolean;
 }
 
 /**
@@ -62,7 +64,7 @@ interface TimeFieldProps {
  * reverting to the last good value if unparseable.
  */
 export const TimeField: React.FC<TimeFieldProps> = ({
-  value, onChange, label, ariaLabel, className, disabled,
+  value, onChange, label, ariaLabel, className, disabled, allowEmpty,
 }) => {
   const { formatTime: fmtTime, timeFormat } = useLocalizedDate();
   const display = (v: string) => (/^\d{1,2}:\d{2}/.test(v) ? fmtTime(v) : (v || ''));
@@ -71,6 +73,10 @@ export const TimeField: React.FC<TimeFieldProps> = ({
   useEffect(() => { setText(display(value)); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [value, timeFormat]);
 
   const commit = () => {
+    if (allowEmpty && !text.trim()) {
+      if (value !== '') onChange('');
+      return;
+    }
     const parsed = parseTimeToHHMM(text);
     if (parsed) {
       setText(display(parsed));

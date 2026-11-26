@@ -1,5 +1,9 @@
 {
   "settings_tabs": {
+    "briefTemplates": {
+      "signals": [],
+      "reason": "Excluded: project brief field templates are studio content, not product usage."
+    },
     "payments": {
       "signals": [],
       "reason": "Excluded: payment credentials, merchant identity and verification status are not product usage."
@@ -380,6 +384,22 @@
         "POST /fonts/:id/archive",
         "PUT /:scope",
         "POST /:scope/preview"
+      ]
+    },
+    "adminBriefs.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Project brief templates and briefs: field labels, names, places, arrangements and notify actions are customer content, not product usage.",
+      "route_signatures": [
+        "GET /templates",
+        "PUT /templates/global",
+        "PUT /templates/occasion/:occasion",
+        "GET /projects/:id",
+        "PUT /projects/:id",
+        "POST /projects/:id/notify",
+        "GET /customers/:id",
+        "PUT /customers/:id",
+        "POST /customers/:id/notify"
       ]
     },
     "adminCalendar.js": {
@@ -1624,6 +1644,7 @@
         "POST /quotes/:id/respond",
         "GET /dashboard",
         "GET /activity",
+        "GET /agreements",
         "GET /events/:slug/overview",
         "GET /documents",
         "POST /documents",

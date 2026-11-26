@@ -42,6 +42,7 @@ import { formatMoneyMinor } from '../../utils/money';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast, useModal } from '../../hooks';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
+import { CustomerBriefCard } from '../../features/briefs/CustomerBriefCard';
 
 type EditableFields =
   | 'email' | 'salutation' | 'firstName' | 'lastName' | 'displayName'
@@ -465,6 +466,12 @@ export const CustomerDetailPage: React.FC = () => {
           className="input w-full"
         />
       </Card>
+
+      {/* The brief of a job without a project (issue 2678), behind the
+          projects flag like the project cockpit. */}
+      {flags.projects && (
+        <CustomerBriefCard customerId={customer.id} canEdit={hasPermission('customers.edit')} />
+      )}
 
       {/* Groups (#1443) */}
       <CustomerGroupsCard

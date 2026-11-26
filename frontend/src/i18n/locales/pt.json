@@ -2121,6 +2121,10 @@
         "sso_account": "Sua conta entra pelo login único e por isso não pode usar chaves de acesso.",
         "unsupported": "Este navegador não oferece suporte a chaves de acesso."
       }
+    },
+    "briefTemplates": {
+      "title": "Modelos de briefing",
+      "description": "Os campos de um briefing de projeto: para toda ocasião e por tipo de evento."
     }
   },
   "analytics": {
@@ -4431,6 +4435,7 @@
     "nav": {
       "galleries": "Galerias",
       "calendar": "Calendário",
+      "agreements": "Combinados",
       "quotes": "Orçamentos",
       "bills": "Faturas",
       "profile": "Perfil"
@@ -4525,6 +4530,22 @@
       "title": "Atividade",
       "loadError": "Não foi possível carregar a atividade. Tente novamente.",
       "empty": "Ainda não aconteceu nada."
+    },
+    "agreements": {
+      "title": "Combinados",
+      "subtitle": "O que você combinou com o seu fotógrafo. Se algo não estiver certo, entre em contato.",
+      "disabled": "Ainda não há combinados para a sua conta.",
+      "loadError": "Não foi possível carregar os seus combinados.",
+      "empty": "Ainda não há combinados.",
+      "untitled": "A sua reserva",
+      "updated": "Atualizado em {{date}}",
+      "shared": "Combinados",
+      "price": "Preço",
+      "fromQuote": "Orçamento {{number}}",
+      "deposit": "Sinal",
+      "paid": "Pago",
+      "due": "Vence em {{date}}",
+      "open": "Em aberto"
     }
   },
   "customers": {
@@ -4649,6 +4670,11 @@
       "removedN": "{{count}} removida(s)",
       "error": "Não foi possível atualizar as atribuições",
       "clearSearchAria": "Limpar pesquisa"
+    },
+    "contacts": {
+      "area": {
+        "agreements": "Combinados"
+      }
     }
   },
   "clients": {
@@ -4846,6 +4872,91 @@
       "slate": "Ardósia",
       "square": "Quadrado",
       "type": "Álbum"
+    }
+  },
+  "briefs": {
+    "title": "Briefing",
+    "help": "Os detalhes combinados deste trabalho. O cliente vê os campos marcados com um olho quando você o notifica.",
+    "readOnly": "Você pode ver este briefing, mas não alterá-lo.",
+    "titleLabel": "Título que o cliente vê",
+    "titleHint": "Se ficar vazio, a ocasião é o título. O nome do projeto continua interno.",
+    "notSaved": "ainda não salvo",
+    "loadFailed": "Não foi possível carregar o briefing.",
+    "saved": "Briefing salvo",
+    "saveFailed": "Não foi possível salvar o briefing",
+    "save": "Salvar briefing",
+    "discard": "Descartar",
+    "occasion": "Ocasião",
+    "noOccasion": "Nenhuma (apenas os campos para toda ocasião)",
+    "occasionLocked": "Salve as alterações nos campos desta ocasião antes de escolher outra ocasião.",
+    "occasionAfterSave": "Os campos da nova ocasião aparecem depois de salvar.",
+    "noFields": "Ainda não há campos de briefing para esta ocasião.",
+    "setUpTemplates": "Configurar modelos de briefing",
+    "visible": "O cliente vê",
+    "hidden": "Oculto",
+    "visibilityOverride": "Difere do modelo",
+    "fromProject": "Dos dados do projeto",
+    "shared": "Combinados partilhados",
+    "sharedHint": "O cliente vê este texto. As notas internas ficam no campo de notas.",
+    "removed": "Não está mais no modelo",
+    "removedHint": "Mantido neste briefing e nunca mostrado ao cliente.",
+    "removeValue": "Remover",
+    "yes": "Sim",
+    "no": "Não",
+    "input": {
+      "time": "Hora",
+      "place": "Local",
+      "address": "Endereço (opcional)",
+      "notSet": "Não definido"
+    },
+    "notify": {
+      "button": "Notificar cliente",
+      "pending": "Alterações ainda não enviadas: {{count}}",
+      "upToDate": "O cliente tem o estado atual.",
+      "last": "Última atualização enviada {{date}}",
+      "noCustomer": "Vincule um cliente ao projeto para enviar atualizações.",
+      "saveFirst": "Salve primeiro as suas alterações.",
+      "confirmTitle": "Notificar cliente",
+      "confirmMessage": "Enviar ao cliente por e-mail as alterações desde a última atualização ({{count}})? Ele também vê o novo estado no portal.",
+      "sent": "Atualização colocada na fila para o cliente.",
+      "suppressed": "Portal atualizado. O cliente não recebe e-mails administrativos, por isso nenhum e-mail foi enviado.",
+      "failed": "Não foi possível enviar a atualização"
+    },
+    "templates": {
+      "occasion": "Modelo",
+      "global": "Toda ocasião",
+      "inactive": "{{name}} (inativo)",
+      "globalHint": "Estes campos aparecem em todo briefing, antes dos campos da sua ocasião.",
+      "occasionHint": "Num briefing de {{occasion}}, estes campos vêm depois dos campos para toda ocasião.",
+      "empty": "Ainda não há campos.",
+      "label": "Rótulo",
+      "type": "Tipo",
+      "typeFixed": "Campos salvos mantêm o seu tipo.",
+      "visibleDefault": "O cliente vê",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "remove": "Remover campo",
+      "add": "Adicionar campo",
+      "removeHint": "Remover um campo mantém o que os briefings já contêm: o valor continua legível, marcado como fora do modelo, e o cliente deixa de vê-lo.",
+      "labelMissing": "Cada campo precisa de um rótulo.",
+      "saved": "Modelos de briefing salvos",
+      "saveFailed": "Não salvo: {{lists}}",
+      "loadFailed": "Não foi possível carregar os modelos de briefing.",
+      "readOnly": "Você pode ver estes modelos, mas não alterá-los."
+    },
+    "types": {
+      "short_text": "Texto curto",
+      "long_text": "Texto longo",
+      "date": "Data",
+      "time": "Hora",
+      "datetime": "Data e hora",
+      "place": "Local",
+      "place_time": "Local e hora",
+      "number": "Número",
+      "yes_no": "Sim / não",
+      "project_date": "Data do evento (do projeto)",
+      "project_location": "Local (do projeto)",
+      "project_guests": "Número de convidados (do projeto)"
     }
   }
 }

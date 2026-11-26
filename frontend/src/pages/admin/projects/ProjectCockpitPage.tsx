@@ -40,6 +40,7 @@ import { AttachDocumentDialog, type AttachKind } from './AttachDocumentDialog';
 import { ProjectCustomerCard, ProjectDataCard, ProjectValueCard, type CustomerChoice } from './ProjectSideCards';
 import { ProjectSettingsTab } from './ProjectSettingsTab';
 import { projectSteps, type ProjectStep } from './projectSteps';
+import { BriefCard, useBriefEditor } from '../../../features/briefs/BriefCard';
 import { StepIcon, useRunStep, useStepLabel } from './useProjectSteps';
 import {
   MAX_GUESTS, changedKeys, draftError, draftFromProject, rebaseDraft, updatePayload, type ProjectDraft,
@@ -120,21 +121,40 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
   const baseRef = useRef(base);
   useEffect(() => {
     // A refetch changed the saved state: keep the admin's edits, take the rest.
-    setDraft((d) => rebaseDraft(d, baseRef.current, base));
+    // The old state is read now: the updater runs later, after the ref moved.
+    const oldBase = baseRef.current;
+    setDraft((d) => rebaseDraft(d, oldBase, base));
     baseRef.current = base;
   }, [base]);
   const savedCustomer = useMemo(() => customerFromProject(data), [data]);
   const [customer, setCustomer] = useState<CustomerChoice>(savedCustomer);
   const savedCustomerRef = useRef(savedCustomer);
   useEffect(() => {
-    setCustomer((c) => (c.id === savedCustomerRef.current.id ? savedCustomer : c));
+    const oldCustomerId = savedCustomerRef.current.id;
+    setCustomer((c) => (c.id === oldCustomerId ? savedCustomer : c));
     savedCustomerRef.current = savedCustomer;
   }, [savedCustomer]);
 
+  // The brief (issue 2678) is the project's data too: one save bar for both.
+  const brief = useBriefEditor({ kind: 'projects', id: projectId });
+  // It shows the project's customer state and data (occasion, date, location,
+  // guests). Whatever changed them (a save, attaching a customer's document,
+  // a step) moves the project's updated_at, which every caller gets (the
+  // customer itself is left out for one without customers.view): the brief
+  // reloads when it moves.
+  const projectRevision = project.updatedAt;
+  const projectRevisionRef = useRef(projectRevision);
+  useEffect(() => {
+    if (projectRevisionRef.current === projectRevision) return;
+    projectRevisionRef.current = projectRevision;
+    qc.invalidateQueries({ queryKey: ['brief', 'projects', projectId] });
+  }, [projectRevision, qc, projectId]);
+
   const dirtyKeys = changedKeys(draft, base);
   const customerDirty = customer.id !== savedCustomer.id;
-  const isDirty = dirtyKeys.length > 0 || customerDirty;
-  const discard = () => { setDraft(base); setCustomer(savedCustomer); };
+  const projectDirty = dirtyKeys.length > 0 || customerDirty;
+  const isDirty = projectDirty || brief.dirty;
+  const discard = () => { setDraft(base); setCustomer(savedCustomer); brief.discard(); };
 
   // A budget is stored with its currency: the business profile's when the
   // admin did not pick one (as on New inquiry).
@@ -165,6 +185,19 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
     },
     invalidateKeys: [['project-overview', projectId], ['projects']],
   });
+  // Each changed slice saves on its own; a failed one stays dirty (UX.md › Saving).
+  // The brief goes first: the server checks its values against the project's
+  // occasion as saved, which the project data may be about to change.
+  const saveAll = async () => {
+    const saved = (job: () => Promise<unknown>) => job().then(() => true, () => false);
+    const briefSaved = brief.dirty ? await saved(() => brief.save.mutateAsync()) : true;
+    // A new occasion would void the brief edits that just failed: the project
+    // data then waits as well, both stay unsaved, and the brief's error said why.
+    if (!briefSaved && dirtyKeys.includes('eventType')) throw new Error('Save failed');
+    const projectSaved = projectDirty ? await saved(() => save.mutateAsync()) : true;
+    if (!briefSaved || !projectSaved) throw new Error('Save failed');
+  };
+  const isSaving = save.isPending || brief.save.isPending;
 
   const rename = useMutationWithToast({
     mutationFn: (name: string) => projectsService.update(projectId, { name }),
@@ -226,7 +259,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
         toast.error(blockedText(blocked));
         return;
       }
-      try { await save.mutateAsync(); } catch { return; }
+      try { await saveAll(); } catch { return; }
       // The page still holds the pre-save state until the refetch renders;
       // what was unsaved is saved now, so leaving needs no question.
       await qc.refetchQueries({ queryKey: ['project-overview', projectId] });
@@ -329,7 +362,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
             <ActionMenu items={menuItems} align="right" size="icon-sm" label={t('projects.menu.more', 'More actions') as string} className="hidden sm:block" />
           )}
           {main && (
-            <Button variant="primary" size="sm" leftIcon={<StepIcon kind={main.kind} />} isLoading={isRunning || save.isPending} onClick={() => { void runStep(main); }}>
+            <Button variant="primary" size="sm" leftIcon={<StepIcon kind={main.kind} />} isLoading={isRunning || isSaving} onClick={() => { void runStep(main); }}>
               {stepLabel(main.kind)}
             </Button>
           )}
@@ -346,7 +379,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
               main={main}
               later={later}
               onRun={(step) => { void runStep(step); }}
-              busy={isRunning || save.isPending || skipStage.isPending}
+              busy={isRunning || isSaving || skipStage.isPending}
               onSkip={canEdit && !closed ? (stage) => skipStage.mutate({ stage, skip: true }) : undefined}
               onRestore={canEdit && !closed ? (stage) => skipStage.mutate({ stage, skip: false }) : undefined}
             />
@@ -361,6 +394,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
               onAdd={setAdding}
             />
             <AttachDocumentDialog kind={adding} data={data} onClose={() => setAdding(null)} />
+            <BriefCard editor={brief} canEdit={canEdit} pageBusy={projectDirty || isSaving} />
           </div>
           <div className="space-y-6 min-w-0">
             <ProjectValueCard valuation={data.valuation} quotedMinor={quotedMinor} />
@@ -393,7 +427,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
       {canEdit && (
         <SettingsSaveBar
           isDirty={isDirty}
-          isSaving={save.isPending}
+          isSaving={isSaving}
           onSave={() => {
             const blocked = draftError(draft);
             if (blocked) {
@@ -401,7 +435,7 @@ const ProjectPage: React.FC<{ data: ProjectOverview }> = ({ data }) => {
               toast.error(blockedText(blocked));
               return;
             }
-            save.mutate();
+            saveAll().catch(() => { /* the failed slice toasted and stays dirty */ });
           }}
           onDiscard={discard}
         />

@@ -247,7 +247,8 @@ async function invoicesForProjects(projectIds, columns) {
 
 /** List projects with customer email + event count + rolled-up value.
  *  `perms` gates which document types feed the value (matches the cockpit):
- *  invoices need bills.view, quotes need quotes.view. */
+ *  invoices need bills.view, quotes need quotes.view. The search matches
+ *  the customer's email only with `perms.customers === true` (customers.view). */
 async function listProjects({ search = '', status = null, perms = {}, projectIds = null, withStages = false } = {}) {
   let q = db('projects')
     .leftJoin('customer_accounts', 'customer_accounts.id', 'projects.customer_account_id')
@@ -266,8 +267,10 @@ async function listProjects({ search = '', status = null, perms = {}, projectIds
   else if (status && !Array.isArray(status)) q = q.where('projects.status', status);
   if (search) {
     q = q.where(function () {
-      this.where('projects.name', 'like', `%${search}%`)
-        .orWhere('customer_accounts.email', 'like', `%${search}%`);
+      this.where('projects.name', 'like', `%${search}%`);
+      // The customer's address is customers.view data: a match would confirm
+      // it to a caller whose list does not show it.
+      if (perms.customers === true) this.orWhere('customer_accounts.email', 'like', `%${search}%`);
     });
   }
   const rows = await q;
@@ -491,6 +494,8 @@ async function deleteProject(id, actor = null, { checked = null } = {}) {
     }
     await trx('events').where({ project_id: id }).update({ project_id: null });
     await trx('customer_documents').where({ project_id: id }).update({ project_id: null });
+    // The brief is the project's own data and goes with it (issue 2678).
+    await require('./briefService').deleteForProject(trx, id);
     await deleteWithAccountingHistory(trx, 'projects', { id },
       { actor: actor?.id ?? null, source: 'project.delete' });
   });
@@ -1309,7 +1314,19 @@ async function getProjectOverview(id, perms = {}, admin = null) {
       if (candidates.some((n) => n != null && docNumbers.has(String(n)))) emailRows.push(r);
     }
   }
-  // Merge both sources, newest first, capped.
+  // Brief updates (issue 2678) carry the project in their data.
+  if (customerEmail) {
+    const briefMails = await db('email_queue')
+      .where({ recipient_email: customerEmail, email_type: 'project_brief_updated' })
+      .whereNull('event_id')
+      .select([...selectCols, 'email_data'])
+      .orderBy('created_at', 'desc')
+      .limit(200);
+    for (const r of briefMails) {
+      if (Number((parseEmailData(r.email_data) || {}).__projectId) === Number(id)) emailRows.push(r);
+    }
+  }
+  // Merge all sources, newest first, capped.
   emailRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   out.emails = emailRows.slice(0, 200).map(mapEmail);
 
@@ -1482,6 +1499,7 @@ module.exports = {
   SKIPPABLE_STAGES,
   listProjects,
   getProjectById,
+  invoicesForProjects,
   createProject,
   updateProject,
   deleteProject,

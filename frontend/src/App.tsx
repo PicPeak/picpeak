@@ -95,6 +95,7 @@ import {
   CustomerProfilePage,
   CustomerCalendarPage,
   CustomerQuotesPage,
+  CustomerAgreementsPage,
   CustomerBillsPage,
   CustomerContractsPage,
   CustomerContractSignPage,
@@ -578,6 +579,7 @@ const router = createBrowserRouter(
             <Route path="dashboard" element={<CustomerDashboardPage />} />
             <Route path="activity" element={<CustomerActivityPage />} />
             <Route path="calendar" element={<CustomerCalendarPage />} />
+            <Route path="agreements" element={<CustomerAgreementsPage />} />
             <Route path="quotes" element={<CustomerQuotesPage />} />
             {/* Respond / sign inside the portal session, so the
                 portal never hands out the emailed link tokens. */}

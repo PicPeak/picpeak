@@ -138,6 +138,8 @@ router.get('/', requirePermission('events.view'), [
   const perms = {
     bills: await userHasAnyPermission(req.admin.id, ['bills.view']),
     quotes: await userHasAnyPermission(req.admin.id, ['quotes.view']),
+    // Also keeps the search off the customer's address.
+    customers: await mayViewCustomers(req),
   };
   // Only the caller's projects (GHSA-wrg5). Passed as a SUBQUERY so a large
   // project count can't hit the driver's bind-parameter limit; null means
@@ -157,7 +159,7 @@ router.get('/', requirePermission('events.view'), [
     projectIds,
     withStages,
   });
-  const visible = (await mayViewCustomers(req)) ? projects : projects.map(withoutCustomer);
+  const visible = perms.customers ? projects : projects.map(withoutCustomer);
   return successResponse(res, { projects: visible });
 }));
 

@@ -2041,6 +2041,10 @@
         "sso_account": "Votre compte se connecte par authentification unique et ne peut donc pas utiliser de clés d'accès.",
         "unsupported": "Ce navigateur ne prend pas en charge les clés d'accès."
       }
+    },
+    "briefTemplates": {
+      "title": "Modèles de brief",
+      "description": "Les champs d'un brief de projet : pour toutes les occasions et par type d'événement."
     }
   },
   "analytics": {
@@ -4231,6 +4235,7 @@
     "nav": {
       "galleries": "Galeries",
       "calendar": "Calendrier",
+      "agreements": "Accords",
       "quotes": "Devis",
       "bills": "Factures",
       "profile": "Profil"
@@ -4325,6 +4330,22 @@
       "title": "Activité",
       "loadError": "Impossible de charger l’activité. Veuillez réessayer.",
       "empty": "Rien ne s’est encore passé."
+    },
+    "agreements": {
+      "title": "Accords",
+      "subtitle": "Ce que vous avez convenu avec votre photographe. Si quelque chose ne va pas, contactez-le.",
+      "disabled": "Il n'y a pas encore d'accords pour votre compte.",
+      "loadError": "Impossible de charger vos accords.",
+      "empty": "Pas encore d'accords.",
+      "untitled": "Votre réservation",
+      "updated": "Mis à jour le {{date}}",
+      "shared": "Accords",
+      "price": "Prix",
+      "fromQuote": "Devis {{number}}",
+      "deposit": "Acompte",
+      "paid": "Payé",
+      "due": "À payer le {{date}}",
+      "open": "En attente"
     }
   },
   "customers": {
@@ -4449,6 +4470,11 @@
       "removedN": "{{count}} supprimé",
       "error": "Impossible de mettre à jour les assignations",
       "clearSearchAria": "Effacer la recherche"
+    },
+    "contacts": {
+      "area": {
+        "agreements": "Accords"
+      }
     }
   },
   "clients": {
@@ -4646,6 +4672,91 @@
       "slate": "Ardoise",
       "square": "Carré",
       "type": "Album"
+    }
+  },
+  "briefs": {
+    "title": "Brief",
+    "help": "Les détails convenus pour ce travail. Le client voit les champs marqués d'un œil dès que vous le notifiez.",
+    "readOnly": "Vous pouvez voir ce brief, mais pas le modifier.",
+    "titleLabel": "Titre vu par le client",
+    "titleHint": "Laissé vide, l'occasion sert de titre. Le nom du projet reste interne.",
+    "notSaved": "pas encore enregistré",
+    "loadFailed": "Impossible de charger le brief.",
+    "saved": "Brief enregistré",
+    "saveFailed": "Impossible d'enregistrer le brief",
+    "save": "Enregistrer le brief",
+    "discard": "Annuler",
+    "occasion": "Occasion",
+    "noOccasion": "Aucune (seulement les champs communs à toutes les occasions)",
+    "occasionLocked": "Enregistrez les modifications des champs de cette occasion avant d'en choisir une autre.",
+    "occasionAfterSave": "Les champs de la nouvelle occasion apparaissent après l'enregistrement.",
+    "noFields": "Aucun champ de brief pour cette occasion pour l'instant.",
+    "setUpTemplates": "Configurer les modèles de brief",
+    "visible": "Visible par le client",
+    "hidden": "Masqué",
+    "visibilityOverride": "Diffère du modèle",
+    "fromProject": "Des données du projet",
+    "shared": "Accords communs",
+    "sharedHint": "Le client voit ce texte. Les notes internes restent dans le champ des notes.",
+    "removed": "Plus dans le modèle",
+    "removedHint": "Conservé dans ce brief et jamais montré au client.",
+    "removeValue": "Supprimer",
+    "yes": "Oui",
+    "no": "Non",
+    "input": {
+      "time": "Heure",
+      "place": "Lieu",
+      "address": "Adresse (facultative)",
+      "notSet": "Non défini"
+    },
+    "notify": {
+      "button": "Notifier le client",
+      "pending": "Modifications pas encore envoyées : {{count}}",
+      "upToDate": "Le client a l'état actuel.",
+      "last": "Dernière mise à jour envoyée {{date}}",
+      "noCustomer": "Liez un client au projet pour envoyer des mises à jour.",
+      "saveFirst": "Enregistrez d'abord vos modifications.",
+      "confirmTitle": "Notifier le client",
+      "confirmMessage": "Envoyer au client par e-mail les modifications depuis la dernière mise à jour ({{count}}) ? Il voit aussi le nouvel état dans son portail.",
+      "sent": "Mise à jour mise en file d'attente pour le client.",
+      "suppressed": "Portail mis à jour. Le client ne reçoit pas d'e-mails administratifs, aucun e-mail n'a donc été envoyé.",
+      "failed": "Impossible d'envoyer la mise à jour"
+    },
+    "templates": {
+      "occasion": "Modèle",
+      "global": "Toutes les occasions",
+      "inactive": "{{name}} (inactif)",
+      "globalHint": "Ces champs apparaissent dans chaque brief, avant les champs de son occasion.",
+      "occasionHint": "Dans un brief {{occasion}}, ces champs suivent les champs communs à toutes les occasions.",
+      "empty": "Aucun champ pour l'instant.",
+      "label": "Libellé",
+      "type": "Type",
+      "typeFixed": "Les champs enregistrés gardent leur type.",
+      "visibleDefault": "Visible par le client",
+      "moveUp": "Monter",
+      "moveDown": "Descendre",
+      "remove": "Supprimer le champ",
+      "add": "Ajouter un champ",
+      "removeHint": "Supprimer un champ conserve ce que les briefs contiennent déjà : la valeur reste lisible, marquée comme hors modèle, et le client ne la voit plus.",
+      "labelMissing": "Chaque champ a besoin d'un libellé.",
+      "saved": "Modèles de brief enregistrés",
+      "saveFailed": "Non enregistré : {{lists}}",
+      "loadFailed": "Impossible de charger les modèles de brief.",
+      "readOnly": "Vous pouvez voir ces modèles, mais pas les modifier."
+    },
+    "types": {
+      "short_text": "Texte court",
+      "long_text": "Texte long",
+      "date": "Date",
+      "time": "Heure",
+      "datetime": "Date et heure",
+      "place": "Lieu",
+      "place_time": "Lieu et heure",
+      "number": "Nombre",
+      "yes_no": "Oui / non",
+      "project_date": "Date de l'événement (du projet)",
+      "project_location": "Lieu (du projet)",
+      "project_guests": "Nombre d'invités (du projet)"
     }
   }
 }

@@ -4521,6 +4521,10 @@
     "crm": {
       "title": "CRM-Verhalten"
     },
+    "briefTemplates": {
+      "title": "Briefing-Vorlagen",
+      "description": "Die Felder eines Projekt-Briefings: für jeden Anlass und je Veranstaltungsart."
+    },
     "accounting": {
       "title": "Buchhaltung",
       "subtitle": "Standardsätze, MwSt-Einstellungen und die Belegpflicht.",
@@ -8156,6 +8160,7 @@
     "nav": {
       "galleries": "Galerien",
       "calendar": "Kalender",
+      "agreements": "Vereinbarungen",
       "quotes": "Angebote",
       "bills": "Rechnungen",
       "profile": "Profil",
@@ -8387,6 +8392,22 @@
         "selected": "Dieser Upload beantwortet: {{title}}",
         "clear": "Nicht für diese Anforderung"
       }
+    },
+    "agreements": {
+      "title": "Vereinbarungen",
+      "subtitle": "Was Sie mit Ihrem Fotografen vereinbart haben. Wenn etwas nicht stimmt, melden Sie sich bitte.",
+      "disabled": "Für Ihr Konto gibt es noch keine Vereinbarungen.",
+      "loadError": "Ihre Vereinbarungen konnten nicht geladen werden.",
+      "empty": "Noch keine Vereinbarungen.",
+      "untitled": "Ihre Buchung",
+      "updated": "Aktualisiert am {{date}}",
+      "shared": "Vereinbarungen",
+      "price": "Preis",
+      "fromQuote": "Angebot {{number}}",
+      "deposit": "Anzahlung",
+      "paid": "Bezahlt",
+      "due": "Fällig am {{date}}",
+      "open": "Offen"
     },
     "event": {
       "notFound": "Dieses Event wurde nicht gefunden, oder Sie haben keinen Zugriff mehr darauf.",
@@ -8934,7 +8955,8 @@
         "contracts": "Verträge",
         "bills": "Rechnungen",
         "documents": "Dokumente",
-        "company": "Firmendaten"
+        "company": "Firmendaten",
+        "agreements": "Vereinbarungen"
       },
       "level": {
         "none": "Kein Zugriff",
@@ -9447,6 +9469,91 @@
       "takeOutFailed": "Konnte nicht aus dem Projekt genommen werden",
       "takeOut": "Aus dem Projekt nehmen",
       "takeOutNamed": "{{number}} aus dem Projekt nehmen"
+    }
+  },
+  "briefs": {
+    "title": "Briefing",
+    "help": "Die vereinbarten Details dieses Auftrags. Felder mit Auge sieht der Kunde, sobald Sie ihn benachrichtigen.",
+    "readOnly": "Sie können dieses Briefing sehen, aber nicht ändern.",
+    "titleLabel": "Titel für den Kunden",
+    "titleHint": "Leer gelassen ist der Anlass der Titel. Der Projektname bleibt intern.",
+    "notSaved": "noch nicht gespeichert",
+    "loadFailed": "Das Briefing konnte nicht geladen werden.",
+    "saved": "Briefing gespeichert",
+    "saveFailed": "Das Briefing konnte nicht gespeichert werden",
+    "save": "Briefing speichern",
+    "discard": "Verwerfen",
+    "occasion": "Anlass",
+    "noOccasion": "Keiner (nur die Felder für jeden Anlass)",
+    "occasionLocked": "Speichern Sie die Änderungen an den Feldern dieses Anlasses, bevor Sie einen anderen Anlass wählen.",
+    "occasionAfterSave": "Die Felder des neuen Anlasses erscheinen nach dem Speichern.",
+    "noFields": "Für diesen Anlass gibt es noch keine Briefing-Felder.",
+    "setUpTemplates": "Briefing-Vorlagen einrichten",
+    "visible": "Kunde sieht es",
+    "hidden": "Verborgen",
+    "visibilityOverride": "Weicht von der Vorlage ab",
+    "fromProject": "Aus den Projektdaten",
+    "shared": "Gemeinsame Vereinbarungen",
+    "sharedHint": "Diesen Text sieht der Kunde. Interne Notizen bleiben im Notizfeld.",
+    "removed": "Nicht mehr in der Vorlage",
+    "removedHint": "Bleibt in diesem Briefing und wird dem Kunden nie gezeigt.",
+    "removeValue": "Entfernen",
+    "yes": "Ja",
+    "no": "Nein",
+    "input": {
+      "time": "Uhrzeit",
+      "place": "Ort",
+      "address": "Adresse (optional)",
+      "notSet": "Nicht festgelegt"
+    },
+    "notify": {
+      "button": "Kunden benachrichtigen",
+      "pending": "Noch nicht gesendete Änderungen: {{count}}",
+      "upToDate": "Der Kunde hat den aktuellen Stand.",
+      "last": "Letzte Aktualisierung gesendet {{date}}",
+      "noCustomer": "Verknüpfen Sie einen Kunden mit dem Projekt, um Aktualisierungen zu senden.",
+      "saveFirst": "Speichern Sie zuerst Ihre Änderungen.",
+      "confirmTitle": "Kunden benachrichtigen",
+      "confirmMessage": "Dem Kunden die Änderungen seit der letzten Aktualisierung ({{count}}) per E-Mail senden? Im Kundenportal sieht er den neuen Stand ebenfalls.",
+      "sent": "Aktualisierung an den Kunden in die Warteschlange gestellt.",
+      "suppressed": "Portal aktualisiert. Der Kunde erhält keine administrativen E-Mails, daher wurde keine E-Mail gesendet.",
+      "failed": "Die Aktualisierung konnte nicht gesendet werden"
+    },
+    "templates": {
+      "occasion": "Vorlage",
+      "global": "Jeder Anlass",
+      "inactive": "{{name}} (inaktiv)",
+      "globalHint": "Diese Felder erscheinen in jedem Briefing, vor den Feldern seines Anlasses.",
+      "occasionHint": "Diese Felder folgen in einem Briefing für {{occasion}} auf die Felder für jeden Anlass.",
+      "empty": "Noch keine Felder.",
+      "label": "Bezeichnung",
+      "type": "Typ",
+      "typeFixed": "Gespeicherte Felder behalten ihren Typ.",
+      "visibleDefault": "Der Kunde sieht es",
+      "moveUp": "Nach oben",
+      "moveDown": "Nach unten",
+      "remove": "Feld entfernen",
+      "add": "Feld hinzufügen",
+      "removeHint": "Ein entferntes Feld bleibt in bestehenden Briefings lesbar, als nicht mehr in der Vorlage markiert, und der Kunde sieht es nicht mehr.",
+      "labelMissing": "Jedes Feld braucht eine Bezeichnung.",
+      "saved": "Briefing-Vorlagen gespeichert",
+      "saveFailed": "Nicht gespeichert: {{lists}}",
+      "loadFailed": "Die Briefing-Vorlagen konnten nicht geladen werden.",
+      "readOnly": "Sie können diese Vorlagen sehen, aber nicht ändern."
+    },
+    "types": {
+      "short_text": "Kurzer Text",
+      "long_text": "Langer Text",
+      "date": "Datum",
+      "time": "Uhrzeit",
+      "datetime": "Datum und Uhrzeit",
+      "place": "Ort",
+      "place_time": "Ort und Uhrzeit",
+      "number": "Zahl",
+      "yes_no": "Ja / Nein",
+      "project_date": "Veranstaltungsdatum (aus dem Projekt)",
+      "project_location": "Ort (aus dem Projekt)",
+      "project_guests": "Anzahl Gäste (aus dem Projekt)"
     }
   },
   "calendar": {

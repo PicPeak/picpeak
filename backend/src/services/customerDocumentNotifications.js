@@ -229,4 +229,6 @@ async function emitDocumentWorkflow(trigger, doc, dedupSuffix = null) {
 
 module.exports = {
   notifyShared, notifyUploaded, notifyRejected, notifyRequest, emitDocumentWorkflow,
+  // Shared with the other customer notices (briefService).
+  customerDisplayName, businessName, frontendBase,
 };
