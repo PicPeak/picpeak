@@ -93,6 +93,12 @@ describe('redactKnownAddresses', () => {
     )).toBe('<a href="mailto:hello@studio.example?cc=…">x</a><p title=…>/…</p>');
   });
 
+  it('matches an address whose lower case changes its length, as written', () => {
+    // 'İ'.toLowerCase() is 'i' plus a combining dot, which no longer matches 'İ'.
+    expect(redactKnownAddresses('<p>İpek@kunde.example</p>', ['İpek@kunde.example'])).toBe('<p>…</p>');
+    expect(redactKnownAddresses('<p>İpek&amp;co@kunde.example</p>', ['İpek&co@kunde.example'])).toBe('<p>…</p>');
+  });
+
   it('leaves the body alone when the mail carries no address', () => {
     expect(redactKnownAddresses('<p>hello@studio.example</p>', [null, { name: 'Anna' }])).toBe('<p>hello@studio.example</p>');
     expect(redactKnownAddresses(null, ['anna@kunde.example'])).toBeNull();
