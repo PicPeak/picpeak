@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.210.7-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.6-beta.0...v3.210.7-beta.0) (2026-11-26)
+
+
+### Bug Fixes
+
+* **backup:** remove the unused DELETE /api/admin/backup/cleanup and DELETE /api/admin/backup/s3/cleanup routes; old backup-run records and legacy S3 backup objects are no longer purged through the API ([41238a3](https://github.com/PicPeak/picpeak/commit/41238a32962897eabc456823c6303d30ffc38228))
+
 ## [3.210.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.210.5-beta.0...v3.210.6-beta.0) (2026-11-25)
 
 
