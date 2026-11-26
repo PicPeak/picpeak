@@ -39,10 +39,7 @@ async function verifySnipcartRequestToken(token) {
   const auth = snipcartSettings.auth(await snipcartSettings.credentials());
   if (!auth || !token) return false;
   try {
-    const response = await snipcartSettings.request(
-      `/requestvalidation/${encodeURIComponent(String(token))}`,
-      { headers: { Authorization: auth, Accept: 'application/json' } }
-    );
+    const response = await snipcartSettings.request(`/requestvalidation/${encodeURIComponent(String(token))}`);
     return response.ok;
   } catch (error) {
     logger.warn(`Snipcart request token validation failed: ${error.type || error.name}`);

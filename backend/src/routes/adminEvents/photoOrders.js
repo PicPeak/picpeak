@@ -13,6 +13,7 @@ const { errorResponse } = require('../../utils/routeHelpers');
 const { requireEventOwner, scopeEventsListQuery } = require('../../middleware/ownership');
 const { buildPurchasedDownloadUrl, pauseAdjustedExpiry } = require('../../modules/photoSales/purchaseAccess');
 const { summarisePurchaseOrder } = require('../../modules/photoSales/adminOrders');
+const { purchaseEmailVariables } = require('../../modules/photoSales/fulfilment');
 const { queueEmail, getSupportEmail } = require('../../services/emailProcessor');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const { stripeConfiguration } = require('../../modules/photoSales/stripeClient');
@@ -23,25 +24,13 @@ async function loadOwnedEvent(req) {
   return scopeEventsListQuery(db('events').where('id', req.params.id), req.admin).first();
 }
 
-function emailVariables(order, galleryName, photoCount) {
-  return {
-    buyer_email: order.buyer_email,
-    gallery_name: galleryName,
-    access_link: null, // filled by the caller once the URL is known
-    purchased_at: order.purchased_at,
-    expires_at: order.expires_at,
-    photo_count: photoCount,
-    download_count: photoCount,
-  };
-}
-
 module.exports = (router) => {
   // Read with the event details' visibility (GET /:id), so a role that sees
   // every event reads the orders of one it does not own; resending stays
   // with the owner.
   router.get('/:id/photo-orders', adminAuth, requirePermission('events.view'), async (req, res) => {
     try {
-      const event = await scopeEventsListQuery(db('events').where('id', req.params.id), req.admin).first();
+      const event = await loadOwnedEvent(req);
       if (!event) return res.status(404).json({ error: 'Event not found' });
 
       const orders = await db('photo_purchase_orders')
@@ -110,14 +99,15 @@ module.exports = (router) => {
         baseUrl: await getFrontendBaseUrl(),
         accessToken: order.access_token,
       });
-      const variables = emailVariables(order, event.event_name || event.slug, photoCount);
-      variables.access_link = accessLink;
-      variables.expires_at = pauseAdjustedExpiry(order, event);
-
-      if (event.temporarily_disabled) {
-        variables.support_email = await getSupportEmail();
-        variables.expiry_date = event.expires_at;
-      }
+      const variables = purchaseEmailVariables({
+        order,
+        galleryName: event.event_name || event.slug,
+        accessLink,
+        expiresAt: pauseAdjustedExpiry(order, event),
+        photoCount,
+        paused: event.temporarily_disabled
+          ? { supportEmail: await getSupportEmail(), expiryDate: event.expires_at } : null,
+      });
       await queueEmail(event.id, order.buyer_email, event.temporarily_disabled ? 'photo_purchase_paused' : 'photo_purchase_access', variables);
       await db('photo_purchase_orders')
         .where({ id: order.id })

@@ -474,6 +474,50 @@ async function loadSeparations(eventId, conn = db) {
   return { ids, vectors };
 }
 
+/** The similarity at which consolidate() merges on its own. */
+function autoMergeThreshold(thresholds) {
+  return Math.min(0.95, thresholds.face_match_threshold + 0.08);
+}
+
+/**
+ * The event's people that may take part in a merge, with their centroids
+ * unpacked. "Not a real person" must never be merged INTO one: mergePeople
+ * ORs is_ignored onto the survivor, so absorbing a false-positive cluster
+ * would mark a real person ignored and drop them out of the guest-facing
+ * strip entirely. Nor is an ignored person suggested again.
+ */
+async function loadMergeCandidates(eventId) {
+  const people = await db('event_people')
+    .where({ event_id: eventId })
+    .select('id', 'centroid', 'face_count_total', 'model_version', 'label', 'is_ignored');
+  return people
+    .filter((p) => !(p.is_ignored === true || p.is_ignored === 1))
+    .map((p) => ({ ...p, vec: unpackEmbedding(p.centroid) }))
+    .filter((p) => p.vec);
+}
+
+/** loadSeparations, with each candidate's projection stored on it as `sep`. */
+async function loadProjectedSeparations(eventId, state) {
+  const separations = await loadSeparations(eventId);
+  for (const p of state) p.sep = projectOnSeparations(p.vec, separations.vectors);
+  return separations;
+}
+
+/**
+ * May these two be merged (or suggested) at all? Same embedding model; never
+ * two people the photographer has NAMED differently, a human assertion this
+ * heuristic does not get to overrule; and not a pair separated by "not the
+ * same", by both identities: the exact pair while the ids still mean what
+ * they meant, and the embedding match that carries the decision across a
+ * re-derivation (#1132).
+ */
+function pairIsEligible(a, b, separations) {
+  if (a.model_version !== b.model_version) return false;
+  if (a.label && b.label && a.label !== b.label) return false;
+  if (separations.ids.has(pairKey(a.id, b.id))) return false;
+  return !separationForbidsProjected(a.sep, b.sep, { modelVersion: a.model_version || null });
+}
+
 /**
  * Merge people whose centroids have drifted together.
  *
@@ -487,27 +531,15 @@ async function loadSeparations(eventId, conn = db) {
  */
 async function consolidate(eventId, options = {}) {
   const thresholds = options.thresholds || (await getThresholds());
-  const mergeThreshold = Math.min(0.95, thresholds.face_match_threshold + 0.08);
+  const mergeThreshold = autoMergeThreshold(thresholds);
 
-  const people = await db('event_people')
-    .where({ event_id: eventId })
-    .select('id', 'centroid', 'face_count_total', 'model_version', 'label', 'is_ignored');
-
-  const state = people
-    // "Not a real person" must never be merged INTO one. mergePeople ORs
-    // is_ignored onto the survivor, so absorbing a false-positive cluster
-    // would mark a real person ignored and drop them out of the guest-facing
-    // strip entirely. Cheap to skip, expensive to discover.
-    .filter((p) => !(p.is_ignored === true || p.is_ignored === 1))
-    .map((p) => ({ ...p, vec: unpackEmbedding(p.centroid) }))
-    .filter((p) => p.vec);
+  const state = await loadMergeCandidates(eventId);
 
   // A pair the photographer answered "not the same" about stays not the same,
   // however far the centroids drift afterwards. Without this the automatic
   // pass silently overturns an explicit human decision the moment new faces
   // push the pair over the threshold — or the moment someone tunes it.
-  const separations = await loadSeparations(eventId);
-  for (const p of state) p.sep = projectOnSeparations(p.vec, separations.vectors);
+  const separations = await loadProjectedSeparations(eventId, state);
 
   const merged = [];
   const absorbed = new Set();
@@ -524,19 +556,7 @@ async function consolidate(eventId, options = {}) {
         if (absorbed.has(state[j].id)) continue;
         const a = state[i];
         const b = state[j];
-        if (a.model_version !== b.model_version) continue;
-
-        // Never silently merge two people the photographer has NAMED
-        // differently — that is a human assertion this heuristic does not get
-        // to overrule.
-        if (a.label && b.label && a.label !== b.label) continue;
-
-        // Both identities: the exact pair while the ids still mean what they
-        // meant, and the embedding match that carries the decision across a
-        // re-derivation (#1132).
-        if (separations.ids.has(pairKey(a.id, b.id))) continue;
-        if (separationForbidsProjected(a.sep, b.sep,
-          { modelVersion: a.model_version || null })) continue;
+        if (!pairIsEligible(a, b, separations)) continue;
 
         if (dot(a.vec, b.vec) >= mergeThreshold) {
           // Re-read this one pair immediately before acting. The set above was
@@ -600,40 +620,24 @@ async function consolidate(eventId, options = {}) {
  */
 async function suggestMerges(eventId, options = {}) {
   const thresholds = options.thresholds || (await getThresholds());
-  const mergeThreshold = Math.min(0.95, thresholds.face_match_threshold + 0.08);
+  const mergeThreshold = autoMergeThreshold(thresholds);
   const floor = thresholds.face_match_threshold;
   const limit = options.limit || 20;
 
-  const people = await db('event_people')
-    .where({ event_id: eventId })
-    .select('id', 'centroid', 'face_count_total', 'model_version', 'label', 'is_ignored');
-
-  const state = people
-    // "Not a real person" is an answer already given — never ask about it again.
-    .filter((p) => !(p.is_ignored === true || p.is_ignored === 1))
-    .map((p) => ({ ...p, vec: unpackEmbedding(p.centroid) }))
-    .filter((p) => p.vec);
+  // "Not a real person" is an answer already given — never ask about it again.
+  const state = await loadMergeCandidates(eventId);
 
   if (state.length < 2) return [];
 
-  const separations = await loadSeparations(eventId);
-  for (const p of state) p.sep = projectOnSeparations(p.vec, separations.vectors);
+  const separations = await loadProjectedSeparations(eventId, state);
 
   const pairs = [];
   for (let i = 0; i < state.length; i++) {
     for (let j = i + 1; j < state.length; j++) {
       const a = state[i];
       const b = state[j];
-      if (a.model_version !== b.model_version) continue;
-      // Same rule consolidate() applies: two different names is a human
-      // assertion, not a question.
-      if (a.label && b.label && a.label !== b.label) continue;
-
-      // Exact pair while the ids still hold, plus the embedding match that
-      // carries the decision across a re-derivation (#1132).
-      if (separations.ids.has(pairKey(a.id, b.id))) continue;
-      if (separationForbidsProjected(a.sep, b.sep,
-        { modelVersion: a.model_version || null })) continue;
+      // Same rules consolidate() applies.
+      if (!pairIsEligible(a, b, separations)) continue;
 
       const score = dot(a.vec, b.vec);
       if (score < floor || score >= mergeThreshold) continue;

@@ -80,6 +80,18 @@ const SHORT_TOKEN_RE = /^[A-Za-z0-9]{10,16}$/;
 const LONG_TOKEN_RE = /^[a-f0-9]{64}$/;
 const TOKEN_RE = /^([A-Za-z0-9]{10,16}|[a-f0-9]{64})$/;
 
+const isShortUploadCode = (token) => !LONG_TOKEN_RE.test(token) && SHORT_TOKEN_RE.test(token);
+
+/**
+ * The request behind a short upload code or a long request token. Both
+ * lookups filter on kind='request', so a send's download token finds nothing.
+ */
+async function findRequestByAnyToken(token, isShortCode = isShortUploadCode(token)) {
+  return isShortCode
+    ? transferService.getTransferByUploadToken(token)
+    : transferService.getRequestByToken(token);
+}
+
 async function loadUploadTransfer(req, res, { requireOpen = true } = {}) {
   // Keyed like the limiters above: an IPv6 /64 counts as one client, so a
   // guesser rotating addresses inside one allocation does not reset the
@@ -94,15 +106,12 @@ async function loadUploadTransfer(req, res, { requireOpen = true } = {}) {
   // needs no lockout; the short read-aloud code keeps the pre-lookup lockout
   // its smaller keyspace requires, isolated from the high-entropy document
   // links so one surface cannot disable the other.
-  const isShortCode = !LONG_TOKEN_RE.test(token) && SHORT_TOKEN_RE.test(token);
+  const isShortCode = isShortUploadCode(token);
   if (isShortCode && tokenLock.isIpLocked(ip, 'transfer_uploads')) {
     res.status(429).json({ error: 'Too many invalid attempts. Try again later.', code: 'TOKEN_LOOKUP_LOCKED' });
     return null;
   }
-  // Both lookups filter on kind='request', so a send's download token 404s.
-  const transfer = isShortCode
-    ? await transferService.getTransferByUploadToken(token)
-    : await transferService.getRequestByToken(token);
+  const transfer = await findRequestByAnyToken(token, isShortCode);
   if (!transfer) {
     if (isShortCode) tokenLock.recordBadAttempt(ip, 'transfer_uploads');
     res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
@@ -148,10 +157,7 @@ router.get('/:token', infoLimiter, [param('token').matches(TOKEN_RE)], handleAsy
 // delete, while the bytes are still coming in. Lookup by token, which both
 // getters filter to live request rows, then the same eligibility predicate.
 async function reloadUploadTransfer(token) {
-  const isShortCode = !LONG_TOKEN_RE.test(token) && SHORT_TOKEN_RE.test(token);
-  const transfer = isShortCode
-    ? await transferService.getTransferByUploadToken(token)
-    : await transferService.getRequestByToken(token);
+  const transfer = await findRequestByAnyToken(token);
   const gate = transferService.assertUploadable(transfer);
   return gate.ok ? { transfer } : { gate };
 }

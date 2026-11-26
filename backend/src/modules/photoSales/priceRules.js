@@ -1,7 +1,13 @@
 const { eventWatermarksDownloads } = require('../../utils/watermarkDownloads');
+const { isTrue } = require('../../utils/galleryLifecycle');
+
+/** A price in major units (euros) as rounded minor units (cents). */
+function toMinorUnits(amount) {
+  return Math.round(amount * 100);
+}
 
 function isGalleryPriced(event) {
-  return !!(event && (event.is_priced === true || event.is_priced === 1 || event.is_priced === '1'));
+  return !!event && isTrue(event.is_priced);
 }
 
 function normaliseFreeCount(event) {
@@ -30,7 +36,7 @@ function allocateFreeLines(event, items) {
     lines.push({
       photoId: validId ? photoId : null,
       free,
-      amountCents: free ? 0 : Math.round(effectivePhotoPrice(event, item) * 100),
+      amountCents: free ? 0 : toMinorUnits(effectivePhotoPrice(event, item)),
     });
   });
   return lines;
@@ -107,6 +113,7 @@ async function resolveForcedWatermarkSettingsForPhoto(event, photo) {
 }
 
 module.exports = {
+  toMinorUnits,
   isGalleryPriced,
   effectivePhotoPrice,
   allocateFreeLines,

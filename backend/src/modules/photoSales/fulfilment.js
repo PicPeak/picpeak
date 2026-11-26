@@ -34,6 +34,24 @@ function purchaseRows({ orderId, galleryId, buyerEmail, purchasedAt, expiresAt, 
   }));
 }
 
+/**
+ * Variables of the photo_purchase_access / photo_purchase_paused templates.
+ * The names are template contracts. `paused` carries what the paused
+ * template adds ({ supportEmail, expiryDate }), or is null.
+ */
+function purchaseEmailVariables({ order, galleryName, accessLink, expiresAt, photoCount, paused = null }) {
+  return {
+    buyer_email: order.buyer_email,
+    gallery_name: galleryName,
+    access_link: accessLink,
+    purchased_at: order.purchased_at,
+    expires_at: expiresAt,
+    download_count: photoCount,
+    photo_count: photoCount,
+    ...(paused && { support_email: paused.supportEmail, expiry_date: paused.expiryDate }),
+  };
+}
+
 // A failed queue operation remains retryable: payment acknowledgement must
 // not permanently lose the buyer's email after the purchase was committed.
 async function sendPurchaseEmail(order, galleryName, photoCount) {
@@ -51,16 +69,14 @@ async function sendPurchaseEmail(order, galleryName, photoCount) {
     const current = await query.first();
     if (!current || current.status !== 'completed' || current.email_sent || !current.buyer_email) return;
     const paused = isTrue(gallery?.temporarily_disabled);
-    const variables = {
-      buyer_email: current.buyer_email,
-      gallery_name: gallery?.event_name || galleryName,
-      access_link: buildPurchasedDownloadUrl({ baseUrl, accessToken: current.access_token }),
-      purchased_at: current.purchased_at,
-      expires_at: pauseAdjustedExpiry(current, gallery),
-      download_count: photoCount,
-      photo_count: photoCount,
-      ...(paused && { support_email: supportEmail, expiry_date: gallery.expires_at }),
-    };
+    const variables = purchaseEmailVariables({
+      order: current,
+      galleryName: gallery?.event_name || galleryName,
+      accessLink: buildPurchasedDownloadUrl({ baseUrl, accessToken: current.access_token }),
+      expiresAt: pauseAdjustedExpiry(current, gallery),
+      photoCount,
+      paused: paused ? { supportEmail, expiryDate: gallery.expires_at } : null,
+    });
     const claimed = await trx('photo_purchase_orders').where({ id: order.id, status: 'completed', email_sent: false })
       .update({ email_sent: true });
     if (!claimed) return;
@@ -69,4 +85,4 @@ async function sendPurchaseEmail(order, galleryName, photoCount) {
   });
 }
 
-module.exports = { purchaseExpiry, reservationExpiry, purchaseRows, sendPurchaseEmail };
+module.exports = { purchaseExpiry, reservationExpiry, purchaseRows, purchaseEmailVariables, sendPurchaseEmail };

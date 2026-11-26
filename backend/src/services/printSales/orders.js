@@ -1,4 +1,5 @@
 'use strict';
+const { PRINT_SALES_FLAGS } = require('./flags');
 const crypto = require('crypto');
 const V = require('../albumProducts/validation');
 const P = require('./profiles');
@@ -47,7 +48,7 @@ function createService({ db, storage, sharp }) {
     const event = await tx('events').where({ id: eventId }).first();
     assertGalleryAvailable(event);
     if (!isTrue(event.print_sales_enabled) || !event.print_sales_admin_id) throw new ForbiddenError('The print shop is closed');
-    for (const key of ['printSales', 'albumProducts', 'bills'])
+    for (const key of PRINT_SALES_FLAGS)
       if (!isTrue((await tx('feature_flags').where({ key }).first())?.value)) throw new ForbiddenError('Print ordering is disabled');
     const assigned = await tx('event_customer_assignments').where({ event_id: eventId, customer_account_id: customerId }).first();
     const customer = assigned && await tx('customer_accounts').where({ id: customerId }).first();

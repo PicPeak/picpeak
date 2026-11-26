@@ -90,6 +90,13 @@ function normalizeKind(value) {
   return String(value || '').toLowerCase() === KIND_REQUEST ? KIND_REQUEST : KIND_SEND;
 }
 
+/** Trimmed, well-formed, de-duplicated recipient addresses. */
+function cleanEmails(emails) {
+  return [...new Set((emails || [])
+    .map((e) => String(e || '').trim())
+    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
+}
+
 function isRequestRow(row) {
   return row && normalizeKind(row.kind) === KIND_REQUEST;
 }
@@ -1307,9 +1314,7 @@ async function removeExtraFiles(transferId) {
  * onlyUnsent always does this. Both off is the admin path, unchanged.
  */
 async function sendTransferEmails(transferId, emails, { onlyUnsent = false, trackFailures = false } = {}) {
-  let clean = [...new Set((emails || [])
-    .map((e) => String(e || '').trim())
-    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
+  let clean = cleanEmails(emails);
   if (!clean.length) return { sent: 0, recipients: [], failed: [], already_sent: [] };
 
   const transfer = await db('transfers').where({ id: transferId }).first();
@@ -1438,9 +1443,7 @@ async function recordUnsentRecipient(transferId, email) {
  * them as held throughout, with "Send again".
  */
 async function holdTransferRecipients(transferId, emails) {
-  const clean = [...new Set((emails || [])
-    .map((e) => String(e || '').trim())
-    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
+  const clean = cleanEmails(emails);
   // The hold goes on BEFORE the first held row exists: a photo of this send
   // finishing in between would otherwise find a held recipient and no hold,
   // and mail it ahead of the files (sendHeldReadyEmailsForPhotos).
@@ -1565,9 +1568,7 @@ async function sendHeldReadyEmailsForPhotosInternal(photoIds) {
  * cannot fail the create, recipients recorded either way.
  */
 async function sendTransferRequestEmails(transferId, emails) {
-  const clean = [...new Set((emails || [])
-    .map((e) => String(e || '').trim())
-    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
+  const clean = cleanEmails(emails);
   if (!clean.length) return { sent: 0, recipients: [] };
 
   const transfer = await db('transfers').where({ id: transferId }).first();

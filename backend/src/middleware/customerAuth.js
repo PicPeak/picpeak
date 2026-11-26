@@ -35,12 +35,10 @@ async function customerAuth(req, res, next) {
 
     let decoded;
     try {
-      const verified = jwt.verify(token, process.env.JWT_SECRET, {
+      decoded = jwt.verify(token, process.env.JWT_SECRET, {
         algorithms: ['HS256'],
         issuer: 'picpeak-auth',
-        complete: true,
       });
-      decoded = verified.payload;
     } catch (err) {
       logger.warn('[customerAuth] jwt verification failed', {
         url: requestLogPath(req.originalUrl),

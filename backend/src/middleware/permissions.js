@@ -99,17 +99,26 @@ async function roleEventScope(roleName) {
 }
 
 /**
+ * The role of an admin account as { role_name, role_display_name }, or
+ * undefined when the account (or its role) does not exist. Read from the
+ * database on every call, so a role change takes effect at once.
+ */
+function roleOf(userId) {
+  return db('admin_users')
+    .join('roles', 'roles.id', 'admin_users.role_id')
+    .where('admin_users.id', userId)
+    .select('roles.name as role_name', 'roles.display_name as role_display_name')
+    .first();
+}
+
+/**
  * Check if user has any of the specified permissions
  * @param {number} userId - User ID to check
  * @param {string[]} permissions - Array of permission names
  * @returns {Promise<boolean>}
  */
 async function userHasAnyPermission(userId, permissions) {
-  const user = await db('admin_users')
-    .join('roles', 'roles.id', 'admin_users.role_id')
-    .where('admin_users.id', userId)
-    .select('roles.name as role_name')
-    .first();
+  const user = await roleOf(userId);
 
   if (!user) return false;
 
@@ -128,11 +137,7 @@ async function userHasAnyPermission(userId, permissions) {
  * @returns {Promise<boolean>}
  */
 async function userHasAllPermissions(userId, permissions) {
-  const user = await db('admin_users')
-    .join('roles', 'roles.id', 'admin_users.role_id')
-    .where('admin_users.id', userId)
-    .select('roles.name as role_name')
-    .first();
+  const user = await roleOf(userId);
 
   if (!user) return false;
 
@@ -195,11 +200,7 @@ function requireSuperAdmin() {
         throw new ForbiddenError('Authentication required');
       }
 
-      const user = await db('admin_users')
-        .join('roles', 'roles.id', 'admin_users.role_id')
-        .where('admin_users.id', req.admin.id)
-        .select('roles.name as role_name')
-        .first();
+      const user = await roleOf(req.admin.id);
 
       if (!user || user.role_name !== 'super_admin') {
         logger.warn('Super admin access denied', {
@@ -227,11 +228,7 @@ function requireSuperAdmin() {
  * @returns {Promise<{role: object|null, permissions: string[]}>}
  */
 async function getUserPermissions(userId) {
-  const user = await db('admin_users')
-    .join('roles', 'roles.id', 'admin_users.role_id')
-    .where('admin_users.id', userId)
-    .select('roles.name as role_name', 'roles.display_name as role_display_name')
-    .first();
+  const user = await roleOf(userId);
 
   if (!user) return { role: null, permissions: [] };
 
@@ -259,11 +256,7 @@ function clearPermissionCache() {
 /** Whether an admin account holds the super_admin role. */
 async function isSuperAdminUser(userId) {
   if (!userId) return false;
-  const user = await db('admin_users')
-    .join('roles', 'roles.id', 'admin_users.role_id')
-    .where('admin_users.id', userId)
-    .select('roles.name as role_name')
-    .first();
+  const user = await roleOf(userId);
   return Boolean(user && user.role_name === 'super_admin');
 }
 

@@ -169,7 +169,7 @@ const STYLE_ATTRIBUTE = /style="([^"]*)"/gi;
 
 function sanitizeStyleAttribute(match, css) {
   const { sanitized } = sanitizeCSS(decodeHtmlEntities(css));
-  return sanitized ? `style="${encodeForAttribute(sanitized)}"` : '';
+  return sanitized ? `style="${escapeAttribute(sanitized)}"` : '';
 }
 
 /**
@@ -214,15 +214,6 @@ function decodeHtmlEntities(value) {
       return { quot: '"', apos: '\'', amp: '&', lt: '<', gt: '>' }[name];
     }
   );
-}
-
-/** Re-encode a sanitized value so it is safe inside a double-quoted attribute. */
-function encodeForAttribute(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 /**
@@ -500,17 +491,13 @@ function isOptedOut(row) {
 
 function parseRecipientIds(campaign) {
   if (campaign.recipient_mode !== 'manual') return [];
-  const raw = campaign.recipient_filter;
-  if (!raw) return [];
-  let parsed;
-  try {
-    parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  } catch (_) {
-    return [];
-  }
-  const ids = Array.isArray(parsed) ? parsed : parsed?.customerIds;
-  if (!Array.isArray(ids)) return [];
-  return [...new Set(ids.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  return cleanIds(parseCustomerIds(campaign.recipient_filter));
+}
+
+/** The customer ids a stored recipient_filter names, as stored (not cleaned). */
+function parseCustomerIds(raw) {
+  const ids = parseFilterObject(raw).customerIds;
+  return Array.isArray(ids) ? ids : [];
 }
 
 function parseFilterObject(raw) {
@@ -1040,6 +1027,20 @@ async function deleteCampaign(id, adminId) {
   return { deleted: true };
 }
 
+/** The made-up customer a test send and the preview render the campaign for. */
+function sampleRecipient(email, language) {
+  return {
+    id: null,
+    email,
+    salutation: 'Ms.',
+    first_name: 'Alex',
+    last_name: 'Sample',
+    display_name: 'Alex Sample',
+    company_name: 'Sample & Co',
+    preferred_language: language,
+  };
+}
+
 /**
  * Send one test copy, rendered with sample data, without touching the queue
  * or the recipient table. `test_sent_at` is stamped so the list can show that
@@ -1049,16 +1050,7 @@ async function sendTest(campaignId, toEmail, adminId) {
   const campaign = await getCampaign(campaignId);
   const { sendRawEmail } = require('./emailProcessor');
 
-  const sample = {
-    id: null,
-    email: toEmail,
-    salutation: 'Ms.',
-    first_name: 'Alex',
-    last_name: 'Sample',
-    display_name: 'Alex Sample',
-    company_name: 'Sample & Co',
-    preferred_language: campaign.language,
-  };
+  const sample = sampleRecipient(toEmail, campaign.language);
   // No real customer id, so no real unsubscribe token — the test mail gets a
   // dead link rather than one that would opt a stranger out.
   const { subject, html } = await renderForRecipient(campaign, sample, {
@@ -1098,6 +1090,8 @@ module.exports = {
   updateCampaign,
   deleteCampaign,
   sendTest,
+  sampleRecipient,
+  parseCustomerIds,
   // Exported for the routes' validators and the tests.
   clampRate,
   MAX_BODY_BYTES,

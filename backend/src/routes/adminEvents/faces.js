@@ -95,7 +95,7 @@ module.exports = (router) => {
 
         const status = await facePeopleService.getScanStatus(event.id);
         res.json({
-          enabled: event.face_recognition_enabled === true || event.face_recognition_enabled === 1,
+          enabled: faceSettings.isSwitchedOnForEvent(event),
           visible_to_guests: faceSettings.areFacesVisibleToGuests(event),
           // Guests may search with a selfie (issue 2355); per-event opt-in.
           selfie_search: event.face_selfie_search_enabled === true || event.face_selfie_search_enabled === 1,
@@ -142,7 +142,7 @@ module.exports = (router) => {
         if (!event) return res.status(404).json({ error: 'Event not found' });
 
         const update = {};
-        const wasEnabled = event.face_recognition_enabled === true || event.face_recognition_enabled === 1;
+        const wasEnabled = faceSettings.isSwitchedOnForEvent(event);
         let nowEnabled = wasEnabled;
 
         if (req.body.enabled !== undefined) {

@@ -435,21 +435,14 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
 async function assertMayManageSuperAdminTarget(target, actorId) {
   const superAdminRole = await db('roles').where('name', 'super_admin').first();
   if (!superAdminRole || target.role_id !== superAdminRole.id) return;
-  const actor = await db('admin_users')
-    .leftJoin('roles', 'roles.id', 'admin_users.role_id')
-    .where('admin_users.id', actorId)
-    .first('roles.name as role_name');
-  if (!actor || actor.role_name !== 'super_admin') {
+  if (!(await isSuperAdminActor(actorId))) {
     throw new ForbiddenError('Only Super Admins can modify a Super Admin account');
   }
 }
 
-async function isSuperAdminActor(actorId) {
-  const actor = await db('admin_users')
-    .leftJoin('roles', 'roles.id', 'admin_users.role_id')
-    .where('admin_users.id', actorId)
-    .first('roles.name as role_name');
-  return Boolean(actor && actor.role_name === 'super_admin');
+// Read lazily, like the userHasAllPermissions lookups in this file.
+function isSuperAdminActor(actorId) {
+  return require('../middleware/permissions').isSuperAdminUser(actorId);
 }
 
 /**
@@ -874,12 +867,7 @@ async function resolvePermissionIds(permissionNames) {
 async function assertActorMayGrant(actorId, permissionNames) {
   const names = Array.from(new Set((permissionNames || []).filter(Boolean)));
   if (names.length === 0) return;
-  const actor = await db('admin_users')
-    .leftJoin('roles', 'roles.id', 'admin_users.role_id')
-    .where('admin_users.id', actorId)
-    .select('roles.name as role_name')
-    .first();
-  if (actor && actor.role_name === 'super_admin') return;
+  if (await isSuperAdminActor(actorId)) return;
   const { userHasAllPermissions } = require('../middleware/permissions');
   if (!(await userHasAllPermissions(actorId, names))) {
     throw new ForbiddenError('You can only grant permissions your own role already holds.');

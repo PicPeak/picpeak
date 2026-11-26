@@ -19,8 +19,7 @@
 const crypto = require('crypto');
 const { db } = require('../../database/db');
 const logger = require('../../utils/logger');
-
-const SNIPCART_API = 'https://app.snipcart.com/api';
+const { isGalleryPriced } = require('./priceRules');
 
 /** Random code: unambiguous alphabet, grouped for easy typing. */
 function generatePromoCode() {
@@ -34,7 +33,7 @@ function generatePromoCode() {
 /** Make sure a priced gallery has a promo code; returns the code (or null). */
 async function ensurePromoCode(eventRow) {
   if (!eventRow || !eventRow.id) return null;
-  const priced = eventRow.is_priced === true || eventRow.is_priced === 1 || eventRow.is_priced === '1';
+  const priced = isGalleryPriced(eventRow);
   if (!priced) return null;
   if (eventRow.promo_code) return eventRow.promo_code;
   // Conditional: two replicas healing the same gallery at startup must end
@@ -77,12 +76,12 @@ async function claimDiscountCreation(eventId, current) {
   return (await query.update({ snipcart_discount_id: claim })) ? claim : null;
 }
 
-async function snipcartAuth() {
+/** The Snipcart credentials when checkout through Snipcart is on, else null. */
+async function snipcartCredentials() {
   if (!(await require('./providers').preferences()).snipcart) return null;
   const settings = require('./snipcartSettings');
   const value = await settings.credentials();
-  return settings.configurationOf(value).checkout_configured
-    ? Buffer.from(`${value.secretKey}:`).toString('base64') : null;
+  return settings.configurationOf(value).checkout_configured ? value : null;
 }
 
 /**
@@ -91,8 +90,8 @@ async function snipcartAuth() {
  */
 async function syncPromoDiscount(eventRow) {
   try {
-    const auth = await snipcartAuth();
-    if (!auth) return { ok: false, skipped: true, error: 'Snipcart checkout is not configured' };
+    const credentials = await snipcartCredentials();
+    if (!credentials) return { ok: false, skipped: true, error: 'Snipcart checkout is not configured' };
 
     const freeCount = Math.max(0, Math.floor(Number(eventRow.free_photo_count || 0)));
     const price = Number(eventRow.photo_price || 0);
@@ -112,19 +111,15 @@ async function syncPromoDiscount(eventRow) {
       maxNumberOfUsages: null,
     };
 
-    const headers = {
-      Authorization: `Basic ${auth}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    };
+    // snipcartSettings.request adds Accept, the Basic auth and the 15 s timeout.
+    const { request } = require('./snipcartSettings');
+    const headers = { 'Content-Type': 'application/json' };
     const existingId = eventRow.snipcart_discount_id;
 
     if (isDiscountId(existingId)) {
-      const response = await fetch(`${SNIPCART_API}/discounts/${encodeURIComponent(existingId)}`, {
-        method: 'PUT',
-        headers, signal: AbortSignal.timeout(15000),
-        body: JSON.stringify(body),
-      });
+      const response = await request(`/discounts/${encodeURIComponent(existingId)}`, {
+        method: 'PUT', headers, body: JSON.stringify(body),
+      }, credentials);
       if (response.ok) return { ok: true };
       if (response.status !== 404) {
         return { ok: false, error: `Snipcart discount API HTTP ${response.status}` };
@@ -134,7 +129,7 @@ async function syncPromoDiscount(eventRow) {
 
     const claim = await claimDiscountCreation(eventRow.id, existingId || null);
     if (!claim) return { ok: false, skipped: true, error: 'Another process is creating this discount' };
-    const created = await fetch(`${SNIPCART_API}/discounts`, { method: 'POST', headers, signal: AbortSignal.timeout(15000), body: JSON.stringify(body) });
+    const created = await request('/discounts', { method: 'POST', headers, body: JSON.stringify(body) }, credentials);
     const createdBody = created.ok ? await created.json().catch(() => ({})) : {};
     const id = isDiscountId(createdBody?.id) ? createdBody.id : null;
     await db('events')

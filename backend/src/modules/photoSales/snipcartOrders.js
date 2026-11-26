@@ -3,7 +3,8 @@ const { db } = require('../../database/db');
 const { createPurchaseAccessToken } = require('./purchaseAccess');
 const logger = require('../../utils/logger');
 const { purchaseExpiry, purchaseRows, sendPurchaseEmail } = require('./fulfilment');
-const { allocateFreeLines } = require('./priceRules');
+const { allocateFreeLines, toMinorUnits } = require('./priceRules');
+const { OPEN, REFUSING } = require('./orderStatus');
 const { isDiscountId } = require('./promoDiscount');
 const { SALES_CURRENCY, ON_SALE_COLUMNS, isGalleryOnSale, sellablePhotos, verifyPhotoSale, saleSignatureFromUrl } = require('./sellable');
 const snipcartSettings = require('./snipcartSettings');
@@ -20,7 +21,7 @@ async function refundSnipcartOrder(orderToken, amount, comment) {
   try {
     const response = await snipcartSettings.request(`/orders/${encodeURIComponent(orderToken)}/refunds`, {
       method: 'POST',
-      headers: { Authorization: auth, 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount, comment, notifyCustomer: true }),
     });
     if (!response.ok) {
@@ -39,9 +40,7 @@ async function fetchSnipcartOrder(orderToken) {
   const auth = snipcartSettings.auth(await snipcartSettings.credentials());
   if (!auth || !orderToken) return null;
   try {
-    const response = await snipcartSettings.request(`/orders/${encodeURIComponent(orderToken)}`, {
-      headers: { Authorization: auth, Accept: 'application/json' },
-    });
+    const response = await snipcartSettings.request(`/orders/${encodeURIComponent(orderToken)}`);
     if (!response.ok) {
       logger.warn(`Snipcart order ${orderToken} could not be fetched: HTTP ${response.status}`);
       return null;
@@ -88,7 +87,7 @@ function gallerySlugFromOrderItems(items) {
 
 function centsOf(amount) {
   const value = Number(amount);
-  return Number.isFinite(value) ? Math.round(value * 100) : NaN;
+  return Number.isFinite(value) ? toMinorUnits(value) : NaN;
 }
 
 /** Revoke a granted order: the link and every purchase row stop working. */
@@ -103,7 +102,7 @@ async function revokeOrder(orderToken, status, { fullRefund = false, refundedCen
       // full repayment before its attention flag or unused claim can clear.
       // Check the live row, since a refusal can race this notification.
       update.where(q => {
-        q.whereNotIn('status', ['refund_pending', 'refund_failed']);
+        q.whereNotIn('status', REFUSING);
         if (Number.isSafeInteger(refundedCents) && refundedCents > 0)
           q.orWhere(held => held.where({ currency }).where('total_cents', '>', 0).where('total_cents', '<=', refundedCents));
       });
@@ -155,7 +154,7 @@ async function rejectOrder(order, gallery, reason, reserved = null) {
   };
   let recordId;
   if (reserved) {
-    const changed = await db('photo_purchase_orders').where({ id: reserved.id }).whereIn('status', ['pending', 'creation_unknown', 'processing', 'expired'])
+    const changed = await db('photo_purchase_orders').where({ id: reserved.id }).whereIn('status', [...OPEN, 'expired'])
       .where((q) => q.whereNull('provider_order_id').orWhere({ provider_order_id: orderToken })).update({ ...record, order_id: reserved.order_id, access_token: reserved.access_token });
     if (changed) recordId = reserved.id;
     else if (await findProviderOrder(orderToken)) return;
@@ -241,7 +240,7 @@ async function grantOrder(order) {
   const codeApplied = !!(gallery.promo_code && discountCodes.includes(gallery.promo_code));
   const codeHonored = codeApplied && !priorPromoUse && isDiscountId(gallery.snipcart_discount_id);
   const freeValueCents = codeHonored
-    ? Math.round(Math.max(0, Number(gallery.free_photo_count || 0)) * Number(gallery.photo_price || 0) * 100)
+    ? toMinorUnits(Math.max(0, Number(gallery.free_photo_count || 0)) * Number(gallery.photo_price || 0))
     : 0;
   const expectedTotalCents = Math.max(0, grossCents - freeValueCents);
 
@@ -310,7 +309,7 @@ async function trackPendingOrder(order) {
   const token = reservationToken(order.items);
   if (!token || await findProviderOrder(order.token)) return;
   await db('photo_purchase_orders').where({ payment_provider: 'snipcart', checkout_token: token })
-    .whereIn('status', ['pending', 'creation_unknown', 'processing']).whereNull('provider_order_id')
+    .whereIn('status', OPEN).whereNull('provider_order_id')
     .update({ provider_order_id: String(order.token), status: 'processing' });
 }
 async function reconcileOrder(order) {
@@ -331,13 +330,13 @@ async function reconcileOrder(order) {
   }
 
   const stored = await findProviderOrder(orderToken);
-  if (!stored || ['pending', 'creation_unknown', 'processing'].includes(stored.status)) {
+  if (!stored || OPEN.includes(stored.status)) {
     try {
       await grantOrder(order);
     } catch (error) {
       // A redelivery racing the first delivery loses on UNIQUE order_id.
       const raced = await findProviderOrder(orderToken);
-      if (!raced || ['pending', 'creation_unknown', 'processing'].includes(raced.status)) throw error;
+      if (!raced || OPEN.includes(raced.status)) throw error;
     }
   }
   const granted = await findProviderOrder(orderToken);

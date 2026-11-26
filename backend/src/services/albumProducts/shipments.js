@@ -11,6 +11,7 @@
  * opened by PIN alone, or shared by several customers with nobody named on
  * the offer, has nobody to tell: the admin form says so.
  */
+const { EMAIL_MAX_ATTEMPTS } = require('../../utils/emailQueueRetry');
 const { AppError, ConflictError, NotFoundError } = require('../../utils/errors');
 const { formatBoolean } = require('../../utils/dbCompat');
 const { toIso } = require('../../utils/dateNormalize');
@@ -82,7 +83,7 @@ async function mailStates(conn, rows) {
     const entry = row.notified_at ? queue.get(Number(row.notification_id)) : undefined;
     if (!entry) return null;
     if (entry.status === 'sent' || entry.status === 'failed') return entry.status;
-    if (entry.status === 'pending') return Number(entry.retry_count) >= 3 ? 'failed' : 'queued';
+    if (entry.status === 'pending') return Number(entry.retry_count) >= EMAIL_MAX_ATTEMPTS ? 'failed' : 'queued';
     return null;
   };
 }

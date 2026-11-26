@@ -18,6 +18,7 @@ const { ensureThumbnail } = require('./imageProcessor');
 // tagQueue, which is the only layer that knows to retry rather than fail.
 const { tagImage } = require('./faceClient');
 const { isEnabledForEvent } = require('./tagSettings');
+const { streamToBuffer, isVideoPhoto } = require('./sidecarImage');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { isTransient } = require('./imageResourcePolicy');
 
@@ -45,15 +46,6 @@ class TagSourceUnreachableError extends Error {
     super(`Tagging of photo ${photoId} deferred: ${reason}`);
     this.name = 'TagSourceUnreachableError';
   }
-}
-
-async function streamToBuffer(stream) {
-  if (Buffer.isBuffer(stream)) return stream;
-  const chunks = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
 }
 
 /** Valid, de-duplicated `{ tag, score }` pairs from a sidecar response. */
@@ -116,9 +108,7 @@ async function processPhotoTags(claimed) {
     return { status: 'skipped' };
   }
 
-  const isVideo = photo.media_type === 'video'
-    || (photo.mime_type && photo.mime_type.startsWith('video/'));
-  if (isVideo) {
+  if (isVideoPhoto(photo)) {
     await settle(claimed, 'skipped');
     return { status: 'skipped' };
   }

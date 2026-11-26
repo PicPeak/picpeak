@@ -14,6 +14,7 @@ const { resolveSqlitePath } = require('../utils/databaseEngine');
 const { checkForUpdates, getCurrentChannel, getCurrentVersion, getReleasesSince, compareVersions } = require('../services/updateCheckService');
 const { getQueueProcessorStatus } = require('../services/emailProcessor');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
+const { EMAIL_MAX_ATTEMPTS } = require('../utils/emailQueueRetry');
 const { getAppSetting, upsertAppSetting } = require('../utils/appSettings');
 const { parseWhatsNew } = require('../utils/whatsNew');
 const { detectEnvironment, generateUpdateInstructions } = require('../services/environmentService');
@@ -392,13 +393,13 @@ router.get('/status', adminAuth, requirePermission(['settings.view', 'system.vie
       .whereIn('status', ['pending', PROTECTED_PENDING_STATUS]).count('* as count');
     const [processableEmails] = await db('email_queue')
       .whereIn('status', ['pending', PROTECTED_PENDING_STATUS])
-      .where('retry_count', '<', 3)
+      .where('retry_count', '<', EMAIL_MAX_ATTEMPTS)
       .count('* as count');
     const [sentEmails] = await db('email_queue').where('status', 'sent').count('* as count');
     const [failedEmails] = await db('email_queue').where('status', 'failed').count('* as count');
     const [stuckEmails] = await db('email_queue')
       .whereIn('status', ['pending', PROTECTED_PENDING_STATUS])
-      .where('retry_count', '>=', 3)
+      .where('retry_count', '>=', EMAIL_MAX_ATTEMPTS)
       .count('* as count');
 
     // Activity logs count

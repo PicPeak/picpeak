@@ -3,6 +3,7 @@ const { queueTimestamp, toMillis } = require('../utils/queueTimestamps');
 const nodemailer = require('nodemailer');
 const { smtpConnectionOptions } = require('../utils/mailConnection');
 const { db } = require('../database/db');
+const { EMAIL_MAX_ATTEMPTS } = require('../utils/emailQueueRetry');
 const logger = require('../utils/logger');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const {
@@ -53,6 +54,20 @@ function attachmentFile(file, filename) {
     throw missing;
   }
   return placed;
+}
+
+/** Queue-side attachment descriptors as nodemailer attachments. */
+function mailAttachments(list) {
+  return Array.isArray(list)
+    ? list
+      .filter((a) => a && (a.contentPath || a.path || a.content))
+      .map((a) => ({
+        filename: a.filename,
+        path: attachmentFile(a.contentPath || a.path, a.filename),
+        content: a.content,
+        contentType: a.contentType,
+      }))
+    : undefined;
 }
 
 /**
@@ -1182,16 +1197,7 @@ async function sendTemplateEmail(to, templateKey, variables, { usageEligible = t
       : (typeof variables.cc === 'string' && variables.cc.trim())
         ? variables.cc.split(/[,;]+/).map((s) => s.trim()).filter(Boolean)
         : undefined;
-    const attachments = Array.isArray(variables.attachments)
-      ? variables.attachments
-        .filter((a) => a && (a.contentPath || a.path || a.content))
-        .map((a) => ({
-          filename: a.filename,
-          path: attachmentFile(a.contentPath || a.path, a.filename),
-          content: a.content,
-          contentType: a.contentType,
-        }))
-      : undefined;
+    const attachments = mailAttachments(variables.attachments);
 
     // Send email
     const mail = {
@@ -1314,10 +1320,7 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
   }
 
   const ccList = Array.isArray(cc) ? cc.filter(Boolean) : (cc ? [cc] : undefined);
-  const atts = Array.isArray(attachments)
-    ? attachments.filter((a) => a && (a.contentPath || a.path || a.content))
-      .map((a) => ({ filename: a.filename, path: attachmentFile(a.contentPath || a.path, a.filename), content: a.content, contentType: a.contentType }))
-    : undefined;
+  const atts = mailAttachments(attachments);
   const mail = {
     from: `${fromName || 'picpeak'} <${fromEmail}>`,
     to,
@@ -1564,7 +1567,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
       if (!ignoreSchedule) {
         // Automatic runs: respect the retry cap (don't hammer a failing
         // address) AND the schedule (business-hours floor / future send).
-        query.where('retry_count', '<', 3).andWhere(function() {
+        query.where('retry_count', '<', EMAIL_MAX_ATTEMPTS).andWhere(function() {
           this.whereNull('scheduled_at').orWhere('scheduled_at', '<=', now);
         });
       }
@@ -1666,21 +1669,23 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         // body lives on the campaign. They also get the send-time opt-out
         // re-check: a customer who unsubscribed after the campaign was
         // queued is skipped here, not mailed.
+        // The batch above was materialised before this loop started. A cancel
+        // that lands in between (a newsletter campaign cancelled, its rows
+        // deleted) or a redact (a customer erasure, #1593) would otherwise go
+        // out anyway, and the send below would write the row back to 'sent'
+        // with the pre-erasure, unredacted data. Re-check the row still
+        // exists and is still pending immediately before sending.
+        const stillPending = await db('email_queue')
+          .where({ id: email.id, status: email.status })
+          .first('id');
+        if (!stillPending) {
+          logger.info(`Email ${email.id} skipped — cancelled after the batch was fetched`);
+          continue;
+        }
+
         let sendResult;
         if (email.email_type === 'newsletter' && email.campaign_id) {
           const newsletterService = require('./newsletterService');
-          // The batch above was materialised before this loop started. A
-          // cancel that lands in between deletes the pending rows, but this
-          // worker still holds them in memory — so without re-reading, up to
-          // a full batch goes out after the UI says the campaign is
-          // cancelled. Re-check the row still exists and is still pending.
-          const stillPending = await db('email_queue')
-            .where({ id: email.id, status: email.status })
-            .first('id');
-          if (!stillPending) {
-            logger.info(`Email ${email.id} skipped — cancelled after the batch was fetched`);
-            continue;
-          }
           if (await newsletterService.shouldSkipForOptOut(emailData.customerId, email.recipient_email)) {
             await newsletterService.markSkippedOptOut(email);
             logger.info(`Email ${email.id} skipped — recipient opted out after queueing`);
@@ -1688,19 +1693,6 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
           }
           sendResult = await sendCampaignEmail(email, emailData);
         } else {
-          // Same race as the newsletter branch above: the batch was
-          // materialised before this loop started, so a cancel/redact that
-          // lands in the gap (e.g. a customer erasure, #1593) would
-          // otherwise be silently overwritten below by this send re-writing
-          // the row back to 'sent' with the pre-erasure, unredacted data.
-          // Re-check the row is still pending immediately before sending.
-          const stillPending = await db('email_queue')
-            .where({ id: email.id, status: email.status })
-            .first('id');
-          if (!stillPending) {
-            logger.info(`Email ${email.id} skipped — cancelled after the batch was fetched`);
-            continue;
-          }
           sendResult = await sendTemplateEmail(
             email.recipient_email,
             email.email_type,
@@ -1710,8 +1702,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         }
 
         // Mark as sent, persisting the actual rendered HTML for the Project
-        // Overview email preview (guarded — older installs without migration
-        // 119 just skip it).
+        // Overview email preview.
         const sentUpdate = { status: 'sent', sent_at: new Date().toISOString() };
         // The mail is out: this is the last moment the variables were needed
         // in the clear. Gallery passwords and client PINs are bcrypt-hashed
@@ -1818,7 +1809,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         // Recording it on attempt 1 would mark the recipient failed while
         // the queue is still going to retry them, and could flip the whole
         // campaign terminal on a transient SMTP blip.
-        if (email.campaign_id && email.retry_count + 1 >= 3) {
+        if (email.campaign_id && email.retry_count + 1 >= EMAIL_MAX_ATTEMPTS) {
           try {
             await require('./newsletterService')
               .recordRecipientResult(email, { status: 'failed', errorMessage: error.message });
