@@ -91,7 +91,7 @@ describe('AdminLoginPage passkey button', () => {
     fireEvent.click(screen.getByRole('button', { name: BUTTON }));
 
     await waitFor(() => expect(passkey.login).toHaveBeenCalledWith({ rememberMe: true }));
-    await waitFor(() => expect(login).toHaveBeenCalledWith(undefined, { id: 1, username: 'admin' }));
+    await waitFor(() => expect(login).toHaveBeenCalledWith({ id: 1, username: 'admin' }));
   });
 
   it('is hidden when the browser has no passkey support', () => {

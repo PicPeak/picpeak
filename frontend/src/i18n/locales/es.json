@@ -2848,7 +2848,6 @@
     "previewTemplate": "Vista previa de la plantilla",
     "smtpSettings": "Ajustes SMTP",
     "testEmailSuccess": "Correo de prueba enviado con éxito",
-    "saveSmtpSettings": "Guardar ajustes SMTP",
     "testEmailSection": "Correo de prueba",
     "beforeTesting": "Antes de probar:",
     "saveSmtpFirst": "Guarda primero los ajustes SMTP",
@@ -2880,7 +2879,6 @@
     "primaryColorHint": "Usado para encabezado, botones y enlaces",
     "secondaryColor": "Fondo del pie",
     "secondaryColorHint": "Usado para el fondo del pie",
-    "saveEmailColors": "Guardar colores de correo",
     "editor": {
       "bold": "Negrita",
       "italic": "Cursiva",

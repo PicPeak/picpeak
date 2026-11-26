@@ -35,12 +35,11 @@ router.get('/pages/:slug', async (req, res) => {
       // toggle can be flipped back on, but it shouldn't leak via the API).
       use_external_url: !!page.use_external_url,
       external_url: page.use_external_url && page.external_url ? page.external_url : null,
-      // Footer visibility (#441). Default true for legacy rows; admins
-      // can hide a CMS page from the gallery footer when their
-      // jurisdiction doesn't require it (e.g. impressum / datenschutz
-      // outside DE/AT). SQLite returns the flag as 0/1, so normalise it
-      // rather than comparing against false.
-      show_in_footer: page.show_in_footer == null ? true : parseBoolean(page.show_in_footer),
+      // Footer visibility (#441). Admins can hide a CMS page from the
+      // gallery footer when their jurisdiction doesn't require it (e.g.
+      // impressum / datenschutz outside DE/AT). SQLite returns the flag as
+      // 0/1, so normalise it rather than comparing against false.
+      show_in_footer: parseBoolean(page.show_in_footer),
       updated_at: page.updated_at
     });
   } catch (error) {

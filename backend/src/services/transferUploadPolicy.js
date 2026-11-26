@@ -289,11 +289,8 @@ function setAttachmentHeaders(res, filename, mimetype) {
 }
 
 module.exports = {
-  DEFAULT_ALLOWED_MIME,
-  SAFE_ECHO_MIME,
   normalizeAllowedTypes,
   getTransferUploadPolicy,
-  DEFAULT_MAX_FILES,
   MAX_FILES_CEILING,
   normalizeMaxFiles,
   effectiveMaxFiles,

@@ -3,7 +3,9 @@
 /**
  * Photo sales — what may be sold, and to whom.
  *
- * The Snipcart price check and the order webhook are public: Snipcart's
+ * Two providers sell photos, Stripe Checkout and Snipcart, and both reserve
+ * the cart through checkoutReservation.js, which applies the first two rules
+ * below. The Snipcart price check and the order webhook are public: Snipcart's
  * servers call them without a gallery session, and the cart line's URL (which
  * names the gallery and the photo) is set by the browser. So neither can rely
  * on the gallery login. Three rules close that gap, and every sale path

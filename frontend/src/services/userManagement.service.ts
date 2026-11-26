@@ -78,11 +78,6 @@ interface GetUsersResponse {
   users: any[];
 }
 
-interface GetUserResponse {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  user: any;
-}
-
 interface GetRolesResponse {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   roles: any[];
@@ -121,29 +116,6 @@ interface DeactivateUserResponse {
   message: string;
 }
 
-interface ResetPasswordResponse {
-  temporaryPassword: string;
-  message: string;
-}
-
-interface ValidateInvitationResponse {
-  valid: boolean;
-  email: string;
-  roleName: string;
-  invitedBy: string;
-  expiresAt: string;
-}
-
-interface AcceptInvitationData {
-  username: string;
-  password: string;
-}
-
-interface AcceptInvitationResponse {
-  message: string;
-  user: AdminUser;
-}
-
 export const userManagementService = {
   /**
    * Get all admin users
@@ -151,14 +123,6 @@ export const userManagementService = {
   async getUsers(): Promise<AdminUser[]> {
     const response = await api.get<GetUsersResponse>('/admin/users');
     return response.data.users.map(transformUser);
-  },
-
-  /**
-   * Get a single admin user by ID
-   */
-  async getUser(id: number): Promise<AdminUser> {
-    const response = await api.get<GetUserResponse>(`/admin/users/${id}`);
-    return transformUser(response.data.user);
   },
 
   /**
@@ -229,29 +193,5 @@ export const userManagementService = {
   async deleteUser(id: number): Promise<string> {
     const response = await api.delete<DeactivateUserResponse>(`/admin/users/${id}`);
     return response.data.message;
-  },
-
-  /**
-   * Reset an admin user's password
-   */
-  async resetPassword(id: number): Promise<ResetPasswordResponse> {
-    const response = await api.post<ResetPasswordResponse>(`/admin/users/${id}/reset-password`);
-    return response.data;
-  },
-
-  /**
-   * Validate an invitation token (public endpoint)
-   */
-  async validateInvitation(token: string): Promise<ValidateInvitationResponse> {
-    const response = await api.get<ValidateInvitationResponse>(`/invite/${token}`);
-    return response.data;
-  },
-
-  /**
-   * Accept an invitation and create account (public endpoint)
-   */
-  async acceptInvitation(token: string, data: AcceptInvitationData): Promise<AcceptInvitationResponse> {
-    const response = await api.post<AcceptInvitationResponse>(`/invite/${token}`, data);
-    return response.data;
   },
 };

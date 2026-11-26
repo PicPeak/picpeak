@@ -119,7 +119,7 @@ async function establishAdminSession(res, admin, ipAddress, userAgent, lockoutKe
   };
 }
 
-async function completeAdminLogin(req, res, admin, ipAddress, userAgent, lockoutKey, { rememberMe = false } = {}) {
+async function completeAdminLogin(res, admin, ipAddress, userAgent, lockoutKey, { rememberMe = false } = {}) {
   const user = await establishAdminSession(res, admin, ipAddress, userAgent, lockoutKey, { rememberMe });
   return res.json({ user });
 }
@@ -242,7 +242,7 @@ router.post('/admin/login', [
       return res.json({ mfaRequired: true, mfaToken, passkeyAvailable });
     }
 
-    return await completeAdminLogin(req, res, admin, ipAddress, userAgent, username, { rememberMe });
+    return await completeAdminLogin(res, admin, ipAddress, userAgent, username, { rememberMe });
   } catch (error) {
     errorResponse(res, error, 500, 'Login failed');
   }
@@ -388,7 +388,7 @@ router.post('/admin/login/mfa', [
     // Taken from the signed mfa_pending token, not from this request: the
     // choice belongs to the password step, and reading it back out of the
     // token stops the verify leg asking for a longer session than was agreed.
-    return await completeAdminLogin(req, res, admin, ipAddress, userAgent, lockoutKey, {
+    return await completeAdminLogin(res, admin, ipAddress, userAgent, lockoutKey, {
       rememberMe: decoded.rememberMe === true,
     });
   } catch (error) {
@@ -563,7 +563,7 @@ router.post('/admin/passkey/verify', [
       { type: 'admin', id: admin.id, name: admin.username }
     );
 
-    return await completeAdminLogin(req, res, admin, ipAddress, userAgent,
+    return await completeAdminLogin(res, admin, ipAddress, userAgent,
       pending ? (pending.loginId || pending.username) : admin.username,
       { rememberMe: challenge.rememberMe });
   } catch (error) {
@@ -1125,16 +1125,10 @@ router.post('/password-strength', [
 
     const { password, context = 'gallery' } = req.body;
 
-    // Get user data if available (for context-aware validation)
-    const userData = {};
-    if (context === 'admin' && req.admin) {
-      userData.username = req.admin.username;
-      userData.email = req.admin.email;
-    }
-
-    // validatePasswordInContext is async; unawaited this resolved to a Promise
-    // and every field below came back undefined.
-    const validation = await validatePasswordInContext(password, context, userData);
+    // Public route: no admin session is attached here, so there is no user
+    // data for the context-aware checks. validatePasswordInContext is async;
+    // unawaited this resolved to a Promise and every field came back undefined.
+    const validation = await validatePasswordInContext(password, context, {});
 
     res.json({
       valid: validation.valid,

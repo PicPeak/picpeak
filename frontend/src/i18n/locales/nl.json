@@ -3026,7 +3026,6 @@
     "emailTemplates": "E-mailsjablonen",
     "smtpSettings": "SMTP-instellingen",
     "testEmailSuccess": "Test-e-mail succesvol verzonden",
-    "saveSmtpSettings": "SMTP-instellingen opslaan",
     "testEmailSection": "Test-e-mail",
     "beforeTesting": "Voor het testen:",
     "saveSmtpFirst": "Sla eerst uw SMTP-instellingen op",
@@ -3053,7 +3052,6 @@
     "brandingDescription": "Pas de kleuren aan die in e-mailsjablonen worden gebruikt. Wijzigingen zijn van toepassing op de headerbalk, knoppen, links en voettekstachtergrond.",
     "primaryColor": "Primaire kleur",
     "secondaryColor": "Voettekstachtergrond",
-    "saveEmailColors": "E-mailkleuren opslaan",
     "editor": {
       "bold": "Vet",
       "italic": "Cursief",

@@ -157,7 +157,6 @@ async function isAuthenticated(req) {
       return false;
     }
     req.tokenType = decoded.type;
-    req.tokenPayload = decoded;
 
     return true;
   } catch (error) {

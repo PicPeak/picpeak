@@ -120,8 +120,6 @@ async function isRowHeldBack(row) {
 
 module.exports = {
   isRowHeldBack,
-  ADMINISTRATIVE_EMAIL_TYPES,
-  isAdministrativeEmailType,
   isSuppressedForRecipient,
   isHeldBackFor,
   customerTakesNoAdminEmails,

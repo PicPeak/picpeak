@@ -204,20 +204,8 @@ const notFoundHandler = (req, res, next) => {
   next(new NotFoundError('Route', requestLogPath(req.originalUrl)));
 };
 
-/**
- * Async handler that catches unhandled promise rejections.
- * Use this to wrap async route handlers.
- *
- * @param {Function} fn - Async function to wrap
- * @returns {Function} Wrapped function
- */
-const asyncHandler = (fn) => (req, res, next) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
-};
-
 module.exports = {
   errorHandler,
   notFoundHandler,
-  asyncHandler,
   isOperationalError
 };

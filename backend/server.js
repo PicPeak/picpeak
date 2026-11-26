@@ -1403,8 +1403,9 @@ async function startServerInternal() {
     }
     startEmailQueueProcessor();
 
-    // Start WhatsApp queue processor — no-ops each cycle unless the
-    // `whatsapp` flag is on and a config exists (migration 136, #640D).
+    // Start WhatsApp queue processor — no-ops each cycle unless an enabled
+    // whatsapp_configs row exists (migration 136, #640D). It does not read
+    // the `whatsapp` feature flag.
     try {
       const { startWhatsAppQueueProcessor } = require('./src/services/whatsappProcessor');
       startWhatsAppQueueProcessor();
@@ -1467,7 +1468,7 @@ async function startServerInternal() {
     // Self-heal the RBAC catalog: ensure super_admin holds every permission
     // (the "Admin tracks all" guarantee) and the solo_photographer preset
     // exists. New perms never need a compensation migration. See
-    // _permissionsBoot.js + project_permission_gating.
+    // _permissionsBoot.js.
     try {
       const { seedPermissionsAtBoot } = require('./src/services/_permissionsBoot');
       await seedPermissionsAtBoot(db, logger);

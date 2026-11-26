@@ -381,16 +381,12 @@ async function passwordKnownColumns() {
 }
 
 module.exports = {
-  canReceiveGalleryNotice,
   reachableAccountsByIds,
   resolveGalleryRecipients,
-  hasGalleryEmailOnlyContent,
   galleryCreatedEmailData,
   galleryLinkFor,
   notifyGalleryRecipients,
   notifyGalleryCompleted,
-  accountsAnnounceable,
-  portalEventLink,
   describeRecipients,
   recipientSummary,
   passwordKnownColumns,

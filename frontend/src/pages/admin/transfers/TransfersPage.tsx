@@ -108,10 +108,6 @@ const STATUS_TONES: Record<string, BadgeTone> = {
 type TabKey = 'all' | 'send' | 'request';
 
 /**
- * Warn about files the server took in but dropped on type. The create/upload
- * calls succeed with the good files, so without this the drop is silent.
- */
-/**
  * Say what a write did not keep.
  *
  * The routes answer 201/200 with the good files stored and the rest named

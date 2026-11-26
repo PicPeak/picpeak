@@ -24,7 +24,7 @@ async function isFeatureEnabled() {
   try {
     return await isFlagEnabled(FLAG_KEY);
   } catch (e) {
-    // A missing table (pre-migration install) means off, not a crash.
+    // A failed flag read means off, not a crash.
     logger.debug?.('tagSettings: feature flag read failed', { error: e.message });
     return false;
   }

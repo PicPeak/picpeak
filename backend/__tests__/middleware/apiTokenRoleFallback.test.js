@@ -5,7 +5,7 @@
  * privilege escalation that reopens GHSA-9697 for a demoted token owner.
  */
 
-const { isMissingRolesSchema } = require('../../src/middleware/apiTokenAuth');
+const { isMissingRolesSchema } = require('../../src/utils/dbErrors');
 
 describe('apiTokenAuth roles-schema fallback predicate (GHSA-9697)', () => {
   it('accepts a genuinely missing roles table on both engines', () => {

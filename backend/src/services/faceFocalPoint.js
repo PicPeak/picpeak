@@ -102,4 +102,4 @@ async function refocusFromFaces(photo) {
   }
 }
 
-module.exports = { MIN_AREA_SHARE, faceFocalPoint, refocusFromFaces };
+module.exports = { faceFocalPoint, refocusFromFaces };

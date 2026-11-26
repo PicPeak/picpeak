@@ -3086,7 +3086,6 @@
     "emailTemplates": "Modèles d'e-mail",
     "smtpSettings": "Paramètres SMTP",
     "testEmailSuccess": "E-mail de test envoyé avec succès",
-    "saveSmtpSettings": "Enregistrer les paramètres SMTP",
     "testEmailSection": "E-mail de test",
     "beforeTesting": "Avant de tester :",
     "saveSmtpFirst": "Enregistrez d'abord vos paramètres SMTP",
@@ -3113,7 +3112,6 @@
     "brandingDescription": "Personnalisez les couleurs utilisées dans les modèles d'e-mail. Les modifications s'appliquent à la barre d'en-tête, aux boutons, aux liens et à l'arrière-plan du pied de page.",
     "primaryColor": "Couleur principale",
     "secondaryColor": "Couleur de l'arrière-plan du pied de page",
-    "saveEmailColors": "Enregistrer les couleurs de l'e-mail",
     "editor": {
       "bold": "Gras",
       "italic": "Italique",

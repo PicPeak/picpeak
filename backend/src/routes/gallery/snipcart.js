@@ -1,5 +1,7 @@
 /**
- * Photo sales — Snipcart order validation for priced galleries.
+ * Photo sales — Snipcart order validation for priced galleries. Snipcart is
+ * one of the two checkout providers; Stripe Checkout is the other
+ * (routes/gallery/stripeCheckout.js).
  *
  * Snipcart's SERVER crawls this URL once per cart line before payment
  * (no gallery session cookie — public by design) and compares the answer

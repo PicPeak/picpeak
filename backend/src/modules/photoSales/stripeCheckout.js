@@ -4,7 +4,7 @@ const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const { reservationExpiry, purchaseRows, sendPurchaseEmail } = require('./fulfilment');
 const { isGalleryOnSale, sellablePhotos } = require('./sellable');
 const { stripeClient, stripeConfiguration } = require('./stripeClient');
-const { reserveCheckout, quoteOf, verifyCheckoutBrowser, checkoutError, OPEN } = require('./checkoutReservation');
+const { quoteOf, checkoutError, OPEN } = require('./checkoutReservation');
 const REFUSING = ['refund_pending', 'refund_failed'];
 function idOf(value) { return typeof value === 'string' ? value : value?.id; }
 
@@ -281,4 +281,4 @@ async function reconcileWebhook(event, client = stripeClient()) {
   await reconcileSession(order, session, { failed: event.type === 'checkout.session.async_payment_failed', client });
 }
 
-module.exports = { reserveCheckout, checkoutSession, reconcileSession, reconcileWebhook, quoteOf, verifyCheckoutBrowser, checkoutError, OPEN };
+module.exports = { checkoutSession, reconcileSession, reconcileWebhook };

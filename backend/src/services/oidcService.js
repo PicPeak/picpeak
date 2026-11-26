@@ -39,7 +39,6 @@ RestrictedIssuer[custom.http_options] = integrationRequestOptions;
 const { db } = require('../database/db');
 const { getAppSetting, upsertAppSetting } = require('../utils/appSettings');
 const { formatBoolean } = require('../utils/dbCompat');
-const { hasColumnCached } = require('../utils/schemaCache');
 const { getBcryptRounds } = require('../utils/passwordValidation');
 const logger = require('../utils/logger');
 
@@ -619,9 +618,7 @@ async function resolveAdminFromClaims(claims) {
     const byEmailQuery = db('admin_users')
       .whereRaw('LOWER(email) = ?', [email])
       .whereNull('external_subject');
-    if (await hasColumnCached('admin_users', 'email_link_eligible')) {
-      byEmailQuery.where('email_link_eligible', formatBoolean(true));
-    }
+    byEmailQuery.where('email_link_eligible', formatBoolean(true));
     // More than one row can share an address once case is ignored (no
     // case-insensitive unique index exists, and older installs may already
     // hold a pair). Picking one would hand the IdP identity — and its mapped

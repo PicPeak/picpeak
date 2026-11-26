@@ -156,7 +156,6 @@ function start() {
     if (stopped) return;
     const db = require('../../database/db').db, storage = require('../storage').getStorage();
     if (!running) running = (async () => {
-      if (!await db.schema.hasTable('print_sales_orders')) return;
       await createWorker({ db, storage, sharp: require('../isolatedSharp'), orders: require('./orders').application() }).runOne();
     })().catch(error => logger.error('Print worker failed', { error: error.message })).finally(() => { running = null; });
     // Expiry and deletion must continue even during a long render.
@@ -168,8 +167,7 @@ function start() {
         await work.track('print download status cleanup', () => require('./downloadStatus').createService(db).cleanup())
           .catch(error => logger.error('Print download status cleanup failed', { error: error.message }));
       }
-      if (await db.schema.hasTable('print_sales_orders'))
-        await work.track('print retention', () => require('./fulfilment').createService({ db, storage }).cleanup());
+      await work.track('print retention', () => require('./fulfilment').createService({ db, storage }).cleanup());
     })().catch(error => logger.error('Print retention failed', { error: error.message })).finally(() => { cleaning = null; });
   };
   timer = setInterval(tick, 10000); timer.unref();

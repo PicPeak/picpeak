@@ -258,11 +258,11 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
       case 'faces':
         // Face recognition is a set of jobs (detect, rescan, recluster,
         // delete) rather than settings, so it acts immediately.
-        return <FaceRecognitionCard eventId={event.id} isArchived={archived} bare />;
+        return <FaceRecognitionCard eventId={event.id} isArchived={archived} />;
       case 'tags':
         // Like faces: a switch and a job, so it acts immediately. Unlike
         // faces it stays inside the read-only fieldset for a viewer.
-        return <AutoTaggingCard eventId={event.id} isArchived={archived} bare />;
+        return <AutoTaggingCard eventId={event.id} isArchived={archived} />;
       case 'danger':
         return (
           <SectionCard>

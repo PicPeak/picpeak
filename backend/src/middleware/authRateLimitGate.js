@@ -20,8 +20,8 @@
  * 1. It does not match on a prefix. The old registrations used
  *    app.use('/api/auth', authRateLimiter), and /api/auth is the mount point of
  *    the whole auth router — so the 5-per-window budget would also have covered
- *    GET /api/auth/session and POST /api/auth/password-strength, both of which
- *    the frontend calls far more than five times per window. Activating them as
+ *    GET /api/auth/session, which the frontend calls far more than five times
+ *    per window, and POST /api/auth/password-strength. Activating them as
  *    written would have locked legitimate users out. The table below is exact
  *    method + exact path.
  *

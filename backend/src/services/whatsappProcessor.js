@@ -14,8 +14,8 @@
  *     `pt_BR`. Falls back to `en` then `en_US` if nothing is configured.
  *   - Cycle size + interval pulled from env vars so low-volume installs can
  *     dial back the poll frequency.
- *   - Exits gracefully when the `whatsapp` feature flag is off (no config
- *     polling, no queue queries).
+ *   - Idles while `whatsapp_configs` is not enabled (no queue queries). It
+ *     reads the config row, not the `whatsapp` feature flag.
  */
 
 const { db } = require('../database/db');
@@ -215,11 +215,10 @@ async function getWhatsAppConfig() {
 }
 
 /**
- * Enqueue a WhatsApp message. Safe to call without checking the feature flag
- * upstream — the processor's poll loop is the gate, so a queued message just
- * sits idle if the flag is off. Routes still SHOULD check the flag before
- * calling so the customer-facing error path (silent feature disabled vs. real
- * queue failure) stays distinguishable.
+ * Enqueue a WhatsApp message. The processor's poll loop checks
+ * `whatsapp_configs.enabled`, not the feature flag, so routes SHOULD check the
+ * flag before calling; that also keeps the customer-facing error path (silent
+ * feature disabled vs. real queue failure) distinguishable.
  */
 async function queueWhatsapp(eventId, recipientPhone, messageType, messageData) {
   try {
@@ -245,13 +244,8 @@ async function queueWhatsapp(eventId, recipientPhone, messageType, messageData) 
  * so a single bad row can't stall the rest of the batch.
  */
 async function processWhatsAppQueue() {
-  let config;
-  try {
-    config = await getWhatsAppConfig();
-  } catch (e) {
-    // Tables not migrated yet — just bail.
-    return;
-  }
+  // getWhatsAppConfig already turns a failed read into null.
+  const config = await getWhatsAppConfig();
   if (!config || !config.enabled || !config.phone_number_id || !config.access_token) return;
 
   // Priority order for the *default* (when message_data.language is null):

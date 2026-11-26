@@ -33,4 +33,4 @@ async function galleryPolicy(req, res, next) {
   const directives = enabled ? withPhotoSalesSources(siteDirectives()) : siteDirectives();
   helmet.contentSecurityPolicy({ useDefaults: false, directives })(req, res, next);
 }
-module.exports = { siteDirectives, galleryPolicy, SNIPCART_SOURCES, withPhotoSalesSources };
+module.exports = { siteDirectives, galleryPolicy };

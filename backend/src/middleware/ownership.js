@@ -41,18 +41,11 @@ function canAccessEvent(admin, event) {
 /**
  * The events an admin is assigned to (migration 269), as numbers. adminAuth,
  * apiTokenAuth and the gallery preview put them on the principal as
- * `assignedEventIds`, which canAccessEvent reads. Before the migration has
- * run there are none, the same posture roleEventScope takes.
+ * `assignedEventIds`, which canAccessEvent reads.
  *
  * @returns {Promise<number[]>}
  */
-let assignmentsTableReady = false;
 async function loadAssignedEventIds(adminId) {
-  // Schema only changes at boot, so a table found once stays found.
-  if (!assignmentsTableReady) {
-    if (!(await db.schema.hasTable('event_admin_assignments'))) return [];
-    assignmentsTableReady = true;
-  }
   const ids = await db('event_admin_assignments').where('admin_user_id', adminId).pluck('event_id');
   return ids.map(Number);
 }
@@ -170,10 +163,8 @@ function scopeEventsQuery(query, admin, column = 'created_by', { assignments = t
   const idColumn = column.replace(/created_by$/, 'id');
   return query.where((q) => {
     q.whereNull(column).orWhere(column, admin.id);
-    // Every principal loads its assignments first (loadAssignedEventIds), so
-    // the flag says whether the table exists yet. `assignments: false` is the
-    // requireEventOwner rule.
-    if (assignments && assignmentsTableReady) {
+    // `assignments: false` is the requireEventOwner rule.
+    if (assignments) {
       q.orWhereIn(idColumn, db('event_admin_assignments').select('event_id').where('admin_user_id', admin.id));
     }
   });

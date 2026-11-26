@@ -272,18 +272,6 @@ describe('face merge suggestions (#1107)', () => {
       }
     });
 
-    it.each([
-      ['postgres undefined_table', { code: '42P01', message: 'relation "x" does not exist' }, true],
-      ['sqlite missing table', { code: 'SQLITE_ERROR', message: 'no such table: x' }, true],
-      // The one that matters: a missing COLUMN is a broken query, not a
-      // pre-migration install, and must NOT be allowed to fail open.
-      ['postgres undefined_column', { code: '42703', message: 'column "x" does not exist' }, false],
-      ['sqlite missing column', { code: 'SQLITE_ERROR', message: 'no such column: x' }, false],
-      ['statement timeout', { code: '57014', message: 'canceling statement due to statement timeout' }, false],
-    ])('missing-table check — %s → %s', (_name, err, expected) => {
-      expect(clustering.isMissingTable(err)).toBe(expected);
-    });
-
     it('normalizes the pair so one row covers both orderings', async () => {
       const eventId = await seedEvent('dismissal-normalized');
       const [a, b] = pairAtSimilarity(0.64, 0);

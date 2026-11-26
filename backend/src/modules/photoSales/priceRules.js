@@ -15,12 +15,10 @@ function normalisePrice(event) {
 }
 
 /**
- * Per-ORDER free allocation: in a priced gallery the first
- * `free_photo_count` line items of a checkout are free — the buyer's own
- * choice, in the order they were added. Every line beyond that carries the
- * gallery price (or its per-photo override). Mirrors the client-side cart
- * allocation in frontend/src/features/photo-sales, and is re-verified here
- * at order.completed against the DB.
+ * Per-line prices of an order: each line carries the gallery price or its
+ * per-photo override. The first `free_photo_count` lines would be free, but
+ * the only caller (snipcartOrders.grantOrder) passes `free_photo_count: 0`:
+ * the free quota is now the one-time promo-code discount.
  */
 function allocateFreeLines(event, items) {
   const freeCount = normaliseFreeCount(event);
@@ -40,7 +38,7 @@ function allocateFreeLines(event, items) {
 
 /**
  * True for EVERY photo of a priced gallery. Which photos end up free is
- * decided per order (see allocateFreeLines) — before checkout no photo may
+ * decided per order (the promo-code discount) — before checkout no photo may
  * be served clean, so the forced watermark applies to all of them.
  */
 function shouldForceWatermarkForPhoto(event, _photo) {
@@ -103,25 +101,13 @@ async function resolvePhotoSalesWatermarkSettings(event, _photo) {
  * never what the buyer sees beforehand.
  */
 async function resolveForcedWatermarkSettingsForPhoto(event, photo) {
-  const settings = await resolvePhotoSalesWatermarkSettings(event, photo);
-  if (settings) return settings;
-  const watermarkService = require('../../services/watermarkService');
-  const global = await watermarkService.getWatermarkSettings();
-  return {
-    ...(global || {}),
-    enabled: true,
-    tiled: true,
-    position: 'center',
-    opacity: Math.max(Number(global?.opacity) || 0, 40),
-    size: Math.max(Number(global?.size) || 0, 20),
-    text: event.watermark_text || global?.companyName || 'Preview',
-  };
+  // Every caller checks isGalleryPriced first, and for a priced gallery
+  // resolvePhotoSalesWatermarkSettings always returns the forced settings.
+  return resolvePhotoSalesWatermarkSettings(event, photo);
 }
 
 module.exports = {
   isGalleryPriced,
-  normaliseFreeCount,
-  normalisePrice,
   effectivePhotoPrice,
   allocateFreeLines,
   shouldForceWatermarkForPhoto,

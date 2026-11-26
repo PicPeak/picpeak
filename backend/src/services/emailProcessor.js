@@ -9,7 +9,6 @@ const {
   snapToBusinessHours,
   normaliseSchedule,
 } = require('../utils/businessHours');
-const { hasColumnCached } = require('../utils/schemaCache');
 const {
   decryptEmailData,
   encryptEmailData,
@@ -1723,7 +1722,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         const secrets = secretValues(emailData);
         sentUpdate.email_data = JSON.stringify(redactRecoveryLinksInData(redactEmailData(emailData)));
         try {
-          if (sendResult && sendResult.html && await hasColumnCached('email_queue', 'rendered_html')) {
+          if (sendResult && sendResult.html) {
             sentUpdate.rendered_html = redactRecoveryLinks(redactRenderedHtml(sendResult.html, secrets));
           }
         } catch (_) { /* best-effort — never block the send on the preview */ }
@@ -1812,14 +1811,6 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
             });
         } catch (updateError) {
           logger.error(`Failed to update email retry count for ${email.id}:`, updateError);
-          // If update fails due to column issue, try without any potential auto-added fields
-          if (updateError.message && updateError.message.includes('updated_at')) {
-            logger.warn('Detected updated_at column issue, attempting raw query...');
-            await db.raw(
-              'UPDATE email_queue SET retry_count = ?, error_message = ? WHERE id = ?',
-              [email.retry_count + 1, error.message, email.id]
-            );
-          }
         }
           
         // Campaign bookkeeping (#1264). Only record a FAILURE once the row
@@ -2004,23 +1995,6 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
   }
 }
 
-// Test email connection
-async function testEmailConnection() {
-  try {
-    if (!transporter) {
-      await initializeTransporter();
-    }
-    if (!transporter) {
-      return false;
-    }
-    await transporter.verify();
-    return true;
-  } catch (error) {
-    logger.error('Email connection test failed:', error);
-    return false;
-  }
-}
-
 const emailTask = require('./scheduledTask').scheduledTask(processEmailQueue, { interval: 60000, initialDelay: 0 });
 function startEmailQueueProcessor() {
   emailTask.start(); processorStatus.started = true;
@@ -2029,12 +2003,6 @@ async function stopEmailQueueProcessor() {
   await emailTask.stop(); processorStatus.started = false;
   transporter?.close?.(); transporter = null;
 }
-
-// Initialize on module load - DISABLED for production startup
-// This will be called from server.js after database is ready
-// initializeTransporter().then(() => {
-//   startEmailQueueProcessor();
-// });
 
 module.exports = {
   initializeTransporter,
@@ -2047,7 +2015,6 @@ module.exports = {
   getQueueProcessorStatus,
   queueEmail,
   stopEmailQueueProcessor,
-  testEmailConnection,
   wrapEmailHtml,
   renderEmailSignatureText,
   buildSignatureTextFor,

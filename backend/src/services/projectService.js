@@ -17,7 +17,7 @@ const { db, logActivity } = require('../database/db');
 const { AppError } = require('../utils/errors');
 const { toDateOnly } = require('../utils/dateOnly');
 const { hasColumnCached } = require('../utils/schemaCache');
-const { reachesQueuedEmailRow, senderColumnReady, sentByColumns } = require('../middleware/emailQueueOwnership');
+const { reachesQueuedEmailRow, sentByColumns } = require('../middleware/emailQueueOwnership');
 const { auditedUpdate } = require('./accountingHistory');
 const { redactBearerLinks, hasMaskedRecoveryLink, parseEmailData, MASK } = require('../utils/emailSecretRedaction');
 const {
@@ -1195,7 +1195,6 @@ async function getProjectOverview(id, perms = {}, admin = null) {
   // (legacy/system) event would satisfy `created_by == null` and be marked
   // actionable for a caller we know nothing about.
   const eventsById = new Map(eventRows.map((e) => [Number(e.id), e]));
-  const withSender = await senderColumnReady();
 
   // Whether new quotes, contracts and invoices may join this project: the
   // CRM write rule ties project_id to the project's creator (or a super
@@ -1255,7 +1254,7 @@ async function getProjectOverview(id, perms = {}, admin = null) {
   //      both scopes to the right customer and excludes system/admin alerts
   //      (backup_failed, …) sent to the same inbox.
   const selectCols = ['id', 'recipient_email', 'email_type', 'status', 'created_at', 'sent_at', 'error_message', 'event_id',
-    ...(withSender ? ['sent_by_admin_id'] : []),
+    'sent_by_admin_id',
     // Exact stored preview available? (CASE is cross-DB: SQLite→0/1, PG→int)
     db.raw('CASE WHEN rendered_html IS NOT NULL THEN 1 ELSE 0 END as has_rendered')];
   const mapEmail = (e) => ({

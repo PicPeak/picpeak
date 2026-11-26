@@ -314,93 +314,11 @@ async function validatePasswordInContext(password, context, userData = {}) {
 }
 
 /**
- * Generate a secure random password
- * @param {Object} options - Generation options
- * @returns {string} - Generated password
- */
-function generateSecurePassword(options = {}) {
-  const config = {
-    length: options.length || 16,
-    includeUppercase: options.includeUppercase !== false,
-    includeLowercase: options.includeLowercase !== false,
-    includeNumbers: options.includeNumbers !== false,
-    includeSpecialChars: options.includeSpecialChars !== false,
-    excludeAmbiguous: options.excludeAmbiguous !== false
-  };
-  
-  let charset = '';
-  
-  if (config.includeLowercase) {
-    charset += config.excludeAmbiguous ? 'abcdefghjkmnpqrstuvwxyz' : 'abcdefghijklmnopqrstuvwxyz';
-  }
-  
-  if (config.includeUppercase) {
-    charset += config.excludeAmbiguous ? 'ABCDEFGHJKLMNPQRSTUVWXYZ' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  }
-  
-  if (config.includeNumbers) {
-    charset += config.excludeAmbiguous ? '23456789' : '0123456789';
-  }
-  
-  if (config.includeSpecialChars) {
-    charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
-  }
-  
-  if (charset.length === 0) {
-    throw new Error('At least one character type must be included');
-  }
-
-  // A requested length the validator will always reject makes the retry below
-  // unwinnable, so say so instead of spinning. MAX_PASSWORD_LENGTH is the cap
-  // validatePassword() applies; anything above it fails every candidate.
-  if (config.length > MAX_PASSWORD_LENGTH) {
-    throw new Error(`length must be at most ${MAX_PASSWORD_LENGTH}`);
-  }
-
-  const crypto = require('crypto');
-
-  // Bounded retry rather than unbounded recursion. Every candidate failing is
-  // possible for reasons other than bad luck -- a charset that cannot satisfy
-  // the configured policy (numbers excluded while requireNumbers is on, say)
-  // -- and the previous `return generateSecurePassword(options)` turned that
-  // into a stack overflow rather than an error anyone could act on.
-  const MAX_ATTEMPTS = 100;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-    let password = '';
-    for (let i = 0; i < config.length; i++) {
-      const randomIndex = crypto.randomInt(charset.length);
-      password += charset[randomIndex];
-    }
-    if (validatePassword(password).valid) return password;
-  }
-
-  throw new Error(
-    'Could not generate a password satisfying the configured policy — '
-    + 'check that the selected character types can meet it',
-  );
-}
-
-/**
  * Get bcrypt rounds configuration
  * @returns {number} - Number of bcrypt rounds to use
  */
 function getBcryptRounds() {
   return PASSWORD_CONFIG.bcryptRounds;
-}
-
-/**
- * Log password validation failures for security monitoring
- * @param {string} context - Context of validation failure
- * @param {Array} errors - Validation errors
- * @param {Object} metadata - Additional metadata
- */
-function logPasswordValidationFailure(context, errors, metadata = {}) {
-  logger.warn('Password validation failed', {
-    context,
-    errorCount: errors.length,
-    errors: errors.slice(0, 3), // Log first 3 errors only
-    ...metadata
-  });
 }
 
 /**
@@ -438,9 +356,7 @@ module.exports = {
   rejectWeakCustomerPassword,
   validatePassword,
   validatePasswordInContext,
-  generateSecurePassword,
   getBcryptRounds,
-  logPasswordValidationFailure,
   getPasswordComplexitySettings,
   getPasswordConfigForComplexity,
   PASSWORD_CONFIG

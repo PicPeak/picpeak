@@ -3166,7 +3166,6 @@
     "emailTemplates": "Шаблоны email",
     "smtpSettings": "Настройки SMTP",
     "testEmailSuccess": "Тестовое письмо успешно отправлено",
-    "saveSmtpSettings": "Сохранить настройки SMTP",
     "testEmailSection": "Тестовое письмо",
     "beforeTesting": "Перед тестированием:",
     "saveSmtpFirst": "Сначала сохраните настройки SMTP",
@@ -3193,7 +3192,6 @@
     "brandingDescription": "Настройте цвета в шаблонах писем. Изменения применяются к шапке, кнопкам, ссылкам и фону подвала.",
     "primaryColor": "Основной цвет",
     "secondaryColor": "Фон подвала",
-    "saveEmailColors": "Сохранить цвета",
     "editor": {
       "bold": "Жирный",
       "italic": "Курсив",

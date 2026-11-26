@@ -128,7 +128,7 @@ router.get('/:token', infoLimiter, [param('token').matches(TOKEN_RE)], handleAsy
     transfer: {
       title: transfer.title || 'Upload',
       message: transfer.message || null,
-      expires_at: transfer.upload_expires_at || transfer.expires_at,
+      expires_at: transfer.expires_at,
       max_size_mb: policy.maxSizeMb,
       // This request's own limit, or the global default (issue 1914).
       max_files: effectiveMaxFiles(transfer, policy),

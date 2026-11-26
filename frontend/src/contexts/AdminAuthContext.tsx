@@ -8,10 +8,9 @@ import type { AdminUser } from '../types';
 interface AdminAuthContextType {
   isAuthenticated: boolean;
   user: AdminUser | null;
-  login: (token: string, user: AdminUser) => void;
+  login: (user: AdminUser) => void;
   logout: () => void;
   isLoading: boolean;
-  error: string | null;
   mustChangePassword: boolean;
   updateUserProfile: (updates: Partial<AdminUser>) => void;
 }
@@ -34,7 +33,6 @@ export const AdminAuthProvider: React.FC<AdminAuthProviderProps> = ({ children }
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<AdminUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
 
   useEffect(() => {
@@ -88,10 +86,9 @@ export const AdminAuthProvider: React.FC<AdminAuthProviderProps> = ({ children }
     checkAuth();
   }, []);
 
-  const login = (_token: string, user: AdminUser) => {
-    // Token is already stored in cookie by authService
+  const login = (user: AdminUser) => {
+    // The session itself is the cookie the login response set.
     setUser(user);
-    setError(null);
     setIsAuthenticated(true);
     setMustChangePassword(user.mustChangePassword || false);
     sessionStorage.setItem('admin_user', JSON.stringify(user));
@@ -124,7 +121,6 @@ export const AdminAuthProvider: React.FC<AdminAuthProviderProps> = ({ children }
         login,
         logout,
         isLoading,
-        error,
         mustChangePassword,
         updateUserProfile,
       }}

@@ -204,20 +204,6 @@ function endSession(token) {
   sessions.delete(token);
 }
 
-// Function to get active sessions count
-function getActiveSessions() {
-  const now = Date.now();
-  let active = 0;
-  
-  for (const lastActivity of sessions.values()) {
-    if (now - lastActivity <= DEFAULT_SESSION_TIMEOUT) {
-      active++;
-    }
-  }
-  
-  return active;
-}
-
 module.exports = {
   dispose: () => { clearInterval(cleanupTimer); cleanupTimer = null; sessions.clear(); cachedTimeout = null; cacheExpiry = 0; },
   startSessionCleanup,
@@ -225,5 +211,4 @@ module.exports = {
   isSessionExpired,
   touchSession,
   endSession,
-  getActiveSessions
 };
