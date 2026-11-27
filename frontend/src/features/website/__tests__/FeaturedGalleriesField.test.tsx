@@ -104,4 +104,20 @@ describe('chosen entries that are gone', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByLabelText('First page')).toBeInTheDocument();
   });
+
+  it('says the catalogue could not load instead of calling chosen packages unavailable, and retries', async () => {
+    vi.mocked(websiteService.listPackages).mockReset();
+    vi.mocked(websiteService.listPackages)
+      .mockRejectedValueOnce(new Error('Network down'))
+      .mockResolvedValue({ available: true, packages: [{ id: 3, name: 'Full day', description: '', currency: 'CHF' }] });
+    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3], showPrices: true, buttonLabel: '', buttonUrl: '' };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><BlockEditor block={block} onChange={vi.fn()} /></QueryClientProvider>);
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText('Package no longer in the catalogue')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByLabelText('Full day')).toBeChecked();
+    expect(screen.queryByText('Package no longer in the catalogue')).toBeNull();
+  });
 });
+

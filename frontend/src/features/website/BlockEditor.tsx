@@ -283,7 +283,10 @@ const FeaturedGalleriesField: React.FC<{
 const PackagesField: React.FC<{ value: number[]; onChange: (value: number[]) => void }> = ({ value, onChange }) => {
   const { t } = useTranslation();
   const packages = useQuery({ queryKey: ['website-packages'], queryFn: websiteService.listPackages });
+  const failure = loadFailure(packages, t);
   if (packages.isLoading) return null;
+  // Not loaded: say so, and call no chosen package unavailable on a guess.
+  if (failure.blocking) return failure.blocking;
   const list = packages.data?.available ? packages.data.packages : [];
   // A chosen package that was archived (or the whole catalogue, with quotes
   // off) is gone from the list but still counts toward the limit.
@@ -306,6 +309,7 @@ const PackagesField: React.FC<{ value: number[]; onChange: (value: number[]) => 
   return (
     <fieldset>
       <legend className="block text-sm font-medium text-body mb-1.5">{t('website.fields.packages', 'Packages from your catalogue')}</legend>
+      {failure.notice}
       {list.length === 0 && (
         <p className="text-sm text-muted">{t('website.fields.noPackages', 'The catalogue has no packages yet.')}</p>
       )}
