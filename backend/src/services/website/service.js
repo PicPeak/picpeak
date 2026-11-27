@@ -19,6 +19,7 @@ const publicSite = require('../publicSiteService');
 const { DEFAULT_PUBLIC_SITE_CSS } = require('../../constants/publicSiteDefaults');
 const { normalizeDocument, collectReferences, newPageId } = require('./document');
 const media = require('./media');
+const { livePhotos } = require('../../utils/photoVisibility');
 const { renderPage, pageHref } = require('./renderer');
 const { getCached, setCached, clearWebsiteCache } = require('./cache');
 
@@ -164,7 +165,8 @@ async function storedReferences() {
  */
 async function referencesAdminMay(admin, { photoIds = [], eventIds = [] }) {
   const stored = await storedReferences();
-  const photoRows = photoIds.length ? await db('photos').whereIn('id', photoIds).select('id', 'event_id') : [];
+  // A photo in the trash is not offered for a new pick.
+  const photoRows = photoIds.length ? await livePhotos(db).whereIn('id', photoIds).select('id', 'event_id') : [];
   const candidates = [...new Set([...eventIds, ...photoRows.map((p) => p.event_id)])];
   const events = candidates.length ? await db('events').whereIn('id', candidates) : [];
   const accessible = new Set(events.filter((e) => canAccessEvent(admin, e)).map((e) => e.id));
