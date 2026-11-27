@@ -209,10 +209,12 @@ async function processPhotoFaces(claimed) {
   }
 
   const storage = getStorage();
-  // An edited photo's preview shows the edit (issue 2619), maybe cropped or
-  // turned; faces are found on the original, in its pixels, as before.
+  // A photo that has had an edit (issue 2619) may show it in its preview,
+  // maybe cropped or turned: the applied one, also while a newer save (a
+  // reset included) is pending. Faces are always found on the original, in
+  // its pixels, as before.
   const photoEdits = require('./photoEdits');
-  const buffer = photoEdits.isEdited(await photoEdits.withEditColumns(photo))
+  const buffer = Number((await photoEdits.withEditColumns(photo)).edit_rev) > 0
     ? await photoEdits.originalPreviewJpeg(photo)
     : await streamToBuffer(await storage.get(previewKey));
 
