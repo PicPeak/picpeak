@@ -288,7 +288,8 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
     const dateColumnsByTable = await pgDateColumns();
     for (const table of tables) {
       const { largestRowBytes: largest, ...meta } = await writeTableNdjson(table, dataDir, pathMap, (name, rows) => {
-        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files', 'print_sales_assets'].includes(name)) referenceRows.set(name, rows);
+        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files', 'print_sales_assets',
+          'website_assets'].includes(name)) referenceRows.set(name, rows);
       }, dateColumnsByTable);
       tableMeta[table] = meta;
       largestRowBytes = Math.max(largestRowBytes, largest);

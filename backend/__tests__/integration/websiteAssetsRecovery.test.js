@@ -86,3 +86,43 @@ test('the portable export carries the files, and its import accepts their folder
   }
   expect(require('../../src/services/picpeakImportService').importFilePathProblem(videoKey)).toBeNull();
 });
+
+describe('portable export on S3', () => {
+  const { Readable } = require('stream');
+  let objects;
+
+  beforeEach(() => {
+    objects = new Map([[imageKey, Buffer.from('website image rendition')], [videoKey, Buffer.from('website hero video')]]);
+    require('../../src/services/storage').setStorageForTesting({
+      kind: () => 's3',
+      list: jest.fn(async (prefix) => [...objects].filter(([k]) => k.startsWith(prefix)).map(([key, bytes]) => ({ key, size: bytes.length }))),
+      stat: jest.fn(async (key) => (objects.has(key) ? { size: objects.get(key).length, etag: 'e' } : null)),
+      get: jest.fn(async (key) => { if (!objects.has(key)) throw new Error('fixture object missing'); return Readable.from(objects.get(key)); }),
+      putFromFile: jest.fn(), delete: jest.fn(async (key) => objects.delete(key)),
+    });
+  });
+  afterAll(() => require('../../src/services/storage').setStorageForTesting(storage));
+
+  test('an upload deleted between the table dump and the file inventory fails the export', async () => {
+    // The dump already holds the row; then the upload is deleted (row and
+    // files) before the files are listed. An export with the row and no files
+    // would restore a broken image, so the export is refused.
+    const recovery = require('../../src/services/recoveryFiles');
+    const original = recovery.requiredKeys;
+    const spy = jest.spyOn(recovery, 'requiredKeys').mockImplementation(async (...args) => {
+      await db('website_assets').where({ public_id: publicId }).del();
+      objects.delete(imageKey);
+      objects.delete(videoKey);
+      return original(...args);
+    });
+    try {
+      await expect(require('../../src/services/picpeakExportService').createPicpeak({ includePhotos: false, outDir: path.join(destination, 'portable') }))
+        .rejects.toThrow(/Required primary-storage object.*website\//);
+    } finally {
+      spy.mockRestore();
+      await db('website_assets').insert({
+        public_id: publicId, kind: 'image', rendition_keys: JSON.stringify({ 640: imageKey, video: videoKey }), created_at: new Date().toISOString(),
+      }).onConflict('public_id').ignore();
+    }
+  });
+});
