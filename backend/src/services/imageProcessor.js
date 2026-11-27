@@ -340,7 +340,7 @@ async function applyContainerOrientation(previewPath, orientation, previewOrient
  * @param {Buffer} jpeg     the finished rendition
  * @returns {Promise<Buffer>}
  */
-async function withRawContainerTags(rawPath, jpeg) {
+async function withRawContainerTags(rawPath, jpeg, { withoutImages = false } = {}) {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-rawtags-'));
   const target = path.join(dir, 'download.jpg');
   try {
@@ -353,6 +353,11 @@ async function withRawContainerTags(rawPath, jpeg) {
     await runExiftool([
       '-m', '-TagsFromFile', source, '-all:all',
       '--Orientation', '--ThumbnailImage', '--PreviewImage', '--JpgFromRaw',
+      // An edited render (issue 2619) carries no image of the original at
+      // all: no thumbnail group, maker note (camera previews), MPF or
+      // embedded XMP / Photoshop thumbnails.
+      ...(withoutImages ? ['--IFD1:all', '--MakerNotes:all', '--MPF:all', '--Photoshop:all', '--ThumbnailTIFF', '--PreviewTIFF',
+        '--OtherImage', '--XMP-xmp:Thumbnails*', '--XMP-photoshop:all'] : []),
       '-overwrite_original', target,
     ]);
     return await fsp.readFile(target);

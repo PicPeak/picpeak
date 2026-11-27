@@ -188,6 +188,45 @@ describe('a JPEG named like a camera RAW', () => {
   });
 });
 
+describe('embedded images of the source', () => {
+  /** An EXIF block (little-endian TIFF) with a camera name in IFD0 and `thumb` as the IFD1 thumbnail. */
+  const exifWithThumbnail = (thumb) => {
+    const make = Buffer.from('Leakcam\0', 'latin1');
+    const tiff = Buffer.alloc(8 + 2 + 12 + 4 + 2 + 24 + 4);
+    tiff.write('II', 0, 'latin1'); tiff.writeUInt16LE(42, 2); tiff.writeUInt32LE(8, 4);
+    let at = 8;
+    tiff.writeUInt16LE(1, at); at += 2;
+    const makeOffset = tiff.length;
+    tiff.writeUInt16LE(0x010f, at); tiff.writeUInt16LE(2, at + 2); tiff.writeUInt32LE(make.length, at + 4); tiff.writeUInt32LE(makeOffset, at + 8); at += 12;
+    tiff.writeUInt32LE(at + 4, at); at += 4; // next IFD: IFD1 right after
+    tiff.writeUInt16LE(2, at); at += 2;
+    const thumbOffset = makeOffset + make.length;
+    tiff.writeUInt16LE(0x0201, at); tiff.writeUInt16LE(4, at + 2); tiff.writeUInt32LE(1, at + 4); tiff.writeUInt32LE(thumbOffset, at + 8); at += 12;
+    tiff.writeUInt16LE(0x0202, at); tiff.writeUInt16LE(4, at + 2); tiff.writeUInt32LE(1, at + 4); tiff.writeUInt32LE(thumb.length, at + 8); at += 12;
+    tiff.writeUInt32LE(0, at);
+    return Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff, make, thumb]);
+  };
+
+  it('an edited render carries no thumbnail or preview of the uncropped original', async () => {
+    const thumb = await sharp({ create: { width: 32, height: 24, channels: 3, background: { r: 250, g: 0, b: 250 } } }).jpeg().toBuffer();
+    const xmp = Buffer.from('<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+      + '<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:xmpGImg="http://ns.adobe.com/xap/1.0/g/img/" xmp:CreatorTool="Studio">'
+      + '<xmp:Thumbnails><rdf:Alt><rdf:li><xmpGImg:image>U0VDUkVUVEhVTUI=</xmpGImg:image></rdf:li></rdf:Alt></xmp:Thumbnails>'
+      + '</rdf:Description></rdf:RDF></x:xmpmeta>', 'utf8');
+    const source = require('../../src/services/imageProcessor').withSourceMetadata(originalBytes, { exif: exifWithThumbnail(thumb), xmp });
+    const file = storagePath('events/active/edit-card/thumbed.jpg');
+    fs.writeFileSync(file, source);
+    const photo = { ...(await row()), path: 'edit-card/thumbed.jpg', edit_rev: 1 };
+    const { buffer } = await photoEdits().renderEditedJpeg(photo, validated({ crop: { x: 0, y: 0, w: 0.5, h: 0.5 } }));
+    expect(buffer.indexOf(thumb)).toBe(-1);
+    expect(buffer.indexOf('U0VDUkVUVEhVTUI=')).toBe(-1);
+    expect(await require('exifr').thumbnail(buffer)).toBeUndefined();
+    // The text metadata stays.
+    expect(buffer.indexOf('Leakcam')).toBeGreaterThan(-1);
+    expect(buffer.indexOf('CreatorTool="Studio"')).toBeGreaterThan(-1);
+  });
+});
+
 describe('save, background apply, reset', () => {
   it('queues the photo, renders the edit, rebuilds its renditions and never touches the original', async () => {
     const params = validated({ crop: { x: 0, y: 0, w: 0.5, h: 1 }, exposure: 1 });

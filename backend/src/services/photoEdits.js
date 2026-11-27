@@ -153,6 +153,75 @@ function toRgb(data, info) {
   return rgb;
 }
 
+/**
+ * The source's EXIF without the images it can carry: the IFD1 thumbnail
+ * (JPEG or strips) and the maker note, where cameras keep previews. A crop
+ * must not ship the uncropped picture inside its own metadata. The bytes are
+ * zeroed and IFD1 unlinked; the text tags stay. Null for a block that cannot
+ * be read safely, which then goes out without EXIF.
+ */
+function exifWithoutImages(exif) {
+  if (!exif || exif.toString('latin1', 0, 6) !== 'Exif\0\0') return null;
+  const b = Buffer.from(exif);
+  const base = 6;
+  const little = b.toString('latin1', 6, 8) === 'II';
+  const u16 = (o) => (little ? b.readUInt16LE(o) : b.readUInt16BE(o));
+  const u32 = (o) => (little ? b.readUInt32LE(o) : b.readUInt32BE(o));
+  const zero = (offset, length) => {
+    const start = base + offset;
+    if (start < base || length <= 0 || start + length > b.length) throw new Error('out of range');
+    b.fill(0, start, start + length);
+  };
+  // The values of an IFD entry: inline when they fit in four bytes.
+  const values = (entry) => {
+    const type = u16(entry + 2);
+    const count = u32(entry + 4);
+    const size = type === 3 ? 2 : 4;
+    const at = count * size <= 4 ? entry + 8 : base + u32(entry + 8);
+    return Array.from({ length: count }, (_, i) => (type === 3 ? u16(at + i * 2) : u32(at + i * 4)));
+  };
+  try {
+    const ifd0 = base + u32(base + 4);
+    const count0 = u16(ifd0);
+    for (let i = 0; i < count0; i++) {
+      const entry = ifd0 + 2 + i * 12;
+      if (u16(entry) !== 0x8769) continue;
+      const exifIfd = base + u32(entry + 8);
+      for (let j = 0; j < u16(exifIfd); j++) {
+        const e = exifIfd + 2 + j * 12;
+        if (u16(e) === 0x927c && u32(e + 4) > 4) zero(u32(e + 8), u32(e + 4));
+      }
+    }
+    const next = ifd0 + 2 + count0 * 12;
+    const ifd1 = u32(next);
+    if (ifd1) {
+      const at = base + ifd1;
+      const tags = {};
+      for (let i = 0; i < u16(at); i++) tags[u16(at + 2 + i * 12)] = at + 2 + i * 12;
+      if (tags[0x0201] && tags[0x0202]) zero(values(tags[0x0201])[0], values(tags[0x0202])[0]);
+      if (tags[0x0111] && tags[0x0117]) {
+        const offsets = values(tags[0x0111]);
+        const lengths = values(tags[0x0117]);
+        offsets.forEach((offset, i) => zero(offset, lengths[i] || 0));
+      }
+      if (little) b.writeUInt32LE(0, next); else b.writeUInt32BE(0, next);
+    }
+    return b;
+  } catch {
+    return null;
+  }
+}
+
+/** The source's XMP without its embedded thumbnails (xmp:Thumbnails, xmpGImg images). */
+function xmpWithoutImages(xmp) {
+  if (!xmp) return null;
+  const text = xmp.toString('utf8')
+    .replace(/<(xmp|xap):Thumbnails\b[\s\S]*?<\/\1:Thumbnails>/g, '')
+    .replace(/<(xmpGImg|xapGImg):image\b[\s\S]*?<\/\1:image>/g, '')
+    .replace(/\s(?:xmpGImg|xapGImg):image="[^"]*"/g, '');
+  return Buffer.from(text, 'utf8');
+}
+
 /** photoEditMath.renderEdit on a worker thread; `src` is handed over, not copied. */
 function renderInWorker(src, width, height, channels, params, options) {
   const { Worker } = require('worker_threads');
@@ -210,7 +279,11 @@ async function renderEditedJpeg(photo, params, { interactive = false } = {}) {
     }
     const { data, info } = await chain.flatten({ background: '#ffffff' }).raw({ depth: 'uchar' }).toBuffer({ resolveWithObject: true });
     const out = await renderInWorker(toRgb(data, info), info.width, info.height, 3, params, { maxPixels: limit });
-    return { buffer: imageProcessor.withSourceMetadata(await encode(out), { exif: metadata.exif, xmp: metadata.xmp }), width: out.width, height: out.height };
+    return {
+      buffer: imageProcessor.withSourceMetadata(await encode(out), { exif: exifWithoutImages(metadata.exif), xmp: xmpWithoutImages(metadata.xmp) }),
+      width: out.width,
+      height: out.height,
+    };
   };
   const developable = rawDevelop.isRawPhoto(photo) && await rawDevelop.isAvailable();
   return withOriginal(photo, async (localPath, sourceName) => {
@@ -221,7 +294,9 @@ async function renderEditedJpeg(photo, params, { interactive = false } = {}) {
       const image = await rawDevelop.developLinear(localPath, { half, nr: params.nr });
       const out = await renderInWorker(image.data, image.width, image.height, 3, params,
         { maxPixels: limit, linear: true, exposureBias: info.exposureBias });
-      return { buffer: await imageProcessor.withRawContainerTags(localPath, await encode(out)), width: out.width, height: out.height };
+      // The container's tags, none of the RAW's preview images (a crop must
+      // not carry the whole picture).
+      return { buffer: await imageProcessor.withRawContainerTags(localPath, await encode(out), { withoutImages: true }), width: out.width, height: out.height };
     }
     const proc = await imageProcessor.withProcessableImage(localPath, sourceName);
     try {

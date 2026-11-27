@@ -113,7 +113,17 @@ describeRaw('RAW development (LibRaw dcraw_emu)', () => {
   it('renders a developed RAW to JPEG that matches the reference (golden)', async () => {
     const params = math.validateEditParams({ develop: true, exposure: 0.3, highlights: -30, vibrance: 20 }).params;
     await photoEdits().saveEdits([{ photo: await row(), params }]);
-    expect(await photoEdits().runPass({ active: () => true, sleep: async () => {} })).toMatchObject({ applied: 1, failed: 0 });
+    const runner = require('../../src/services/mediaProcessService');
+    const run = jest.spyOn(runner, 'run');
+    try {
+      expect(await photoEdits().runPass({ active: () => true, sleep: async () => {} })).toMatchObject({ applied: 1, failed: 0 });
+      // The container's tags are copied without any image of the RAW: no
+      // thumbnail group, maker note (camera previews), MPF or XMP thumbnails.
+      const copy = run.mock.calls.find(([command, args]) => command === 'exiftool' && args.includes('-TagsFromFile'));
+      if (HAVE_EXIFTOOL) expect(copy[1]).toEqual(expect.arrayContaining(['--IFD1:all', '--MakerNotes:all', '--MPF:all', '--XMP-xmp:Thumbnails*']));
+    } finally {
+      run.mockRestore();
+    }
     const current = await row();
     const jpeg = fs.readFileSync(storagePath(current.edit_render_path));
     const { data, info } = await sharp(jpeg).raw().toBuffer({ resolveWithObject: true });
@@ -149,6 +159,7 @@ describeRaw('RAW development (LibRaw dcraw_emu)', () => {
     const exif = require('exifr');
     const tags = await exif.parse(jpeg, ['DateTimeOriginal', 'Make', 'Orientation']);
     expect(tags.Make).toBe('PicPeak');
+    expect(await exif.thumbnail(jpeg)).toBeUndefined();
     expect(tags.DateTimeOriginal).toBeTruthy();
     expect(tags.Orientation === undefined || tags.Orientation === 1 || tags.Orientation === 'Horizontal (normal)').toBe(true);
   });
