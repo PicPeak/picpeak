@@ -83,7 +83,7 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, fullVie
 
   // Cover faces, also scoped: the stored cover_face_id may point at a face in
   // a photo this audience cannot see. Pick the best VISIBLE face instead.
-  const covers = await applyVisibilityScope(
+  const rawCovers = await applyVisibilityScope(
     db('photo_faces')
       .modify(joinLivePhotos, 'photos.id', 'photo_faces.photo_id')
       .where('photo_faces.event_id', eventId)
@@ -104,8 +104,19 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, fullVie
       // admin manager was scaling an original-space box by a THUMBNAIL's
       // natural size and rendering the wrong region entirely.
       'photos.width as photo_width',
-      'photos.height as photo_height'
+      'photos.height as photo_height',
+      // An edited photo's preview shows the edit (issue 2619): the box is
+      // carried into the edited image below.
+      'photos.edit_params'
     );
+  // Boxes in the image the avatar is cut from; a face an edit cropped away
+  // is no cover (the next best one is).
+  const { faceBoxForGuests } = require('./faceFocalPoint');
+  const covers = [];
+  for (const row of rawCovers) {
+    const box = faceBoxForGuests(row);
+    if (box) covers.push({ ...row, box });
+  }
 
   // The photographer's explicit pick wins whenever this audience can see it
   // (#1096). Without this the stored cover_face_id was loaded and discarded —
@@ -146,9 +157,7 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, fullVie
         ? {
           face_id: cover.id,
           photo_id: cover.photo_id,
-          bbox: [cover.bbox_x, cover.bbox_y, cover.bbox_w, cover.bbox_h],
-          photo_width: cover.photo_width ?? null,
-          photo_height: cover.photo_height ?? null,
+          ...cover.box,
         }
         : null,
     };

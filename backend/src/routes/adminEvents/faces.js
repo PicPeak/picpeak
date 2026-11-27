@@ -55,7 +55,9 @@ function buildPersonFacesQuery(dbi, eventId, personId) {
       'photo_faces.bbox_w', 'photo_faces.bbox_h',
       'photo_faces.det_score', 'photo_faces.blur',
       // Needed to crop the box — it is in original-image pixels.
-      'photos.width as photo_width', 'photos.height as photo_height'
+      'photos.width as photo_width', 'photos.height as photo_height',
+      // And the edit (issue 2619), whose preview the crop is cut from.
+      'photos.edit_params'
     );
 }
 
@@ -384,16 +386,14 @@ module.exports = (router) => {
 
         const faces = await buildPersonFacesQuery(db, event.id, req.params.personId);
 
+        // Boxes in the edited image an edited photo's preview shows (issue
+        // 2619); a face its crop removed is left out, there is nothing to show.
+        const { faceBoxForGuests } = require('../../services/faceFocalPoint');
         res.json({
-          faces: faces.map((f) => ({
-            id: f.id,
-            photo_id: f.photo_id,
-            bbox: [f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h],
-            photo_width: f.photo_width ?? null,
-            photo_height: f.photo_height ?? null,
-            score: f.det_score,
-            blur: f.blur,
-          })),
+          faces: faces.flatMap((f) => {
+            const box = faceBoxForGuests(f);
+            return box ? [{ id: f.id, photo_id: f.photo_id, ...box, score: f.det_score, blur: f.blur }] : [];
+          }),
         });
       } catch (error) {
         errorResponse(res, error, 500, 'Failed to fetch faces');

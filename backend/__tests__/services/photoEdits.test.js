@@ -432,6 +432,36 @@ describe('edited tiers after a reset', () => {
   });
 });
 
+describe('face covers of an edited photo', () => {
+  it('are boxes in the edited image: turned with it, and a face cropped away is no cover', async () => {
+    const eventId = (await row()).event_id;
+    const insertPhoto = async (name, edit) => unwrap(await db('photos').insert({
+      event_id: eventId, filename: name, path: `edit-card/${name}`, type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      width: 600, height: 400, size_bytes: 1, processing_status: 'complete', uploaded_at: new Date().toISOString(),
+      edit_params: edit ? math.canonicalJson(validated(edit)) : null, edit_rev: edit ? 1 : 0, edit_applied_rev: edit ? 1 : 0,
+    }).returning('id'));
+    const turned = await insertPhoto('face-turned.jpg', { rotate: 90 });
+    const cropped = await insertPhoto('face-cropped.jpg', { crop: { x: 0.5, y: 0, w: 0.5, h: 1 } });
+    const people = [];
+    for (const label of ['Turned', 'Cropped']) {
+      people.push(unwrap(await db('event_people').insert({ event_id: eventId, label, face_count_total: 1 }).returning('id')));
+    }
+    const face = (photoId, personId, x, score) => db('photo_faces').insert({
+      photo_id: photoId, event_id: eventId, person_id: personId, bbox_x: x, bbox_y: 100, bbox_w: 60, bbox_h: 80, det_score: score,
+    });
+    await face(turned, people[0], 100, 0.9);
+    // The best face of the second person is in the half the crop removed;
+    // the next one survives the crop.
+    await face(cropped, people[1], 50, 0.99);
+    await face(cropped, people[1], 400, 0.5);
+    const list = await require('../../src/services/facePeopleService').listPeople(eventId, { forAdmin: true, minClusterSize: 1 });
+    const byLabel = Object.fromEntries(list.map((p) => [p.label, p.cover]));
+    // Turned 90 degrees clockwise: x' = 400 - (y + h), y' = x, in a 400 x 600 image.
+    expect(byLabel.Turned).toMatchObject({ bbox: [220, 100, 80, 60], photo_width: 400, photo_height: 600 });
+    expect(byLabel.Cropped).toMatchObject({ bbox: [100, 100, 60, 80], photo_width: 300, photo_height: 400 });
+  });
+});
+
 describe('focal point after a geometry change', () => {
   it('carries a manual point through a rotation and clears a detected one', () => {
     const photo = { width: 600, height: 400, focal_x: 0.25, focal_y: 0.5, focal_source: 'manual' };

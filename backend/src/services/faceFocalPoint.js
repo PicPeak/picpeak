@@ -128,4 +128,25 @@ async function refocusFromFaces(photo) {
   }
 }
 
-module.exports = { faceFocalPoint, refocusFromFaces };
+/**
+ * A face box as the photo's guests see it (issue 2619): `row` carries the
+ * box in original pixels (bbox_x..bbox_h), photo_width / photo_height and
+ * the photo's edit_params. For an edited photo the box and the size it is
+ * measured against are the edited image's, so a face cover cut from the
+ * edited preview shows the face; null when the edit cropped the face away.
+ * Unedited photos are returned as they are.
+ */
+function faceBoxForGuests(row) {
+  const box = { bbox: [row.bbox_x, row.bbox_y, row.bbox_w, row.bbox_h], photo_width: row.photo_width ?? null, photo_height: row.photo_height ?? null };
+  const edit = require('./photoEdits').paramsOf(row);
+  const width = Number(row.photo_width);
+  const height = Number(row.photo_height);
+  if (!edit || !(width > 0) || !(height > 0)) return box;
+  const moved = facesInEdit(edit, width, height, [{ x: Number(row.bbox_x), y: Number(row.bbox_y), w: Number(row.bbox_w), h: Number(row.bbox_h) }]);
+  if (!moved.faces.length) return null;
+  const round = (v) => Math.round(v * 100) / 100;
+  const [face] = moved.faces;
+  return { bbox: [round(face.x), round(face.y), round(face.w), round(face.h)], photo_width: moved.width, photo_height: moved.height };
+}
+
+module.exports = { faceFocalPoint, refocusFromFaces, faceBoxForGuests };
