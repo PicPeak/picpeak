@@ -18,9 +18,8 @@ const { canAccessEvent } = require('../../middleware/ownership');
 const { userHasAllPermissions } = require('../../middleware/permissions');
 const { listFonts } = require('../fontsService');
 const publicSite = require('../publicSiteService');
-const { DEFAULT_PUBLIC_SITE_CSS, DEFAULT_PUBLIC_SITE_HTML } = require('../../constants/publicSiteDefaults');
 const {
-  normalizeDocument, collectReferences, newPageId, LIMIT_CODES, MAX_CUSTOM_HTML, MAX_CUSTOM_CSS,
+  normalizeDocument, collectReferences, legacyImport, newPageId, LIMIT_CODES, MAX_CUSTOM_CSS,
 } = require('./document');
 const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
@@ -82,51 +81,31 @@ function starterDocument() {
   };
 }
 
-/**
- * The document a site starts from the first time the builder opens. An
- * existing single-page site is imported as it is: its HTML becomes the home
- * page's one custom-HTML block, its stylesheet (with the template's base CSS
- * it was written against) the site's custom CSS. Nothing anyone published
- * changes until they publish the builder's version.
- */
+/** The single-page landing page as a first draft (document.js legacyImport). */
 async function legacySite() {
-  const rows = await db('app_settings')
-    .whereIn('setting_key', ['general_public_site_enabled', 'general_public_site_html', 'general_public_site_custom_css']);
-  const settings = {};
-  rows.forEach((row) => { settings[row.setting_key] = parseSettingValue(row.setting_value); });
-  const html = typeof settings.general_public_site_html === 'string' ? settings.general_public_site_html : '';
-  // Migration 043 seeds the template's HTML on every install. Only a page
-  // someone edited, or one visitors can see, is theirs to keep; an untouched
-  // template behind a switched-off site gets the starter instead.
-  const ownPage = !!html.trim() && (flag(settings.general_public_site_enabled)
-    || html.trim() !== DEFAULT_PUBLIC_SITE_HTML.trim());
-  const css = typeof settings.general_public_site_custom_css === 'string' ? settings.general_public_site_custom_css : '';
-  return { ownPage, html, css };
+  const settings = await readSettings(['general_public_site_enabled', 'general_public_site_html', 'general_public_site_custom_css']);
+  return legacyImport({
+    enabled: flag(settings.general_public_site_enabled),
+    html: settings.general_public_site_html,
+    css: settings.general_public_site_custom_css,
+  });
 }
 
+/**
+ * The document a site starts from the first time the builder opens: the
+ * imported landing page, else the starter. Nothing anyone published changes
+ * until they publish the builder's version.
+ */
 async function initialDocument() {
-  const { ownPage, html, css } = await legacySite();
-  if (!ownPage) return { document: starterDocument(), imported: false };
-  // A page longer than a custom-HTML block holds is not cut short: the
-  // editor starts from the starter and says why, and the page stays live
-  // at / until something is published.
-  if (html.length > MAX_CUSTOM_HTML) {
-    return { document: starterDocument(), imported: false, refused: { length: html.length, max: MAX_CUSTOM_HTML } };
-  }
-  return {
-    imported: true,
-    document: {
-      pages: [{ id: newPageId(), slug: 'home', title: 'Home', isHome: true, blocks: [{ type: 'customHtml', html, legacy: true }] }],
-      customCss: `${DEFAULT_PUBLIC_SITE_CSS}\n\n${css}`.trim(),
-    },
-  };
+  const legacy = await legacySite();
+  if (legacy.document) return { document: legacy.document, imported: true };
+  return { document: starterDocument(), imported: false, ...(legacy.refused ? { refused: legacy.refused } : {}) };
 }
 
 /** The import refusal the editor shows while the old page is still what / serves. */
 async function importRefusal({ published }) {
   if (published) return null;
-  const { ownPage, html } = await legacySite();
-  return ownPage && html.length > MAX_CUSTOM_HTML ? { length: html.length, max: MAX_CUSTOM_HTML } : null;
+  return (await legacySite()).refused || null;
 }
 
 /** The draft, created on first use (with the legacy import). */

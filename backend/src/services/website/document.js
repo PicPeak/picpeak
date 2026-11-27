@@ -10,7 +10,7 @@
  */
 const crypto = require('crypto');
 const { sanitizeCssColor, MAX_CSS_SIZE } = require('../../utils/cssSanitizer');
-const { DEFAULT_PUBLIC_SITE_CSS } = require('../../constants/publicSiteDefaults');
+const { DEFAULT_PUBLIC_SITE_CSS, DEFAULT_PUBLIC_SITE_HTML } = require('../../constants/publicSiteDefaults');
 const { parseBooleanInput } = require('../../utils/parsers');
 
 const DOCUMENT_VERSION = 1;
@@ -439,6 +439,33 @@ function collectReferences(document) {
 // 400, nothing is cut.
 const LIMIT_CODES = new Set(['TOO_MANY_PAGES', 'TOO_MANY_BLOCKS', 'TOO_MANY_ITEMS', 'TEXT_TOO_LONG', 'DOCUMENT_TOO_LARGE']);
 
+/**
+ * The single-page landing page an install already has, as the website's
+ * first draft. `used`: visitors see it (switched on), or someone edited its
+ * HTML or CSS from what migration 043 seeds; an untouched template behind a
+ * switched-off site is not theirs to keep. Its HTML becomes the home page's
+ * one custom-HTML block (rendered in its old containers), its stylesheet,
+ * with the template's base CSS it was written against, the site's custom
+ * CSS. A page longer than a custom-HTML block holds is not cut short:
+ * `refused` says why, and the page stays live until something is published.
+ * Pure: the service and migration 381 both use it.
+ */
+function legacyImport({ enabled, html, css }) {
+  const page = typeof html === 'string' ? html : '';
+  const style = typeof css === 'string' ? css : '';
+  const used = !!page.trim() && (enabled
+    || page.trim() !== DEFAULT_PUBLIC_SITE_HTML.trim() || !!style.trim());
+  if (!used) return { used: false };
+  if (page.length > MAX_CUSTOM_HTML) return { used: true, refused: { length: page.length, max: MAX_CUSTOM_HTML } };
+  return {
+    used: true,
+    document: {
+      pages: [{ id: newId(), slug: 'home', title: 'Home', isHome: true, blocks: [{ type: 'customHtml', html: page, legacy: true }] }],
+      customCss: `${DEFAULT_PUBLIC_SITE_CSS}\n\n${style}`.trim(),
+    },
+  };
+}
+
 module.exports = {
   DOCUMENT_VERSION,
   LIMIT_CODES,
@@ -453,5 +480,6 @@ module.exports = {
   isValidSlug,
   safeUrl,
   collectReferences,
+  legacyImport,
   newPageId: newId,
 };
