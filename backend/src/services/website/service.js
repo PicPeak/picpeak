@@ -134,9 +134,12 @@ async function ensureDraft(adminId = null) {
   return readRow('draft');
 }
 
-async function getEditorState(adminId) {
-  const draft = await ensureDraft(adminId);
-  const published = await readRow('published');
+/**
+ * The editor's state for a given draft row. A save or publish passes the
+ * row it wrote, so its answer is exactly that, never a draft another editor
+ * saved a moment later.
+ */
+async function editorState(draft, published) {
   const settings = await readSettings(['general_public_site_enabled']);
   return {
     document: parseDocument(draft),
@@ -146,6 +149,11 @@ async function getEditorState(adminId) {
     // Publishing changes nothing visible while the public site is off.
     publicSiteEnabled: flag(settings.general_public_site_enabled),
   };
+}
+
+async function getEditorState(adminId) {
+  const draft = await ensureDraft(adminId);
+  return editorState(draft, await readRow('published'));
 }
 
 function validationError(errors) {
@@ -211,19 +219,20 @@ async function saveDraft(rawDocument, expectedRevision, admin) {
   if (expectedRevision != null && Number(expectedRevision) !== Number(current.revision)) {
     throw new AppError('The website was changed elsewhere. Reload to get the latest version.', 409, 'WEBSITE_REVISION_CONFLICT');
   }
-  const nextRevision = Number(current.revision) + 1;
+  const written = {
+    state: 'draft',
+    document: JSON.stringify(document),
+    revision: Number(current.revision) + 1,
+    updated_by: adminId,
+    updated_at: new Date().toISOString(),
+  };
   const updated = await db('website_documents')
     .where({ state: 'draft', revision: current.revision })
-    .update({
-      document: JSON.stringify(document),
-      revision: nextRevision,
-      updated_by: adminId,
-      updated_at: new Date().toISOString(),
-    });
+    .update({ document: written.document, revision: written.revision, updated_by: adminId, updated_at: written.updated_at });
   if (!updated) {
     throw new AppError('The website was changed elsewhere. Reload to get the latest version.', 409, 'WEBSITE_REVISION_CONFLICT');
   }
-  return getEditorState(adminId);
+  return editorState(written, await readRow('published'));
 }
 
 /**
@@ -231,12 +240,20 @@ async function saveDraft(rawDocument, expectedRevision, admin) {
  * old site or the new one, never a mix. The draft is validated again, since
  * a cms page may have taken a slug since it was saved.
  */
+/**
+ * Publish the draft revision the editor last saved. `expectedRevision` is
+ * required: without it a publish could go out with whatever another editor
+ * saved since.
+ */
 async function publish(expectedRevision, adminId) {
+  if (expectedRevision == null || !Number.isInteger(Number(expectedRevision))) {
+    throw new AppError('Say which saved revision to publish', 400, 'WEBSITE_REVISION_REQUIRED');
+  }
   const reserved = await cmsSlugs();
-  await db.transaction(async (trx) => {
+  const result = await db.transaction(async (trx) => {
     const draft = await readRow('draft', trx);
     if (!draft) throw new AppError('There is nothing to publish yet', 404, 'WEBSITE_NO_DRAFT');
-    if (expectedRevision != null && Number(expectedRevision) !== Number(draft.revision)) {
+    if (Number(expectedRevision) !== Number(draft.revision)) {
       throw new AppError('The website was changed elsewhere. Reload to get the latest version.', 409, 'WEBSITE_REVISION_CONFLICT');
     }
     const { errors } = normalizeDocument(parseDocument(draft), { reservedSlugs: reserved });
@@ -252,9 +269,10 @@ async function publish(expectedRevision, adminId) {
     const existing = await readRow('published', trx);
     if (existing) await trx('website_documents').where({ state: 'published' }).update(values);
     else await trx('website_documents').insert({ state: 'published', ...values });
+    return { draft, published: { state: 'published', ...values } };
   });
   clearWebsiteCache();
-  return getEditorState(adminId);
+  return editorState(result.draft, result.published);
 }
 
 /** Throw the draft away and start again from what is published. */

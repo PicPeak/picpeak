@@ -51,7 +51,8 @@ router.put('/draft', canEdit, [
 }));
 
 router.post('/publish', canEdit, [
-  body('revision').optional({ nullable: true }).isInt({ min: 0 }),
+  // The revision the editor last saved: publish exactly that, or 409.
+  body('revision').isInt({ min: 0 }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   res.json(await websiteService.publish(req.body.revision, req.admin.id));

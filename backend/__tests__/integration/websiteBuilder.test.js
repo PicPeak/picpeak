@@ -764,3 +764,40 @@ describe('the public site switch as the settings page writes it', () => {
     expect((await request(app).get('/api/admin/website').set(auth(adminId))).body.publicSiteEnabled).toBe(false);
   });
 });
+
+describe('save and publish under a concurrent save', () => {
+  const doc = (heading) => ({ pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'h', type: 'hero', heading }] }] });
+
+  test('a save answers with what it wrote, and publish needs that revision', async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    const base = (await request(app).get('/api/admin/website').set(auth(adminId))).body.draft.revision;
+    // Another editor saves right after this save's UPDATE, before it answers.
+    let injected = false;
+    const onResponse = (_response, query) => {
+      if (injected || !/^update/i.test(query.sql) || !/website_documents/.test(query.sql)) return;
+      injected = true;
+      db('website_documents').where({ state: 'draft' })
+        .update({ document: JSON.stringify(doc('Theirs')), revision: base + 2, updated_at: new Date().toISOString() })
+        .catch(() => {});
+    };
+    db.on('query-response', onResponse);
+    let mine;
+    try {
+      mine = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document: doc('Mine'), revision: base });
+    } finally {
+      db.removeListener('query-response', onResponse);
+    }
+    expect(injected).toBe(true);
+    expect(mine.status).toBe(200);
+    expect(mine.body.draft.revision).toBe(base + 1);
+    expect(mine.body.document.pages[0].blocks[0].heading).toBe('Mine');
+    // Publishing what this editor saved is refused: the draft moved on.
+    const publish = await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: mine.body.draft.revision });
+    expect(publish.status).toBe(409);
+  });
+
+  test('publish without the saved revision is refused', async () => {
+    const res = await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({});
+    expect(res.status).toBe(400);
+  });
+});
