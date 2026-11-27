@@ -221,6 +221,10 @@ async function referencesAdminMay(admin, { photoIds = [], eventIds = [] }) {
   };
 }
 
+function revisionConflict() {
+  return new AppError('The website was changed elsewhere. Reload to get the latest version.', 409, 'WEBSITE_REVISION_CONFLICT');
+}
+
 async function saveDraft(rawDocument, expectedRevision, admin) {
   const adminId = admin.id;
   const { document, errors } = normalizeDocument(rawDocument, { reservedSlugs: await cmsSlugs() });
@@ -238,7 +242,7 @@ async function saveDraft(rawDocument, expectedRevision, admin) {
   }
   const current = await ensureDraft(adminId);
   if (expectedRevision != null && Number(expectedRevision) !== Number(current.revision)) {
-    throw new AppError('The website was changed elsewhere. Reload to get the latest version.', 409, 'WEBSITE_REVISION_CONFLICT');
+    throw revisionConflict();
   }
   const written = {
     state: 'draft',
@@ -251,7 +255,7 @@ async function saveDraft(rawDocument, expectedRevision, admin) {
     .where({ state: 'draft', revision: current.revision })
     .update({ document: written.document, revision: written.revision, updated_by: adminId, updated_at: written.updated_at });
   if (!updated) {
-    throw new AppError('The website was changed elsewhere. Reload to get the latest version.', 409, 'WEBSITE_REVISION_CONFLICT');
+    throw revisionConflict();
   }
   return editorState(written, await readRow('published'));
 }
@@ -271,7 +275,6 @@ async function publish(expectedRevision, adminId) {
     throw new AppError('Say which saved revision to publish', 400, 'WEBSITE_REVISION_REQUIRED');
   }
   const reserved = await cmsSlugs();
-  const conflict = () => new AppError('The website was changed elsewhere. Reload to get the latest version.', 409, 'WEBSITE_REVISION_CONFLICT');
   const result = await db.transaction(async (trx) => {
     // On PostgreSQL the draft row is locked, so concurrent publishes (and a
     // save) wait for this one; SQLite serialises writers anyway.
@@ -279,7 +282,7 @@ async function publish(expectedRevision, adminId) {
     if (trx.client.config.client === 'pg') draftQuery.forUpdate();
     const draft = await draftQuery.first();
     if (!draft) throw new AppError('There is nothing to publish yet', 404, 'WEBSITE_NO_DRAFT');
-    if (Number(expectedRevision) !== Number(draft.revision)) throw conflict();
+    if (Number(expectedRevision) !== Number(draft.revision)) throw revisionConflict();
     const { errors } = normalizeDocument(parseDocument(draft), { reservedSlugs: reserved });
     if (errors.length) throw validationError(errors);
     const now = new Date().toISOString();
@@ -299,7 +302,7 @@ async function publish(expectedRevision, adminId) {
         .where({ state: 'published' })
         .where('revision', '<=', draft.revision)
         .update(values);
-      if (!written) throw conflict();
+      if (!written) throw revisionConflict();
     }
     return { draft, published: { state: 'published', ...values } };
   });
@@ -307,17 +310,22 @@ async function publish(expectedRevision, adminId) {
   return editorState(result.draft, result.published);
 }
 
-/** Throw the draft away and start again from what is published. */
-async function discardDraft(adminId) {
+/**
+ * Throw the draft at `expectedRevision` away and start again from what is
+ * published. A draft saved since is someone else's work: 409, like a save.
+ */
+async function discardDraft(expectedRevision, adminId) {
   const published = await readRow('published');
   if (!published) throw new AppError('Nothing has been published yet', 404, 'WEBSITE_NOT_PUBLISHED');
-  const draft = await ensureDraft(adminId);
-  await db('website_documents').where({ state: 'draft' }).update({
-    document: published.document,
-    revision: Number(draft.revision) + 1,
-    updated_by: adminId,
-    updated_at: new Date().toISOString(),
-  });
+  const updated = await db('website_documents')
+    .where({ state: 'draft', revision: Number(expectedRevision) })
+    .update({
+      document: published.document,
+      revision: Number(expectedRevision) + 1,
+      updated_by: adminId,
+      updated_at: new Date().toISOString(),
+    });
+  if (!updated) throw revisionConflict();
   return getEditorState(adminId);
 }
 
