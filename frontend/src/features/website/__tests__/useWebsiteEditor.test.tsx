@@ -163,5 +163,35 @@ describe('useWebsiteEditor', () => {
     act(() => result.current.undo());
     expect(result.current.draft?.pages[0].title).toBe('Theirs');
   });
+
+  it('never lets a refetch that started before a save take the draft back to an older revision', async () => {
+    vi.mocked(websiteService.saveDraft).mockResolvedValue(state('Saved', 2));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.draft).not.toBeNull());
+    act(() => result.current.update(rename('Saved')));
+    await act(async () => { await result.current.save.mutateAsync(); });
+    act(() => result.current.update(rename('Saved, then more')));
+    act(() => result.current.update(rename('Saved')));
+    expect(result.current.canUndo).toBe(true);
+    // A background fetch from before the save lands now, with revision 1.
+    act(() => { client.setQueryData(['website-editor'], state('Home', 1)); });
+    await waitFor(() => expect(result.current.server?.draft.revision).toBe(1));
+    expect(result.current.draft?.pages[0].title).toBe('Saved');
+    expect(result.current.canUndo).toBe(true);
+    vi.mocked(websiteService.saveDraft).mockResolvedValue(state('Next', 3));
+    act(() => result.current.update(rename('Next')));
+    await act(async () => { await result.current.save.mutateAsync(); });
+    expect(websiteService.saveDraft).toHaveBeenLastCalledWith(expect.anything(), 2);
+  });
+
+  it('cancels an editor fetch in flight when a save answers', async () => {
+    vi.mocked(websiteService.saveDraft).mockResolvedValue(state('Saved', 2));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.draft).not.toBeNull());
+    const cancel = vi.spyOn(client, 'cancelQueries');
+    act(() => result.current.update(rename('Saved')));
+    await act(async () => { await result.current.save.mutateAsync(); });
+    expect(cancel).toHaveBeenCalledWith({ queryKey: ['website-editor'] });
+  });
 });
 

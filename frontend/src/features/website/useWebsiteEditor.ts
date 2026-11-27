@@ -71,7 +71,9 @@ export function useWebsiteEditor() {
   useEffect(() => {
     if (!server) return;
     const current = baseRef.current;
-    if (current && current.revision === server.draft.revision && same(current.document, server.document)) return;
+    // Only a newer revision: a fetch that started before a save can land
+    // after it, and must not take the draft back.
+    if (current && server.draft.revision <= current.revision) return;
     if (!current || same(draftRef.current, current.document)) {
       replaceBase({ document: server.document, revision: server.draft.revision });
       replaceDraft(server.document);
@@ -125,6 +127,8 @@ export function useWebsiteEditor() {
   const adopt = useCallback((state: EditorState, sent: WebsiteDocument | null) => {
     replaceBase({ document: state.document, revision: state.draft.revision });
     if (!sent || same(draftRef.current, sent)) replaceDraft(state.document);
+    // A fetch already on its way describes the state before this write.
+    void queryClient.cancelQueries({ queryKey: EDITOR_QUERY_KEY });
     queryClient.setQueryData(EDITOR_QUERY_KEY, state);
     setConflict(false);
   }, [queryClient, replaceBase, replaceDraft]);
