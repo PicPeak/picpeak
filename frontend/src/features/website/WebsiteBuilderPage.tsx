@@ -45,6 +45,11 @@ function blockSummary(block: Block): string {
 // names an older document's preview.
 let previewRun = 0;
 
+// The editor's image URLs (in the preview and the thumbnails) work for one
+// to two hours (backend media.js editorBase): both are fetched again well
+// before, on a timer and when the tab comes back after that long.
+const EDITOR_URL_REFRESH_MS = 45 * 60 * 1000;
+
 /**
  * The server-rendered preview of `doc`, as a query (`website-preview`), so a
  * change that is not in the document (a gallery taken off the website) can
@@ -62,7 +67,9 @@ function usePreview(doc: WebsiteDocument | null, pageId: string) {
     queryKey: ['website-preview', sent?.run],
     queryFn: () => websiteService.preview(sent!.doc, sent!.pageId, { videoAsPoster: mediaOriginDiffers() }),
     enabled: !!sent,
-    staleTime: Infinity,
+    staleTime: EDITOR_URL_REFRESH_MS,
+    refetchInterval: EDITOR_URL_REFRESH_MS,
+    refetchOnWindowFocus: true,
     gcTime: 0,
     retry: false,
   });
@@ -105,6 +112,9 @@ export const WebsiteBuilderPage: React.FC = () => {
     queryKey: ['website-media', refsKey],
     queryFn: () => websiteService.resolveMedia(refs),
     enabled: refs.length > 0,
+    staleTime: EDITOR_URL_REFRESH_MS,
+    refetchInterval: EDITOR_URL_REFRESH_MS,
+    refetchOnWindowFocus: true,
     placeholderData: (previous) => previous,
   });
 

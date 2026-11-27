@@ -155,6 +155,27 @@ describe('WebsiteBuilderPage', () => {
     await waitFor(() => expect(screen.getByTitle('Preview of the page').getAttribute('srcdoc')).toContain('Gallery gone'));
   });
 
+  it('renders the preview and the image URLs again before the editor URLs in them expire', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(websiteService.getState).mockResolvedValue({
+        ...structuredClone(STATE),
+        document: { ...structuredClone(STATE.document), pages: [{ ...structuredClone(STATE.document.pages[0]), blocks: [{ ...STATE.document.pages[0].blocks[0], image: { source: 'photo', id: 7 } }] }] },
+      } as EditorState);
+      vi.mocked(websiteService.preview).mockClear();
+      vi.mocked(websiteService.resolveMedia).mockClear();
+      renderPage();
+      await waitFor(() => expect(websiteService.preview).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(websiteService.resolveMedia).toHaveBeenCalledTimes(1));
+      // The URLs work for one to two hours: refreshed well inside one.
+      await act(async () => { vi.advanceTimersByTime(46 * 60 * 1000); });
+      await waitFor(() => expect(websiteService.preview).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(websiteService.resolveMedia).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('switches the preview to phone width', async () => {
     renderPage();
     const frame = await screen.findByTitle('Preview of the page');
