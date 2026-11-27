@@ -623,6 +623,23 @@ describe('face covers of an edited photo', () => {
   });
 });
 
+describe('face covers of an edited photo delivered smaller', () => {
+  it('are boxes in the delivered image, the size the listing reports', async () => {
+    const eventId = (await row()).event_id;
+    // Turned, and delivered at half the edited size (PHOTO_EDIT_MAX_PIXELS, or a half-size RAW develop).
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'face-capped.jpg', path: 'edit-card/face-capped.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      width: 600, height: 400, size_bytes: 1, processing_status: 'complete', uploaded_at: new Date().toISOString(),
+      edit_params: math.canonicalJson(validated({ rotate: 90 })), edit_rev: 1, edit_applied_rev: 1, edit_width: 200, edit_height: 300,
+    }).returning('id'));
+    const person = unwrap(await db('event_people').insert({ event_id: eventId, label: 'Capped', face_count_total: 1 }).returning('id'));
+    await db('photo_faces').insert({ photo_id: id, event_id: eventId, person_id: person, bbox_x: 100, bbox_y: 100, bbox_w: 60, bbox_h: 80, det_score: 0.9 });
+    const list = await require('../../src/services/facePeopleService').listPeople(eventId, { forAdmin: true, minClusterSize: 1 });
+    // In the 400 x 600 edit the box is [220, 100, 80, 60]; delivered at 200 x 300 it is half that.
+    expect(list.find((p) => p.label === 'Capped').cover).toMatchObject({ bbox: [110, 50, 40, 30], photo_width: 200, photo_height: 300 });
+  });
+});
+
 describe('focal point after a geometry change', () => {
   it('carries a manual point through a rotation and clears a detected one', () => {
     const photo = { width: 600, height: 400, focal_x: 0.25, focal_y: 0.5, focal_source: 'manual' };

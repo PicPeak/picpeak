@@ -131,9 +131,11 @@ async function refocusFromFaces(photo) {
 /**
  * A face box as the photo's guests see it (issue 2619): `row` carries the
  * box in original pixels (bbox_x..bbox_h), photo_width / photo_height and
- * the photo's edit_params. For an edited photo the box and the size it is
- * measured against are the edited image's, so a face cover cut from the
- * edited preview shows the face; null when the edit cropped the face away.
+ * the photo's edit_params, edit_width / edit_height. For an edited photo the
+ * box and the size it is measured against are the delivered image's (the
+ * size the listings report, smaller than the edit when the render is capped
+ * or a RAW was developed at half size), so a face cover cut from the edited
+ * preview shows the face; null when the edit cropped the face away.
  * Unedited photos are returned as they are.
  */
 function faceBoxForGuests(row) {
@@ -146,7 +148,13 @@ function faceBoxForGuests(row) {
   if (!moved.faces.length) return null;
   const round = (v) => Math.round(v * 100) / 100;
   const [face] = moved.faces;
-  return { bbox: [round(face.x), round(face.y), round(face.w), round(face.h)], photo_width: moved.width, photo_height: moved.height };
+  const delivered = require('./photoEdits').deliveredDimensions({ ...row, width: moved.width, height: moved.height });
+  const sx = delivered.width / moved.width;
+  const sy = delivered.height / moved.height;
+  return {
+    bbox: [round(face.x * sx), round(face.y * sy), round(face.w * sx), round(face.h * sy)],
+    photo_width: delivered.width, photo_height: delivered.height,
+  };
 }
 
 module.exports = { faceFocalPoint, refocusFromFaces, faceBoxForGuests };
