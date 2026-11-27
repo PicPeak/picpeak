@@ -324,3 +324,33 @@ describe('batch copy and presets', () => {
     expect((await auth(request(presetApp).get(base))).body.presets).toEqual([]);
   });
 });
+
+describe('an edited photo whose render fails', () => {
+  it('is left out of the archives, which still go out; never its unedited original', async () => {
+    const dir = path.join(process.env.STORAGE_PATH, 'events/active/edit-route');
+    fs.writeFileSync(path.join(dir, 'broken.jpg'), Buffer.from('not an image at all'));
+    const brokenId = unwrap(await db('photos').insert({
+      event_id: event.id, filename: 'broken.jpg', path: 'edit-route/broken.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', size_bytes: 19, processing_status: 'complete', uploaded_at: new Date().toISOString(),
+      width: 800, height: 600, edit_params: JSON.stringify({ v: 1, exposure: 1 }), edit_rev: 1, edit_applied_rev: 1,
+    }).returning('id'));
+    try {
+      const streamed = await zipEntries((await binary(guest('get', '/download-all')).expect(200)).body);
+      expect(Object.keys(streamed).some((name) => name.startsWith('broken'))).toBe(false);
+      expect(Object.keys(streamed).some((name) => name.startsWith('beach'))).toBe(true);
+      const selected = await binary(guest('post', '/download-selected').send({ photo_ids: [brokenId, photoId] }));
+      expect(selected.status).toBe(200);
+      const entries = await zipEntries(selected.body);
+      expect(Object.keys(entries).some((name) => name.startsWith('broken'))).toBe(false);
+      const zip = require('../../src/services/downloadZipService');
+      expect((await zip.generateZip(event.id)).success).toBe(true);
+      const jobs = require('../../src/services/downloadJobService');
+      const fresh = await db('events').where({ id: event.id }).first();
+      const job = await jobs.createJob({ event: fresh, resolution: 'original', photoIds: [brokenId, photoId], accessLevel: 'guest' });
+      await jobs.liveBuilds.get(job.id);
+      expect((await db('download_jobs').where({ id: job.id }).first()).status).toBe('ready');
+    } finally {
+      await db('photos').where({ id: brokenId }).delete();
+    }
+  });
+});

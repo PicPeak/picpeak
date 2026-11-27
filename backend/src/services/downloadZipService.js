@@ -317,7 +317,7 @@ class DownloadZipService {
         .select('*')
         .orderBy('type', 'asc')
         .orderBy('uploaded_at', 'desc')) {
-        photos.push(await require('./photoEdits').deliveredPhoto(row));
+        photos.push(await require('./photoEdits').deliveredPhoto(row, { unavailableOnFailure: true }));
       }
 
       if (photos.length === 0) return { success: false, error: 'No photos' };
@@ -399,6 +399,14 @@ class DownloadZipService {
             // through the storage backend. resolvePhotoStorageKey returns null
             // for external, in which case fall back to resolvePhotoFilePath.
             const storageKey = resolvePhotoStorageKey(event, photo);
+            // A file that is not there is skipped, like a source that cannot
+            // be rendered: a lazy local read would fail the whole archive
+            // after it started (an edited photo whose render failed, issue
+            // 2619, is delivered under a key with no file).
+            if (storageKey && storage.kind() === 'local' && !(await storage.stat(storageKey).catch(() => null))) {
+              logger.warn('Skipping photo in pre-zip', { photoId: photo.id, error: 'missing in storage' });
+              continue;
+            }
 
             // Resize to the gallery's standard resolution (#858) and/or
             // watermark. Returns null when neither applies, so an

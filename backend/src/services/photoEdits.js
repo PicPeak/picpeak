@@ -402,11 +402,20 @@ const asJpegName = (name) => (name ? `${String(name).replace(/\.[^./\\]*$/, '')}
  * the edited size, and no pre-generated watermark copy unless that copy was
  * made from this revision. Unchanged for a photo without an edit.
  */
-async function deliveredPhoto(photo, options) {
+async function deliveredPhoto(photo, options = {}) {
   if (!photo || isVideoRow(photo)) return photo;
   const row = await withEditColumns(photo);
   if (!paramsOf(row)) return photo;
-  const key = await ensureEditedSource(row, options);
+  let key;
+  try {
+    key = await ensureEditedSource(row, options);
+  } catch (err) {
+    if (!options.unavailableOnFailure) throw err;
+    // An archive builder skips this photo like any other unreadable file:
+    // it is delivered under a render key no file has, never as its original.
+    logger.warn(`Photo edit: photo ${row.id} could not be rendered for a download: ${err.message}`);
+    key = `edits/edit_p${row.id}_r${Number(row.edit_rev) || 0}_s${'0'.repeat(10)}_${'0'.repeat(12)}.jpg`;
+  }
   if (!key) return photo;
   const current = await db('photos').where({ id: row.id }).first(['edit_rev', 'edit_width', 'edit_height', 'watermark_path']);
   return {

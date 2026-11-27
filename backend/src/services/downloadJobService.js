@@ -488,7 +488,7 @@ class DownloadJobService {
       for (const row of await progress.wait(this.photoQuery(event.id, photoIds, accessLevel, folders)
         .select('photos.*').orderBy('photos.uploaded_at', 'desc'))) {
         // Edited photos (issue 2619) as their edited render.
-        photos.push(await progress.wait(photoEdits.deliveredPhoto(row)));
+        photos.push(await progress.wait(photoEdits.deliveredPhoto(row, { unavailableOnFailure: true })));
       }
       if (!photos.length) throw new Error('No photos available for this selection');
 

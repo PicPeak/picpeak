@@ -192,9 +192,12 @@ function notifySinglePhotoDownload(event, req) {
 
 // Edited photos (issue 2619) go into an archive as their edited render, named
 // and typed as the JPEG it is. One at a time: a missing render is drawn here.
+// One that cannot be rendered is skipped by the archive loop like any other
+// unreadable photo (deliveredPhoto's unavailableOnFailure), never shipped as
+// its original.
 async function deliveredPhotos(rows) {
   const delivered = [];
-  for (const row of rows) delivered.push(await photoEdits.deliveredPhoto(row));
+  for (const row of rows) delivered.push(await photoEdits.deliveredPhoto(row, { unavailableOnFailure: true }));
   return delivered;
 }
 

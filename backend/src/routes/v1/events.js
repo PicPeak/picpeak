@@ -1750,7 +1750,7 @@ router.get(
       // edited file is sized below with the unsized rows instead.
       const photos = [];
       for (const row of await selection().applySorting('filename', 'asc').getQuery().select('photos.*')) {
-        const delivered = await photoEdits.deliveredPhoto(row);
+        const delivered = await photoEdits.deliveredPhoto(row, { unavailableOnFailure: true });
         if (deliveredKey(delivered) && Number(row.size_bytes) > 0) totalBytes -= Number(row.size_bytes);
         photos.push(delivered);
       }

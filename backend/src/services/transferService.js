@@ -818,7 +818,7 @@ async function loadTransferPhotos(transferId) {
 async function streamTransferArchive(transfer, res) {
   // Edited photos (issue 2619) go out as their edited render.
   const photos = [];
-  for (const row of await loadTransferPhotos(transfer.id)) photos.push(await photoEdits.deliveredPhoto(row));
+  for (const row of await loadTransferPhotos(transfer.id)) photos.push(await photoEdits.deliveredPhoto(row, { unavailableOnFailure: true }));
 
   // Left while the rows were being read: 'close' has fired already and will
   // not fire again for the listener below (issue 2130).
