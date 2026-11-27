@@ -7686,7 +7686,8 @@
     "submit": "Admin-Konto erstellen",
     "success": "Admin-Konto erstellt. Willkommen!",
     "genericError": "Einrichtung fehlgeschlagen. Bitte versuchen Sie es erneut.",
-    "tooManyAttempts": "Zu viele Versuche. Bitte warten Sie einen Moment und versuchen Sie es erneut."
+    "tooManyAttempts": "Zu viele Versuche. Bitte warten Sie einen Moment und versuchen Sie es erneut.",
+    "usageGroupWebsite": "Ihre öffentliche Website"
   },
   "adminLogin": {
     "title": "Admin-Anmeldung",

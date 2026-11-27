@@ -7583,7 +7583,8 @@
     "submit": "Create admin account",
     "success": "Admin account created. Welcome!",
     "genericError": "Setup failed. Please try again.",
-    "tooManyAttempts": "Too many attempts. Please wait a moment and try again."
+    "tooManyAttempts": "Too many attempts. Please wait a moment and try again.",
+    "usageGroupWebsite": "Your public website"
   },
   "adminLogin": {
     "title": "Admin Login",
