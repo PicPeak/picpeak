@@ -3085,7 +3085,9 @@
       "previewSandboxed": "Sandboxed preview",
       "previewDisabled": "Enable the public site to see the live preview.",
       "sanitizationNotice": "Scripts, embedded frames, and unsafe attributes are removed before publishing. Only safe HTML, links, and images are allowed.",
-      "htmlRequired": "Provide HTML content before enabling the public site."
+      "htmlRequired": "Provide HTML content before enabling the public site.",
+      "openWebsiteBuilder": "Open the website builder",
+      "websiteBuilderNotice": "The website builder is on. Once you publish a website there, it replaces this page at the site root. A saved landing page is copied into the builder as a custom HTML block the first time the builder opens."
     },
     "storage": {
       "totalUsed": "Total Used",

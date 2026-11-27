@@ -24,6 +24,7 @@ vi.mock('../../../hooks/useLocalizedDate', () => ({
   useLocalizedDate: () => ({ format: String, formatDateTime: String, formatTime: String }),
 }));
 vi.mock('../../../components/admin/CMSEditor', () => ({ CMSEditor: () => <div>editor</div> }));
+vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () => false }));
 
 const stored = { slug: 'impressum', title_en: 'Imprint', title_de: 'Impressum', content_en: '<p>x</p>', content_de: '<p>x</p>', logo_url: null as string | null };
 let current = { ...stored };

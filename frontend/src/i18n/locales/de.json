@@ -3818,7 +3818,9 @@
       "previewSandboxed": "Sandbox-Vorschau",
       "previewDisabled": "Aktivieren Sie die öffentliche Seite, um die Live-Vorschau zu sehen.",
       "sanitizationNotice": "Skripte, iframes und unsichere Attribute werden vor der Veröffentlichung entfernt. Erlaubt sind sichere HTML-Elemente, Links und Bilder.",
-      "htmlRequired": "Legen Sie HTML-Inhalt fest, bevor die öffentliche Seite aktiviert wird."
+      "htmlRequired": "Legen Sie HTML-Inhalt fest, bevor die öffentliche Seite aktiviert wird.",
+      "openWebsiteBuilder": "Website-Baukasten öffnen",
+      "websiteBuilderNotice": "Der Website-Baukasten ist eingeschaltet. Sobald Sie dort eine Website veröffentlichen, ersetzt sie diese Seite unter der Hauptadresse. Eine gespeicherte Startseite wird beim ersten Öffnen des Baukastens als eigener HTML-Block übernommen."
     },
     "storage": {
       "totalUsed": "Gesamt verwendet",

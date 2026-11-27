@@ -3,9 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { FileText, Globe, Sparkles, ShieldCheck, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 
-import { Button, Card, Input, Loading, useConfirm } from '../../components/common';
+import { Button, Card, Input, Loading, Notice, useConfirm } from '../../components/common';
+import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
 import { CMSEditor } from '../../components/admin/CMSEditor';
 import { cmsService } from '../../services/cms.service';
 import type { CMSPage as CMSPageType } from '../../services/cms.service';
@@ -18,6 +20,7 @@ import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 
 export const CMSPage: React.FC = () => {
   const { t } = useTranslation();
+  const websiteBuilderOn = useFeatureEnabled('websiteBuilder');
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   const queryClient = useQueryClient();
   const [selectedPage, setSelectedPage] = useState<string>('impressum');
@@ -405,6 +408,18 @@ export const CMSPage: React.FC = () => {
               </span>
             </label>
           </div>
+
+          {/* Website builder (issue 2618): once something is published there,
+              it answers `/` and this page is only its fallback. */}
+          {websiteBuilderOn && (
+            <Notice
+              tone="info"
+              size="sm"
+              action={<Link to="/admin/website" className="text-sm font-medium text-accent hover:underline">{t('settings.publicSite.openWebsiteBuilder', 'Open the website builder')}</Link>}
+            >
+              {t('settings.publicSite.websiteBuilderNotice', 'The website builder is on. Once you publish a website there, it replaces this page at the site root. A saved landing page is copied into the builder as a custom HTML block the first time the builder opens.')}
+            </Notice>
+          )}
 
           {publicSiteLoading ? (
             <div className="flex items-center justify-center min-h-[240px]">
