@@ -705,8 +705,12 @@ async function applyPhoto(photo, references) {
     await dropWatermarkCopy(row);
     const zip = require('./downloadZipService');
     await zip.invalidateIfBuilt(Number(row.event_id));
-    await db('photos').where({ id: row.id, edit_rev: rev })
-      .update({ edit_applied_rev: rev, edit_failed_rev: null, edit_error: null });
+    // The applied edit and its size with it: what the previews now show.
+    await db('photos').where({ id: row.id, edit_rev: rev }).update({
+      edit_applied_rev: rev, edit_applied_params: row.edit_params || null,
+      edit_applied_width: row.edit_params ? row.edit_width : null, edit_applied_height: row.edit_params ? row.edit_height : null,
+      edit_failed_rev: null, edit_error: null,
+    });
     return true;
   } catch (err) {
     logger.warn(`Photo edit: photo ${photo.id} revision ${rev} could not be applied: ${err.message}`);

@@ -131,19 +131,21 @@ async function refocusFromFaces(photo) {
 /**
  * A face box as the photo's guests see it (issue 2619): `row` carries the
  * box in original pixels (bbox_x..bbox_h), photo_width / photo_height and
- * the photo's edit_params, edit_width / edit_height. For an edited photo the
- * box and the size it is measured against are the delivered image's (the
- * size the listings report, smaller than the edit when the render is capped
- * or a RAW was developed at half size), so a face cover cut from the edited
- * preview shows the face; null when the edit cropped the face away.
- * Unedited photos are returned as they are.
+ * the photo's applied edit (edit_applied_params, edit_applied_width /
+ * edit_applied_height, edit_applied_rev). The box and the size it is
+ * measured against are those of the applied revision's delivered image,
+ * the one its previews show (smaller than the edit when the render is
+ * capped or a RAW was developed at half size): a newer save still being
+ * applied, or one whose render failed, changes nothing until it lands.
+ * Null when the edit cropped the face away. Unedited photos are returned
+ * as they are.
  */
 function faceBoxForGuests(row) {
   // The applied revision names the preview the box is to be cut from (the
   // admin preview URL's `e=`), so no older cached preview meets new boxes.
   const version = { edit_applied_rev: Number(row.edit_applied_rev) || 0 };
   const box = { bbox: [row.bbox_x, row.bbox_y, row.bbox_w, row.bbox_h], photo_width: row.photo_width ?? null, photo_height: row.photo_height ?? null, ...version };
-  const edit = require('./photoEdits').paramsOf(row);
+  const edit = require('./photoEdits').paramsOf({ edit_params: row.edit_applied_params });
   const width = Number(row.photo_width);
   const height = Number(row.photo_height);
   if (!edit || !(width > 0) || !(height > 0)) return box;
@@ -151,7 +153,10 @@ function faceBoxForGuests(row) {
   if (!moved.faces.length) return null;
   const round = (v) => Math.round(v * 100) / 100;
   const [face] = moved.faces;
-  const delivered = require('./photoEdits').deliveredDimensions({ ...row, width: moved.width, height: moved.height });
+  const delivered = {
+    width: Number(row.edit_applied_width) || moved.width,
+    height: Number(row.edit_applied_height) || moved.height,
+  };
   const sx = delivered.width / moved.width;
   const sy = delivered.height / moved.height;
   return {

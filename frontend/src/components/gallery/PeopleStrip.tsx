@@ -43,9 +43,12 @@ const PersonAvatar: React.FC<PersonAvatarProps> = ({
 }) => {
   const { t } = useTranslation();
 
+  // Measured against the size the box came with (issue 2619), the listing's otherwise.
+  const boxWidth = person.cover?.photo_width || photo?.width;
+  const boxHeight = person.cover?.photo_height || photo?.height;
   const cropStyle = useMemo(
-    () => faceCropStyle(person.cover, photo?.width, photo?.height, size),
-    [person.cover, photo?.width, photo?.height, size],
+    () => faceCropStyle(person.cover, boxWidth, boxHeight, size),
+    [person.cover, boxWidth, boxHeight, size],
   );
 
   const label = person.label

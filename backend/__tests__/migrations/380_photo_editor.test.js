@@ -29,7 +29,7 @@ describe('migration 380 on SQLite', () => {
     await migration.up(db);
     expect(await db('photos').first()).toMatchObject({
       filename: 'old.jpg', edit_params: null, edit_rev: 0, edit_applied_rev: 0, edit_render_path: null, edit_width: null, edit_height: null,
-      edit_failed_rev: null, edit_error: null,
+      edit_applied_params: null, edit_applied_width: null, edit_applied_height: null, edit_failed_rev: null, edit_error: null,
     });
     expect(await db.schema.hasTable('photo_edit_presets')).toBe(true);
     expect(await db('feature_flags').where({ key: 'photoEditor' }).first()).toMatchObject({ value: 0 });

@@ -600,6 +600,7 @@ describe('face covers of an edited photo', () => {
       event_id: eventId, filename: name, path: `edit-card/${name}`, type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
       width: 600, height: 400, size_bytes: 1, processing_status: 'complete', uploaded_at: new Date().toISOString(),
       edit_params: edit ? math.canonicalJson(validated(edit)) : null, edit_rev: edit ? 1 : 0, edit_applied_rev: edit ? 1 : 0,
+      edit_applied_params: edit ? math.canonicalJson(validated(edit)) : null,
     }).returning('id'));
     const turned = await insertPhoto('face-turned.jpg', { rotate: 90 });
     const cropped = await insertPhoto('face-cropped.jpg', { crop: { x: 0.5, y: 0, w: 0.5, h: 1 } });
@@ -631,6 +632,7 @@ describe('face covers of an edited photo delivered smaller', () => {
       event_id: eventId, filename: 'face-capped.jpg', path: 'edit-card/face-capped.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
       width: 600, height: 400, size_bytes: 1, processing_status: 'complete', uploaded_at: new Date().toISOString(),
       edit_params: math.canonicalJson(validated({ rotate: 90 })), edit_rev: 1, edit_applied_rev: 1, edit_width: 200, edit_height: 300,
+      edit_applied_params: math.canonicalJson(validated({ rotate: 90 })), edit_applied_width: 200, edit_applied_height: 300,
     }).returning('id'));
     const person = unwrap(await db('event_people').insert({ event_id: eventId, label: 'Capped', face_count_total: 1 }).returning('id'));
     await db('photo_faces').insert({ photo_id: id, event_id: eventId, person_id: person, bbox_x: 100, bbox_y: 100, bbox_w: 60, bbox_h: 80, det_score: 0.9 });
@@ -638,6 +640,44 @@ describe('face covers of an edited photo delivered smaller', () => {
     // In the 400 x 600 edit the box is [220, 100, 80, 60]; delivered at 200 x 300 it is half that.
     // With the applied revision, which names the preview the box belongs to.
     expect(list.find((p) => p.label === 'Capped').cover).toMatchObject({ bbox: [110, 50, 40, 30], photo_width: 200, photo_height: 300, edit_applied_rev: 1 });
+  });
+});
+
+describe('face covers while an edit is being applied', () => {
+  it('follow the applied revision: unchanged while pending, turned once applied, kept after a failed render', async () => {
+    const eventId = (await row()).event_id;
+    fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/face-pending.jpg'));
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'face-pending.jpg', path: 'edit-card/face-pending.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: originalBytes.length, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    const person = unwrap(await db('event_people').insert({ event_id: eventId, label: 'Pending', face_count_total: 1 }).returning('id'));
+    await db('photo_faces').insert({ photo_id: id, event_id: eventId, person_id: person, bbox_x: 100, bbox_y: 100, bbox_w: 60, bbox_h: 80, det_score: 0.9 });
+    const cover = async () => (await require('../../src/services/facePeopleService').listPeople(eventId, { forAdmin: true, minClusterSize: 1 }))
+      .find((p) => p.label === 'Pending').cover;
+    const fresh = () => db('photos').where({ id }).first();
+    const unturned = { bbox: [100, 100, 60, 80], photo_width: 600, photo_height: 400 };
+    const turned = { bbox: [220, 100, 80, 60], photo_width: 400, photo_height: 600 };
+    try {
+      await photoEdits().saveEdits([{ photo: await fresh(), params: validated({ rotate: 90 }) }]);
+      // Guests still get the unturned previews: the boxes are theirs.
+      expect(await cover()).toMatchObject({ ...unturned, edit_applied_rev: 0 });
+      await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+      expect(await cover()).toMatchObject({ ...turned, edit_applied_rev: 1 });
+      // A crop whose render fails: the turned previews stay, and so do their boxes.
+      await photoEdits().saveEdits([{ photo: await fresh(), params: validated({ rotate: 90, crop: { x: 0, y: 0, w: 0.5, h: 1 } }) }]);
+      fs.renameSync(storagePath('events/active/edit-card/face-pending.jpg'), storagePath('events/active/edit-card/face-pending.gone'));
+      try {
+        expect(await photoEdits().runPass({ active: () => true, sleep: async () => {} })).toMatchObject({ failed: 1 });
+      } finally {
+        fs.renameSync(storagePath('events/active/edit-card/face-pending.gone'), storagePath('events/active/edit-card/face-pending.jpg'));
+      }
+      expect(await cover()).toMatchObject({ ...turned, edit_applied_rev: 1 });
+    } finally {
+      await db('photo_faces').where({ photo_id: id }).delete();
+      await db('photos').where({ id }).delete();
+    }
   });
 });
 
