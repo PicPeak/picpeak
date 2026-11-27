@@ -19,10 +19,17 @@ jest.setTimeout(120000);
 // ffmpeg is not part of the test run: the hero video's remux is stood in for
 // by a copy, the probe by a fixed answer.
 const mockProbe = jest.fn();
+const mockTranscode = jest.fn((src, out) => require('fs').promises.copyFile(src, out));
 jest.mock('../../src/services/videoRenditionService', () => ({
   probe: (...args) => mockProbe(...args),
-  playsInBrowser: () => true,
-  transcode: (src, out) => require('fs').promises.copyFile(src, out),
+  // The gallery web copy's rules: plays as it is when it is H.264/AAC MP4.
+  playsInBrowser: (probed) => probed.videoCodec !== 'hevc',
+  hasFaststart: async () => true,
+  hdrPlan: async (probed, remux) => {
+    const hdr = !remux && probed.colorTransfer === 'smpte2084';
+    return { hdr, toneMap: hdr };
+  },
+  transcode: (...args) => mockTranscode(...args),
 }));
 
 let db; let cleanup; let app;
@@ -494,6 +501,14 @@ describe('hero video', () => {
     const long = await request(app).post('/api/admin/website/assets').set(auth(adminId)).attach('file', mp4, { filename: 'long.mp4', contentType: 'video/mp4' });
     expect(long.status).toBe(400);
     expect(long.body.code).toBe('WEBSITE_ASSET_TOO_LONG');
+  });
+
+  test('an HDR HEVC video is tone-mapped like a gallery web copy', async () => {
+    mockTranscode.mockClear();
+    mockProbe.mockResolvedValue({ duration: 8, width: 3840, height: 2160, videoCodec: 'hevc', colorTransfer: 'smpte2084' });
+    const res = await request(app).post('/api/admin/website/assets').set(auth(adminId)).attach('file', mp4, { filename: 'hdr.mp4', contentType: 'video/mp4' });
+    expect(res.status).toBe(201);
+    expect(mockTranscode).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.objectContaining({ remux: false, toneMap: true }));
   });
 
   test('a file that only claims to be MP4 is refused', async () => {

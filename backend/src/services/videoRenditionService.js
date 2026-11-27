@@ -402,6 +402,18 @@ function remuxOptions({ videoIndex = null, audioIndex = null } = {}) {
  * gets longer than VIDEO_RENDITION_TIMEOUT_MS, which is only the minimum.
  * `timeoutMs` overrides it (tests).
  */
+/**
+ * Whether a copy of `probed` is tone-mapped. An HDR source is tone-mapped to
+ * SDR when this ffmpeg can; otherwise the copy is still made (it plays, which
+ * the original did not) and the caller logs why it looks flat. A remux copies
+ * the streams: there is nothing to tone-map. Shared by the gallery web copy
+ * and the website builder's hero video (issue 2618).
+ */
+async function hdrPlan(probed, remux) {
+  const hdr = !remux && isHdr(probed);
+  return { hdr, toneMap: hdr && await canToneMap() };
+}
+
 function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, remux = false, mayTranscode = true } = {}) {
   return mediaProcesses.withSnapshot(localPath, 'rendition', async (snapshot, details) => {
     const { policy } = details;
@@ -506,12 +518,7 @@ async function renderWebCopy(photoId) {
     let remuxed = false;
     const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-webcopy-'));
     const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.mp4`);
-    // An HDR source is tone-mapped to SDR when this ffmpeg can; otherwise the
-    // copy is still made (it plays, which the original did not) and the log
-    // says why it looks flat.
-    // A remux copies the streams: there is nothing to tone-map.
-    const hdr = !remux && isHdr(probed);
-    const toneMap = hdr && await canToneMap();
+    const { hdr, toneMap } = await hdrPlan(probed, remux);
     if (hdr && !toneMap) {
       logger.warn(`videoRendition: photo ${photoId} is HDR (${probed.colorTransfer}) but this ffmpeg lacks zscale/tonemap; the copy is not tone-mapped`);
     }
@@ -578,6 +585,7 @@ module.exports = {
   remuxOptions,
   isHdr,
   canToneMap,
+  hdrPlan,
   _resetToneMapSupportForTests,
   HDR_TO_SDR_FILTER,
   transcode,

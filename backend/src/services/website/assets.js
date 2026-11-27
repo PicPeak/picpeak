@@ -19,6 +19,7 @@ const path = require('path');
 const sharp = require('../isolatedSharp');
 const { db } = require('../../database/db');
 const { AppError } = require('../../utils/errors');
+const logger = require('../../utils/logger');
 const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../../utils/sqlSecurity');
 const { getStorage } = require('../storage');
 const { getStoragePath } = require('../../config/storage');
@@ -116,7 +117,12 @@ async function createVideoAsset(file, adminId) {
   const publicId = crypto.randomBytes(12).toString('hex');
   const tmpOut = path.join(getStoragePath(), 'temp', `site_${publicId}.mp4`);
   try {
-    await video.transcode(file.path, tmpOut, { remux: video.playsInBrowser(probed, true), duration });
+    // The gallery web copy's decision: remux what plays already, else
+    // transcode, tone-mapping HDR to SDR when this ffmpeg can.
+    const remux = video.playsInBrowser(probed, await video.hasFaststart(file.path));
+    const { hdr, toneMap } = await video.hdrPlan(probed, remux);
+    if (hdr && !toneMap) logger.warn('Website hero video is HDR but this ffmpeg lacks zscale/tonemap; the copy is not tone-mapped');
+    await video.transcode(file.path, tmpOut, { remux, toneMap, duration });
     const key = `website/${publicId}/video.mp4`;
     await getStorage().putFromFile(key, tmpOut, { contentType: 'video/mp4' });
     const stat = await fs.stat(tmpOut);
