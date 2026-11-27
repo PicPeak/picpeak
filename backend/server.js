@@ -877,7 +877,11 @@ app.get('/robots.txt', async (req, res) => {
 
 // sitemap.xml of the published website (issue 2618); 404 while the builder
 // is not live, as before.
-app.get('/sitemap.xml', async (req, res, next) => {
+// These run before the SPA block mounts compression() (and the API stays
+// uncompressed), so the website's HTML and sitemap take it themselves, as
+// the home page gets it there. /site-media serves already compressed images.
+const websiteCompression = compression();
+app.get('/sitemap.xml', websiteCompression, async (req, res, next) => {
   try {
     const xml = await require('./src/services/website/service').sitemapXml();
     if (!xml) return next();
@@ -898,7 +902,10 @@ app.use('/site-media', setCorsHeaders, require('./src/routes/publicWebsiteMedia'
 // Website builder pages at a single clean path segment (issue 2618). Only
 // slug-shaped paths reach the handler; it hands everything it does not own
 // on to the SPA routes below.
-app.get(/^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/, handleWebsitePageRequest);
+// Paths the app owns (/health, /api, /admin, ...) pass by untouched.
+const compressWebsitePage = (req, res, next) => (
+  require('./src/services/website/document').RESERVED_SLUGS.has(req.params[0]) ? next() : websiteCompression(req, res, next));
+app.get(/^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/, compressWebsitePage, handleWebsitePageRequest);
 
 // Dynamic favicon endpoints. Browsers — notably Safari — request
 // /favicon.ico and /apple-touch-icon*.png directly at the site root and are

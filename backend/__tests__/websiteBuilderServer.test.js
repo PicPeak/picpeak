@@ -85,6 +85,21 @@ test('with the flag on and a published site, / and /<slug> are server-rendered p
   expect(home.headers.location).toBe('/');
 });
 
+test('website subpages and the sitemap are compressed like the home page', async () => {
+  await setSetting('seo_allow_indexing', true, 'seo');
+  const about = await request(app).get('/about').set('Accept-Encoding', 'gzip');
+  expect(about.status).toBe(200);
+  expect(about.headers['content-encoding']).toBe('gzip');
+  const sitemap = await request(app).get('/sitemap.xml').set('Accept-Encoding', 'gzip');
+  // Below compression's 1 KB threshold it is sent plain, but it went through it.
+  expect(sitemap.headers.vary).toMatch(/Accept-Encoding/);
+  // The API keeps its behaviour.
+  const api = await request(app).get('/api/public/settings').set('Accept-Encoding', 'gzip');
+  expect(api.headers['content-encoding']).toBeUndefined();
+  const health = await request(app).get('/health').set('Accept-Encoding', 'gzip');
+  expect(health.headers.vary || '').not.toMatch(/Accept-Encoding/);
+});
+
 test('paths the app owns and unknown slugs still reach the SPA', async () => {
   for (const p of ['/admin', '/setup', '/impressum', '/no-such-page', '/book']) {
     // eslint-disable-next-line no-await-in-loop
