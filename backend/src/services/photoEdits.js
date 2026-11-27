@@ -518,8 +518,13 @@ function focalAfterEdit(photo, before, after) {
  * Save edits: `changes` is [{ photo, params }] with params validated (null
  * resets). One transaction, every row's revision bumped; the background pass
  * renders and rebuilds. Returns the new revisions by photo id.
+ *
+ * `onlyUnedited`: write only while the row is still the unedited one `photo`
+ * was read as (no edit, the same revision); a row that changed meanwhile is
+ * left alone and missing from the result. The default RAW develop is queued
+ * from such an earlier read and must never replace an edit saved since.
  */
-async function saveEdits(changes) {
+async function saveEdits(changes, { onlyUnedited = false } = {}) {
   const revisions = {};
   const unreachable = [];
   await db.transaction(async (trx) => {
@@ -542,16 +547,16 @@ async function saveEdits(changes) {
         update.edit_height = size.height;
       }
       const focal = focalAfterEdit(photo, before, next);
-      if (focal) {
-        Object.assign(update, focal);
-        // Thumbnail tier keys name the focal point; once it moves, no key the
-        // row gives (and no later cleanup) reaches the ones cut at the old
-        // point. Listed from the row as it is now, removed once saved.
-        if (focal.focal_x !== photo.focal_x || focal.focal_y !== photo.focal_y || focal.focal_source !== photo.focal_source) {
-          unreachable.push(...tierKeysAtCurrentPoint(photo));
-        }
+      if (focal) Object.assign(update, focal);
+      const target = trx('photos').where({ id: photo.id });
+      if (onlyUnedited) target.whereNull('edit_params').where('edit_rev', Number(photo.edit_rev) || 0);
+      if (!(await target.update(update))) continue;
+      // Thumbnail tier keys name the focal point; once it moves, no key the
+      // row gives (and no later cleanup) reaches the ones cut at the old
+      // point. Listed from the row as it was, removed once saved.
+      if (focal && (focal.focal_x !== photo.focal_x || focal.focal_y !== photo.focal_y || focal.focal_source !== photo.focal_source)) {
+        unreachable.push(...tierKeysAtCurrentPoint(photo));
       }
-      await trx('photos').where({ id: photo.id }).update(update);
       const row = await trx('photos').where({ id: photo.id }).first('edit_rev');
       revisions[photo.id] = Number(row.edit_rev);
     }
@@ -615,8 +620,9 @@ async function queueDefaultDevelop(photos) {
     if (isVideoRow(photo) || paramsOf(photo) || !(await rawDevelop.isRawSource(photo))) continue;
     changes.push({ photo, params: { ...math.DEFAULT_PARAMS, develop: true } });
   }
-  if (changes.length) await saveEdits(changes);
-  return changes.map((change) => change.photo.id);
+  // Over the unedited row as read here only: an edit saved meanwhile stays.
+  const revisions = changes.length ? await saveEdits(changes, { onlyUnedited: true }) : {};
+  return changes.map((change) => change.photo.id).filter((id) => revisions[id] !== undefined);
 }
 
 /** After a RAW upload finished processing: its default develop, when the studio asked for that. */

@@ -346,6 +346,31 @@ describe('noise reduction on a sensor developed at half size', () => {
   });
 });
 
+describe('the default RAW develop and a manual edit saved meanwhile', () => {
+  it('never replaces the edit: the default is written only over the unedited row it was queued from', async () => {
+    const rawDevelop = require('../../src/services/rawDevelop');
+    const isRaw = jest.spyOn(rawDevelop, 'isRawSource').mockResolvedValue(true);
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'race.cr3', path: 'edit-card/card.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/x-canon-cr3', width: 600, height: 400, size_bytes: 1, processing_status: 'complete', uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    try {
+      // The batch (or an upload's auto develop) read the photo unedited...
+      const snapshot = await db('photos').where({ id }).first();
+      // ...an admin saved an edit meanwhile...
+      await photoEdits().saveEdits([{ photo: await db('photos').where({ id }).first(), params: validated({ exposure: 1, develop: true }) }]);
+      // ...and the default lands afterwards.
+      expect(await photoEdits().queueDefaultDevelop([snapshot])).toEqual([]);
+      const after = await db('photos').where({ id }).first();
+      expect(JSON.parse(after.edit_params)).toMatchObject({ exposure: 1 });
+      expect(after.edit_rev).toBe(1);
+    } finally {
+      isRaw.mockRestore();
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
+
 describe('two replicas rendering the same revision', () => {
   it('the later one adopts the render the first published, and that file survives', async () => {
     fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/race.jpg'));
