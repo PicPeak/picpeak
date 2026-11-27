@@ -351,6 +351,29 @@ describe('noise reduction on a sensor developed at half size', () => {
   });
 });
 
+describe('an edit whose render failed', () => {
+  it('is not rendered again on a request: 503 at once; the pass (and so an admin retry) tries it', async () => {
+    fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/failed-once.jpg'));
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'failed-once.jpg', path: 'edit-card/failed-once.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: originalBytes.length, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    const fresh = () => db('photos').where({ id }).first();
+    try {
+      await photoEdits().saveEdits([{ photo: await fresh(), params: validated({ exposure: 0.4 }) }]);
+      // The pass failed on it (the source has since become readable again).
+      await db('photos').where({ id }).update({ edit_failed_rev: 1, edit_error: 'render' });
+      await expect(photoEdits().ensureEditedSource(await fresh())).rejects.toMatchObject({ status: 503, code: 'EDIT_FAILED' });
+      expect((await fresh()).edit_render_path).toBeNull();
+      await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+      expect(await fresh()).toMatchObject({ edit_applied_rev: 1, edit_failed_rev: null });
+    } finally {
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
+
 describe('a guest request while the pass applies a revision', () => {
   it('cannot leave the old revision\'s preview in place once the new one is applied', async () => {
     fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/race-preview.jpg'));

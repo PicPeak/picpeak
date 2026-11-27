@@ -413,10 +413,20 @@ async function renderAndRecord(photo, params, options) {
  * process); null for a photo without an edit. Throws when the render fails:
  * a caller must never fall back to the original, which the edit may crop.
  */
-async function ensureEditedSource(photo, { interactive = false } = {}) {
+async function ensureEditedSource(photo, { interactive = false, retryFailed = false } = {}) {
   photo = await withEditColumns(photo);
   let params = paramsOf(photo);
   if (!params) return null;
+  // A revision whose render failed is tried again by the background pass
+  // only (an admin retry asks it to), never on a request: each would queue
+  // another full render on the shared limit and fail again.
+  if (!retryFailed && photo.edit_view !== 'applied') {
+    const failed = 'edit_failed_rev' in photo ? photo.edit_failed_rev
+      : (await db('photos').where({ id: photo.id }).first('edit_failed_rev'))?.edit_failed_rev;
+    if (failed != null && Number(failed) === Number(photo.edit_rev)) {
+      throw Object.assign(new Error(`The edit of photo ${photo.id} could not be rendered; it is tried again later`), { status: 503, code: 'EDIT_FAILED' });
+    }
+  }
   // The source columns only where there is a render to check.
   photo = await withEditColumns(photo, { source: true });
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -766,7 +776,7 @@ async function applyPhoto(photo, references) {
     let row = await db('photos').where({ id: photo.id }).first();
     if (!row || Number(row.edit_rev) !== rev) return true;
     if (paramsOf(row)) {
-      const rendered = await ensureEditedSource(row).catch((err) => {
+      const rendered = await ensureEditedSource(row, { retryFailed: true }).catch((err) => {
         logger.warn(`Photo edit: photo ${photo.id} revision ${rev} could not be rendered: ${err.message}`);
         return null;
       });
