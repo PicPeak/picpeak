@@ -11,7 +11,7 @@ const { logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { formatDate } = require('../utils/dateFormatter');
-const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
+const { issuerIntlLocale, languageIntlLocale } = require('../utils/issuerIntlLocale');
 const emailProcessor = require('./emailProcessor');
 const businessProfileService = require('./businessProfileService');
 const { workingHours, localParts, depositReceivedMinor, ERASED_EMAIL } = require('./bookingService');
@@ -22,7 +22,7 @@ async function context(request) {
   const language = request.language || (profile && profile.default_locale) || 'en';
   const start = localParts(request.starts_at, timezone);
   const hold = localParts(request.hold_expires_at, timezone);
-  const locale = issuerIntlLocale(profile && profile.country_code) || (language === 'de' ? 'de-CH' : 'en-GB');
+  const locale = issuerIntlLocale(profile && profile.country_code) || languageIntlLocale(language);
   const estimate = new Intl.NumberFormat(locale, { style: 'currency', currency: request.currency || 'CHF' })
     .format(Number(request.estimate_minor || 0) / 100);
   return {
@@ -92,7 +92,7 @@ async function notifyDeclined(request, { lateReason = null } = {}) {
   const { language, vars } = await context(request);
   // What actually came in: a payment of another amount is refunded in full.
   // Amounts are hundredths in every currency, as everywhere in the app.
-  const deposit = new Intl.NumberFormat(language === 'de' ? 'de-CH' : 'en-GB', { style: 'currency', currency: request.currency || 'CHF' })
+  const deposit = new Intl.NumberFormat(languageIntlLocale(language), { style: 'currency', currency: request.currency || 'CHF' })
     .format(depositReceivedMinor(request) / 100);
   const late = LATE_PAYMENT_REASONS[lateReason];
   await queue('booking_request_declined', request.email, {

@@ -31,7 +31,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { unicodeSearchForms } = require('../utils/sqlSecurity');
-const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
+const { issuerIntlLocale, languageIntlLocale } = require('../utils/issuerIntlLocale');
 const { db, withRetry, logActivity } = require('../database/db');
 const { adminActivityActor } = require('../utils/activityActor');
 const logger = require('../utils/logger');
@@ -1309,7 +1309,7 @@ function formatMajor(minor, currency, locale, issuerCountryCode) {
   // Outside DACH we still honour the document locale.
   // A US issuer writes $1,000.00 the same way (utils/issuerIntlLocale).
   const intlLocale = issuerIntlLocale(issuerCountryCode)
-    || (locale === 'de' ? 'de-CH' : 'en-GB');
+    || languageIntlLocale(locale);
   return new Intl.NumberFormat(intlLocale, {
     style: 'currency', currency: (currency || 'CHF').toUpperCase(),
   }).format(Number(minor || 0) / 100);

@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
-const { issuerIntlLocale } = require('../../utils/issuerIntlLocale');
+const { issuerIntlLocale, languageIntlLocale } = require('../../utils/issuerIntlLocale');
 const { AppError } = require('../../utils/errors');
 const { nextDocumentNumber } = require('../../utils/documentSequences');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
@@ -361,7 +361,7 @@ async function resolveIntlLocale(docLocale) {
       return _cachedIntlLocale;
     }
   } catch (_) { /* fall through to per-locale default */ }
-  return docLocale === 'de' ? 'de-CH' : 'en-GB';
+  return languageIntlLocale(docLocale);
 }
 
 function formatMajor(minor, currency, locale) {
@@ -371,7 +371,7 @@ function formatMajor(minor, currency, locale) {
   // fall through to the legacy de-vs-en split; the cache fills after
   // the first send and every subsequent send uses the correct locale.
   const cached = _cachedIntlLocale;
-  const intlLocale = cached || (locale === 'de' ? 'de-CH' : 'en-GB');
+  const intlLocale = cached || languageIntlLocale(locale);
   // Best-effort warm-up — fire and forget; the next call hits cache.
   if (!cached) {
     resolveIntlLocale(locale).catch(() => { /* tolerate */ });
