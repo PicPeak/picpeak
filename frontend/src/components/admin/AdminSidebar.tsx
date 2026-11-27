@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   ChevronRight,
   LayoutDashboard,
-  BarChart3,
   Settings,
   X,
   Briefcase,
@@ -13,7 +12,6 @@ import {
   Mail,
   Share2,
   Workflow,
-  Globe,
   PanelLeftClose,
   PanelLeftOpen,
   Github,
@@ -143,8 +141,8 @@ interface NavItem {
 // from what is inside the way a duplicated permission list can.
 export const adminNavigation: NavItem[] = [
   { nameKey: 'navigation.dashboard', href: '/admin/dashboard', icon: LayoutDashboard, permission: false },
-  // Sharing section — the three ways files reach someone: the galleries, the
-  // archived ones, and a direct PicTransfer link.
+  // Sharing section — the galleries, the archived ones, PicTransfer, the
+  // public website and analytics (sharingNav.ts).
   { nameKey: 'navigation.sharing',   href: '/admin/events',    icon: Share2 },
   // Messages is a single page, so it stays a plain entry. It briefly shared a
   // "Communication" section with PicTransfer; sending files is not messaging,
@@ -152,11 +150,6 @@ export const adminNavigation: NavItem[] = [
   {
     nameKey: 'navigation.messages', href: '/admin/messages', icon: Mail,
     permission: 'email.view', featureFlag: 'messaging',
-  },
-  // Website builder (issue 2618): the public site, built from blocks.
-  {
-    nameKey: 'navigation.website', href: '/admin/website', icon: Globe,
-    permission: 'cms.view', featureFlag: 'websiteBuilder',
   },
   // Clients section (#354 follow-up) — admin-side surface for the
   // CRM-area sub-features. Today this entry leads to /admin/clients
@@ -213,7 +206,6 @@ export const adminNavigation: NavItem[] = [
     nameKey: 'navigation.automation', href: '/admin/automation', icon: Workflow,
     featureFlagsAny: ['workflows', 'reminderEmails'],
   },
-  { nameKey: 'admin.analytics',      href: '/admin/analytics', icon: BarChart3,       permission: 'analytics.view', featureFlag: 'analytics' },
   { nameKey: 'navigation.settings',  href: '/admin/settings',  icon: Settings },
 ];
 

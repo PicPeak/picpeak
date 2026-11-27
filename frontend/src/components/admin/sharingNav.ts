@@ -1,8 +1,9 @@
 /**
  * Sharing section navigation.
  *
- * The three ways a photographer gets files to someone: the event galleries
- * themselves, the archived ones, and a direct PicTransfer link. Archives and
+ * The ways a photographer gets work to someone: the event galleries
+ * themselves, the archived ones, a direct PicTransfer link, the public
+ * website (issue 2618), and the analytics of who looked. Archives and
  * PicTransfer were both top-level sidebar entries before the navigation
  * cleanup, and PicTransfer briefly sat under Communication — which reads as
  * messaging, and sending files is not messaging (review of #1718).
@@ -16,13 +17,13 @@
  * section's first path. It reads this hook directly and activates on either.
  */
 import { useTranslation } from 'react-i18next';
-import { Calendar, Archive, Send } from 'lucide-react';
+import { Calendar, Archive, Send, Globe, BarChart3 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
 
 /** Route prefixes that put the sidebar into the Sharing section. */
-export const SHARING_PATHS = ['/admin/events', '/admin/transfers'] as const;
+export const SHARING_PATHS = ['/admin/events', '/admin/transfers', '/admin/website', '/admin/analytics'] as const;
 
 export interface SharingNavItem {
   key: string;
@@ -64,6 +65,23 @@ export function useSharingNavItems(): SharingNavItem[] {
       icon: Send,
       permission: 'events.view',
       featureFlag: 'transfers',
+    },
+    {
+      // The public website builder (issue 2618), a global feature.
+      key: 'website',
+      to: '/admin/website',
+      label: t('navigation.website', 'Website'),
+      icon: Globe,
+      permission: 'cms.view',
+      featureFlag: 'websiteBuilder',
+    },
+    {
+      key: 'analytics',
+      to: '/admin/analytics',
+      label: t('admin.analytics', 'Analytics'),
+      icon: BarChart3,
+      permission: 'analytics.view',
+      featureFlag: 'analytics',
     },
   ];
 
