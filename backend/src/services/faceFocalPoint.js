@@ -63,10 +63,16 @@ function facesInEdit(edit, width, height, faces) {
   return { faces: moved, width: size.width, height: size.height };
 }
 
-/** `{ x, y }` fractions from a photo's faces, or null without any. Never throws. */
-async function faceFocalPoint(photoId) {
+/**
+ * `{ x, y }` fractions from a photo's faces, or null without any. Never
+ * throws. `edit`: the edit of the picture the point is for, as a rendition
+ * is cut (the rendition's view: the applied edit while a newer one is
+ * pending, issue 2619); without it, the row's rendition view decides.
+ */
+async function faceFocalPoint(photoId, options = {}) {
   try {
-    const photo = await db('photos').where({ id: photoId }).first('width', 'height', 'edit_params', 'media_type', 'mime_type');
+    const photo = await db('photos').where({ id: photoId }).first('id', 'width', 'height', 'edit_params', 'edit_rev',
+      'edit_applied_rev', 'edit_applied_params', 'media_type', 'mime_type');
     let width = Number(photo?.width);
     let height = Number(photo?.height);
     if (!(width > 0) || !(height > 0)) return null;
@@ -83,7 +89,8 @@ async function faceFocalPoint(photoId) {
     // An edited photo's thumbnail is cut from the edit (issue 2619): the
     // boxes move with its crop, turn and flip, and a face cropped away
     // does not count.
-    const edit = require('./photoEdits').paramsOf(photo);
+    const photoEdits = require('./photoEdits');
+    const edit = 'edit' in options ? options.edit : photoEdits.paramsOf(await photoEdits.renditionView(photo));
     if (edit) {
       ({ faces, width, height } = facesInEdit(edit, width, height, faces));
       if (!faces.length) return null;

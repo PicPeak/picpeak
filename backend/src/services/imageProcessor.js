@@ -1583,7 +1583,8 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // Faces the scan found are where the subject is: their middle is the
   // point, and sharp's guess only stands in for a photo without any.
   if (focal === undefined && stored) {
-    const fromFaces = await require('./faceFocalPoint').faceFocalPoint(photo.id);
+    // For the picture this rendition is cut from (the view's edit).
+    const fromFaces = await require('./faceFocalPoint').faceFocalPoint(photo.id, { edit: require('./photoEdits').paramsOf(photo) });
     if (fromFaces) {
       focal = fromFaces;
       meta.focal = fromFaces;

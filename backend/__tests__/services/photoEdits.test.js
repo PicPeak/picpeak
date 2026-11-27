@@ -1057,6 +1057,28 @@ describe('face covers while an edit is being applied', () => {
   });
 });
 
+describe('a focal point from faces while a turn is pending', () => {
+  it('is placed on the picture the renditions show: the applied one', async () => {
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'faces-pending.jpg', path: 'edit-card/card.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: 1, processing_status: 'complete', uploaded_at: new Date().toISOString(),
+      edit_params: math.canonicalJson(validated({ rotate: 90 })), edit_rev: 1, edit_applied_rev: 0,
+    }).returning('id'));
+    await db('photo_faces').insert({ photo_id: id, event_id: eventId, bbox_x: 20, bbox_y: 20, bbox_w: 60, bbox_h: 80, det_score: 0.9 });
+    try {
+      const { faceFocalPoint } = require('../../src/services/faceFocalPoint');
+      const unedited = await faceFocalPoint(id, { edit: null });
+      const turned = await faceFocalPoint(id, { edit: validated({ rotate: 90 }) });
+      expect(turned).not.toEqual(unedited);
+      // The turn is not applied yet: the thumbnail is cut from the unturned picture.
+      expect(await faceFocalPoint(id)).toEqual(unedited);
+    } finally {
+      await db('photo_faces').where({ photo_id: id }).delete();
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
+
 describe('focal point after a geometry change', () => {
   it('carries a manual point through a rotation and clears a detected one', () => {
     const photo = { width: 600, height: 400, focal_x: 0.25, focal_y: 0.5, focal_source: 'manual' };
