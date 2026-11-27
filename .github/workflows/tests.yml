@@ -25,7 +25,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Installed by the media tools step; part of its apt cache key.
-      MEDIA_APT_PACKAGES: build-essential ffmpeg libimage-exiftool-perl sqlite3
+      # libraw-bin: LibRaw's dcraw_emu / raw-identify for the photo editor's RAW
+      # develop (issue 2619); the RAW suite fails rather than skips without it.
+      MEDIA_APT_PACKAGES: build-essential ffmpeg libimage-exiftool-perl sqlite3 libraw-bin
       # S3-compatible store for the backup/restore S3 suites (started below).
       # MinIO no longer publishes images on Docker Hub or quay.io; Chainguard's
       # free build is pinned by digest. The free tier only promises :latest, so
@@ -204,6 +206,8 @@ jobs:
           # Un-gates the real-Postgres cases in the .picpeak restore suites
           # (see the `services:` note above). Absent it they silently skip.
           PICPEAK_PG_TEST_URL: 'postgres://picpeak:testpass@127.0.0.1:5432/picpeak_test'
+          # The RAW develop suite (photoEditRaw.test.js) must run here, not skip.
+          PICPEAK_REQUIRE_DCRAW: 'true'
         run: npx jest --ci
 
   frontend:

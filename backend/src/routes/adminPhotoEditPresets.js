@@ -3,6 +3,8 @@
  * with photos.edit can apply, behind the photoEditor feature flag. The params
  * are validated as strictly as a saved edit (photoEditMath).
  *
+ *   GET    /settings   the editor's studio settings (develop RAW uploads automatically)
+ *   PUT    /settings   { auto_develop_raw }
  *   GET    /        the presets, by name
  *   POST   /        { name, params }
  *   PUT    /:id     { name?, params? }
@@ -38,6 +40,27 @@ const toPayload = (row) => ({
   id: row.id,
   name: row.name,
   params: math.parseStoredParams(row.params) || { ...math.DEFAULT_PARAMS },
+});
+
+router.get('/settings', async (req, res) => {
+  try {
+    res.json({ auto_develop_raw: await require('../services/photoEdits').autoDevelopEnabled() });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to load the editor settings');
+  }
+});
+
+router.put('/settings', async (req, res) => {
+  try {
+    const value = req.body?.auto_develop_raw;
+    if (typeof value !== 'boolean') return res.status(400).json({ error: 'auto_develop_raw must be true or false' });
+    const { AUTO_DEVELOP_SETTING } = require('../services/photoEdits');
+    await require('../utils/appSettings').upsertAppSetting(AUTO_DEVELOP_SETTING, JSON.stringify(value), 'boolean');
+    await logActivity('photo_editor_settings_updated', { auto_develop_raw: value }, null, actor(req));
+    res.json({ auto_develop_raw: value });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to save the editor settings');
+  }
 });
 
 router.get('/', async (req, res) => {

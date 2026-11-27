@@ -6,6 +6,8 @@
  *   PUT  /:eventId/photos/:photoId/edit        save an edit ({ params }), or reset it ({ params: null })
  *   POST /:eventId/photos/edit/batch           copy settings to photos ({ photo_ids, params, parts })
  *   GET  /:eventId/photos/edit/status          the background apply's progress for the gallery
+ *   POST /:eventId/photos/edit/develop         develop RAW photos with the default look ({ photo_ids } or { all: true })
+ *   GET  /:eventId/photos/:photoId/edit/develop  a RAW photo's 16-bit linear develop preview, the editor's canvas for it
  *
  * Behind the photoEditor feature flag and photos.edit, for the galleries the
  * admin may reach (requireEventOwnership, as the focal point and poster
@@ -66,8 +68,12 @@ async function loadPhoto(req, res) {
 }
 
 /** What the editor needs to open a photo. */
-function editPayload(photo) {
+async function editPayload(photo) {
+  const rawDevelop = require('../services/rawDevelop');
   return {
+    // A RAW the server can develop: the editor works on its 16-bit develop
+    // preview with the RAW look, and noise reduction applies.
+    raw: rawDevelop.isRawPhoto(photo) && await rawDevelop.isAvailable(),
     photo_id: photo.id,
     params: photoEdits.paramsOf(photo),
     edit_rev: Number(photo.edit_rev) || 0,
@@ -133,12 +139,42 @@ router.post('/:eventId/photos/edit/batch', ...gate, async (req, res) => {
   }
 });
 
+router.post('/:eventId/photos/edit/develop', ...gate, async (req, res) => {
+  try {
+    const eventId = parsePositiveInt32(req.params.eventId);
+    const event = eventId ? await db('events').where({ id: eventId }).first('id', 'is_archived') : null;
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+    if (event.is_archived === true || event.is_archived === 1) {
+      return res.status(409).json({ error: 'An archived gallery cannot be edited' });
+    }
+    if (!(await require('../services/rawDevelop').isAvailable())) {
+      return res.status(409).json({ error: 'RAW development needs LibRaw (dcraw_emu) on the server', code: 'RAW_DEVELOP_UNAVAILABLE' });
+    }
+    const { photo_ids: rawIds, all } = req.body || {};
+    let query = livePhotos(db).where({ event_id: eventId });
+    if (all !== true) {
+      if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > MAX_BATCH) {
+        return res.status(400).json({ error: `photo_ids must list 1 to ${MAX_BATCH} photos, or all must be true` });
+      }
+      const ids = rawIds.map((id) => parsePositiveInt32(id));
+      if (ids.some((id) => !id)) return res.status(400).json({ error: 'photo_ids must be photo ids' });
+      query = query.whereIn('id', ids);
+    }
+    const photos = (await query).filter((photo) => !refusal(photo, event));
+    const queued = await photoEdits.queueDefaultDevelop(photos);
+    await logActivity('photo_raws_developed', { count: queued.length }, eventId, actor(req));
+    res.json({ queued: queued.length, photo_ids: queued });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to develop the RAW photos');
+  }
+});
+
 router.get('/:eventId/photos/:photoId/edit', ...gate, async (req, res) => {
   try {
     const loaded = await loadPhoto(req, res);
     if (!loaded) return;
     if (isVideoRow(loaded.photo)) return res.status(400).json({ error: 'Videos cannot be edited' });
-    res.json(editPayload(loaded.photo));
+    res.json(await editPayload(loaded.photo));
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to read the edit');
   }
@@ -165,6 +201,29 @@ router.get('/:eventId/photos/:photoId/edit/base', ...gate, async (req, res) => {
   }
 });
 
+router.get('/:eventId/photos/:photoId/edit/develop', ...gate, async (req, res) => {
+  try {
+    const loaded = await loadPhoto(req, res);
+    if (!loaded) return;
+    const rawDevelop = require('../services/rawDevelop');
+    if (!rawDevelop.isRawPhoto(loaded.photo) || !(await rawDevelop.isAvailable())) {
+      return res.status(404).json({ error: 'This photo has no RAW develop' });
+    }
+    const body = await rawDevelop.developPreview(loaded.photo, photoEdits.withOriginal);
+    res.set({
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': body.length,
+      'Cache-Control': 'private, max-age=3600',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(body);
+  } catch (error) {
+    if (answerVanished(res, error, 'Photo file not found')) return;
+    if (error.status === 503) return res.status(503).set('Retry-After', '5').json({ error: 'RAW processing is busy; try again shortly' });
+    errorResponse(res, error, 500, 'Failed to develop the RAW photo');
+  }
+});
+
 router.put('/:eventId/photos/:photoId/edit', ...gate, async (req, res) => {
   try {
     const loaded = await loadPhoto(req, res);
@@ -185,7 +244,7 @@ router.put('/:eventId/photos/:photoId/edit', ...gate, async (req, res) => {
     await logActivity('photo_edited', {
       photo_id: photo.id, reset: !photoEdits.paramsOf(saved),
     }, photo.event_id, actor(req));
-    res.json(editPayload(saved));
+    res.json(await editPayload(saved));
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to save the edit');
   }

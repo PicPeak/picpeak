@@ -1164,8 +1164,10 @@
       "route_signatures": [
         "GET /:eventId/photos/edit/status",
         "POST /:eventId/photos/edit/batch",
+        "POST /:eventId/photos/edit/develop",
         "GET /:eventId/photos/:photoId/edit",
         "GET /:eventId/photos/:photoId/edit/base",
+        "GET /:eventId/photos/:photoId/edit/develop",
         "PUT /:eventId/photos/:photoId/edit"
       ]
     },
@@ -1174,6 +1176,8 @@
       "signals": [],
       "reason": "Excluded: photo editor presets (issue 2619) are studio configuration, not reported; no preset names, settings or counts.",
       "route_signatures": [
+        "GET /settings",
+        "PUT /settings",
         "GET /",
         "POST /",
         "PUT /:id",

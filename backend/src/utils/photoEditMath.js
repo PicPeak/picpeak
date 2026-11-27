@@ -14,13 +14,11 @@
  *   1. geometry: EXIF-upright source -> rotate in 90 degree steps (clockwise)
  *      -> flip -> straighten (a small rotation about the centre) -> crop.
  *      Applied as an inverse map with bilinear sampling.
- *   2. light and colour, on sRGB values in [0, 1]: to linear light, white
- *      balance and exposure gains, back to sRGB, the tone curve (blacks and
- *      whites, shadows, highlights, contrast), vibrance and saturation
- *      around Rec. 709 luma, black & white.
- *   3. detail: clarity and sharpening add the difference between the
- *      geometry output's luma and a blurred copy of it (a large and a small
- *      radius).
+ *   2. light and colour, in linear light (see the section below): decode,
+ *      white balance and exposure as one matrix, detail, shadows and
+ *      highlights, contrast, whites and blacks, vibrance and saturation,
+ *      black & white, then the output transform (a highlight shoulder for a
+ *      JPEG, a sigmoid tone curve for a camera RAW) and the sRGB encoding.
  *
  * Dependency-free on purpose: no sharp, no database. Pure functions over
  * plain arrays.
@@ -43,13 +41,15 @@ const SLIDERS = {
   saturation: [-100, 100, 0],
   clarity: [-100, 100, 0],
   sharpen: [0, 100, 0],
+  // Camera RAW only: noise reduction in the develop (rawDevelop.noiseOptions).
+  nr: [0, 100, 0],
 };
 const STRAIGHTEN_MAX = 45;
 const ROTATIONS = [0, 90, 180, 270];
 // A crop narrower than this share of a side is a slip, not an edit.
 const MIN_CROP = 0.02;
 // The parts batch copy can carry separately (BatchCopyDialog).
-const TONE_KEYS = Object.keys(SLIDERS).concat(['bw']);
+const TONE_KEYS = Object.keys(SLIDERS).concat(['bw', 'develop']);
 const GEOMETRY_KEYS = ['rotate', 'flipH', 'flipV', 'straighten', 'crop'];
 
 const DEFAULT_PARAMS = Object.freeze({
@@ -61,6 +61,9 @@ const DEFAULT_PARAMS = Object.freeze({
   crop: null,
   ...Object.fromEntries(Object.keys(SLIDERS).map((key) => [key, 0])),
   bw: false,
+  // Camera RAW only: developed from the sensor data even with no other change
+  // (the default look), instead of showing the camera's embedded preview.
+  develop: false,
 });
 
 const KNOWN_KEYS = new Set(Object.keys(DEFAULT_PARAMS));
@@ -91,7 +94,7 @@ function validateEditParams(input) {
     }
     params[key] = roundTo(input[key], decimals) + 0; // + 0 turns -0 into 0
   }
-  for (const key of ['flipH', 'flipV', 'bw']) {
+  for (const key of ['flipH', 'flipV', 'bw', 'develop']) {
     if (input[key] === undefined) continue;
     if (typeof input[key] !== 'boolean') return { error: `${key} must be true or false` };
     params[key] = input[key];
@@ -310,86 +313,339 @@ function mapPointFromEdited(params, width, height, point) {
 }
 
 // ------------------------------------------------------------ light, colour
+//
+// Scene-referred, in linear light, after the concepts of darktable (a +0.7 EV
+// baseline for RAW, white balance as a chromatic adaptation, shadows and
+// highlights as exposure shifts by tonal zone, contrast around middle grey,
+// a sigmoid tone curve that never clips) and RapidRAW (the single-pass
+// order, local contrast in the log domain, temperature on a mired scale).
+// Formulas are standard or our own; no code of either project is used.
+//
+// Per pixel (scenePixel, then outputPixel):
+//   decode      JPEG: the sRGB curve to linear. RAW: 16-bit linear from
+//               LibRaw, times 2^(0.7 + bias) (the baseline).
+//   matrix      white balance (Bradford adaptation from a Planckian light
+//               moved in mireds and Duv) and exposure, one 3x3 matrix.
+//   detail      clarity and sharpening as a gain 2^G from the pixel's log
+//               luminance against a blurred copy (large and 1 px radius).
+//   zones       shadows and highlights: exposure shifts weighted by how far
+//               the local level is from middle grey.
+//   contrast    a power curve on luminance around middle grey.
+//   end points  whites and blacks: shifts near the white and the black end.
+//   colour      vibrance (dull colours and not skin first) and saturation
+//               around luminance, kept from going negative.
+//   output      JPEG: identity unless an edit pushed values past white, then
+//               a shoulder brings them back. RAW: a log-logistic sigmoid per
+//               channel with the hue kept. Then the sRGB curve.
+
+const G0 = 0.1845;
+const LOG_G0 = Math.log2(G0);
+const RAW_BASELINE_EV = 0.7;
+const MIN_LEVEL = 2 ** -16;
+const LUMA = [0.2126, 0.7152, 0.0722];
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 const linearToSrgb = (l) => (l <= 0.0031308 ? 12.92 * l : 1.055 * l ** (1 / 2.4) - 0.055);
-const LUMA = [0.2126, 0.7152, 0.0722];
+const smoothstep = (a, b, x) => {
+  const t = clamp01((x - a) / (b - a));
+  return t * t * (3 - 2 * t);
+};
+const luminance = (r, g, b) => LUMA[0] * r + LUMA[1] * g + LUMA[2] * b;
 
-/** Per-channel linear gains of white balance and exposure, grey kept grey. */
-function channelGains(params) {
-  const t = params.temperature / 100;
-  const m = params.tint / 100;
-  const r = 2 ** (0.3 * t);
-  const g = 2 ** (-0.25 * m);
-  const b = 2 ** (-0.3 * t);
-  const norm = 1 / (LUMA[0] * r + LUMA[1] * g + LUMA[2] * b);
-  const e = 2 ** params.exposure;
-  return [r * norm * e, g * norm * e, b * norm * e];
-}
+// ---- white balance
 
-/**
- * The tone curve on an sRGB value in [0, 1]: blacks and whites move the end
- * points, shadows and highlights bend the lower and upper part, contrast is
- * an S around the middle. Monotonic for every slider position.
- */
-function toneCurve(x, params) {
-  const bp = -params.blacks / 100 * 0.1;
-  const wp = 1 - params.whites / 100 * 0.15;
-  let y = clamp01((x - bp) / (wp - bp));
-  // Bumps that peak at a third and two thirds. The gains are the largest
-  // that keep the curve monotonic (lifting shadows / pulling highlights can
-  // go further than the opposite direction without folding over).
-  const s = params.shadows / 100;
-  y += s * (s > 0 ? 2.5 : 1) * y * (1 - y) * (1 - y);
-  const h = params.highlights / 100;
-  y += h * (h < 0 ? 2.5 : 1) * y * y * (1 - y);
-  y = clamp01(y);
-  const c = params.contrast / 100 * 0.75;
-  y += c * (y * y * (3 - 2 * y) - y);
-  return clamp01(y);
-}
+const SRGB_TO_XYZ = [0.4124564, 0.3575761, 0.1804375, 0.2126729, 0.7151522, 0.0721750, 0.0193339, 0.1191920, 0.9503041];
+const BRADFORD = [0.8951, 0.2664, -0.1614, -0.7502, 1.7135, 0.0367, 0.0389, -0.0685, 1.0296];
 
-/** Saturation factor for a pixel: vibrance favours the dull ones. */
-function saturationFactor(r, g, b, params) {
-  const v = params.vibrance / 100;
-  const s = params.saturation / 100;
-  const sat = Math.max(r, g, b) - Math.min(r, g, b);
-  return (1 + v * (1 - sat)) * (1 + s);
-}
-
-/** Detail weights: clarity (large radius) and sharpening (small radius). */
-function detailWeights(params) {
-  return { clarity: params.clarity / 100 * 0.8, sharpen: params.sharpen / 100 * 1.5 };
-}
-
-/**
- * Blur radii in output pixels. Clarity's is a share of the upright source's
- * long edge, so a crop does not change its look and the browser can blur its
- * preview once per photo; sharpening works at the pixel. `outPerSource` is
- * output pixels per source pixel (below 1 when the render is scaled down).
- */
-function detailSigmas(sourceLongEdge, outPerSource = 1) {
-  return { clarity: Math.max(1, 0.012 * sourceLongEdge * outPerSource), sharpen: 1 };
-}
-
-/**
- * One pixel through steps 2 and 3, by the formulas (the CPU reference).
- * `rgb` in [0, 1] sRGB; `detail` is the weighted luma difference (0 without
- * clarity or sharpening). Returns sRGB in [0, 1].
- */
-function referencePixel(rgb, params, detail = 0) {
-  const gains = channelGains(params);
-  let out = rgb.map((c, i) => toneCurve(linearToSrgb(clamp01(srgbToLinear(c) * gains[i])), params));
-  const luma = LUMA[0] * out[0] + LUMA[1] * out[1] + LUMA[2] * out[2];
-  const f = saturationFactor(out[0], out[1], out[2], params);
-  out = out.map((c) => clamp01(luma + (c - luma) * f));
-  if (params.bw) {
-    const l = LUMA[0] * out[0] + LUMA[1] * out[1] + LUMA[2] * out[2];
-    out = [l, l, l];
+function multiply3(a, b) {
+  const out = new Array(9);
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) out[r * 3 + c] = a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c];
   }
-  return out.map((c) => clamp01(c + detail));
+  return out;
 }
+function invert3(m) {
+  const [a, b, c, d, e, f, g, h, i] = m;
+  const A = e * i - f * h; const B = -(d * i - f * g); const C = d * h - e * g;
+  const det = a * A + b * B + c * C;
+  return [A, -(b * i - c * h), b * f - c * e, B, a * i - c * g, -(a * f - c * d), C, -(a * h - b * g), a * e - b * d].map((v) => v / det);
+}
+const apply3 = (m, v) => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
+const XYZ_TO_SRGB = invert3(SRGB_TO_XYZ);
+const BRADFORD_INV = invert3(BRADFORD);
+
+/** Chromaticity of a Planckian light, Kim et al. (2002) cubic fit, 1667..25000 K. */
+function planckianXy(kelvin) {
+  const t = Math.min(25000, Math.max(1667, kelvin));
+  const x = t <= 4000
+    ? -0.2661239e9 / t ** 3 - 0.2343589e6 / t ** 2 + 0.8776956e3 / t + 0.179910
+    : -3.0258469e9 / t ** 3 + 2.1070379e6 / t ** 2 + 0.2226347e3 / t + 0.240390;
+  const y = t <= 2222 ? -1.1063814 * x ** 3 - 1.34811020 * x ** 2 + 2.18555832 * x - 0.20219683
+    : t <= 4000 ? -0.9549476 * x ** 3 - 1.37418593 * x ** 2 + 2.09137015 * x - 0.16748867
+      : 3.0817580 * x ** 3 - 5.87338670 * x ** 2 + 3.75112997 * x - 0.37001483;
+  return [x, y];
+}
+const toUv = ([x, y]) => [4 * x / (-2 * x + 12 * y + 3), 6 * y / (-2 * x + 12 * y + 3)];
+const toXy = ([u, v]) => [3 * u / (2 * u - 8 * v + 4), 2 * v / (2 * u - 8 * v + 4)];
+
+/** The light at `mired`, moved `duv` off the Planckian locus towards green (positive) or magenta. */
+function lightXy(mired, duv) {
+  const uv = toUv(planckianXy(1e6 / mired));
+  if (!duv) return toXy(uv);
+  const a = toUv(planckianXy(1e6 / (mired - 1)));
+  const b = toUv(planckianXy(1e6 / (mired + 1)));
+  let nu = -(b[1] - a[1]);
+  let nv = b[0] - a[0];
+  if (nv < 0) { nu = -nu; nv = -nv; }
+  const len = Math.hypot(nu, nv);
+  return toXy([uv[0] + duv * nu / len, uv[1] + duv * nv / len]);
+}
+
+/**
+ * The white balance matrix (linear sRGB) for the sliders, relative to the
+ * picture as it is: temperature moves the light the picture was taken under
+ * by up to 150 mired (left: a warmer light was assumed, so the result is
+ * cooler), tint by up to 0.03 Duv (right: a greener light, so the result is
+ * more magenta). Bradford adaptation, white kept at its luminance. Exactly
+ * the identity at 0 / 0.
+ */
+function whiteBalanceMatrix(temperature, tint) {
+  if (!temperature && !tint) return [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const reference = 1e6 / 6504;
+  const mired = Math.min(600, Math.max(40, reference - 1.5 * temperature));
+  const cone = (xy) => apply3(BRADFORD, [xy[0] / xy[1], 1, (1 - xy[0] - xy[1]) / xy[1]]);
+  const from = cone(lightXy(mired, 0.0003 * tint));
+  const to = cone(lightXy(reference, 0));
+  const scale = [to[0] / from[0], 0, 0, 0, to[1] / from[1], 0, 0, 0, to[2] / from[2]];
+  const m = multiply3(XYZ_TO_SRGB, multiply3(BRADFORD_INV, multiply3(scale, multiply3(BRADFORD, SRGB_TO_XYZ))));
+  const white = apply3(m, [1, 1, 1]);
+  const norm = luminance(white[0], white[1], white[2]);
+  return m.map((v) => v / norm);
+}
+
+// ---- the sigmoid of the RAW look
+
+/**
+ * A log-logistic curve f(x) = (x+p)^n / ((x+p)^n + e) fitted so middle grey
+ * stays middle grey, scene black lands on a deep display black and the slope
+ * at grey is `contrast` (the darktable defaults: 1.5, black 0.0152 %). It
+ * approaches white without ever reaching it: nothing clips.
+ */
+function fitSigmoid(contrast = 1.5, black = 0.000152) {
+  const ratio = (G0 * (1 - black)) / (black * (1 - G0));
+  const fit = (n) => {
+    const phi = G0 / (ratio ** (1 / n) - 1);
+    return { n, phi, e: (G0 + phi) ** n * (1 - G0) / G0 };
+  };
+  const first = fit(contrast);
+  return fit(contrast * (G0 + first.phi) / G0);
+}
+const RAW_SIGMOID = fitSigmoid();
+const sigmoid = (x, s) => {
+  const p = (Math.max(0, x) + s.phi) ** s.n;
+  return p / (p + s.e);
+};
+
+// ---- detail
+
+/** Clarity and sharpening radii in output pixels: a share of the source's short side, and one pixel. */
+function detailSigmas(sourceShortSide, outPerSource = 1) {
+  return { clarity: Math.max(1, 0.015 * sourceShortSide * outPerSource), sharpen: 1 };
+}
+// A halo limiter: linear for texture, back towards 0 across big edges.
+const limiter = (d, s) => d / (1 + (d / s) * (d / s));
+// Leaves the faintest differences (noise) alone.
+const coring = (d, t) => (d * d) / (d * d + t * t);
+const levelOf = (y) => Math.log2(Math.max(y, MIN_LEVEL));
+
+/** What the sliders work out to, once per edit; the per-pixel steps read it. */
+function prepare(params, { linear = false, exposureBias = 0 } = {}) {
+  const exposure = 2 ** params.exposure;
+  const matrix = whiteBalanceMatrix(params.temperature, params.tint).map((v) => v * exposure);
+  const prep = {
+    linear,
+    baseline: linear ? 2 ** (RAW_BASELINE_EV + exposureBias) : 1,
+    matrix,
+    clarity: params.clarity / 100,
+    sharpen: params.sharpen / 100,
+    shadows: params.shadows / 100,
+    highlights: params.highlights / 100,
+    gamma: 2 ** (0.5 * params.contrast / 100),
+    whites: params.whites / 100,
+    blacks: params.blacks / 100,
+    saturation: params.saturation / 100,
+    vibrance: params.vibrance / 100,
+    bw: Boolean(params.bw),
+    whiteLevel: 0,
+    blackLevel: 0,
+    shoulder: 1,
+  };
+  // The white end: where the brightest input (diffuse white, or the sensor's
+  // clipping point times the baseline) lands after exposure and contrast.
+  const whiteIn = prep.baseline;
+  const white = apply3(matrix, [whiteIn, whiteIn, whiteIn]);
+  prep.whiteLevel = levelOf(contrastLuminance(prep, luminance(white[0], white[1], white[2])));
+  prep.blackLevel = prep.whiteLevel - 10;
+  if (!linear) {
+    // A JPEG keeps its look until an edit pushes something past white: then
+    // the shoulder starts at 0.8 and ends at the brightest probe colour.
+    let peak = 1;
+    for (const probe of [[1, 1, 1], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [1, 0, 1], [0, 1, 1]]) {
+      const v = scenePixel(prep, probe[0], probe[1], probe[2], 0, 0);
+      peak = Math.max(peak, v[0], v[1], v[2]);
+    }
+    prep.shoulder = peak;
+  }
+  return prep;
+}
+
+function contrastLuminance(prep, y) {
+  return prep.gamma === 1 || y <= 0 ? y : G0 * (y / G0) ** prep.gamma;
+}
+
+/** How strongly a hue reads as skin (HSV hue near 25 degrees): 1 there, 0 far away. */
+function skinWeight(r, g, b) {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max <= min) return 0;
+  const d = max - min;
+  let hue = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  hue *= 60;
+  if (hue < 0) hue += 360;
+  const away = Math.min(Math.abs(hue - 25), 360 - Math.abs(hue - 25));
+  return Math.exp(-(away / 15) * (away / 15));
+}
+
+/**
+ * One pixel from linear input to linear scene output, before the output
+ * transform. `dc`, `ds`: the pixel's log luminance minus its clarity and
+ * sharpening blur (0 without detail).
+ */
+function scenePixel(prep, r0, g0, b0, dc, ds, result = [0, 0, 0]) {
+  const m = prep.matrix;
+  let r = m[0] * r0 + m[1] * g0 + m[2] * b0;
+  let g = m[3] * r0 + m[4] * g0 + m[5] * b0;
+  let b = m[6] * r0 + m[7] * g0 + m[8] * b0;
+  let y = luminance(r, g, b);
+  const level = levelOf(y);
+  const local = limiter(dc, 0.7);
+
+  // Detail and tonal zones, one gain.
+  let detail = 0;
+  if (prep.clarity || prep.sharpen) {
+    const gate = smoothstep(-11, -8, level) * (prep.linear ? 1 : 1 - smoothstep(0.9, 1, y));
+    if (prep.clarity > 0) detail += 1.6 * prep.clarity * local * coring(dc, 0.05) * gate;
+    else if (prep.clarity < 0) detail += 0.6 * prep.clarity * dc;
+    if (prep.sharpen) detail += 1.2 * prep.sharpen * limiter(ds, 0.25) * coring(ds, 0.02) * gate;
+    detail /= 1 + Math.abs(detail);
+  }
+  const zone = level - 0.7 * local - LOG_G0;
+  let shift = detail;
+  // Left darkens the bright zones (recovery), right brightens them.
+  if (prep.highlights) shift += 1.5 * prep.highlights * smoothstep(0, 3, zone);
+  if (prep.shadows) {
+    shift += 1.5 * prep.shadows * (1 - smoothstep(-5, 0, zone)) * (prep.shadows > 0 ? smoothstep(-12, -8.5, zone) : 1);
+  }
+  if (shift) {
+    const gain = 2 ** shift;
+    r *= gain; g *= gain; b *= gain;
+  }
+
+  // Contrast around middle grey.
+  if (prep.gamma !== 1) {
+    y = luminance(r, g, b);
+    if (y > 0) {
+      const gain = contrastLuminance(prep, y) / y;
+      r *= gain; g *= gain; b *= gain;
+    }
+  }
+
+  // Whites and blacks.
+  if (prep.whites || prep.blacks) {
+    const end = levelOf(luminance(r, g, b)) - 0.7 * local;
+    let ends = prep.whites * smoothstep(prep.whiteLevel - 3, prep.whiteLevel, end);
+    if (prep.blacks < 0) ends += 1.5 * prep.blacks * (1 - smoothstep(prep.blackLevel, prep.blackLevel + 4, end));
+    if (ends) {
+      const gain = 2 ** ends;
+      r *= gain; g *= gain; b *= gain;
+    }
+    if (prep.blacks > 0) {
+      const lift = 0.0025 * prep.blacks;
+      r += lift; g += lift; b += lift;
+    }
+  }
+
+  // Colour: chroma scaled around luminance, never below zero.
+  y = luminance(r, g, b);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let k = 1 + prep.saturation;
+  if (prep.vibrance > 0) {
+    const chroma = (max - min) / Math.max(max, 1e-6);
+    k *= 1 + prep.vibrance * (1 - chroma) * (1 - chroma) * (1 - 0.5 * skinWeight(r, g, b));
+  } else if (prep.vibrance < 0) {
+    k *= 1 + prep.vibrance * smoothstep(0.05, 0.75, (max - min) / Math.max(max, 1e-6));
+  }
+  if (min < 0 && y > 0) k = Math.min(k, y / (y - min));
+  if (k !== 1) {
+    r = y + k * (r - y); g = y + k * (g - y); b = y + k * (b - y);
+  }
+  if (prep.bw) {
+    const l = luminance(r, g, b);
+    r = l; g = l; b = l;
+  }
+  result[0] = r; result[1] = g; result[2] = b;
+  return result;
+}
+
+/** Scene to display, still linear: the RAW sigmoid or the JPEG shoulder. In place. */
+function outputPixel(prep, rgb) {
+  let r = rgb[0];
+  let g = rgb[1];
+  let b = rgb[2];
+  if (prep.linear) {
+    // Per channel, then the middle channel put back where the hue had it.
+    const hi = r >= g ? (r >= b ? 0 : 2) : (g >= b ? 1 : 2);
+    const lo = r < g ? (r < b ? 0 : 2) : (g < b ? 1 : 2);
+    const spread = rgb[hi] - rgb[lo] > 0 && hi !== lo;
+    const t = spread ? (rgb[3 - hi - lo] - rgb[lo]) / (rgb[hi] - rgb[lo]) : 0;
+    rgb[0] = sigmoid(r, RAW_SIGMOID);
+    rgb[1] = sigmoid(g, RAW_SIGMOID);
+    rgb[2] = sigmoid(b, RAW_SIGMOID);
+    if (spread) rgb[3 - hi - lo] = rgb[lo] + t * (rgb[hi] - rgb[lo]);
+    return rgb;
+  }
+  if (prep.shoulder > 1) {
+    const peak = Math.max(r, g, b);
+    const knee = 0.8;
+    if (peak > knee) {
+      const u = (peak - knee) / (1 - knee);
+      const top = (prep.shoulder - knee) / (1 - knee);
+      const mapped = knee + (1 - knee) * (u * (1 + u / (top * top))) / (1 + u);
+      const gain = mapped / peak;
+      r *= gain; g *= gain; b *= gain;
+    }
+  }
+  rgb[0] = r; rgb[1] = g; rgb[2] = b;
+  return rgb;
+}
+
+/** The input value (0..1 encoded for a JPEG, 0..1 linear for a RAW) as scene-linear light. */
+const decode = (prep, v) => (prep.linear ? v * prep.baseline : srgbToLinear(v));
+
+/**
+ * One pixel by the formulas (the CPU reference): `rgb` as stored (0..1),
+ * `dc` / `ds` the detail differences. Returns display sRGB in [0, 1].
+ */
+function referencePixel(rgb, params, { dc = 0, ds = 0, linear = false, exposureBias = 0, prep } = {}) {
+  const p = prep || prepare(params, { linear, exposureBias });
+  const out = outputPixel(p, scenePixel(p, decode(p, rgb[0]), decode(p, rgb[1]), decode(p, rgb[2]), dc, ds));
+  return [linearToSrgb(clamp01(out[0])), linearToSrgb(clamp01(out[1])), linearToSrgb(clamp01(out[2]))];
+}
+
+/** Whether the edit needs the detail planes (the log luminance and its blurs). */
+const usesDetail = (prep) => Boolean(prep.clarity || prep.sharpen || prep.shadows || prep.highlights || prep.whites || prep.blacks);
 
 // ------------------------------------------------------------- blur, detail
 
@@ -426,8 +682,8 @@ function boxPass(src, dst, width, height, radius, horizontal) {
 }
 
 /**
- * Gaussian-like blur of a 16-bit plane (three box passes each way), in
- * place, with `scratch` the same size. Integer arithmetic, so every JS
+ * Gaussian-like blur of an integer plane in place (three box passes each
+ * way), with `scratch` the same size. Integer arithmetic, so every JS
  * implementation gets the same numbers.
  */
 function blurPlane(plane, scratch, width, height, sigma) {
@@ -438,30 +694,15 @@ function blurPlane(plane, scratch, width, height, sigma) {
   }
 }
 
+// Log luminance in the detail planes: 1/1024 EV steps in an Int16.
+const LEVEL_SCALE = 1024;
+const quantLevel = (y) => Math.max(-32768, Math.min(32767, Math.round(levelOf(y) * LEVEL_SCALE)));
+
 // ----------------------------------------------------------------- render
 
-/** Interpolated lookup into a table over [0, 1]. */
-function lookup(table, v) {
-  const last = table.length - 1;
-  const p = clamp01(v) * last;
-  const i = p | 0;
-  if (i >= last) return table[last];
-  const f = p - i;
-  return table[i] + (table[i + 1] - table[i]) * f;
-}
-
-/** linear light in [0, 1] -> tone-curved sRGB, tabulated (4096 steps). */
-function toneTable(params) {
-  const table = new Float32Array(4097);
-  for (let i = 0; i <= 4096; i++) table[i] = toneCurve(linearToSrgb(i / 4096), params);
-  return table;
-}
-
-const LINEAR_8 = Float32Array.from({ length: 256 }, (_, i) => srgbToLinear(i / 255));
-
 /**
- * Bilinear sample of an interleaved 8-bit image at (x, y) in pixel units
- * (centres at +0.5), edges clamped. Writes three floats in [0, 255] to `out`.
+ * Bilinear sample at (x, y) in pixel units (centres at +0.5), edges clamped,
+ * of interleaved samples; writes three values in the source's scale to `out`.
  */
 function sampleBilinear(src, width, height, channels, x, y, out) {
   let fx = x - 0.5;
@@ -486,124 +727,144 @@ function sampleBilinear(src, width, height, channels, x, y, out) {
 }
 
 /**
- * Render an edit. `src` is the upright source as interleaved 8-bit RGB
- * (`channels` 3, or 4 with the alpha ignored), `width` x `height`. Returns
- * `{ data, width, height }`, 8-bit RGB. `maxPixels` caps the output.
- *
- * Memory: the output (3 bytes a pixel) next to the source; with clarity or
- * sharpening, two 16-bit planes of the output size more.
+ * Linear display light -> 8-bit sRGB through a 16384-step table with linear
+ * interpolation: within half a level of the formula everywhere.
  */
-function renderEdit(src, width, height, channels, params, { maxPixels = Infinity } = {}) {
-  const out = outputSize(params, width, height, { maxPixels });
-  const map = inverseMapper(params, width, height, out);
-  const data = Buffer.alloc(out.width * out.height * 3);
-  const px = [0, 0, 0];
-  // 1. Geometry. Identity geometry at the same size is a straight copy.
-  const identity = !hasGeometry(params) && out.width === width && out.height === height;
-  for (let y = 0; y < out.height; y++) {
-    for (let x = 0; x < out.width; x++) {
-      const o = (y * out.width + x) * 3;
-      if (identity) {
-        const s = (y * width + x) * channels;
-        data[o] = src[s]; data[o + 1] = src[s + 1]; data[o + 2] = src[s + 2];
-        continue;
-      }
-      const p = map(x + 0.5, y + 0.5);
-      sampleBilinear(src, width, height, channels, p.x, p.y, px);
-      data[o] = Math.round(px[0]); data[o + 1] = Math.round(px[1]); data[o + 2] = Math.round(px[2]);
-    }
-  }
-  applyColour(data, out.width, out.height, params, detailSigmas(Math.max(width, height), out.width / out.crop.width));
-  return { data, width: out.width, height: out.height };
+function encoder() {
+  const steps = 16384;
+  const table = Float64Array.from({ length: steps + 1 }, (_, i) => linearToSrgb(i / steps) * 255);
+  return (v) => {
+    if (!(v > 0)) return 0;
+    if (v >= 1) return 255;
+    const p = v * steps;
+    const i = p | 0;
+    return Math.round(table[i] + (table[i + 1] - table[i]) * (p - i));
+  };
 }
 
-/** Steps 2 and 3 in place on interleaved 8-bit RGB (the geometry output). */
-function applyColour(data, width, height, params, sigmas = detailSigmas(Math.max(width, height))) {
-  const weights = detailWeights(params);
-  let detail = null;
-  if (weights.clarity || weights.sharpen) {
-    const n = width * height;
-    const luma = new Uint16Array(n);
-    for (let i = 0, o = 0; i < n; i++, o += 3) {
-      luma[i] = Math.round((LUMA[0] * data[o] + LUMA[1] * data[o + 1] + LUMA[2] * data[o + 2]) * 257);
+/**
+ * Render an edit. `src` is the upright source, interleaved: 8-bit sRGB
+ * (a JPEG and the like) or, with `linear`, 16-bit linear RGB from the RAW
+ * develop. `channels` is 3 or 4 (the fourth ignored). Returns
+ * `{ data, width, height }`, 8-bit sRGB RGB.
+ *
+ * Two passes over the output, sampling the source each time, so there is no
+ * full-size intermediate: memory is the source, the 3-byte output and, when
+ * the edit needs them, three 2-byte detail planes of the output size.
+ */
+function renderEdit(src, width, height, channels, params, { maxPixels = Infinity, linear = false, exposureBias = 0 } = {}) {
+  const out = outputSize(params, width, height, { maxPixels });
+  const map = inverseMapper(params, width, height, out);
+  const prep = prepare(params, { linear, exposureBias });
+  const scale = linear ? 65535 : 255;
+  const n = out.width * out.height;
+  const px = [0, 0, 0];
+  const plain = !hasGeometry(params) && out.width === width && out.height === height;
+  // Whole 8-bit values decode through a table; a sample between pixels by the formula.
+  const table = linear ? null : Float64Array.from({ length: 256 }, (_, i) => srgbToLinear(i / 255));
+  const sample = (x, y) => {
+    if (plain) {
+      const s = (y * width + x) * channels;
+      if (table) {
+        px[0] = table[src[s]]; px[1] = table[src[s + 1]]; px[2] = table[src[s + 2]];
+        return;
+      }
+      px[0] = src[s]; px[1] = src[s + 1]; px[2] = src[s + 2];
+    } else {
+      const p = map(x + 0.5, y + 0.5);
+      sampleBilinear(src, width, height, channels, p.x, p.y, px);
     }
-    detail = new Int16Array(n);
-    const blurred = new Uint16Array(n);
-    const scratch = new Uint16Array(n);
-    for (const [kind, weight] of [['clarity', weights.clarity], ['sharpen', weights.sharpen]]) {
-      if (!weight) continue;
-      blurred.set(luma);
-      blurPlane(blurred, scratch, width, height, sigmas[kind]);
-      // In 1/4096ths of the full range, which fits Int16 for any weight.
-      for (let i = 0; i < n; i++) {
-        const v = detail[i] + Math.round(weight * (luma[i] - blurred[i]) / 16);
-        detail[i] = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
+    px[0] = decode(prep, px[0] / scale); px[1] = decode(prep, px[1] / scale); px[2] = decode(prep, px[2] / scale);
+  };
+  const encode = encoder();
+  const rgb = [0, 0, 0];
+
+  let level = null;
+  let clarityBlur = null;
+  let sharpenBlur = null;
+  if (usesDetail(prep)) {
+    level = new Int16Array(n);
+    for (let y = 0, i = 0; y < out.height; y++) {
+      for (let x = 0; x < out.width; x++, i++) {
+        sample(x, y);
+        level[i] = quantLevel(luminance(px[0], px[1], px[2]));
       }
     }
+    const sigmas = detailSigmas(Math.min(width, height), out.width / out.crop.width);
+    const scratch = new Int16Array(n);
+    clarityBlur = Int16Array.from(level);
+    blurPlane(clarityBlur, scratch, out.width, out.height, sigmas.clarity);
+    if (prep.sharpen) {
+      sharpenBlur = Int16Array.from(level);
+      blurPlane(sharpenBlur, scratch, out.width, out.height, sigmas.sharpen);
+    }
   }
-  const gains = channelGains(params);
-  const table = toneTable(params);
-  const vib = params.vibrance / 100;
-  const sat = params.saturation / 100;
-  const bw = params.bw;
-  const n = width * height;
-  for (let i = 0, o = 0; i < n; i++, o += 3) {
-    let r = lookup(table, LINEAR_8[data[o]] * gains[0]);
-    let g = lookup(table, LINEAR_8[data[o + 1]] * gains[1]);
-    let b = lookup(table, LINEAR_8[data[o + 2]] * gains[2]);
-    const l = LUMA[0] * r + LUMA[1] * g + LUMA[2] * b;
-    if (vib || sat) {
-      const max = r > g ? (r > b ? r : b) : (g > b ? g : b);
-      const min = r < g ? (r < b ? r : b) : (g < b ? g : b);
-      const f = (1 + vib * (1 - (max - min))) * (1 + sat);
-      r = clamp01(l + (r - l) * f);
-      g = clamp01(l + (g - l) * f);
-      b = clamp01(l + (b - l) * f);
+
+  const data = Buffer.alloc(n * 3);
+  for (let y = 0, i = 0; y < out.height; y++) {
+    for (let x = 0; x < out.width; x++, i++) {
+      sample(x, y);
+      const dc = level ? (level[i] - clarityBlur[i]) / LEVEL_SCALE : 0;
+      const ds = sharpenBlur ? (level[i] - sharpenBlur[i]) / LEVEL_SCALE : 0;
+      outputPixel(prep, scenePixel(prep, px[0], px[1], px[2], dc, ds, rgb));
+      const o = i * 3;
+      data[o] = encode(rgb[0]);
+      data[o + 1] = encode(rgb[1]);
+      data[o + 2] = encode(rgb[2]);
     }
-    if (bw) {
-      const k = LUMA[0] * r + LUMA[1] * g + LUMA[2] * b;
-      r = k; g = k; b = k;
-    }
-    if (detail) {
-      const d = detail[i] / 4096;
-      r += d; g += d; b += d;
-    }
-    data[o] = Math.round(clamp01(r) * 255);
-    data[o + 1] = Math.round(clamp01(g) * 255);
-    data[o + 2] = Math.round(clamp01(b) * 255);
   }
+  return { data, width: out.width, height: out.height };
 }
 
 // --------------------------------------------------------------- auto tone
 
 /**
- * One-click tone from a 256-bin luma histogram (sRGB): stretch the ends to
- * the 0.5 / 99.5 percentiles and pull the median towards the middle with
- * exposure. Light-handed on purpose; the result is ordinary slider values.
+ * Levels of a picture for Auto tone, from its linear luminances (after the
+ * RAW baseline): percentiles and the log mean, in EV. The browser measures
+ * its base image; only the resulting slider values are saved.
  */
-function autoTone(histogram) {
-  const total = histogram.reduce((sum, v) => sum + v, 0);
-  if (!total) return { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 };
-  const percentile = (q) => {
-    let acc = 0;
-    for (let i = 0; i < 256; i++) {
-      acc += histogram[i];
-      if (acc >= q * total) return i / 255;
-    }
-    return 1;
+function toneStats(luminances) {
+  const levels = Float64Array.from(luminances, (y) => levelOf(y)).sort();
+  const at = (q) => levels[Math.min(levels.length - 1, Math.max(0, Math.floor(q * (levels.length - 1))))];
+  let sum = 0;
+  for (const level of levels) sum += level;
+  return {
+    p005: at(0.005), p10: at(0.1), p50: at(0.5), p99: at(0.99), p995: at(0.995),
+    mean: levels.length ? sum / levels.length : LOG_G0,
+    clipped: luminances.length ? luminances.filter((y) => y >= 0.999).length / luminances.length : 0,
   };
-  const lo = percentile(0.005);
-  const hi = percentile(0.995);
-  const median = percentile(0.5);
+}
+
+/**
+ * One-click tone (the order and the "do not brighten what already clips"
+ * rule after RapidRAW's auto adjust; the targets are ours): exposure brings
+ * the log mean towards middle grey, highlights and shadows pull in what then
+ * sits far from it, contrast fits the range into about 8 EV, whites and
+ * blacks set the ends. Plain slider values; nothing else is stored.
+ */
+function autoTone(stats, { linear = false } = {}) {
   const clampTo = (v, min, max) => Math.min(max, Math.max(min, v));
-  const blacks = Math.round(clampTo(-(Math.min(lo, 0.1) / 0.1) * 100, -100, 0));
-  const whites = Math.round(clampTo(((1 - Math.max(hi, 0.85)) / 0.15) * 100, 0, 100));
-  // Median after the stretch, then the exposure that brings it to 0.45.
-  const stretched = clampTo((median - lo) / Math.max(0.05, hi - lo), 0.02, 0.98);
-  const exposure = roundTo(clampTo(Math.log2(srgbToLinear(0.45) / srgbToLinear(stretched)), -1.5, 1.5), 2) + 0;
-  const shadows = Math.round(clampTo((0.3 - stretched) * 100, 0, 30));
-  const highlights = Math.round(clampTo(-(percentile(0.98) - 0.9) * 300, -30, 0)) + 0;
-  return { exposure, contrast: 0, highlights, shadows, whites, blacks };
+  const white = linear ? RAW_BASELINE_EV : 0;
+  let exposure = 0.7 * (LOG_G0 - stats.mean);
+  if (stats.p995 + exposure > LOG_G0 + 2.3 || stats.clipped > 0.005) {
+    exposure = Math.min(exposure, 0, LOG_G0 + 2.3 - stats.p995);
+  }
+  exposure = clampTo(exposure, -2, 3);
+  const highlights = -clampTo((stats.p99 + exposure - (LOG_G0 + 2)) / 1.5, 0, 0.6);
+  const shadows = clampTo(((LOG_G0 - 4) - (stats.p10 + exposure)) / 3, 0, 0.5);
+  const range = Math.max(0.5, stats.p995 - stats.p005);
+  const contrast = clampTo(2 * Math.log2(8 / range), -0.3, 0.5);
+  const whites = clampTo((white - 0.3 - (stats.p995 + exposure)) / 3, -0.4, 0.4);
+  const blacks = -clampTo(((LOG_G0 - 7) - (stats.p005 + exposure)) / -4, 0, 0.4);
+  const round = (v) => Math.round(v * 100) + 0;
+  return {
+    exposure: Math.round(exposure * 100) / 100 + 0,
+    contrast: round(contrast),
+    highlights: round(highlights),
+    shadows: round(shadows),
+    whites: round(whites),
+    blacks: round(blacks),
+  };
 }
 
 module.exports = {
@@ -614,6 +875,9 @@ module.exports = {
   TONE_KEYS,
   GEOMETRY_KEYS,
   DEFAULT_PARAMS,
+  G0,
+  RAW_BASELINE_EV,
+  LEVEL_SCALE,
   validateEditParams,
   isIdentity,
   hasGeometry,
@@ -628,15 +892,18 @@ module.exports = {
   mapPointFromEdited,
   srgbToLinear,
   linearToSrgb,
-  channelGains,
-  toneCurve,
-  saturationFactor,
-  detailWeights,
-  detailSigmas,
+  whiteBalanceMatrix,
+  fitSigmoid,
+  prepare,
+  scenePixel,
+  outputPixel,
   referencePixel,
+  usesDetail,
+  detailSigmas,
+  quantLevel,
   boxesForGauss,
   blurPlane,
   renderEdit,
-  applyColour,
+  toneStats,
   autoTone,
 };

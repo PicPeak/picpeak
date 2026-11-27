@@ -32,6 +32,7 @@
  * Tunables (env, all optional):
  *   PHOTO_EDIT_MAX_PIXELS        default 36000000, the largest edited render
  *                                (a larger source is scaled down on decode)
+ *   PHOTO_EDIT_JPEG_QUALITY      default 92, the edited JPEG's quality
  *   PREVIEW_REGEN_CONCURRENCY    photos applied at once (default 1), shared
  *                                with the preview regeneration
  *   PHOTO_EDIT_DELAY_MS          default 5000, wait after boot
@@ -64,6 +65,7 @@ const intEnv = (name, fallback) => {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 };
 const maxPixels = () => intEnv('PHOTO_EDIT_MAX_PIXELS', 36000000);
+const jpegQuality = () => Math.min(100, Math.max(60, intEnv('PHOTO_EDIT_JPEG_QUALITY', 92)));
 const concurrency = () => Math.min(8, intEnv('PREVIEW_REGEN_CONCURRENCY', 1));
 
 const isVideoRow = (photo) => photo.media_type === 'video' || photo.type === 'video'
@@ -93,9 +95,10 @@ function isRenderKeyOf(photo, key, rev) {
 
 /**
  * Open the photo's original as something sharp can read (a RAW's embedded
- * preview, a decoded HEIC) and hand its local path to `fn`.
+ * preview, a decoded HEIC) and hand its local path to `fn`; with `raw`, the
+ * file itself (for the RAW develop).
  */
-async function withOriginal(photo, fn) {
+async function withOriginal(photo, fn, { raw = false } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
   const { withLocalCopy, withProcessableImage } = require('./imageProcessor');
   const event = await db('events').where({ id: photo.event_id }).first();
@@ -104,6 +107,7 @@ async function withOriginal(photo, fn) {
   delete original[DELIVERY_KEY];
   const key = resolvePhotoStorageKey(event, original);
   const open = async (localPath, sourceName) => {
+    if (raw) return fn(localPath);
     const proc = await withProcessableImage(localPath, sourceName);
     try {
       return await fn(proc.path);
@@ -130,19 +134,61 @@ function toRgb(data, info) {
   return rgb;
 }
 
+/** photoEditMath.renderEdit on a worker thread; `src` is handed over, not copied. */
+function renderInWorker(src, width, height, channels, params, options) {
+  const { Worker } = require('worker_threads');
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(require('path').join(__dirname, 'photoEditWorker.js'), {
+      workerData: {
+        buffer: src.buffer, byteOffset: src.byteOffset, length: src.length, bits: src.BYTES_PER_ELEMENT * 8,
+        width, height, channels, params, options,
+      },
+      transferList: [src.buffer],
+    });
+    worker.once('message', (out) => resolve({
+      width: out.width, height: out.height, data: Buffer.from(out.buffer, out.byteOffset, out.length),
+    }));
+    worker.once('error', reject);
+    worker.once('exit', (code) => { if (code !== 0) reject(new Error(`The edit render stopped (${code})`)); });
+  });
+}
+
 /**
- * The full-size edited JPEG of a photo. The source is decoded upright, scaled
- * down on decode when it is larger than PHOTO_EDIT_MAX_PIXELS, then the edit
- * runs over it in this process (photoEditMath.renderEdit) and the result is
- * encoded in the image worker. Peak memory is the decoded source and the
- * output, 3 bytes a pixel each, plus 6 bytes a pixel of the output while
- * clarity or sharpening is computed. The source's EXIF and XMP (capture date,
- * camera, copyright) go onto the result with the orientation set upright.
+ * The full-size edited JPEG of a photo.
+ *
+ * A camera RAW, where LibRaw's dcraw_emu is installed, is developed from its
+ * sensor data (rawDevelop: 16-bit linear, as-shot white balance, highlights
+ * rebuilt), half-size when the sensor is far larger than the render may be;
+ * the edit then runs on the linear data with the RAW look. Anything else, and
+ * a RAW without dcraw_emu, is decoded upright by sharp (a RAW through its
+ * embedded preview), scaled down on decode when it is larger than
+ * PHOTO_EDIT_MAX_PIXELS.
+ *
+ * The pixel pass runs on a worker thread and streams over the output twice
+ * instead of keeping a full-size intermediate. Memory: the decoded source (3
+ * bytes a pixel, 6 for a RAW develop) and the 3-byte output, plus three
+ * 2-byte planes of the output while detail, shadows/highlights or
+ * whites/blacks are in the edit. Metadata: the source's EXIF and XMP
+ * (capture date, camera, copyright) go onto the result with the orientation
+ * upright; for a RAW through exiftool from the container.
  */
 async function renderEditedJpeg(photo, params, { interactive = false } = {}) {
   const sharp = require('./isolatedSharp');
-  const { withSourceMetadata } = require('./imageProcessor');
+  const rawDevelop = require('./rawDevelop');
+  const imageProcessor = require('./imageProcessor');
   const limit = maxPixels();
+  const encode = async (out) => sharp(out.data, { raw: { width: out.width, height: out.height, channels: 3 }, interactive })
+    .jpeg({ quality: jpegQuality(), chromaSubsampling: '4:4:4' }).toBuffer();
+  if (rawDevelop.isRawPhoto(photo) && await rawDevelop.isAvailable()) {
+    return withOriginal(photo, async (rawPath) => {
+      const info = await rawDevelop.identify(rawPath);
+      const half = Boolean(info.width && info.height && info.width * info.height > 1.5 * limit);
+      const image = await rawDevelop.developLinear(rawPath, { half, nr: params.nr });
+      const out = await renderInWorker(image.data, image.width, image.height, 3, params,
+        { maxPixels: limit, linear: true, exposureBias: info.exposureBias });
+      return { buffer: await imageProcessor.withRawContainerTags(rawPath, await encode(out)), width: out.width, height: out.height };
+    }, { raw: true });
+  }
   return withOriginal(photo, async (sourcePath) => {
     const metadata = await sharp(sourcePath, { failOn: 'none', interactive }).metadata();
     const turned = (metadata.orientation || 1) >= 5;
@@ -154,11 +200,8 @@ async function renderEditedJpeg(photo, params, { interactive = false } = {}) {
       chain = chain.resize(Math.max(1, Math.floor(width * scale)), Math.max(1, Math.floor(height * scale)), { fit: 'inside' });
     }
     const { data, info } = await chain.flatten({ background: '#ffffff' }).raw({ depth: 'uchar' }).toBuffer({ resolveWithObject: true });
-    const source = toRgb(data, info);
-    const out = math.renderEdit(source, info.width, info.height, 3, params, { maxPixels: limit });
-    const jpeg = await sharp(out.data, { raw: { width: out.width, height: out.height, channels: 3 }, interactive })
-      .jpeg({ quality: 92, chromaSubsampling: '4:4:4' }).toBuffer();
-    return { buffer: withSourceMetadata(jpeg, { exif: metadata.exif, xmp: metadata.xmp }), width: out.width, height: out.height };
+    const out = await renderInWorker(toRgb(data, info), info.width, info.height, 3, params, { maxPixels: limit });
+    return { buffer: imageProcessor.withSourceMetadata(await encode(out), { exif: metadata.exif, xmp: metadata.xmp }), width: out.width, height: out.height };
   });
 }
 
@@ -371,13 +414,49 @@ async function saveEdits(changes) {
   return revisions;
 }
 
-/** Remove a photo's edited render (photo delete, archive). Best effort. */
+/** Remove a photo's edited render and RAW develop preview (photo delete, archive, replace). Best effort. */
 async function deleteEditedRender(photo) {
-  const key = photo?.edit_render_path;
-  if (!isRenderKeyOf(photo, key)) return;
-  await getStorage().delete(key).catch((err) => {
-    logger.warn(`Could not remove the edited render ${key} of photo ${photo.id}: ${err.message}`);
-  });
+  if (!photo) return;
+  const keys = [];
+  if (isRenderKeyOf(photo, photo.edit_render_path)) keys.push(photo.edit_render_path);
+  const rawDevelop = require('./rawDevelop');
+  if (rawDevelop.isRawPhoto(photo)) keys.push(rawDevelop.previewKey(photo));
+  for (const key of keys) {
+    await getStorage().delete(key).catch((err) => {
+      logger.warn(`Could not remove the edit file ${key} of photo ${photo.id}: ${err.message}`);
+    });
+  }
+}
+
+const AUTO_DEVELOP_SETTING = 'photo_editor_auto_develop_raw';
+
+/** Whether new RAW uploads are developed with the default look (off by default: CPU). */
+async function autoDevelopEnabled() {
+  const value = await require('../utils/appSettings').getAppSetting(AUTO_DEVELOP_SETTING, false);
+  return value === true || value === 'true' || value === 1;
+}
+
+/**
+ * Queue the default develop for RAW photos that have no edit yet (the batch
+ * action and, when the setting is on, every finished RAW upload). Their
+ * guests then get a JPEG developed from the sensor data instead of the
+ * camera's embedded preview. Returns the ids queued.
+ */
+async function queueDefaultDevelop(photos) {
+  const rawDevelop = require('./rawDevelop');
+  const changes = photos
+    .filter((photo) => !isVideoRow(photo) && rawDevelop.isRawPhoto(photo) && !paramsOf(photo))
+    .map((photo) => ({ photo, params: { ...math.DEFAULT_PARAMS, develop: true } }));
+  if (changes.length) await saveEdits(changes);
+  return changes.map((change) => change.photo.id);
+}
+
+/** After a RAW upload finished processing: its default develop, when the studio asked for that. */
+async function afterUpload(photoId) {
+  if (!(await autoDevelopEnabled())) return;
+  if (!(await require('../middleware/requireFeatureFlag').isFeatureEnabled('photoEditor'))) return;
+  const photo = await livePhotos(db).where({ id: photoId }).first();
+  if (photo) await queueDefaultDevelop([photo]);
 }
 
 // -------------------------------------------------------- background apply
@@ -576,6 +655,11 @@ module.exports = {
   focalAfterEdit,
   saveEdits,
   deleteEditedRender,
+  AUTO_DEVELOP_SETTING,
+  autoDevelopEnabled,
+  queueDefaultDevelop,
+  afterUpload,
+  withOriginal,
   applyPhoto,
   runPass,
   start,

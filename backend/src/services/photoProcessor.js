@@ -850,6 +850,14 @@ async function processPhoto(photoId) {
     logger.warn(`processPhoto: zip invalidate failed for ${photoId}`, { error: err.message });
   }
 
+  // A RAW upload is developed with the default look when the studio turned
+  // that on (issue 2619); queued, the render runs in the background.
+  if (!isVideo) {
+    await require('./photoEdits').afterUpload(photoId).catch((err) => {
+      logger.warn(`processPhoto: RAW auto develop failed for ${photoId}`, { error: err.message });
+    });
+  }
+
   // A transfer created while all its photos were processing held its "ready"
   // mail back (issue 2061); this photo may be the first it can hand out. Not
   // awaited: a slow SMTP server must not hold this worker or its attempt, and
