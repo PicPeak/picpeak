@@ -348,8 +348,13 @@ router.get('/:slug/photo/:photoId',
       }
 
       // An edited photo (issue 2619) is its edited render from here on: the
-      // bytes, the type, the stored watermark copy of its revision.
-      if (!video) photo = await photoEdits.deliveredPhoto(photo, { interactive: true, headOnly: req.method === 'HEAD' });
+      // bytes, the type, the stored watermark copy of its revision. Of the
+      // applied revision, the one the listing describes (its size, the e= of
+      // this URL) and drawings are made on; only a download delivers the
+      // edit saved last.
+      if (!video) {
+        photo = await photoEdits.deliveredPhoto(await photoEdits.renditionView(photo), { interactive: true, headOnly: req.method === 'HEAD' });
+      }
 
       // Resolve where to read the photo bytes from. For external/reference
       // photos the source is always a local mount path. For managed photos

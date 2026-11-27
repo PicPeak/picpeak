@@ -763,3 +763,21 @@ describe('the watermark batch over edited photos', () => {
     }
   });
 });
+
+describe('the gallery photo route while an edit is pending', () => {
+  it('shows the applied revision, the one the listing describes; a download gets the saved edit', async () => {
+    const id = unwrap(await db('photos').insert({
+      event_id: event.id, filename: 'pending-photo.jpg', path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600,
+      edit_params: JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), edit_rev: 1, edit_applied_rev: 0,
+    }).returning('id'));
+    try {
+      const shown = await binary(guest('get', `/photo/${id}`)).expect(200);
+      expect(await size(shown.body)).toEqual([800, 600]);
+      const downloaded = await binary(guest('get', `/download/${id}`)).expect(200);
+      expect(await size(downloaded.body)).toEqual([400, 600]);
+    } finally {
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
