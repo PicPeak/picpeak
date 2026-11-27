@@ -154,5 +154,21 @@ describe('chosen entries that are gone', () => {
     render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={{ ...hero, variant: 'overlay' }} onChange={vi.fn()} /></QueryClientProvider>);
     expect(screen.getByText('Image')).toBeInTheDocument();
   });
+
+  it('unchecking the last chosen gallery unchecks it', async () => {
+    vi.mocked(websiteService.listGalleries).mockReset();
+    vi.mocked(websiteService.listGalleries).mockImplementation(async (params = {}) => (params.ids
+      ? { galleries: [g(5, 'Only one')], hasMore: false }
+      : { galleries: [g(5, 'Only one')], hasMore: false }));
+    const Holder = () => {
+      const [block, setBlock] = React.useState<FeaturedGalleriesBlock>({ id: 'f', type: 'featuredGalleries', variant: 'cards', background: 'default', heading: '', intro: '', galleries: [{ id: 5, text: '' }] });
+      return <BlockEditor block={block} onChange={(next) => setBlock(next as FeaturedGalleriesBlock)} />;
+    };
+    render(<QueryClientProvider client={new QueryClient()}><Holder /></QueryClientProvider>);
+    const box = await screen.findByLabelText('Only one');
+    await waitFor(() => expect(box).toBeChecked());
+    fireEvent.click(box);
+    await waitFor(() => expect(screen.getAllByLabelText('Only one').every((el) => !(el as HTMLInputElement).checked)).toBe(true));
+  });
 });
 

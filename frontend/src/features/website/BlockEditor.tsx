@@ -236,12 +236,16 @@ const FeaturedGalleriesField: React.FC<{
   });
   const availableFailure = loadFailure(available, t);
   const chosenFailure = loadFailure(chosenQuery, t);
-  const chosenRows = chosenQuery.data?.galleries || [];
+  // The answer kept from an earlier selection (keepPreviousData, or none
+  // fetched once the selection is empty) still lists what was unchecked:
+  // only the galleries chosen now are shown as chosen.
+  const chosenRows = (chosenQuery.data?.galleries || []).filter((r) => chosenIds.includes(r.id));
+  const answered = !!chosenQuery.data && !chosenQuery.isPlaceholderData;
   const rows = (available.data?.pages || []).flatMap((p) => p.galleries).filter((g) => g.eligible && !chosenIds.includes(g.id));
-  const missing = chosenIds.length && chosenQuery.data ? value.filter((g) => !chosenRows.some((r) => r.id === g.id && r.eligible)) : [];
+  const missing = chosenIds.length && answered ? value.filter((g) => !chosenRows.some((r) => r.id === g.id && r.eligible)) : [];
   // A chosen gallery that is deleted, archived or out of reach comes back
   // without a row: it still counts toward the limit, so it can be removed.
-  const unavailable = chosenQuery.data ? chosenIds.filter((id) => !chosenRows.some((r) => r.id === id)) : [];
+  const unavailable = answered ? chosenIds.filter((id) => !chosenRows.some((r) => r.id === id)) : [];
   const toggle = (id: number, on: boolean) => onChange(on ? [...value, { id, text: '' }] : value.filter((x) => x.id !== id));
   const row = (g: WebsiteGallery, checked: boolean) => (
     <li key={g.id}>
