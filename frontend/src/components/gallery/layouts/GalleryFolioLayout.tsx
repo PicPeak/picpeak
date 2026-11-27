@@ -13,6 +13,7 @@ import { PhotoCard } from '../PhotoCard';
 import { BackToAccountLink } from '../BackToAccountLink';
 import { BulkRatingPopover } from '../BulkRatingPopover';
 import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
+import { firstLookAboveChips } from '../GalleryTileBadges';
 import { DownloadQuotaNotice } from '../DownloadQuotaNotice';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { heroImageUrl } from '../heroImage';
@@ -187,6 +188,9 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
         onClick={() => onPhotoClick(index)}
         onDownload={(e) => onDownload(photo, e)}
         onToggleSelect={() => onPhotoSelect?.(photo.id)}
+        // Above the action row, which takes the bottom of the tile and on a
+        // phone's two columns reaches the left edge.
+        firstLookClassName={firstLookAboveChips(2)}
         className="folio-tile photo-card group"
         style={{ width: '100%', height, ...boxStyle(box) }}
         lazy
@@ -219,10 +223,12 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
           ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
           : undefined}
       >
+        {/* In the middle: the corners belong to the labels, the checkbox
+            and the action row. */}
         {isVideoItem(photo) && (
           <span className="folio-video-badge">
-            <Play className="w-3 h-3" aria-hidden="true" fill="currentColor" />
-            {t('common.video', 'Video')}
+            <Play className="w-4 h-4" aria-hidden="true" fill="currentColor" />
+            <span className="sr-only">{t('common.video', 'Video')}</span>
           </span>
         )}
       </PhotoCard>

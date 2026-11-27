@@ -63,6 +63,7 @@ vi.mock('react-photo-album', () => ({
 }));
 
 import { GalleryFolioLayout } from '../GalleryFolioLayout';
+import { GalleryTileBadgesProvider } from '../../GalleryTileBadges';
 
 const photos = [1, 2, 3].map((id) => ({
   id,
@@ -223,6 +224,20 @@ describe('Gallery Folio', () => {
     fireEvent.click(nav().getByRole('button', { name: 'More actions' }));
     fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Logout' }));
     expect(handlers.onLogout).toHaveBeenCalledTimes(1);
+  });
+
+  it('lifts the first-look badge clear of the tile\'s action row', () => {
+    const firstLook = photos.map((photo, index) => ({ ...photo, first_look: index === 0 }));
+    render(
+      <MemoryRouter>
+        <GalleryTileBadgesProvider value={{ firstLookLabel: 'First look', folderNameOf: null }}>
+          <GalleryFolioLayout photos={firstLook} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} {...likes} />
+        </GalleryTileBadgesProvider>
+      </MemoryRouter>,
+    );
+    const badge = screen.getByTestId('first-look-badge');
+    expect(badge).toHaveClass('bottom-16');
+    expect(badge).not.toHaveClass('bottom-2');
   });
 
   it('has no menu when there is nothing secondary to put in it', () => {

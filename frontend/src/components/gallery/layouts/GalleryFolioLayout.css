@@ -593,18 +593,20 @@
 
 .folio-video-badge {
   position: absolute;
-  left: 0.625rem;
-  bottom: 0.625rem;
-  display: inline-flex;
+  top: 50%;
+  left: 50%;
+  display: flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.2rem 0.55rem;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding-left: 0.15rem;
   border-radius: 9999px;
-  background-color: rgba(0, 0, 0, 0.55);
+  background-color: rgba(0, 0, 0, 0.42);
   color: #fff;
-  font-size: 0.66rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  transform: translate(-50%, -50%);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
   pointer-events: none;
 }
 
