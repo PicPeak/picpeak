@@ -112,7 +112,7 @@ it('keeps session-management actions out of an admin preview', () => {
   } finally { window.history.replaceState(null, '', previous); }
 });
 
-describe.each(['grid', 'gallery-premium', 'gallery-story'])('gallery PIN entry on %s', (layout) => {
+describe.each(['grid', 'gallery-premium', 'gallery-story', 'gallery-folio'])('gallery PIN entry on %s', (layout) => {
   beforeEach(() => {
     stable.theme.theme = { galleryLayout: layout };
     stable.auth.isClient = false;
@@ -152,7 +152,7 @@ describe.each(['grid', 'gallery-premium', 'gallery-story'])('gallery PIN entry o
   });
 });
 
-describe.each(['gallery-premium', 'gallery-story'])('GalleryView client access on %s', (layout) => {
+describe.each(['gallery-premium', 'gallery-story', 'gallery-folio'])('GalleryView client access on %s', (layout) => {
   beforeEach(() => {
     stable.theme.theme = { galleryLayout: layout };
   });

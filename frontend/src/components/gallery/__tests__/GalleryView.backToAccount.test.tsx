@@ -104,7 +104,7 @@ afterEach(() => {
   stable.auth.isClient = false;
 });
 
-describe.each(['grid', 'gallery-premium', 'gallery-story'])('back to the account on %s', (layout) => {
+describe.each(['grid', 'gallery-premium', 'gallery-story', 'gallery-folio'])('back to the account on %s', (layout) => {
   it('is offered to a portal session', () => {
     stable.theme.theme = { galleryLayout: layout };
     stable.auth.viaCustomer = true;

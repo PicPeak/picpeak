@@ -27,7 +27,9 @@ import {
   MosaicGalleryLayout,
   GalleryPremiumLayout,
   GalleryStoryLayout,
+  GalleryFolioLayout,
 } from './layouts';
+import { isFullPageLayout as isFullPage, layoutOwnsLightbox as ownsLightbox } from './layouts/fullPageLayouts';
 import { HeroHeader } from './HeroHeader';
 import type { HeaderStyleType, HeroDividerStyle } from '../../types/theme.types';
 
@@ -258,14 +260,16 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
 
   // Gallery Premium and Gallery Story mount their own lightbox and report
   // its moves through this wrapper, so the id it is on is known here too.
-  const layoutOwnsLightbox = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
-  // Premium and Story render their own empty state; the key remounts them
-  // when the list empties or fills, so their own lightbox state goes with it
-  // as it did when this component returned its empty message instead.
+  const layoutOwnsLightbox = ownsLightbox(theme.galleryLayout);
+  // The full-page layouts draw their own page, their empty state included.
+  const fullPage = isFullPage(theme.galleryLayout);
+  // They render that empty state themselves; the key remounts them when the
+  // list empties or fills, so their own lightbox state goes with it as it
+  // did when this component returned its empty message instead.
   // Not for a search or filter that left nothing (issue 2543): those layouts
   // keep their shell then, with the feature toolbox in it, so its open filter
   // panel and its focus stay put while the guest changes the filter back.
-  const layoutKey = layoutOwnsLightbox && photos.length === 0 && !emptyIsFiltered ? 'empty' : 'photos';
+  const layoutKey = fullPage && photos.length === 0 && !emptyIsFiltered ? 'empty' : 'photos';
   // The remount drops whatever had focus in the old layout: the empty
   // state's upload button once the first upload's refetch fills the gallery.
   // A control marked `data-gallery-focus="<role>"` hands focus to the new
@@ -455,9 +459,9 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     }
   };
 
-  // Premium and Story render their own empty state (with the upload button
-  // and their way back from a filter), so only the other layouts stop here.
-  if (photos.length === 0 && !layoutOwnsLightbox) {
+  // The full-page layouts render their own empty state (with the upload
+  // button and their way back from a filter), so only the others stop here.
+  if (photos.length === 0 && !fullPage) {
     // Suppressed (#1160): a folder-only root has folder tiles above proving the
     // gallery isn't empty, so the message would contradict them.
     if (!suppressEmptyState) {
@@ -521,6 +525,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     storyShowFilenames: theme.gallerySettings?.storyShowFilenames === true,
     storyFooterTitle: theme.gallerySettings?.storyFooterTitle,
     storyFooterText: theme.gallerySettings?.storyFooterText,
+    // Gallery Folio's cover crops around the event's hero focal point.
+    heroImageAnchor,
     categories,
     chapterMarkerStyle,
     chapterHeroPhotos,
@@ -582,17 +588,17 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     case 'gallery-story':
       LayoutComponent = GalleryStoryLayout;
       break;
+    case 'gallery-folio':
+      LayoutComponent = GalleryFolioLayout;
+      break;
     default:
       LayoutComponent = GridGalleryLayout;
   }
 
-  // Gallery Premium and Gallery Story layouts have their own integrated hero/header
-  const isFullPageLayout = galleryLayout === 'gallery-premium' || galleryLayout === 'gallery-story';
-
   return (
     <>
       {/* Hero Header - shown when headerStyle is 'hero' (skip for full-page layouts with integrated hero) */}
-      {showHeroHeader && !isFullPageLayout && (
+      {showHeroHeader && !fullPage && (
         <HeroHeader
           photos={photos}
           slug={slug}
@@ -610,21 +616,21 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
       )}
 
       {/* Welcome Message - shown for non-fullpage layouts when set */}
-      {!isFullPageLayout && (welcomeMessage || secondaryWelcome) && (
+      {!fullPage && (welcomeMessage || secondaryWelcome) && (
         <div className="mb-6 px-4 py-3 rounded-lg bg-card-theme/50 border border-border-theme text-center">
           <p className="text-sm text-muted-theme whitespace-pre-line">{welcomeMessage}<GallerySecondaryText kind="welcome" /></p>
         </div>
       )}
 
-      {!isFullPageLayout && afterHero}
+      {!fullPage && afterHero}
 
       {/* Render the selected layout, keyed by `layoutKey` (see above). */}
       <LayoutComponent key={layoutKey} {...layoutProps} />
       {/* Full-page layouts place it themselves, ahead of their footer. */}
-      {!isFullPageLayout && afterGrid}
+      {!fullPage && afterGrid}
 
-      {/* Lightbox - skip for full-page layouts which have their own lightbox */}
-      {selectedPhotoIndex !== null && !isFullPageLayout && (
+      {/* Lightbox - skip for the layouts that have their own */}
+      {selectedPhotoIndex !== null && !layoutOwnsLightbox && (
         <PhotoLightbox
           photos={photos}
           initialIndex={selectedPhotoIndex}

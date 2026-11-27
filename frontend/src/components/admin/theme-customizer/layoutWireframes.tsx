@@ -111,6 +111,20 @@ export const layoutWireframes: Record<GalleryLayoutType, React.ReactNode> = {
       <rect x="3" y="14.5" width="16" height="2" rx="1" fill="currentColor" />
     </Wireframe>
   ),
+  'gallery-folio': (
+    <Wireframe
+      boxes={[
+        [3, 19, 13, 9], [3, 30, 13, 3],
+        [17.5, 19, 13, 14],
+        [32, 19, 13, 6], [32, 27, 13, 6],
+      ]}
+    >
+      {/* The cover: a photo with a quiet title low on it, then a hairline nav. */}
+      <rect x="3" y="3" width="42" height="12" rx="1" fill="currentColor" fillOpacity="0.3" />
+      <rect x="18" y="10.5" width="12" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="3" y="16.5" width="42" height="0.6" fill="currentColor" fillOpacity="0.5" />
+    </Wireframe>
+  ),
 };
 
 export const masonryModeWireframes: Record<MasonryPickerMode, React.ReactNode> = {
@@ -138,7 +152,7 @@ export const masonryModeWireframes: Record<MasonryPickerMode, React.ReactNode> =
   ),
 };
 
-export const BETA_LAYOUTS: GalleryLayoutType[] = ['gallery-premium', 'gallery-story'];
+export const BETA_LAYOUTS: GalleryLayoutType[] = ['gallery-premium', 'gallery-story', 'gallery-folio'];
 
 /** The gallery layouts as LayoutPicker options, in the picker's order. */
 export function useGalleryLayoutOptions(): LayoutPickerOption<GalleryLayoutType>[] {

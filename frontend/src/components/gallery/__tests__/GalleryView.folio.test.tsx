@@ -1,0 +1,131 @@
+/**
+ * Gallery Folio in the gallery shell (issue 2617). A full-page layout like
+ * Premium and Story: the shell steps aside, the folder strip above it takes
+ * Folio's palette, opening a folder narrows the photos it is handed, and its
+ * nav heart filters the viewer's own likes.
+ */
+import React from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+type PhotosResult = { data: unknown; isLoading: boolean; error: unknown; refetch: () => void };
+
+const stable = vi.hoisted(() => ({
+  auth: { logout: () => {}, endSession: () => {}, isClient: false, viaCustomer: false, viaClientPin: false,
+    enterClientMode: vi.fn(), leaveClientMode: vi.fn() },
+  theme: {
+    setTheme: () => {},
+    theme: { galleryLayout: 'gallery-folio', gallerySettings: { folioPalette: 'charcoal' } } as Record<string, unknown>,
+  },
+  download: { mutate: () => {}, isPending: false },
+  settings: { data: {} },
+  watermark: { watermarkEnabled: false },
+  t: (key: string) => key,
+  photos: null as unknown as PhotosResult,
+  grid: null as unknown as { photos: Array<{ id: number }>; onToggleLikedOnly?: () => void; likedOnly?: boolean },
+}));
+
+vi.mock('../../../contexts', () => ({
+  useGalleryAuth: () => stable.auth,
+  useTheme: () => stable.theme,
+}));
+vi.mock('../../../hooks/useGallery', () => ({
+  useGalleryPhotos: () => stable.photos,
+  useDownloadAllPhotos: () => stable.download,
+}));
+vi.mock('../../../hooks/usePublicSettings', () => ({ usePublicSettings: () => stable.settings }));
+vi.mock('../../../hooks/useWatermarkSettings', () => ({ useWatermarkSettings: () => stable.watermark }));
+vi.mock('../../../hooks/useGalleryCustomCss', () => ({ useGalleryCustomCss: () => undefined }));
+vi.mock('../../../hooks/useDevToolsProtection', () => ({ useDevToolsProtection: () => undefined }));
+vi.mock('react-i18next', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-i18next')>()),
+  useTranslation: () => ({ t: stable.t, i18n: { language: 'en' } }),
+}));
+vi.mock('../../../services/analytics.service', () => ({
+  analyticsService: { track: vi.fn(), trackGalleryEvent: vi.fn(), trackSearch: vi.fn(), trackExpirationWarning: vi.fn() },
+}));
+vi.mock('../../../services/gallery.service', () => ({
+  galleryService: { getPeople: vi.fn().mockResolvedValue({ people: [] }) },
+}));
+vi.mock('../../../services/feedback.service', () => ({
+  feedbackService: {
+    getGalleryFeedbackSettings: vi.fn().mockResolvedValue({ feedback_enabled: true, allow_likes: true, identity_mode: 'simple' }),
+    getMyFeedback: vi.fn().mockResolvedValue([]),
+  },
+}));
+vi.mock('../GalleryLayout', () => ({
+  GalleryLayout: ({ children }: { children?: React.ReactNode }) => <div data-testid="standard-shell">{children}</div>,
+}));
+vi.mock('../PhotoGridWithLayouts', () => ({
+  PhotoGridWithLayouts: (props: typeof stable.grid) => {
+    stable.grid = props;
+    return <div data-testid="photo-grid" data-ids={props.photos.map((p) => p.id).join(',')} />;
+  },
+}));
+
+import { GalleryView } from '../GalleryView';
+
+const event = { id: 1, event_name: 'Hoa Wedding', event_type: 'wedding', event_date: '2026-09-19', expires_at: '2027-09-19T00:00:00Z' };
+
+const photo = (id: number, folder: number | null, liked = false, likeCount = 0) => ({
+  id, filename: `${id}.jpg`, url: `/${id}.jpg`, thumbnail_url: `/${id}-t.jpg`, type: 'photo', size: 1,
+  uploaded_at: `2026-09-19T1${id}:00:00Z`, category_id: null, folder_id: folder,
+  is_liked: liked, like_count: likeCount,
+});
+
+function show() {
+  stable.photos = {
+    data: {
+      event: { ...event, allow_downloads: true },
+      categories: [{ id: 3, name: 'Ceremony', slug: 'ceremony', is_folder: true, parent_id: null }],
+      // 5 is liked by this viewer; 6 only by someone else.
+      photos: [photo(4, 3), photo(5, null, true, 1), photo(6, null, false, 2)],
+    },
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <GalleryView slug="wedding" event={event} />
+    </QueryClientProvider>,
+  );
+}
+
+const shownIds = () => screen.getByTestId('photo-grid').getAttribute('data-ids');
+
+afterEach(() => {
+  cleanup();
+  // Opening a folder writes it to the URL.
+  window.history.replaceState({}, '', '/');
+});
+
+describe('Gallery Folio in the gallery shell', () => {
+  it('draws its own page, without the standard shell', () => {
+    show();
+    expect(screen.queryByTestId('standard-shell')).toBeNull();
+    expect(screen.getByTestId('photo-grid')).toBeInTheDocument();
+  });
+
+  it('paints the folder strip in its palette, and a folder narrows its photos', () => {
+    show();
+    expect(shownIds()).toBe('6,5');
+    const tile = screen.getByRole('button', { name: 'gallery.openFolder' });
+    // The strip sits in a box that carries Folio's charcoal palette.
+    const scope = tile.closest('[style*="--color-background"]') as HTMLElement;
+    expect(scope.style.getPropertyValue('--color-background')).toBe('#1c1c1b');
+
+    fireEvent.click(tile);
+    expect(shownIds()).toBe('4');
+  });
+
+  it('filters the viewer\'s own likes from its nav heart', () => {
+    show();
+    act(() => stable.grid.onToggleLikedOnly?.());
+    expect(stable.grid.likedOnly).toBe(true);
+    // Photo 6 has likes, but not this viewer's.
+    expect(shownIds()).toBe('5');
+  });
+});

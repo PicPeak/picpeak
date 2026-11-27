@@ -1,5 +1,5 @@
 /**
- * Premium and Story render their own empty state, with the guest upload
+ * The full-page layouts render their own empty state, with the guest upload
  * button and the event-wide filename list. PhotoGridWithLayouts must hand an
  * empty list through to them instead of returning its own message first.
  */
@@ -56,12 +56,15 @@ const renderGrid = (props: Partial<React.ComponentProps<typeof PhotoGridWithLayo
   return { ...view, rerenderWith: (next: typeof props) => view.rerender(tree(next)) };
 };
 
+// Each layout's own nav prefix for its test ids.
+const navPrefix = (layout: string) => layout.replace('gallery-', '');
+
 const photo = {
   id: 1, filename: 'a.jpg', url: '/api/gallery/demo/photo/1', thumbnail_url: '/api/gallery/demo/thumbnail/1',
   width: 600, height: 400, type: 'individual', size: 1, uploaded_at: '2026-01-01T00:00:00Z',
 } as any;
 
-describe.each(['gallery-premium', 'gallery-story'])('PhotoGridWithLayouts empty %s', (layout) => {
+describe.each(['gallery-premium', 'gallery-story', 'gallery-folio'])('PhotoGridWithLayouts empty %s', (layout) => {
   beforeEach(() => {
     theme.galleryLayout = layout;
   });
@@ -113,7 +116,7 @@ describe.each(['gallery-premium', 'gallery-story'])('PhotoGridWithLayouts empty 
     // The refetch brings the first photo: the layout remounts out of its
     // empty state and that button is gone.
     rerenderWith({ onUploadClick, photos: [photo] });
-    const navUpload = screen.getByTestId(layout === 'gallery-premium' ? 'premium-nav-upload' : 'story-nav-upload');
+    const navUpload = screen.getByTestId(`${navPrefix(layout)}-nav-upload`);
     expect(document.activeElement).toBe(navUpload);
   });
 
@@ -134,7 +137,7 @@ describe.each(['gallery-premium', 'gallery-story'])('PhotoGridWithLayouts empty 
   it('moves focus between the nav heart and "Show all photos" across the empty Liked view', () => {
     const likes = { feedbackEnabled: true, feedbackOptions: { allowLikes: true } as never };
     const { rerenderWith } = renderGrid({ ...likes, photos: [photo], onToggleLikedOnly: vi.fn() });
-    const heartId = layout === 'gallery-premium' ? 'premium-nav-liked' : 'story-nav-liked';
+    const heartId = `${navPrefix(layout)}-nav-liked`;
     screen.getByTestId(heartId).focus();
     // Nothing liked: the filter empties the view and the layout remounts.
     rerenderWith({ ...likes, photos: [], likedOnly: true, onToggleLikedOnly: vi.fn() });

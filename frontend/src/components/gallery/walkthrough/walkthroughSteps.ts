@@ -54,6 +54,7 @@ export const MAX_WALKTHROUGH_STEPS = 5;
  *  - grid, masonry, mosaic, timeline, carousel: a heart on the tile (likes),
  *    and the shared PhotoLightbox with heart and bookmark (favourites)
  *  - Story: a heart on its cards, and the shared PhotoLightbox
+ *  - Folio: a heart on the shared tile, and the shared PhotoLightbox
  *  - Premium: a heart on its tiles and in its nav; its own lightbox
  *    (yet-another-react-lightbox) has no favourite, and nothing else does
  *

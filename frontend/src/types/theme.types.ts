@@ -1,5 +1,5 @@
 // Gallery Layout Types
-export type GalleryLayoutType = 'grid' | 'masonry' | 'carousel' | 'timeline' | 'mosaic' | 'gallery-premium' | 'gallery-story';
+export type GalleryLayoutType = 'grid' | 'masonry' | 'carousel' | 'timeline' | 'mosaic' | 'gallery-premium' | 'gallery-story' | 'gallery-folio';
 
 // Header Style Types (decoupled from layout)
 export type HeaderStyleType = 'hero' | 'standard' | 'banner' | 'minimal' | 'none';
@@ -62,6 +62,21 @@ export interface GalleryLayoutSettings {
   // welcome message / default thank-you line (GalleryStoryLayout).
   storyFooterTitle?: string;
   storyFooterText?: string;
+
+  // Gallery Folio (issue 2617). Unset keeps the defaults in folioSettings.ts:
+  // a full cover, the paper palette, classic type, regular spacing and
+  // 3 columns on a desktop, 2 on a phone. Fonts and the cover's focal point
+  // are the theme's and the event's own settings.
+  folioCover?: 'full' | 'split';
+  folioPalette?: 'paper' | 'white' | 'charcoal';
+  folioType?: 'classic' | 'modern';
+  folioSpacing?: 'compact' | 'regular' | 'airy';
+  folioColumns?: {
+    mobile: number;
+    desktop: number;
+  };
+  // Plain text in the nav, e.g. the studio's name; empty shows the event name.
+  folioStudioLabel?: string;
 
   // Thumbnail scale (applies to Grid, Masonry columns, Mosaic)
   thumbnailScale?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
@@ -466,6 +481,35 @@ export const GALLERY_THEME_PRESETS: Record<string, EventTheme> = {
       headerStyle: 'none',
       footerStyle: 'minimal',
       shadowStyle: 'subtle'
+    },
+    isPreset: true
+  },
+
+  galleryFolio: {
+    name: 'Gallery Folio (Beta)',
+    description: 'Quiet, image-first client gallery with a photographic cover',
+    config: {
+      primaryColor: '#24211d',
+      accentColor: '#8a7356',
+      accentDarkColor: '#24211d',
+      backgroundColor: '#f4f1eb',
+      textColor: '#24211d',
+      surfaceColor: '#faf8f4',
+      elevatedColor: '#ebe6dc',
+      surfaceBorderColor: '#ddd6c8',
+      mutedTextColor: '#6a6359',
+      colorMode: 'light',
+      fontFamily: "'Inter', sans-serif",
+      headingFontFamily: "'Playfair Display', serif",
+      borderRadius: 'none',
+      galleryLayout: 'gallery-folio',
+      gallerySettings: {
+        folioCover: 'full',
+        folioPalette: 'paper',
+      },
+      headerStyle: 'none',
+      footerStyle: 'minimal',
+      shadowStyle: 'none'
     },
     isPreset: true
   }

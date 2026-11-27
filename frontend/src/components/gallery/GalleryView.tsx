@@ -120,6 +120,8 @@ import { WalkthroughHelpButton } from './walkthrough/WalkthroughHelpButton';
 import { isAdminPreviewUrl, useGalleryWalkthrough } from './walkthrough/useGalleryWalkthrough';
 import { buildWalkthroughSteps, layoutFeedbackActions, type WalkthroughScope } from './walkthrough/walkthroughSteps';
 import { safeGetItem, safeSetItem } from '../../utils/safeStorage';
+import { isFullPageLayout as isFullPage } from './layouts/fullPageLayouts';
+import { folioPaletteStyle, folioSettings } from './layouts/folioSettings';
 
 interface GalleryViewProps {
   slug: string;
@@ -1001,10 +1003,11 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   }, [resetScopeState, openFolderSlug, galleryView]);
 
   // Premium and Story have no `favorite` control: their hearts write `like`
-  // feedback and seed from `is_liked`, so there a like is the favourite. Their
-  // nav heart drives the "Liked" filter, which then keeps the viewer's own
-  // likes rather than every photo anyone liked.
-  const favouritesAreLikes = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
+  // feedback and seed from `is_liked`, so there a like is the favourite. The
+  // nav heart of every full-page layout (Folio's too) drives the "Liked"
+  // filter, which then keeps the viewer's own likes rather than every photo
+  // anyone liked.
+  const favouritesAreLikes = isFullPage(theme.galleryLayout);
   const filteredPhotos = useGalleryFiltering({
     sourcePhotos: data?.photos, categories: data?.categories, folderId: openFolderId, viewAll,
     selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug,
@@ -2035,9 +2038,9 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     );
   }
 
-  // Full-page layouts (gallery-premium, gallery-story) have their own integrated UI
+  // Full-page layouts (gallery-premium, gallery-story, gallery-folio) have their own integrated UI
   // Skip all wrapper elements (header, footer, sidebar, filters) for these layouts
-  const isFullPageLayout = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
+  const isFullPageLayout = isFullPage(theme.galleryLayout);
 
   // Does this session hold something worth dropping? A password gallery and a
   // PIN client obviously do. So does a customer-portal session: its token
@@ -2182,6 +2185,14 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         : null;
       return toolbar || peoplePanel || language ? <div className="gallery-toolbox">{language}{toolbar}{peoplePanel}</div> : null;
     };
+    // Story and Folio carry Copy filenames in their own nav.
+    const filenamesInBand = theme.galleryLayout !== 'gallery-story' && theme.galleryLayout !== 'gallery-folio';
+    // Folio paints its own palette (issue 2617); the band and the album
+    // entry above it take the same colours rather than the operator's.
+    const folioPalette = theme.galleryLayout === 'gallery-folio' ? folioSettings(theme.gallerySettings).palette : null;
+    const folioScope = (children: React.ReactNode) => (folioPalette
+      ? <div style={folioPaletteStyle(folioPalette)}>{children}</div>
+      : children);
     return withDownloadProviders(
       // The same identity flow as the standard layout below (issue 1733):
       // Premium and Story already ask for it (ensureIdentity) before a like,
@@ -2205,11 +2216,12 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             layout, so Story's dark row does not restyle it. */}
         {peopleSheet}
 
+        {folioScope(<>
         {/* #1160: these layouts return early and render edge-to-edge, but they
             still get `filteredPhotos`, so without this the foldered photos
             would be hidden with no way in. Contained width so the folder strip
             reads as chrome against the full-bleed grid below it. */}
-        {(hasFolderNav || selectionBarShown || (copyFilenames.photos.length > 0 && theme.galleryLayout !== 'gallery-story')) && (
+        {(hasFolderNav || selectionBarShown || (copyFilenames.photos.length > 0 && filenamesInBand)) && (
           // Story's `.story-nav` is fixed across this same band at z-index 50.
           // Raising the strip above it is necessary for the chips to be
           // clickable at all, but the strip is mostly empty space — so the
@@ -2260,7 +2272,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 above its full-bleed grid. Story's fixed nav covers this band
                 on narrow phones, so Story gets the button inside that nav
                 instead (onCopyFilenames below). */}
-            {copyFilenames.photos.length > 0 && theme.galleryLayout !== 'gallery-story' && (
+            {copyFilenames.photos.length > 0 && filenamesInBand && (
               <Button
                 variant="outline"
                 size="sm"
@@ -2293,6 +2305,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             className={theme.galleryLayout === 'gallery-story' && !selectionBarShown ? 'pt-20' : undefined}
           />
         )}
+        </>)}
         <PhotoGridWithLayouts
           // Remount on a scope change (#1160): layout state such as the
           // carousel's currentIndex is only meaningful for the photo set it was
