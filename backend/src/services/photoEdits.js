@@ -785,27 +785,40 @@ async function applyPhoto(photo, references) {
     // Listed now, dropped once applied: guests are served the applied
     // revision's tiers until then.
     const staleTiers = staleTierKeys(row);
-    // The renditions of the revision being applied, cut from its own render
-    // (edit_view 'current': not the applied view guests' requests get).
-    if (!(await require('./renditionRefresh').refreshPhoto({ ...row, edit_view: 'current' }, references))) return 'renditions';
-    await dropWatermarkCopy(row);
-    const zip = require('./downloadZipService');
-    await zip.invalidateIfBuilt(Number(row.event_id));
-    // The applied edit, its size and render with it: what the previews now show.
-    const advanced = await db('photos').where({ id: row.id, edit_rev: rev }).update({
-      edit_applied_rev: rev, edit_applied_params: row.edit_params || null,
-      edit_applied_width: row.edit_params ? row.edit_width : null, edit_applied_height: row.edit_params ? row.edit_height : null,
-      edit_applied_render_path: row.edit_params ? row.edit_render_path : null,
-      edit_failed_rev: null, edit_error: null,
-    });
-    if (advanced) {
-      const storage = getStorage();
-      await Promise.all(staleTiers.map((key) => storage.delete(key).catch(() => {})));
-      // The render of the revision applied before, no longer cut from.
-      const previous = row.edit_applied_render_path;
-      if (previous && previous !== row.edit_render_path && isRenderKeyOf(row, previous)) await storage.delete(previous).catch(() => {});
+    // Twice at most: a guest's request may record a rendition of the applied
+    // revision over one just built here (it holds the row as it was); then
+    // they are built again before the revision is applied.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      // The renditions of the revision being applied, cut from its own
+      // render (edit_view 'current': not the applied view guests' requests get).
+      const written = {};
+      if (!(await require('./renditionRefresh').refreshPhoto({ ...row, edit_view: 'current' }, references, written))) return 'renditions';
+      await dropWatermarkCopy(row);
+      const zip = require('./downloadZipService');
+      await zip.invalidateIfBuilt(Number(row.event_id));
+      // The applied edit, its size and render with it: what the previews now
+      // show. One write, fenced on the revision applied before and on the
+      // rendition keys built just now, so URL, pixels and boxes move together.
+      const advanced = await db('photos')
+        .where({ id: row.id, edit_rev: rev, edit_applied_rev: Number(row.edit_applied_rev) || 0, ...written })
+        .update({
+          edit_applied_rev: rev, edit_applied_params: row.edit_params || null,
+          edit_applied_width: row.edit_params ? row.edit_width : null, edit_applied_height: row.edit_params ? row.edit_height : null,
+          edit_applied_render_path: row.edit_params ? row.edit_render_path : null,
+          edit_failed_rev: null, edit_error: null,
+        });
+      if (advanced) {
+        const storage = getStorage();
+        await Promise.all(staleTiers.map((key) => storage.delete(key).catch(() => {})));
+        // The render of the revision applied before, no longer cut from.
+        const previous = row.edit_applied_render_path;
+        if (previous && previous !== row.edit_render_path && isRenderKeyOf(row, previous)) await storage.delete(previous).catch(() => {});
+        return true;
+      }
+      row = await db('photos').where({ id: photo.id }).first();
+      if (!row || Number(row.edit_rev) !== rev) return true;
     }
-    return true;
+    return 'renditions';
   } catch (err) {
     logger.warn(`Photo edit: photo ${photo.id} revision ${rev} could not be applied: ${err.message}`);
     return 'error';

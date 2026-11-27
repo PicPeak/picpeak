@@ -351,6 +351,46 @@ describe('noise reduction on a sensor developed at half size', () => {
   });
 });
 
+describe('a guest request while the pass applies a revision', () => {
+  it('cannot leave the old revision\'s preview in place once the new one is applied', async () => {
+    fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/race-preview.jpg'));
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'race-preview.jpg', path: 'edit-card/race-preview.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: originalBytes.length, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    const fresh = () => db('photos').where({ id }).first();
+    const imageProcessor = require('../../src/services/imageProcessor');
+    const renditionRefresh = require('../../src/services/renditionRefresh');
+    const refresh = renditionRefresh.refreshPhoto;
+    let raced = false;
+    const spy = jest.spyOn(renditionRefresh, 'refreshPhoto').mockImplementation(async (...args) => {
+      const ok = await refresh(...args);
+      if (!raced) {
+        raced = true;
+        // A guest holding the row as it was asks for its preview: it is cut
+        // for the applied revision and recorded over the pass's new one.
+        await db('photos').where({ id }).update({ preview_path: null });
+        await imageProcessor.ensurePreviewImage(await fresh(), { force: true });
+      }
+      return ok;
+    });
+    try {
+      await imageProcessor.ensurePreviewImage(await fresh());
+      await photoEdits().saveEdits([{ photo: await fresh(), params: validated({ rotate: 90 }) }]);
+      await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+      const after = await fresh();
+      expect(after.edit_applied_rev).toBe(1);
+      const meta = await sharp(storagePath(after.preview_path)).metadata();
+      // The turned picture, not the original the guest's request cut.
+      expect(meta.height).toBeGreaterThan(meta.width);
+    } finally {
+      spy.mockRestore();
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
+
 describe('a guest\'s drawing on an edited photo', () => {
   it('is stored with the applied edit\'s geometry and shown on the photo as it is edited now', async () => {
     const feedbackService = require('../../src/services/feedbackService');
