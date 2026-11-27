@@ -72,4 +72,17 @@ describe('useGalleryFiltering capture-date sort (issue 2617)', () => {
     const { result } = renderHook(() => useGalleryFiltering({ ...baseOptions, sourcePhotos: external }));
     expect(result.current.map((p) => p.id)).toEqual([3, 2, 1]);
   });
+
+  it('compares names the way the database does: plain, case-sensitive, not numeric', () => {
+    // SQLite's BINARY collation and the postgres:15-alpine image order by
+    // code point, so the server and the browser must agree on this.
+    const unpadded: Photo[] = [
+      makePhoto(1, 'IMG_9.jpg', burst),
+      makePhoto(2, 'IMG_10.jpg', burst),
+      makePhoto(3, 'img_2.jpg', burst),
+      makePhoto(4, 'IMG_3.jpg', burst),
+    ];
+    const { result } = renderHook(() => useGalleryFiltering({ ...baseOptions, sourcePhotos: unpadded }));
+    expect(result.current.map((p) => p.original_filename)).toEqual(['IMG_10.jpg', 'IMG_3.jpg', 'IMG_9.jpg', 'img_2.jpg']);
+  });
 });

@@ -181,8 +181,13 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
           const captureDateB = b.captured_at || b.uploaded_at;
           // A burst shares one EXIF second: the camera's file counter, then
           // id, order it the way the server's capture-date sort does (issue 2617).
+          // A plain code-point comparison, as SQLite and our postgres:alpine
+          // image (byte-order en_US.utf8) compare; a glibc-locale Postgres
+          // would put lower and upper case together instead.
+          const nameA = a.original_filename ?? a.filename;
+          const nameB = b.original_filename ?? b.filename;
           return flip * (new Date(captureDateB).getTime() - new Date(captureDateA).getTime()
-            || (b.original_filename ?? b.filename).localeCompare(a.original_filename ?? a.filename, undefined, { numeric: true })
+            || (nameB < nameA ? -1 : nameB > nameA ? 1 : 0)
             || b.id - a.id);
         }
         case 'date':
