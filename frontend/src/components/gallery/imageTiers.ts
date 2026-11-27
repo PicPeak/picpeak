@@ -185,11 +185,28 @@ export function lightboxImageLongEdge(photo: {
  * for any photo that has a face — faceProcessor calls ensurePreviewImage to
  * get something to scan — so this asks for a rendition that is already there.
  */
+/**
+ * The `e=` part (issue 2619) of the URLs the gallery listing gave a photo:
+ * its applied edit revision. A URL the frontend builds itself carries it
+ * too, or a copy the browser cached before the edit landed is reused.
+ * Empty for a photo never edited.
+ */
+export function guestEditQuery(photo: { url?: string | null; thumbnail_url?: string | null }): string {
+  for (const url of [photo.url, photo.thumbnail_url]) {
+    if (!url) continue;
+    const rev = new URLSearchParams(url.split('?')[1] || '').get('e');
+    if (rev) return `e=${encodeURIComponent(rev)}`;
+  }
+  return '';
+}
+
 export function facePreviewUrl(
   slug: string | undefined,
   photo: {
     id: number | string;
     preview_url?: string | null;
+    url?: string | null;
+    thumbnail_url?: string | null;
     width?: number | null;
     height?: number | null;
   } | null | undefined,
@@ -212,7 +229,8 @@ export function facePreviewUrl(
     && new URLSearchParams(window.location.search).get('admin_preview') === '1'
     ? '&admin_preview=1'
     : '';
-  return `/api/gallery/${slug}/preview/${photo.id}?w=${width}${adminPreview}`;
+  const edit = guestEditQuery(photo);
+  return `/api/gallery/${slug}/preview/${photo.id}?w=${width}${edit ? `&${edit}` : ''}${adminPreview}`;
 }
 
 /**

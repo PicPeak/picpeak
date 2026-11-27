@@ -49,6 +49,12 @@ describe('face avatars use a whole-frame rendition', () => {
     expect(adminPhotoPreviewUrl(7, 42, 1920, 0)).toBe('/api/admin/photos/7/preview/42?w=1920');
   });
 
+  it('carries the edit revision of the photo\'s URLs into a synthesized guest preview (issue 2619)', () => {
+    const edited = { id: 42, url: '/api/gallery/wed/photo/42?e=3', thumbnail_url: '/api/gallery/wed/thumbnail/42?e=3' };
+    expect(facePreviewUrl('wed', edited)).toBe(`/api/gallery/wed/preview/42?w=${FACE_CROP_WIDTH}&e=3`);
+    expect(facePreviewUrl('wed', { id: 42, url: '/api/gallery/wed/photo/42' })).toBe(`/api/gallery/wed/preview/42?w=${FACE_CROP_WIDTH}`);
+  });
+
   it('prefers the served preview_url so a watermark query survives', () => {
     const wm = { id: 9, preview_url: '/api/gallery/wed/preview/9?wm=1' };
     expect(facePreviewUrl('wed', wm)).toBe(`/api/gallery/wed/preview/9?wm=1&w=${FACE_CROP_WIDTH}`);

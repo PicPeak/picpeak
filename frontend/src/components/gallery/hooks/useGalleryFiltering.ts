@@ -3,6 +3,7 @@ import type { Photo, PhotoCategory } from '../../../types';
 import type { ColorLabel } from '../../../services/feedback.service';
 import type { FeedbackFilterType } from '../GalleryFilter';
 import { photosInView } from '../folders';
+import { guestEditQuery } from '../imageTiers';
 import { creditKeyOf } from '../../../utils/photoCredits';
 import { photoMatchesFilenameSearch, photoNameCompare } from '../../../utils/photoFilename';
 export type GallerySort = 'date' | 'name' | 'size' | 'rating' | 'capture_date';
@@ -190,10 +191,11 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
     // Transform full-size URLs for watermarks if enabled
     // Note: Thumbnails are watermarked server-side at the thumbnail endpoint
     if (watermarkEnabled) {
-      photos = photos.map(photo => ({
-        ...photo,
-        url: `/api/gallery/${slug}/photo/${photo.id}`
-      }));
+      photos = photos.map(photo => {
+        // The applied edit revision stays on it (issue 2619).
+        const edit = guestEditQuery(photo);
+        return { ...photo, url: `/api/gallery/${slug}/photo/${photo.id}${edit ? `?${edit}` : ''}` };
+      });
     }
     
     return photos;
