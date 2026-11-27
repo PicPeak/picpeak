@@ -179,4 +179,17 @@ describe('WebsiteBuilderPage', () => {
     await waitFor(() => expect((screen.getByLabelText('Heading') as HTMLInputElement).value).toBe('Theirs'));
     expect(screen.queryByText(/Someone else saved the website/)).toBeNull();
   });
+
+  it('offers no duplicate or new block once a page has 60', async () => {
+    const full = structuredClone(STATE);
+    full.document.pages[0].blocks = Array.from({ length: 60 }, (_, i) => ({ id: `s${i}`, type: 'spacer', variant: 'medium', background: 'default', divider: false }));
+    full.document.pages[0].blocks[0] = { id: 'h1', type: 'hero', variant: 'minimal', background: 'default', heading: 'Hello there', subheading: '', buttonLabel: '', buttonUrl: '', image: null, video: null };
+    vi.mocked(websiteService.getState).mockResolvedValue(full);
+    renderPage();
+    fireEvent.click(await screen.findByText('Hello there'));
+    expect(screen.getByRole('button', { name: 'Duplicate block' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'All blocks' }));
+    expect(screen.getByRole('button', { name: 'Add block' })).toBeDisabled();
+  });
 });
+

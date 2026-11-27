@@ -31,6 +31,9 @@ import type { Block, BlockType, ValidationProblem, WebsiteDocument, WebsitePage 
 
 type Panel = 'blocks' | 'pages' | 'site';
 
+// Mirrors MAX_BLOCKS in backend/src/services/website/document.js.
+const MAX_BLOCKS = 60;
+
 function blockSummary(block: Block): string {
   if ('heading' in block && block.heading) return block.heading;
   if (block.type === 'text') return block.body.slice(0, 60);
@@ -117,6 +120,8 @@ export const WebsiteBuilderPage: React.FC = () => {
   };
 
   const duplicateBlock = (b: Block) => {
+    // The server refuses a page over the limit; never build one.
+    if (page.blocks.length >= MAX_BLOCKS) return;
     const copy = { ...structuredClone(b), id: newId() };
     setPageBlocks((blocks) => {
       const at = blocks.findIndex((x) => x.id === b.id) + 1;
@@ -185,7 +190,9 @@ export const WebsiteBuilderPage: React.FC = () => {
         <span className="flex-1 min-w-0 text-sm font-semibold text-heading truncate">{blockLabel(t, block.type)}</span>
         {canEdit && (
           <>
-            <Button size="icon-sm" variant="ghost" onClick={() => duplicateBlock(block)} aria-label={t('website.blocks.duplicate', 'Duplicate block') as string}>
+            <Button size="icon-sm" variant="ghost" onClick={() => duplicateBlock(block)} disabled={page.blocks.length >= MAX_BLOCKS}
+              aria-label={t('website.blocks.duplicate', 'Duplicate block') as string}
+              title={page.blocks.length >= MAX_BLOCKS ? t('website.blocks.full', 'A page holds at most 60 blocks.') as string : undefined}>
               <Copy className="w-4 h-4" />
             </Button>
             <Button size="icon-sm" variant="ghost" onClick={() => deleteBlock(block)} aria-label={t('website.blocks.delete', 'Remove') as string}>
@@ -206,7 +213,7 @@ export const WebsiteBuilderPage: React.FC = () => {
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-heading">{t('website.blocks.title', 'Blocks on “{{name}}”', { name: page.title })}</h3>
         {canEdit && (
-          <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />} onClick={() => setAdding(true)} disabled={page.blocks.length >= 60}>
+          <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />} onClick={() => setAdding(true)} disabled={page.blocks.length >= MAX_BLOCKS}>
             {t('website.blocks.add', 'Add block')}
           </Button>
         )}

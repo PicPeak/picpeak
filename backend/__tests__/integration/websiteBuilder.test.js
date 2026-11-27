@@ -183,6 +183,18 @@ describe('admin API', () => {
     expect(live.html).not.toContain('data-block-id');
   });
 
+  test('a document over a limit is refused whole, not shortened', async () => {
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    const blocks = Array.from({ length: 61 }, (_, i) => ({ id: `s${i}`, type: 'spacer' }));
+    const res = await request(app).put('/api/admin/website/draft').set(auth(adminId))
+      .send({ document: { pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks }] }, revision: state.draft.revision });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('WEBSITE_LIMIT_EXCEEDED');
+    expect(res.body.details).toEqual([expect.objectContaining({ code: 'TOO_MANY_BLOCKS', pageId: 'home', max: 60 })]);
+    const after = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    expect(after.draft.revision).toBe(state.draft.revision);
+  });
+
   test('packages are unavailable while quotes are off', async () => {
     await setFeatureFlags(db, { quotes: false });
     const res = await request(app).get('/api/admin/website/packages').set(auth(adminId));

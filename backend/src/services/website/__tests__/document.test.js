@@ -151,3 +151,34 @@ describe('page cache', () => {
     expect(getCached('page:nope')).toBeUndefined();
   });
 });
+
+describe('limits are refused, not cut', () => {
+  const codes = (doc) => normalizeDocument(doc).errors.map((e) => e.code);
+  const blocks = (n) => Array.from({ length: n }, (_, i) => ({ id: `b${i}`, type: 'spacer' }));
+
+  test('a page with more than 60 blocks', () => {
+    expect(codes({ pages: [page({ blocks: blocks(60) })] })).toEqual([]);
+    expect(codes({ pages: [page({ blocks: blocks(61) })] })).toEqual(['TOO_MANY_BLOCKS']);
+  });
+
+  test('more than 30 pages', () => {
+    const pages = Array.from({ length: 31 }, (_, i) => page({ id: `p${i}`, slug: `p-${i}`, isHome: i === 0 }));
+    expect(codes({ pages })).toEqual(['TOO_MANY_PAGES']);
+  });
+
+  test('too many images, items, galleries or packages in a block', () => {
+    const images = (n) => Array.from({ length: n }, (_, i) => ({ source: 'photo', id: i + 1 }));
+    expect(codes({ pages: [page({ blocks: [{ type: 'gallery', images: images(61) }] })] })).toEqual(['TOO_MANY_ITEMS']);
+    expect(codes({ pages: [page({ blocks: [{ type: 'instagram', images: images(13) }] })] })).toEqual(['TOO_MANY_ITEMS']);
+    expect(codes({ pages: [page({ blocks: [{ type: 'testimonials', items: Array.from({ length: 25 }, () => ({ quote: 'q' })) }] })] })).toEqual(['TOO_MANY_ITEMS']);
+    expect(codes({ pages: [page({ blocks: [{ type: 'pricing', packageIds: Array.from({ length: 13 }, (_, i) => i + 1) }] })] })).toEqual(['TOO_MANY_ITEMS']);
+  });
+
+  test('text over its length', () => {
+    expect(codes({ pages: [page({ blocks: [{ type: 'text', heading: 'x'.repeat(200) }] })] })).toEqual([]);
+    const errors = normalizeDocument({ pages: [page({ blocks: [{ id: 't', type: 'text', heading: 'x'.repeat(201) }] })] }).errors;
+    expect(errors).toEqual([expect.objectContaining({ code: 'TEXT_TOO_LONG', field: 'heading', max: 200, blockId: 't' })]);
+    expect(codes({ pages: [page({ blocks: [{ type: 'customHtml', html: 'x'.repeat(100 * 1024 + 1) }] })] })).toEqual(['TEXT_TOO_LONG']);
+    expect(codes({ pages: [page()], customCss: 'x'.repeat(100 * 1024 + 1) })).toEqual(['TEXT_TOO_LONG']);
+  });
+});

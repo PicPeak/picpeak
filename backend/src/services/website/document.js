@@ -51,11 +51,33 @@ const BLOCK_VARIANTS = {
 };
 const BLOCK_TYPES = Object.keys(BLOCK_VARIANTS);
 
-function str(value, max) {
+// Problems found while normalising, with the page and block they are in.
+// Set by normalizeDocument for the length of one synchronous call; a limit
+// that is exceeded is reported here (so a save is refused) and still capped
+// (so a stored document always renders).
+let sink = null;
+let where = {};
+function report(problem) {
+  if (sink) sink.push({ ...where, ...problem });
+}
+
+function str(value, max, field) {
   if (typeof value !== 'string') return '';
   // Control characters other than tab/newline have no place in page text.
   // eslint-disable-next-line no-control-regex -- intentional: strips control chars from admin input
-  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, max);
+  const cleaned = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
+  if (cleaned.length > max) report({ code: 'TEXT_TOO_LONG', field, max });
+  return cleaned.slice(0, max);
+}
+
+function capText(value, max, field) {
+  if (value.length > max) report({ code: 'TEXT_TOO_LONG', field, max });
+  return value.slice(0, max);
+}
+
+function capped(list, max, field) {
+  if (list.length > max) report({ code: 'TOO_MANY_ITEMS', field, max });
+  return list.slice(0, max);
 }
 
 function bool(value) {
@@ -110,7 +132,7 @@ function blockId(value) {
 
 function imageRef(value) {
   if (!value || typeof value !== 'object') return null;
-  const alt = str(value.alt, 300);
+  const alt = str(value.alt, 300, 'alt');
   if (value.source === 'photo') {
     const id = Number(value.id);
     return Number.isInteger(id) && id > 0 ? { source: 'photo', id, alt } : null;
@@ -121,20 +143,19 @@ function imageRef(value) {
   return null;
 }
 
-function imageList(value) {
+function imageList(value, max = MAX_IMAGES) {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, MAX_IMAGES).map(imageRef).filter(Boolean);
+  return capped(value, max, 'images').map(imageRef).filter(Boolean);
 }
 
-function idList(value, max = MAX_ITEMS) {
+function idList(value, max, field) {
   if (!Array.isArray(value)) return [];
   const out = [];
   for (const raw of value) {
     const id = Number(raw);
     if (Number.isInteger(id) && id > 0 && !out.includes(id)) out.push(id);
-    if (out.length >= max) break;
   }
-  return out;
+  return capped(out, max, field);
 }
 
 function videoRef(value) {
@@ -144,82 +165,82 @@ function videoRef(value) {
 
 const BLOCK_FIELDS = {
   hero: (b) => ({
-    heading: str(b.heading, 200),
-    subheading: str(b.subheading, 600),
-    buttonLabel: str(b.buttonLabel, 60),
+    heading: str(b.heading, 200, 'heading'),
+    subheading: str(b.subheading, 600, 'subheading'),
+    buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
     buttonUrl: safeUrl(b.buttonUrl),
     image: imageRef(b.image),
     video: videoRef(b.video),
   }),
   text: (b) => ({
-    heading: str(b.heading, 200),
-    body: str(b.body, 10000),
+    heading: str(b.heading, 200, 'heading'),
+    body: str(b.body, 10000, 'body'),
   }),
   imageText: (b) => ({
-    heading: str(b.heading, 200),
-    body: str(b.body, 5000),
+    heading: str(b.heading, 200, 'heading'),
+    body: str(b.body, 5000, 'body'),
     image: imageRef(b.image),
-    buttonLabel: str(b.buttonLabel, 60),
+    buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
     buttonUrl: safeUrl(b.buttonUrl),
   }),
   gallery: (b) => ({
-    heading: str(b.heading, 200),
+    heading: str(b.heading, 200, 'heading'),
     images: imageList(b.images),
     columns: intInRange(b.columns, 2, 4, 3),
   }),
   featuredGalleries: (b) => ({
-    heading: str(b.heading, 200),
-    intro: str(b.intro, 1000),
+    heading: str(b.heading, 200, 'heading'),
+    intro: str(b.intro, 1000, 'intro'),
     galleries: Array.isArray(b.galleries)
-      ? b.galleries.slice(0, MAX_ITEMS).map((g) => {
+      ? capped(b.galleries, MAX_ITEMS, 'galleries').map((g) => {
         const id = Number(g && g.id);
-        return Number.isInteger(id) && id > 0 ? { id, text: str(g.text, 400) } : null;
+        return Number.isInteger(id) && id > 0 ? { id, text: str(g.text, 400, 'text') } : null;
       }).filter(Boolean)
       : [],
   }),
   testimonials: (b) => ({
-    heading: str(b.heading, 200),
+    heading: str(b.heading, 200, 'heading'),
     items: Array.isArray(b.items)
-      ? b.items.slice(0, MAX_ITEMS).map((item) => (item && typeof item === 'object' ? {
-        quote: str(item.quote, 1200),
-        author: str(item.author, 120),
-        role: str(item.role, 120),
+      ? capped(b.items, MAX_ITEMS, 'items').map((item) => (item && typeof item === 'object' ? {
+        quote: str(item.quote, 1200, 'quote'),
+        author: str(item.author, 120, 'author'),
+        role: str(item.role, 120, 'role'),
         image: imageRef(item.image),
       } : null)).filter((item) => item && item.quote)
       : [],
   }),
   pricing: (b) => ({
-    heading: str(b.heading, 200),
-    intro: str(b.intro, 1000),
-    packageIds: idList(b.packageIds, 12),
+    heading: str(b.heading, 200, 'heading'),
+    intro: str(b.intro, 1000, 'intro'),
+    packageIds: idList(b.packageIds, 12, 'packageIds'),
     showPrices: b.showPrices !== false,
-    buttonLabel: str(b.buttonLabel, 60),
+    buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
     buttonUrl: safeUrl(b.buttonUrl),
   }),
   contact: (b) => ({
-    heading: str(b.heading, 200),
-    intro: str(b.intro, 1000),
+    heading: str(b.heading, 200, 'heading'),
+    intro: str(b.intro, 1000, 'intro'),
     showPhone: bool(b.showPhone),
     showDate: bool(b.showDate),
-    submitLabel: str(b.submitLabel, 60),
-    successMessage: str(b.successMessage, 300),
+    submitLabel: str(b.submitLabel, 60, 'submitLabel'),
+    successMessage: str(b.successMessage, 300, 'successMessage'),
   }),
   booking: (b) => ({
-    heading: str(b.heading, 200),
-    text: str(b.text, 1000),
-    buttonLabel: str(b.buttonLabel, 60),
+    heading: str(b.heading, 200, 'heading'),
+    text: str(b.text, 1000, 'text'),
+    buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
   }),
   instagram: (b) => ({
-    heading: str(b.heading, 200),
-    handle: str(b.handle, 60).replace(/^@/, '').replace(/[^A-Za-z0-9._]/g, ''),
+    heading: str(b.heading, 200, 'heading'),
+    handle: str(b.handle, 60, 'handle').replace(/^@/, '').replace(/[^A-Za-z0-9._]/g, ''),
     profileUrl: safeUrl(b.profileUrl),
-    images: imageList(b.images).slice(0, 12),
+    images: imageList(b.images, 12),
   }),
   spacer: (b) => ({
     divider: bool(b.divider),
   }),
   customHtml: (b) => ({
-    html: typeof b.html === 'string' ? b.html.slice(0, MAX_CUSTOM_HTML) : '',
+    html: typeof b.html === 'string' ? capText(b.html, MAX_CUSTOM_HTML, 'html') : '',
   }),
 };
 
@@ -270,17 +291,33 @@ function normalizeTheme(raw) {
  */
 function normalizeDocument(raw, { reservedSlugs = [] } = {}) {
   const errors = [];
+  sink = errors;
+  try {
+    return normalizeInto(raw, reservedSlugs, errors);
+  } finally {
+    sink = null;
+    where = {};
+  }
+}
+
+function capPages(list) {
+  if (list.length > MAX_PAGES) report({ code: 'TOO_MANY_PAGES', max: MAX_PAGES });
+  return list.slice(0, MAX_PAGES);
+}
+
+function normalizeInto(raw, reservedSlugs, errors) {
   const input = raw && typeof raw === 'object' ? raw : {};
   const extraReserved = new Set(reservedSlugs.map((s) => String(s).toLowerCase()));
   const seenSlugs = new Set();
   const seenIds = new Set();
 
-  const pages = (Array.isArray(input.pages) ? input.pages : []).slice(0, MAX_PAGES).map((page, index) => {
+  const pages = capPages(Array.isArray(input.pages) ? input.pages : []).map((page, index) => {
     const p = page && typeof page === 'object' ? page : {};
     let id = blockId(p.id);
     while (seenIds.has(id)) id = newId();
     seenIds.add(id);
-    const title = str(p.title, 120) || `Page ${index + 1}`;
+    where = { pageId: id };
+    const title = str(p.title, 120, 'title') || `Page ${index + 1}`;
     const slug = normalizeSlug(typeof p.slug === 'string' && p.slug ? p.slug : title);
     if (!isValidSlug(slug)) {
       errors.push({ code: 'SLUG_RESERVED', pageId: id, slug });
@@ -291,24 +328,30 @@ function normalizeDocument(raw, { reservedSlugs = [] } = {}) {
     }
     seenSlugs.add(slug);
     const blockIds = new Set();
-    const blocks = (Array.isArray(p.blocks) ? p.blocks : []).slice(0, MAX_BLOCKS).map(normalizeBlock).filter(Boolean)
+    const rawBlocks = Array.isArray(p.blocks) ? p.blocks : [];
+    if (rawBlocks.length > MAX_BLOCKS) report({ code: 'TOO_MANY_BLOCKS', max: MAX_BLOCKS });
+    const blocks = rawBlocks.slice(0, MAX_BLOCKS).map((b) => {
+      where = { pageId: id, blockId: b && typeof b.id === 'string' ? b.id : undefined };
+      return normalizeBlock(b);
+    }).filter(Boolean)
       .map((block) => {
         while (blockIds.has(block.id)) block.id = newId();
         blockIds.add(block.id);
         return block;
       });
+    where = { pageId: id };
     const seo = p.seo && typeof p.seo === 'object' ? p.seo : {};
     return {
       id,
       slug,
       title,
-      navLabel: str(p.navLabel, 60),
+      navLabel: str(p.navLabel, 60, 'navLabel'),
       hidden: bool(p.hidden),
       inNav: p.inNav !== false,
       isHome: bool(p.isHome),
       seo: {
-        title: str(seo.title, 120),
-        description: str(seo.description, 300),
+        title: str(seo.title, 120, 'title'),
+        description: str(seo.description, 300, 'description'),
         image: imageRef(seo.image),
       },
       blocks,
@@ -322,11 +365,12 @@ function normalizeDocument(raw, { reservedSlugs = [] } = {}) {
   pages.forEach((p, index) => { p.isHome = index === homeIndex; });
   if (pages[homeIndex]) pages[homeIndex].hidden = false;
 
+  where = {};
   const document = {
     version: DOCUMENT_VERSION,
     pages,
     theme: normalizeTheme(input.theme),
-    customCss: typeof input.customCss === 'string' ? input.customCss.slice(0, MAX_CUSTOM_CSS) : '',
+    customCss: typeof input.customCss === 'string' ? capText(input.customCss, MAX_CUSTOM_CSS, 'customCss') : '',
   };
 
   if (Buffer.byteLength(JSON.stringify(document), 'utf8') > MAX_DOCUMENT_BYTES) {
@@ -363,8 +407,13 @@ function collectReferences(document) {
   };
 }
 
+// Problems that mean "too much" rather than "wrong": a save is refused with
+// 400, nothing is cut.
+const LIMIT_CODES = new Set(['TOO_MANY_PAGES', 'TOO_MANY_BLOCKS', 'TOO_MANY_ITEMS', 'TEXT_TOO_LONG', 'DOCUMENT_TOO_LARGE']);
+
 module.exports = {
   DOCUMENT_VERSION,
+  LIMIT_CODES,
   BLOCK_TYPES,
   BLOCK_VARIANTS,
   RESERVED_SLUGS,

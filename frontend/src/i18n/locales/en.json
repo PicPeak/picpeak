@@ -13359,7 +13359,8 @@
       "customHtml": {
         "name": "Custom HTML",
         "description": "Your own markup, sanitised."
-      }
+      },
+      "full": "A page holds at most 60 blocks."
     },
     "saved": "Draft saved",
     "publishTitle": "Publish the website?",

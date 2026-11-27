@@ -221,7 +221,7 @@ const FeaturedGalleriesField: React.FC<{
         {eligible.map((g) => (
           <li key={g.id}>
             <label className="flex items-center gap-2 text-sm text-body">
-              <input type="checkbox" className="rounded border-line-strong" checked={chosen.has(g.id)}
+              <input type="checkbox" className="rounded border-line-strong" checked={chosen.has(g.id)} disabled={!chosen.has(g.id) && value.length >= 24}
                 onChange={(e) => onChange(e.target.checked ? [...value, { id: g.id, text: '' }] : value.filter((x) => x.id !== g.id))} />
               {g.name}
             </label>
@@ -258,7 +258,7 @@ const PackagesField: React.FC<{ value: number[]; onChange: (value: number[]) => 
         {packages.data.packages.map((p) => (
           <li key={p.id}>
             <label className="flex items-center gap-2 text-sm text-body">
-              <input type="checkbox" className="rounded border-line-strong" checked={value.includes(p.id)}
+              <input type="checkbox" className="rounded border-line-strong" checked={value.includes(p.id)} disabled={!value.includes(p.id) && value.length >= 12}
                 onChange={(e) => onChange(e.target.checked ? [...value, p.id] : value.filter((id) => id !== p.id))} />
               {p.name}
             </label>
@@ -292,7 +292,7 @@ const TestimonialsField: React.FC<{ value: Testimonial[]; onChange: (value: Test
           <ImageField label={t('website.fields.portrait', 'Photo (optional)')} value={item.image} onChange={(image) => patch(index, { image })} />
         </div>
       ))}
-      <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />}
+      <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />} disabled={value.length >= 24}
         onClick={() => onChange([...value, { quote: '', author: '', role: '', image: null }])}>
         {t('website.fields.addTestimonial', 'Add testimonial')}
       </Button>

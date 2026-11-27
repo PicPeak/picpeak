@@ -13324,7 +13324,8 @@
       "customHtml": {
         "name": "Eigenes HTML",
         "description": "Ihr eigenes Markup, bereinigt."
-      }
+      },
+      "full": "Eine Seite hat höchstens 60 Blöcke."
     },
     "saved": "Entwurf gespeichert",
     "publishTitle": "Website veröffentlichen?",

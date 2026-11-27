@@ -17,7 +17,7 @@ const { canAccessEvent } = require('../../middleware/ownership');
 const { listFonts } = require('../fontsService');
 const publicSite = require('../publicSiteService');
 const { DEFAULT_PUBLIC_SITE_CSS } = require('../../constants/publicSiteDefaults');
-const { normalizeDocument, collectReferences, newPageId } = require('./document');
+const { normalizeDocument, collectReferences, newPageId, LIMIT_CODES } = require('./document');
 const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
 const { renderPage, pageHref } = require('./renderer');
@@ -137,7 +137,10 @@ async function getEditorState(adminId) {
 }
 
 function validationError(errors) {
-  const err = new AppError('The website has problems to fix before it can be saved', 422, 'WEBSITE_INVALID');
+  // Over a limit: refused as too large, never shortened behind the admin's back.
+  const err = errors.some((e) => LIMIT_CODES.has(e.code))
+    ? new AppError('The website is over a size limit (pages, blocks, items or text length); nothing was saved', 400, 'WEBSITE_LIMIT_EXCEEDED')
+    : new AppError('The website has problems to fix before it can be saved', 422, 'WEBSITE_INVALID');
   err.details = errors;
   return err;
 }
