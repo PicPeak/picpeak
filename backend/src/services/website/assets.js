@@ -79,29 +79,36 @@ async function createImageAsset(file, adminId) {
   const publicId = crypto.randomBytes(12).toString('hex');
   const keys = {};
   const storage = getStorage();
-  for (const tier of MEDIA_WIDTHS) {
-    // eslint-disable-next-line no-await-in-loop -- one tier at a time keeps peak memory at one decode
-    const rendered = await generatePreviewImage(file.path, { outputBasename: `site_${publicId}`, longEdge: tier, regenerate: true });
-    if (!rendered) {
-      await removeKeys(keys);
-      throw new AppError('The image could not be processed', 400, 'WEBSITE_ASSET_UNREADABLE');
+  let rendered = null;
+  try {
+    for (const tier of MEDIA_WIDTHS) {
+      // eslint-disable-next-line no-await-in-loop -- one tier at a time keeps peak memory at one decode
+      rendered = await generatePreviewImage(file.path, { outputBasename: `site_${publicId}`, longEdge: tier, regenerate: true });
+      if (!rendered) throw new AppError('The image could not be processed', 400, 'WEBSITE_ASSET_UNREADABLE');
+      const key = `website/${publicId}/w${tier}${path.extname(rendered)}`;
+      // eslint-disable-next-line no-await-in-loop -- see above
+      await storage.rename(rendered, key);
+      rendered = null;
+      keys[tier] = key;
     }
-    const key = `website/${publicId}/w${tier}${path.extname(rendered)}`;
-    // eslint-disable-next-line no-await-in-loop -- see above
-    await storage.rename(rendered, key);
-    keys[tier] = key;
+    return await insertAsset({
+      public_id: publicId,
+      kind: 'image',
+      mime_type: sniffed,
+      width,
+      height,
+      rendition_keys: JSON.stringify(keys),
+      original_filename: String(file.originalname || '').slice(0, 255),
+      size_bytes: file.size,
+      created_by: adminId,
+    });
+  } catch (err) {
+    // Whatever step failed (a tier, a move, the row): nothing of this upload
+    // stays behind without a row to find it by.
+    if (rendered) await storage.delete(rendered).catch(() => {});
+    await removeUploadFiles(publicId);
+    throw err;
   }
-  return insertAsset({
-    public_id: publicId,
-    kind: 'image',
-    mime_type: sniffed,
-    width,
-    height,
-    rendition_keys: JSON.stringify(keys),
-    original_filename: String(file.originalname || '').slice(0, 255),
-    size_bytes: file.size,
-    created_by: adminId,
-  });
 }
 
 async function createVideoAsset(file, adminId) {
@@ -127,7 +134,7 @@ async function createVideoAsset(file, adminId) {
     const key = `website/${publicId}/video.mp4`;
     await getStorage().putFromFile(key, tmpOut, { contentType: 'video/mp4' });
     const stat = await fs.stat(tmpOut);
-    return insertAsset({
+    return await insertAsset({
       public_id: publicId,
       kind: 'video',
       mime_type: 'video/mp4',
@@ -139,6 +146,7 @@ async function createVideoAsset(file, adminId) {
       created_by: adminId,
     });
   } catch (err) {
+    await removeUploadFiles(publicId);
     if (err instanceof AppError) throw err;
     throw new AppError('The video could not be processed', 400, 'WEBSITE_ASSET_UNREADABLE');
   } finally {
@@ -149,6 +157,16 @@ async function createVideoAsset(file, adminId) {
 async function removeKeys(keys) {
   const storage = getStorage();
   for (const key of Object.values(keys)) {
+    // eslint-disable-next-line no-await-in-loop -- a handful of keys
+    await storage.delete(key).catch(() => {});
+  }
+}
+
+/** Every file stored under an upload's own folder, website/<publicId>/. */
+async function removeUploadFiles(publicId) {
+  const storage = getStorage();
+  const entries = await storage.list(`website/${publicId}/`).catch(() => []);
+  for (const { key } of entries) {
     // eslint-disable-next-line no-await-in-loop -- a handful of keys
     await storage.delete(key).catch(() => {});
   }

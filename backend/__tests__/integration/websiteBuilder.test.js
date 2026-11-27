@@ -31,6 +31,12 @@ jest.mock('../../src/services/videoRenditionService', () => ({
   },
   transcode: (...args) => mockTranscode(...args),
 }));
+// The real rendition step, which a test can make fail once.
+const mockPreviewStep = jest.fn();
+jest.mock('../../src/services/imageProcessor', () => {
+  const actual = jest.requireActual('../../src/services/imageProcessor');
+  return { ...actual, generatePreviewImage: (...args) => mockPreviewStep(...args) || actual.generatePreviewImage(...args) };
+});
 
 let db; let cleanup; let app;
 let adminId; let viewerId;
@@ -668,6 +674,22 @@ describe('uploads', () => {
     expect((await sharp(served.body).metadata()).width).toBe(640);
     // Nothing else was kept of the upload.
     expect(fs.readdirSync(path.join(process.env.STORAGE_PATH, 'temp'))).toEqual([]);
+  });
+
+  test('a failure in a later rendition step leaves nothing of the upload behind', async () => {
+    const root = path.join(process.env.STORAGE_PATH, 'website');
+    const listing = () => (fs.existsSync(root) ? fs.readdirSync(root).sort() : []);
+    const before = listing();
+    const rows = Number((await db('website_assets').count({ c: '*' }).first()).c);
+    // The first tier renders; the worker fails on the second.
+    mockPreviewStep.mockReturnValueOnce(undefined).mockImplementationOnce(() => Promise.reject(new Error('worker crashed')));
+    const png = await sharp({ create: { width: 2400, height: 1600, channels: 3, background: { r: 10, g: 10, b: 10 } } }).png().toBuffer();
+    const res = await request(app).post('/api/admin/website/assets').set(auth(adminId)).attach('file', png, 'broken.png');
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    // No tier left in its folder, no row, nothing in previews/.
+    expect(listing().filter((name) => !before.includes(name)).flatMap((name) => fs.readdirSync(path.join(root, name)))).toEqual([]);
+    expect(Number((await db('website_assets').count({ c: '*' }).first()).c)).toBe(rows);
+    expect(fs.readdirSync(path.join(process.env.STORAGE_PATH, 'previews')).filter((f) => f.startsWith('site_'))).toEqual([]);
   });
 
   test('a file that is not an image is refused', async () => {
