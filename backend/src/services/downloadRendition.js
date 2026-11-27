@@ -148,6 +148,10 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
  */
 async function renderPreviewForDownload(photo, watermarkSettings) {
   if (isVideo(photo)) return null;
+  // Not the picture a failing crop or turn is meant to change (issue 2619).
+  if (await require('./photoEdits').withheldFromGuests(photo)) {
+    throw Object.assign(new Error('This photo is being updated'), { status: 503, code: 'EDIT_PENDING' });
+  }
   const previewKey = await ensurePreviewImage(photo);
   if (!isPresentationRenditionKey(previewKey, 'preview')) return null;
   const wantsWatermark = !!(watermarkSettings && watermarkSettings.enabled);

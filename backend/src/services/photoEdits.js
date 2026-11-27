@@ -104,6 +104,28 @@ async function renditionView(photo) {
   return appliedView({ ...photo, ...(row || {}) });
 }
 
+/**
+ * Whether guests are kept from this photo's picture for now (issue 2619): a
+ * saved edit that changes its geometry (a crop, a turn, a flip, a
+ * straighten) failed to render, so its previews still show what the crop
+ * may have been made to remove, and keep doing so while the apply keeps
+ * failing. Guests get 503 until it renders; the admin sees it as it is.
+ * A pending edit that has not failed yet keeps serving the applied one.
+ */
+async function withheldFromGuests(photo) {
+  if (!photo || photo.id == null || isVideoRow(photo)) return false;
+  const columns = ['edit_params', 'edit_rev', 'edit_applied_rev', 'edit_applied_params', 'edit_failed_rev'];
+  const missing = columns.filter((column) => !(column in photo));
+  const row = missing.length ? { ...photo, ...(await db('photos').where({ id: photo.id }).first(missing)) } : photo;
+  if (row.edit_failed_rev == null || Number(row.edit_failed_rev) !== Number(row.edit_rev)) return false;
+  if (!(Number(row.edit_rev) > Number(row.edit_applied_rev))) return false;
+  const geometry = (stored) => {
+    const params = math.parseStoredParams(stored);
+    return JSON.stringify(math.GEOMETRY_KEYS.map((key) => (params ? params[key] : math.DEFAULT_PARAMS[key])));
+  };
+  return geometry(row.edit_params) !== geometry(row.edit_applied_params);
+}
+
 /** The row with its edit columns, read once when a caller's select left them out. */
 async function withEditColumns(photo, { source = false } = {}) {
   if (!photo || photo.id == null || isVideoRow(photo)) return photo;
@@ -971,6 +993,7 @@ module.exports = {
   ensureEditedSource,
   deliveredPhoto,
   renditionView,
+  withheldFromGuests,
   EDIT_FILE_COLUMNS,
   namedAsDelivered,
   deliveredKey,

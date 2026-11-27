@@ -526,3 +526,40 @@ describe('archives after an edit is saved', () => {
     }
   });
 });
+
+describe('a geometry edit whose render keeps failing', () => {
+  it('withholds the unedited picture from guests (503, no-store), unless only light and colour failed or nothing failed yet', async () => {
+    const insert = async (filename, over) => unwrap(await db('photos').insert({
+      event_id: event.id, filename, path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600, ...over,
+    }).returning('id'));
+    const crop = JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } });
+    const failedCrop = await insert('failed-crop.jpg', { edit_params: crop, edit_rev: 1, edit_applied_rev: 0, edit_failed_rev: 1, edit_error: 'render' });
+    const failedTone = await insert('failed-tone.jpg', { edit_params: JSON.stringify({ v: 1, exposure: 1 }), edit_rev: 1, edit_applied_rev: 0, edit_failed_rev: 1 });
+    const pendingCrop = await insert('pending-crop.jpg', { edit_params: crop, edit_rev: 1, edit_applied_rev: 0 });
+    try {
+      for (const route of ['thumbnail', 'preview', 'hero']) {
+        const res = await guest('get', `/${route}/${failedCrop}`);
+        expect(res.status).toBe(503);
+        expect(res.headers['cache-control']).toBe('no-store');
+        expect((await guest('get', `/${route}/${failedTone}`)).status).toBe(200);
+        expect((await guest('get', `/${route}/${pendingCrop}`)).status).toBe(200);
+      }
+      // A preview-size download of it is refused too (an archive skips it).
+      const { renderPreviewForDownload } = require('../../src/services/downloadRendition');
+      await expect(renderPreviewForDownload(await row(failedCrop), null)).rejects.toMatchObject({ status: 503 });
+      // A download of it neither (503, try again later).
+      const download = await guest('get', `/download/${failedCrop}`);
+      expect(download.status).toBe(503);
+      expect(download.headers['cache-control']).toBe('no-store');
+      // Nor is the full-size photo rendered again on a guest's request.
+      const full = await guest('get', `/photo/${failedCrop}`);
+      expect(full.status).toBe(503);
+      expect(full.headers['cache-control']).toBe('no-store');
+      // The admin still sees it.
+      expect((await auth(request(adminApp).get(`/api/admin/photos/${event.id}/preview/${failedCrop}`))).status).toBe(200);
+    } finally {
+      await db('photos').whereIn('id', [failedCrop, failedTone, pendingCrop]).delete();
+    }
+  });
+});

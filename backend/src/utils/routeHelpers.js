@@ -105,6 +105,12 @@ const errorResponse = (res, error, statusCode = 500, publicMessage) => {
     res.set({ 'Retry-After': String(error.retryAfter || 5), 'Cache-Control': 'no-store' });
     return res.status(503).json({ error: 'Image processing is busy, try again shortly', code: error.code });
   }
+  // A photo edit not rendered yet, or whose render failed (issue 2619):
+  // later, never an original in its place.
+  if (['EDIT_PENDING', 'EDIT_FAILED', 'EDIT_BUSY'].includes(error?.code)) {
+    res.set({ 'Retry-After': '60', 'Cache-Control': 'no-store' });
+    return res.status(503).json({ error: 'This photo is being updated, try again later', code: error.code });
+  }
   res.status(statusCode).json({ error: message });
 };
 

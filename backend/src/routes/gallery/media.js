@@ -191,6 +191,14 @@ async function loadGalleryPhoto(req, res, { columns = [], sourceGrant = false } 
     res.status(403).json({ error: 'Photo not available' });
     return null;
   }
+  // A crop or turn that keeps failing to render (issue 2619): the picture it
+  // was meant to change is not handed out meanwhile, under any URL.
+  if (await photoEdits.withheldFromGuests(photo)) {
+    res.set('Cache-Control', 'no-store');
+    res.set('Retry-After', '60');
+    res.status(503).json({ error: 'This photo is being updated', code: 'EDIT_PENDING' });
+    return null;
+  }
   return photo;
 }
 
