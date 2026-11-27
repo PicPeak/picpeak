@@ -516,6 +516,33 @@ describe('renditions while a newer edit is being applied', () => {
   });
 });
 
+describe('auto develop of a guest upload held for review', () => {
+  it('waits for the approval, and develops the RAW then', async () => {
+    const { setFeatureFlags } = require('../integration/helpers/crmDb');
+    const { invalidateFeatureFlagCache } = require('../../src/middleware/requireFeatureFlag');
+    const rawDevelop = require('../../src/services/rawDevelop');
+    const isRaw = jest.spyOn(rawDevelop, 'isRawSource').mockResolvedValue(true);
+    await setFeatureFlags(db, { photoEditor: true });
+    invalidateFeatureFlagCache();
+    await require('../../src/utils/appSettings').upsertAppSetting(photoEdits().AUTO_DEVELOP_SETTING, 'true', 'boolean');
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'held.cr3', path: 'edit-card/card.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/x-canon-cr3', width: 600, height: 400, size_bytes: 1, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(), visibility: 'hidden', moderation_status: 'pending',
+    }).returning('id'));
+    try {
+      await photoEdits().afterUpload(id);
+      expect((await db('photos').where({ id }).first()).edit_params).toBeNull();
+      await require('../../src/services/uploadReviewService').moderatePhotos(eventId, [id], 'approve');
+      expect(JSON.parse((await db('photos').where({ id }).first()).edit_params)).toMatchObject({ develop: true });
+    } finally {
+      isRaw.mockRestore();
+      await require('../../src/utils/appSettings').upsertAppSetting(photoEdits().AUTO_DEVELOP_SETTING, 'false', 'boolean');
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
+
 describe('the default RAW develop and a manual edit saved meanwhile', () => {
   it('never replaces the edit: the default is written only over the unedited row it was queued from', async () => {
     const rawDevelop = require('../../src/services/rawDevelop');

@@ -658,7 +658,10 @@ async function afterUpload(photoId) {
   if (!(await autoDevelopEnabled())) return;
   if (!(await require('../middleware/requireFeatureFlag').isFeatureEnabled('photoEditor'))) return;
   const photo = await livePhotos(db).where({ id: photoId }).first();
-  if (photo) await queueDefaultDevelop([photo]);
+  // A guest upload held for review is developed once approved
+  // (uploadReviewService.moderatePhotos), not before: one that is rejected
+  // never costs the render.
+  if (photo && !photo.moderation_status) await queueDefaultDevelop([photo]);
 }
 
 // -------------------------------------------------------- background apply

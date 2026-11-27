@@ -101,36 +101,49 @@ function developArgs(file, { half = false, nr = 0 } = {}) {
 }
 
 /**
- * Parse a binary PPM (P6) from dcraw_emu: 16-bit big-endian samples, turned
- * little-endian in place so the returned Uint16Array is a view, not a copy.
+ * Read the binary PPM (P6) dcraw_emu wrote to `file`: the header first, then
+ * the body straight into one buffer of its size (its own memory, so the
+ * 16-bit view is aligned whatever the header's length), turned little-endian
+ * in place. No full-file read and no second copy: the peak is the image
+ * itself, 6 bytes a pixel.
  */
-function parsePpm(buffer) {
-  const head = buffer.toString('latin1', 0, Math.min(buffer.length, 64));
-  const match = /^P6\s+(\d+)\s+(\d+)\s+(\d+)\s/.exec(head);
-  if (!match) throw new Error('dcraw_emu did not write a PPM image');
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  const maxval = Number(match[3]);
-  const offset = match[0].length;
-  const bytes = width * height * 3 * (maxval > 255 ? 2 : 1);
-  if (maxval !== 65535 || buffer.length < offset + bytes) throw new Error('dcraw_emu wrote an incomplete 16-bit image');
-  const body = buffer.subarray(offset, offset + bytes);
-  body.swap16();
-  const aligned = body.byteOffset % 2 === 0 ? body : Buffer.from(body);
-  return { width, height, data: new Uint16Array(aligned.buffer, aligned.byteOffset, width * height * 3) };
+async function readPpm(file) {
+  const handle = await fsp.open(file, 'r');
+  try {
+    const head = Buffer.alloc(64);
+    const { bytesRead } = await handle.read(head, 0, head.length, 0);
+    const match = /^P6\s+(\d+)\s+(\d+)\s+(\d+)\s/.exec(head.toString('latin1', 0, bytesRead));
+    if (!match) throw new Error('dcraw_emu did not write a PPM image');
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (Number(match[3]) !== 65535) throw new Error('dcraw_emu wrote an incomplete 16-bit image');
+    const bytes = width * height * 6;
+    const body = Buffer.allocUnsafeSlow(bytes);
+    let filled = 0;
+    while (filled < bytes) {
+      const { bytesRead: got } = await handle.read(body, filled, bytes - filled, match[0].length + filled);
+      if (!got) throw new Error('dcraw_emu wrote an incomplete 16-bit image');
+      filled += got;
+    }
+    body.swap16();
+    return { width, height, data: new Uint16Array(body.buffer, body.byteOffset, width * height * 3) };
+  } finally {
+    await handle.close();
+  }
 }
 
 /**
  * The bytes a develop of a sensor of `size` (raw-identify's output size)
  * writes: 16-bit RGB, 6 bytes a pixel, a quarter of them at half size, plus
  * the header. A sensor beyond RAW_DEVELOP_MAX_PIXELS is refused before
- * anything runs; an unknown size gets the budget of the largest one.
+ * anything runs, as is one raw-identify reports no size for (no budget can
+ * be set for it).
  */
 function outputBudget(size, { half = false } = {}) {
-  const known = size && size.width > 0 && size.height > 0;
-  const pixels = known ? size.width * size.height : maxSensorPixels();
+  if (!(size && size.width > 0 && size.height > 0)) throw new Error('RAW sensor of no known size: not developed');
+  const pixels = size.width * size.height;
   if (pixels > maxSensorPixels()) throw new Error(`RAW sensor too large to develop (${size.width} x ${size.height})`);
-  const written = half && known ? Math.ceil(size.width / 2) * Math.ceil(size.height / 2) : (half ? Math.ceil(pixels / 4) : pixels);
+  const written = half ? Math.ceil(size.width / 2) * Math.ceil(size.height / 2) : pixels;
   return written * 6 + PPM_SLACK;
 }
 
@@ -159,7 +172,7 @@ async function developLinear(file, { half = false, nr = 0, size = null, signal }
         fileBytes,
         signal,
       });
-      return parsePpm(await fsp.readFile(out));
+      return await readPpm(out);
     } finally {
       await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
     }
@@ -330,7 +343,7 @@ module.exports = {
   identify,
   developArgs,
   noiseOptions,
-  parsePpm,
+  readPpm,
   outputBudget,
   developLinear,
   shrink,

@@ -89,7 +89,7 @@ describeRaw('RAW development (LibRaw dcraw_emu)', () => {
     expect(info).toMatchObject({ width: 384, height: 256 });
     expect(info.multipliers.slice(0, 3).map((v) => Math.round(v * 100) / 100)).toEqual([2, 1, 1.43]);
     expect(info.exposureBias).toBeCloseTo(1, 3);
-    const image = await rawDevelop().developLinear(FIXTURE);
+    const image = await rawDevelop().developLinear(FIXTURE, { size: info });
     // A mid-grey patch of the scene (0.18), as-shot balanced: neutral, and
     // 0.18 once the bias is given back.
     const i = (200 * image.width + 20) * 3;
@@ -117,10 +117,13 @@ describeRaw('RAW development (LibRaw dcraw_emu)', () => {
     const run = jest.spyOn(runner, 'run');
     try {
       expect(await photoEdits().runPass({ active: () => true, sleep: async () => {} })).toMatchObject({ applied: 1, failed: 0 });
-      // The container's tags are copied without any image of the RAW: no
-      // thumbnail group, maker note (camera previews), MPF or XMP thumbnails.
+      // The container's tags are copied from an allowlist only: no group of
+      // tags, so no thumbnail, maker note, MPF or XMP image comes along.
       const copy = run.mock.calls.find(([command, args]) => command === 'exiftool' && args.includes('-TagsFromFile'));
-      if (HAVE_EXIFTOOL) expect(copy[1]).toEqual(expect.arrayContaining(['--IFD1:all', '--MakerNotes:all', '--MPF:all', '--XMP-xmp:Thumbnails*']));
+      if (HAVE_EXIFTOOL) {
+        expect(copy[1]).toEqual(expect.arrayContaining(['-EXIF:DateTimeOriginal', '-EXIF:Copyright', '-XMP-dc:Creator']));
+        expect(copy[1].filter((arg) => /(^-+|:)all$|MakerNote|IFD1|Thumbnail|Preview/i.test(arg))).toEqual([]);
+      }
     } finally {
       run.mockRestore();
     }
@@ -129,7 +132,7 @@ describeRaw('RAW development (LibRaw dcraw_emu)', () => {
     const { data, info } = await sharp(jpeg).raw().toBuffer({ resolveWithObject: true });
     expect([info.width, info.height]).toEqual([384, 256]);
 
-    const develop = await rawDevelop().developLinear(FIXTURE);
+    const develop = await rawDevelop().developLinear(FIXTURE, { size: await rawDevelop().identify(FIXTURE) });
     const { exposureBias } = await rawDevelop().identify(FIXTURE);
     const prep = math.prepare(params, { linear: true, exposureBias });
     // Reference without the detail planes: they only drive highlights here,
@@ -189,10 +192,33 @@ describe('the output budget of a develop', () => {
     expect(half).toBeLessThan(full / 3);
   });
 
-  it('refuses a sensor beyond the pixel cap before anything runs, and caps an unknown size', () => {
+  it('refuses a sensor beyond the pixel cap, or of no known size, before anything runs', () => {
     expect(() => rawDevelop().outputBudget({ width: 20000, height: 20000 }, { half: false })).toThrow(/too large/);
-    const unknown = rawDevelop().outputBudget({ width: null, height: null }, { half: false });
-    expect(unknown).toBeGreaterThan(100 * MB);
+    expect(() => rawDevelop().outputBudget({ width: null, height: null }, { half: false })).toThrow(/size/);
+    expect(() => rawDevelop().outputBudget(null, { half: true })).toThrow(/size/);
+    expect(MB).toBeGreaterThan(0);
+  });
+
+  it('reads a develop into one buffer of its size: the header first, then the body straight in, whatever the header length', async () => {
+    const os = require('os');
+    for (const header of ['P6\n3 2\n65535\n', 'P6 3 2 65535\n', 'P6\n3  2\n65535\n']) {
+      const body = Buffer.alloc(3 * 2 * 6);
+      for (let i = 0; i < body.length / 2; i++) body.writeUInt16BE(i * 1000, i * 2);
+      const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ppm-')), 'x.ppm');
+      fs.writeFileSync(file, Buffer.concat([Buffer.from(header, 'latin1'), body, Buffer.from('trailing')]));
+      const readFile = jest.spyOn(fs.promises, 'readFile');
+      try {
+        const image = await rawDevelop().readPpm(file);
+        expect(readFile).not.toHaveBeenCalled();
+        expect(image).toMatchObject({ width: 3, height: 2 });
+        expect(Array.from(image.data)).toEqual(Array.from({ length: 18 }, (_, i) => i * 1000));
+        // A view of the buffer it was read into, aligned, no copy.
+        expect(image.data.byteOffset % 2).toBe(0);
+        expect(image.data.buffer.byteLength).toBe(36);
+      } finally {
+        readFile.mockRestore();
+      }
+    }
   });
 
   it('hands that budget to the process as its file budget', async () => {
