@@ -119,10 +119,20 @@ function zipEntryPath(photo, entryName, hasMultipleTypes) {
  * undefined (archiver's own default) when the row has none of the three.
  */
 function zipEntryDate(photo) {
-  const wall = cameraWallClock(photo.captured_at_wall)
-    || toServerWallClock(photo.captured_at)
-    || toServerWallClock(photo.uploaded_at);
-  return wall ? new Date(`${wall}Z`) : undefined;
+  const candidates = [
+    cameraWallClock(photo.captured_at_wall),
+    toServerWallClock(photo.captured_at),
+    toServerWallClock(photo.uploaded_at),
+  ];
+  for (const wall of candidates) {
+    if (!wall) continue;
+    const date = new Date(`${wall}Z`);
+    // A malformed camera clock ('2025-00-01', '2025-02-30') is an Invalid
+    // Date, which archiver writes as a zero date, or rolls over to another
+    // day: only a value that reads back unchanged is taken.
+    if (!Number.isNaN(date.getTime()) && date.toISOString().slice(0, 19) === wall) return date;
+  }
+  return undefined;
 }
 
 module.exports = {

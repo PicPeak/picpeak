@@ -97,6 +97,16 @@ describe('zipEntryDate (issue 2617)', () => {
       .toBe(serverWall('2023-03-04T05:06:08.000Z'));
   });
 
+  it('skips a malformed camera clock instead of writing a zero or rolled-over date', () => {
+    const fallback = '2024-12-24T17:00:10.000Z';
+    for (const wall of ['2025-00-01T09:45:03', '2025-13-01T09:45:03', '2025-02-30T09:45:03', '2025-06-31T09:45:03', '2025-06-01T24:00:00', '2025-06-01T09:60:00']) {
+      expect(shown(zipEntryDate({ captured_at_wall: wall, captured_at: fallback, uploaded_at: null }))).toBe(serverWall(fallback));
+    }
+    expect(shown(zipEntryDate({ captured_at_wall: '2025-00-01T09:45:03', captured_at: null, uploaded_at: '2023-03-04 05:06:08' })))
+      .toBe(serverWall('2023-03-04T05:06:08.000Z'));
+    expect(zipEntryDate({ captured_at_wall: '2025-00-01T09:45:03', captured_at: null, uploaded_at: null })).toBeUndefined();
+  });
+
   it('leaves the date to archiver when the row has none', () => {
     expect(zipEntryDate({ captured_at_wall: null, captured_at: null, uploaded_at: null })).toBeUndefined();
   });
