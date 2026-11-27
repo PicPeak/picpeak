@@ -13443,6 +13443,7 @@
     "importRefused": "Your landing page is too long for a custom HTML block ({{length}} of {{max}} characters), so it was not copied into the builder; nothing of it was cut. It stays live at the site root until you publish here. To keep it, shorten it and paste it into a custom HTML block.",
     "refreshFailed": "Could not refresh the website. Your changes here are kept.",
     "previewStale": "Preview out of date: it could not be refreshed.",
-    "previewRetry": "Refresh preview"
+    "previewRetry": "Refresh preview",
+    "galleryOff": "{{names}} is not on the website. Remove the pick, or switch the gallery on in its settings or in the image picker."
   }
 }

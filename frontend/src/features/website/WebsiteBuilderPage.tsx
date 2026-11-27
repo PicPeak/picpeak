@@ -179,7 +179,14 @@ export const WebsiteBuilderPage: React.FC = () => {
   const busy = editor.save.isPending || editor.publish.isPending;
 
   const onSaveError = (err: unknown) => {
-    const details = (err as { response?: { data?: { details?: ValidationProblem[] } } })?.response?.data?.details;
+    const data = (err as { response?: { data?: { code?: string; details?: unknown } } })?.response?.data;
+    if (data?.code === 'WEBSITE_GALLERY_NOT_ON_WEBSITE') {
+      const names = (Array.isArray(data.details) ? data.details as Array<{ name?: string }> : [])
+        .map((d) => d.name).filter(Boolean).join(', ');
+      toast.error(t('website.galleryOff', '{{names}} is not on the website. Remove the pick, or switch the gallery on in its settings or in the image picker.', { names }));
+      return;
+    }
+    const details = data?.details as ValidationProblem[] | undefined;
     if (Array.isArray(details)) {
       setProblems(details);
       setPanel('pages');

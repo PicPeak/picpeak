@@ -57,6 +57,7 @@ globalThis.ResizeObserver = class {
   disconnect() {}
 } as unknown as typeof ResizeObserver;
 
+import { toast } from 'react-toastify';
 import { websiteService } from '../../../services/website.service';
 import { usePermission } from '../../../hooks/usePermission';
 import { WebsiteBuilderPage } from '../WebsiteBuilderPage';
@@ -174,6 +175,26 @@ describe('WebsiteBuilderPage', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('a pick from a gallery that is off is its own error, not a conflict, and the edit stays', async () => {
+    vi.mocked(websiteService.saveDraft).mockRejectedValue({
+      response: {
+        status: 409,
+        data: { code: 'WEBSITE_GALLERY_NOT_ON_WEBSITE', error: 'Put the gallery on the website first: Summer party', details: [{ code: 'GALLERY_NOT_ON_WEBSITE', eventId: 9, name: 'Summer party' }] },
+      },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByText('Hello there'));
+    fireEvent.change(screen.getByLabelText('Heading'), { target: { value: 'Welcome' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    const message = String(vi.mocked(toast.error).mock.calls.at(-1)?.[0]);
+    expect(message).toContain('Summer party');
+    expect(message).toMatch(/Remove the pick|switch the gallery on/);
+    expect(screen.queryByText(/Someone else saved the website/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Load the latest version' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save draft' })).not.toBeDisabled();
   });
 
   it('switches the preview to phone width', async () => {

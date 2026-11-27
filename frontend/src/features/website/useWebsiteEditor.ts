@@ -22,9 +22,11 @@ export const EDITOR_QUERY_KEY = ['website-editor'] as const;
 
 const same = (a: WebsiteDocument | null, b: WebsiteDocument | null) => JSON.stringify(a) === JSON.stringify(b);
 
+// Only a draft saved elsewhere is a conflict to reload from; another 409
+// (a pick from a gallery that is off) is the page's own error to fix.
 function isConflict(err: unknown): boolean {
-  const response = (err as { response?: { status?: number; data?: { code?: string } } } | null)?.response;
-  return response?.status === 409 || response?.data?.code === 'WEBSITE_REVISION_CONFLICT';
+  const response = (err as { response?: { data?: { code?: string } } } | null)?.response;
+  return response?.data?.code === 'WEBSITE_REVISION_CONFLICT';
 }
 
 /**
