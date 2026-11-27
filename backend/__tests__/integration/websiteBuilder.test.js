@@ -108,6 +108,25 @@ describe('admin API', () => {
     expect((await request(app).post('/api/admin/website/preview').set(auth(adminId)).send({ document: {} })).status).toBe(403);
   });
 
+  test('every in-page link of the starter site leads somewhere', async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    // A fresh install: the template migration 043 seeded, site switched off.
+    const { document: raw, imported } = await service._internal.initialDocument();
+    expect(imported).toBe(false);
+    const { document } = require('../../src/services/website/document').normalizeDocument(raw);
+    const page = document.pages[0];
+    const html = (await request(app).post('/api/admin/website/preview').set(auth(adminId)).send({ document, pageId: page.id })).body.html;
+    const anchors = [...html.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+    expect(anchors.length).toBeGreaterThan(0);
+    for (const anchor of anchors) expect(html).toContain(`id="${anchor}"`);
+  });
+
+  test('the seeded template is imported only when visitors see it', async () => {
+    await setSetting('general_public_site_enabled', true);
+    expect((await service._internal.initialDocument()).imported).toBe(true);
+    await setSetting('general_public_site_enabled', false);
+  });
+
   test('imports the single-page site into the first draft', async () => {
     await setSetting('general_public_site_html', '<section class="hero"><h1>Old site {{company_name}}</h1></section>');
     await setSetting('general_public_site_custom_css', '.legacy-rule{color:red}');

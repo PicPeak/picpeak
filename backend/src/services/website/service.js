@@ -16,7 +16,7 @@ const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const { canAccessEvent } = require('../../middleware/ownership');
 const { listFonts } = require('../fontsService');
 const publicSite = require('../publicSiteService');
-const { DEFAULT_PUBLIC_SITE_CSS } = require('../../constants/publicSiteDefaults');
+const { DEFAULT_PUBLIC_SITE_CSS, DEFAULT_PUBLIC_SITE_HTML } = require('../../constants/publicSiteDefaults');
 const { normalizeDocument, collectReferences, newPageId, LIMIT_CODES } = require('./document');
 const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
@@ -64,9 +64,11 @@ function starterDocument() {
       title: 'Home',
       isHome: true,
       blocks: [
-        { type: 'hero', variant: 'minimal', heading: 'Photography for the moments that matter', subheading: 'Weddings, portraits and events, told honestly and beautifully.', buttonLabel: 'Get in touch', buttonUrl: '#contact' },
-        { type: 'text', variant: 'center', heading: 'About', body: 'Tell your visitors who you are and how you work.' },
-        { type: 'contact', variant: 'simple', heading: 'Let’s talk', intro: 'Tell me about your plans.' },
+        // A section is reached as #b-<block id>; the ids here are fixed so
+        // the hero's button finds the contact form.
+        { id: 'hero', type: 'hero', variant: 'minimal', heading: 'Photography for the moments that matter', subheading: 'Weddings, portraits and events, told honestly and beautifully.', buttonLabel: 'Get in touch', buttonUrl: '#b-contact' },
+        { id: 'about', type: 'text', variant: 'center', heading: 'About', body: 'Tell your visitors who you are and how you work.' },
+        { id: 'contact', type: 'contact', variant: 'simple', heading: 'Let’s talk', intro: 'Tell me about your plans.' },
       ],
     }],
   };
@@ -81,11 +83,16 @@ function starterDocument() {
  */
 async function initialDocument() {
   const rows = await db('app_settings')
-    .whereIn('setting_key', ['general_public_site_html', 'general_public_site_custom_css']);
+    .whereIn('setting_key', ['general_public_site_enabled', 'general_public_site_html', 'general_public_site_custom_css']);
   const settings = {};
   rows.forEach((row) => { settings[row.setting_key] = parseSettingValue(row.setting_value); });
   const html = typeof settings.general_public_site_html === 'string' ? settings.general_public_site_html : '';
-  if (!html.trim()) return { document: starterDocument(), imported: false };
+  // Migration 043 seeds the template's HTML on every install. Only a page
+  // someone edited, or one visitors can see, is theirs to keep; an untouched
+  // template behind a switched-off site gets the starter instead.
+  const ownPage = html.trim() && (settings.general_public_site_enabled === true
+    || html.trim() !== DEFAULT_PUBLIC_SITE_HTML.trim());
+  if (!ownPage) return { document: starterDocument(), imported: false };
   const css = typeof settings.general_public_site_custom_css === 'string' ? settings.general_public_site_custom_css : '';
   return {
     imported: true,
