@@ -166,3 +166,49 @@ describe('website page views', () => {
     expect(await rows()).toEqual([]);
   });
 });
+
+describe('website page views sent to the configured analytics, when chosen', () => {
+  const BROWSER = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+  let collector; let received = [];
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+  beforeAll(async () => {
+    process.env.ANALYTICS_ALLOW_INSECURE_HTTP = 'true';
+    const http = require('http');
+    collector = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => { received.push({ path: req.url, headers: req.headers, body: JSON.parse(body || '{}') }); res.end('{}'); });
+    });
+    await new Promise((resolve) => collector.listen(0, '127.0.0.1', resolve));
+    await setSetting('analytics_tracker_provider', 'umami', 'analytics');
+    await setSetting('analytics_umami_url', `http://127.0.0.1:${collector.address().port}`, 'analytics');
+    await setSetting('analytics_umami_website_id', 'site-123', 'analytics');
+    await setFeatureFlags(db, { websiteBuilder: true });
+    await publish({ pages: [{ id: 'home', slug: 'home', title: 'Home', isHome: true, blocks: [] }, { id: 'about', slug: 'about', title: 'About', blocks: [] }] });
+  });
+  afterAll(async () => {
+    delete process.env.ANALYTICS_ALLOW_INSECURE_HTTP;
+    await new Promise((resolve) => collector.close(resolve));
+  });
+
+  test('off by default: nothing leaves the server', async () => {
+    await request(app).get('/about').set('User-Agent', BROWSER);
+    await settle();
+    expect(received).toEqual([]);
+  });
+
+  test('on: a page view goes to the tracker from the server, never for crawlers or Do Not Track', async () => {
+    await setSetting('analytics_website_forward', true, 'analytics');
+    await request(app).get('/about').set('User-Agent', BROWSER).set('X-Forwarded-For', '198.51.100.7');
+    await request(app).get('/about').set('User-Agent', 'Mozilla/5.0 (compatible; Googlebot/2.1)');
+    await request(app).get('/about').set('User-Agent', BROWSER).set('DNT', '1');
+    await request(app).get('/about').set('User-Agent', BROWSER).set('Sec-GPC', '1');
+    await settle();
+    expect(received).toHaveLength(1);
+    expect(received[0].path).toBe('/api/send');
+    expect(received[0].body.payload).toMatchObject({ website: 'site-123', url: '/about' });
+    expect(received[0].headers['user-agent']).toBe(BROWSER);
+    await setSetting('analytics_website_forward', false, 'analytics');
+  });
+});

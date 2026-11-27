@@ -4163,7 +4163,9 @@
       "umamiApiKey": "API-Schlüssel",
       "umamiApiKeyHelp": "Optional. Nur für das Geräte-Diagramm im Analyse-Dashboard erforderlich. Erstellen in Umami → Settings → Profile → API Keys. Nach dem Speichern maskiert als •••••••• hinterlegt — den maskierten Wert stehen lassen, um den bestehenden Schlüssel zu behalten.",
       "honorDoNotTrack": "Do Not Track beachten",
-      "honorDoNotTrackHelp": "Standardmäßig an: Besucher, deren Browser Do Not Track sendet, werden nicht gezählt. Schalten Sie es aus, um sie zu zählen, zum Beispiel bei Galerien nur für geladene Gäste; für die Rechtsgrundlage sind dann Sie verantwortlich. Global Privacy Control wird immer beachtet."
+      "honorDoNotTrackHelp": "Standardmäßig an: Besucher, deren Browser Do Not Track sendet, werden nicht gezählt. Schalten Sie es aus, um sie zu zählen, zum Beispiel bei Galerien nur für geladene Gäste; für die Rechtsgrundlage sind dann Sie verantwortlich. Global Privacy Control wird immer beachtet.",
+      "websiteForward": "Auch die Website hier zählen",
+      "websiteForwardHelp": "Standardmässig aus; die Website zählt ihre Seitenaufrufe auch ohne. Eingeschaltet geht jeder Aufruf einer Website-Seite zusätzlich von Ihrem Server an diesen Tracker, mit Adresse und Browser (User-Agent) des Besuchers, damit der Tracker Besucher unterscheiden kann. Die Website führt weiterhin kein Skript aus und setzt kein Cookie; Do Not Track und Global Privacy Control werden wie oben beachtet. Erwähnen Sie es in Ihrer Datenschutzerklärung."
     },
     "groups": {
       "general": "Allgemein",

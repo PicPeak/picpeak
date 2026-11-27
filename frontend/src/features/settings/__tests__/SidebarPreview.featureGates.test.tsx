@@ -33,7 +33,7 @@ describe('SidebarPreview feature gates (QA J.14)', () => {
 
   it.each([
     ['accounting', 'navigation.accounting'],
-    ['analytics', 'admin.analytics'],
+    // Analytics is no main-menu entry any more: it sits in the Sharing section.
     ['messaging', 'navigation.messages'],
   ] as const)('reflects the %s toggle', (flag, label) => {
     const { unmount } = render(<SidebarPreview staged={staged({ [flag]: false })} />);

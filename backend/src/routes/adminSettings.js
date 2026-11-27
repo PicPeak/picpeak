@@ -168,6 +168,8 @@ const TRACKER_CODE_KEYS = new Set([
   // Decides whether visitors who sent Do Not Track are counted (issue 1921):
   // the same kind of decision as where the events go.
   'analytics_honor_do_not_track',
+  // Whether the website's page views also go to the tracker (issue 2618).
+  'analytics_website_forward',
 ]);
 const parseStoredSetting = (row) => {
   if (!row) return undefined;
@@ -268,6 +270,7 @@ const effectiveMissingSetting = async (key) => {
   }
   if (key === 'analytics_umami_enabled') return false;
   if (key === 'analytics_honor_do_not_track') return true;
+  if (key === 'analytics_website_forward') return false;
   return null;
 };
 // A rule names either the owning `perm`, or `superAdmin: true` when the key is
@@ -338,10 +341,11 @@ const rejectUnauthorizedProtectedKeys = async (settings, req, res) => {
   // whichever endpoint wrote it: a strict boolean (issue 1921). The client
   // reads it through the public settings and the relay reads it directly;
   // a string would let the two disagree about who is counted.
-  if (Object.hasOwn(settings, 'analytics_honor_do_not_track')
-    && typeof settings.analytics_honor_do_not_track !== 'boolean') {
-    res.status(400).json({ error: 'analytics_honor_do_not_track must be true or false', code: 'BAD_BOOLEAN' });
-    return true;
+  for (const key of ['analytics_honor_do_not_track', 'analytics_website_forward']) {
+    if (Object.hasOwn(settings, key) && typeof settings[key] !== 'boolean') {
+      res.status(400).json({ error: `${key} must be true or false`, code: 'BAD_BOOLEAN' });
+      return true;
+    }
   }
   return false;
 };

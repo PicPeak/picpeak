@@ -474,6 +474,7 @@ function sendWebsitePage(req, res, page, slug) {
   if (req.method === 'GET') {
     require('./src/services/website/pageViews').recordPageView({
       slug, userAgent: req.get('user-agent'), referer: req.get('referer'), host: req.get('host'),
+      ip: require('./src/utils/clientIp').clientIpForAudit(req), gpc: req.get('Sec-GPC'), dnt: req.get('DNT'),
     });
   }
   // Every header before the conditional answer: a 304 updates the cached

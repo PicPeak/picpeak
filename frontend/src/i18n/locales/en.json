@@ -3430,7 +3430,9 @@
       "umamiApiKey": "API key",
       "umamiApiKeyHelp": "Optional. Required only for the device-breakdown chart on the Analytics dashboard. Generate in Umami → Settings → Profile → API Keys. Stored masked as •••••••• once saved — leave the masked value to keep the existing key.",
       "honorDoNotTrack": "Honour Do Not Track",
-      "honorDoNotTrackHelp": "On by default: a visitor whose browser sends Do Not Track is not counted. Switch it off to count them, for example for invite-only galleries; you are then responsible for the legal basis. Global Privacy Control is always honoured."
+      "honorDoNotTrackHelp": "On by default: a visitor whose browser sends Do Not Track is not counted. Switch it off to count them, for example for invite-only galleries; you are then responsible for the legal basis. Global Privacy Control is always honoured.",
+      "websiteForward": "Also count the website here",
+      "websiteForwardHelp": "Off by default; the website counts its own page views without it. On, each view of a website page also goes from your server to this tracker with the visitor’s address and browser (user agent), so the tracker can tell visitors apart. The website still runs no script and sets no cookie; Do Not Track and Global Privacy Control are honoured as above. Mention it in your privacy policy."
     },
     "groups": {
       "general": "General",

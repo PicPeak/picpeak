@@ -6,6 +6,9 @@
 const { db } = require('../../database/db');
 const logger = require('../../utils/logger');
 const { isBot, deviceClass } = require('../../utils/userAgentClass');
+const { getAppSetting } = require('../../utils/appSettings');
+const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
+const trackers = require('../trackers/forwardEvent');
 
 /** The referring site's domain; '' for none or the site's own pages. */
 function referrerDomain(referer, ownHost) {
@@ -19,11 +22,34 @@ function referrerDomain(referer, ownHost) {
 }
 
 /**
- * Count one view of `slug` ('' = home). Never throws and is not awaited by
- * the response: a lost count is better than a slower page.
+ * With "use for the website" on (Settings › Analytics), the view also goes
+ * to the configured Umami or Rybbit, from the server as the admin app's
+ * events do: the page path, the visitor's user agent and address, nothing
+ * from the page itself. Do Not Track and Global Privacy Control are honoured
+ * as there. The public pages still run no script.
  */
-async function recordPageView({ slug, userAgent, referer, host }) {
+async function forwardPageView({ slug, userAgent, ip, gpc, dnt }) {
+  const chosen = await getAppSetting('analytics_website_forward', false);
+  if (chosen !== true && chosen !== 'true') return;
+  if (await trackers.optedOut({ gpc, dnt })) return;
+  const upstream = await trackers.resolveUpstream();
+  if (!upstream) return;
+  let hostname = '';
+  try { hostname = new URL(await getFrontendBaseUrl()).hostname; } catch { /* no public origin known */ }
+  await trackers.forwardEvent(upstream, {
+    type: 'pageview', path: `/${slug || ''}`, language: '', screenWidth: 0, screenHeight: 0,
+  }, { userAgent, ip, hostname });
+}
+
+/**
+ * Count one view of `slug` ('' = home), and forward it when chosen. Never
+ * throws and is not awaited by the response: a lost count is better than a
+ * slower page.
+ */
+async function recordPageView({ slug, userAgent, referer, host, ip, gpc, dnt }) {
   if (isBot(userAgent)) return;
+  forwardPageView({ slug, userAgent, ip, gpc, dnt })
+    .catch((error) => logger.debug('Website page view not forwarded', { error: error.message }));
   const row = {
     day: new Date().toISOString().slice(0, 10),
     page: String(slug || '').slice(0, 80),
