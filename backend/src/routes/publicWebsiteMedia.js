@@ -3,7 +3,11 @@
  * /site-media outside /api so crawlers that honour robots.txt's
  * `Disallow: /api` can still index a portfolio.
  *
- *   GET /:token/:size   token = <p|a><id>.<sig>, size = 640 | 1280 | 1920 | video
+ *   GET /:token/:size   size = 640 | 1280 | 1920 | video
+ *     token = <p|a><id>[-<version>].<sig>     public: while the website is
+ *             live, a gallery photo only while the published website shows it
+ *     token = e<p|a><id>-<expiry>.<sig>       the editor's, for an hour or two,
+ *             anything an admin may pick; private, never cached
  *
  * Only signed URLs work (services/website/media.js), only while the
  * `websiteBuilder` flag is on, and a gallery photo is re-checked for
@@ -23,6 +27,7 @@ const { ensurePreviewImageAtWidth } = require('../services/imageProcessor');
 const { isPresentationRenditionKey } = require('../services/galleryAssetPolicy');
 const renditionRefresh = require('../services/renditionRefresh');
 const media = require('../services/website/media');
+const websiteService = require('../services/website/service');
 const imageResourcePolicy = require('../services/imageResourcePolicy');
 const { capPreviewRendition, watermarkPreviewRendition } = require('../services/galleryViewRendition');
 
@@ -34,10 +39,10 @@ function notFound(res) {
   res.status(404).type('text/plain').send('Not found');
 }
 
-// A photo's rendition as { key, view }, or { redirect } when the URL names
-// an older version of the picture or of its watermark (or none): the
-// current URL then serves the current one.
-async function photoRendition(id, width, version) {
+// A photo's rendition as { key, view }, or { redirect } when a public URL
+// names an older version of the picture or of its watermark (or none): the
+// current URL then serves the current one. An editor URL has no version.
+async function photoRendition(id, width, version, editor) {
   const eligible = await media.loadEligiblePhotos([id]);
   if (!eligible.has(id)) return null;
   const { view } = eligible.get(id);
@@ -51,7 +56,7 @@ async function photoRendition(id, width, version) {
     if (!photo) return null;
   }
   const current = media.photoVersion({ ...photo, view });
-  if (version !== current) return { redirect: `${media.mediaBase({ source: 'photo', id }, current)}/${width}` };
+  if (!editor && version !== current) return { redirect: `${media.mediaBase({ source: 'photo', id }, current)}/${width}` };
   const key = await ensurePreviewImageAtWidth(photo, width);
   return isPresentationRenditionKey(key, 'preview') ? { key, view } : null;
 }
@@ -85,8 +90,15 @@ router.get('/:token/:size', async (req, res) => {
     const isVideo = size === 'video';
     if (!isVideo && !media.MEDIA_WIDTHS.includes(width)) return notFound(res);
     if (isVideo && ref.kind !== 'a') return notFound(res);
+    // A public URL works only while the website is live, and a gallery
+    // photo's only while the published website shows it. The editor's
+    // short-lived URLs reach what an admin may pick (eligibility below).
+    if (!ref.editor) {
+      if (!(await websiteService.isWebsiteActive())) return notFound(res);
+      if (ref.kind === 'p' && !(await websiteService.publishedPhotoIds()).has(ref.id)) return notFound(res);
+    }
 
-    const found = ref.kind === 'p' ? await photoRendition(ref.id, width, ref.version) : await assetRendition(ref.id, isVideo ? 'video' : String(width));
+    const found = ref.kind === 'p' ? await photoRendition(ref.id, width, ref.version, ref.editor) : await assetRendition(ref.id, isVideo ? 'video' : String(width));
     if (!found) return notFound(res);
     if (found.redirect) {
       // Not cached: the next replacement moves the target again.
@@ -105,8 +117,9 @@ router.get('/:token/:size', async (req, res) => {
     const headers = {
       'Content-Type': contentType,
       // Public, but not immutable: a gallery that leaves the website should
-      // drop out of shared caches within a day.
-      'Cache-Control': 'public, max-age=86400',
+      // drop out of shared caches within a day. An editor URL is the
+      // admin's alone, and never kept.
+      'Cache-Control': ref.editor ? 'private, no-store' : 'public, max-age=86400',
       'X-Content-Type-Options': 'nosniff',
       'Accept-Ranges': isVideo ? 'bytes' : 'none',
     };

@@ -529,6 +529,28 @@ async function publishedDocument() {
   return raw ? normalizeDocument(raw).document : null;
 }
 
+/**
+ * The gallery photos the published website shows: the picks on its visible
+ * pages and the covers of the galleries they feature. Only these have a
+ * working public URL (/site-media). Cached with the pages, so a publish or
+ * an opt-out (both clear the cache) changes it at once.
+ */
+async function publishedPhotoIds() {
+  const generation = cacheGeneration();
+  const cached = getCached('published-photos');
+  if (cached !== undefined) return cached;
+  const document = await publishedDocument();
+  const ids = new Set();
+  if (document) {
+    const refs = collectReferences({ pages: document.pages.filter((p) => !p.hidden) });
+    refs.photoIds.forEach((id) => ids.add(id));
+    const events = await media.loadEligibleEvents(refs.eventIds);
+    for (const cover of (await media.loadCoverPhotos([...events.values()])).values()) ids.add(cover.id);
+  }
+  setCached('published-photos', ids, generation);
+  return ids;
+}
+
 /** Flag on, public site on, something published: the builder owns `/`. */
 async function isWebsiteActive() {
   if (!(await isFeatureEnabled(FLAG))) return false;
@@ -613,6 +635,7 @@ module.exports = {
   renderPreview,
   resolvePublicPage,
   isWebsiteActive,
+  publishedPhotoIds,
   sitemapXml,
   publishedDocument,
   setGalleryOnWebsite,

@@ -91,16 +91,46 @@ function mediaBase(ref, version) {
   return `/site-media/${kind}${ref.id}${tag}.${signMedia(kind, ref.id)}`;
 }
 
-/** The 640 tier of an eligible photo (a loadEligiblePhotos row): the editor's thumbnail. */
+/**
+ * The editor's URL of a photo or an upload (picker tiles, field thumbnails,
+ * the preview): `e<kind><id>-<expiry>.<sig>`, the expiry (unix seconds)
+ * inside the signature, served `private, no-store`. It reaches what an
+ * admin may pick, published or not, so it must never pass for a public URL:
+ * its signature covers another kind (`ep` / `ea`) than the public one. The
+ * expiry is the end of the next full hour, so a URL stays the same for an
+ * hour and works for one to two.
+ */
+const EDITOR_URL_SECONDS = 3600;
+function editorExpiry(now = Date.now()) {
+  return (Math.floor(now / 1000 / EDITOR_URL_SECONDS) + 2) * EDITOR_URL_SECONDS;
+}
+
+function editorBase(ref, expires = editorExpiry()) {
+  const kind = ref.source === 'photo' ? 'p' : 'a';
+  return `/site-media/e${kind}${ref.id}-${expires}.${signMedia(`e${kind}`, `${ref.id}:${expires}`)}`;
+}
+
+/** The 640 tier of a photo for the editor. */
 function photoPreviewUrl(photo) {
-  return `${mediaBase({ source: 'photo', id: photo.id }, photoVersion(photo))}/640`;
+  return `${editorBase({ source: 'photo', id: photo.id })}/640`;
 }
 
 /**
- * Parse `<kind><id>[-<version>].<sig>` from the URL. Returns
- * { kind, id, version } when the signature matches, else null.
+ * Parse `<kind><id>[-<version>].<sig>` (public) or
+ * `e<kind><id>-<expiry>.<sig>` (editor) from the URL. Returns
+ * { kind, id, version, editor } when the signature matches (and an editor
+ * URL has not expired), else null.
  */
 function parseMediaToken(token) {
+  const editor = /^e([pa])([0-9a-f]{24}|[1-9][0-9]{0,15})-([0-9]{10})\.([0-9a-f]{32})$/.exec(String(token || ''));
+  if (editor) {
+    const [, kind, rawId, expires, signature] = editor;
+    if (kind === 'p' && !/^[1-9][0-9]*$/.test(rawId)) return null;
+    if (kind === 'a' && !/^[0-9a-f]{24}$/.test(rawId)) return null;
+    if (!verifyMedia(`e${kind}`, `${rawId}:${expires}`, signature)) return null;
+    if (Number(expires) * 1000 <= Date.now()) return null;
+    return { kind, id: kind === 'p' ? Number(rawId) : rawId, version: null, editor: true };
+  }
   const match = /^([pa])([0-9a-f]{24}|[1-9][0-9]{0,15})(?:-([0-9a-f]{10}))?\.([0-9a-f]{32})$/.exec(String(token || ''));
   if (!match) return null;
   const [, kind, rawId, version, signature] = match;
@@ -217,6 +247,7 @@ module.exports = {
   signMedia,
   verifyMedia,
   mediaBase,
+  editorBase,
   photoPreviewUrl,
   photoVersion,
   parseMediaToken,

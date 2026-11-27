@@ -570,18 +570,14 @@ describe('gallery photos on the website', () => {
     expect(photos.body.photos.map((p) => p.id)).toEqual([lockedPhoto, lockedOther]);
   });
 
-  test('the picker shows a gallery\'s photos through the website\'s own URLs, no photo permission needed', async () => {
+  test('the picker shows a gallery\'s photos through the website\'s media route, no photo permission needed', async () => {
     const photos = (await request(app).get(`/api/admin/website/galleries/${lockedEvent}/photos`).set(auth(adminId))).body.photos;
-    const { html } = await service.resolvePublicPage('');
     for (const photo of photos) {
-      expect(photo.thumbnailUrl).toMatch(new RegExp(`^/site-media/p${photo.id}-[0-9a-f]{10}\\.[0-9a-f]{32}/640$`));
-      // Served without any admin credentials, as the website serves it.
+      expect(photo.thumbnailUrl).toMatch(new RegExp(`^/site-media/ep${photo.id}-\\d{10}\\.[0-9a-f]{32}/640$`));
+      // A signed URL: no admin credentials (and no photos.view) needed.
       // eslint-disable-next-line no-await-in-loop
       expect((await request(app).get(photo.thumbnailUrl)).status).toBe(200);
     }
-    // The picked one is the very URL the page uses.
-    const picked = photos.find((p) => p.id === lockedPhoto);
-    expect(html).toContain(picked.thumbnailUrl);
   });
 
   test('the opt-in reads "false" and "0" as off, not as a truthy string', async () => {
@@ -812,8 +808,8 @@ describe('what an admin may pick', () => {
   test('preview and thumbnails give no URL for a photo the admin may not pick', async () => {
     const other = await insertPhoto(foreignEvent);
     const preview = await request(app).post('/api/admin/website/preview').set(colleague()).send({ document: docWith([ownPhoto, other]), pageId: 'home' });
-    expect(preview.body.html).toContain(`/site-media/p${ownPhoto}-`);
-    expect(preview.body.html).not.toContain(`/site-media/p${other}-`);
+    expect(preview.body.html).toContain(`/site-media/ep${ownPhoto}-`);
+    expect(preview.body.html).not.toContain(`/site-media/ep${other}-`);
     const urls = (await request(app).post('/api/admin/website/media/resolve').set(colleague())
       .send({ refs: [{ source: 'photo', id: ownPhoto }, { source: 'photo', id: other }, { source: 'photo', id: foreignPhoto }] })).body.urls;
     expect(urls[`photo:${ownPhoto}`]).toMatch(/^\/site-media\//);
@@ -1268,5 +1264,97 @@ describe('what a page render reads', () => {
       expect(page.html).toContain(`/site-media/p${photoIds[23]}-`);
     });
     expect(seen.filter((sql) => /branding_watermark_enabled/.test(sql))).toHaveLength(1);
+  });
+});
+
+describe('which photo URLs work', () => {
+  let eventId; let onPage; let onHidden; let draftOnly; let unpicked;
+  const publicUrl = (id) => `${media.mediaBase({ source: 'photo', id })}/640`;
+  const state = async () => (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+  const save = async (pages) => {
+    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document: { pages }, revision: (await state()).draft.revision }).expect(200);
+    return saved.body.draft.revision;
+  };
+  const publish = async (pages) => {
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: await save(pages) }).expect(200);
+    cache.clearWebsiteCache();
+  };
+  const gallery = (id, ids) => ({ id, type: 'gallery', images: ids.map((photoId) => ({ source: 'photo', id: photoId })) });
+  const home = (ids) => ({ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [gallery('g1', ids)] });
+  const hidden = { id: 'later', title: 'Later', slug: 'later', hidden: true, blocks: [] };
+
+  beforeAll(async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    await setSetting('general_public_site_enabled', true);
+    await setSetting('branding_watermark_enabled', false, 'branding');
+    eventId = await insertEvent({ require_password: 1 });
+    onPage = await insertPhoto(eventId);
+    onHidden = await insertPhoto(eventId);
+    draftOnly = await insertPhoto(eventId);
+    unpicked = await insertPhoto(eventId);
+    hidden.blocks = [gallery('g2', [onHidden])];
+    await publish([home([onPage]), hidden]);
+    // Picked in the draft only, never published.
+    await save([home([onPage, draftOnly]), hidden]);
+  });
+
+  test('a public URL works only for a photo the published website shows', async () => {
+    const page = await service.resolvePublicPage('');
+    const shown = page.html.match(new RegExp(`/site-media/p${onPage}-[0-9a-f]{10}\\.[0-9a-f]{32}/640`))[0];
+    const ok = await request(app).get(shown);
+    expect(ok.status).toBe(200);
+    expect(ok.headers['cache-control']).toBe('public, max-age=86400');
+    for (const id of [onHidden, draftOnly, unpicked]) {
+      // eslint-disable-next-line no-await-in-loop
+      expect((await request(app).get(publicUrl(id)).redirects(1)).status).toBe(404);
+    }
+  });
+
+  test('a photo taken off the website loses its public URL at the next publish', async () => {
+    const before = (await service.resolvePublicPage('')).html.match(new RegExp(`/site-media/p${onPage}-[0-9a-f]{10}\\.[0-9a-f]{32}/640`))[0];
+    await publish([home([draftOnly]), hidden]);
+    expect((await request(app).get(before)).status).toBe(404);
+    await publish([home([onPage]), hidden]);
+  });
+
+  test('picker tiles are short-lived editor URLs: never public-cacheable, never public', async () => {
+    const tiles = (await request(app).get(`/api/admin/website/galleries/${eventId}/photos`).set(auth(adminId))).body.photos;
+    const tile = tiles.find((p) => p.id === unpicked).thumbnailUrl;
+    expect(tile).toMatch(new RegExp(`^/site-media/ep${unpicked}-\\d{10}\\.[0-9a-f]{32}/640$`));
+    const ok = await request(app).get(tile);
+    expect(ok.status).toBe(200);
+    expect(ok.headers['cache-control']).toBe('private, no-store');
+    // Another photo under the same signature, or the public kind of it: refused.
+    expect((await request(app).get(tile.replace(`ep${unpicked}-`, `ep${onHidden}-`))).status).toBe(404);
+    expect((await request(app).get(tile.replace('/site-media/ep', '/site-media/p'))).status).toBe(404);
+    // Expired.
+    const past = Math.floor(Date.now() / 1000) - 60;
+    expect((await request(app).get(`${media.editorBase({ source: 'photo', id: unpicked }, past)}/640`)).status).toBe(404);
+    // A later expiry cannot be written in without the key.
+    const [, exp] = tile.match(/-(\d{10})\./);
+    expect((await request(app).get(tile.replace(`-${exp}.`, `-${Number(exp) + 86400 * 365}.`))).status).toBe(404);
+  });
+
+  test('the editor preview uses editor URLs; the published page uses public ones', async () => {
+    const preview = (await request(app).post('/api/admin/website/preview').set(auth(adminId)).send({ document: { pages: [home([onPage, draftOnly])] }, pageId: 'home' })).body.html;
+    expect(preview).toContain(`/site-media/ep${draftOnly}-`);
+    expect(preview).not.toMatch(/\/site-media\/p\d/);
+    const live = (await service.resolvePublicPage('')).html;
+    expect(live).toContain(`/site-media/p${onPage}-`);
+    expect(live).not.toContain('/site-media/e');
+  });
+
+  test('while the website is not live, only editor URLs work', async () => {
+    const shown = (await service.resolvePublicPage('')).html.match(new RegExp(`/site-media/p${onPage}-[0-9a-f]{10}\\.[0-9a-f]{32}/640`))[0];
+    const tile = (await request(app).get(`/api/admin/website/galleries/${eventId}/photos`).set(auth(adminId))).body.photos[0].thumbnailUrl;
+    await setSetting('general_public_site_enabled', false);
+    cache.clearWebsiteCache();
+    try {
+      expect((await request(app).get(shown)).status).toBe(404);
+      expect((await request(app).get(tile)).status).toBe(200);
+    } finally {
+      await setSetting('general_public_site_enabled', true);
+      cache.clearWebsiteCache();
+    }
   });
 });

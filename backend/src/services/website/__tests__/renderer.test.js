@@ -227,7 +227,7 @@ describe('hero video in the editor preview', () => {
   test('shows the poster and says where the video plays when the admin runs on another origin', () => {
     const html = render([home(blocks)], { ctx: { ...ctx, videoAsPoster: true } });
     expect(html).not.toContain('<video');
-    expect(html).toMatch(/<img class="pp-hero__media"[^>]+src="\/site-media\/p11-/);
+    expect(html).toMatch(/<img class="pp-hero__media"[^>]+src="\/site-media\/ep11-/);
     expect(html).toContain('Video plays on the published page');
   });
 

@@ -22,7 +22,7 @@ const { escapeCssForStyleElement } = require('../../utils/cssSanitizer');
 const { relativeLuminance, readableTextOn } = require('../../utils/colorContrast');
 const { safeUrl } = require('./document');
 const { brandCssVariables } = require('../../utils/brandCssVariables');
-const { MEDIA_WIDTHS, mediaBase, parseRenditionKeys, photoVersion } = require('./media');
+const { MEDIA_WIDTHS, mediaBase, editorBase, parseRenditionKeys, photoVersion } = require('./media');
 
 const esc = escapeHtml;
 
@@ -123,6 +123,15 @@ function richText(text) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Where a photo or upload is served from: the public URL on the website,
+ * the short-lived editor URL in the preview (a draft's picks have no public
+ * URL until they are published).
+ */
+function urlBase(ref, ctx, version) {
+  return ctx.preview ? editorBase(ref) : mediaBase(ref, version);
+}
+
+/**
  * Resolve an image reference against what the data layer found eligible.
  * Returns { base, width, height, tiers } or null (not eligible / unknown).
  */
@@ -131,14 +140,14 @@ function resolveImage(ref, ctx) {
   if (ref.source === 'photo') {
     const photo = ctx.photos.get(ref.id);
     if (!photo) return null;
-    return { base: mediaBase(ref, photoVersion(photo)), width: Number(photo.width) || null, height: Number(photo.height) || null, tiers: MEDIA_WIDTHS };
+    return { base: urlBase(ref, ctx, photoVersion(photo)), width: Number(photo.width) || null, height: Number(photo.height) || null, tiers: MEDIA_WIDTHS };
   }
   const asset = ctx.assets.get(ref.id);
   if (!asset || asset.kind !== 'image') return null;
   const keys = parseRenditionKeys(asset);
   const tiers = MEDIA_WIDTHS.filter((w) => keys[w]);
   if (!tiers.length) return null;
-  return { base: mediaBase(ref), width: Number(asset.width) || null, height: Number(asset.height) || null, tiers };
+  return { base: urlBase(ref, ctx), width: Number(asset.width) || null, height: Number(asset.height) || null, tiers };
 }
 
 /**
@@ -216,7 +225,7 @@ function renderHero(block, ctx) {
     media.push(`<span class="pp-video-note">${esc(strings(ctx.locale).videoInPreview)}</span>`);
   } else if (video && video.kind === 'video') {
     const poster = image ? ` poster="${esc(defaultSrc(image))}"` : '';
-    media.push(`<video class="pp-hero__media" autoplay muted loop playsinline preload="metadata"${poster}><source src="${esc(mediaBase(block.video))}/video" type="${esc(video.mime_type || 'video/mp4')}"></video>`);
+    media.push(`<video class="pp-hero__media" autoplay muted loop playsinline preload="metadata"${poster}><source src="${esc(urlBase(block.video, ctx))}/video" type="${esc(video.mime_type || 'video/mp4')}"></video>`);
   } else if (image) {
     media.push(imgTag(image, {
       alt: block.image.alt, eager: isFirst, className: 'pp-hero__media',

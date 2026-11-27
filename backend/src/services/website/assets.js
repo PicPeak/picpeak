@@ -25,7 +25,7 @@ const { getStorage } = require('../storage');
 const { getStoragePath } = require('../../config/storage');
 const { sniffImageFileType, validateFileContent } = require('../../utils/fileSecurityUtils');
 const { generatePreviewImage, orientedDimensions } = require('../imageProcessor');
-const { MEDIA_WIDTHS, parseRenditionKeys, mediaBase } = require('./media');
+const { MEDIA_WIDTHS, parseRenditionKeys, editorBase } = require('./media');
 
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const MAX_VIDEO_SECONDS = 120;
@@ -41,8 +41,9 @@ function publicAsset(row) {
     originalFilename: row.original_filename,
     sizeBytes: Number(row.size_bytes) || null,
     createdAt: row.created_at,
-    previewUrl: row.kind === 'image' && keys[640] ? `${mediaBase(ref)}/640` : null,
-    videoUrl: row.kind === 'video' ? `${mediaBase(ref)}/video` : null,
+    // The editor's URLs: an upload has a public one only on a published page.
+    previewUrl: row.kind === 'image' && keys[640] ? `${editorBase(ref)}/640` : null,
+    videoUrl: row.kind === 'video' ? `${editorBase(ref)}/video` : null,
   };
 }
 
