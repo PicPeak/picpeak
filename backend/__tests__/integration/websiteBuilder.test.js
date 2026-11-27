@@ -34,7 +34,7 @@ jest.mock('../../src/services/videoRenditionService', () => ({
 
 let db; let cleanup; let app;
 let adminId; let viewerId;
-let service; let media; let cache;
+let service; let media; let cache; let frontendUrl; let realFrontendBaseUrl;
 
 async function insertId(table, row) {
   const [inserted] = await db(table).insert(row).returning('id');
@@ -90,6 +90,11 @@ beforeAll(async () => {
   await assignAdminRole(db, viewerId, 'viewer');
   require('../../src/middleware/permissions').clearPermissionCache();
 
+  // A pass-through spy the service picks up when it loads: a test can pause
+  // a render or the sitemap at this call, after the published document is read.
+  frontendUrl = require('../../src/utils/frontendUrl');
+  realFrontendBaseUrl = frontendUrl.getFrontendBaseUrl;
+  jest.spyOn(frontendUrl, 'getFrontendBaseUrl');
   service = require('../../src/services/website/service');
   media = require('../../src/services/website/media');
   cache = require('../../src/services/website/cache');
@@ -324,6 +329,36 @@ describe('public pages', () => {
     expect(xml).toContain('<loc>https://studio.example/</loc>');
     expect(xml).toContain('<loc>https://studio.example/about</loc>');
     expect(xml).not.toContain('hidden');
+  });
+
+  const publishPages = async (pages) => {
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document: { pages }, revision: state.draft.revision }).expect(200);
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+  };
+  const home = { id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [] };
+  const about = { id: 'about', title: 'About', slug: 'about', blocks: [{ id: 't1', type: 'text', body: 'About us' }] };
+  // The render (or sitemap) has read the published document; before it
+  // goes on, a publish removes the About page.
+  const publishDuringNextRender = () => frontendUrl.getFrontendBaseUrl.mockImplementationOnce(async () => {
+    await publishPages([home]);
+    return realFrontendBaseUrl();
+  });
+
+  test('a page render that overlaps a publish does not put the old page back in the cache', async () => {
+    await publishPages([home, about]);
+    publishDuringNextRender();
+    // The render already under way may still answer with what it read...
+    expect(await service.resolvePublicPage('about')).toMatchObject({ status: 200 });
+    // ...but it must not keep serving it from the cache.
+    expect(await service.resolvePublicPage('about')).toBeNull();
+  });
+
+  test('a sitemap that overlaps a publish does not put the old list back in the cache', async () => {
+    await publishPages([home, about]);
+    publishDuringNextRender();
+    expect(await service.sitemapXml()).toContain('/about</loc>');
+    expect(await service.sitemapXml()).not.toContain('/about</loc>');
   });
 });
 

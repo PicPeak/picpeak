@@ -141,14 +141,21 @@ test('collectReferences finds every image, gallery and package', () => {
 });
 
 describe('page cache', () => {
-  const { getCached, setCached, clearWebsiteCache } = require('../cache');
+  const { cacheGeneration, getCached, setCached, clearWebsiteCache } = require('../cache');
   test('keeps a miss apart from no entry', () => {
     clearWebsiteCache();
     expect(getCached('page:nope')).toBeUndefined();
-    setCached('page:nope', null);
+    setCached('page:nope', null, cacheGeneration());
     expect(getCached('page:nope')).toBeNull();
     clearWebsiteCache();
     expect(getCached('page:nope')).toBeUndefined();
+  });
+
+  test('a value from before a clear is not stored', () => {
+    const startedAt = cacheGeneration();
+    clearWebsiteCache();
+    setCached('page:old', { status: 200 }, startedAt);
+    expect(getCached('page:old')).toBeUndefined();
   });
 });
 

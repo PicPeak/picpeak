@@ -24,7 +24,7 @@ const {
 const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
 const { renderPage, pageHref } = require('./renderer');
-const { getCached, setCached, clearWebsiteCache } = require('./cache');
+const { cacheGeneration, getCached, setCached, clearWebsiteCache } = require('./cache');
 
 const FLAG = 'websiteBuilder';
 const LEGAL_SLUGS = ['impressum', 'datenschutz', 'agb'];
@@ -557,6 +557,7 @@ async function isWebsiteActive() {
  * caller falls through exactly as before.
  */
 async function resolvePublicPage(slug) {
+  const generation = cacheGeneration();
   if (!(await isWebsiteActive())) return null;
   const key = `page:${slug}`;
   const cached = getCached(key);
@@ -581,7 +582,7 @@ async function resolvePublicPage(slug) {
   }
   // Misses are cached too, so a crawler walking random slugs costs one
   // lookup per slug and TTL, not a document parse per request.
-  setCached(key, result);
+  setCached(key, result, generation);
   return result;
 }
 
@@ -591,6 +592,7 @@ function xmlEscape(value) {
 
 /** sitemap.xml of the published pages; null while the builder is inactive. */
 async function sitemapXml() {
+  const generation = cacheGeneration();
   if (!(await isWebsiteActive())) return null;
   const cached = getCached('sitemap');
   if (cached !== undefined) return cached;
@@ -602,7 +604,7 @@ async function sitemapXml() {
   const pages = base && flag(settings.seo_allow_indexing) ? document.pages.filter((p) => !p.hidden) : [];
   const urls = pages.map((p) => `<url><loc>${xmlEscape(`${base}${pageHref(p)}`)}</loc></url>`).join('');
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>\n`;
-  setCached('sitemap', xml);
+  setCached('sitemap', xml, generation);
   return xml;
 }
 
