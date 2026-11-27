@@ -1,7 +1,7 @@
 /**
  * Migration 377: archives built before issue 2617 date every entry by the
  * build time. The cached gallery ZIP is dropped once and rebuilt on the next
- * download; ready download jobs expire and are swept as usual.
+ * download; ready download jobs keep their links.
  */
 const knex = require('knex');
 
@@ -36,15 +36,14 @@ describe('migration 377 on SQLite', () => {
 
   afterEach(async () => { await db.destroy(); });
 
-  it('drops the cached gallery archive and expires ready jobs only', async () => {
+  it('drops the cached gallery archive and leaves download jobs alone', async () => {
     await migration.up(db);
     for (const row of await db('events')) {
       expect(row.download_zip_path).toBeNull();
       expect(row.download_zip_generated_at).toBeNull();
     }
-    const [ready, building] = await db('download_jobs').orderBy('id');
-    expect(new Date(ready.expires_at).getTime()).toBeLessThanOrEqual(Date.now());
-    expect(building.expires_at).toBe(future);
+    const jobs = await db('download_jobs').orderBy('id');
+    expect(jobs.map((j) => j.expires_at)).toEqual([future, future]);
   });
 
   it('is safe to run twice and on a database without the tables', async () => {
