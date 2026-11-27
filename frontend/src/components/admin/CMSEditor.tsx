@@ -12,6 +12,7 @@ import { lowlight } from 'lowlight';
 import { 
   Bold, 
   Italic, 
+  Underline as UnderlineIcon,
   List, 
   ListOrdered,
   Link as LinkIcon,
@@ -49,6 +50,13 @@ interface CMSEditorProps {
   onChange: (content: string) => void;
   onSave?: () => void;
   isSaving?: boolean;
+  /**
+   * The website builder's text editor (issue 2618): headings 2 and 3, bold,
+   * italic, underline, lists, quote, link and alignment, without the page
+   * chrome (view modes, save, help, fullscreen, counts) and without what the
+   * website's sanitiser drops (h1, h4–h6, code, rules, justify).
+   */
+  compact?: boolean;
 }
 
 type ViewMode = 'edit' | 'preview' | 'split';
@@ -76,7 +84,7 @@ const MenuButton: React.FC<{
   </button>
 );
 
-export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave, isSaving }) => {
+export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave, isSaving, compact = false }) => {
   const { t } = useTranslation();
   const [linkUrl, setLinkUrl] = useState('');
   const [showLinkDialog, setShowLinkDialog] = useState(false);
@@ -239,63 +247,67 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
             most of a phone's editing area. */}
         <div ref={toolbarRef} className="border-b border-line bg-subtle md:sticky md:top-0 md:z-10">
           {/* View Mode Controls */}
-          <div className="flex items-center justify-between p-2 border-b border-line">
-            <div className="flex items-center gap-2">
-              <button onClick={() => setViewMode('edit')} className={viewModeChipClass('edit')}>
-                <Edit3 className="w-4 h-4 inline-block mr-1" />
-                {t('cms.editor.viewEdit', 'Edit')}
-              </button>
-              <button onClick={() => setViewMode('preview')} className={viewModeChipClass('preview')}>
-                <Eye className="w-4 h-4 inline-block mr-1" />
-                {t('cms.editor.viewPreview', 'Preview')}
-              </button>
-              <button onClick={() => setViewMode('split')} className={viewModeChipClass('split')}>
-                <Columns className="w-4 h-4 inline-block mr-1" />
-                {t('cms.editor.viewSplit', 'Split')}
-              </button>
-            </div>
+          {!compact && (
+            <div className="flex items-center justify-between p-2 border-b border-line">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setViewMode('edit')} className={viewModeChipClass('edit')}>
+                  <Edit3 className="w-4 h-4 inline-block mr-1" />
+                  {t('cms.editor.viewEdit', 'Edit')}
+                </button>
+                <button onClick={() => setViewMode('preview')} className={viewModeChipClass('preview')}>
+                  <Eye className="w-4 h-4 inline-block mr-1" />
+                  {t('cms.editor.viewPreview', 'Preview')}
+                </button>
+                <button onClick={() => setViewMode('split')} className={viewModeChipClass('split')}>
+                  <Columns className="w-4 h-4 inline-block mr-1" />
+                  {t('cms.editor.viewSplit', 'Split')}
+                </button>
+              </div>
             
-            <div className="flex items-center gap-2">
-              {onSave && (
-                <Button
-                  size="sm"
-                  onClick={onSave}
-                  isLoading={isSaving}
-                  leftIcon={<Save className="w-4 h-4" />}
+              <div className="flex items-center gap-2">
+                {onSave && (
+                  <Button
+                    size="sm"
+                    onClick={onSave}
+                    isLoading={isSaving}
+                    leftIcon={<Save className="w-4 h-4" />}
+                  >
+                    {t('cms.editor.save', 'Save')}
+                  </Button>
+                )}
+
+                <MenuButton
+                  onClick={() => setShowHelp(true)}
+                  title={t('cms.editor.help', 'Help & Keyboard Shortcuts')}
                 >
-                  {t('cms.editor.save', 'Save')}
-                </Button>
-              )}
+                  <HelpCircle className="w-4 h-4" />
+                </MenuButton>
 
-              <MenuButton
-                onClick={() => setShowHelp(true)}
-                title={t('cms.editor.help', 'Help & Keyboard Shortcuts')}
-              >
-                <HelpCircle className="w-4 h-4" />
-              </MenuButton>
-
-              <MenuButton
-                onClick={toggleFullscreen}
-                title={isFullscreen
-                  ? t('cms.editor.exitFullscreen', 'Exit Fullscreen')
-                  : t('cms.editor.enterFullscreen', 'Enter Fullscreen')}
-                active={isFullscreen}
-              >
-                <Maximize2 className="w-4 h-4" />
-              </MenuButton>
+                <MenuButton
+                  onClick={toggleFullscreen}
+                  title={isFullscreen
+                    ? t('cms.editor.exitFullscreen', 'Exit Fullscreen')
+                    : t('cms.editor.enterFullscreen', 'Enter Fullscreen')}
+                  active={isFullscreen}
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </MenuButton>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Formatting Toolbar */}
           {viewMode !== 'preview' && (
             <div className="flex items-center gap-1 p-2 flex-wrap">
-              <MenuButton
-                onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-                active={editor.isActive('heading', { level: 1 })}
-                title={t('cms.editor.tool.heading1', "Heading 1 (Ctrl+Alt+1)")}
-              >
-                <Heading1 className="w-4 h-4" />
-              </MenuButton>
+              {!compact && (
+                <MenuButton
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+                  active={editor.isActive('heading', { level: 1 })}
+                  title={t('cms.editor.tool.heading1', "Heading 1 (Ctrl+Alt+1)")}
+                >
+                  <Heading1 className="w-4 h-4" />
+                </MenuButton>
+              )}
               
               <MenuButton
                 onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
@@ -313,29 +325,35 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
                 <Heading3 className="w-4 h-4" />
               </MenuButton>
               
-              <MenuButton
-                onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()}
-                active={editor.isActive('heading', { level: 4 })}
-                title={t('cms.editor.tool.heading4', "Heading 4 (Ctrl+Alt+4)")}
-              >
-                <Heading4 className="w-4 h-4" />
-              </MenuButton>
+              {!compact && (
+                <MenuButton
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()}
+                  active={editor.isActive('heading', { level: 4 })}
+                  title={t('cms.editor.tool.heading4', "Heading 4 (Ctrl+Alt+4)")}
+                >
+                  <Heading4 className="w-4 h-4" />
+                </MenuButton>
+              )}
               
-              <MenuButton
-                onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()}
-                active={editor.isActive('heading', { level: 5 })}
-                title={t('cms.editor.tool.heading5', "Heading 5 (Ctrl+Alt+5)")}
-              >
-                <Heading5 className="w-4 h-4" />
-              </MenuButton>
+              {!compact && (
+                <MenuButton
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()}
+                  active={editor.isActive('heading', { level: 5 })}
+                  title={t('cms.editor.tool.heading5', "Heading 5 (Ctrl+Alt+5)")}
+                >
+                  <Heading5 className="w-4 h-4" />
+                </MenuButton>
+              )}
               
-              <MenuButton
-                onClick={() => editor.chain().focus().toggleHeading({ level: 6 }).run()}
-                active={editor.isActive('heading', { level: 6 })}
-                title={t('cms.editor.tool.heading6', "Heading 6 (Ctrl+Alt+6)")}
-              >
-                <Heading6 className="w-4 h-4" />
-              </MenuButton>
+              {!compact && (
+                <MenuButton
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 6 }).run()}
+                  active={editor.isActive('heading', { level: 6 })}
+                  title={t('cms.editor.tool.heading6', "Heading 6 (Ctrl+Alt+6)")}
+                >
+                  <Heading6 className="w-4 h-4" />
+                </MenuButton>
+              )}
 
               <div className="w-px h-6 bg-fill-strong mx-1" />
               
@@ -354,22 +372,35 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               >
                 <Italic className="w-4 h-4" />
               </MenuButton>
+              {compact && (
+                <MenuButton
+                  onClick={() => editor.chain().focus().toggleUnderline().run()}
+                  active={editor.isActive('underline')}
+                  title={t('cms.editor.tool.underline', 'Underline (Ctrl+U)')}
+                >
+                  <UnderlineIcon className="w-4 h-4" />
+                </MenuButton>
+              )}
               
-              <MenuButton
-                onClick={() => editor.chain().focus().toggleCode().run()}
-                active={editor.isActive('code')}
-                title={t('cms.editor.tool.inlineCode', "Inline Code (Ctrl+E)")}
-              >
-                <Code className="w-4 h-4" />
-              </MenuButton>
+              {!compact && (
+                <MenuButton
+                  onClick={() => editor.chain().focus().toggleCode().run()}
+                  active={editor.isActive('code')}
+                  title={t('cms.editor.tool.inlineCode', "Inline Code (Ctrl+E)")}
+                >
+                  <Code className="w-4 h-4" />
+                </MenuButton>
+              )}
               
-              <MenuButton
-                onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-                active={editor.isActive('codeBlock')}
-                title={t('cms.editor.tool.codeBlock', "Code Block (Ctrl+Alt+C)")}
-              >
-                <Code2 className="w-4 h-4" />
-              </MenuButton>
+              {!compact && (
+                <MenuButton
+                  onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                  active={editor.isActive('codeBlock')}
+                  title={t('cms.editor.tool.codeBlock', "Code Block (Ctrl+Alt+C)")}
+                >
+                  <Code2 className="w-4 h-4" />
+                </MenuButton>
+              )}
 
               <div className="w-px h-6 bg-fill-strong mx-1" />
               
@@ -407,12 +438,14 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
                 <LinkIcon className="w-4 h-4" />
               </MenuButton>
               
-              <MenuButton
-                onClick={() => editor.chain().focus().setHorizontalRule().run()}
-                title={t('cms.editor.tool.horizontalRule', "Horizontal Rule")}
-              >
-                <Minus className="w-4 h-4" />
-              </MenuButton>
+              {!compact && (
+                <MenuButton
+                  onClick={() => editor.chain().focus().setHorizontalRule().run()}
+                  title={t('cms.editor.tool.horizontalRule', "Horizontal Rule")}
+                >
+                  <Minus className="w-4 h-4" />
+                </MenuButton>
+              )}
 
               <div className="w-px h-6 bg-fill-strong mx-1" />
               
@@ -440,13 +473,15 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
                 <AlignRight className="w-4 h-4" />
               </MenuButton>
               
-              <MenuButton
-                onClick={() => editor.chain().focus().setTextAlign('justify').run()}
-                active={editor.isActive({ textAlign: 'justify' })}
-                title={t('cms.editor.tool.justify', "Justify")}
-              >
-                <AlignJustify className="w-4 h-4" />
-              </MenuButton>
+              {!compact && (
+                <MenuButton
+                  onClick={() => editor.chain().focus().setTextAlign('justify').run()}
+                  active={editor.isActive({ textAlign: 'justify' })}
+                  title={t('cms.editor.tool.justify', "Justify")}
+                >
+                  <AlignJustify className="w-4 h-4" />
+                </MenuButton>
+              )}
 
               <div className="w-px h-6 bg-fill-strong mx-1" />
               
@@ -509,7 +544,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
             <div className={`${viewMode === 'split' ? 'w-1/2 border-r border-line' : 'w-full'} overflow-auto bg-shell`}>
               <EditorContent
                 editor={editor}
-                className="min-h-[400px] p-4 prose prose-neutral dark:prose-invert max-w-none focus:outline-none [&_.ProseMirror]:min-h-[400px] [&_.ProseMirror]:outline-none [&_.ProseMirror]:text-neutral-900 dark:[&_.ProseMirror]:text-neutral-100 [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-neutral-400 dark:[&_.ProseMirror_p.is-editor-empty:first-child::before]:text-neutral-500 [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0 [&_.ProseMirror_br.hard-break]:display-block [&_.ProseMirror_br.hard-break]:content-[''] [&_.ProseMirror_br.hard-break]:margin-[0.5em_0] [&_.ProseMirror_pre]:bg-neutral-100 dark:[&_.ProseMirror_pre]:bg-neutral-800 [&_.ProseMirror_pre]:rounded-md [&_.ProseMirror_pre]:p-4 [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_code]:bg-neutral-100 dark:[&_.ProseMirror_code]:bg-neutral-800 [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:py-0.5 [&_.ProseMirror_code]:text-sm [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0"
+                className={`${compact ? 'min-h-[9rem] [&_.ProseMirror]:min-h-[9rem]' : 'min-h-[400px] [&_.ProseMirror]:min-h-[400px]'} p-4 prose prose-neutral dark:prose-invert max-w-none focus:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:text-neutral-900 dark:[&_.ProseMirror]:text-neutral-100 [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-neutral-400 dark:[&_.ProseMirror_p.is-editor-empty:first-child::before]:text-neutral-500 [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0 [&_.ProseMirror_br.hard-break]:display-block [&_.ProseMirror_br.hard-break]:content-[''] [&_.ProseMirror_br.hard-break]:margin-[0.5em_0] [&_.ProseMirror_pre]:bg-neutral-100 dark:[&_.ProseMirror_pre]:bg-neutral-800 [&_.ProseMirror_pre]:rounded-md [&_.ProseMirror_pre]:p-4 [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_code]:bg-neutral-100 dark:[&_.ProseMirror_code]:bg-neutral-800 [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:py-0.5 [&_.ProseMirror_code]:text-sm [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0`}
               />
             </div>
           )}
@@ -526,15 +561,17 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
         </div>
 
         {/* Status Bar */}
-        <div className="flex items-center justify-between px-4 py-2 bg-subtle border-t border-line text-sm text-body">
-          <div className="flex items-center gap-4">
-            <span>{t('cms.editor.wordCount', '{{count}} words', { count: wordCount })}</span>
-            <span>{t('cms.editor.charCount', '{{count}} characters', { count: charCount })}</span>
+        {!compact && (
+          <div className="flex items-center justify-between px-4 py-2 bg-subtle border-t border-line text-sm text-body">
+            <div className="flex items-center gap-4">
+              <span>{t('cms.editor.wordCount', '{{count}} words', { count: wordCount })}</span>
+              <span>{t('cms.editor.charCount', '{{count}} characters', { count: charCount })}</span>
+            </div>
+            <div className="text-xs text-muted">
+              {t('cms.editor.lineBreakHint', 'Press Shift+Enter for line break, Enter for new paragraph')}
+            </div>
           </div>
-          <div className="text-xs text-muted">
-            {t('cms.editor.lineBreakHint', 'Press Shift+Enter for line break, Enter for new paragraph')}
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Help Modal */}

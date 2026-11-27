@@ -6362,7 +6362,8 @@
         "blockquoteShort": "Blockquote",
         "codeBlockShort": "Code block",
         "undoShort": "Undo",
-        "redoShort": "Redo"
+        "redoShort": "Redo",
+        "underline": "Underline (Ctrl+U)"
       }
     },
     "showInFooter": "Show in gallery footer",

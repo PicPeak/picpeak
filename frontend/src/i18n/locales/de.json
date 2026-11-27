@@ -7045,7 +7045,8 @@
         "blockquoteShort": "Zitatblock",
         "codeBlockShort": "Codeblock",
         "undoShort": "Rückgängig",
-        "redoShort": "Wiederherstellen"
+        "redoShort": "Wiederherstellen",
+        "underline": "Unterstrichen (Ctrl+U)"
       }
     },
     "showInFooter": "In der Galerie-Fußzeile anzeigen",
