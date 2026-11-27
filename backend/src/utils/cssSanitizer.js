@@ -113,7 +113,9 @@ function sanitizeCssColor(value) {
 /**
  * Basic CSS sanitization (original function, kept for compatibility)
  */
-function sanitizeCss(css) {
+// `maxLength` defaults to the settings page's limit; the website builder
+// passes its own, which allows the template's base CSS in front of that.
+function sanitizeCss(css, { maxLength = 100 * 1024 } = {}) {
   if (!css || typeof css !== 'string') {
     return '';
   }
@@ -146,9 +148,8 @@ function sanitizeCss(css) {
   // site's <style> element; see escapeCssForStyleElement.
   sanitized = escapeCssForStyleElement(sanitized);
 
-  const MAX_LENGTH = 100 * 1024;
-  if (sanitized.length > MAX_LENGTH) {
-    sanitized = sanitized.slice(0, MAX_LENGTH);
+  if (sanitized.length > maxLength) {
+    sanitized = sanitized.slice(0, maxLength);
   }
 
   return sanitized.trim();

@@ -833,6 +833,17 @@ describe('importing a large landing page', () => {
     expect(document.customCss.endsWith(storedCss.trim())).toBe(true);
   });
 
+  test('an imported stylesheet of the largest accepted size renders whole', async () => {
+    const { MAX_CSS_SIZE } = require('../../src/utils/cssSanitizer');
+    const last = '.last-rule{color:blue}';
+    const css = `${'/*pad*/'.repeat(Math.ceil(MAX_CSS_SIZE / 7))}`.slice(0, MAX_CSS_SIZE - last.length) + last;
+    expect((await writeSite({ general_public_site_html: '<p>Edited landing page</p>', general_public_site_custom_css: css })).status).toBe(200);
+    const { document: raw } = await service._internal.initialDocument();
+    const { document } = require('../../src/services/website/document').normalizeDocument(raw);
+    const html = (await request(app).post('/api/admin/website/preview').set(auth(adminId)).send({ document, pageId: document.pages[0].id })).body.html;
+    expect(html).toContain(last);
+  });
+
   test('a landing page too large for a custom HTML block is not cut: it is left out, and the editor says why', async () => {
     const { MAX_CUSTOM_HTML } = require('../../src/services/website/document');
     const html = `<p>${'x'.repeat(MAX_CUSTOM_HTML + 10)}</p>`;

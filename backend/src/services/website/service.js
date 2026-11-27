@@ -19,7 +19,7 @@ const { listFonts } = require('../fontsService');
 const publicSite = require('../publicSiteService');
 const { DEFAULT_PUBLIC_SITE_CSS, DEFAULT_PUBLIC_SITE_HTML } = require('../../constants/publicSiteDefaults');
 const {
-  normalizeDocument, collectReferences, newPageId, LIMIT_CODES, MAX_CUSTOM_HTML,
+  normalizeDocument, collectReferences, newPageId, LIMIT_CODES, MAX_CUSTOM_HTML, MAX_CUSTOM_CSS,
 } = require('./document');
 const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
@@ -485,7 +485,8 @@ async function buildContext(document, page, { preview = false, allowed = null } 
     legalLinks: legal,
     baseUrl: baseUrl || '',
     robots: preview ? 'noindex' : robotsDirective(settings),
-    customCss: sanitizeCss(document.customCss || ''),
+    // The document's own limit: a stylesheet it accepted renders whole.
+    customCss: sanitizeCss(document.customCss || '', { maxLength: MAX_CUSTOM_CSS }),
     sanitizeCustomHtml,
   };
 }
