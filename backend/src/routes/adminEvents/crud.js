@@ -1444,20 +1444,23 @@ module.exports = (router) => {
 
       // Putting a gallery on the website (issue 2618) publishes the photos
       // picked from it even when it has a password: the owner's call, as the
-      // password is, and a change to the website, so cms.edit too. A
-      // non-owner's echo of the stored value changes nothing and passes;
-      // assigned admins keep picking from a gallery that is on.
+      // password is, and a change to the website, so cms.edit too. Anyone
+      // else's echo of the stored value passes but is not written: written,
+      // a stale echo would undo the owner switching it off meanwhile.
+      // Assigned admins keep picking from a gallery that is on.
       if (Object.prototype.hasOwnProperty.call(req.body, 'show_on_website')
         && await require('../../middleware/requireFeatureFlag').isFeatureEnabled('websiteBuilder')) {
         const stored = await db('events').where('id', id).first('id', 'created_by', 'show_on_website');
         if (!stored) return res.status(404).json({ error: 'Event not found' });
-        if (parseBooleanInput(req.body.show_on_website, false) !== parseBooleanInput(stored.show_on_website, false)) {
-          if (!ownsEvent(req.admin, stored)) {
-            return res.status(403).json({ error: 'Only the gallery owner can put it on the website', code: 'EVENT_OWNER_REQUIRED' });
+        const owner = ownsEvent(req.admin, stored);
+        const mayChange = owner && await userHasAllPermissions(req.admin.id, ['cms.edit']);
+        if (!mayChange) {
+          if (parseBooleanInput(req.body.show_on_website, false) !== parseBooleanInput(stored.show_on_website, false)) {
+            return owner
+              ? res.status(403).json({ error: 'Changing the website needs the cms.edit permission', code: 'FORBIDDEN' })
+              : res.status(403).json({ error: 'Only the gallery owner can put it on the website', code: 'EVENT_OWNER_REQUIRED' });
           }
-          if (!(await userHasAllPermissions(req.admin.id, ['cms.edit']))) {
-            return res.status(403).json({ error: 'Changing the website needs the cms.edit permission', code: 'FORBIDDEN' });
-          }
+          delete updates.show_on_website;
         }
       }
 

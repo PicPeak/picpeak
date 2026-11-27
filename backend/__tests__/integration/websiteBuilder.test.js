@@ -936,6 +936,32 @@ describe('what an admin may pick', () => {
     }
   });
 
+  test('a non-owner\'s stale echo cannot switch a gallery back on that its owner just switched off', async () => {
+    const assigned = await insertEvent({ created_by: adminId, show_on_website: 1 });
+    await db('event_admin_assignments').insert({ event_id: assigned, admin_user_id: colleagueId, created_at: new Date().toISOString() });
+    // The colleague's save reads the stored value while it is still on; the
+    // owner switches the gallery off before that save writes.
+    let stale = false;
+    const readBeforeOptOut = (response, query) => {
+      if (stale || !/select .*show_on_website.* from .events./i.test(query.sql)) return;
+      const row = Array.isArray(response) ? response[0] : response;
+      if (!row || Number(row.id) !== assigned) return;
+      stale = true;
+      row.show_on_website = 1;
+    };
+    await db('events').where({ id: assigned }).update({ show_on_website: 0 });
+    db.on('query-response', readBeforeOptOut);
+    try {
+      // The settings form sends back what it loaded: on.
+      expect((await request(app).put(`/api/admin/events/${assigned}`).set(colleague()).send({ show_on_website: true })).status).toBe(200);
+    } finally {
+      db.removeListener('query-response', readBeforeOptOut);
+      await db('event_admin_assignments').where({ event_id: assigned }).del();
+    }
+    expect(stale).toBe(true);
+    expect(Boolean((await db('events').where({ id: assigned }).first()).show_on_website)).toBe(false);
+  });
+
   test('the gallery settings change the opt-in only with cms.edit as well', async () => {
     const editor = await insertId('admin_users', { username: 'events-only', email: 'events-only@example.com', password_hash: 'x', must_change_password: false, created_at: new Date().toISOString() });
     const roleId = await insertId('roles', { name: 'events_only', display_name: 'Events only', is_system: false, created_at: new Date().toISOString() });
