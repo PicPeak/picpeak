@@ -21,16 +21,26 @@ export const WebsiteSection: React.FC<{
 }> = ({ f, set, event, readOnly }) => {
   const { t } = useTranslation();
   const canOpenBuilder = usePermission('cms.view');
+  const canEditWebsite = usePermission('cms.edit');
+  // The owner's switch, as the password is (the server refuses anyone else);
+  // an older payload without the field is read as the owner's.
+  const ownsEvent = event.can_manage_assignments !== false;
   const hasPassword = normalizeRequirePassword(event.require_password, true);
   return (
     <SectionCard>
       <Switch
         checked={f.show_on_website}
-        disabled={readOnly}
+        disabled={readOnly || !ownsEvent || !canEditWebsite}
         onChange={(show_on_website) => set({ show_on_website })}
         label={t('events.website.toggle', 'Show on public website')}
         description={t('events.website.help', 'Lets you pick photos of this gallery for your website and list it among the featured galleries. Only the photos you pick appear there. Switch it off and they leave the website at once.')}
       />
+      {!ownsEvent && (
+        <p className="text-xs text-muted">{t('events.website.ownerOnly', 'Only the gallery owner can put it on the website.')}</p>
+      )}
+      {ownsEvent && !canEditWebsite && (
+        <p className="text-xs text-muted">{t('events.website.needsCmsEdit', 'Changing the website needs the permission to edit it.')}</p>
+      )}
       {f.show_on_website && (
         <p className="text-xs text-muted">{t('events.website.watermarkNote', 'Photos from this gallery appear with its watermark; upload images directly for a clean portfolio.')}</p>
       )}

@@ -2880,7 +2880,9 @@
       "help": "Lets you pick photos of this gallery for your website and list it among the featured galleries. Only the photos you pick appear there. Switch it off and they leave the website at once.",
       "passwordNotice": "This gallery has a password. While this is on, the photos you pick for the website are public, although this gallery has a password; the rest of the gallery keeps its password.",
       "openBuilder": "Open the website builder",
-      "watermarkNote": "Photos from this gallery appear with its watermark; upload images directly for a clean portfolio."
+      "watermarkNote": "Photos from this gallery appear with its watermark; upload images directly for a clean portfolio.",
+      "ownerOnly": "Only the gallery owner can put it on the website.",
+      "needsCmsEdit": "Changing the website needs the permission to edit it."
     }
   },
   "settings": {

@@ -15,7 +15,7 @@ const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireFeatureFlag');
-const { scopeEventsQuery, canAccessEvent } = require('../middleware/ownership');
+const { scopeEventsQuery, canAccessEvent, ownsEvent } = require('../middleware/ownership');
 const { handleAsync, validateRequest } = require('../utils/routeHelpers');
 const { getStoragePath } = require('../config/storage');
 const { AppError } = require('../utils/errors');
@@ -141,14 +141,16 @@ router.get('/galleries', canView, [
       hasPassword: requiresGalleryPassword(e),
       eligible: media.isEventWebsiteEligible(e, now),
       reason: media.eventIneligibleReason(e, now),
-      canChange: canAccessEvent(req.admin, e),
+      // Only the owner switches it (see PUT /galleries/:id).
+      canChange: ownsEvent(req.admin, e),
     })),
     hasMore: found.length > pageSize,
   });
 }));
 
-// The per-gallery opt-in, under the rules of the gallery's own settings
-// (events.edit on a gallery the admin may act on), plus cms.edit.
+// The per-gallery opt-in: cms.edit and events.edit, and only the gallery's
+// owner, as for its password (it makes the picked photos public even when
+// the gallery has one). An assigned admin picks from a gallery that is on.
 router.put('/galleries/:id', canEdit, requirePermission('events.edit'), [
   param('id').isInt({ min: 1 }),
   body('showOnWebsite').isBoolean(),
@@ -156,6 +158,7 @@ router.put('/galleries/:id', canEdit, requirePermission('events.edit'), [
   validateRequest(req);
   const event = await db('events').where({ id: Number(req.params.id) }).first();
   if (!event || !canAccessEvent(req.admin, event)) throw new AppError('Gallery not found', 404, 'EVENT_NOT_FOUND');
+  if (!ownsEvent(req.admin, event)) throw new AppError('Only the gallery owner can put it on the website', 403, 'EVENT_OWNER_REQUIRED');
   // isBoolean() lets "false" and "0" through; Boolean() would make them true.
   const showOnWebsite = parseBooleanInput(req.body.showOnWebsite, false);
   await websiteService.setGalleryOnWebsite(event.id, showOnWebsite);

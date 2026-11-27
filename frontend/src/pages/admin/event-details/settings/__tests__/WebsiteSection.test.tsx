@@ -13,8 +13,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_k: string, fb?: unknown) => (typeof fb === 'string' ? fb : _k), i18n: { language: 'en' } }),
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
-vi.mock('../../../../../hooks/usePermission', () => ({ usePermission: () => true }));
+vi.mock('../../../../../hooks/usePermission', () => ({ usePermission: vi.fn(() => true) }));
 
+import { usePermission } from '../../../../../hooks/usePermission';
 import { dirtySections, eventFieldsFromEvent, eventUpdatePayload } from '../draft';
 import { WebsiteSection } from '../WebsiteSection';
 
@@ -44,5 +45,18 @@ describe('website opt-in in the gallery settings', () => {
     expect(screen.getByText('Photos from this gallery appear with its watermark; upload images directly for a clean portfolio.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('switch'));
     expect(set).toHaveBeenCalledWith({ show_on_website: false });
+  });
+
+  it('is the owner\'s switch, and needs the website permission too', () => {
+    const f = eventFieldsFromEvent(EVENT, null);
+    const { unmount } = render(<MemoryRouter><WebsiteSection f={f} set={vi.fn()} event={{ ...EVENT, can_manage_assignments: false } as Event} readOnly={false} /></MemoryRouter>);
+    expect(screen.getByRole('switch')).toBeDisabled();
+    expect(screen.getByText('Only the gallery owner can put it on the website.')).toBeInTheDocument();
+    unmount();
+    vi.mocked(usePermission).mockImplementation((p: string) => p !== 'cms.edit');
+    render(<MemoryRouter><WebsiteSection f={f} set={vi.fn()} event={EVENT} readOnly={false} /></MemoryRouter>);
+    expect(screen.getByRole('switch')).toBeDisabled();
+    expect(screen.getByText('Changing the website needs the permission to edit it.')).toBeInTheDocument();
+    vi.mocked(usePermission).mockImplementation(() => true);
   });
 });

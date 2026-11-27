@@ -787,6 +787,44 @@ describe('what an admin may pick', () => {
     expect((await request(app).put(`/api/admin/website/galleries/${foreignEvent}`).set(colleague()).send({ showOnWebsite: false })).status).toBe(404);
   });
 
+  test('only the owner puts a gallery on the website or takes it off; an assigned admin still picks from it', async () => {
+    const assigned = await insertEvent({ created_by: adminId, show_on_website: 1 });
+    const assignedPhoto = await insertPhoto(assigned);
+    await db('event_admin_assignments').insert({ event_id: assigned, admin_user_id: colleagueId, created_at: new Date().toISOString() });
+    const owned = async () => Boolean((await db('events').where({ id: assigned }).first()).show_on_website);
+    try {
+      const listed = (await request(app).get('/api/admin/website/galleries').set(colleague())).body.galleries.find((g) => g.id === assigned);
+      expect(listed).toMatchObject({ canChange: false });
+      const picker = await request(app).put(`/api/admin/website/galleries/${assigned}`).set(colleague()).send({ showOnWebsite: false });
+      expect(picker.status).toBe(403);
+      expect(picker.body.code).toBe('EVENT_OWNER_REQUIRED');
+      const settings = await request(app).put(`/api/admin/events/${assigned}`).set(colleague()).send({ show_on_website: false });
+      expect(settings.status).toBe(403);
+      expect(settings.body.code).toBe('EVENT_OWNER_REQUIRED');
+      expect(await owned()).toBe(true);
+      // The settings form sends what it loaded: an unchanged value passes.
+      expect((await request(app).put(`/api/admin/events/${assigned}`).set(colleague()).send({ show_on_website: true })).status).toBe(200);
+      // Picking from it stays open to the assigned admin.
+      const photos = await request(app).get(`/api/admin/website/galleries/${assigned}/photos`).set(colleague());
+      expect(photos.body.photos.map((p) => p.id)).toEqual([assignedPhoto]);
+    } finally {
+      await db('event_admin_assignments').where({ event_id: assigned }).del();
+    }
+  });
+
+  test('the gallery settings change the opt-in only with cms.edit as well', async () => {
+    const editor = await insertId('admin_users', { username: 'events-only', email: 'events-only@example.com', password_hash: 'x', must_change_password: false, created_at: new Date().toISOString() });
+    const roleId = await insertId('roles', { name: 'events_only', display_name: 'Events only', is_system: false, created_at: new Date().toISOString() });
+    const permissionIds = await db('permissions').whereIn('name', ['events.view', 'events.edit', 'events.manage_all']).pluck('id');
+    await db('role_permissions').insert(permissionIds.map((permission_id) => ({ role_id: roleId, permission_id })));
+    await db('admin_users').where({ id: editor }).update({ role_id: roleId });
+    require('../../src/middleware/permissions').clearPermissionCache();
+    const event = await insertEvent({ created_by: editor, show_on_website: 0 });
+    const res = await request(app).put(`/api/admin/events/${event}`).set(auth(editor)).send({ show_on_website: true });
+    expect(res.status).toBe(403);
+    expect(Boolean((await db('events').where({ id: event }).first()).show_on_website)).toBe(false);
+  });
+
   test('a draft may not add photos or galleries the admin cannot access', async () => {
     const bad = await request(app).put('/api/admin/website/draft').set(colleague()).send({ document: docWith([ownPhoto, foreignPhoto]), revision: await revision() });
     expect(bad.status).toBe(422);
