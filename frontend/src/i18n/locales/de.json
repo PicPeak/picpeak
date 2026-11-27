@@ -13146,7 +13146,9 @@
       "rolePlaceholder": "Hochzeit, Juni 2026",
       "portrait": "Foto (optional)",
       "addTestimonial": "Kundenstimme hinzufügen",
-      "formatHint": "Leerzeile = neuer Absatz. **fett**, *kursiv*, [Linktext](https://…)"
+      "formatHint": "Leerzeile = neuer Absatz. **fett**, *kursiv*, [Linktext](https://…)",
+      "galleriesMissing_one": "{{count}} gewählte Galerie ist nicht mehr auf der Website und wird nicht gezeigt.",
+      "galleriesMissing_other": "{{count}} gewählte Galerien sind nicht mehr auf der Website und werden nicht gezeigt."
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",
@@ -13220,7 +13222,9 @@
         "payment_lock": "Wartet auf Zahlung",
         "not_opted_in": "Nicht auf der Website",
         "missing": "Nicht gefunden"
-      }
+      },
+      "addSelected_one": "{{count}} Bild hinzufügen",
+      "addSelected_other": "{{count}} Bilder hinzufügen"
     },
     "preview": {
       "title": "Vorschau der Seite",

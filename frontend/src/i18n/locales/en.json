@@ -13181,7 +13181,9 @@
       "rolePlaceholder": "Wedding, June 2026",
       "portrait": "Photo (optional)",
       "addTestimonial": "Add testimonial",
-      "formatHint": "Blank line = new paragraph. **bold**, *italic*, [link text](https://…)"
+      "formatHint": "Blank line = new paragraph. **bold**, *italic*, [link text](https://…)",
+      "galleriesMissing_one": "{{count}} chosen gallery is no longer on the website and is not shown.",
+      "galleriesMissing_other": "{{count}} chosen galleries are no longer on the website and are not shown."
     },
     "defaults": {
       "heroHeading": "Your headline",
@@ -13255,7 +13257,9 @@
         "payment_lock": "Waiting for payment",
         "not_opted_in": "Not on the website",
         "missing": "Not found"
-      }
+      },
+      "addSelected_one": "Add {{count}} image",
+      "addSelected_other": "Add {{count}} images"
     },
     "preview": {
       "title": "Preview of the page",
