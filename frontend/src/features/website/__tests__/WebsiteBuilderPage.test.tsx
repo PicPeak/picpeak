@@ -197,6 +197,12 @@ describe('WebsiteBuilderPage', () => {
     expect(screen.getByRole('button', { name: 'Save draft' })).not.toBeDisabled();
   });
 
+  it('orders the panel tabs Pages, Blocks, Design', async () => {
+    renderPage();
+    await screen.findByText('Blocks on “Home”');
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.trim())).toEqual(['Pages', 'Blocks', 'Design']);
+  });
+
   it('switches the preview to phone width', async () => {
     renderPage();
     const frame = await screen.findByTitle('Preview of the page');

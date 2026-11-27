@@ -370,8 +370,8 @@ export const WebsiteBuilderPage: React.FC = () => {
               value={panel}
               onChange={setPanel}
               items={[
-                { id: 'blocks', label: t('website.tabs.blocks', 'Blocks'), icon: <Layers className="w-4 h-4" /> },
                 { id: 'pages', label: t('website.tabs.pages', 'Pages'), icon: <FileText className="w-4 h-4" />, dirty: problems.length > 0 || localProblem },
+                { id: 'blocks', label: t('website.tabs.blocks', 'Blocks'), icon: <Layers className="w-4 h-4" /> },
                 { id: 'site', label: t('website.tabs.site', 'Design'), icon: <Palette className="w-4 h-4" /> },
               ]}
             />
