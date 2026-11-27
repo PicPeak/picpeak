@@ -38,6 +38,7 @@ jest.mock('../../src/services/imageProcessor', () => {
   return { ...actual, generatePreviewImage: (...args) => mockPreviewStep(...args) || actual.generatePreviewImage(...args) };
 });
 
+const { decodeSettingValue } = require('../helpers/settingValue');
 let db; let cleanup; let app;
 let adminId; let viewerId;
 let service; let media; let cache; let frontendUrl; let realFrontendBaseUrl;
@@ -1950,7 +1951,7 @@ describe('spam check on the contact form', () => {
     const row = await db('app_settings').where({ setting_key: 'website_captcha_friendly_api_key' }).first();
     expect(row.setting_value).not.toContain('A1-secret-key');
     const all = (await request(app).get('/api/admin/settings').set(auth(adminId))).body;
-    expect(JSON.stringify(all)).not.toContain(JSON.parse(row.setting_value));
+    expect(JSON.stringify(all)).not.toContain(decodeSettingValue(db, row.setting_value));
     // The generic settings writer cannot switch it.
     await request(app).put('/api/admin/settings/general').set(auth(adminId)).send({ website_captcha_provider: 'none' });
     expect((await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body.captcha.provider).toBe('friendly');
