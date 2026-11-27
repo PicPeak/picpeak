@@ -201,6 +201,19 @@ export const WebsiteBuilderPage: React.FC = () => {
           </>
         )}
       </div>
+      {/* Sections are anchored as #b-<block id>: a button or text link can point here. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg bg-subtle border border-line px-3 py-2">
+        <span className="text-xs text-muted">{t('website.blocks.anchor', 'Link to this block')}</span>
+        <code className="text-xs text-body">{`#b-${block.id}`}</code>
+        <Button size="icon-sm" variant="ghost" className="ml-auto" aria-label={t('website.blocks.copyAnchor', 'Copy the link to this block') as string}
+          onClick={() => {
+            navigator.clipboard.writeText(`#b-${block.id}`)
+              .then(() => toast.success(t('website.blocks.anchorCopied', 'Link copied. Paste it as a button or text link.')))
+              .catch(() => toast.error(t('website.blocks.anchorCopyFailed', 'Could not copy the link.')));
+          }}>
+          <Copy className="w-4 h-4" />
+        </Button>
+      </div>
       <fieldset disabled={!canEdit}>
         <BlockEditor
           block={block}

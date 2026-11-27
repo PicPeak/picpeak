@@ -191,5 +191,15 @@ describe('WebsiteBuilderPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'All blocks' }));
     expect(screen.getByRole('button', { name: 'Add block' })).toBeDisabled();
   });
+
+  it('shows the block\'s anchor and copies it', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    renderPage();
+    fireEvent.click(await screen.findByText('Hello there'));
+    expect(screen.getByText('#b-h1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy the link to this block' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('#b-h1'));
+  });
 });
 

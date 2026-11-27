@@ -13328,7 +13328,11 @@
         "name": "Eigenes HTML",
         "description": "Ihr eigenes Markup, bereinigt."
       },
-      "full": "Eine Seite hat höchstens 60 Blöcke."
+      "full": "Eine Seite hat höchstens 60 Blöcke.",
+      "anchor": "Link zu diesem Block",
+      "copyAnchor": "Link zu diesem Block kopieren",
+      "anchorCopied": "Link kopiert. Fügen Sie ihn als Link einer Schaltfläche oder im Text ein.",
+      "anchorCopyFailed": "Der Link konnte nicht kopiert werden."
     },
     "saved": "Entwurf gespeichert",
     "publishTitle": "Website veröffentlichen?",

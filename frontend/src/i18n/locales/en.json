@@ -13363,7 +13363,11 @@
         "name": "Custom HTML",
         "description": "Your own markup, sanitised."
       },
-      "full": "A page holds at most 60 blocks."
+      "full": "A page holds at most 60 blocks.",
+      "anchor": "Link to this block",
+      "copyAnchor": "Copy the link to this block",
+      "anchorCopied": "Link copied. Paste it as a button or text link.",
+      "anchorCopyFailed": "Could not copy the link."
     },
     "saved": "Draft saved",
     "publishTitle": "Publish the website?",
