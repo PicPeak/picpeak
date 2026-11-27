@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const { db } = require('../../database/db');
 const logger = require('../../utils/logger');
 const { publishedDocument } = require('./service');
+const { META_BYTES } = require('../mailRetentionService');
 
 const DAILY_CAP = Number(process.env.WEBSITE_CONTACT_DAILY_CAP || 200);
 const EMAIL_PATTERN = /^[^\s@<>()[\]\\,;:"]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
@@ -84,6 +85,7 @@ async function storeSubmission(values, page) {
     return 'capped';
   }
   const now = new Date().toISOString();
+  const body = formatBody(values, page);
   await db('received_emails').insert({
     message_id: `${MESSAGE_ID_PREFIX}${crypto.randomUUID()}@picpeak>`,
     account_key: 'customers',
@@ -92,8 +94,11 @@ async function storeSubmission(values, page) {
     received_at: now,
     attachment_count: 0,
     status: 'no_attachment',
-    body_text: formatBody(values, page),
+    body_text: body,
     body_html: null,
+    // Counted like an intake mail's body, so the mailbox's storage figures
+    // include website messages.
+    retained_bytes: META_BYTES + Buffer.byteLength(body),
     mailbox_state: 'active',
     created_at: now,
   });
