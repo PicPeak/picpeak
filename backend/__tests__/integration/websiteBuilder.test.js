@@ -1801,3 +1801,30 @@ describe('website traffic in analytics', () => {
     expect((await request(app).get('/api/admin/website/analytics').set(auth(editor))).status).toBe(403);
   });
 });
+
+describe('uploading a font in the branding settings', () => {
+  const WOFF2 = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(200)]);
+
+  test('stores a font for the galleries and the website, refuses others, and deletes an uploaded one', async () => {
+    const up = (file, fields = {}) => {
+      const req = request(app).post('/api/admin/settings/fonts').set(auth(adminId));
+      Object.entries({ family: 'Studio Serif', weight: '400', generic: 'serif', ...fields }).forEach(([k, v]) => req.field(k, v));
+      return req.attach('file', file, 'studio.woff2');
+    };
+    expect((await up(WOFF2, {}).set(auth(viewerId))).status).toBe(403);
+    const bad = await up(Buffer.from('<svg onload=alert(1)>'.padEnd(64)));
+    expect(bad.status).toBe(400);
+    expect(bad.body.code).toBe('FONT_TYPE');
+    const tooBig = await up(Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(3 * 1024 * 1024)]));
+    expect(tooBig.status).toBe(413);
+    const ok = await up(WOFF2);
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ family: 'Studio Serif', weight: 400, format: 'woff2' });
+    const fonts = (await request(app).get('/api/admin/settings/fonts').set(auth(adminId))).body.fonts;
+    expect(fonts.find((f) => f.family === 'Studio Serif')).toMatchObject({ source: 'uploaded', generic: 'serif', weights: [400] });
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, 'fonts', 'Studio-Serif', '400.woff2'))).toBe(true);
+    expect((await request(app).delete('/api/admin/settings/fonts/Studio%20Serif').set(auth(adminId))).status).toBe(204);
+    expect((await request(app).delete('/api/admin/settings/fonts/Inter').set(auth(adminId))).status).toBe(404);
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, 'fonts', 'Studio-Serif'))).toBe(false);
+  });
+});

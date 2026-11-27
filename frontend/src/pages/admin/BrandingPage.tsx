@@ -16,6 +16,7 @@ import { CustomerDashboardBrandingCard } from '../../components/admin/CustomerDa
 import { PdfTypographyCard } from '../../components/admin/PdfTypographyCard';
 import { PdfThemeCard, usePdfThemeDrafts } from '../../components/admin/PdfThemeCard';
 import { PdfFontsCard } from '../../components/admin/PdfFontsCard';
+import { FontsCard } from '../../components/admin/FontsCard';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useMutationWithToast } from '../../hooks';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
@@ -1298,6 +1299,7 @@ export const BrandingPage: React.FC = () => {
           </div>
         </div>
 
+        <FontsCard />
         {(flags.quotes || flags.bills || flags.taxReport || flags.contracts) && <PdfFontsCard />}
 
         {/* Event-Specific Themes Info */}

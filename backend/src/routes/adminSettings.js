@@ -546,6 +546,47 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
   }
 });
 
+// Fonts (issue 2618): the families the galleries and the website offer,
+// and uploads of new ones (WOFF2, WOFF or TTF, known by their first bytes).
+const fontUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } }).single('file');
+router.get('/fonts', adminAuth, requirePermission('settings.view'), async (req, res) => {
+  try {
+    res.json({ fonts: await require('../services/fontsService').listFonts() });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to list fonts');
+  }
+});
+
+router.post('/fonts', adminAuth, requirePermission('settings.edit'), (req, res, next) => fontUpload(req, res, (err) => {
+  if (!err) return next();
+  if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'A font file can be at most 2 MB', code: 'FONT_TOO_LARGE' });
+  return res.status(400).json({ error: 'Invalid upload', code: 'FONT_TYPE' });
+}), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Choose a font file', code: 'FONT_TYPE' });
+    const saved = await require('../services/fontsService').saveUploadedFont({
+      family: req.body.family, weight: Number(req.body.weight), generic: req.body.generic, buffer: req.file.buffer,
+    });
+    clearPublicSiteCache();
+    res.status(201).json(saved);
+  } catch (error) {
+    if (error.statusCode === 400) return res.status(400).json({ error: error.message, code: error.code });
+    errorResponse(res, error, 500, 'Failed to upload the font');
+  }
+});
+
+router.delete('/fonts/:family', adminAuth, requirePermission('settings.edit'), async (req, res) => {
+  try {
+    if (!(await require('../services/fontsService').deleteUploadedFamily(req.params.family))) {
+      return res.status(404).json({ error: 'No uploaded font of that name', code: 'FONT_NOT_FOUND' });
+    }
+    clearPublicSiteCache();
+    res.status(204).end();
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to remove the font');
+  }
+});
+
 /**
  * Customer-surface branding settings (#354 follow-up).
  *

@@ -5581,6 +5581,28 @@
       "save": "Speichern",
       "colorsTab": "Farben",
       "galleryTab": "Galerie"
+    },
+    "fonts": {
+      "title": "Schriften",
+      "intro": "Die Schriften, die Ihre Galerien und Ihre Website verwenden können. Laden Sie eine Schrift hoch, die Sie im Web verwenden dürfen, jeweils eine Strichstärke.",
+      "uploaded": "Schrift hochgeladen",
+      "removeTitle": "Diese Schrift entfernen?",
+      "removeMessage": "Galerien und Website-Seiten, die sie verwenden, zeigen wieder ihre Standardschrift.",
+      "uploadedLabel": "Hochgeladen",
+      "bundledLabel": "Mitgeliefert",
+      "remove": "{{name}} entfernen",
+      "name": "Name der Schrift",
+      "weight": "Strichstärke",
+      "style": "Stil",
+      "generic": {
+        "sans-serif": "Serifenlos",
+        "serif": "Mit Serifen",
+        "cursive": "Schreibschrift",
+        "monospace": "Nichtproportional"
+      },
+      "file": "Schriftdatei",
+      "fileHint": "WOFF2 (am besten), WOFF oder TTF, bis 2 MB.",
+      "upload": "Schrift hochladen"
     }
   },
   "admin": {
@@ -13279,7 +13301,8 @@
       "background": "Seitenhintergrund",
       "text": "Text",
       "customCss": "Eigenes CSS (für Fortgeschrittene)",
-      "customCssHint": "Gilt auf jeder Seite nach den Stilen der Website. Imports und Skripte werden entfernt."
+      "customCssHint": "Gilt auf jeder Seite nach den Stilen der Website. Imports und Skripte werden entfernt.",
+      "manageFonts": "Schriften verwalten"
     },
     "list": {
       "drag": "„{{name}}“ verschieben (ziehen oder Leertaste, dann Pfeiltasten)",

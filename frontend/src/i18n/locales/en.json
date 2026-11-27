@@ -4929,6 +4929,28 @@
       "save": "Save",
       "colorsTab": "Colours",
       "galleryTab": "Gallery"
+    },
+    "fonts": {
+      "title": "Fonts",
+      "intro": "The fonts your galleries and website can use. Upload a font you have the right to use on the web, one weight at a time.",
+      "uploaded": "Font uploaded",
+      "removeTitle": "Remove this font?",
+      "removeMessage": "Galleries and website pages that use it fall back to their default font.",
+      "uploadedLabel": "Uploaded",
+      "bundledLabel": "Included",
+      "remove": "Remove {{name}}",
+      "name": "Font name",
+      "weight": "Weight",
+      "style": "Style",
+      "generic": {
+        "sans-serif": "Sans serif",
+        "serif": "Serif",
+        "cursive": "Script",
+        "monospace": "Monospace"
+      },
+      "file": "Font file",
+      "fileHint": "WOFF2 (best), WOFF or TTF, up to 2 MB.",
+      "upload": "Upload font"
     }
   },
   "admin": {
@@ -13314,7 +13336,8 @@
       "background": "Page background",
       "text": "Text",
       "customCss": "Custom CSS (advanced)",
-      "customCssHint": "Applied to every page after the site’s own styles. Imports and scripts are removed."
+      "customCssHint": "Applied to every page after the site’s own styles. Imports and scripts are removed.",
+      "manageFonts": "Manage fonts"
     },
     "list": {
       "drag": "Move “{{name}}” (drag, or Space then arrow keys)",

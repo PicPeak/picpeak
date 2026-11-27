@@ -430,6 +430,9 @@ function fontStack(font) {
   return `'${font.family}', ${font.generic === 'serif' ? 'Georgia, serif' : FALLBACK_SANS}`;
 }
 
+// A font file's format as @font-face names it.
+const CSS_FONT_FORMAT = { woff2: 'woff2', woff: 'woff', ttf: 'truetype' };
+
 function fontFaces(fonts) {
   const faces = [];
   const seen = new Set();
@@ -442,7 +445,8 @@ function fontFaces(fonts) {
       if (seen.has(key)) continue;
       seen.add(key);
       const folder = font.family.replace(/ /g, '-');
-      faces.push(`@font-face{font-family:'${font.family}';font-style:normal;font-weight:${weight};font-display:swap;src:url('/fonts/${encodeURIComponent(folder)}/${weight}.woff2') format('woff2')}`);
+      const file = (font.formats && font.formats[weight]) || 'woff2';
+      faces.push(`@font-face{font-family:'${font.family}';font-style:normal;font-weight:${weight};font-display:swap;src:url('/fonts/${encodeURIComponent(folder)}/${weight}.${file}') format('${CSS_FONT_FORMAT[file]}')}`);
     }
   }
   return faces.join('');

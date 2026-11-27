@@ -56,6 +56,8 @@ const DEFAULT_PATHS = [
   // Website builder uploads (migration 379): only these files exist, the
   // originals are discarded, so nothing can regenerate them.
   { path: 'website', include_in_default: true, feature_flag: null, display_order: 120, description: 'Website builder images and hero videos' },
+  // Fonts uploaded in the branding settings (migration 381): only copy.
+  { path: 'fonts', include_in_default: true, feature_flag: null, display_order: 125, description: 'Uploaded fonts' },
   {
     path: 'events/active',
     include_in_default: true,

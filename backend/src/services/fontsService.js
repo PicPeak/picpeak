@@ -1,6 +1,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const logger = require('../utils/logger');
+const { AppError } = require('../utils/errors');
 
 /**
  * Filesystem-driven font scanner.
@@ -41,6 +42,11 @@ const logger = require('../utils/logger');
  */
 
 const FONTS_CACHE_TTL_MS = 30_000;
+// Formats a family's weight files may come in, best first: a weight with
+// several keeps the first. Uploads (issue 2618) take any of them.
+const FONT_FORMATS = ['woff2', 'woff', 'ttf'];
+const UPLOAD_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+const FAMILY_NAME = /^[A-Za-z0-9]+(?: [A-Za-z0-9]+)*$/;
 const VALID_GENERICS = new Set(['sans-serif', 'serif', 'cursive', 'monospace']);
 const DEFAULT_GENERIC = 'sans-serif';
 
@@ -107,7 +113,7 @@ async function readFamilyMeta(folderAbs, folderName) {
  * Read one family folder and return { family, weights, generic } or null
  * if the folder has no usable .woff2 files.
  */
-async function readFamilyFolder(rootAbs, folderName) {
+async function readFamilyFolder(rootAbs, folderName, source) {
   const folderAbs = path.join(rootAbs, folderName);
   let entries;
   try {
@@ -117,16 +123,17 @@ async function readFamilyFolder(rootAbs, folderName) {
     return null;
   }
 
-  const weights = [];
+  const formats = {};
   for (const entry of entries) {
     if (!entry.isFile()) continue;
-    if (!entry.name.toLowerCase().endsWith('.woff2')) continue;
-    const stem = entry.name.slice(0, -'.woff2'.length);
-    if (!/^\d+$/.test(stem)) continue; // ignore non-numeric weight names
-    const weight = parseInt(stem, 10);
+    const match = /^(\d+)\.(woff2|woff|ttf)$/i.exec(entry.name);
+    if (!match) continue; // ignore non-numeric weight names and other files
+    const weight = parseInt(match[1], 10);
     if (weight < 1 || weight > 1000) continue;
-    weights.push(weight);
+    const format = match[2].toLowerCase();
+    if (!formats[weight] || FONT_FORMATS.indexOf(format) < FONT_FORMATS.indexOf(formats[weight])) formats[weight] = format;
   }
+  const weights = Object.keys(formats).map(Number);
 
   if (weights.length === 0) {
     logger.warn(`[fonts] Skipping ${folderName} in ${rootAbs}: no usable <weight>.woff2 files`);
@@ -135,7 +142,7 @@ async function readFamilyFolder(rootAbs, folderName) {
 
   weights.sort((a, b) => a - b);
   const generic = await readFamilyMeta(folderAbs, folderName);
-  return { family: familyDisplayName(folderName), weights, generic };
+  return { family: familyDisplayName(folderName), weights, generic, formats, source };
 }
 
 /**
@@ -143,7 +150,7 @@ async function readFamilyFolder(rootAbs, folderName) {
  * lowercased family name (for case-insensitive de-dup against the other
  * root). Missing directory → empty Map (not an error).
  */
-async function scanRoot(rootAbs) {
+async function scanRoot(rootAbs, source) {
   let entries;
   try {
     entries = await fs.readdir(rootAbs, { withFileTypes: true });
@@ -159,7 +166,7 @@ async function scanRoot(rootAbs) {
     if (!entry.isDirectory()) continue;
     if (entry.name.startsWith('.')) continue;
 
-    const family = await readFamilyFolder(rootAbs, entry.name);
+    const family = await readFamilyFolder(rootAbs, entry.name, source);
     if (!family) continue;
 
     const lc = family.family.toLowerCase();
@@ -187,8 +194,8 @@ async function listFonts() {
     return cachedFonts;
   }
 
-  const bundled = await scanRoot(getBundledFontsRoot());
-  const userAdded = await scanRoot(getUserFontsRoot());
+  const bundled = await scanRoot(getBundledFontsRoot(), 'bundled');
+  const userAdded = await scanRoot(getUserFontsRoot(), 'uploaded');
 
   // User additions override bundled families of the same name.
   const merged = new Map(bundled);
@@ -215,9 +222,65 @@ function clearFontsCache() {
   fontsCacheExpiresAt = 0;
 }
 
+/** The font format a file's first bytes prove ('woff2', 'woff', 'ttf'), or null. */
+function fontFormatOf(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
+  const tag = buffer.subarray(0, 4);
+  if (tag.toString('latin1') === 'wOF2') return 'woff2';
+  if (tag.toString('latin1') === 'wOFF') return 'woff';
+  if (tag.equals(Buffer.from([0x00, 0x01, 0x00, 0x00])) || tag.toString('latin1') === 'true') return 'ttf';
+  return null;
+}
+
+function fontError(message, code) {
+  return new AppError(message, 400, code);
+}
+
+/**
+ * Store an uploaded font weight (Settings › Branding) as
+ * STORAGE_PATH/fonts/<Family-Name>/<weight>.<format>, the layout listFonts
+ * reads, so the galleries and the website both offer it. A file of the same
+ * weight in another format is replaced.
+ */
+async function saveUploadedFont({ family, weight, generic, buffer }) {
+  const format = fontFormatOf(buffer);
+  if (!format) throw fontError('Upload a WOFF2, WOFF or TTF font', 'FONT_TYPE');
+  const name = typeof family === 'string' ? family.trim().replace(/\s+/g, ' ') : '';
+  if (!FAMILY_NAME.test(name) || name.length > 60) throw fontError('Name the font with letters, digits and spaces', 'FONT_NAME');
+  if (!UPLOAD_WEIGHTS.includes(Number(weight))) throw fontError('Pick a weight from 100 to 900', 'FONT_WEIGHT');
+  const folder = path.join(getUserFontsRoot(), name.replace(/ /g, '-'));
+  await fs.mkdir(folder, { recursive: true });
+  for (const other of FONT_FORMATS) {
+    // eslint-disable-next-line no-await-in-loop -- three names at most
+    if (other !== format) await fs.rm(path.join(folder, `${Number(weight)}.${other}`), { force: true });
+  }
+  await fs.writeFile(path.join(folder, `${Number(weight)}.${format}`), buffer);
+  if (VALID_GENERICS.has(generic)) await fs.writeFile(path.join(folder, 'meta.json'), JSON.stringify({ generic }));
+  clearFontsCache();
+  return { family: name, weight: Number(weight), format };
+}
+
+/** Remove an uploaded family; a bundled one cannot be. Returns whether one was removed. */
+async function deleteUploadedFamily(family) {
+  const name = typeof family === 'string' ? family.trim() : '';
+  if (!FAMILY_NAME.test(name)) return false;
+  const folder = path.join(getUserFontsRoot(), name.replace(/ /g, '-'));
+  try {
+    await fs.access(folder);
+  } catch {
+    return false;
+  }
+  await fs.rm(folder, { recursive: true, force: true });
+  clearFontsCache();
+  return true;
+}
+
 module.exports = {
   listFonts,
   clearFontsCache,
+  fontFormatOf,
+  saveUploadedFont,
+  deleteUploadedFamily,
   getBundledFontsRoot,
   getUserFontsRoot
 };

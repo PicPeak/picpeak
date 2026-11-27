@@ -1346,6 +1346,9 @@
       "reason": "Only specified configuration presence/booleans and explicit branding/SEO/slideshow operations. Generic settings reads, security policies, passwords, storage data, SMTP/OIDC credentials, custom HTML/CSS/SEO values excluded. v3 adds only: s3_auto_import, download_original_filenames. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /",
+        "GET /fonts",
+        "POST /fonts",
+        "DELETE /fonts/:family",
         "GET /:type",
         "GET /customer-surface",
         "PUT /customer-surface",

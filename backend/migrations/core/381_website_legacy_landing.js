@@ -12,6 +12,7 @@
  *   - `website_legacy_landing_migrated` marks such an install, so its admins
  *     are told where the page went (until they publish or dismiss it).
  *   - `admin_notice_dismissals`: per-admin dismissal of such notices.
+ *   - backup path `fonts`: fonts uploaded in the branding settings.
  *   - `website_page_views`: the website's page views, counted server-side per
  *     day, page, referrer domain and device class. Nothing about a visitor
  *     (no address, agent string or cookie) has a column to land in.
@@ -51,6 +52,12 @@ exports.up = async function up(knex) {
       t.integer('views').notNullable().defaultTo(0);
       t.unique(['day', 'page', 'referrer', 'device']);
     });
+  }
+  // Fonts uploaded in the branding settings live in fonts/: back them up.
+  if (await knex.schema.hasTable('backup_paths')) {
+    await knex('backup_paths').insert({
+      path: 'fonts', include_in_default: formatBoolean(true), feature_flag: null, display_order: 125, description: 'Uploaded fonts',
+    }).onConflict('path').ignore();
   }
   if (!(await knex.schema.hasTable('app_settings')) || !(await knex.schema.hasTable('website_documents'))) return;
   const rows = await knex('app_settings')

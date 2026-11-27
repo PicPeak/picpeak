@@ -262,7 +262,7 @@ describe('fontsService.listFonts', () => {
   });
 
   describe('result shape', () => {
-    test('every family is { family, weights, generic }', async () => {
+    test('every family is { family, weights, generic, formats, source }', async () => {
       await makeFamily(bundledRoot, 'Inter', [400, 700]);
       await makeFamily(bundledRoot, 'Playfair-Display', [400], { generic: 'serif' });
       const fonts = await fontsService.listFonts();
@@ -270,7 +270,9 @@ describe('fontsService.listFonts', () => {
         expect(f).toEqual({
           family: expect.any(String),
           weights: expect.any(Array),
-          generic: expect.stringMatching(/^(sans-serif|serif|cursive|monospace)$/)
+          generic: expect.stringMatching(/^(sans-serif|serif|cursive|monospace)$/),
+          formats: expect.any(Object),
+          source: 'bundled',
         });
         expect(f.weights.length).toBeGreaterThan(0);
       }
@@ -316,5 +318,46 @@ describe('fontsService.listFonts', () => {
       const fresh = await fontsService.listFonts();
       expect(fresh.map((f) => f.family)).toEqual(['Inter', 'Roboto']);
     });
+  });
+});
+
+describe('uploaded fonts (issue 2618)', () => {
+  const WOFF2 = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(60)]);
+  const WOFF = Buffer.concat([Buffer.from('wOFF'), Buffer.alloc(60)]);
+  const TTF = Buffer.concat([Buffer.from([0x00, 0x01, 0x00, 0x00]), Buffer.alloc(60)]);
+
+  test('a font file is known by its first bytes, not its name', () => {
+    expect(fontsService.fontFormatOf(WOFF2)).toBe('woff2');
+    expect(fontsService.fontFormatOf(WOFF)).toBe('woff');
+    expect(fontsService.fontFormatOf(TTF)).toBe('ttf');
+    expect(fontsService.fontFormatOf(Buffer.from('<svg onload=alert(1)>'))).toBeNull();
+    expect(fontsService.fontFormatOf(Buffer.from('OTTO'))).toBeNull();
+  });
+
+  test('woff and ttf weights count, woff2 wins a weight, and each family says where it came from', async () => {
+    await makeFamily(bundledRoot, 'Inter', [400]);
+    await makeFamily(userRoot, 'Studio-Sans', ['400.ttf', '400.woff2', '700.woff']);
+    const fonts = await fontsService.listFonts();
+    expect(fonts.find((f) => f.family === 'Inter')).toMatchObject({ source: 'bundled', formats: { 400: 'woff2' } });
+    expect(fonts.find((f) => f.family === 'Studio Sans')).toMatchObject({ weights: [400, 700], source: 'uploaded', formats: { 400: 'woff2', 700: 'woff' } });
+  });
+
+  test('an upload lands in the user fonts folder, replaces the same weight, and can be removed', async () => {
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, generic: 'serif', buffer: TTF });
+    await fontsService.saveUploadedFont({ family: 'Studio Serif', weight: 400, generic: 'serif', buffer: WOFF2 });
+    expect(fs.readdirSync(path.join(userRoot, 'Studio-Serif')).sort()).toEqual(['400.woff2', 'meta.json']);
+    expect((await fontsService.listFonts()).find((f) => f.family === 'Studio Serif')).toMatchObject({ generic: 'serif', source: 'uploaded' });
+    expect(await fontsService.deleteUploadedFamily('Studio Serif')).toBe(true);
+    expect(fs.existsSync(path.join(userRoot, 'Studio-Serif'))).toBe(false);
+    // A bundled family is not removable.
+    await makeFamily(bundledRoot, 'Inter', [400]);
+    expect(await fontsService.deleteUploadedFamily('Inter')).toBe(false);
+  });
+
+  test('refuses what is not a font, a name that is not a plain family name, and odd weights', async () => {
+    await expect(fontsService.saveUploadedFont({ family: 'Evil', weight: 400, buffer: Buffer.from('<script>') })).rejects.toMatchObject({ code: 'FONT_TYPE' });
+    await expect(fontsService.saveUploadedFont({ family: '../etc', weight: 400, buffer: WOFF2 })).rejects.toMatchObject({ code: 'FONT_NAME' });
+    await expect(fontsService.saveUploadedFont({ family: 'Ok', weight: 450, buffer: WOFF2 })).rejects.toMatchObject({ code: 'FONT_WEIGHT' });
+    expect(fs.readdirSync(userRoot)).toEqual([]);
   });
 });

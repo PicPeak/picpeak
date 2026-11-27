@@ -319,3 +319,18 @@ describe('rich text in the text block', () => {
     expect(textBlock({ variant: 'left', format: 'html', body: '<p>L</p>', bodyRight: '<p>R</p>' }).bodyRight).toBe('');
   });
 });
+
+describe('uploaded fonts', () => {
+  test('a woff or ttf weight is linked in its own format; woff2 stays as before', () => {
+    const { fontFaces } = require('../renderer')._internal;
+    const css = fontFaces({
+      body: { family: 'Studio Sans', weights: [400, 600], formats: { 400: 'ttf', 600: 'woff' } },
+      heading: { family: 'Inter', weights: [600], formats: { 600: 'woff2' } },
+    });
+    expect(css).toContain("src:url('/fonts/Studio-Sans/400.ttf') format('truetype')");
+    expect(css).toContain("src:url('/fonts/Studio-Sans/600.woff') format('woff')");
+    expect(css).toContain("src:url('/fonts/Inter/600.woff2') format('woff2')");
+    // A family listed before formats were known keeps woff2.
+    expect(fontFaces({ body: { family: 'Old', weights: [400] }, heading: null })).toContain("/fonts/Old/400.woff2') format('woff2')");
+  });
+});

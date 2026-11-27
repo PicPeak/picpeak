@@ -47,6 +47,10 @@ export const SitePanel: React.FC<SitePanelProps> = ({ doc, update, readOnly }) =
           onChange={(v) => setTheme({ headingFont: v || null })} />
         <SelectField label={t('website.site.bodyFont', 'Text font')} value={doc.theme.bodyFont || ''} options={fontOptions}
           onChange={(v) => setTheme({ bodyFont: v || null })} />
+        <Link to={`${settingsTabHref('branding')}#fonts`} className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
+          {t('website.site.manageFonts', 'Manage fonts')}
+          <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+        </Link>
         <ChoiceField
           label={t('website.site.buttonStyle', 'Buttons')}
           value={doc.theme.buttonStyle || ''}

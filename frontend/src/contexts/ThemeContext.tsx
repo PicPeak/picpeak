@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { ThemeConfig, EventTheme, GALLERY_THEME_PRESETS } from '../types/theme.types';
-import { fontsService, extractFamilyName, type FontDefinition } from '../services/fonts.service';
+import { fontsService, extractFamilyName, fontFaceSource, type FontDefinition } from '../services/fonts.service';
 import { applyForceColorMode, DARK_SURFACE_DEFAULTS, LIGHT_SURFACE_DEFAULTS } from '../utils/themeMigration';
 import { getReadableForeground, readableAccentText } from '../utils/contrast';
 import { applyStatusColors, normalizeStatusColors } from '../utils/statusColors';
@@ -29,7 +29,7 @@ function getFontsList(): Promise<FontDefinition[]> {
   return fontsListPromise;
 }
 
-function ensureFontFaceLoaded(family: string, weights: number[]): void {
+function ensureFontFaceLoaded(family: string, weights: number[], formats?: FontDefinition['formats']): void {
   if (injectedFamilies.has(family)) return;
   injectedFamilies.add(family);
 
@@ -40,12 +40,10 @@ function ensureFontFaceLoaded(family: string, weights: number[]): void {
     document.head.appendChild(styleEl);
   }
 
-  // Folder name on disk = family name with hyphens. URL-encode in case of
-  // unusual characters (the scanner already restricts to subdirectory names,
-  // so this is belt-and-braces).
-  const folderName = family.replace(/ /g, '-');
+  // Folder name on disk = family name with hyphens (fontFaceSource), in the
+  // weight's own format: an uploaded font may be WOFF or TTF (issue 2618).
   const blocks = weights.map(
-    (w) => `@font-face{font-family:'${family}';font-style:normal;font-weight:${w};font-display:swap;src:url('/fonts/${encodeURIComponent(folderName)}/${w}.woff2') format('woff2');}`
+    (w) => `@font-face{font-family:'${family}';font-style:normal;font-weight:${w};font-display:swap;src:${fontFaceSource(family, w, formats)};}`
   );
   styleEl.textContent += '\n' + blocks.join('\n');
 }
@@ -57,7 +55,7 @@ async function loadFontForFamily(cssFontFamily: string | undefined | null): Prom
   const fonts = await getFontsList();
   const match = fonts.find((f) => f.family.toLowerCase() === family.toLowerCase());
   if (!match) return; // unknown family — browser falls back to the CSS generic
-  ensureFontFaceLoaded(match.family, match.weights);
+  ensureFontFaceLoaded(match.family, match.weights, match.formats);
 }
 
 function resolveColorMode(mode: 'light' | 'dark' | 'auto' | undefined): 'light' | 'dark' {
