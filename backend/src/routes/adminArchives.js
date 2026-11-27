@@ -67,6 +67,15 @@ const isBareFilename = (name) => typeof name === 'string'
   && name !== '..'
   && !/[\\/]/.test(name);
 
+/** The edit columns of a restored photo: its validated edit as a revision still to render, or none. */
+function restoredEditFields(entry, isVideo) {
+  const math = require('../utils/photoEditMath');
+  const params = isVideo ? null : math.parseStoredParams(entry?.edit_params);
+  return params
+    ? { edit_params: math.canonicalJson(params), edit_rev: 1, edit_applied_rev: 0 }
+    : { edit_params: null, edit_rev: 0, edit_applied_rev: 0 };
+}
+
 // Get all archived events
 router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) => {
   try {
@@ -799,12 +808,18 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
           // as above. recomputeSelection() below settles the flag against the
           // event's current selection.
           ...restoredSourceFields(manifestEntry, takenRelpaths),
+          // A photo edit (issue 2619), validated like a saved one: a new
+          // revision nothing is applied for yet, so the background pass
+          // renders it. Always written, as above.
+          ...restoredEditFields(manifestEntry, isVideoEntry),
         });
       }
 
       // Insert new photos if any
       if (extractedPhotos.length > 0) {
         await db('photos').insert(extractedPhotos);
+        // Restored edits (issue 2619) are rendered by the background pass.
+        if (extractedPhotos.some((p) => p.edit_params)) require('../services/photoEdits').requestPass();
         // A guest erased while this restore ran was not in the rows the
         // erasure cleared; now that they are in, clear them (#1561).
         const restoredGuestIds = [...new Set(extractedPhotos

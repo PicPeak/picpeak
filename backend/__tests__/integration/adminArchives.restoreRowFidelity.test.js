@@ -280,6 +280,30 @@ describe('archive restore rebuilds the photo row faithfully', () => {
       .toEqual({ 'picked.mov': 4.5, 'still.png': null });
   });
 
+  it('restores a photo edit, to be rendered again, and refuses an invalid one (issue 2619)', async () => {
+    const archiveRelPath = await writeArchive('edits.zip', {
+      'individual/edited.jpg': BYTES,
+      'individual/plain.jpg': BYTES,
+      'individual/forged.jpg': BYTES,
+      'photos_manifest.json': manifestOf([
+        { filename: 'edited.jpg', type: 'individual', edit_params: JSON.stringify({ v: 1, exposure: 0.5, bw: true }) },
+        { filename: 'plain.jpg', type: 'individual' },
+        { filename: 'forged.jpg', type: 'individual', edit_params: '{"v":1,"exposure":99}' },
+      ]),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'edit-restore-event');
+
+    await restore(eventId);
+
+    const params = await columnByFilename(eventId, 'edit_params');
+    expect(JSON.parse(params['edited.jpg'])).toMatchObject({ exposure: 0.5, bw: true });
+    expect(params['plain.jpg']).toBeNull();
+    expect(params['forged.jpg']).toBeNull();
+    // A new revision with nothing applied: the background pass renders it.
+    expect(await columnByFilename(eventId, 'edit_rev')).toMatchObject({ 'edited.jpg': 1, 'plain.jpg': 0 });
+    expect(await columnByFilename(eventId, 'edit_applied_rev')).toMatchObject({ 'edited.jpg': 0 });
+  });
+
   it('restores a watcher-imported video as a video despite its stale media_type', async () => {
     // fileWatcher sets type='video' and a video/* mime but never media_type,
     // so its rows carry the 'image' column default. Readers know those clips

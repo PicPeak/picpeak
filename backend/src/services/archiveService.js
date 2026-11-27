@@ -412,6 +412,9 @@ async function buildArchive(event, lease) {
           // every guest sees.
           'photos.external_relpath',
           'photos.selection_hidden',
+          // A photo edit (issue 2619): only its parameters; the edited file
+          // is rendered again from the restored original.
+          'photos.edit_params',
         );
       // The folder a photo lives in, as a path ("Saturday/Activity B"):
       // folder ids do not survive a restore into a fresh database, names do.
