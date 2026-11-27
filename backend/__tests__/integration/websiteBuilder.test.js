@@ -246,7 +246,14 @@ describe('admin API', () => {
     const dayPkg = await pkg('Daily', [[daily, 2]]);
     const mixed = await pkg('Mixed', [[fixed, 1], [hourly, 4], [daily, 2]]);
     const unpriced = await pkg('No rate', [[fixed, 1], [hourlyNoRate, 3]]);
-    const packages = await service._internal.loadPackages([hourPkg, dayPkg, mixed, unpriced]);
+    const archivedItem = await preset({ name: 'Retired extra', unit_price_minor: 5000, price_mode: 'fixed', is_active: false });
+    const withArchived = await pkg('With a retired item', [[fixed, 1], [archivedItem, 1]]);
+    const packages = await service._internal.loadPackages([hourPkg, dayPkg, mixed, unpriced, withArchived]);
+    // Not offered cheaper and incomplete: a quote could not be made from it.
+    expect(packages.has(withArchived)).toBe(false);
+    const listed = (await request(app).get('/api/admin/website/packages').set(auth(adminId))).body.packages;
+    expect(listed.find((p) => p.id === withArchived)).toMatchObject({ unavailable: 'archived_items' });
+    expect(listed.find((p) => p.id === mixed)).toMatchObject({ unavailable: null });
     expect(packages.get(hourPkg).totalMinor).toBe(60000);
     expect(packages.get(dayPkg).totalMinor).toBe(400000);
     expect(packages.get(mixed).totalMinor).toBe(560000);

@@ -308,9 +308,18 @@ const PackagesField: React.FC<{ value: number[]; onChange: (value: number[]) => 
         {list.map((p) => (
           <li key={p.id}>
             <label className="flex items-center gap-2 text-sm text-body">
-              <input type="checkbox" className="rounded border-line-strong" checked={value.includes(p.id)} disabled={!value.includes(p.id) && value.length >= 12}
+              <input type="checkbox" className="rounded border-line-strong" checked={value.includes(p.id)}
+                // One a quote could not be made from is not offered for a new pick.
+                disabled={!value.includes(p.id) && (value.length >= 12 || !!p.unavailable)}
                 onChange={(e) => onChange(e.target.checked ? [...value, p.id] : value.filter((id) => id !== p.id))} />
               {p.name}
+              {p.unavailable && (
+                <span className="text-xs text-warning-text">
+                  {p.unavailable === 'archived_items'
+                    ? t('website.fields.packageArchivedItems', 'Contains archived items, not shown')
+                    : t('website.fields.packageNotShown', 'Cannot be quoted, not shown')}
+                </span>
+              )}
             </label>
           </li>
         ))}

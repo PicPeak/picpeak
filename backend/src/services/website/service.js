@@ -373,42 +373,57 @@ async function readSettings(keys) {
 }
 
 /**
+ * A package as a quote would take it (quoteTemplateService.packageLine), or
+ * why it cannot be offered: archived, empty, or holding an archived item.
+ * Its rule, not a copy: what a quote refuses, the website does not advertise.
+ */
+function packageOffer(pkg) {
+  const { packageLine } = require('../quoteTemplateService');
+  try {
+    const line = packageLine(pkg, false);
+    // One item: the package line carries the price; several: each child does.
+    return { lines: pkg.items.length === 1 ? [line] : line.children, unavailable: null };
+  } catch (err) {
+    const reasons = { TEMPLATE_ITEM_ARCHIVED: 'archived_items', TEMPLATE_PACKAGE_EMPTY: 'empty', TEMPLATE_PACKAGE_ARCHIVED: 'archived' };
+    if (err instanceof AppError && reasons[err.code]) return { lines: [], unavailable: reasons[err.code] };
+    throw err;
+  }
+}
+
+/**
  * Catalogue packages for the pricing block, priced as a quote from the
- * package would be: each item through the catalogue's presetLine (fixed
- * price, or the item's pinned hour/day rate), an 'auto' rate from the
- * studio's default rates. A package with an item that has no rate at all
- * gets no price rather than a sum that leaves the item out.
+ * package would be: packageLine's lines (fixed price, or the item's pinned
+ * hour/day rate), an 'auto' rate from the studio's default rates. A package
+ * a quote could not be made from is left out; one with an item that has no
+ * rate at all gets no price rather than a sum that leaves the item out.
  */
 async function loadPackages(ids) {
   if (!ids.length || !(await isFeatureEnabled('quotes'))) return new Map();
   const { listPackages } = require('../quoteCatalogService');
-  const { presetLine } = require('../quoteTemplateService');
   const rateResolver = require('../rateResolver');
   const [packages, rates] = await Promise.all([listPackages({ activeOnly: true, ids }), rateResolver.loadRates(null)]);
-  return new Map(packages.map((pkg) => {
-    const items = pkg.items.filter((item) => item.preset_is_active === true || item.preset_is_active === 1);
+  const out = new Map();
+  for (const pkg of packages) {
+    const { lines, unavailable } = packageOffer(pkg);
+    if (unavailable) continue;
     let totalMinor = 0;
-    for (const item of items) {
-      const line = presetLine({ ...item, name: item.preset_name }, item.quantity, item.bound_to);
+    for (const line of lines) {
       let unit = line.unitPriceMinor;
       if (line.rateSource === 'auto') {
         const rate = rateResolver.pickRate(rates, line.priceMode);
         unit = rate ? rate.rateMinor : null;
       }
-      if (unit == null || totalMinor == null) {
-        totalMinor = null;
-      } else {
-        totalMinor += Math.round(Number(unit) * Number(line.quantity));
-      }
+      totalMinor = unit == null || totalMinor == null ? null : totalMinor + Math.round(Number(unit) * Number(line.quantity));
     }
-    return [pkg.id, {
+    out.set(pkg.id, {
       name: pkg.name,
       description: pkg.description || '',
       currency: pkg.currency,
       totalMinor,
-      items: items.map((item) => item.preset_name).filter(Boolean),
-    }];
-  }));
+      items: pkg.items.map((item) => item.preset_name).filter(Boolean),
+    });
+  }
+  return out;
 }
 
 async function bookingState() {
@@ -595,5 +610,6 @@ module.exports = {
   setGalleryOnWebsite,
   buildContext,
   referencesAdminMay,
+  packageOffer,
   _internal: { initialDocument, importRefusal, robotsDirective, loadPackages },
 };

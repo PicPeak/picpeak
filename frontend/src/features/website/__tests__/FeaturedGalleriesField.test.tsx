@@ -75,4 +75,20 @@ describe('chosen entries that are gone', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Remove the unavailable package' }));
     expect(onChange.mock.calls[0][0].packageIds).toEqual([]);
   });
+
+  it('marks a package with an archived item as not shown, keeps it removable and not newly pickable', async () => {
+    vi.mocked(websiteService.listPackages).mockResolvedValue({ available: true, packages: [
+      { id: 3, name: 'Full day', description: '', currency: 'CHF', unavailable: 'archived_items' },
+      { id: 4, name: 'Half day', description: '', currency: 'CHF', unavailable: 'archived_items' },
+    ] });
+    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3], showPrices: true, buttonLabel: '', buttonUrl: '' };
+    const onChange = vi.fn();
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={onChange} /></QueryClientProvider>);
+    expect(await screen.findAllByText('Contains archived items, not shown')).toHaveLength(2);
+    expect(screen.getByLabelText(/Full day/)).toBeChecked();
+    expect(screen.getByLabelText(/Half day/)).toBeDisabled();
+    fireEvent.click(screen.getByLabelText(/Full day/));
+    expect(onChange.mock.calls[0][0].packageIds).toEqual([]);
+  });
 });
+

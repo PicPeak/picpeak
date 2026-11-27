@@ -154,6 +154,13 @@ export interface WebsiteAsset {
   videoUrl: string | null;
 }
 
-export interface WebsitePackage { id: number; name: string; description: string; currency: string }
+export interface WebsitePackage {
+  id: number;
+  name: string;
+  description: string;
+  currency: string;
+  /** Why a quote could not be made from it (and the page leaves it out). */
+  unavailable?: 'archived_items' | 'empty' | 'archived' | null;
+}
 
 export interface ValidationProblem { code: string; pageId?: string; slug?: string }

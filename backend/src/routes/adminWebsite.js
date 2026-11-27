@@ -253,7 +253,12 @@ router.get('/packages', canView, handleAsync(async (req, res) => {
   const packages = await listPackages({ activeOnly: true });
   return res.json({
     available: true,
-    packages: packages.map((p) => ({ id: p.id, name: p.name, description: p.description || '', currency: p.currency })),
+    // A package a quote could not be made from is listed with why; the page
+    // leaves it out.
+    packages: packages.map((p) => ({
+      id: p.id, name: p.name, description: p.description || '', currency: p.currency,
+      unavailable: websiteService.packageOffer(p).unavailable,
+    })),
   });
 }));
 
