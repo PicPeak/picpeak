@@ -60,6 +60,12 @@ router.put('/visibility', canEdit, [
   res.json({ enabled: parseBooleanInput(req.body.enabled, false) });
 }));
 
+// The booking block's form: client booking on or off, and the bookable
+// services the booking page can open with.
+router.get('/booking', canView, handleAsync(async (req, res) => {
+  res.json(await websiteService.bookingOptions());
+}));
+
 // The website's page views (counted server-side, pageViews.js) for the
 // Analytics page: analytics.view, as the rest of it.
 router.get('/analytics', requirePermission('analytics.view'), [

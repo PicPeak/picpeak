@@ -1,10 +1,11 @@
 /**
  * The form of one block in the website builder (issue 2618).
  */
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
+import { ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { Button, Notice, Switch } from '../../components/common';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { usePermission } from '../../hooks/usePermission';
@@ -165,7 +166,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brand
   case 'booking':
     fields = (
       <>
-        <BookingNotice />
+        <BookingTarget serviceId={block.serviceId} onChange={(serviceId) => set(block, { serviceId })} />
         <TextField label={t('website.fields.heading', 'Heading')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
         <TextArea label={t('website.fields.body', 'Text')} value={block.text} rows={3} maxLength={1000} onChange={(text) => set(block, { text }, 'text')} />
         <TextField label={t('website.fields.buttonLabel', 'Button text')} value={block.buttonLabel} maxLength={60} onChange={(buttonLabel) => set(block, { buttonLabel }, 'buttonLabel')} />
@@ -216,14 +217,47 @@ const ContactNotice: React.FC = () => {
   );
 };
 
-const BookingNotice: React.FC = () => {
+/**
+ * Where the booking button leads (the public booking page, /book), whether
+ * it shows at all (client booking on, something bookable) and which service
+ * it opens with.
+ */
+const BookingTarget: React.FC<{ serviceId: number | null; onChange: (serviceId: number | null) => void }> = ({ serviceId, onChange }) => {
   const { t } = useTranslation();
-  const { flags } = useFeatureFlags();
-  if (flags.calendarBooking) return null;
+  const id = useId();
+  const options = useQuery({ queryKey: ['website-booking'], queryFn: websiteService.getBooking });
+  const data = options.data;
   return (
-    <Notice tone="warning" size="sm">
-      {t('website.fields.bookingOff', 'Booking is switched off, so this block is hidden on the site. Turn on Booking under Settings › Features.')}
-    </Notice>
+    <div className="space-y-3">
+      {data && !data.flagOn && (
+        <Notice tone="warning" size="sm">
+          {t('website.fields.bookingOff', 'Client booking is switched off, so this block is hidden on the website. Turn it on under Settings › Features.')}
+        </Notice>
+      )}
+      {data && data.flagOn && !data.services.length && (
+        <Notice tone="warning" size="sm">
+          {t('website.fields.bookingNothing', 'Nothing can be booked yet, so this block is hidden on the website. Mark a service in the quote catalogue as bookable.')}
+        </Notice>
+      )}
+      <div className="rounded-lg border border-line p-3 text-sm text-body space-y-1.5">
+        <p>{t('website.fields.bookingTarget', 'Opens your booking page, /book, where visitors pick a service and a time and send a request.')}</p>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          <a href="/book" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
+            {t('website.fields.openBooking', 'Open the booking page')}<ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+          </a>
+          <Link to="/admin/clients/bookings" className="text-accent hover:underline">{t('website.fields.bookingSettings', 'Booking settings')}</Link>
+        </div>
+      </div>
+      {data && data.services.length > 0 && (
+        <div>
+          <label htmlFor={id} className="block text-sm font-medium text-body mb-1.5">{t('website.fields.bookingService', 'Service')}</label>
+          <select id={id} className="input" value={serviceId ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}>
+            <option value="">{t('website.fields.bookingAnyService', 'Let the visitor choose')}</option>
+            {data.services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+      )}
+    </div>
   );
 };
 

@@ -2280,6 +2280,7 @@
         "GET /",
         "PUT /draft",
         "PUT /visibility",
+        "GET /booking",
         "GET /analytics",
         "GET /notice",
         "POST /notice/dismiss",

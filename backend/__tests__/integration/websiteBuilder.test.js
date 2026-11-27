@@ -403,6 +403,19 @@ describe('public pages', () => {
     await setSetting('general_public_site_enabled', true);
   });
 
+  test('the booking block\'s form learns whether booking is on and which services it can open with', async () => {
+    await setFeatureFlags(db, { calendarBooking: false });
+    expect((await request(app).get('/api/admin/website/booking').set(auth(adminId))).body).toEqual({ flagOn: false, services: [] });
+    await setFeatureFlags(db, { calendarBooking: true });
+    const now = new Date().toISOString();
+    const id = await insertId('quote_line_item_presets', { name: 'Family shoot', unit_price_minor: 30000, currency: 'CHF', bookable: true, is_active: true, created_at: now });
+    const res = (await request(app).get('/api/admin/website/booking').set(auth(adminId))).body;
+    expect(res.flagOn).toBe(true);
+    expect(res.services).toEqual(expect.arrayContaining([{ id, name: 'Family shoot' }]));
+    await db('quote_line_item_presets').where({ id }).del();
+    await setFeatureFlags(db, { calendarBooking: false });
+  });
+
   test('the booking block links the booking page only while booking is on with a bookable service', async () => {
     const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
     const document = {

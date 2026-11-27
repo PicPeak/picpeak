@@ -13160,7 +13160,7 @@
       "html": "HTML",
       "contactNotice": "Nachrichten kommen unter Nachrichten › Kunden an. An die Besucherin oder den Besucher wird nichts gemailt.",
       "contactNoticeOff": "Nachrichten werden unter Nachrichten › Kunden gespeichert, das ausgeschaltet ist. Schalten Sie Nachrichten unter Einstellungen › Funktionen ein, um sie zu lesen.",
-      "bookingOff": "Die Buchung ist ausgeschaltet, deshalb ist dieser Block auf der Website ausgeblendet. Schalten Sie die Buchung unter Einstellungen › Funktionen ein.",
+      "bookingOff": "Die Online-Buchung ist ausgeschaltet, deshalb ist dieser Block auf der Website ausgeblendet. Schalten Sie sie unter Einstellungen › Funktionen ein.",
       "galleries": "Galerien",
       "noGalleries": "Noch keine Galerie ist auf der Website. Stellen Sie eine im Register Galerien der Bildauswahl auf die Website.",
       "galleriesMissing": "{{count}} gewählte Galerien sind nicht mehr auf der Website und werden nicht gezeigt.",
@@ -13196,7 +13196,13 @@
       "spacingNone": "Keiner",
       "leftColumn": "Linke Spalte",
       "rightColumn": "Rechte Spalte",
-      "rightColumnHint": "Bleibt sie leer, fliesst der linke Text über beide Spalten."
+      "rightColumnHint": "Bleibt sie leer, fliesst der linke Text über beide Spalten.",
+      "bookingNothing": "Es ist noch nichts buchbar, deshalb ist dieser Block auf der Website ausgeblendet. Markieren Sie im Angebotskatalog eine Leistung als buchbar.",
+      "bookingTarget": "Öffnet Ihre Buchungsseite /book, auf der Besucher eine Leistung und einen Termin wählen und eine Anfrage senden.",
+      "openBooking": "Buchungsseite öffnen",
+      "bookingSettings": "Buchungseinstellungen",
+      "bookingService": "Leistung",
+      "bookingAnyService": "Besucher wählen selbst"
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",

@@ -65,7 +65,7 @@ export interface ContactBlock extends BlockBase {
   submitLabel: string;
   successMessage: string;
 }
-export interface BookingBlock extends BlockBase { type: 'booking'; heading: string; text: string; buttonLabel: string }
+export interface BookingBlock extends BlockBase { type: 'booking'; heading: string; text: string; buttonLabel: string; serviceId: number | null }
 export interface InstagramBlock extends BlockBase {
   type: 'instagram';
   heading: string;

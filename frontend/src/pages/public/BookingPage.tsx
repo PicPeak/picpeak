@@ -12,6 +12,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { CalendarCheck, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { Button, Loading } from '../../components/common';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
@@ -50,9 +51,15 @@ export const BookingPage: React.FC = () => {
 
   const [serviceId, setServiceId] = useState<number | null>(null);
   const service = info?.services.find((s) => s.id === serviceId) || null;
+  // ?service=<id> (the website's booking button, issue 2618) opens with that
+  // service chosen, when this page offers it; one service is chosen anyway.
+  const [searchParams] = useSearchParams();
+  const linked = Number(searchParams.get('service'));
   useEffect(() => {
-    if (info && info.services.length === 1 && serviceId == null) setServiceId(info.services[0].id);
-  }, [info, serviceId]);
+    if (!info || serviceId != null) return;
+    if (info.services.some((s) => s.id === linked)) setServiceId(linked);
+    else if (info.services.length === 1) setServiceId(info.services[0].id);
+  }, [info, serviceId, linked]);
 
   const factors = useMemo(() => (service ? service.factors.map((f) => asFactor(f, service.currency)) : []), [service]);
   const [values, setValues] = useState<Record<string, FactorValue>>({});

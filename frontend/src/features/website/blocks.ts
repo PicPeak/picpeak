@@ -91,7 +91,7 @@ export function createBlock(type: BlockType, t: TFunction): Block {
   case 'contact':
     return { ...base, type, heading: t('website.defaults.contactHeading', 'Get in touch'), intro: '', showPhone: false, showDate: false, submitLabel: '', successMessage: '' };
   case 'booking':
-    return { ...base, type, heading: t('website.defaults.bookingHeading', 'Book a session'), text: '', buttonLabel: '' };
+    return { ...base, type, heading: t('website.defaults.bookingHeading', 'Book a session'), text: '', buttonLabel: '', serviceId: null };
   case 'instagram':
     return { ...base, type, heading: '', handle: '', profileUrl: '', images: [] };
   case 'spacer':

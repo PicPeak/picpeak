@@ -36,6 +36,12 @@ export const websiteService = {
     await api.put('/admin/website/visibility', { enabled });
   },
 
+  /** The booking block's form: client booking on, and the bookable services. */
+  async getBooking(): Promise<{ flagOn: boolean; services: Array<{ id: number; name: string }> }> {
+    const r = await api.get<{ flagOn: boolean; services: Array<{ id: number; name: string }> }>('/admin/website/booking');
+    return r.data;
+  },
+
   /** The website's page views over the last `days` days (Analytics page). */
   async getAnalytics(days: number): Promise<WebsiteTraffic> {
     const r = await api.get<WebsiteTraffic>('/admin/website/analytics', { params: { days } });

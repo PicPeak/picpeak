@@ -47,6 +47,7 @@ const STRINGS = {
     imprint: 'Impressum',
     terms: 'Terms & Conditions',
     previewForm: 'The form is disabled in the preview.',
+    bookingHidden: 'Hidden on the website: client booking is off or nothing can be booked yet.',
     follow: 'Follow',
     videoInPreview: 'Video plays on the published page',
   },
@@ -70,6 +71,7 @@ const STRINGS = {
     imprint: 'Impressum',
     terms: 'AGB',
     previewForm: 'Das Formular ist in der Vorschau deaktiviert.',
+    bookingHidden: 'Auf der Website ausgeblendet: Die Online-Buchung ist aus oder es ist noch nichts buchbar.',
     follow: 'Folgen',
     videoInPreview: 'Das Video läuft auf der veröffentlichten Seite',
   },
@@ -359,12 +361,15 @@ ${ctx.preview ? `<p class="pp-muted">${esc(s.previewForm)}</p>` : ''}</form>`;
 
 function renderBooking(block, ctx) {
   const s = strings(ctx.locale);
-  if (!ctx.booking || !ctx.booking.enabled) {
-    // Hidden on the live site while booking is off; the editor still shows
-    // where it would be.
-    return ctx.preview ? section(block, `<div class="pp-wrap pp-narrow pp-center pp-muted">${heading(block.heading)}<p>${esc(s.book)} (off)</p></div>`, ctx) : '';
-  }
-  const inner = `<div class="pp-wrap pp-narrow pp-center">${heading(block.heading)}${block.text ? `<div class="pp-prose">${richText(block.text)}</div>` : ''}${button(block.buttonLabel || s.book, ctx.booking.url)}</div>`;
+  const enabled = !!(ctx.booking && ctx.booking.enabled);
+  // Hidden on the live site while booking is off or nothing is bookable;
+  // the preview shows the block as it would be, and why it is not.
+  if (!enabled && !ctx.preview) return '';
+  const url = enabled && block.serviceId && ctx.booking.serviceIds && ctx.booking.serviceIds.has(block.serviceId)
+    ? `${ctx.booking.url}?service=${block.serviceId}`
+    : (enabled ? ctx.booking.url : '/book');
+  const hint = enabled ? '' : `<p class="pp-preview-hint">${esc(s.bookingHidden)}</p>`;
+  const inner = `<div class="pp-wrap pp-narrow pp-center">${heading(block.heading)}${block.text ? `<div class="pp-prose">${richText(block.text)}</div>` : ''}${button(block.buttonLabel || s.book, url)}${hint}</div>`;
   return section(block, inner, ctx, block.variant === 'banner' ? 'pp-band' : '');
 }
 
@@ -608,6 +613,7 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 // would be painted under a positioned full-bleed hero picture.
 const PREVIEW_CSS = `.pp-hero__placeholder{background:linear-gradient(135deg,#3a3a3a,#1c1c1c);min-height:100%}
 .pp-video-note{position:absolute;z-index:2;top:1rem;right:1rem;padding:.35rem .7rem;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;font:600 .8rem/1.2 var(--font-body)}
+.pp-preview-hint{margin:1rem auto 0;max-width:34rem;padding:.5rem .8rem;border-radius:.5rem;background:rgba(0,0,0,.06);color:var(--muted);font-size:.9rem}
 [data-block-id]{position:relative;cursor:pointer}
 [data-block-id]::after{content:"";position:absolute;inset:0;z-index:5;pointer-events:none;border:2px dashed transparent}
 [data-block-id]:hover::after{border-color:color-mix(in srgb,var(--accent) 60%,transparent)}

@@ -254,6 +254,8 @@ const BLOCK_FIELDS = {
     heading: str(b.heading, 200, 'heading'),
     text: str(b.text, 1000, 'text'),
     buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
+    // A bookable service the booking page opens with; null: the visitor picks.
+    serviceId: /^[1-9]\d{0,8}$/.test(String(b.serviceId ?? '')) ? Number(b.serviceId) : null,
   }),
   instagram: (b) => ({
     heading: str(b.heading, 200, 'heading'),

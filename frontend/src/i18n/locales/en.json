@@ -13195,7 +13195,7 @@
       "html": "HTML",
       "contactNotice": "Messages arrive in Messages › Customers. Nothing is emailed to the visitor.",
       "contactNoticeOff": "Messages are stored in Messages › Customers, which is switched off. Turn on Messages under Settings › Features to read them.",
-      "bookingOff": "Booking is switched off, so this block is hidden on the site. Turn on Booking under Settings › Features.",
+      "bookingOff": "Client booking is switched off, so this block is hidden on the website. Turn it on under Settings › Features.",
       "galleries": "Galleries",
       "noGalleries": "No gallery is on the website yet. Put one on the website from the image picker’s Galleries tab.",
       "galleriesMissing": "{{count}} chosen galleries are no longer on the website and are not shown.",
@@ -13231,7 +13231,13 @@
       "spacingNone": "None",
       "leftColumn": "Left column",
       "rightColumn": "Right column",
-      "rightColumnHint": "Leave it empty and the left text flows over both columns."
+      "rightColumnHint": "Leave it empty and the left text flows over both columns.",
+      "bookingNothing": "Nothing can be booked yet, so this block is hidden on the website. Mark a service in the quote catalogue as bookable.",
+      "bookingTarget": "Opens your booking page, /book, where visitors pick a service and a time and send a request.",
+      "openBooking": "Open the booking page",
+      "bookingSettings": "Booking settings",
+      "bookingService": "Service",
+      "bookingAnyService": "Let the visitor choose"
     },
     "defaults": {
       "heroHeading": "Your headline",

@@ -6,6 +6,7 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import type { FeaturedGalleriesBlock, WebsiteGallery } from '../types';
 
 vi.mock('react-i18next', () => ({
@@ -15,7 +16,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureFlags: () => ({ flags: {} }) }));
 vi.mock('../../../hooks/usePermission', () => ({ usePermission: vi.fn(() => true) }));
 vi.mock('../../../services/website.service', () => ({
-  websiteService: { listGalleries: vi.fn(), listPackages: vi.fn() },
+  websiteService: { listGalleries: vi.fn(), listPackages: vi.fn(), getBooking: vi.fn() },
   mediaKey: (r: { source: string; id: string | number }) => `${r.source}:${r.id}`,
 }));
 
@@ -211,6 +212,29 @@ describe('chosen entries that are gone', () => {
     expect(screen.getAllByTitle(/Heading 2/)).toHaveLength(2);
     expect(screen.getByText('Left text')).toBeInTheDocument();
     expect(screen.getByText(/flows over both columns/)).toBeInTheDocument();
+  });
+
+  it('the booking block says where it leads, links the booking page and its settings, and can name a service', async () => {
+    vi.mocked(websiteService.getBooking).mockResolvedValue({ flagOn: true, services: [{ id: 4, name: 'Portraits' }] });
+    const onChange = vi.fn();
+    const block = { id: 'b', type: 'booking' as const, variant: 'button', background: 'default' as const, heading: '', text: '', buttonLabel: '', serviceId: null };
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><BlockEditor block={block} onChange={onChange} /></MemoryRouter></QueryClientProvider>);
+    expect(await screen.findByText(/Opens your booking page/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open the booking page/ })).toHaveAttribute('href', '/book');
+    expect(screen.getByRole('link', { name: /Booking settings/ })).toHaveAttribute('href', '/admin/clients/bookings');
+    fireEvent.change(await screen.findByLabelText('Service'), { target: { value: '4' } });
+    expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({ serviceId: 4 });
+  });
+
+  it('says why the booking block is hidden: booking off, or nothing bookable', async () => {
+    vi.mocked(websiteService.getBooking).mockResolvedValue({ flagOn: true, services: [] });
+    const block = { id: 'b', type: 'booking' as const, variant: 'button', background: 'default' as const, heading: '', text: '', buttonLabel: '', serviceId: null };
+    const { unmount } = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><BlockEditor block={block} onChange={vi.fn()} /></MemoryRouter></QueryClientProvider>);
+    expect(await screen.findByText(/Nothing can be booked yet/)).toBeInTheDocument();
+    unmount();
+    vi.mocked(websiteService.getBooking).mockResolvedValue({ flagOn: false, services: [] });
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><BlockEditor block={block} onChange={vi.fn()} /></MemoryRouter></QueryClientProvider>);
+    expect(await screen.findByText(/Client booking is switched off/)).toBeInTheDocument();
   });
 });
 

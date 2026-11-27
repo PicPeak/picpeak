@@ -334,3 +334,22 @@ describe('uploaded fonts', () => {
     expect(fontFaces({ body: { family: 'Old', weights: [400] }, heading: null })).toContain("/fonts/Old/400.woff2') format('woff2')");
   });
 });
+
+describe('booking button', () => {
+  const booking = (over) => ({ type: 'booking', id: 'b1', heading: 'Book', buttonLabel: 'Book a session', ...over });
+
+  test('opens the booking page, with the chosen service preselected while it can be booked', () => {
+    const on = { enabled: true, url: '/book', serviceIds: new Set([7]) };
+    expect(render([home([booking({ serviceId: 7 })])], { ctx: { booking: on } })).toContain('href="/book?service=7"');
+    // A service that cannot be booked any more: the booking page as such.
+    expect(render([home([booking({ serviceId: 9 })])], { ctx: { booking: on } })).toContain('href="/book"');
+    expect(normalizeDocument({ pages: [home([booking({ serviceId: 'x' })])] }).document.pages[0].blocks[0].serviceId).toBeNull();
+  });
+
+  test('hidden on the website while booking is off; the preview shows it with why', () => {
+    expect(render([home([booking({})])], { ctx: { booking: { enabled: false } } })).not.toContain('pp-booking');
+    const preview = render([home([booking({})])], { ctx: { booking: { enabled: false }, preview: true } });
+    expect(preview).toContain('Book a session');
+    expect(preview).toContain('Hidden on the website: client booking is off or nothing can be booked yet.');
+  });
+});

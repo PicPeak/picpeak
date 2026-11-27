@@ -505,7 +505,15 @@ async function bookingState() {
   if (!(await isFeatureEnabled('calendarBooking'))) return { enabled: false };
   const { bookableServices } = require('../bookingService');
   const services = await bookableServices();
-  return { enabled: services.length > 0, url: '/book' };
+  return { enabled: services.length > 0, url: '/book', serviceIds: new Set(services.map((s) => s.id)) };
+}
+
+/** What the booking block's form says: on or off, and the services it can preselect. */
+async function bookingOptions() {
+  const flagOn = await isFeatureEnabled('calendarBooking');
+  const { bookableServices } = require('../bookingService');
+  const services = flagOn ? await bookableServices() : [];
+  return { flagOn, services: services.map((s) => ({ id: s.id, name: s.name })) };
 }
 
 async function legalLinks(locale) {
@@ -730,6 +738,7 @@ module.exports = {
   publishedPhotoIds,
   legacyLandingNotice,
   setSiteVisible,
+  bookingOptions,
   dismissLegacyLandingNotice,
   mediaRobotsTag,
   sitemapXml,
