@@ -819,3 +819,37 @@ describe('the admin viewer while an edit is pending', () => {
     }
   });
 });
+
+describe('a stored watermark copy while a first edit is pending', () => {
+  it('is not served with the unedited picture the gallery shows', async () => {
+    const watermarkService = require('../../src/services/watermarkService');
+    const settings = jest.spyOn(watermarkService, 'getWatermarkSettings')
+      .mockResolvedValue({ enabled: true, logoPath: null, position: 'bottom-right', opacity: 50, size: 15, companyName: 'Studio' });
+    const id = unwrap(await db('photos').insert({
+      event_id: event.id, filename: 'wm-pending.jpg', path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600,
+      edit_params: JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), edit_rev: 1, edit_applied_rev: 0,
+    }).returning('id'));
+    // The copy the watermark job cut from the saved crop, tagged with its revision.
+    const copy = `watermarks/${id}_watermarked_0123456789ab_e1_.jpg`;
+    fs.mkdirSync(path.join(process.env.STORAGE_PATH, 'watermarks'), { recursive: true });
+    fs.writeFileSync(path.join(process.env.STORAGE_PATH, copy),
+      await sharp({ create: { width: 400, height: 600, channels: 3, background: '#ff00ff' } }).jpeg().toBuffer());
+    await db('photos').where({ id }).update({ watermark_path: copy });
+    const { watermarkCopyCurrent } = require('../../src/services/photoEdits');
+    try {
+      const shown = await binary(guest('get', `/photo/${id}`)).expect(200);
+      expect(await size(shown.body)).toEqual([800, 600]);
+      // The rule: a copy of the revision an edited view shows, an untagged one for an unedited view.
+      const edited = { edit_rev: 2, edit_params: '{"v":1,"exposure":0.2}' };
+      const unedited = { edit_rev: 2, edit_params: null };
+      expect(watermarkCopyCurrent(edited, 'watermarks/5_watermarked_0123456789ab_e2_.jpg')).toBe(true);
+      expect(watermarkCopyCurrent(edited, 'watermarks/5_watermarked_0123456789ab_e1_.jpg')).toBe(false);
+      expect(watermarkCopyCurrent(unedited, 'watermarks/5_watermarked_0123456789ab.jpg')).toBe(true);
+      expect(watermarkCopyCurrent(unedited, 'watermarks/5_watermarked_0123456789ab_e2_.jpg')).toBe(false);
+    } finally {
+      settings.mockRestore();
+      await db('photos').where({ id }).delete();
+    }
+  });
+});

@@ -443,7 +443,9 @@ const asJpegName = (name) => (name ? `${String(name).replace(/\.[^./\\]*$/, '')}
 async function deliveredPhoto(photo, options = {}) {
   if (!photo || isVideoRow(photo)) return photo;
   const row = await withEditColumns(photo);
-  if (!paramsOf(row)) return photo;
+  // Not edited in this view (never, reset, or a first edit still pending):
+  // only an untagged watermark copy shows it, not one cut from an edit.
+  if (!paramsOf(row)) return !photo.watermark_path || watermarkCopyCurrent(row, photo.watermark_path) ? photo : { ...photo, watermark_path: null };
   let key;
   try {
     key = await ensureEditedSource(row, options);
@@ -483,9 +485,19 @@ function namedAsDelivered(photo) {
   return { ...photo, filename: asJpegName(photo.filename), original_filename: asJpegName(photo.original_filename) };
 }
 
-/** Whether a stored watermark copy was made from the edit of the row's revision (watermarkService.watermarkKey). */
+// The edit tag watermarkService.watermarkKey puts after the source hash.
+const WATERMARK_EDIT_TAG = /_watermarked_[0-9a-f]{12}_e\d+_/;
+
+/**
+ * Whether a stored watermark copy shows the picture of this row (or view,
+ * renditionView): for an edited one, a copy cut from the edit of its
+ * revision (watermarkService.watermarkKey tags it); for one not edited, an
+ * untagged copy only.
+ */
 function watermarkCopyCurrent(photo, key) {
-  return Boolean(key && String(key).includes(`_e${photo.edit_rev}_`));
+  if (!key) return false;
+  if (!paramsOf(photo)) return !WATERMARK_EDIT_TAG.test(String(key));
+  return String(key).includes(`_e${photo.edit_rev}_`);
 }
 
 
