@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 type PhotosResult = { data: unknown; isLoading: boolean; error: unknown; refetch: () => void };
@@ -27,6 +27,7 @@ const stable = vi.hoisted(() => ({
     photos: Array<{ id: number }>;
     onToggleLikedOnly?: () => void;
     likedOnly?: boolean;
+    copyFilenamesCount?: number;
     beforeGrid?: React.ReactNode | ((shown: Array<{ id: number }>) => React.ReactNode);
   },
 }));
@@ -78,10 +79,10 @@ import { GalleryView } from '../GalleryView';
 
 const event = { id: 1, event_name: 'Hoa Wedding', event_type: 'wedding', event_date: '2026-09-19', expires_at: '2027-09-19T00:00:00Z' };
 
-const photo = (id: number, folder: number | null, liked = false, likeCount = 0, category: number | null = null) => ({
+const photo = (id: number, folder: number | null, liked = false, likeCount = 0, category: number | null = null, favorites = 0) => ({
   id, filename: `${id}.jpg`, url: `/${id}.jpg`, thumbnail_url: `/${id}-t.jpg`, type: 'photo', size: 1,
   uploaded_at: `2026-09-19T1${id}:00:00Z`, category_id: category, folder_id: folder,
-  is_liked: liked, like_count: likeCount,
+  is_liked: liked, like_count: likeCount, favorite_count: favorites,
 });
 
 function show({ filterBar = true } = {}) {
@@ -94,7 +95,8 @@ function show({ filterBar = true } = {}) {
         { id: 9, name: 'Party', slug: 'party', is_folder: false, parent_id: null },
       ],
       // 5 is liked by this viewer; 6 only by someone else, and in Party.
-      photos: [photo(4, 3), photo(5, null, true, 1), photo(6, null, false, 2, 9)],
+      // 4 and 6 are bookmarked (favourite feedback, from the lightbox).
+      photos: [photo(4, 3, false, 0, null, 1), photo(5, null, true, 1), photo(6, null, false, 2, 9, 1)],
     },
     isLoading: false,
     error: null,
@@ -141,6 +143,13 @@ describe('Gallery Folio in the gallery shell', () => {
     const party = within(screen.getByTestId('before-grid')).getByRole('button', { name: 'Party (1)' });
     fireEvent.click(party);
     expect(shownIds()).toBe('6');
+  });
+
+  it('lists the bookmarked photos for Copy filenames, not the liked ones', async () => {
+    // Folio's lightbox writes favourite feedback: unlike Premium and Story,
+    // a like is not its favourite, even though its heart filters own likes.
+    show();
+    await waitFor(() => expect(stable.grid.copyFilenamesCount).toBe(2));
   });
 
   it('filters the viewer\'s own likes from its nav heart', () => {

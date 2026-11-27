@@ -1003,11 +1003,13 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   }, [resetScopeState, openFolderSlug, galleryView]);
 
   // Premium and Story have no `favorite` control: their hearts write `like`
-  // feedback and seed from `is_liked`, so there a like is the favourite. The
-  // nav heart of every full-page layout (Folio's too) drives the "Liked"
-  // filter, which then keeps the viewer's own likes rather than every photo
-  // anyone liked.
-  const favouritesAreLikes = isFullPage(theme.galleryLayout);
+  // feedback and seed from `is_liked`, so there a like is the favourite.
+  // Folio's lightbox writes `favorite` feedback, so its favourites stay
+  // the bookmarks.
+  const favouritesAreLikes = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
+  // The nav heart of every full-page layout drives the "Liked" filter, which
+  // keeps the viewer's own likes rather than every photo anyone liked.
+  const likedIsOwn = isFullPage(theme.galleryLayout);
   const filteredPhotos = useGalleryFiltering({
     sourcePhotos: data?.photos, categories: data?.categories, folderId: openFolderId, viewAll,
     selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug,
@@ -1024,7 +1026,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     minRating: feedbackSettings?.feedback_enabled && feedbackSettings?.allow_ratings ? minRating : null,
     // Only while tagging is on for the gallery: the chips hide with it.
     selectedTagKeys: tagsEnabled ? selectedTagKeys : undefined,
-    likedIsOwn: favouritesAreLikes,
+    likedIsOwn,
     favoritedIsOwn: savedIsOwn,
     videosFirst,
     // Story's scenes are its categories, and it has no category control: its
