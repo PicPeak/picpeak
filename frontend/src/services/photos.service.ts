@@ -102,6 +102,11 @@ export interface AdminPhoto {
   // Where crops keep the subject (issue 2377), 0..1 fractions of the photo;
   // null: the centre. 'auto' was detected, 'manual' set by an admin.
   focal_point?: { x: number; y: number } | null;
+  // The photo editor (issue 2619): whether the photo has an edit, the
+  // revision saved and the one whose renditions are in place.
+  edited?: boolean;
+  edit_rev?: number;
+  edit_applied_rev?: number;
   focal_source?: 'auto' | 'manual' | null;
 }
 
@@ -514,8 +519,9 @@ class PhotosService {
   // (issue 2304): an expired session (401, the interceptor's login redirect),
   // a missing permission or a deleted file rejects here, and the caller shows
   // its error toast instead of "Download started".
-  async downloadPhoto(eventId: number, photoId: number, filename: string, isVideo = false): Promise<void> {
-    const path = `/admin/events/${eventId}/photos/${photoId}/download`;
+  // `edited` (issue 2619): the photo as guests receive it; without it the original.
+  async downloadPhoto(eventId: number, photoId: number, filename: string, isVideo = false, { edited = false } = {}): Promise<void> {
+    const path = `/admin/events/${eventId}/photos/${photoId}/download${edited ? '?edited=1' : ''}`;
     if (isVideo) {
       await api.head(path);
       const link = document.createElement('a');

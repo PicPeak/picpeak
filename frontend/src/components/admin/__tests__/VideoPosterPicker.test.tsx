@@ -6,6 +6,8 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+// The photo editor (issue 2619) is behind a feature flag; off here.
+vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () => false }));
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { VideoPosterPicker, formatPosterOffset } from '../VideoPosterPicker';

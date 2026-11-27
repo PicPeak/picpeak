@@ -29,6 +29,7 @@ import {
   Gift,
   ShieldCheck,
   Code,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -174,6 +175,22 @@ export const FeaturesTab: React.FC = () => {
             sidebarHiddenLabel={sidebarHiddenLabel}
             enabled={staged.embed}
             onToggle={(next) => setFlag('embed', next)}
+          />
+
+          {/* Photo editor (issue 2619): crop, light and colour corrections in
+              the admin photo viewer. Non-destructive; guests see the edit. */}
+          <FeatureCard
+            icon={SlidersHorizontal}
+            title={t('settings.features.photoEditor.title', 'Photo editor')}
+            description={t(
+              'settings.features.photoEditor.description',
+              'Quick, non-destructive corrections in the photo viewer: crop, straighten, exposure, white balance and colour, with presets and copying settings to other photos. Guests see and download the edited photo; the original stays untouched and can still be downloaded by admins. Turning this off hides the editor; saved edits stay applied.',
+            )}
+            feature="photoEditor"
+            sidebarHidden
+            sidebarHiddenLabel={sidebarHiddenLabel}
+            enabled={staged.photoEditor}
+            onToggle={(next) => setFlag('photoEditor', next)}
           />
 
           <FeatureCard

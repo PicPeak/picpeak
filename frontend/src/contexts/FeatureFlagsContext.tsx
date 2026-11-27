@@ -90,6 +90,8 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   // Website embed (migration 363, issue 1112) - opt-in; the backend 404s
   // every embed link while it is off.
   embed: false,
+  // Photo editor (migration 380, issue 2619). Off by default.
+  photoEditor: false,
 };
 
 export const FEATURE_FLAGS_QUERY_KEY = ['feature-flags'] as const;

@@ -1,6 +1,6 @@
 import { usePhotoSelection } from '../../hooks/usePhotoSelection';
 import React, { useEffect, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, Euro, ThumbsUp, ThumbsDown, Pencil, Image as ImageIcon, Crosshair, Sparkles } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, Euro, ThumbsUp, ThumbsDown, Pencil, Image as ImageIcon, Crosshair, Sparkles, SlidersHorizontal } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -27,6 +27,10 @@ import { deleteOneConfirm, deletedMessage } from './photoDeleteCopy';
 import { isImeComposing } from '../../utils/imeComposition';
 import { formatPhotoPrice } from '../../features/photo-sales/photoSales';
 import { usePermission } from '../../hooks/usePermission';
+import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
+
+// The photo editor (issue 2619) is its own chunk, fetched when it is opened.
+const PhotoEditor = React.lazy(() => import('../../features/photo-editor/PhotoEditor'));
 
 type AdminFeedbackResponse = {
   feedback: PhotoFeedback[];
@@ -108,6 +112,8 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   const focalModal = useModal();
   // Picking a frame is photos.edit; a reader still sees which frame it is.
   const canEditPhotos = usePermission('photos.edit');
+  const photoEditorEnabled = useFeatureEnabled('photoEditor');
+  const [editorOpen, setEditorOpen] = useState(false);
   const queryClient = useQueryClient();
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   
@@ -179,9 +185,11 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
     }
   };
 
-  const handleDownload = async () => {
+  // An edited photo (issue 2619) offers the edit as guests get it, and the original.
+  const handleDownload = async (edited = false) => {
     try {
-      await photosService.downloadPhoto(eventId, currentPhoto.id, currentPhoto.filename, Boolean(isVideo));
+      if (edited) await photosService.downloadPhoto(eventId, currentPhoto.id, currentPhoto.filename, Boolean(isVideo), { edited });
+      else await photosService.downloadPhoto(eventId, currentPhoto.id, currentPhoto.filename, Boolean(isVideo));
       toast.success('Download started');
     } catch (error) {
       toast.error('Failed to download photo');
@@ -348,9 +356,20 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
     return () => { layer.release(); layerRef.current = null; };
   }, []);
 
+  // Opening the editor from the key handler, which is bound once per photo.
+  const canOpenEditor = canEditPhotos && photoEditorEnabled && !isVideo;
+  const editorRef = React.useRef<(() => void) | null>(null);
+  editorRef.current = canOpenEditor ? () => setEditorOpen(true) : null;
+
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (layerRef.current && !layerRef.current.isTop()) return;
+      // E opens the editor, as in Lightroom's Develop shortcut row.
+      if (e.key === 'e' && !e.ctrlKey && !e.metaKey && !e.altKey && !isTypingTarget(e.target) && editorRef.current) {
+        e.preventDefault();
+        editorRef.current();
+        return;
+      }
       switch (e.key) {
         case 'Escape':
           // An Escape that cancels an IME composition belongs to the field.
@@ -469,12 +488,23 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
             <Button
               variant="primary"
               size="sm"
-              onClick={handleDownload}
+              onClick={() => void handleDownload(false)}
               leftIcon={<Download className="w-4 h-4" />}
               className="flex-1"
             >
-              Download
+              {currentPhoto.edited ? t('photoEditor.viewer.downloadOriginal', 'Original') : 'Download'}
             </Button>
+            {currentPhoto.edited && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void handleDownload(true)}
+                leftIcon={<Download className="w-4 h-4" />}
+                className="flex-1"
+              >
+                {t('photoEditor.viewer.downloadEdited', 'Edited')}
+              </Button>
+            )}
             <button
               onClick={handleDelete}
               disabled={isDeleting}
@@ -696,6 +726,33 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                   photoId={currentPhoto.id}
                   onChanged={handlePosterChanged}
                 />
+              )}
+            </div>
+          )}
+
+          {/* The photo editor (issue 2619). */}
+          {canOpenEditor && (
+            <div className="mb-6">
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                leftIcon={<SlidersHorizontal className="w-4 h-4" />}
+                onClick={() => setEditorOpen(true)}
+                title={t('photoEditor.viewer.shortcut', 'Shortcut: E')}
+              >
+                {currentPhoto.edited ? t('photoEditor.viewer.editAgain', 'Edit photo (edited)') : t('photoEditor.viewer.edit', 'Edit photo')}
+              </Button>
+              {editorOpen && (
+                <React.Suspense fallback={<div className="fixed inset-0 z-50 bg-black/80" aria-busy="true" />}>
+                  <PhotoEditor
+                    eventId={eventId}
+                    photos={photos}
+                    initialPhotoId={currentPhoto.id}
+                    onClose={() => setEditorOpen(false)}
+                    onChanged={() => { queryClient.invalidateQueries({ queryKey: ['admin-event-photos'] }); }}
+                  />
+                </React.Suspense>
               )}
             </div>
           )}

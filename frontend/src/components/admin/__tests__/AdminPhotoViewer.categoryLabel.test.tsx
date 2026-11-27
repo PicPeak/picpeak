@@ -6,6 +6,8 @@
  */
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+// The photo editor (issue 2619) is behind a feature flag; off here.
+vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () => false }));
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { AdminPhotoViewer } from '../AdminPhotoViewer';
