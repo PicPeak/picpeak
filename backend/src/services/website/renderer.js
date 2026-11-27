@@ -45,6 +45,7 @@ const STRINGS = {
     imprint: 'Impressum',
     terms: 'Terms & Conditions',
     previewForm: 'The form is disabled in the preview.',
+    follow: 'Follow',
   },
   de: {
     menu: 'Menü',
@@ -66,6 +67,7 @@ const STRINGS = {
     imprint: 'Impressum',
     terms: 'AGB',
     previewForm: 'Das Formular ist in der Vorschau deaktiviert.',
+    follow: 'Folgen',
   },
 };
 
@@ -345,9 +347,15 @@ function renderBooking(block, ctx) {
 function renderInstagram(block, ctx) {
   const images = block.images.map((ref) => [ref, resolveImage(ref, ctx)]).filter(([, image]) => image);
   if (!images.length && !ctx.preview) return '';
+  const s = strings(ctx.locale);
   const handle = block.handle ? `@${block.handle}` : '';
   const title = block.heading || handle;
-  const profile = block.profileUrl && handle ? `<a class="pp-link" href="${esc(block.profileUrl)}"${linkAttrs(block.profileUrl)}>${esc(handle)}</a>` : (handle && block.heading ? `<span class="pp-muted">${esc(handle)}</span>` : '');
+  // The handle is the title when there is no heading; the link then says
+  // "Follow" rather than repeating it.
+  const linkText = block.heading ? handle : s.follow;
+  const profile = block.profileUrl && linkText
+    ? `<a class="pp-link" href="${esc(block.profileUrl)}"${linkAttrs(block.profileUrl)}>${esc(linkText)} →</a>`
+    : (handle && block.heading ? `<span class="pp-muted">${esc(handle)}</span>` : '');
   const tiles = images.map(([ref, image]) => `<figure class="pp-tile pp-tile--crop">${imgTag(image, { alt: ref.alt, sizes: block.variant === 'grid' ? '33vw' : '(min-width: 900px) 17vw, 40vw' })}</figure>`).join('');
   return section(block, `<div class="pp-wrap"><div class="pp-insta-head">${heading(title)}${profile}</div><div class="${block.variant === 'grid' ? 'pp-grid pp-cols-3' : 'pp-strip'}">${tiles}</div></div>`, ctx);
 }
@@ -449,6 +457,7 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-light{--bg:var(--surface)}
 .pp-dark{--bg:var(--dark-bg);--text:var(--dark-text);--muted:var(--dark-muted);--link:var(--dark-link);--border:color-mix(in srgb,var(--dark-text) 18%,transparent);--surface:color-mix(in srgb,var(--dark-text) 6%,var(--dark-bg))}
 .pp-prose p{margin:0 0 1em}.pp-prose p:last-child{margin-bottom:0}
+.pp-prose+.pp-btn{margin-top:1.5rem}
 .pp-intro{margin:-.2em 0 2rem;color:var(--muted);max-width:60ch}
 .pp-columns{columns:2 22rem;column-gap:3rem}
 .pp-btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:.7rem 1.6rem;border:2px solid var(--accent);border-radius:var(--btn-radius);background:var(--accent);color:var(--accent-fg);font:600 1rem/1.2 var(--font-body);text-decoration:none;cursor:pointer}
@@ -551,9 +560,12 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-skip{position:absolute;left:-10000px}.pp-skip:focus{left:1rem;top:1rem;z-index:20;background:var(--surface);padding:.6rem 1rem}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}`;
 
+// The marker is a pseudo-element above the section's children: an outline
+// would be painted under a positioned full-bleed hero picture.
 const PREVIEW_CSS = `[data-block-id]{position:relative;cursor:pointer}
-[data-block-id]:hover{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--accent) 55%,transparent)}
-[data-block-id].pp-selected{box-shadow:inset 0 0 0 3px var(--accent)}
+[data-block-id]::after{content:"";position:absolute;inset:0;z-index:5;pointer-events:none;border:2px dashed transparent}
+[data-block-id]:hover::after{border-color:color-mix(in srgb,var(--accent) 60%,transparent)}
+[data-block-id].pp-selected::after{border:3px solid var(--accent)}
 .pp-header{position:relative}`;
 
 const RADII = { none: '0px', sm: '4px', md: '10px', lg: '18px' };

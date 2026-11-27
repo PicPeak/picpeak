@@ -873,6 +873,7 @@ module.exports = {
   saveSettings,
   workingHours,
   publicCatalogue,
+  bookableServices,
   bookableService,
   serviceDuration,
   availableSlots,

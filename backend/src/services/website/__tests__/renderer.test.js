@@ -181,6 +181,12 @@ test('the public page ships no script, the preview marks blocks and disables the
   expect(preview).toMatch(/<button class="pp-btn" type="submit" disabled>/);
 });
 
+test('the photo strip names the account once', () => {
+  const html = render([home([{ type: 'instagram', handle: '@studio', profileUrl: 'https://www.instagram.com/studio', images: [{ source: 'photo', id: 11 }] }])], { ctx: { photos: new Map([[11, { id: 11, width: 10, height: 10 }]]) } });
+  expect(html.match(/@studio/g)).toHaveLength(1);
+  expect(html).toContain('>Follow →</a>');
+});
+
 test('robots directives are emitted', () => {
   expect(render([home([])], { ctx: { robots: 'noindex, nofollow' } })).toContain('<meta name="robots" content="noindex, nofollow">');
 });

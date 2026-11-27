@@ -238,7 +238,9 @@ async function resolveTheme(docTheme) {
     readThemeConfig(),
     listFonts().catch(() => []),
   ]);
-  const byName = new Map(fonts.map((f) => [f.family.toLowerCase(), f]));
+  // Family names go into the page's CSS; a folder name an operator dropped
+  // into STORAGE_PATH/fonts is only used when it is a plain name.
+  const byName = new Map(fonts.filter((f) => /^[A-Za-z0-9 ]{1,60}$/.test(f.family)).map((f) => [f.family.toLowerCase(), f]));
   const findFont = (name) => (name ? byName.get(name.toLowerCase()) || null : null);
   const body = findFont(docTheme.bodyFont) || findFont(firstFamily(themeConfig.fontFamily));
   const heading = findFont(docTheme.headingFont)

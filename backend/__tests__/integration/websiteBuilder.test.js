@@ -200,6 +200,28 @@ describe('public pages', () => {
     await setSetting('general_public_site_enabled', true);
   });
 
+  test('the booking block links the booking page only while booking is on with a bookable service', async () => {
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    const document = {
+      pages: [
+        { id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'bk', type: 'booking', heading: 'Book a session' }] },
+        { id: 'about', title: 'About', slug: 'about', blocks: [] },
+      ],
+    };
+    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document, revision: state.draft.revision }).expect(200);
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+    await setFeatureFlags(db, { calendarBooking: true });
+    cache.clearWebsiteCache();
+    // On, but nothing can be booked yet: the page would only say so.
+    expect((await service.resolvePublicPage('')).html).not.toContain('href="/book"');
+    await db('quote_line_item_presets').insert({ name: 'Portrait session', unit_price_minor: 45000, currency: 'CHF', bookable: true, is_active: true, created_at: new Date().toISOString() });
+    cache.clearWebsiteCache();
+    expect((await service.resolvePublicPage('')).html).toContain('href="/book"');
+    await setFeatureFlags(db, { calendarBooking: false });
+    cache.clearWebsiteCache();
+    expect((await service.resolvePublicPage('')).html).not.toContain('Book a session');
+  });
+
   test('sitemap lists the visible pages once indexing is on and the origin known', async () => {
     await setSetting('seo_allow_indexing', true, 'seo');
     await setSetting('general_site_url', 'https://studio.example');
