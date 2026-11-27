@@ -71,15 +71,16 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({ crop, effective, aspec
     se: { left: '100%', top: '100%' }, s: { left: '50%', top: '100%' }, sw: { left: 0, top: '100%' }, w: { left: 0, top: '50%' },
   };
   return (
-    <div ref={ref} className="absolute inset-0 select-none touch-none" data-testid="crop-overlay">
-      {/* Outside the rendered crop: dimmed. */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          left: pct(effective.x), top: pct(effective.y), width: pct(effective.w), height: pct(effective.h),
-          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.55)',
-        }}
-      />
+    <div ref={ref} className="absolute inset-0 z-10 select-none touch-none" data-testid="crop-overlay">
+      {/* Outside the rendered crop: dimmed, four bands around it. */}
+      {[
+        { left: 0, top: 0, width: '100%', height: pct(effective.y) },
+        { left: 0, top: pct(effective.y + effective.h), width: '100%', height: pct(1 - effective.y - effective.h) },
+        { left: 0, top: pct(effective.y), width: pct(effective.x), height: pct(effective.h) },
+        { left: pct(effective.x + effective.w), top: pct(effective.y), width: pct(1 - effective.x - effective.w), height: pct(effective.h) },
+      ].map((band, i) => (
+        <div key={i} className="absolute pointer-events-none" style={{ ...band, background: "rgba(0, 0, 0, 0.55)" }} />
+      ))}
       <div
         role="group"
         aria-label={t('photoEditor.crop.frame', 'Crop frame')}
