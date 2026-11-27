@@ -100,6 +100,53 @@ describe('GalleryPhotosPane', () => {
   });
 });
 
+describe('a pane that cannot load', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const failing = () => Promise.reject(new Error('Network down'));
+  // No automatic retries: the first failure is what the pane shows.
+  const wrap = (node: React.ReactNode) => render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{node}</QueryClientProvider>,
+  );
+
+  it('says the uploads could not load and retries, instead of "No uploads yet"', async () => {
+    vi.mocked(websiteService.listAssets).mockImplementationOnce(failing).mockResolvedValue({ assets: [], hasMore: false });
+    wrap(<UploadsPane kind="image" isSelected={() => false} onToggle={() => {}} />);
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText('No uploads yet')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('No uploads yet')).toBeInTheDocument();
+  });
+
+  it('says the galleries could not load and retries, instead of an empty list', async () => {
+    vi.mocked(websiteService.listGalleries).mockImplementationOnce(failing).mockResolvedValue({ galleries: [gallery(1, 'Open portraits')], hasMore: false });
+    wrap(<GalleriesPane onOpen={() => {}} />);
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText('No gallery is on the website yet.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('button', { name: 'Open portraits' })).toBeInTheDocument();
+  });
+
+  it('says a gallery\'s photos could not load and retries', async () => {
+    vi.mocked(websiteService.listGalleryPhotos).mockImplementationOnce(failing).mockResolvedValue({ photos: [], hasMore: false });
+    wrap(<GalleryPhotosPane gallery={gallery(1, 'Open portraits')} onBack={() => {}} isSelected={() => false} onToggle={() => {}} />);
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
+
+  it('keeps a loaded list when loading more fails, with a notice to retry', async () => {
+    vi.mocked(websiteService.listGalleries).mockImplementation(async ({ page = 1 } = {}) => {
+      if (page === 1) return { galleries: [gallery(1, 'Newest')], hasMore: true };
+      throw new Error('Network down');
+    });
+    wrap(<GalleriesPane onOpen={() => {}} />);
+    expect(await screen.findByRole('button', { name: 'Newest' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+    expect(await screen.findByText(/Could not refresh this list/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Newest' })).toBeInTheDocument();
+  });
+});
+
 describe('UploadsPane', () => {
   it('loads more uploads and searches by file name', async () => {
     const asset = (id: string, name: string) => ({ id, kind: 'image' as const, width: 1, height: 1, originalFilename: name, sizeBytes: 1, createdAt: '', previewUrl: `/m/${id}`, videoUrl: null });

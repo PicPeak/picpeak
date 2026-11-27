@@ -13247,7 +13247,8 @@
       "searchUploads": "Nach Dateiname suchen",
       "searchGalleries": "Galerien nach Namen suchen",
       "noMatch": "Keine Galerie auf der Website passt dazu.",
-      "watermarkNote": "Fotos aus dieser Galerie erscheinen mit ihrem Wasserzeichen; laden Sie Bilder direkt hoch, um ein Portfolio ohne Wasserzeichen zu zeigen."
+      "watermarkNote": "Fotos aus dieser Galerie erscheinen mit ihrem Wasserzeichen; laden Sie Bilder direkt hoch, um ein Portfolio ohne Wasserzeichen zu zeigen.",
+      "refreshFailed": "Diese Liste konnte nicht neu geladen werden. Was Sie sehen, ist vielleicht nicht aktuell."
     },
     "preview": {
       "title": "Vorschau der Seite",

@@ -13282,7 +13282,8 @@
       "searchUploads": "Search by file name",
       "searchGalleries": "Search galleries by name",
       "noMatch": "No gallery on the website matches.",
-      "watermarkNote": "Photos from this gallery appear with its watermark; upload images directly for a clean portfolio."
+      "watermarkNote": "Photos from this gallery appear with its watermark; upload images directly for a clean portfolio.",
+      "refreshFailed": "Could not refresh this list. What you see may be out of date."
     },
     "preview": {
       "title": "Preview of the page",

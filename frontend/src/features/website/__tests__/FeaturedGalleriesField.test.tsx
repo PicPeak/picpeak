@@ -90,5 +90,18 @@ describe('chosen entries that are gone', () => {
     fireEvent.click(screen.getByLabelText(/Full day/));
     expect(onChange.mock.calls[0][0].packageIds).toEqual([]);
   });
-});
 
+  it('says the galleries could not load instead of "none on the website", and retries', async () => {
+    vi.mocked(websiteService.listGalleries).mockReset();
+    vi.mocked(websiteService.listGalleries)
+      .mockRejectedValueOnce(new Error('Network down'))
+      .mockResolvedValue({ galleries: [g(1, 'First page')], hasMore: false });
+    const block: FeaturedGalleriesBlock = { id: 'f', type: 'featuredGalleries', variant: 'cards', background: 'default', heading: '', intro: '', galleries: [] };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><BlockEditor block={block} onChange={vi.fn()} /></QueryClientProvider>);
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText(/No gallery is on the website yet/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByLabelText('First page')).toBeInTheDocument();
+  });
+});

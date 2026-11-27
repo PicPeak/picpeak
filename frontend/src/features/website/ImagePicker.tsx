@@ -20,6 +20,7 @@ import { apiErrorText } from '../../utils/apiErrorText';
 import { buildResourceUrl } from '../../utils/url';
 import type { ImageRef, WebsiteAsset, WebsiteGallery } from './types';
 import { SearchField, useDebounced } from './search';
+import { loadFailure } from './loadFailure';
 
 type Source = 'uploads' | 'galleries';
 
@@ -140,6 +141,7 @@ export const UploadsPane: React.FC<{ kind: 'image' | 'video'; isSelected: (ref: 
   });
 
   const list = (assets.data?.pages || []).flatMap((p) => p.assets);
+  const failure = loadFailure(assets, t);
   const askRemove = async (asset: WebsiteAsset) => {
     const ok = await confirm({
       title: t('website.picker.deleteTitle', 'Delete this upload?'),
@@ -177,7 +179,8 @@ export const UploadsPane: React.FC<{ kind: 'image' | 'video'; isSelected: (ref: 
         </div>
       )}
       <SearchField value={search} onChange={setSearch} label={t('website.picker.searchUploads', 'Search by file name')} />
-      {assets.isLoading ? (
+      {failure.notice}
+      {failure.blocking || (assets.isLoading ? (
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
           {Array.from({ length: 10 }, (_, i) => <div key={i} className="aspect-square rounded-lg bg-fill animate-pulse" />)}
         </div>
@@ -215,7 +218,7 @@ export const UploadsPane: React.FC<{ kind: 'image' | 'video'; isSelected: (ref: 
             );
           })}
         </ul>
-      )}
+      ))}
       {assets.hasNextPage && (
         <div className="flex justify-center">
           <Button variant="secondary" isLoading={assets.isFetchingNextPage} onClick={() => assets.fetchNextPage()}>{t('website.picker.more', 'Show more')}</Button>
@@ -259,6 +262,7 @@ export const GalleriesPane: React.FC<{ onOpen: (gallery: WebsiteGallery) => void
     },
     onError: (err) => toast.error(apiErrorText(err)),
   });
+  const failure = loadFailure(galleries, t);
   const [onSite, others] = useMemo(() => {
     const list = (galleries.data?.pages || []).flatMap((p) => p.galleries);
     return [list.filter((g) => g.showOnWebsite), list.filter((g) => !g.showOnWebsite)];
@@ -303,7 +307,8 @@ export const GalleriesPane: React.FC<{ onOpen: (gallery: WebsiteGallery) => void
       <Notice tone="info" size="sm">
         {t('website.picker.galleriesNotice', 'Only galleries you put on the website can be used, and only while they are live. Putting a gallery on the website makes the photos you pick public, even when the gallery has a password; its other photos stay private. Turn a gallery off here and its photos leave the website at once.')}
       </Notice>
-      {galleries.isLoading ? <div className="h-40 rounded-lg bg-fill animate-pulse" /> : (
+      {failure.notice}
+      {failure.blocking || (galleries.isLoading ? <div className="h-40 rounded-lg bg-fill animate-pulse" /> : (
         <>
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted mb-1">{t('website.picker.onWebsite', 'On the website')}</h3>
@@ -324,7 +329,7 @@ export const GalleriesPane: React.FC<{ onOpen: (gallery: WebsiteGallery) => void
             </div>
           )}
         </>
-      )}
+      ))}
     </div>
   );
 };
@@ -343,6 +348,7 @@ export const GalleryPhotosPane: React.FC<{
     getNextPageParam: (last, all) => (last.hasMore ? all.length + 1 : undefined),
   });
   const list = (photos.data?.pages || []).flatMap((p) => p.photos);
+  const failure = loadFailure(photos, t);
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -350,7 +356,8 @@ export const GalleryPhotosPane: React.FC<{
         <span className="text-sm font-medium text-heading truncate">{gallery.name}</span>
       </div>
       <p className="text-xs text-muted">{t('website.picker.watermarkNote', 'Photos from this gallery appear with its watermark; upload images directly for a clean portfolio.')}</p>
-      {photos.isLoading ? (
+      {failure.notice}
+      {failure.blocking || (photos.isLoading ? (
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
           {Array.from({ length: 10 }, (_, i) => <div key={i} className="aspect-square rounded-lg bg-fill animate-pulse" />)}
         </div>
@@ -368,7 +375,7 @@ export const GalleryPhotosPane: React.FC<{
             );
           })}
         </ul>
-      )}
+      ))}
       {photos.hasNextPage && (
         <div className="flex justify-center">
           <Button variant="secondary" isLoading={photos.isFetchingNextPage} onClick={() => photos.fetchNextPage()}>{t('website.picker.more', 'Show more')}</Button>

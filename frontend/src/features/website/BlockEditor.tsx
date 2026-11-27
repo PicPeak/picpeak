@@ -13,6 +13,7 @@ import {
   ChoiceField, ImageField, ImageListField, LinkField, TextArea, TextField, VideoField, useBackgroundOptions,
 } from './fields';
 import { SearchField, useDebounced } from './search';
+import { loadFailure } from './loadFailure';
 import type { Block, Testimonial, WebsiteGallery } from './types';
 
 interface BlockEditorProps {
@@ -225,6 +226,8 @@ const FeaturedGalleriesField: React.FC<{
     getNextPageParam: (last, all) => (last.hasMore ? all.length + 1 : undefined),
     placeholderData: keepPreviousData,
   });
+  const availableFailure = loadFailure(available, t);
+  const chosenFailure = loadFailure(chosenQuery, t);
   const chosenRows = chosenQuery.data?.galleries || [];
   const rows = (available.data?.pages || []).flatMap((p) => p.galleries).filter((g) => g.eligible && !chosenIds.includes(g.id));
   const missing = chosenIds.length && chosenQuery.data ? value.filter((g) => !chosenRows.some((r) => r.id === g.id && r.eligible)) : [];
@@ -244,6 +247,7 @@ const FeaturedGalleriesField: React.FC<{
   return (
     <fieldset className="space-y-2">
       <legend className="block text-sm font-medium text-body mb-1.5">{t('website.fields.galleries', 'Galleries')}</legend>
+      {chosenFailure.blocking || chosenFailure.notice}
       {(chosenRows.length > 0 || unavailable.length > 0) && (
         <ul className="space-y-1">
           {chosenRows.map((g) => row(g, true))}
@@ -255,7 +259,8 @@ const FeaturedGalleriesField: React.FC<{
         </ul>
       )}
       <SearchField value={search} onChange={setSearch} label={t('website.picker.searchGalleries', 'Search galleries by name')} />
-      {rows.length === 0 && !available.isLoading && (
+      {availableFailure.blocking || availableFailure.notice}
+      {rows.length === 0 && !available.isLoading && !availableFailure.blocking && (
         <p className="text-sm text-muted">{q
           ? t('website.picker.noMatch', 'No gallery on the website matches.')
           : t('website.fields.noGalleries', 'No gallery is on the website yet. Put one on the website from the image picker’s Galleries tab.')}</p>
