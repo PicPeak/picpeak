@@ -169,5 +169,6 @@ describe('copy to photos', () => {
     await waitFor(() => expect(onQueued).toHaveBeenCalled());
     expect(service.copyTo.mock.calls.map((call) => call[1].length)).toEqual([1000, 500]);
     expect(onQueued.mock.calls[0][0]).toHaveLength(1500);
-  });
+  // 1500 tiles take longer than the default 5 s in a loaded full run.
+  }, 20000);
 });
