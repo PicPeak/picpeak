@@ -816,9 +816,9 @@ async function loadTransferPhotos(transferId) {
  * Returns the number of files successfully appended.
  */
 async function streamTransferArchive(transfer, res) {
-  // Edited photos (issue 2619) go out as their edited render.
-  const photos = [];
-  for (const row of await loadTransferPhotos(transfer.id)) photos.push(await photoEdits.deliveredPhoto(row, { unavailableOnFailure: true }));
+  // Edited photos (issue 2619) go out as their edited render, drawn with
+  // their entry below so a missing one never holds back the first bytes.
+  const photos = await loadTransferPhotos(transfer.id);
 
   // Left while the rows were being read: 'close' has fired already and will
   // not fire again for the listener below (issue 2130).
@@ -859,13 +859,15 @@ async function streamTransferArchive(transfer, res) {
 
   const storage = getStorage();
   const useOriginal = await getUseOriginalFilenames();
-  const entryNames = getZipEntryNames(photos, useOriginal);
+  const entryNames = getZipEntryNames(photos.map(photoEdits.namedAsDelivered), useOriginal);
   const multiEvent = new Set(photos.map((p) => p.event_id)).size > 1;
 
   let appended = 0;
   for (let i = 0; i < photos.length; i += 1) {
     if (stopped) break;
-    const photo = photos[i];
+    // One that cannot be rendered is skipped below, never shipped as its original.
+    const photo = await photoEdits.deliveredPhoto(photos[i], { unavailableOnFailure: true });
+    if (stopped) break;
     const event = {
       id: photo.event_id,
       slug: photo.event_slug,

@@ -309,16 +309,15 @@ class DownloadZipService {
       // PIN-clients bypass this cache and stream a full archive instead.
       // Photos still processing (or failed) are not in the gallery list either.
       // The selection only (issue 2356), as an ordinary guest sees it.
-      // Edited photos (issue 2619) as their edited render; saving an edit
-      // invalidates this archive (photoEdits.applyPhoto).
-      const photos = [];
-      for (const row of await applyPhotoVisibilityFilter(wherePhotoProcessed(livePhotos(db))
+      // Edited photos (issue 2619) go in as their edited render, drawn with
+      // their entry below; saving an edit invalidates this archive
+      // (photoEdits.applyPhoto).
+      const photoEdits = require('./photoEdits');
+      const photos = await applyPhotoVisibilityFilter(wherePhotoProcessed(livePhotos(db))
         .where({ event_id: eventId }), 'guest')
         .select('*')
         .orderBy('type', 'asc')
-        .orderBy('uploaded_at', 'desc')) {
-        photos.push(await require('./photoEdits').deliveredPhoto(row, { unavailableOnFailure: true }));
-      }
+        .orderBy('uploaded_at', 'desc');
 
       if (photos.length === 0) return { success: false, error: 'No photos' };
 
@@ -340,7 +339,7 @@ class DownloadZipService {
       // #493: resolve display filenames (with collision suffix) before the
       // streaming starts so the loop just indexes the precomputed array.
       const useOriginal = await getUseOriginalFilenames();
-      const entryNames = getZipEntryNames(photos, useOriginal);
+      const entryNames = getZipEntryNames(photos.map(photoEdits.namedAsDelivered), useOriginal);
       // A converted entry takes the new format's extension, which can give it
       // the name of another entry: uniquify the final names as they ship.
       const finalNames = new Map();
@@ -385,12 +384,14 @@ class DownloadZipService {
 
         const addPhotos = async () => {
           for (let i = 0; i < photos.length; i += 1) {
-            const photo = photos[i];
             // Check if build was invalidated
             if (cancelled) return;
             if (this.versions.get(eventId) !== version) {
               return failBuild(new Error('Build invalidated'));
             }
+            // An edited photo as its render, drawn here when missing; one that
+            // cannot be rendered is skipped below, never shipped as its original.
+            const photo = await photoEdits.deliveredPhoto(photos[i], { unavailableOnFailure: true });
 
             const entryName = entryNames[i];
             const archiveName = zipEntryPath(photo, entryName, hasMultipleTypes);

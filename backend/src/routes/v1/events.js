@@ -1750,14 +1750,11 @@ router.get(
       });
 
       // Edited photos go out as their edit (issue 2619), like a gallery
-      // download. The preflight above counted their originals' sizes; the
-      // edited file is sized below with the unsized rows instead.
-      const photos = [];
-      for (const row of await selection().applySorting('filename', 'asc').getQuery().select('photos.*')) {
-        const delivered = await photoEdits.deliveredPhoto(row, { unavailableOnFailure: true });
-        if (deliveredKey(delivered) && Number(row.size_bytes) > 0) totalBytes -= Number(row.size_bytes);
-        photos.push(delivered);
-      }
+      // download, rendered with their entry below so a missing render never
+      // holds back the first bytes. The preflight above counted their
+      // originals' sizes, which stand in for the edited files here; the bytes
+      // actually streamed are capped as they go out.
+      const photos = await selection().applySorting('filename', 'asc').getQuery().select('photos.*');
       if (!photos.length) {
         return res.status(404).json({ error: 'No photos found', code: 'NO_PHOTOS' });
       }
@@ -1783,7 +1780,7 @@ router.get(
       // The manifest is named last, so a photo uploaded as MISSING_FILES.txt
       // keeps its name and the manifest becomes MISSING_FILES_1.txt.
       const entryNames = zipEntryNames([
-        ...photos.map((p) => pickRawDownloadName(p, true)),
+        ...photos.map((p) => pickRawDownloadName(photoEdits.namedAsDelivered(p), true)),
         MISSING_MANIFEST_NAME
       ]);
       const manifestName = entryNames.pop();
@@ -1843,6 +1840,9 @@ router.get(
       for (let i = 0; i < photos.length; i += 1) {
         if (!await pacer.room()) break;
         if (!await guard.acquire()) break;
+        // An edited photo as its render, drawn here when missing; one that
+        // cannot be rendered is listed as missing, never sent as its original.
+        const photo = await photoEdits.deliveredPhoto(photos[i], { unavailableOnFailure: true });
         // Rendered entries are buffers, appended whole — the same shape the
         // gallery's own cached zip builder uses. Only the stored-bytes path
         // needs a tracked stream. A render that fails on a photo is treated
@@ -1850,12 +1850,12 @@ router.get(
         let rendered = null;
         if (box) {
           try {
-            rendered = await renderPhotoAtBox(event, photos[i], box);
+            rendered = await renderPhotoAtBox(event, photo, box);
           } catch (err) {
             logger.warn('v1 zip rendition failed, skipping photo', {
-              eventId: event.id, photoId: photos[i].id, error: errorClass(err)
+              eventId: event.id, photoId: photo.id, error: errorClass(err)
             });
-            missingIds.push(photos[i].id);
+            missingIds.push(photo.id);
             continue;
           }
         }
@@ -1868,9 +1868,9 @@ router.get(
           continue;
         }
 
-        const source = await openOriginal(event, photos[i], { needSize: false });
+        const source = await openOriginal(event, photo, { needSize: false });
         if (!source) {
-          missingIds.push(photos[i].id);
+          missingIds.push(photo.id);
           continue;
         }
         pacer.append(guard.track(source.stream), { name: entryNames[i] });
