@@ -3,6 +3,9 @@ import type {
   EditorState, ImageRef, WebsiteAsset, WebsiteDocument, WebsiteGallery, WebsitePackage, WebsitePhoto,
 } from '../features/website/types';
 
+// The most references POST /admin/website/media/resolve takes at once.
+const RESOLVE_BATCH = 500;
+
 /** Website builder admin API (issue 2618), /api/admin/website. */
 export const websiteService = {
   async getState(): Promise<EditorState> {
@@ -21,11 +24,19 @@ export const websiteService = {
     const r = await api.post<{ html: string }>('/admin/website/preview', { document, pageId });
     return r.data.html;
   },
+  /** Thumbnail URLs by mediaKey: each image once, in batches the server accepts. */
   async resolveMedia(refs: ImageRef[]): Promise<Record<string, string | null>> {
-    const r = await api.post<{ urls: Record<string, string | null> }>('/admin/website/media/resolve', {
-      refs: refs.map(({ source, id }) => ({ source, id })),
-    });
-    return r.data.urls;
+    const unique = [...new Map(refs.map(({ source, id }) => [mediaKey({ source, id }), { source, id }])).values()];
+    const urls: Record<string, string | null> = {};
+    for (let i = 0; i < unique.length; i += RESOLVE_BATCH) {
+      // One batch at a time: the endpoint does a lookup per batch, and an
+      // editor rarely has more than one.
+      const r = await api.post<{ urls: Record<string, string | null> }>('/admin/website/media/resolve', {
+        refs: unique.slice(i, i + RESOLVE_BATCH),
+      });
+      Object.assign(urls, r.data.urls);
+    }
+    return urls;
   },
   async listGalleries(): Promise<WebsiteGallery[]> {
     const r = await api.get<{ galleries: WebsiteGallery[] }>('/admin/website/galleries');
