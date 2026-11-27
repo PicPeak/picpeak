@@ -147,4 +147,21 @@ describe('useWebsiteEditor', () => {
     expect(websiteService.saveDraft).toHaveBeenLastCalledWith(expect.objectContaining({ pages: [expect.objectContaining({ title: 'First and more' })] }), 2);
     expect(result.current.isDirty).toBe(false);
   });
+
+  it('forgets the undo history when it takes over a colleague\'s draft', async () => {
+    const { result } = setup();
+    await waitFor(() => expect(result.current.draft).not.toBeNull());
+    act(() => result.current.update(rename('Mine')));
+    act(() => result.current.update(rename('Home')));
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.isDirty).toBe(false);
+    // Clean, so a refetch with a colleague's draft is taken over.
+    act(() => { client.setQueryData(['website-editor'], state('Theirs', 2)); });
+    await waitFor(() => expect(result.current.draft?.pages[0].title).toBe('Theirs'));
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(false);
+    act(() => result.current.undo());
+    expect(result.current.draft?.pages[0].title).toBe('Theirs');
+  });
 });
+

@@ -75,6 +75,10 @@ export function useWebsiteEditor() {
     if (!current || same(draftRef.current, current.document)) {
       replaceBase({ document: server.document, revision: server.draft.revision });
       replaceDraft(server.document);
+      // The history describes documents from before this one: undoing into
+      // them and saving would overwrite whoever wrote this draft.
+      setHistory({ past: [], future: [] });
+      lastEdit.current = null;
     }
   }, [server, replaceBase, replaceDraft]);
 
