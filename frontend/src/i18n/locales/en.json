@@ -13239,7 +13239,8 @@
       "seoDescription": "Description",
       "seoDescriptionHint": "{{count}}/300 — one or two sentences about this page.",
       "seoImage": "Image when shared (optional)",
-      "delete": "Delete page"
+      "delete": "Delete page",
+      "slugHintHome": "The home page is at the site root; yoursite.com/{{slug}} leads there too."
     },
     "picker": {
       "addSelected": "Add {{count}} images",

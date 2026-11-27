@@ -142,7 +142,8 @@ export const WebsiteBuilderPage: React.FC = () => {
     setBlockId(null);
   };
 
-  const localProblem = draft.pages.some((p) => !p.isHome && slugProblem(draft, p));
+  // Every page's address, the home page's too: the server checks them all.
+  const localProblem = draft.pages.some((p) => slugProblem(draft, p));
   // One write at a time: a save and a publish both act on the draft's revision.
   const busy = editor.save.isPending || editor.publish.isPending;
 

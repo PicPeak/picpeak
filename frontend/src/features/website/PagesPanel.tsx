@@ -111,16 +111,18 @@ export const PagesPanel: React.FC<PagesPanelProps> = ({ doc, pageId, onSelectPag
           <h3 className="text-sm font-semibold text-heading">{t('website.pages.settingsOf', 'Settings of “{{name}}”', { name: page.title })}</h3>
           <TextField label={t('website.pages.pageTitle', 'Title')} value={page.title} maxLength={120} onChange={(title) => patchPage({ title }, 'title')} />
           <TextField label={t('website.pages.navLabel', 'Menu label (optional)')} value={page.navLabel} maxLength={60} onChange={(navLabel) => patchPage({ navLabel }, 'navLabel')} />
-          {!page.isHome && (
-            <TextField
-              label={t('website.pages.slug', 'Address')}
-              value={page.slug}
-              maxLength={60}
-              onChange={(slug) => patchPage({ slug: slugWhileTyping(slug) }, 'slug')}
-              error={slugError}
-              helperText={slugError ? undefined : t('website.pages.slugHint', 'Shown as yoursite.com/{{slug}}', { slug: page.slug })}
-            />
-          )}
+          {/* The home page keeps its address too: the server checks it, and
+              /<address> leads to /, so a faulty one must stay fixable here. */}
+          <TextField
+            label={t('website.pages.slug', 'Address')}
+            value={page.slug}
+            maxLength={60}
+            onChange={(slug) => patchPage({ slug: slugWhileTyping(slug) }, 'slug')}
+            error={slugError}
+            helperText={slugError ? undefined : page.isHome
+              ? t('website.pages.slugHintHome', 'The home page is at the site root; yoursite.com/{{slug}} leads there too.', { slug: page.slug })
+              : t('website.pages.slugHint', 'Shown as yoursite.com/{{slug}}', { slug: page.slug })}
+          />
           <Switch checked={page.inNav} onChange={(inNav) => patchPage({ inNav })} label={t('website.pages.inNav', 'Show in the menu')} />
           {!page.isHome && (
             <Switch checked={!page.hidden} onChange={(visible) => patchPage({ hidden: !visible })}

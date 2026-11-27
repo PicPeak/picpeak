@@ -241,5 +241,20 @@ describe('WebsiteBuilderPage', () => {
     const frame = await screen.findByTitle('Preview of the page');
     await waitFor(() => expect(frame.getAttribute('srcdoc')).toContain('<base href="https://api.example.com/">'));
   });
+
+  it('keeps a home page\'s faulty address visible so it can be fixed', async () => {
+    renderPage();
+    await screen.findByText('Blocks on “Home”');
+    fireEvent.click(screen.getByRole('tab', { name: /Pages/ }));
+    fireEvent.click(screen.getByText('/about'));
+    fireEvent.change(screen.getByLabelText('Address'), { target: { value: 'book' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Make this the home page' }));
+    expect(screen.getByLabelText('Address')).toHaveValue('book');
+    expect(screen.getByText('This address is used by PicPeak itself. Choose another.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Address'), { target: { value: 'start' } });
+    expect(screen.queryByText('This address is used by PicPeak itself. Choose another.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Publish' })).not.toBeDisabled();
+  });
 });
 

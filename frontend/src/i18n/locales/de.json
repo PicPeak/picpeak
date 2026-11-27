@@ -13204,7 +13204,8 @@
       "seoDescription": "Beschreibung",
       "seoDescriptionHint": "{{count}}/300 – ein oder zwei Sätze über diese Seite.",
       "seoImage": "Bild beim Teilen (optional)",
-      "delete": "Seite löschen"
+      "delete": "Seite löschen",
+      "slugHintHome": "Die Startseite liegt unter der Hauptadresse; ihreseite.ch/{{slug}} führt ebenfalls dorthin."
     },
     "picker": {
       "addSelected": "{{count}} Bilder hinzufügen",
