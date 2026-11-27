@@ -13,13 +13,19 @@ interface PhotoFeedbackProps {
   // The lightbox bar has the rating, like and favourite buttons (issue
   // 1733); the panel holds reactions and comments.
   onFeedbackUpdate?: (toggledPhotoId?: number) => void;
+  /**
+   * The edit revision of the picture shown (issue 2619): comments are read
+   * again when it changes, their drawings placed on the new picture.
+   */
+  editRevision?: number;
 }
 
 export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
   photoId,
   gallerySlug,
   className = '',
-  onFeedbackUpdate
+  onFeedbackUpdate,
+  editRevision = 0,
 }) => {
   // Fetch feedback settings for the gallery
   const { data: settings, isLoading: settingsLoading } = useGalleryFeedbackSettings(gallerySlug, {
@@ -28,7 +34,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
 
   // Fetch feedback data for the photo
   const { data: feedbackData } = useQuery({
-    queryKey: ['photo-feedback', gallerySlug, photoId],
+    queryKey: ['photo-feedback', gallerySlug, photoId, editRevision],
     queryFn: () => feedbackService.getPhotoFeedback(gallerySlug, photoId),
     enabled: !!settings?.feedback_enabled,
   });

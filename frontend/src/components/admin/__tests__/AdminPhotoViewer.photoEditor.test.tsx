@@ -87,6 +87,22 @@ describe('AdminPhotoViewer photo editor entry', () => {
     expect(screen.queryByRole('button', { name: 'Edit photo' })).toBeNull();
   });
 
+  it('reads the photo\'s comments again when an edit is applied: their drawings are placed on the new picture', async () => {
+    const { feedbackService } = await import('../../../services/feedback.service');
+    const get = vi.mocked(feedbackService.getEventFeedback);
+    get.mockClear();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = (photo: AdminPhoto) => (
+      <QueryClientProvider client={client}>
+        <AdminPhotoViewer photos={[photo]} initialIndex={0} eventId={42} onClose={vi.fn()} onPhotoDeleted={vi.fn()} categories={[]} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view({ ...image, edit_applied_rev: 1 } as AdminPhoto));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    rerender(view({ ...image, edit_applied_rev: 2 } as AdminPhoto));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  });
+
   it('downloads an edited photo as the original or as the edit', async () => {
     const user = userEvent.setup();
     renderViewer({ ...image, edited: true } as AdminPhoto);

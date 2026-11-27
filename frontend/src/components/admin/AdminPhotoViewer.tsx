@@ -128,7 +128,9 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
 
   // Fetch feedback for current photo
   const { data: feedbackData } = useQuery<AdminFeedbackResponse>({
-    queryKey: ['admin-photo-feedback', eventId, currentPhoto?.id],
+    // With the applied edit revision (issue 2619): the drawings are read
+    // again, placed on the new picture, when an edit lands.
+    queryKey: ['admin-photo-feedback', eventId, currentPhoto?.id, currentPhoto?.edit_applied_rev ?? 0],
     queryFn: () => feedbackService.getEventFeedback(eventId.toString(), {
       photoId: currentPhoto?.id.toString(),
       status: 'all' // Get all comments including unapproved

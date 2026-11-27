@@ -242,6 +242,20 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     await waitFor(() => expect(screen.queryByTestId('annotation-overlay')).toBeNull());
   });
 
+  it('reads the comments again when the photo\'s edit revision changes (issue 2619)', async () => {
+    open();
+    await waitFor(() => expect(queryClient.getQueryState(['photo-feedback', 'g', '1', 3])?.status).toBe('success'));
+    // The gallery list was refetched after an edit was applied: the URLs name revision 4.
+    const edited = photos.map((p) => (p.id === 1 ? { ...p, url: '/api/gallery/g/photo/1?e=4' } : p)) as Photo[];
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PhotoLightbox photos={edited} initialIndex={0} onClose={onClose} slug="g" feedbackEnabled initialShowFeedback />
+      </QueryClientProvider>,
+    );
+    // Read again under the new revision, not served from the old one's cache.
+    await waitFor(() => expect(queryClient.getQueryState(['photo-feedback', 'g', '1', 4])?.status).toBe('success'));
+  });
+
   it('shows a stored drawing on the photo from the comment list, and only a valid one', async () => {
     vi.mocked(feedbackService.getPhotoFeedback).mockResolvedValue({
       feedback: [

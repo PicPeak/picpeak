@@ -1946,6 +1946,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             <CommentAnnotationContext.Provider value={annotation.context}>
               <PhotoFeedback
                 photoId={String(feedbackPhotoIdRef.current ?? currentPhoto.id)}
+                editRevision={guestEditRevision(photos.find((p) => p.id === (feedbackPhotoIdRef.current ?? currentPhoto.id)) ?? currentPhoto)}
                 gallerySlug={slug}
                 className="space-y-4"
                 // Only when someone above refreshes the row; otherwise the
