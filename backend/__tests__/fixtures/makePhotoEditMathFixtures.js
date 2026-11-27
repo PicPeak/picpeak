@@ -55,6 +55,14 @@ const out = {
   autoTone: stats.map((s) => ({ stats: s, out: m.autoTone(s), raw: m.autoTone(s, { linear: true }) })),
   toneStats: { in: [0.001, 0.01, 0.05, 0.18, 0.18, 0.4, 0.9, 1], out: m.toneStats([0.001, 0.01, 0.05, 0.18, 0.18, 0.4, 0.9, 1]) },
   boxes: [1, 2.5, 23].map((s) => ({ sigma: s, out: m.boxesForGauss(s) })),
+  blur: (() => {
+    const width = 17;
+    const height = 9;
+    const values = Array.from({ length: width * height }, (_, i) => ((i * 7919) % 4001) - 2000);
+    const plane = Int16Array.from(values);
+    m.blurPlane(plane, new Int16Array(plane.length), width, height, 2.5);
+    return { width, height, sigma: 2.5, in: values, out: Array.from(plane) };
+  })(),
   sigmas: { in: [1365, 0.5], out: m.detailSigmas(1365, 0.5) },
 };
 fs.writeFileSync(path.join(__dirname, 'photoEditMath.fixtures.json'), `${JSON.stringify(out, null, 1)}\n`);

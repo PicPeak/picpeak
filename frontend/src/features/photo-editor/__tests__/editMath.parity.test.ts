@@ -50,6 +50,16 @@ describe('editMath matches the server fixtures', () => {
     deepClose(math.detailSigmas(fixtures.sigmas.in[0], fixtures.sigmas.in[1]), fixtures.sigmas.out);
   });
 
+  it('blurs like the server, and keeps a constant plane constant', () => {
+    const { width, height, sigma } = fixtures.blur;
+    const plane = Int16Array.from(fixtures.blur.in);
+    math.blurPlane(plane, new Int16Array(plane.length), width, height, sigma);
+    expect(Array.from(plane)).toEqual(fixtures.blur.out);
+    const flat = new Int16Array(40 * 3).fill(-2048);
+    math.blurPlane(flat, new Int16Array(flat.length), 40, 3, 1);
+    expect(Array.from(flat).every((v) => v === -2048)).toBe(true);
+  });
+
   it('the shader map is the inverse map as a matrix', () => {
     const params = fixtures.cases.find((c: { name: string }) => c.name === 'mixed').params as math.EditParams;
     const out = math.outputSize(params, 600, 400);

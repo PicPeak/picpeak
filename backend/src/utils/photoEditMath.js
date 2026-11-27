@@ -665,18 +665,16 @@ function boxPass(src, dst, width, height, radius, horizontal) {
   const length = horizontal ? width : height;
   const step = horizontal ? 1 : width;
   const span = 2 * radius + 1;
+  const last = length - 1;
   for (let line = 0; line < lines; line++) {
     const base = horizontal ? line * width : line;
-    const first = src[base];
-    const last = src[base + (length - 1) * step];
-    let sum = (radius + 1) * first;
-    for (let i = 0; i < radius; i++) sum += src[base + Math.min(i, length - 1) * step];
+    // The window of the first sample, edges repeated: indices -r..r clamped.
+    let sum = 0;
+    for (let j = -radius; j <= radius; j++) sum += src[base + Math.min(last, Math.max(0, j)) * step];
     for (let i = 0; i < length; i++) {
-      const addIndex = i + radius;
-      sum += addIndex < length ? src[base + addIndex * step] : last;
       dst[base + i * step] = Math.round(sum / span);
-      const removeIndex = i - radius;
-      sum -= removeIndex >= 0 ? src[base + removeIndex * step] : first;
+      // Slide: in comes i + r + 1, out goes i - r (both clamped).
+      sum += src[base + Math.min(last, i + radius + 1) * step] - src[base + Math.max(0, i - radius) * step];
     }
   }
 }

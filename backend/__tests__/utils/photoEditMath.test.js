@@ -143,6 +143,41 @@ describe('server pixel pass vs the formulas', () => {
   );
 });
 
+describe('blur planes', () => {
+  const blur = (values, width, height, sigma) => {
+    const plane = Int16Array.from(values);
+    math.blurPlane(plane, new Int16Array(plane.length), width, height, sigma);
+    return Array.from(plane);
+  };
+
+  it('keeps a constant plane constant, negative values included', () => {
+    for (const value of [-2048, 0, 1234]) {
+      for (const sigma of [0.8, 1, 2.5, 23]) {
+        expect(blur(new Array(40 * 3).fill(value), 40, 3, sigma)).toEqual(new Array(40 * 3).fill(value));
+      }
+    }
+  });
+
+  it('changes nothing with boxes of radius 0', () => {
+    expect(math.boxesForGauss(0.5)).toEqual([1, 1, 1]);
+    const values = [5, -3, 100, 7, 0, -40];
+    expect(blur(values, 6, 1, 0.5)).toEqual(values);
+  });
+
+  it('clamps at the edges: the window repeats the edge sample', () => {
+    // sigma 0.8 is two boxes of radius 0 and one of radius 1: on one row,
+    // each sample averages its neighbours, the first (v0, v0, v1), the last
+    // (v4, v5, v5).
+    expect(math.boxesForGauss(0.8)).toEqual([1, 1, 3]);
+    expect(blur([0, 30, 60, 90, 120, 150], 6, 1, 0.8)).toEqual([10, 30, 60, 90, 120, 140]);
+    expect(blur([0, 30, 60, 90, 120, 150], 1, 6, 0.8)).toEqual([10, 30, 60, 90, 120, 140]);
+  });
+
+  it('matches the shared fixture', () => {
+    expect(blur(fixtures.blur.in, fixtures.blur.width, fixtures.blur.height, fixtures.blur.sigma)).toEqual(fixtures.blur.out);
+  });
+});
+
 describe('geometry', () => {
   it('keeps every corner of the effective crop on the straightened image', () => {
     for (const straighten of [-45, -12.5, -1, 1, 7, 30, 45]) {
