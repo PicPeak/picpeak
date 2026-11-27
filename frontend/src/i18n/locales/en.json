@@ -13430,6 +13430,7 @@
     },
     "conflictReload": "Load the latest version",
     "conflict": "Someone else saved the website since you opened it, so your changes were not saved. Load the latest version to continue from theirs; your unsaved changes here are then dropped.",
-    "importRefused": "Your landing page is too long for a custom HTML block ({{length}} of {{max}} characters), so it was not copied into the builder; nothing of it was cut. It stays live at the site root until you publish here. To keep it, shorten it and paste it into a custom HTML block."
+    "importRefused": "Your landing page is too long for a custom HTML block ({{length}} of {{max}} characters), so it was not copied into the builder; nothing of it was cut. It stays live at the site root until you publish here. To keep it, shorten it and paste it into a custom HTML block.",
+    "refreshFailed": "Could not refresh the website. Your changes here are kept."
   }
 }

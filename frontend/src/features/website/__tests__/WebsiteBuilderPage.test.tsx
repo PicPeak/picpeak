@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { EditorState } from '../types';
@@ -84,8 +84,10 @@ const STATE: EditorState = {
   publicSiteEnabled: true,
 };
 
+let queryClient: QueryClient;
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient = client;
   return render(
     <MemoryRouter>
       <QueryClientProvider client={client}>
@@ -260,6 +262,28 @@ describe('WebsiteBuilderPage', () => {
   it('asks for the hero video\'s poster when the media live on another origin', async () => {
     renderPage();
     await waitFor(() => expect(websiteService.preview).toHaveBeenCalledWith(expect.anything(), 'home', { videoAsPoster: true }));
+  });
+
+  it('keeps the editor and its unsaved changes when a refresh fails', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByText('Hello there'));
+    fireEvent.change(screen.getByLabelText('Heading'), { target: { value: 'Unsaved' } });
+    vi.mocked(websiteService.getState).mockRejectedValue(new Error('Network down'));
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['website-editor'] }); });
+    expect(await screen.findByText(/Could not refresh the website/)).toBeInTheDocument();
+    expect((screen.getByLabelText('Heading') as HTMLInputElement).value).toBe('Unsaved');
+    expect(screen.getByRole('button', { name: 'Save draft' })).not.toBeDisabled();
+    vi.mocked(websiteService.getState).mockResolvedValue(structuredClone(STATE));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByText(/Could not refresh the website/)).toBeNull());
+    expect((screen.getByLabelText('Heading') as HTMLInputElement).value).toBe('Unsaved');
+  });
+
+  it('shows the full error only when nothing has loaded yet', async () => {
+    vi.mocked(websiteService.getState).mockRejectedValue(new Error('Network down'));
+    renderPage();
+    expect(await screen.findByText('Network down')).toBeInTheDocument();
+    expect(screen.queryByText(/Could not refresh the website/)).toBeNull();
   });
 });
 

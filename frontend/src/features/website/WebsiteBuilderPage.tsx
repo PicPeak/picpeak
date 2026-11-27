@@ -103,7 +103,9 @@ export const WebsiteBuilderPage: React.FC = () => {
   }, [editor]);
 
   if (editor.query.isLoading || (!draft && !editor.query.isError)) return <Loading />;
-  if (editor.query.isError || !draft || !server || !page) {
+  // The full error only before anything loaded: once the editor holds a
+  // draft, a failed refresh must not unmount it (and the save bar's guard).
+  if (!draft || !server || !page) {
     return <ErrorState onRetry={() => editor.query.refetch()} message={apiErrorText(editor.query.error)} />;
   }
 
@@ -290,6 +292,19 @@ export const WebsiteBuilderPage: React.FC = () => {
           )}
         />
         {!canEdit && <Notice tone="neutral" size="sm">{t('website.readOnly', 'You can see the website but not change it.')}</Notice>}
+        {editor.query.isError && (
+          <Notice
+            tone="warning"
+            size="sm"
+            action={(
+              <Button size="sm" variant="secondary" isLoading={editor.query.isFetching} onClick={() => { void editor.query.refetch(); }}>
+                {t('common.retry', 'Try again')}
+              </Button>
+            )}
+          >
+            {t('website.refreshFailed', 'Could not refresh the website. Your changes here are kept.')}
+          </Notice>
+        )}
         {editor.conflict && (
           <Notice
             tone="warning"
