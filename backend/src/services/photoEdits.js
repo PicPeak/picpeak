@@ -73,9 +73,26 @@ const isVideoRow = (photo) => photo.media_type === 'video' || photo.type === 'vi
 
 /** The row with its edit columns, read once when a caller's select left them out. */
 async function withEditColumns(photo) {
-  if (!photo || photo.id == null || isVideoRow(photo) || EDIT_COLUMNS.every((column) => column in photo)) return photo;
-  const row = await db('photos').where({ id: photo.id }).first(EDIT_COLUMNS);
-  return row ? { ...photo, ...Object.fromEntries(EDIT_COLUMNS.map((column) => [column, row[column]])) } : photo;
+  if (!photo || photo.id == null || isVideoRow(photo)) return photo;
+  const missing = [...EDIT_COLUMNS, ...SOURCE_COLUMNS].filter((column) => !(column in photo));
+  if (!missing.length) return photo;
+  const row = await db('photos').where({ id: photo.id }).first(missing);
+  return row ? { ...photo, ...Object.fromEntries(missing.map((column) => [column, row[column]])) } : photo;
+}
+
+// What identifies the original's bytes: a replaced file moves the path, a
+// file rewritten on a share keeps it but changes size and mtime, a new
+// processing attempt reads it again.
+const SOURCE_COLUMNS = ['path', 'external_relpath', 'size_bytes', 'source_mtime_ms', 'processing_attempt_id'];
+
+/**
+ * A short tag of the original a render or develop preview was made from. It
+ * is in their names, so one of other bytes (an external file rewritten in
+ * place, which keeps the edit) is never served: it is rendered again.
+ */
+function sourceTag(photo) {
+  const identity = [photo.id, ...SOURCE_COLUMNS.map((column) => photo[column] ?? null)].map((v) => (v == null ? null : String(v)));
+  return crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0, 10);
 }
 
 /** The photo's edit, or null for none. */
@@ -85,10 +102,11 @@ const paramsOf = (photo) => (photo && !isVideoRow(photo) ? math.parseStoredParam
 const isEdited = (photo) => Boolean(paramsOf(photo));
 
 /** Whether `key` is an edited render of this photo, of its current revision when `rev` is given. */
+/** Whether `key` is an edited render of this photo; with `rev`, of that revision and the current source. */
 function isRenderKeyOf(photo, key, rev) {
   const match = typeof key === 'string' && RENDER_KEY.exec(key);
   return Boolean(match && Number(match[1]) === Number(photo.id)
-    && (rev === undefined || key.startsWith(`edits/edit_p${photo.id}_r${rev}_`)));
+    && (rev === undefined || key.startsWith(`edits/edit_p${photo.id}_r${rev}_s${sourceTag(photo)}_`)));
 }
 
 // ------------------------------------------------------------------ render
@@ -236,7 +254,7 @@ const renderLimit = pLimit(concurrency());
  */
 async function renderAndRecord(photo, params, options) {
   const { buffer, width, height } = await renderEditedJpeg(photo, params, options);
-  const key = `edits/edit_p${photo.id}_r${photo.edit_rev}_${crypto.randomBytes(6).toString('hex')}.jpg`;
+  const key = `edits/edit_p${photo.id}_r${photo.edit_rev}_s${sourceTag(photo)}_${crypto.randomBytes(6).toString('hex')}.jpg`;
   const storage = getStorage();
   await storage.put(key, buffer);
   const current = await db('photos').where({ id: photo.id }).first(['edit_rev', 'edit_render_path']);
@@ -654,6 +672,8 @@ async function status(eventId) {
 
 module.exports = {
   EDIT_COLUMNS,
+  SOURCE_COLUMNS,
+  sourceTag,
   DELIVERY_KEY,
   RENDER_KEY,
   withEditColumns,

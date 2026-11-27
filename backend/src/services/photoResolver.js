@@ -8,7 +8,7 @@ const { getStoragePath } = require('../config/storage');
 // column, so a row read from the database cannot carry it. Checked against
 // the render key shape, the only files it may name.
 const DELIVERY_KEY = 'edit_delivery_key';
-const RENDER_KEY = /^edits\/edit_p(\d+)_r\d+_[0-9a-f]{12}\.jpg$/;
+const RENDER_KEY = /^edits\/edit_p(\d+)_r\d+_s[0-9a-f]{10}_[0-9a-f]{12}\.jpg$/;
 function deliveredKey(photo) {
   const key = photo[DELIVERY_KEY];
   if (key === undefined) return null;

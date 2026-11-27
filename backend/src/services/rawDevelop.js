@@ -251,9 +251,7 @@ async function isRawSource(photo) {
  * found.
  */
 function previewKey(photo) {
-  const identity = JSON.stringify([photo.id, photo.path, photo.external_relpath, photo.size_bytes ?? null,
-    photo.source_mtime_ms ?? null, photo.processing_attempt_id ?? null, PREVIEW_FORMAT]);
-  return `edits/develop_p${photo.id}_${crypto.createHash('sha256').update(identity).digest('hex').slice(0, 12)}.bin`;
+  return `edits/develop_p${photo.id}_f${PREVIEW_FORMAT}_${require('./photoEdits').sourceTag(photo)}.bin`;
 }
 
 const previewFlights = new Map();

@@ -199,7 +199,7 @@ describe('save, background apply, reset', () => {
     expect(await photoEdits().runPass({ active: () => true, sleep: async () => {} })).toMatchObject({ applied: 1, failed: 0 });
     current = await row();
     expect(current.edit_applied_rev).toBe(1);
-    expect(current.edit_render_path).toMatch(new RegExp(`^edits/edit_p${photoId}_r1_[0-9a-f]{12}\\.jpg$`));
+    expect(current.edit_render_path).toMatch(new RegExp(`^edits/edit_p${photoId}_r1_s[0-9a-f]{10}_[0-9a-f]{12}\\.jpg$`));
     // The preview is cut from the half-width edit (the thumbnail is a square cover crop).
     expect(current.thumbnail_path).toContain(`edit_p${photoId}_r1_`);
     const preview = await sharp(storagePath(current.preview_path)).metadata();
@@ -234,6 +234,18 @@ describe('save, background apply, reset', () => {
     expect(fs.readdirSync(editsDir).filter((name) => name.includes(`_r${stale.edit_rev}_`) && name.startsWith('edit_'))).toHaveLength(0);
     expect(fs.readdirSync(editsDir).length).toBe(filesBefore);
     await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+  });
+
+  it('renders again when the source was rewritten in place (an external refresh)', async () => {
+    const before = await row();
+    const oldKey = await photoEdits().ensureEditedSource(before);
+    // refreshChangedFile records the new size and mtime and keeps the edit.
+    await db('photos').where({ id: photoId }).update({ size_bytes: before.size_bytes + 1, source_mtime_ms: 1767225600000 });
+    const fresh = await photoEdits().ensureEditedSource(await row());
+    expect(fresh).not.toBe(oldKey);
+    expect((await row()).edit_render_path).toBe(fresh);
+    expect(fs.existsSync(storagePath(oldKey))).toBe(false);
+    expect(await photoEdits().ensureEditedSource(await row())).toBe(fresh);
   });
 
   it('delivers the render as a JPEG named like the photo, and the resolver refuses a foreign key', async () => {
