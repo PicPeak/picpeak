@@ -361,6 +361,11 @@ export const WebsiteBuilderPage: React.FC = () => {
             {t('website.importRefused', 'Your landing page is too long for a custom HTML block ({{length}} of {{max}} characters), so it was not copied into the builder; nothing of it was cut. It stays live at the site root until you publish here. To keep it, shorten it and paste it into a custom HTML block.', server.legacyImportRefused)}
           </Notice>
         )}
+        {server.legacyLandingLive && (
+          <Notice tone="info" size="sm">
+            {t('website.legacyImported', 'Your previous landing page was imported here. Visitors still see it unchanged at the site root; review it and publish when you are ready, and the website takes its place.')}
+          </Notice>
+        )}
         {!server.publicSiteEnabled && (
           <Notice tone="warning" size="sm">{t('website.siteOff', 'The public site is switched off in Settings › CMS. Until it is on, `/` leads to the login page and the website is not visible.')}</Notice>
         )}

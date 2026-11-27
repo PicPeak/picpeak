@@ -21,6 +21,7 @@ import { useEscapeClose } from '../common/useEscapeClose';
 const SIDEBAR_COLLAPSED_KEY = 'admin-sidebar-collapsed';
 const ProductUsageNotice = lazy(() => import('./ProductUsageNotice'));
 const UsageReportingPrompt = lazy(() => import('./UsageReportingPrompt'));
+const WebsiteLandingNotice = lazy(() => import('./WebsiteLandingNotice'));
 
 export const AdminLayout: React.FC = () => {
   const { isAuthenticated, isLoading, mustChangePassword } = useAdminAuth();
@@ -192,6 +193,7 @@ const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSid
 
         {!mustChangePassword && <Suspense fallback={null}><ProductUsageNotice /></Suspense>}
         {!mustChangePassword && <Suspense fallback={null}><UsageReportingPrompt /></Suspense>}
+        {!mustChangePassword && <Suspense fallback={null}><WebsiteLandingNotice /></Suspense>}
 
         {/* Page content - disabled when password change required.
             overflow moved up to the column so the scrollbar gutter is

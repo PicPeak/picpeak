@@ -652,6 +652,7 @@ async function deleteAdminUser(id, deletedById) {
     // a team save's key-share lock on the event. No-op on SQLite.
     await trx('events').where('created_by', id).orderBy('id').forNoKeyUpdate().pluck('id');
     await trx('notification_dismissals').where('admin_id', id).del();
+    await trx('admin_notice_dismissals').where('admin_id', id).del();
     // Every row the two statements below touch, locked in id order first:
     // the order a gallery team save takes them in (setAssignedAdmins). Two
     // statements lock their rows in two scan orders, which can deadlock

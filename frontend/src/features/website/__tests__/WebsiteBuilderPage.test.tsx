@@ -203,6 +203,12 @@ describe('WebsiteBuilderPage', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.trim())).toEqual(['Pages', 'Blocks', 'Design']);
   });
 
+  it('says the previous landing page was imported while it is still what visitors see', async () => {
+    vi.mocked(websiteService.getState).mockResolvedValue({ ...structuredClone(STATE), published: null, legacyLandingLive: true });
+    renderPage();
+    expect(await screen.findByText(/Your previous landing page was imported/)).toBeInTheDocument();
+  });
+
   it('switches the preview to phone width', async () => {
     renderPage();
     const frame = await screen.findByTitle('Preview of the page');

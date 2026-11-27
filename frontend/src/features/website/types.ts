@@ -123,6 +123,8 @@ export interface EditorState {
   published: RevisionInfo | null;
   hasUnpublishedChanges: boolean;
   publicSiteEnabled: boolean;
+  /** The landing page migration 381 imported is still what `/` serves. */
+  legacyLandingLive?: boolean;
   /** The branding's colours, offered as swatches for a custom block background. */
   brandColors?: string[];
   /** The configured public origin (sitemap, canonical links); '' when none. */

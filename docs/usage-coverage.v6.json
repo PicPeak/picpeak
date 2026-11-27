@@ -2278,6 +2278,8 @@
       "route_signatures": [
         "GET /",
         "PUT /draft",
+        "GET /notice",
+        "POST /notice/dismiss",
         "POST /publish",
         "POST /preview",
         "POST /media/resolve",

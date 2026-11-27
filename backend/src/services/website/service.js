@@ -102,6 +102,27 @@ async function initialDocument() {
   return { document: starterDocument(), imported: false, ...(legacy.refused ? { refused: legacy.refused } : {}) };
 }
 
+const LEGACY_NOTICE = 'website_legacy_landing';
+
+/** An install migration 381 moved into the builder, whose old page `/` still serves. */
+async function legacyLandingLive(published) {
+  if (published) return false;
+  const settings = await readSettings(['website_legacy_landing_migrated']);
+  return flag(settings.website_legacy_landing_migrated);
+}
+
+/** Whether this admin is still to be told where the landing page went. */
+async function legacyLandingNotice(adminId) {
+  if (!(await legacyLandingLive(await readRow('published')))) return false;
+  return !(await db('admin_notice_dismissals').where({ admin_id: adminId, notice_key: LEGACY_NOTICE }).first('id'));
+}
+
+async function dismissLegacyLandingNotice(adminId) {
+  await db('admin_notice_dismissals')
+    .insert({ admin_id: adminId, notice_key: LEGACY_NOTICE, dismissed_at: new Date().toISOString() })
+    .onConflict(['admin_id', 'notice_key']).ignore();
+}
+
 /** The import refusal the editor shows while the old page is still what / serves. */
 async function importRefusal({ published }) {
   if (published) return null;
@@ -158,6 +179,8 @@ async function editorState(draft, published) {
     // Publishing changes nothing visible while the public site is off.
     publicSiteEnabled: flag(settings.general_public_site_enabled),
     legacyImportRefused: await importRefusal({ published }),
+    // Migration 381 imported the landing page, which `/` still serves.
+    legacyLandingLive: await legacyLandingLive(published),
     // The public origin the sitemap and the canonical links use, for the
     // editor's "Open site"; '' when none is configured.
     publicUrl: await getFrontendBaseUrl().catch(() => ''),
@@ -684,6 +707,8 @@ module.exports = {
   resolvePublicPage,
   isWebsiteActive,
   publishedPhotoIds,
+  legacyLandingNotice,
+  dismissLegacyLandingNotice,
   mediaRobotsTag,
   sitemapXml,
   publishedDocument,

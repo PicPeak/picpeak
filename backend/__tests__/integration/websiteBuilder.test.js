@@ -1686,3 +1686,42 @@ describe('the published set is what the pages show', () => {
     }
   });
 });
+
+describe('telling admins where the landing page went', () => {
+  const notice = async (who) => (await request(app).get('/api/admin/website/notice').set(auth(who))).body;
+  let kept;
+
+  beforeAll(async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    kept = await db('website_documents').where({ state: 'published' }).first();
+    await db('website_documents').where({ state: 'published' }).del();
+    await setSetting('website_legacy_landing_migrated', true);
+  });
+  afterAll(async () => {
+    await db('app_settings').where({ setting_key: 'website_legacy_landing_migrated' }).del();
+    await db('admin_notice_dismissals').del();
+    if (kept && !(await db('website_documents').where({ state: 'published' }).first())) await db('website_documents').insert(kept);
+  });
+
+  test('a migrated install is told until each admin dismisses it, and the editor says the old page is still live', async () => {
+    expect(await notice(adminId)).toEqual({ legacyLanding: true });
+    expect((await request(app).get('/api/admin/website').set(auth(adminId))).body.legacyLandingLive).toBe(true);
+    expect((await request(app).post('/api/admin/website/notice/dismiss').set(auth(viewerId))).status).toBe(204);
+    expect(await notice(viewerId)).toEqual({ legacyLanding: false });
+    expect(await notice(adminId)).toEqual({ legacyLanding: true });
+  });
+
+  test('publishing from the builder ends it for everyone', async () => {
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: state.draft.revision }).expect(200);
+    expect(await notice(adminId)).toEqual({ legacyLanding: false });
+    expect((await request(app).get('/api/admin/website').set(auth(adminId))).body.legacyLandingLive).toBe(false);
+  });
+
+  test('deleting an admin deletes their dismissals', async () => {
+    const gone = await insertId('admin_users', { username: 'gone', email: 'gone@example.com', password_hash: 'x', must_change_password: false, created_at: new Date().toISOString() });
+    await db('admin_notice_dismissals').insert({ admin_id: gone, notice_key: 'website_legacy_landing', dismissed_at: new Date().toISOString() });
+    await require('../../src/services/userManagementService').deleteAdminUser(gone, adminId);
+    expect(await db('admin_notice_dismissals').where({ admin_id: gone })).toHaveLength(0);
+  });
+});

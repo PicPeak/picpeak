@@ -13425,6 +13425,13 @@
     "refreshFailed": "Die Website konnte nicht neu geladen werden. Ihre Änderungen hier bleiben erhalten.",
     "previewStale": "Vorschau nicht aktuell: Sie konnte nicht neu geladen werden.",
     "previewRetry": "Vorschau neu laden",
-    "galleryOff": "{{names}} ist nicht auf der Website. Entfernen Sie die Auswahl oder stellen Sie die Galerie in ihren Einstellungen oder in der Bildauswahl auf die Website."
+    "galleryOff": "{{names}} ist nicht auf der Website. Entfernen Sie die Auswahl oder stellen Sie die Galerie in ihren Einstellungen oder in der Bildauswahl auf die Website.",
+    "legacyImported": "Ihre bisherige Startseite wurde hierher übernommen. Besucher sehen sie unter der Hauptadresse weiterhin unverändert; prüfen Sie sie und veröffentlichen Sie, wenn Sie so weit sind – dann tritt die Website an ihre Stelle."
+  },
+  "websiteNotice": {
+    "title": "Ihre Startseite ist umgezogen",
+    "body": "Ihre Startseite finden Sie jetzt unter Website. Sie funktioniert wie bisher, Besucher sehen sie unverändert. Prüfen Sie sie im neuen Website-Baukasten und veröffentlichen Sie sie dort, wenn Sie so weit sind.",
+    "open": "Website öffnen",
+    "dismiss": "Ausblenden"
   }
 }

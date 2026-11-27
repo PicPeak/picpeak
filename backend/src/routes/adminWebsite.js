@@ -50,6 +50,17 @@ router.put('/draft', canEdit, [
   res.json(await websiteService.saveDraft(req.body.document, req.body.revision, req.admin));
 }));
 
+// Where the old landing page went (migration 381): told to each admin once,
+// until they dismiss it or the website is published.
+router.get('/notice', canView, handleAsync(async (req, res) => {
+  res.json({ legacyLanding: await websiteService.legacyLandingNotice(req.admin.id) });
+}));
+
+router.post('/notice/dismiss', canView, handleAsync(async (req, res) => {
+  await websiteService.dismissLegacyLandingNotice(req.admin.id);
+  res.status(204).end();
+}));
+
 router.post('/publish', canEdit, [
   // The revision the editor last saved: publish exactly that, or 409.
   body('revision').isInt({ min: 0 }),

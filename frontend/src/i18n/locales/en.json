@@ -13460,6 +13460,13 @@
     "refreshFailed": "Could not refresh the website. Your changes here are kept.",
     "previewStale": "Preview out of date: it could not be refreshed.",
     "previewRetry": "Refresh preview",
-    "galleryOff": "{{names}} is not on the website. Remove the pick, or switch the gallery on in its settings or in the image picker."
+    "galleryOff": "{{names}} is not on the website. Remove the pick, or switch the gallery on in its settings or in the image picker.",
+    "legacyImported": "Your previous landing page was imported here. Visitors still see it unchanged at the site root; review it and publish when you are ready, and the website takes its place."
+  },
+  "websiteNotice": {
+    "title": "Your landing page moved",
+    "body": "Your landing page now lives under Website. It still works as before: visitors see it unchanged. Review it in the new website builder and publish it there when you are ready.",
+    "open": "Open Website",
+    "dismiss": "Dismiss"
   }
 }

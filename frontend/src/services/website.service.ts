@@ -23,6 +23,16 @@ export const websiteService = {
     const r = await api.put<EditorState>('/admin/website/draft', { document, revision });
     return r.data;
   },
+  /** Whether to tell this admin where the old landing page went (migration 381). */
+  async getNotice(): Promise<{ legacyLanding: boolean }> {
+    const r = await api.get<{ legacyLanding: boolean }>('/admin/website/notice');
+    return r.data;
+  },
+
+  async dismissNotice(): Promise<void> {
+    await api.post('/admin/website/notice/dismiss');
+  },
+
   async publish(revision: number): Promise<EditorState> {
     const r = await api.post<EditorState>('/admin/website/publish', { revision });
     return r.data;
