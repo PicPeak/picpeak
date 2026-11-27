@@ -388,7 +388,10 @@ function focalAfterEdit(photo, before, after) {
 async function saveEdits(changes) {
   const revisions = {};
   await db.transaction(async (trx) => {
-    for (const { photo, params } of changes) {
+    for (const { photo, params: asked } of changes) {
+      // Develop and noise reduction mean nothing for a photo that is no
+      // camera RAW; left in, they would re-encode a JPEG for no change.
+      const params = asked && !require('./rawDevelop').isRawPhoto(photo) ? { ...asked, develop: false, nr: 0 } : asked;
       const next = params && !math.isIdentity(params) ? params : null;
       const before = paramsOf(photo);
       const update = {
