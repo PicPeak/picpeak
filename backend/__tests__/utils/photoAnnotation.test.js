@@ -167,8 +167,27 @@ describe('a drawing after the photo was edited', () => {
     ] };
     const shown = displayAnnotation(stored(drawing), null, photo({ crop: { x: 0.5, y: 0, w: 0.5, h: 1 } }));
     expect(shown.clipped).toBe(true);
-    // The arrow was in the left half: gone. The line keeps what is in the right half.
-    expect(shown.annotation.strokes).toEqual([{ t: 'free', c: 1, p: [[0.2, 0.5], [0.6, 0.5], [0.8, 0.5]] }]);
+    // The arrow was in the left half: gone. The line keeps what is in the
+    // right half, from where it crosses the crop's edge.
+    expect(shown.annotation.strokes).toEqual([{ t: 'free', c: 1, p: [[0, 0.5], [0.2, 0.5], [0.6, 0.5], [0.8, 0.5]] }]);
+  });
+
+  it('keeps the middle of a line drawn across a crop whose ends are both outside it', () => {
+    const across = { v: 1, strokes: [{ t: 'free', c: 0, p: [[0.1, 0.5], [0.9, 0.5]] }] };
+    const shown = displayAnnotation(stored(across), null, photo({ crop: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 } }));
+    expect(shown.clipped).toBe(true);
+    expect(shown.annotation.strokes).toEqual([{ t: 'free', c: 0, p: [[0, 0.5], [1, 0.5]] }]);
+  });
+
+  it('splits a stroke that leaves the crop and comes back into two pieces', () => {
+    // Right half kept (x 0.5..1, shown as 0..1): in, out across the left edge, in again.
+    const wander = { v: 1, strokes: [{ t: 'free', c: 2, p: [[0.75, 0.2], [0.25, 0.2], [0.25, 0.8], [0.75, 0.8]] }] };
+    const shown = displayAnnotation(stored(wander), null, photo({ crop: { x: 0.5, y: 0, w: 0.5, h: 1 } }));
+    expect(shown.clipped).toBe(true);
+    expect(shown.annotation.strokes).toEqual([
+      { t: 'free', c: 2, p: [[0.5, 0.2], [0, 0.2]] },
+      { t: 'free', c: 2, p: [[0, 0.8], [0.5, 0.8]] },
+    ]);
   });
 
   it('goes back to the original after a reset, and nothing is shown when all of it was cropped away', () => {
