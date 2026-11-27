@@ -226,6 +226,29 @@ describe('Gallery Folio', () => {
     expect(handlers.onLogout).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['640 px and up', true, 'the upload button in the row'],
+    ['below 640 px', false, 'the menu that holds upload'],
+  ])('gives the upload focus role to what the nav shows %s: %s', (_width, wide) => {
+    // The stylesheet hides the row's upload button below 640 px; focus
+    // handed to it there would drop to the page.
+    const matchMedia = vi.fn((query: string) => ({
+      matches: wide && query === '(min-width: 640px)', media: query,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    vi.stubGlobal('matchMedia', matchMedia);
+    try {
+      mount({ onUploadClick: vi.fn() });
+      const targets = Array.from(document.querySelectorAll('[data-gallery-focus="upload"]'));
+      expect(targets).toHaveLength(1);
+      expect(targets[0]).toBe(wide
+        ? nav().getByRole('button', { name: 'Upload Photos' })
+        : nav().getByRole('button', { name: 'More actions' }));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('lifts the first-look badge clear of the tile\'s action row', () => {
     const firstLook = photos.map((photo, index) => ({ ...photo, first_look: index === 0 }));
     render(

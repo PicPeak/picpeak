@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { parseISO } from 'date-fns';
 import { MasonryPhotoAlbum } from 'react-photo-album';
@@ -44,6 +44,25 @@ interface GalleryFolioLayoutProps extends BaseGalleryLayoutProps {
 }
 
 type AlbumPhoto = { src: string; width: number; height: number; key: string; index: number; photo: Photo };
+
+/** From here up the nav row holds every action (GalleryFolioLayout.css). */
+const WIDE_NAV_QUERY = '(min-width: 640px)';
+
+/**
+ * Whether the nav row shows its secondary actions or the menu holds them.
+ * Without matchMedia (no browser) the row does, as on a desktop.
+ */
+function useWideNav(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia?.(WIDE_NAV_QUERY);
+      query?.addEventListener?.('change', onChange);
+      return () => query?.removeEventListener?.('change', onChange);
+    },
+    () => window.matchMedia?.(WIDE_NAV_QUERY).matches ?? true,
+    () => true,
+  );
+}
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -102,6 +121,7 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
   const folio = folioSettings(theme?.gallerySettings);
   const paletteStyle = folioPaletteStyle(folio.palette);
   const inputMode = useInputMode();
+  const wideNav = useWideNav();
   const bands = useLazyBands();
   const downloadQuota = useDownloadQuota();
 
@@ -353,7 +373,9 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
                 aria-label={uploadLabel}
                 title={uploadLabel}
                 data-testid="folio-nav-upload"
-                data-gallery-focus="upload"
+                // The control a remount hands focus to (PhotoGridWithLayouts)
+                // must be one on screen: on a phone that is the menu.
+                data-gallery-focus={wideNav ? 'upload' : undefined}
               >
                 <Upload className="w-[18px] h-[18px]" />
               </button>
@@ -441,7 +463,11 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
                 <LogOut className="w-4 h-4" aria-hidden="true" />
               </button>
             )}
-            <ActionMenu className="folio-nav-more" items={secondaryActions} />
+            <ActionMenu
+              className="folio-nav-more"
+              items={secondaryActions}
+              triggerProps={!wideNav && onUploadClick ? { 'data-gallery-focus': 'upload' } : undefined}
+            />
           </div>
         </div>
 
