@@ -12,12 +12,13 @@
  * submissions per day, and the form must exist on the published site.
  */
 const crypto = require('crypto');
-const { db } = require('../../database/db');
+const { db, logActivity } = require('../../database/db');
+const { toTimestamp } = require('../../utils/dateNormalize');
 const logger = require('../../utils/logger');
 const { publishedDocument } = require('./service');
 const { META_BYTES } = require('../mailRetentionService');
 
-const DAILY_CAP = Number(process.env.WEBSITE_CONTACT_DAILY_CAP || 200);
+const DAILY_CAP = Number(process.env.WEBSITE_CONTACT_DAILY_CAP || 1000);
 const EMAIL_PATTERN = /^[^\s@<>()[\]\\,;:"]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 const MESSAGE_ID_PREFIX = '<website-contact-';
 // Characters, as the form's maxlength counts them.
@@ -72,6 +73,20 @@ async function overDailyCap() {
   return Number(row?.c || 0) >= DAILY_CAP;
 }
 
+const CAP_ACTIVITY = 'website_contact_cap_reached';
+
+/**
+ * The studio hears of a reached cap in the notification bell, once a day:
+ * visitors are being turned away, which a log line alone would hide.
+ */
+async function tellStudioCapReached() {
+  // created_at is the database's default (SQLite: zone-less text), so it is
+  // compared as a timestamp, not as a string.
+  const last = await db('activity_logs').where({ activity_type: CAP_ACTIVITY }).orderBy('id', 'desc').first('created_at');
+  if (last && Date.now() - toTimestamp(last.created_at) < 24 * 60 * 60 * 1000) return;
+  await logActivity(CAP_ACTIVITY, { cap: DAILY_CAP });
+}
+
 function formatBody(values, page) {
   const lines = [
     `Name: ${values.name}`,
@@ -90,6 +105,7 @@ function formatBody(values, page) {
 async function storeSubmission(values, page) {
   if (await overDailyCap()) {
     logger.warn('Website contact form: daily cap reached, submission dropped');
+    await tellStudioCapReached();
     return 'capped';
   }
   const now = new Date().toISOString();

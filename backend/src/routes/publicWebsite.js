@@ -35,17 +35,21 @@ function back(res, page, blockId, outcome) {
   res.redirect(303, target);
 }
 
-// Counts every attempt: a visitor sends a handful of messages, not ten an hour.
-const contactLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
+// Count every attempt, per sender (an IPv6 /64 is one, rateLimitKey): a
+// visitor sends a handful of messages, not ten an hour, and no sender fills
+// the studio's daily cap (contact.DAILY_CAP) alone.
+const senderLimit = (windowMs, max) => rateLimit({
+  windowMs,
+  max,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: rateLimitKey,
   handler: (req, res) => res.redirect(303, '/'),
 });
+const hourly = senderLimit(60 * 60 * 1000, 5);
+const daily = senderLimit(24 * 60 * 60 * 1000, 20);
 
-router.post('/contact', contactLimiter, (req, res, next) => {
+router.post('/contact', daily, hourly, (req, res, next) => {
   formFields(req, res, (err) => {
     if (!err) return next();
     // Over the parser's limits: the visitor gets the form's own error note
@@ -81,3 +85,4 @@ router.post('/contact', contactLimiter, (req, res, next) => {
 });
 
 module.exports = router;
+module.exports._internal = { hourly, daily };

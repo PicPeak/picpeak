@@ -5930,7 +5930,8 @@
       "productChoiceReopened": "{{eventName}}: {{productName}} für den Kunden wieder geöffnet",
       "productChoiceUnlocked": "{{eventName}}: {{productName}} entsperrt",
       "productReleased": "{{eventName}}: {{productName}} für den Kunden freigegeben",
-      "productWithdrawn": "{{eventName}}: Freigabe von {{productName}} zurückgenommen"
+      "productWithdrawn": "{{eventName}}: Freigabe von {{productName}} zurückgenommen",
+      "websiteContactCapReached": "Das Kontaktformular der Website hat sein Tageslimit von {{cap}} Nachrichten erreicht. Besucher erhalten bis zum Ende des Tages eine Fehlermeldung."
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",

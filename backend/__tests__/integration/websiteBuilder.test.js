@@ -706,6 +706,8 @@ describe('hero video', () => {
 });
 
 describe('contact form', () => {
+  // Loaded once the test database is up.
+  const contact = () => require('../../src/services/website/contact');
   let ip = 0;
   const post = (fields, headers = {}) => {
     ip += 1;
@@ -725,6 +727,49 @@ describe('contact form', () => {
     expect(row.body_text).toContain('<script>alert(1)</script>\nSee you');
     expect(row.subject).toBe('Website enquiry from Ada <b>');
     expect(await db('email_queue').count({ c: '*' }).first()).toMatchObject({ c: 0 });
+  });
+
+  test('one network gets 20 messages a day, however it spreads them over the hours', async () => {
+    const { rateLimitKey } = require('../../src/utils/rateLimitKey');
+    const { hourly } = require('../../src/routes/publicWebsite')._internal;
+    // Addresses of one IPv6 /64 count as one sender.
+    const from = (n) => request(app).post('/api/public/website/contact').set('X-Forwarded-For', `2001:db8:5:7::${n}`).set('Sec-Fetch-Site', 'same-origin');
+    const send = (n) => {
+      const req = from(n);
+      Object.entries({ ...valid, email: `net${n}@example.com` }).forEach(([k, v]) => req.field(k, v));
+      return req;
+    };
+    for (let i = 1; i <= 20; i += 1) {
+      // The hourly limit (5) would stop it first: let an hour pass each time.
+      if (i % 5 === 1) await hourly.resetKey(rateLimitKey({ ip: `2001:db8:5:7::${i}` })); // eslint-disable-line no-await-in-loop
+      const res = await send(i); // eslint-disable-line no-await-in-loop
+      expect(res.headers.location).toBe('/#contact-sent-c1');
+    }
+    await hourly.resetKey(rateLimitKey({ ip: '2001:db8:5:7::99' }));
+    const refused = await send(99);
+    expect(refused.status).toBe(303);
+    expect(refused.headers.location).toBe('/');
+    expect(await db('received_emails').where('from_address', 'net99@example.com').first()).toBeUndefined();
+  });
+
+  test('the daily cap for all senders is 1000, and reaching it tells the studio once', async () => {
+    expect(contact().DAILY_CAP).toBe(1000);
+    const now = new Date().toISOString();
+    const already = Number((await db('received_emails').where('message_id', 'like', '<website-contact-%').count({ c: '*' }).first()).c);
+    const filler = Array.from({ length: contact().DAILY_CAP - already }, (_, i) => ({
+      message_id: `<website-contact-filler-${i}@picpeak>`, account_key: 'customers', from_address: 'filler@example.com', subject: 'x',
+      received_at: now, attachment_count: 0, status: 'no_attachment', body_text: 'x', mailbox_state: 'active', created_at: now,
+    }));
+    for (let i = 0; i < filler.length; i += 200) await db('received_emails').insert(filler.slice(i, i + 200)); // eslint-disable-line no-await-in-loop
+    try {
+      expect((await post({ ...valid, email: 'late1@example.com' })).headers.location).toBe('/#contact-error-c1');
+      expect((await post({ ...valid, email: 'late2@example.com' })).headers.location).toBe('/#contact-error-c1');
+      const told = await db('activity_logs').where({ activity_type: 'website_contact_cap_reached' });
+      expect(told).toHaveLength(1);
+    } finally {
+      await db('received_emails').where('message_id', 'like', '<website-contact-filler-%').del();
+      await db('activity_logs').where({ activity_type: 'website_contact_cap_reached' }).del();
+    }
   });
 
   test('the honeypot answers like a success and stores nothing', async () => {

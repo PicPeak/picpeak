@@ -5268,7 +5268,8 @@
       "productChoiceReopened": "{{eventName}}: {{productName}} reopened for the client",
       "productChoiceUnlocked": "{{eventName}}: {{productName}} unlocked",
       "productReleased": "{{eventName}}: {{productName}} released to the client",
-      "productWithdrawn": "{{eventName}}: release of {{productName}} withdrawn"
+      "productWithdrawn": "{{eventName}}: release of {{productName}} withdrawn",
+      "websiteContactCapReached": "The website contact form reached its daily limit of {{cap}} messages. Visitors get an error until the day is over."
     },
     "notificationToasts": {
       "markedAllRead": "All notifications marked as read",
