@@ -282,13 +282,25 @@ async function isRawSource(photo) {
 }
 
 /**
- * The storage key of a photo's develop preview. Named after what identifies
- * the original's bytes (as imageProcessor's derivative names are), so a
- * replaced or rewritten original gets a new preview and the old one is not
- * found.
+ * The storage key of a photo's develop preview: one a photo. What identifies
+ * the original's bytes (photoEdits.sourceTag) is in the file's header
+ * instead of its name, so a replaced or rewritten original's preview is
+ * developed again over it, never kept beside it, and a delete reaches it
+ * from the row whatever the source was.
  */
 function previewKey(photo) {
-  return `edits/develop_p${photo.id}_f${PREVIEW_FORMAT}_${require('./photoEdits').sourceTag(photo)}.bin`;
+  return `edits/develop_p${photo.id}_f${PREVIEW_FORMAT}.bin`;
+}
+
+/** The source tag in a stored preview's header, or null for none or a file that does not read. */
+function previewSource(buffer) {
+  try {
+    if (buffer.toString('latin1', 0, 4) !== 'PPDV') return null;
+    const length = buffer.readUInt32LE(4);
+    return JSON.parse(buffer.toString('utf8', 8, 8 + length)).source || null;
+  } catch {
+    return null;
+  }
 }
 
 const previewFlights = new Map();
@@ -301,12 +313,19 @@ const previewFlights = new Map();
 async function developPreview(photo, withOriginal) {
   const storage = require('./storage').getStorage();
   const key = previewKey(photo);
+  const source = require('./photoEdits').sourceTag(photo);
   try {
-    if (await storage.stat(key)) return await streamToBuffer(await storage.get(key));
+    if (await storage.stat(key)) {
+      // Of this source only: one of a replaced or rewritten original is
+      // developed again, over it.
+      const stored = await streamToBuffer(await storage.get(key));
+      if (previewSource(stored) === source) return stored;
+    }
   } catch (err) {
     if (require('./storage/storageErrors').isStorageUnavailableError(err)) throw err;
   }
-  let flight = previewFlights.get(key);
+  const flightKey = `${key}:${source}`;
+  let flight = previewFlights.get(flightKey);
   if (!flight) {
     flight = (async () => {
       const started = Date.now();
@@ -316,13 +335,13 @@ async function developPreview(photo, withOriginal) {
       }, { raw: true });
       const encoded = encodePreview(shrink(image, PREVIEW_LONG_EDGE), {
         linear: true, primaries: 'srgb', whiteBalance: 'as-shot', highlights: `rebuild-${HIGHLIGHT_MODE}`,
-        exposureBias: info.exposureBias, cameraMultipliers: info.multipliers,
+        exposureBias: info.exposureBias, cameraMultipliers: info.multipliers, source,
       });
       await storage.put(key, encoded);
       logger.info(`RAW develop preview of photo ${photo.id}: ${Date.now() - started} ms`);
       return encoded;
-    })().finally(() => previewFlights.delete(key));
-    previewFlights.set(key, flight);
+    })().finally(() => previewFlights.delete(flightKey));
+    previewFlights.set(flightKey, flight);
   }
   return flight;
 }

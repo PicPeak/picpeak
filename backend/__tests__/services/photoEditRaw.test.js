@@ -107,7 +107,21 @@ describeRaw('RAW development (LibRaw dcraw_emu)', () => {
     // Cached: the same bytes without a develop.
     const second = await rawDevelop().developPreview(photo, async () => { throw new Error('developed again'); });
     expect(second.equals(first)).toBe(true);
-    expect(rawDevelop().previewKey({ ...photo, size_bytes: 1 })).not.toBe(rawDevelop().previewKey(photo));
+  });
+
+  it('keeps one develop preview a photo: a rewritten source replaces it, and a delete leaves none', async () => {
+    const photo = await row();
+    const develops = () => fs.readdirSync(storagePath('edits')).filter((name) => name.startsWith(`develop_p${photoId}_`));
+    await rawDevelop().developPreview(photo, photoEdits().withOriginal);
+    // The file rewritten in place on its share: another size and time.
+    const rewritten = { ...photo, size_bytes: Number(photo.size_bytes) + 1, source_mtime_ms: 1767225600000 };
+    let developed = false;
+    await rawDevelop().developPreview(rewritten, async (...args) => { developed = true; return photoEdits().withOriginal(...args); });
+    expect(developed).toBe(true);
+    expect(develops()).toHaveLength(1);
+    // Deleted: nothing of it stays.
+    for (const key of photoEdits().editCacheKeys(rewritten)) await require('../../src/services/storage').getStorage().delete(key).catch(() => {});
+    expect(develops()).toEqual([]);
   });
 
   it('renders a developed RAW to JPEG that matches the reference (golden)', async () => {
