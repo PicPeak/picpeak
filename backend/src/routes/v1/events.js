@@ -1161,15 +1161,25 @@ router.get(
       // statements above.
       const mediaRows = pageIds.length
         ? await livePhotos(db).where('event_id', eventId).whereIn('id', pageIds)
-          .select('id', 'media_type', 'mime_type', 'processing_status', 'moderation_status')
+          .select('id', 'media_type', 'mime_type', 'processing_status', 'moderation_status', ...photoEdits.EDIT_COLUMNS)
         : [];
       const mediaById = new Map(mediaRows.map((r) => [r.id, r]));
+      // An edited photo (issue 2619) is listed as the file its download
+      // serves: the edited JPEG, its size and dimensions (null until rendered).
+      const edited = new Map();
+      for (const row of mediaRows) {
+        if (!photoEdits.isEdited(row)) continue;
+        const stat = photoEdits.isRenderKeyOf(row, row.edit_render_path)
+          ? await getStorage().stat(row.edit_render_path).catch(() => null) : null;
+        edited.set(row.id, { width: row.edit_width || null, height: row.edit_height || null, size_bytes: stat ? stat.size : null });
+      }
 
       const filtered = parseInt(countResult[0]?.count, 10) || 0;
 
       res.json({
         photos: photos.map(photo => {
           const merged = mergeMarks(photo, markSource);
+          const delivered = edited.get(photo.id);
           return {
             id: photo.id,
             filename: photo.filename,
@@ -1197,15 +1207,15 @@ router.get(
             my_color_label: photo.my_color_label || null,
             color_label: merged.color_label,
             rating: merged.rating,
-            width: photo.width || null,
-            height: photo.height || null,
-            size_bytes: Number(photo.size_bytes) > 0 ? Number(photo.size_bytes) : null,
+            width: delivered ? delivered.width : photo.width || null,
+            height: delivered ? delivered.height : photo.height || null,
+            size_bytes: delivered ? delivered.size_bytes : Number(photo.size_bytes) > 0 ? Number(photo.size_bytes) : null,
             // ?? rather than ||: this is a second round trip over the same
             // rows, so a photo deleted between them is absent here. Reporting
             // null says "unknown", where defaulting would advertise a video as
             // a resizable image.
             media_type: mediaById.get(photo.id)?.media_type ?? null,
-            mime_type: mediaById.get(photo.id)?.mime_type ?? null,
+            mime_type: delivered ? 'image/jpeg' : mediaById.get(photo.id)?.mime_type ?? null,
             // 'complete' unless the async worker is still on it. The preview
             // and download routes answer 503/422 for the other states.
             processing_status: mediaById.get(photo.id)?.processing_status ?? null,
@@ -1735,10 +1745,14 @@ router.get(
         else zipsInFlight.delete(tokenId);
       });
 
-      // Edited photos go out as their edit (issue 2619), like a gallery download.
+      // Edited photos go out as their edit (issue 2619), like a gallery
+      // download. The preflight above counted their originals' sizes; the
+      // edited file is sized below with the unsized rows instead.
       const photos = [];
       for (const row of await selection().applySorting('filename', 'asc').getQuery().select('photos.*')) {
-        photos.push(await photoEdits.deliveredPhoto(row));
+        const delivered = await photoEdits.deliveredPhoto(row);
+        if (deliveredKey(delivered) && Number(row.size_bytes) > 0) totalBytes -= Number(row.size_bytes);
+        photos.push(delivered);
       }
       if (!photos.length) {
         return res.status(404).json({ error: 'No photos found', code: 'NO_PHOTOS' });

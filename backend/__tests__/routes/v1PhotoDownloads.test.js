@@ -662,6 +662,28 @@ describe('v1 original downloads (issue 1473)', () => {
       });
       afterAll(() => { zipLimits.maxBytes = defaultMax; });
 
+      it('counts an edited photo once, at its edited size (issue 2619)', async () => {
+        // Recorded as 63 KB, but what goes out is the edited render, a few
+        // KB: counted as both, the pair went over the 64 KB cap.
+        const noise = await require('sharp')(crypto.randomBytes(96 * 64 * 3), { raw: { width: 96, height: 64, channels: 3 } })
+          .jpeg({ quality: 95 }).toBuffer();
+        await mkPhoto('edited', evId, 'dl-stale', 'dl-stale_edited.jpg', noise, {
+          size_bytes: 63 * 1024, media_type: 'image', processing_status: 'complete',
+          edit_params: JSON.stringify({ v: 1, exposure: 0.5 }), edit_rev: 1, edit_applied_rev: 1,
+        });
+        const res = await get(`/api/v1/events/${evId}/photos/download`);
+        expect(res.status).toBe(200);
+        // The listing describes the file the download serves: the edit.
+        const render = (await db('photos').where({ id: photos.edited }).first()).edit_render_path;
+        const listed = json(await get(`/api/v1/events/${evId}/photos`)).photos.find((p) => p.id === photos.edited);
+        expect(listed).toMatchObject({
+          mime_type: 'image/jpeg', width: 96, height: 64, size_bytes: fs.statSync(path.join(storageRoot, render)).size,
+        });
+        // The download is logged; the cases below count those rows from zero.
+        await new Promise((r) => setTimeout(r, 100));
+        await db('activity_logs').where({ event_id: evId }).delete();
+      });
+
       it('stats a row recorded as 0 bytes instead of trusting it', async () => {
         await mkPhoto('zero', evId, 'dl-stale', 'dl-stale_zero.jpg', crypto.randomBytes(128 * 1024), {
           size_bytes: 0,
