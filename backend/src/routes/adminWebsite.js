@@ -21,6 +21,7 @@ const { getStoragePath } = require('../config/storage');
 const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
 const { AppError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
+const { toDateOnly } = require('../utils/dateOnly');
 const { parseBooleanInput } = require('../utils/parsers');
 const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../utils/sqlSecurity');
 const websiteService = require('../services/website/service');
@@ -134,7 +135,7 @@ router.get('/galleries', canView, [
       id: e.id,
       name: e.event_name,
       slug: e.slug,
-      date: e.event_date,
+      date: toDateOnly(e.event_date),
       showOnWebsite: e.show_on_website === true || e.show_on_website === 1,
       // The picker says that opting in publishes the picked photos although
       // the gallery has a password.

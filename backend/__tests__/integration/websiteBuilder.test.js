@@ -511,6 +511,14 @@ describe('gallery photos on the website', () => {
     expect((await getPhoto(openPhoto)).status).toBe(200);
   });
 
+  test('the picker gets a gallery date as a bare calendar day', async () => {
+    // node-pg hands a `date` column back as a Date (serialised as an instant);
+    // the API must send the day itself, as the gallery list does.
+    const dated = await insertEvent({ event_date: '2026-06-01T00:00:00.000Z' });
+    const list = await request(app).get('/api/admin/website/galleries').set(auth(adminId)).query({ ids: String(dated) });
+    expect(list.body.galleries[0].date).toBe('2026-06-01');
+  });
+
   test('the picker lists eligible galleries, flags a password, and refuses the photos of others', async () => {
     const list = await request(app).get('/api/admin/website/galleries').set(auth(adminId));
     expect(list.body.galleries.find((g) => g.id === lockedEvent)).toMatchObject({ showOnWebsite: true, eligible: true, reason: null, hasPassword: true });

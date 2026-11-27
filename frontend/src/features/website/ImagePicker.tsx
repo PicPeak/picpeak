@@ -13,6 +13,7 @@ import { Button, Modal, Notice, Switch, Tabs } from '../../components/common';
 import { EmptyState } from '../../components/common/EmptyState';
 import { useConfirm } from '../../components/common/ConfirmDialog';
 import { AdminAuthenticatedImage } from '../../components/admin/AdminAuthenticatedImage';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { usePermission } from '../../hooks/usePermission';
 import { websiteService } from '../../services/website.service';
 import { apiErrorText } from '../../utils/apiErrorText';
@@ -232,6 +233,7 @@ const REASONS: Record<string, string> = {
 
 export const GalleriesPane: React.FC<{ onOpen: (gallery: WebsiteGallery) => void }> = ({ onOpen }) => {
   const { t } = useTranslation();
+  const { format } = useLocalizedDate();
   const queryClient = useQueryClient();
   const canEditEvents = usePermission('events.edit');
   const canEditSite = usePermission('cms.edit');
@@ -271,7 +273,7 @@ export const GalleriesPane: React.FC<{ onOpen: (gallery: WebsiteGallery) => void
           </button>
         ) : <span className="text-sm font-medium text-heading">{g.name}</span>}
         <p className="text-xs text-muted">
-          {g.date ? new Date(g.date).toLocaleDateString() : ''}
+          {g.date ? format(g.date) : ''}
           {g.showOnWebsite && !g.eligible && g.reason ? ` · ${t(`website.picker.reason.${g.reason}`, REASONS[g.reason] || g.reason)}` : ''}
         </p>
         {g.hasPassword && (

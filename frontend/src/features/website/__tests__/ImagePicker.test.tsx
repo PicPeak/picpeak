@@ -4,7 +4,7 @@
  * paged and searchable, so older galleries stay reachable.
  */
 import React from 'react';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { WebsiteGallery } from '../types';
@@ -15,6 +15,7 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('../../../hooks/usePermission', () => ({ usePermission: () => true }));
+vi.mock('../../../hooks/usePublicSettings', () => ({ usePublicSettings: () => ({ data: undefined }) }));
 vi.mock('../../../utils/url', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../utils/url')>()),
   buildResourceUrl: (path: string) => `https://api.example.com${path}`,
@@ -74,6 +75,20 @@ describe('GalleriesPane', () => {
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'summer' } });
     expect(await screen.findByRole('button', { name: 'Old summer' })).toBeInTheDocument();
     await waitFor(() => expect(websiteService.listGalleries).toHaveBeenCalledWith(expect.objectContaining({ q: 'summer', page: 1 })));
+  });
+});
+
+describe('GalleriesPane west of UTC', () => {
+  let previousTz: string | undefined;
+  beforeAll(() => { previousTz = process.env.TZ; process.env.TZ = 'America/Los_Angeles'; });
+  afterAll(() => { if (previousTz === undefined) delete process.env.TZ; else process.env.TZ = previousTz; });
+
+  it('shows a gallery date as the calendar day it is, not the evening before', async () => {
+    vi.mocked(websiteService.listGalleries).mockResolvedValue({ galleries: [gallery(1, 'Summer wedding', { date: '2026-06-01' })], hasMore: false });
+    wrap(<GalleriesPane onOpen={() => {}} />);
+    await screen.findByRole('button', { name: 'Summer wedding' });
+    expect(screen.getByText(/June 1st, 2026/)).toBeInTheDocument();
+    expect(screen.queryByText(/5\/31\/2026|May 31/)).toBeNull();
   });
 });
 
