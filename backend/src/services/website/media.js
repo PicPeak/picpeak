@@ -19,6 +19,7 @@ const { isAwaitingPayment, isGalleryAvailable, requiresGalleryPassword, isTrue }
 const { isGalleryHidden } = require('../../utils/revealMode');
 const { capsFullSizeView, MAXIMUM_PROTECTION_CAP } = require('../galleryAssetPolicy');
 const { viewWatermarkSettings } = require('../galleryViewRendition');
+const { AppError } = require('../../utils/errors');
 const {
   applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed, whereNotVideo,
 } = require('../../utils/photoVisibility');
@@ -67,6 +68,9 @@ function photoVersion(photo) {
  */
 async function guestView(event, photo) {
   const settings = await viewWatermarkSettings(event, photo);
+  // No settings: they could not be read (watermarkService logs why). The
+  // gallery then shows the photo unmarked; the public website shows nothing.
+  if (settings == null) throw new AppError('The watermark settings could not be read', 503, 'WEBSITE_WATERMARK_UNAVAILABLE');
   const watermark = settings && settings.enabled ? settings : null;
   const capped = capsFullSizeView(event);
   const mark = watermark ? crypto.createHash('sha1').update(JSON.stringify(watermark)).digest('hex').slice(0, 10) : '';

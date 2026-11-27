@@ -1123,6 +1123,33 @@ describe('gallery watermarks on the website', () => {
     cache.clearWebsiteCache();
   });
 
+  test('when the watermark settings cannot be read, no photo leaves unmarked', async () => {
+    const spy = jest.spyOn(watermarkService, 'getWatermarkSettings').mockResolvedValue(null);
+    try {
+      const res = await getPhoto(markedPhoto);
+      expect(res.status).toBe(503);
+      expect(res.headers['retry-after']).toBeDefined();
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.body.length || 0).toBeLessThan(200);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await getPhoto(markedPhoto)).status).toBe(200);
+  });
+
+  test('a busy image worker is a 503 to retry, as in the gallery, not a 500', async () => {
+    const busy = Object.assign(new Error('Image queue is full'), { code: 'IMAGE_QUEUE_FULL', retryAfter: 7 });
+    const spy = jest.spyOn(watermarkService, 'applyWatermark').mockRejectedValue(busy);
+    try {
+      const res = await getPhoto(markedPhoto);
+      expect(res.status).toBe(503);
+      expect(res.headers['retry-after']).toBe('7');
+      expect(res.headers['cache-control']).toBe('no-store');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test('builder uploads are never watermarked', async () => {
     const png = await sharp({ create: { width: 2000, height: 1200, channels: 3, background: { r: 30, g: 160, b: 60 } } }).png().toBuffer();
     const res = await request(app).post('/api/admin/website/assets').set(auth(adminId)).attach('file', png, 'clean.png');

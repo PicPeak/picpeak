@@ -23,6 +23,7 @@ const { ensurePreviewImageAtWidth } = require('../services/imageProcessor');
 const { isPresentationRenditionKey } = require('../services/galleryAssetPolicy');
 const renditionRefresh = require('../services/renditionRefresh');
 const media = require('../services/website/media');
+const imageResourcePolicy = require('../services/imageResourcePolicy');
 const { capPreviewRendition, watermarkPreviewRendition } = require('../services/galleryViewRendition');
 
 const router = express.Router();
@@ -135,6 +136,12 @@ router.get('/:token/:size', async (req, res) => {
     res.status(200).set({ ...headers, 'Content-Length': size_ });
     return pipeStreamToResponse(stream, res, { context: 'website media' });
   } catch (error) {
+    // Unreadable watermark settings or a busy image worker: "try again", as
+    // the gallery answers, and never cached. Never the unmarked image.
+    if (!res.headersSent && (error.code === 'WEBSITE_WATERMARK_UNAVAILABLE' || imageResourcePolicy.isTransient(error))) {
+      res.set({ 'Retry-After': String(error.retryAfter || 5), 'Cache-Control': 'no-store' });
+      return res.status(503).type('text/plain').send('Try again shortly');
+    }
     logger.error('Website media failed', { error: error.message });
     if (!res.headersSent) res.status(500).type('text/plain').send('Internal server error');
   }
