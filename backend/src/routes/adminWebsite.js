@@ -156,19 +156,24 @@ router.get('/assets', canView, handleAsync(async (req, res) => {
   res.json({ assets: await assets.listAssets() });
 }));
 
+// The temp directory is made on the first upload, not when the module loads:
+// importing the server must not touch the storage volume.
 const upload = multer({
-  dest: path.join(getStoragePath(), 'temp'),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      const dir = path.join(getStoragePath(), 'temp');
+      fs.mkdir(dir, { recursive: true }).then(() => cb(null, dir), cb);
+    },
+  }),
   // Single unnamed `file` field; no bracket-indexed field names (as adminCMS).
   limits: { fileSize: 100 * 1024 * 1024, files: 1, fields: 2, fieldArrayIndexLimit: 0 },
 });
 
 router.post('/assets', canEdit, (req, res, next) => {
-  fs.mkdir(path.join(getStoragePath(), 'temp'), { recursive: true })
-    .then(() => upload.single('file')(req, res, (err) => {
-      if (err) return res.status(400).json({ error: err.message, code: 'WEBSITE_UPLOAD_FAILED' });
-      return next();
-    }))
-    .catch(next);
+  upload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message, code: 'WEBSITE_UPLOAD_FAILED' });
+    return next();
+  });
 }, handleAsync(async (req, res) => {
   const file = req.file;
   if (!file) throw new AppError('No file uploaded', 400, 'WEBSITE_UPLOAD_FAILED');
