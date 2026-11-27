@@ -1,5 +1,7 @@
 'use strict';
 
+const { PT_EMAIL_TEMPLATES } = require('./ptEmailTemplates');
+
 /**
  * Bring a seeded email template up to date when its default text changed.
  *
@@ -92,8 +94,8 @@ async function seedTemplates(db, logger, templates, label) {
       const rows = await db('email_templates').insert(masterRow).returning('id');
       const templateId = typeof rows[0] === 'object' ? rows[0].id : rows[0];
       if (hasTranslationsTable && templateId) {
-        for (const lang of ['en', 'de']) {
-          const content = def[lang];
+        for (const lang of ['en', 'de', 'pt']) {
+          const content = lang === 'pt' ? PT_EMAIL_TEMPLATES[templateKey] : def[lang];
           if (!content) continue;
           await db('email_template_translations').insert({
             template_id: templateId,
