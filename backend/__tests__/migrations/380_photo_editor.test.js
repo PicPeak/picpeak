@@ -29,6 +29,7 @@ describe('migration 380 on SQLite', () => {
     await migration.up(db);
     expect(await db('photos').first()).toMatchObject({
       filename: 'old.jpg', edit_params: null, edit_rev: 0, edit_applied_rev: 0, edit_render_path: null, edit_width: null, edit_height: null,
+      edit_failed_rev: null, edit_error: null,
     });
     expect(await db.schema.hasTable('photo_edit_presets')).toBe(true);
     expect(await db('feature_flags').where({ key: 'photoEditor' }).first()).toMatchObject({ value: 0 });
@@ -47,6 +48,7 @@ describe('migration 380 on SQLite', () => {
     await migration.up(db);
     await migration.down(db);
     expect(await db.schema.hasColumn('photos', 'edit_params')).toBe(false);
+    expect(await db.schema.hasColumn('photos', 'edit_failed_rev')).toBe(false);
     expect(await db.schema.hasTable('photo_edit_presets')).toBe(false);
     expect(await db('feature_flags').where({ key: 'photoEditor' }).first()).toBeUndefined();
     await expect(migration.down(db)).resolves.toBeUndefined();

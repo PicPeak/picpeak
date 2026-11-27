@@ -506,6 +506,7 @@ module.exports = {
   JOB_NAME,
   needsRefresh,
   refreshPhoto,
+  createReferenceIndex,
   refreshCover,
   runPass,
   invalidateRestoredRenditions,

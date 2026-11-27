@@ -14,6 +14,11 @@
  * edit_width / edit_height its size, which guests are shown. photos.width /
  * height stay the original's: face boxes are in its pixels.
  *
+ * edit_failed_rev is the revision the background apply last failed on, and
+ * edit_error a short code for what failed ('render', 'renditions', 'error'),
+ * on the row so every replica reports the failure and a retry on any replica
+ * clears it. A failure counts only while it names the current edit_rev.
+ *
  * photo_edit_presets are the studio's saved edits, shared by every admin.
  * feature_flags.photoEditor gates the editor, default off.
  *
@@ -27,6 +32,8 @@ exports.up = async function up(knex) {
     ['edit_render_path', (t) => t.string('edit_render_path', 512).nullable()],
     ['edit_width', (t) => t.integer('edit_width').nullable()],
     ['edit_height', (t) => t.integer('edit_height').nullable()],
+    ['edit_failed_rev', (t) => t.integer('edit_failed_rev').nullable()],
+    ['edit_error', (t) => t.string('edit_error', 32).nullable()],
   ];
   const hasPhotos = await knex.schema.hasTable('photos');
   for (const [name, add] of columns) {
@@ -56,7 +63,7 @@ exports.down = async function down(knex) {
   }
   await knex.schema.dropTableIfExists('photo_edit_presets');
   const hasPhotos = await knex.schema.hasTable('photos');
-  for (const name of ['edit_height', 'edit_width', 'edit_render_path', 'edit_applied_rev', 'edit_rev', 'edit_params']) {
+  for (const name of ['edit_error', 'edit_failed_rev', 'edit_height', 'edit_width', 'edit_render_path', 'edit_applied_rev', 'edit_rev', 'edit_params']) {
     if (hasPhotos && await knex.schema.hasColumn('photos', name)) {
       await knex.schema.alterTable('photos', (t) => t.dropColumn(name));
     }

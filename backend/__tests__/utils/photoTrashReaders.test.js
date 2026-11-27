@@ -56,7 +56,7 @@ const ALL_ROWS = {
   'services/mediaAttemptService.js': [11, 'attempts in flight and their recovery, restore-time reset of every row; the claim itself is live only'],
   'services/photoCap.js': [3, 'inserts of new photos'],
   'services/photoCredit.js': [7, 'guest erasure and merge treat trashed photos like any other'],
-  'services/photoEdits.js': [13, 'edits of a photo a route or the pass found live, by id: its edit columns, the render recorded and fenced on its revision, a superseded render, the save itself, a reset, and a watermark copy another row (trashed or not) may still name (issue 2619)'],
+  'services/photoEdits.js': [14, 'edits of a photo a route or the pass found live, by id: its edit columns, the render recorded and fenced on its revision, a superseded render, the save itself, a reset, a failed apply recorded on its revision, and a watermark copy another row (trashed or not) may still name (issue 2619)'],
   'services/photoProcessor.js': [8, 'filename counters, inserts and the run in flight; a failed upload keeps any file a row still names, trashed or not'],
   'services/photoReplacementService.js': [6, 'writes to the replacement target found live just before; a preview or hero a trashed photo shares is kept too; a lost commit acknowledgement is detected on the row itself'],
   'services/picpeakImportService.js': [1, 'portable import: the flag travels with the row'],

@@ -314,6 +314,71 @@ describe('save, background apply, reset', () => {
   });
 });
 
+describe('a pass over many edited photos', () => {
+  it('reads the rendition owners once, not once a photo', async () => {
+    const ids = [];
+    for (let i = 0; i < 3; i++) {
+      fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath(`events/active/edit-card/batch${i}.jpg`));
+      ids.push(unwrap(await db('photos').insert({
+        event_id: eventId, filename: `batch${i}.jpg`, path: `edit-card/batch${i}.jpg`, type: 'individual', media_type: 'image',
+        mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: originalBytes.length, processing_status: 'complete',
+        uploaded_at: new Date().toISOString(),
+      }).returning('id')));
+    }
+    const { ensureThumbnail } = require('../../src/services/imageProcessor');
+    const rows = [];
+    for (const id of ids) {
+      await ensureThumbnail(await db('photos').where({ id }).first(), { force: true });
+      rows.push({ photo: await db('photos').where({ id }).first(), params: validated({ exposure: 0.5 }) });
+    }
+    await photoEdits().saveEdits(rows);
+    // The owner scan reads every row's rendition keys; it is the cost that
+    // must not grow with the batch.
+    let scans = 0;
+    const count = (query) => { if (/select .*thumbnail_path.*preview_path.*hero_path.* from .photos. where .id. > \?/.test(query.sql)) scans++; };
+    db.on('query', count);
+    try {
+      expect(await photoEdits().runPass({ active: () => true, sleep: async () => {} })).toMatchObject({ applied: 3, failed: 0 });
+    } finally {
+      db.removeListener('query', count);
+    }
+    for (const id of ids) expect((await db('photos').where({ id }).first()).thumbnail_path).toContain(`edit_p${id}_r1_`);
+    // One paged scan: a page with the rows and the empty page that ends it.
+    expect(scans).toBe(2);
+    await db('photos').whereIn('id', ids).delete();
+  });
+});
+
+describe('a render that fails', () => {
+  it('is recorded on the row, so every replica reports it and a retry anywhere asks again', async () => {
+    fs.writeFileSync(storagePath('events/active/edit-card/broken.jpg'), 'not an image');
+    const brokenId = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'broken.jpg', path: 'edit-card/broken.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: 12, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    const broken = () => db('photos').where({ id: brokenId }).first();
+    try {
+      await photoEdits().saveEdits([{ photo: await broken(), params: validated({ exposure: 1 }) }]);
+      expect(await photoEdits().runPass({ active: () => true, sleep: async () => {} })).toMatchObject({ failed: 1 });
+      expect(await broken()).toMatchObject({ edit_rev: 1, edit_applied_rev: 0, edit_failed_rev: 1, edit_error: 'render' });
+      expect(photoEdits().hasFailed(await broken())).toBe(true);
+      // Another replica (no memory of this pass) sees it and can retry it.
+      let other;
+      jest.isolateModules(() => { other = require('../../src/services/photoEdits'); });
+      expect(other.hasFailed(await broken())).toBe(true);
+      expect(await photoEdits().retry(eventId, [brokenId])).toBe(1);
+      expect(await broken()).toMatchObject({ edit_failed_rev: null, edit_error: null });
+      // A new save is a new revision: not failed until a pass has tried it.
+      await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+      await photoEdits().saveEdits([{ photo: await broken(), params: validated({ exposure: 0.5 }) }]);
+      expect(photoEdits().hasFailed(await broken())).toBe(false);
+    } finally {
+      await db('photos').where({ id: brokenId }).delete();
+    }
+  });
+});
+
 describe('deleting photos leaves no edit files behind', () => {
   // A RAW by name with a develop preview file, and an edited JPEG with its render.
   const plant = async (slug) => {

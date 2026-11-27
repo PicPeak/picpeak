@@ -651,14 +651,23 @@ async function dropWatermarkCopy(row) {
   }
 }
 
-/** Bring one row's renditions to its edit revision. True when done (or superseded). */
-async function applyPhoto(photo) {
+/**
+ * Bring one row's renditions to its edit revision. True when done (or
+ * superseded), otherwise a short code for what failed (edit_error).
+ * `references` is the pass's rendition owner index (renditionRefresh), read
+ * once a pass rather than once a photo.
+ */
+async function applyPhoto(photo, references) {
   const rev = Number(photo.edit_rev);
   try {
     let row = await db('photos').where({ id: photo.id }).first();
     if (!row || Number(row.edit_rev) !== rev) return true;
     if (paramsOf(row)) {
-      if (!(await ensureEditedSource(row))) return false;
+      const rendered = await ensureEditedSource(row).catch((err) => {
+        logger.warn(`Photo edit: photo ${photo.id} revision ${rev} could not be rendered: ${err.message}`);
+        return null;
+      });
+      if (!rendered) return 'render';
     } else if (row.edit_render_path) {
       // A reset: the original is what guests get again.
       const cleared = await db('photos').where({ id: row.id, edit_rev: rev, edit_render_path: row.edit_render_path })
@@ -668,15 +677,16 @@ async function applyPhoto(photo) {
     row = await db('photos').where({ id: photo.id }).first();
     if (!row || Number(row.edit_rev) !== rev) return true;
     await dropStaleTiers(row);
-    if (!(await require('./renditionRefresh').refreshPhoto(row))) return false;
+    if (!(await require('./renditionRefresh').refreshPhoto(row, references))) return 'renditions';
     await dropWatermarkCopy(row);
     const zip = require('./downloadZipService');
     await zip.invalidateIfBuilt(Number(row.event_id));
-    await db('photos').where({ id: row.id, edit_rev: rev }).update({ edit_applied_rev: rev });
+    await db('photos').where({ id: row.id, edit_rev: rev })
+      .update({ edit_applied_rev: rev, edit_failed_rev: null, edit_error: null });
     return true;
   } catch (err) {
     logger.warn(`Photo edit: photo ${photo.id} revision ${rev} could not be applied: ${err.message}`);
-    return false;
+    return 'error';
   }
 }
 
@@ -684,8 +694,6 @@ let running = false;
 let loop = null;
 let waits = null;
 let rerunRequested = false;
-// Rows that failed at a revision, so status can say so; retried on the next pass.
-const failures = new Map();
 
 async function runPass({ active = () => running, sleep = (ms) => waits.sleep(ms) } = {}) {
   await maintenanceJobs.ensure(JOB_NAME);
@@ -694,6 +702,7 @@ async function runPass({ active = () => running, sleep = (ms) => waits.sleep(ms)
   const lease = maintenanceJobs.startLeaseKeeper(JOB_NAME, token);
   const counts = { applied: 0, failed: 0 };
   const limit = pLimit(concurrency());
+  const references = require('./renditionRefresh').createReferenceIndex();
   try {
     let lastId = 0;
     while (active()) {
@@ -704,12 +713,16 @@ async function runPass({ active = () => running, sleep = (ms) => waits.sleep(ms)
       lastId = batch[batch.length - 1].id;
       await Promise.all(batch.map((photo) => limit(async () => {
         if (!active() || lease.lost()) return;
-        if (await applyPhoto(photo)) {
+        const outcome = await applyPhoto(photo, references);
+        if (outcome === true) {
           counts.applied++;
-          failures.delete(photo.id);
         } else {
           counts.failed++;
-          failures.set(photo.id, Number(photo.edit_rev));
+          // On the row, not in memory: every replica reports it, and a retry
+          // on any of them clears it. Tried again on later passes anyway.
+          await db('photos').where({ id: photo.id, edit_rev: Number(photo.edit_rev) })
+            .update({ edit_failed_rev: Number(photo.edit_rev), edit_error: outcome })
+            .catch((err) => logger.warn(`Photo edit: could not record the failure of photo ${photo.id}: ${err.message}`));
         }
         const wait = loadGovernor.bulkDelayMs();
         if (wait) await sleep(wait);
@@ -783,7 +796,7 @@ function requestPass() {
  * the editor can offer a retry and the grid stops polling for it.
  */
 function hasFailed(photo) {
-  return Number(photo.edit_rev) > Number(photo.edit_applied_rev) && failures.get(photo.id) === Number(photo.edit_rev);
+  return Number(photo.edit_rev) > Number(photo.edit_applied_rev) && Number(photo.edit_failed_rev) === Number(photo.edit_rev);
 }
 
 /**
@@ -791,11 +804,11 @@ function hasFailed(photo) {
  * pending until the pass has tried them. Returns how many were failed.
  */
 async function retry(eventId, ids) {
-  const rows = await livePhotos(db).where({ event_id: eventId }).whereIn('id', ids).select('id', 'edit_rev', 'edit_applied_rev');
-  const failed = rows.filter(hasFailed);
-  for (const row of failed) failures.delete(row.id);
-  if (failed.length) requestPass();
-  return failed.length;
+  const cleared = await livePhotos(db).where({ event_id: eventId }).whereIn('id', ids)
+    .whereRaw('edit_rev > edit_applied_rev').whereRaw('edit_failed_rev = edit_rev')
+    .update({ edit_failed_rev: null, edit_error: null });
+  if (cleared) requestPass();
+  return cleared;
 }
 
 module.exports = {
