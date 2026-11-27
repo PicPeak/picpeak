@@ -23,7 +23,7 @@ import { BLOCK_ICONS, BLOCK_TYPES, blockLabel, collectImageRefs, createBlock, mo
 import { BlockEditor } from './BlockEditor';
 import { MediaUrlsContext } from './fields';
 import { PagesPanel, slugProblem } from './PagesPanel';
-import { PreviewFrame, mediaOriginDiffers, type PreviewDevice } from './PreviewFrame';
+import { PreviewFrame, mediaOriginDiffers, publicSiteUrl, type PreviewDevice } from './PreviewFrame';
 import { SitePanel } from './SitePanel';
 import { SortableList } from './SortableList';
 import { useWebsiteEditor } from './useWebsiteEditor';
@@ -70,7 +70,13 @@ function usePreview(doc: WebsiteDocument | null, pageId: string) {
   const lastGood = useRef<string | null>(null);
   if (preview.data !== undefined) lastGood.current = preview.data;
   const waiting = !!doc && !!pageId && (sent?.doc !== doc || sent?.pageId !== pageId);
-  return { html: lastGood.current, loading: waiting || preview.isFetching };
+  return {
+    html: lastGood.current,
+    loading: waiting || preview.isFetching,
+    // The shown preview is an older one: the latest render failed.
+    stale: preview.isError && !preview.isFetching,
+    retry: () => { void preview.refetch(); },
+  };
 }
 
 export const WebsiteBuilderPage: React.FC = () => {
@@ -91,7 +97,7 @@ export const WebsiteBuilderPage: React.FC = () => {
   useEffect(() => { if (page && page.id !== pageId) setPageId(page.id); }, [page, pageId]);
   const block = page?.blocks.find((b) => b.id === blockId) || null;
 
-  const { html, loading } = usePreview(draft, page?.id || '');
+  const preview = usePreview(draft, page?.id || '');
 
   const refs = useMemo(() => (draft ? collectImageRefs(draft) : []), [draft]);
   const refsKey = useMemo(() => [...new Set(refs.map(mediaKey))].sort().join(','), [refs]);
@@ -291,7 +297,7 @@ export const WebsiteBuilderPage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               {status}
               {server.published && (
-                <a href="/" target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm inline-flex items-center gap-1.5">
+                <a href={publicSiteUrl()} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm inline-flex items-center gap-1.5">
                   <ExternalLink className="w-4 h-4" aria-hidden="true" />{t('website.openSite', 'Open site')}
                 </a>
               )}
@@ -383,7 +389,16 @@ export const WebsiteBuilderPage: React.FC = () => {
                 ))}
               </div>
             </div>
-            <PreviewFrame html={html} loading={loading} device={device} selectedBlockId={block?.id || null}
+            {preview.stale && (
+              <Notice
+                tone="warning"
+                size="sm"
+                action={<Button size="sm" variant="secondary" onClick={preview.retry}>{t('website.previewRetry', 'Refresh preview')}</Button>}
+              >
+                {t('website.previewStale', 'Preview out of date: it could not be refreshed.')}
+              </Notice>
+            )}
+            <PreviewFrame html={preview.html} loading={preview.loading} device={device} selectedBlockId={block?.id || null}
               onSelectBlock={(id) => { setPanel('blocks'); setBlockId(id); }} />
           </section>
         </div>

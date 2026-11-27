@@ -253,6 +253,27 @@ describe('WebsiteBuilderPage', () => {
     await waitFor(() => expect(frame.getAttribute('srcdoc')).toContain('<base href="https://api.example.com/">'));
   });
 
+  it('opens the published site on the website\'s origin, not the admin\'s', async () => {
+    renderPage();
+    const link = await screen.findByRole('link', { name: /Open site/ });
+    expect(link.getAttribute('href')).toBe('https://api.example.com/');
+  });
+
+  it('says when the preview could not be refreshed, keeps the last one, and retries', async () => {
+    renderPage();
+    const frame = await screen.findByTitle('Preview of the page');
+    await waitFor(() => expect(frame.getAttribute('srcdoc')).toContain('Hello there|About'));
+    vi.mocked(websiteService.preview).mockRejectedValue(new Error('Network down'));
+    fireEvent.click(screen.getByText('Hello there'));
+    fireEvent.change(screen.getByLabelText('Heading'), { target: { value: 'Welcome' } });
+    expect(await screen.findByText(/Preview out of date/)).toBeInTheDocument();
+    expect(screen.getByTitle('Preview of the page').getAttribute('srcdoc')).toContain('Hello there|About');
+    vi.mocked(websiteService.preview).mockImplementation(async (doc) => `<html><body>${doc.pages[0].blocks.map((b) => ('heading' in b ? b.heading : '')).join('|')}</body></html>`);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh preview' }));
+    await waitFor(() => expect(screen.getByTitle('Preview of the page').getAttribute('srcdoc')).toContain('Welcome|About'));
+    expect(screen.queryByText(/Preview out of date/)).toBeNull();
+  });
+
   it('keeps a home page\'s faulty address visible so it can be fixed', async () => {
     renderPage();
     await screen.findByText('Blocks on “Home”');

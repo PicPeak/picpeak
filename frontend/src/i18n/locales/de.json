@@ -13398,6 +13398,8 @@
     "conflictReload": "Neueste Version laden",
     "conflict": "Jemand anderes hat die Website gespeichert, seit Sie sie geöffnet haben, deshalb wurden Ihre Änderungen nicht gespeichert. Laden Sie die neueste Version, um dort weiterzuarbeiten; Ihre ungespeicherten Änderungen hier gehen dabei verloren.",
     "importRefused": "Ihre Startseite ist zu lang für einen eigenen HTML-Block ({{length}} von {{max}} Zeichen) und wurde deshalb nicht in den Baukasten übernommen; gekürzt wurde nichts. Sie bleibt unter der Hauptadresse sichtbar, bis Sie hier veröffentlichen. Um sie zu behalten, kürzen Sie sie und fügen Sie sie in einen eigenen HTML-Block ein.",
-    "refreshFailed": "Die Website konnte nicht neu geladen werden. Ihre Änderungen hier bleiben erhalten."
+    "refreshFailed": "Die Website konnte nicht neu geladen werden. Ihre Änderungen hier bleiben erhalten.",
+    "previewStale": "Vorschau nicht aktuell: Sie konnte nicht neu geladen werden.",
+    "previewRetry": "Vorschau neu laden"
   }
 }

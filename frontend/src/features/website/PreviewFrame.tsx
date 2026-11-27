@@ -12,14 +12,6 @@ import { buildResourceUrl } from '../../utils/url';
 export type PreviewDevice = 'desktop' | 'phone';
 
 /**
- * The page's /site-media, /fonts and /uploads paths are root-relative. In a
- * srcdoc they resolve against the admin's origin, which in a split-origin
- * install (absolute VITE_API_URL) is not the backend's; a <base> on the
- * backend's resource origin (buildResourceUrl) points them there. The frame
- * runs no scripts and its clicks are cancelled, so the base only moves where
- * resources load from.
- */
-/**
  * Whether the backend's resources live on another origin than the admin
  * (split origin). The admin's policy lets the preview frame load no video
  * from there, so the preview then shows the hero video's poster instead.
@@ -28,8 +20,25 @@ export function mediaOriginDiffers(): boolean {
   return new URL(buildResourceUrl('/'), window.location.href).origin !== window.location.origin;
 }
 
+/**
+ * The published website's address: the backend renders it, so in a
+ * split-origin install or the Vite dev server it is on the backend's
+ * resource origin, not the admin's (where / is the admin app).
+ */
+export function publicSiteUrl(): string {
+  return new URL(buildResourceUrl('/'), window.location.href).href;
+}
+
+/**
+ * The page's /site-media, /fonts and /uploads paths are root-relative. In a
+ * srcdoc they resolve against the admin's origin, which in a split-origin
+ * install (absolute VITE_API_URL) is not the backend's; a <base> on the
+ * backend's resource origin (buildResourceUrl) points them there. The frame
+ * runs no scripts and its clicks are cancelled, so the base only moves where
+ * resources load from.
+ */
 export function withResourceBase(html: string): string {
-  const base = new URL(buildResourceUrl('/'), window.location.href).href;
+  const base = publicSiteUrl();
   const tag = `<base href="${base.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">`;
   return /<head>/i.test(html) ? html.replace(/<head>/i, `<head>\n${tag}`) : `${tag}${html}`;
 }
