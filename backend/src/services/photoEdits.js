@@ -57,6 +57,8 @@ const EDIT_COLUMNS = ['edit_params', 'edit_rev', 'edit_applied_rev', 'edit_rende
 const { RENDER_KEY, DELIVERY_KEY, deliveredKey } = require('./photoResolver');
 const BASE_LONG_EDGE = 1920;
 const BATCH = 100;
+// Photos a default develop saves in one transaction.
+const DEVELOP_CHUNK = 200;
 const RETRY_MS = 10 * 60 * 1000;
 const RETRY_CLAIM_MS = 10 * 60 * 1000;
 
@@ -649,8 +651,14 @@ async function queueDefaultDevelop(photos) {
     changes.push({ photo, params: { ...math.DEFAULT_PARAMS, develop: true } });
   }
   // Over the unedited row as read here only: an edit saved meanwhile stays.
-  const revisions = changes.length ? await saveEdits(changes, { onlyUnedited: true }) : {};
-  return changes.map((change) => change.photo.id).filter((id) => revisions[id] !== undefined);
+  // In bounded transactions: "develop all" can name a whole large gallery.
+  const queued = [];
+  for (let i = 0; i < changes.length; i += DEVELOP_CHUNK) {
+    const part = changes.slice(i, i + DEVELOP_CHUNK);
+    const revisions = await saveEdits(part, { onlyUnedited: true });
+    queued.push(...part.map((change) => change.photo.id).filter((id) => revisions[id] !== undefined));
+  }
+  return queued;
 }
 
 /** After a RAW upload finished processing: its default develop, when the studio asked for that. */

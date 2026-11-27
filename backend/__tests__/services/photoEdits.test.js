@@ -543,6 +543,31 @@ describe('auto develop of a guest upload held for review', () => {
   });
 });
 
+describe('develop all RAWs of a large gallery', () => {
+  it('saves them in bounded transactions, not one for all', async () => {
+    const rawDevelop = require('../../src/services/rawDevelop');
+    const isRaw = jest.spyOn(rawDevelop, 'isRawSource').mockResolvedValue(true);
+    const rows = Array.from({ length: 450 }, (_, i) => ({
+      event_id: eventId, filename: `bulk${i}.cr3`, path: 'edit-card/card.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/x-canon-cr3', width: 600, height: 400, size_bytes: 1, processing_status: 'complete', uploaded_at: new Date().toISOString(),
+    }));
+    for (let i = 0; i < rows.length; i += 100) await db('photos').insert(rows.slice(i, i + 100));
+    const photos = await db('photos').where('filename', 'like', 'bulk%.cr3');
+    // A transaction is the one write that updates edit_rev for many rows: count those.
+    let begun = 0;
+    const count = (query) => { if (/^begin/i.test(query.sql)) begun++; };
+    db.on('query', count);
+    try {
+      expect(await photoEdits().queueDefaultDevelop(photos)).toHaveLength(450);
+      expect(begun).toBe(3);
+    } finally {
+      db.removeListener('query', count);
+      isRaw.mockRestore();
+      await db('photos').where('filename', 'like', 'bulk%.cr3').delete();
+    }
+  });
+});
+
 describe('the default RAW develop and a manual edit saved meanwhile', () => {
   it('never replaces the edit: the default is written only over the unedited row it was queued from', async () => {
     const rawDevelop = require('../../src/services/rawDevelop');
