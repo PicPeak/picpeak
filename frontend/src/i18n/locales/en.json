@@ -2613,7 +2613,8 @@
         "delivery": "Nested folders from uploads, and delivering a first look before the full gallery.",
         "tags": "Tag photos by scene so guests can filter the gallery.",
         "pricing": "Sell individual photo downloads: price, free quota and access window.",
-        "languages": "Show the title, welcome message and category texts in more than one language."
+        "languages": "Show the title, welcome message and category texts in more than one language.",
+        "website": "Use photos of this gallery on your public website."
       },
       "access": "Access",
       "appearance": "Appearance",
@@ -2708,7 +2709,9 @@
         "languagesVisitor": "Visitor's language",
         "languagesDefault": "default {{language}}",
         "languagesBilingual": "Bilingual",
-        "languagesOff": "One language"
+        "languagesOff": "One language",
+        "onWebsite": "On the website",
+        "notOnWebsite": "Not on the website"
       },
       "undoSection": "Undo changes in this section",
       "delivery": "Folders & delivery",
@@ -2716,7 +2719,8 @@
       "recipientsOwnerOnly": "Only the gallery owner can change who receives the gallery email.",
       "tags": "Tags",
       "pricing": "Photo sales",
-      "languages": "Languages"
+      "languages": "Languages",
+      "website": "Public website"
     },
     "folders": {
       "sectionTitle": "Folders",
@@ -2870,6 +2874,12 @@
       "hiddenRemove": "Remove these translations",
       "hiddenRemoveConfirm": "Remove the {{count}} translations written in {{language}}? This cannot be undone.",
       "hiddenRemoveFailed": "Some translations could not be removed. Try again."
+    },
+    "website": {
+      "toggle": "Show on public website",
+      "help": "Lets you pick photos of this gallery for your website and list it among the featured galleries. Only the photos you pick appear there. Switch it off and they leave the website at once.",
+      "passwordNotice": "This gallery has a password. While this is on, the photos you pick for the website are public, although this gallery has a password; the rest of the gallery keeps its password.",
+      "openBuilder": "Open the website builder"
     }
   },
   "settings": {

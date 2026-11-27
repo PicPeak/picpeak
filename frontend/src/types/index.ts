@@ -120,6 +120,8 @@ export interface Event {
   // photo gets surfaced via WhatsApp share until they consciously
   // flip it on.
   og_image_share_enabled?: boolean;
+  // Opt-in for the public website (issue 2618, migration 379).
+  show_on_website?: boolean;
   // Header style settings (decoupled from layout)
   header_style?: 'hero' | 'standard' | 'minimal' | 'none';
   hero_divider_style?: 'wave' | 'straight' | 'angle' | 'curve' | 'none';

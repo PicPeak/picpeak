@@ -3346,7 +3346,8 @@
         "delivery": "Verschachtelte Ordner aus Uploads und eine erste Auswahl vor der vollständigen Galerie.",
         "tags": "Fotos nach Szenen taggen, damit Gäste die Galerie filtern können.",
         "pricing": "Einzelne Foto-Downloads verkaufen: Preis, Gratis-Kontingent und Zugriffsdauer.",
-        "languages": "Titel, Willkommensnachricht und Kategorietexte in mehr als einer Sprache zeigen."
+        "languages": "Titel, Willkommensnachricht und Kategorietexte in mehr als einer Sprache zeigen.",
+        "website": "Fotos dieser Galerie auf Ihrer öffentlichen Website verwenden."
       },
       "access": "Zugang",
       "appearance": "Erscheinungsbild",
@@ -3441,7 +3442,9 @@
         "languagesVisitor": "Sprache des Besuchers",
         "languagesDefault": "Standard {{language}}",
         "languagesBilingual": "Zweisprachig",
-        "languagesOff": "Eine Sprache"
+        "languagesOff": "Eine Sprache",
+        "onWebsite": "Auf der Website",
+        "notOnWebsite": "Nicht auf der Website"
       },
       "undoSection": "Diesen Bereich zurücksetzen",
       "delivery": "Ordner & Auslieferung",
@@ -3449,7 +3452,8 @@
       "recipientsOwnerOnly": "Nur der Besitzer der Galerie kann ändern, wer die Galerie-E-Mail erhält.",
       "tags": "Tags",
       "pricing": "Foto-Verkauf",
-      "languages": "Sprachen"
+      "languages": "Sprachen",
+      "website": "Öffentliche Website"
     },
     "folders": {
       "sectionTitle": "Ordner",
@@ -3603,6 +3607,12 @@
       "hiddenRemove": "Diese Übersetzungen entfernen",
       "hiddenRemoveConfirm": "Die {{count}} Übersetzungen auf {{language}} entfernen? Das lässt sich nicht rückgängig machen.",
       "hiddenRemoveFailed": "Einige Übersetzungen konnten nicht entfernt werden. Versuchen Sie es erneut."
+    },
+    "website": {
+      "toggle": "Auf der öffentlichen Website zeigen",
+      "help": "Damit können Sie Fotos dieser Galerie für Ihre Website auswählen und die Galerie unter den ausgewählten Galerien zeigen. Dort erscheinen nur die Fotos, die Sie auswählen. Schalten Sie es aus, verschwinden sie sofort von der Website.",
+      "passwordNotice": "Diese Galerie hat ein Passwort. Solange dies eingeschaltet ist, sind die Fotos, die Sie für die Website auswählen, öffentlich, obwohl diese Galerie ein Passwort hat; der Rest der Galerie bleibt hinter dem Passwort.",
+      "openBuilder": "Website-Baukasten öffnen"
     }
   },
   "settings": {

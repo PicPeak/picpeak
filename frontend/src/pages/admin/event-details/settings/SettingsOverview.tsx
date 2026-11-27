@@ -8,7 +8,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  AlertTriangle, Bell, ChevronRight, Code, Download, FolderOpen, FolderTree, Lock, MonitorPlay,
+  AlertTriangle, Bell, ChevronRight, Code, Download, FolderOpen, FolderTree, Globe, Lock, MonitorPlay,
   Languages, Palette, ScanFace, SlidersHorizontal, Tags, Users, ShoppingCart, type LucideIcon,
 } from 'lucide-react';
 import type { Event } from '../../../../types';
@@ -26,6 +26,7 @@ export const SECTION_ICON: Record<SettingsSectionKey, LucideIcon> = {
   guests: Users,
   slideshow: MonitorPlay,
   embed: Code,
+  website: Globe,
   source: FolderOpen,
   delivery: FolderTree,
   reminder: Bell,
@@ -39,7 +40,7 @@ export const SECTION_ICON: Record<SettingsSectionKey, LucideIcon> = {
 export const SECTION_GROUPS: Array<{ key: string; label: string; sections: SettingsSectionKey[] }> = [
   { key: 'basics', label: 'Basics', sections: ['general', 'appearance', 'languages'] },
   { key: 'access', label: 'Access & downloads', sections: ['access', 'downloads', 'pricing'] },
-  { key: 'guests', label: 'Guests', sections: ['guests', 'slideshow', 'embed'] },
+  { key: 'guests', label: 'Guests', sections: ['guests', 'slideshow', 'embed', 'website'] },
   { key: 'photos', label: 'Photos & automation', sections: ['source', 'delivery', 'reminder', 'faces', 'tags'] },
 ];
 
@@ -153,6 +154,13 @@ export function useSectionSummaries(
         event.embed_token
           ? { text: s('embedActive', 'Embed active'), tone: 'ok' }
           : { text: s('noEmbed', 'Not embedded'), tone: 'off' },
+      ],
+    },
+    website: {
+      parts: [
+        f.show_on_website
+          ? { text: s('onWebsite', 'On the website'), tone: 'ok' }
+          : { text: s('notOnWebsite', 'Not on the website'), tone: 'off' },
       ],
     },
     source: {
