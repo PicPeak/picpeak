@@ -89,7 +89,7 @@ describe('tier deletes (issue 2113)', () => {
   // The other sweeps that hand the helpers a partial row. Both run against
   // mocked or joined selects elsewhere, so the column list is pinned here.
   it.each([
-    ['event delete cascade', '../../src/routes/adminEvents/helpers.js', /const tieredPhotos = await db\('photos'\)([\s\S]*?)'edit_height'\);/, ['event_id', 'processing_attempt_id', 'edit_params', 'edit_rev']],
+    ['event delete cascade', '../../src/routes/adminEvents/helpers.js', /const tieredPhotos = await db\('photos'\)([\s\S]*?)EDIT_FILE_COLUMNS\);/, ['event_id', 'processing_attempt_id', 'edit_params', 'edit_rev']],
     ['orientation repair', '../../src/routes/adminPhotoDimensions.js', /'photos\.event_id',\s*'photos\.width', 'photos\.height', 'photos\.face_status',([\s\S]*?)'events\.slug'/, ['photos.processing_attempt_id']],
   ])('the %s selects what a RAW row\'s tier keys need', async (_name, file, pattern, columns) => {
     const source = await fs.readFile(path.join(__dirname, file), 'utf8');

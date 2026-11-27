@@ -32,6 +32,13 @@ const math = require('../../src/utils/photoEditMath');
 
 jest.setTimeout(120000);
 
+// Metadata goes onto an edited render through exiftool (an allowlist): the
+// CI installs it; elsewhere these run where it is on PATH.
+const HAVE_EXIFTOOL = !require('child_process').spawnSync('exiftool', ['-ver'], { stdio: 'ignore' }).error;
+const itExif = HAVE_EXIFTOOL || process.env.PICPEAK_REQUIRE_DCRAW === 'true' ? it : it.skip;
+const describeExif = HAVE_EXIFTOOL || process.env.PICPEAK_REQUIRE_DCRAW === 'true' ? describe : describe.skip;
+
+
 let db; let cleanup; let eventId; let photoId; let originalBytes;
 const storagePath = (key) => path.join(process.env.STORAGE_PATH, key);
 const unwrap = (rows) => (typeof rows[0] === 'object' && rows[0] !== null ? rows[0].id : rows[0]);
@@ -158,7 +165,7 @@ describe('the edited render (golden, server vs CPU reference)', () => {
     });
   }
 
-  it('carries the source EXIF with the orientation upright', async () => {
+  itExif('carries the source EXIF with the orientation upright', async () => {
     const params = validated({ exposure: 0.3 });
     const exifSource = await sharp(originalBytes).withExif({ IFD0: { Copyright: 'Studio test', Orientation: '1' } }).jpeg().toBuffer();
     const file = storagePath('events/active/edit-card/exif.jpg');
@@ -187,11 +194,6 @@ describe('a JPEG named like a camera RAW', () => {
     }
   });
 });
-
-// Metadata goes onto an edited render through exiftool (an allowlist): the
-// CI installs it; elsewhere these run where it is on PATH.
-const HAVE_EXIFTOOL = !require('child_process').spawnSync('exiftool', ['-ver'], { stdio: 'ignore' }).error;
-const describeExif = HAVE_EXIFTOOL || process.env.PICPEAK_REQUIRE_DCRAW === 'true' ? describe : describe.skip;
 
 describeExif('embedded images of the source', () => {
   /** An EXIF block (little-endian TIFF) with a camera name in IFD0 and `thumb` as the IFD1 thumbnail. */
