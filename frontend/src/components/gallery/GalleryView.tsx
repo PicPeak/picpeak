@@ -113,6 +113,7 @@ import { useGalleryFeedbackSettings } from '../../hooks/useGalleryFeedbackSettin
 import { useBlockContextMenu } from './hooks/useBlockContextMenu';
 import { useLastDefined } from './hooks/useLastDefined';
 import { useQueryClient } from '@tanstack/react-query';
+import { useFreshFaceCovers } from './useFreshFaceCovers';
 import { FavoriteListsContext, favoriteRowInList, useFavoriteListsState } from '../../contexts/FavoriteListsContext';
 import { FavoriteListsDialog } from './FavoriteListsDialog';
 import { GalleryWalkthroughHost } from './walkthrough/GalleryWalkthroughHost';
@@ -492,7 +493,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const activeSelfiePhotoIds = selfieSearchEnabled ? selfiePhotoIds : null;
   // Automatic scene tags (issue 1733), from the same payload.
   const tagsEnabled = data?.event?.tags_enabled === true;
-  const { data: peopleData, isFetched: peopleFetched } = useQuery({
+  const { data: peopleData, isFetched: peopleFetched, dataUpdatedAt: peopleUpdatedAt } = useQuery({
     queryKey: ['gallery-people', slug, accessScope],
     queryFn: () => galleryService.getPeople(slug),
     enabled: peopleEnabled,
@@ -534,6 +535,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Memoised so the `people` recount below isn't invalidated by a fresh []
   // identity on every render.
   const allPeople = useMemo(() => peopleData?.people || [], [peopleData?.people]);
+  // A cover box older than the photo it is cut from is fetched again (issue 2619).
+  useFreshFaceCovers(allPeople, data?.photos, peopleUpdatedAt, () => {
+    void queryClient.invalidateQueries({ queryKey: ['gallery-people', slug] });
+  });
 
   // Folders (#1160, nested since issue 1786). A gallery "has folders" when
   // the root has at least one folder tile; without one the switch and the

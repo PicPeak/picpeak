@@ -22,7 +22,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-import { facePreviewUrl, adminFacePreviewUrl, adminPhotoPreviewUrl, FACE_CROP_WIDTH } from '../imageTiers';
+import { facePreviewUrl, adminFacePreviewUrl, adminPhotoPreviewUrl, staleFaceCovers, FACE_CROP_WIDTH } from '../imageTiers';
 
 describe('face avatars use a whole-frame rendition', () => {
   const photo = { id: 42, preview_url: '/api/gallery/wed/preview/42' };
@@ -128,5 +128,26 @@ describe('face avatars use a whole-frame rendition', () => {
       // And no face surface may reintroduce a hardcoded thumbnail path.
       expect(src).not.toContain('/thumbnail/${photoId}');
     });
+  });
+});
+
+describe('a face avatar and the revision its box belongs to (issue 2619)', () => {
+  const photo = { id: 42, url: '/api/gallery/wed/photo/42?e=3', thumbnail_url: '/api/gallery/wed/thumbnail/42?e=3' };
+  const cover = (rev: number) => ({ bbox: [1, 2, 3, 4], edit_applied_rev: rev });
+
+  it('names the cover\'s revision, not the photo\'s, so image and box match', () => {
+    expect(facePreviewUrl('wed', photo, cover(2))).toBe(`/api/gallery/wed/preview/42?w=${FACE_CROP_WIDTH}&e=2`);
+    expect(facePreviewUrl('wed', photo, cover(0))).toBe(`/api/gallery/wed/preview/42?w=${FACE_CROP_WIDTH}`);
+    expect(facePreviewUrl('wed', { ...photo, preview_url: '/api/gallery/wed/preview/42?e=3&wm=1' }, cover(2)))
+      .toBe(`/api/gallery/wed/preview/42?e=2&wm=1&w=${FACE_CROP_WIDTH}`);
+    // A cover without a revision (an older server) keeps the photo's.
+    expect(facePreviewUrl('wed', photo, { bbox: [1, 2, 3, 4] })).toBe(`/api/gallery/wed/preview/42?w=${FACE_CROP_WIDTH}&e=3`);
+  });
+
+  it('finds covers older than the photo they show', () => {
+    const people = [{ cover: { photo_id: 42, ...cover(2) } }, { cover: null }];
+    expect(staleFaceCovers(people, new Map([[42, photo]]))).toBe(true);
+    expect(staleFaceCovers([{ cover: { photo_id: 42, ...cover(3) } }], new Map([[42, photo]]))).toBe(false);
+    expect(staleFaceCovers([{ cover: { photo_id: 7, ...cover(0) } }], new Map([[42, photo]]))).toBe(false);
   });
 });

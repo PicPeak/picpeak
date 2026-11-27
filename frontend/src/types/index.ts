@@ -256,6 +256,8 @@ export interface GalleryPerson {
      */
     photo_width?: number | null;
     photo_height?: number | null;
+    /** The applied edit revision the box is placed in (issue 2619). */
+    edit_applied_rev?: number | null;
   } | null;
 }
 

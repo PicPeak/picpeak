@@ -216,14 +216,21 @@ export function facePreviewUrl(
     width?: number | null;
     height?: number | null;
   } | null | undefined,
-  cover?: { bbox: number[] } | null,
+  cover?: { bbox: number[]; edit_applied_rev?: number | null } | null,
 ): string | null {
   if (!photo) return null;
   const width = faceTierWidth(photo, cover);
+  // The revision the cover's box is placed in (issue 2619): the people list
+  // is cached apart from the photos, so the photo's own revision can be newer
+  // than the box. The image is asked for under the box's revision; a newer
+  // photo has the people list refetched (staleFaceCovers).
+  const edit = cover?.edit_applied_rev != null
+    ? (Number(cover.edit_applied_rev) > 0 ? `e=${Number(cover.edit_applied_rev)}` : '')
+    : guestEditQuery(photo);
 
   // preview_url carries the watermark query when the server emitted one, so
   // prefer it; it is only absent when lightbox previews are off.
-  if (photo.preview_url) return withWidth(photo.preview_url, width);
+  if (photo.preview_url) return withWidth(withEditQuery(photo.preview_url, edit), width);
   if (!slug) return null;
 
   // Carry admin_preview through. verifyGalleryAccess only accepts the admin
@@ -235,8 +242,34 @@ export function facePreviewUrl(
     && new URLSearchParams(window.location.search).get('admin_preview') === '1'
     ? '&admin_preview=1'
     : '';
-  const edit = guestEditQuery(photo);
   return `/api/gallery/${slug}/preview/${photo.id}?w=${width}${edit ? `&${edit}` : ''}${adminPreview}`;
+}
+
+/** The URL with its `e=` set to the given one (`e=N`), or removed for ''. */
+function withEditQuery(url: string, edit: string): string {
+  const [base, query = ''] = url.split('?');
+  const params = new URLSearchParams(query);
+  if (edit) params.set('e', edit.slice(2));
+  else params.delete('e');
+  const rest = params.toString();
+  return rest ? `${base}?${rest}` : base;
+}
+
+/**
+ * Whether a person's cover box is older than the photo it is shown on
+ * (issue 2619): the photo's URLs name a newer applied revision than the box
+ * was placed in, so the people list is to be fetched again.
+ */
+export function staleFaceCovers(
+  people: Array<{ cover?: { photo_id: number; edit_applied_rev?: number | null } | null }>,
+  photosById: Map<number, { url?: string | null; thumbnail_url?: string | null }>,
+): boolean {
+  return people.some((person) => {
+    const cover = person.cover;
+    if (!cover || cover.edit_applied_rev == null) return false;
+    const photo = photosById.get(cover.photo_id);
+    return Boolean(photo) && guestEditRevision(photo!) > Number(cover.edit_applied_rev);
+  });
 }
 
 /**
