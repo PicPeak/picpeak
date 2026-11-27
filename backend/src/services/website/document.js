@@ -214,7 +214,7 @@ const BLOCK_FIELDS = {
         author: str(item.author, 120, 'author'),
         role: str(item.role, 120, 'role'),
         image: imageRef(item.image),
-      } : null)).filter((item) => item && item.quote)
+      } : null)).filter(Boolean)
       : [],
   }),
   pricing: (b) => ({

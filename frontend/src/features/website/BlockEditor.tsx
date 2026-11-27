@@ -348,6 +348,9 @@ const TestimonialsField: React.FC<{ value: Testimonial[]; onChange: (value: Test
             </Button>
           </div>
           <TextArea label={t('website.fields.quote', 'Quote')} value={item.quote} rows={3} maxLength={1200} onChange={(quote) => patch(index, { quote }, 'quote')} />
+          {!item.quote.trim() && (
+            <p className="text-xs text-warning-text">{t('website.fields.testimonialIncomplete', 'Incomplete: without a quote this testimonial is not shown on the page.')}</p>
+          )}
           <TextField label={t('website.fields.author', 'Name')} value={item.author} maxLength={120} onChange={(author) => patch(index, { author }, 'author')} />
           <TextField label={t('website.fields.role', 'Detail (optional)')} value={item.role} maxLength={120} placeholder={t('website.fields.rolePlaceholder', 'Wedding, June 2026') as string} onChange={(role) => patch(index, { role }, 'role')} />
           <ImageField label={t('website.fields.portrait', 'Photo (optional)')} value={item.image} onChange={(image) => patch(index, { image })} />

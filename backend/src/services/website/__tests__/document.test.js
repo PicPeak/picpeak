@@ -205,3 +205,13 @@ test('booleans sent as strings mean what they say', () => {
   expect(contact).toMatchObject({ showPhone: false, showDate: true });
   expect(spacer.divider).toBe(false);
 });
+
+test('a draft keeps a testimonial that is not finished yet', () => {
+  const { document, errors } = normalizeDocument({ pages: [page({ blocks: [{ type: 'testimonials', items: [{ author: 'Lea' }, { quote: 'Lovely', author: 'Ben' }, {}] }] })] });
+  expect(errors).toEqual([]);
+  expect(document.pages[0].blocks[0].items).toEqual([
+    { quote: '', author: 'Lea', role: '', image: null },
+    { quote: 'Lovely', author: 'Ben', role: '', image: null },
+    { quote: '', author: '', role: '', image: null },
+  ]);
+});

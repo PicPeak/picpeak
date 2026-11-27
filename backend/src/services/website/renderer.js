@@ -285,7 +285,8 @@ function renderFeaturedGalleries(block, ctx) {
 }
 
 function renderTestimonials(block, ctx) {
-  const items = block.items.map((item) => {
+  // A draft keeps an unfinished testimonial; the page shows only quoted ones.
+  const items = block.items.filter((item) => item.quote).map((item) => {
     const image = resolveImage(item.image, ctx);
     const avatar = image ? `<span class="pp-avatar">${imgTag(image, { alt: item.author, sizes: '64px' })}</span>` : '';
     return `<figure class="pp-quote"><blockquote>${richText(item.quote)}</blockquote><figcaption>${avatar}<span><strong>${esc(item.author)}</strong>${item.role ? `<span class="pp-muted">${esc(item.role)}</span>` : ''}</span></figcaption></figure>`;

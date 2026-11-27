@@ -207,3 +207,9 @@ test('an imported landing page keeps the --brand-* variables its CSS was written
     expect(html).toContain(`--brand-${name}: ${value};`);
   }
 });
+
+test('a testimonial without a quote is left off the page', () => {
+  const html = render([home([{ type: 'testimonials', items: [{ author: 'Unfinished Lea' }, { quote: 'Lovely day', author: 'Ben' }] }])]);
+  expect(html).toContain('Lovely day');
+  expect(html).not.toContain('Unfinished Lea');
+});

@@ -13162,7 +13162,8 @@
       "galleryUnavailable": "Galerie nicht mehr verfügbar",
       "removeUnavailableGallery": "Nicht mehr verfügbare Galerie entfernen",
       "packageUnavailable": "Paket nicht mehr im Katalog",
-      "removeUnavailablePackage": "Nicht mehr verfügbares Paket entfernen"
+      "removeUnavailablePackage": "Nicht mehr verfügbares Paket entfernen",
+      "testimonialIncomplete": "Unvollständig: Ohne Zitat wird diese Kundenstimme auf der Seite nicht gezeigt."
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",

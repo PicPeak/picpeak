@@ -13197,7 +13197,8 @@
       "galleryUnavailable": "Gallery no longer available",
       "removeUnavailableGallery": "Remove the unavailable gallery",
       "packageUnavailable": "Package no longer in the catalogue",
-      "removeUnavailablePackage": "Remove the unavailable package"
+      "removeUnavailablePackage": "Remove the unavailable package",
+      "testimonialIncomplete": "Incomplete: without a quote this testimonial is not shown on the page."
     },
     "defaults": {
       "heroHeading": "Your headline",
