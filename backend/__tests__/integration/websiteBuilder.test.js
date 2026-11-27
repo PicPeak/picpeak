@@ -570,6 +570,20 @@ describe('gallery photos on the website', () => {
     expect(photos.body.photos.map((p) => p.id)).toEqual([lockedPhoto, lockedOther]);
   });
 
+  test('the picker shows a gallery\'s photos through the website\'s own URLs, no photo permission needed', async () => {
+    const photos = (await request(app).get(`/api/admin/website/galleries/${lockedEvent}/photos`).set(auth(adminId))).body.photos;
+    const { html } = await service.resolvePublicPage('');
+    for (const photo of photos) {
+      expect(photo.thumbnailUrl).toMatch(new RegExp(`^/site-media/p${photo.id}-[0-9a-f]{10}\\.[0-9a-f]{32}/640$`));
+      // Served without any admin credentials, as the website serves it.
+      // eslint-disable-next-line no-await-in-loop
+      expect((await request(app).get(photo.thumbnailUrl)).status).toBe(200);
+    }
+    // The picked one is the very URL the page uses.
+    const picked = photos.find((p) => p.id === lockedPhoto);
+    expect(html).toContain(picked.thumbnailUrl);
+  });
+
   test('the opt-in reads "false" and "0" as off, not as a truthy string', async () => {
     const put = (value) => request(app).put(`/api/admin/website/galleries/${lockedEvent}`).set(auth(adminId)).send({ showOnWebsite: value });
     const stored = async () => Boolean((await db('events').where({ id: lockedEvent }).first()).show_on_website);

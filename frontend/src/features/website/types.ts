@@ -142,7 +142,8 @@ export interface WebsitePhoto {
   width: number | null;
   height: number | null;
   filename: string;
-  thumbnailUrl: string;
+  /** The website's own 640 URL (as the website shows it, watermark included). */
+  thumbnailUrl: string | null;
 }
 
 export interface WebsiteAsset {

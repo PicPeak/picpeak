@@ -12,7 +12,6 @@ import { ArrowLeft, Check, Film, Images, Trash2, Upload } from 'lucide-react';
 import { Button, Modal, Notice, Switch, Tabs } from '../../components/common';
 import { EmptyState } from '../../components/common/EmptyState';
 import { useConfirm } from '../../components/common/ConfirmDialog';
-import { AdminAuthenticatedImage } from '../../components/admin/AdminAuthenticatedImage';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { usePermission } from '../../hooks/usePermission';
 import { websiteService } from '../../services/website.service';
@@ -368,7 +367,7 @@ export const GalleryPhotosPane: React.FC<{
             return (
               <li key={photo.id}>
                 <button type="button" className={tileClass(isSelected(ref))} onClick={() => onToggle(ref)} aria-pressed={isSelected(ref)} aria-label={photo.filename}>
-                  <AdminAuthenticatedImage src={photo.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                  {photo.thumbnailUrl && <img src={buildResourceUrl(photo.thumbnailUrl)} alt="" loading="lazy" className="w-full h-full object-cover" />}
                   {isSelected(ref) && <SelectedMark />}
                 </button>
               </li>

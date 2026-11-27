@@ -18,7 +18,6 @@ const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireF
 const { scopeEventsQuery, canAccessEvent } = require('../middleware/ownership');
 const { handleAsync, validateRequest } = require('../utils/routeHelpers');
 const { getStoragePath } = require('../config/storage');
-const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
 const { AppError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
 const { toDateOnly } = require('../utils/dateOnly');
@@ -92,7 +91,7 @@ router.post('/media/resolve', canView, [
   ]);
   const urls = {};
   for (const id of photoIds) {
-    urls[`photo:${id}`] = photos.has(id) ? `${media.mediaBase({ source: 'photo', id }, media.photoVersion(photos.get(id)))}/640` : null;
+    urls[`photo:${id}`] = photos.has(id) ? media.photoPreviewUrl(photos.get(id)) : null;
   }
   for (const id of assetIds) {
     const row = assetRows.get(id);
@@ -163,8 +162,9 @@ router.put('/galleries/:id', canEdit, requirePermission('events.edit'), [
   res.json({ id: event.id, showOnWebsite });
 }));
 
-// Photos of an eligible gallery, for the image picker. Admin thumbnails for
-// the picker itself; the public URL is only ever built by the renderer.
+// Photos of an eligible gallery, for the image picker. Their thumbnails are
+// the website's own URLs (watermark included): the picker shows what the
+// website will, and needs no photo permission the builder does not ask for.
 router.get('/galleries/:id/photos', canView, [
   param('id').isInt({ min: 1 }),
   query('page').optional().isInt({ min: 1, max: 10000 }),
@@ -179,14 +179,16 @@ router.get('/galleries/:id/photos', canView, [
   const page = Number(req.query.page) || 1;
   const rows = await media.guestPhotoQuery().where('photos.event_id', event.id)
     .orderBy('photos.id', 'asc').limit(pageSize + 1).offset((page - 1) * pageSize)
-    .select('photos.id', 'photos.width', 'photos.height', 'photos.original_filename', ...ADMIN_THUMBNAIL_COLUMNS);
+    .select('photos.id', 'photos.width', 'photos.height', 'photos.original_filename');
+  const shown = rows.slice(0, pageSize);
+  const eligible = await media.loadEligiblePhotos(shown.map((p) => p.id));
   res.json({
-    photos: rows.slice(0, pageSize).map((p) => ({
+    photos: shown.map((p) => ({
       id: p.id,
       width: p.width,
       height: p.height,
       filename: p.original_filename,
-      thumbnailUrl: adminThumbnailUrl(event.id, p),
+      thumbnailUrl: eligible.has(p.id) ? media.photoPreviewUrl(eligible.get(p.id)) : null,
     })),
     hasMore: rows.length > pageSize,
   });

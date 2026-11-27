@@ -92,6 +92,17 @@ describe('GalleriesPane west of UTC', () => {
   });
 });
 
+describe('GalleryPhotosPane tiles', () => {
+  it('loads each tile from the website\'s own URL on the backend origin', async () => {
+    vi.mocked(websiteService.listGalleryPhotos).mockResolvedValue({
+      photos: [{ id: 5, width: 10, height: 10, filename: 'a.jpg', thumbnailUrl: '/site-media/p5-0123456789.abcdefabcdefabcdefabcdefabcdefab/640' }], hasMore: false,
+    });
+    wrap(<GalleryPhotosPane gallery={gallery(1, 'Open portraits')} onBack={() => {}} isSelected={() => false} onToggle={() => {}} />);
+    const tile = await screen.findByRole('button', { name: 'a.jpg' });
+    expect(tile.querySelector('img')?.getAttribute('src')).toBe('https://api.example.com/site-media/p5-0123456789.abcdefabcdefabcdefabcdefabcdefab/640');
+  });
+});
+
 describe('GalleryPhotosPane', () => {
   it('says the photos keep the gallery watermark, and where clean images come from', async () => {
     vi.mocked(websiteService.listGalleryPhotos).mockResolvedValue({ photos: [], hasMore: false });

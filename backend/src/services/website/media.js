@@ -91,6 +91,11 @@ function mediaBase(ref, version) {
   return `/site-media/${kind}${ref.id}${tag}.${signMedia(kind, ref.id)}`;
 }
 
+/** The 640 tier of an eligible photo (a loadEligiblePhotos row): the editor's thumbnail. */
+function photoPreviewUrl(photo) {
+  return `${mediaBase({ source: 'photo', id: photo.id }, photoVersion(photo))}/640`;
+}
+
 /**
  * Parse `<kind><id>[-<version>].<sig>` from the URL. Returns
  * { kind, id, version } when the signature matches, else null.
@@ -212,6 +217,7 @@ module.exports = {
   signMedia,
   verifyMedia,
   mediaBase,
+  photoPreviewUrl,
   photoVersion,
   parseMediaToken,
   isEventWebsiteEligible,
