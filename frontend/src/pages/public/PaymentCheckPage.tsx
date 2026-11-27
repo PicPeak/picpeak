@@ -245,6 +245,7 @@ export const PaymentCheckPage: React.FC = () => {
 };
 
 const BrandingHeader: React.FC<{ issuer: PaymentCheckIssuer | null }> = ({ issuer }) => {
+  const { t } = useTranslation();
   const { isDark } = usePublicDarkMode();
   if (!issuer || (!issuer.logoUrl && !issuer.logoUrlDark && !issuer.companyName)) return null;
   const logo = isDark
@@ -255,7 +256,7 @@ const BrandingHeader: React.FC<{ issuer: PaymentCheckIssuer | null }> = ({ issue
       {logo && (
         <img
           src={logo}
-          alt={issuer.companyName || 'Logo'}
+          alt={issuer.companyName || t('branding.logo', 'Logo')}
           className="mx-auto h-16 w-auto object-contain mb-3"
         />
       )}

@@ -801,7 +801,7 @@ export const EmailConfigPage: React.FC = () => {
                   type="text"
                   value={smtpConfig.from_name}
                   onChange={(e) => setSmtpConfig(prev => ({ ...prev, from_name: e.target.value }))}
-                  placeholder="Photo Sharing"
+                  placeholder={t('email.fromNamePlaceholder', 'Photo Sharing')}
                 />
               </div>
 

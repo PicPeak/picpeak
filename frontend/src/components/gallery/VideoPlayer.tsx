@@ -403,7 +403,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               <button
                 onClick={togglePlayPause}
                 className="hover:bg-white/20 p-2 rounded-full transition-colors"
-                aria-label={isPlaying ? 'Pause' : 'Play'}
+                aria-label={isPlaying ? t('gallery.video.pause', 'Pause') : t('gallery.video.play', 'Play')}
               >
                 {isPlaying ? <Pause size={20} /> : <Play size={20} />}
               </button>
@@ -411,7 +411,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               <button
                 onClick={toggleMute}
                 className="hover:bg-white/20 p-2 rounded-full transition-colors"
-                aria-label={isMuted ? 'Unmute' : 'Mute'}
+                aria-label={isMuted ? t('gallery.video.unmute', 'Unmute') : t('gallery.video.mute', 'Mute')}
               >
                 {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
               </button>
@@ -424,7 +424,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             <button
               onClick={toggleFullscreen}
               className="hover:bg-white/20 p-2 rounded-full transition-colors"
-              aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              aria-label={isFullscreen ? t('gallery.video.exitFullscreen', 'Exit fullscreen') : t('gallery.video.fullscreen', 'Fullscreen')}
             >
               {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
             </button>
@@ -441,7 +441,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <button
             onClick={togglePlayPause}
             className="pointer-events-auto bg-black/50 hover:bg-black/70 text-white rounded-full p-6 transition-colors"
-            aria-label="Play"
+            aria-label={t('gallery.video.play', 'Play')}
           >
             <Play size={48} fill="white" />
           </button>

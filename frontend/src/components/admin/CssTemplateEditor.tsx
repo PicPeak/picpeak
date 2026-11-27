@@ -199,7 +199,7 @@ export const CssTemplateEditor: React.FC = () => {
                   onChange={(e) => updateLocalTemplate({ css_content: e.target.value })}
                   className="w-full h-96 px-4 py-3 font-mono text-sm border border-line-strong rounded-lg focus:ring-2 focus:ring-accent focus:border-accent-dark bg-neutral-900 text-success"
                   spellCheck={false}
-                  placeholder="/* Enter your custom CSS here */"
+                  placeholder={t('cssTemplates.cssPlaceholder', '/* Enter your custom CSS here */')}
                 />
                 <div className="absolute bottom-3 right-3 text-xs text-faint">
                   {(activeTemplate.css_content?.length || 0).toLocaleString()} / 102,400 {t('common.characters', 'characters')}

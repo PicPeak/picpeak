@@ -173,7 +173,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
       
       onPhotoDeleted();
     } catch (error) {
-      toast.error('Failed to delete photo');
+      toast.error(t('photos.deleteFailed', 'Failed to delete photo'));
     } finally {
       setIsDeleting(false);
     }
@@ -182,9 +182,9 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   const handleDownload = async () => {
     try {
       await photosService.downloadPhoto(eventId, currentPhoto.id, currentPhoto.filename, Boolean(isVideo));
-      toast.success('Download started');
+      toast.success(t('events.downloadStarted', 'Download started'));
     } catch (error) {
-      toast.error('Failed to download photo');
+      toast.error(t('photos.downloadFailed', 'Failed to download photo'));
     }
   };
 
@@ -235,7 +235,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   const handleCategoryChange = async (categoryId: number | null) => {
     try {
       await photosService.updatePhotoCategory(eventId, currentPhoto.id, categoryId);
-      toast.success('Category updated');
+      toast.success(t('photos.categoryUpdated', 'Category updated'));
       categoryMenuModal.close();
       // Invalidate photos query to refresh data
       await queryClient.invalidateQueries({ queryKey: ['admin-event-photos', eventId.toString()] });
@@ -243,7 +243,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
       // Also trigger the parent's refresh callback
       onPhotoDeleted();
     } catch (error) {
-      toast.error('Failed to update category');
+      toast.error(t('photos.categoryUpdateFailed', 'Failed to update category'));
     }
   };
 
@@ -252,15 +252,15 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
     mutationFn: ({ feedbackId, action }: { feedbackId: string; action: 'approve' | 'hide' | 'reject' }) =>
       feedbackService.moderateFeedback(feedbackId, action),
     invalidateKeys: [['admin-photo-feedback', eventId, currentPhoto?.id]],
-    successMessage: 'Feedback moderated successfully',
-    errorMessage: () => 'Failed to moderate feedback'
+    successMessage: t('feedback.moderationSuccess', 'Feedback moderated successfully'),
+    errorMessage: () => t('feedback.moderationError', 'Failed to moderate feedback')
   });
 
   const deleteFeedbackMutation = useMutationWithToast({
     mutationFn: (feedbackId: string) => feedbackService.deleteFeedback(feedbackId),
     invalidateKeys: [['admin-photo-feedback', eventId, currentPhoto?.id]],
-    successMessage: 'Feedback deleted successfully',
-    errorMessage: () => 'Failed to delete feedback'
+    successMessage: t('feedback.deleted', 'Feedback deleted'),
+    errorMessage: () => t('feedback.deleteError', 'Failed to delete feedback')
   });
 
   // The mark shown for a photo: the local edit if there is one, otherwise
@@ -434,7 +434,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                 <div className="flex items-center justify-center text-neutral-400">
                   <div className="text-center">
                     <Eye className="w-12 h-12 mx-auto mb-2" />
-                    <p className="text-sm">Failed to load media</p>
+                    <p className="text-sm">{t('photos.mediaLoadFailed', 'Failed to load media')}</p>
                   </div>
                 </div>
               }
@@ -448,7 +448,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                 <div className="flex items-center justify-center text-neutral-400">
                   <div className="text-center">
                     <Eye className="w-12 h-12 mx-auto mb-2" />
-                    <p className="text-sm">Failed to load image</p>
+                    <p className="text-sm">{t('photos.imageLoadFailed', 'Failed to load image')}</p>
                   </div>
                 </div>
               }
@@ -906,7 +906,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                       <Star className="w-4 h-4" fill="currentColor" />
                       <span className="text-white font-medium">{Number(averageRating).toFixed(1)}</span>
                     </div>
-                    <p className="text-xs text-neutral-400">Avg Rating</p>
+                    <p className="text-xs text-neutral-400">{t('feedback.avgRating', 'Average Rating')}</p>
                   </div>
                 )}
                 
@@ -1097,7 +1097,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
 
               {/* No feedback message */}
               {comments.length === 0 && decisions.length === 0 && (
-                <p className="text-neutral-400 text-sm">No feedback for this photo yet.</p>
+                <p className="text-neutral-400 text-sm">{t('photos.noFeedbackYet', 'No feedback for this photo yet.')}</p>
               )}
             </div>
           )}

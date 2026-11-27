@@ -302,7 +302,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       toast.success(deletedMessage(t, 1, result));
       onPhotosDeleted();
     } catch {
-      toast.error('Failed to delete photo');
+      toast.error(t('photos.deleteFailed', 'Failed to delete photo'));
       setDeletingPhotos(prev => {
         const newSet = new Set(prev);
         newSet.delete(photo.id);
@@ -342,7 +342,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       setIsSelectionMode(false);
       onPhotosDeleted();
     } catch {
-      toast.error('Failed to delete photos');
+      toast.error(t('photos.deleteManyFailed', 'Failed to delete photos'));
       setDeletingPhotos(new Set());
     } finally {
       setIsDeleting(false);
@@ -353,9 +353,9 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     e.stopPropagation();
     try {
       await photosService.downloadPhoto(eventId, photo.id, photo.filename, isVideoItem(photo));
-      toast.success('Download started');
+      toast.success(t('events.downloadStarted', 'Download started'));
     } catch {
-      toast.error('Failed to download photo');
+      toast.error(t('photos.downloadFailed', 'Failed to download photo'));
     }
   };
 
@@ -712,7 +712,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
             {/* Selection Checkbox (top-right) */}
             <button
               type="button"
-              aria-label={`Select ${photo.filename}`}
+              aria-label={t('gallery.tile.selectPhoto', { name: photo.filename, defaultValue: 'Select {{name}}' })}
               role="checkbox"
               aria-checked={selectedPhotos.has(photo.id)}
               data-testid={`admin-photo-checkbox-${photo.id}`}
@@ -1012,13 +1012,13 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                   </div>
                 )}
                 {averageRating > 0 && (
-                  <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={`Rating: ${Number(averageRating).toFixed(1)}`}>
+                  <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={t('photos.ratingValue', { value: Number(averageRating).toFixed(1), defaultValue: 'Rating: {{value}}' })}>
                     <Star className="w-3.5 h-3.5 text-rating" fill="currentColor" />
                     <span className="text-xs font-medium text-body">{Number(averageRating).toFixed(1)}</span>
                   </div>
                 )}
                 {commentCount > 0 && (
-                  <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={`${commentCount} comments`}>
+                  <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={t('photos.commentCount', { count: commentCount, defaultValue: '{{count}} comments' })}>
                     <MessageSquare className="w-3.5 h-3.5 text-accent" fill="currentColor" />
                     <span className="text-xs font-medium text-body">{commentCount}</span>
                   </div>
@@ -1077,7 +1077,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
-                      aria-label={`Select ${photo.filename}`}
+                      aria-label={t('gallery.tile.selectPhoto', { name: photo.filename, defaultValue: 'Select {{name}}' })}
                       role="checkbox"
                       aria-checked={isSelected}
                       data-testid={`admin-photo-row-checkbox-${photo.id}`}
@@ -1240,13 +1240,13 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                     {averageRating > 0 || commentCount > 0 ? (
                       <div className="flex items-center justify-end gap-2">
                         {averageRating > 0 && (
-                          <span className="inline-flex items-center gap-0.5" title={`Rating: ${Number(averageRating).toFixed(1)}`}>
+                          <span className="inline-flex items-center gap-0.5" title={t('photos.ratingValue', { value: Number(averageRating).toFixed(1), defaultValue: 'Rating: {{value}}' })}>
                             <Star className="w-3.5 h-3.5 text-rating" fill="currentColor" />
                             {Number(averageRating).toFixed(1)}
                           </span>
                         )}
                         {commentCount > 0 && (
-                          <span className="inline-flex items-center gap-0.5" title={`${commentCount} comments`}>
+                          <span className="inline-flex items-center gap-0.5" title={t('photos.commentCount', { count: commentCount, defaultValue: '{{count}} comments' })}>
                             <MessageSquare className="w-3.5 h-3.5 text-accent" fill="currentColor" />
                             {commentCount}
                           </span>

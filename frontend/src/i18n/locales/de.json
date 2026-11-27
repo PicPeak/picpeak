@@ -945,7 +945,8 @@
     "chooseDate": "Datum wählen",
     "name": "Name",
     "description": "Beschreibung",
-    "refresh": "Aktualisieren"
+    "refresh": "Aktualisieren",
+    "skipToContent": "Zum Hauptinhalt springen"
   },
   "upload": {
     "duplicates": {
@@ -2165,7 +2166,8 @@
     "deleteAction": "Archiv löschen",
     "loadFailed": "Die Archive konnten nicht geladen werden",
     "noArchivesMatchHint": "Nichts passt zu dieser Suche oder diesem Filter.",
-    "noArchivesHint": "Archivieren Sie eine Galerie über ihr Menü in der Galerieliste; sie erscheint dann hier."
+    "noArchivesHint": "Archivieren Sie eine Galerie über ihr Menü in der Galerieliste; sie erscheint dann hier.",
+    "party": "Party"
   },
   "auth": {
     "password": "Passwort",
@@ -2584,7 +2586,8 @@
       "comment": "Kommentieren",
       "like": "Gefällt mir",
       "unlike": "Gefällt mir zurücknehmen",
-      "selectPhoto": "{{name}} auswählen"
+      "selectPhoto": "{{name}} auswählen",
+      "liked": "Gefällt mir"
     },
     "neutralLabel": {
       "numbered": "Foto {{position}} von {{total}}",
@@ -2676,6 +2679,25 @@
     },
     "language": {
       "switch": "Sprache"
+    },
+    "scrollToGallery": "Zur Galerie scrollen",
+    "scrollToTop": "Nach oben scrollen",
+    "heroImage": "Titelbild",
+    "imageLoadError": "{{alt}} konnte nicht geladen werden",
+    "viewer": {
+      "zoomIn": "Vergrößern",
+      "zoomOut": "Verkleinern",
+      "fitToScreen": "An Bildschirm anpassen",
+      "playSlideshow": "Diashow abspielen",
+      "pauseSlideshow": "Diashow anhalten"
+    },
+    "video": {
+      "play": "Abspielen",
+      "pause": "Pausieren",
+      "mute": "Ton aus",
+      "unmute": "Ton an",
+      "fullscreen": "Vollbild",
+      "exitFullscreen": "Vollbild beenden"
     }
   },
   "categories": {
@@ -3792,7 +3814,13 @@
       "accountCreditName": "Fotografen-Credit",
       "accountCreditNameHelp": "Wird bei Ihren Uploads als Fotograf angegeben, wenn die Datei keinen Fotografennamen in den Metadaten enthält. Leer lassen für keinen Credit.",
       "photoTrashRetention": "Aufbewahrung im Papierkorb (Tage)",
-      "photoTrashRetentionHelp": "So lange bleiben aus einer Galerie gelöschte Fotos in deren Papierkorb und lassen sich wiederherstellen. 0 löscht Fotos sofort. Fotos im Papierkorb belegen weiterhin Speicherplatz."
+      "photoTrashRetentionHelp": "So lange bleiben aus einer Galerie gelöschte Fotos in deren Papierkorb und lassen sich wiederherstellen. 0 löscht Fotos sofort. Fotos im Papierkorb belegen weiterhin Speicherplatz.",
+      "dateFormatOptions": {
+        "european": "TT/MM/JJJJ (europäisch)",
+        "us": "MM/TT/JJJJ (US)",
+        "iso": "JJJJ-MM-TT (ISO)",
+        "german": "TT.MM.JJJJ (deutsch)"
+      }
     },
     "publicSite": {
       "badge": "Öffentliche Landingpage",
@@ -5585,7 +5613,9 @@
       "save": "Speichern",
       "colorsTab": "Farben",
       "galleryTab": "Galerie"
-    }
+    },
+    "customCssPlaceholder": "/* Eigenes CSS hier einfügen */",
+    "footerTextPlaceholder": "© {{year}} Deine Firma. Alle Rechte vorbehalten."
   },
   "admin": {
     "title": "Admin-Panel",
@@ -6945,7 +6975,14 @@
     "signatureOff": "Fusszeilen-Signatur ist aus — E-Mails zeigen nur Logo und Firmenname.",
     "signatureEdit": "Im Geschäftsprofil bearbeiten",
     "followColors": "Farben folgen",
-    "primaryFollowsColors": "Folgt Branding › Farben"
+    "primaryFollowsColors": "Folgt Branding › Farben",
+    "previewModal": {
+      "title": "E-Mail-Vorschau",
+      "subject": "Betreff:",
+      "htmlView": "HTML-Ansicht",
+      "textView": "Textansicht"
+    },
+    "fromNamePlaceholder": "Foto-Sharing"
   },
   "cms": {
     "title": "CMS-Seiten",
@@ -7360,7 +7397,12 @@
       "done": "Fertig",
       "limitReached": "Eine Zeichnung kann höchstens {{max}} Striche enthalten.",
       "overlayLabel": "Zeichnung auf dem Foto"
-    }
+    },
+    "togglePanel": "Feedback ein- oder ausblenden",
+    "panelTitleWithCount_one": "Feedback zum Foto ({{count}} Kommentar)",
+    "panelTitleWithCount_other": "Feedback zum Foto ({{count}} Kommentare)",
+    "moderationError": "Feedback konnte nicht moderiert werden",
+    "deleteError": "Feedback konnte nicht gelöscht werden"
   },
   "filter": {
     "feedbackFilters": "Feedback-Filter",
@@ -7745,7 +7787,8 @@
     "saveFailed": "Vorlage konnte nicht gespeichert werden",
     "sanitizationWarning": "Einige CSS-Muster wurden aus Sicherheitsgründen blockiert",
     "reset": "Vorlage auf Standard zurückgesetzt",
-    "resetFailed": "Vorlage konnte nicht zurückgesetzt werden"
+    "resetFailed": "Vorlage konnte nicht zurückgesetzt werden",
+    "cssPlaceholder": "/* Eigenes CSS hier eingeben */"
   },
   "photoSort": {
     "defaultSort": "Standard-Fotosortierung",
@@ -8024,7 +8067,21 @@
       "hiddenUntilApproved": "Für Gäste und Kunden verborgen, bis es freigegeben ist",
       "skippedOnShow_one": "{{count}} Foto wartet auf Prüfung und bleibt verborgen, bis es freigegeben ist",
       "skippedOnShow_other": "{{count}} Fotos warten auf Prüfung und bleiben verborgen, bis sie freigegeben sind"
-    }
+    },
+    "deleteFailed": "Foto konnte nicht gelöscht werden",
+    "deleteManyFailed": "Fotos konnten nicht gelöscht werden",
+    "downloaded": "Foto heruntergeladen",
+    "downloadFailed": "Foto konnte nicht heruntergeladen werden",
+    "downloadManyFailed": "Fotos konnten nicht heruntergeladen werden",
+    "saveFailed": "Foto konnte nicht gespeichert werden",
+    "categoryUpdated": "Kategorie aktualisiert",
+    "categoryUpdateFailed": "Kategorie konnte nicht aktualisiert werden",
+    "mediaLoadFailed": "Medium konnte nicht geladen werden",
+    "imageLoadFailed": "Bild konnte nicht geladen werden",
+    "noFeedbackYet": "Zu diesem Foto gibt es noch kein Feedback.",
+    "ratingValue": "Bewertung: {{value}}",
+    "commentCount_one": "{{count}} Kommentar",
+    "commentCount_other": "{{count}} Kommentare"
   },
   "customer": {
     "login": {

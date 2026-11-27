@@ -256,7 +256,7 @@ export const AnalyticsPage: React.FC = () => {
           <iframe
             {...dashboardProps}
             className="w-full h-full border-0"
-            title="Umami Analytics Dashboard"
+            title={t('analytics.title', 'Analytics Dashboard')}
             // Separate cookie/storage context, including redirects; no
             // ordinary-frame fallback, popup escape or top navigation.
           />

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowUp } from 'lucide-react';
 
 export const StoryScrollToTop: React.FC = () => {
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -35,7 +37,7 @@ export const StoryScrollToTop: React.FC = () => {
           transition={{ duration: 0.3 }}
           onClick={scrollToTop}
           className="story-scroll-to-top"
-          aria-label="Scroll to top"
+          aria-label={t('gallery.scrollToTop', 'Scroll to top')}
         >
           <ArrowUp size={24} strokeWidth={2} />
         </motion.button>

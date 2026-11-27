@@ -945,7 +945,8 @@
     "chooseDate": "Choose date",
     "name": "Name",
     "description": "Description",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "skipToContent": "Skip to main content"
   },
   "upload": {
     "duplicates": {
@@ -1432,7 +1433,8 @@
     "deleteAction": "Delete archive",
     "loadFailed": "Could not load the archives",
     "noArchivesMatchHint": "Nothing matches this search or filter.",
-    "noArchivesHint": "Archive a gallery from its menu in the gallery list; it shows up here."
+    "noArchivesHint": "Archive a gallery from its menu in the gallery list; it shows up here.",
+    "party": "Party"
   },
   "auth": {
     "password": "Password",
@@ -1851,7 +1853,8 @@
       "comment": "Comment",
       "like": "Like",
       "unlike": "Unlike",
-      "selectPhoto": "Select {{name}}"
+      "selectPhoto": "Select {{name}}",
+      "liked": "Liked"
     },
     "neutralLabel": {
       "numbered": "Photo {{position}} of {{total}}",
@@ -1943,6 +1946,25 @@
     },
     "language": {
       "switch": "Language"
+    },
+    "scrollToGallery": "Scroll to gallery",
+    "scrollToTop": "Scroll to top",
+    "heroImage": "Hero image",
+    "imageLoadError": "Error loading {{alt}}",
+    "viewer": {
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "fitToScreen": "Fit to screen",
+      "playSlideshow": "Play slideshow",
+      "pauseSlideshow": "Pause slideshow"
+    },
+    "video": {
+      "play": "Play",
+      "pause": "Pause",
+      "mute": "Mute",
+      "unmute": "Unmute",
+      "fullscreen": "Fullscreen",
+      "exitFullscreen": "Exit fullscreen"
     }
   },
   "categories": {
@@ -3059,7 +3081,13 @@
       "accountCreditName": "Photo credit",
       "accountCreditNameHelp": "Credited on photos you upload when the file has no photographer name in its metadata. Leave empty for no credit.",
       "photoTrashRetention": "Trash retention (days)",
-      "photoTrashRetentionHelp": "Photos deleted from a gallery stay in its trash this long and can be restored. 0 deletes photos at once. Photos in the trash still use storage."
+      "photoTrashRetentionHelp": "Photos deleted from a gallery stay in its trash this long and can be restored. 0 deletes photos at once. Photos in the trash still use storage.",
+      "dateFormatOptions": {
+        "european": "DD/MM/YYYY (European)",
+        "us": "MM/DD/YYYY (US)",
+        "iso": "YYYY-MM-DD (ISO)",
+        "german": "DD.MM.YYYY (German)"
+      }
     },
     "publicSite": {
       "badge": "Public Landing",
@@ -4925,7 +4953,9 @@
       "save": "Save",
       "colorsTab": "Colours",
       "galleryTab": "Gallery"
-    }
+    },
+    "customCssPlaceholder": "/* Add custom CSS here */",
+    "footerTextPlaceholder": "© {{year}} Your Company. All rights reserved."
   },
   "admin": {
     "title": "Admin Panel",
@@ -6262,7 +6292,14 @@
     "signatureOff": "Footer signature is off — emails show the logo and company name only.",
     "signatureEdit": "Edit in Business profile",
     "followColors": "Follow Colours",
-    "primaryFollowsColors": "Follows Branding › Colours"
+    "primaryFollowsColors": "Follows Branding › Colours",
+    "previewModal": {
+      "title": "Email preview",
+      "subject": "Subject:",
+      "htmlView": "HTML view",
+      "textView": "Text view"
+    },
+    "fromNamePlaceholder": "Photo Sharing"
   },
   "cms": {
     "title": "CMS Pages",
@@ -7116,7 +7153,8 @@
     "saveFailed": "Failed to save template",
     "sanitizationWarning": "Some CSS patterns were blocked for security",
     "reset": "Template reset to default",
-    "resetFailed": "Failed to reset template"
+    "resetFailed": "Failed to reset template",
+    "cssPlaceholder": "/* Enter your custom CSS here */"
   },
   "maintenance": {
     "title": "System Maintenance",
@@ -7415,7 +7453,12 @@
       "done": "Done",
       "limitReached": "A drawing can have up to {{max}} strokes.",
       "overlayLabel": "Drawing on the photo"
-    }
+    },
+    "togglePanel": "Toggle feedback",
+    "panelTitleWithCount_one": "Photo feedback ({{count}} comment)",
+    "panelTitleWithCount_other": "Photo feedback ({{count}} comments)",
+    "moderationError": "Failed to moderate feedback",
+    "deleteError": "Failed to delete feedback"
   },
   "filter": {
     "feedbackFilters": "Feedback Filters",
@@ -8059,7 +8102,21 @@
       "hiddenUntilApproved": "Hidden from guests and clients until approved",
       "skippedOnShow_one": "{{count}} photo waits for review and stays hidden until it is approved",
       "skippedOnShow_other": "{{count}} photos wait for review and stay hidden until they are approved"
-    }
+    },
+    "deleteFailed": "Failed to delete photo",
+    "deleteManyFailed": "Failed to delete photos",
+    "downloaded": "Photo downloaded successfully",
+    "downloadFailed": "Failed to download photo",
+    "downloadManyFailed": "Failed to download photos",
+    "saveFailed": "Failed to save photo",
+    "categoryUpdated": "Category updated",
+    "categoryUpdateFailed": "Failed to update category",
+    "mediaLoadFailed": "Failed to load media",
+    "imageLoadFailed": "Failed to load image",
+    "noFeedbackYet": "No feedback for this photo yet.",
+    "ratingValue": "Rating: {{value}}",
+    "commentCount_one": "{{count}} comment",
+    "commentCount_other": "{{count}} comments"
   },
   "customer": {
     "login": {

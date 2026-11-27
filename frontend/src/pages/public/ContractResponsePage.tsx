@@ -91,6 +91,7 @@ interface IssuerHeader {
 }
 
 const PageShell: React.FC<{ issuer?: IssuerHeader | null; children: React.ReactNode }> = ({ issuer, children }) => {
+  const { t } = useTranslation();
   const { isDark } = usePublicDarkMode();
   const logo = isDark
     ? (issuer?.logoUrlDark || issuer?.logoUrl)
@@ -101,7 +102,7 @@ const PageShell: React.FC<{ issuer?: IssuerHeader | null; children: React.ReactN
         {issuer && (
           <div className="text-center mb-6">
             {logo && (
-              <img src={logo} alt={issuer.companyName || 'Logo'} className="mx-auto mb-3 h-16 object-contain" />
+              <img src={logo} alt={issuer.companyName || t('branding.logo', 'Logo')} className="mx-auto mb-3 h-16 object-contain" />
             )}
             {issuer.companyName && <h2 className="text-xl font-bold">{issuer.companyName}</h2>}
             {issuer.website && (
@@ -1597,7 +1598,7 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
             return logo ? (
               <img
                 src={logo}
-                alt={c.issuer?.companyName || 'Logo'}
+                alt={c.issuer?.companyName || t('branding.logo', 'Logo')}
                 className="mx-auto mb-3 h-16 object-contain"
               />
             ) : null;
