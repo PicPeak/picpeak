@@ -92,8 +92,10 @@ export const photoEditorService = {
     return (await api.post(`${base(eventId)}/edit/batch`, { photo_ids: photoIds, params, parts })).data;
   },
 
-  async status(eventId: number): Promise<PhotoEditStatus> {
-    return (await api.get<PhotoEditStatus>(`${base(eventId)}/edit/status`)).data;
+  /** The gallery's edits still to apply; with `ids` (at most 500), only those photos'. */
+  async status(eventId: number, ids?: number[]): Promise<PhotoEditStatus> {
+    const params = ids ? { ids: ids.join(',') } : undefined;
+    return (await api.get<PhotoEditStatus>(`${base(eventId)}/edit/status`, { params })).data;
   },
 
   async listPresets(): Promise<PhotoEditPreset[]> {

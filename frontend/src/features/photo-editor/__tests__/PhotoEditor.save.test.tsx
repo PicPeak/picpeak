@@ -96,6 +96,58 @@ describe('saving', () => {
   });
 });
 
+describe('while the next photo loads', () => {
+  it('nothing can be changed or saved, and a late answer does not touch the photo shown', async () => {
+    const { EditRenderer } = await import('../renderer');
+    const dispose = vi.spyOn(EditRenderer.prototype as any, 'dispose');
+    let release: () => void = () => {};
+    service.get.mockImplementation(async (_e: number, id: number) => {
+      if (id === 2) await new Promise<void>((resolve) => { release = resolve; });
+      return state(id);
+    });
+    await open();
+    await userEvent.click(screen.getByRole('button', { name: 'Next photo' }));
+    await waitFor(() => expect(service.get).toHaveBeenCalledWith(1, 2));
+    // Photo 2's state is not here: the sliders and Save are off, Ctrl+S does nothing.
+    expect(screen.getByLabelText('photoEditor.sliders.exposure')).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('photoEditor.sliders.exposure'), { target: { value: '1' } });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    expect(service.save).not.toHaveBeenCalled();
+    // Back to photo 1 before photo 2 answered; its late answer must not
+    // dispose the renderer photo 1 now has.
+    await userEvent.click(screen.getByRole('button', { name: 'Previous photo' }));
+    await waitFor(() => expect(screen.getByLabelText('photoEditor.sliders.exposure')).not.toBeDisabled());
+    const disposedBefore = dispose.mock.calls.length;
+    await act(async () => { release(); });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(dispose.mock.calls.length).toBe(disposedBefore);
+    dispose.mockRestore();
+  });
+});
+
+describe('background progress', () => {
+  it('follows every queued photo, asking for them in parts, until each is done', async () => {
+    const many = Array.from({ length: 700 }, (_, i) => ({ id: i + 10, filename: `x${i}.jpg`, media_type: 'image' }));
+    service.copyTo.mockImplementation(async (_e: number, ids: number[]) => ({ queued: ids.length, skipped: [] }));
+    let done = false;
+    service.status.mockImplementation(async (_e: number, ids?: number[]) => {
+      const pending = done || !ids ? [] : ids;
+      return { pending: pending.length, failed: 0, pending_ids: pending, failed_ids: [] };
+    });
+    render(<PhotoEditor eventId={1} photos={[...photos, ...many] as any} initialPhotoId={1} onClose={vi.fn()} onChanged={vi.fn()} />);
+    await waitFor(() => expect(screen.getByLabelText('Edited preview')).toHaveAttribute('data-backend', 'webgl2'));
+    await userEvent.click(screen.getByRole('button', { name: 'Copy to photos…' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Select all' }));
+    await userEvent.click(screen.getByRole('button', { name: /Copy to 701 photos/ }));
+    await waitFor(() => expect(service.status).toHaveBeenCalled(), { timeout: 4000 });
+    const asked = service.status.mock.calls.map((call) => call[1]?.length);
+    expect(Math.max(...asked)).toBeLessThanOrEqual(500);
+    expect(screen.getByText(/for 701 photos/)).toBeInTheDocument();
+    done = true;
+    await waitFor(() => expect(screen.queryByText(/for 701 photos/)).toBeNull(), { timeout: 4000 });
+  }, 15000);
+});
+
 describe('copy to photos', () => {
   it('sends more than a request takes in parts and adds up the result', async () => {
     const many = Array.from({ length: 1500 }, (_, i) => ({ id: i + 10, filename: `x${i}.jpg`, media_type: 'image' })) as any;

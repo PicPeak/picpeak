@@ -185,6 +185,10 @@ describe('an edit, saved and applied', () => {
     expect(res.body.params).toMatchObject({ rotate: 90, exposure: 0.5 });
     const status = await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos/edit/status`));
     expect(status.body).toMatchObject({ pending: 1, pending_ids: [photoId] });
+    // Asked for given photos, it answers for those (a batch larger than one page).
+    const asked = await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos/edit/status?ids=${secondId},${photoId}`));
+    expect(asked.body).toMatchObject({ pending: 1, pending_ids: [photoId] });
+    expect((await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos/edit/status?ids=x`))).status).toBe(400);
     const zip = require('../../src/services/downloadZipService');
     const invalidate = jest.spyOn(zip, 'invalidateIfBuilt');
     await applyEdits();

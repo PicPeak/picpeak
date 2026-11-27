@@ -5,7 +5,7 @@
  *   GET  /:eventId/photos/:photoId/edit/base   the unedited photo at 1920 px, the editor's canvas
  *   PUT  /:eventId/photos/:photoId/edit        save an edit ({ params }), or reset it ({ params: null })
  *   POST /:eventId/photos/edit/batch           copy settings to photos ({ photo_ids, params, parts })
- *   GET  /:eventId/photos/edit/status          the background apply's progress for the gallery
+ *   GET  /:eventId/photos/edit/status          the background apply's progress for the gallery (?ids= for given photos)
  *   POST /:eventId/photos/edit/develop         develop RAW photos with the default look ({ photo_ids } or { all: true })
  *   GET  /:eventId/photos/:photoId/edit/develop  a RAW photo's 16-bit linear develop preview, the editor's canvas for it
  *
@@ -105,7 +105,13 @@ router.get('/:eventId/photos/edit/status', ...gate, async (req, res) => {
   try {
     const eventId = parsePositiveInt32(req.params.eventId);
     if (!eventId) return res.status(404).json({ error: 'Event not found' });
-    res.json(await photoEdits.status(eventId));
+    // ?ids=1,2,3: the photos the editor is following, at most 500 a request.
+    let ids = null;
+    if (req.query.ids !== undefined) {
+      ids = String(req.query.ids).split(',').map((id) => parsePositiveInt32(id));
+      if (!ids.length || ids.length > 500 || ids.some((id) => !id)) return res.status(400).json({ error: 'ids must list 1 to 500 photo ids' });
+    }
+    res.json(await photoEdits.status(eventId, ids));
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to read the edit progress');
   }

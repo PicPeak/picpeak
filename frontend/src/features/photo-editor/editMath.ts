@@ -78,6 +78,7 @@ export const DEFAULT_PARAMS: EditParams = Object.freeze({
   clarity: 0,
   sharpen: 0,
   bw: false,
+  nr: 0,
   develop: false,
 }) as EditParams;
 

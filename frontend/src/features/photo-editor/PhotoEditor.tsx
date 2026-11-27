@@ -101,6 +101,10 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
   const [params, dispatch] = useReducer(editorReducer, DEFAULT_PARAMS);
   const [saved, setSaved] = useState<EditParams>(DEFAULT_PARAMS);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  // The photo whose edit `params` and `saved` hold: until the shown photo's
+  // state is here they are the previous photo's, and nothing may change or
+  // save them.
+  const [loadedFor, setLoadedFor] = useState<number | null>(null);
   const [cropMode, setCropMode] = useState(false);
   const [before, setBefore] = useState(false);
   const [aspect, setAspect] = useState('free');
@@ -130,11 +134,14 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
     if (!photo) return undefined;
     const abort = new AbortController();
     setLoadState('loading');
+    setLoadedFor(null);
     setCropMode(false);
     setBefore(false);
     (async () => {
       try {
         const state = await photoEditorService.get(eventId, photo.id);
+        // An answer for a photo no longer shown changes nothing.
+        if (abort.signal.aborted || !canvasRef.current) return;
         let renderer: EditRenderer | null = null;
         rendererRef.current?.dispose();
         rendererRef.current = null;
@@ -161,6 +168,7 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
         const start = state.params ? { ...DEFAULT_PARAMS, ...state.params } : { ...DEFAULT_PARAMS };
         dispatch({ type: 'apply', params: start });
         setSaved(start);
+        setLoadedFor(photo.id);
         setLoadState('ready');
       } catch {
         if (!abort.signal.aborted) setLoadState('error');
@@ -206,15 +214,21 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
     return () => observer.disconnect();
   }, [view]);
 
-  // ---- background progress of saved edits.
+  // ---- background progress of saved edits: every tracked photo, asked
+  // for in parts the status answers in full, kept until it is known done.
   useEffect(() => {
     if (!pending.length) return undefined;
     const timer = window.setInterval(async () => {
       try {
-        const status = await photoEditorService.status(eventId);
-        const still = pending.filter((id) => status.pending_ids.includes(id) && !status.failed_ids.includes(id));
-        if (still.length !== pending.length) onChanged();
-        setPending(still);
+        const still = new Set<number>();
+        for (let start = 0; start < pending.length; start += 500) {
+          const part = pending.slice(start, start + 500);
+          const status = await photoEditorService.status(eventId, part);
+          for (const id of status.pending_ids) if (!status.failed_ids.includes(id)) still.add(id);
+        }
+        const next = pending.filter((id) => still.has(id));
+        if (next.length !== pending.length) onChanged();
+        setPending(next);
       } catch {
         // Polled again on the next tick.
       }
@@ -225,11 +239,21 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
   // A save on its way, and what the editor shows now: a save that lands
   // after the editor moved on only updates the photo it was for.
   const saveFlight = useRef<Promise<boolean> | null>(null);
-  const shown = useRef({ photoId: photo?.id, params, saved });
-  shown.current = { photoId: photo?.id, params, saved };
+  const ready = loadState === 'ready' && loadedFor === photo?.id;
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
+  // Changes from the controls and keys, only to a photo whose own state is loaded.
+  const edit = useCallback((action: Parameters<typeof dispatch>[0]) => {
+    if (readyRef.current) dispatch(action);
+  }, []);
+  const shown = useRef({ photoId: photo?.id, params, saved, loadedFor });
+  shown.current = { photoId: photo?.id, params, saved, loadedFor };
   const save = useCallback((): Promise<boolean> => {
     if (saveFlight.current) return saveFlight.current;
-    if (!photo || sameParams(shown.current.params, shown.current.saved)) return Promise.resolve(true);
+    // Nothing of this photo to save until its own state is loaded: the
+    // working edit is still the previous photo's.
+    if (!photo || shown.current.loadedFor !== photo.id) return Promise.resolve(true);
+    if (sameParams(shown.current.params, shown.current.saved)) return Promise.resolve(true);
     const photoId = photo.id;
     const sent = shown.current.params;
     const flight = (async () => {
@@ -269,11 +293,13 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
   /** Save until nothing is left unsaved (a save on its way first). False when one failed. */
   const settle = useCallback(async () => {
     for (let attempt = 0; attempt < 3; attempt++) {
+      // A photo still loading has nothing of its own to save.
+      if (!photo || shown.current.loadedFor !== photo.id) return saveFlight.current ? saveFlight.current : true;
       if (!(await save())) return false;
       if (sameParams(shown.current.params, shown.current.saved)) return true;
     }
     return false;
-  }, [save]);
+  }, [save, photo]);
 
   // Moving on keeps the work, as Lightroom does.
   const go = useCallback(async (step: 1 | -1) => {
@@ -304,13 +330,13 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
   }, [params, t]);
   const pasteSettings = useCallback(() => {
     if (!clipboard) return;
-    dispatch({ type: 'apply', params: clipboard, parts: ['tone'] });
+    edit({ type: 'apply', params: clipboard, parts: ['tone'] });
     toast.info(t('photoEditor.toast.pasted', 'Light, colour and detail pasted'));
-  }, [clipboard, t]);
+  }, [clipboard, edit, t]);
   const auto = useCallback(() => {
     const renderer = rendererRef.current;
-    if (renderer) dispatch({ type: 'auto', stats: renderer.toneStats(), linear: renderer.linear });
-  }, []);
+    if (renderer) edit({ type: 'auto', stats: renderer.toneStats(), linear: renderer.linear });
+  }, [edit]);
 
   // ---- keyboard, as a layer of the dialog stack: a confirm on top keeps its keys.
   const commands = useRef<Record<EditorCommand, () => void>>({} as Record<EditorCommand, () => void>);
@@ -319,10 +345,10 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
     next: () => { void go(1); },
     beforeAfter: () => setBefore((b) => !b),
     crop: () => setCropMode((c) => !c),
-    rotateLeft: () => dispatch({ type: 'rotate', direction: -1 }),
-    rotateRight: () => dispatch({ type: 'rotate', direction: 1 }),
+    rotateLeft: () => edit({ type: 'rotate', direction: -1 }),
+    rotateRight: () => edit({ type: 'rotate', direction: 1 }),
     auto,
-    reset: () => dispatch({ type: 'resetAll' }),
+    reset: () => edit({ type: 'resetAll' }),
     copy: copySettings,
     paste: pasteSettings,
     save: () => { void save(); },
@@ -339,6 +365,8 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
       });
       if (!command) return;
       event.preventDefault();
+      // While a photo loads only moving on, closing and the help work.
+      if (!readyRef.current && !['previous', 'next', 'close', 'shortcuts'].includes(command)) return;
       commands.current[command]();
     };
     window.addEventListener('keydown', onKey);
@@ -358,7 +386,7 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
   const chooseAspect = (id: string) => {
     setAspect(id);
     const ratio = aspectRatio(id);
-    if (ratio && base) dispatch({ type: 'aspect', ratio, width: base.width, height: base.height });
+    if (ratio && base) edit({ type: 'aspect', ratio, width: base.width, height: base.height });
   };
   const effective: CropRect | null = cropMode && view && frame
     ? { x: view.crop.left / frame.width, y: view.crop.top / frame.height, w: view.crop.width / frame.width, h: view.crop.height / frame.height }
@@ -379,7 +407,7 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
         max={max}
         step={decimals ? 1 / 10 ** decimals : 1}
         format={key === 'exposure' ? (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)} EV` : undefined}
-        onChange={(value) => dispatch({ type: 'slider', key, value })}
+        onChange={(value) => edit({ type: 'slider', key, value })}
       />
     );
   };
@@ -424,13 +452,13 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
           <Button variant={before ? 'secondary' : 'ghost'} size="sm" aria-pressed={before} leftIcon={<SplitSquareHorizontal className="w-4 h-4" />} onClick={() => setBefore((b) => !b)}>
             {t('photoEditor.actions.beforeAfter', 'Before / after')}
           </Button>
-          <Button variant="ghost" size="icon-sm" aria-label={t('photoEditor.actions.copy', 'Copy settings')} title={t('photoEditor.actions.copy', 'Copy settings')} onClick={copySettings}><Copy className="w-4 h-4" /></Button>
-          <Button variant="ghost" size="icon-sm" aria-label={t('photoEditor.actions.paste', 'Paste settings')} title={t('photoEditor.actions.paste', 'Paste settings')} disabled={!clipboard} onClick={pasteSettings}><ClipboardPaste className="w-4 h-4" /></Button>
-          <Button variant="ghost" size="sm" leftIcon={<Layers className="w-4 h-4" />} onClick={() => setCopyOpen(true)}>
+          <Button variant="ghost" size="icon-sm" aria-label={t('photoEditor.actions.copy', 'Copy settings')} title={t('photoEditor.actions.copy', 'Copy settings')} disabled={!ready} onClick={copySettings}><Copy className="w-4 h-4" /></Button>
+          <Button variant="ghost" size="icon-sm" aria-label={t('photoEditor.actions.paste', 'Paste settings')} title={t('photoEditor.actions.paste', 'Paste settings')} disabled={!clipboard || !ready} onClick={pasteSettings}><ClipboardPaste className="w-4 h-4" /></Button>
+          <Button variant="ghost" size="sm" leftIcon={<Layers className="w-4 h-4" />} disabled={!ready} onClick={() => setCopyOpen(true)}>
             {t('photoEditor.actions.copyTo', 'Copy to photos…')}
           </Button>
           <Button variant="ghost" size="icon-sm" aria-label={t('photoEditor.actions.shortcuts', 'Keyboard shortcuts')} aria-expanded={shortcutsOpen} onClick={() => setShortcutsOpen((s) => !s)}><Keyboard className="w-4 h-4" /></Button>
-          <Button variant="primary" size="sm" isLoading={saving} disabled={!dirty} leftIcon={<Save className="w-4 h-4" />} onClick={() => void save()}>
+          <Button variant="primary" size="sm" isLoading={saving} disabled={!dirty || !ready} leftIcon={<Save className="w-4 h-4" />} onClick={() => void save()}>
             {t('photoEditor.actions.save', 'Save')}
           </Button>
         </div>
@@ -447,12 +475,12 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
               aria-label={before ? t('photoEditor.canvas.before', 'Original') : t('photoEditor.canvas.after', 'Edited preview')}
               data-backend={backend}
             />
-            {cropMode && effective && !before && (
+            {cropMode && effective && !before && ready && (
               <CropOverlay
                 crop={params.crop}
                 effective={effective}
                 aspect={overlayAspect}
-                onChange={(crop) => dispatch({ type: 'crop', crop })}
+                onChange={(crop) => edit({ type: 'crop', crop })}
               />
             )}
           </div>
@@ -477,7 +505,8 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
         </div>
 
         {/* Panel */}
-        <aside className="w-full lg:w-80 shrink-0 overflow-y-auto border-t border-line bg-shell p-4 lg:border-l lg:border-t-0 space-y-4" aria-label={t('photoEditor.panel', 'Adjustments')}>
+        <aside className="w-full lg:w-80 shrink-0 overflow-y-auto border-t border-line bg-shell p-4 lg:border-l lg:border-t-0" aria-label={t('photoEditor.panel', 'Adjustments')}>
+          <fieldset disabled={!ready} className="space-y-4 min-w-0 disabled:opacity-60">
           <Section
             title={t('photoEditor.sections.crop', 'Crop and rotate')}
             action={<Button size="sm" variant={cropMode ? 'secondary' : 'ghost'} aria-pressed={cropMode} leftIcon={<Crop className="w-4 h-4" />} onClick={() => setCropMode((c) => !c)}>{cropMode ? t('photoEditor.crop.done', 'Done') : t('photoEditor.crop.start', 'Crop')}</Button>}
@@ -504,14 +533,14 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
               max={STRAIGHTEN_MAX}
               step={0.1}
               format={(v) => `${v.toFixed(1)}°`}
-              onChange={(value) => dispatch({ type: 'straighten', value })}
+              onChange={(value) => edit({ type: 'straighten', value })}
             />
             <div className="flex flex-wrap gap-1">
-              <Button size="icon-sm" variant="ghost" aria-label={t('photoEditor.crop.rotateLeft', 'Rotate left')} title={t('photoEditor.crop.rotateLeft', 'Rotate left')} onClick={() => dispatch({ type: 'rotate', direction: -1 })}><RotateCcw className="w-4 h-4" /></Button>
-              <Button size="icon-sm" variant="ghost" aria-label={t('photoEditor.crop.rotateRight', 'Rotate right')} title={t('photoEditor.crop.rotateRight', 'Rotate right')} onClick={() => dispatch({ type: 'rotate', direction: 1 })}><RotateCw className="w-4 h-4" /></Button>
-              <Button size="icon-sm" variant="ghost" aria-label={t('photoEditor.crop.flipH', 'Flip horizontally')} title={t('photoEditor.crop.flipH', 'Flip horizontally')} onClick={() => dispatch({ type: 'flip', axis: 'h' })}><FlipHorizontal2 className="w-4 h-4" /></Button>
-              <Button size="icon-sm" variant="ghost" aria-label={t('photoEditor.crop.flipV', 'Flip vertically')} title={t('photoEditor.crop.flipV', 'Flip vertically')} onClick={() => dispatch({ type: 'flip', axis: 'v' })}><FlipVertical2 className="w-4 h-4" /></Button>
-              {params.crop && <Button size="sm" variant="ghost" onClick={() => dispatch({ type: 'crop', crop: null })}>{t('photoEditor.crop.clear', 'Clear crop')}</Button>}
+              <Button size="icon-sm" variant="ghost" aria-label={t('photoEditor.crop.rotateLeft', 'Rotate left')} title={t('photoEditor.crop.rotateLeft', 'Rotate left')} onClick={() => edit({ type: 'rotate', direction: -1 })}><RotateCcw className="w-4 h-4" /></Button>
+              <Button size="icon-sm" variant="ghost" aria-label={t('photoEditor.crop.rotateRight', 'Rotate right')} title={t('photoEditor.crop.rotateRight', 'Rotate right')} onClick={() => edit({ type: 'rotate', direction: 1 })}><RotateCw className="w-4 h-4" /></Button>
+              <Button size="icon-sm" variant="ghost" aria-label={t('photoEditor.crop.flipH', 'Flip horizontally')} title={t('photoEditor.crop.flipH', 'Flip horizontally')} onClick={() => edit({ type: 'flip', axis: 'h' })}><FlipHorizontal2 className="w-4 h-4" /></Button>
+              <Button size="icon-sm" variant="ghost" aria-label={t('photoEditor.crop.flipV', 'Flip vertically')} title={t('photoEditor.crop.flipV', 'Flip vertically')} onClick={() => edit({ type: 'flip', axis: 'v' })}><FlipVertical2 className="w-4 h-4" /></Button>
+              {params.crop && <Button size="sm" variant="ghost" onClick={() => edit({ type: 'crop', crop: null })}>{t('photoEditor.crop.clear', 'Clear crop')}</Button>}
             </div>
           </Section>
 
@@ -524,7 +553,7 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
 
           <Section title={t('photoEditor.sections.colour', 'Colour')}>
             {COLOUR.map(slider)}
-            <Switch checked={params.bw} onChange={(value) => dispatch({ type: 'bw', value })} label={t('photoEditor.sliders.bw', 'Black & white')} size="sm" />
+            <Switch checked={params.bw} onChange={(value) => edit({ type: 'bw', value })} label={t('photoEditor.sliders.bw', 'Black & white')} size="sm" />
           </Section>
 
           <Section title={t('photoEditor.sections.detail', 'Detail')}>
@@ -578,7 +607,7 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
             <ul className="space-y-1">
               {presets.map((preset) => (
                 <li key={preset.id} className="flex items-center gap-1">
-                  <button type="button" className="min-w-0 flex-1 truncate rounded-lg px-2 py-1 text-left text-sm text-body hover:bg-hover" onClick={() => dispatch({ type: 'apply', params: preset.params, parts: ['tone'] })}>
+                  <button type="button" className="min-w-0 flex-1 truncate rounded-lg px-2 py-1 text-left text-sm text-body hover:bg-hover" onClick={() => edit({ type: 'apply', params: preset.params, parts: ['tone'] })}>
                     {preset.name}
                   </button>
                   <Button size="icon-sm" variant="ghost" aria-label={t('photoEditor.presets.delete', { name: preset.name, defaultValue: 'Delete {{name}}' })} onClick={() => void deletePreset(preset)}><Trash2 className="w-4 h-4" /></Button>
@@ -599,10 +628,11 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
           </Section>
 
           <div className="border-t border-line pt-4">
-            <Button size="sm" variant="ghost" leftIcon={<RotateCcw className="w-4 h-4" />} onClick={() => dispatch({ type: 'resetAll' })} disabled={isIdentity(params)}>
+            <Button size="sm" variant="ghost" leftIcon={<RotateCcw className="w-4 h-4" />} onClick={() => edit({ type: 'resetAll' })} disabled={isIdentity(params)}>
               {t('photoEditor.actions.reset', 'Reset to original')}
             </Button>
           </div>
+          </fieldset>
         </aside>
       </div>
 

@@ -768,10 +768,14 @@ function requestPass() {
   previous.cancel();
 }
 
-/** Progress of a gallery's edits for the admin. */
-async function status(eventId) {
-  const rows = await livePhotos(db).where({ event_id: eventId })
-    .whereRaw('edit_rev > edit_applied_rev').select('id', 'edit_rev');
+/**
+ * Progress of a gallery's edits for the admin: every photo still to apply,
+ * or, with `ids`, those of them (a batch larger than one answer's id list).
+ */
+async function status(eventId, ids = null) {
+  let query = livePhotos(db).where({ event_id: eventId }).whereRaw('edit_rev > edit_applied_rev');
+  if (ids) query = query.whereIn('id', ids);
+  const rows = await query.select('id', 'edit_rev');
   const failed = rows.filter((row) => failures.get(row.id) === Number(row.edit_rev)).map((row) => row.id);
   return { pending: rows.length, failed: failed.length, pending_ids: rows.slice(0, 500).map((row) => row.id), failed_ids: failed.slice(0, 500) };
 }

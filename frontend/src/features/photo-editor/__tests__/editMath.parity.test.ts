@@ -20,6 +20,18 @@ const deepClose = (actual: unknown, expected: unknown): void => {
   expect(actual).toEqual(expected);
 };
 
+describe('the parameter schema', () => {
+  it('has the server\'s keys, defaults and slider ranges, no more and no fewer', () => {
+    expect(Object.keys(math.DEFAULT_PARAMS).sort()).toEqual(Object.keys(fixtures.schema.defaults).sort());
+    expect({ ...math.DEFAULT_PARAMS }).toEqual(fixtures.schema.defaults);
+    expect(math.SLIDERS).toEqual(fixtures.schema.sliders);
+  });
+
+  it('an edit that only sets noise reduction is an edit', () => {
+    expect(math.isIdentity({ ...math.DEFAULT_PARAMS, nr: 20 })).toBe(false);
+  });
+});
+
 describe('editMath matches the server fixtures', () => {
   const prepFields = (p: math.Prepared) => ({ matrix: p.matrix, gamma: p.gamma, whiteLevel: p.whiteLevel, blackLevel: p.blackLevel, shoulder: p.shoulder, baseline: p.baseline });
   it.each(fixtures.cases.map((c: { name: string }) => [c.name, c]))('%s', (_name, c) => {
