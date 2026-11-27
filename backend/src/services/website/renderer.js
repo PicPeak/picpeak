@@ -17,6 +17,7 @@
  * contact form posts natively and reports back through a :target anchor.
  */
 const { escapeHtml } = require('../../utils/formatters');
+const { toDateOnly } = require('../../utils/dateOnly');
 const { escapeCssForStyleElement } = require('../../utils/cssSanitizer');
 const { relativeLuminance, readableTextOn } = require('../../utils/colorContrast');
 const { safeUrl } = require('./document');
@@ -249,9 +250,13 @@ function renderGallery(block, ctx) {
   return section(block, `<div class="pp-wrap">${heading(block.heading)}<div class="pp-grid pp-cols-${block.columns}${block.variant === 'masonry' ? ' pp-masonry' : ''}">${tiles}</div></div>`, ctx);
 }
 
+// event_date is a calendar date. On PostgreSQL it arrives as a Date at local
+// midnight, which east of UTC is the day before in UTC: reduce it to its
+// calendar day first (toDateOnly, as the OG preview does), then format that.
 function formatDate(value, locale) {
-  if (!value) return '';
-  const date = new Date(typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value);
+  const day = toDateOnly(value);
+  if (!day) return '';
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day}T12:00:00Z` : day);
   if (Number.isNaN(date.getTime())) return '';
   try {
     return new Intl.DateTimeFormat(locale === 'de' ? 'de-CH' : 'en-GB', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(date);
