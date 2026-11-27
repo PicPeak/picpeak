@@ -72,22 +72,28 @@ function isAvailable() {
 /**
  * The noise reduction slider (0..100) as LibRaw options: FBDD before the
  * demosaic (light up to 50, full above) and up to three median passes over
- * the colour differences, which is chroma noise. Only the full develop takes
- * them: FBDD needs the full demosaic, and the editor's preview approximates
- * by leaving noise reduction out (it says so). LibRaw's wavelet denoise
+ * the colour differences, which is chroma noise. LibRaw's wavelet denoise
  * (`-n`) is not used: LibRaw 0.22 crashes on it for some DNGs.
+ *
+ * A half-size develop (`half`: a sensor far larger than the render may be)
+ * has no demosaic for FBDD to act on, so it takes the median passes alone;
+ * its 2 x 2 binning already averages away much of the luminance noise. A
+ * full develop of such a sensor to apply FBDD would roughly quadruple the
+ * memory the half-size develop was chosen to keep within. The editor's
+ * preview leaves noise reduction out (it says so).
  */
-function noiseOptions(nr) {
+function noiseOptions(nr, { half = false } = {}) {
   const amount = Math.max(0, Math.min(100, Math.round(Number(nr) || 0)));
   if (!amount) return [];
-  return ['-fbdd', amount > 50 ? '2' : '1', '-m', String(Math.max(1, Math.round(amount / 34)))];
+  const median = ['-m', String(Math.max(1, Math.round(amount / 34)))];
+  return half ? median : ['-fbdd', amount > 50 ? '2' : '1', ...median];
 }
 
 /** dcraw_emu's arguments for a develop of `file`. */
 function developArgs(file, { half = false, nr = 0 } = {}) {
   return [
     '-4', '-o', '1', '-w', '-H', HIGHLIGHT_MODE,
-    ...(half ? ['-h'] : ['-q', '3', ...noiseOptions(nr)]),
+    ...(half ? ['-h'] : ['-q', '3']), ...noiseOptions(nr, { half }),
     '-Z', '-',
     // Absolute, so a name can never read as an option.
     path.resolve(file),

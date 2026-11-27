@@ -314,6 +314,38 @@ describe('save, background apply, reset', () => {
   });
 });
 
+describe('noise reduction on a sensor developed at half size', () => {
+  it('still reaches LibRaw: a 60 MP RAW with NR gets the median passes the half-size develop takes', async () => {
+    const rawDevelop = require('../../src/services/rawDevelop');
+    const media = require('../../src/services/mediaProcessService');
+    fs.copyFileSync(path.join(__dirname, '../fixtures/raw/synthetic.dng'), storagePath('events/active/edit-card/big.dng'));
+    const photo = { ...(await row()), id: 999001, filename: 'big.dng', original_filename: 'BIG.DNG', path: 'edit-card/big.dng', mime_type: 'image/x-adobe-dng' };
+    const spies = [
+      jest.spyOn(rawDevelop, 'isAvailable').mockResolvedValue(true),
+      jest.spyOn(rawDevelop, 'isOrdinaryImageFile').mockResolvedValue(false),
+      // A 60 MP sensor: above 1.5 x PHOTO_EDIT_MAX_PIXELS, developed at half size.
+      jest.spyOn(rawDevelop, 'identify').mockResolvedValue({ width: 9504, height: 6336, multipliers: null, exposureBias: 0 }),
+    ];
+    const run = jest.spyOn(media, 'run').mockRejectedValue(new Error('stop before LibRaw'));
+    try {
+      const args = async (nr) => {
+        run.mockClear();
+        await expect(photoEdits().renderEditedJpeg(photo, validated({ develop: true, nr }))).rejects.toThrow('stop before LibRaw');
+        return run.mock.calls[0][1];
+      };
+      const without = await args(0);
+      const withNr = await args(100);
+      expect(without).toContain('-h');
+      expect(withNr).toContain('-h');
+      expect(withNr).toEqual(expect.arrayContaining(['-m', '3']));
+      expect(without).not.toContain('-m');
+    } finally {
+      run.mockRestore();
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+});
+
 describe('two replicas rendering the same revision', () => {
   it('the later one adopts the render the first published, and that file survives', async () => {
     fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/race.jpg'));
