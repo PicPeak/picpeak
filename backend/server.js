@@ -461,9 +461,9 @@ function buildPublicSiteDocument(payload) {
 }
 
 // The website builder's pages (issue 2618). Same headers as the single
-// page; the CSP adds media-src for a hero video. Answers 304 on a matching
+// page; the CSP adds media-src for a hero video, and the captcha's origins on
+// a page with a contact form while it is on (captcha.js). Answers 304 on a matching
 // validator, and the noindex header travels with the cached page.
-const WEBSITE_CSP = 'default-src \'self\'; frame-ancestors \'none\'; img-src \'self\' data: https:; media-src \'self\'; style-src \'self\' \'unsafe-inline\' https:; font-src \'self\' https: data:; object-src \'none\'; script-src \'none\'; form-action \'self\'; base-uri \'none\'';
 function sendWebsitePage(req, res, page, slug) {
   if (page.status === 302) {
     res.setHeader('Cache-Control', 'no-store');
@@ -484,7 +484,7 @@ function sendWebsitePage(req, res, page, slug) {
   res.setHeader('Cache-Control', 'public, max-age=30, must-revalidate');
   res.setHeader('ETag', page.etag);
   res.setHeader('Vary', 'Accept-Encoding');
-  res.setHeader('Content-Security-Policy', WEBSITE_CSP);
+  res.setHeader('Content-Security-Policy', require('./src/services/website/captcha').websiteCsp(page.captcha));
   if (req.headers['if-none-match'] === page.etag) {
     res.status(304).end();
     return;

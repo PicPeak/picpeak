@@ -567,6 +567,9 @@ async function buildContext(document, page, {
     legalLinks(locale),
     getFrontendBaseUrl().catch(() => ''),
   ]);
+  // The live contact forms show the spam check; the preview never loads it.
+  const active = preview ? null : await require('./contactSettings').activeCaptcha();
+  const captcha = active ? { provider: active.provider, siteKey: active.siteKey, endpoint: active.endpoint } : null;
   const covers = await media.loadCoverPhotos([...events.values()], { views });
   const sanitizeCustomHtml = (html) => publicSite.applyBrandTokens(publicSite.sanitizeHtmlPayload(html || ''), themeInfo.branding);
   const { sanitizeCss } = require('../../utils/cssSanitizer');
@@ -585,6 +588,7 @@ async function buildContext(document, page, {
     packages,
     booking,
     legalLinks: legal,
+    captcha,
     baseUrl: baseUrl || '',
     robots: preview ? 'noindex' : robotsDirective(settings),
     // The document's own limit: a stylesheet it accepted renders whole.
@@ -685,7 +689,10 @@ async function resolvePublicPage(slug) {
     else if (page) result = { status: 200, page };
   }
   if (result && result.status === 200) {
-    result = withEtag(renderPage(await buildContext(document, result.page)));
+    const ctx = await buildContext(document, result.page);
+    // The captcha's origins are allowed only where its form is (server.js).
+    const captcha = ctx.captcha && result.page.blocks.some((b) => b.type === 'contact') ? ctx.captcha.provider : null;
+    result = withEtag(renderPage(ctx), { captcha });
   } else if (!result && slug) {
     // A legal page, or the not-found page for any other address, in the
     // website's design while the website is live (the app shows them otherwise).

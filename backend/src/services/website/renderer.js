@@ -22,6 +22,7 @@ const { escapeCssForStyleElement } = require('../../utils/cssSanitizer');
 const { relativeLuminance, readableTextOn } = require('../../utils/colorContrast');
 const { inline, richText, linkAttrs } = require('./richText');
 const { icon, NETWORK_LABELS } = require('./icons');
+const { widgetHtml } = require('./captcha');
 const { brandCssVariables } = require('../../utils/brandCssVariables');
 const { MEDIA_WIDTHS, mediaBase, editorBase, parseRenditionKeys, photoVersion } = require('./media');
 
@@ -49,6 +50,7 @@ const STRINGS = {
     terms: 'Terms & Conditions',
     previewForm: 'The form is disabled in the preview.',
     bookingHidden: 'Hidden on the website: client booking is off or nothing can be booked yet.',
+    captchaFailed: 'The spam check did not go through. Please complete it and send the message again.',
     follow: 'Follow',
     videoInPreview: 'Video plays on the published page',
   },
@@ -73,6 +75,7 @@ const STRINGS = {
     terms: 'AGB',
     previewForm: 'Das Formular ist in der Vorschau deaktiviert.',
     bookingHidden: 'Auf der Website ausgeblendet: Die Online-Buchung ist aus oder es ist noch nichts buchbar.',
+    captchaFailed: 'Die Spam-Prüfung hat nicht geklappt. Bitte schliessen Sie sie ab und senden Sie die Nachricht erneut.',
     follow: 'Folgen',
     videoInPreview: 'Das Video läuft auf der veröffentlichten Seite',
   },
@@ -350,9 +353,11 @@ ${field('email', s.email, `<input id="${fid('email')}" name="email" type="email"
 ${block.showPhone ? field('phone', s.phone, `<input id="${fid('phone')}" name="phone" type="tel" maxlength="40" autocomplete="tel"${disabled}>`) : ''}
 ${block.showDate ? field('date', s.date, `<input id="${fid('date')}" name="date" type="date"${disabled}>`) : ''}
 ${field('message', s.message, `<textarea id="${fid('message')}" name="message" required maxlength="5000" rows="5"${disabled}></textarea>`)}
+${ctx.captcha ? widgetHtml(ctx.captcha, { locale: ctx.locale, esc }) : ''}
 <button class="pp-btn" type="submit"${disabled}>${esc(block.submitLabel || s.send)}</button>
 ${ctx.preview ? `<p class="pp-muted">${esc(s.previewForm)}</p>` : ''}</form>`;
-  const notes = `<p id="contact-sent-${esc(block.id)}" class="pp-note pp-note--ok" role="status">${esc(block.successMessage || s.sent)}</p><p id="contact-error-${esc(block.id)}" class="pp-note pp-note--err" role="alert">${esc(s.failed)}</p>`;
+  const notes = `<p id="contact-sent-${esc(block.id)}" class="pp-note pp-note--ok" role="status">${esc(block.successMessage || s.sent)}</p><p id="contact-error-${esc(block.id)}" class="pp-note pp-note--err" role="alert">${esc(s.failed)}</p>`
+    + (ctx.captcha ? `<p id="contact-captcha-${esc(block.id)}" class="pp-note pp-note--err" role="alert">${esc(s.captchaFailed)}</p>` : '');
   const intro = `<div>${heading(block.heading)}${block.intro ? `<div class="pp-prose">${richText(block.intro)}</div>` : ''}</div>`;
   if (block.variant === 'split') {
     return section(block, `<div class="pp-wrap pp-split pp-split--top">${intro}<div>${notes}${form}</div></div>`, ctx);

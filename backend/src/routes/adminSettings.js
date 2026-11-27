@@ -86,6 +86,11 @@ const isReservedSettingKey = (key) => RESERVED_SETTING_KEYS.includes(key)
   // PUT /admin/system-health/status/settings is the only writer: it needs
   // system.manage, validates the values and writes the audit entry.
   || key.startsWith('degradation_')
+  // The website's spam check and contact notifications: PUT
+  // /admin/website/contact-settings checks the keys exist and encrypts the
+  // Friendly Captcha API key (issue 2618).
+  || key.startsWith('website_captcha_')
+  || key.startsWith('website_contact_')
   || key === 'transfer_max_upload_size_mb'
   // Derived, read-only fields the GET response adds for the General tab
   // (#705). They are computed from the environment, never stored, so a
@@ -216,6 +221,7 @@ const MASKED_SECRET_KEYS = [
   'backup_rsync_ssh_key',
   'analytics_umami_api_key',
   'analytics_rybbit_api_key',
+  'website_captcha_friendly_api_key',
 ];
 const maskSecrets = (settingsObject) => {
   for (const key of MASKED_SECRET_KEYS) {

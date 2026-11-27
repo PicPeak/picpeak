@@ -24,11 +24,12 @@ export const TextField: React.FC<{
   placeholder?: string;
   helperText?: string;
   error?: string;
-}> = ({ label, value, onChange, maxLength, placeholder, helperText, error }) => {
+  type?: 'text' | 'password' | 'email';
+}> = ({ label, value, onChange, maxLength, placeholder, helperText, error, type = 'text' }) => {
   const id = useId();
   return (
-    <Input id={id} label={label} value={value} maxLength={maxLength} placeholder={placeholder}
-      helperText={helperText} error={error} onChange={(e) => onChange(e.target.value)} />
+    <Input id={id} type={type} label={label} value={value} maxLength={maxLength} placeholder={placeholder}
+      helperText={helperText} error={error} autoComplete={type === 'password' ? 'new-password' : undefined} onChange={(e) => onChange(e.target.value)} />
   );
 };
 

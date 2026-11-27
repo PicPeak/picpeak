@@ -19,8 +19,21 @@ function block(opening) {
 test('a website page keeps the policy the backend sent; anything else gets the site policy', () => {
   const map = conf.match(/map \$upstream_http_content_security_policy \$picpeak_site_csp \{([\s\S]*?)\n\}/);
   expect(map).not.toBeNull();
-  expect(map[1]).toContain('"~script-src \'none\'" $upstream_http_content_security_policy;');
   expect(map[1]).toContain('default $picpeak_csp;');
+  // The one regex entry, evaluated as nginx would (PCRE, case-sensitive).
+  const entry = map[1].match(/"~([^"]+)" \$upstream_http_content_security_policy;/);
+  expect(entry).not.toBeNull();
+  const kept = (policy) => new RegExp(entry[1]).test(policy);
+  const { websiteCsp } = require('../../src/services/website/captcha');
+  // Every page policy the website sends: no script, or a captcha's own.
+  expect(kept(websiteCsp())).toBe(true);
+  expect(kept(websiteCsp('friendly'))).toBe(true);
+  expect(kept(websiteCsp('recaptcha'))).toBe(true);
+  // Anything that would run the site's own or inline script is not.
+  expect(kept('default-src \'self\'; script-src \'self\'')).toBe(false);
+  expect(kept('default-src \'self\'; script-src https://cdn.example/ \'unsafe-inline\'; base-uri \'none\'')).toBe(false);
+  expect(kept('default-src \'self\'; script-src \'self\' https://www.google.com')).toBe(false);
+  expect(kept('default-src \'self\'; script-src https:; base-uri \'none\'')).toBe(false);
 });
 
 test.each([['location = / {'], ['location ~ "^/(?!(?:']])('%s carries the full header set and compresses', (opening) => {

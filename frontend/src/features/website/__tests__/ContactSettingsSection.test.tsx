@@ -1,0 +1,60 @@
+/**
+ * The contact form's settings in the Design panel (issue 2618): the spam
+ * check, saved right away.
+ */
+import React from 'react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (k: string, fb?: unknown) => (typeof fb === 'string' ? fb : (fb as { defaultValue?: string })?.defaultValue ?? k) }),
+  initReactI18next: { type: '3rdParty', init: () => {} },
+}));
+vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('../../../services/website.service', () => ({
+  websiteService: { getContactSettings: vi.fn(), saveContactSettings: vi.fn() },
+}));
+
+import { websiteService } from '../../../services/website.service';
+import { ContactSettingsSection } from '../ContactSettingsSection';
+
+const SETTINGS = {
+  captcha: { provider: 'none' as const, friendly: { siteKey: '', endpoint: 'global' as const, apiKeySet: false }, recaptchaReady: false },
+};
+
+function open(readOnly = false) {
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ContactSettingsSection readOnly={readOnly} /></MemoryRouter></QueryClientProvider>);
+}
+
+describe('contact form settings', () => {
+  it('turns on Friendly Captcha with its keys; the API key is sent only when typed', async () => {
+    vi.mocked(websiteService.getContactSettings).mockResolvedValue(SETTINGS);
+    vi.mocked(websiteService.saveContactSettings).mockResolvedValue(SETTINGS);
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Friendly Captcha' }));
+    fireEvent.change(screen.getByLabelText('Site key'), { target: { value: 'FCMTEST0123' } });
+    fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'A1-secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Servers in the EU' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save contact form settings' }));
+    await waitFor(() => expect(websiteService.saveContactSettings).toHaveBeenCalledWith(expect.objectContaining({
+      captcha: { provider: 'friendly', friendly: { siteKey: 'FCMTEST0123', endpoint: 'eu', apiKey: 'A1-secret' } },
+    })));
+  });
+
+  it('keeps a saved API key it does not show', async () => {
+    vi.mocked(websiteService.getContactSettings).mockResolvedValue({ ...SETTINGS, captcha: { ...SETTINGS.captcha, provider: 'friendly', friendly: { siteKey: 'FCMTEST0123', endpoint: 'global', apiKeySet: true } } });
+    open();
+    expect(await screen.findByPlaceholderText('Saved. Type a new one to replace it.')).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Save contact form settings' }));
+    await waitFor(() => expect(vi.mocked(websiteService.saveContactSettings).mock.calls.at(-1)?.[0].captcha.friendly).not.toHaveProperty('apiKey'));
+  });
+
+  it('reCAPTCHA points to the security settings while its keys are missing', async () => {
+    vi.mocked(websiteService.getContactSettings).mockResolvedValue(SETTINGS);
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Google reCAPTCHA' }));
+    expect(screen.getByRole('link', { name: /Settings › Security/ })).toHaveAttribute('href', '/admin/settings?tab=security');
+  });
+});

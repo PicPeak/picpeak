@@ -60,6 +60,15 @@ router.put('/visibility', canEdit, [
   res.json({ enabled: parseBooleanInput(req.body.enabled, false) });
 }));
 
+// The contact form's settings (spam check, notifications): saved right away,
+// not part of the draft. No secret goes back.
+router.get('/contact-settings', canView, handleAsync(async (req, res) => {
+  res.json(await require('../services/website/contactSettings').readContactSettings());
+}));
+router.put('/contact-settings', canEdit, handleAsync(async (req, res) => {
+  res.json(await require('../services/website/contactSettings').writeContactSettings(req.body));
+}));
+
 // The booking block's form: client booking on or off, and the bookable
 // services the booking page can open with.
 router.get('/booking', canView, handleAsync(async (req, res) => {

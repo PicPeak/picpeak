@@ -1911,3 +1911,87 @@ describe('legal and system pages in the website design', () => {
     expect((await service.resolvePublicPage('impressum')).html).toContain('Seestrasse 9');
   });
 });
+
+describe('spam check on the contact form', () => {
+  const axios = require('axios');
+  let ip = 100;
+  const post = (fields) => {
+    ip += 1;
+    const req = request(app).post('/api/public/website/contact').set('X-Forwarded-For', `198.51.100.${ip}`).set('Sec-Fetch-Site', 'same-origin');
+    Object.entries(fields).forEach(([k, v]) => req.field(k, v));
+    return req;
+  };
+  const valid = { page: 'home', block: 'c1', name: 'Grace', email: 'grace@example.com', message: 'Hello' };
+  const settings = (body, as = adminId) => request(app).put('/api/admin/website/contact-settings').set(auth(as)).send(body);
+
+  beforeAll(async () => {
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    const document = { pages: [
+      { id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'c1', type: 'contact' }] },
+      { id: 'about', title: 'About', slug: 'about', blocks: [{ type: 'text', body: 'x' }] },
+    ] };
+    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document, revision: state.draft.revision }).expect(200);
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+  });
+  afterEach(() => jest.restoreAllMocks());
+  afterAll(async () => { await settings({ captcha: { provider: 'none' } }); });
+
+  test('off by default; a provider needs its keys first; the API key is kept encrypted and never sent back', async () => {
+    const initial = (await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body;
+    expect(initial.captcha).toMatchObject({ provider: 'none', friendly: { siteKey: '', apiKeySet: false }, recaptchaReady: false });
+    expect((await settings({ captcha: { provider: 'friendly' } })).body.code).toBe('CAPTCHA_NOT_READY');
+    expect((await settings({ captcha: { provider: 'recaptcha' } })).body.code).toBe('CAPTCHA_NOT_READY');
+    expect((await settings({ captcha: { friendly: { siteKey: '<script>' } } })).body.code).toBe('CAPTCHA_SITE_KEY');
+    expect((await settings({ captcha: { provider: 'friendly', friendly: { siteKey: 'FCMTEST0123', apiKey: 'A1-secret-key' } } }, viewerId)).status).toBe(403);
+    const saved = await settings({ captcha: { provider: 'friendly', friendly: { siteKey: 'FCMTEST0123', apiKey: 'A1-secret-key', endpoint: 'eu' } } });
+    expect(saved.status).toBe(200);
+    expect(saved.body.captcha).toMatchObject({ provider: 'friendly', friendly: { siteKey: 'FCMTEST0123', endpoint: 'eu', apiKeySet: true } });
+    expect(JSON.stringify(saved.body)).not.toContain('A1-secret-key');
+    const row = await db('app_settings').where({ setting_key: 'website_captcha_friendly_api_key' }).first();
+    expect(row.setting_value).not.toContain('A1-secret-key');
+    const all = (await request(app).get('/api/admin/settings').set(auth(adminId))).body;
+    expect(JSON.stringify(all)).not.toContain(JSON.parse(row.setting_value));
+    // The generic settings writer cannot switch it.
+    await request(app).put('/api/admin/settings/general').set(auth(adminId)).send({ website_captcha_provider: 'none' });
+    expect((await request(app).get('/api/admin/website/contact-settings').set(auth(adminId))).body.captcha.provider).toBe('friendly');
+  });
+
+  test('only the page with the form loads the widget and allows the provider', async () => {
+    cache.clearWebsiteCache();
+    const home = await service.resolvePublicPage('');
+    expect(home.captcha).toBe('friendly');
+    expect(home.html).toContain('<div class="frc-captcha" data-sitekey="FCMTEST0123" data-api-endpoint="eu"');
+    expect(home.html).toMatch(/<script type="module" src="https:\/\/cdn\.jsdelivr\.net\/npm\/@friendlycaptcha\/sdk@1\.1\.5\/site\.min\.js" integrity="sha384-/);
+    const about = await service.resolvePublicPage('about');
+    expect(about.captcha).toBeNull();
+    expect(about.html).not.toMatch(/<script/);
+  });
+
+  test('a message without a valid answer is refused and stored nowhere; a valid one goes through', async () => {
+    const spy = jest.spyOn(axios, 'post');
+    const before = Number((await db('received_emails').count({ c: '*' }).first()).c);
+    expect((await post(valid)).headers.location).toBe('/#contact-captcha-c1');
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockResolvedValueOnce({ data: { success: false, error: { error_code: 'response_invalid' } } });
+    expect((await post({ ...valid, 'frc-captcha-response': 'bad' })).headers.location).toBe('/#contact-captcha-c1');
+    expect(Number((await db('received_emails').count({ c: '*' }).first()).c)).toBe(before);
+    spy.mockResolvedValueOnce({ data: { success: true } });
+    expect((await post({ ...valid, 'frc-captcha-response': 'good' })).headers.location).toBe('/#contact-sent-c1');
+    expect(spy).toHaveBeenLastCalledWith('https://eu.frcapi.com/api/v2/captcha/siteverify', { response: 'good', sitekey: 'FCMTEST0123' },
+      expect.objectContaining({ headers: { 'X-API-Key': 'A1-secret-key' } }));
+    // The provider unreachable: refused, not let through.
+    spy.mockRejectedValueOnce(new Error('timeout'));
+    expect((await post({ ...valid, 'frc-captcha-response': 'good' })).headers.location).toBe('/#contact-captcha-c1');
+  });
+
+  test('reCAPTCHA uses the keys of the security settings', async () => {
+    await setSetting('security_recaptcha_site_key', '6LcSiteKey', 'security');
+    await setSetting('security_recaptcha_secret_key', 'recaptcha-secret', 'security');
+    expect((await settings({ captcha: { provider: 'recaptcha' } })).status).toBe(200);
+    expect((await service.resolvePublicPage('')).html).toContain('<div class="g-recaptcha" data-sitekey="6LcSiteKey"></div>');
+    const spy = jest.spyOn(axios, 'post').mockResolvedValueOnce({ data: { success: true } });
+    expect((await post({ ...valid, 'g-recaptcha-response': 'tok' })).headers.location).toBe('/#contact-sent-c1');
+    expect(spy.mock.calls[0][0]).toBe('https://www.google.com/recaptcha/api/siteverify');
+    expect(spy.mock.calls[0][1]).toContain('secret=recaptcha-secret');
+  });
+});

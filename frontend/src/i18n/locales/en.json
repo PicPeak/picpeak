@@ -13643,6 +13643,25 @@
       "background": "Background",
       "bgDefault": "Light",
       "bgColor": "Footer colour"
+    },
+    "contact": {
+      "saved": "Contact form settings saved",
+      "title": "Contact form",
+      "intro": "For every contact form on the website. Saved right away, not with the draft.",
+      "captcha": "Spam check",
+      "captchaNone": "Off",
+      "captchaHint": "The form always has a hidden trap field and a limit per sender. A spam check adds the provider’s widget to pages with a contact form, and only those pages load its script. Friendly Captcha needs no cookies.",
+      "siteKey": "Site key",
+      "apiKey": "API key",
+      "apiKeySaved": "Saved. Type a new one to replace it.",
+      "endpoint": "Where the check runs",
+      "endpointGlobal": "Worldwide",
+      "endpointEu": "Servers in the EU",
+      "endpointHint": "The EU servers are part of Friendly Captcha’s paid plans; choose them only if your plan includes them.",
+      "recaptchaReady": "Uses the reCAPTCHA keys of ",
+      "recaptchaMissing": "Enter the reCAPTCHA site key and secret first, in ",
+      "securityLink": "Settings › Security",
+      "save": "Save contact form settings"
     }
   },
   "websiteNotice": {

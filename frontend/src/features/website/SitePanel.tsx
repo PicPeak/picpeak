@@ -11,6 +11,7 @@ import { ExternalLink } from 'lucide-react';
 import { fontsService } from '../../services/fonts.service';
 import { settingsTabHref } from '../settings/settingsNav';
 import { ChoiceField, ColorField, SelectField, TextArea, labelClass } from './fields';
+import { ContactSettingsSection } from './ContactSettingsSection';
 import { FooterSection } from './FooterSection';
 import { MenuSection } from './MenuSection';
 import type { WebsiteDocument, WebsiteTheme } from './types';
@@ -75,6 +76,7 @@ export const SitePanel: React.FC<SitePanelProps> = ({ doc, update, readOnly }) =
 
       <MenuSection doc={doc} update={update} readOnly={readOnly} />
       <FooterSection doc={doc} update={update} readOnly={readOnly} />
+      <ContactSettingsSection readOnly={readOnly} />
 
       <section>
         <TextArea

@@ -22,6 +22,20 @@ export interface WebsiteTraffic {
   totals: { views: number };
 }
 
+export type CaptchaProvider = 'none' | 'friendly' | 'recaptcha';
+export interface ContactSettings {
+  captcha: {
+    provider: CaptchaProvider;
+    friendly: { siteKey: string; endpoint: 'global' | 'eu'; apiKeySet: boolean };
+    /** The reCAPTCHA keys of Settings › Security are there. */
+    recaptchaReady: boolean;
+  };
+}
+export interface ContactSettingsUpdate {
+  /** `apiKey`: a new key, '' to remove it, absent to keep it. */
+  captcha: { provider: CaptchaProvider; friendly: { siteKey: string; endpoint: 'global' | 'eu'; apiKey?: string } };
+}
+
 export const websiteService = {
   async getState(): Promise<EditorState> {
     const r = await api.get<EditorState>('/admin/website');
@@ -34,6 +48,17 @@ export const websiteService = {
   /** Show the website at the site root, or not. */
   async setVisibility(enabled: boolean): Promise<void> {
     await api.put('/admin/website/visibility', { enabled });
+  },
+
+  /** The contact form's settings (spam check), saved right away. */
+  async getContactSettings(): Promise<ContactSettings> {
+    const r = await api.get<ContactSettings>('/admin/website/contact-settings');
+    return r.data;
+  },
+
+  async saveContactSettings(body: ContactSettingsUpdate): Promise<ContactSettings> {
+    const r = await api.put<ContactSettings>('/admin/website/contact-settings', body);
+    return r.data;
   },
 
   /** The booking block's form: client booking on, and the bookable services. */

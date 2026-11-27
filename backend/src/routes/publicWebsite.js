@@ -22,7 +22,7 @@ const { pageHref } = require('../services/website/renderer');
 
 const router = express.Router();
 
-// Fields only: six text inputs and two hidden ones. Multer counts bytes; the
+// Fields only: six text inputs, two hidden ones and the captcha's answer. Multer counts bytes; the
 // longest field (the message, MESSAGE_MAX characters) may take four bytes a
 // character in UTF-8. Characters are checked in validateSubmission.
 const formFields = multer({
@@ -75,6 +75,11 @@ router.post('/contact', daily, hourly, (req, res, next) => {
         return back(res, form.page, form.block.id, 'sent');
       }
       return back(res, form.page, form.block.id, 'error');
+    }
+    // The spam check, when it is on: checked with the provider, every time.
+    const captcha = await require('../services/website/contactSettings').activeCaptcha();
+    if (captcha && !(await require('../services/website/captcha').verifyAnswer(captcha, body, { ip: req.ip }))) {
+      return back(res, form.page, form.block.id, 'captcha');
     }
     const outcome = await contact.storeSubmission(checked.values, form.page);
     return back(res, form.page, form.block.id, outcome === 'stored' ? 'sent' : 'error');
