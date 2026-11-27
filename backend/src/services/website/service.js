@@ -551,7 +551,9 @@ async function resolvePublicPage(slug) {
     if (home) result = { status: 200, page: home };
   } else {
     const page = visible.find((p) => p.slug === slug);
-    if (page && page.isHome) result = { status: 301, location: '/' };
+    // The home page's own address leads to /. Temporary: which page is home
+    // can change, and a stored permanent redirect would outlive that.
+    if (page && page.isHome) result = { status: 302, location: '/' };
     else if (page) result = { status: 200, page };
   }
   if (result && result.status === 200) {

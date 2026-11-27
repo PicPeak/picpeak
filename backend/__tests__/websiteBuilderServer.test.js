@@ -79,7 +79,9 @@ test('with the flag on and a published site, / and /<slug> are server-rendered p
   expect(about.text).toContain('<title>About');
 
   const home = await request(app).get('/home');
-  expect(home.status).toBe(301);
+  // Which page is home can change: a temporary, unstored redirect.
+  expect(home.status).toBe(302);
+  expect(home.headers['cache-control']).toBe('no-store');
   expect(home.headers.location).toBe('/');
 });
 

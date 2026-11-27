@@ -465,8 +465,9 @@ function buildPublicSiteDocument(payload) {
 // validator, and the noindex header travels with the cached page.
 const WEBSITE_CSP = 'default-src \'self\'; frame-ancestors \'none\'; img-src \'self\' data: https:; media-src \'self\'; style-src \'self\' \'unsafe-inline\' https:; font-src \'self\' https: data:; object-src \'none\'; script-src \'none\'; form-action \'self\'; base-uri \'none\'';
 function sendWebsitePage(req, res, page) {
-  if (page.status === 301) {
-    res.redirect(301, page.location);
+  if (page.status === 302) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.redirect(302, page.location);
     return;
   }
   // Every header before the conditional answer: a 304 updates the cached

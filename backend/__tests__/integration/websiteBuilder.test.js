@@ -277,7 +277,7 @@ describe('public pages', () => {
   test('resolve only while the flag is on and the public site is enabled', async () => {
     expect(await service.resolvePublicPage('')).toMatchObject({ status: 200 });
     expect((await service.resolvePublicPage('about')).html).toContain('About us');
-    expect(await service.resolvePublicPage('home')).toEqual({ status: 301, location: '/' });
+    expect(await service.resolvePublicPage('home')).toEqual({ status: 302, location: '/' });
     expect(await service.resolvePublicPage('hidden')).toBeNull();
     expect(await service.resolvePublicPage('nope')).toBeNull();
 
