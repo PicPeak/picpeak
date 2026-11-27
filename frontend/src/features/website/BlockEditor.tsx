@@ -1,9 +1,9 @@
 /**
  * The form of one block in the website builder (issue 2618).
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button, Notice, Switch } from '../../components/common';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
@@ -12,7 +12,8 @@ import { BLOCK_VARIANTS, variantLabel } from './blocks';
 import {
   ChoiceField, ImageField, ImageListField, LinkField, TextArea, TextField, VideoField, useBackgroundOptions,
 } from './fields';
-import type { Block, Testimonial } from './types';
+import { SearchField, useDebounced } from './search';
+import type { Block, Testimonial, WebsiteGallery } from './types';
 
 interface BlockEditorProps {
   block: Block;
@@ -207,29 +208,54 @@ const FeaturedGalleriesField: React.FC<{
   onChange: (value: { id: number; text: string }[]) => void;
 }> = ({ value, onChange }) => {
   const { t } = useTranslation();
-  const galleries = useQuery({ queryKey: ['website-galleries'], queryFn: websiteService.listGalleries });
-  const eligible = (galleries.data || []).filter((g) => g.eligible);
-  const chosen = new Map(value.map((g) => [g.id, g]));
-  const missing = value.filter((g) => !eligible.some((e) => e.id === g.id));
+  const [search, setSearch] = useState('');
+  const q = useDebounced(search.trim());
+  const chosenIds = value.map((g) => g.id);
+  // The chosen ones by id, wherever they are in the paged list.
+  const chosenQuery = useQuery({
+    queryKey: ['website-galleries', 'chosen', chosenIds],
+    queryFn: () => websiteService.listGalleries({ ids: chosenIds }),
+    enabled: chosenIds.length > 0,
+    placeholderData: keepPreviousData,
+  });
+  const available = useInfiniteQuery({
+    queryKey: ['website-galleries', 'on-website', q],
+    queryFn: ({ pageParam }) => websiteService.listGalleries({ page: pageParam, q, onWebsite: true }),
+    initialPageParam: 1,
+    getNextPageParam: (last, all) => (last.hasMore ? all.length + 1 : undefined),
+    placeholderData: keepPreviousData,
+  });
+  const chosenRows = chosenQuery.data?.galleries || [];
+  const rows = (available.data?.pages || []).flatMap((p) => p.galleries).filter((g) => g.eligible && !chosenIds.includes(g.id));
+  const missing = chosenIds.length && chosenQuery.data ? value.filter((g) => !chosenRows.some((r) => r.id === g.id && r.eligible)) : [];
+  const toggle = (id: number, on: boolean) => onChange(on ? [...value, { id, text: '' }] : value.filter((x) => x.id !== id));
+  const row = (g: WebsiteGallery, checked: boolean) => (
+    <li key={g.id}>
+      <label className="flex items-center gap-2 text-sm text-body">
+        <input type="checkbox" className="rounded border-line-strong" checked={checked} disabled={!checked && value.length >= 24}
+          onChange={(e) => toggle(g.id, e.target.checked)} />
+        {g.name}
+      </label>
+    </li>
+  );
   return (
-    <fieldset>
+    <fieldset className="space-y-2">
       <legend className="block text-sm font-medium text-body mb-1.5">{t('website.fields.galleries', 'Galleries')}</legend>
-      {eligible.length === 0 && !galleries.isLoading && (
-        <p className="text-sm text-muted">{t('website.fields.noGalleries', 'No gallery is on the website yet. Put one on the website from the image picker’s Galleries tab.')}</p>
+      {chosenRows.length > 0 && <ul className="space-y-1">{chosenRows.map((g) => row(g, true))}</ul>}
+      <SearchField value={search} onChange={setSearch} label={t('website.picker.searchGalleries', 'Search galleries by name')} />
+      {rows.length === 0 && !available.isLoading && (
+        <p className="text-sm text-muted">{q
+          ? t('website.picker.noMatch', 'No gallery on the website matches.')
+          : t('website.fields.noGalleries', 'No gallery is on the website yet. Put one on the website from the image picker’s Galleries tab.')}</p>
       )}
-      <ul className="space-y-1">
-        {eligible.map((g) => (
-          <li key={g.id}>
-            <label className="flex items-center gap-2 text-sm text-body">
-              <input type="checkbox" className="rounded border-line-strong" checked={chosen.has(g.id)} disabled={!chosen.has(g.id) && value.length >= 24}
-                onChange={(e) => onChange(e.target.checked ? [...value, { id: g.id, text: '' }] : value.filter((x) => x.id !== g.id))} />
-              {g.name}
-            </label>
-          </li>
-        ))}
-      </ul>
+      <ul className="space-y-1">{rows.map((g) => row(g, false))}</ul>
+      {available.hasNextPage && (
+        <Button size="sm" variant="secondary" isLoading={available.isFetchingNextPage} onClick={() => available.fetchNextPage()}>
+          {t('website.picker.more', 'Show more')}
+        </Button>
+      )}
       {missing.length > 0 && (
-        <p className="mt-2 text-xs text-warning-text">
+        <p className="text-xs text-warning-text">
           {t('website.fields.galleriesMissing', '{{count}} chosen galleries are no longer on the website and are not shown.', { count: missing.length })}
         </p>
       )}

@@ -4,6 +4,7 @@
  * contact form, including the security rules each of them carries.
  */
 const path = require('path');
+const crypto = require('crypto');
 const fs = require('fs');
 const express = require('express');
 const cookieParser = require('cookie-parser');
@@ -673,5 +674,65 @@ describe('the opt-in in the gallery settings', () => {
     expect((await put({ show_on_website: true })).status).toBe(200);
     expect(await stored()).toBe(false);
     await setFeatureFlags(db, { websiteBuilder: true });
+  });
+});
+
+describe('picker inventories page and search', () => {
+  beforeAll(async () => {
+    for (let i = 0; i < 130; i += 1) {
+      // Old, opted-in galleries far past the first page.
+      // eslint-disable-next-line no-await-in-loop
+      await insertEvent({ event_name: `Archive pick ${String(i).padStart(3, '0')}`, event_date: '2001-01-01' });
+    }
+    await insertEvent({ event_name: 'Ärger am Ufer', event_date: '2000-01-01' });
+    for (let i = 0; i < 60; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await db('website_assets').insert({ public_id: crypto.randomBytes(12).toString('hex'), kind: 'image', original_filename: `upload-${i}.jpg`, rendition_keys: '{}', created_at: new Date(Date.UTC(2020, 0, 1, 0, i)).toISOString() });
+    }
+  });
+
+  test('galleries come in pages until the last one', async () => {
+    const seen = new Set();
+    let page = 1;
+    let body;
+    do {
+      // eslint-disable-next-line no-await-in-loop
+      body = (await request(app).get('/api/admin/website/galleries').query({ page, pageSize: 50 }).set(auth(adminId))).body;
+      expect(body.galleries.length).toBeLessThanOrEqual(50);
+      body.galleries.forEach((g) => seen.add(g.id));
+      page += 1;
+    } while (body.hasMore);
+    const total = (await db('events').where((q) => q.where('is_archived', false).orWhereNull('is_archived')).count({ c: '*' }).first()).c;
+    expect(seen.size).toBe(Number(total));
+  });
+
+  test('galleries are found by name, the oldest included', async () => {
+    // Same matching as the gallery list: ASCII case does not matter.
+    for (const q of ['Ärger', 'am ufer']) {
+      // eslint-disable-next-line no-await-in-loop
+      const hit = (await request(app).get('/api/admin/website/galleries').query({ q }).set(auth(adminId))).body;
+      expect(hit.galleries.map((g) => g.name)).toEqual(['Ärger am Ufer']);
+    }
+    const wild = (await request(app).get('/api/admin/website/galleries').query({ q: '%' }).set(auth(adminId))).body;
+    expect(wild.galleries).toEqual([]);
+  });
+
+  test('the featured-galleries selector lists only galleries on the website and loads chosen ones by id', async () => {
+    const some = await insertEvent({ event_name: 'Chosen far back', event_date: '1999-01-01' });
+    const onSite = (await request(app).get('/api/admin/website/galleries').query({ onWebsite: 1, pageSize: 100 }).set(auth(adminId))).body;
+    expect(onSite.galleries.every((g) => g.showOnWebsite)).toBe(true);
+    const chosen = (await request(app).get('/api/admin/website/galleries').query({ ids: String(some) }).set(auth(adminId))).body;
+    expect(chosen.galleries.map((g) => g.id)).toEqual([some]);
+  });
+
+  test('uploads come in pages and can be searched', async () => {
+    const first = (await request(app).get('/api/admin/website/assets').query({ pageSize: 50 }).set(auth(adminId))).body;
+    expect(first.assets).toHaveLength(50);
+    expect(first.hasMore).toBe(true);
+    const second = (await request(app).get('/api/admin/website/assets').query({ pageSize: 50, page: 2 }).set(auth(adminId))).body;
+    expect(second.assets.length).toBeGreaterThan(0);
+    expect(new Set([...first.assets, ...second.assets].map((a) => a.id)).size).toBe(first.assets.length + second.assets.length);
+    const hit = (await request(app).get('/api/admin/website/assets').query({ q: 'upload-7.' }).set(auth(adminId))).body;
+    expect(hit.assets.map((a) => a.originalFilename)).toEqual(['upload-7.jpg']);
   });
 });

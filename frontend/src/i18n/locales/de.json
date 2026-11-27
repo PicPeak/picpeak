@@ -13234,7 +13234,10 @@
       },
       "addSelected_one": "{{count}} Bild hinzufügen",
       "addSelected_other": "{{count}} Bilder hinzufügen",
-      "passwordNote": "Hat ein Passwort. Auf der Website sind die Fotos öffentlich, die Sie auswählen; der Rest der Galerie bleibt hinter dem Passwort."
+      "passwordNote": "Hat ein Passwort. Auf der Website sind die Fotos öffentlich, die Sie auswählen; der Rest der Galerie bleibt hinter dem Passwort.",
+      "searchUploads": "Nach Dateiname suchen",
+      "searchGalleries": "Galerien nach Namen suchen",
+      "noMatch": "Keine Galerie auf der Website passt dazu."
     },
     "preview": {
       "title": "Vorschau der Seite",

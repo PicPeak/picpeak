@@ -3,6 +3,13 @@ import type {
   EditorState, ImageRef, WebsiteAsset, WebsiteDocument, WebsiteGallery, WebsitePackage, WebsitePhoto,
 } from '../features/website/types';
 
+export interface GalleryQuery {
+  page?: number;
+  q?: string;
+  onWebsite?: boolean;
+  ids?: number[];
+}
+
 // The most references POST /admin/website/media/resolve takes at once.
 const RESOLVE_BATCH = 500;
 
@@ -38,9 +45,17 @@ export const websiteService = {
     }
     return urls;
   },
-  async listGalleries(): Promise<WebsiteGallery[]> {
-    const r = await api.get<{ galleries: WebsiteGallery[] }>('/admin/website/galleries');
-    return r.data.galleries;
+  /** One page of galleries, newest first; `ids` fetches chosen ones whatever the page. */
+  async listGalleries(params: GalleryQuery = {}): Promise<{ galleries: WebsiteGallery[]; hasMore: boolean }> {
+    const r = await api.get<{ galleries: WebsiteGallery[]; hasMore: boolean }>('/admin/website/galleries', {
+      params: {
+        page: params.page,
+        q: params.q || undefined,
+        onWebsite: params.onWebsite ? '1' : undefined,
+        ids: params.ids?.length ? params.ids.join(',') : undefined,
+      },
+    });
+    return r.data;
   },
   async setGalleryOnWebsite(id: number, showOnWebsite: boolean): Promise<void> {
     await api.put(`/admin/website/galleries/${id}`, { showOnWebsite });
@@ -49,9 +64,12 @@ export const websiteService = {
     const r = await api.get<{ photos: WebsitePhoto[]; hasMore: boolean }>(`/admin/website/galleries/${id}/photos`, { params: { page } });
     return r.data;
   },
-  async listAssets(): Promise<WebsiteAsset[]> {
-    const r = await api.get<{ assets: WebsiteAsset[] }>('/admin/website/assets');
-    return r.data.assets;
+  /** One page of uploads, newest first. */
+  async listAssets(params: { page?: number; q?: string; kind?: 'image' | 'video' } = {}): Promise<{ assets: WebsiteAsset[]; hasMore: boolean }> {
+    const r = await api.get<{ assets: WebsiteAsset[]; hasMore: boolean }>('/admin/website/assets', {
+      params: { page: params.page, q: params.q || undefined, kind: params.kind },
+    });
+    return r.data;
   },
   async uploadAsset(file: File): Promise<WebsiteAsset> {
     const form = new FormData();

@@ -6,7 +6,7 @@
  */
 import React, { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { ArrowLeft, Check, Film, Images, Trash2, Upload } from 'lucide-react';
 import { Button, Modal, Notice, Switch, Tabs } from '../../components/common';
@@ -17,6 +17,7 @@ import { usePermission } from '../../hooks/usePermission';
 import { websiteService } from '../../services/website.service';
 import { apiErrorText } from '../../utils/apiErrorText';
 import type { ImageRef, WebsiteAsset, WebsiteGallery } from './types';
+import { SearchField, useDebounced } from './search';
 
 type Source = 'uploads' | 'galleries';
 
@@ -101,13 +102,22 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({ open, onClose, onSelec
   );
 };
 
-const UploadsPane: React.FC<{ kind: 'image' | 'video'; isSelected: (ref: ImageRef) => boolean; onToggle: (ref: ImageRef) => void }> = ({ kind, isSelected, onToggle }) => {
+export const UploadsPane: React.FC<{ kind: 'image' | 'video'; isSelected: (ref: ImageRef) => boolean; onToggle: (ref: ImageRef) => void }> = ({ kind, isSelected, onToggle }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const canEdit = usePermission('cms.edit');
   const input = useRef<HTMLInputElement>(null);
-  const assets = useQuery({ queryKey: ['website-assets'], queryFn: websiteService.listAssets });
+  const [search, setSearch] = useState('');
+  const q = useDebounced(search.trim());
+  const assets = useInfiniteQuery({
+    queryKey: ['website-assets', kind, q],
+    // A new search keeps the old list on screen until its answer arrives.
+    placeholderData: keepPreviousData,
+    queryFn: ({ pageParam }) => websiteService.listAssets({ page: pageParam, q, kind }),
+    initialPageParam: 1,
+    getNextPageParam: (last, all) => (last.hasMore ? all.length + 1 : undefined),
+  });
   const upload = useMutation({
     mutationFn: async (files: File[]) => {
       for (const file of files) {
@@ -127,7 +137,7 @@ const UploadsPane: React.FC<{ kind: 'image' | 'video'; isSelected: (ref: ImageRe
     onError: (err) => toast.error(apiErrorText(err)),
   });
 
-  const list = (assets.data || []).filter((a) => a.kind === kind);
+  const list = (assets.data?.pages || []).flatMap((p) => p.assets);
   const askRemove = async (asset: WebsiteAsset) => {
     const ok = await confirm({
       title: t('website.picker.deleteTitle', 'Delete this upload?'),
@@ -164,6 +174,7 @@ const UploadsPane: React.FC<{ kind: 'image' | 'video'; isSelected: (ref: ImageRe
           </span>
         </div>
       )}
+      <SearchField value={search} onChange={setSearch} label={t('website.picker.searchUploads', 'Search by file name')} />
       {assets.isLoading ? (
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
           {Array.from({ length: 10 }, (_, i) => <div key={i} className="aspect-square rounded-lg bg-fill animate-pulse" />)}
@@ -203,6 +214,11 @@ const UploadsPane: React.FC<{ kind: 'image' | 'video'; isSelected: (ref: ImageRe
           })}
         </ul>
       )}
+      {assets.hasNextPage && (
+        <div className="flex justify-center">
+          <Button variant="secondary" isLoading={assets.isFetchingNextPage} onClick={() => assets.fetchNextPage()}>{t('website.picker.more', 'Show more')}</Button>
+        </div>
+      )}
     </div>
   );
 };
@@ -219,18 +235,25 @@ export const GalleriesPane: React.FC<{ onOpen: (gallery: WebsiteGallery) => void
   const canEditEvents = usePermission('events.edit');
   const canEditSite = usePermission('cms.edit');
   const canChange = canEditEvents && canEditSite;
-  const galleries = useQuery({ queryKey: ['website-galleries'], queryFn: websiteService.listGalleries });
+  const [search, setSearch] = useState('');
+  const q = useDebounced(search.trim());
+  const galleries = useInfiniteQuery({
+    queryKey: ['website-galleries', 'picker', q],
+    // A new search keeps the old list on screen until its answer arrives.
+    placeholderData: keepPreviousData,
+    queryFn: ({ pageParam }) => websiteService.listGalleries({ page: pageParam, q }),
+    initialPageParam: 1,
+    getNextPageParam: (last, all) => (last.hasMore ? all.length + 1 : undefined),
+  });
   const toggle = useMutation({
     mutationFn: ({ id, on }: { id: number; on: boolean }) => websiteService.setGalleryOnWebsite(id, on),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['website-galleries'] }),
     onError: (err) => toast.error(apiErrorText(err)),
   });
   const [onSite, others] = useMemo(() => {
-    const list = galleries.data || [];
+    const list = (galleries.data?.pages || []).flatMap((p) => p.galleries);
     return [list.filter((g) => g.showOnWebsite), list.filter((g) => !g.showOnWebsite)];
   }, [galleries.data]);
-
-  if (galleries.isLoading) return <div className="h-40 rounded-lg bg-fill animate-pulse" />;
 
   const row = (g: WebsiteGallery) => (
     <li key={g.id} className="flex flex-wrap items-center gap-3 py-2.5">
@@ -267,19 +290,31 @@ export const GalleriesPane: React.FC<{ onOpen: (gallery: WebsiteGallery) => void
 
   return (
     <div className="space-y-4">
+      <SearchField value={search} onChange={setSearch} label={t('website.picker.searchGalleries', 'Search galleries by name')} />
       <Notice tone="info" size="sm">
         {t('website.picker.galleriesNotice', 'Only galleries you put on the website can be used, and only while they are live. Putting a gallery on the website makes the photos you pick public, even when the gallery has a password; its other photos stay private. Turn a gallery off here and its photos leave the website at once.')}
       </Notice>
-      <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted mb-1">{t('website.picker.onWebsite', 'On the website')}</h3>
-        {onSite.length ? <ul className="divide-y divide-line">{onSite.map(row)}</ul>
-          : <p className="text-sm text-muted py-2">{t('website.picker.noneOnWebsite', 'No gallery is on the website yet.')}</p>}
-      </section>
-      {others.length > 0 && (
-        <section>
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted mb-1">{t('website.picker.otherGalleries', 'Other galleries')}</h3>
-          <ul className="divide-y divide-line">{others.map(row)}</ul>
-        </section>
+      {galleries.isLoading ? <div className="h-40 rounded-lg bg-fill animate-pulse" /> : (
+        <>
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted mb-1">{t('website.picker.onWebsite', 'On the website')}</h3>
+            {onSite.length ? <ul className="divide-y divide-line">{onSite.map(row)}</ul>
+              : <p className="text-sm text-muted py-2">{q
+                ? t('website.picker.noMatch', 'No gallery on the website matches.')
+                : t('website.picker.noneOnWebsite', 'No gallery is on the website yet.')}</p>}
+          </section>
+          {others.length > 0 && (
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted mb-1">{t('website.picker.otherGalleries', 'Other galleries')}</h3>
+              <ul className="divide-y divide-line">{others.map(row)}</ul>
+            </section>
+          )}
+          {galleries.hasNextPage && (
+            <div className="flex justify-center">
+              <Button variant="secondary" isLoading={galleries.isFetchingNextPage} onClick={() => galleries.fetchNextPage()}>{t('website.picker.more', 'Show more')}</Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

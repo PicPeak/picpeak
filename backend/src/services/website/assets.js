@@ -17,6 +17,7 @@ const path = require('path');
 const sharp = require('sharp');
 const { db } = require('../../database/db');
 const { AppError } = require('../../utils/errors');
+const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../../utils/sqlSecurity');
 const { getStorage } = require('../storage');
 const { getStoragePath } = require('../../config/storage');
 const { sniffImageFileType, validateFileContent } = require('../../utils/fileSecurityUtils');
@@ -42,9 +43,16 @@ function publicAsset(row) {
   };
 }
 
-async function listAssets() {
-  const rows = await db('website_assets').orderBy('created_at', 'desc').orderBy('id', 'desc').limit(500);
-  return rows.map(publicAsset);
+async function listAssets({ q = '', page = 1, pageSize = 60, kind = null } = {}) {
+  let query = db('website_assets');
+  if (kind) query = query.where({ kind });
+  if (q) {
+    query = query.where((b) => {
+      for (const form of unicodeSearchForms(q)) b.orWhereRaw(likeWithEscape('original_filename'), [`%${escapeLikePattern(form)}%`]);
+    });
+  }
+  const rows = await query.orderBy('created_at', 'desc').orderBy('id', 'desc').limit(pageSize + 1).offset((page - 1) * pageSize);
+  return { assets: rows.slice(0, pageSize).map(publicAsset), hasMore: rows.length > pageSize };
 }
 
 async function insertAsset(values) {

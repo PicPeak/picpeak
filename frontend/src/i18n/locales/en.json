@@ -13269,7 +13269,10 @@
       },
       "addSelected_one": "Add {{count}} image",
       "addSelected_other": "Add {{count}} images",
-      "passwordNote": "Has a password. On the website, the photos you pick are public; the rest of the gallery keeps its password."
+      "passwordNote": "Has a password. On the website, the photos you pick are public; the rest of the gallery keeps its password.",
+      "searchUploads": "Search by file name",
+      "searchGalleries": "Search galleries by name",
+      "noMatch": "No gallery on the website matches."
     },
     "preview": {
       "title": "Preview of the page",

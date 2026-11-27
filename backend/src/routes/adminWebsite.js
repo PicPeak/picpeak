@@ -22,6 +22,7 @@ const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminTh
 const { AppError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
 const { parseBooleanInput } = require('../utils/parsers');
+const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../utils/sqlSecurity');
 const websiteService = require('../services/website/service');
 const assets = require('../services/website/assets');
 const media = require('../services/website/media');
@@ -97,14 +98,35 @@ router.post('/media/resolve', canView, [
 
 // Galleries the admin may act on (owner, assigned, or a role that manages
 // every gallery: the rule of the admin photo routes), with their website
-// opt-in and, when opted in but excluded, why (expired, ...).
-router.get('/galleries', canView, handleAsync(async (req, res) => {
-  const rows = await scopeEventsQuery(db('events'), req.admin, 'events.created_by')
-    .where((q) => q.where('is_archived', formatBoolean(false)).orWhereNull('is_archived'))
-    .orderBy('event_date', 'desc').orderBy('id', 'desc').limit(300);
+// opt-in and, when opted in but excluded, why (expired, ...). Paged and
+// searchable by name, newest first; `onWebsite=1` lists only opted-in ones
+// (the featured-galleries selector), `ids` fetches chosen ones by id.
+router.get('/galleries', canView, [
+  query('q').optional().isString().isLength({ max: 200 }),
+  query('page').optional().isInt({ min: 1, max: 100000 }),
+  query('pageSize').optional().isInt({ min: 1, max: 100 }),
+  query('onWebsite').optional().isIn(['0', '1']),
+  query('ids').optional().matches(/^\d+(,\d+){0,99}$/),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const pageSize = Number(req.query.pageSize) || 50;
+  const page = Number(req.query.page) || 1;
+  let rows = scopeEventsQuery(db('events'), req.admin, 'events.created_by')
+    .where((q) => q.where('is_archived', formatBoolean(false)).orWhereNull('is_archived'));
+  if (req.query.ids) rows = rows.whereIn('id', req.query.ids.split(',').map(Number));
+  if (req.query.onWebsite === '1') rows = rows.where('show_on_website', formatBoolean(true));
+  const term = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (term) {
+    // Every stored spelling of the name, as the gallery list searches.
+    rows = rows.where((b) => {
+      for (const form of unicodeSearchForms(term)) b.orWhereRaw(likeWithEscape('event_name'), [`%${escapeLikePattern(form)}%`]);
+    });
+  }
+  const found = await rows.orderBy('event_date', 'desc').orderBy('id', 'desc')
+    .limit(pageSize + 1).offset((page - 1) * pageSize);
   const now = new Date();
   res.json({
-    galleries: rows.map((e) => ({
+    galleries: found.slice(0, pageSize).map((e) => ({
       id: e.id,
       name: e.event_name,
       slug: e.slug,
@@ -117,6 +139,7 @@ router.get('/galleries', canView, handleAsync(async (req, res) => {
       reason: media.eventIneligibleReason(e, now),
       canChange: canAccessEvent(req.admin, e),
     })),
+    hasMore: found.length > pageSize,
   });
 }));
 
@@ -164,8 +187,20 @@ router.get('/galleries/:id/photos', canView, [
   });
 }));
 
-router.get('/assets', canView, handleAsync(async (req, res) => {
-  res.json({ assets: await assets.listAssets() });
+// Uploads, newest first, paged and searchable by file name.
+router.get('/assets', canView, [
+  query('q').optional().isString().isLength({ max: 200 }),
+  query('page').optional().isInt({ min: 1, max: 100000 }),
+  query('pageSize').optional().isInt({ min: 1, max: 100 }),
+  query('kind').optional().isIn(['image', 'video']),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  res.json(await assets.listAssets({
+    q: typeof req.query.q === 'string' ? req.query.q.trim() : '',
+    page: Number(req.query.page) || 1,
+    pageSize: Number(req.query.pageSize) || 60,
+    kind: req.query.kind || null,
+  }));
 }));
 
 // The temp directory is made on the first upload, not when the module loads:

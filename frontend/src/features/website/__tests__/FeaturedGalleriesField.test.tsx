@@ -1,0 +1,46 @@
+/**
+ * The featured-galleries selector (issue 2618) lists galleries on the website
+ * page by page, searchable, and always shows the chosen ones, however old.
+ */
+import React from 'react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { FeaturedGalleriesBlock, WebsiteGallery } from '../types';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (k: string, fb?: unknown) => (typeof fb === 'string' ? fb : k), i18n: { language: 'en' } }),
+  initReactI18next: { type: '3rdParty', init: () => {} },
+}));
+vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureFlags: () => ({ flags: {} }) }));
+vi.mock('../../../services/website.service', () => ({
+  websiteService: { listGalleries: vi.fn(), listPackages: vi.fn() },
+  mediaKey: (r: { source: string; id: string | number }) => `${r.source}:${r.id}`,
+}));
+
+import { websiteService } from '../../../services/website.service';
+import { BlockEditor } from '../BlockEditor';
+
+const g = (id: number, name: string): WebsiteGallery => ({ id, name, slug: `g${id}`, date: null, showOnWebsite: true, eligible: true, hasPassword: false, reason: null, canChange: true });
+
+describe('featured galleries selector', () => {
+  it('shows the chosen gallery, pages the rest and searches them', async () => {
+    vi.mocked(websiteService.listGalleries).mockImplementation(async (params = {}) => {
+      if (params.ids) return { galleries: [g(99, 'Chosen long ago')], hasMore: false };
+      expect(params.onWebsite).toBe(true);
+      if (params.q) return { galleries: [g(7, 'Winter match')], hasMore: false };
+      return params.page === 2 ? { galleries: [g(2, 'Second page')], hasMore: false } : { galleries: [g(1, 'First page')], hasMore: true };
+    });
+    const block: FeaturedGalleriesBlock = { id: 'f', type: 'featuredGalleries', variant: 'cards', background: 'default', heading: '', intro: '', galleries: [{ id: 99, text: '' }] };
+    const onChange = vi.fn();
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={onChange} /></QueryClientProvider>);
+    expect(await screen.findByLabelText('Chosen long ago')).toBeChecked();
+    expect(await screen.findByLabelText('First page')).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+    expect(await screen.findByLabelText('Second page')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'winter' } });
+    fireEvent.click(await screen.findByLabelText('Winter match'));
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(onChange.mock.calls[0][0].galleries).toEqual([{ id: 99, text: '' }, { id: 7, text: '' }]);
+  });
+});
