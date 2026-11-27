@@ -96,7 +96,6 @@ export const SitePanel: React.FC<SitePanelProps> = ({ doc, update, readOnly }) =
           value={doc.customCss}
           rows={8}
           mono
-          maxLength={100 * 1024}
           helperText={t('website.site.customCssHint', 'Applied to every page after the site’s own styles. Imports and scripts are removed.')}
           onChange={(customCss) => update((d) => ({ ...d, customCss }), 'customCss')}
         />

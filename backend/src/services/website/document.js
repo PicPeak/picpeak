@@ -9,7 +9,8 @@
  * links are reduced to the schemes a public page may point at.
  */
 const crypto = require('crypto');
-const { sanitizeCssColor } = require('../../utils/cssSanitizer');
+const { sanitizeCssColor, MAX_CSS_SIZE } = require('../../utils/cssSanitizer');
+const { DEFAULT_PUBLIC_SITE_CSS } = require('../../constants/publicSiteDefaults');
 const { parseBooleanInput } = require('../../utils/parsers');
 
 const DOCUMENT_VERSION = 1;
@@ -19,7 +20,11 @@ const MAX_IMAGES = 60;
 const MAX_ITEMS = 24;
 const MAX_DOCUMENT_BYTES = 1024 * 1024;
 const MAX_CUSTOM_HTML = 100 * 1024;
-const MAX_CUSTOM_CSS = 100 * 1024;
+// The site stylesheet takes the largest one the settings page accepts for
+// the single-page site (sanitizeCss's MAX_CSS_SIZE) plus the template's base
+// stylesheet, which the import puts in front of it; so an imported landing
+// page is never cut.
+const MAX_CUSTOM_CSS = MAX_CSS_SIZE + DEFAULT_PUBLIC_SITE_CSS.length + 2;
 
 // Single-segment paths the SPA, nginx or the backend already own. A website
 // page under one of these would either never be reached or shadow a real
@@ -417,6 +422,7 @@ const LIMIT_CODES = new Set(['TOO_MANY_PAGES', 'TOO_MANY_BLOCKS', 'TOO_MANY_ITEM
 module.exports = {
   DOCUMENT_VERSION,
   LIMIT_CODES,
+  MAX_CUSTOM_HTML,
   BLOCK_TYPES,
   BLOCK_VARIANTS,
   RESERVED_SLUGS,

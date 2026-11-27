@@ -801,3 +801,35 @@ describe('save and publish under a concurrent save', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('importing a large landing page', () => {
+  const writeSite = (settings) => request(app).put('/api/admin/settings/general').set(auth(adminId)).send(settings);
+
+  test('the largest stylesheet the settings page takes comes over whole', async () => {
+    const { MAX_CSS_SIZE } = require('../../src/utils/cssSanitizer');
+    const css = `.x{color:red}${'/*pad*/'.repeat(Math.ceil(MAX_CSS_SIZE / 7))}`.slice(0, MAX_CSS_SIZE);
+    expect((await writeSite({ general_public_site_html: '<p>Edited landing page</p>', general_public_site_custom_css: css })).status).toBe(200);
+    const stored = (await db('app_settings').where({ setting_key: 'general_public_site_custom_css' }).first()).setting_value;
+    const storedCss = JSON.parse(stored);
+    const { document: raw, imported } = await service._internal.initialDocument();
+    expect(imported).toBe(true);
+    const { document, errors } = require('../../src/services/website/document').normalizeDocument(raw);
+    expect(errors).toEqual([]);
+    expect(document.customCss.endsWith(storedCss.trim())).toBe(true);
+  });
+
+  test('a landing page too large for a custom HTML block is not cut: it is left out, and the editor says why', async () => {
+    const { MAX_CUSTOM_HTML } = require('../../src/services/website/document');
+    const html = `<p>${'x'.repeat(MAX_CUSTOM_HTML + 10)}</p>`;
+    expect((await writeSite({ general_public_site_html: html })).status).toBe(200);
+    const { document, imported, refused } = await service._internal.initialDocument();
+    expect(imported).toBe(false);
+    expect(refused).toEqual({ length: html.length, max: MAX_CUSTOM_HTML });
+    // The starter instead, nothing of the landing page in it.
+    expect(JSON.stringify(document)).not.toContain('xxxxxxxxxx');
+    expect(await service._internal.importRefusal({ published: null })).toEqual({ length: html.length, max: MAX_CUSTOM_HTML });
+    // Once something is published the old page is gone from / anyway.
+    expect(await service._internal.importRefusal({ published: { id: 1 } })).toBeNull();
+    await writeSite({ general_public_site_html: '<p>Edited landing page</p>' });
+  });
+});

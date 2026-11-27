@@ -179,7 +179,12 @@ describe('limits are refused, not cut', () => {
     const errors = normalizeDocument({ pages: [page({ blocks: [{ id: 't', type: 'text', heading: 'x'.repeat(201) }] })] }).errors;
     expect(errors).toEqual([expect.objectContaining({ code: 'TEXT_TOO_LONG', field: 'heading', max: 200, blockId: 't' })]);
     expect(codes({ pages: [page({ blocks: [{ type: 'customHtml', html: 'x'.repeat(100 * 1024 + 1) }] })] })).toEqual(['TEXT_TOO_LONG']);
-    expect(codes({ pages: [page()], customCss: 'x'.repeat(100 * 1024 + 1) })).toEqual(['TEXT_TOO_LONG']);
+    // The settings page's stylesheet limit plus the template's base CSS.
+    const { MAX_CSS_SIZE } = require('../../../utils/cssSanitizer');
+    const { DEFAULT_PUBLIC_SITE_CSS } = require('../../../constants/publicSiteDefaults');
+    const max = MAX_CSS_SIZE + DEFAULT_PUBLIC_SITE_CSS.length + 2;
+    expect(codes({ pages: [page()], customCss: 'x'.repeat(max) })).toEqual([]);
+    expect(codes({ pages: [page()], customCss: 'x'.repeat(max + 1) })).toEqual(['TEXT_TOO_LONG']);
   });
 });
 

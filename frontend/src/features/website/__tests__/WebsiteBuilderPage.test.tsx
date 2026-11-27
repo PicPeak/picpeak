@@ -201,5 +201,12 @@ describe('WebsiteBuilderPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy the link to this block' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('#b-h1'));
   });
+
+  it('says why the landing page was not imported', async () => {
+    vi.mocked(websiteService.getState).mockResolvedValue({ ...structuredClone(STATE), published: null, legacyImportRefused: { length: 150000, max: 102400 } });
+    renderPage();
+    expect(await screen.findByText(/Your landing page is too long for a custom HTML block/)).toBeInTheDocument();
+    expect(screen.getByText(/150000/)).toBeInTheDocument();
+  });
 });
 

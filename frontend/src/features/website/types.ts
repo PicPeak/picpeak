@@ -118,6 +118,8 @@ export interface EditorState {
   published: RevisionInfo | null;
   hasUnpublishedChanges: boolean;
   publicSiteEnabled: boolean;
+  /** The landing page was too long to import; it stays live until a publish. */
+  legacyImportRefused?: { length: number; max: number } | null;
 }
 
 export interface WebsiteGallery {

@@ -296,6 +296,11 @@ export const WebsiteBuilderPage: React.FC = () => {
             {t('website.conflict', 'Someone else saved the website since you opened it, so your changes were not saved. Load the latest version to continue from theirs; your unsaved changes here are then dropped.')}
           </Notice>
         )}
+        {server.legacyImportRefused && (
+          <Notice tone="warning" size="sm">
+            {t('website.importRefused', 'Your landing page is too long for a custom HTML block ({{length}} of {{max}} characters), so it was not copied into the builder; nothing of it was cut. It stays live at the site root until you publish here. To keep it, shorten it and paste it into a custom HTML block.', server.legacyImportRefused)}
+          </Notice>
+        )}
         {!server.publicSiteEnabled && (
           <Notice tone="warning" size="sm">{t('website.siteOff', 'The public site is switched off in Settings › CMS. Until it is on, `/` leads to the login page and the website is not visible.')}</Notice>
         )}

@@ -18,7 +18,9 @@ const { canAccessEvent } = require('../../middleware/ownership');
 const { listFonts } = require('../fontsService');
 const publicSite = require('../publicSiteService');
 const { DEFAULT_PUBLIC_SITE_CSS, DEFAULT_PUBLIC_SITE_HTML } = require('../../constants/publicSiteDefaults');
-const { normalizeDocument, collectReferences, newPageId, LIMIT_CODES } = require('./document');
+const {
+  normalizeDocument, collectReferences, newPageId, LIMIT_CODES, MAX_CUSTOM_HTML,
+} = require('./document');
 const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
 const { renderPage, pageHref } = require('./renderer');
@@ -86,7 +88,7 @@ function starterDocument() {
  * it was written against) the site's custom CSS. Nothing anyone published
  * changes until they publish the builder's version.
  */
-async function initialDocument() {
+async function legacySite() {
   const rows = await db('app_settings')
     .whereIn('setting_key', ['general_public_site_enabled', 'general_public_site_html', 'general_public_site_custom_css']);
   const settings = {};
@@ -95,10 +97,21 @@ async function initialDocument() {
   // Migration 043 seeds the template's HTML on every install. Only a page
   // someone edited, or one visitors can see, is theirs to keep; an untouched
   // template behind a switched-off site gets the starter instead.
-  const ownPage = html.trim() && (flag(settings.general_public_site_enabled)
+  const ownPage = !!html.trim() && (flag(settings.general_public_site_enabled)
     || html.trim() !== DEFAULT_PUBLIC_SITE_HTML.trim());
-  if (!ownPage) return { document: starterDocument(), imported: false };
   const css = typeof settings.general_public_site_custom_css === 'string' ? settings.general_public_site_custom_css : '';
+  return { ownPage, html, css };
+}
+
+async function initialDocument() {
+  const { ownPage, html, css } = await legacySite();
+  if (!ownPage) return { document: starterDocument(), imported: false };
+  // A page longer than a custom-HTML block holds is not cut short: the
+  // editor starts from the starter and says why, and the page stays live
+  // at / until something is published.
+  if (html.length > MAX_CUSTOM_HTML) {
+    return { document: starterDocument(), imported: false, refused: { length: html.length, max: MAX_CUSTOM_HTML } };
+  }
   return {
     imported: true,
     document: {
@@ -106,6 +119,13 @@ async function initialDocument() {
       customCss: `${DEFAULT_PUBLIC_SITE_CSS}\n\n${css}`.trim(),
     },
   };
+}
+
+/** The import refusal the editor shows while the old page is still what / serves. */
+async function importRefusal({ published }) {
+  if (published) return null;
+  const { ownPage, html } = await legacySite();
+  return ownPage && html.length > MAX_CUSTOM_HTML ? { length: html.length, max: MAX_CUSTOM_HTML } : null;
 }
 
 /** The draft, created on first use (with the legacy import). */
@@ -148,6 +168,7 @@ async function editorState(draft, published) {
     hasUnpublishedChanges: !published || published.document !== draft.document,
     // Publishing changes nothing visible while the public site is off.
     publicSiteEnabled: flag(settings.general_public_site_enabled),
+    legacyImportRefused: await importRefusal({ published }),
   };
 }
 
@@ -573,5 +594,5 @@ module.exports = {
   setGalleryOnWebsite,
   buildContext,
   referencesAdminMay,
-  _internal: { initialDocument, robotsDirective, loadPackages },
+  _internal: { initialDocument, importRefusal, robotsDirective, loadPackages },
 };
