@@ -14,6 +14,14 @@ export interface GalleryQuery {
 const RESOLVE_BATCH = 500;
 
 /** Website builder admin API (issue 2618), /api/admin/website. */
+export interface WebsiteTraffic {
+  chartData: Array<{ date: string; views: number }>;
+  topPages: Array<{ page: string; title: string | null; views: number }>;
+  referrers: Array<{ domain: string; views: number }>;
+  devices: { desktop: number; mobile: number; tablet: number };
+  totals: { views: number };
+}
+
 export const websiteService = {
   async getState(): Promise<EditorState> {
     const r = await api.get<EditorState>('/admin/website');
@@ -26,6 +34,12 @@ export const websiteService = {
   /** Show the website at the site root, or not. */
   async setVisibility(enabled: boolean): Promise<void> {
     await api.put('/admin/website/visibility', { enabled });
+  },
+
+  /** The website's page views over the last `days` days (Analytics page). */
+  async getAnalytics(days: number): Promise<WebsiteTraffic> {
+    const r = await api.get<WebsiteTraffic>('/admin/website/analytics', { params: { days } });
+    return r.data;
   },
 
   /** Whether to tell this admin where the old landing page went (migration 381). */

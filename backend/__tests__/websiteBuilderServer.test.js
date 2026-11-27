@@ -124,3 +124,45 @@ test('the image endpoint is mounted and refuses an unsigned path', async () => {
   // Loadable from the admin's origin in a split-origin install, like /fonts.
   expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
 });
+
+describe('website page views', () => {
+  const BROWSER = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+  const PHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
+  const rows = () => db('website_page_views').select('page', 'referrer', 'device', 'views');
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
+
+  beforeAll(async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    await publish({ pages: [{ id: 'home', slug: 'home', title: 'Home', isHome: true, blocks: [] }, { id: 'about', slug: 'about', title: 'About', blocks: [] }] });
+    await db('website_page_views').del();
+  });
+
+  test('a visit counts per page, referrer domain and device class, with nothing about the visitor', async () => {
+    await request(app).get('/').set('User-Agent', BROWSER).set('Referer', 'https://www.instagram.com/studio/p/xyz?igsh=abc');
+    await request(app).get('/').set('User-Agent', BROWSER).set('Referer', 'https://instagram.com/other');
+    await request(app).get('/about').set('User-Agent', PHONE).set('X-Forwarded-For', '203.0.113.9');
+    // Moving between the site's own pages has no outside referrer.
+    await request(app).get('/about').set('Host', 'studio.example').set('User-Agent', BROWSER).set('Referer', 'https://studio.example/');
+    await settle();
+    const counted = await rows();
+    expect(counted).toEqual(expect.arrayContaining([
+      { page: '', referrer: 'instagram.com', device: 'desktop', views: 2 },
+      { page: 'about', referrer: '', device: 'mobile', views: 1 },
+      { page: 'about', referrer: '', device: 'desktop', views: 1 },
+    ]));
+    // No column could hold an address, an agent string or a cookie.
+    const columns = Object.keys(await db('website_page_views').columnInfo());
+    expect(columns.sort()).toEqual(['day', 'device', 'id', 'page', 'referrer', 'views'].sort());
+    const set = (await request(app).get('/').set('User-Agent', BROWSER)).headers['set-cookie'];
+    expect(set).toBeUndefined();
+  });
+
+  test('crawlers, HEAD requests and pages nobody can see are not counted', async () => {
+    await db('website_page_views').del();
+    await request(app).get('/').set('User-Agent', 'Mozilla/5.0 (compatible; Googlebot/2.1)');
+    await request(app).head('/').set('User-Agent', BROWSER);
+    await request(app).get('/nope').set('User-Agent', BROWSER);
+    await settle();
+    expect(await rows()).toEqual([]);
+  });
+});

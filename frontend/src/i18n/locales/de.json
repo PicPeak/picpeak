@@ -6725,7 +6725,15 @@
     "catalogedMedia": "Katalogisierte Medien",
     "storageUnavailable": "nicht verfügbar",
     "storageNoMeasurement": "keine Messung verfügbar",
-    "loadFailed": "Die Analysedaten konnten nicht geladen werden"
+    "loadFailed": "Die Analysedaten konnten nicht geladen werden",
+    "website": {
+      "title": "Website",
+      "hint": "Seitenaufrufe Ihrer öffentlichen Website, auf dem Server gezählt: keine Cookies, kein Tracking-Skript, keine Adressen gespeichert. Suchmaschinen-Crawler zählen nicht mit.",
+      "topPages": "Meistbesuchte Seiten",
+      "none": "In diesem Zeitraum noch keine Besuche.",
+      "referrers": "Woher die Besucher kamen",
+      "direct": "Bisher nur direkte Besuche."
+    }
   },
   "email": {
     "title": "E-Mail-Konfiguration",

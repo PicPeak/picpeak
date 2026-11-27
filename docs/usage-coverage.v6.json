@@ -2277,6 +2277,7 @@
         "GET /",
         "PUT /draft",
         "PUT /visibility",
+        "GET /analytics",
         "GET /notice",
         "POST /notice/dismiss",
         "POST /publish",

@@ -16,6 +16,8 @@ vi.mock('react-i18next', async () => {
 
 const apiGet = vi.fn();
 vi.mock('../../../config/api', () => ({ api: { get: (...args: unknown[]) => apiGet(...args) } }));
+// The website section has tests of its own (WebsiteTrafficSection.test.tsx).
+vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () => false }));
 vi.mock('../../../services/admin.service', () => ({
   adminService: {
     getAnalytics: async () => ({

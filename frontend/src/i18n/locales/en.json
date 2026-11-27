@@ -4395,7 +4395,15 @@
     "catalogedMedia": "Catalogued media",
     "storageUnavailable": "unavailable",
     "storageNoMeasurement": "no measurement available",
-    "loadFailed": "Could not load the analytics"
+    "loadFailed": "Could not load the analytics",
+    "website": {
+      "title": "Website",
+      "hint": "Page views of your public website, counted on the server: no cookies, no tracking script, no addresses stored. Crawlers are left out.",
+      "topPages": "Most viewed pages",
+      "none": "No visits in this period yet.",
+      "referrers": "Where visitors came from",
+      "direct": "Only direct visits so far."
+    }
   },
   "branding": {
     "title": "Branding & Themes",

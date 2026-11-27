@@ -1755,3 +1755,36 @@ describe('showing the website at the site root', () => {
     await visibility(true);
   });
 });
+
+describe('website traffic in analytics', () => {
+  test('daily views, top pages, referrers and devices over the chosen days, with analytics.view', async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    const day = (offset) => new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10);
+    await db('website_page_views').del();
+    await db('website_page_views').insert([
+      { day: day(0), page: '', referrer: 'instagram.com', device: 'mobile', views: 6 },
+      { day: day(0), page: 'about', referrer: '', device: 'desktop', views: 3 },
+      { day: day(1), page: '', referrer: '', device: 'desktop', views: 1 },
+      // Outside the window.
+      { day: day(40), page: 'old', referrer: 'example.org', device: 'tablet', views: 99 },
+    ]);
+    const res = await request(app).get('/api/admin/website/analytics?days=30').set(auth(adminId));
+    expect(res.status).toBe(200);
+    expect(res.body.totals).toEqual({ views: 10 });
+    expect(res.body.chartData).toHaveLength(30);
+    expect(res.body.chartData.at(-1)).toEqual({ date: day(0), views: 9 });
+    expect(res.body.topPages[0]).toMatchObject({ page: '', views: 7 });
+    expect(res.body.topPages.map((p) => p.page)).not.toContain('old');
+    expect(res.body.referrers).toEqual([{ domain: 'instagram.com', views: 6 }]);
+    expect(res.body.devices).toEqual({ desktop: 40, mobile: 60, tablet: 0 });
+
+    const now = new Date().toISOString();
+    const editor = await insertId('admin_users', { username: 'cms-no-analytics', email: 'cms-no-analytics@example.com', password_hash: 'x', must_change_password: false, created_at: now });
+    const roleId = await insertId('roles', { name: 'cms_no_analytics', display_name: 'CMS only', is_system: false, created_at: now });
+    const permissionIds = await db('permissions').whereIn('name', ['cms.view', 'cms.edit']).pluck('id');
+    await db('role_permissions').insert(permissionIds.map((permission_id) => ({ role_id: roleId, permission_id })));
+    await db('admin_users').where({ id: editor }).update({ role_id: roleId });
+    require('../../src/middleware/permissions').clearPermissionCache();
+    expect((await request(app).get('/api/admin/website/analytics').set(auth(editor))).status).toBe(403);
+  });
+});

@@ -12,9 +12,12 @@
  *   - `website_legacy_landing_migrated` marks such an install, so its admins
  *     are told where the page went (until they publish or dismiss it).
  *   - `admin_notice_dismissals`: per-admin dismissal of such notices.
+ *   - `website_page_views`: the website's page views, counted server-side per
+ *     day, page, referrer domain and device class. Nothing about a visitor
+ *     (no address, agent string or cookie) has a column to land in.
  *
  * Idempotent: an existing draft is never replaced, the flag and the marker
- * are only set. down() drops the table and the marker; the flag and an
+ * are only set. down() drops the tables and the marker; the flag and an
  * imported draft stay (irreversible by design: someone may have edited it).
  */
 const { formatBoolean } = require('../../src/utils/dbCompat');
@@ -36,6 +39,17 @@ exports.up = async function up(knex) {
       t.string('notice_key', 64).notNullable();
       t.string('dismissed_at', 40).notNullable();
       t.unique(['admin_id', 'notice_key']);
+    });
+  }
+  if (!(await knex.schema.hasTable('website_page_views'))) {
+    await knex.schema.createTable('website_page_views', (t) => {
+      t.increments('id').primary();
+      t.string('day', 10).notNullable();
+      t.string('page', 80).notNullable();
+      t.string('referrer', 100).notNullable();
+      t.string('device', 10).notNullable();
+      t.integer('views').notNullable().defaultTo(0);
+      t.unique(['day', 'page', 'referrer', 'device']);
     });
   }
   if (!(await knex.schema.hasTable('app_settings')) || !(await knex.schema.hasTable('website_documents'))) return;
@@ -65,5 +79,6 @@ exports.up = async function up(knex) {
 
 exports.down = async function down(knex) {
   await knex.schema.dropTableIfExists('admin_notice_dismissals');
+  await knex.schema.dropTableIfExists('website_page_views');
   if (await knex.schema.hasTable('app_settings')) await knex('app_settings').where({ setting_key: MARKER }).del();
 };

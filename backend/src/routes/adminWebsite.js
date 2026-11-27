@@ -60,6 +60,20 @@ router.put('/visibility', canEdit, [
   res.json({ enabled: parseBooleanInput(req.body.enabled, false) });
 }));
 
+// The website's page views (counted server-side, pageViews.js) for the
+// Analytics page: analytics.view, as the rest of it.
+router.get('/analytics', requirePermission('analytics.view'), [
+  query('days').optional().isInt({ min: 1, max: 365 }),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const stats = await require('../services/website/pageViews').pageViewStats(Number(req.query.days) || 30);
+  // Page titles from the published website ('' is the home page).
+  const document = await websiteService.publishedDocument();
+  const titles = new Map((document?.pages || []).map((p) => [p.isHome ? '' : p.slug, p.title]));
+  stats.topPages = stats.topPages.map((row) => ({ ...row, title: titles.get(row.page) || null }));
+  res.json(stats);
+}));
+
 // Where the old landing page went (migration 381): told to each admin once,
 // until they dismiss it or the website is published.
 router.get('/notice', canView, handleAsync(async (req, res) => {

@@ -464,11 +464,17 @@ function buildPublicSiteDocument(payload) {
 // page; the CSP adds media-src for a hero video. Answers 304 on a matching
 // validator, and the noindex header travels with the cached page.
 const WEBSITE_CSP = 'default-src \'self\'; frame-ancestors \'none\'; img-src \'self\' data: https:; media-src \'self\'; style-src \'self\' \'unsafe-inline\' https:; font-src \'self\' https: data:; object-src \'none\'; script-src \'none\'; form-action \'self\'; base-uri \'none\'';
-function sendWebsitePage(req, res, page) {
+function sendWebsitePage(req, res, page, slug) {
   if (page.status === 302) {
     res.setHeader('Cache-Control', 'no-store');
     res.redirect(302, page.location);
     return;
+  }
+  // Counted server-side (no cookie, no script); a revalidation is a view too.
+  if (req.method === 'GET') {
+    require('./src/services/website/pageViews').recordPageView({
+      slug, userAgent: req.get('user-agent'), referer: req.get('referer'), host: req.get('host'),
+    });
   }
   // Every header before the conditional answer: a 304 updates the cached
   // copy's headers, so it must carry this page's policy, not Helmet's.
@@ -493,7 +499,7 @@ async function handleWebsitePageRequest(req, res, next) {
     if (require('./src/services/website/document').RESERVED_SLUGS.has(req.params[0])) return next();
     const page = await require('./src/services/website/service').resolvePublicPage(req.params[0]);
     if (!page) return next();
-    return sendWebsitePage(req, res, page);
+    return sendWebsitePage(req, res, page, req.params[0]);
   } catch (error) {
     logger.error('Failed to render website page', { error: error.message });
     return next();
@@ -508,7 +514,7 @@ async function handlePublicSiteRequest(req, res, next) {
         return null;
       });
     if (websitePage) {
-      sendWebsitePage(req, res, websitePage);
+      sendWebsitePage(req, res, websitePage, '');
       return;
     }
 
