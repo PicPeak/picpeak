@@ -397,7 +397,7 @@ async function resolvePublicPage(slug) {
   if (!(await isWebsiteActive())) return null;
   const key = `page:${slug}`;
   const cached = getCached(key);
-  if (cached) return cached;
+  if (cached !== undefined) return cached;
   const document = await publishedDocument();
   if (!document) return null;
   let result = null;
@@ -428,7 +428,7 @@ function xmlEscape(value) {
 async function sitemapXml() {
   if (!(await isWebsiteActive())) return null;
   const cached = getCached('sitemap');
-  if (cached) return cached;
+  if (cached !== undefined) return cached;
   const document = await publishedDocument();
   const base = await getFrontendBaseUrl().catch(() => '');
   const settings = await readSettings(['seo_allow_indexing']);

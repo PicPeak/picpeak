@@ -139,3 +139,15 @@ test('collectReferences finds every image, gallery and package', () => {
     photoIds: [9, 1, 2], assetIds: ['a'.repeat(24), 'b'.repeat(24)], eventIds: [5], packageIds: [7],
   });
 });
+
+describe('page cache', () => {
+  const { getCached, setCached, clearWebsiteCache } = require('../cache');
+  test('keeps a miss apart from no entry', () => {
+    clearWebsiteCache();
+    expect(getCached('page:nope')).toBeUndefined();
+    setCached('page:nope', null);
+    expect(getCached('page:nope')).toBeNull();
+    clearWebsiteCache();
+    expect(getCached('page:nope')).toBeUndefined();
+  });
+});

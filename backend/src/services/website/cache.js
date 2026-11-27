@@ -11,12 +11,13 @@ const TTL_MS = Number(process.env.PUBLIC_SITE_CACHE_TTL_MS || 60_000);
 
 const entries = new Map();
 
+/** The cached value (which may be null, a cached miss), or undefined. */
 function getCached(key) {
   const hit = entries.get(key);
-  if (!hit) return null;
+  if (!hit) return undefined;
   if (hit.expiresAt <= Date.now()) {
     entries.delete(key);
-    return null;
+    return undefined;
   }
   return hit.value;
 }
