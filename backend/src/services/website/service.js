@@ -13,6 +13,7 @@ const { formatBoolean } = require('../../utils/dbCompat');
 const { AppError } = require('../../utils/errors');
 const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
+const { canAccessEvent } = require('../../middleware/ownership');
 const { listFonts } = require('../fontsService');
 const publicSite = require('../publicSiteService');
 const { DEFAULT_PUBLIC_SITE_CSS } = require('../../constants/publicSiteDefaults');
@@ -140,9 +141,55 @@ function validationError(errors) {
   return err;
 }
 
-async function saveDraft(rawDocument, expectedRevision, adminId) {
+/** Photos and galleries the stored draft or published site already use. */
+async function storedReferences() {
+  const photoIds = new Set();
+  const eventIds = new Set();
+  for (const row of await db('website_documents').select('document')) {
+    const raw = parseDocument(row);
+    if (!raw) continue;
+    const refs = collectReferences(normalizeDocument(raw).document);
+    refs.photoIds.forEach((id) => photoIds.add(id));
+    refs.eventIds.forEach((id) => eventIds.add(id));
+  }
+  return { photoIds, eventIds };
+}
+
+/**
+ * The photos and galleries an admin may reference: those of galleries they
+ * may act on (owner, assigned, or a role that manages every gallery — the
+ * rule of the admin gallery and photo routes), plus whatever the stored
+ * site already uses, so a colleague can edit a page that shows a pick they
+ * could not have made themselves.
+ */
+async function referencesAdminMay(admin, { photoIds = [], eventIds = [] }) {
+  const stored = await storedReferences();
+  const photoRows = photoIds.length ? await db('photos').whereIn('id', photoIds).select('id', 'event_id') : [];
+  const candidates = [...new Set([...eventIds, ...photoRows.map((p) => p.event_id)])];
+  const events = candidates.length ? await db('events').whereIn('id', candidates) : [];
+  const accessible = new Set(events.filter((e) => canAccessEvent(admin, e)).map((e) => e.id));
+  const photoEvent = new Map(photoRows.map((p) => [p.id, p.event_id]));
+  return {
+    photoIds: new Set(photoIds.filter((id) => stored.photoIds.has(id) || accessible.has(photoEvent.get(id)))),
+    eventIds: new Set(eventIds.filter((id) => stored.eventIds.has(id) || accessible.has(id))),
+  };
+}
+
+async function saveDraft(rawDocument, expectedRevision, admin) {
+  const adminId = admin.id;
   const { document, errors } = normalizeDocument(rawDocument, { reservedSlugs: await cmsSlugs() });
   if (errors.length) throw validationError(errors);
+  const refs = collectReferences(document);
+  const allowed = await referencesAdminMay(admin, refs);
+  const refused = [
+    ...refs.photoIds.filter((id) => !allowed.photoIds.has(id)).map((id) => ({ code: 'PHOTO_NOT_ACCESSIBLE', photoId: id })),
+    ...refs.eventIds.filter((id) => !allowed.eventIds.has(id)).map((id) => ({ code: 'GALLERY_NOT_ACCESSIBLE', eventId: id })),
+  ];
+  if (refused.length) {
+    const err = new AppError('The page uses photos or galleries you cannot access', 422, 'WEBSITE_REFERENCE_NOT_ACCESSIBLE');
+    err.details = refused;
+    throw err;
+  }
   const current = await ensureDraft(adminId);
   if (expectedRevision != null && Number(expectedRevision) !== Number(current.revision)) {
     throw new AppError('The website was changed elsewhere. Reload to get the latest version.', 409, 'WEBSITE_REVISION_CONFLICT');
@@ -322,8 +369,13 @@ function robotsDirective(seo) {
  * Everything the renderer needs for one page of `document`. `preview` marks
  * the editor's render: block ids on the sections, the contact form disabled.
  */
-async function buildContext(document, page, { preview = false } = {}) {
+async function buildContext(document, page, { preview = false, allowed = null } = {}) {
   const refs = collectReferences(document);
+  if (allowed) {
+    // The preview of an unsaved draft shows only what its admin may pick.
+    refs.photoIds = refs.photoIds.filter((id) => allowed.photoIds.has(id));
+    refs.eventIds = refs.eventIds.filter((id) => allowed.eventIds.has(id));
+  }
   const settings = await readSettings([
     'general_default_language', 'seo_allow_indexing', 'seo_meta_noindex', 'seo_meta_nofollow', 'seo_meta_noai',
   ]);
@@ -363,11 +415,12 @@ async function buildContext(document, page, { preview = false } = {}) {
   };
 }
 
-async function renderPreview(rawDocument, pageId) {
+async function renderPreview(rawDocument, pageId, admin) {
   const { document } = normalizeDocument(rawDocument);
   const page = document.pages.find((p) => p.id === pageId) || document.pages[0];
   if (!page) throw new AppError('The website has no pages', 422, 'WEBSITE_INVALID');
-  return renderPage(await buildContext(document, page, { preview: true }));
+  const allowed = await referencesAdminMay(admin, collectReferences(document));
+  return renderPage(await buildContext(document, page, { preview: true, allowed }));
 }
 
 // ---------------------------------------------------------------------------
@@ -465,5 +518,6 @@ module.exports = {
   publishedDocument,
   setGalleryOnWebsite,
   buildContext,
+  referencesAdminMay,
   _internal: { initialDocument, robotsDirective, loadPackages },
 };

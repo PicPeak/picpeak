@@ -479,3 +479,70 @@ describe('contact form', () => {
     await setFeatureFlags(db, { websiteBuilder: true });
   });
 });
+
+describe('what an admin may pick', () => {
+  // A second studio admin with the built-in `admin` role: CMS rights, but
+  // galleries only of their own or assigned (no events.manage_all).
+  let colleagueId; let foreignEvent; let foreignPhoto; let ownEvent; let ownPhoto;
+  const colleague = () => auth(colleagueId);
+
+  beforeAll(async () => {
+    colleagueId = await insertId('admin_users', { username: 'colleague', email: 'colleague@example.com', password_hash: 'x', must_change_password: false, created_at: new Date().toISOString() });
+    await assignAdminRole(db, colleagueId, 'admin');
+    require('../../src/middleware/permissions').clearPermissionCache();
+    foreignEvent = await insertEvent({ created_by: adminId });
+    foreignPhoto = await insertPhoto(foreignEvent);
+    ownEvent = await insertEvent({ created_by: colleagueId });
+    ownPhoto = await insertPhoto(ownEvent);
+  });
+
+  const docWith = (photoIds, galleries = []) => ({
+    pages: [{
+      id: 'home', title: 'Home', slug: 'home', isHome: true,
+      blocks: [
+        { id: 'g9', type: 'gallery', images: photoIds.map((id) => ({ source: 'photo', id })) },
+        { id: 'f9', type: 'featuredGalleries', galleries: galleries.map((id) => ({ id })) },
+      ],
+    }],
+  });
+  const revision = async () => (await request(app).get('/api/admin/website').set(colleague())).body.draft.revision;
+
+  test('the picker lists only galleries the admin may act on', async () => {
+    const ids = (await request(app).get('/api/admin/website/galleries').set(colleague())).body.galleries.map((g) => g.id);
+    expect(ids).toContain(ownEvent);
+    expect(ids).not.toContain(foreignEvent);
+    expect((await request(app).get(`/api/admin/website/galleries/${foreignEvent}/photos`).set(colleague())).status).toBe(404);
+    expect((await request(app).put(`/api/admin/website/galleries/${foreignEvent}`).set(colleague()).send({ showOnWebsite: false })).status).toBe(404);
+  });
+
+  test('a draft may not add photos or galleries the admin cannot access', async () => {
+    const bad = await request(app).put('/api/admin/website/draft').set(colleague()).send({ document: docWith([ownPhoto, foreignPhoto]), revision: await revision() });
+    expect(bad.status).toBe(422);
+    expect(bad.body.code).toBe('WEBSITE_REFERENCE_NOT_ACCESSIBLE');
+    const badGallery = await request(app).put('/api/admin/website/draft').set(colleague()).send({ document: docWith([ownPhoto], [foreignEvent]), revision: await revision() });
+    expect(badGallery.status).toBe(422);
+    const ok = await request(app).put('/api/admin/website/draft').set(colleague()).send({ document: docWith([ownPhoto], [ownEvent]), revision: await revision() });
+    expect(ok.status).toBe(200);
+  });
+
+  test('a pick another admin made may stay when the colleague edits the page', async () => {
+    // The owner picks the photo; the colleague then changes something else.
+    const rev = (await request(app).get('/api/admin/website').set(auth(adminId))).body.draft.revision;
+    await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document: docWith([ownPhoto, foreignPhoto], [foreignEvent]), revision: rev }).expect(200);
+    const edited = docWith([foreignPhoto, ownPhoto], [foreignEvent, ownEvent]);
+    expect((await request(app).put('/api/admin/website/draft').set(colleague()).send({ document: edited, revision: await revision() })).status).toBe(200);
+  });
+
+  test('preview and thumbnails give no URL for a photo the admin may not pick', async () => {
+    const other = await insertPhoto(foreignEvent);
+    const preview = await request(app).post('/api/admin/website/preview').set(colleague()).send({ document: docWith([ownPhoto, other]), pageId: 'home' });
+    expect(preview.body.html).toContain(`/site-media/p${ownPhoto}.`);
+    expect(preview.body.html).not.toContain(`/site-media/p${other}.`);
+    const urls = (await request(app).post('/api/admin/website/media/resolve').set(colleague())
+      .send({ refs: [{ source: 'photo', id: ownPhoto }, { source: 'photo', id: other }, { source: 'photo', id: foreignPhoto }] })).body.urls;
+    expect(urls[`photo:${ownPhoto}`]).toMatch(/^\/site-media\//);
+    expect(urls[`photo:${other}`]).toBeNull();
+    // Already on the site: its thumbnail shows.
+    expect(urls[`photo:${foreignPhoto}`]).toMatch(/^\/site-media\//);
+  });
+});

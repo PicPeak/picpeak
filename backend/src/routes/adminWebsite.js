@@ -15,7 +15,7 @@ const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireFeatureFlag');
-const { ownsEvent, scopeEventsListQuery, canAccessEvent } = require('../middleware/ownership');
+const { scopeEventsQuery, canAccessEvent } = require('../middleware/ownership');
 const { handleAsync, validateRequest } = require('../utils/routeHelpers');
 const { getStoragePath } = require('../config/storage');
 const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
@@ -45,7 +45,7 @@ router.put('/draft', canEdit, [
   body('revision').optional({ nullable: true }).isInt({ min: 0 }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
-  res.json(await websiteService.saveDraft(req.body.document, req.body.revision, req.admin.id));
+  res.json(await websiteService.saveDraft(req.body.document, req.body.revision, req.admin));
 }));
 
 router.post('/publish', canEdit, [
@@ -67,11 +67,12 @@ router.post('/preview', canView, [
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   res.set('Cache-Control', 'no-store');
-  res.json({ html: await websiteService.renderPreview(req.body.document, req.body.pageId) });
+  res.json({ html: await websiteService.renderPreview(req.body.document, req.body.pageId, req.admin) });
 }));
 
 // URLs for the editor's thumbnails of picked images; null where the image
-// would not appear on the public site (its gallery left the website).
+// would not appear on the public site (its gallery left the website) or is
+// from a gallery the admin may not pick from.
 router.post('/media/resolve', canView, [
   body('refs').isArray({ max: 500 }),
 ], handleAsync(async (req, res) => {
@@ -79,7 +80,11 @@ router.post('/media/resolve', canView, [
   const refs = req.body.refs.filter((r) => r && typeof r === 'object');
   const photoIds = refs.filter((r) => r.source === 'photo').map((r) => Number(r.id)).filter(Number.isInteger);
   const assetIds = refs.filter((r) => r.source === 'asset' && typeof r.id === 'string').map((r) => r.id);
-  const [photos, assetRows] = await Promise.all([media.loadEligiblePhotos(photoIds), media.loadAssets(assetIds)]);
+  const allowed = await websiteService.referencesAdminMay(req.admin, { photoIds });
+  const [photos, assetRows] = await Promise.all([
+    media.loadEligiblePhotos(photoIds.filter((id) => allowed.photoIds.has(id))),
+    media.loadAssets(assetIds),
+  ]);
   const urls = {};
   for (const id of photoIds) urls[`photo:${id}`] = photos.has(id) ? `${media.mediaBase({ source: 'photo', id })}/640` : null;
   for (const id of assetIds) {
@@ -89,10 +94,11 @@ router.post('/media/resolve', canView, [
   res.json({ urls });
 }));
 
-// Galleries the admin can see, with their website opt-in and, when opted in
-// but excluded, why (password, expired, ...).
+// Galleries the admin may act on (owner, assigned, or a role that manages
+// every gallery: the rule of the admin photo routes), with their website
+// opt-in and, when opted in but excluded, why (expired, ...).
 router.get('/galleries', canView, handleAsync(async (req, res) => {
-  const rows = await scopeEventsListQuery(db('events'), req.admin, 'events.created_by')
+  const rows = await scopeEventsQuery(db('events'), req.admin, 'events.created_by')
     .where((q) => q.where('is_archived', formatBoolean(false)).orWhereNull('is_archived'))
     .orderBy('event_date', 'desc').orderBy('id', 'desc').limit(300);
   const now = new Date();
@@ -108,13 +114,13 @@ router.get('/galleries', canView, handleAsync(async (req, res) => {
       hasPassword: requiresGalleryPassword(e),
       eligible: media.isEventWebsiteEligible(e, now),
       reason: media.eventIneligibleReason(e, now),
-      canChange: ownsEvent(req.admin, e),
+      canChange: canAccessEvent(req.admin, e),
     })),
   });
 }));
 
-// The per-gallery opt-in. Owner-only: making a gallery's photos public is
-// the owner's call, like its password.
+// The per-gallery opt-in, under the rules of the gallery's own settings
+// (events.edit on a gallery the admin may act on), plus cms.edit.
 router.put('/galleries/:id', canEdit, requirePermission('events.edit'), [
   param('id').isInt({ min: 1 }),
   body('showOnWebsite').isBoolean(),
@@ -122,7 +128,6 @@ router.put('/galleries/:id', canEdit, requirePermission('events.edit'), [
   validateRequest(req);
   const event = await db('events').where({ id: Number(req.params.id) }).first();
   if (!event || !canAccessEvent(req.admin, event)) throw new AppError('Gallery not found', 404, 'EVENT_NOT_FOUND');
-  if (!ownsEvent(req.admin, event)) throw new AppError('Only the gallery owner can change this', 403, 'FORBIDDEN');
   await websiteService.setGalleryOnWebsite(event.id, req.body.showOnWebsite);
   res.json({ id: event.id, showOnWebsite: Boolean(req.body.showOnWebsite) });
 }));
