@@ -165,6 +165,12 @@ function createReferenceIndex() {
  */
 async function dropSuperseded(photo, column, oldKey, newKey, references) {
   if (!oldKey || !newKey || sameStorageKey(oldKey, newKey)) return;
+  // Staged renditions (photoEdits.applyPhoto): the old one is live until the
+  // new ones are recorded, and goes then.
+  if (photo.edit_stage) {
+    photo.edit_stage.drops.push([column, oldKey, newKey]);
+    return;
+  }
   if (!isPresentationRenditionKey(oldKey, RENDITION_KIND[column])) return;
   try {
     if (!(await references.moved(photo.id, oldKey, newKey))) return;
@@ -178,10 +184,10 @@ async function dropSuperseded(photo, column, oldKey, newKey, references) {
 /**
  * Rebuild the stored renditions of one photo. True when every rendition it
  * had was regenerated (or it had none); false leaves the row for a later pass.
- * `written`, when given, receives the key each rendition column got, so a
- * caller can fence its next write on them (photoEdits.applyPhoto).
+ * A row with edit_stage (photoEdits.applyPhoto) gets its renditions staged:
+ * built and collected there, not recorded, and the old ones kept.
  */
-async function refreshPhoto(photo, references = createReferenceIndex(), written = null) {
+async function refreshPhoto(photo, references = createReferenceIndex()) {
   // A video's thumbnail is an ffmpeg poster frame; it never carried the
   // source's EXIF, and videos have no preview or hero rendition.
   if (isVideo(photo)) return true;
@@ -202,20 +208,17 @@ async function refreshPhoto(photo, references = createReferenceIndex(), written 
     // lazy generation already in flight is not adopted (as adminThumbnails).
     const key = await imageProcessor.ensureThumbnail({ ...photo, thumbnail_path: null }, { force: true });
     if (!key) return false;
-    if (written) written.thumbnail_path = key;
     await dropSuperseded(photo, 'thumbnail_path', photo.thumbnail_path, key, references);
   }
   if (photo.preview_path) {
     const key = await imageProcessor.ensurePreviewImage({ ...photo, preview_path: null }, { force: true });
     if (!key) return false;
-    if (written) written.preview_path = key;
     await dropSuperseded(photo, 'preview_path', photo.preview_path, key, references);
   }
   if (photo.hero_path) {
     // No anchor: cut at the gallery's current focal point, as a request would.
     const key = await imageProcessor.ensureHeroImage({ ...photo, hero_path: null });
     if (!key) return false;
-    if (written) written.hero_path = key;
     await dropSuperseded(photo, 'hero_path', photo.hero_path, key, references);
   }
   return true;
@@ -512,6 +515,7 @@ module.exports = {
   needsRefresh,
   refreshPhoto,
   createReferenceIndex,
+  dropSuperseded,
   refreshCover,
   runPass,
   invalidateRestoredRenditions,

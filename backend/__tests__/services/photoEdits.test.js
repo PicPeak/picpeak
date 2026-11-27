@@ -436,6 +436,47 @@ describe('a failed edit of a photo with renditions', () => {
   });
 });
 
+describe('the renditions of a revision being applied', () => {
+  it('are built beside the live ones, which change only when the revision is applied', async () => {
+    fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/staged.jpg'));
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'staged.jpg', path: 'edit-card/staged.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: originalBytes.length, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    const fresh = () => db('photos').where({ id }).first();
+    const { ensurePreviewImage } = require('../../src/services/imageProcessor');
+    const renditionRefresh = require('../../src/services/renditionRefresh');
+    const refresh = renditionRefresh.refreshPhoto;
+    let during = null;
+    const spy = jest.spyOn(renditionRefresh, 'refreshPhoto').mockImplementation(async (...args) => {
+      const ok = await refresh(...args);
+      // What a request sees between building the new renditions and applying the revision.
+      const row = await fresh();
+      during = { row, meta: await sharp(storagePath(row.preview_path)).metadata() };
+      return ok;
+    });
+    try {
+      const before = await ensurePreviewImage(await fresh());
+      await photoEdits().saveEdits([{ photo: await fresh(), params: validated({ rotate: 90 }) }]);
+      await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+      // Still the unturned preview, at revision 0, as the listing says.
+      expect(during.row).toMatchObject({ preview_path: before, edit_applied_rev: 0 });
+      expect(during.meta.width).toBeGreaterThan(during.meta.height);
+      const after = await fresh();
+      expect(after.edit_applied_rev).toBe(1);
+      expect(after.preview_path).not.toBe(before);
+      const meta = await sharp(storagePath(after.preview_path)).metadata();
+      expect(meta.height).toBeGreaterThan(meta.width);
+      // The old one goes once the new one is recorded.
+      expect(fs.existsSync(storagePath(before))).toBe(false);
+    } finally {
+      spy.mockRestore();
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
+
 describe('a guest request while the pass applies a revision', () => {
   it('cannot leave the old revision\'s preview in place once the new one is applied', async () => {
     fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/race-preview.jpg'));

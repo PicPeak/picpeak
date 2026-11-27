@@ -766,23 +766,30 @@ async function applyPhoto(photo, references) {
     // Listed now, dropped once applied: guests are served the applied
     // revision's tiers until then.
     const staleTiers = staleTierKeys(row);
-    // Twice at most: a guest's request may record a rendition of the applied
-    // revision over one just built here (it holds the row as it was); then
-    // they are built again before the revision is applied.
+    // Twice at most: the live renditions may change meanwhile (a guest's
+    // request rebuilding a lost one for the applied revision); then the new
+    // ones are built again before the revision is applied.
+    const renditionRefresh = require('./renditionRefresh');
     for (let attempt = 0; attempt < 2; attempt++) {
-      // The renditions of the revision being applied, cut from its own
-      // render (edit_view 'current': not the applied view guests' requests get).
-      const written = {};
-      if (!(await require('./renditionRefresh').refreshPhoto({ ...row, edit_view: 'current', edit_retry_failed: true }, references, written))) return 'renditions';
+      // The renditions of the revision being applied, cut from its own render
+      // (edit_view 'current', not the applied view guests' requests get) and
+      // staged: built beside the live ones, which stay until the revision is
+      // applied, so URL, pixels, size and boxes move together.
+      const stage = { values: {}, drops: [] };
+      const live = { thumbnail_path: row.thumbnail_path ?? null, preview_path: row.preview_path ?? null, hero_path: row.hero_path ?? null };
+      if (!(await renditionRefresh.refreshPhoto({ ...row, edit_view: 'current', edit_retry_failed: true, edit_stage: stage }, references))) {
+        return 'renditions';
+      }
       await dropWatermarkCopy(row);
       const zip = require('./downloadZipService');
       await zip.invalidateIfBuilt(Number(row.event_id));
-      // The applied edit, its size and render with it: what the previews now
-      // show. One write, fenced on the revision applied before and on the
-      // rendition keys built just now, so URL, pixels and boxes move together.
+      // One write: the new renditions, the applied edit, its size and render.
+      // Fenced on the revision applied before and on the live renditions as
+      // they were read, so nothing recorded meanwhile is overwritten.
       const advanced = await db('photos')
-        .where({ id: row.id, edit_rev: rev, edit_applied_rev: Number(row.edit_applied_rev) || 0, ...written })
+        .where({ id: row.id, edit_rev: rev, edit_applied_rev: Number(row.edit_applied_rev) || 0, ...live })
         .update({
+          ...stage.values,
           edit_applied_rev: rev, edit_applied_params: row.edit_params || null,
           edit_applied_width: row.edit_params ? row.edit_width : null, edit_applied_height: row.edit_params ? row.edit_height : null,
           edit_applied_render_path: row.edit_params ? row.edit_render_path : null,
@@ -790,8 +797,9 @@ async function applyPhoto(photo, references) {
         });
       if (advanced) {
         const storage = getStorage();
+        // What the revision applied before showed: its renditions, tiers and render.
+        for (const [column, oldKey, newKey] of stage.drops) await renditionRefresh.dropSuperseded(row, column, oldKey, newKey, references);
         await Promise.all(staleTiers.map((key) => storage.delete(key).catch(() => {})));
-        // The render of the revision applied before, no longer cut from.
         const previous = row.edit_applied_render_path;
         if (previous && previous !== row.edit_render_path && isRenderKeyOf(row, previous)) await storage.delete(previous).catch(() => {});
         return true;

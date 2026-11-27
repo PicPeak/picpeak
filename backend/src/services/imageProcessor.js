@@ -156,6 +156,17 @@ function derivativeBasename(name, { cache = false } = {}) {
 // describes the old file, so the caller treats it as nothing generated.
 // `narrow` adds conditions to the source guard (a video poster's frame pick).
 async function publishPhotoDerivative(photo, key, values, narrow = (query) => query) {
+  // Staged (the photo edit pass, issue 2619): the rendition of a revision not
+  // applied yet is built beside the live one and recorded later, together
+  // with that revision (photoEdits.applyPhoto). Only the source is checked.
+  if (photo.edit_stage) {
+    if (await narrow(sourceGuard(photo)).first('id')) {
+      Object.assign(photo.edit_stage.values, values);
+      return true;
+    }
+    await getStorage().delete(key).catch(() => {});
+    return false;
+  }
   const scope = derivativeContext.getStore();
   if (!scope) {
     if (await narrow(sourceGuard(photo)).update(values) === 1) return true;
