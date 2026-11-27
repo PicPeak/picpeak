@@ -13,10 +13,12 @@ const { MAX_SOURCE_BYTES, MAX_ORDER_SOURCE_BYTES, MAX_IMAGE_BYTES, MAX_ORDER_ART
   QUOTE_TTL_MS, preparationBudget, budgetOf } = require('./limits');
 const { isManagedOriginalKey, resolvePhotoStorageKey, deliveredKey } = require('../photoResolver');
 const now = () => new Date().toISOString();
-// A saved photo edit (issue 2619) changes what is printed, so its revision is
-// part of the photo's identity; absent for a photo never edited.
+// A photo edit (issue 2619) changes what is printed: the applied revision,
+// whose previews the buyer saw and cropped on (a save still pending is not
+// shown yet). Its number is part of the photo's identity, so a quotation is
+// refused once another revision is applied; absent for a photo never edited.
 const fingerprint = p => V.hash({ id: p.id, path: p.path, sha: p.content_sha256 || null, filename: p.original_filename,
-  ...(Number(p.edit_rev) > 0 ? { edit: Number(p.edit_rev) } : {}) });
+  ...(Number(p.edit_applied_rev) > 0 ? { edit: Number(p.edit_applied_rev) } : {}) });
 const ACTIVE = ['capturing', 'quoted', 'accepted'];
 
 async function read(storage, key, max = MAX_SOURCE_BYTES, options) {
@@ -213,9 +215,11 @@ function createService({ db, storage, sharp }) {
     // Record the version, without transferring original image bytes in the request.
     for (const item of plan.items) {
       if (!sources.has(item.photoId)) {
-        // An edited photo is printed from its edited render, the image the
-        // customer saw and cropped.
-        const row = await photo(db, eventId, item.photoId, accessLevel), p = await require('../photoEdits').deliveredPhoto(row),
+        // An edited photo is printed from the render of its applied
+        // revision, the image the customer saw and cropped.
+        const photoEdits = require('../photoEdits');
+        const row = await photo(db, eventId, item.photoId, accessLevel),
+          p = await photoEdits.deliveredPhoto(await photoEdits.renditionView(row)),
           key = resolvePhotoStorageKey(event, p);
         if (!key || !(isManagedOriginalKey(key) || deliveredKey(p))) throw new AppError('Print ordering currently requires managed originals', 400);
         const stat = await storage.stat(key);
