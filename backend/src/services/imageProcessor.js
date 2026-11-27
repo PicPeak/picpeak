@@ -160,7 +160,9 @@ async function publishPhotoDerivative(photo, key, values, narrow = (query) => qu
   // applied yet is built beside the live one and recorded later, together
   // with that revision (photoEdits.applyPhoto). Only the source is checked.
   if (photo.edit_stage) {
-    if (await narrow(sourceGuard(photo)).first('id')) {
+    // The source only: the row's focal point and poster pick are fenced by
+    // that later write, which records the staged point with the renditions.
+    if (await sourceGuard(photo).first('id')) {
       Object.assign(photo.edit_stage.values, values);
       return true;
     }
@@ -1594,7 +1596,9 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // The render is kept only while the row still has the point it read: a
   // point saved meanwhile (another replica, or the admin) renders its own
   // crop, and this one must not overwrite that thumbnail or land on the row.
-  const focalCurrent = stored && (async () => {
+  // Staged (the photo edit pass): the point it cuts around is the one the
+  // pass records with it, so the row's is not compared here.
+  const focalCurrent = stored && !photo.edit_stage && (async () => {
     try {
       const current = await db('photos').where('id', photo.id).first(FOCAL_COLUMNS);
       if (!current || sameFocalColumns(current, stored)) return true;

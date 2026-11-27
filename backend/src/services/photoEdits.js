@@ -554,14 +554,12 @@ function focalAfterEdit(photo, before, after) {
  */
 async function saveEdits(changes, { onlyUnedited = false } = {}) {
   const revisions = {};
-  const unreachable = [];
   await db.transaction(async (trx) => {
     for (const { photo, params: asked } of changes) {
       // Develop and noise reduction mean nothing for a photo that is no
       // camera RAW; left in, they would re-encode a JPEG for no change.
       const params = asked && !require('./rawDevelop').isRawPhoto(photo) ? { ...asked, develop: false, nr: 0 } : asked;
       const next = params && !math.isIdentity(params) ? params : null;
-      const before = paramsOf(photo);
       const update = {
         edit_params: next ? math.canonicalJson(next) : null,
         edit_rev: trx.raw('edit_rev + 1'),
@@ -574,23 +572,16 @@ async function saveEdits(changes, { onlyUnedited = false } = {}) {
         update.edit_width = size.width;
         update.edit_height = size.height;
       }
-      const focal = focalAfterEdit(photo, before, next);
-      if (focal) Object.assign(update, focal);
+      // The focal point stays the one of the applied picture, which the
+      // previews keep showing; the pass moves it with the geometry when it
+      // applies the revision (applyPhoto).
       const target = trx('photos').where({ id: photo.id });
       if (onlyUnedited) target.whereNull('edit_params').where('edit_rev', Number(photo.edit_rev) || 0);
       if (!(await target.update(update))) continue;
-      // Thumbnail tier keys name the focal point; once it moves, no key the
-      // row gives (and no later cleanup) reaches the ones cut at the old
-      // point. Listed from the row as it was, removed once saved.
-      if (focal && (focal.focal_x !== photo.focal_x || focal.focal_y !== photo.focal_y || focal.focal_source !== photo.focal_source)) {
-        unreachable.push(...tierKeysAtCurrentPoint(photo));
-      }
       const row = await trx('photos').where({ id: photo.id }).first('edit_rev');
       revisions[photo.id] = Number(row.edit_rev);
     }
   });
-  const storage = getStorage();
-  await Promise.all([...new Set(unreachable)].map((key) => storage.delete(key).catch(() => {})));
   // The prebuilt download-all ZIP holds the saved edits' renders: it goes now,
   // not when the render lands, which may never happen if it keeps failing.
   const zip = require('./downloadZipService');
@@ -776,8 +767,15 @@ async function applyPhoto(photo, references) {
       // staged: built beside the live ones, which stay until the revision is
       // applied, so URL, pixels, size and boxes move together.
       const stage = { values: {}, drops: [] };
-      const live = { thumbnail_path: row.thumbnail_path ?? null, preview_path: row.preview_path ?? null, hero_path: row.hero_path ?? null };
-      if (!(await renditionRefresh.refreshPhoto({ ...row, edit_view: 'current', edit_retry_failed: true, edit_stage: stage }, references))) {
+      const live = {
+        thumbnail_path: row.thumbnail_path ?? null, preview_path: row.preview_path ?? null, hero_path: row.hero_path ?? null,
+        focal_x: row.focal_x ?? null, focal_y: row.focal_y ?? null, focal_source: row.focal_source ?? null,
+      };
+      // The focal point moved with the geometry, from the applied picture to
+      // this revision's: the new renditions are cut around it, and it is
+      // recorded with them.
+      const focal = focalAfterEdit(row, paramsOf({ edit_params: row.edit_applied_params }), paramsOf(row));
+      if (!(await renditionRefresh.refreshPhoto({ ...row, ...(focal || {}), edit_view: 'current', edit_retry_failed: true, edit_stage: stage }, references))) {
         return 'renditions';
       }
       await dropWatermarkCopy(row);
@@ -789,6 +787,8 @@ async function applyPhoto(photo, references) {
       const advanced = await db('photos')
         .where({ id: row.id, edit_rev: rev, edit_applied_rev: Number(row.edit_applied_rev) || 0, ...live })
         .update({
+          // A point detected on the new thumbnail wins over the cleared one.
+          ...(focal || {}),
           ...stage.values,
           edit_applied_rev: rev, edit_applied_params: row.edit_params || null,
           edit_applied_width: row.edit_params ? row.edit_width : null, edit_applied_height: row.edit_params ? row.edit_height : null,
@@ -799,7 +799,11 @@ async function applyPhoto(photo, references) {
         const storage = getStorage();
         // What the revision applied before showed: its renditions, tiers and render.
         for (const [column, oldKey, newKey] of stage.drops) await renditionRefresh.dropSuperseded(row, column, oldKey, newKey, references);
-        await Promise.all(staleTiers.map((key) => storage.delete(key).catch(() => {})));
+        // Tier keys name the focal point: those cut at a point that moved are
+        // reached by no key the row gives any more.
+        const written = { ...live, ...(focal || {}), ...stage.values };
+        const moved = written.focal_x !== live.focal_x || written.focal_y !== live.focal_y || written.focal_source !== live.focal_source;
+        await Promise.all([...staleTiers, ...(moved ? tierKeysAtCurrentPoint(row) : [])].map((key) => storage.delete(key).catch(() => {})));
         const previous = row.edit_applied_render_path;
         if (previous && previous !== row.edit_render_path && isRenderKeyOf(row, previous)) await storage.delete(previous).catch(() => {});
         return true;

@@ -911,6 +911,22 @@ describe('edited tiers after a reset', () => {
     expect(fs.existsSync(storagePath(cut))).toBe(false);
   });
 
+  it('keeps the focal point the previews are cut around until the turn that moves it is applied', async () => {
+    const { id } = await plantEdited('tiers-focal-staged.jpg');
+    await db('photos').where({ id }).update({ focal_x: 0.2, focal_y: 0.4, focal_source: 'manual' });
+    const imageProcessor = require('../../src/services/imageProcessor');
+    await photoEdits().saveEdits([{ photo: await db('photos').where({ id }).first(), params: validated({ saturation: -50, rotate: 90 }) }]);
+    // Saved, not applied: the previews are still the unturned ones, cut around the point as it was.
+    expect(await db('photos').where({ id }).first()).toMatchObject({ focal_x: 0.2, focal_y: 0.4, focal_source: 'manual' });
+    const pendingTier = await imageProcessor.ensureThumbnailAtWidth(await db('photos').where({ id }).first(), 600);
+    expect(pendingTier).toMatch(/_e1_f200-400_/);
+    await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+    // Applied: the point turned with the picture, and the tiers of the old one are gone.
+    const after = await db('photos').where({ id }).first();
+    expect(after).toMatchObject({ edit_applied_rev: 2, focal_x: 0.6, focal_y: 0.2, focal_source: 'manual' });
+    expect(fs.existsSync(storagePath(pendingTier))).toBe(false);
+  });
+
   it('a delete after a reset still pending removes them too', async () => {
     const { id, tier } = await plantEdited('tiers-delete.jpg');
     await photoEdits().saveEdits([{ photo: await db('photos').where({ id }).first(), params: null }]);
