@@ -89,7 +89,9 @@ router.post('/media/resolve', canView, [
     media.loadAssets(assetIds),
   ]);
   const urls = {};
-  for (const id of photoIds) urls[`photo:${id}`] = photos.has(id) ? `${media.mediaBase({ source: 'photo', id })}/640` : null;
+  for (const id of photoIds) {
+    urls[`photo:${id}`] = photos.has(id) ? `${media.mediaBase({ source: 'photo', id }, media.photoVersion(photos.get(id)))}/640` : null;
+  }
   for (const id of assetIds) {
     const row = assetRows.get(id);
     urls[`asset:${id}`] = row ? assets.publicAsset(row).previewUrl || assets.publicAsset(row).videoUrl : null;

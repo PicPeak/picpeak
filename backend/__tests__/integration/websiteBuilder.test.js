@@ -73,8 +73,11 @@ async function insertPhoto(eventId) {
   });
 }
 
+const getPhoto = (id, width) => request(app).get(photoUrl(id, width)).redirects(1);
 const auth = (id) => ({ Authorization: `Bearer ${mintAdminToken(id)}` });
 
+// The current URL of a photo carries its content version; the helper builds
+// the unversioned one, which the endpoint redirects to the current one.
 function photoUrl(id, width = 640) {
   return `${media.mediaBase({ source: 'photo', id })}/${width}`;
 }
@@ -354,12 +357,12 @@ describe('gallery photos on the website', () => {
 
   test('picked photos of opted-in galleries are rendered, with or without a password; nothing else is', async () => {
     const { html } = await service.resolvePublicPage('');
-    expect(html).toContain(`/site-media/p${openPhoto}.`);
-    expect(html).toContain(`/site-media/p${lockedPhoto}.`);
+    expect(html).toContain(`/site-media/p${openPhoto}-`);
+    expect(html).toContain(`/site-media/p${lockedPhoto}-`);
     // The protected gallery has no cover of its own: its card shows none
     // rather than one of the photos nobody picked.
-    expect(html).not.toContain(`/site-media/p${lockedOther}.`);
-    expect(html).not.toContain(`/site-media/p${optedOutPhoto}.`);
+    expect(html).not.toContain(`/site-media/p${lockedOther}-`);
+    expect(html).not.toContain(`/site-media/p${optedOutPhoto}-`);
     const openSlug = (await db('events').where({ id: openEvent }).first()).slug;
     expect(html).toContain(`href="/gallery/${openSlug}"`);
     // Its card links to the gallery, where the password still applies.
@@ -371,21 +374,21 @@ describe('gallery photos on the website', () => {
   test('a protected gallery card shows the cover its owner chose', async () => {
     await db('events').where({ id: lockedEvent }).update({ hero_photo_id: lockedOther });
     cache.clearWebsiteCache();
-    expect((await service.resolvePublicPage('')).html).toContain(`/site-media/p${lockedOther}.`);
+    expect((await service.resolvePublicPage('')).html).toContain(`/site-media/p${lockedOther}-`);
     await db('events').where({ id: lockedEvent }).update({ hero_photo_id: null });
     cache.clearWebsiteCache();
   });
 
   test('the image endpoint serves a rendition of an eligible photo, nothing else', async () => {
-    const ok = await request(app).get(photoUrl(openPhoto));
+    const ok = await getPhoto(openPhoto);
     expect(ok.status).toBe(200);
     expect(ok.headers['content-type']).toBe('image/jpeg');
     const meta = await sharp(ok.body).metadata();
     expect(meta.width).toBe(640);
 
-    expect((await request(app).get(photoUrl(lockedPhoto))).status).toBe(200);
-    expect((await request(app).get(photoUrl(optedOutPhoto))).status).toBe(404);
-    expect((await request(app).get(photoUrl(openPhoto, 999))).status).toBe(404);
+    expect((await getPhoto(lockedPhoto)).status).toBe(200);
+    expect((await getPhoto(optedOutPhoto)).status).toBe(404);
+    expect((await getPhoto(openPhoto, 999)).status).toBe(404);
     expect((await request(app).get(`/site-media/p${openPhoto}.${'0'.repeat(32)}/640`)).status).toBe(404);
     // A signature for one photo does not open another: the protected
     // gallery's unpicked photos have no URL anyone was given.
@@ -394,27 +397,54 @@ describe('gallery photos on the website', () => {
     expect((await request(app).get(`${media.mediaBase({ source: 'photo', id: openPhoto })}/video`)).status).toBe(404);
   });
 
+  test('a replaced photo gets a new URL, and the old one leads to it', async () => {
+    const before = (await service.resolvePublicPage('')).html;
+    const oldUrl = before.match(new RegExp(`/site-media/p${openPhoto}-[0-9a-f]{10}\\.[0-9a-f]{32}/1280`))[0];
+    expect((await request(app).get(oldUrl)).status).toBe(200);
+    // What photoReplacementService writes: a new file at a new path, its hash.
+    const row = await db('photos').where({ id: openPhoto }).first();
+    const newRel = `site/replaced-${openPhoto}.jpg`;
+    await sharp({ create: { width: 1600, height: 1000, channels: 3, background: { r: 200, g: 20, b: 20 } } }).jpeg()
+      .toFile(path.join(process.env.STORAGE_PATH, 'events/active', newRel));
+    await db('photos').where({ id: openPhoto }).update({ path: newRel, content_sha256: 'f'.repeat(64), preview_path: null });
+    cache.clearWebsiteCache();
+    const after = (await service.resolvePublicPage('')).html;
+    const newUrl = after.match(new RegExp(`/site-media/p${openPhoto}-[0-9a-f]{10}\\.[0-9a-f]{32}/1280`))[0];
+    expect(newUrl).not.toBe(oldUrl);
+    // The old URL no longer serves the old picture: it redirects, uncached.
+    const stale = await request(app).get(oldUrl);
+    expect(stale.status).toBe(302);
+    expect(stale.headers.location).toBe(newUrl);
+    expect(stale.headers['cache-control']).toBe('no-cache');
+    const fresh = await request(app).get(newUrl);
+    expect(fresh.status).toBe(200);
+    const { dominant } = await sharp(fresh.body).stats();
+    expect(dominant.r).toBeGreaterThan(150);
+    await db('photos').where({ id: openPhoto }).update({ path: row.path, content_sha256: row.content_sha256, preview_path: null });
+    cache.clearWebsiteCache();
+  });
+
   test('turning the gallery off removes its photos at once, cached page or not', async () => {
     const before = await service.resolvePublicPage('');
-    expect(before.html).toContain(`/site-media/p${lockedPhoto}.`);
+    expect(before.html).toContain(`/site-media/p${lockedPhoto}-`);
     const res = await request(app).put(`/api/admin/website/galleries/${lockedEvent}`).set(auth(adminId)).send({ showOnWebsite: false });
     expect(res.status).toBe(200);
-    expect((await request(app).get(photoUrl(lockedPhoto))).status).toBe(404);
-    expect((await service.resolvePublicPage('')).html).not.toContain(`/site-media/p${lockedPhoto}.`);
+    expect((await getPhoto(lockedPhoto)).status).toBe(404);
+    expect((await service.resolvePublicPage('')).html).not.toContain(`/site-media/p${lockedPhoto}-`);
     await request(app).put(`/api/admin/website/galleries/${lockedEvent}`).set(auth(adminId)).send({ showOnWebsite: true }).expect(200);
-    expect((await request(app).get(photoUrl(lockedPhoto))).status).toBe(200);
+    expect((await getPhoto(lockedPhoto)).status).toBe(200);
   });
 
   test('an expired or archived gallery and a disabled flag close the endpoint', async () => {
     await db('events').where({ id: openEvent }).update({ expires_at: new Date(Date.now() - 86400000).toISOString() });
-    expect((await request(app).get(photoUrl(openPhoto))).status).toBe(404);
+    expect((await getPhoto(openPhoto)).status).toBe(404);
     await db('events').where({ id: openEvent }).update({ expires_at: new Date(Date.now() + 86400000).toISOString(), is_archived: 1 });
-    expect((await request(app).get(photoUrl(openPhoto))).status).toBe(404);
+    expect((await getPhoto(openPhoto)).status).toBe(404);
     await db('events').where({ id: openEvent }).update({ is_archived: 0 });
     await setFeatureFlags(db, { websiteBuilder: false });
-    expect((await request(app).get(photoUrl(openPhoto))).status).toBe(404);
+    expect((await getPhoto(openPhoto)).status).toBe(404);
     await setFeatureFlags(db, { websiteBuilder: true });
-    expect((await request(app).get(photoUrl(openPhoto))).status).toBe(200);
+    expect((await getPhoto(openPhoto)).status).toBe(200);
   });
 
   test('the picker lists eligible galleries, flags a password, and refuses the photos of others', async () => {
@@ -655,8 +685,8 @@ describe('what an admin may pick', () => {
   test('preview and thumbnails give no URL for a photo the admin may not pick', async () => {
     const other = await insertPhoto(foreignEvent);
     const preview = await request(app).post('/api/admin/website/preview').set(colleague()).send({ document: docWith([ownPhoto, other]), pageId: 'home' });
-    expect(preview.body.html).toContain(`/site-media/p${ownPhoto}.`);
-    expect(preview.body.html).not.toContain(`/site-media/p${other}.`);
+    expect(preview.body.html).toContain(`/site-media/p${ownPhoto}-`);
+    expect(preview.body.html).not.toContain(`/site-media/p${other}-`);
     const urls = (await request(app).post('/api/admin/website/media/resolve').set(colleague())
       .send({ refs: [{ source: 'photo', id: ownPhoto }, { source: 'photo', id: other }, { source: 'photo', id: foreignPhoto }] })).body.urls;
     expect(urls[`photo:${ownPhoto}`]).toMatch(/^\/site-media\//);
@@ -682,14 +712,14 @@ describe('the opt-in in the gallery settings', () => {
   const stored = async () => Boolean((await db('events').where({ id: event }).first()).show_on_website);
 
   test('switches the gallery on and off, and the published page follows at once', async () => {
-    expect((await service.resolvePublicPage('')).html).not.toContain(`/site-media/p${photo}.`);
+    expect((await service.resolvePublicPage('')).html).not.toContain(`/site-media/p${photo}-`);
     expect((await put({ show_on_website: true })).status).toBe(200);
     expect(await stored()).toBe(true);
     // No wait for the page cache: the change clears it.
-    expect((await service.resolvePublicPage('')).html).toContain(`/site-media/p${photo}.`);
+    expect((await service.resolvePublicPage('')).html).toContain(`/site-media/p${photo}-`);
     expect((await put({ show_on_website: false })).status).toBe(200);
     expect(await stored()).toBe(false);
-    expect((await service.resolvePublicPage('')).html).not.toContain(`/site-media/p${photo}.`);
+    expect((await service.resolvePublicPage('')).html).not.toContain(`/site-media/p${photo}-`);
   });
 
   test('reads "false" as off in the gallery update too', async () => {

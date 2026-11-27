@@ -22,7 +22,7 @@ const { escapeCssForStyleElement } = require('../../utils/cssSanitizer');
 const { relativeLuminance, readableTextOn } = require('../../utils/colorContrast');
 const { safeUrl } = require('./document');
 const { brandCssVariables } = require('../../utils/brandCssVariables');
-const { MEDIA_WIDTHS, mediaBase, parseRenditionKeys } = require('./media');
+const { MEDIA_WIDTHS, mediaBase, parseRenditionKeys, photoVersion } = require('./media');
 
 const esc = escapeHtml;
 
@@ -129,7 +129,7 @@ function resolveImage(ref, ctx) {
   if (ref.source === 'photo') {
     const photo = ctx.photos.get(ref.id);
     if (!photo) return null;
-    return { base: mediaBase(ref), width: Number(photo.width) || null, height: Number(photo.height) || null, tiers: MEDIA_WIDTHS };
+    return { base: mediaBase(ref, photoVersion(photo)), width: Number(photo.width) || null, height: Number(photo.height) || null, tiers: MEDIA_WIDTHS };
   }
   const asset = ctx.assets.get(ref.id);
   if (!asset || asset.kind !== 'image') return null;

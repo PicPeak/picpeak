@@ -40,25 +40,45 @@ function verifyMedia(kind, id, signature) {
   return crypto.timingSafeEqual(Buffer.from(signMedia(kind, id)), Buffer.from(candidate));
 }
 
-/** Path prefix of one image; the renderer appends `/<width>`. */
-function mediaBase(ref) {
-  const kind = ref.source === 'photo' ? 'p' : 'a';
-  return `/site-media/${kind}${ref.id}.${signMedia(kind, ref.id)}`;
+// The photo columns that change when its picture does: a replacement writes
+// a new path and hash (photoReplacementService), an external source a new
+// size or mtime, the EXIF refresh a new rendition_version.
+const PHOTO_VERSION_COLUMNS = ['photos.path', 'photos.content_sha256', 'photos.size_bytes', 'photos.source_mtime_ms', 'photos.rendition_version'];
+
+/** A short tag of a photo's content: it goes into the URL (see mediaBase). */
+function photoVersion(photo) {
+  const parts = ['path', 'content_sha256', 'size_bytes', 'source_mtime_ms', 'rendition_version']
+    .map((column) => (photo[column] == null ? '' : String(photo[column])));
+  return crypto.createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 10);
 }
 
 /**
- * Parse `<kind><id>.<sig>` from the URL. Returns { kind, id } when the
- * signature matches, else null.
+ * Path prefix of one image; the renderer appends `/<width>`. A photo's URL
+ * carries its content version (`p<id>-<version>`): the rendition is cached
+ * publicly for a day, so a photo replaced under the same id needs a new URL.
+ * The signature covers kind and id only; the version is not a secret.
+ * Uploads never change in place (a new upload is a new id).
+ */
+function mediaBase(ref, version) {
+  const kind = ref.source === 'photo' ? 'p' : 'a';
+  const tag = kind === 'p' && version ? `-${version}` : '';
+  return `/site-media/${kind}${ref.id}${tag}.${signMedia(kind, ref.id)}`;
+}
+
+/**
+ * Parse `<kind><id>[-<version>].<sig>` from the URL. Returns
+ * { kind, id, version } when the signature matches, else null.
  */
 function parseMediaToken(token) {
-  const match = /^([pa])([0-9a-f]{24}|[1-9][0-9]{0,15})\.([0-9a-f]{32})$/.exec(String(token || ''));
+  const match = /^([pa])([0-9a-f]{24}|[1-9][0-9]{0,15})(?:-([0-9a-f]{10}))?\.([0-9a-f]{32})$/.exec(String(token || ''));
   if (!match) return null;
-  const [, kind, rawId, signature] = match;
+  const [, kind, rawId, version, signature] = match;
+  if (version && kind !== 'p') return null;
   if (kind === 'p' && !/^[1-9][0-9]*$/.test(rawId)) return null;
   if (kind === 'a' && !/^[0-9a-f]{24}$/.test(rawId)) return null;
   const id = kind === 'p' ? Number(rawId) : rawId;
   if (!verifyMedia(kind, id, signature)) return null;
-  return { kind, id };
+  return { kind, id, version: version || null };
 }
 
 /**
@@ -111,7 +131,7 @@ async function loadEligiblePhotos(photoIds) {
   const ids = (photoIds || []).filter((id) => Number.isInteger(id) && id > 0);
   if (!ids.length) return new Map();
   const photos = await guestPhotoQuery().whereIn('photos.id', ids)
-    .select('photos.id', 'photos.event_id', 'photos.width', 'photos.height', 'photos.rendition_version');
+    .select('photos.id', 'photos.event_id', 'photos.width', 'photos.height', ...PHOTO_VERSION_COLUMNS);
   const events = await loadEligibleEvents([...new Set(photos.map((p) => p.event_id))]);
   return new Map(photos.filter((p) => events.has(p.event_id)).map((p) => [p.id, p]));
 }
@@ -144,11 +164,11 @@ async function loadCoverPhotos(events) {
     let photo = null;
     if (event.hero_photo_id) {
       photo = await guestPhotoQuery().where({ 'photos.id': event.hero_photo_id, 'photos.event_id': event.id })
-        .first('photos.id', 'photos.event_id', 'photos.width', 'photos.height');
+        .first('photos.id', 'photos.event_id', 'photos.width', 'photos.height', ...PHOTO_VERSION_COLUMNS);
     }
     if (!photo && !requiresGalleryPassword(event)) {
       photo = await guestPhotoQuery().where('photos.event_id', event.id).orderBy('photos.id', 'asc')
-        .first('photos.id', 'photos.event_id', 'photos.width', 'photos.height');
+        .first('photos.id', 'photos.event_id', 'photos.width', 'photos.height', ...PHOTO_VERSION_COLUMNS);
     }
     if (photo) covers.set(event.id, photo);
   }
@@ -160,6 +180,7 @@ module.exports = {
   signMedia,
   verifyMedia,
   mediaBase,
+  photoVersion,
   parseMediaToken,
   isEventWebsiteEligible,
   eventIneligibleReason,

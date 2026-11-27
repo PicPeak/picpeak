@@ -97,8 +97,8 @@ describe('images fail closed', () => {
 
   test('an eligible photo is rendered as signed rendition URLs with a srcset and its size', () => {
     const html = render([home([{ type: 'gallery', images: [{ source: 'photo', id: 11, alt: 'Bride' }] }])], { ctx: { photos: new Map([[11, photo]]) } });
-    expect(html).toMatch(/src="\/site-media\/p11\.[0-9a-f]{32}\/1280"/);
-    expect(html).toMatch(/srcset="\/site-media\/p11\.[0-9a-f]{32}\/640 640w, \/site-media\/p11\.[0-9a-f]{32}\/1280 1280w, \/site-media\/p11\.[0-9a-f]{32}\/1920 1920w"/);
+    expect(html).toMatch(/src="\/site-media\/p11-[0-9a-f]{10}\.[0-9a-f]{32}\/1280"/);
+    expect(html).toMatch(/srcset="\/site-media\/p11-[0-9a-f]{10}\.[0-9a-f]{32}\/640 640w, \/site-media\/p11-[0-9a-f]{10}\.[0-9a-f]{32}\/1280 1280w, \/site-media\/p11-[0-9a-f]{10}\.[0-9a-f]{32}\/1920 1920w"/);
     expect(html).toContain('width="4000" height="3000"');
     expect(html).toContain('loading="lazy"');
     expect(html).toContain('alt="Bride"');
@@ -116,7 +116,7 @@ describe('images fail closed', () => {
     const html = render([home([{ type: 'hero', variant: 'overlay', heading: 'H', image: { source: 'photo', id: 11 } }])], { ctx: { photos: new Map([[11, photo]]) } });
     expect(html).toMatch(/<link rel="preload" as="image" imagesrcset="[^"]+" imagesizes="100vw" fetchpriority="high">/);
     expect(html).toMatch(/<img class="pp-hero__media"[^>]+fetchpriority="high"/);
-    expect(html).toContain('<meta property="og:image" content="https://studio.example/site-media/p11.');
+    expect(html).toContain('<meta property="og:image" content="https://studio.example/site-media/p11-');
   });
 });
 

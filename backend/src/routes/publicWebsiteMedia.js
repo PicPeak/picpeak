@@ -30,7 +30,9 @@ function notFound(res) {
   res.status(404).type('text/plain').send('Not found');
 }
 
-async function photoRendition(id, width) {
+// A photo's rendition, or { redirect } when the URL names an older version
+// of the picture (or none): the current URL then serves the current one.
+async function photoRendition(id, width, version) {
   const eligible = await media.loadEligiblePhotos([id]);
   if (!eligible.has(id)) return null;
   let photo = await media.guestPhotoQuery().where('photos.id', id).first('photos.*');
@@ -42,6 +44,8 @@ async function photoRendition(id, width) {
     photo = await media.guestPhotoQuery().where('photos.id', id).first('photos.*');
     if (!photo) return null;
   }
+  const current = media.photoVersion(photo);
+  if (version !== current) return { redirect: `${media.mediaBase({ source: 'photo', id }, current)}/${width}` };
   const key = await ensurePreviewImageAtWidth(photo, width);
   return isPresentationRenditionKey(key, 'preview') ? key : null;
 }
@@ -67,8 +71,13 @@ router.get('/:token/:size', async (req, res) => {
     if (!isVideo && !media.MEDIA_WIDTHS.includes(width)) return notFound(res);
     if (isVideo && ref.kind !== 'a') return notFound(res);
 
-    const key = ref.kind === 'p' ? await photoRendition(ref.id, width) : await assetRendition(ref.id, isVideo ? 'video' : String(width));
+    const key = ref.kind === 'p' ? await photoRendition(ref.id, width, ref.version) : await assetRendition(ref.id, isVideo ? 'video' : String(width));
     if (!key) return notFound(res);
+    if (key.redirect) {
+      // Not cached: the next replacement moves the target again.
+      res.set('Cache-Control', 'no-cache');
+      return res.redirect(302, key.redirect);
+    }
 
     const storage = getStorage();
     const stat = await storage.stat(key);
