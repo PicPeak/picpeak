@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import {
   Image as ImageIcon, Type, Columns2, LayoutGrid, FolderHeart, Quote, BadgeDollarSign, Mail, CalendarCheck,
-  Instagram, MoveVertical, Minus, Code, type LucideIcon,
+  Instagram, MoveVertical, Minus, Code, CircleHelp, ListOrdered, Megaphone, Award, Share2, type LucideIcon,
 } from 'lucide-react';
 import type { Block, BlockType, ImageRef, WebsiteDocument, WebsitePage } from './types';
 
@@ -13,7 +13,7 @@ export function newId(): string {
 
 export const BLOCK_TYPES: BlockType[] = [
   'hero', 'text', 'imageText', 'gallery', 'featuredGalleries', 'testimonials',
-  'pricing', 'contact', 'booking', 'instagram', 'spacer', 'divider', 'customHtml',
+  'pricing', 'contact', 'booking', 'instagram', 'faq', 'steps', 'cta', 'logos', 'social', 'spacer', 'divider', 'customHtml',
 ];
 
 export const BLOCK_ICONS: Record<BlockType, LucideIcon> = {
@@ -29,6 +29,11 @@ export const BLOCK_ICONS: Record<BlockType, LucideIcon> = {
   instagram: Instagram,
   spacer: MoveVertical,
   divider: Minus,
+  faq: CircleHelp,
+  steps: ListOrdered,
+  cta: Megaphone,
+  logos: Award,
+  social: Share2,
   customHtml: Code,
 };
 
@@ -46,6 +51,11 @@ export const BLOCK_VARIANTS: Record<BlockType, string[]> = {
   instagram: ['strip', 'grid'],
   spacer: ['small', 'medium', 'large'],
   divider: ['thin', 'medium'],
+  faq: ['list', 'boxed'],
+  steps: ['numbers', 'icons'],
+  cta: ['centered', 'split'],
+  logos: ['strip', 'grid'],
+  social: ['icons', 'buttons'],
   customHtml: ['default'],
 };
 
@@ -54,6 +64,7 @@ export function blockLabel(t: TFunction, type: BlockType): string {
     hero: 'Hero', text: 'Text', imageText: 'Image and text', gallery: 'Image grid',
     featuredGalleries: 'Featured galleries', testimonials: 'Testimonials', pricing: 'Pricing',
     contact: 'Contact form', booking: 'Booking button', instagram: 'Photo strip', spacer: 'Spacer', divider: 'Divider',
+    faq: 'Questions and answers', steps: 'Steps', cta: 'Call to action', logos: 'Logos', social: 'Social links',
     customHtml: 'Custom HTML',
   };
   return t(`website.blocks.${type}.name`, fallback[type]);
@@ -65,7 +76,8 @@ export function variantLabel(t: TFunction, variant: string): string {
     columns: 'Two columns', 'image-left': 'Image left', 'image-right': 'Image right', grid: 'Grid',
     masonry: 'Masonry', cards: 'Cards', list: 'List', quote: 'Large quote', simple: 'Simple',
     button: 'Button', banner: 'Banner', strip: 'Strip', small: 'Small', medium: 'Medium', large: 'Large',
-    default: 'Default', thin: 'Thin line',
+    default: 'Default', thin: 'Thin line', boxed: 'Boxed', numbers: 'Numbers', icons: 'Icons', centered: 'Centred',
+    buttons: 'With names',
   };
   return t(`website.variants.${variant}`, fallback[variant] || variant);
 }
@@ -98,6 +110,23 @@ export function createBlock(type: BlockType, t: TFunction): Block {
     return { ...base, type, variant: 'medium', divider: false };
   case 'divider':
     return { ...base, type, width: 'full', spacing: 'medium' };
+  case 'faq':
+    return { ...base, type, heading: t('website.defaults.faqHeading', 'Questions and answers'), items: [{ question: '', answer: '' }] };
+  case 'steps':
+    return {
+      ...base, type, heading: t('website.defaults.stepsHeading', 'How it works'),
+      items: [
+        { title: t('website.defaults.step1', 'Get in touch'), text: '', icon: 'chat' },
+        { title: t('website.defaults.step2', 'The shoot'), text: '', icon: 'camera' },
+        { title: t('website.defaults.step3', 'Your gallery'), text: '', icon: 'image' },
+      ],
+    };
+  case 'cta':
+    return { ...base, type, heading: t('website.defaults.ctaHeading', 'Ready when you are'), text: '', buttons: [{ label: '', target: null }] };
+  case 'logos':
+    return { ...base, type, heading: '', grayscale: true, items: [] };
+  case 'social':
+    return { ...base, type, heading: '', links: [] };
   case 'customHtml':
     return { ...base, type, html: '' };
   default:
@@ -145,7 +174,7 @@ export function collectImageRefs(doc: WebsiteDocument): ImageRef[] {
     for (const block of page.blocks) {
       if ('image' in block) add(block.image);
       if ('images' in block) block.images.forEach(add);
-      if (block.type === 'testimonials') block.items.forEach((item) => add(item.image));
+      if (block.type === 'testimonials' || block.type === 'logos') block.items.forEach((item) => add(item.image));
       if (block.type === 'hero' && block.video) add(block.video);
     }
   }

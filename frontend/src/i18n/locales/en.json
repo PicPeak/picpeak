@@ -13237,7 +13237,38 @@
       "openBooking": "Open the booking page",
       "bookingSettings": "Booking settings",
       "bookingService": "Service",
-      "bookingAnyService": "Let the visitor choose"
+      "bookingAnyService": "Let the visitor choose",
+      "headingOptional": "Heading (optional)",
+      "faqItem": "Question {{n}}",
+      "removeFaqItem": "Remove question {{n}}",
+      "question": "Question",
+      "answer": "Answer",
+      "addFaqItem": "Add question",
+      "step": "Step {{n}}",
+      "removeStep": "Remove step {{n}}",
+      "stepTitle": "Title",
+      "stepText": "Short text",
+      "icon": "Icon",
+      "iconNumber": "The number",
+      "addStep": "Add step",
+      "stepsHint": "Three to five steps read best; two to eight are possible.",
+      "ctaButton": "Button {{n}}",
+      "removeCtaButton": "Remove button {{n}}",
+      "addCtaButton": "Add button",
+      "logo": "Logo {{n}}",
+      "removeLogo": "Remove logo {{n}}",
+      "logoImage": "Logo",
+      "logoLink": "Link (optional)",
+      "addLogo": "Add logo",
+      "logosHint": "Upload logos as PNG or WebP with a transparent background; they are shown at most 56 pixels high.",
+      "grayscale": "Show logos in grey, in colour on hover",
+      "removeSocial": "Remove {{name}}",
+      "network": "Network",
+      "socialEmail": "E-mail address",
+      "socialUrl": "Profile address",
+      "socialEmailBad": "Enter an e-mail address",
+      "socialUrlBad": "Start with https://",
+      "addSocial": "Add link"
     },
     "defaults": {
       "heroHeading": "Your headline",
@@ -13246,7 +13277,13 @@
       "testimonialsHeading": "Kind words",
       "pricingHeading": "Packages",
       "contactHeading": "Get in touch",
-      "bookingHeading": "Book a session"
+      "bookingHeading": "Book a session",
+      "faqHeading": "Questions and answers",
+      "stepsHeading": "How it works",
+      "step1": "Get in touch",
+      "step2": "The shoot",
+      "step3": "Your gallery",
+      "ctaHeading": "Ready when you are"
     },
     "pages": {
       "newTitle": "New page",
@@ -13417,7 +13454,28 @@
       "anchorCopied": "Link copied. Paste it as a button or text link.",
       "anchorCopyFailed": "Could not copy the link.",
       "divider": {
-        "name": "Divider"
+        "name": "Divider",
+        "description": "A line between two blocks, with space around it."
+      },
+      "faq": {
+        "name": "Questions and answers",
+        "description": "Questions visitors open with a click, no script needed."
+      },
+      "steps": {
+        "name": "Steps",
+        "description": "How working with you goes, in numbered steps."
+      },
+      "cta": {
+        "name": "Call to action",
+        "description": "A heading, a sentence and one or two buttons."
+      },
+      "logos": {
+        "name": "Logos",
+        "description": "Logos of clients or publications, optionally linked."
+      },
+      "social": {
+        "name": "Social links",
+        "description": "Your profiles as icons: Instagram, Facebook, TikTok and more."
       }
     },
     "saved": "Draft saved",
@@ -13470,7 +13528,12 @@
       "medium": "Medium",
       "large": "Large",
       "default": "Default",
-      "thin": "Thin line"
+      "thin": "Thin line",
+      "boxed": "Boxed",
+      "numbers": "Numbers",
+      "icons": "Icons",
+      "centered": "Centred",
+      "buttons": "With names"
     },
     "conflictReload": "Load the latest version",
     "conflict": "Someone else saved the website since you opened it, so your changes were not saved. Load the latest version to continue from theirs; your unsaved changes here are then dropped.",
@@ -13490,6 +13553,32 @@
       "hint": "Shown in the website’s design while it is live; the galleries link the same pages.",
       "legal": "Legal pages",
       "system": "System pages"
+    },
+    "icons": {
+      "chat": "Speech bubble",
+      "calendar": "Calendar",
+      "camera": "Camera",
+      "image": "Picture",
+      "heart": "Heart",
+      "star": "Star",
+      "gift": "Gift",
+      "check": "Tick",
+      "email": "Envelope"
+    },
+    "link": {
+      "page": "A page",
+      "anchor": "A block on a page",
+      "booking": "The booking page",
+      "legal": "A legal page",
+      "url": "An address",
+      "leadsTo": "Leads to",
+      "none": "Nowhere yet",
+      "whichPage": "Page",
+      "whichBlock": "Block",
+      "chooseBlock": "Choose a block",
+      "whichLegal": "Legal page",
+      "address": "Address",
+      "noBlock": "Choose a block, or the button is not shown."
     }
   },
   "websiteNotice": {

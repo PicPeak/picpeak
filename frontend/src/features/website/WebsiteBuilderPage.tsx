@@ -22,6 +22,7 @@ import { mediaKey, websiteService } from '../../services/website.service';
 import { apiErrorText } from '../../utils/apiErrorText';
 import { BLOCK_ICONS, BLOCK_TYPES, blockLabel, collectImageRefs, createBlock, moveItem, newId } from './blocks';
 import { BlockEditor } from './BlockEditor';
+import { WebsiteDocContext } from './LinkTargetField';
 import { MediaUrlsContext } from './fields';
 import { PagesPanel, slugProblem } from './PagesPanel';
 import { PreviewFrame, mediaOriginDiffers, publicSiteUrl, type PreviewDevice } from './PreviewFrame';
@@ -280,11 +281,13 @@ export const WebsiteBuilderPage: React.FC = () => {
         </Button>
       </div>
       <fieldset disabled={!canEdit}>
-        <BlockEditor
-          block={block}
-          brandColors={server.brandColors}
-          onChange={(next, field) => setPageBlocks((blocks) => blocks.map((b) => (b.id === next.id ? next : b)), field ? `${next.id}.${field}` : undefined)}
-        />
+        <WebsiteDocContext.Provider value={draft}>
+          <BlockEditor
+            block={block}
+            brandColors={server.brandColors}
+            onChange={(next, field) => setPageBlocks((blocks) => blocks.map((b) => (b.id === next.id ? next : b)), field ? `${next.id}.${field}` : undefined)}
+          />
+        </WebsiteDocContext.Provider>
       </fieldset>
     </div>
   ) : (

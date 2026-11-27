@@ -75,12 +75,28 @@ export interface InstagramBlock extends BlockBase {
 }
 export interface SpacerBlock extends BlockBase { type: 'spacer'; divider: boolean }
 export interface DividerBlock extends BlockBase { type: 'divider'; width: 'full' | 'short'; spacing: 'none' | 'small' | 'medium' | 'large' }
+/** Where a button or menu item leads (backend document.js linkTarget). */
+export type LinkTarget =
+  | { kind: 'page'; pageId: string }
+  | { kind: 'anchor'; pageId: string; blockId: string }
+  | { kind: 'booking' }
+  | { kind: 'legal'; slug: 'impressum' | 'datenschutz' | 'agb' }
+  | { kind: 'url'; url: string };
+// `answer`: sanitised HTML from the rich text editor.
+export interface FaqBlock extends BlockBase { type: 'faq'; heading: string; items: { question: string; answer: string }[] }
+export type StepIcon = 'camera' | 'calendar' | 'chat' | 'heart' | 'image' | 'star' | 'gift' | 'check' | 'email';
+export interface StepsBlock extends BlockBase { type: 'steps'; heading: string; items: { title: string; text: string; icon: StepIcon | null }[] }
+export interface CtaBlock extends BlockBase { type: 'cta'; heading: string; text: string; buttons: { label: string; target: LinkTarget | null }[] }
+export interface LogosBlock extends BlockBase { type: 'logos'; heading: string; grayscale: boolean; items: { image: ImageRef | null; url: string }[] }
+export type SocialNetwork = 'instagram' | 'facebook' | 'tiktok' | 'youtube' | 'pinterest' | 'linkedin' | 'website' | 'email';
+export interface SocialBlock extends BlockBase { type: 'social'; heading: string; links: { network: SocialNetwork; url: string }[] }
 // `legacy`: the imported single-page site, rendered in its old containers.
 export interface CustomHtmlBlock extends BlockBase { type: 'customHtml'; html: string; legacy?: boolean }
 
 export type Block =
   | HeroBlock | TextBlock | ImageTextBlock | GalleryBlock | FeaturedGalleriesBlock | TestimonialsBlock
-  | PricingBlock | ContactBlock | BookingBlock | InstagramBlock | SpacerBlock | DividerBlock | CustomHtmlBlock;
+  | PricingBlock | ContactBlock | BookingBlock | InstagramBlock | SpacerBlock | DividerBlock
+  | FaqBlock | StepsBlock | CtaBlock | LogosBlock | SocialBlock | CustomHtmlBlock;
 
 export type BlockType = Block['type'];
 

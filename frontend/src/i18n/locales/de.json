@@ -13202,7 +13202,38 @@
       "openBooking": "Buchungsseite öffnen",
       "bookingSettings": "Buchungseinstellungen",
       "bookingService": "Leistung",
-      "bookingAnyService": "Besucher wählen selbst"
+      "bookingAnyService": "Besucher wählen selbst",
+      "headingOptional": "Überschrift (optional)",
+      "faqItem": "Frage {{n}}",
+      "removeFaqItem": "Frage {{n}} entfernen",
+      "question": "Frage",
+      "answer": "Antwort",
+      "addFaqItem": "Frage hinzufügen",
+      "step": "Schritt {{n}}",
+      "removeStep": "Schritt {{n}} entfernen",
+      "stepTitle": "Titel",
+      "stepText": "Kurzer Text",
+      "icon": "Symbol",
+      "iconNumber": "Die Nummer",
+      "addStep": "Schritt hinzufügen",
+      "stepsHint": "Drei bis fünf Schritte lesen sich am besten; zwei bis acht sind möglich.",
+      "ctaButton": "Knopf {{n}}",
+      "removeCtaButton": "Knopf {{n}} entfernen",
+      "addCtaButton": "Knopf hinzufügen",
+      "logo": "Logo {{n}}",
+      "removeLogo": "Logo {{n}} entfernen",
+      "logoImage": "Logo",
+      "logoLink": "Link (optional)",
+      "addLogo": "Logo hinzufügen",
+      "logosHint": "Laden Sie Logos als PNG oder WebP mit transparentem Hintergrund hoch; sie werden höchstens 56 Pixel hoch gezeigt.",
+      "grayscale": "Logos grau zeigen, farbig beim Darüberfahren",
+      "removeSocial": "{{name}} entfernen",
+      "network": "Netzwerk",
+      "socialEmail": "E-Mail-Adresse",
+      "socialUrl": "Profiladresse",
+      "socialEmailBad": "Geben Sie eine E-Mail-Adresse ein",
+      "socialUrlBad": "Mit https:// beginnen",
+      "addSocial": "Link hinzufügen"
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",
@@ -13211,7 +13242,13 @@
       "testimonialsHeading": "Was Kundinnen und Kunden sagen",
       "pricingHeading": "Pakete",
       "contactHeading": "Kontakt aufnehmen",
-      "bookingHeading": "Termin buchen"
+      "bookingHeading": "Termin buchen",
+      "faqHeading": "Fragen und Antworten",
+      "stepsHeading": "So läuft es ab",
+      "step1": "Kontakt aufnehmen",
+      "step2": "Das Shooting",
+      "step3": "Ihre Galerie",
+      "ctaHeading": "Bereit, wenn Sie es sind"
     },
     "pages": {
       "newTitle": "Neue Seite",
@@ -13382,7 +13419,28 @@
       "anchorCopied": "Link kopiert. Fügen Sie ihn als Link einer Schaltfläche oder im Text ein.",
       "anchorCopyFailed": "Der Link konnte nicht kopiert werden.",
       "divider": {
-        "name": "Trennlinie"
+        "name": "Trennlinie",
+        "description": "Eine Linie zwischen zwei Blöcken, mit Abstand darum."
+      },
+      "faq": {
+        "name": "Fragen und Antworten",
+        "description": "Fragen, die Besucher mit einem Klick öffnen, ohne Skript."
+      },
+      "steps": {
+        "name": "Ablauf",
+        "description": "Wie die Zusammenarbeit abläuft, in nummerierten Schritten."
+      },
+      "cta": {
+        "name": "Handlungsaufruf",
+        "description": "Eine Überschrift, ein Satz und ein oder zwei Knöpfe."
+      },
+      "logos": {
+        "name": "Logos",
+        "description": "Logos von Kunden oder Medien, auf Wunsch verlinkt."
+      },
+      "social": {
+        "name": "Social-Media-Links",
+        "description": "Ihre Profile als Symbole: Instagram, Facebook, TikTok und mehr."
       }
     },
     "saved": "Entwurf gespeichert",
@@ -13435,7 +13493,12 @@
       "medium": "Mittel",
       "large": "Gross",
       "default": "Standard",
-      "thin": "Dünne Linie"
+      "thin": "Dünne Linie",
+      "boxed": "In Kästen",
+      "numbers": "Nummern",
+      "icons": "Symbole",
+      "centered": "Zentriert",
+      "buttons": "Mit Namen"
     },
     "conflictReload": "Neueste Version laden",
     "conflict": "Jemand anderes hat die Website gespeichert, seit Sie sie geöffnet haben, deshalb wurden Ihre Änderungen nicht gespeichert. Laden Sie die neueste Version, um dort weiterzuarbeiten; Ihre ungespeicherten Änderungen hier gehen dabei verloren.",
@@ -13455,6 +13518,32 @@
       "hint": "Werden im Design der Website gezeigt, solange sie online ist; die Galerien verlinken dieselben Seiten.",
       "legal": "Rechtliche Seiten",
       "system": "Systemseiten"
+    },
+    "icons": {
+      "chat": "Sprechblase",
+      "calendar": "Kalender",
+      "camera": "Kamera",
+      "image": "Bild",
+      "heart": "Herz",
+      "star": "Stern",
+      "gift": "Geschenk",
+      "check": "Häkchen",
+      "email": "Briefumschlag"
+    },
+    "link": {
+      "page": "Eine Seite",
+      "anchor": "Ein Block auf einer Seite",
+      "booking": "Die Buchungsseite",
+      "legal": "Eine rechtliche Seite",
+      "url": "Eine Adresse",
+      "leadsTo": "Führt zu",
+      "none": "Noch nirgends",
+      "whichPage": "Seite",
+      "whichBlock": "Block",
+      "chooseBlock": "Block wählen",
+      "whichLegal": "Rechtliche Seite",
+      "address": "Adresse",
+      "noBlock": "Wählen Sie einen Block, sonst wird der Knopf nicht gezeigt."
     }
   },
   "websiteNotice": {

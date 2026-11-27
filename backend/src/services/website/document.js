@@ -33,6 +33,7 @@ const MAX_CUSTOM_CSS = MAX_CSS_SIZE + DEFAULT_PUBLIC_SITE_CSS.length + 2;
 // route (frontend/src/App.tsx, frontend/nginx.conf, backend/server.js). The
 // list is shared: nginx.conf and the frontend page editor keep copies that
 // __tests__/services/websiteReservedSlugs.test.js holds to this file.
+const { SOCIAL_NETWORKS, STEP_ICONS } = require('./icons');
 const RESERVED_SLUGS = new Set(require('./reservedSlugs.json'));
 // Reserved for pages, but the website renders them in its design while it
 // is live (the CMS legal pages); the app's own page otherwise.
@@ -62,8 +63,18 @@ const BLOCK_VARIANTS = {
   instagram: ['strip', 'grid'],
   spacer: ['small', 'medium', 'large'],
   divider: ['thin', 'medium'],
+  faq: ['list', 'boxed'],
+  steps: ['numbers', 'icons'],
+  cta: ['centered', 'split'],
+  logos: ['strip', 'grid'],
+  social: ['icons', 'buttons'],
   customHtml: ['default'],
 };
+const MAX_STEPS = 8;
+const MAX_CTA_BUTTONS = 2;
+const MAX_SOCIAL_LINKS = 8;
+const MAX_ANSWER = 5000;
+const MAX_CTA_TEXT = 4000;
 const BLOCK_TYPES = Object.keys(BLOCK_VARIANTS);
 
 // Problems found while normalising, with the page and block they are in.
@@ -175,6 +186,47 @@ function idList(value, max, field) {
   return capped(out, max, field);
 }
 
+/**
+ * Where a button or menu item leads: a page, a block on a page (its anchor),
+ * the booking page, a legal page, or an address (safeUrl). Ids only: the
+ * renderer looks the page up when it renders, so a renamed page keeps its
+ * links and a removed one drops them.
+ */
+function linkTarget(value) {
+  if (!value || typeof value !== 'object') return null;
+  const id = (v) => (typeof v === 'string' && ID_PATTERN.test(v) ? v : null);
+  switch (value.kind) {
+  case 'page': return id(value.pageId) ? { kind: 'page', pageId: value.pageId } : null;
+  case 'anchor': return id(value.pageId) && id(value.blockId) ? { kind: 'anchor', pageId: value.pageId, blockId: value.blockId } : null;
+  case 'booking': return { kind: 'booking' };
+  case 'legal': return LEGAL_SLUGS.includes(value.slug) ? { kind: 'legal', slug: value.slug } : null;
+  case 'url': {
+    const url = safeUrl(value.url);
+    return url ? { kind: 'url', url } : null;
+  }
+  default: return null;
+  }
+}
+
+// A social profile: http(s) only; for e-mail an address, as mailto.
+function socialUrl(network, value) {
+  const raw = str(value, 500, 'url');
+  if (network === 'email') {
+    const address = raw.replace(/^mailto:/i, '');
+    return /^[^\s@<>"']{1,64}@[^\s@<>"']{1,190}\.[a-z]{2,}$/i.test(address) ? `mailto:${address}` : '';
+  }
+  const url = safeUrl(raw);
+  return /^https?:\/\//i.test(url) ? url : '';
+}
+
+function rich(value, max, field) {
+  // Loaded here, not at the top: richText.js needs this module's safeUrl.
+  const { sanitizeRichText } = require('./richText');
+  return sanitizeRichText(capText(typeof value === 'string' ? value : '', max, field));
+}
+
+const objects = (value, max, field) => (Array.isArray(value) ? capped(value, max, field).filter((x) => x && typeof x === 'object') : []);
+
 function videoRef(value) {
   if (!value || typeof value !== 'object') return null;
   return typeof value.id === 'string' && ASSET_ID_PATTERN.test(value.id) ? { source: 'asset', id: value.id } : null;
@@ -190,17 +242,15 @@ const BLOCK_FIELDS = {
     video: videoRef(b.video),
   }),
   text: (b) => {
-    // Loaded here, not at the top: richText.js needs this module's safeUrl.
-    const { richText, sanitizeRichText } = require('./richText');
-    const rich = (value, field) => sanitizeRichText(capText(typeof value === 'string' ? value : '', MAX_RICH_TEXT, field));
+    const { richText } = require('./richText');
     const html = b.format === 'html';
     return {
       heading: str(b.heading, 200, 'heading'),
       // Older text in the short inline format becomes the HTML it always
       // rendered as (safe by construction), so the page does not change.
-      body: html ? rich(b.body, 'body') : richText(str(b.body, 10000, 'body')),
+      body: html ? rich(b.body, MAX_RICH_TEXT, 'body') : richText(str(b.body, 10000, 'body')),
       // Two columns: the right one, when the editor filled it separately.
-      bodyRight: html && b.variant === 'columns' ? rich(b.bodyRight, 'bodyRight') : '',
+      bodyRight: html && b.variant === 'columns' ? rich(b.bodyRight, MAX_RICH_TEXT, 'bodyRight') : '',
       format: 'html',
     };
   },
@@ -272,6 +322,41 @@ const BLOCK_FIELDS = {
   divider: (b) => ({
     width: pick(b.width, ['full', 'short'], 'full'),
     spacing: pick(b.spacing, ['none', 'small', 'medium', 'large'], 'medium'),
+  }),
+  faq: (b) => ({
+    heading: str(b.heading, 200, 'heading'),
+    items: objects(b.items, MAX_ITEMS, 'items').map((item) => ({
+      question: str(item.question, 300, 'question'),
+      answer: rich(item.answer, MAX_ANSWER, 'answer'),
+    })),
+  }),
+  steps: (b) => ({
+    heading: str(b.heading, 200, 'heading'),
+    items: objects(b.items, MAX_STEPS, 'items').map((item) => ({
+      title: str(item.title, 120, 'title'),
+      text: str(item.text, 400, 'text'),
+      icon: pick(item.icon, STEP_ICONS, null),
+    })),
+  }),
+  cta: (b) => ({
+    heading: str(b.heading, 200, 'heading'),
+    text: rich(b.text, MAX_CTA_TEXT, 'text'),
+    buttons: objects(b.buttons, MAX_CTA_BUTTONS, 'buttons').map((button) => ({
+      label: str(button.label, 60, 'buttonLabel'),
+      target: linkTarget(button.target),
+    })),
+  }),
+  logos: (b) => ({
+    heading: str(b.heading, 200, 'heading'),
+    grayscale: bool(b.grayscale),
+    items: objects(b.items, MAX_ITEMS, 'items').map((item) => ({ image: imageRef(item.image), url: safeUrl(item.url) })),
+  }),
+  social: (b) => ({
+    heading: str(b.heading, 200, 'heading'),
+    links: objects(b.links, MAX_SOCIAL_LINKS, 'links').map((link) => {
+      const network = pick(link.network, SOCIAL_NETWORKS, null);
+      return network ? { network, url: socialUrl(network, link.url) } : null;
+    }).filter(Boolean),
   }),
   customHtml: (b) => ({
     html: typeof b.html === 'string' ? capText(b.html, MAX_CUSTOM_HTML, 'html') : '',
@@ -493,6 +578,7 @@ module.exports = {
   BLOCK_VARIANTS,
   RESERVED_SLUGS,
   LEGAL_SLUGS,
+  linkTarget,
   normalizeDocument,
   normalizeBlock,
   normalizeSlug,

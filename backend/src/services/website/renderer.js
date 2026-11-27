@@ -21,6 +21,7 @@ const { toDateOnly } = require('../../utils/dateOnly');
 const { escapeCssForStyleElement } = require('../../utils/cssSanitizer');
 const { relativeLuminance, readableTextOn } = require('../../utils/colorContrast');
 const { inline, richText, linkAttrs } = require('./richText');
+const { icon, NETWORK_LABELS } = require('./icons');
 const { brandCssVariables } = require('../../utils/brandCssVariables');
 const { MEDIA_WIDTHS, mediaBase, editorBase, parseRenditionKeys, photoVersion } = require('./media');
 
@@ -389,6 +390,91 @@ function renderInstagram(block, ctx) {
   return section(block, `<div class="pp-wrap"><div class="pp-insta-head">${heading(title)}${profile}</div><div class="${block.variant === 'grid' ? 'pp-grid pp-cols-3' : 'pp-strip'}">${tiles}</div></div>`, ctx);
 }
 
+/**
+ * The address a link target (document.js linkTarget) leads to on this
+ * site, or null when it leads nowhere: a hidden or removed page, a block
+ * no longer on its page, the booking page while booking is off.
+ */
+function targetHref(target, ctx) {
+  if (!target) return null;
+  const page = (id) => ctx.document.pages.find((p) => p.id === id && !p.hidden);
+  switch (target.kind) {
+  case 'page': {
+    const p = page(target.pageId);
+    return p ? pageHref(p) : null;
+  }
+  case 'anchor': {
+    const p = page(target.pageId);
+    if (!p || !p.blocks.some((b) => b.id === target.blockId)) return null;
+    return `${p.id === ctx.page.id ? '' : pageHref(p)}#b-${target.blockId}`;
+  }
+  case 'booking':
+    return ctx.booking && ctx.booking.enabled ? ctx.booking.url : null;
+  case 'legal':
+    return `/${target.slug}`;
+  case 'url':
+    return target.url;
+  default:
+    return null;
+  }
+}
+
+function renderFaq(block, ctx) {
+  // A draft keeps an unfinished question; the page shows only asked ones.
+  const items = block.items.filter((item) => item.question).map((item) => (
+    `<details class="pp-faq__item"><summary>${esc(item.question)}</summary><div class="pp-prose">${item.answer}</div></details>`
+  )).join('');
+  if (!items && !ctx.preview) return '';
+  return section(block, `<div class="pp-wrap pp-narrow">${heading(block.heading)}<div class="pp-faq">${items}</div></div>`, ctx);
+}
+
+function renderSteps(block, ctx) {
+  const items = block.items.filter((item) => item.title || item.text);
+  if (!items.length && !ctx.preview) return '';
+  const steps = items.map((item, index) => {
+    const mark = (block.variant === 'icons' && icon(item.icon, 26)) || String(index + 1);
+    return `<li class="pp-step"><span class="pp-step__mark" aria-hidden="true">${mark}</span>${heading(item.title, 3)}${item.text ? `<p>${inline(item.text)}</p>` : ''}</li>`;
+  }).join('');
+  return section(block, `<div class="pp-wrap">${heading(block.heading)}<ol class="pp-steps" style="--steps:${items.length}">${steps}</ol></div>`, ctx);
+}
+
+function renderCta(block, ctx) {
+  const buttons = block.buttons
+    .map((b, index) => button(b.label, targetHref(b.target, ctx), { secondary: index > 0 }))
+    .filter(Boolean).join('');
+  if (!block.heading && !block.text && !buttons && !ctx.preview) return '';
+  const text = `<div>${heading(block.heading)}${block.text ? `<div class="pp-prose">${block.text}</div>` : ''}</div>`;
+  const actions = buttons ? `<div class="pp-actions">${buttons}</div>` : '';
+  return section(block, `<div class="pp-wrap pp-cta${block.variant === 'split' ? ' pp-cta--split' : ''}">${text}${actions}</div>`, ctx);
+}
+
+function renderLogos(block, ctx) {
+  const items = block.items.map((item) => {
+    const image = resolveImage(item.image, ctx);
+    if (!image) return '';
+    const img = imgTag(image, { alt: item.image.alt, sizes: '160px' });
+    return item.url ? `<a class="pp-logo" href="${esc(item.url)}"${linkAttrs(item.url)}>${img}</a>` : `<span class="pp-logo">${img}</span>`;
+  }).join('');
+  if (!items && !ctx.preview) return '';
+  const cls = `pp-logos pp-logos--${block.variant}${block.grayscale ? ' pp-logos--gray' : ''}`;
+  return section(block, `<div class="pp-wrap">${heading(block.heading)}<div class="${cls}">${items}</div></div>`, ctx);
+}
+
+/** Links to social profiles as icons (also the footer's social column). */
+function socialLinks(links, { labels = false } = {}) {
+  return links.filter((link) => link.url).map((link) => {
+    const name = NETWORK_LABELS[link.network];
+    const label = labels ? `<span>${esc(name)}</span>` : '';
+    return `<a class="pp-social__link" href="${esc(link.url)}"${linkAttrs(link.url)}${labels ? '' : ` aria-label="${esc(name)}"`}>${icon(link.network, 22)}${label}</a>`;
+  }).join('');
+}
+
+function renderSocial(block, ctx) {
+  const links = socialLinks(block.links, { labels: block.variant === 'buttons' });
+  if (!links && !ctx.preview) return '';
+  return section(block, `<div class="pp-wrap pp-center">${heading(block.heading)}<div class="pp-social pp-social--${block.variant}">${links}</div></div>`, ctx);
+}
+
 function renderDivider(block, ctx) {
   return section(block, '<div class="pp-wrap"><hr class="pp-line"></div>', ctx, `pp-divider--${block.width} pp-space-${block.spacing}`);
 }
@@ -421,6 +507,11 @@ const RENDERERS = {
   instagram: renderInstagram,
   spacer: renderSpacer,
   divider: renderDivider,
+  faq: renderFaq,
+  steps: renderSteps,
+  cta: renderCta,
+  logos: renderLogos,
+  social: renderSocial,
   customHtml: renderCustomHtml,
 };
 
@@ -599,6 +690,34 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-spacer.pp-v-small{padding:1.5rem 0}.pp-spacer.pp-v-medium{padding:3rem 0}.pp-spacer.pp-v-large{padding:6rem 0}
 .pp-rule{border:0;border-top:1px solid var(--border);margin:0}
 .pp-customHtml{padding:0}
+.pp-faq{display:grid;gap:.6rem}
+.pp-faq__item{border-bottom:1px solid var(--border);padding:.2rem 0}
+.pp-v-boxed .pp-faq__item{border:1px solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--surface);padding:.2rem 1.1rem}
+.pp-faq__item summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:1rem;padding:.9rem 0;font-weight:600;font-size:1.05rem}
+.pp-faq__item summary::-webkit-details-marker{display:none}
+.pp-faq__item summary::after{content:"+";flex:none;font-weight:400;font-size:1.4rem;line-height:1;color:var(--link)}
+.pp-faq__item[open] summary::after{content:"\u2212"}
+.pp-faq__item .pp-prose{padding:0 0 1rem;color:var(--muted)}
+.pp-steps{list-style:none;margin:0;padding:0;display:grid;gap:2rem}
+@media (min-width:860px){.pp-steps{grid-template-columns:repeat(min(var(--steps),4),1fr)}}
+.pp-step{position:relative}
+.pp-step .pp-h{font-size:1.2rem;margin:.9rem 0 .4rem}
+.pp-step p{margin:0;color:var(--muted)}
+.pp-step__mark{display:inline-flex;align-items:center;justify-content:center;width:3rem;height:3rem;border-radius:50%;border:2px solid var(--accent);color:var(--link);font:600 1.2rem/1 var(--font-heading)}
+.pp-cta{display:grid;gap:1.5rem;justify-items:center;text-align:center;max-width:760px}
+.pp-cta .pp-h{margin-bottom:.5rem}
+.pp-cta--split{max-width:none;text-align:left;justify-items:start}
+@media (min-width:860px){.pp-cta--split{grid-template-columns:1fr auto;align-items:center}}
+.pp-actions{display:flex;flex-wrap:wrap;gap:.8rem;justify-content:center}.pp-cta--split .pp-actions{justify-content:flex-start}
+.pp-logos{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:1.5rem 3rem}
+.pp-logos--grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));justify-items:center}
+.pp-logo{display:block}.pp-logo img{display:block;max-height:56px;max-width:160px;width:auto;height:auto;object-fit:contain}
+.pp-logos--gray .pp-logo img{filter:grayscale(1);opacity:.7;transition:filter .2s,opacity .2s}.pp-logos--gray a.pp-logo:hover img,.pp-logos--gray a.pp-logo:focus-visible img{filter:none;opacity:1}
+.pp-social{display:flex;flex-wrap:wrap;justify-content:center;gap:.8rem}
+.pp-social__link{display:inline-flex;align-items:center;gap:.5rem;min-width:44px;min-height:44px;justify-content:center;color:var(--text);text-decoration:none;border-radius:999px}
+.pp-social--icons .pp-social__link{border:1px solid var(--border)}
+.pp-social--buttons .pp-social__link{padding:.55rem 1.1rem;border:1px solid var(--border);font-weight:600}
+.pp-social__link:hover{color:var(--link);border-color:currentColor}
 .pp-footer{background:var(--surface);border-top:1px solid var(--border);padding:3.5rem 0 2rem;font-size:.95rem}
 .pp-footer__in{display:grid;gap:2rem}
 @media (min-width:760px){.pp-footer__in{grid-template-columns:2fr 1fr 1fr}}

@@ -15,6 +15,7 @@ import {
   BackgroundField, ChoiceField, ImageField, ImageListField, LinkField, RichTextField, TextArea, TextField, VideoField,
 } from './fields';
 import { SearchField, useDebounced } from './search';
+import { CtaButtonsField, FaqItemsField, LogosField, SocialLinksField, StepsField } from './itemForms';
 import { loadFailure } from './loadFailure';
 import type { Block, Testimonial, WebsiteGallery } from './types';
 
@@ -175,6 +176,48 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brand
     break;
   case 'spacer':
     fields = <Switch checked={block.divider} onChange={(divider) => set(block, { divider })} label={t('website.fields.divider', 'Show a line')} />;
+    break;
+  case 'faq':
+    fields = (
+      <>
+        <TextField label={t('website.fields.headingOptional', 'Heading (optional)')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
+        <FaqItemsField value={block.items} onChange={(items, field) => set(block, { items }, field)} />
+      </>
+    );
+    break;
+  case 'steps':
+    fields = (
+      <>
+        <TextField label={t('website.fields.heading', 'Heading')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
+        <StepsField value={block.items} withIcons={block.variant === 'icons'} onChange={(items, field) => set(block, { items }, field)} />
+      </>
+    );
+    break;
+  case 'cta':
+    fields = (
+      <>
+        <TextField label={t('website.fields.heading', 'Heading')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
+        <RichTextField label={t('website.fields.body', 'Text')} value={block.text} onChange={(text) => set(block, { text }, 'text')} />
+        <CtaButtonsField value={block.buttons} onChange={(buttons, field) => set(block, { buttons }, field)} />
+      </>
+    );
+    break;
+  case 'logos':
+    fields = (
+      <>
+        <TextField label={t('website.fields.headingOptional', 'Heading (optional)')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
+        <Switch checked={block.grayscale} onChange={(grayscale) => set(block, { grayscale })} label={t('website.fields.grayscale', 'Show logos in grey, in colour on hover')} />
+        <LogosField value={block.items} onChange={(items, field) => set(block, { items }, field)} />
+      </>
+    );
+    break;
+  case 'social':
+    fields = (
+      <>
+        <TextField label={t('website.fields.headingOptional', 'Heading (optional)')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
+        <SocialLinksField value={block.links} onChange={(links, field) => set(block, { links }, field)} />
+      </>
+    );
     break;
   case 'divider':
     fields = (
