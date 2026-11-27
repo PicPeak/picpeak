@@ -768,16 +768,14 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {!lane && checkbox(`absolute top-2 right-2 z-20 transition-opacity ${checkboxVisibilityClass}`)}
 
           {lane && (
-            <div data-photo-card-lane className="absolute inset-x-2 bottom-2 z-20 flex items-end gap-1.5 pointer-events-none">
-              {/* One row: whatever wraps to a second one is clipped whole.
-                  The empty first item keeps a mark wider than the row from
-                  sitting cut on the first line; it wraps away instead. */}
-              <div data-lane-marks className="flex min-w-0 flex-1 flex-wrap content-start items-center gap-1 h-8 overflow-hidden">
+            <div data-photo-card-lane className="absolute inset-x-2 bottom-2 z-20 flex items-center gap-1.5 pointer-events-none">
+              {/* Decorative marks only. One row: whatever wraps to a second
+                  one is clipped whole. The empty first item keeps a mark wider
+                  than the row from sitting cut on the first line; it wraps
+                  away instead. Small marks first: the row drops everything
+                  after the first mark that does not fit. */}
+              <div data-lane-marks className="flex min-w-0 flex-1 basis-0 flex-wrap content-start items-center gap-1 h-8 overflow-hidden">
                 <span aria-hidden="true" className="w-0 h-8" />
-                {topLeftControl && <span className="flex pointer-events-auto">{topLeftControl}</span>}
-                <PhotoPurchaseBadge photo={photo} className="relative bottom-auto left-auto" />
-                {/* The small marks ahead of the wide pills: a row drops
-                    everything after the first mark that does not fit. */}
                 {laneMarks}
                 <ColorLabelBadge
                   colorLabel={photo.my_color_label}
@@ -789,13 +787,23 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                 <FolderHintPill photo={photo} className="relative" />
                 {topLeftExtras}
               </div>
+              {/* Like and download, which the lightbox offers too: on a tile
+                  too narrow for them they drop whole, download first. */}
+              {!isSelectionMode && (
+                <div
+                  data-lane-actions
+                  className={`${laneShown(overlayVisible || downloadPending)} min-w-0 flex-wrap content-start items-center justify-end gap-1 h-8 overflow-hidden pointer-events-auto`}
+                >
+                  <span aria-hidden="true" className="w-0 h-8" />
+                  {likeBeforeComment ? <>{likeButton}{commentButton}</> : <>{commentButton}{likeButton}</>}
+                  {downloadButton}
+                </div>
+              )}
+              {/* The controls that have no other home on the page: never
+                  dropped. At most 28 + 32 + 32 px, which a 130 px tile holds. */}
               <div data-lane-controls className="flex shrink-0 items-center gap-1 pointer-events-auto">
-                {!isSelectionMode && (
-                  <div data-lane-actions className={`${laneShown(overlayVisible || downloadPending)} items-center gap-1`}>
-                    {downloadButton}
-                    {likeBeforeComment ? <>{likeButton}{commentButton}</> : <>{commentButton}{likeButton}</>}
-                  </div>
-                )}
+                {topLeftControl}
+                <PhotoPurchaseBadge photo={photo} compact className="relative bottom-auto left-auto" />
                 {checkbox(`p-1 ${laneShown(isSelected || isSelectionMode || overlayVisible)}`)}
               </div>
             </div>

@@ -67,13 +67,12 @@ function renderCard(props: Partial<React.ComponentProps<typeof PhotoCard>> = {})
 const lane = () => document.querySelector('[data-photo-card-lane]') as HTMLElement;
 const marks = () => lane().querySelector('[data-lane-marks]') as HTMLElement;
 const controls = () => lane().querySelector('[data-lane-controls]') as HTMLElement;
+const actions = () => lane().querySelector('[data-lane-actions]') as HTMLElement;
 
 describe('PhotoCard lane mode', () => {
-  it('puts every mark into the lane, from the left', () => {
+  it('puts every decorative mark into the lane, from the left', () => {
     renderCard();
     const inMarks = within(marks());
-    expect(inMarks.getByRole('button', { name: 'Hide from guests' })).toBeInTheDocument();
-    expect(inMarks.getByRole('button', { name: /Add photo to cart/ })).toBeInTheDocument();
     expect(inMarks.getByTestId('first-look-badge')).toBeInTheDocument();
     expect(inMarks.getByTestId('folder-hint')).toBeInTheDocument();
     expect(inMarks.getByTestId('video-mark')).toBeInTheDocument();
@@ -83,18 +82,38 @@ describe('PhotoCard lane mode', () => {
     }
   });
 
+  it('keeps every control out of the part of the lane that drops what does not fit', () => {
+    renderCard();
+    // Only decorative marks may drop out of the row.
+    expect(marks().querySelectorAll('button, a, input, [tabindex]')).toHaveLength(0);
+    // The client's toggle, the cart and the checkbox are never dropped.
+    const essential = within(controls());
+    expect(essential.getByRole('button', { name: 'Hide from guests' })).toBeInTheDocument();
+    expect(essential.getByRole('button', { name: /Add photo to cart for/ })).toBeInTheDocument();
+    expect(essential.getByRole('checkbox')).toBeInTheDocument();
+    expect(controls()).toHaveClass('shrink-0');
+    expect(controls()).not.toHaveClass('overflow-hidden');
+  });
+
+  it('shows the cart as one 32 px button, the price in its name', () => {
+    renderCard();
+    const cart = within(controls()).getByRole('button', { name: /Add photo to cart for/ });
+    expect(cart).toHaveClass('w-8', 'h-8');
+    expect(cart.textContent).toBe('');
+  });
+
   it('drops a mark that does not fit whole, never cutting one', () => {
     renderCard();
     // One row high; what wraps to a second row is clipped out entirely.
     expect(marks()).toHaveClass('flex-wrap', 'h-8', 'overflow-hidden', 'min-w-0');
   });
 
-  it('puts the actions and the checkbox at the right end, and nothing at the corners', () => {
+  it('puts the lightbox\'s actions between, dropped whole when there is no room, and nothing at the corners', () => {
     renderCard();
-    const inControls = within(controls());
-    expect(inControls.getByRole('button', { name: 'Like photo' })).toBeInTheDocument();
-    expect(inControls.getByRole('checkbox')).toBeInTheDocument();
-    expect(controls()).toHaveClass('shrink-0');
+    // Like and download are also in the lightbox, so on a tile too narrow
+    // for them they drop out like the marks, like last.
+    expect(within(actions()).getByRole('button', { name: 'Like photo' })).toBeInTheDocument();
+    expect(actions()).toHaveClass('flex-wrap', 'h-8', 'overflow-hidden', 'min-w-0');
     // Nothing of the card is placed at a corner outside the lane.
     const placed = Array.from(document.querySelectorAll('.tile *'))
       .filter((el) => /\b(top|bottom|left|right)-\d/.test(el.getAttribute('class') || ''))
@@ -115,7 +134,7 @@ describe('PhotoCard lane mode', () => {
 
   it('shows the actions only while the tile is revealed, so at rest the marks have the row', () => {
     renderCard();
-    expect(controls().querySelector('[data-lane-actions]')).toHaveClass('hidden');
+    expect(actions()).toHaveClass('hidden');
   });
 
   it('leaves the other layouts\' card as it was', () => {
