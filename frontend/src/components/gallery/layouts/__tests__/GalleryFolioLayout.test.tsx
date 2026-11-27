@@ -201,14 +201,33 @@ describe('Gallery Folio', () => {
     expect(onDeselectAll).toHaveBeenCalledTimes(1);
   });
 
-  it('puts upload and logout in the nav, logout last', () => {
-    const onUploadClick = vi.fn();
-    const onLogout = vi.fn();
-    mount({ onUploadClick, onLogout });
-    fireEvent.click(nav().getByRole('button', { name: 'Upload Photos' }));
-    expect(onUploadClick).toHaveBeenCalledTimes(1);
-    const buttons = nav().getAllByRole('button');
-    expect(buttons.at(-1)).toHaveAccessibleName('Logout');
+  it('keeps select, likes and download in the nav row and puts the rest in a menu on a phone', () => {
+    const handlers = { onUploadClick: vi.fn(), onLogout: vi.fn(), onManageGallery: vi.fn(), onCopyFilenames: vi.fn() };
+    mount({
+      ...handlers, ...likes, copyFilenamesCount: 2, onDownloadEverything: vi.fn(),
+      onToggleSelectionMode: vi.fn(), onPhotoSelect: vi.fn(),
+    });
+    // Inline from 640 px up; the stylesheet hides these below that.
+    for (const name of ['Upload Photos', 'Copy filenames (2)', 'Manage Gallery', 'Logout']) {
+      expect(nav().getByRole('button', { name })).toHaveClass('folio-nav-secondary');
+    }
+    for (const id of ['folio-nav-select', 'folio-nav-liked', 'folio-nav-download-all']) {
+      expect(nav().getByTestId(id)).not.toHaveClass('folio-nav-secondary');
+    }
+    // The phone's menu offers the same actions, logout last.
+    fireEvent.click(nav().getByRole('button', { name: 'More actions' }));
+    const items = within(screen.getByRole('menu')).getAllByRole('menuitem');
+    expect(items.map((item) => item.textContent)).toEqual(['Upload Photos', 'Copy filenames (2)', 'Manage Gallery', 'Logout']);
+    fireEvent.click(items[0]);
+    expect(handlers.onUploadClick).toHaveBeenCalledTimes(1);
+    fireEvent.click(nav().getByRole('button', { name: 'More actions' }));
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Logout' }));
+    expect(handlers.onLogout).toHaveBeenCalledTimes(1);
+  });
+
+  it('has no menu when there is nothing secondary to put in it', () => {
+    mount();
+    expect(nav().queryByRole('button', { name: 'More actions' })).toBeNull();
   });
 
   it('keeps the toolbox and says why when a filter leaves nothing', () => {

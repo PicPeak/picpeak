@@ -8,7 +8,7 @@ import { ArrowDown, CheckSquare, ClipboardList, Download, Heart, LogOut, Package
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
-import { AuthenticatedImage, PoweredBy } from '../../common';
+import { ActionMenu, AuthenticatedImage, PoweredBy, type ActionMenuItem } from '../../common';
 import { PhotoCard } from '../PhotoCard';
 import { BackToAccountLink } from '../BackToAccountLink';
 import { BulkRatingPopover } from '../BulkRatingPopover';
@@ -273,6 +273,17 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
   const manageLabel = isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery');
   const likedLabel = `${t('gallery.showLikedOnly', 'Show only photos I liked')}${likedPhotoIds.size > 0 ? ` (${likedPhotoIds.size})` : ''}`;
   const copyLabel = `${t('gallery.copyFilenames.button', 'Copy filenames')} (${copyFilenamesCount})`;
+  // The phone's menu: the same secondary actions as the row, logout last.
+  const secondaryActions: ActionMenuItem[] = [
+    ...(onUploadClick ? [{ key: 'upload', label: uploadLabel, icon: <Upload />, onSelect: onUploadClick }] : []),
+    ...(onCopyFilenames && copyFilenamesCount > 0
+      ? [{ key: 'filenames', label: copyLabel, icon: <ClipboardList />, onSelect: onCopyFilenames }]
+      : []),
+    ...(onManageGallery
+      ? [{ key: 'manage', label: manageLabel, icon: <Shield />, disabled: clientModeBusy, onSelect: onManageGallery }]
+      : []),
+    ...(onLogout ? [{ key: 'logout', label: t('common.logout', 'Logout'), icon: <LogOut />, onSelect: onLogout }] : []),
+  ];
 
   return (
     <div
@@ -325,11 +336,13 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
           <div className="folio-nav-actions">
             <PhotoSalesCartButton />
             {/* Guest upload: no gallery header here, which is where the
-                other layouts offer it. */}
+                other layouts offer it. The secondary actions (upload, copy
+                filenames, manage, logout) stay in the row from 640 px and
+                move into the menu at the end below that. */}
             {onUploadClick && (
               <button
                 type="button"
-                className="folio-nav-btn"
+                className="folio-nav-btn folio-nav-secondary"
                 onClick={onUploadClick}
                 aria-label={uploadLabel}
                 title={uploadLabel}
@@ -376,7 +389,7 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
             {onCopyFilenames && copyFilenamesCount > 0 && (
               <button
                 type="button"
-                className="folio-nav-btn"
+                className="folio-nav-btn folio-nav-secondary"
                 onClick={onCopyFilenames}
                 aria-label={copyLabel}
                 title={copyLabel}
@@ -401,7 +414,7 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
             {onManageGallery && (
               <button
                 type="button"
-                className="folio-nav-btn"
+                className="folio-nav-btn folio-nav-secondary"
                 onClick={onManageGallery}
                 disabled={clientModeBusy}
                 aria-label={manageLabel}
@@ -414,7 +427,7 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
             {onLogout && (
               <button
                 type="button"
-                className="folio-nav-btn folio-nav-logout"
+                className="folio-nav-btn folio-nav-secondary folio-nav-logout"
                 onClick={onLogout}
                 aria-label={t('common.logout', 'Logout')}
                 title={t('common.logout', 'Logout')}
@@ -422,6 +435,7 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
                 <LogOut className="w-4 h-4" aria-hidden="true" />
               </button>
             )}
+            <ActionMenu className="folio-nav-more" items={secondaryActions} />
           </div>
         </div>
 

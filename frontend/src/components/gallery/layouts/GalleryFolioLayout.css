@@ -253,9 +253,13 @@
 
 .folio-nav-actions {
   display: flex;
-  flex-shrink: 0;
   align-items: center;
-  gap: 0.125rem;
+  gap: 0;
+}
+
+/* The way back to the account keeps its whole hit area; the label gives way. */
+.folio-nav-back {
+  flex-shrink: 0;
 }
 
 .folio-nav-btn {
@@ -281,6 +285,39 @@
 
 .folio-nav-btn:hover {
   background-color: var(--color-elevated);
+}
+
+/* Below 640 px these move into the menu (.folio-nav-more). */
+.folio-nav-secondary {
+  display: none;
+}
+
+.folio-nav-more > button {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-text);
+}
+
+.folio-nav-more > button:hover {
+  background-color: var(--color-elevated);
+}
+
+@media (min-width: 640px) {
+  .folio-nav-actions {
+    gap: 0.125rem;
+  }
+
+  .folio-nav-secondary {
+    display: inline-flex;
+  }
+
+  .folio-nav-more {
+    display: none;
+  }
 }
 
 .folio-nav-btn.is-active {

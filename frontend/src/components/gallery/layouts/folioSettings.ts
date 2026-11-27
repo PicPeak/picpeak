@@ -111,6 +111,12 @@ export function folioPaletteStyle(palette: FolioPalette): CSSProperties {
     // tuned for their own page and can vanish on charcoal.
     '--accent-text': colors.text,
     '--color-accent-text': colors.text,
+    // The shared primitives inside (the nav's menu) read the UI tokens.
+    '--ui-panel': colors.surface,
+    '--ui-hover': colors.elevated,
+    '--ui-line': colors.border,
+    '--ui-text-body': colors.text,
+    '--ui-text-heading': colors.text,
     backgroundColor: colors.background,
     color: colors.text,
   } as CSSProperties;
