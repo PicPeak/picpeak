@@ -242,15 +242,28 @@ function faceTierWidth(
   return smallestCovering(Math.round(avatarDevicePx / faceShareOfFrame), PREVIEW_WIDTHS);
 }
 
+/**
+ * The `e=` an admin preview URL carries (issue 2619): the photo's applied
+ * edit revision, as the admin listings give it. The preview route keeps an
+ * answer only under that revision, so a preview cut before an edit landed
+ * is never combined with the edit's face boxes or focal point. Empty for a
+ * photo never edited.
+ */
+export function adminPreviewEditQuery(editAppliedRev?: number | null): string {
+  return editAppliedRev && editAppliedRev > 0 ? `e=${editAppliedRev}` : '';
+}
+
 /** Admin equivalent — the admin API has its own preview route. */
 export function adminFacePreviewUrl(
   eventId: number | string,
   photoId: number | string,
   photo?: { width?: number | null; height?: number | null },
   cover?: { bbox: number[] } | null,
+  editAppliedRev?: number | null,
 ): string {
   const width = photo ? faceTierWidth(photo, cover) : FACE_CROP_WIDTH;
-  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${width}`;
+  const edit = adminPreviewEditQuery(editAppliedRev);
+  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${width}${edit ? `&${edit}` : ''}`;
 }
 
 /**
@@ -342,7 +355,9 @@ export function adminPhotoPreviewUrl(
   eventId: number | string,
   photoId: number | string,
   width: number = PREVIEW_WIDTHS[PREVIEW_WIDTHS.length - 1],
+  editAppliedRev?: number | null,
 ): string {
-  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${width}`;
+  const edit = adminPreviewEditQuery(editAppliedRev);
+  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${width}${edit ? `&${edit}` : ''}`;
 }
 

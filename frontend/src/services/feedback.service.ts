@@ -133,6 +133,8 @@ export interface PhotoFeedback {
   photo_filename?: string;
   /** The admin list's tile URL, versioned like the photo grid's. */
   thumbnail_url?: string;
+  /** The photo's applied edit revision (issue 2619): admin preview URLs name it. */
+  edit_applied_rev?: number;
   is_mine?: boolean;
 }
 

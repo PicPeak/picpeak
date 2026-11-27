@@ -139,7 +139,10 @@ async function refocusFromFaces(photo) {
  * Unedited photos are returned as they are.
  */
 function faceBoxForGuests(row) {
-  const box = { bbox: [row.bbox_x, row.bbox_y, row.bbox_w, row.bbox_h], photo_width: row.photo_width ?? null, photo_height: row.photo_height ?? null };
+  // The applied revision names the preview the box is to be cut from (the
+  // admin preview URL's `e=`), so no older cached preview meets new boxes.
+  const version = { edit_applied_rev: Number(row.edit_applied_rev) || 0 };
+  const box = { bbox: [row.bbox_x, row.bbox_y, row.bbox_w, row.bbox_h], photo_width: row.photo_width ?? null, photo_height: row.photo_height ?? null, ...version };
   const edit = require('./photoEdits').paramsOf(row);
   const width = Number(row.photo_width);
   const height = Number(row.photo_height);
@@ -153,7 +156,7 @@ function faceBoxForGuests(row) {
   const sy = delivered.height / moved.height;
   return {
     bbox: [round(face.x * sx), round(face.y * sy), round(face.w * sx), round(face.h * sy)],
-    photo_width: delivered.width, photo_height: delivered.height,
+    photo_width: delivered.width, photo_height: delivered.height, ...version,
   };
 }
 

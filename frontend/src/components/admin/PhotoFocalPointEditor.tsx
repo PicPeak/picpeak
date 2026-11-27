@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Badge, Button, Modal, Notice } from '../common';
 import { photosService, type AdminPhoto } from '../../services/photos.service';
 import { FocalPointPicker } from './FocalPointPicker';
+import { adminPreviewEditQuery } from '../gallery/imageTiers';
 
 interface PhotoFocalPointEditorProps {
   open: boolean;
@@ -107,7 +108,7 @@ export const PhotoFocalPointEditor: React.FC<PhotoFocalPointEditorProps> = ({ op
           {status}
         </p>
         <FocalPointPicker
-          imageUrl={`/admin/photos/${eventId}/preview/${photo.id}`}
+          imageUrl={`/admin/photos/${eventId}/preview/${photo.id}${adminPreviewEditQuery(photo.edit_applied_rev) ? `?${adminPreviewEditQuery(photo.edit_applied_rev)}` : ''}`}
           currentValue={draft}
           onChange={setDraft}
           aspectRatio={aspectRatio}

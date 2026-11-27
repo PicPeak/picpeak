@@ -636,7 +636,8 @@ describe('face covers of an edited photo delivered smaller', () => {
     await db('photo_faces').insert({ photo_id: id, event_id: eventId, person_id: person, bbox_x: 100, bbox_y: 100, bbox_w: 60, bbox_h: 80, det_score: 0.9 });
     const list = await require('../../src/services/facePeopleService').listPeople(eventId, { forAdmin: true, minClusterSize: 1 });
     // In the 400 x 600 edit the box is [220, 100, 80, 60]; delivered at 200 x 300 it is half that.
-    expect(list.find((p) => p.label === 'Capped').cover).toMatchObject({ bbox: [110, 50, 40, 30], photo_width: 200, photo_height: 300 });
+    // With the applied revision, which names the preview the box belongs to.
+    expect(list.find((p) => p.label === 'Capped').cover).toMatchObject({ bbox: [110, 50, 40, 30], photo_width: 200, photo_height: 300, edit_applied_rev: 1 });
   });
 });
 

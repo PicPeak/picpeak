@@ -93,6 +93,11 @@ describe('PhotoFocalPointEditor', () => {
     expect(image.style.objectPosition).toBe('80% 40%');
     expect(screen.getByTestId('focal-point-picker').style.aspectRatio).toBe('2');
     expect(screen.getByText('admin.photos.focalPoint.isAuto')).toBeInTheDocument();
+  });
+
+  it('asks for the preview of the applied edit revision (issue 2619), so no cached pre-edit preview is used', () => {
+    renderEditor({ ...detected, edit_applied_rev: 3 } as AdminPhoto);
+    expect(screen.getByRole('img', { name: 'couple.jpg' })).toHaveAttribute('src', '/admin/photos/42/preview/7?e=3');
     // Nothing set by hand: nothing to go back from.
     expect(screen.getByRole('button', { name: 'admin.photos.focalPoint.useAuto' })).toBeDisabled();
   });

@@ -22,7 +22,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-import { facePreviewUrl, adminFacePreviewUrl, FACE_CROP_WIDTH } from '../imageTiers';
+import { facePreviewUrl, adminFacePreviewUrl, adminPhotoPreviewUrl, FACE_CROP_WIDTH } from '../imageTiers';
 
 describe('face avatars use a whole-frame rendition', () => {
   const photo = { id: 42, preview_url: '/api/gallery/wed/preview/42' };
@@ -39,6 +39,14 @@ describe('face avatars use a whole-frame rendition', () => {
     // person — pulling the full tier for each would be its own problem.
     expect(facePreviewUrl('wed', photo)).toBe(`/api/gallery/wed/preview/42?w=${FACE_CROP_WIDTH}`);
     expect(adminFacePreviewUrl(7, 42)).toBe(`/api/admin/photos/7/preview/42?w=${FACE_CROP_WIDTH}`);
+  });
+
+  it('names the applied edit revision in the admin previews (issue 2619)', () => {
+    // The face boxes are in the edited image; an older preview cached under
+    // an unversioned URL would put them on the unedited one.
+    expect(adminFacePreviewUrl(7, 42, undefined, null, 3)).toBe(`/api/admin/photos/7/preview/42?w=${FACE_CROP_WIDTH}&e=3`);
+    expect(adminPhotoPreviewUrl(7, 42, 1920, 3)).toBe('/api/admin/photos/7/preview/42?w=1920&e=3');
+    expect(adminPhotoPreviewUrl(7, 42, 1920, 0)).toBe('/api/admin/photos/7/preview/42?w=1920');
   });
 
   it('prefers the served preview_url so a watermark query survives', () => {

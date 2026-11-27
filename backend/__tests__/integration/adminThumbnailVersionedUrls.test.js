@@ -117,4 +117,14 @@ describe('versioned admin thumbnail URLs (issue 2276)', () => {
       await db('photos').where({ id: photoId }).update({ processing_error: null });
     }
   });
+
+  it('a feedback row names its photo\'s applied edit revision, for the annotation preview (issue 2619)', async () => {
+    await db('photos').where({ id: photoId }).update({ edit_applied_rev: 4, edit_rev: 4 });
+    try {
+      const res = await request(app).get(`/api/admin/feedback/events/${eventId}/feedback`);
+      expect(res.body.feedback.find((row) => row.photo_id === photoId).edit_applied_rev).toBe(4);
+    } finally {
+      await db('photos').where({ id: photoId }).update({ edit_applied_rev: 0, edit_rev: 0 });
+    }
+  });
 });

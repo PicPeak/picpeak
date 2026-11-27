@@ -107,7 +107,7 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, fullVie
       'photos.height as photo_height',
       // An edited photo's preview shows the edit (issue 2619): the box is
       // carried into the edited image below.
-      'photos.edit_params', 'photos.edit_width', 'photos.edit_height'
+      'photos.edit_params', 'photos.edit_width', 'photos.edit_height', 'photos.edit_applied_rev'
     );
   // Boxes in the image the avatar is cut from; a face an edit cropped away
   // is no cover (the next best one is).

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { ImageAnnotationOverlay } from '../gallery/annotation/ImageAnnotationOverlay';
 import { parseAnnotation } from '../../utils/photoAnnotation';
+import { adminPreviewEditQuery } from '../gallery/imageTiers';
 
 interface AnnotatedPhotoPreviewProps {
   eventId: string | number;
@@ -11,6 +12,8 @@ interface AnnotatedPhotoPreviewProps {
   annotation: unknown;
   alt: string;
   className?: string;
+  /** The photo's applied edit revision, as the feedback list gives it (issue 2619). */
+  editAppliedRev?: number | null;
 }
 
 /**
@@ -25,6 +28,7 @@ export const AnnotatedPhotoPreview: React.FC<AnnotatedPhotoPreviewProps> = ({
   annotation,
   alt,
   className = '',
+  editAppliedRev,
 }) => {
   const { t } = useTranslation();
   if (!parseAnnotation(annotation)) return null;
@@ -34,7 +38,7 @@ export const AnnotatedPhotoPreview: React.FC<AnnotatedPhotoPreviewProps> = ({
       data-testid="annotated-photo-preview"
     >
       <AdminAuthenticatedImage
-        src={`/admin/photos/${eventId}/preview/${photoId}`}
+        src={`/admin/photos/${eventId}/preview/${photoId}${adminPreviewEditQuery(editAppliedRev) ? `?${adminPreviewEditQuery(editAppliedRev)}` : ''}`}
         alt={alt}
         className="max-w-full max-h-full object-contain"
       />

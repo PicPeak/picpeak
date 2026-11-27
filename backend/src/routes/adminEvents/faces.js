@@ -57,7 +57,7 @@ function buildPersonFacesQuery(dbi, eventId, personId) {
       // Needed to crop the box — it is in original-image pixels.
       'photos.width as photo_width', 'photos.height as photo_height',
       // And the edit (issue 2619), whose preview the crop is cut from.
-      'photos.edit_params', 'photos.edit_width', 'photos.edit_height'
+      'photos.edit_params', 'photos.edit_width', 'photos.edit_height', 'photos.edit_applied_rev'
     );
 }
 

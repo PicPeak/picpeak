@@ -44,6 +44,8 @@ interface AdminPerson {
     bbox: [number, number, number, number];
     photo_width: number | null;
     photo_height: number | null;
+    /** Names the preview the box belongs to (issue 2619). */
+    edit_applied_rev?: number;
   } | null;
 }
 
@@ -53,6 +55,7 @@ interface PersonFace {
   bbox: [number, number, number, number];
   photo_width: number | null;
   photo_height: number | null;
+  edit_applied_rev?: number;
   score: number | null;
   blur: number | null;
 }
@@ -89,9 +92,10 @@ const FaceThumb: React.FC<{
   bbox?: [number, number, number, number] | null;
   photoWidth?: number | null;
   photoHeight?: number | null;
+  editAppliedRev?: number;
   size?: number;
   dim?: boolean;
-}> = ({ eventId, photoId, bbox, photoWidth, photoHeight, size = 64, dim }) => {
+}> = ({ eventId, photoId, bbox, photoWidth, photoHeight, editAppliedRev, size = 64, dim }) => {
   // Crop to the face rather than showing the centred thumbnail. On a group
   // photo the uncropped version shows whoever stands in the middle, so two
   // different people whose cover is the same photo looked IDENTICAL here —
@@ -110,7 +114,7 @@ const FaceThumb: React.FC<{
       style={{ width: size, height: size, opacity: dim ? 0.4 : 1 }}
     >
       <img
-        src={adminFacePreviewUrl(eventId, photoId)}
+        src={adminFacePreviewUrl(eventId, photoId, undefined, null, editAppliedRev)}
         alt=""
         loading="lazy"
         style={style || { width: '100%', height: '100%', objectFit: 'cover' }}
@@ -149,7 +153,7 @@ const FaceInContext: React.FC<{
         style={{ aspectRatio: `${face.photo_width || 1} / ${face.photo_height || 1}` }}
       >
         <img
-          src={adminPhotoPreviewUrl(eventId, face.photo_id)}
+          src={adminPhotoPreviewUrl(eventId, face.photo_id, undefined, face.edit_applied_rev)}
           alt=""
           className="block w-full h-full object-contain"
         />
@@ -506,6 +510,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                   bbox={face.bbox}
                   photoWidth={face.photo_width}
                   photoHeight={face.photo_height}
+                  editAppliedRev={face.edit_applied_rev}
                   size={88}
                 />
               </button>
@@ -566,6 +571,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                 bbox={face.bbox}
                 photoWidth={face.photo_width}
                 photoHeight={face.photo_height}
+                editAppliedRev={face.edit_applied_rev}
                 size={88}
               />
               {picked && (
@@ -629,6 +635,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                           bbox={person.cover?.bbox}
                           photoWidth={person.cover?.photo_width}
                           photoHeight={person.cover?.photo_height}
+                          editAppliedRev={person.cover?.edit_applied_rev}
                           size={48}
                         />
                         <span className="text-xs text-body">
@@ -689,6 +696,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                   bbox={person.cover?.bbox}
                   photoWidth={person.cover?.photo_width}
                   photoHeight={person.cover?.photo_height}
+                  editAppliedRev={person.cover?.edit_applied_rev}
                   dim={person.is_ignored || person.is_hidden}
                 />
               </button>
