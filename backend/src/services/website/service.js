@@ -11,6 +11,7 @@ const { db } = require('../../database/db');
 const { parseSettingValue } = require('../../utils/appSettings');
 const { formatBoolean } = require('../../utils/dbCompat');
 const { AppError } = require('../../utils/errors');
+const { parseBooleanInput } = require('../../utils/parsers');
 const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const { canAccessEvent } = require('../../middleware/ownership');
@@ -25,6 +26,10 @@ const { getCached, setCached, clearWebsiteCache } = require('./cache');
 
 const FLAG = 'websiteBuilder';
 const LEGAL_SLUGS = ['impressum', 'datenschutz', 'agb'];
+
+// A boolean setting as stored: JSON true, or 1/0 where the settings writer
+// went through formatBoolean on SQLite.
+const flag = (value) => parseBooleanInput(value, false);
 
 function parseDocument(row) {
   if (!row) return null;
@@ -90,7 +95,7 @@ async function initialDocument() {
   // Migration 043 seeds the template's HTML on every install. Only a page
   // someone edited, or one visitors can see, is theirs to keep; an untouched
   // template behind a switched-off site gets the starter instead.
-  const ownPage = html.trim() && (settings.general_public_site_enabled === true
+  const ownPage = html.trim() && (flag(settings.general_public_site_enabled)
     || html.trim() !== DEFAULT_PUBLIC_SITE_HTML.trim());
   if (!ownPage) return { document: starterDocument(), imported: false };
   const css = typeof settings.general_public_site_custom_css === 'string' ? settings.general_public_site_custom_css : '';
@@ -139,7 +144,7 @@ async function getEditorState(adminId) {
     published: rowSummary(published),
     hasUnpublishedChanges: !published || published.document !== draft.document,
     // Publishing changes nothing visible while the public site is off.
-    publicSiteEnabled: settings.general_public_site_enabled === true,
+    publicSiteEnabled: flag(settings.general_public_site_enabled),
   };
 }
 
@@ -390,9 +395,9 @@ async function legalLinks(locale) {
 
 function robotsDirective(seo) {
   const directives = [];
-  if (seo.seo_allow_indexing !== true || seo.seo_meta_noindex) directives.push('noindex');
-  if (seo.seo_meta_nofollow) directives.push('nofollow');
-  if (seo.seo_meta_noai) directives.push('noai', 'noimageai');
+  if (!flag(seo.seo_allow_indexing) || flag(seo.seo_meta_noindex)) directives.push('noindex');
+  if (flag(seo.seo_meta_nofollow)) directives.push('nofollow');
+  if (flag(seo.seo_meta_noai)) directives.push('noai', 'noimageai');
   return directives.join(', ');
 }
 
@@ -468,7 +473,7 @@ async function publishedDocument() {
 async function isWebsiteActive() {
   if (!(await isFeatureEnabled(FLAG))) return false;
   const settings = await readSettings(['general_public_site_enabled']);
-  if (settings.general_public_site_enabled !== true) return false;
+  if (!flag(settings.general_public_site_enabled)) return false;
   return !!(await db('website_documents').where({ state: 'published' }).first('id'));
 }
 
@@ -518,7 +523,7 @@ async function sitemapXml() {
   const settings = await readSettings(['seo_allow_indexing']);
   // Sitemap entries must be absolute; without a known public origin, or with
   // indexing off, the sitemap is empty rather than pointing at a guess.
-  const pages = base && settings.seo_allow_indexing === true ? document.pages.filter((p) => !p.hidden) : [];
+  const pages = base && flag(settings.seo_allow_indexing) ? document.pages.filter((p) => !p.hidden) : [];
   const urls = pages.map((p) => `<url><loc>${xmlEscape(`${base}${pageHref(p)}`)}</loc></url>`).join('');
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>\n`;
   setCached('sitemap', xml);

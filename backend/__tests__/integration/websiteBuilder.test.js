@@ -92,6 +92,7 @@ beforeAll(async () => {
   app.use('/api/public/website', require('../../src/routes/publicWebsite'));
   app.use('/site-media', require('../../src/routes/publicWebsiteMedia'));
   app.use('/api/admin/events', require('../../src/routes/adminEvents'));
+  app.use('/api/admin/settings', require('../../src/routes/adminSettings'));
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => res.status(err.statusCode || err.status || 500).json({ error: err.message, code: err.code, details: err.details }));
 });
@@ -734,5 +735,32 @@ describe('picker inventories page and search', () => {
     expect(new Set([...first.assets, ...second.assets].map((a) => a.id)).size).toBe(first.assets.length + second.assets.length);
     const hit = (await request(app).get('/api/admin/website/assets').query({ q: 'upload-7.' }).set(auth(adminId))).body;
     expect(hit.assets.map((a) => a.originalFilename)).toEqual(['upload-7.jpg']);
+  });
+});
+
+describe('the public site switch as the settings page writes it', () => {
+  // On SQLite the settings writer stores the switch as 1, not as JSON true.
+  const writeSwitch = (on) => request(app).put('/api/admin/settings/general').set(auth(adminId)).send({ general_public_site_enabled: on });
+
+  test('turns the published website on and off', async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    const rev = (await request(app).get('/api/admin/website').set(auth(adminId))).body.draft.revision;
+    const document = { pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'h', type: 'hero', heading: 'Switch test' }] }] };
+    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document, revision: rev }).expect(200);
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+
+    expect((await writeSwitch(true)).status).toBe(200);
+    const stored = await db('app_settings').where({ setting_key: 'general_public_site_enabled' }).first();
+    cache.clearWebsiteCache();
+    expect((await service.resolvePublicPage('')).html).toContain('Switch test');
+    expect((await request(app).get('/api/admin/website').set(auth(adminId))).body.publicSiteEnabled).toBe(true);
+    // Whatever shape the writer chose, the template counts as visible now.
+    expect(stored).toBeTruthy();
+    expect((await service._internal.initialDocument()).imported).toBe(true);
+
+    expect((await writeSwitch(false)).status).toBe(200);
+    cache.clearWebsiteCache();
+    expect(await service.resolvePublicPage('')).toBeNull();
+    expect((await request(app).get('/api/admin/website').set(auth(adminId))).body.publicSiteEnabled).toBe(false);
   });
 });
