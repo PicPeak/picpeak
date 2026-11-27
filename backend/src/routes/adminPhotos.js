@@ -2203,6 +2203,8 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         edited: photoEdits.isEdited(photo),
         edit_rev: Number(photo.edit_rev) || 0,
         edit_applied_rev: Number(photo.edit_applied_rev) || 0,
+        // Rebuilding them failed for that save (retried later, or on request).
+        edit_failed: photoEdits.hasFailed(photo),
         // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
         thumb_hash: photo.thumb_hash || null,
         // Where crops keep the subject (issue 2377), and whether an admin

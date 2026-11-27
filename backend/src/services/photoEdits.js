@@ -778,15 +778,24 @@ function requestPass() {
 }
 
 /**
- * Progress of a gallery's edits for the admin: every photo still to apply,
- * or, with `ids`, those of them (a batch larger than one answer's id list).
+ * Whether the pass failed to apply this photo's latest save (it is tried
+ * again later). The admin listing reports it apart from a pending save, so
+ * the editor can offer a retry and the grid stops polling for it.
  */
-async function status(eventId, ids = null) {
-  let query = livePhotos(db).where({ event_id: eventId }).whereRaw('edit_rev > edit_applied_rev');
-  if (ids) query = query.whereIn('id', ids);
-  const rows = await query.select('id', 'edit_rev');
-  const failed = rows.filter((row) => failures.get(row.id) === Number(row.edit_rev)).map((row) => row.id);
-  return { pending: rows.length, failed: failed.length, pending_ids: rows.slice(0, 500).map((row) => row.id), failed_ids: failed.slice(0, 500) };
+function hasFailed(photo) {
+  return Number(photo.edit_rev) > Number(photo.edit_applied_rev) && failures.get(photo.id) === Number(photo.edit_rev);
+}
+
+/**
+ * Ask for failed photos of a gallery to be tried again now: they count as
+ * pending until the pass has tried them. Returns how many were failed.
+ */
+async function retry(eventId, ids) {
+  const rows = await livePhotos(db).where({ event_id: eventId }).whereIn('id', ids).select('id', 'edit_rev', 'edit_applied_rev');
+  const failed = rows.filter(hasFailed);
+  for (const row of failed) failures.delete(row.id);
+  if (failed.length) requestPass();
+  return failed.length;
 }
 
 module.exports = {
@@ -822,5 +831,6 @@ module.exports = {
   start,
   stop,
   requestPass,
-  status,
+  hasFailed,
+  retry,
 };

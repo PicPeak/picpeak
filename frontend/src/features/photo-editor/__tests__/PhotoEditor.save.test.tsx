@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { service, toast } = vi.hoisted(() => ({
   service: {
-    get: vi.fn(), baseImage: vi.fn(), developPreview: vi.fn(), save: vi.fn(), copyTo: vi.fn(), status: vi.fn(),
+    get: vi.fn(), baseImage: vi.fn(), developPreview: vi.fn(), save: vi.fn(), copyTo: vi.fn(), retry: vi.fn(),
     listPresets: vi.fn(), settings: vi.fn(), saveSettings: vi.fn(), createPreset: vi.fn(), deletePreset: vi.fn(), developRaw: vi.fn(),
   },
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -62,7 +62,6 @@ beforeEach(() => {
   service.developPreview.mockResolvedValue({ width: 600, height: 400, data: new Uint16Array(600 * 400 * 3), exposureBias: 0 });
   service.listPresets.mockResolvedValue([]);
   service.settings.mockResolvedValue({ auto_develop_raw: false });
-  service.status.mockResolvedValue({ pending: 0, failed: 0, pending_ids: [], failed_ids: [] });
 });
 
 const open = async () => {
@@ -126,26 +125,24 @@ describe('while the next photo loads', () => {
 });
 
 describe('background progress', () => {
-  it('follows every queued photo, asking for them in parts, until each is done', async () => {
-    const many = Array.from({ length: 700 }, (_, i) => ({ id: i + 10, filename: `x${i}.jpg`, media_type: 'image' }));
-    service.copyTo.mockImplementation(async (_e: number, ids: number[]) => ({ queued: ids.length, skipped: [] }));
-    let done = false;
-    service.status.mockImplementation(async (_e: number, ids?: number[]) => {
-      const pending = done || !ids ? [] : ids;
-      return { pending: pending.length, failed: 0, pending_ids: pending, failed_ids: [] };
-    });
-    render(<PhotoEditor eventId={1} photos={[...photos, ...many] as any} initialPhotoId={1} onClose={vi.fn()} onChanged={vi.fn()} />);
+  it('reads it from the photo rows: pending and failed apart, failed ones offered a retry', async () => {
+    service.retry.mockResolvedValue({ retried: 2 });
+    const onChanged = vi.fn();
+    const rows = [
+      ...photos,
+      { id: 3, filename: 'a.jpg', media_type: 'image', edit_rev: 2, edit_applied_rev: 1, edit_failed: false },
+      { id: 4, filename: 'b.jpg', media_type: 'image', edit_rev: 1, edit_applied_rev: 0, edit_failed: true },
+      { id: 5, filename: 'c.jpg', media_type: 'image', edit_rev: 3, edit_applied_rev: 1, edit_failed: true },
+      { id: 6, filename: 'd.jpg', media_type: 'image', edit_rev: 1, edit_applied_rev: 1, edit_failed: false },
+    ] as any;
+    render(<PhotoEditor eventId={1} photos={rows} initialPhotoId={1} onClose={vi.fn()} onChanged={onChanged} />);
     await waitFor(() => expect(screen.getByLabelText('Edited preview')).toHaveAttribute('data-backend', 'webgl2'));
-    await userEvent.click(screen.getByRole('button', { name: 'Copy to photos…' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Select all' }));
-    await userEvent.click(screen.getByRole('button', { name: /Copy to 701 photos/ }));
-    await waitFor(() => expect(service.status).toHaveBeenCalled(), { timeout: 4000 });
-    const asked = service.status.mock.calls.map((call) => call[1]?.length);
-    expect(Math.max(...asked)).toBeLessThanOrEqual(500);
-    expect(screen.getByText(/for 701 photos/)).toBeInTheDocument();
-    done = true;
-    await waitFor(() => expect(screen.queryByText(/for 701 photos/)).toBeNull(), { timeout: 4000 });
-  }, 15000);
+    expect(screen.getByText(/for 1 photos/)).toBeInTheDocument();
+    expect(screen.getByText(/2 photos could not be updated/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(service.retry).toHaveBeenCalledWith(1, [4, 5]));
+    expect(onChanged).toHaveBeenCalled();
+  });
 });
 
 describe('copy to photos', () => {

@@ -101,19 +101,22 @@ async function editPayload(photo) {
   };
 }
 
-router.get('/:eventId/photos/edit/status', ...gate, async (req, res) => {
+// Progress is read from the photo listing (edit_rev, edit_applied_rev,
+// edit_failed), which the event page polls; this only asks again for failed
+// renders.
+router.post('/:eventId/photos/edit/retry', ...gate, async (req, res) => {
   try {
     const eventId = parsePositiveInt32(req.params.eventId);
     if (!eventId) return res.status(404).json({ error: 'Event not found' });
-    // ?ids=1,2,3: the photos the editor is following, at most 500 a request.
-    let ids = null;
-    if (req.query.ids !== undefined) {
-      ids = String(req.query.ids).split(',').map((id) => parsePositiveInt32(id));
-      if (!ids.length || ids.length > 500 || ids.some((id) => !id)) return res.status(400).json({ error: 'ids must list 1 to 500 photo ids' });
+    const rawIds = req.body?.photo_ids;
+    if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > MAX_BATCH) {
+      return res.status(400).json({ error: `photo_ids must list 1 to ${MAX_BATCH} photos` });
     }
-    res.json(await photoEdits.status(eventId, ids));
+    const ids = [...new Set(rawIds.map((id) => parsePositiveInt32(id)))];
+    if (ids.some((id) => !id)) return res.status(400).json({ error: 'photo_ids must be photo ids' });
+    res.json({ retried: await photoEdits.retry(eventId, ids) });
   } catch (error) {
-    errorResponse(res, error, 500, 'Failed to read the edit progress');
+    errorResponse(res, error, 500, 'Failed to retry the edits');
   }
 });
 

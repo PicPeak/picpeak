@@ -114,7 +114,6 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
   const [clipboard, setClipboard] = useState<EditParams | null>(readClipboard);
   const [presets, setPresets] = useState<PhotoEditPreset[]>([]);
   const [presetName, setPresetName] = useState('');
-  const [pending, setPending] = useState<number[]>([]);
   const [backend, setBackend] = useState<string>('');
   const [raw, setRaw] = useState(false);
   const [autoDevelop, setAutoDevelop] = useState<boolean | null>(null);
@@ -214,27 +213,32 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
     return () => observer.disconnect();
   }, [view]);
 
-  // ---- background progress of saved edits: every tracked photo, asked
-  // for in parts the status answers in full, kept until it is known done.
-  useEffect(() => {
-    if (!pending.length) return undefined;
-    const timer = window.setInterval(async () => {
-      try {
-        const still = new Set<number>();
-        for (let start = 0; start < pending.length; start += 500) {
-          const part = pending.slice(start, start + 500);
-          const status = await photoEditorService.status(eventId, part);
-          for (const id of status.pending_ids) if (!status.failed_ids.includes(id)) still.add(id);
-        }
-        const next = pending.filter((id) => still.has(id));
-        if (next.length !== pending.length) onChanged();
-        setPending(next);
-      } catch {
-        // Polled again on the next tick.
+  // ---- background progress of saved edits, read from the photo rows: the
+  // event page polls them while an edit is being applied (onChanged starts
+  // it), and keeps doing so after the editor closed.
+  const progress = useMemo(() => {
+    const pending: number[] = [];
+    const failed: number[] = [];
+    for (const row of photos) {
+      if ((row.edit_rev ?? 0) <= (row.edit_applied_rev ?? 0)) continue;
+      (row.edit_failed ? failed : pending).push(row.id);
+    }
+    return { pending, failed };
+  }, [photos]);
+  const [retrying, setRetrying] = useState(false);
+  const retryFailed = async () => {
+    setRetrying(true);
+    try {
+      for (let start = 0; start < progress.failed.length; start += 1000) {
+        await photoEditorService.retry(eventId, progress.failed.slice(start, start + 1000));
       }
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, [pending, eventId, onChanged]);
+      onChanged();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || t('common.error'));
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   // A save on its way, and what the editor shows now: a save that lands
   // after the editor moved on only updates the photo it was for.
@@ -263,7 +267,6 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
         const toSave = isIdentity(sent) ? null : { ...sent, develop: raw ? true : sent.develop };
         const state = await photoEditorService.save(eventId, photoId, toSave);
         const next = state.params ? { ...DEFAULT_PARAMS, ...state.params } : { ...DEFAULT_PARAMS };
-        setPending((prev) => [...new Set([...prev, photoId])]);
         onChanged();
         if (shown.current.photoId === photoId) {
           // What the server stored is the saved state (a RAW's develop flag
@@ -573,7 +576,7 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
                   setDeveloping(true);
                   try {
                     const result = await photoEditorService.developRaw(eventId, { all: true });
-                    setPending((prev) => [...new Set([...prev, ...result.photo_ids])]);
+                    onChanged();
                     toast.success(t('photoEditor.raw.queued', { count: result.queued, defaultValue: '{{count}} RAW photos are being developed' }));
                   } catch (error: any) {
                     toast.error(error?.response?.data?.error || t('common.error'));
@@ -637,9 +640,15 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
       </div>
 
       <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line bg-shell px-4 py-1.5 text-xs text-muted" aria-live="polite">
-        <span>{pending.length
-          ? t('photoEditor.status.pending', { count: pending.length, defaultValue: 'Updating previews and downloads for {{count}} photos…' })
+        <span>{progress.pending.length
+          ? t('photoEditor.status.pending', { count: progress.pending.length, defaultValue: 'Updating previews and downloads for {{count}} photos…' })
           : t('photoEditor.status.idle', 'Guests see the saved edit; the original file stays untouched.')}</span>
+        {progress.failed.length > 0 && (
+          <span className="flex items-center gap-2 text-danger-text">
+            {t('photoEditor.status.failed', { count: progress.failed.length, defaultValue: '{{count}} photos could not be updated.' })}
+            <Button size="sm" variant="ghost" isLoading={retrying} onClick={retryFailed}>{t('photoEditor.status.retry', 'Retry')}</Button>
+          </span>
+        )}
         {backend && <span className="ml-auto">{t(`photoEditor.status.backend.${backend}`)}</span>}
       </footer>
 
@@ -650,7 +659,7 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
         photos={photos}
         sourceId={photo.id}
         params={params}
-        onQueued={(ids) => setPending((prev) => [...new Set([...prev, ...ids])])}
+        onQueued={onChanged}
       />
     </div>
   );

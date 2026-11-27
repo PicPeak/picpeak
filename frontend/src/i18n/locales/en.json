@@ -13231,6 +13231,9 @@
       "idle": "Guests see the saved edit; the original file stays untouched.",
       "pending_one": "Updating previews and downloads for {{count}} photo…",
       "pending_other": "Updating previews and downloads for {{count}} photos…",
+      "failed_one": "{{count}} photo could not be updated.",
+      "failed_other": "{{count}} photos could not be updated.",
+      "retry": "Retry",
       "backend": {
         "webgl2": "Preview: GPU (WebGL 2)",
         "webgl": "Preview: GPU (WebGL)",

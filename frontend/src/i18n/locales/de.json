@@ -13196,6 +13196,9 @@
       "idle": "Gäste sehen die gespeicherte Bearbeitung; die Originaldatei bleibt unverändert.",
       "pending_one": "Vorschau und Downloads von {{count}} Foto werden aktualisiert …",
       "pending_other": "Vorschauen und Downloads von {{count}} Fotos werden aktualisiert …",
+      "failed_one": "{{count}} Foto konnte nicht aktualisiert werden.",
+      "failed_other": "{{count}} Fotos konnten nicht aktualisiert werden.",
+      "retry": "Erneut versuchen",
       "backend": {
         "webgl2": "Vorschau: Grafikkarte (WebGL 2)",
         "webgl": "Vorschau: Grafikkarte (WebGL)",

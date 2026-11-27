@@ -1162,7 +1162,7 @@
       "signals": [],
       "reason": "Excluded: the photo editor (issue 2619) is not reported as its own capability; no edit settings, counts or photo identifiers.",
       "route_signatures": [
-        "GET /:eventId/photos/edit/status",
+        "POST /:eventId/photos/edit/retry",
         "POST /:eventId/photos/edit/batch",
         "POST /:eventId/photos/edit/develop",
         "GET /:eventId/photos/:photoId/edit",

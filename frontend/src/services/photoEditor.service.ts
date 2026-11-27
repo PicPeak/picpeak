@@ -18,13 +18,6 @@ export interface PhotoEditState {
   edited_height: number | null;
 }
 
-export interface PhotoEditStatus {
-  pending: number;
-  failed: number;
-  pending_ids: number[];
-  failed_ids: number[];
-}
-
 export interface PhotoEditPreset {
   id: number;
   name: string;
@@ -92,10 +85,9 @@ export const photoEditorService = {
     return (await api.post(`${base(eventId)}/edit/batch`, { photo_ids: photoIds, params, parts })).data;
   },
 
-  /** The gallery's edits still to apply; with `ids` (at most 500), only those photos'. */
-  async status(eventId: number, ids?: number[]): Promise<PhotoEditStatus> {
-    const params = ids ? { ids: ids.join(',') } : undefined;
-    return (await api.get<PhotoEditStatus>(`${base(eventId)}/edit/status`, { params })).data;
+  /** Try failed renders again now (progress is read from the photo list). */
+  async retry(eventId: number, photoIds: number[]): Promise<{ retried: number }> {
+    return (await api.post(`${base(eventId)}/edit/retry`, { photo_ids: photoIds })).data;
   },
 
   async listPresets(): Promise<PhotoEditPreset[]> {

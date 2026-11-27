@@ -107,6 +107,8 @@ export interface AdminPhoto {
   edited?: boolean;
   edit_rev?: number;
   edit_applied_rev?: number;
+  /** Applying the latest save failed; tried again later or on a retry. */
+  edit_failed?: boolean;
   focal_source?: 'auto' | 'manual' | null;
 }
 

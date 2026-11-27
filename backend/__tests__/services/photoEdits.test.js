@@ -259,7 +259,7 @@ describe('save, background apply, reset', () => {
     expect(current.edit_render_path).toMatch(/_r2_/);
     // The superseded render is gone.
     expect(fs.existsSync(storagePath(renderBefore))).toBe(false);
-    expect(await photoEdits().status(eventId)).toMatchObject({ pending: 0, failed: 0 });
+    expect(photoEdits().hasFailed(current)).toBe(false);
   });
 
   it('does not record a render a newer save superseded, and drops its file', async () => {

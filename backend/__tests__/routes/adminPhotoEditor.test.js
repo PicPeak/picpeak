@@ -183,12 +183,8 @@ describe('an edit, saved and applied', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ edit_rev: 1, edit_applied_rev: 0, width: 800, height: 600 });
     expect(res.body.params).toMatchObject({ rotate: 90, exposure: 0.5 });
-    const status = await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos/edit/status`));
-    expect(status.body).toMatchObject({ pending: 1, pending_ids: [photoId] });
-    // Asked for given photos, it answers for those (a batch larger than one page).
-    const asked = await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos/edit/status?ids=${secondId},${photoId}`));
-    expect(asked.body).toMatchObject({ pending: 1, pending_ids: [photoId] });
-    expect((await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos/edit/status?ids=x`))).status).toBe(400);
+    const listed = (await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos`))).body.photos;
+    expect(listed.find((p) => p.id === photoId)).toMatchObject({ edit_rev: 1, edit_applied_rev: 0, edit_failed: false });
     // A download job's identity follows the revision whose previews and
     // renditions are in place: a preview-only job built now packages the
     // old previews and must not be reused once the edit lands.
@@ -297,7 +293,7 @@ describe('batch copy and presets', () => {
     expect((await auth(request(adminApp).post(`/api/admin/photos/${event.id}/photos/edit/batch`)
       .send({ photo_ids: [photoId], params: { exposure: 10 } }))).status).toBe(400);
     await applyEdits();
-    expect(await require('../../src/services/photoEdits').status(event.id)).toMatchObject({ pending: 0 });
+    expect(await db('photos').where({ event_id: event.id }).whereRaw('edit_rev > edit_applied_rev').count({ n: '*' }).first()).toMatchObject({ n: 0 });
   });
 
   it('keeps the auto-develop setting off by default; changing it needs settings.edit', async () => {
@@ -349,6 +345,33 @@ describe('an edited photo whose render fails', () => {
       const job = await jobs.createJob({ event: fresh, resolution: 'original', photoIds: [brokenId, photoId], accessLevel: 'guest' });
       await jobs.liveBuilds.get(job.id);
       expect((await db('download_jobs').where({ id: job.id }).first()).status).toBe('ready');
+    } finally {
+      await db('photos').where({ id: brokenId }).delete();
+    }
+  });
+
+  it('is listed as failed, apart from pending ones, until a retry asks for it again', async () => {
+    const dir = path.join(process.env.STORAGE_PATH, 'events/active/edit-route');
+    fs.writeFileSync(path.join(dir, 'broken.jpg'), Buffer.from('not an image at all'));
+    const brokenId = unwrap(await db('photos').insert({
+      event_id: event.id, filename: 'broken.jpg', path: 'edit-route/broken.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', size_bytes: 19, processing_status: 'complete', uploaded_at: new Date().toISOString(),
+      width: 800, height: 600, edit_params: JSON.stringify({ v: 1, exposure: 1 }), edit_rev: 1, edit_applied_rev: 0,
+    }).returning('id'));
+    const listed = async () => (await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos`))).body.photos
+      .find((p) => p.id === brokenId);
+    try {
+      expect(await listed()).toMatchObject({ edit_rev: 1, edit_applied_rev: 0, edit_failed: false });
+      await applyEdits();
+      expect(await listed()).toMatchObject({ edit_rev: 1, edit_applied_rev: 0, edit_failed: true });
+      const retry = await auth(request(adminApp).post(`/api/admin/photos/${event.id}/photos/edit/retry`).send({ photo_ids: [brokenId] }));
+      expect(retry.status).toBe(200);
+      expect(retry.body).toEqual({ retried: 1 });
+      // Tracked as pending again until the pass has tried it.
+      expect(await listed()).toMatchObject({ edit_failed: false });
+      await applyEdits();
+      expect(await listed()).toMatchObject({ edit_failed: true });
+      expect((await auth(request(adminApp).post(`/api/admin/photos/${event.id}/photos/edit/retry`).send({ photo_ids: [] }))).status).toBe(400);
     } finally {
       await db('photos').where({ id: brokenId }).delete();
     }
