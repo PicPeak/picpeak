@@ -2278,6 +2278,7 @@
       "route_signatures": [
         "GET /",
         "PUT /draft",
+        "PUT /visibility",
         "GET /notice",
         "POST /notice/dismiss",
         "POST /publish",

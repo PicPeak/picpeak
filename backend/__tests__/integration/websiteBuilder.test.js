@@ -1725,3 +1725,33 @@ describe('telling admins where the landing page went', () => {
     expect(await db('admin_notice_dismissals').where({ admin_id: gone })).toHaveLength(0);
   });
 });
+
+describe('showing the website at the site root', () => {
+  const visibility = (enabled, who = adminId) => request(app).put('/api/admin/website/visibility').set(auth(who)).send({ enabled });
+  const stored = async () => (await request(app).get('/api/admin/website').set(auth(adminId))).body.publicSiteEnabled;
+
+  test('the builder switches it, with cms.edit; on needs something to show', async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    expect((await visibility(true, viewerId)).status).toBe(403);
+    const kept = await db('website_documents').where({ state: 'published' }).first();
+    await db('website_documents').where({ state: 'published' }).del();
+    await setSetting('general_public_site_html', require('../../src/constants/publicSiteDefaults').DEFAULT_PUBLIC_SITE_HTML.trim());
+    await setSetting('general_public_site_custom_css', '');
+    await setSetting('general_public_site_enabled', false);
+    try {
+      // Nothing published and only the untouched template: nothing to show.
+      const refused = await visibility(true);
+      expect(refused.status).toBe(409);
+      expect(refused.body.code).toBe('WEBSITE_NOTHING_TO_SHOW');
+      expect(await stored()).toBe(false);
+    } finally {
+      if (kept) await db('website_documents').insert(kept);
+    }
+    expect((await visibility(true)).status).toBe(200);
+    expect(await stored()).toBe(true);
+    expect((await visibility('false')).status).toBe(200);
+    expect(await stored()).toBe(false);
+    expect((await visibility('maybe')).status).toBe(400);
+    await visibility(true);
+  });
+});

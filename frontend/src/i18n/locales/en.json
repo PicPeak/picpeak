@@ -13405,7 +13405,7 @@
     "saved": "Draft saved",
     "publishTitle": "Publish the website?",
     "publishMessage": "Visitors see this version right away. The draft is saved first.",
-    "publishMessageOff": "The public site is switched off, so visitors will not see it until you turn it on in Settings › CMS. The draft is saved first.",
+    "publishMessageOff": "The website is not shown at the site root yet, so visitors will not see it until you show it there. The draft is saved first.",
     "publish": "Publish",
     "published": "Website published",
     "status": {
@@ -13417,7 +13417,7 @@
     "description": "Your public website, built from blocks. Edit the draft, then publish.",
     "openSite": "Open site",
     "readOnly": "You can see the website but not change it.",
-    "siteOff": "The public site is switched off in Settings › CMS. Until it is on, `/` leads to the login page and the website is not visible.",
+    "siteOff": "The website is not shown at the site root yet: `/` leads to the gallery code page instead.",
     "tabs": {
       "blocks": "Blocks",
       "pages": "Pages",
@@ -13461,7 +13461,12 @@
     "previewStale": "Preview out of date: it could not be refreshed.",
     "previewRetry": "Refresh preview",
     "galleryOff": "{{names}} is not on the website. Remove the pick, or switch the gallery on in its settings or in the image picker.",
-    "legacyImported": "Your previous landing page was imported here. Visitors still see it unchanged at the site root; review it and publish when you are ready, and the website takes its place."
+    "legacyImported": "Your previous landing page was imported here. Visitors still see it unchanged at the site root; review it and publish when you are ready, and the website takes its place.",
+    "showAtRoot": "Show it at the site root",
+    "takeOffline": "Take offline",
+    "takeOfflineTitle": "Take the website offline?",
+    "takeOfflineMessage": "Visitors no longer see it at the site root; `/` leads to the gallery code page instead. The website and its draft stay as they are.",
+    "takeOfflineConfirm": "Take the website offline"
   },
   "websiteNotice": {
     "title": "Your landing page moved",

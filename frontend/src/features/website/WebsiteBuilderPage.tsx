@@ -4,7 +4,7 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import {
   ArrowLeft, Copy, ExternalLink, FileText, Globe, Layers, Monitor, Palette, Plus, Redo2, Smartphone, Trash2, Undo2,
@@ -26,7 +26,7 @@ import { PagesPanel, slugProblem } from './PagesPanel';
 import { PreviewFrame, mediaOriginDiffers, publicSiteUrl, type PreviewDevice } from './PreviewFrame';
 import { SitePanel } from './SitePanel';
 import { SortableList } from './SortableList';
-import { useWebsiteEditor } from './useWebsiteEditor';
+import { EDITOR_QUERY_KEY, useWebsiteEditor } from './useWebsiteEditor';
 import type { Block, BlockType, ValidationProblem, WebsiteDocument, WebsitePage } from './types';
 
 type Panel = 'blocks' | 'pages' | 'site';
@@ -92,6 +92,13 @@ export const WebsiteBuilderPage: React.FC = () => {
   const confirm = useConfirm();
   const canEdit = usePermission('cms.edit');
   const editor = useWebsiteEditor();
+  const queryClient = useQueryClient();
+  // Shown at the site root or not: an action like Publish, taken at once.
+  const visibility = useMutation({
+    mutationFn: (enabled: boolean) => websiteService.setVisibility(enabled),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: EDITOR_QUERY_KEY }),
+    onError: (err) => toast.error(apiErrorText(err)),
+  });
   const { draft, server } = editor;
   const [panel, setPanel] = useState<Panel>('blocks');
   const [pageId, setPageId] = useState('');
@@ -210,7 +217,7 @@ export const WebsiteBuilderPage: React.FC = () => {
       title: t('website.publishTitle', 'Publish the website?'),
       message: server.publicSiteEnabled
         ? t('website.publishMessage', 'Visitors see this version right away. The draft is saved first.')
-        : t('website.publishMessageOff', 'The public site is switched off, so visitors will not see it until you turn it on in Settings › CMS. The draft is saved first.'),
+        : t('website.publishMessageOff', 'The website is not shown at the site root yet, so visitors will not see it until you show it there. The draft is saved first.'),
       confirmLabel: t('website.publish', 'Publish'),
     });
     if (!ok) return;
@@ -218,6 +225,16 @@ export const WebsiteBuilderPage: React.FC = () => {
       onSuccess: () => { setProblems([]); toast.success(t('website.published', 'Website published')); },
       onError: onSaveError,
     });
+  };
+
+  const takeOffline = async () => {
+    const ok = await confirm({
+      title: t('website.takeOfflineTitle', 'Take the website offline?'),
+      message: t('website.takeOfflineMessage', 'Visitors no longer see it at the site root; `/` leads to the gallery code page instead. The website and its draft stay as they are.'),
+      confirmLabel: t('website.takeOfflineConfirm', 'Take the website offline'),
+      variant: 'danger',
+    });
+    if (ok) visibility.mutate(false);
   };
 
   const status = !server.published
@@ -315,6 +332,11 @@ export const WebsiteBuilderPage: React.FC = () => {
           actions={(
             <div className="flex flex-wrap items-center gap-2">
               {status}
+              {canEdit && server.publicSiteEnabled && (
+                <Button size="sm" variant="ghost" isLoading={visibility.isPending} onClick={() => { void takeOffline(); }}>
+                  {t('website.takeOffline', 'Take offline')}
+                </Button>
+              )}
               {server.published && (
                 <a href={publicSiteUrl(server.publicUrl)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm inline-flex items-center gap-1.5">
                   <ExternalLink className="w-4 h-4" aria-hidden="true" />{t('website.openSite', 'Open site')}
@@ -367,7 +389,14 @@ export const WebsiteBuilderPage: React.FC = () => {
           </Notice>
         )}
         {!server.publicSiteEnabled && (
-          <Notice tone="warning" size="sm">{t('website.siteOff', 'The public site is switched off in Settings › CMS. Until it is on, `/` leads to the login page and the website is not visible.')}</Notice>
+          <Notice tone="warning" size="sm"
+            action={canEdit ? (
+              <Button size="sm" variant="secondary" isLoading={visibility.isPending} onClick={() => visibility.mutate(true)}>
+                {t('website.showAtRoot', 'Show it at the site root')}
+              </Button>
+            ) : undefined}>
+            {t('website.siteOff', 'The website is not shown at the site root yet: `/` leads to the gallery code page instead.')}
+          </Notice>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[400px_minmax(0,1fr)] gap-6 lg:flex-1 lg:min-h-0">

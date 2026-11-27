@@ -44,7 +44,7 @@ vi.mock('../../../components/admin/SettingsSaveBar', () => ({
 }));
 vi.mock('../../../services/website.service', () => ({
   websiteService: {
-    getState: vi.fn(), saveDraft: vi.fn(), publish: vi.fn(), preview: vi.fn(), resolveMedia: vi.fn(),
+    getState: vi.fn(), saveDraft: vi.fn(), publish: vi.fn(), preview: vi.fn(), resolveMedia: vi.fn(), setVisibility: vi.fn(),
     listGalleries: vi.fn().mockResolvedValue([]), listAssets: vi.fn().mockResolvedValue([]), listPackages: vi.fn().mockResolvedValue({ available: false, packages: [] }),
   },
   mediaKey: (r: { source: string; id: string | number }) => `${r.source}:${r.id}`,
@@ -207,6 +207,22 @@ describe('WebsiteBuilderPage', () => {
     vi.mocked(websiteService.getState).mockResolvedValue({ ...structuredClone(STATE), published: null, legacyLandingLive: true });
     renderPage();
     expect(await screen.findByText(/Your previous landing page was imported/)).toBeInTheDocument();
+  });
+
+  it('switches the website on at the site root from the builder', async () => {
+    vi.mocked(websiteService.getState).mockResolvedValue({ ...structuredClone(STATE), publicSiteEnabled: false });
+    vi.mocked(websiteService.setVisibility).mockResolvedValue(undefined);
+    renderPage();
+    expect(await screen.findByText(/not shown at the site root/)).toBeInTheDocument();
+    vi.mocked(websiteService.getState).mockResolvedValue(structuredClone(STATE));
+    fireEvent.click(screen.getByRole('button', { name: 'Show it at the site root' }));
+    await waitFor(() => expect(websiteService.setVisibility).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(screen.queryByText(/not shown at the site root/)).toBeNull());
+    // And off again, after asking (no confirm dialog provider here: window.confirm).
+    window.confirm = () => true;
+    vi.mocked(websiteService.getState).mockResolvedValue({ ...structuredClone(STATE), publicSiteEnabled: false });
+    fireEvent.click(await screen.findByRole('button', { name: 'Take offline' }));
+    await waitFor(() => expect(websiteService.setVisibility).toHaveBeenLastCalledWith(false));
   });
 
   it('switches the preview to phone width', async () => {

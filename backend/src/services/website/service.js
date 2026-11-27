@@ -123,6 +123,25 @@ async function dismissLegacyLandingNotice(adminId) {
     .onConflict(['admin_id', 'notice_key']).ignore();
 }
 
+/**
+ * Show the website at the site root, or not (the setting the CMS tab's
+ * landing page switch used to write). On needs something to show: a
+ * published website, or a landing page the install uses; the untouched
+ * template is not it.
+ */
+async function setSiteVisible(enabled) {
+  if (enabled && !(await readRow('published')) && !(await legacySite()).used) {
+    throw new AppError('Publish the website first: there is nothing to show yet', 409, 'WEBSITE_NOTHING_TO_SHOW');
+  }
+  const value = JSON.stringify(formatBoolean(enabled));
+  const now = new Date().toISOString();
+  const updated = await db('app_settings').where({ setting_key: 'general_public_site_enabled' }).update({ setting_value: value, updated_at: now });
+  if (!updated) {
+    await db('app_settings').insert({ setting_key: 'general_public_site_enabled', setting_value: value, setting_type: 'general', updated_at: now });
+  }
+  publicSite.clearPublicSiteCache();
+}
+
 /** The import refusal the editor shows while the old page is still what / serves. */
 async function importRefusal({ published }) {
   if (published) return null;
@@ -708,6 +727,7 @@ module.exports = {
   isWebsiteActive,
   publishedPhotoIds,
   legacyLandingNotice,
+  setSiteVisible,
   dismissLegacyLandingNotice,
   mediaRobotsTag,
   sitemapXml,

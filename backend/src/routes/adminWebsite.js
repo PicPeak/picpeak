@@ -50,6 +50,16 @@ router.put('/draft', canEdit, [
   res.json(await websiteService.saveDraft(req.body.document, req.body.revision, req.admin));
 }));
 
+// The website at the site root, on or off (cms.edit; it used to be the CMS
+// tab's landing page switch).
+router.put('/visibility', canEdit, [
+  body('enabled').isBoolean(),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  await websiteService.setSiteVisible(parseBooleanInput(req.body.enabled, false));
+  res.json({ enabled: parseBooleanInput(req.body.enabled, false) });
+}));
+
 // Where the old landing page went (migration 381): told to each admin once,
 // until they dismiss it or the website is published.
 router.get('/notice', canView, handleAsync(async (req, res) => {

@@ -23,6 +23,11 @@ export const websiteService = {
     const r = await api.put<EditorState>('/admin/website/draft', { document, revision });
     return r.data;
   },
+  /** Show the website at the site root, or not. */
+  async setVisibility(enabled: boolean): Promise<void> {
+    await api.put('/admin/website/visibility', { enabled });
+  },
+
   /** Whether to tell this admin where the old landing page went (migration 381). */
   async getNotice(): Promise<{ legacyLanding: boolean }> {
     const r = await api.get<{ legacyLanding: boolean }>('/admin/website/notice');

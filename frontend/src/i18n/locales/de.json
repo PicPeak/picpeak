@@ -13370,7 +13370,7 @@
     "saved": "Entwurf gespeichert",
     "publishTitle": "Website veröffentlichen?",
     "publishMessage": "Besucherinnen und Besucher sehen diese Version sofort. Der Entwurf wird zuerst gespeichert.",
-    "publishMessageOff": "Die öffentliche Seite ist ausgeschaltet; Besucher sehen die Website erst, wenn Sie sie unter Einstellungen › CMS einschalten. Der Entwurf wird zuerst gespeichert.",
+    "publishMessageOff": "Die Website wird an der Hauptadresse noch nicht gezeigt; Besucher sehen sie erst, wenn Sie sie dort zeigen. Der Entwurf wird zuerst gespeichert.",
     "publish": "Veröffentlichen",
     "published": "Website veröffentlicht",
     "status": {
@@ -13382,7 +13382,7 @@
     "description": "Ihre öffentliche Website aus Blöcken. Bearbeiten Sie den Entwurf, dann veröffentlichen Sie.",
     "openSite": "Website öffnen",
     "readOnly": "Sie können die Website sehen, aber nicht ändern.",
-    "siteOff": "Die öffentliche Seite ist unter Einstellungen › CMS ausgeschaltet. Solange sie aus ist, führt `/` zur Anmeldung und die Website ist nicht sichtbar.",
+    "siteOff": "Die Website wird an der Hauptadresse noch nicht gezeigt: `/` führt stattdessen zur Seite für den Galerie-Code.",
     "tabs": {
       "blocks": "Blöcke",
       "pages": "Seiten",
@@ -13426,7 +13426,12 @@
     "previewStale": "Vorschau nicht aktuell: Sie konnte nicht neu geladen werden.",
     "previewRetry": "Vorschau neu laden",
     "galleryOff": "{{names}} ist nicht auf der Website. Entfernen Sie die Auswahl oder stellen Sie die Galerie in ihren Einstellungen oder in der Bildauswahl auf die Website.",
-    "legacyImported": "Ihre bisherige Startseite wurde hierher übernommen. Besucher sehen sie unter der Hauptadresse weiterhin unverändert; prüfen Sie sie und veröffentlichen Sie, wenn Sie so weit sind – dann tritt die Website an ihre Stelle."
+    "legacyImported": "Ihre bisherige Startseite wurde hierher übernommen. Besucher sehen sie unter der Hauptadresse weiterhin unverändert; prüfen Sie sie und veröffentlichen Sie, wenn Sie so weit sind – dann tritt die Website an ihre Stelle.",
+    "showAtRoot": "An der Hauptadresse zeigen",
+    "takeOffline": "Offline nehmen",
+    "takeOfflineTitle": "Website offline nehmen?",
+    "takeOfflineMessage": "Besucher sehen sie nicht mehr an der Hauptadresse; `/` führt stattdessen zur Seite für den Galerie-Code. Die Website und ihr Entwurf bleiben, wie sie sind.",
+    "takeOfflineConfirm": "Website offline nehmen"
   },
   "websiteNotice": {
     "title": "Ihre Startseite ist umgezogen",
