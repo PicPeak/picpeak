@@ -366,22 +366,27 @@ export const WebsiteBuilderPage: React.FC = () => {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[400px_minmax(0,1fr)] gap-6 lg:flex-1 lg:min-h-0">
-          <aside className="min-w-0 lg:min-h-0 lg:overflow-y-auto lg:pb-8 rounded-xl border border-line bg-panel p-4 space-y-4">
-            <Tabs<Panel>
-              value={panel}
-              onChange={setPanel}
-              items={[
-                { id: 'pages', label: t('website.tabs.pages', 'Pages'), icon: <FileText className="w-4 h-4" />, dirty: problems.length > 0 || localProblem },
-                { id: 'blocks', label: t('website.tabs.blocks', 'Blocks'), icon: <Layers className="w-4 h-4" /> },
-                { id: 'site', label: t('website.tabs.site', 'Design'), icon: <Palette className="w-4 h-4" /> },
-              ]}
-            />
-            {panel === 'blocks' && blocksPanel}
-            {panel === 'pages' && (
-              <PagesPanel doc={draft} pageId={page.id} onSelectPage={(id) => { setPageId(id); setBlockId(null); }}
-                update={editor.update} serverProblems={problems} readOnly={!canEdit} />
-            )}
-            {panel === 'site' && <SitePanel doc={draft} update={editor.update} readOnly={!canEdit} />}
+          {/* The frame stays put; only its content scrolls, inside the border. */}
+          <aside className="min-w-0 lg:min-h-0 flex flex-col rounded-xl border border-line bg-panel overflow-hidden">
+            <div className="px-4 pt-4">
+              <Tabs<Panel>
+                value={panel}
+                onChange={setPanel}
+                items={[
+                  { id: 'pages', label: t('website.tabs.pages', 'Pages'), icon: <FileText className="w-4 h-4" />, dirty: problems.length > 0 || localProblem },
+                  { id: 'blocks', label: t('website.tabs.blocks', 'Blocks'), icon: <Layers className="w-4 h-4" /> },
+                  { id: 'site', label: t('website.tabs.site', 'Design'), icon: <Palette className="w-4 h-4" /> },
+                ]}
+              />
+            </div>
+            <div className="panel-scroll lg:flex-1 lg:min-h-0 lg:overflow-y-auto px-4 pt-4 pb-8 space-y-4">
+              {panel === 'blocks' && blocksPanel}
+              {panel === 'pages' && (
+                <PagesPanel doc={draft} pageId={page.id} onSelectPage={(id) => { setPageId(id); setBlockId(null); }}
+                  update={editor.update} serverProblems={problems} readOnly={!canEdit} />
+              )}
+              {panel === 'site' && <SitePanel doc={draft} update={editor.update} readOnly={!canEdit} />}
+            </div>
           </aside>
 
           <section className="min-w-0 flex flex-col gap-3 lg:min-h-0">
