@@ -21,15 +21,18 @@ export function mediaOriginDiffers(): boolean {
 }
 
 /**
- * The published website's address: the backend renders it, so in a
- * split-origin install it is on the backend's resource origin, not the
- * admin's (where / is the admin app). On the Vite dev server without an API
+ * The published website's address. On the Vite dev server without an API
  * URL the resources come through its proxy, but / does not: there it is the
- * backend the proxy targets.
+ * backend the proxy targets. Otherwise the configured public address
+ * (`publicUrl`, what the sitemap and the canonical links use), where the
+ * website's own links (/gallery/…, /book) work too; without one, the
+ * backend's resource origin.
  */
-export function publicSiteUrl(): string {
+export function publicSiteUrl(publicUrl?: string): string {
   const devOrigin = typeof __PICPEAK_DEV_SITE_ORIGIN__ === 'string' ? __PICPEAK_DEV_SITE_ORIGIN__ : '';
   if (devOrigin && !mediaOriginDiffers()) return new URL('/', devOrigin).href;
+  // As the sitemap joins it: a path the address has is kept.
+  if (publicUrl) return `${publicUrl.replace(/\/+$/, '')}/`;
   return new URL(buildResourceUrl('/'), window.location.href).href;
 }
 

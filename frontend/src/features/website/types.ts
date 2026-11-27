@@ -119,6 +119,8 @@ export interface EditorState {
   published: RevisionInfo | null;
   hasUnpublishedChanges: boolean;
   publicSiteEnabled: boolean;
+  /** The configured public origin (sitemap, canonical links); '' when none. */
+  publicUrl?: string;
   /** The landing page was too long to import; it stays live until a publish. */
   legacyImportRefused?: { length: number; max: number } | null;
 }

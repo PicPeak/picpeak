@@ -271,6 +271,13 @@ describe('WebsiteBuilderPage', () => {
     expect(link.getAttribute('href')).toBe('https://api.example.com/');
   });
 
+  it('opens the published site on the configured public address, where its links work', async () => {
+    vi.mocked(websiteService.getState).mockResolvedValue({ ...structuredClone(STATE), publicUrl: 'https://photos.example' });
+    renderPage();
+    const link = await screen.findByRole('link', { name: /Open site/ });
+    expect(link.getAttribute('href')).toBe('https://photos.example/');
+  });
+
   it('says when the preview could not be refreshed, keeps the last one, and retries', async () => {
     renderPage();
     const frame = await screen.findByTitle('Preview of the page');

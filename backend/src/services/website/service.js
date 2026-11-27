@@ -169,6 +169,9 @@ async function editorState(draft, published) {
     // Publishing changes nothing visible while the public site is off.
     publicSiteEnabled: flag(settings.general_public_site_enabled),
     legacyImportRefused: await importRefusal({ published }),
+    // The public origin the sitemap and the canonical links use, for the
+    // editor's "Open site"; '' when none is configured.
+    publicUrl: await getFrontendBaseUrl().catch(() => ''),
   };
 }
 

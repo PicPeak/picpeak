@@ -349,6 +349,18 @@ describe('public pages', () => {
     expect((await service.resolvePublicPage('')).html).not.toContain('Book a session');
   });
 
+  test('the editor, the sitemap and the canonical links name the same public origin', async () => {
+    await setSetting('seo_allow_indexing', true, 'seo');
+    await setSetting('general_site_url', 'https://studio.example/');
+    frontendUrl.invalidateSiteUrlCache();
+    await frontendUrl.primeSiteUrlCache();
+    cache.clearWebsiteCache();
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    expect(state.publicUrl).toBe('https://studio.example');
+    expect(await service.sitemapXml()).toContain(`<loc>${state.publicUrl}/about</loc>`);
+    expect((await service.resolvePublicPage('about')).html).toContain(`<link rel="canonical" href="${state.publicUrl}/about">`);
+  });
+
   test('sitemap lists the visible pages once indexing is on and the origin known', async () => {
     await setSetting('seo_allow_indexing', true, 'seo');
     await setSetting('general_site_url', 'https://studio.example');

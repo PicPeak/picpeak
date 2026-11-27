@@ -20,3 +20,9 @@ it('opens the site on the backend the Vite dev server proxies to', () => {
   dev.__PICPEAK_DEV_SITE_ORIGIN__ = 'http://localhost:3001';
   expect(publicSiteUrl()).toBe('http://localhost:3001/');
 });
+
+it('prefers the configured public address, but not over the dev server override', () => {
+  expect(publicSiteUrl('https://photos.example')).toBe('https://photos.example/');
+  dev.__PICPEAK_DEV_SITE_ORIGIN__ = 'http://localhost:3001';
+  expect(publicSiteUrl('https://photos.example')).toBe('http://localhost:3001/');
+});

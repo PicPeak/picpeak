@@ -298,7 +298,7 @@ export const WebsiteBuilderPage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               {status}
               {server.published && (
-                <a href={publicSiteUrl()} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm inline-flex items-center gap-1.5">
+                <a href={publicSiteUrl(server.publicUrl)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm inline-flex items-center gap-1.5">
                   <ExternalLink className="w-4 h-4" aria-hidden="true" />{t('website.openSite', 'Open site')}
                 </a>
               )}
