@@ -33,7 +33,7 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { getAppSetting } = require('../utils/appSettings');
 const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
-const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
+const { getUseOriginalFilenames, getZipEntryNames, zipEntryDate } = require('./downloadFilenameService');
 const { sanitizeForZipEntry, buildContentDisposition } = require('../utils/filenameSanitizer');
 const {
   setAttachmentHeaders, opaqueStoredName, normalizeMaxFiles, getTransferUploadPolicy, effectiveMaxFiles,
@@ -895,9 +895,9 @@ async function streamTransferArchive(transfer, res) {
           stream.destroy();
           break;
         }
-        archive.append(guard.track(stream), { name });
+        archive.append(guard.track(stream), { name, date: zipEntryDate(photo) });
       } else {
-        archive.file(resolvePhotoFilePath(event, photo), { name });
+        archive.file(resolvePhotoFilePath(event, photo), { name, date: zipEntryDate(photo) });
       }
       appended += 1;
     } catch (err) {

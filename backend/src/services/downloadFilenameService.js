@@ -14,6 +14,7 @@
 const path = require('path');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
+const { cameraWallClock, toServerWallClock } = require('../utils/dateNormalize');
 const {
   sanitizeForZipEntry,
   uniquifyZipNames,
@@ -108,6 +109,22 @@ function zipEntryPath(photo, entryName, hasMultipleTypes) {
   return path.join(photo.type === 'individual' ? 'Individual Photos' : 'Collages', entryName);
 }
 
+/**
+ * The date a photo's zip entry carries, so an unpacked archive sorts by shot
+ * time (issue 2617). A zip entry's time has no zone and unzip tools show it as
+ * stored, so it is the wall clock the camera showed: captured_at_wall as the
+ * EXIF wrote it, else captured_at in the server's zone (the zone exifr read
+ * the EXIF in, as the admin list formats it), else the upload time there.
+ * archiver writes a Date's UTC fields, so that wall clock goes in as UTC.
+ * undefined (archiver's own default) when the row has none of the three.
+ */
+function zipEntryDate(photo) {
+  const wall = cameraWallClock(photo.captured_at_wall)
+    || toServerWallClock(photo.captured_at)
+    || toServerWallClock(photo.uploaded_at);
+  return wall ? new Date(`${wall}Z`) : undefined;
+}
+
 module.exports = {
   SETTING_KEY,
   clearCache,
@@ -115,4 +132,5 @@ module.exports = {
   pickRawDownloadName,
   getZipEntryNames,
   zipEntryPath,
+  zipEntryDate,
 };

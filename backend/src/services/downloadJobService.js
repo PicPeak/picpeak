@@ -30,7 +30,7 @@ const archiver = require('archiver');
 const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
-const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
+const { getUseOriginalFilenames, getZipEntryNames, zipEntryDate } = require('./downloadFilenameService');
 const { renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, renderedDownloadType, resolveWatermarkSettings, isVideo } = require('./downloadRendition');
 const { isGalleryPriced, resolveForcedWatermarkSettingsForPhoto } = require('../modules/photoSales/priceRules');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
@@ -571,7 +571,7 @@ class DownloadJobService {
               };
               completeEntry = (error) => { archive.removeListener('entry', onEntry); failed(error); };
               archive.once('entry', onEntry);
-              archive.append(source, { name: entryName });
+              archive.append(source, { name: entryName, date: zipEntryDate(photo) });
             }));
             await report();
           }
