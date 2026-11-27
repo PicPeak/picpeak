@@ -12,7 +12,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const layouts: GalleryLayoutType[] = ['grid', 'masonry', 'carousel', 'timeline', 'mosaic', 'gallery-premium', 'gallery-story'];
+const layouts: GalleryLayoutType[] = ['grid', 'masonry', 'carousel', 'timeline', 'mosaic', 'gallery-premium', 'gallery-story', 'gallery-folio'];
 
 describe('GalleryPreview', () => {
   it.each(layouts)('draws sample photos for the %s layout', (layoutType) => {

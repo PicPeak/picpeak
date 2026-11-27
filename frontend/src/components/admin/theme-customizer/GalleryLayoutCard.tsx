@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, Input, Switch } from '../../common';
 import { ThemeConfig, STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { LayoutPicker } from './LayoutPicker';
+import { FolioSettingsFields } from './FolioSettingsFields';
 import { masonryModeWireframes, useGalleryLayoutOptions, type MasonryPickerMode } from './layoutWireframes';
 import { masonryModeOf } from '../../gallery/layouts/masonryMode';
 import { PREMIUM_COLUMN_LIMITS, PREMIUM_GAP_LIMITS, clampPremiumColumns, clampPremiumGap, premiumColumns, premiumGap } from '../../gallery/layouts/premiumGeometry';
@@ -38,6 +39,7 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
   // admin picks.
   const masonryMode: MasonryPickerMode = masonryModeOf(localTheme.gallerySettings?.masonryMode);
   const isPremium = localTheme.galleryLayout === 'gallery-premium';
+  const isFolio = localTheme.galleryLayout === 'gallery-folio';
   const premium = premiumColumns(localTheme.gallerySettings);
   // The same control for grid, masonry columns and mosaic.
   const thumbnailScaleField = (
@@ -109,8 +111,8 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
 
           {/* Common settings */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Premium sets its gap in pixels below and ignores this. */}
-            {!isPremium && (
+            {/* Premium and Folio set their own spacing below and ignore this. */}
+            {!isPremium && !isFolio && (
             <div>
               <label className="block text-sm font-medium text-body mb-2">
                 {t('branding.photoSpacing')}
@@ -409,6 +411,14 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
                 </p>
               </div>
             </>
+          )}
+
+          {/* Gallery Folio specific (issue 2617) */}
+          {isFolio && (
+            <FolioSettingsFields
+              gallerySettings={localTheme.gallerySettings}
+              updateGallerySettings={updateGallerySettings}
+            />
           )}
 
           {localTheme.galleryLayout === 'mosaic' && thumbnailScaleField}
