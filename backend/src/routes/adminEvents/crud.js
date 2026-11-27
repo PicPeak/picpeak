@@ -1341,6 +1341,8 @@ module.exports = (router) => {
     ...sharedValidators('default_photo_sort'),
     // Videos ahead of photos in the guest gallery (issue 2263).
     body('videos_first').optional().isBoolean(),
+    // The website opt-in (issue 2618).
+    body('show_on_website').optional().isBoolean(),
     // Chapter markers above the categories (issue 2548).
     body('chapter_marker_style').optional().isIn(['off', 'divider', 'hero']),
     // Multilingual texts (issue 2550): the mode and the two languages it
@@ -1978,6 +1980,16 @@ module.exports = (router) => {
         updates.og_image_share_enabled = formatBoolean(updates.og_image_share_enabled === true);
       }
 
+      // The website opt-in (issue 2618): only while the website builder is
+      // on, so a switched-off feature is not actable through the API either.
+      if (Object.prototype.hasOwnProperty.call(updates, 'show_on_website')) {
+        if (await require('../../middleware/requireFeatureFlag').isFeatureEnabled('websiteBuilder')) {
+          updates.show_on_website = formatBoolean(parseBooleanInput(updates.show_on_website, false));
+        } else {
+          delete updates.show_on_website;
+        }
+      }
+
       // Banner overrides (#440 promo / #932 info). Markdown is stored ONLY
       // while the mode is 'custom', so switching modes can't leave stale copy
       // that reappears later. Empty markdown becomes NULL.
@@ -2195,6 +2207,9 @@ module.exports = (router) => {
         if (archiveLease) await archiveLease.release();
       }
       if (Object.keys(recoverable).length > 0) await dropCopiesIfStorageOff(id);
+      // Website pages (issue 2618) show the gallery's opt-in, name, date and
+      // cover; a saved gallery is reflected there at once, not after the TTL.
+      require('../../services/website/cache').clearWebsiteCache();
       // A new or detached source re-marks the curated selection (issue 2356):
       // without a source every photo is in it again, and another folder has
       // its own paths.

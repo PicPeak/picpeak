@@ -90,6 +90,7 @@ beforeAll(async () => {
   app.use('/api/admin/website', require('../../src/routes/adminWebsite'));
   app.use('/api/public/website', require('../../src/routes/publicWebsite'));
   app.use('/site-media', require('../../src/routes/publicWebsiteMedia'));
+  app.use('/api/admin/events', require('../../src/routes/adminEvents'));
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => res.status(err.statusCode || err.status || 500).json({ error: err.message, code: err.code, details: err.details }));
 });
@@ -544,5 +545,48 @@ describe('what an admin may pick', () => {
     expect(urls[`photo:${other}`]).toBeNull();
     // Already on the site: its thumbnail shows.
     expect(urls[`photo:${foreignPhoto}`]).toMatch(/^\/site-media\//);
+  });
+});
+
+describe('the opt-in in the gallery settings', () => {
+  let event; let photo;
+
+  beforeAll(async () => {
+    event = await insertEvent({ show_on_website: 0 });
+    photo = await insertPhoto(event);
+    const rev = (await request(app).get('/api/admin/website').set(auth(adminId))).body.draft.revision;
+    const document = { pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'g', type: 'gallery', images: [{ source: 'photo', id: photo }] }] }] };
+    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document, revision: rev }).expect(200);
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+  });
+
+  const put = (body, who = adminId) => request(app).put(`/api/admin/events/${event}`).set(auth(who)).send(body);
+  const stored = async () => Boolean((await db('events').where({ id: event }).first()).show_on_website);
+
+  test('switches the gallery on and off, and the published page follows at once', async () => {
+    expect((await service.resolvePublicPage('')).html).not.toContain(`/site-media/p${photo}.`);
+    expect((await put({ show_on_website: true })).status).toBe(200);
+    expect(await stored()).toBe(true);
+    // No wait for the page cache: the change clears it.
+    expect((await service.resolvePublicPage('')).html).toContain(`/site-media/p${photo}.`);
+    expect((await put({ show_on_website: false })).status).toBe(200);
+    expect(await stored()).toBe(false);
+    expect((await service.resolvePublicPage('')).html).not.toContain(`/site-media/p${photo}.`);
+  });
+
+  test('takes a boolean only', async () => {
+    expect((await put({ show_on_website: 'yes please' })).status).toBe(400);
+  });
+
+  test('needs events.edit, like every gallery setting', async () => {
+    expect((await put({ show_on_website: true }, viewerId)).status).toBe(403);
+    expect(await stored()).toBe(false);
+  });
+
+  test('cannot be changed while the website builder is off', async () => {
+    await setFeatureFlags(db, { websiteBuilder: false });
+    expect((await put({ show_on_website: true })).status).toBe(200);
+    expect(await stored()).toBe(false);
+    await setFeatureFlags(db, { websiteBuilder: true });
   });
 });
