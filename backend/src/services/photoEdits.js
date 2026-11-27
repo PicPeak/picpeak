@@ -107,7 +107,7 @@ async function withOriginal(photo, fn, { raw = false } = {}) {
   delete original[DELIVERY_KEY];
   const key = resolvePhotoStorageKey(event, original);
   const open = async (localPath, sourceName) => {
-    if (raw) return fn(localPath);
+    if (raw) return fn(localPath, sourceName);
     const proc = await withProcessableImage(localPath, sourceName);
     try {
       return await fn(proc.path);
@@ -179,17 +179,7 @@ async function renderEditedJpeg(photo, params, { interactive = false } = {}) {
   const limit = maxPixels();
   const encode = async (out) => sharp(out.data, { raw: { width: out.width, height: out.height, channels: 3 }, interactive })
     .jpeg({ quality: jpegQuality(), chromaSubsampling: '4:4:4' }).toBuffer();
-  if (rawDevelop.isRawPhoto(photo) && await rawDevelop.isAvailable()) {
-    return withOriginal(photo, async (rawPath) => {
-      const info = await rawDevelop.identify(rawPath);
-      const half = Boolean(info.width && info.height && info.width * info.height > 1.5 * limit);
-      const image = await rawDevelop.developLinear(rawPath, { half, nr: params.nr });
-      const out = await renderInWorker(image.data, image.width, image.height, 3, params,
-        { maxPixels: limit, linear: true, exposureBias: info.exposureBias });
-      return { buffer: await imageProcessor.withRawContainerTags(rawPath, await encode(out)), width: out.width, height: out.height };
-    }, { raw: true });
-  }
-  return withOriginal(photo, async (sourcePath) => {
+  const decoded = async (sourcePath) => {
     const metadata = await sharp(sourcePath, { failOn: 'none', interactive }).metadata();
     const turned = (metadata.orientation || 1) >= 5;
     const width = turned ? metadata.height : metadata.width;
@@ -202,7 +192,25 @@ async function renderEditedJpeg(photo, params, { interactive = false } = {}) {
     const { data, info } = await chain.flatten({ background: '#ffffff' }).raw({ depth: 'uchar' }).toBuffer({ resolveWithObject: true });
     const out = await renderInWorker(toRgb(data, info), info.width, info.height, 3, params, { maxPixels: limit });
     return { buffer: imageProcessor.withSourceMetadata(await encode(out), { exif: metadata.exif, xmp: metadata.xmp }), width: out.width, height: out.height };
-  });
+  };
+  const developable = rawDevelop.isRawPhoto(photo) && await rawDevelop.isAvailable();
+  return withOriginal(photo, async (localPath, sourceName) => {
+    // The name only proposes a RAW; the bytes decide (a renamed JPEG is decoded as one).
+    if (developable && !(await rawDevelop.isOrdinaryImageFile(localPath))) {
+      const info = await rawDevelop.identify(localPath);
+      const half = Boolean(info.width && info.height && info.width * info.height > 1.5 * limit);
+      const image = await rawDevelop.developLinear(localPath, { half, nr: params.nr });
+      const out = await renderInWorker(image.data, image.width, image.height, 3, params,
+        { maxPixels: limit, linear: true, exposureBias: info.exposureBias });
+      return { buffer: await imageProcessor.withRawContainerTags(localPath, await encode(out)), width: out.width, height: out.height };
+    }
+    const proc = await imageProcessor.withProcessableImage(localPath, sourceName);
+    try {
+      return await decoded(proc.path);
+    } finally {
+      await proc.cleanup();
+    }
+  }, { raw: true });
 }
 
 /** The unedited photo, upright, at most `longEdge` long: the editor's base and the face scan's input for an edited photo. */
@@ -451,9 +459,11 @@ async function autoDevelopEnabled() {
  */
 async function queueDefaultDevelop(photos) {
   const rawDevelop = require('./rawDevelop');
-  const changes = photos
-    .filter((photo) => !isVideoRow(photo) && rawDevelop.isRawPhoto(photo) && !paramsOf(photo))
-    .map((photo) => ({ photo, params: { ...math.DEFAULT_PARAMS, develop: true } }));
+  const changes = [];
+  for (const photo of photos) {
+    if (isVideoRow(photo) || paramsOf(photo) || !(await rawDevelop.isRawSource(photo))) continue;
+    changes.push({ photo, params: { ...math.DEFAULT_PARAMS, develop: true } });
+  }
   if (changes.length) await saveEdits(changes);
   return changes.map((change) => change.photo.id);
 }

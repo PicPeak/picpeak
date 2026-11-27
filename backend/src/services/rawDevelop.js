@@ -211,8 +211,38 @@ function decodePreview(buffer) {
   return { header, width: header.width, height: header.height, data: new Uint16Array(pixels.buffer, pixels.byteOffset, header.width * header.height * 3) };
 }
 
-/** Whether a photo row is a camera RAW (by its file name), which the develop path applies to. */
+/** Whether a photo row is named like a camera RAW; isRawSource then asks the bytes. */
 const isRawPhoto = (photo) => Boolean(photo) && isRawFilename(photo.original_filename || photo.filename || photo.path || '');
+
+/**
+ * Whether a file's first bytes rule a RAW out: they are an ordinary image
+ * (JPEG, PNG, WebP, GIF). A JPEG renamed .CR3 must never reach LibRaw.
+ * TIFF-like headers are not ruled out: most RAW containers are TIFF.
+ */
+async function isOrdinaryImageFile(filePath) {
+  const { sniffImageFileType } = require('../utils/fileSecurityUtils');
+  return Boolean(await sniffImageFileType(filePath));
+}
+
+/** A RAW by name whose stored bytes are not an ordinary image. */
+async function isRawSource(photo) {
+  if (!isRawPhoto(photo)) return false;
+  const { sniffImageType } = require('../utils/fileSecurityUtils');
+  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
+  const { db } = require('../database/db');
+  try {
+    const event = await db('events').where({ id: photo.event_id }).first();
+    const key = resolvePhotoStorageKey(event, photo);
+    if (key) {
+      const chunks = [];
+      for await (const chunk of await require('./storage').getStorage().getRange(key, 0, 63)) chunks.push(chunk);
+      return !sniffImageType(Buffer.concat(chunks));
+    }
+    return !(await isOrdinaryImageFile(resolvePhotoFilePath(event, photo)));
+  } catch {
+    return false;
+  }
+}
 
 /**
  * The storage key of a photo's develop preview. Named after what identifies
@@ -273,6 +303,8 @@ module.exports = {
   PREVIEW_LONG_EDGE,
   isAvailable,
   isRawPhoto,
+  isRawSource,
+  isOrdinaryImageFile,
   identify,
   developArgs,
   noiseOptions,

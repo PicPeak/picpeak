@@ -112,7 +112,7 @@ beforeAll(async () => {
   originalBytes = await testCard();
   fs.writeFileSync(path.join(dir, 'card.jpg'), originalBytes);
   photoId = unwrap(await db('photos').insert({
-    event_id: eventId, filename: 'card.jpg', original_filename: 'IMG_0001.CR3', path: 'edit-card/card.jpg',
+    event_id: eventId, filename: 'card.jpg', original_filename: 'IMG_0001.JPEG', path: 'edit-card/card.jpg',
     type: 'individual', media_type: 'image', mime_type: 'image/jpeg', width: 600, height: 400,
     size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(),
   }).returning('id'));
@@ -166,6 +166,24 @@ describe('the edited render (golden, server vs CPU reference)', () => {
     const { buffer } = await photoEdits().renderEditedJpeg(photo, params);
     const meta = await sharp(buffer).metadata();
     expect(meta.exif.toString('latin1')).toContain('Studio test');
+  });
+});
+
+describe('a JPEG named like a camera RAW', () => {
+  it('is never sent to LibRaw, whatever its name says', async () => {
+    const rawDevelop = require('../../src/services/rawDevelop');
+    const available = jest.spyOn(rawDevelop, 'isAvailable').mockResolvedValue(true);
+    const develop = jest.spyOn(rawDevelop, 'developLinear').mockRejectedValue(new Error('sent to LibRaw'));
+    try {
+      const photo = { ...(await row()), filename: 'card.CR3', original_filename: 'IMG_0001.CR3', edit_rev: 1 };
+      const { width, height } = await photoEdits().renderEditedJpeg(photo, validated({ exposure: 0.2 }));
+      expect([width, height]).toEqual([600, 400]);
+      expect(develop).not.toHaveBeenCalled();
+      expect(await rawDevelop.isRawSource(photo)).toBe(false);
+    } finally {
+      available.mockRestore();
+      develop.mockRestore();
+    }
   });
 });
 

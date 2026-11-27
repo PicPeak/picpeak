@@ -73,7 +73,7 @@ async function editPayload(photo) {
   return {
     // A RAW the server can develop: the editor works on its 16-bit develop
     // preview with the RAW look, and noise reduction applies.
-    raw: rawDevelop.isRawPhoto(photo) && await rawDevelop.isAvailable(),
+    raw: rawDevelop.isRawPhoto(photo) && await rawDevelop.isAvailable() && await rawDevelop.isRawSource(photo),
     photo_id: photo.id,
     params: photoEdits.paramsOf(photo),
     edit_rev: Number(photo.edit_rev) || 0,
@@ -206,7 +206,7 @@ router.get('/:eventId/photos/:photoId/edit/develop', ...gate, async (req, res) =
     const loaded = await loadPhoto(req, res);
     if (!loaded) return;
     const rawDevelop = require('../services/rawDevelop');
-    if (!rawDevelop.isRawPhoto(loaded.photo) || !(await rawDevelop.isAvailable())) {
+    if (!rawDevelop.isRawPhoto(loaded.photo) || !(await rawDevelop.isAvailable()) || !(await rawDevelop.isRawSource(loaded.photo))) {
       return res.status(404).json({ error: 'This photo has no RAW develop' });
     }
     const body = await rawDevelop.developPreview(loaded.photo, photoEdits.withOriginal);
