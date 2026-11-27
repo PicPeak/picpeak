@@ -14,10 +14,11 @@
  * edit_width / edit_height its size, which guests are shown. photos.width /
  * height stay the original's: face boxes are in its pixels.
  *
- * edit_applied_params / edit_applied_width / edit_applied_height are the
- * edit and size of the applied revision, the one guests' previews and
- * thumbnails show: while a newer save is being applied (or failed), face
- * boxes are placed with these, so they match the image delivered.
+ * edit_applied_params / edit_applied_width / edit_applied_height /
+ * edit_applied_render_path are the edit, size and render of the applied
+ * revision, the one guests' previews and thumbnails show: while a newer save
+ * is being applied (or failed), renditions are cut from that render and face
+ * boxes placed with that edit, so URL, pixels and boxes move together.
  *
  * edit_failed_rev is the revision the background apply last failed on, and
  * edit_error a short code for what failed ('render', 'renditions', 'error'),
@@ -40,6 +41,7 @@ exports.up = async function up(knex) {
     ['edit_applied_params', (t) => t.text('edit_applied_params').nullable()],
     ['edit_applied_width', (t) => t.integer('edit_applied_width').nullable()],
     ['edit_applied_height', (t) => t.integer('edit_applied_height').nullable()],
+    ['edit_applied_render_path', (t) => t.string('edit_applied_render_path', 512).nullable()],
     ['edit_failed_rev', (t) => t.integer('edit_failed_rev').nullable()],
     ['edit_error', (t) => t.string('edit_error', 32).nullable()],
   ];
@@ -71,7 +73,7 @@ exports.down = async function down(knex) {
   }
   await knex.schema.dropTableIfExists('photo_edit_presets');
   const hasPhotos = await knex.schema.hasTable('photos');
-  for (const name of ['edit_error', 'edit_failed_rev', 'edit_applied_height', 'edit_applied_width', 'edit_applied_params', 'edit_height', 'edit_width', 'edit_render_path', 'edit_applied_rev', 'edit_rev', 'edit_params']) {
+  for (const name of ['edit_error', 'edit_failed_rev', 'edit_applied_render_path', 'edit_applied_height', 'edit_applied_width', 'edit_applied_params', 'edit_height', 'edit_width', 'edit_render_path', 'edit_applied_rev', 'edit_rev', 'edit_params']) {
     if (hasPhotos && await knex.schema.hasColumn('photos', name)) {
       await knex.schema.alterTable('photos', (t) => t.dropColumn(name));
     }

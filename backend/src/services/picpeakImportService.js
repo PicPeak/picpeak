@@ -594,7 +594,7 @@ const CONTAINED_PATH_COLUMNS = {
   album_product_images: ['storage_key'],
   print_sales_assets: ['storage_key'],
   events: ['archive_path'],
-  photos: ['path', 'thumbnail_path', 'watermark_path', 'external_relpath', 'edit_render_path'],
+  photos: ['path', 'thumbnail_path', 'watermark_path', 'external_relpath', 'edit_render_path', 'edit_applied_render_path'],
 };
 
 function assertContainedPaths(table, rows) {

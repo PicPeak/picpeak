@@ -271,9 +271,14 @@ describe('save, background apply, reset', () => {
     // Served the revision the row has now, never the stale one.
     expect(key).toMatch(new RegExp(`_r${stale.edit_rev + 1}_`));
     expect((await row()).edit_render_path).toBe(key);
-    expect(fs.readdirSync(editsDir).filter((name) => name.includes(`_r${stale.edit_rev}_`) && name.startsWith('edit_'))).toHaveLength(0);
-    expect(fs.readdirSync(editsDir).length).toBe(filesBefore);
+    // The stale render is dropped. The applied revision's render stays while
+    // the new one is pending (renditions are cut from it), and goes once the
+    // new revision is applied.
+    const applied = path.basename(stale.edit_applied_render_path);
+    expect(fs.readdirSync(editsDir).filter((name) => name.includes(`_r${stale.edit_rev}_`) && name.startsWith('edit_'))).toEqual([applied]);
+    expect(fs.readdirSync(editsDir).length).toBe(filesBefore + 1);
     await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+    expect(fs.existsSync(path.join(editsDir, applied))).toBe(false);
   });
 
   it('renders again when the source was rewritten in place (an external refresh)', async () => {
@@ -342,6 +347,42 @@ describe('noise reduction on a sensor developed at half size', () => {
     } finally {
       run.mockRestore();
       for (const spy of spies) spy.mockRestore();
+    }
+  });
+});
+
+describe('renditions while a newer edit is being applied', () => {
+  it('show the applied revision, as its URL and face boxes do, until the pass applies the new one', async () => {
+    fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/tier-pending.jpg'));
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'tier-pending.jpg', path: 'edit-card/tier-pending.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: originalBytes.length, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    const fresh = () => db('photos').where({ id }).first();
+    const imageProcessor = require('../../src/services/imageProcessor');
+    const tierShape = async () => {
+      const key = await imageProcessor.ensurePreviewImageAtWidth(await fresh(), 640);
+      const meta = await sharp(storagePath(key)).metadata();
+      return { key, ratio: Math.round((meta.width / meta.height) * 100) / 100 };
+    };
+    try {
+      await photoEdits().saveEdits([{ photo: await fresh(), params: validated({ rotate: 90 }) }]);
+      await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+      // A crop saved, not applied yet: guests' URLs still name revision 1.
+      await photoEdits().saveEdits([{ photo: await fresh(), params: validated({ rotate: 90, crop: { x: 0, y: 0, w: 1, h: 0.5 } }) }]);
+      const pending = await tierShape();
+      expect(pending.ratio).toBeCloseTo(0.67, 1);
+      expect(pending.key).toMatch(/_e1_/);
+      // Nothing is kept under the old URL while a newer edit is pending.
+      expect(photoEdits().editVersionStale(await fresh(), '1')).toBe(true);
+      await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+      const applied = await tierShape();
+      expect(applied.ratio).toBeCloseTo(1.33, 1);
+      expect(applied.key).toMatch(/_e2_/);
+      expect(photoEdits().editVersionStale(await fresh(), '2')).toBe(false);
+    } finally {
+      await db('photos').where({ id }).delete();
     }
   });
 });

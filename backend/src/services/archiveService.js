@@ -768,6 +768,9 @@ async function buildArchive(event, lease) {
       if (photo.edit_render_path) {
         await db('photos').where({ id: photo.id, edit_render_path: photo.edit_render_path }).update({ edit_render_path: null });
       }
+      if (photo.edit_applied_render_path) {
+        await db('photos').where({ id: photo.id, edit_applied_render_path: photo.edit_applied_render_path }).update({ edit_applied_render_path: null });
+      }
       await require('./photoEdits').deleteEditedRender(photo);
     }
 

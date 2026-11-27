@@ -101,8 +101,10 @@ async function withSourceVersion(photo) {
   // the edited file in place of the original; renditions are built from the
   // row itself, which the source guard compares against.
   if (photo && photo.edit_delivery_key !== undefined) photo = (await db('photos').where({ id: photo.id }).first()) || photo;
-  // The edit columns too: they name and guard the renditions.
-  photo = await require('./photoEdits').withEditColumns(photo);
+  // The edit columns too: they name and guard the renditions. While a newer
+  // edit is being applied, renditions show the applied revision, the one the
+  // URLs and face boxes name (photoEdits.renditionView).
+  photo = await require('./photoEdits').renditionView(await require('./photoEdits').withEditColumns(photo));
   if (!photo || !isExternalSource(photo) || photo.id == null
       || (photo.size_bytes !== undefined && photo.source_mtime_ms !== undefined)) return photo;
   const row = await db('photos').where({ id: photo.id }).first('size_bytes', 'source_mtime_ms');
@@ -132,7 +134,8 @@ function sourceGuard(photo) {
   for (const field of derivativeSourceFields) if (photo[field] !== undefined) match[field] = photo[field];
   if (isExternalSource(photo) && photo.size_bytes !== undefined) match.size_bytes = photo.size_bytes;
   if (isExternalSource(photo) && photo.source_mtime_ms !== undefined) match.source_mtime_ms = photo.source_mtime_ms;
-  if (photo.edit_rev !== undefined) match.edit_rev = photo.edit_rev;
+  // The revision it shows: the applied one for an applied view.
+  if (photo.edit_rev !== undefined) match[photo.edit_view === 'applied' ? 'edit_applied_rev' : 'edit_rev'] = photo.edit_rev;
   return db('photos').where(match);
 }
 function withLazyDerivative(photo, callback) {
@@ -2380,7 +2383,9 @@ function thumbnailTierKeys(photo) {
 async function keepTierIfCurrent(photo, key, keysOf, shapeIsCurrent) {
   if (!key) return key;
   try {
-    const current = await db('photos').where({ id: photo.id }).first();
+    // As its renditions show it: the applied revision while a newer edit is
+    // pending (issue 2619), which is what a tier cut for guests shows.
+    const current = await require('./photoEdits').renditionView(await db('photos').where({ id: photo.id }).first());
     // The version too, not only the key: the keys of a row include the names
     // its tiers had under an earlier version, and a tier cut while the row
     // still had that version may be of bytes since replaced (issue 2059).

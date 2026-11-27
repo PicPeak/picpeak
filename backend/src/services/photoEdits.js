@@ -71,6 +71,36 @@ const concurrency = () => Math.min(8, intEnv('PREVIEW_REGEN_CONCURRENCY', 1));
 const isVideoRow = (photo) => photo.media_type === 'video' || photo.type === 'video'
   || String(photo.mime_type || '').startsWith('video/');
 
+// The applied revision's edit, size and render (migration 380).
+const APPLIED_COLUMNS = ['edit_applied_params', 'edit_applied_width', 'edit_applied_height', 'edit_applied_render_path'];
+
+/** The row as its applied revision: what its renditions show while a newer edit is pending. */
+function appliedView(row) {
+  return {
+    ...row,
+    edit_params: row.edit_applied_params ?? null,
+    edit_rev: Number(row.edit_applied_rev) || 0,
+    edit_render_path: row.edit_applied_render_path ?? null,
+    edit_width: row.edit_applied_width ?? null,
+    edit_height: row.edit_applied_height ?? null,
+    edit_view: 'applied',
+  };
+}
+
+/**
+ * The row renditions (thumbnails, previews, hero, their tiers) are cut for
+ * (issue 2619): while a newer save is still being applied, its applied
+ * revision, which guests' URLs (e=) and face boxes name; the pending edit
+ * shows once the background pass applies it. A row marked edit_view
+ * 'current' (the pass building that revision's renditions) stays as it is.
+ */
+async function renditionView(photo) {
+  if (!photo || photo.edit_view || isVideoRow(photo) || !(Number(photo.edit_rev) > Number(photo.edit_applied_rev))) return photo;
+  const missing = APPLIED_COLUMNS.filter((column) => !(column in photo));
+  const row = missing.length ? await db('photos').where({ id: photo.id }).first(missing) : {};
+  return appliedView({ ...photo, ...(row || {}) });
+}
+
 /** The row with its edit columns, read once when a caller's select left them out. */
 async function withEditColumns(photo, { source = false } = {}) {
   if (!photo || photo.id == null || isVideoRow(photo)) return photo;
@@ -339,20 +369,34 @@ async function renderAndRecord(photo, params, options) {
   const key = `edits/edit_p${photo.id}_r${photo.edit_rev}_s${sourceTag(photo)}_${crypto.randomBytes(6).toString('hex')}.jpg`;
   const storage = getStorage();
   await storage.put(key, buffer);
+  // The applied revision's render (an applied view, renditionView) is
+  // recorded in its own column; the current one with its size.
+  const applied = photo.edit_view === 'applied';
+  const [revColumn, pathColumn] = applied ? ['edit_applied_rev', 'edit_applied_render_path'] : ['edit_rev', 'edit_render_path'];
   const before = photo.edit_render_path || null;
-  const recorded = await db('photos').where({ id: photo.id, edit_rev: photo.edit_rev })
-    .where((q) => (before ? q.where('edit_render_path', before) : q.whereNull('edit_render_path')))
-    .update({ edit_render_path: key, edit_width: width, edit_height: height });
+  const recorded = await db('photos').where({ id: photo.id, [revColumn]: photo.edit_rev })
+    .where((q) => (before ? q.where(pathColumn, before) : q.whereNull(pathColumn)))
+    .update(applied ? { [pathColumn]: key } : { [pathColumn]: key, edit_width: width, edit_height: height });
   if (recorded !== 1) {
     await storage.delete(key).catch(() => {});
-    const current = await db('photos').where({ id: photo.id }).first(['edit_rev', 'edit_render_path']);
-    const winner = current && Number(current.edit_rev) === Number(photo.edit_rev) ? current.edit_render_path : null;
+    const current = await db('photos').where({ id: photo.id }).first([revColumn, pathColumn]);
+    const winner = current && Number(current[revColumn]) === Number(photo.edit_rev) ? current[pathColumn] : null;
     return winner && isRenderKeyOf(photo, winner, photo.edit_rev) ? winner : null;
   }
   // The render this one replaced: of an older revision or source, or lost.
   // Only a key of this photo's own render namespace is deleted; a download
-  // still streaming it keeps its handle.
-  if (before && before !== key && isRenderKeyOf(photo, before)) {
+  // still streaming it keeps its handle. Never the applied revision's render
+  // while it is still applied: renditions are cut from it until the pass
+  // applies the new one (and then drops it).
+  if (!applied && before) {
+    // Of the applied revision itself (nothing pending: the source was
+    // rewritten, or the render lost): it is the applied render now too.
+    await db('photos').where({ id: photo.id, edit_applied_rev: photo.edit_rev, edit_applied_render_path: before })
+      .update({ edit_applied_render_path: key });
+  }
+  const stillApplied = !applied && before
+    && (await db('photos').where({ id: photo.id }).first('edit_applied_render_path'))?.edit_applied_render_path === before;
+  if (before && before !== key && !stillApplied && isRenderKeyOf(photo, before)) {
     await storage.delete(before).catch((err) => {
       logger.warn(`Could not remove the superseded edited render ${before} of photo ${photo.id}: ${err.message}`);
     });
@@ -381,7 +425,7 @@ async function ensureEditedSource(photo, { interactive = false } = {}) {
         if (require('./storage/storageErrors').isStorageUnavailableError(err)) throw err;
       }
     }
-    const flightKey = `${photo.id}:${photo.edit_rev}`;
+    const flightKey = `${photo.edit_view === 'applied' ? 'applied' : 'current'}:${photo.id}:${photo.edit_rev}`;
     let flight = renderFlights.get(flightKey);
     if (!flight) {
       const snapshot = photo;
@@ -393,7 +437,9 @@ async function ensureEditedSource(photo, { interactive = false } = {}) {
     if (recorded) return recorded;
     // Superseded: the row has a newer revision (or another replica recorded
     // this one). Read it again and serve what it says now.
-    photo = { ...photo, ...(await db('photos').where({ id: photo.id }).first(EDIT_COLUMNS)) };
+    const fresh = await db('photos').where({ id: photo.id }).first([...EDIT_COLUMNS, ...APPLIED_COLUMNS]);
+    if (!fresh) return null;
+    photo = photo.edit_view === 'applied' ? appliedView({ ...photo, ...fresh }) : { ...photo, ...fresh };
     params = paramsOf(photo);
     if (!params) return null;
   }
@@ -484,6 +530,9 @@ function editQuery(photo) {
 function editVersionStale(photo, asked) {
   if (isVideoRow(photo)) return false;
   const applied = Number(photo.edit_applied_rev) || 0;
+  // A newer edit being applied: nothing is kept under any URL until it lands
+  // and the URL moves on (the pass rebuilds the renditions just before).
+  if (Number(photo.edit_rev) > applied) return true;
   return String(typeof asked === 'string' ? asked : '') !== (applied > 0 ? String(applied) : '');
 }
 
@@ -584,6 +633,9 @@ function editCacheKeys(photo) {
   // background pass has not dropped them yet.
   const keys = Number(photo.edit_rev) > 0 ? historicalTierKeys(photo) : [];
   if (isRenderKeyOf(photo, photo.edit_render_path)) keys.push(photo.edit_render_path);
+  if (isRenderKeyOf(photo, photo.edit_applied_render_path) && photo.edit_applied_render_path !== photo.edit_render_path) {
+    keys.push(photo.edit_applied_render_path);
+  }
   const rawDevelop = require('./rawDevelop');
   if (rawDevelop.isRawPhoto(photo)) keys.push(rawDevelop.previewKey(photo));
   return keys;
@@ -646,19 +698,19 @@ function pendingRows() {
 }
 
 /**
- * Delete the responsive tiers of every revision but the row's current one:
- * a tier's key names the revision it was cut from (imageProcessor
- * versionTag), so the old ones would otherwise stay in storage for good.
+ * The responsive tiers of every revision but the row's current one: a
+ * tier's key names the revision it was cut from (imageProcessor versionTag),
+ * so the old ones would otherwise stay in storage for good. Dropped once
+ * the row's revision is applied.
  */
-async function dropStaleTiers(row) {
+function staleTierKeys(row) {
   const keys = new Set(historicalTierKeys(row, { upTo: Number(row.edit_rev) - 1 }));
   if (paramsOf(row)) {
     const imageProcessor = require('./imageProcessor');
     const original = { ...row, edit_params: null };
     for (const key of [...imageProcessor.thumbnailTierKeys(original), ...imageProcessor.previewTierKeys(original)]) keys.add(key);
   }
-  const storage = getStorage();
-  await Promise.all([...keys].map((key) => storage.delete(key).catch(() => {})));
+  return [...keys];
 }
 
 // Any edit stands in for the one a past revision had: tier keys name the
@@ -709,24 +761,39 @@ async function applyPhoto(photo, references) {
       });
       if (!rendered) return 'render';
     } else if (row.edit_render_path) {
-      // A reset: the original is what guests get again.
+      // A reset: the original is what guests get once it is applied. The
+      // applied revision's render stays until then (renditions are cut from it).
       const cleared = await db('photos').where({ id: row.id, edit_rev: rev, edit_render_path: row.edit_render_path })
         .update({ edit_render_path: null, edit_width: null, edit_height: null });
-      if (cleared) await deleteEditedRender(row);
+      if (cleared && row.edit_render_path !== row.edit_applied_render_path && isRenderKeyOf(row, row.edit_render_path)) {
+        await getStorage().delete(row.edit_render_path).catch(() => {});
+      }
     }
     row = await db('photos').where({ id: photo.id }).first();
     if (!row || Number(row.edit_rev) !== rev) return true;
-    await dropStaleTiers(row);
-    if (!(await require('./renditionRefresh').refreshPhoto(row, references))) return 'renditions';
+    // Listed now, dropped once applied: guests are served the applied
+    // revision's tiers until then.
+    const staleTiers = staleTierKeys(row);
+    // The renditions of the revision being applied, cut from its own render
+    // (edit_view 'current': not the applied view guests' requests get).
+    if (!(await require('./renditionRefresh').refreshPhoto({ ...row, edit_view: 'current' }, references))) return 'renditions';
     await dropWatermarkCopy(row);
     const zip = require('./downloadZipService');
     await zip.invalidateIfBuilt(Number(row.event_id));
-    // The applied edit and its size with it: what the previews now show.
-    await db('photos').where({ id: row.id, edit_rev: rev }).update({
+    // The applied edit, its size and render with it: what the previews now show.
+    const advanced = await db('photos').where({ id: row.id, edit_rev: rev }).update({
       edit_applied_rev: rev, edit_applied_params: row.edit_params || null,
       edit_applied_width: row.edit_params ? row.edit_width : null, edit_applied_height: row.edit_params ? row.edit_height : null,
+      edit_applied_render_path: row.edit_params ? row.edit_render_path : null,
       edit_failed_rev: null, edit_error: null,
     });
+    if (advanced) {
+      const storage = getStorage();
+      await Promise.all(staleTiers.map((key) => storage.delete(key).catch(() => {})));
+      // The render of the revision applied before, no longer cut from.
+      const previous = row.edit_applied_render_path;
+      if (previous && previous !== row.edit_render_path && isRenderKeyOf(row, previous)) await storage.delete(previous).catch(() => {});
+    }
     return true;
   } catch (err) {
     logger.warn(`Photo edit: photo ${photo.id} revision ${rev} could not be applied: ${err.message}`);
@@ -869,6 +936,7 @@ module.exports = {
   originalPreviewJpeg,
   ensureEditedSource,
   deliveredPhoto,
+  renditionView,
   namedAsDelivered,
   deliveredKey,
   deliveredDimensions,
