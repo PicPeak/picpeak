@@ -46,6 +46,21 @@ describe('GalleriesPane', () => {
     expect(screen.getByText(/makes the photos you pick public, even when the gallery has a password/)).toBeInTheDocument();
   });
 
+  it('a visibility change refreshes the preview and the picked images, not only the list', async () => {
+    vi.mocked(websiteService.listGalleries).mockResolvedValue({ galleries: [gallery(1, 'Open portraits')], hasMore: false });
+    vi.mocked(websiteService.setGalleryOnWebsite).mockResolvedValue(undefined as never);
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    render(<QueryClientProvider client={client}><GalleriesPane onOpen={() => {}} /></QueryClientProvider>);
+    await screen.findByRole('button', { name: 'Open portraits' });
+    fireEvent.click(screen.getByRole('switch'));
+    await waitFor(() => expect(websiteService.setGalleryOnWebsite).toHaveBeenCalledWith(1, false));
+    await waitFor(() => {
+      const keys = invalidate.mock.calls.map(([filters]) => filters?.queryKey?.[0]);
+      expect(keys).toEqual(expect.arrayContaining(['website-galleries', 'website-media', 'website-preview']));
+    });
+  });
+
   it('loads more galleries and searches by name', async () => {
     vi.mocked(websiteService.listGalleries).mockImplementation(async ({ page = 1, q = '' } = {}) => {
       if (q) return { galleries: [gallery(9, 'Old summer')], hasMore: false };

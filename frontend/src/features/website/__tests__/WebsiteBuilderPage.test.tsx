@@ -146,6 +146,15 @@ describe('WebsiteBuilderPage', () => {
     expect(screen.getAllByText('Contact form').length).toBeGreaterThan(0);
   });
 
+  it('renders the preview again when its query is invalidated (a gallery left the website)', async () => {
+    renderPage();
+    const frame = await screen.findByTitle('Preview of the page');
+    await waitFor(() => expect(frame.getAttribute('srcdoc')).toContain('Hello there|About'));
+    vi.mocked(websiteService.preview).mockResolvedValue('<html><body>Gallery gone</body></html>');
+    await act(async () => { await queryClient.invalidateQueries({ queryKey: ['website-preview'] }); });
+    await waitFor(() => expect(screen.getByTitle('Preview of the page').getAttribute('srcdoc')).toContain('Gallery gone'));
+  });
+
   it('switches the preview to phone width', async () => {
     renderPage();
     const frame = await screen.findByTitle('Preview of the page');

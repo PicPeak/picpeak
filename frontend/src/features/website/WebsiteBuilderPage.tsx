@@ -2,7 +2,7 @@
  * Website builder (issue 2618): pages built from blocks, previewed with the
  * server's own markup, edited as a draft and published in one step.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
@@ -41,23 +41,36 @@ function blockSummary(block: Block): string {
   return '';
 }
 
+// Numbers the documents sent for preview, across mounts, so a query key never
+// names an older document's preview.
+let previewRun = 0;
+
+/**
+ * The server-rendered preview of `doc`, as a query (`website-preview`), so a
+ * change that is not in the document (a gallery taken off the website) can
+ * invalidate it.
+ */
 function usePreview(doc: WebsiteDocument | null, pageId: string) {
-  const [html, setHtml] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState<{ run: number; doc: WebsiteDocument; pageId: string } | null>(null);
   useEffect(() => {
     if (!doc || !pageId) return undefined;
-    let stale = false;
-    setLoading(true);
     // Typing re-renders on a pause, not on every key.
-    const timer = window.setTimeout(() => {
-      websiteService.preview(doc, pageId, { videoAsPoster: mediaOriginDiffers() })
-        .then((next) => { if (!stale) setHtml(next); })
-        .catch(() => { /* the last good preview stays */ })
-        .finally(() => { if (!stale) setLoading(false); });
-    }, 350);
-    return () => { stale = true; window.clearTimeout(timer); };
+    const timer = window.setTimeout(() => { previewRun += 1; setSent({ run: previewRun, doc, pageId }); }, 350);
+    return () => window.clearTimeout(timer);
   }, [doc, pageId]);
-  return { html, loading };
+  const preview = useQuery({
+    queryKey: ['website-preview', sent?.run],
+    queryFn: () => websiteService.preview(sent!.doc, sent!.pageId, { videoAsPoster: mediaOriginDiffers() }),
+    enabled: !!sent,
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+  });
+  // The last good preview stays while the next renders, or if it fails.
+  const lastGood = useRef<string | null>(null);
+  if (preview.data !== undefined) lastGood.current = preview.data;
+  const waiting = !!doc && !!pageId && (sent?.doc !== doc || sent?.pageId !== pageId);
+  return { html: lastGood.current, loading: waiting || preview.isFetching };
 }
 
 export const WebsiteBuilderPage: React.FC = () => {

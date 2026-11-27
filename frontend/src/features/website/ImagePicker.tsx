@@ -248,7 +248,13 @@ export const GalleriesPane: React.FC<{ onOpen: (gallery: WebsiteGallery) => void
   });
   const toggle = useMutation({
     mutationFn: ({ id, on }: { id: number; on: boolean }) => websiteService.setGalleryOnWebsite(id, on),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['website-galleries'] }),
+    onSuccess: () => {
+      // The preview and the picked images' thumbnails show which galleries
+      // are on the website too, not only this list.
+      void queryClient.invalidateQueries({ queryKey: ['website-galleries'] });
+      void queryClient.invalidateQueries({ queryKey: ['website-media'] });
+      void queryClient.invalidateQueries({ queryKey: ['website-preview'] });
+    },
     onError: (err) => toast.error(apiErrorText(err)),
   });
   const [onSite, others] = useMemo(() => {
