@@ -219,3 +219,25 @@ describe('copy to photos', () => {
   // 1500 tiles take longer than the default 5 s in a loaded full run.
   }, 20000);
 });
+
+describe('deleting a preset', () => {
+  const preset = { id: 7, name: 'Warm', params: { v: 1, exposure: 0.3 } };
+
+  it('keeps it in the list and shows the error when the delete fails', async () => {
+    service.listPresets.mockResolvedValue([preset]);
+    service.deletePreset.mockRejectedValue({ response: { data: { error: 'Preset is in use' } } });
+    await open();
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Warm' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Preset is in use'));
+    expect(screen.getByRole('button', { name: 'Delete Warm' })).toBeInTheDocument();
+  });
+
+  it('takes it off the list once the delete went through', async () => {
+    service.listPresets.mockResolvedValue([preset]);
+    service.deletePreset.mockResolvedValue(undefined);
+    await open();
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Warm' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Delete Warm' })).toBeNull());
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+});

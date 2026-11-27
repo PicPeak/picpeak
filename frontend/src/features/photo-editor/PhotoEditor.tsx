@@ -453,8 +453,12 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
   };
   const deletePreset = async (preset: PhotoEditPreset) => {
     if (!(await confirm({ message: t('photoEditor.presets.confirmDelete', { name: preset.name, defaultValue: 'Delete the preset “{{name}}”?' }), variant: 'danger' }))) return;
-    await photoEditorService.deletePreset(preset.id).catch(() => toast.error(t('common.error')));
-    setPresets((prev) => prev.filter((p) => p.id !== preset.id));
+    try {
+      await photoEditorService.deletePreset(preset.id);
+      setPresets((prev) => prev.filter((p) => p.id !== preset.id));
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || t('common.error'));
+    }
   };
 
   return (
