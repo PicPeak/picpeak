@@ -53,6 +53,9 @@
 const DEFAULT_PATHS = [
   { path: 'album-products', include_in_default: true, feature_flag: null, display_order: 110, description: 'Private product option images and historical choices' },
   { path: '.print-sales', include_in_default: true, feature_flag: null, display_order: 115, description: 'Retained print order originals and production artwork' },
+  // Website builder uploads (migration 379): only these files exist, the
+  // originals are discarded, so nothing can regenerate them.
+  { path: 'website', include_in_default: true, feature_flag: null, display_order: 120, description: 'Website builder images and hero videos' },
   {
     path: 'events/active',
     include_in_default: true,

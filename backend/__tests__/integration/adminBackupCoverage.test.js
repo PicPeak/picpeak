@@ -105,6 +105,7 @@ describe('GET /api/admin/system-health/backup-coverage', () => {
       'watermarks',
       'album-products',
       '.print-sales',
+      'website',
     ]);
 
     // Default mode is inline — no inline_dump setting present means
@@ -113,7 +114,7 @@ describe('GET /api/admin/system-health/backup-coverage', () => {
     expect(report.database.ok).toBe(true);
 
     expect(report.summary).toMatchObject({
-      configuredCount: 12,
+      configuredCount: 13,
       tableMissingFallbackInUse: false,
     });
   });

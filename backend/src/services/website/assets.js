@@ -3,11 +3,13 @@
  *
  * An image goes through the ordinary preview pipeline
  * (imageProcessor.generatePreviewImage): one rendition per media tier,
- * EXIF-stripped and orientation-corrected, written through the storage
- * abstraction as previews/preview_[wN_]site_<publicId>.jpg|webp. A video is
- * remuxed (or transcoded when a browser could not play it) without its
- * container metadata, so a phone's recording location never reaches the
- * public site. The uploaded originals are not kept.
+ * EXIF-stripped and orientation-corrected. A video is remuxed (or transcoded
+ * when a browser could not play it) without its container metadata, so a
+ * phone's recording location never reaches the public site. The uploaded
+ * originals are not kept, so these files are the only copy: they live under
+ * website/<publicId>/ (w640.jpg, w1280.jpg, w1920.jpg, video.mp4), a root
+ * every backup, export and recovery inventory includes, and not among the
+ * regenerable previews/.
  */
 const crypto = require('crypto');
 const fs = require('fs').promises;
@@ -64,13 +66,17 @@ async function createImageAsset(file, adminId) {
   const { width, height } = orientedDimensions(metadata);
   const publicId = crypto.randomBytes(12).toString('hex');
   const keys = {};
+  const storage = getStorage();
   for (const tier of MEDIA_WIDTHS) {
     // eslint-disable-next-line no-await-in-loop -- one tier at a time keeps peak memory at one decode
-    const key = await generatePreviewImage(file.path, { outputBasename: `site_${publicId}`, longEdge: tier, regenerate: true });
-    if (!key) {
+    const rendered = await generatePreviewImage(file.path, { outputBasename: `site_${publicId}`, longEdge: tier, regenerate: true });
+    if (!rendered) {
       await removeKeys(keys);
       throw new AppError('The image could not be processed', 400, 'WEBSITE_ASSET_UNREADABLE');
     }
+    const key = `website/${publicId}/w${tier}${path.extname(rendered)}`;
+    // eslint-disable-next-line no-await-in-loop -- see above
+    await storage.rename(rendered, key);
     keys[tier] = key;
   }
   return insertAsset({
@@ -101,7 +107,7 @@ async function createVideoAsset(file, adminId) {
   const tmpOut = path.join(getStoragePath(), 'temp', `site_${publicId}.mp4`);
   try {
     await video.transcode(file.path, tmpOut, { remux: video.playsInBrowser(probed, true), duration });
-    const key = `website/${publicId}.mp4`;
+    const key = `website/${publicId}/video.mp4`;
     await getStorage().putFromFile(key, tmpOut, { contentType: 'video/mp4' });
     const stat = await fs.stat(tmpOut);
     return insertAsset({

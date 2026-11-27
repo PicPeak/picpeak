@@ -54,6 +54,15 @@ exports.up = async function up(knex) {
     });
   }
 
+  // Uploads live under website/ and are their own only copy: back them up
+  // by default (the boot self-heal reseeds it from migration 109 as well).
+  if (await knex.schema.hasTable('backup_paths')) {
+    await knex('backup_paths').insert({
+      path: 'website', include_in_default: formatBoolean(true), feature_flag: null, display_order: 120,
+      description: 'Website builder images and hero videos',
+    }).onConflict('path').ignore();
+  }
+
   if (await knex.schema.hasTable('feature_flags')) {
     const flag = await knex('feature_flags').where({ key: 'websiteBuilder' }).first();
     if (!flag) await knex('feature_flags').insert({ key: 'websiteBuilder', value: formatBoolean(false) });
@@ -61,6 +70,9 @@ exports.up = async function up(knex) {
 };
 
 exports.down = async function down(knex) {
+  if (await knex.schema.hasTable('backup_paths')) {
+    await knex('backup_paths').where({ path: 'website' }).del();
+  }
   if (await knex.schema.hasTable('feature_flags')) {
     await knex('feature_flags').where({ key: 'websiteBuilder' }).del();
   }

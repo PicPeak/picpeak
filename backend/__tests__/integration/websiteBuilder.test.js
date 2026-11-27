@@ -365,7 +365,9 @@ describe('uploads', () => {
     const row = await db('website_assets').where({ public_id: uploaded.id }).first();
     const keys = JSON.parse(row.rendition_keys);
     expect(Object.keys(keys).sort()).toEqual(['1280', '1920', '640']);
-    for (const key of Object.values(keys)) expect(key).toMatch(/^previews\/preview_(w\d+_)?site_[0-9a-f]{24}\.jpg$/);
+    for (const key of Object.values(keys)) expect(key).toMatch(new RegExp(`^website/${uploaded.id}/w(640|1280|1920)\\.jpg$`));
+    // The intermediate preview files are gone; the website/ copies are the only ones.
+    expect(fs.readdirSync(path.join(process.env.STORAGE_PATH, 'previews')).filter((f) => f.includes(uploaded.id))).toEqual([]);
     const served = await request(app).get(uploaded.previewUrl);
     expect(served.status).toBe(200);
     expect((await sharp(served.body).metadata()).width).toBe(640);

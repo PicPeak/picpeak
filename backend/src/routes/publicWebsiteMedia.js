@@ -52,7 +52,8 @@ async function assetRendition(publicId, size) {
   const keys = media.parseRenditionKeys(asset);
   const key = size === 'video' ? (asset.kind === 'video' ? keys.video : null) : (asset.kind === 'image' ? keys[size] : null);
   // Only keys this feature wrote: a tampered row cannot point outside them.
-  return typeof key === 'string' && /^(previews\/preview_(w\d+_)?site_[0-9a-f]{24}\.(jpg|webp)|website\/[0-9a-f]{24}\.mp4)$/.test(key) ? key : null;
+  const own = new RegExp(`^website/${publicId}/(w(640|1280|1920)\\.(jpg|webp)|video\\.mp4)$`);
+  return typeof key === 'string' && own.test(key) ? key : null;
 }
 
 router.get('/:token/:size', async (req, res) => {
