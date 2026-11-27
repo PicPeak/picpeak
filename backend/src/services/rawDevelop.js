@@ -28,7 +28,6 @@ const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
 const pLimit = require('p-limit');
 const logger = require('../utils/logger');
 const { isRawFilename } = require('../utils/rawFormats');
