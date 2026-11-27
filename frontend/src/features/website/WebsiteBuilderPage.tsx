@@ -263,6 +263,19 @@ export const WebsiteBuilderPage: React.FC = () => {
           )}
         />
         {!canEdit && <Notice tone="neutral" size="sm">{t('website.readOnly', 'You can see the website but not change it.')}</Notice>}
+        {editor.conflict && (
+          <Notice
+            tone="warning"
+            size="sm"
+            action={(
+              <Button size="sm" variant="secondary" onClick={() => { void editor.reloadLatest().then(() => setProblems([])); }}>
+                {t('website.conflictReload', 'Load the latest version')}
+              </Button>
+            )}
+          >
+            {t('website.conflict', 'Someone else saved the website since you opened it, so your changes were not saved. Load the latest version to continue from theirs; your unsaved changes here are then dropped.')}
+          </Notice>
+        )}
         {!server.publicSiteEnabled && (
           <Notice tone="warning" size="sm">{t('website.siteOff', 'The public site is switched off in Settings › CMS. Until it is on, `/` leads to the login page and the website is not visible.')}</Notice>
         )}

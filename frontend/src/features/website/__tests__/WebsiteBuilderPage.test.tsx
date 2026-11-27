@@ -161,4 +161,22 @@ describe('WebsiteBuilderPage', () => {
     expect(screen.getByText('This address is used by PicPeak itself. Choose another.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();
   });
+
+  it('says so when someone else saved first, and loads their version on request', async () => {
+    vi.mocked(websiteService.saveDraft).mockRejectedValue({ response: { status: 409, data: { error: 'changed elsewhere', code: 'WEBSITE_REVISION_CONFLICT' } } });
+    renderPage();
+    fireEvent.click(await screen.findByText('Hello there'));
+    fireEvent.change(screen.getByLabelText('Heading'), { target: { value: 'Mine' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(await screen.findByText(/Someone else saved the website/)).toBeInTheDocument();
+    // The typed text is still there.
+    expect((screen.getByLabelText('Heading') as HTMLInputElement).value).toBe('Mine');
+    const theirs = structuredClone(STATE);
+    (theirs.document.pages[0].blocks[0] as { heading: string }).heading = 'Theirs';
+    theirs.draft.revision = 4;
+    vi.mocked(websiteService.getState).mockResolvedValue(theirs);
+    fireEvent.click(screen.getByRole('button', { name: 'Load the latest version' }));
+    await waitFor(() => expect((screen.getByLabelText('Heading') as HTMLInputElement).value).toBe('Theirs'));
+    expect(screen.queryByText(/Someone else saved the website/)).toBeNull();
+  });
 });

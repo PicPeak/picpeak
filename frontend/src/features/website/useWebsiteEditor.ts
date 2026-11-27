@@ -12,41 +12,73 @@ interface History {
   future: WebsiteDocument[];
 }
 
+/** The server document the local draft started from, and its revision. */
+interface Base {
+  document: WebsiteDocument;
+  revision: number;
+}
+
 export const EDITOR_QUERY_KEY = ['website-editor'] as const;
+
+const same = (a: WebsiteDocument | null, b: WebsiteDocument | null) => JSON.stringify(a) === JSON.stringify(b);
+
+function isConflict(err: unknown): boolean {
+  const response = (err as { response?: { status?: number; data?: { code?: string } } } | null)?.response;
+  return response?.status === 409 || response?.data?.code === 'WEBSITE_REVISION_CONFLICT';
+}
 
 /**
  * The editor's draft of the website: the server's draft plus local edits,
  * an undo/redo history (client-side only), and the save, publish and discard
  * operations. Local edits are a page-level draft saved through the save bar
  * (UX.md › Saving); publishing is an action that saves first.
+ *
+ * The draft is paired with the revision it was based on, and that revision
+ * is what a save sends: a refetch that brings a newer server draft is taken
+ * over only while nothing is edited, so a stale draft can never be saved
+ * over someone else's change; the server answers 409 instead and `conflict`
+ * says so. Edits typed while a save runs are kept on top of what it stored.
  */
 export function useWebsiteEditor() {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: EDITOR_QUERY_KEY, queryFn: websiteService.getState });
   const server = query.data;
   const [draft, setDraft] = useState<WebsiteDocument | null>(null);
+  const [base, setBase] = useState<Base | null>(null);
   const [history, setHistory] = useState<History>({ past: [], future: [] });
+  const [conflict, setConflict] = useState(false);
   const lastEdit = useRef<{ key: string; at: number } | null>(null);
 
-  useEffect(() => {
-    if (server && draft === null) setDraft(server.document);
-  }, [server, draft]);
-
-  const isDirty = !!(draft && server && JSON.stringify(draft) !== JSON.stringify(server.document));
-
-  /**
-   * Apply an edit. `coalesceKey` names the field being typed into, so a word
-   * typed is one undo step rather than one per letter.
-   */
   // The draft as of the latest edit, so several edits in one tick chain and
   // the history is written outside a state updater (StrictMode runs those twice).
   const draftRef = useRef<WebsiteDocument | null>(null);
   draftRef.current = draft;
+  const baseRef = useRef<Base | null>(null);
+  baseRef.current = base;
 
   const replaceDraft = useCallback((next: WebsiteDocument | null) => {
     draftRef.current = next;
     setDraft(next);
   }, []);
+
+  const replaceBase = useCallback((next: Base) => {
+    baseRef.current = next;
+    setBase(next);
+  }, []);
+
+  // A server state the draft is not based on yet: take it over while the
+  // draft is clean, leave a dirty draft alone.
+  useEffect(() => {
+    if (!server) return;
+    const current = baseRef.current;
+    if (current && current.revision === server.draft.revision && same(current.document, server.document)) return;
+    if (!current || same(draftRef.current, current.document)) {
+      replaceBase({ document: server.document, revision: server.draft.revision });
+      replaceDraft(server.document);
+    }
+  }, [server, replaceBase, replaceDraft]);
+
+  const isDirty = !!(draft && base && !same(draft, base.document));
 
   /**
    * Apply an edit. `coalesceKey` names the field being typed into, so a word
@@ -81,36 +113,66 @@ export function useWebsiteEditor() {
     replaceDraft(next);
   }, [history, replaceDraft]);
 
-  const adopt = useCallback((state: EditorState) => {
+  /**
+   * Take a server answer to a save or publish of `sent`. The stored
+   * (normalised) document becomes the base; the draft follows it unless it
+   * was edited after `sent` went out, in which case those edits stay.
+   */
+  const adopt = useCallback((state: EditorState, sent: WebsiteDocument | null) => {
+    replaceBase({ document: state.document, revision: state.draft.revision });
+    if (!sent || same(draftRef.current, sent)) replaceDraft(state.document);
     queryClient.setQueryData(EDITOR_QUERY_KEY, state);
-    // The server returns the stored (normalised) document; taking it keeps
-    // the comparison honest and picks up ids it filled in.
-    replaceDraft(state.document);
-  }, [queryClient, replaceDraft]);
+    setConflict(false);
+  }, [queryClient, replaceBase, replaceDraft]);
+
+  const onError = useCallback((err: unknown) => {
+    if (isConflict(err)) setConflict(true);
+  }, []);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!draft || !server) throw new Error('Nothing to save');
-      return websiteService.saveDraft(draft, server.draft.revision);
+      const sent = draftRef.current;
+      const from = baseRef.current;
+      if (!sent || !from) throw new Error('Nothing to save');
+      return { state: await websiteService.saveDraft(sent, from.revision), sent };
     },
-    onSuccess: adopt,
+    onSuccess: ({ state, sent }) => adopt(state, sent),
+    onError,
   });
 
   const publishMutation = useMutation({
     mutationFn: async () => {
-      if (!draft || !server) throw new Error('Nothing to publish');
-      const saved = isDirty ? await websiteService.saveDraft(draft, server.draft.revision) : server;
-      if (isDirty) adopt(saved);
-      return websiteService.publish(saved.draft.revision);
+      const sent = draftRef.current;
+      const from = baseRef.current;
+      if (!sent || !from) throw new Error('Nothing to publish');
+      let revision = from.revision;
+      if (!same(sent, from.document)) {
+        const saved = await websiteService.saveDraft(sent, from.revision);
+        adopt(saved, sent);
+        revision = saved.draft.revision;
+      }
+      return { state: await websiteService.publish(revision), sent };
     },
-    onSuccess: adopt,
+    onSuccess: ({ state, sent }) => adopt(state, sent),
+    onError,
   });
 
   const discard = useCallback(() => {
-    if (server) replaceDraft(server.document);
+    if (baseRef.current) replaceDraft(baseRef.current.document);
     setHistory({ past: [], future: [] });
     lastEdit.current = null;
-  }, [server, replaceDraft]);
+  }, [replaceDraft]);
+
+  /** After a conflict: drop the local draft and load what is stored now. */
+  const reloadLatest = useCallback(async () => {
+    const result = await query.refetch();
+    if (!result.data) return;
+    replaceBase({ document: result.data.document, revision: result.data.draft.revision });
+    replaceDraft(result.data.document);
+    setHistory({ past: [], future: [] });
+    lastEdit.current = null;
+    setConflict(false);
+  }, [query, replaceBase, replaceDraft]);
 
   return {
     query,
@@ -125,5 +187,7 @@ export function useWebsiteEditor() {
     save: saveMutation,
     publish: publishMutation,
     discard,
+    conflict,
+    reloadLatest,
   };
 }

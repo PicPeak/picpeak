@@ -24,14 +24,16 @@ const state = (title: string, revision = 1, extra: Partial<EditorState> = {}): E
 });
 const rename = (title: string) => (d: WebsiteDocument) => ({ ...d, pages: [{ ...d.pages[0], title }] });
 
+let client: QueryClient;
 function setup() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   return renderHook(() => useWebsiteEditor(), { wrapper });
 }
 
 describe('useWebsiteEditor', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(websiteService.getState).mockResolvedValue(state('Home'));
   });
 
@@ -94,5 +96,55 @@ describe('useWebsiteEditor', () => {
     act(() => result.current.discard());
     expect(result.current.draft?.pages[0].title).toBe('Home');
     expect(result.current.canUndo).toBe(false);
+  });
+
+  it('keeps a dirty draft on a refetch and saves it against the revision it was based on', async () => {
+    vi.mocked(websiteService.saveDraft).mockRejectedValue({ response: { status: 409, data: { code: 'WEBSITE_REVISION_CONFLICT' } } });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.draft).not.toBeNull());
+    act(() => result.current.update(rename('Mine')));
+    // Someone else saved meanwhile; a refetch brings revision 2.
+    act(() => { client.setQueryData(['website-editor'], state('Theirs', 2)); });
+    expect(result.current.draft?.pages[0].title).toBe('Mine');
+    await act(async () => { await result.current.save.mutateAsync().catch(() => {}); });
+    expect(websiteService.saveDraft).toHaveBeenLastCalledWith(expect.anything(), 1);
+    expect(result.current.conflict).toBe(true);
+    expect(result.current.draft?.pages[0].title).toBe('Mine');
+    vi.mocked(websiteService.getState).mockResolvedValue(state('Theirs', 2));
+    await act(async () => { await result.current.reloadLatest(); });
+    expect(result.current.draft?.pages[0].title).toBe('Theirs');
+    expect(result.current.conflict).toBe(false);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it('takes over a refetched draft while nothing is edited', async () => {
+    const { result } = setup();
+    await waitFor(() => expect(result.current.draft).not.toBeNull());
+    act(() => { client.setQueryData(['website-editor'], state('Theirs', 2)); });
+    await waitFor(() => expect(result.current.draft?.pages[0].title).toBe('Theirs'));
+    vi.mocked(websiteService.saveDraft).mockResolvedValue(state('Next', 3));
+    act(() => result.current.update(rename('Next')));
+    await act(async () => { await result.current.save.mutateAsync(); });
+    expect(websiteService.saveDraft).toHaveBeenLastCalledWith(expect.anything(), 2);
+  });
+
+  it('keeps what was typed while a save was on its way', async () => {
+    let finish: (value: EditorState) => void = () => {};
+    vi.mocked(websiteService.saveDraft).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.draft).not.toBeNull());
+    act(() => result.current.update(rename('First')));
+    let saving: Promise<unknown> = Promise.resolve();
+    act(() => { saving = result.current.save.mutateAsync(); });
+    await waitFor(() => expect(websiteService.saveDraft).toHaveBeenCalled());
+    act(() => result.current.update(rename('First and more')));
+    await act(async () => { finish(state('First', 2)); await saving; });
+    expect(result.current.draft?.pages[0].title).toBe('First and more');
+    expect(result.current.isDirty).toBe(true);
+    // The next save goes out against the revision the first one stored.
+    vi.mocked(websiteService.saveDraft).mockResolvedValue(state('First and more', 3));
+    await act(async () => { await result.current.save.mutateAsync(); });
+    expect(websiteService.saveDraft).toHaveBeenLastCalledWith(expect.objectContaining({ pages: [expect.objectContaining({ title: 'First and more' })] }), 2);
+    expect(result.current.isDirty).toBe(false);
   });
 });

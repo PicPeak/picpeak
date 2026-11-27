@@ -13411,6 +13411,8 @@
       "medium": "Medium",
       "large": "Large",
       "default": "Default"
-    }
+    },
+    "conflictReload": "Load the latest version",
+    "conflict": "Someone else saved the website since you opened it, so your changes were not saved. Load the latest version to continue from theirs; your unsaved changes here are then dropped."
   }
 }

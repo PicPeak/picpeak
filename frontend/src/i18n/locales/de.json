@@ -13376,6 +13376,8 @@
       "medium": "Mittel",
       "large": "Gross",
       "default": "Standard"
-    }
+    },
+    "conflictReload": "Neueste Version laden",
+    "conflict": "Jemand anderes hat die Website gespeichert, seit Sie sie geöffnet haben, deshalb wurden Ihre Änderungen nicht gespeichert. Laden Sie die neueste Version, um dort weiterzuarbeiten; Ihre ungespeicherten Änderungen hier gehen dabei verloren."
   }
 }
