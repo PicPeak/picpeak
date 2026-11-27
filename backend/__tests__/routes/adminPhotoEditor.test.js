@@ -432,3 +432,42 @@ describe('a download job with slow edited renders', () => {
     }
   }, 30000);
 });
+
+describe('a streamed download-all with slow edited renders', () => {
+  it('sends the first entry before it renders the second', async () => {
+    const photoEdits = require('../../src/services/photoEdits');
+    const deliver = photoEdits.deliveredPhoto;
+    let firstBytes;
+    const bytesArrived = new Promise((resolve) => { firstBytes = resolve; });
+    let renders = 0;
+    let secondRenderSawBytes = null;
+    const slow = jest.spyOn(photoEdits, 'deliveredPhoto').mockImplementation(async (row, options) => {
+      renders += 1;
+      if (renders === 2) {
+        // Has the client had any of the archive yet? Waits a while for it.
+        secondRenderSawBytes = await Promise.race([bytesArrived.then(() => true), new Promise((r) => setTimeout(() => r(false), 3000))]);
+      }
+      return deliver(row, options);
+    });
+    const server = galleryApp.listen(0);
+    try {
+      const token = jwt.sign({ eventId: event.id, eventSlug: event.slug, type: 'gallery', accessLevel: 'client' },
+        process.env.JWT_SECRET, { expiresIn: '1h', issuer: 'picpeak-auth' });
+      const status = await new Promise((resolve, reject) => {
+        require('http').get({
+          port: server.address().port, path: `/api/gallery/${event.slug}/download-all`, headers: { Authorization: `Bearer ${token}` },
+        }, (res) => {
+          res.on('data', () => firstBytes());
+          res.on('end', () => resolve(res.statusCode));
+          res.on('error', reject);
+        }).on('error', reject);
+      });
+      expect(status).toBe(200);
+      expect(renders).toBeGreaterThanOrEqual(2);
+      expect(secondRenderSawBytes).toBe(true);
+    } finally {
+      slow.mockRestore();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }, 30000);
+});

@@ -191,14 +191,13 @@ function notifySinglePhotoDownload(event, req) {
 }
 
 // Edited photos (issue 2619) go into an archive as their edited render, named
-// and typed as the JPEG it is. One at a time: a missing render is drawn here.
-// One that cannot be rendered is skipped by the archive loop like any other
-// unreadable photo (deliveredPhoto's unavailableOnFailure), never shipped as
-// its original.
-async function deliveredPhotos(rows) {
-  const delivered = [];
-  for (const row of rows) delivered.push(await photoEdits.deliveredPhoto(row, { unavailableOnFailure: true }));
-  return delivered;
+// and typed as the JPEG it is (namedAsDelivered for the names worked out up
+// front). The render is drawn with its entry, behind the pacer, so a missing
+// one never holds back the archive's first bytes. One that cannot be
+// rendered is skipped by the archive loop like any other unreadable photo
+// (deliveredPhoto's unavailableOnFailure), never shipped as its original.
+function deliveredPhoto(row) {
+  return photoEdits.deliveredPhoto(row, { unavailableOnFailure: true });
 }
 
 router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, guestDownloadGate, async (req, res) => {
@@ -836,11 +835,11 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // Only what the gallery list shows: no photo still processing (or failed).
     // The same set a download job of this viewer would package.
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
-    const photos = await deliveredPhotos(await downloadJobService
+    const photos = await downloadJobService
       .photoQuery(req.event.id, null, viewerOf(req), blockedFolders)
       .select('photos.*')
       .orderBy('photos.type', 'asc')
-      .orderBy('photos.uploaded_at', 'desc'));
+      .orderBy('photos.uploaded_at', 'desc');
 
     if (photos.length === 0) {
       return res.status(404).json({ error: 'No photos found' });
@@ -924,7 +923,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // #493: resolve a unique display filename per photo up-front so collisions
     // get a deterministic `_1` suffix before the entries hit the archive.
     const useOriginalBulk = await getUseOriginalFilenames();
-    const bulkEntryNames = getZipEntryNames(photos, useOriginalBulk);
+    const bulkEntryNames = getZipEntryNames(photos.map(photoEdits.namedAsDelivered), useOriginalBulk);
     // A converted entry takes the new format's extension, which can give it
     // the name of another entry: uniquify the final names as they ship.
     const bulkFinalNames = new Map();
@@ -938,7 +937,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       if (cancelled) break;
       // Render the next entry only once archiver has written the earlier ones.
       if (!await pacer.room()) break;
-      const photo = photos[i];
+      const photo = await deliveredPhoto(photos[i]);
       const storageKey = resolvePhotoStorageKey(req.event, photo);
       const entryName = bulkEntryNames[i];
       const archiveName = zipEntryPath(photo, entryName, hasMultipleTypes);
@@ -1094,10 +1093,10 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // Fetch photos — exclude photos in categories that disabled downloads (#640).
     // The same set as the download-all endpoint, narrowed to the selection.
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
-    const photos = await deliveredPhotos(await downloadJobService
+    const photos = await downloadJobService
       .photoQuery(req.event.id, photoIds, viewerOf(req), blockedFolders)
       .select('photos.*')
-      .orderBy('photos.uploaded_at', 'desc'));
+      .orderBy('photos.uploaded_at', 'desc');
 
     if (photos.length === 0) {
       return res.status(404).json({ error: 'No photos found for selected IDs' });
@@ -1166,7 +1165,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     const selectedStorage = getStorage();
     // #493: same display-name resolution as bulk download, with dedup.
     const useOriginalSelected = await getUseOriginalFilenames();
-    const selectedEntryNames = getZipEntryNames(photos, useOriginalSelected);
+    const selectedEntryNames = getZipEntryNames(photos.map(photoEdits.namedAsDelivered), useOriginalSelected);
     // Final names uniquified as they ship, as in download-all.
     const selectedFinalNames = new Map();
     const selectedName = (name) => uniquifyZipNames([name], selectedFinalNames)[0];
@@ -1176,7 +1175,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       // A cancelled download stops rendering; nothing appended now ships.
       if (selectedCancelled) break;
       if (!await pacer.room()) break;
-      const photo = photos[i];
+      const photo = await deliveredPhoto(photos[i]);
       const name = selectedEntryNames[i] || `photo-${photo.id}.jpg`;
       const storageKey = resolvePhotoStorageKey(req.event, photo);
       try {
