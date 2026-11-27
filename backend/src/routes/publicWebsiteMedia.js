@@ -123,6 +123,8 @@ router.get('/:token/:size', async (req, res) => {
       'X-Content-Type-Options': 'nosniff',
       'Accept-Ranges': isVideo ? 'bytes' : 'none',
     };
+    const robots = await websiteService.mediaRobotsTag();
+    if (robots) headers['X-Robots-Tag'] = robots;
 
     // A gallery photo leaves as the gallery shows it: watermarked or capped.
     const copy = ref.kind === 'p' ? await guestCopy(found) : null;

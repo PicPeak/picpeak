@@ -555,6 +555,20 @@ async function publishedPhotoIds() {
   return ids;
 }
 
+/**
+ * The X-Robots-Tag of the website's images: the pages' no-AI setting
+ * (seo_meta_noai, as robotsDirective puts it in their meta), or null.
+ */
+async function mediaRobotsTag() {
+  const generation = cacheGeneration();
+  const cached = getCached('media-robots');
+  if (cached !== undefined) return cached;
+  const settings = await readSettings(['seo_meta_noai']);
+  const tag = flag(settings.seo_meta_noai) ? 'noai, noimageai' : null;
+  setCached('media-robots', tag, generation);
+  return tag;
+}
+
 /** Flag on, public site on, something published: the builder owns `/`. */
 async function isWebsiteActive() {
   if (!(await isFeatureEnabled(FLAG))) return false;
@@ -640,6 +654,7 @@ module.exports = {
   resolvePublicPage,
   isWebsiteActive,
   publishedPhotoIds,
+  mediaRobotsTag,
   sitemapXml,
   publishedDocument,
   setGalleryOnWebsite,

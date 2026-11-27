@@ -1454,6 +1454,23 @@ describe('which photo URLs work', () => {
     expect(live).not.toContain('/site-media/e');
   });
 
+  test('with the no-AI setting on, the images say noimageai too', async () => {
+    const shown = (await service.resolvePublicPage('')).html.match(new RegExp(`/site-media/p${onPage}-[0-9a-f]{10}\\.[0-9a-f]{32}/640`))[0];
+    const tile = (await request(app).get(`/api/admin/website/galleries/${eventId}/photos`).set(auth(adminId))).body.photos[0].thumbnailUrl;
+    await setSetting('seo_meta_noai', false, 'seo');
+    cache.clearWebsiteCache();
+    expect((await request(app).get(shown)).headers['x-robots-tag']).toBeUndefined();
+    await setSetting('seo_meta_noai', true, 'seo');
+    cache.clearWebsiteCache();
+    try {
+      expect((await request(app).get(shown)).headers['x-robots-tag']).toBe('noai, noimageai');
+      expect((await request(app).get(tile)).headers['x-robots-tag']).toBe('noai, noimageai');
+    } finally {
+      await setSetting('seo_meta_noai', false, 'seo');
+      cache.clearWebsiteCache();
+    }
+  });
+
   test('while the website is not live, only editor URLs work', async () => {
     const shown = (await service.resolvePublicPage('')).html.match(new RegExp(`/site-media/p${onPage}-[0-9a-f]{10}\\.[0-9a-f]{32}/640`))[0];
     const tile = (await request(app).get(`/api/admin/website/galleries/${eventId}/photos`).set(auth(adminId))).body.photos[0].thumbnailUrl;
