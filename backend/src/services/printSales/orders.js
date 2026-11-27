@@ -72,6 +72,9 @@ function createService({ db, storage, sharp }) {
     const p = await wherePhotoProcessed(livePhotos(tx)).where({ id, event_id: eventId }).first();
     if (!p || isPhotoHiddenFromViewer(p, accessLevel) || p.media_type === 'video' || p.mime_type?.startsWith('video/'))
       throw new NotFoundError('Photograph');
+    // Withheld from guests while a crop or turn fails to render (issue
+    // 2619): not quoted, and an earlier quotation is not confirmed.
+    if (await require('../photoEdits').withheldFromGuests(p)) throw new ConflictError('This photograph is being updated; try again later');
     return p;
   }
   async function asset(orderId, kind, bytes, claim = null, extension = 'bin', options = {}) {

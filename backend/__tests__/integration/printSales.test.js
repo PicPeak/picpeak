@@ -1433,3 +1433,13 @@ test('prints the revision the buyer cropped on: the applied edit, not one still 
   await expect(orders.accept(event.id, customerId, 'client', second.id, { snapshotHash: second.snapshotHash, acknowledgeSelection: true }))
     .rejects.toThrow('changed');
 });
+test('a photo withheld for a failing crop is neither quoted nor confirmed (issue 2619)', async () => {
+  const q = await quoted();
+  // The crop fails to render: guests are kept from the uncropped picture.
+  await db('photos').where({ id: photoId }).update({
+    edit_params: JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), edit_rev: 1, edit_applied_rev: 0, edit_failed_rev: 1,
+  });
+  await expect(orders.quote(event.id, customerId, 'client', payload())).rejects.toThrow(/being updated/);
+  await expect(orders.accept(event.id, customerId, 'client', q.id, { snapshotHash: q.snapshotHash, acknowledgeSelection: true }))
+    .rejects.toThrow(/being updated/);
+});
