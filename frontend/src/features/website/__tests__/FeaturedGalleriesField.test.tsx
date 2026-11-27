@@ -13,12 +13,14 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureFlags: () => ({ flags: {} }) }));
+vi.mock('../../../hooks/usePermission', () => ({ usePermission: vi.fn(() => true) }));
 vi.mock('../../../services/website.service', () => ({
   websiteService: { listGalleries: vi.fn(), listPackages: vi.fn() },
   mediaKey: (r: { source: string; id: string | number }) => `${r.source}:${r.id}`,
 }));
 
 import { websiteService } from '../../../services/website.service';
+import { usePermission } from '../../../hooks/usePermission';
 import { BlockEditor } from '../BlockEditor';
 
 const g = (id: number, name: string): WebsiteGallery => ({ id, name, slug: `g${id}`, date: null, showOnWebsite: true, eligible: true, hasPassword: false, reason: null, canChange: true });
@@ -118,6 +120,17 @@ describe('chosen entries that are gone', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByLabelText('Full day')).toBeChecked();
     expect(screen.queryByText('Package no longer in the catalogue')).toBeNull();
+  });
+
+  it('without the permission to view quotes it says so, and calls no chosen package unavailable', async () => {
+    vi.mocked(usePermission).mockImplementation((p: string) => p !== 'quotes.view');
+    vi.mocked(websiteService.listPackages).mockClear();
+    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3], showPrices: true, buttonLabel: '', buttonUrl: '' };
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={vi.fn()} /></QueryClientProvider>);
+    expect(await screen.findByText(/needs the permission to view quotes/)).toBeInTheDocument();
+    expect(screen.queryByText('Package no longer in the catalogue')).toBeNull();
+    expect(websiteService.listPackages).not.toHaveBeenCalled();
+    vi.mocked(usePermission).mockImplementation(() => true);
   });
 });
 

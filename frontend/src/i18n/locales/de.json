@@ -13168,7 +13168,8 @@
       "removeUnavailablePackage": "Nicht mehr verfügbares Paket entfernen",
       "testimonialIncomplete": "Unvollständig: Ohne Zitat wird diese Kundenstimme auf der Seite nicht gezeigt.",
       "packageArchivedItems": "Enthält archivierte Positionen, wird nicht gezeigt",
-      "packageNotShown": "Nicht offerierbar, wird nicht gezeigt"
+      "packageNotShown": "Nicht offerierbar, wird nicht gezeigt",
+      "packagesNeedQuotes": "Die Pakete stammen aus dem Angebotskatalog: Um sie auszuwählen, braucht es die Berechtigung, Angebote anzusehen."
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",

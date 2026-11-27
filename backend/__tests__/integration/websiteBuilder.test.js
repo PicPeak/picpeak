@@ -260,6 +260,33 @@ describe('admin API', () => {
     expect(after.draft.revision).toBe(state.draft.revision);
   });
 
+  test('the catalogue reaches the editor only with quotes.view', async () => {
+    await setFeatureFlags(db, { quotes: true });
+    const now = new Date().toISOString();
+    const pkgId = await insertId('quote_packages', { name: 'Secret package', description: 'Our internal margin', currency: 'CHF', display_order: 0, is_active: true, created_at: now, updated_at: now });
+    const presetId = await insertId('quote_line_item_presets', { name: 'Prints', currency: 'CHF', quantity_default: 1, unit_price_minor: 9000, price_mode: 'fixed', is_active: true, created_at: now, updated_at: now });
+    await db('quote_package_items').insert({ package_id: pkgId, preset_id: presetId, quantity: 1, position: 1, created_at: now, updated_at: now });
+    const webOnly = await insertId('admin_users', { username: 'web-only', email: 'web-only@example.com', password_hash: 'x', must_change_password: false, created_at: new Date().toISOString() });
+    const roleId = await insertId('roles', { name: 'web_only', display_name: 'Website only', is_system: false, created_at: now });
+    const permissionIds = await db('permissions').whereIn('name', ['cms.view', 'cms.edit']).pluck('id');
+    await db('role_permissions').insert(permissionIds.map((permission_id) => ({ role_id: roleId, permission_id })));
+    await db('admin_users').where({ id: webOnly }).update({ role_id: roleId });
+    require('../../src/middleware/permissions').clearPermissionCache();
+    try {
+      expect((await request(app).get('/api/admin/website/packages').set(auth(webOnly))).status).toBe(403);
+      const document = { pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'p1', type: 'pricing', packageIds: [pkgId] }] }] };
+      const preview = (await request(app).post('/api/admin/website/preview').set(auth(webOnly)).send({ document, pageId: 'home' })).body.html;
+      expect(preview).not.toContain('Secret package');
+      expect(preview).not.toContain('Our internal margin');
+      const full = (await request(app).post('/api/admin/website/preview').set(auth(adminId)).send({ document, pageId: 'home' })).body.html;
+      expect(full).toContain('Secret package');
+    } finally {
+      await db('quote_package_items').where({ package_id: pkgId }).del();
+      await db('quote_packages').where({ id: pkgId }).del();
+      await setFeatureFlags(db, { quotes: false });
+    }
+  });
+
   test('package prices resolve hourly and daily items like the catalogue does', async () => {
     await setFeatureFlags(db, { quotes: true });
     const now = new Date().toISOString();

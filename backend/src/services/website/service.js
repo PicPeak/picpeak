@@ -15,6 +15,7 @@ const { parseBooleanInput } = require('../../utils/parsers');
 const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const { canAccessEvent } = require('../../middleware/ownership');
+const { userHasAllPermissions } = require('../../middleware/permissions');
 const { listFonts } = require('../fontsService');
 const publicSite = require('../publicSiteService');
 const { DEFAULT_PUBLIC_SITE_CSS, DEFAULT_PUBLIC_SITE_HTML } = require('../../constants/publicSiteDefaults');
@@ -462,7 +463,7 @@ function robotsDirective(seo) {
  * Everything the renderer needs for one page of `document`. `preview` marks
  * the editor's render: block ids on the sections, the contact form disabled.
  */
-async function buildContext(document, page, { preview = false, allowed = null } = {}) {
+async function buildContext(document, page, { preview = false, allowed = null, packages: withPackages = true } = {}) {
   // Only this page's media: the other pages lend the menu and the footer
   // their titles, nothing else.
   const refs = collectReferences({ pages: [page] });
@@ -480,7 +481,7 @@ async function buildContext(document, page, { preview = false, allowed = null } 
     media.loadEligiblePhotos(refs.photoIds),
     media.loadAssets(refs.assetIds),
     media.loadEligibleEvents(refs.eventIds),
-    loadPackages(refs.packageIds),
+    withPackages ? loadPackages(refs.packageIds) : new Map(),
     bookingState(),
     legalLinks(locale),
     getFrontendBaseUrl().catch(() => ''),
@@ -516,7 +517,10 @@ async function renderPreview(rawDocument, pageId, admin, { videoAsPoster = false
   const page = document.pages.find((p) => p.id === pageId) || document.pages[0];
   if (!page) throw new AppError('The website has no pages', 422, 'WEBSITE_INVALID');
   const allowed = await referencesAdminMay(admin, collectReferences({ pages: [page] }));
-  return renderPage({ ...(await buildContext(document, page, { preview: true, allowed })), videoAsPoster });
+  // The catalogue's details are the quotes' (quotes.view, as the catalogue
+  // itself): without it the preview leaves the packages out.
+  const packages = await userHasAllPermissions(admin.id, ['quotes.view']);
+  return renderPage({ ...(await buildContext(document, page, { preview: true, allowed, packages })), videoAsPoster });
 }
 
 // ---------------------------------------------------------------------------

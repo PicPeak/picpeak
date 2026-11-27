@@ -7,6 +7,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-qu
 import { Plus, Trash2 } from 'lucide-react';
 import { Button, Notice, Switch } from '../../components/common';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
+import { usePermission } from '../../hooks/usePermission';
 import { websiteService } from '../../services/website.service';
 import { BLOCK_VARIANTS, variantLabel } from './blocks';
 import {
@@ -282,8 +283,17 @@ const FeaturedGalleriesField: React.FC<{
 
 const PackagesField: React.FC<{ value: number[]; onChange: (value: number[]) => void }> = ({ value, onChange }) => {
   const { t } = useTranslation();
-  const packages = useQuery({ queryKey: ['website-packages'], queryFn: websiteService.listPackages });
+  // The catalogue is the quotes' (quotes.view, as the server checks).
+  const canSeeCatalogue = usePermission('quotes.view');
+  const packages = useQuery({ queryKey: ['website-packages'], queryFn: websiteService.listPackages, enabled: canSeeCatalogue });
   const failure = loadFailure(packages, t);
+  if (!canSeeCatalogue) {
+    return (
+      <Notice tone="neutral" size="sm">
+        {t('website.fields.packagesNeedQuotes', 'The packages come from the quote catalogue: choosing them needs the permission to view quotes.')}
+      </Notice>
+    );
+  }
   if (packages.isLoading) return null;
   // Not loaded: say so, and call no chosen package unavailable on a guess.
   if (failure.blocking) return failure.blocking;

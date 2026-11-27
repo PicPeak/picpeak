@@ -13203,7 +13203,8 @@
       "removeUnavailablePackage": "Remove the unavailable package",
       "testimonialIncomplete": "Incomplete: without a quote this testimonial is not shown on the page.",
       "packageArchivedItems": "Contains archived items, not shown",
-      "packageNotShown": "Cannot be quoted, not shown"
+      "packageNotShown": "Cannot be quoted, not shown",
+      "packagesNeedQuotes": "The packages come from the quote catalogue: choosing them needs the permission to view quotes."
     },
     "defaults": {
       "heroHeading": "Your headline",

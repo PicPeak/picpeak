@@ -256,7 +256,8 @@ router.delete('/assets/:id', canEdit, [
 
 // The CRM catalogue's packages, read-only, for the pricing block. Empty while
 // quotes are off: the catalogue belongs to that feature.
-router.get('/packages', canView, handleAsync(async (req, res) => {
+// The catalogue is the quotes' (adminQuoteCatalog.js): quotes.view as there.
+router.get('/packages', canView, requirePermission('quotes.view'), handleAsync(async (req, res) => {
   if (!(await isFeatureEnabled('quotes'))) return res.json({ available: false, packages: [] });
   const { listPackages } = require('../services/quoteCatalogService');
   const packages = await listPackages({ activeOnly: true });
