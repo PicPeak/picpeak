@@ -222,6 +222,19 @@ describe('wrapEmailHtml — business-profile signature footer', () => {
     expect(en).toContain('VAT ID: CHE-123.456.789');
   });
 
+  it('writes the copyright line and the VAT label in the mail language (issue 2617)', async () => {
+    await enable();
+
+    const pt = await wrapEmailHtml('<p>Body</p>', 'Subject', 'pt');
+    const de = await wrapEmailHtml('<p>Body</p>', 'Subject', 'de');
+    const unknown = await wrapEmailHtml('<p>Body</p>', 'Subject', 'xx');
+
+    expect(pt).toContain('Todos os direitos reservados.');
+    expect(pt).toContain('Inscrição fiscal: CHE-123.456.789');
+    expect(de).toContain('Alle Rechte vorbehalten.');
+    expect(unknown).toContain('All rights reserved.');
+  });
+
   it('omits empty fields instead of rendering blank rows', async () => {
     await enable({
       address_line2: null, mobile: null, website: null, vat_id: null, email_signature_extra: null,

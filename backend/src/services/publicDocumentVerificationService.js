@@ -121,6 +121,14 @@ const COPY = {
     ignore: 'Falls Sie ihn nicht angefordert haben, können Sie diese E-Mail ignorieren. Ohne den Code kann niemand das Dokument öffnen.',
     text: (code) => `Ihr Bestätigungscode lautet ${code}. Er ist 15 Minuten gültig.`,
   },
+  pt: {
+    documentLabel: { contract: 'contrato', quote: 'orçamento' },
+    subject: (label, number) => `Código de verificação do seu ${label} ${number}`.trim(),
+    intro: (label, number, issuer) => `Use este código para abrir o seu ${label} ${number}${issuer ? ` de ${issuer}` : ''}:`,
+    expiry: 'O código expira em 15 minutos.',
+    ignore: 'Se você não o solicitou, pode ignorar este e-mail. Ninguém consegue abrir o documento sem o código.',
+    text: (code) => `Seu código de verificação é ${code}. Ele expira em 15 minutos.`,
+  },
 };
 
 /**
@@ -130,7 +138,7 @@ const COPY = {
 async function sendCodeEmail({ to, code, kind, documentNumber, issuerName, language }) {
   const emailProcessor = require('./emailProcessor');
   const emailWebhookTransport = require('./emailWebhookTransport');
-  const locale = language === 'de' ? 'de' : 'en';
+  const locale = COPY[language] ? language : 'en';
   const copy = COPY[locale];
   const label = copy.documentLabel[kind];
   const number = documentNumber || '';

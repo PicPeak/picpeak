@@ -324,11 +324,22 @@ function darkenColor(hex, amount = 0.15) {
 // being touched. Returns '' when the admin has not enabled it, which keeps
 // the footer byte-identical to what pre-198 installs render.
 
-// VAT is the one value that needs a label to mean anything. en/de only;
-// every other locale falls back to the English label, same as the rest of
-// the wrapper chrome ("All rights reserved"). A US business's signature
+// VAT is the one value that needs a label to mean anything. Any other
+// locale falls back to the English label. A US business's signature
 // carries its own label (EIN), which wins over these.
-const SIGNATURE_VAT_LABELS = { en: 'VAT ID', de: 'USt-IdNr.' };
+const SIGNATURE_VAT_LABELS = { en: 'VAT ID', de: 'USt-IdNr.', pt: 'Inscrição fiscal' };
+
+// Footer copyright line, per email language (falls back to English).
+const ALL_RIGHTS_RESERVED = {
+  en: 'All rights reserved.',
+  de: 'Alle Rechte vorbehalten.',
+  pt: 'Todos os direitos reservados.',
+  es: 'Todos los derechos reservados.',
+  fr: 'Tous droits réservés.',
+  nl: 'Alle rechten voorbehouden.',
+  ru: 'Все права защищены.',
+  sl: 'Vse pravice pridržane.',
+};
 
 // tel: hrefs take digits and a leading +; strip everything else so a pasted
 // "+41 79 123 45 67 (mobile only)" can't smuggle a scheme or a quote into
@@ -829,7 +840,7 @@ async function wrapEmailHtml(htmlBody, subject, language = 'en', { seededTemplat
             <td align="center" bgcolor="${secondaryColor}" class="email-footer" style="background-color:${secondaryColor};padding:30px;text-align:center;border-top:1px solid ${dividerColor};">
               <img src="${logoSrc}" alt="${companyNameHtml}" width="120" style="max-width:120px;height:auto;opacity:0.8;margin-bottom:15px;border:0;">
               <p style="color:${mutedTextColor};font-size:14px;margin:5px 0;">${companyNameHtml}</p>${signatureHtml}
-              <p style="font-size:12px;color:#999999;margin:5px 0;">© ${year} ${companyNameHtml}. All rights reserved.</p>
+              <p style="font-size:12px;color:#999999;margin:5px 0;">© ${year} ${companyNameHtml}. ${ALL_RIGHTS_RESERVED[language] || ALL_RIGHTS_RESERVED.en}</p>
             </td>
           </tr>
         </table>
