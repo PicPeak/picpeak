@@ -2879,7 +2879,8 @@
       "toggle": "Show on public website",
       "help": "Lets you pick photos of this gallery for your website and list it among the featured galleries. Only the photos you pick appear there. Switch it off and they leave the website at once.",
       "passwordNotice": "This gallery has a password. While this is on, the photos you pick for the website are public, although this gallery has a password; the rest of the gallery keeps its password.",
-      "openBuilder": "Open the website builder"
+      "openBuilder": "Open the website builder",
+      "watermarkNote": "Photos from this gallery appear with its watermark; upload images directly for a clean portfolio."
     }
   },
   "settings": {
@@ -13280,7 +13281,8 @@
       "passwordNote": "Has a password. On the website, the photos you pick are public; the rest of the gallery keeps its password.",
       "searchUploads": "Search by file name",
       "searchGalleries": "Search galleries by name",
-      "noMatch": "No gallery on the website matches."
+      "noMatch": "No gallery on the website matches.",
+      "watermarkNote": "Photos from this gallery appear with its watermark; upload images directly for a clean portfolio."
     },
     "preview": {
       "title": "Preview of the page",

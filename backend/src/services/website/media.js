@@ -17,6 +17,8 @@ const crypto = require('crypto');
 const { db } = require('../../database/db');
 const { isAwaitingPayment, isGalleryAvailable, requiresGalleryPassword, isTrue } = require('../../utils/galleryLifecycle');
 const { isGalleryHidden } = require('../../utils/revealMode');
+const { capsFullSizeView, MAXIMUM_PROTECTION_CAP } = require('../galleryAssetPolicy');
+const { viewWatermarkSettings } = require('../galleryViewRendition');
 const {
   applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed, whereNotVideo,
 } = require('../../utils/photoVisibility');
@@ -45,11 +47,30 @@ function verifyMedia(kind, id, signature) {
 // size or mtime, the EXIF refresh a new rendition_version.
 const PHOTO_VERSION_COLUMNS = ['photos.path', 'photos.content_sha256', 'photos.size_bytes', 'photos.source_mtime_ms', 'photos.rendition_version'];
 
-/** A short tag of a photo's content: it goes into the URL (see mediaBase). */
+/**
+ * A short tag of a photo's content and of how a guest sees it (`photo.view`,
+ * see guestView): it goes into the URL (see mediaBase), so a changed
+ * watermark is a new URL and no copy cached under the old one survives.
+ */
 function photoVersion(photo) {
   const parts = ['path', 'content_sha256', 'size_bytes', 'source_mtime_ms', 'rendition_version']
     .map((column) => (photo[column] == null ? '' : String(photo[column])));
+  parts.push(photo.view ? photo.view.tag : '');
   return crypto.createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 10);
+}
+
+/**
+ * How the gallery shows this photo's view tiers to a guest, decided as the
+ * gallery's preview route decides it: the watermark (the event's, or the
+ * photo-sales mark in a priced gallery) and the maximum-protection cap. The
+ * website serves exactly that, never less. `tag` names it for photoVersion.
+ */
+async function guestView(event, photo) {
+  const settings = await viewWatermarkSettings(event, photo);
+  const watermark = settings && settings.enabled ? settings : null;
+  const capped = capsFullSizeView(event);
+  const mark = watermark ? crypto.createHash('sha1').update(JSON.stringify(watermark)).digest('hex').slice(0, 10) : '';
+  return { watermark, capped, tag: `${mark}|${capped ? MAXIMUM_PROTECTION_CAP.tag : ''}` };
 }
 
 /**
@@ -133,7 +154,13 @@ async function loadEligiblePhotos(photoIds) {
   const photos = await guestPhotoQuery().whereIn('photos.id', ids)
     .select('photos.id', 'photos.event_id', 'photos.width', 'photos.height', ...PHOTO_VERSION_COLUMNS);
   const events = await loadEligibleEvents([...new Set(photos.map((p) => p.event_id))]);
-  return new Map(photos.filter((p) => events.has(p.event_id)).map((p) => [p.id, p]));
+  const eligible = new Map();
+  for (const photo of photos) {
+    const event = events.get(photo.event_id);
+    // eslint-disable-next-line no-await-in-loop
+    if (event) eligible.set(photo.id, { ...photo, view: await guestView(event, photo) });
+  }
+  return eligible;
 }
 
 async function loadAssets(publicIds) {
@@ -170,7 +197,7 @@ async function loadCoverPhotos(events) {
       photo = await guestPhotoQuery().where('photos.event_id', event.id).orderBy('photos.id', 'asc')
         .first('photos.id', 'photos.event_id', 'photos.width', 'photos.height', ...PHOTO_VERSION_COLUMNS);
     }
-    if (photo) covers.set(event.id, photo);
+    if (photo) covers.set(event.id, { ...photo, view: await guestView(event, photo) });
   }
   return covers;
 }

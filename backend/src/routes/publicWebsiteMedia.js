@@ -8,7 +8,9 @@
  * Only signed URLs work (services/website/media.js), only while the
  * `websiteBuilder` flag is on, and a gallery photo is re-checked for
  * eligibility on every request. Only preview renditions are served — a
- * missing one is a 404, never the original.
+ * missing one is a 404, never the original — and a gallery photo exactly as
+ * the gallery shows it to a guest: with its watermark, capped at maximum
+ * protection (services/galleryViewRendition.js). Uploads are served as they are.
  */
 const express = require('express');
 const path = require('path');
@@ -21,6 +23,7 @@ const { ensurePreviewImageAtWidth } = require('../services/imageProcessor');
 const { isPresentationRenditionKey } = require('../services/galleryAssetPolicy');
 const renditionRefresh = require('../services/renditionRefresh');
 const media = require('../services/website/media');
+const { capPreviewRendition, watermarkPreviewRendition } = require('../services/galleryViewRendition');
 
 const router = express.Router();
 
@@ -30,11 +33,13 @@ function notFound(res) {
   res.status(404).type('text/plain').send('Not found');
 }
 
-// A photo's rendition, or { redirect } when the URL names an older version
-// of the picture (or none): the current URL then serves the current one.
+// A photo's rendition as { key, view }, or { redirect } when the URL names
+// an older version of the picture or of its watermark (or none): the
+// current URL then serves the current one.
 async function photoRendition(id, width, version) {
   const eligible = await media.loadEligiblePhotos([id]);
   if (!eligible.has(id)) return null;
+  const { view } = eligible.get(id);
   let photo = await media.guestPhotoQuery().where('photos.id', id).first('photos.*');
   if (!photo) return null;
   // Renditions written before EXIF stripping carry the GPS position: clean
@@ -44,10 +49,19 @@ async function photoRendition(id, width, version) {
     photo = await media.guestPhotoQuery().where('photos.id', id).first('photos.*');
     if (!photo) return null;
   }
-  const current = media.photoVersion(photo);
+  const current = media.photoVersion({ ...photo, view });
   if (version !== current) return { redirect: `${media.mediaBase({ source: 'photo', id }, current)}/${width}` };
   const key = await ensurePreviewImageAtWidth(photo, width);
-  return isPresentationRenditionKey(key, 'preview') ? key : null;
+  return isPresentationRenditionKey(key, 'preview') ? { key, view } : null;
+}
+
+// What the gallery would send a guest for this rendition: capped at maximum
+// protection, else watermarked when its gallery marks it. Null: the stored
+// rendition as it is.
+async function guestCopy({ key, view }) {
+  if (view.capped) return capPreviewRendition(key, view.watermark);
+  if (view.watermark) return { buffer: await watermarkPreviewRendition(key, view.watermark), contentType: null };
+  return null;
 }
 
 async function assetRendition(publicId, size) {
@@ -71,13 +85,15 @@ router.get('/:token/:size', async (req, res) => {
     if (!isVideo && !media.MEDIA_WIDTHS.includes(width)) return notFound(res);
     if (isVideo && ref.kind !== 'a') return notFound(res);
 
-    const key = ref.kind === 'p' ? await photoRendition(ref.id, width, ref.version) : await assetRendition(ref.id, isVideo ? 'video' : String(width));
-    if (!key) return notFound(res);
-    if (key.redirect) {
+    const found = ref.kind === 'p' ? await photoRendition(ref.id, width, ref.version) : await assetRendition(ref.id, isVideo ? 'video' : String(width));
+    if (!found) return notFound(res);
+    if (found.redirect) {
       // Not cached: the next replacement moves the target again.
       res.set('Cache-Control', 'no-cache');
-      return res.redirect(302, key.redirect);
+      return res.redirect(302, found.redirect);
     }
+    // Builder uploads are the owner's own images, never watermarked.
+    const key = ref.kind === 'p' ? found.key : found;
 
     const storage = getStorage();
     const stat = await storage.stat(key);
@@ -93,6 +109,13 @@ router.get('/:token/:size', async (req, res) => {
       'X-Content-Type-Options': 'nosniff',
       'Accept-Ranges': isVideo ? 'bytes' : 'none',
     };
+
+    // A gallery photo leaves as the gallery shows it: watermarked or capped.
+    const copy = ref.kind === 'p' ? await guestCopy(found) : null;
+    if (copy) {
+      res.status(200).set({ ...headers, 'Content-Type': copy.contentType || contentType, 'Content-Length': copy.buffer.length });
+      return res.end(copy.buffer);
+    }
 
     const range = isVideo ? req.headers.range : null;
     if (range) {

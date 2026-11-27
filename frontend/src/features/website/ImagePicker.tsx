@@ -329,7 +329,7 @@ export const GalleriesPane: React.FC<{ onOpen: (gallery: WebsiteGallery) => void
   );
 };
 
-const GalleryPhotosPane: React.FC<{
+export const GalleryPhotosPane: React.FC<{
   gallery: WebsiteGallery;
   onBack: () => void;
   isSelected: (ref: ImageRef) => boolean;
@@ -349,6 +349,7 @@ const GalleryPhotosPane: React.FC<{
         <Button size="sm" variant="ghost" leftIcon={<ArrowLeft className="w-4 h-4" />} onClick={onBack}>{t('website.picker.back', 'All galleries')}</Button>
         <span className="text-sm font-medium text-heading truncate">{gallery.name}</span>
       </div>
+      <p className="text-xs text-muted">{t('website.picker.watermarkNote', 'Photos from this gallery appear with its watermark; upload images directly for a clean portfolio.')}</p>
       {photos.isLoading ? (
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
           {Array.from({ length: 10 }, (_, i) => <div key={i} className="aspect-square rounded-lg bg-fill animate-pulse" />)}

@@ -21,12 +21,12 @@ vi.mock('../../../utils/url', async (importOriginal) => ({
   buildResourceUrl: (path: string) => `https://api.example.com${path}`,
 }));
 vi.mock('../../../services/website.service', () => ({
-  websiteService: { listGalleries: vi.fn(), setGalleryOnWebsite: vi.fn(), listAssets: vi.fn() },
+  websiteService: { listGalleries: vi.fn(), setGalleryOnWebsite: vi.fn(), listAssets: vi.fn(), listGalleryPhotos: vi.fn() },
   mediaKey: (r: { source: string; id: string | number }) => `${r.source}:${r.id}`,
 }));
 
 import { websiteService } from '../../../services/website.service';
-import { GalleriesPane, UploadsPane } from '../ImagePicker';
+import { GalleriesPane, GalleryPhotosPane, UploadsPane } from '../ImagePicker';
 
 const gallery = (id: number, name: string, extra: Partial<WebsiteGallery> = {}): WebsiteGallery => ({
   id, name, slug: `g${id}`, date: null, showOnWebsite: true, eligible: true, hasPassword: false, reason: null, canChange: true, ...extra,
@@ -89,6 +89,14 @@ describe('GalleriesPane west of UTC', () => {
     await screen.findByRole('button', { name: 'Summer wedding' });
     expect(screen.getByText(/June 1st, 2026/)).toBeInTheDocument();
     expect(screen.queryByText(/5\/31\/2026|May 31/)).toBeNull();
+  });
+});
+
+describe('GalleryPhotosPane', () => {
+  it('says the photos keep the gallery watermark, and where clean images come from', async () => {
+    vi.mocked(websiteService.listGalleryPhotos).mockResolvedValue({ photos: [], hasMore: false });
+    wrap(<GalleryPhotosPane gallery={gallery(1, 'Open portraits')} onBack={() => {}} isSelected={() => false} onToggle={() => {}} />);
+    expect(await screen.findByText('Photos from this gallery appear with its watermark; upload images directly for a clean portfolio.')).toBeInTheDocument();
   });
 });
 

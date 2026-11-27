@@ -3612,7 +3612,8 @@
       "toggle": "Auf der öffentlichen Website zeigen",
       "help": "Damit können Sie Fotos dieser Galerie für Ihre Website auswählen und die Galerie unter den ausgewählten Galerien zeigen. Dort erscheinen nur die Fotos, die Sie auswählen. Schalten Sie es aus, verschwinden sie sofort von der Website.",
       "passwordNotice": "Diese Galerie hat ein Passwort. Solange dies eingeschaltet ist, sind die Fotos, die Sie für die Website auswählen, öffentlich, obwohl diese Galerie ein Passwort hat; der Rest der Galerie bleibt hinter dem Passwort.",
-      "openBuilder": "Website-Baukasten öffnen"
+      "openBuilder": "Website-Baukasten öffnen",
+      "watermarkNote": "Fotos aus dieser Galerie erscheinen mit ihrem Wasserzeichen; laden Sie Bilder direkt hoch, um ein Portfolio ohne Wasserzeichen zu zeigen."
     }
   },
   "settings": {
@@ -13245,7 +13246,8 @@
       "passwordNote": "Hat ein Passwort. Auf der Website sind die Fotos öffentlich, die Sie auswählen; der Rest der Galerie bleibt hinter dem Passwort.",
       "searchUploads": "Nach Dateiname suchen",
       "searchGalleries": "Galerien nach Namen suchen",
-      "noMatch": "Keine Galerie auf der Website passt dazu."
+      "noMatch": "Keine Galerie auf der Website passt dazu.",
+      "watermarkNote": "Fotos aus dieser Galerie erscheinen mit ihrem Wasserzeichen; laden Sie Bilder direkt hoch, um ein Portfolio ohne Wasserzeichen zu zeigen."
     },
     "preview": {
       "title": "Vorschau der Seite",

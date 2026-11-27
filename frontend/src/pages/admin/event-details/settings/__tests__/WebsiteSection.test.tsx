@@ -41,6 +41,7 @@ describe('website opt-in in the gallery settings', () => {
     const f = eventFieldsFromEvent(EVENT, null);
     render(<MemoryRouter><WebsiteSection f={{ ...f, show_on_website: true }} set={set} event={EVENT} readOnly={false} /></MemoryRouter>);
     expect(screen.getByText(/the photos you pick for the website are public, although this gallery has a password/)).toBeInTheDocument();
+    expect(screen.getByText('Photos from this gallery appear with its watermark; upload images directly for a clean portfolio.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('switch'));
     expect(set).toHaveBeenCalledWith({ show_on_website: false });
   });

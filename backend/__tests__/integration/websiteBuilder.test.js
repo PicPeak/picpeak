@@ -1027,3 +1027,110 @@ describe('importing a large landing page', () => {
     await writeSite({ general_public_site_html: '<p>Edited landing page</p>' });
   });
 });
+
+describe('gallery watermarks on the website', () => {
+  // Loaded once the test database is up (they open the db module).
+  let watermarkService; let ensurePreviewImageAtWidth; let withLocalCopy;
+  let markedEvent; let markedPhoto; let pricedEvent; let pricedPhoto; let cappedPhoto; let cleanPhoto;
+
+  const stored = async (photoId, width) => {
+    const photo = await db('photos').where({ id: photoId }).first();
+    const key = await ensurePreviewImageAtWidth(photo, width);
+    return fs.promises.readFile(path.join(process.env.STORAGE_PATH, key));
+  };
+  // What the gallery's own preview route sends for this photo at this width.
+  const galleryView = async (photoId, width, settingsFor) => {
+    const photo = await db('photos').where({ id: photoId }).first();
+    const event = await db('events').where({ id: photo.event_id }).first();
+    const key = await ensurePreviewImageAtWidth(photo, width);
+    const settings = await settingsFor(event, photo);
+    return withLocalCopy(key, (localPath) => watermarkService.applyWatermark(localPath, settings, { failClosed: true }));
+  };
+  const urlOf = (html, id) => html.match(new RegExp(`/site-media/p${id}-[0-9a-f]{10}\\.[0-9a-f]{32}/640`))[0];
+
+  beforeAll(async () => {
+    watermarkService = require('../../src/services/watermarkService');
+    ({ ensurePreviewImageAtWidth, withLocalCopy } = require('../../src/services/imageProcessor'));
+    await setFeatureFlags(db, { websiteBuilder: true });
+    await setSetting('general_public_site_enabled', true);
+    await setSetting('branding_watermark_enabled', true, 'branding');
+    await setSetting('branding_watermark_position', 'center', 'branding');
+    watermarkService.clearCache();
+    markedEvent = await insertEvent({ watermark_text: 'Studio mark' });
+    markedPhoto = await insertPhoto(markedEvent);
+    pricedEvent = await insertEvent({ is_priced: 1, photo_price: 5 });
+    pricedPhoto = await insertPhoto(pricedEvent);
+    cappedPhoto = await insertPhoto(await insertEvent({ protection_level: 'maximum' }));
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    const document = {
+      pages: [{
+        id: 'home', title: 'Home', slug: 'home', isHome: true,
+        blocks: [{ id: 'g1', type: 'gallery', images: [markedPhoto, pricedPhoto, cappedPhoto].map((id) => ({ source: 'photo', id })) }],
+      }],
+    };
+    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document, revision: state.draft.revision }).expect(200);
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+    cache.clearWebsiteCache();
+  });
+
+  afterAll(async () => {
+    await setSetting('branding_watermark_enabled', false, 'branding');
+    watermarkService.clearCache();
+    cache.clearWebsiteCache();
+  });
+
+  test('a photo carries the watermark its gallery shows', async () => {
+    const served = await getPhoto(markedPhoto);
+    expect(served.status).toBe(200);
+    expect(served.body.equals(await stored(markedPhoto, 640))).toBe(false);
+    const expected = await galleryView(markedPhoto, 640, (event) => watermarkService.getWatermarkSettingsForEvent(event));
+    expect(served.body.equals(expected)).toBe(true);
+  });
+
+  test('a priced gallery photo carries the photo-sales mark', async () => {
+    const { resolvePhotoSalesWatermarkSettings } = require('../../src/modules/photoSales/priceRules');
+    const served = await getPhoto(pricedPhoto);
+    expect(served.status).toBe(200);
+    expect(served.body.equals(await stored(pricedPhoto, 640))).toBe(false);
+    expect(served.body.equals(await galleryView(pricedPhoto, 640, resolvePhotoSalesWatermarkSettings))).toBe(true);
+  });
+
+  test('a gallery at maximum protection gets the capped view, never the plain rendition', async () => {
+    const served = await getPhoto(cappedPhoto, 1920);
+    expect(served.status).toBe(200);
+    expect(served.body.equals(await stored(cappedPhoto, 1920))).toBe(false);
+    const meta = await sharp(served.body).metadata();
+    expect(meta.width).toBeLessThanOrEqual(1920);
+    expect(meta.height).toBeLessThanOrEqual(1080);
+  });
+
+  test('changing the watermark changes the URL, and the old one leads to the new', async () => {
+    const before = urlOf((await service.resolvePublicPage('')).html, markedPhoto);
+    await db('events').where({ id: markedEvent }).update({ watermark_text: 'New mark' });
+    cache.clearWebsiteCache();
+    const after = urlOf((await service.resolvePublicPage('')).html, markedPhoto);
+    expect(after).not.toBe(before);
+    const stale = await request(app).get(before);
+    expect(stale.status).toBe(302);
+    expect(stale.headers.location).toBe(after);
+    // Watermark off: a new URL again, now for the clean rendition.
+    await setSetting('branding_watermark_enabled', false, 'branding');
+    cache.clearWebsiteCache();
+    const clean = urlOf((await service.resolvePublicPage('')).html, markedPhoto);
+    expect(clean).not.toBe(after);
+    expect((await request(app).get(clean)).body.equals(await stored(markedPhoto, 640))).toBe(true);
+    await setSetting('branding_watermark_enabled', true, 'branding');
+    cache.clearWebsiteCache();
+  });
+
+  test('builder uploads are never watermarked', async () => {
+    const png = await sharp({ create: { width: 2000, height: 1200, channels: 3, background: { r: 30, g: 160, b: 60 } } }).png().toBuffer();
+    const res = await request(app).post('/api/admin/website/assets').set(auth(adminId)).attach('file', png, 'clean.png');
+    expect(res.status).toBe(201);
+    cleanPhoto = res.body.asset.id;
+    const keys = JSON.parse((await db('website_assets').where({ public_id: cleanPhoto }).first()).rendition_keys);
+    const served = await request(app).get(res.body.asset.previewUrl);
+    expect(served.status).toBe(200);
+    expect(served.body.equals(await fs.promises.readFile(path.join(process.env.STORAGE_PATH, keys['640'])))).toBe(true);
+  });
+});
