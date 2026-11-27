@@ -728,3 +728,38 @@ describe('public pictures of a photo withheld for a failing crop', () => {
     }
   });
 });
+
+describe('the watermark batch over edited photos', () => {
+  it('marks an edited photo from its edit under the revision, and skips one withheld for a failing crop', async () => {
+    const watermarkService = require('../../src/services/watermarkService');
+    const generator = require('../../src/services/watermarkGeneratorService');
+    const settings = jest.spyOn(watermarkService, 'getWatermarkSettings')
+      .mockResolvedValue({ enabled: true, logoPath: null, position: 'bottom-right', opacity: 50, size: 15, companyName: 'Studio' });
+    const insert = async (filename, over = {}) => unwrap(await db('photos').insert({
+      event_id: event.id, filename, path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600, ...over,
+    }).returning('id'));
+    const others = (await db('photos').where({ event_id: event.id }).pluck('id'));
+    const edited = await insert('wm-edited.jpg');
+    const withheld = await insert('wm-withheld.jpg');
+    // Only these two in the batch.
+    await db('photos').whereIn('id', others).update({ event_id: event.id + 100000 });
+    try {
+      const math = require('../../src/utils/photoEditMath');
+      await require('../../src/services/photoEdits').saveEdits([{ photo: await row(edited), params: math.validateEditParams({ exposure: 0.4 }).params }]);
+      await applyEdits();
+      // A crop that failed to render: guests are kept from the picture.
+      await db('photos').where({ id: withheld }).update({
+        edit_params: JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), edit_rev: 1, edit_applied_rev: 0, edit_failed_rev: 1,
+      });
+      await generator.generateForEvent(event.id);
+      const marked = await row(edited);
+      expect(marked.watermark_path).toMatch(/_e1_/);
+      expect((await row(withheld)).watermark_path).toBeNull();
+    } finally {
+      settings.mockRestore();
+      await db('photos').whereIn('id', others).update({ event_id: event.id });
+      await db('photos').whereIn('id', [edited, withheld]).delete();
+    }
+  });
+});
