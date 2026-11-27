@@ -863,6 +863,50 @@ describe('save and publish under a concurrent save', () => {
     expect(publish.status).toBe(409);
   });
 
+  test('a publish that read an older draft cannot roll the published site back', async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    const base = (await request(app).get('/api/admin/website').set(auth(adminId))).body.draft.revision;
+    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document: doc('Older'), revision: base }).expect(200);
+    const older = saved.body.draft.revision;
+    await service.publish(older, adminId);
+    // This publish reads the draft at `older`, then pauses. In the pause
+    // another editor saves and publishes a newer revision (written here
+    // through the same connection: SQLite has only one). Then it goes on.
+    const { client } = db;
+    const transaction = client.transaction;
+    const spy = jest.spyOn(client, 'transaction').mockImplementationOnce((work, ...rest) => transaction.call(client, (trx) => {
+      let paused = false;
+      const pausing = (...args) => {
+        const query = trx(...args);
+        const first = query.first.bind(query);
+        query.first = async (...cols) => {
+          const row = await first(...cols);
+          if (row && row.state === 'draft' && !paused) {
+            paused = true;
+            const now = new Date().toISOString();
+            const newer = JSON.stringify(doc('Newer'));
+            await trx('website_documents').where({ state: 'draft' }).update({ document: newer, revision: older + 1, updated_at: now });
+            await trx('website_documents').where({ state: 'published' }).update({ document: newer, revision: older + 1, updated_at: now, published_at: now });
+          }
+          return row;
+        };
+        return query;
+      };
+      pausing.client = trx.client;
+      return work(pausing);
+    }, ...rest));
+    try {
+      await expect(service.publish(older, adminId)).rejects.toMatchObject({ statusCode: 409 });
+    } finally {
+      spy.mockRestore();
+    }
+    // The refusal rolls back the pause's writes too (same connection); what
+    // matters is that the older revision was not written over the newer one.
+    const published = await db('website_documents').where({ state: 'published' }).first();
+    expect(published.revision).toBe(older);
+    expect(published.document).toContain('Older');
+  });
+
   test('publish without the saved revision is refused', async () => {
     const res = await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({});
     expect(res.status).toBe(400);

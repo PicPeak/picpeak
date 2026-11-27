@@ -271,12 +271,15 @@ async function publish(expectedRevision, adminId) {
     throw new AppError('Say which saved revision to publish', 400, 'WEBSITE_REVISION_REQUIRED');
   }
   const reserved = await cmsSlugs();
+  const conflict = () => new AppError('The website was changed elsewhere. Reload to get the latest version.', 409, 'WEBSITE_REVISION_CONFLICT');
   const result = await db.transaction(async (trx) => {
-    const draft = await readRow('draft', trx);
+    // On PostgreSQL the draft row is locked, so concurrent publishes (and a
+    // save) wait for this one; SQLite serialises writers anyway.
+    const draftQuery = trx('website_documents').where({ state: 'draft' });
+    if (trx.client.config.client === 'pg') draftQuery.forUpdate();
+    const draft = await draftQuery.first();
     if (!draft) throw new AppError('There is nothing to publish yet', 404, 'WEBSITE_NO_DRAFT');
-    if (Number(expectedRevision) !== Number(draft.revision)) {
-      throw new AppError('The website was changed elsewhere. Reload to get the latest version.', 409, 'WEBSITE_REVISION_CONFLICT');
-    }
+    if (Number(expectedRevision) !== Number(draft.revision)) throw conflict();
     const { errors } = normalizeDocument(parseDocument(draft), { reservedSlugs: reserved });
     if (errors.length) throw validationError(errors);
     const now = new Date().toISOString();
@@ -288,8 +291,16 @@ async function publish(expectedRevision, adminId) {
       published_at: now,
     };
     const existing = await readRow('published', trx);
-    if (existing) await trx('website_documents').where({ state: 'published' }).update(values);
-    else await trx('website_documents').insert({ state: 'published', ...values });
+    if (!existing) {
+      await trx('website_documents').insert({ state: 'published', ...values });
+    } else {
+      // Never put an older revision over a newer published one.
+      const written = await trx('website_documents')
+        .where({ state: 'published' })
+        .where('revision', '<=', draft.revision)
+        .update(values);
+      if (!written) throw conflict();
+    }
     return { draft, published: { state: 'published', ...values } };
   });
   clearWebsiteCache();
