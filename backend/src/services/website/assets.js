@@ -14,7 +14,9 @@
 const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
-const sharp = require('sharp');
+// The worker-isolated Sharp (as imageProcessor uses): the native module is
+// loaded in its worker on first use, never when this module loads.
+const sharp = require('../isolatedSharp');
 const { db } = require('../../database/db');
 const { AppError } = require('../../utils/errors');
 const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../../utils/sqlSecurity');
