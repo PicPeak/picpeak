@@ -189,9 +189,15 @@ describe('an edit, saved and applied', () => {
     const asked = await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos/edit/status?ids=${secondId},${photoId}`));
     expect(asked.body).toMatchObject({ pending: 1, pending_ids: [photoId] });
     expect((await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos/edit/status?ids=x`))).status).toBe(400);
+    // A download job's identity follows the revision whose previews and
+    // renditions are in place: a preview-only job built now packages the
+    // old previews and must not be reused once the edit lands.
+    const jobs = require('../../src/services/downloadJobService');
+    expect(await jobs.editStamp([photoId])).toBe(0);
     const zip = require('../../src/services/downloadZipService');
     const invalidate = jest.spyOn(zip, 'invalidateIfBuilt');
     await applyEdits();
+    expect(await jobs.editStamp([photoId])).toBe(1);
     expect(invalidate).toHaveBeenCalledWith(event.id);
     invalidate.mockRestore();
     expect(await row()).toMatchObject({ edit_rev: 1, edit_applied_rev: 1, edit_width: 300, edit_height: 400 });

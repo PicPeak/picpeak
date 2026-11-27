@@ -144,16 +144,19 @@ class DownloadJobService {
   }
 
   /**
-   * The edit revisions of these photos added up (issue 2619). A revision only
-   * ever grows, so any edit saved since a job was built changes the sum and
-   * with it the job's identity: the ready archive is no longer reused or
-   * delivered.
+   * The applied edit revisions of these photos added up (issue 2619): the
+   * revisions whose previews and renditions are in place, which is what a
+   * preview-only or priced job packages. A revision only ever grows, so an
+   * edit that lands after a job was built changes the sum and with it the
+   * job's identity: that archive is no longer reused or delivered. (A
+   * full-size job built while an edit is pending already holds the newer
+   * render; it is built again once the revision is applied.)
    */
   async editStamp(photoIds) {
     let sum = 0;
     const ids = [...photoIds].map(Number);
     for (let i = 0; i < ids.length; i += 500) {
-      const row = await db('photos').whereIn('id', ids.slice(i, i + 500)).sum({ total: 'edit_rev' }).first();
+      const row = await db('photos').whereIn('id', ids.slice(i, i + 500)).sum({ total: 'edit_applied_rev' }).first();
       sum += Number(row?.total) || 0;
     }
     return sum;

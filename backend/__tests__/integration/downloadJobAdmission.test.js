@@ -20,7 +20,7 @@ describe.each(engines)('concurrent download-job admission on %s', (_name, client
       db = knex({ client, connection: process.env.PICPEAK_PG_TEST_URL, searchPath: [schema], pool: { min: 0, max: 6 } });
     } else db = knex({ client, connection: { filename: ':memory:' }, useNullAsDefault: true });
     await db.schema.createTable('events', (table) => { table.increments('id'); table.string('slug'); });
-    await db.schema.createTable('photos', (table) => { table.increments('id'); table.integer('event_id'); table.integer('edit_rev').notNullable().defaultTo(0); });
+    await db.schema.createTable('photos', (table) => { table.increments('id'); table.integer('event_id'); table.integer('edit_rev').notNullable().defaultTo(0); table.integer('edit_applied_rev').notNullable().defaultTo(0); });
     await require('../../migrations/core/173_add_download_resolutions').up(db);
     await require('../../migrations/core/324_download_job_delivery').up(db);
     await db.schema.createTable('download_job_recipients', (table) => {
