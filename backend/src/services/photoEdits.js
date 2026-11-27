@@ -442,6 +442,16 @@ async function deliveredPhoto(photo, options = {}) {
   };
 }
 
+/**
+ * The row named as deliveredPhoto will name it, without rendering: an
+ * edited photo as the JPEG it is delivered as. For archive entry names
+ * worked out before the renders run one entry at a time.
+ */
+function namedAsDelivered(photo) {
+  if (!photo || isVideoRow(photo) || !paramsOf(photo)) return photo;
+  return { ...photo, filename: asJpegName(photo.filename), original_filename: asJpegName(photo.original_filename) };
+}
+
 /** Whether a stored watermark copy was made from the edit of the row's revision (watermarkService.watermarkKey). */
 function watermarkCopyCurrent(photo, key) {
   return Boolean(key && String(key).includes(`_e${photo.edit_rev}_`));
@@ -853,6 +863,7 @@ module.exports = {
   originalPreviewJpeg,
   ensureEditedSource,
   deliveredPhoto,
+  namedAsDelivered,
   deliveredKey,
   deliveredDimensions,
   editQuery,

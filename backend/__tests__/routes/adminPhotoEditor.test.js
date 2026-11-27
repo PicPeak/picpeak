@@ -408,3 +408,27 @@ describe('admin image URLs follow the applied revision', () => {
     }
   });
 });
+
+describe('a download job with slow edited renders', () => {
+  it('keeps making progress while it renders them one entry at a time', async () => {
+    const jobs = require('../../src/services/downloadJobService');
+    const photoEdits = require('../../src/services/photoEdits');
+    // Each render takes most of the idle deadline; together they exceed it.
+    const worker = new jobs.constructor({ stallTimeoutMs: 1000 });
+    const deliver = photoEdits.deliveredPhoto;
+    const slow = jest.spyOn(photoEdits, 'deliveredPhoto').mockImplementation(async (row, options) => {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      return deliver(row, options);
+    });
+    try {
+      const fresh = await db('events').where({ id: event.id }).first();
+      const job = await worker.createJob({ event: fresh, resolution: 'original', photoIds: [photoId, secondId], accessLevel: 'guest' });
+      await worker.liveBuilds.get(job.id);
+      const done = await worker.getStatus(job.token);
+      expect(done.status).toBe('ready');
+      expect(slow).toHaveBeenCalledTimes(2);
+    } finally {
+      slow.mockRestore();
+    }
+  }, 30000);
+});

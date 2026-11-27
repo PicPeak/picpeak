@@ -484,17 +484,15 @@ class DownloadJobService {
       if (!started) return;
       progress = createBuildProgress(this.stallTimeoutMs);
       const folders = await progress.wait(blockedFoldersOf(event.id));
-      const photos = [];
-      for (const row of await progress.wait(this.photoQuery(event.id, photoIds, accessLevel, folders)
-        .select('photos.*').orderBy('photos.uploaded_at', 'desc'))) {
-        // Edited photos (issue 2619) as their edited render.
-        photos.push(await progress.wait(photoEdits.deliveredPhoto(row, { unavailableOnFailure: true })));
-      }
-      if (!photos.length) throw new Error('No photos available for this selection');
+      const rows = await progress.wait(this.photoQuery(event.id, photoIds, accessLevel, folders)
+        .select('photos.*').orderBy('photos.uploaded_at', 'desc'));
+      if (!rows.length) throw new Error('No photos available for this selection');
 
       const box = parseResolution(resolution);
       const storage = getStorage();
-      const entryNames = getZipEntryNames(photos, await progress.wait(getUseOriginalFilenames()));
+      // Named as delivered up front; an edited photo's render (issue 2619)
+      // runs with its entry below, so each one counts as progress.
+      const entryNames = getZipEntryNames(rows.map(photoEdits.namedAsDelivered), await progress.wait(getUseOriginalFilenames()));
       tmpDir = await progress.wait(fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-dljob-')));
       const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.zip`);
       const packaged = [];
@@ -549,9 +547,11 @@ class DownloadJobService {
         archive.on('data', () => progress.touch());
         archive.pipe(output);
         (async () => {
-          for (let i = 0; i < photos.length; i += 1) {
+          for (let i = 0; i < rows.length; i += 1) {
             progress.signal.throwIfAborted();
-            const photo = photos[i];
+            // Edited photos as their edited render, drawn here when missing.
+            const photo = await progress.wait(photoEdits.deliveredPhoto(rows[i], { unavailableOnFailure: true }));
+            progress.touch();
             const name = entryNames[i] || `photo-${photo.id}.jpg`;
             let source;
             let entryName = name;
