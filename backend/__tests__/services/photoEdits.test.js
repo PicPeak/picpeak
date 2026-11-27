@@ -477,6 +477,39 @@ describe('the renditions of a revision being applied', () => {
   });
 });
 
+describe('a revision superseded while its renditions were staged', () => {
+  it('leaves none of them behind', async () => {
+    fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/superseded.jpg'));
+    const id = unwrap(await db('photos').insert({
+      event_id: eventId, filename: 'superseded.jpg', path: 'edit-card/superseded.jpg', type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: originalBytes.length, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    const fresh = () => db('photos').where({ id }).first();
+    const { ensureThumbnail, ensurePreviewImage } = require('../../src/services/imageProcessor');
+    const renditionRefresh = require('../../src/services/renditionRefresh');
+    const refresh = renditionRefresh.refreshPhoto;
+    const staged = (dir) => fs.readdirSync(storagePath(dir)).filter((name) => name.includes(`edit_p${id}_r1_`));
+    const spy = jest.spyOn(renditionRefresh, 'refreshPhoto').mockImplementation(async (...args) => {
+      const ok = await refresh(...args);
+      // A newer save lands while the revision's renditions sit staged.
+      if (Number((await fresh()).edit_rev) === 1) await db('photos').where({ id }).update({ edit_rev: 2 });
+      return ok;
+    });
+    try {
+      await ensureThumbnail(await fresh(), { force: true });
+      await ensurePreviewImage(await fresh(), { force: true });
+      await photoEdits().saveEdits([{ photo: await fresh(), params: validated({ exposure: 0.3 }) }]);
+      await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+      expect((await fresh()).edit_applied_rev).not.toBe(1);
+      expect([...staged('thumbnails'), ...staged('previews')]).toEqual([]);
+    } finally {
+      spy.mockRestore();
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
+
 describe('a guest request while the pass applies a revision', () => {
   it('cannot leave the old revision\'s preview in place once the new one is applied', async () => {
     fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath('events/active/edit-card/race-preview.jpg'));

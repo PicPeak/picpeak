@@ -681,6 +681,26 @@ function pendingRows() {
 }
 
 /**
+ * Delete the renditions a pass staged and did not record (applyPhoto): a
+ * key in its rendition's own namespace that no row names, and not the live
+ * one. Best effort.
+ */
+async function dropStaged(stage, live) {
+  const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
+  const kinds = { thumbnail_path: 'thumbnail', preview_path: 'preview', hero_path: 'hero' };
+  for (const [column, kind] of Object.entries(kinds)) {
+    const key = stage.values[column];
+    if (!key || key === live[column] || !isPresentationRenditionKey(key, kind)) continue;
+    try {
+      if (await db('photos').where(column, key).first('id')) continue;
+      await getStorage().delete(key);
+    } catch (err) {
+      logger.warn(`Photo edit: could not remove the staged ${kind} ${key}: ${err.message}`);
+    }
+  }
+}
+
+/**
  * The responsive tiers of every revision but the row's current one: a
  * tier's key names the revision it was cut from (imageProcessor versionTag),
  * so the old ones would otherwise stay in storage for good. Dropped once
@@ -775,26 +795,33 @@ async function applyPhoto(photo, references) {
       // this revision's: the new renditions are cut around it, and it is
       // recorded with them.
       const focal = focalAfterEdit(row, paramsOf({ edit_params: row.edit_applied_params }), paramsOf(row));
-      if (!(await renditionRefresh.refreshPhoto({ ...row, ...(focal || {}), edit_view: 'current', edit_retry_failed: true, edit_stage: stage }, references))) {
-        return 'renditions';
+      let advanced = 0;
+      try {
+        if (!(await renditionRefresh.refreshPhoto({ ...row, ...(focal || {}), edit_view: 'current', edit_retry_failed: true, edit_stage: stage }, references))) {
+          return 'renditions';
+        }
+        await dropWatermarkCopy(row);
+        const zip = require('./downloadZipService');
+        await zip.invalidateIfBuilt(Number(row.event_id));
+        // One write: the new renditions, the applied edit, its size and render.
+        // Fenced on the revision applied before and on the live renditions as
+        // they were read, so nothing recorded meanwhile is overwritten.
+        advanced = await db('photos')
+          .where({ id: row.id, edit_rev: rev, edit_applied_rev: Number(row.edit_applied_rev) || 0, ...live })
+          .update({
+            // A point detected on the new thumbnail wins over the cleared one.
+            ...(focal || {}),
+            ...stage.values,
+            edit_applied_rev: rev, edit_applied_params: row.edit_params || null,
+            edit_applied_width: row.edit_params ? row.edit_width : null, edit_applied_height: row.edit_params ? row.edit_height : null,
+            edit_applied_render_path: row.edit_params ? row.edit_render_path : null,
+            edit_failed_rev: null, edit_error: null,
+          });
+      } finally {
+        // Not recorded (failed, superseded, or an error): the renditions it
+        // staged are nobody's.
+        if (!advanced) await dropStaged(stage, live);
       }
-      await dropWatermarkCopy(row);
-      const zip = require('./downloadZipService');
-      await zip.invalidateIfBuilt(Number(row.event_id));
-      // One write: the new renditions, the applied edit, its size and render.
-      // Fenced on the revision applied before and on the live renditions as
-      // they were read, so nothing recorded meanwhile is overwritten.
-      const advanced = await db('photos')
-        .where({ id: row.id, edit_rev: rev, edit_applied_rev: Number(row.edit_applied_rev) || 0, ...live })
-        .update({
-          // A point detected on the new thumbnail wins over the cleared one.
-          ...(focal || {}),
-          ...stage.values,
-          edit_applied_rev: rev, edit_applied_params: row.edit_params || null,
-          edit_applied_width: row.edit_params ? row.edit_width : null, edit_applied_height: row.edit_params ? row.edit_height : null,
-          edit_applied_render_path: row.edit_params ? row.edit_render_path : null,
-          edit_failed_rev: null, edit_error: null,
-        });
       if (advanced) {
         const storage = getStorage();
         // What the revision applied before showed: its renditions, tiers and render.
