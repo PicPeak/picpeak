@@ -13158,7 +13158,11 @@
       "addTestimonial": "Kundenstimme hinzufügen",
       "formatHint": "Leerzeile = neuer Absatz. **fett**, *kursiv*, [Linktext](https://…)",
       "galleriesMissing_one": "{{count}} gewählte Galerie ist nicht mehr auf der Website und wird nicht gezeigt.",
-      "galleriesMissing_other": "{{count}} gewählte Galerien sind nicht mehr auf der Website und werden nicht gezeigt."
+      "galleriesMissing_other": "{{count}} gewählte Galerien sind nicht mehr auf der Website und werden nicht gezeigt.",
+      "galleryUnavailable": "Galerie nicht mehr verfügbar",
+      "removeUnavailableGallery": "Nicht mehr verfügbare Galerie entfernen",
+      "packageUnavailable": "Paket nicht mehr im Katalog",
+      "removeUnavailablePackage": "Nicht mehr verfügbares Paket entfernen"
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",

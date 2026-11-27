@@ -13193,7 +13193,11 @@
       "addTestimonial": "Add testimonial",
       "formatHint": "Blank line = new paragraph. **bold**, *italic*, [link text](https://…)",
       "galleriesMissing_one": "{{count}} chosen gallery is no longer on the website and is not shown.",
-      "galleriesMissing_other": "{{count}} chosen galleries are no longer on the website and are not shown."
+      "galleriesMissing_other": "{{count}} chosen galleries are no longer on the website and are not shown.",
+      "galleryUnavailable": "Gallery no longer available",
+      "removeUnavailableGallery": "Remove the unavailable gallery",
+      "packageUnavailable": "Package no longer in the catalogue",
+      "removeUnavailablePackage": "Remove the unavailable package"
     },
     "defaults": {
       "heroHeading": "Your headline",

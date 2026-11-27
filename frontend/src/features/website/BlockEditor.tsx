@@ -228,6 +228,9 @@ const FeaturedGalleriesField: React.FC<{
   const chosenRows = chosenQuery.data?.galleries || [];
   const rows = (available.data?.pages || []).flatMap((p) => p.galleries).filter((g) => g.eligible && !chosenIds.includes(g.id));
   const missing = chosenIds.length && chosenQuery.data ? value.filter((g) => !chosenRows.some((r) => r.id === g.id && r.eligible)) : [];
+  // A chosen gallery that is deleted, archived or out of reach comes back
+  // without a row: it still counts toward the limit, so it can be removed.
+  const unavailable = chosenQuery.data ? chosenIds.filter((id) => !chosenRows.some((r) => r.id === id)) : [];
   const toggle = (id: number, on: boolean) => onChange(on ? [...value, { id, text: '' }] : value.filter((x) => x.id !== id));
   const row = (g: WebsiteGallery, checked: boolean) => (
     <li key={g.id}>
@@ -241,7 +244,16 @@ const FeaturedGalleriesField: React.FC<{
   return (
     <fieldset className="space-y-2">
       <legend className="block text-sm font-medium text-body mb-1.5">{t('website.fields.galleries', 'Galleries')}</legend>
-      {chosenRows.length > 0 && <ul className="space-y-1">{chosenRows.map((g) => row(g, true))}</ul>}
+      {(chosenRows.length > 0 || unavailable.length > 0) && (
+        <ul className="space-y-1">
+          {chosenRows.map((g) => row(g, true))}
+          {unavailable.map((id) => (
+            <UnavailableEntry key={`missing-${id}`} label={t('website.fields.galleryUnavailable', 'Gallery no longer available')}
+              removeLabel={t('website.fields.removeUnavailableGallery', 'Remove the unavailable gallery')}
+              onRemove={() => onChange(value.filter((x) => x.id !== id))} />
+          ))}
+        </ul>
+      )}
       <SearchField value={search} onChange={setSearch} label={t('website.picker.searchGalleries', 'Search galleries by name')} />
       {rows.length === 0 && !available.isLoading && (
         <p className="text-sm text-muted">{q
@@ -267,21 +279,33 @@ const PackagesField: React.FC<{ value: number[]; onChange: (value: number[]) => 
   const { t } = useTranslation();
   const packages = useQuery({ queryKey: ['website-packages'], queryFn: websiteService.listPackages });
   if (packages.isLoading) return null;
+  const list = packages.data?.available ? packages.data.packages : [];
+  // A chosen package that was archived (or the whole catalogue, with quotes
+  // off) is gone from the list but still counts toward the limit.
+  const unavailable = value.filter((id) => !list.some((p) => p.id === id));
+  const unavailableRows = unavailable.map((id) => (
+    <UnavailableEntry key={`missing-${id}`} label={t('website.fields.packageUnavailable', 'Package no longer in the catalogue')}
+      removeLabel={t('website.fields.removeUnavailablePackage', 'Remove the unavailable package')}
+      onRemove={() => onChange(value.filter((x) => x !== id))} />
+  ));
   if (!packages.data?.available) {
     return (
-      <Notice tone="warning" size="sm">
-        {t('website.fields.packagesOff', 'Packages come from the quote catalogue, which needs Quotes under Settings › Features.')}
-      </Notice>
+      <div className="space-y-2">
+        <Notice tone="warning" size="sm">
+          {t('website.fields.packagesOff', 'Packages come from the quote catalogue, which needs Quotes under Settings › Features.')}
+        </Notice>
+        {unavailableRows.length > 0 && <ul className="space-y-1">{unavailableRows}</ul>}
+      </div>
     );
   }
   return (
     <fieldset>
       <legend className="block text-sm font-medium text-body mb-1.5">{t('website.fields.packages', 'Packages from your catalogue')}</legend>
-      {packages.data.packages.length === 0 && (
+      {list.length === 0 && (
         <p className="text-sm text-muted">{t('website.fields.noPackages', 'The catalogue has no packages yet.')}</p>
       )}
       <ul className="space-y-1">
-        {packages.data.packages.map((p) => (
+        {list.map((p) => (
           <li key={p.id}>
             <label className="flex items-center gap-2 text-sm text-body">
               <input type="checkbox" className="rounded border-line-strong" checked={value.includes(p.id)} disabled={!value.includes(p.id) && value.length >= 12}
@@ -290,11 +314,22 @@ const PackagesField: React.FC<{ value: number[]; onChange: (value: number[]) => 
             </label>
           </li>
         ))}
+        {unavailableRows}
       </ul>
       <p className="mt-1 text-xs text-muted">{t('website.fields.packagesHint', 'Names, descriptions and prices are edited in the catalogue and stay in step.')}</p>
     </fieldset>
   );
 };
+
+/** A chosen gallery or package that no longer exists: shown so it can be removed. */
+const UnavailableEntry: React.FC<{ label: string; removeLabel: string; onRemove: () => void }> = ({ label, removeLabel, onRemove }) => (
+  <li className="flex items-center gap-2 text-sm text-warning-text">
+    <span className="flex-1 min-w-0">{label}</span>
+    <Button size="icon-sm" variant="ghost" aria-label={removeLabel} onClick={onRemove}>
+      <Trash2 className="w-4 h-4" />
+    </Button>
+  </li>
+);
 
 const TestimonialsField: React.FC<{ value: Testimonial[]; onChange: (value: Testimonial[], field?: string) => void }> = ({ value, onChange }) => {
   const { t } = useTranslation();

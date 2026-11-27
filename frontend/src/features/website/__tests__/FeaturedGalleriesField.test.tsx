@@ -44,3 +44,35 @@ describe('featured galleries selector', () => {
     expect(onChange.mock.calls[0][0].galleries).toEqual([{ id: 99, text: '' }, { id: 7, text: '' }]);
   });
 });
+
+describe('chosen entries that are gone', () => {
+  it('lists a deleted or archived gallery as unavailable and lets it be removed', async () => {
+    vi.mocked(websiteService.listGalleries).mockImplementation(async (params = {}) => (params.ids
+      ? { galleries: [g(99, 'Still here')], hasMore: false }
+      : { galleries: [], hasMore: false }));
+    const block: FeaturedGalleriesBlock = { id: 'f', type: 'featuredGalleries', variant: 'cards', background: 'default', heading: '', intro: '', galleries: [{ id: 99, text: '' }, { id: 55, text: '' }] };
+    const onChange = vi.fn();
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={onChange} /></QueryClientProvider>);
+    expect(await screen.findByText('Gallery no longer available')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove the unavailable gallery' }));
+    expect(onChange.mock.calls[0][0].galleries).toEqual([{ id: 99, text: '' }]);
+  });
+
+  it('lists an archived package as unavailable, also while quotes are off, and lets it be removed', async () => {
+    vi.mocked(websiteService.listPackages).mockResolvedValue({ available: true, packages: [{ id: 3, name: 'Full day', description: '', currency: 'CHF' }] });
+    const block = { id: 'p', type: 'pricing' as const, variant: 'cards', background: 'default' as const, heading: '', intro: '', packageIds: [3, 99], showPrices: true, buttonLabel: '', buttonUrl: '' };
+    const onChange = vi.fn();
+    const { unmount } = render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={onChange} /></QueryClientProvider>);
+    expect(await screen.findByText('Package no longer in the catalogue')).toBeInTheDocument();
+    expect(screen.getByLabelText('Full day')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove the unavailable package' }));
+    expect(onChange.mock.calls[0][0].packageIds).toEqual([3]);
+    unmount();
+
+    vi.mocked(websiteService.listPackages).mockResolvedValue({ available: false, packages: [] });
+    onChange.mockClear();
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={{ ...block, packageIds: [3] }} onChange={onChange} /></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove the unavailable package' }));
+    expect(onChange.mock.calls[0][0].packageIds).toEqual([]);
+  });
+});
