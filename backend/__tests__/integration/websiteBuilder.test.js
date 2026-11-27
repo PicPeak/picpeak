@@ -287,6 +287,28 @@ describe('admin API', () => {
     }
   });
 
+  test('without quotes.view a save may keep the packages a page has, not add others', async () => {
+    const now = new Date().toISOString();
+    const editor = await insertId('admin_users', { username: 'web-editor', email: 'web-editor@example.com', password_hash: 'x', must_change_password: false, created_at: now });
+    const roleId = await insertId('roles', { name: 'web_editor', display_name: 'Website editor', is_system: false, created_at: now });
+    const permissionIds = await db('permissions').whereIn('name', ['cms.view', 'cms.edit']).pluck('id');
+    await db('role_permissions').insert(permissionIds.map((permission_id) => ({ role_id: roleId, permission_id })));
+    await db('admin_users').where({ id: editor }).update({ role_id: roleId });
+    require('../../src/middleware/permissions').clearPermissionCache();
+    const doc = (packageIds, heading = 'Prices') => ({ pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'p1', type: 'pricing', heading, packageIds }] }] });
+    const save = async (who, document) => request(app).put('/api/admin/website/draft').set(auth(who))
+      .send({ document, revision: (await request(app).get('/api/admin/website').set(auth(who))).body.draft.revision });
+    // A colleague with the catalogue put package 41 on the page.
+    expect((await save(adminId, doc([41]))).status).toBe(200);
+    // Kept while the page is edited.
+    expect((await save(editor, doc([41], 'Our prices'))).status).toBe(200);
+    const added = await save(editor, doc([41, 42]));
+    expect(added.status).toBe(403);
+    expect(added.body.code).toBe('WEBSITE_PACKAGES_FORBIDDEN');
+    const stored = JSON.parse((await db('website_documents').where({ state: 'draft' }).first()).document);
+    expect(stored.pages[0].blocks[0].packageIds).toEqual([41]);
+  });
+
   test('package prices resolve hourly and daily items like the catalogue does', async () => {
     await setFeatureFlags(db, { quotes: true });
     const now = new Date().toISOString();

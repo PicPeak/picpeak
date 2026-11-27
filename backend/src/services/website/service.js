@@ -201,18 +201,20 @@ function validationError(errors) {
   return err;
 }
 
-/** Photos and galleries the stored draft or published site already use. */
+/** Photos, galleries and packages the stored draft or published site already use. */
 async function storedReferences() {
   const photoIds = new Set();
   const eventIds = new Set();
+  const packageIds = new Set();
   for (const row of await db('website_documents').select('document')) {
     const raw = parseDocument(row);
     if (!raw) continue;
     const refs = collectReferences(normalizeDocument(raw).document);
     refs.photoIds.forEach((id) => photoIds.add(id));
     refs.eventIds.forEach((id) => eventIds.add(id));
+    refs.packageIds.forEach((id) => packageIds.add(id));
   }
-  return { photoIds, eventIds };
+  return { photoIds, eventIds, packageIds };
 }
 
 /**
@@ -253,6 +255,16 @@ async function saveDraft(rawDocument, expectedRevision, admin) {
   if (refused.length) {
     const err = new AppError('The page uses photos or galleries you cannot access', 422, 'WEBSITE_REFERENCE_NOT_ACCESSIBLE');
     err.details = refused;
+    throw err;
+  }
+  // Packages come from the quote catalogue (quotes.view). Without it an
+  // admin keeps the ones the site has, and adds none: the public page would
+  // show the catalogue to them by a guessed id.
+  const stored = await storedReferences();
+  const newPackages = refs.packageIds.filter((id) => !stored.packageIds.has(id));
+  if (newPackages.length && !(await userHasAllPermissions(adminId, ['quotes.view']))) {
+    const err = new AppError('Adding packages needs the permission to view quotes', 403, 'WEBSITE_PACKAGES_FORBIDDEN');
+    err.details = newPackages.map((id) => ({ code: 'PACKAGE_NOT_ALLOWED', packageId: id }));
     throw err;
   }
   const current = await ensureDraft(adminId);
