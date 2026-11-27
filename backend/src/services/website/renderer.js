@@ -134,8 +134,17 @@ function urlBase(ref, ctx, version) {
 /**
  * Resolve an image reference against what the data layer found eligible.
  * Returns { base, width, height, tiers } or null (not eligible / unknown).
+ * Call it only for an image the page then shows: every image resolved is
+ * recorded in ctx.resolved, in page order, and that list is what the page
+ * shows (renderedImages, the published set of public photo URLs).
  */
 function resolveImage(ref, ctx) {
+  const image = lookUpImage(ref, ctx);
+  if (image) ctx.resolved.push({ ref, image });
+  return image;
+}
+
+function lookUpImage(ref, ctx) {
   if (!ref) return null;
   if (ref.source === 'photo') {
     const photo = ctx.photos.get(ref.id);
@@ -211,7 +220,8 @@ function section(block, inner, ctx, extraClass = '') {
 // ---------------------------------------------------------------------------
 
 function renderHero(block, ctx) {
-  const image = resolveImage(block.image, ctx);
+  // A minimal hero shows no picture: its image is not resolved at all.
+  const image = block.variant === 'minimal' ? null : resolveImage(block.image, ctx);
   const video = block.video ? ctx.assets.get(block.video.id) : null;
   const isFirst = ctx.firstHeroId === block.id;
   const media = [];
@@ -227,10 +237,10 @@ function renderHero(block, ctx) {
     const poster = image ? ` poster="${esc(defaultSrc(image))}"` : '';
     media.push(`<video class="pp-hero__media" autoplay muted loop playsinline preload="metadata"${poster}><source src="${esc(urlBase(block.video, ctx))}/video" type="${esc(video.mime_type || 'video/mp4')}"></video>`);
   } else if (image) {
-    media.push(imgTag(image, {
-      alt: block.image.alt, eager: isFirst, className: 'pp-hero__media',
-      sizes: block.variant === 'split' ? '(min-width: 900px) 50vw, 100vw' : '100vw',
-    }));
+    const sizes = block.variant === 'split' ? '(min-width: 900px) 50vw, 100vw' : '100vw';
+    media.push(imgTag(image, { alt: block.image.alt, eager: isFirst, className: 'pp-hero__media', sizes }));
+    // The page's first hero picture is preloaded (renderHead).
+    if (isFirst) ctx.heroPreload = { image, sizes };
   }
   const text = `<div class="pp-hero__text">${block.heading ? `<h1 class="pp-h pp-display">${esc(block.heading)}</h1>` : ''}${block.subheading ? `<p class="pp-lead">${inline(block.subheading)}</p>` : ''}${button(block.buttonLabel, block.buttonUrl)}</div>`;
   if (block.variant === 'split') {
@@ -700,20 +710,11 @@ ${body}
  *   sanitizeCustomHtml(html) -> html
  */
 function renderPage(input) {
-  const ctx = { ...input };
-  const firstHero = ctx.page.blocks.find((b) => b.type === 'hero');
+  const ctx = { ...input, resolved: input.resolved || [] };
   ctx.firstHeroId = ctx.page.blocks[0] && ctx.page.blocks[0].type === 'hero' ? ctx.page.blocks[0].id : null;
-  if (ctx.firstHeroId && !(firstHero.video && ctx.assets.get(firstHero.video.id))) {
-    const image = resolveImage(firstHero.image, ctx);
-    if (image) ctx.heroPreload = { image, sizes: firstHero.variant === 'split' ? '(min-width: 900px) 50vw, 100vw' : '100vw' };
-  }
-  // The first image on the page stands in for a missing OG image.
-  for (const block of ctx.page.blocks) {
-    const ref = block.image || (block.images && block.images[0]);
-    const image = resolveImage(ref, ctx);
-    if (image) { ctx.firstImage = image; break; }
-  }
   const blocks = ctx.page.blocks.map((block) => RENDERERS[block.type](block, ctx)).join('\n');
+  // The first image the page shows stands in for a missing OG image.
+  ctx.firstImage = ctx.resolved.length ? ctx.resolved[0].image : null;
   const body = `<a class="pp-skip" href="#main">Skip to content</a>
 ${renderHeader(ctx)}
 <main id="main">
@@ -723,8 +724,16 @@ ${renderFooter(ctx)}`;
   return renderHead(ctx, body);
 }
 
+/** The images (photo and upload refs) a rendered page shows, in page order. */
+function renderedImages(input) {
+  const resolved = [];
+  renderPage({ ...input, resolved });
+  return resolved.map(({ ref }) => ref);
+}
+
 module.exports = {
   renderPage,
+  renderedImages,
   richText,
   inline,
   srcsetFor,

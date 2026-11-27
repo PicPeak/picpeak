@@ -13172,7 +13172,8 @@
       "packageArchivedItems": "Enthält archivierte Positionen, wird nicht gezeigt",
       "packageNotShown": "Nicht offerierbar, wird nicht gezeigt",
       "packagesNeedQuotes": "Die Pakete stammen aus dem Angebotskatalog: Um sie auszuwählen, braucht es die Berechtigung, Angebote anzusehen.",
-      "galleryOpen": "{{name}} hat kein Passwort: Die Karte verlinkt die Galerie, also kann jede Besucherin und jeder Besucher der Website die ganze Galerie öffnen."
+      "galleryOpen": "{{name}} hat kein Passwort: Die Karte verlinkt die Galerie, also kann jede Besucherin und jeder Besucher der Website die ganze Galerie öffnen.",
+      "minimalNoImage": "Der Stil «Nur Text» zeigt kein Bild und kein Video. Wählen Sie einen anderen Stil, um eines hinzuzufügen."
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",

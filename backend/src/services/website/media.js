@@ -188,7 +188,11 @@ function guestPhotoQuery() {
  * Photos by id that may appear on the public site, keyed by id. A photo of a
  * gallery that is not eligible is simply absent, so the renderer leaves it out.
  */
-async function loadEligiblePhotos(photoIds) {
+/**
+ * `views: false` leaves out the guest view (no watermark settings read):
+ * for callers that need which photos, not their URLs' versions.
+ */
+async function loadEligiblePhotos(photoIds, { views: withViews = true } = {}) {
   const ids = (photoIds || []).filter((id) => Number.isInteger(id) && id > 0);
   if (!ids.length) return new Map();
   const photos = await guestPhotoQuery().whereIn('photos.id', ids)
@@ -198,7 +202,7 @@ async function loadEligiblePhotos(photoIds) {
   const views = new Map();
   for (const event of events.values()) {
     // eslint-disable-next-line no-await-in-loop
-    views.set(event.id, await guestView(event));
+    views.set(event.id, withViews ? await guestView(event) : null);
   }
   return new Map(photos.filter((p) => views.has(p.event_id)).map((p) => [p.id, { ...p, view: views.get(p.event_id) }]));
 }
@@ -225,7 +229,7 @@ function parseRenditionKeys(row) {
  * protected gallery without a cover gets no picture: its other photos are
  * not the owner's pick.
  */
-async function loadCoverPhotos(events) {
+async function loadCoverPhotos(events, { views: withViews = true } = {}) {
   const covers = new Map();
   for (const event of events) {
     let photo = null;
@@ -237,7 +241,7 @@ async function loadCoverPhotos(events) {
       photo = await guestPhotoQuery().where('photos.event_id', event.id).orderBy('photos.id', 'asc')
         .first('photos.id', 'photos.event_id', 'photos.width', 'photos.height', ...PHOTO_VERSION_COLUMNS);
     }
-    if (photo) covers.set(event.id, { ...photo, view: await guestView(event) });
+    if (photo) covers.set(event.id, { ...photo, view: withViews ? await guestView(event) : null });
   }
   return covers;
 }

@@ -575,6 +575,9 @@ describe('gallery photos on the website', () => {
     await setFeatureFlags(db, { websiteBuilder: false });
     expect((await getPhoto(openPhoto)).status).toBe(404);
     await setFeatureFlags(db, { websiteBuilder: true });
+    // Reopened outside the settings routes: the cached set is cleared, as
+    // a save through them does.
+    cache.clearWebsiteCache();
     expect((await getPhoto(openPhoto)).status).toBe(200);
   });
 
@@ -597,6 +600,7 @@ describe('gallery photos on the website', () => {
     }
     // Paid (or opened by hand): the lock stays, the unlock stamp opens it.
     await db('events').where({ id: openEvent }).update({ ...open, payment_lock: 'full_payment', payment_unlocked_at: new Date().toISOString() });
+    cache.clearWebsiteCache();
     expect((await getPhoto(openPhoto)).status).toBe(200);
     expect(await reason()).toBeNull();
     await closedBy({ ...open, is_draft: 1 }, 'unavailable');
@@ -1545,6 +1549,90 @@ describe('opening the editor', () => {
     } finally {
       await db('website_documents').where({ state: 'draft' }).del();
       await db('website_documents').insert(kept);
+    }
+  });
+});
+
+describe('the published set is what the pages show', () => {
+  let eventId; let heroPhoto; let quotePhoto; let galleryPhoto; let offEvent; let offPhoto;
+  const publicUrl = (id) => `${media.mediaBase({ source: 'photo', id })}/640`;
+  const save = async (pages) => request(app).put('/api/admin/website/draft').set(auth(adminId))
+    .send({ document: { pages }, revision: (await request(app).get('/api/admin/website').set(auth(adminId))).body.draft.revision });
+  const publish = async (pages) => {
+    const saved = await save(pages);
+    expect(saved.status).toBe(200);
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+    cache.clearWebsiteCache();
+  };
+
+  beforeAll(async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    await setSetting('general_public_site_enabled', true);
+    await setSetting('general_site_url', 'https://studio.example');
+    frontendUrl.invalidateSiteUrlCache();
+    await frontendUrl.primeSiteUrlCache();
+    eventId = await insertEvent();
+    heroPhoto = await insertPhoto(eventId);
+    quotePhoto = await insertPhoto(eventId);
+    galleryPhoto = await insertPhoto(eventId);
+    offEvent = await insertEvent({ show_on_website: 0, event_name: 'Not on the website' });
+    offPhoto = await insertPhoto(offEvent);
+    await publish([{
+      id: 'home', title: 'Home', slug: 'home', isHome: true,
+      blocks: [
+        { id: 'h', type: 'hero', variant: 'minimal', heading: 'Hello', image: { source: 'photo', id: heroPhoto } },
+        { id: 't', type: 'testimonials', items: [{ author: 'Ada', quote: '', image: { source: 'photo', id: quotePhoto } }] },
+        { id: 'g', type: 'gallery', images: [{ source: 'photo', id: galleryPhoto }] },
+      ],
+    }]);
+  });
+
+  test('a minimal hero\'s image is not shown, preloaded or shared, and has no public URL', async () => {
+    const { html } = await service.resolvePublicPage('');
+    expect(html).not.toContain(`/site-media/p${heroPhoto}-`);
+    expect(html).not.toContain('rel="preload" as="image"');
+    // The share image falls back to the next image the page does show.
+    expect(html).toMatch(new RegExp(`<meta property="og:image" content="https://studio\\.example/site-media/p${galleryPhoto}-`));
+    expect((await request(app).get(publicUrl(heroPhoto)).redirects(1)).status).toBe(404);
+  });
+
+  test('a testimonial without a quote is not shown, nor is its picture served', async () => {
+    expect((await service.resolvePublicPage('')).html).not.toContain(`/site-media/p${quotePhoto}-`);
+    expect((await request(app).get(publicUrl(quotePhoto)).redirects(1)).status).toBe(404);
+    expect((await request(app).get(publicUrl(galleryPhoto)).redirects(1)).status).toBe(200);
+  });
+
+  test('the published set needs no watermark settings', async () => {
+    const watermarkService = require('../../src/services/watermarkService');
+    const spy = jest.spyOn(watermarkService, 'getWatermarkSettings').mockResolvedValue(null);
+    cache.clearWebsiteCache();
+    try {
+      expect((await service.publishedPhotoIds()).has(galleryPhoto)).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('a not-found answer is never cached', async () => {
+    const res = await request(app).get(publicUrl(quotePhoto)).redirects(1);
+    expect(res.status).toBe(404);
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  test('a new pick from a gallery that is not on the website is refused, for its owner too', async () => {
+    const home = (extra) => ({ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'g', type: 'gallery', images: [{ source: 'photo', id: galleryPhoto }, ...extra] }] });
+    const photo = await save([home([{ source: 'photo', id: offPhoto }])]);
+    expect(photo.status).toBe(409);
+    expect(photo.body.code).toBe('WEBSITE_GALLERY_NOT_ON_WEBSITE');
+    expect(photo.body.error).toContain('Not on the website');
+    const featured = await save([{ ...home([]), blocks: [...home([]).blocks, { id: 'f', type: 'featuredGalleries', galleries: [{ id: offEvent }] }] }]);
+    expect(featured.status).toBe(409);
+    // A pick already stored stays when its gallery goes off.
+    await db('events').where({ id: eventId }).update({ show_on_website: 0 });
+    try {
+      expect((await save([home([])])).status).toBe(200);
+    } finally {
+      await db('events').where({ id: eventId }).update({ show_on_website: 1 });
     }
   });
 });

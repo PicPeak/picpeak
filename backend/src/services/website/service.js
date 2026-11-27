@@ -24,7 +24,7 @@ const {
 } = require('./document');
 const media = require('./media');
 const { livePhotos } = require('../../utils/photoVisibility');
-const { renderPage, pageHref } = require('./renderer');
+const { renderPage, renderedImages, pageHref } = require('./renderer');
 const { cacheGeneration, getCached, setCached, clearWebsiteCache } = require('./cache');
 
 const FLAG = 'websiteBuilder';
@@ -486,7 +486,9 @@ function robotsDirective(seo) {
  * Everything the renderer needs for one page of `document`. `preview` marks
  * the editor's render: block ids on the sections, the contact form disabled.
  */
-async function buildContext(document, page, { preview = false, allowed = null, packages: withPackages = true } = {}) {
+async function buildContext(document, page, {
+  preview = false, allowed = null, packages: withPackages = true, views = true,
+} = {}) {
   // Only this page's media: the other pages lend the menu and the footer
   // their titles, nothing else.
   const refs = collectReferences({ pages: [page] });
@@ -501,7 +503,7 @@ async function buildContext(document, page, { preview = false, allowed = null, p
   const locale = settings.general_default_language === 'de' ? 'de' : 'en';
   const [themeInfo, photos, assets, events, packages, booking, legal, baseUrl] = await Promise.all([
     resolveTheme(document.theme),
-    media.loadEligiblePhotos(refs.photoIds),
+    media.loadEligiblePhotos(refs.photoIds, { views }),
     media.loadAssets(refs.assetIds),
     media.loadEligibleEvents(refs.eventIds),
     withPackages ? loadPackages(refs.packageIds) : new Map(),
@@ -509,7 +511,7 @@ async function buildContext(document, page, { preview = false, allowed = null, p
     legalLinks(locale),
     getFrontendBaseUrl().catch(() => ''),
   ]);
-  const covers = await media.loadCoverPhotos([...events.values()]);
+  const covers = await media.loadCoverPhotos([...events.values()], { views });
   const sanitizeCustomHtml = (html) => publicSite.applyBrandTokens(publicSite.sanitizeHtmlPayload(html || ''), themeInfo.branding);
   const { sanitizeCss } = require('../../utils/cssSanitizer');
   return {
@@ -557,10 +559,12 @@ async function publishedDocument() {
 }
 
 /**
- * The gallery photos the published website shows: the picks on its visible
- * pages and the covers of the galleries they feature. Only these have a
- * working public URL (/site-media). Cached with the pages, so a publish or
- * an opt-out (both clear the cache) changes it at once.
+ * The gallery photos the published website shows. Only these have a working
+ * public URL (/site-media). Taken from rendering each visible page, so it is
+ * exactly what the pages show (a minimal hero's image, a testimonial without
+ * a quote: not shown, not in it) and cannot drift from the renderer. Needs
+ * no watermark settings: ids only. Cached with the pages, so a publish or an
+ * opt-out (both clear the cache) changes it at once.
  */
 async function publishedPhotoIds() {
   const generation = cacheGeneration();
@@ -568,11 +572,10 @@ async function publishedPhotoIds() {
   if (cached !== undefined) return cached;
   const document = await publishedDocument();
   const ids = new Set();
-  if (document) {
-    const refs = collectReferences({ pages: document.pages.filter((p) => !p.hidden) });
-    refs.photoIds.forEach((id) => ids.add(id));
-    const events = await media.loadEligibleEvents(refs.eventIds);
-    for (const cover of (await media.loadCoverPhotos([...events.values()])).values()) ids.add(cover.id);
+  for (const page of document ? document.pages.filter((p) => !p.hidden) : []) {
+    // eslint-disable-next-line no-await-in-loop -- a handful of pages, once per publish
+    const shown = renderedImages(await buildContext(document, page, { views: false }));
+    shown.filter((ref) => ref.source === 'photo').forEach((ref) => ids.add(ref.id));
   }
   setCached('published-photos', ids, generation);
   return ids;

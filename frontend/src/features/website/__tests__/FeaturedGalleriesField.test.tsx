@@ -144,5 +144,15 @@ describe('chosen entries that are gone', () => {
     // One note, for the gallery without a password (the test's t() does not interpolate).
     expect(screen.getAllByText(/has no password: its card links to it/)).toHaveLength(1);
   });
+
+  it('offers no picture for a minimal hero, and says so', () => {
+    const hero = { id: 'h', type: 'hero' as const, variant: 'minimal', background: 'default' as const, heading: 'Hi', subheading: '', buttonLabel: '', buttonUrl: '', image: null, video: null };
+    const { unmount } = render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={hero} onChange={vi.fn()} /></QueryClientProvider>);
+    expect(screen.queryByText('Image')).toBeNull();
+    expect(screen.getByText(/style shows no picture or video/)).toBeInTheDocument();
+    unmount();
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={{ ...hero, variant: 'overlay' }} onChange={vi.fn()} /></QueryClientProvider>);
+    expect(screen.getByText('Image')).toBeInTheDocument();
+  });
 });
 

@@ -13207,7 +13207,8 @@
       "packageArchivedItems": "Contains archived items, not shown",
       "packageNotShown": "Cannot be quoted, not shown",
       "packagesNeedQuotes": "The packages come from the quote catalogue: choosing them needs the permission to view quotes.",
-      "galleryOpen": "{{name}} has no password: its card links to it, so every visitor of the website can open the whole gallery."
+      "galleryOpen": "{{name}} has no password: its card links to it, so every visitor of the website can open the whole gallery.",
+      "minimalNoImage": "The “Text only” style shows no picture or video. Choose another style to add one."
     },
     "defaults": {
       "heroHeading": "Your headline",

@@ -59,8 +59,15 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange }) => 
       <>
         <TextField label={t('website.fields.heading', 'Heading')} value={block.heading} maxLength={200} onChange={(heading) => set(block, { heading }, 'heading')} />
         <TextArea label={t('website.fields.subheading', 'Text')} value={block.subheading} rows={3} maxLength={600} onChange={(subheading) => set(block, { subheading }, 'subheading')} />
-        <ImageField label={t('website.fields.image', 'Image')} value={block.image} onChange={(image) => set(block, { image })} />
-        <VideoField value={block.video} onChange={(video) => set(block, { video })} />
+        {block.variant === 'minimal' ? (
+          // The page shows a minimal hero without a picture or video.
+          <p className="text-xs text-muted">{t('website.fields.minimalNoImage', 'The “Text only” style shows no picture or video. Choose another style to add one.')}</p>
+        ) : (
+          <>
+            <ImageField label={t('website.fields.image', 'Image')} value={block.image} onChange={(image) => set(block, { image })} />
+            <VideoField value={block.video} onChange={(video) => set(block, { video })} />
+          </>
+        )}
         <TextField label={t('website.fields.buttonLabel', 'Button text')} value={block.buttonLabel} maxLength={60} onChange={(buttonLabel) => set(block, { buttonLabel }, 'buttonLabel')} />
         <LinkField label={t('website.fields.buttonUrl', 'Button link')} value={block.buttonUrl} onChange={(buttonUrl) => set(block, { buttonUrl }, 'buttonUrl')} />
       </>
