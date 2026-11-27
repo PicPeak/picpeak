@@ -689,3 +689,42 @@ describe('jobs packaged around a failed edit', () => {
     }
   });
 });
+
+describe('public pictures of a photo withheld for a failing crop', () => {
+  it('the link preview (OG) shows no cover of it and its cover route answers no picture', async () => {
+    const og = require('../../src/services/galleryOgService');
+    const id = unwrap(await db('photos').insert({
+      event_id: event.id, filename: 'og-hero.jpg', path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600,
+    }).returning('id'));
+    const app = express();
+    app.get('/og/gallery/:slug/cover', og.handleGalleryOgCover);
+    try {
+      await require('../../src/services/imageProcessor').ensureThumbnail(await row(id), { force: true });
+      await db('events').where({ id: event.id }).update({ og_image_share_enabled: true, hero_photo_id: id, expires_at: new Date(Date.now() + 864e5).toISOString() });
+      expect((await request(app).get(`/og/gallery/${event.slug}/cover`)).status).toBe(200);
+      expect((await og.buildOgMetadata(event.slug, `/gallery/${event.slug}`)).image).toMatch(/\/cover$/);
+      await db('photos').where({ id }).update({
+        edit_params: JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), edit_rev: 1, edit_applied_rev: 0, edit_failed_rev: 1,
+      });
+      const cover = await request(app).get(`/og/gallery/${event.slug}/cover`);
+      expect(cover.status).toBe(404);
+      expect(cover.headers['cache-control']).toBe('no-store');
+      expect((await og.buildOgMetadata(event.slug, `/gallery/${event.slug}`)).image).not.toMatch(/\/cover$/);
+      // The guest listing's blurred placeholder is of the uncropped picture too.
+      const listed = (await guest('get', '/photos').expect(200)).body.photos.find((p) => p.id === id);
+      expect(listed.thumb_hash ?? null).toBeNull();
+    } finally {
+      await db('events').where({ id: event.id }).update({ og_image_share_enabled: false, hero_photo_id: null });
+      await db('photos').where({ id }).delete();
+    }
+  });
+
+  it('every public path that hands out a photo\'s picture checks the withholding', () => {
+    const fsm = require('fs');
+    const read = (file) => fsm.readFileSync(path.join(__dirname, '../../src', file), 'utf8');
+    for (const file of ['services/galleryOgService.js', 'routes/gallery/media.js', 'services/downloadRendition.js', 'services/galleryQueryService.js']) {
+      expect(read(file)).toContain('withheldFromGuests');
+    }
+  });
+});

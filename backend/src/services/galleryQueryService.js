@@ -221,6 +221,12 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   const total = Number(countRow.total);
   if (limit) photosQuery.limit(limit).offset((page - 1) * limit);
   const photos = hiddenForGuest ? [] : await photosQuery;
+  // Photos withheld while a crop or turn fails to render (issue 2619): their
+  // blurred placeholder is of the picture the crop was meant to change.
+  const withheldIds = new Set();
+  for (const photo of photos) {
+    if (photo.edit_failed_rev != null && await photoEdits.withheldFromGuests(photo)) withheldIds.add(photo.id);
+  }
 
   // Then get comment counts separately
   const commentCounts = await db('photo_feedback')
@@ -953,7 +959,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // The edited size for an edited photo (issue 2619).
         ...photoEdits.deliveredDimensions(photo),
         // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
-        thumb_hash: photo.thumb_hash || null,
+        thumb_hash: withheldIds.has(photo.id) ? null : photo.thumb_hash || null,
         // Where a crop keeps the photo's subject (issue 2377), as fractions
         // of the image; null: the centre. The layouts apply it as CSS
         // object-position to any rendition (utils/focalPoint says why the
