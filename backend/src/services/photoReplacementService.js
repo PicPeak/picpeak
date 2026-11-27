@@ -150,6 +150,16 @@ async function findReplacementCandidate(eventId, originalFilename, opts = {}) {
   return null;
 }
 
+/**
+ * The edit revision a replaced photo starts at (issue 2619), computed by the
+ * database from the live row: one past the current one, or 0 for a photo
+ * never edited. Both columns are set from the value before the update.
+ */
+function nextEditRevision() {
+  const next = db.raw('CASE WHEN COALESCE(edit_rev, 0) > 0 THEN edit_rev + 1 ELSE 0 END');
+  return { edit_rev: next, edit_applied_rev: next };
+}
+
 /** True when a fallback match left source_filename mangled (or empty). */
 function repairsLegacySource(photo) {
   if (!photo.legacyNameMatch) return false;
@@ -395,19 +405,22 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       watermark_path: null,
       watermark_generated_at: null,
       // A photo edit (issue 2619) was made on the old picture: the new one
-      // starts unedited, under a new revision so guests refetch it.
-      ...(Number(existingPhoto.edit_rev) > 0 ? {
-        edit_params: null,
-        edit_rev: Number(existingPhoto.edit_rev) + 1,
-        edit_applied_rev: Number(existingPhoto.edit_rev) + 1,
-        edit_applied_params: null,
-        edit_applied_width: null,
-        edit_applied_height: null,
-        edit_applied_render_path: null,
-        edit_render_path: null,
-        edit_width: null,
-        edit_height: null,
-      } : {}),
+      // starts unedited, under a new revision so guests refetch it. Taken
+      // from the row as this write finds it, not from the snapshot the
+      // replacement started with: an edit saved while the new file decoded
+      // and uploaded is reset too, and the revision never moves back. A
+      // photo never edited stays at 0.
+      ...nextEditRevision(),
+      edit_params: null,
+      edit_applied_params: null,
+      edit_applied_width: null,
+      edit_applied_height: null,
+      edit_applied_render_path: null,
+      edit_render_path: null,
+      edit_width: null,
+      edit_height: null,
+      edit_failed_rev: null,
+      edit_error: null,
       size_bytes: stats.size,
       content_sha256: contentSha256,
       width,
@@ -519,6 +532,9 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       });
     }
 
+    // The edit files the row names now (issue 2619): an edit saved since the
+    // snapshot rendered its own, which the write below no longer names.
+    const liveEdit = await db('photos').where({ id: existingPhoto.id }).first(require('./photoEdits').EDIT_FILE_COLUMNS);
     if (object) {
       await uploadQuota.commitObject(object, 'photo', async conn => {
         if (await conn('photos').where({ id: existingPhoto.id, event_id: event.id }).update(updates) !== 1) {
@@ -530,6 +546,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     switched = true;
     releaseClaim();
     await removeReplacedAssets(existingPhoto, { event, finalKey, thumbnailPath, storage, videoRendition });
+    if (liveEdit) await require('./photoEdits').deleteEditedRender({ id: existingPhoto.id, ...liveEdit });
     await sweepOldLadder();
     if (autoCredit) {
       // Fenced like the upload worker: a manual credit set meanwhile wins,
