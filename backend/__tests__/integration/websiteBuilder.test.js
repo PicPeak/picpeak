@@ -942,28 +942,6 @@ describe('save and publish under a concurrent save', () => {
     expect(published.document).toContain('Older');
   });
 
-  test('a discard needs the revision it starts from, and never overwrites a newer save', async () => {
-    await setFeatureFlags(db, { websiteBuilder: true });
-    const base = (await request(app).get('/api/admin/website').set(auth(adminId))).body.draft.revision;
-    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document: doc('Live'), revision: base }).expect(200);
-    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
-    const mine = saved.body.draft.revision;
-    // Another editor saves on top of the revision this editor still shows.
-    const theirs = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document: doc('Theirs'), revision: mine }).expect(200);
-
-    expect((await request(app).post('/api/admin/website/discard').set(auth(adminId)).send({})).status).toBe(400);
-    const stale = await request(app).post('/api/admin/website/discard').set(auth(adminId)).send({ revision: mine });
-    expect(stale.status).toBe(409);
-    expect(stale.body.code).toBe('WEBSITE_REVISION_CONFLICT');
-    const kept = await db('website_documents').where({ state: 'draft' }).first();
-    expect(kept.revision).toBe(theirs.body.draft.revision);
-    expect(kept.document).toContain('Theirs');
-
-    const ok = await request(app).post('/api/admin/website/discard').set(auth(adminId)).send({ revision: theirs.body.draft.revision }).expect(200);
-    expect(ok.body.draft.revision).toBe(theirs.body.draft.revision + 1);
-    expect(JSON.stringify(ok.body.document)).toContain('Live');
-  });
-
   test('publish without the saved revision is refused', async () => {
     const res = await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({});
     expect(res.status).toBe(400);

@@ -58,14 +58,6 @@ router.post('/publish', canEdit, [
   res.json(await websiteService.publish(req.body.revision, req.admin.id));
 }));
 
-router.post('/discard', canEdit, [
-  // The draft revision the editor shows: discard only that one, or 409.
-  body('revision').isInt({ min: 0 }),
-], handleAsync(async (req, res) => {
-  validateRequest(req);
-  res.json(await websiteService.discardDraft(req.body.revision, req.admin.id));
-}));
-
 // The editor's preview of an unsaved document: rendered per request, never
 // cached, never served on the public site.
 router.post('/preview', canView, [

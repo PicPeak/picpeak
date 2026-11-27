@@ -2279,7 +2279,6 @@
         "GET /",
         "PUT /draft",
         "POST /publish",
-        "POST /discard",
         "POST /preview",
         "POST /media/resolve",
         "GET /galleries",

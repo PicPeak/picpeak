@@ -310,25 +310,6 @@ async function publish(expectedRevision, adminId) {
   return editorState(result.draft, result.published);
 }
 
-/**
- * Throw the draft at `expectedRevision` away and start again from what is
- * published. A draft saved since is someone else's work: 409, like a save.
- */
-async function discardDraft(expectedRevision, adminId) {
-  const published = await readRow('published');
-  if (!published) throw new AppError('Nothing has been published yet', 404, 'WEBSITE_NOT_PUBLISHED');
-  const updated = await db('website_documents')
-    .where({ state: 'draft', revision: Number(expectedRevision) })
-    .update({
-      document: published.document,
-      revision: Number(expectedRevision) + 1,
-      updated_by: adminId,
-      updated_at: new Date().toISOString(),
-    });
-  if (!updated) throw revisionConflict();
-  return getEditorState(adminId);
-}
-
 // ---------------------------------------------------------------------------
 // Render context
 // ---------------------------------------------------------------------------
@@ -624,7 +605,6 @@ module.exports = {
   getEditorState,
   saveDraft,
   publish,
-  discardDraft,
   renderPreview,
   resolvePublicPage,
   isWebsiteActive,
