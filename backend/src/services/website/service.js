@@ -460,7 +460,9 @@ function robotsDirective(seo) {
  * the editor's render: block ids on the sections, the contact form disabled.
  */
 async function buildContext(document, page, { preview = false, allowed = null } = {}) {
-  const refs = collectReferences(document);
+  // Only this page's media: the other pages lend the menu and the footer
+  // their titles, nothing else.
+  const refs = collectReferences({ pages: [page] });
   if (allowed) {
     // The preview of an unsaved draft shows only what its admin may pick.
     refs.photoIds = refs.photoIds.filter((id) => allowed.photoIds.has(id));
@@ -510,7 +512,7 @@ async function renderPreview(rawDocument, pageId, admin, { videoAsPoster = false
   const { document } = normalizeDocument(rawDocument);
   const page = document.pages.find((p) => p.id === pageId) || document.pages[0];
   if (!page) throw new AppError('The website has no pages', 422, 'WEBSITE_INVALID');
-  const allowed = await referencesAdminMay(admin, collectReferences(document));
+  const allowed = await referencesAdminMay(admin, collectReferences({ pages: [page] }));
   return renderPage({ ...(await buildContext(document, page, { preview: true, allowed })), videoAsPoster });
 }
 

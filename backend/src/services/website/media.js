@@ -61,13 +61,14 @@ function photoVersion(photo) {
 }
 
 /**
- * How the gallery shows this photo's view tiers to a guest, decided as the
+ * How the gallery shows its photos' view tiers to a guest, decided as the
  * gallery's preview route decides it: the watermark (the event's, or the
  * photo-sales mark in a priced gallery) and the maximum-protection cap. The
  * website serves exactly that, never less. `tag` names it for photoVersion.
+ * Per gallery: the gallery decides the mark without looking at the photo.
  */
-async function guestView(event, photo) {
-  const settings = await viewWatermarkSettings(event, photo);
+async function guestView(event) {
+  const settings = await viewWatermarkSettings(event);
   // No settings: they could not be read (watermarkService logs why). The
   // gallery then shows the photo unmarked; the public website shows nothing.
   if (settings == null) throw new AppError('The watermark settings could not be read', 503, 'WEBSITE_WATERMARK_UNAVAILABLE');
@@ -158,13 +159,13 @@ async function loadEligiblePhotos(photoIds) {
   const photos = await guestPhotoQuery().whereIn('photos.id', ids)
     .select('photos.id', 'photos.event_id', 'photos.width', 'photos.height', ...PHOTO_VERSION_COLUMNS);
   const events = await loadEligibleEvents([...new Set(photos.map((p) => p.event_id))]);
-  const eligible = new Map();
-  for (const photo of photos) {
-    const event = events.get(photo.event_id);
+  // One view (one watermark settings read) per gallery, not per photo.
+  const views = new Map();
+  for (const event of events.values()) {
     // eslint-disable-next-line no-await-in-loop
-    if (event) eligible.set(photo.id, { ...photo, view: await guestView(event, photo) });
+    views.set(event.id, await guestView(event));
   }
-  return eligible;
+  return new Map(photos.filter((p) => views.has(p.event_id)).map((p) => [p.id, { ...p, view: views.get(p.event_id) }]));
 }
 
 async function loadAssets(publicIds) {
@@ -201,7 +202,7 @@ async function loadCoverPhotos(events) {
       photo = await guestPhotoQuery().where('photos.event_id', event.id).orderBy('photos.id', 'asc')
         .first('photos.id', 'photos.event_id', 'photos.width', 'photos.height', ...PHOTO_VERSION_COLUMNS);
     }
-    if (photo) covers.set(event.id, { ...photo, view: await guestView(event, photo) });
+    if (photo) covers.set(event.id, { ...photo, view: await guestView(event) });
   }
   return covers;
 }

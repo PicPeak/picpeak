@@ -1190,3 +1190,57 @@ describe('gallery watermarks on the website', () => {
     expect(served.body.equals(await fs.promises.readFile(path.join(process.env.STORAGE_PATH, keys['640'])))).toBe(true);
   });
 });
+
+describe('what a page render reads', () => {
+  let eventId; let photoIds;
+  const queries = async (work) => {
+    const seen = [];
+    const listen = (q) => seen.push(`${q.sql} ${JSON.stringify(q.bindings || [])}`);
+    db.on('query', listen);
+    try { await work(); } finally { db.removeListener('query', listen); }
+    return seen;
+  };
+  const publishPages = async (pages) => {
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document: { pages }, revision: state.draft.revision }).expect(200);
+    await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+    cache.clearWebsiteCache();
+  };
+  const gallery = (id, ids) => ({ id, type: 'gallery', images: ids.map((photoId) => ({ source: 'photo', id: photoId })) });
+
+  beforeAll(async () => {
+    await setFeatureFlags(db, { websiteBuilder: true });
+    await setSetting('general_public_site_enabled', true);
+    eventId = await insertEvent();
+    photoIds = [];
+    for (let i = 0; i < 24; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      photoIds.push(await insertId('photos', {
+        event_id: eventId, filename: `q${i}.jpg`, original_filename: `q${i}.jpg`, path: `site/q${i}.jpg`, type: 'individual',
+        width: 1600, height: 1000, processing_status: 'complete', source_origin: 'managed', rendition_version: 1,
+        mime_type: 'image/jpeg', media_type: 'photo',
+      }));
+    }
+  });
+
+  test('a page reads only its own photos, not those of other (hidden) pages', async () => {
+    await publishPages([
+      { id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'c1', type: 'contact' }] },
+      { id: 'portfolio', title: 'Portfolio', slug: 'portfolio', hidden: true, blocks: [gallery('g1', photoIds.slice(0, 12)), gallery('g2', photoIds.slice(12, 24))] },
+    ]);
+    const seen = await queries(() => service.resolvePublicPage(''));
+    expect(seen.filter((sql) => /from [`"]photos[`"]/i.test(sql))).toEqual([]);
+    expect(seen.filter((sql) => /branding_watermark_enabled/.test(sql))).toEqual([]);
+  });
+
+  test('the watermark settings are read once per gallery, not once per photo', async () => {
+    await publishPages([
+      { id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [gallery('g1', photoIds.slice(0, 12)), gallery('g2', photoIds.slice(12, 24))] },
+    ]);
+    const seen = await queries(async () => {
+      const page = await service.resolvePublicPage('');
+      expect(page.html).toContain(`/site-media/p${photoIds[23]}-`);
+    });
+    expect(seen.filter((sql) => /branding_watermark_enabled/.test(sql))).toHaveLength(1);
+  });
+});
