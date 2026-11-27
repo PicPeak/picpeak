@@ -171,10 +171,16 @@ export function useWebsiteEditor() {
     lastEdit.current = null;
   }, [replaceDraft]);
 
-  /** After a conflict: drop the local draft and load what is stored now. */
+  /**
+   * After a conflict: drop the local draft and load what is stored now. Only
+   * once that load answered with a newer revision: a failed refetch keeps the
+   * old data (and says so through query.isError), and the draft, its undo
+   * and the conflict stay.
+   */
   const reloadLatest = useCallback(async () => {
     const result = await query.refetch();
-    if (!result.data) return;
+    const from = baseRef.current;
+    if (result.isError || !result.data || (from && result.data.draft.revision <= from.revision)) return;
     replaceBase({ document: result.data.document, revision: result.data.draft.revision });
     replaceDraft(result.data.document);
     setHistory({ past: [], future: [] });

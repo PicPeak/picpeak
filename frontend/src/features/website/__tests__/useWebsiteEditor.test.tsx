@@ -117,6 +117,30 @@ describe('useWebsiteEditor', () => {
     expect(result.current.isDirty).toBe(false);
   });
 
+  it('keeps the draft and its undo when loading the latest version fails or brings nothing newer', async () => {
+    vi.mocked(websiteService.saveDraft).mockRejectedValue({ response: { status: 409, data: { code: 'WEBSITE_REVISION_CONFLICT' } } });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.draft).not.toBeNull());
+    act(() => result.current.update(rename('Mine')));
+    await act(async () => { await result.current.save.mutateAsync().catch(() => {}); });
+    expect(result.current.conflict).toBe(true);
+
+    vi.mocked(websiteService.getState).mockRejectedValue(new Error('Network down'));
+    await act(async () => { await result.current.reloadLatest(); });
+    // The page shows the failed load from the query's error state.
+    expect(client.getQueryState(['website-editor'])?.status).toBe('error');
+    expect(result.current.draft?.pages[0].title).toBe('Mine');
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.conflict).toBe(true);
+
+    // Answered, but with the revision this draft is already based on.
+    vi.mocked(websiteService.getState).mockResolvedValue(state('Home', 1));
+    await act(async () => { await result.current.reloadLatest(); });
+    expect(result.current.draft?.pages[0].title).toBe('Mine');
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.conflict).toBe(true);
+  });
+
   it('takes over a refetched draft while nothing is edited', async () => {
     const { result } = setup();
     await waitFor(() => expect(result.current.draft).not.toBeNull());
