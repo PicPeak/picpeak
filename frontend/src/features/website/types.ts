@@ -134,10 +134,29 @@ export interface WebsiteMenu {
   items: MenuItem[];
 }
 
+export type FooterColumn =
+  | { id: string; kind: 'brand' | 'pages'; heading: string }
+  | { id: string; kind: 'links'; heading: string; links: { label: string; target: LinkTarget }[] }
+  | { id: string; kind: 'text'; heading: string; text: string }
+  | { id: string; kind: 'contact'; heading: string; email: string; phone: string; address: string }
+  | { id: string; kind: 'social'; heading: string; social: SocialBlock['links'] };
+export type FooterColumnKind = FooterColumn['kind'];
+export interface WebsiteFooter {
+  columns: FooterColumn[];
+  /** The legal links (and the support address): a column, the copyright row, or not at all. */
+  legal: 'column' | 'bottom' | 'off';
+  /** '' = "© {year} {company}"; {year} is replaced. */
+  copyright: string;
+  background: 'default' | 'dark' | 'custom';
+  backgroundColor?: string;
+  textColor?: string | null;
+}
+
 export interface WebsiteDocument {
   version: number;
   pages: WebsitePage[];
   menu: WebsiteMenu;
+  footer: WebsiteFooter;
   theme: WebsiteTheme;
   customCss: string;
 }

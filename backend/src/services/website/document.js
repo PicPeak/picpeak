@@ -74,6 +74,10 @@ const MAX_MENU_ITEMS = 12;
 const MENU_LAYOUTS = ['left', 'center'];
 const MENU_STYLES = ['plain', 'underline', 'pill'];
 const MENU_MOBILE = ['dropdown', 'panel'];
+const FOOTER_KINDS = ['brand', 'pages', 'links', 'text', 'contact', 'social'];
+const FOOTER_LEGAL = ['column', 'bottom', 'off'];
+const MAX_FOOTER_COLUMNS = 4;
+const MAX_FOOTER_LINKS = 12;
 const MAX_STEPS = 8;
 const MAX_CTA_BUTTONS = 2;
 const MAX_SOCIAL_LINKS = 8;
@@ -223,6 +227,13 @@ function socialUrl(network, value) {
   return /^https?:\/\//i.test(url) ? url : '';
 }
 
+function socialList(value, field) {
+  return objects(value, MAX_SOCIAL_LINKS, field).map((link) => {
+    const network = pick(link.network, SOCIAL_NETWORKS, null);
+    return network ? { network, url: socialUrl(network, link.url) } : null;
+  }).filter(Boolean);
+}
+
 function rich(value, max, field) {
   // Loaded here, not at the top: richText.js needs this module's safeUrl.
   const { sanitizeRichText } = require('./richText');
@@ -357,10 +368,7 @@ const BLOCK_FIELDS = {
   }),
   social: (b) => ({
     heading: str(b.heading, 200, 'heading'),
-    links: objects(b.links, MAX_SOCIAL_LINKS, 'links').map((link) => {
-      const network = pick(link.network, SOCIAL_NETWORKS, null);
-      return network ? { network, url: socialUrl(network, link.url) } : null;
-    }).filter(Boolean),
+    links: socialList(b.links, 'links'),
   }),
   customHtml: (b) => ({
     html: typeof b.html === 'string' ? capText(b.html, MAX_CUSTOM_HTML, 'html') : '',
@@ -442,6 +450,50 @@ function normalizeMenu(raw, pages, inNavById) {
     background: hex(menu.background),
     text: hex(menu.text),
     items,
+  };
+}
+
+/**
+ * The footer: columns (the branding's name and texts, the pages, a list of
+ * links, a text, contact details, social links), where the legal links go,
+ * the copyright line and the background. A document from before the footer
+ * had settings gets the footer it always showed: the branding, the pages,
+ * the legal links as a column, "© year name".
+ */
+function normalizeFooterColumn(column) {
+  const kind = pick(column.kind, FOOTER_KINDS, null);
+  if (!kind) return null;
+  const out = { id: blockId(column.id), kind, heading: str(column.heading, 80, 'footerHeading') };
+  if (kind === 'text') out.text = rich(column.text, 2000, 'footerText');
+  if (kind === 'links') {
+    out.links = objects(column.links, MAX_FOOTER_LINKS, 'footerLinks').map((link) => {
+      const target = linkTarget(link.target);
+      return target ? { label: str(link.label, 60, 'footerLinkLabel'), target } : null;
+    }).filter(Boolean);
+  }
+  if (kind === 'contact') {
+    const email = str(column.email, 254, 'email');
+    const phone = str(column.phone, 40, 'phone');
+    out.email = /^[^\s@<>"']{1,64}@[^\s@<>"']{1,190}\.[a-z]{2,}$/i.test(email) ? email : '';
+    out.phone = /^\+?[0-9 ()./-]{3,40}$/.test(phone) ? phone : '';
+    out.address = str(column.address, 300, 'address');
+  }
+  if (kind === 'social') out.social = socialList(column.social, 'footerSocial');
+  return out;
+}
+
+function normalizeFooter(raw) {
+  const footer = raw && typeof raw === 'object' ? raw : {};
+  const columns = Array.isArray(footer.columns)
+    ? objects(footer.columns, MAX_FOOTER_COLUMNS, 'footer').map(normalizeFooterColumn).filter(Boolean)
+    : [{ id: 'brand', kind: 'brand', heading: '' }, { id: 'pages', kind: 'pages', heading: '' }];
+  // Page (as it always was), dark, or a colour of its own.
+  const background = normalizeBackground({ ...footer, background: footer.background === 'light' ? 'default' : footer.background });
+  return {
+    columns,
+    legal: pick(footer.legal, FOOTER_LEGAL, 'column'),
+    copyright: str(footer.copyright, 200, 'copyright'),
+    ...background,
   };
 }
 
@@ -532,6 +584,7 @@ function normalizeInto(raw, reservedSlugs, errors) {
     version: DOCUMENT_VERSION,
     pages,
     menu: normalizeMenu(input.menu, pages, inNavById),
+    footer: normalizeFooter(input.footer),
     theme: normalizeTheme(input.theme),
     customCss: typeof input.customCss === 'string' ? capText(input.customCss, MAX_CUSTOM_CSS, 'customCss') : '',
   };

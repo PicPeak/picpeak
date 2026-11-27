@@ -92,3 +92,51 @@ describe('the menu', () => {
     expect(errors).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'TOO_MANY_ITEMS', field: 'menu' }), expect.objectContaining({ code: 'TEXT_TOO_LONG', field: 'menuLabel' })]));
   });
 });
+
+describe('the footer', () => {
+  test('a document from before the footer settings renders its footer exactly as before', () => {
+    const { footer, document } = render({ pages: LEGACY_PAGES });
+    expect(footer).toBe(BEFORE.footer);
+    expect(document.footer).toMatchObject({ legal: 'column', copyright: '', background: 'default' });
+    expect(document.footer.columns.map((c) => c.kind)).toEqual(['brand', 'pages']);
+    expect(render(document).footer).toBe(BEFORE.footer);
+  });
+
+  test('columns of text, links, contact details and social icons', () => {
+    const { footer } = render({ pages: LEGACY_PAGES, footer: { legal: 'off', columns: [
+      { id: 'c1', kind: 'text', heading: 'Studio', text: '<p>Since <strong>2010</strong></p><script>x()</script>' },
+      { id: 'c2', kind: 'links', heading: 'More', links: [
+        { label: 'Contact', target: { kind: 'anchor', pageId: 'about', blockId: 'form' } },
+        { label: 'Evil', target: { kind: 'url', url: 'javascript:alert(1)' } },
+      ] },
+      { id: 'c3', kind: 'contact', heading: 'Visit', email: 'hi@studio.example', phone: '+41 44 123 45 67', address: 'Seestrasse 1\n8000 Zürich' },
+      { id: 'c4', kind: 'social', social: [{ network: 'instagram', url: 'https://instagram.com/studio' }] },
+    ] } });
+    expect(footer).toContain('<div><h2 class="pp-footer__h">Studio</h2><div class="pp-prose"><p>Since <strong>2010</strong></p></div></div>');
+    expect(footer).toContain('<nav aria-label="More"><h2 class="pp-footer__h">More</h2><ul><li><a href="#b-form">Contact</a></li></ul></nav>');
+    expect(footer).toContain('<a href="mailto:hi@studio.example">hi@studio.example</a>');
+    expect(footer).toContain('<a href="tel:+41441234567">+41 44 123 45 67</a>');
+    expect(footer).toContain('Seestrasse 1<br>8000 Zürich');
+    expect(footer).toMatch(/<a class="pp-social__link" href="https:\/\/instagram.com\/studio" rel="noopener noreferrer" aria-label="Instagram"><svg/);
+    expect(footer).not.toMatch(/<script|javascript:|Evil|\/impressum/);
+    expect(footer).toContain('pp-footer__in pp-footer__in--n4');
+  });
+
+  test('legal links at the bottom, a copyright line of its own, a dark background', () => {
+    const { footer } = render({ pages: LEGACY_PAGES, footer: { legal: 'bottom', copyright: '© {year} Studio <AG>, all rights reserved', background: 'dark', columns: [{ id: 'b', kind: 'brand' }] } });
+    expect(footer).toMatch(/^<footer class="pp-footer pp-dark">/);
+    expect(footer).toContain('<div class="pp-copy pp-copy--legal"><span>© 2026 Studio &lt;AG&gt;, all rights reserved</span><ul><li><a href="/impressum">Impressum</a></li><li><a href="mailto:hi@studio.example">Contact</a></li></ul></div>');
+  });
+
+  test('validated and capped like the blocks', () => {
+    const { document, errors } = normalizeDocument({ pages: LEGACY_PAGES, footer: {
+      legal: 'sideways', background: 'custom', backgroundColor: 'url(x)',
+      columns: [...Array.from({ length: 6 }, (_, i) => ({ id: `c${i}`, kind: 'brand' })), { kind: 'iframe' }],
+    } });
+    expect(document.footer.columns).toHaveLength(4);
+    expect(document.footer).toMatchObject({ legal: 'column', background: 'default' });
+    expect(errors).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'TOO_MANY_ITEMS', field: 'footer' })]));
+    const contact = normalizeDocument({ pages: LEGACY_PAGES, footer: { columns: [{ kind: 'contact', email: 'not an address', phone: 'javascript:1' }] } }).document.footer.columns[0];
+    expect(contact).toMatchObject({ email: '', phone: '' });
+  });
+});

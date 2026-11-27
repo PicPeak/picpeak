@@ -82,7 +82,7 @@ const STATE: EditorState = {
     ],
     theme: { headingFont: null, bodyFont: null, buttonStyle: null, accent: null, background: null, text: null },
     customCss: '',
-    menu: { layout: 'left', style: 'plain', sticky: true, transparent: false, mobile: 'dropdown', background: null, text: null, items: [{ id: 'mh', label: '', hidden: false, target: { kind: 'page', pageId: 'home' } }, { id: 'ma', label: '', hidden: false, target: { kind: 'page', pageId: 'about' } }] },
+    footer: { columns: [], legal: 'column', copyright: '', background: 'default' }, menu: { layout: 'left', style: 'plain', sticky: true, transparent: false, mobile: 'dropdown', background: null, text: null, items: [{ id: 'mh', label: '', hidden: false, target: { kind: 'page', pageId: 'home' } }, { id: 'ma', label: '', hidden: false, target: { kind: 'page', pageId: 'about' } }] },
   },
   draft: { revision: 3, updatedAt: '', publishedAt: null },
   published: { revision: 3, updatedAt: '', publishedAt: '2026-11-27T10:00:00Z' },

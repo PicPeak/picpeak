@@ -17,7 +17,7 @@ const doc = (title: string): WebsiteDocument => ({
   pages: [{ id: 'home', slug: 'home', title, navLabel: '', hidden: false, isHome: true, seo: { title: '', description: '', image: null }, blocks: [] }],
   theme: { headingFont: null, bodyFont: null, buttonStyle: null, accent: null, background: null, text: null },
   customCss: '',
-  menu: { layout: 'left', style: 'plain', sticky: true, transparent: false, mobile: 'dropdown', background: null, text: null, items: [] },
+  footer: { columns: [], legal: 'column', copyright: '', background: 'default' }, menu: { layout: 'left', style: 'plain', sticky: true, transparent: false, mobile: 'dropdown', background: null, text: null, items: [] },
 });
 const state = (title: string, revision = 1, extra: Partial<EditorState> = {}): EditorState => ({
   document: doc(title), draft: { revision, updatedAt: '', publishedAt: null }, published: null,

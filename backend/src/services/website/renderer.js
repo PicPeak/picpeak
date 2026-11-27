@@ -732,6 +732,11 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-footer li{margin:0 0 .5rem}
 .pp-footer p{margin:.4rem 0 0;color:var(--muted)}
 .pp-copy{grid-column:1/-1;border-top:1px solid var(--border);padding-top:1.5rem;font-size:.85rem}
+@media (min-width:760px){.pp-footer__in--n1{grid-template-columns:1fr}.pp-footer__in--n2{grid-template-columns:2fr 1fr}.pp-footer__in--n4{grid-template-columns:2fr 1fr 1fr 1fr}.pp-footer__in--n5{grid-template-columns:2fr 1fr 1fr 1fr 1fr}}
+.pp-footer{color:var(--text)}.pp-footer__h{font:600 .8rem/1.3 var(--font-body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 .8rem}
+.pp-footer__contact{font-style:normal}.pp-footer__contact p{margin:0 0 .4rem;color:var(--text)}
+.pp-footer__social{justify-content:flex-start}
+.pp-copy--legal{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.5rem 1.5rem}.pp-copy--legal ul{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem}.pp-copy--legal li{margin:0}
 .pp-skip{position:absolute;left:-10000px}.pp-skip:focus{left:1rem;top:1rem;z-index:20;background:var(--surface);padding:.6rem 1rem}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}`;
 
@@ -806,16 +811,62 @@ function renderHeader(ctx) {
   return `<header class="${classes.join(' ')}"${vars ? ` style="${vars}"` : ''}><div class="pp-wrap pp-header__in"><a class="pp-brand" href="/">${logo}<span>${esc(name)}</span></a>${nav}</div></header>`;
 }
 
+function footerColumn(column, ctx) {
+  const { branding } = ctx;
+  const h = column.heading ? `<h2 class="pp-footer__h">${esc(column.heading)}</h2>` : '';
+  switch (column.kind) {
+  case 'brand':
+    return `<div><strong>${esc(branding.companyName || 'PicPeak')}</strong>${branding.companyTagline ? `<p>${esc(branding.companyTagline)}</p>` : ''}${branding.footerText ? `<p>${esc(branding.footerText)}</p>` : ''}</div>`;
+  case 'pages': {
+    const pages = ctx.document.pages.filter((p) => !p.hidden)
+      .map((p) => `<li><a href="${esc(pageHref(p))}">${esc(p.navLabel || p.title)}</a></li>`).join('');
+    return `<nav aria-label="Pages">${h}<ul>${pages}</ul></nav>`;
+  }
+  case 'links': {
+    const links = column.links.map((link) => {
+      const href = targetHref(link.target, ctx);
+      const label = href && menuLabel(link, ctx);
+      return label ? `<li><a href="${esc(href)}"${linkAttrs(href)}>${esc(label)}</a></li>` : '';
+    }).join('');
+    return `<nav aria-label="${esc(column.heading || 'Links')}">${h}<ul>${links}</ul></nav>`;
+  }
+  case 'text':
+    return `<div>${h}${column.text ? `<div class="pp-prose">${column.text}</div>` : ''}</div>`;
+  case 'contact': {
+    const lines = [
+      column.email && `<a href="mailto:${esc(column.email)}">${esc(column.email)}</a>`,
+      column.phone && `<a href="${esc(`tel:${column.phone.replace(/\s+/g, '')}`)}">${esc(column.phone)}</a>`,
+      column.address && esc(column.address).replace(/\n/g, '<br>'),
+    ].filter(Boolean).map((line) => `<p>${line}</p>`).join('');
+    return `<div>${h}<address class="pp-footer__contact">${lines}</address></div>`;
+  }
+  case 'social':
+    return `<div>${h}<div class="pp-social pp-social--icons pp-footer__social">${socialLinks(column.social)}</div></div>`;
+  default:
+    return '';
+  }
+}
+
 function renderFooter(ctx) {
   const { branding } = ctx;
+  const { footer } = ctx.document;
   const s = strings(ctx.locale);
   const name = branding.companyName || 'PicPeak';
-  const pages = ctx.document.pages.filter((p) => !p.hidden)
-    .map((p) => `<li><a href="${esc(pageHref(p))}">${esc(p.navLabel || p.title)}</a></li>`).join('');
   const legal = (ctx.legalLinks || []).map((l) => `<li><a href="${esc(l.href)}">${esc(l.label)}</a></li>`);
   if (branding.supportEmail) legal.push(`<li><a href="mailto:${esc(branding.supportEmail)}">${esc(s.support)}</a></li>`);
-  const year = (ctx.now || new Date()).getUTCFullYear();
-  return `<footer class="pp-footer"><div class="pp-wrap pp-footer__in"><div><strong>${esc(name)}</strong>${branding.companyTagline ? `<p>${esc(branding.companyTagline)}</p>` : ''}${branding.footerText ? `<p>${esc(branding.footerText)}</p>` : ''}</div><nav aria-label="Pages"><ul>${pages}</ul></nav><ul>${legal.join('')}</ul><p class="pp-copy">© ${year} ${esc(name)}</p></div></footer>`;
+  const year = String((ctx.now || new Date()).getUTCFullYear());
+  const copyright = footer.copyright ? footer.copyright.replace(/\{year\}/g, year) : `© ${year} ${name}`;
+  const columns = footer.columns.map((column) => footerColumn(column, ctx));
+  if (footer.legal === 'column') columns.push(`<ul>${legal.join('')}</ul>`);
+  const copy = footer.legal === 'bottom' && legal.length
+    ? `<div class="pp-copy pp-copy--legal"><span>${esc(copyright)}</span><ul>${legal.join('')}</ul></div>`
+    : `<p class="pp-copy">${esc(copyright)}</p>`;
+  // Three columns is the footer as it always was; other counts have a class.
+  const count = columns.length === 3 ? '' : ` pp-footer__in--n${columns.length}`;
+  const custom = footer.background === 'custom' && footer.backgroundColor;
+  const bg = custom ? ' pp-custom-bg' : (footer.background === 'dark' ? ' pp-dark' : '');
+  const style = custom ? ` style="${customBackgroundStyle(footer, ctx)}"` : '';
+  return `<footer class="pp-footer${bg}"${style}><div class="pp-wrap pp-footer__in${count}">${columns.join('')}${copy}</div></footer>`;
 }
 
 function absolute(base, path) {
