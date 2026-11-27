@@ -257,10 +257,25 @@ async function saveDraft(rawDocument, expectedRevision, admin) {
     err.details = refused;
     throw err;
   }
+  const stored = await storedReferences();
+  // A new pick comes from a gallery that is on the website now, for its
+  // owner too: they put the gallery on first, then pick. Picks already
+  // stored stay when their gallery goes off (the page leaves them out).
+  const newPhotoIds = refs.photoIds.filter((id) => !stored.photoIds.has(id));
+  const newEventIds = refs.eventIds.filter((id) => !stored.eventIds.has(id));
+  const pickedFrom = newPhotoIds.length ? await livePhotos(db).whereIn('id', newPhotoIds).pluck('event_id') : [];
+  const sourceIds = [...new Set([...pickedFrom, ...newEventIds])];
+  const sources = sourceIds.length ? await db('events').whereIn('id', sourceIds) : [];
+  const off = sources.filter((event) => !media.isEventWebsiteEligible(event));
+  if (off.length) {
+    const names = off.map((event) => event.event_name).join(', ');
+    const err = new AppError(`Put the gallery on the website first: ${names}`, 409, 'WEBSITE_GALLERY_NOT_ON_WEBSITE');
+    err.details = off.map((event) => ({ code: 'GALLERY_NOT_ON_WEBSITE', eventId: event.id, name: event.event_name, reason: media.eventIneligibleReason(event) }));
+    throw err;
+  }
   // Packages come from the quote catalogue (quotes.view). Without it an
   // admin keeps the ones the site has, and adds none: the public page would
   // show the catalogue to them by a guessed id.
-  const stored = await storedReferences();
   const newPackages = refs.packageIds.filter((id) => !stored.packageIds.has(id));
   if (newPackages.length && !(await userHasAllPermissions(adminId, ['quotes.view']))) {
     const err = new AppError('Adding packages needs the permission to view quotes', 403, 'WEBSITE_PACKAGES_FORBIDDEN');

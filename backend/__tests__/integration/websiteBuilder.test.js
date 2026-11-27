@@ -470,7 +470,9 @@ describe('gallery photos on the website', () => {
     lockedPhoto = await insertPhoto(lockedEvent);
     lockedOther = await insertPhoto(lockedEvent);
     expiredEvent = await insertEvent({ expires_at: new Date(Date.now() - 86400000).toISOString() });
-    optedOutPhoto = await insertPhoto(await insertEvent({ show_on_website: 0 }));
+    // Picked while its gallery was on the website; switched off afterwards.
+    const optedOutEvent = await insertEvent();
+    optedOutPhoto = await insertPhoto(optedOutEvent);
     const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
     const document = {
       pages: [{
@@ -484,6 +486,8 @@ describe('gallery photos on the website', () => {
     };
     const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document, revision: state.draft.revision }).expect(200);
     await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+    await db('events').where({ id: optedOutEvent }).update({ show_on_website: 0 });
+    cache.clearWebsiteCache();
   });
 
   test('picked photos of opted-in galleries are rendered, with or without a password; nothing else is', async () => {
@@ -981,12 +985,15 @@ describe('the opt-in in the gallery settings', () => {
   let event; let photo;
 
   beforeAll(async () => {
-    event = await insertEvent({ show_on_website: 0 });
+    // Picked while the gallery was on the website, then switched off.
+    event = await insertEvent();
     photo = await insertPhoto(event);
     const rev = (await request(app).get('/api/admin/website').set(auth(adminId))).body.draft.revision;
     const document = { pages: [{ id: 'home', title: 'Home', slug: 'home', isHome: true, blocks: [{ id: 'g', type: 'gallery', images: [{ source: 'photo', id: photo }] }] }] };
     const saved = await request(app).put('/api/admin/website/draft').set(auth(adminId)).send({ document, revision: rev }).expect(200);
     await request(app).post('/api/admin/website/publish').set(auth(adminId)).send({ revision: saved.body.draft.revision }).expect(200);
+    await db('events').where({ id: event }).update({ show_on_website: 0 });
+    require('../../src/services/website/cache').clearWebsiteCache();
   });
 
   const put = (body, who = adminId) => request(app).put(`/api/admin/events/${event}`).set(auth(who)).send(body);
