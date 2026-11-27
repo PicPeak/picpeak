@@ -574,7 +574,7 @@ class FeedbackService {
     // the write had a transaction. Inside it the aggregate would not see
     // another guest's like on the same photo that is still uncommitted (the
     // lock is per guest), and the two would each store a count of one.
-    if (!result.locked && !result.guest_missing && !result.limit_reached && !result.list_missing) {
+    if (!result.locked && !result.guest_missing && !result.limit_reached && !result.list_missing && !result.image_changed) {
       await this.updatePhotoFeedbackStats(photoId);
     }
     return result;
@@ -797,11 +797,20 @@ class FeedbackService {
       const storedAnnotation = feedback_type === 'comment' && feedbackData.annotation
         ? serializeAnnotation(feedbackData.annotation)
         : null;
-      // Drawn on the photo as shown now: with its applied edit's geometry
-      // (issue 2619), so the drawing follows a later turn or crop.
-      const annotationGeometryText = storedAnnotation
-        ? annotationGeometry(require('./photoEdits').paramsOf({ edit_params: (await executor('photos').where({ id: photoId }).first('edit_applied_params'))?.edit_applied_params }))
-        : null;
+      // Drawn on the photo as it was shown: the client names the edit
+      // revision it displayed (annotation_rev; an older client none, taken as
+      // the one applied now). The applied revision's geometry is recorded
+      // (issue 2619), so the drawing follows a later turn or crop; one drawn
+      // on another revision than the applied one is refused, not misplaced.
+      let annotationGeometryText = null;
+      if (storedAnnotation) {
+        const shown = await executor('photos').where({ id: photoId }).first('edit_applied_rev', 'edit_applied_params');
+        const drawnOn = feedbackData.annotation_rev;
+        if (drawnOn !== undefined && drawnOn !== null && Number(drawnOn) !== (Number(shown?.edit_applied_rev) || 0)) {
+          return { image_changed: true };
+        }
+        annotationGeometryText = annotationGeometry(require('./photoEdits').paramsOf({ edit_params: shown?.edit_applied_params }));
+      }
 
       // Insert new feedback
       const insertFeedback = (executor) => executor('photo_feedback').insert({

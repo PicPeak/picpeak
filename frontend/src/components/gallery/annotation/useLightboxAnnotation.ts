@@ -17,6 +17,8 @@ interface Options {
   onStart: () => void;
   /** Called when a stored drawing is put on the photo. */
   onShow: () => void;
+  /** The edit revision of the picture on screen (issue 2619; 0: unedited). */
+  editRevision?: number;
 }
 
 /**
@@ -25,12 +27,14 @@ interface Options {
  * guest picked from the comment list. Kept out of PhotoLightbox so that file
  * only has the integration points.
  */
-export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, onShow }: Options) {
+export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, onShow, editRevision = 0 }: Options) {
   const onShowRef = useRef(onShow);
   onShowRef.current = onShow;
   const [drawing, setDrawing] = useState(false);
   const [strokes, setStrokes] = useState<AnnotationStroke[]>([]);
   const [draft, setDraft] = useState<PhotoAnnotation | null>(null);
+  // The edit revision of the picture the draft was drawn on (issue 2619).
+  const [draftRevision, setDraftRevision] = useState(0);
   const [shown, setShown] = useState<{ commentId: number; annotation: PhotoAnnotation } | null>(null);
   const [tool, setTool] = useState<AnnotationTool>('free');
   const [color, setColor] = useState(0);
@@ -69,6 +73,7 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
 
   const done = () => {
     setDraft(strokes.length > 0 ? { v: 1, strokes } : null);
+    setDraftRevision(editRevision);
     setDrawing(false);
   };
 
@@ -105,13 +110,14 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     canDraw,
     drawing,
     draft,
+    draftRevision,
     discard,
     discardSent,
     setSending,
     shownCommentId: shown?.commentId ?? null,
     toggleShown,
     hideShown,
-  }), [canDraw, drawing, draft, discard, discardSent, shown, toggleShown, hideShown]);
+  }), [canDraw, drawing, draft, draftRevision, discard, discardSent, shown, toggleShown, hideShown]);
 
   // What lies on the photo: the strokes in progress, else the drawing picked
   // from the comment list, else the one waiting on the comment form.

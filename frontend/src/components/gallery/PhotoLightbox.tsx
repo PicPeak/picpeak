@@ -10,7 +10,7 @@ import { AuthenticatedImage } from '../common';
 import { useFullResolutionZoom, FullResolutionImage } from './hooks/useFullResolutionZoom';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { PhotoFeedback } from './PhotoFeedback';
-import { lightboxImageLongEdge, lightboxImageUrl } from './imageTiers';
+import { guestEditRevision, lightboxImageLongEdge, lightboxImageUrl } from './imageTiers';
 import { feedbackService, type ColorLabel, type KeybindMode, type PhotoDecision as Decision } from '../../services/feedback.service';
 import { FEEDBACK_SETTINGS_STALE_TIME, useGalleryFeedbackSettings } from '../../hooks/useGalleryFeedbackSettings';
 import { PhotoColorLabels } from './PhotoColorLabels';
@@ -161,6 +161,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     onStart: () => resetZoom(),
     // On a phone the panel covers the photo: step aside to show the drawing.
     onShow: () => { if (isSmallScreen) setShowFeedback(false); },
+    // The edit revision the picture on screen shows (issue 2619).
+    editRevision: photos[currentIndex] ? guestEditRevision(photos[currentIndex]) : 0,
   });
   const annotating = annotation.drawing;
   const annotationRef = useRef(annotation);

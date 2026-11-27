@@ -200,6 +200,12 @@ export function guestEditQuery(photo: { url?: string | null; thumbnail_url?: str
   return '';
 }
 
+/** The applied edit revision the photo's listed URLs name (issue 2619); 0 for none. */
+export function guestEditRevision(photo: { url?: string | null; thumbnail_url?: string | null }): number {
+  const query = guestEditQuery(photo);
+  return query ? Number(query.slice(2)) || 0 : 0;
+}
+
 export function facePreviewUrl(
   slug: string | undefined,
   photo: {

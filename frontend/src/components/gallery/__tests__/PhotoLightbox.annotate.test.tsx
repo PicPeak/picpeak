@@ -51,8 +51,9 @@ import { PhotoLightbox } from '../PhotoLightbox';
 
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
 
+// The first one edited (issue 2619): its URLs name the applied revision.
 const photos = [1, 2, 3].map((id) => ({
-  id, filename: `${id}.jpg`, url: `/api/gallery/g/photo/${id}`, thumbnail_url: `/t/${id}`, type: 'individual',
+  id, filename: `${id}.jpg`, url: `/api/gallery/g/photo/${id}${id === 1 ? '?e=3' : ''}`, thumbnail_url: `/t/${id}`, type: 'individual',
 })) as Photo[];
 
 const STORED = { v: 1, strokes: [{ t: 'arrow', c: 1, p: [[0.2, 0.2], [0.6, 0.7]] }] };
@@ -234,6 +235,8 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
       feedback_type: 'comment',
       comment_text: 'Crop here',
       annotation: { v: 1, strokes: [{ t: 'arrow', c: 0, p: [[0, 0], [1, 1]] }] },
+      // Drawn on the picture of the edit revision on screen (issue 2619).
+      annotation_rev: 3,
     }));
     // Sent: the draft is gone from the photo.
     await waitFor(() => expect(screen.queryByTestId('annotation-overlay')).toBeNull());

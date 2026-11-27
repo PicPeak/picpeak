@@ -400,6 +400,8 @@ class FeedbackService {
     decision?: PhotoDecision;
     /** Only with feedback_type 'comment' (issue 1733). */
     annotation?: PhotoAnnotation;
+    /** The edit revision of the picture the annotation was drawn on (issue 2619). */
+    annotation_rev?: number;
     /** Only with feedback_type 'favorite' (issue 2303): null = default list. */
     favorite_list_id?: number | null;
     guest_name?: string;

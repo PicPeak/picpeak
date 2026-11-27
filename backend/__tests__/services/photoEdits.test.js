@@ -488,11 +488,17 @@ describe('a guest\'s drawing on an edited photo', () => {
     try {
       // Drawn on the turned photo guests see.
       await feedbackService.submitFeedback(id, eventId, {
-        feedback_type: 'comment', comment_text: 'look here', guest_name: 'Ann',
+        feedback_type: 'comment', comment_text: 'look here', guest_name: 'Ann', annotation_rev: 1,
         annotation: { v: 1, strokes: [{ t: 'arrow', c: 0, p: [[0.8, 0.1], [0.5, 0.5]] }] },
       }, 'guest-ann');
       const stored = await db('photo_feedback').where({ photo_id: id }).first();
       expect(JSON.parse(stored.annotation_geometry)).toMatchObject({ rotate: 90 });
+      // Drawn on a picture of another revision than the one applied now: refused, reload.
+      expect(await feedbackService.submitFeedback(id, eventId, {
+        feedback_type: 'comment', comment_text: 'stale', guest_name: 'Ann', annotation_rev: 0,
+        annotation: { v: 1, strokes: [{ t: 'arrow', c: 0, p: [[0.1, 0.1], [0.5, 0.5]] }] },
+      }, 'guest-ann')).toMatchObject({ image_changed: true });
+      expect(await db('photo_feedback').where({ photo_id: id, comment_text: 'stale' }).first()).toBeUndefined();
       // Shown as drawn while the edit stands...
       let [shown] = await feedbackService.getPhotoFeedback(id, { feedback_type: 'comment' });
       expect(shown).toMatchObject({ annotation: { strokes: [{ p: [[0.8, 0.1], [0.5, 0.5]] }] }, annotation_clipped: false });

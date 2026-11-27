@@ -69,6 +69,8 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
         feedback_type: 'comment',
         comment_text: data.comment_text,
         annotation: data.annotation,
+        // The edit revision of the picture it was drawn on (issue 2619).
+        ...(data.annotation ? { annotation_rev: data.annotationRevision ?? 0 } : {}),
         guest_name: data.guest_name,
         guest_email: data.guest_email
       }),
@@ -93,6 +95,9 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
     onError: (error: any) => {
       if (error.response?.status === 429) {
         toast.error(t('feedback.rateLimited', 'Please wait before commenting again'));
+      } else if (error.response?.data?.code === 'IMAGE_CHANGED') {
+        // The photo was edited since it was shown (issue 2619).
+        toast.error(t('feedback.annotation.imageChanged', 'The photo has changed since you drew on it. Reload the gallery and draw again.'));
       } else if (error.response?.data?.errors) {
         setErrors(error.response.data.errors);
       } else {
@@ -157,13 +162,14 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
       } catch {
         return;
       }
-      submitCommentMutation.mutate({ comment_text: commentText.trim(), annotation: draftAnnotation });
+      submitCommentMutation.mutate({ comment_text: commentText.trim(), annotation: draftAnnotation, annotationRevision: annotation?.draftRevision });
       return;
     }
 
     submitCommentMutation.mutate({
       comment_text: commentText.trim(),
       annotation: draftAnnotation,
+      annotationRevision: annotation?.draftRevision,
       guest_name: guestName.trim() || undefined,
       guest_email: guestEmail.trim() || undefined
     });

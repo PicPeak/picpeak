@@ -13,6 +13,11 @@ export interface CommentAnnotationContextValue {
   drawing: boolean;
   /** The finished drawing waiting to be sent with the comment. */
   draft: PhotoAnnotation | null;
+  /**
+   * The edit revision of the picture the draft was drawn on (issue 2619;
+   * 0: unedited): the server refuses it once another revision is applied.
+   */
+  draftRevision: number;
   /** Leave drawing mode and drop the draft. */
   discard: () => void;
   /**
