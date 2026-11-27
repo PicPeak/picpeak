@@ -532,7 +532,9 @@ async function saveEdits(changes) {
  */
 function editCacheKeys(photo) {
   if (!photo) return [];
-  const keys = [];
+  // The tiers of the edit's revisions too: a reset still waiting for the
+  // background pass has not dropped them yet.
+  const keys = Number(photo.edit_rev) > 0 ? historicalTierKeys(photo) : [];
   if (isRenderKeyOf(photo, photo.edit_render_path)) keys.push(photo.edit_render_path);
   const rawDevelop = require('./rawDevelop');
   if (rawDevelop.isRawPhoto(photo)) keys.push(rawDevelop.previewKey(photo));
@@ -600,18 +602,34 @@ function pendingRows() {
  * versionTag), so the old ones would otherwise stay in storage for good.
  */
 async function dropStaleTiers(row) {
-  const imageProcessor = require('./imageProcessor');
-  const rev = Number(row.edit_rev);
-  const views = [];
-  if (paramsOf(row)) views.push({ ...row, edit_params: null });
-  const from = Math.max(1, Number(row.edit_applied_rev) || 0, rev - 50);
-  for (let r = from; r < rev; r++) views.push({ ...row, edit_rev: r, edit_params: row.edit_params || '{}' });
-  const keys = new Set();
-  for (const view of views) {
-    for (const key of [...imageProcessor.thumbnailTierKeys(view), ...imageProcessor.previewTierKeys(view)]) keys.add(key);
+  const keys = new Set(historicalTierKeys(row, { upTo: Number(row.edit_rev) - 1 }));
+  if (paramsOf(row)) {
+    const imageProcessor = require('./imageProcessor');
+    const original = { ...row, edit_params: null };
+    for (const key of [...imageProcessor.thumbnailTierKeys(original), ...imageProcessor.previewTierKeys(original)]) keys.add(key);
   }
   const storage = getStorage();
   await Promise.all([...keys].map((key) => storage.delete(key).catch(() => {})));
+}
+
+// Any edit stands in for the one a past revision had: tier keys name the
+// revision, not the settings, so this is enough to list them after a reset
+// cleared the params.
+const PAST_EDIT = math.canonicalJson({ ...math.DEFAULT_PARAMS, develop: true });
+
+/**
+ * Tier keys revisions of the edit may have left: from the one whose
+ * renditions were last in place up to `upTo` (at most 50 back).
+ */
+function historicalTierKeys(row, { upTo = Number(row.edit_rev) } = {}) {
+  const imageProcessor = require('./imageProcessor');
+  const keys = [];
+  const from = Math.max(1, Number(row.edit_applied_rev) || 0, upTo - 50);
+  for (let r = from; r <= upTo; r++) {
+    const view = { ...row, edit_rev: r, edit_params: PAST_EDIT };
+    keys.push(...imageProcessor.thumbnailTierKeys(view), ...imageProcessor.previewTierKeys(view));
+  }
+  return keys;
 }
 
 /** Drop a pre-generated watermark copy that shows another revision. */

@@ -399,6 +399,39 @@ describe('a reference photo rewritten on its share', () => {
   });
 });
 
+describe('edited tiers after a reset', () => {
+  const tierFor = async (photoId) => require('../../src/services/imageProcessor').ensurePreviewImageAtWidth(await db('photos').where({ id: photoId }).first(), 640);
+  const plantEdited = async (name) => {
+    fs.writeFileSync(storagePath(`events/active/edit-card/${name}`), originalBytes);
+    const id = unwrap(await db('photos').insert({
+      event_id: (await row()).event_id, filename: name, path: `edit-card/${name}`, type: 'individual', media_type: 'image',
+      mime_type: 'image/jpeg', width: 600, height: 400, size_bytes: originalBytes.length, processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id'));
+    await photoEdits().saveEdits([{ photo: await db('photos').where({ id }).first(), params: validated({ saturation: -50 }) }]);
+    await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+    const tier = await tierFor(id);
+    expect(tier).toMatch(/_e1_/);
+    expect(fs.existsSync(storagePath(tier))).toBe(true);
+    return { id, tier };
+  };
+
+  it('the reset removes the tiers the edit had', async () => {
+    const { id, tier } = await plantEdited('tiers-reset.jpg');
+    await photoEdits().saveEdits([{ photo: await db('photos').where({ id }).first(), params: null }]);
+    await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+    expect(fs.existsSync(storagePath(tier))).toBe(false);
+  });
+
+  it('a delete after a reset still pending removes them too', async () => {
+    const { id, tier } = await plantEdited('tiers-delete.jpg');
+    await photoEdits().saveEdits([{ photo: await db('photos').where({ id }).first(), params: null }]);
+    const gallery = await db('events').where({ id: (await row()).event_id }).first();
+    await require('../../src/services/photoTrash').deletePhotoForGood(gallery, await db('photos').where({ id }).first());
+    expect(fs.existsSync(storagePath(tier))).toBe(false);
+  });
+});
+
 describe('focal point after a geometry change', () => {
   it('carries a manual point through a rotation and clears a detected one', () => {
     const photo = { width: 600, height: 400, focal_x: 0.25, focal_y: 0.5, focal_source: 'manual' };
