@@ -321,16 +321,35 @@ async function readSettings(keys) {
   return out;
 }
 
+/**
+ * Catalogue packages for the pricing block, priced as a quote from the
+ * package would be: each item through the catalogue's presetLine (fixed
+ * price, or the item's pinned hour/day rate), an 'auto' rate from the
+ * studio's default rates. A package with an item that has no rate at all
+ * gets no price rather than a sum that leaves the item out.
+ */
 async function loadPackages(ids) {
   if (!ids.length || !(await isFeatureEnabled('quotes'))) return new Map();
   const { listPackages } = require('../quoteCatalogService');
-  const packages = await listPackages({ activeOnly: true, ids });
+  const { presetLine } = require('../quoteTemplateService');
+  const rateResolver = require('../rateResolver');
+  const [packages, rates] = await Promise.all([listPackages({ activeOnly: true, ids }), rateResolver.loadRates(null)]);
   return new Map(packages.map((pkg) => {
     const items = pkg.items.filter((item) => item.preset_is_active === true || item.preset_is_active === 1);
-    const totalMinor = items.reduce((sum, item) => {
-      const qty = Number(item.quantity ?? item.quantity_default ?? 1);
-      return sum + Math.round(Number(item.unit_price_minor || 0) * (Number.isFinite(qty) ? qty : 1));
-    }, 0);
+    let totalMinor = 0;
+    for (const item of items) {
+      const line = presetLine({ ...item, name: item.preset_name }, item.quantity, item.bound_to);
+      let unit = line.unitPriceMinor;
+      if (line.rateSource === 'auto') {
+        const rate = rateResolver.pickRate(rates, line.priceMode);
+        unit = rate ? rate.rateMinor : null;
+      }
+      if (unit == null || totalMinor == null) {
+        totalMinor = null;
+      } else {
+        totalMinor += Math.round(Number(unit) * Number(line.quantity));
+      }
+    }
     return [pkg.id, {
       name: pkg.name,
       description: pkg.description || '',

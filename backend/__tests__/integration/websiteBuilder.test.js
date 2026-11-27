@@ -195,6 +195,39 @@ describe('admin API', () => {
     expect(after.draft.revision).toBe(state.draft.revision);
   });
 
+  test('package prices resolve hourly and daily items like the catalogue does', async () => {
+    await setFeatureFlags(db, { quotes: true });
+    const now = new Date().toISOString();
+    const preset = (row) => insertId('quote_line_item_presets', { currency: 'CHF', quantity_default: 1, is_active: true, created_at: now, updated_at: now, ...row });
+    const pkg = async (name, items) => {
+      const id = await insertId('quote_packages', { name, currency: 'CHF', display_order: 0, is_active: true, created_at: now, updated_at: now });
+      let position = 1;
+      for (const [presetId, quantity] of items) {
+        // eslint-disable-next-line no-await-in-loop
+        await db('quote_package_items').insert({ package_id: id, preset_id: presetId, quantity, position: position++, created_at: now, updated_at: now });
+      }
+      return id;
+    };
+    await db('business_profile').update({ default_day_rate_minor: 200000, default_hourly_rate_minor: null });
+    const fixed = await preset({ name: 'Album', unit_price_minor: 100000, price_mode: 'fixed' });
+    // Hour and day items carry unit_price_minor 0: the price is their rate.
+    const hourly = await preset({ name: 'Coverage', unit_price_minor: 0, price_mode: 'hour', pinned_rate_minor: 15000 });
+    const daily = await preset({ name: 'Second shooter', unit_price_minor: 0, price_mode: 'day' });
+    const hourlyNoRate = await preset({ name: 'Editing', unit_price_minor: 0, price_mode: 'hour' });
+    const hourPkg = await pkg('Hourly', [[hourly, 4]]);
+    const dayPkg = await pkg('Daily', [[daily, 2]]);
+    const mixed = await pkg('Mixed', [[fixed, 1], [hourly, 4], [daily, 2]]);
+    const unpriced = await pkg('No rate', [[fixed, 1], [hourlyNoRate, 3]]);
+    const packages = await service._internal.loadPackages([hourPkg, dayPkg, mixed, unpriced]);
+    expect(packages.get(hourPkg).totalMinor).toBe(60000);
+    expect(packages.get(dayPkg).totalMinor).toBe(400000);
+    expect(packages.get(mixed).totalMinor).toBe(560000);
+    // An hourly item without any rate has no price; the package shows none
+    // rather than a sum that leaves it out.
+    expect(packages.get(unpriced).totalMinor).toBeNull();
+    await setFeatureFlags(db, { quotes: false });
+  });
+
   test('packages are unavailable while quotes are off', async () => {
     await setFeatureFlags(db, { quotes: false });
     const res = await request(app).get('/api/admin/website/packages').set(auth(adminId));

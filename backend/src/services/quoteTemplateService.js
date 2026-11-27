@@ -722,6 +722,8 @@ async function saveQuoteAsTemplate(quoteId, { name }, adminId) {
 }
 
 module.exports = {
+  // The website's pricing block (issue 2618) prices packages the same way.
+  presetLine,
   parseSnapshot,
   emptyDraft,
   sanitizeDraft,
