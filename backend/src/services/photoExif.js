@@ -24,7 +24,7 @@ const MAX_TEXT_LENGTH = 100;
 // ICC or Photoshop blocks (some editors' exports) comes back empty (issue
 // 2617). Only JPEG has that gap, so only a JPEG is looked at again, and not
 // through exifr, which reads whole segments: the marker chain is walked with
-// 4-byte reads and the one EXIF segment (64 KB at most) is read on its own.
+// small header reads and the one EXIF segment (64 KB at most) is read on its own.
 const JPEG_SOI = Buffer.from([0xff, 0xd8]);
 const JPEG_EOI = Buffer.from([0xff, 0xd9]);
 const MAX_JPEG_SEGMENTS = 256;
@@ -34,6 +34,7 @@ async function readJpegExifSegment(filePath) {
   const handle = await fsp.open(filePath, 'r');
   try {
     const head = Buffer.alloc(4);
+    const id = Buffer.alloc(6);
     if ((await handle.read(head, 0, 2, 0)).bytesRead < 2 || !head.subarray(0, 2).equals(JPEG_SOI)) return null;
     let offset = 2;
     for (let i = 0; i < MAX_JPEG_SEGMENTS; i += 1) {
@@ -42,10 +43,12 @@ async function readJpegExifSegment(filePath) {
       if (head[1] === 0xda || head[1] === 0xd9) return null;
       const length = head.readUInt16BE(2);
       if (length < 2) return null;
-      if (head[1] === 0xe1 && length >= 8) {
+      // The six-byte identifier first: XMP shares APP1 and can be large.
+      if (head[1] === 0xe1 && length >= 8
+        && (await handle.read(id, 0, 6, offset + 4)).bytesRead === 6 && id.toString('latin1') === 'Exif\0\0') {
         const segment = Buffer.alloc(2 + length);
         const { bytesRead } = await handle.read(segment, 0, segment.length, offset);
-        if (bytesRead === segment.length && segment.toString('latin1', 4, 10) === 'Exif\0\0') return segment;
+        return bytesRead === segment.length ? segment : null;
       }
       offset += 2 + length;
     }

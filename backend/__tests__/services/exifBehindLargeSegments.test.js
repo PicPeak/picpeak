@@ -31,7 +31,7 @@ const appSegment = (marker, id, size) => {
 
 describe('EXIF behind large metadata segments (issue 2617)', () => {
   let tmpDir;
-  const jpeg = async (name, leadingSegments, { exif = true } = {}) => {
+  const jpeg = async (name, leadingSegments, { exif = true, xmp = false } = {}) => {
     let image = sharp({ create: { width: 30, height: 20, channels: 3, background: { r: 5, g: 5, b: 5 } } });
     if (exif) {
       image = image.withExif({
@@ -42,7 +42,9 @@ describe('EXIF behind large metadata segments (issue 2617)', () => {
     const plain = await image.jpeg().toBuffer();
     // sharp writes the EXIF APP1 right after SOI; the extra blocks go in front of it.
     if (exif) expect(plain.readUInt16BE(2)).toBe(0xffe1);
-    const extra = Array.from({ length: leadingSegments }, () => appSegment(0xe2, 'ICC_PROFILE\0', 65000));
+    const extra = Array.from({ length: leadingSegments }, () => (xmp
+      ? appSegment(0xe1, 'http://ns.adobe.com/xap/1.0/\0', 65000)
+      : appSegment(0xe2, 'ICC_PROFILE\0', 65000)));
     const file = path.join(tmpDir, name);
     await fs.writeFile(file, Buffer.concat([plain.subarray(0, 2), ...extra, plain.subarray(2)]));
     return file;
@@ -127,6 +129,12 @@ describe('EXIF behind large metadata segments (issue 2617)', () => {
     it('reads one EXIF segment, not the blocks in front of it', async () => {
       const file = await jpeg('bounded.jpg', 16);
       expect(await readBoth(file)).toBeLessThanOrEqual(2 * (FIRST_PASS + 2 + 4 * 32 + 64 * 1024));
+    });
+
+    it('skips large XMP blocks, which share APP1, by their identifier', async () => {
+      const file = await jpeg('xmp.jpg', 16, { xmp: true });
+      expect((await extractCapture(file)).capturedAt).toBeInstanceOf(Date);
+      expect(await readBoth(file)).toBeLessThanOrEqual(2 * (FIRST_PASS + 2 + 10 * 32 + 64 * 1024));
     });
   });
 });
