@@ -507,10 +507,14 @@ function watermarkCopyCurrent(photo, key) {
 }
 
 
-/** `w`/`h` guests are shown: the edited size for an edited photo. */
+/**
+ * The size listings give a photo, the size of its previews: the applied
+ * edit's (issue 2619), which they show until a newer edit is applied, or
+ * the original's when no edit is applied.
+ */
 function deliveredDimensions(photo) {
-  if (paramsOf(photo) && photo.edit_width && photo.edit_height) {
-    return { width: Number(photo.edit_width), height: Number(photo.edit_height) };
+  if (photo.edit_applied_params && photo.edit_applied_width && photo.edit_applied_height) {
+    return { width: Number(photo.edit_applied_width), height: Number(photo.edit_applied_height) };
   }
   return { width: photo.width || null, height: photo.height || null };
 }

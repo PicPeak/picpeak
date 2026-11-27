@@ -471,3 +471,31 @@ describe('a streamed download-all with slow edited renders', () => {
     }
   }, 30000);
 });
+
+describe('listed sizes while an edit is pending', () => {
+  it('describe the previews: the applied edit\'s size, or the original\'s when nothing is applied', async () => {
+    const insert = async (filename, over) => unwrap(await db('photos').insert({
+      event_id: event.id, filename, path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 600, height: 400, ...over,
+    }).returning('id'));
+    // A turn applied (400 x 600), a crop pending (400 x 300).
+    const turned = await insert('pending-turned.jpg', {
+      edit_params: JSON.stringify({ v: 1, rotate: 90, crop: { x: 0, y: 0, w: 1, h: 0.5 } }), edit_rev: 2, edit_applied_rev: 1,
+      edit_width: 400, edit_height: 300, edit_applied_params: JSON.stringify({ v: 1, rotate: 90 }), edit_applied_width: 400, edit_applied_height: 600,
+    });
+    // A first edit, not applied yet: the previews are the original's.
+    const fresh = await insert('pending-first.jpg', {
+      edit_params: JSON.stringify({ v: 1, rotate: 90 }), edit_rev: 1, edit_applied_rev: 0, edit_width: 400, edit_height: 600,
+    });
+    try {
+      const guestRows = (await guest('get', '/photos').expect(200)).body.photos;
+      const adminRows = (await auth(request(adminApp).get(`/api/admin/photos/${event.id}/photos`))).body.photos;
+      for (const rows of [guestRows, adminRows]) {
+        expect(rows.find((p) => p.id === turned)).toMatchObject({ width: 400, height: 600 });
+        expect(rows.find((p) => p.id === fresh)).toMatchObject({ width: 600, height: 400 });
+      }
+    } finally {
+      await db('photos').whereIn('id', [turned, fresh]).delete();
+    }
+  });
+});
