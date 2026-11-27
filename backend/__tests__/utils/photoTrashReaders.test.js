@@ -32,7 +32,7 @@ const ALL_ROWS = {
   'routes/adminSystem.js': [1, 'storage statistics'],
   'routes/v1/events.js': [1, 'insert of a new photo'],
   'services/archiveService.js': [7, 'runs after purgeEventTrash; the rows must match the files that go into the zip, and every derived copy is reset, the edited render (and the applied revision\'s) included'],
-  'services/downloadJobService.js': [1, 'the edit revisions of photos a live query resolved for a job (issue 2619)'],
+  'services/downloadJobService.js': [2, 'the edit revisions of photos a live query resolved for a job, and which of them a failed crop withholds (issue 2619)'],
   'services/backgroundProcessor.js': [3, 'state of a processing run already in flight; the gallery of the photo it just processed (photo sales preview)'],
   'modules/photoSales/salesRenditions.js': [3, 'bookkeeping of a photo\'s own persisted sales preview by id (read, replace, record)'],
   'services/backupManifest.js': [1, 'backup manifest counts every row it carries'],

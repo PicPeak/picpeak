@@ -136,7 +136,7 @@ class DownloadJobService {
     const sales = priced ? '|priced' : '';
     // Photo edits (issue 2619): an archive holds the edits of its time. Absent
     // while nothing in it was ever edited, so those keys stay as they were.
-    const edited = edits > 0 ? `|e${edits}` : '';
+    const edited = edits && String(edits) !== '0' ? `|e${edits}` : '';
     return crypto.createHash('sha256')
       .update(`${eventId}|${resolution}|${visibilityScope}|${ids}|${wm}${sales}${mode}${edited}`)
       .digest('hex')
@@ -154,13 +154,30 @@ class DownloadJobService {
    */
   async editStamp(photoIds, { applied = false } = {}) {
     let sum = 0;
+    const withheld = [];
     const ids = [...photoIds].map(Number);
     const column = applied ? 'edit_applied_rev' : 'edit_rev';
     for (let i = 0; i < ids.length; i += 500) {
-      const row = await db('photos').whereIn('id', ids.slice(i, i + 500)).sum({ total: column }).first();
+      const part = ids.slice(i, i + 500);
+      const row = await db('photos').whereIn('id', part).sum({ total: column }).first();
       sum += Number(row?.total) || 0;
+      // Previews whose crop or turn failed to render are withheld from
+      // guests (photoEdits.withheldFromGuests): part of the identity too, so
+      // an archive of their old pictures is not reused once that happens.
+      if (applied) withheld.push(...(await this.withheldIds(part)));
     }
-    return sum;
+    return withheld.length ? `${sum}w${withheld.sort((a, b) => a - b).join(',')}` : sum;
+  }
+
+  /** The photos of `ids` withheld from guests while a failed geometry edit stands. */
+  async withheldIds(ids) {
+    const photoEdits = require('./photoEdits');
+    const failed = await db('photos').whereIn('id', ids).whereRaw('edit_failed_rev = edit_rev')
+      // An edit is only ever saved for a photo, never a video.
+      .select('id', 'edit_params', 'edit_rev', 'edit_applied_rev', 'edit_applied_params', 'edit_failed_rev');
+    const out = [];
+    for (const row of failed) if (await photoEdits.withheldFromGuests(row)) out.push(Number(row.id));
+    return out;
   }
 
   /**
@@ -414,6 +431,11 @@ class DownloadJobService {
     const visible = await this.photoQuery(job.event_id, ids, accessLevel, await blockedFoldersOf(job.event_id))
       .select('photos.id', 'photos.media_type', 'photos.mime_type');
     if (visible.length !== ids.length) return false;
+    // …and none of them withheld for a crop or turn that failed to render
+    // (issue 2619): the archive holds its picture from before.
+    for (let i = 0; i < ids.length; i += 500) {
+      if ((await this.withheldIds(ids.slice(i, i + 500))).length) return false;
+    }
 
     // …and the archive must still match the CURRENT rendition policy. Turning
     // a watermark on, editing it, or revoking a resolution after the job went

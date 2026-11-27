@@ -824,7 +824,7 @@ async function runPass({ active = () => running, sleep = (ms) => waits.sleep(ms)
     while (active()) {
       if (lease.lost()) break;
       const batch = await pendingRows().where('photos.id', '>', lastId).orderBy('photos.id').limit(BATCH)
-        .select('photos.id', 'photos.edit_rev');
+        .select('photos.id', 'photos.edit_rev', 'photos.event_id');
       if (!batch.length) break;
       lastId = batch[batch.length - 1].id;
       await Promise.all(batch.map((photo) => limit(async () => {
@@ -836,9 +836,13 @@ async function runPass({ active = () => running, sleep = (ms) => waits.sleep(ms)
           counts.failed++;
           // On the row, not in memory: every replica reports it, and a retry
           // on any of them clears it. Tried again on later passes anyway.
-          await db('photos').where({ id: photo.id, edit_rev: Number(photo.edit_rev) })
+          const recorded = await db('photos').where({ id: photo.id, edit_rev: Number(photo.edit_rev) })
             .update({ edit_failed_rev: Number(photo.edit_rev), edit_error: outcome })
             .catch((err) => logger.warn(`Photo edit: could not record the failure of photo ${photo.id}: ${err.message}`));
+          // A failed crop or turn withholds the photo from guests: an archive
+          // prepared with its old pictures goes as when the edit was saved
+          // (download jobs check it per photo, downloadJobService).
+          if (recorded) await require('./downloadZipService').invalidateIfBuilt(Number(photo.event_id)).catch(() => {});
         }
         const wait = loadGovernor.bulkDelayMs();
         if (wait) await sleep(wait);

@@ -619,3 +619,38 @@ describe('a preview-only archive and a failed light-and-colour edit', () => {
     }
   });
 });
+
+describe('a cached preview archive and a crop that then fails', () => {
+  it('is neither reused nor delivered; the prebuilt ZIP goes when the failure is recorded', async () => {
+    const jobs = require('../../src/services/downloadJobService');
+    const zip = require('../../src/services/downloadZipService');
+    const id = unwrap(await db('photos').insert({
+      event_id: event.id, filename: 'crop-later.jpg', path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600,
+    }).returning('id'));
+    try {
+      const fresh = await db('events').where({ id: event.id }).first();
+      const job = await jobs.createJob({ event: fresh, resolution: 'original', photoIds: [id], accessLevel: 'guest', previewOnly: true });
+      await jobs.liveBuilds.get(job.id);
+      // A crop saved: the previews (and the archive) still show the applied, unedited photo.
+      await db('photos').where({ id }).update({ edit_params: JSON.stringify({ v: 1, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), edit_rev: 1 });
+      const ready = await db('download_jobs').where({ id: job.id }).first();
+      expect(await jobs.deliveryPhotos(ready, fresh, 'guest')).toBeTruthy();
+      // The crop fails to render: the uncropped archive must not go out any more.
+      const invalidate = jest.spyOn(zip, 'invalidateIfBuilt');
+      const brokenPath = (await row(id)).path;
+      await db('photos').where({ id }).update({ path: 'edit-route/missing.jpg' });
+      await applyEdits();
+      await db('photos').where({ id }).update({ path: brokenPath });
+      expect((await row(id)).edit_failed_rev).toBe(1);
+      expect(invalidate).toHaveBeenCalledWith(event.id);
+      invalidate.mockRestore();
+      expect(await jobs.deliveryPhotos(ready, fresh, 'guest')).toBeFalsy();
+      const again = await jobs.createJob({ event: fresh, resolution: 'original', photoIds: [id], accessLevel: 'guest', previewOnly: true }).catch((e) => e);
+      expect(again.id).not.toBe(job.id);
+      if (again.id) await jobs.liveBuilds.get(again.id);
+    } finally {
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
