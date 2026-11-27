@@ -18,6 +18,23 @@ const logger = require('../utils/logger');
 const EXIF_TAGS = ['Make', 'Model', 'LensModel', 'FocalLength', 'FNumber', 'ExposureTime', 'ISO'];
 const MAX_TEXT_LENGTH = 100;
 
+// exifr's Node build reads the first 64 KB of a file and, when only EXIF tags
+// are asked for, no further: a JPEG whose EXIF segment sits behind large XMP,
+// ICC or Photoshop blocks (some editors' exports) comes back empty (issue
+// 2617). The retry reads a larger window, still a fixed size so a big TIFF or
+// RAW without the tags is not read whole, and only after a pass found none.
+const RETRY_FIRST_CHUNK_SIZE = 4 * 1024 * 1024;
+
+/**
+ * exifr.parse for a pick of EXIF tags, retried over a 4 MB window when the
+ * default read found none of them. Throws what exifr throws.
+ */
+async function parseExif(filePath, options) {
+  const found = await exifr.parse(filePath, options);
+  if (found) return found;
+  return exifr.parse(filePath, { ...options, firstChunkSize: RETRY_FIRST_CHUNK_SIZE });
+}
+
 function cleanText(value) {
   if (typeof value !== 'string') return null;
   // eslint-disable-next-line no-control-regex
@@ -64,7 +81,7 @@ function normalizeExif(raw) {
  */
 async function extractPhotoExif(filePath) {
   try {
-    return normalizeExif(await exifr.parse(filePath, { pick: EXIF_TAGS }));
+    return normalizeExif(await parseExif(filePath, { pick: EXIF_TAGS }));
   } catch (error) {
     logger.debug(`Could not read EXIF details from ${path.basename(String(filePath))}: ${error.message}`);
     return error && error.code ? null : {};
@@ -88,4 +105,4 @@ function parseStoredExif(value) {
   return Object.keys(exif).length ? exif : null;
 }
 
-module.exports = { extractPhotoExif, exifColumn, normalizeExif, parseStoredExif };
+module.exports = { extractPhotoExif, exifColumn, normalizeExif, parseStoredExif, parseExif };
