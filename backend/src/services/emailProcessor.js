@@ -2041,6 +2041,8 @@ async function stopEmailQueueProcessor() {
 
 module.exports = {
   initializeTransporter,
+  // Exposed so tests can render a stored template exactly as a send would.
+  processTemplate,
   resolveFromIdentity,
   mailIdentities,
   startEmailQueueProcessor,

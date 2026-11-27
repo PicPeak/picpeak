@@ -326,7 +326,9 @@ async function ensureEventReminderTemplatesSeeded(db, logger) {
         if (isEmpty(en)) {
           await upsertTranslation(existing.id, 'en', def.en);
           await upsertTranslation(existing.id, 'de', def.de);
-          if (PT_EMAIL_TEMPLATES[templateKey]) await upsertTranslation(existing.id, 'pt', PT_EMAIL_TEMPLATES[templateKey]);
+          // No pt here: pt comes with a template this seeder creates, or from
+          // migration 378. Repairing English must not bring back a pt version
+          // an admin deleted.
           touched.push(templateKey);
           if (logger) logger.info(`Self-healed empty event reminder translations: ${templateKey}`);
         }

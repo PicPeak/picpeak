@@ -13,22 +13,42 @@
  *   - No pt row → insert one.
  *   - A pt row whose subject and both bodies are empty → fill it.
  *   - A pt row with any content → left alone (an admin wrote it).
- *   - A template still kept only in the legacy subject_en / body_*_en /
- *     *_de columns, with no translation rows at all (the PicTransfer mails
- *     of migration 171), first gets en / de rows copied from those columns.
- *     processTemplate falls back to "any available language" when neither
- *     the requested language nor en has a row, so a lone pt row would
- *     otherwise go to English and German recipients too. The copy is
- *     verbatim, so those mails read exactly as before.
+ *   - First, en and de are materialised wherever processTemplate would
+ *     still read them from the legacy subject_* / body_* columns (the
+ *     PicTransfer mails of migration 171 have no translation rows at all).
+ *     Its row choice is "requested language → en → any row", so a new or
+ *     filled pt row would otherwise become the "any row" English and
+ *     German recipients get. Each language is decided on the rows as they
+ *     were, and gets exactly the fields the renderer picked from the legacy
+ *     columns (German falls back to English field by field), so those mails
+ *     read the same as before.
  *
  * Idempotent: a second run finds every pt row filled and every legacy
- * template already materialised.
+ * language already materialised.
  */
 
 const { PT_EMAIL_TEMPLATES } = require('../../src/services/ptEmailTemplates');
 
 const FIELDS = ['subject', 'body_html', 'body_text'];
 const isBlank = (row) => FIELDS.every((field) => !String(row[field] || '').trim());
+
+// Mirrors emailProcessor.processTemplate. The row it reads for a language:
+// that language's own row, else the English one, else any row (first by id).
+const chosenRow = (rows, language) => rows.find((row) => row.language === language)
+  || (language !== 'en' && rows.find((row) => row.language === 'en'))
+  || rows[0];
+// It falls back to the legacy columns when that row has no subject and no HTML.
+const readsLegacy = (row) => !row || (!row.subject && !row.body_html);
+// What it then sends, field by field: the German column for German, else the
+// English one, else the unsuffixed column.
+function legacyFields(template, cols, language) {
+  const fields = {};
+  for (const field of FIELDS) {
+    const names = [language === 'de' ? `${field}_de` : `${field}_en`, `${field}_en`, field];
+    fields[field] = names.map((name) => (name in cols ? template[name] : '')).find(Boolean) || '';
+  }
+  return fields;
+}
 
 exports.up = async function up(knex) {
   if (!(await knex.schema.hasTable('email_templates'))) return;
@@ -40,19 +60,19 @@ exports.up = async function up(knex) {
   for (const [templateKey, pt] of Object.entries(PT_EMAIL_TEMPLATES)) {
     const template = await knex('email_templates').where({ template_key: templateKey }).first();
     if (!template) continue;
-    const rows = await knex('email_template_translations').where({ template_id: template.id });
+    const rows = await knex('email_template_translations').where({ template_id: template.id }).orderBy('id');
 
-    if (rows.length === 0) {
-      for (const language of ['en', 'de']) {
-        const legacy = {};
-        for (const field of FIELDS) {
-          // English may sit in the unsuffixed column on older installs.
-          const names = language === 'en' ? [`${field}_en`, field] : [`${field}_${language}`];
-          legacy[field] = names.map((name) => (name in cols ? template[name] : '')).find(Boolean) || '';
-        }
-        if (isBlank(legacy)) continue;
+    const materialise = ['en', 'de']
+      .filter((language) => readsLegacy(chosenRow(rows, language)))
+      .map((language) => ({ language, fields: legacyFields(template, cols, language) }))
+      .filter(({ fields }) => fields.subject || fields.body_html);
+    for (const { language, fields } of materialise) {
+      const own = rows.find((row) => row.language === language);
+      if (own) {
+        await knex('email_template_translations').where({ id: own.id }).update({ ...fields, updated_at: now });
+      } else {
         await knex('email_template_translations').insert({
-          template_id: template.id, language, ...legacy, created_at: now, updated_at: now,
+          template_id: template.id, language, ...fields, created_at: now, updated_at: now,
         });
       }
     }
@@ -77,8 +97,9 @@ exports.up = async function up(knex) {
 };
 
 // Removes only pt rows that still hold the content above; an edited one stays.
-// en / de rows copied from the legacy columns stay too: they repeat those
-// columns verbatim and the mails read the same with or without them.
+// en / de rows materialised from the legacy columns stay too: they hold what
+// the renderer already sent from those columns, so the mails read the same
+// with or without them.
 exports.down = async function down(knex) {
   if (!(await knex.schema.hasTable('email_templates'))) return;
   if (!(await knex.schema.hasTable('email_template_translations'))) return;

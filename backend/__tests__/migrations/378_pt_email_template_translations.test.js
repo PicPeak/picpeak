@@ -66,8 +66,19 @@ function suite(label, connect) {
           body_html_de: '<p>Hallo</p>',
           body_text_de: 'Hallo',
         }),
+        legacyWithBlankPt: await insertTemplate(db, {
+          template_key: 'transfer_files_received',
+          subject_en: 'Files received', body_html_en: '<p>Received</p>', body_text_en: 'Received',
+          subject_de: 'Dateien erhalten', body_html_de: '<p>Erhalten</p>', body_text_de: 'Erhalten',
+        }),
+        germanSubjectOnly: await insertTemplate(db, {
+          template_key: 'transfer_request',
+          subject_en: 'Please upload', body_html_en: '<p>Upload: {{upload_url}}</p>', body_text_en: 'Upload: {{upload_url}}',
+          subject_de: 'Bitte hochladen', body_html_de: '', body_text_de: '',
+        }),
       };
       await db('email_template_translations').insert([
+        { template_id: ids.legacyWithBlankPt, language: 'pt', subject: '', body_html: '', body_text: '', created_at: now, updated_at: now },
         { template_id: ids.plain, language: 'en', subject: 'Archive Complete', body_html: '<p>x</p>', body_text: 'x', created_at: now, updated_at: now },
         { template_id: ids.edited, language: 'en', subject: 'Expired', body_html: '<p>x</p>', body_text: 'x', created_at: now, updated_at: now },
         { template_id: ids.edited, language: 'pt', subject: 'Minha versão', body_html: '<p>meu texto</p>', body_text: 'meu texto', created_at: now, updated_at: now },
@@ -100,12 +111,24 @@ function suite(label, connect) {
       expect((await translation(db, ids.legacy, 'pt')).subject).toBe(PT_EMAIL_TEMPLATES.transfer_ready.subject);
     });
 
+    it('materialises en / de per language even when an empty pt row exists', async () => {
+      expect(await translation(db, ids.legacyWithBlankPt, 'en')).toMatchObject({ subject: 'Files received', body_html: '<p>Received</p>' });
+      expect(await translation(db, ids.legacyWithBlankPt, 'de')).toMatchObject({ subject: 'Dateien erhalten', body_text: 'Erhalten' });
+      expect((await translation(db, ids.legacyWithBlankPt, 'pt')).subject).toBe(PT_EMAIL_TEMPLATES.transfer_files_received.subject);
+    });
+
+    it('gives German the English bodies the renderer used when only the German subject existed', async () => {
+      expect(await translation(db, ids.germanSubjectOnly, 'de')).toMatchObject({
+        subject: 'Bitte hochladen', body_html: '<p>Upload: {{upload_url}}</p>', body_text: 'Upload: {{upload_url}}',
+      });
+    });
+
     it('is idempotent and skips templates the install does not have', async () => {
       const before = await db('email_template_translations').count({ n: '*' }).first();
       await migration.up(db);
       const after = await db('email_template_translations').count({ n: '*' }).first();
       expect(Number(after.n)).toBe(Number(before.n));
-      expect(Number(before.n)).toBe(9);
+      expect(Number(before.n)).toBe(15);
     });
 
     it('down() removes only the pt rows it wrote', async () => {
