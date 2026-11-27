@@ -589,3 +589,33 @@ describe('a HEAD request for an edited photo not rendered yet', () => {
     }
   });
 });
+
+describe('a preview-only archive and a failed light-and-colour edit', () => {
+  it('still has the photo: its preview shows the applied revision and needs no full-size render', async () => {
+    const id = unwrap(await db('photos').insert({
+      event_id: event.id, filename: 'tone-failed.jpg', path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600,
+      edit_params: JSON.stringify({ v: 1, exposure: 1 }), edit_rev: 1, edit_applied_rev: 0, edit_failed_rev: 1, edit_error: 'render',
+    }).returning('id'));
+    // A share-link guest of a gallery with a download limit gets previews.
+    await db('events').where({ id: event.id }).update({ download_limit: 50 });
+    const token = jwt.sign({ eventId: event.id, eventSlug: event.slug, type: 'gallery', accessLevel: 'guest' },
+      process.env.JWT_SECRET, { expiresIn: '1h', issuer: 'picpeak-auth' });
+    try {
+      const res = await binary(request(galleryApp).get(`/api/gallery/${event.slug}/download-all`).set('Authorization', `Bearer ${token}`));
+      expect(res.status).toBe(200);
+      expect(Object.keys(await zipEntries(res.body)).some((name) => name.startsWith('tone-failed'))).toBe(true);
+      const selected = await binary(request(galleryApp).post(`/api/gallery/${event.slug}/download-selected`)
+        .set('Authorization', `Bearer ${token}`).send({ photo_ids: [id] }));
+      expect(Object.keys(await zipEntries(selected.body)).some((name) => name.startsWith('tone-failed'))).toBe(true);
+      const jobs = require('../../src/services/downloadJobService');
+      const fresh = await db('events').where({ id: event.id }).first();
+      const job = await jobs.createJob({ event: fresh, resolution: 'original', photoIds: [id], accessLevel: 'guest', previewOnly: true });
+      await jobs.liveBuilds.get(job.id);
+      expect((await jobs.getStatus(job.token)).status).toBe('ready');
+    } finally {
+      await db('events').where({ id: event.id }).update({ download_limit: null });
+      await db('photos').where({ id }).delete();
+    }
+  });
+});

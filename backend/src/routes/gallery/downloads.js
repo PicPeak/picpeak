@@ -937,28 +937,13 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       if (cancelled) break;
       // Render the next entry only once archiver has written the earlier ones.
       if (!await pacer.room()) break;
-      const photo = await deliveredPhoto(photos[i]);
-      const storageKey = resolvePhotoStorageKey(req.event, photo);
+      // The row as listed: a preview shows its applied revision. Only a
+      // full-size entry is the edit's render (issue 2619), resolved below.
+      let photo = photos[i];
       const entryName = bulkEntryNames[i];
       const archiveName = zipEntryPath(photo, entryName, hasMultipleTypes);
 
       try {
-        // Verify the source exists BEFORE appending — but only for local
-        // sources: fs.createReadStream is lazy, so its error fires outside
-        // this try/catch and the archive 'error' handler then kills the
-        // whole response instead of skipping one photo (#895 review). S3's
-        // get() awaits GetObject and rejects right here on a missing key,
-        // so a preflight HEAD per entry would just be a redundant serial
-        // round trip (500-photo zip = 500 extra HEADs).
-        if (storageKey && storage.kind() === 'local') {
-          const srcStat = await storage.stat(storageKey);
-          if (!srcStat) {
-            throw new Error(`Photo missing in storage: ${storageKey}`);
-          }
-        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
-          throw new Error('Photo file missing on disk');
-        }
-
         if (previewOnly) {
           const preview = await renderPreviewForDownload(photo, effectiveSettings);
           if (!preview) throw new Error('No preview-size copy of this photo');
@@ -984,6 +969,24 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           appendedIds.push(photo.id);
           releaseAll.appended(photo.id);
           continue;
+        }
+
+        photo = await deliveredPhoto(photo);
+        const storageKey = resolvePhotoStorageKey(req.event, photo);
+        // Verify the source exists BEFORE appending — but only for local
+        // sources: fs.createReadStream is lazy, so its error fires outside
+        // this try/catch and the archive 'error' handler then kills the
+        // whole response instead of skipping one photo (#895 review). S3's
+        // get() awaits GetObject and rejects right here on a missing key,
+        // so a preflight HEAD per entry would just be a redundant serial
+        // round trip (500-photo zip = 500 extra HEADs).
+        if (storageKey && storage.kind() === 'local') {
+          const srcStat = await storage.stat(storageKey);
+          if (!srcStat) {
+            throw new Error(`Photo missing in storage: ${storageKey}`);
+          }
+        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
+          throw new Error('Photo file missing on disk');
         }
 
         // Resize to the gallery's standard resolution (#858) and/or watermark.
@@ -1175,23 +1178,11 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       // A cancelled download stops rendering; nothing appended now ships.
       if (selectedCancelled) break;
       if (!await pacer.room()) break;
-      const photo = await deliveredPhoto(photos[i]);
+      // The row as listed: a preview shows its applied revision. Only a
+      // full-size entry is the edit's render (issue 2619), resolved below.
+      let photo = photos[i];
       const name = selectedEntryNames[i] || `photo-${photo.id}.jpg`;
-      const storageKey = resolvePhotoStorageKey(req.event, photo);
       try {
-        // Same pre-append source check as download-all (#895 review),
-        // local backend only: a lazy fs stream's async error would kill
-        // the response instead of skipping the photo; S3's get() rejects
-        // at the await below, so no redundant per-entry HEAD there.
-        if (storageKey && selectedStorage.kind() === 'local') {
-          const srcStat = await selectedStorage.stat(storageKey);
-          if (!srcStat) {
-            throw new Error(`Photo missing in storage: ${storageKey}`);
-          }
-        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
-          throw new Error('Photo file missing on disk');
-        }
-
         if (selectedPreviewOnly) {
           const preview = await renderPreviewForDownload(photo, effectiveSettings);
           if (!preview) throw new Error('No preview-size copy of this photo');
@@ -1216,6 +1207,21 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           appendedIds.push(photo.id);
           releaseSelected.appended(photo.id);
           continue;
+        }
+
+        photo = await deliveredPhoto(photo);
+        const storageKey = resolvePhotoStorageKey(req.event, photo);
+        // Same pre-append source check as download-all (#895 review),
+        // local backend only: a lazy fs stream's async error would kill
+        // the response instead of skipping the photo; S3's get() rejects
+        // at the await below, so no redundant per-entry HEAD there.
+        if (storageKey && selectedStorage.kind() === 'local') {
+          const srcStat = await selectedStorage.stat(storageKey);
+          if (!srcStat) {
+            throw new Error(`Photo missing in storage: ${storageKey}`);
+          }
+        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
+          throw new Error('Photo file missing on disk');
         }
 
         // Resize (#858) and/or watermark. renderPhotoForDownload returns null

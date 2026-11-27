@@ -550,9 +550,9 @@ class DownloadJobService {
         (async () => {
           for (let i = 0; i < rows.length; i += 1) {
             progress.signal.throwIfAborted();
-            // Edited photos as their edited render, drawn here when missing.
-            const photo = await progress.wait(photoEdits.deliveredPhoto(rows[i], { unavailableOnFailure: true }));
-            progress.touch();
+            // The row as listed: a preview shows its applied revision; a
+            // full-size entry is the edit's render, drawn below when missing.
+            let photo = rows[i];
             const name = entryNames[i] || `photo-${photo.id}.jpg`;
             let source;
             let entryName = name;
@@ -566,6 +566,8 @@ class DownloadJobService {
                 source = preview.buffer;
                 entryName = previewDownloadName(name, preview.extension);
               } else {
+                photo = await progress.wait(photoEdits.deliveredPhoto(photo, { unavailableOnFailure: true }));
+                progress.touch();
                 source = await progress.wait(renderPhotoForDownload(event, photo, box, settings));
                 if (source) entryName = renderedDownloadType(source, photo, name).name;
                 else {
