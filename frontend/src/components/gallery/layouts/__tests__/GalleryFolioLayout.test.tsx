@@ -147,7 +147,8 @@ describe('Gallery Folio', () => {
   it('opens the shared lightbox at the clicked photo', () => {
     const onPhotoClick = vi.fn();
     mount({ onPhotoClick });
-    fireEvent.click(screen.getAllByRole('button', { name: 'View full size' })[1]);
+    // The tile itself is the button (PhotoCard's lane).
+    fireEvent.click(screen.getByRole('button', { name: 'photo-2.jpg' }));
     expect(onPhotoClick).toHaveBeenCalledWith(1);
   });
 
@@ -249,7 +250,7 @@ describe('Gallery Folio', () => {
     }
   });
 
-  it('lifts the first-look badge clear of the tile\'s action row', () => {
+  it('puts the first-look badge and the video mark in the tile\'s lane with the actions', () => {
     const firstLook = photos.map((photo, index) => ({ ...photo, first_look: index === 0 }));
     render(
       <MemoryRouter>
@@ -259,8 +260,11 @@ describe('Gallery Folio', () => {
       </MemoryRouter>,
     );
     const badge = screen.getByTestId('first-look-badge');
-    expect(badge).toHaveClass('bottom-16');
-    expect(badge).not.toHaveClass('bottom-2');
+    const lane = badge.closest('[data-photo-card-lane]') as HTMLElement;
+    expect(lane).not.toBeNull();
+    expect(within(lane).getByRole('button', { name: 'Like photo' })).toBeInTheDocument();
+    const video = screen.getByText('Video').closest('[data-photo-card-lane]');
+    expect(video).not.toBeNull();
   });
 
   it('has no menu when there is nothing secondary to put in it', () => {
