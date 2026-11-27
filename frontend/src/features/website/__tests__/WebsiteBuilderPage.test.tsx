@@ -29,8 +29,12 @@ vi.mock('../../../components/admin/SectionPageHeader', () => ({
   SectionPageHeader: ({ title, actions }: { title: string; actions?: React.ReactNode }) => <header><h1>{title}</h1>{actions}</header>,
 }));
 vi.mock('../../../components/admin/SettingsSaveBar', () => ({
-  SettingsSaveBar: ({ isDirty, onSave, saveLabel }: { isDirty: boolean; onSave: () => void; saveLabel: string }) => (
-    <button type="button" disabled={!isDirty} onClick={onSave}>{saveLabel}</button>
+  // Like the real bar: both buttons off while clean or while saving.
+  SettingsSaveBar: ({ isDirty, isSaving, onSave, onDiscard, saveLabel }: { isDirty: boolean; isSaving?: boolean; onSave: () => void; onDiscard: () => void; saveLabel: string }) => (
+    <>
+      <button type="button" disabled={!isDirty || isSaving} onClick={onDiscard}>Discard</button>
+      <button type="button" disabled={!isDirty || isSaving} onClick={onSave}>{saveLabel}</button>
+    </>
   ),
 }));
 vi.mock('../../../services/website.service', () => ({
@@ -207,6 +211,24 @@ describe('WebsiteBuilderPage', () => {
     renderPage();
     expect(await screen.findByText(/Your landing page is too long for a custom HTML block/)).toBeInTheDocument();
     expect(screen.getByText(/150000/)).toBeInTheDocument();
+  });
+
+  it('locks saving and discarding while Publish saves the draft', async () => {
+    window.confirm = () => true;
+    let finishSave: (value: EditorState) => void = () => {};
+    vi.mocked(websiteService.saveDraft).mockImplementation(() => new Promise((resolve) => { finishSave = resolve; }));
+    vi.mocked(websiteService.publish).mockImplementation(async () => ({ ...structuredClone(STATE), hasUnpublishedChanges: false }));
+    renderPage();
+    fireEvent.click(await screen.findByText('Hello there'));
+    fireEvent.change(screen.getByLabelText('Heading'), { target: { value: 'Mine' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await waitFor(() => expect(websiteService.saveDraft).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Discard' })).toBeDisabled();
+    const saved = structuredClone(STATE);
+    saved.draft.revision = 4;
+    finishSave(saved);
+    await waitFor(() => expect(websiteService.publish).toHaveBeenCalledWith(4));
   });
 });
 

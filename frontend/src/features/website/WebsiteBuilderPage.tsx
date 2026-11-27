@@ -143,6 +143,8 @@ export const WebsiteBuilderPage: React.FC = () => {
   };
 
   const localProblem = draft.pages.some((p) => !p.isHome && slugProblem(draft, p));
+  // One write at a time: a save and a publish both act on the draft's revision.
+  const busy = editor.save.isPending || editor.publish.isPending;
 
   const onSaveError = (err: unknown) => {
     const details = (err as { response?: { data?: { details?: ValidationProblem[] } } })?.response?.data?.details;
@@ -155,12 +157,16 @@ export const WebsiteBuilderPage: React.FC = () => {
     toast.error(apiErrorText(err));
   };
 
-  const save = () => editor.save.mutate(undefined, {
-    onSuccess: () => { setProblems([]); toast.success(t('website.saved', 'Draft saved')); },
-    onError: onSaveError,
-  });
+  const save = () => {
+    if (busy) return;
+    editor.save.mutate(undefined, {
+      onSuccess: () => { setProblems([]); toast.success(t('website.saved', 'Draft saved')); },
+      onError: onSaveError,
+    });
+  };
 
   const publish = async () => {
+    if (busy) return;
     const ok = await confirm({
       title: t('website.publishTitle', 'Publish the website?'),
       message: server.publicSiteEnabled
@@ -275,7 +281,7 @@ export const WebsiteBuilderPage: React.FC = () => {
               )}
               {canEdit && (
                 <Button variant="primary" onClick={publish} isLoading={editor.publish.isPending}
-                  disabled={localProblem || (!editor.isDirty && !server.hasUnpublishedChanges && !!server.published)}>
+                  disabled={busy || localProblem || (!editor.isDirty && !server.hasUnpublishedChanges && !!server.published)}>
                   {t('website.publish', 'Publish')}
                 </Button>
               )}
@@ -375,7 +381,9 @@ export const WebsiteBuilderPage: React.FC = () => {
         {canEdit && (
           <SettingsSaveBar
             isDirty={editor.isDirty}
-            isSaving={editor.save.isPending}
+            // Publish saves first: neither a second save nor a discard may
+            // run against the revision it is writing.
+            isSaving={busy}
             onSave={save}
             onDiscard={() => { editor.discard(); setProblems([]); }}
             canSave={!localProblem}
