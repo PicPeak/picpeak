@@ -196,3 +196,14 @@ test('without a known public origin the canonical stays relative and no og:image
   expect(html).toContain('<link rel="canonical" href="/">');
   expect(html).not.toContain('og:image');
 });
+
+test('an imported landing page keeps the --brand-* variables its CSS was written against', () => {
+  const colors = { primary: '#123456', accent: '#234567', background: '#f0f0f0', text: '#111111', surface: '#fefefe', elevated: '#eeeeee', border: '#dddddd', mutedText: '#777777' };
+  const html = render([home([{ type: 'customHtml', html: '<a class="button button--primary">Go</a>' }])], {
+    ctx: { branding: { ...BRANDING, colors }, customCss: '.button--primary{background:var(--brand-primary)}' },
+  });
+  for (const [name, value] of [['primary', '#123456'], ['accent', '#234567'], ['background', '#f0f0f0'], ['text', '#111111'],
+    ['surface', '#fefefe'], ['elevated', '#eeeeee'], ['border', '#dddddd'], ['muted-text', '#777777']]) {
+    expect(html).toContain(`--brand-${name}: ${value};`);
+  }
+});

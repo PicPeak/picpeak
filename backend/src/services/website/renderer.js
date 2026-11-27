@@ -20,6 +20,7 @@ const { escapeHtml } = require('../../utils/formatters');
 const { escapeCssForStyleElement } = require('../../utils/cssSanitizer');
 const { relativeLuminance, readableTextOn } = require('../../utils/colorContrast');
 const { safeUrl } = require('./document');
+const { brandCssVariables } = require('../../utils/brandCssVariables');
 const { MEDIA_WIDTHS, mediaBase, parseRenditionKeys } = require('./media');
 
 const esc = escapeHtml;
@@ -643,7 +644,10 @@ function renderHead(ctx, body) {
   if (ctx.heroPreload) {
     tags.push(`<link rel="preload" as="image" imagesrcset="${esc(srcsetFor(ctx.heroPreload.image))}" imagesizes="${esc(ctx.heroPreload.sizes)}" fetchpriority="high">`);
   }
-  const css = [fontFaces(ctx.fonts), themeCss(ctx), BASE_CSS, ctx.preview ? PREVIEW_CSS : '', ctx.customCss || ''].join('\n');
+  // The --brand-* variables of the single-page site come first: a landing
+  // page imported as custom HTML, and its CSS, still read them.
+  const css = [fontFaces(ctx.fonts), brandCssVariables(ctx.branding.colors || {}), themeCss(ctx), BASE_CSS,
+    ctx.preview ? PREVIEW_CSS : '', ctx.customCss || ''].join('\n');
   return `<!DOCTYPE html>
 <html lang="${esc(ctx.locale === 'de' ? 'de' : 'en')}">
 <head>

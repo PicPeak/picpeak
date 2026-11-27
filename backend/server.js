@@ -317,16 +317,7 @@ function composeInlineStyles(payload) {
   const { branding } = payload;
   const cssSegments = [];
 
-  cssSegments.push(`:root {
-  --brand-primary: ${branding.colors.primary};
-  --brand-accent: ${branding.colors.accent};
-  --brand-background: ${branding.colors.background};
-  --brand-text: ${branding.colors.text};
-  --brand-surface: ${branding.colors.surface || '#ffffff'};
-  --brand-elevated: ${branding.colors.elevated || '#f5f5f5'};
-  --brand-border: ${branding.colors.border || '#e5e5e5'};
-  --brand-muted-text: ${branding.colors.mutedText || '#737373'};
-}`);
+  cssSegments.push(require('./src/utils/brandCssVariables').brandCssVariables(branding.colors));
 
   if (payload.baseCss) {
     cssSegments.push(payload.baseCss);
