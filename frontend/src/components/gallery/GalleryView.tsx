@@ -2166,6 +2166,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // N" all follow that list. Not here, because the layout already has
     // them in its nav: the selection actions (select all, rate, download),
     // copy filenames, and the categories (Premium's tabs, Story's scenes).
+    // Folio has neither tabs nor scenes, so its categories are the chips the
+    // standard layouts show under their toolbar, shown with or without the
+    // filter bar, as Premium's tabs are.
+    const folioCategories = theme.galleryLayout === 'gallery-folio' ? filterCategories(data.categories) : [];
     const featureToolbox = (shownPhotos: Photo[]) => {
       const toolbar = filterBarEnabled ? (
         <GalleryToolbar
@@ -2175,15 +2179,27 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           photoCount={shownPhotos.length}
         />
       ) : null;
-      const peoplePanel = buildPeoplePanel(shownPhotos, toolbar ? 'mt-3' : undefined);
+      const categoryChips = folioCategories.length > 0 ? (
+        <GalleryCategoryChips
+          className={`folio-categories${toolbar ? ' mt-3' : ''}`}
+          categories={folioCategories}
+          photos={scopedPhotos}
+          selectedCategoryId={selectedCategoryId}
+          onCategoryChange={setSelectedCategoryId}
+          hasVideos={showMediaFilter}
+        />
+      ) : null;
+      const peoplePanel = buildPeoplePanel(shownPhotos, toolbar || categoryChips ? 'mt-3' : undefined);
       // These layouts draw their own header, so the language switcher
       // (issue 2550) and the walkthrough's help icon (issue 2551) sit at the
       // top of the toolbox instead.
       const help = walkthroughEnabled ? <WalkthroughHelpButton onClick={walkthrough.reopen} /> : null;
       const language = languageSwitcher || help
-        ? <div className={`gallery-toolbox-language flex justify-end gap-2 ${toolbar || peoplePanel ? 'mb-3' : ''}`}>{help}{languageSwitcher}</div>
+        ? <div className={`gallery-toolbox-language flex justify-end gap-2 ${toolbar || categoryChips || peoplePanel ? 'mb-3' : ''}`}>{help}{languageSwitcher}</div>
         : null;
-      return toolbar || peoplePanel || language ? <div className="gallery-toolbox">{language}{toolbar}{peoplePanel}</div> : null;
+      return toolbar || categoryChips || peoplePanel || language
+        ? <div className="gallery-toolbox">{language}{toolbar}{categoryChips}{peoplePanel}</div>
+        : null;
     };
     // Story and Folio carry Copy filenames in their own nav.
     const filenamesInBand = theme.galleryLayout !== 'gallery-story' && theme.galleryLayout !== 'gallery-folio';

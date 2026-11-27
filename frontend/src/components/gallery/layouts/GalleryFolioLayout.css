@@ -474,6 +474,29 @@
   margin-bottom: 1rem;
 }
 
+/* The gallery's categories, as quiet pills in the palette's ink. */
+.folio-toolbar .folio-categories .btn {
+  min-height: 2rem;
+  padding: 0.3rem 0.95rem;
+  border: 1px solid var(--folio-hairline);
+  border-radius: 9999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-muted-text);
+  font-weight: 400;
+}
+
+.folio-toolbar .folio-categories .btn:hover {
+  border-color: var(--color-text);
+  color: var(--color-text);
+}
+
+.folio-toolbar .folio-categories .btn-primary {
+  border-color: var(--color-text);
+  background-color: var(--color-text);
+  color: var(--color-background);
+}
+
 .folio-quota {
   margin-bottom: 1.25rem;
   text-align: center;

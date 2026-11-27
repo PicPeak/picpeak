@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 type PhotosResult = { data: unknown; isLoading: boolean; error: unknown; refetch: () => void };
@@ -23,7 +23,12 @@ const stable = vi.hoisted(() => ({
   watermark: { watermarkEnabled: false },
   t: (key: string) => key,
   photos: null as unknown as PhotosResult,
-  grid: null as unknown as { photos: Array<{ id: number }>; onToggleLikedOnly?: () => void; likedOnly?: boolean },
+  grid: null as unknown as {
+    photos: Array<{ id: number }>;
+    onToggleLikedOnly?: () => void;
+    likedOnly?: boolean;
+    beforeGrid?: React.ReactNode | ((shown: Array<{ id: number }>) => React.ReactNode);
+  },
 }));
 
 vi.mock('../../../contexts', () => ({
@@ -60,7 +65,12 @@ vi.mock('../GalleryLayout', () => ({
 vi.mock('../PhotoGridWithLayouts', () => ({
   PhotoGridWithLayouts: (props: typeof stable.grid) => {
     stable.grid = props;
-    return <div data-testid="photo-grid" data-ids={props.photos.map((p) => p.id).join(',')} />;
+    const { beforeGrid } = props;
+    return (
+      <div data-testid="photo-grid" data-ids={props.photos.map((p) => p.id).join(',')}>
+        <div data-testid="before-grid">{typeof beforeGrid === 'function' ? beforeGrid(props.photos) : beforeGrid}</div>
+      </div>
+    );
   },
 }));
 
@@ -68,19 +78,23 @@ import { GalleryView } from '../GalleryView';
 
 const event = { id: 1, event_name: 'Hoa Wedding', event_type: 'wedding', event_date: '2026-09-19', expires_at: '2027-09-19T00:00:00Z' };
 
-const photo = (id: number, folder: number | null, liked = false, likeCount = 0) => ({
+const photo = (id: number, folder: number | null, liked = false, likeCount = 0, category: number | null = null) => ({
   id, filename: `${id}.jpg`, url: `/${id}.jpg`, thumbnail_url: `/${id}-t.jpg`, type: 'photo', size: 1,
-  uploaded_at: `2026-09-19T1${id}:00:00Z`, category_id: null, folder_id: folder,
+  uploaded_at: `2026-09-19T1${id}:00:00Z`, category_id: category, folder_id: folder,
   is_liked: liked, like_count: likeCount,
 });
 
-function show() {
+function show({ filterBar = true } = {}) {
+  stable.settings = { data: filterBar ? {} : { gallery_show_filter_bar: false } };
   stable.photos = {
     data: {
       event: { ...event, allow_downloads: true },
-      categories: [{ id: 3, name: 'Ceremony', slug: 'ceremony', is_folder: true, parent_id: null }],
-      // 5 is liked by this viewer; 6 only by someone else.
-      photos: [photo(4, 3), photo(5, null, true, 1), photo(6, null, false, 2)],
+      categories: [
+        { id: 3, name: 'Ceremony', slug: 'ceremony', is_folder: true, parent_id: null },
+        { id: 9, name: 'Party', slug: 'party', is_folder: false, parent_id: null },
+      ],
+      // 5 is liked by this viewer; 6 only by someone else, and in Party.
+      photos: [photo(4, 3), photo(5, null, true, 1), photo(6, null, false, 2, 9)],
     },
     isLoading: false,
     error: null,
@@ -119,6 +133,14 @@ describe('Gallery Folio in the gallery shell', () => {
 
     fireEvent.click(tile);
     expect(shownIds()).toBe('4');
+  });
+
+  it.each([true, false])('offers the gallery\'s categories above the photos (filter bar %s)', (filterBar) => {
+    // Folio has no tabs or scenes of its own: the chips are its way to a category.
+    show({ filterBar });
+    const party = within(screen.getByTestId('before-grid')).getByRole('button', { name: 'Party (1)' });
+    fireEvent.click(party);
+    expect(shownIds()).toBe('6');
   });
 
   it('filters the viewer\'s own likes from its nav heart', () => {
