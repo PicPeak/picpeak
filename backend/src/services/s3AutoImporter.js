@@ -253,6 +253,10 @@ async function processEvent(event, storage) {
           } catch (err) {
             logger.warn(`[s3AutoImporter] could not queue photo #${photoId} for tagging: ${err.message}`);
           }
+          // A RAW's default develop when the studio turned it on (issue 2619).
+          await require('./photoEdits').afterUpload(photoId).catch((err) => {
+            logger.warn(`[s3AutoImporter] could not queue photo #${photoId} for its RAW develop: ${err.message}`);
+          });
         }
 
         // Webhook (#327): same shape as fileWatcher.

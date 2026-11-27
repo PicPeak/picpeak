@@ -1281,6 +1281,11 @@ async function importExternalFolder({
             thumbnailsFailed++;
             logger.warn(`Thumbnail generation failed for external photo ${photoId} (${f.rel}): ${thumbErr.message}`);
           }
+          // A new RAW on the share gets its default develop when the studio
+          // turned that on (issue 2619), like an uploaded one.
+          await require('./photoEdits').afterUpload(photoId).catch((err) => {
+            logger.warn(`Could not queue external photo ${photoId} for its RAW develop: ${err.message}`);
+          });
         }
 
         // A video goes through the same routine an uploaded one does: a poster

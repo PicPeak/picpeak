@@ -832,6 +832,10 @@ async function handleV1PhotoUpload(req, res) {
       } catch (e) {
         logger.warn(`v1 upload: tag enqueue failed for photo ${id}`, { error: e.message });
       }
+      // A RAW's default develop when the studio turned it on (issue 2619).
+      await require('../../services/photoEdits').afterUpload(id).catch((e) => {
+        logger.warn(`v1 upload: RAW auto develop failed for photo ${id}`, { error: e.message });
+      });
     }
 
     await logActivity('photo_uploaded', { via: 'api_v1', filename: finalName }, event.id, {
