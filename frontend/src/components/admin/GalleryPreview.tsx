@@ -177,7 +177,11 @@ export const GalleryPreview: React.FC<GalleryPreviewProps> = ({
             </div>
           </div>
         ) : (
-          <div className="relative flex items-end justify-center pb-4" style={{ height: 170, backgroundColor: colors.elevated }}>
+          <div
+            className="relative flex items-end justify-center pb-4"
+            // The same soft scrim as the real cover, so the white title reads.
+            style={{ height: 170, background: `linear-gradient(to top, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0) 70%), ${colors.elevated}` }}
+          >
             <div className="absolute inset-0 flex items-center justify-center">
               <Camera className="w-6 h-6" style={{ color: colors.muted }} />
             </div>
