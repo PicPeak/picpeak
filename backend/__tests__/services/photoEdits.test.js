@@ -177,6 +177,39 @@ describe('the edited render (golden, server vs CPU reference)', () => {
   });
 });
 
+describe('a source with an embedded colour profile', () => {
+  const icc = (name) => path.join(__dirname, '../../src/services/printSales/icc', name);
+  const colour = { r: 180, g: 99, b: 59 };
+  /** A flat colour, converted into the profile and tagged with it. */
+  const profiled = async (profile, format) => {
+    const chain = sharp({ create: { width: 64, height: 48, channels: 3, background: colour } }).withIccProfile(icc(profile), { attach: true });
+    return format === 'png16' ? chain.toColourspace('rgb16').png().toBuffer() : chain.jpeg({ quality: 95 }).toBuffer();
+  };
+  const meanOf = async (buffer) => {
+    const { channels } = await sharp(buffer).stats();
+    return channels.slice(0, 3).map((c) => c.mean);
+  };
+  const cases = [
+    ['a 16-bit PNG in Display P3', 'DisplayP3-v2-magic.icc', 'png16', 'png', 'image/png'],
+    ['an 8-bit JPEG in Adobe RGB', 'AdobeCompat-v2.icc', 'jpeg', 'jpg', 'image/jpeg'],
+  ];
+  for (const [label, profile, format, ext, mime] of cases) {
+    it(`keeps its colours through a crop and in the editor's base: ${label}`, async () => {
+      const file = `profiled-${format}.${ext}`;
+      fs.writeFileSync(storagePath(`events/active/edit-card/${file}`), await profiled(profile, format));
+      const photo = { ...(await row()), path: `edit-card/${file}`, filename: file, mime_type: mime, edit_rev: 1 };
+      const { buffer } = await photoEdits().renderEditedJpeg(photo, validated({ crop: { x: 0, y: 0, w: 0.5, h: 1 } }));
+      const base = await photoEdits().originalPreviewJpeg(photo);
+      for (const out of [buffer, base]) {
+        const [r, g, b] = await meanOf(out);
+        expect(Math.abs(r - colour.r)).toBeLessThan(3);
+        expect(Math.abs(g - colour.g)).toBeLessThan(3);
+        expect(Math.abs(b - colour.b)).toBeLessThan(3);
+      }
+    });
+  }
+});
+
 describe('a JPEG named like a camera RAW', () => {
   it('is never sent to LibRaw, whatever its name says', async () => {
     const rawDevelop = require('../../src/services/rawDevelop');

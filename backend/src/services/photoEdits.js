@@ -261,7 +261,7 @@ async function renderEditedJpeg(photo, params, { interactive = false } = {}) {
     const turned = (metadata.orientation || 1) >= 5;
     const width = turned ? metadata.height : metadata.width;
     const height = turned ? metadata.width : metadata.height;
-    let chain = sharp(sourcePath, { failOn: 'none', interactive }).rotate();
+    let chain = srgb(sharp(sourcePath, { failOn: 'none', interactive }).rotate(), metadata);
     if (width * height > limit) {
       const scale = Math.sqrt(limit / (width * height));
       chain = chain.resize(Math.max(1, Math.floor(width * scale)), Math.max(1, Math.floor(height * scale)), { fit: 'inside' });
@@ -295,11 +295,21 @@ async function renderEditedJpeg(photo, params, { interactive = false } = {}) {
   }, { raw: true });
 }
 
+/**
+ * A decode of a source with an embedded profile converted to sRGB, as the
+ * rendition generators do (imageProcessor): sharp's implicit conversion
+ * relabels a 16-bit tagged source's numbers as sRGB, so even a crop changed
+ * its colours. An untagged source is left alone.
+ */
+function srgb(chain, metadata) {
+  return metadata.hasProfile ? chain.withIccProfile('srgb', { attach: false }) : chain;
+}
+
 /** The unedited photo, upright, at most `longEdge` long: the editor's base and the face scan's input for an edited photo. */
 async function originalPreviewJpeg(photo, { longEdge = BASE_LONG_EDGE, interactive = false } = {}) {
   const sharp = require('./isolatedSharp');
-  return withOriginal(photo, (sourcePath) => sharp(sourcePath, { failOn: 'none', interactive })
-    .rotate()
+  return withOriginal(photo, async (sourcePath) => srgb(sharp(sourcePath, { failOn: 'none', interactive }).rotate(),
+    await sharp(sourcePath, { failOn: 'none', interactive }).metadata())
     .resize(longEdge, longEdge, { fit: 'inside', withoutEnlargement: true })
     .flatten({ background: '#ffffff' })
     .jpeg({ quality: 90 })
