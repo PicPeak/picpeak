@@ -13089,6 +13089,7 @@
     "loadError": "Das Foto konnte nicht zum Bearbeiten geladen werden.",
     "position": "{{current}} von {{total}}",
     "unsaved": "Nicht gespeichert",
+    "gone": "Dieses Foto ist nicht mehr in der Liste; speichere oder schließe, um deine Änderungen zu verwerfen.",
     "detailNoPreview": "Dieser Browser zeigt Klarheit und Schärfe erst im gespeicherten Foto.",
     "actions": {
       "auto": "Automatisch",

@@ -13124,6 +13124,7 @@
     "loadError": "The photo could not be loaded for editing.",
     "position": "{{current}} of {{total}}",
     "unsaved": "Not saved",
+    "gone": "This photo is no longer in the list; save or close to discard your changes.",
     "detailNoPreview": "This browser shows clarity and sharpening only in the saved photo.",
     "actions": {
       "auto": "Auto",

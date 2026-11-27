@@ -146,6 +146,53 @@ describe('background progress', () => {
   });
 });
 
+describe('the photo list changing under the editor', () => {
+  it('stays on the same photo with its unsaved change when the list is refreshed or reordered', async () => {
+    const view = render(<PhotoEditor eventId={1} photos={photos} initialPhotoId={1} onClose={vi.fn()} onChanged={vi.fn()} />);
+    await waitFor(() => expect(screen.getByLabelText('Edited preview')).toHaveAttribute('data-backend', 'webgl2'));
+    fireEvent.change(screen.getByLabelText('photoEditor.sliders.exposure'), { target: { value: '1' } });
+    const fresh = { id: 0, filename: 'new.cr3', media_type: 'image', mime_type: 'image/x-canon-cr3' };
+    view.rerender(<PhotoEditor eventId={1} photos={[fresh, ...photos] as any} initialPhotoId={1} onClose={vi.fn()} onChanged={vi.fn()} />);
+    expect(screen.getByText('p1.cr3')).toBeInTheDocument();
+    expect(screen.getByText('Not saved')).toBeInTheDocument();
+    expect(service.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a photo that left the list, with its unsaved change, and says so', async () => {
+    const view = render(<PhotoEditor eventId={1} photos={photos} initialPhotoId={1} onClose={vi.fn()} onChanged={vi.fn()} />);
+    await waitFor(() => expect(screen.getByLabelText('Edited preview')).toHaveAttribute('data-backend', 'webgl2'));
+    fireEvent.change(screen.getByLabelText('photoEditor.sliders.exposure'), { target: { value: '1' } });
+    view.rerender(<PhotoEditor eventId={1} photos={[photos[1]]} initialPhotoId={1} onClose={vi.fn()} onChanged={vi.fn()} />);
+    expect(screen.getByText('p1.cr3')).toBeInTheDocument();
+    expect(screen.getByText('Not saved')).toBeInTheDocument();
+    expect(screen.getByText(/no longer in the list/)).toHaveAttribute('role', 'status');
+    expect(service.get).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('develop all RAWs', () => {
+  it('takes the developed state of the open photo when it has no unsaved change', async () => {
+    service.developRaw.mockResolvedValue({ queued: 2, photo_ids: [1, 2] });
+    await open();
+    expect(screen.getByRole('button', { name: 'Reset to original' })).toBeDisabled();
+    service.get.mockImplementation(async (_e: number, id: number) => state(id, { ...DEFAULT_PARAMS, develop: true }));
+    await userEvent.click(screen.getByRole('button', { name: 'Develop all unedited RAW photos' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reset to original' })).toBeEnabled());
+    expect(screen.queryByText('Not saved')).toBeNull();
+  });
+
+  it('keeps an unsaved change and takes only the saved state', async () => {
+    service.developRaw.mockResolvedValue({ queued: 2, photo_ids: [1, 2] });
+    await open();
+    fireEvent.change(screen.getByLabelText('photoEditor.sliders.exposure'), { target: { value: '1' } });
+    service.get.mockImplementation(async (_e: number, id: number) => state(id, { ...DEFAULT_PARAMS, develop: true }));
+    await userEvent.click(screen.getByRole('button', { name: 'Develop all unedited RAW photos' }));
+    await waitFor(() => expect(service.get).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText('photoEditor.sliders.exposure')).toHaveValue('1');
+    expect(screen.getByText('Not saved')).toBeInTheDocument();
+  });
+});
+
 describe('layout', () => {
   it('bounds the adjustments panel stacked under the photo, so it scrolls instead of running off-screen', async () => {
     await open();

@@ -95,8 +95,24 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
   const { t } = useTranslation();
   const confirm = useConfirm();
   const editable = useMemo(() => photos.filter((p) => !isVideo(p)), [photos]);
-  const [index, setIndex] = useState(() => Math.max(0, editable.findIndex((p) => p.id === initialPhotoId)));
-  const photo = editable[index];
+  // The photo is followed by id (as usePhotoSelection does): the list is
+  // refetched while uploads process or edits apply, and a new, removed or
+  // reordered row must not switch photos under unsaved work. A photo that
+  // left the list (deleted, filtered out) stays open with its state, the
+  // header says so; `index` is where it was, for moving on.
+  const [selected, setSelected] = useState(() => {
+    const at = Math.max(0, editable.findIndex((p) => p.id === initialPhotoId));
+    return { photo: editable[at], index: at };
+  });
+  const found = selected.photo ? editable.findIndex((p) => p.id === selected.photo.id) : -1;
+  const photo = found >= 0 ? editable[found] : selected.photo;
+  const index = found >= 0 ? found : selected.index;
+  const gone = found < 0 && !!photo;
+  useEffect(() => {
+    if (found >= 0 && (editable[found] !== selected.photo || found !== selected.index)) {
+      setSelected({ photo: editable[found], index: found });
+    }
+  }, [editable, found, selected]);
 
   const [params, dispatch] = useReducer(editorReducer, DEFAULT_PARAMS);
   const [saved, setSaved] = useState<EditParams>(DEFAULT_PARAMS);
@@ -312,10 +328,13 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
 
   // Moving on keeps the work, as Lightroom does.
   const go = useCallback(async (step: 1 | -1) => {
-    if (editable.length < 2) return;
+    if (editable.length < (gone ? 1 : 2)) return;
     if (!(await settle())) return;
-    setIndex((i) => (i + step + editable.length) % editable.length);
-  }, [settle, editable.length]);
+    // From a photo that left the list, the next one is the row now at its place.
+    const target = gone && step === 1 ? index : index + step;
+    const at = ((target % editable.length) + editable.length) % editable.length;
+    setSelected({ photo: editable[at], index: at });
+  }, [settle, editable, gone, index]);
 
   const close = useCallback(async () => {
     // A save on its way lands before the editor goes.
@@ -452,6 +471,7 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
           </h2>
           <p className="text-xs text-muted">
             {t('photoEditor.position', { current: index + 1, total: editable.length, defaultValue: '{{current}} of {{total}}' })}
+            {gone && <span role="status" className="ml-2 text-warning-text">{t('photoEditor.gone', 'This photo is no longer in the list; save or close to discard your changes.')}</span>}
             {dirty && <span className="ml-2 inline-flex items-center gap-1 text-warning-text"><span className="w-1.5 h-1.5 rounded-full bg-warning" />{t('photoEditor.unsaved', 'Not saved')}</span>}
           </p>
         </div>
@@ -585,6 +605,18 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
                   try {
                     const result = await photoEditorService.developRaw(eventId, { all: true });
                     onChanged();
+                    // The open photo was developed on the server: take its new
+                    // saved state, and the working edit too unless it has
+                    // unsaved changes (those stay, now against the new state).
+                    const openId = shown.current.photoId;
+                    if (openId !== undefined && shown.current.loadedFor === openId && result.photo_ids.includes(openId)) {
+                      const state = await photoEditorService.get(eventId, openId);
+                      if (shown.current.photoId === openId) {
+                        const next = state.params ? { ...DEFAULT_PARAMS, ...state.params } : { ...DEFAULT_PARAMS };
+                        if (sameParams(shown.current.params, shown.current.saved)) dispatch({ type: 'apply', params: next });
+                        setSaved(next);
+                      }
+                    }
                     toast.success(t('photoEditor.raw.queued', { count: result.queued, defaultValue: '{{count}} RAW photos are being developed' }));
                   } catch (error: any) {
                     toast.error(error?.response?.data?.error || t('common.error'));
