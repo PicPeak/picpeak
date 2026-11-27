@@ -570,6 +570,7 @@ describe('a HEAD request for an edited photo not rendered yet', () => {
       event_id: event.id, filename: 'head.jpg', path: 'edit-route/beach.jpg', type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
       size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(), width: 800, height: 600,
       edit_params: JSON.stringify({ v: 1, exposure: 0.5 }), edit_rev: 1, edit_applied_rev: 1,
+      edit_applied_params: JSON.stringify({ v: 1, exposure: 0.5 }), edit_applied_width: 800, edit_applied_height: 600,
     }).returning('id'));
     try {
       for (const url of [`/download/${id}`, `/photo/${id}`]) {

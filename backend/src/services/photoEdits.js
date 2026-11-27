@@ -100,7 +100,11 @@ function appliedView(row) {
  * 'current' (the pass building that revision's renditions) stays as it is.
  */
 async function renditionView(photo) {
-  if (!photo || photo.edit_view || isVideoRow(photo) || !(Number(photo.edit_rev) > Number(photo.edit_applied_rev))) return photo;
+  // Marked applied whenever an edit was ever applied, not only while a newer
+  // one is pending: a render rebuilt for this view stays of the applied
+  // revision even when a save lands meanwhile (ensureEditedSource retries).
+  if (!photo || photo.edit_view || isVideoRow(photo)) return photo;
+  if (!(Number(photo.edit_rev) > Number(photo.edit_applied_rev)) && !(Number(photo.edit_applied_rev) > 0)) return photo;
   const missing = APPLIED_COLUMNS.filter((column) => !(column in photo));
   const row = missing.length ? await db('photos').where({ id: photo.id }).first(missing) : {};
   return appliedView({ ...photo, ...(row || {}) });
@@ -356,15 +360,18 @@ async function renderAndRecord(photo, params, options) {
   // still streaming it keeps its handle. Never the applied revision's render
   // while it is still applied: renditions are cut from it until the pass
   // applies the new one (and then drops it).
-  if (!applied && before) {
-    // Of the applied revision itself (nothing pending: the source was
-    // rewritten, or the render lost): it is the applied render now too.
-    await db('photos').where({ id: photo.id, edit_applied_rev: photo.edit_rev, edit_applied_render_path: before })
-      .update({ edit_applied_render_path: key });
-  }
-  const stillApplied = !applied && before
-    && (await db('photos').where({ id: photo.id }).first('edit_applied_render_path'))?.edit_applied_render_path === before;
-  if (before && before !== key && !stillApplied && isRenderKeyOf(photo, before)) {
+  // Of the revision both columns name (nothing pending: the source was
+  // rewritten, or the render lost or never made): the other column takes it
+  // too, when it named the same render (or none).
+  const [otherRev, otherPath] = applied ? ['edit_rev', 'edit_render_path'] : ['edit_applied_rev', 'edit_applied_render_path'];
+  await db('photos').where({ id: photo.id, [otherRev]: photo.edit_rev })
+    .where((q) => (before ? q.where(otherPath, before) : q.whereNull(otherPath)))
+    .update({ [otherPath]: key });
+  // Still named by the other column (a newer save, or a pending one, keeps
+  // it there): not deleted.
+  const named = before
+    && await db('photos').where({ id: photo.id }).where((q) => q.where('edit_render_path', before).orWhere('edit_applied_render_path', before)).first('id');
+  if (before && before !== key && !named && isRenderKeyOf(photo, before)) {
     await storage.delete(before).catch((err) => {
       logger.warn(`Could not remove the superseded edited render ${before} of photo ${photo.id}: ${err.message}`);
     });
@@ -423,7 +430,9 @@ async function ensureEditedSource(photo, { interactive = false, retryFailed = fa
     // Superseded: the row has a newer revision (or another replica recorded
     // this one). Read it again and serve what it says now.
     const fresh = await db('photos').where({ id: photo.id }).first([...EDIT_COLUMNS, ...APPLIED_COLUMNS]);
-    if (!fresh) return null;
+    // Deleted meanwhile: gone, never "no edit" (which would serve the
+    // original, uncropped, from a share file that may still be there).
+    if (!fresh) throw Object.assign(new Error(`Photo ${photo.id} was deleted while its edit was rendered`), { status: 404, code: 'PHOTO_GONE' });
     photo = photo.edit_view === 'applied' ? appliedView({ ...photo, ...fresh }) : { ...photo, ...fresh };
     params = paramsOf(photo);
     if (!params) return null;
@@ -781,9 +790,12 @@ async function applyPhoto(photo, references) {
     if (!row || Number(row.edit_rev) !== rev) return true;
     if (paramsOf(row)) {
       const rendered = await ensureEditedSource(row, { retryFailed: true }).catch((err) => {
+        // Deleted meanwhile: nothing left to apply, and no failure to record.
+        if (err.code === 'PHOTO_GONE') return 'gone';
         logger.warn(`Photo edit: photo ${photo.id} revision ${rev} could not be rendered: ${err.message}`);
         return null;
       });
+      if (rendered === 'gone') return true;
       if (!rendered) return 'render';
     } else if (row.edit_render_path) {
       // A reset: the original is what guests get once it is applied. The

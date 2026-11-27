@@ -782,6 +782,68 @@ describe('two replicas rendering the same revision', () => {
   });
 });
 
+describe('a render rebuilt while the row changes', () => {
+  const insertEdited = async (name, edit) => {
+    const eventId = (await row()).event_id;
+    fs.copyFileSync(storagePath('events/active/edit-card/card.jpg'), storagePath(`events/active/edit-card/${name}`));
+    const params = math.canonicalJson(validated(edit));
+    return unwrap(await db('photos').insert({
+      event_id: eventId, filename: name, path: `edit-card/${name}`, type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      width: 600, height: 400, size_bytes: originalBytes.length, processing_status: 'complete', uploaded_at: new Date().toISOString(),
+      // Applied, but its render is lost: the next request renders it again.
+      edit_params: params, edit_rev: 1, edit_applied_rev: 1, edit_applied_params: params, edit_width: 600, edit_height: 400,
+      edit_applied_width: 600, edit_applied_height: 400,
+    }).returning('id'));
+  };
+  /** Runs `during` once, when the first edit render is about to be stored. */
+  const onFirstRender = (during) => {
+    const storage = require('../../src/services/storage').getStorage();
+    const put = storage.put.bind(storage);
+    let done = false;
+    return jest.spyOn(storage, 'put').mockImplementation(async (key, ...rest) => {
+      if (!done && String(key).startsWith('edits/edit_')) { done = true; await during(); }
+      return put(key, ...rest);
+    });
+  };
+
+  it('a photo deleted meanwhile is gone (404), never its original', async () => {
+    const id = await insertEdited('vanish.jpg', { crop: { x: 0, y: 0, w: 0.5, h: 1 } });
+    const photo = await db('photos').where({ id }).first();
+    const spy = onFirstRender(() => db('photos').where({ id }).delete());
+    try {
+      await expect(photoEdits().deliveredPhoto(await photoEdits().renditionView(photo))).rejects.toMatchObject({ status: 404, code: 'PHOTO_GONE' });
+      const skipped = await photoEdits().deliveredPhoto(photo, { unavailableOnFailure: true }).catch((err) => err);
+      // An archive builder is given a key no file has, never the original.
+      expect(skipped.path).toBe(photo.path);
+      expect(skipped.mime_type).toBe('image/jpeg');
+      expect(require('../../src/services/photoResolver').deliveredKey(skipped)).toMatch(/^edits\/edit_p/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('the display view renders the applied revision even when a newer save lands meanwhile', async () => {
+    const id = await insertEdited('interleave.jpg', { exposure: 0.3 });
+    const photo = await db('photos').where({ id }).first();
+    const spy = onFirstRender(() => db('photos').where({ id }).update({
+      edit_params: math.canonicalJson(validated({ rotate: 90 })), edit_rev: 2, edit_width: 400, edit_height: 600,
+    }));
+    try {
+      const shown = await photoEdits().deliveredPhoto(await photoEdits().renditionView(photo));
+      const key = require('../../src/services/photoResolver').deliveredKey(shown);
+      expect(key).toMatch(new RegExp(`^edits/edit_p${id}_r1_`));
+      expect(await sharp(storagePath(key)).metadata()).toMatchObject({ width: 600, height: 400 });
+      expect((await db('photos').where({ id }).first()).edit_applied_render_path).toBe(key);
+      // A download still follows the saved edit.
+      const downloaded = await photoEdits().deliveredPhoto(await db('photos').where({ id }).first());
+      expect(require('../../src/services/photoResolver').deliveredKey(downloaded)).toMatch(new RegExp(`^edits/edit_p${id}_r2_`));
+    } finally {
+      spy.mockRestore();
+      await db('photos').where({ id }).delete();
+    }
+  });
+});
+
 describe('a pass over many edited photos', () => {
   it('reads the rendition owners once, not once a photo', async () => {
     const ids = [];
