@@ -259,8 +259,15 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
   const formattedDate = eventDate
     ? parseISO(eventDate).toLocaleDateString(i18n.language, { year: 'numeric', month: 'long', day: 'numeric' })
     : null;
-  const coverPhoto = heroPhotoOverride || photos.find((photo) => !isVideoItem(photo)) || null;
-  const coverVariant = coverPhoto ? folio.cover : 'plain';
+  // A video has no preview to show as an image: its poster stands in, and
+  // without one the cover keeps to the title. A hero the container picked
+  // (a video-only gallery hands over its first video) goes through the same.
+  const coverSource = (photo: Photo) => (isVideoItem(photo) ? photo.thumbnail_url || null : heroImageUrl(photo, true));
+  const firstPhoto = photos.find((photo) => !isVideoItem(photo));
+  const coverSrc = (heroPhotoOverride && coverSource(heroPhotoOverride))
+    || (firstPhoto && coverSource(firstPhoto))
+    || null;
+  const coverVariant = coverSrc ? folio.cover : 'plain';
   const uploadLabel = t('upload.uploadPhotos', 'Upload Photos');
   const downloadAllLabel = t('common.downloadAll', 'Download All');
   const manageLabel = isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery');
@@ -278,13 +285,13 @@ export const GalleryFolioLayout: React.FC<GalleryFolioLayoutProps> = ({
       style={paletteStyle}
     >
       <header className={`folio-cover folio-cover--${coverVariant}`}>
-        {coverPhoto && (
+        {coverSrc && (
           <div className="folio-cover-media">
             {/* The uncropped preview, so the event's focal point picks the
                 crop at every shape the cover takes. Decorative: the title
                 below names the gallery. */}
             <AuthenticatedImage
-              src={heroImageUrl(coverPhoto, true)}
+              src={coverSrc}
               alt=""
               className="folio-cover-image"
               style={{ objectPosition: heroImageAnchor }}

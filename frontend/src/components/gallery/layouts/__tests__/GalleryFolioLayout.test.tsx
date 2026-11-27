@@ -129,6 +129,20 @@ describe('Gallery Folio', () => {
     expect(cover).toHaveAttribute('alt', '');
   });
 
+  it('covers a video-only gallery with the video\'s poster, never the video file', () => {
+    const video = { ...photos[2], hero_url: undefined, slideshow_url: undefined } as Photo;
+    const { container } = mount({ photos: [video], heroPhotoOverride: video });
+    const cover = container.querySelector('.folio-cover-image') as HTMLImageElement;
+    expect(cover.getAttribute('src')).toBe('/api/gallery/demo/thumbnail/3');
+  });
+
+  it('falls back to a title-only cover for a video without a poster', () => {
+    const video = { ...photos[2], hero_url: undefined, slideshow_url: undefined, thumbnail_url: null } as unknown as Photo;
+    const { container } = mount({ photos: [video], heroPhotoOverride: video });
+    expect(container.querySelector('.folio-cover-image')).toBeNull();
+    expect(root(container).dataset.cover).toBe('plain');
+  });
+
   it('opens the shared lightbox at the clicked photo', () => {
     const onPhotoClick = vi.fn();
     mount({ onPhotoClick });
