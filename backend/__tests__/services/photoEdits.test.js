@@ -488,6 +488,22 @@ describe('edited tiers after a reset', () => {
     expect(fs.existsSync(storagePath(tier))).toBe(false);
   });
 
+  it('a geometry edit that moves a manual focal point leaves no tiers cut at the old point', async () => {
+    const { id } = await plantEdited('tiers-focal.jpg');
+    await db('photos').where({ id }).update({ focal_x: 0.2, focal_y: 0.4, focal_source: 'manual' });
+    const imageProcessor = require('../../src/services/imageProcessor');
+    const cut = await imageProcessor.ensureThumbnailAtWidth(await db('photos').where({ id }).first(), 600);
+    expect(cut).toMatch(/_e1_f/);
+    expect(fs.existsSync(storagePath(cut))).toBe(true);
+    await photoEdits().saveEdits([{ photo: await db('photos').where({ id }).first(), params: validated({ saturation: -50, rotate: 90 }) }]);
+    // The point turned with the photo: the old tier's key names a point the row no longer has.
+    expect(await db('photos').where({ id }).first()).toMatchObject({ focal_source: 'manual' });
+    await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+    const gallery = await db('events').where({ id: (await row()).event_id }).first();
+    await require('../../src/services/photoTrash').deletePhotoForGood(gallery, await db('photos').where({ id }).first());
+    expect(fs.existsSync(storagePath(cut))).toBe(false);
+  });
+
   it('a delete after a reset still pending removes them too', async () => {
     const { id, tier } = await plantEdited('tiers-delete.jpg');
     await photoEdits().saveEdits([{ photo: await db('photos').where({ id }).first(), params: null }]);

@@ -504,6 +504,7 @@ function focalAfterEdit(photo, before, after) {
  */
 async function saveEdits(changes) {
   const revisions = {};
+  const unreachable = [];
   await db.transaction(async (trx) => {
     for (const { photo, params: asked } of changes) {
       // Develop and noise reduction mean nothing for a photo that is no
@@ -524,14 +525,30 @@ async function saveEdits(changes) {
         update.edit_height = size.height;
       }
       const focal = focalAfterEdit(photo, before, next);
-      if (focal) Object.assign(update, focal);
+      if (focal) {
+        Object.assign(update, focal);
+        // Thumbnail tier keys name the focal point; once it moves, no key the
+        // row gives (and no later cleanup) reaches the ones cut at the old
+        // point. Listed from the row as it is now, removed once saved.
+        if (focal.focal_x !== photo.focal_x || focal.focal_y !== photo.focal_y || focal.focal_source !== photo.focal_source) {
+          unreachable.push(...tierKeysAtCurrentPoint(photo));
+        }
+      }
       await trx('photos').where({ id: photo.id }).update(update);
       const row = await trx('photos').where({ id: photo.id }).first('edit_rev');
       revisions[photo.id] = Number(row.edit_rev);
     }
   });
+  const storage = getStorage();
+  await Promise.all([...new Set(unreachable)].map((key) => storage.delete(key).catch(() => {})));
   requestPass();
   return revisions;
+}
+
+/** The thumbnail tiers a row's current focal point names: the original's and every revision's still around. */
+function tierKeysAtCurrentPoint(photo) {
+  const imageProcessor = require('./imageProcessor');
+  return [...imageProcessor.thumbnailTierKeys({ ...photo, edit_params: null }), ...historicalTierKeys(photo)];
 }
 
 /**
