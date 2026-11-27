@@ -24,6 +24,12 @@ export interface WebsiteTraffic {
 
 export type CaptchaProvider = 'none' | 'friendly' | 'recaptcha';
 export interface ContactSettings {
+  contact: {
+    recipients: string[];
+    /** Used while `recipients` is empty: the business, else the support address. */
+    defaultRecipient: string;
+    confirmation: boolean;
+  };
   captcha: {
     provider: CaptchaProvider;
     friendly: { siteKey: string; endpoint: 'global' | 'eu'; apiKeySet: boolean };
@@ -34,6 +40,7 @@ export interface ContactSettings {
 export interface ContactSettingsUpdate {
   /** `apiKey`: a new key, '' to remove it, absent to keep it. */
   captcha: { provider: CaptchaProvider; friendly: { siteKey: string; endpoint: 'global' | 'eu'; apiKey?: string } };
+  contact: { recipients: string[]; confirmation: boolean };
 }
 
 export const websiteService = {
@@ -50,7 +57,7 @@ export const websiteService = {
     await api.put('/admin/website/visibility', { enabled });
   },
 
-  /** The contact form's settings (spam check), saved right away. */
+  /** The contact form's settings (spam check, mails), saved right away. */
   async getContactSettings(): Promise<ContactSettings> {
     const r = await api.get<ContactSettings>('/admin/website/contact-settings');
     return r.data;

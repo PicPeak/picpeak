@@ -1,21 +1,26 @@
 /**
  * The website's contact form settings (issue 2618), saved right away (not
- * part of the draft): the spam check. Friendly Captcha keeps its own site
- * key and API key (encrypted at rest, never sent back); reCAPTCHA uses the
- * keys of Settings › Security, whether or not the galleries use it.
+ * part of the draft): the spam check, who hears of a new message, and the
+ * visitor's confirmation. Friendly Captcha keeps its own site key and API
+ * key (encrypted at rest, never sent back); reCAPTCHA uses the keys of
+ * Settings › Security, whether or not the galleries use it.
  */
 const { db } = require('../../database/db');
 const { parseSettingValue } = require('../../utils/appSettings');
 const { createSecretBox } = require('../../utils/secretBox');
 const { AppError } = require('../../utils/errors');
 const { clearWebsiteCache } = require('./cache');
+const { EMAIL_PATTERN } = require('./contact');
 
 const KEYS = {
   provider: 'website_captcha_provider',
   friendlySiteKey: 'website_captcha_friendly_sitekey',
   friendlyApiKey: 'website_captcha_friendly_api_key',
   friendlyEndpoint: 'website_captcha_friendly_endpoint',
+  recipients: 'website_contact_recipients',
+  confirmation: 'website_contact_confirmation',
 };
+const MAX_RECIPIENTS = 5;
 const PROVIDERS = ['none', 'friendly', 'recaptcha'];
 const SITE_KEY = /^[A-Za-z0-9_-]{8,100}$/;
 
@@ -33,10 +38,27 @@ async function write(key, value) {
   await db('app_settings').insert(row).onConflict('setting_key').merge(['setting_value', 'updated_at']);
 }
 
+/** Where a new message goes when no recipients are set: the business, else the support address. */
+async function defaultRecipient() {
+  const { profile } = await require('../businessProfileService').getProfile().catch(() => ({ profile: null }));
+  if (profile && profile.email) return profile.email;
+  const s = await read(['branding_support_email']);
+  return typeof s.branding_support_email === 'string' ? s.branding_support_email : '';
+}
+
+function recipientList(value) {
+  return Array.isArray(value) ? value.filter((v) => typeof v === 'string' && EMAIL_PATTERN.test(v)) : [];
+}
+
 /** What the admin sees: no secret, only whether one is set. */
 async function readContactSettings() {
   const s = await read([...Object.values(KEYS), 'security_recaptcha_site_key', 'security_recaptcha_secret_key']);
   return {
+    contact: {
+      recipients: recipientList(s[KEYS.recipients]),
+      defaultRecipient: await defaultRecipient(),
+      confirmation: s[KEYS.confirmation] === true,
+    },
     captcha: {
       provider: PROVIDERS.includes(s[KEYS.provider]) ? s[KEYS.provider] : 'none',
       friendly: {
@@ -68,6 +90,14 @@ async function writeContactSettings(input) {
     throw new AppError('This is not a Friendly Captcha API key', 400, 'CAPTCHA_API_KEY');
   }
   if (friendly.endpoint !== undefined && !['global', 'eu'].includes(friendly.endpoint)) throw new AppError('Unknown endpoint', 400, 'CAPTCHA_ENDPOINT');
+  const contact = body.contact && typeof body.contact === 'object' ? body.contact : {};
+  if (contact.recipients !== undefined) {
+    const list = Array.isArray(contact.recipients) ? contact.recipients.map((v) => String(v).trim()).filter(Boolean) : null;
+    if (!list || list.length > MAX_RECIPIENTS || list.some((v) => v.length > 254 || !EMAIL_PATTERN.test(v))) {
+      throw new AppError(`Up to ${MAX_RECIPIENTS} e-mail addresses`, 400, 'CONTACT_RECIPIENT');
+    }
+    contact.recipients = [...new Set(list)];
+  }
 
   if (friendly.siteKey !== undefined) await write(KEYS.friendlySiteKey, String(friendly.siteKey));
   if (friendly.endpoint !== undefined) await write(KEYS.friendlyEndpoint, friendly.endpoint);
@@ -81,7 +111,15 @@ async function writeContactSettings(input) {
   if (chosen === 'recaptcha' && !current.captcha.recaptchaReady) {
     throw new AppError('Enter the reCAPTCHA keys under Settings › Security first', 400, 'CAPTCHA_NOT_READY');
   }
+  // A confirmation goes to whatever address a visitor types: only with a
+  // spam check on, and off again when the check is turned off.
+  const confirmation = contact.confirmation === undefined ? current.contact.confirmation : contact.confirmation === true;
+  if (confirmation && chosen === 'none') {
+    if (contact.confirmation === true) throw new AppError('Turn on a spam check first', 400, 'CONFIRMATION_NEEDS_CAPTCHA');
+  }
   if (provider !== undefined) await write(KEYS.provider, provider);
+  if (contact.recipients !== undefined) await write(KEYS.recipients, contact.recipients);
+  await write(KEYS.confirmation, confirmation && chosen !== 'none');
   // The contact forms on the cached pages show the widget, or not.
   clearWebsiteCache();
   return readContactSettings();
@@ -104,4 +142,12 @@ async function activeCaptcha() {
   return null;
 }
 
-module.exports = { readContactSettings, writeContactSettings, activeCaptcha, KEYS };
+/** Who hears of a new message, and whether the visitor gets a confirmation. */
+async function mailSettings() {
+  const s = await read([KEYS.recipients, KEYS.confirmation]);
+  const recipients = recipientList(s[KEYS.recipients]);
+  const fallback = recipients.length ? '' : await defaultRecipient();
+  return { recipients: recipients.length ? recipients : [fallback].filter(Boolean), confirmation: s[KEYS.confirmation] === true };
+}
+
+module.exports = { readContactSettings, writeContactSettings, activeCaptcha, mailSettings, KEYS };

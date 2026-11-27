@@ -12,6 +12,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string, fb?: unknown) => (typeof fb === 'string' ? fb : k) }),
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
+vi.mock('../../../hooks/usePermission', () => ({ usePermission: () => true }));
 vi.mock('../../../services/fonts.service', () => ({ fontsService: { list: vi.fn().mockResolvedValue([]) } }));
 
 import { SitePanel } from '../SitePanel';

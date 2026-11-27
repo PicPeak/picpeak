@@ -6256,7 +6256,8 @@
       "calendar": "Calendar",
       "quotes": "Quotes",
       "contracts": "Contracts",
-      "billing": "Billing"
+      "billing": "Billing",
+      "website": "Website"
     },
     "featureOff": "Feature off",
     "featureOffTooltip": "The feature this template belongs to is currently disabled. You can still edit the template — it will be used once the feature is re-enabled.",
@@ -13193,7 +13194,7 @@
       "divider": "Show a line",
       "customHtmlNotice": "For advanced use. Scripts, frames, forms and event handlers are removed when the page is shown; style it with the site’s custom CSS.",
       "html": "HTML",
-      "contactNotice": "Messages arrive in Messages › Customers. Nothing is emailed to the visitor.",
+      "contactNotice": "Messages arrive in Messages › Customers and are mailed to the studio. Who gets them, a confirmation to the visitor and the spam check: Design › Contact form.",
       "contactNoticeOff": "Messages are stored in Messages › Customers, which is switched off. Turn on Messages under Settings › Features to read them.",
       "bookingOff": "Client booking is switched off, so this block is hidden on the website. Turn it on under Settings › Features.",
       "galleries": "Galleries",
@@ -13661,7 +13662,14 @@
       "recaptchaReady": "Uses the reCAPTCHA keys of ",
       "recaptchaMissing": "Enter the reCAPTCHA site key and secret first, in ",
       "securityLink": "Settings › Security",
-      "save": "Save contact form settings"
+      "save": "Save contact form settings",
+      "recipients": "Send new messages to",
+      "recipientsHint": "Up to five addresses, separated by commas. Empty: the business address, else the support address. Every message is in Messages › Customers as well.",
+      "editAdminMail": "Edit the notification mail",
+      "confirmation": "Send the visitor a confirmation",
+      "confirmationNeedsCaptcha": "Only with a spam check: without one, anyone could have it sent to any address.",
+      "confirmationHint": "Their name and your fixed text, never their message; at most one a day to an address.",
+      "editConfirmationMail": "Edit the confirmation mail"
     }
   },
   "websiteNotice": {

@@ -1,32 +1,43 @@
 /**
  * The website's contact form settings in the Design panel (issue 2618),
- * saved right away, not part of the draft: the spam check (Friendly Captcha
- * with its own keys, or reCAPTCHA with the keys of Settings › Security).
- * The API key is never shown again; typing one replaces it.
+ * saved right away, not part of the draft: who is mailed a new message, the
+ * visitor's confirmation (only with a spam check), and the spam check
+ * (Friendly Captcha with its own keys, or reCAPTCHA with the keys of
+ * Settings › Security). The API key is never shown again; typing one
+ * replaces it. Both mails are email templates, linked from here.
  */
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { Button, Notice } from '../../components/common';
+import { Button, Notice, Switch } from '../../components/common';
 import { settingsTabHref } from '../settings/settingsNav';
 import { websiteService, type CaptchaProvider, type ContactSettings } from '../../services/website.service';
 import { apiErrorText } from '../../utils/apiErrorText';
+import { usePermission } from '../../hooks/usePermission';
 import { ChoiceField, TextField } from './fields';
 
 const QUERY_KEY = ['website-contact-settings'];
+const templateHref = (key: string) => `${settingsTabHref('email')}&template=${key}`;
 
-export const ContactSettingsSection: React.FC<{ readOnly: boolean }> = ({ readOnly }) => {
+export const ContactSettingsSection: React.FC<{ readOnly: boolean }> = ({ readOnly: draftReadOnly }) => {
   const { t } = useTranslation();
+  // Where visitors' messages go is a studio setting (server: settings.edit).
+  const canChange = usePermission('settings.edit');
+  const readOnly = draftReadOnly || !canChange;
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: QUERY_KEY, queryFn: websiteService.getContactSettings });
   const [provider, setProvider] = useState<CaptchaProvider>('none');
   const [siteKey, setSiteKey] = useState('');
   const [endpoint, setEndpoint] = useState<'global' | 'eu'>('global');
   const [apiKey, setApiKey] = useState('');
+  const [recipients, setRecipients] = useState('');
+  const [confirmation, setConfirmation] = useState(false);
   useEffect(() => {
     if (!data) return;
+    setRecipients(data.contact.recipients.join(', '));
+    setConfirmation(data.contact.confirmation);
     setProvider(data.captcha.provider);
     setSiteKey(data.captcha.friendly.siteKey);
     setEndpoint(data.captcha.friendly.endpoint);
@@ -36,6 +47,7 @@ export const ContactSettingsSection: React.FC<{ readOnly: boolean }> = ({ readOn
   const save = useMutation({
     mutationFn: () => websiteService.saveContactSettings({
       captcha: { provider, friendly: { siteKey: siteKey.trim(), endpoint, ...(apiKey ? { apiKey: apiKey.trim() } : {}) } },
+      contact: { recipients: recipients.split(/[\s,;]+/).filter(Boolean), confirmation: confirmation && provider !== 'none' },
     }),
     onSuccess: (next: ContactSettings) => {
       queryClient.setQueryData(QUERY_KEY, next);
@@ -55,6 +67,13 @@ export const ContactSettingsSection: React.FC<{ readOnly: boolean }> = ({ readOn
       </div>
       <fieldset disabled={readOnly} className="space-y-4">
         <legend className="sr-only">{t('website.contact.title', 'Contact form')}</legend>
+        <div className="space-y-1">
+          <TextField label={t('website.contact.recipients', 'Send new messages to')} value={recipients} maxLength={1300}
+            placeholder={data.contact.defaultRecipient}
+            helperText={t('website.contact.recipientsHint', 'Up to five addresses, separated by commas. Empty: the business address, else the support address. Every message is in Messages › Customers as well.')}
+            onChange={setRecipients} />
+          <Link to={templateHref('website_contact_admin')} className="text-xs text-accent hover:underline">{t('website.contact.editAdminMail', 'Edit the notification mail')}</Link>
+        </div>
         <ChoiceField label={t('website.contact.captcha', 'Spam check')} value={provider}
           options={[
             { value: 'none', label: t('website.contact.captchaNone', 'Off') },
@@ -88,6 +107,14 @@ export const ContactSettingsSection: React.FC<{ readOnly: boolean }> = ({ readOn
             <Link to={settingsTabHref('security')} className="font-medium underline">{t('website.contact.securityLink', 'Settings › Security')}</Link>.
           </Notice>
         )}
+        <div className="space-y-1">
+          <Switch checked={confirmation && provider !== 'none'} disabled={provider === 'none'} onChange={setConfirmation}
+            label={t('website.contact.confirmation', 'Send the visitor a confirmation')}
+            description={provider === 'none'
+              ? t('website.contact.confirmationNeedsCaptcha', 'Only with a spam check: without one, anyone could have it sent to any address.')
+              : t('website.contact.confirmationHint', 'Their name and your fixed text, never their message; at most one a day to an address.')} />
+          <Link to={templateHref('website_contact_confirmation')} className="text-xs text-accent hover:underline">{t('website.contact.editConfirmationMail', 'Edit the confirmation mail')}</Link>
+        </div>
         {!readOnly && (
           <Button size="sm" variant="primary" isLoading={save.isPending} onClick={() => save.mutate()}>
             {t('website.contact.save', 'Save contact form settings')}

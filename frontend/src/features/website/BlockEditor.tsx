@@ -254,7 +254,7 @@ const ContactNotice: React.FC = () => {
   return (
     <Notice tone={flags.messaging ? 'info' : 'warning'} size="sm">
       {flags.messaging
-        ? t('website.fields.contactNotice', 'Messages arrive in Messages › Customers. Nothing is emailed to the visitor.')
+        ? t('website.fields.contactNotice', 'Messages arrive in Messages › Customers and are mailed to the studio. Who gets them, a confirmation to the visitor and the spam check: Design › Contact form.')
         : t('website.fields.contactNoticeOff', 'Messages are stored in Messages › Customers, which is switched off. Turn on Messages under Settings › Features to read them.')}
     </Notice>
   );

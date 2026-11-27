@@ -22,7 +22,7 @@ import { ReceivedEmailsPanel } from '../../components/admin/ReceivedEmailsPanel'
 import { IncomingMailConfigCard, type IncomingMailConfigHandle } from '../../components/admin/IncomingMailConfigCard';
 import { CustomerMailboxCard } from '../../components/admin/CustomerMailboxCard';
 import { Palette, RefreshCw, Info, AlertTriangle } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useModal, useMutationWithToast } from '../../hooks';
 import { SettingsSaveBar } from '../../components/admin/SettingsSaveBar';
@@ -59,6 +59,8 @@ const CATEGORY_ORDER: readonly string[] = [
   // unknown-category fallback below.
   'contracts',
   'billing',
+  // The website's contact form mails (issue 2618, migration 382).
+  'website',
 ] as const;
 
 /**
@@ -82,6 +84,13 @@ const CORE_SUBCATEGORY_ORDER: readonly string[] = [
  * `buildPreviewSampleData` below covers the rest.
  */
 const PREVIEW_SAMPLE_VALUES: Record<string, string> = {
+  sender_name: 'Ada Lovelace',
+  sender_email: 'ada@example.com',
+  sender_phone: '+41 44 123 45 67',
+  page_title: 'Contact',
+  page_url: 'https://studio.example.com/contact',
+  message: 'Hello! We are getting married in June and would love to hear about your packages.',
+  inbox_link: 'https://studio.example.com/admin/messages',
   event_name: 'John & Jane Wedding',
   event_date: 'December 25, 2024',
   expiry_date: 'January 25, 2025',
@@ -164,6 +173,8 @@ const TEMPLATE_DISPLAY_NAMES: Record<string, string> = {
   customer_document_request_reminder: 'Document Request Reminder',
   album_shipped: 'Album Shipped',
   project_brief_updated: 'Project Brief Updated',
+  website_contact_admin: 'Website Message (to the Studio)',
+  website_contact_confirmation: 'Website Message Confirmation (to the Visitor)',
   // quotes
   quote_sent: 'Quote Sent',
   quote_accepted_customer: 'Quote Accepted (Customer)',
@@ -191,10 +202,18 @@ const TEMPLATE_DISPLAY_NAMES: Record<string, string> = {
   event_reminder_other: 'Event Reminder (Other)',
 };
 
+/** ?template=<key> opens the Templates tab on that template (a link from elsewhere). */
+export function initialEmailView(params: URLSearchParams): { tab: 'smtp' | 'templates'; templateKey: string } {
+  const key = params.get('template') || '';
+  return /^[a-z0-9_]{1,80}$/.test(key) ? { tab: 'templates', templateKey: key } : { tab: 'smtp', templateKey: 'gallery_created' };
+}
+
 export const EmailConfigPage: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'smtp' | 'templates' | 'sent' | 'received'>('smtp');
-  const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>('gallery_created');
+  const [searchParams] = useSearchParams();
+  const [initialView] = useState(() => initialEmailView(searchParams));
+  const [activeTab, setActiveTab] = useState<'smtp' | 'templates' | 'sent' | 'received'>(initialView.tab);
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>(initialView.templateKey);
   // For callbacks that outlive a render (a save completing after a switch).
   const selectedTemplateKeyRef = useRef(selectedTemplateKey);
   selectedTemplateKeyRef.current = selectedTemplateKey;

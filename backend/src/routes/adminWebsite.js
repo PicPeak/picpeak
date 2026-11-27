@@ -65,7 +65,8 @@ router.put('/visibility', canEdit, [
 router.get('/contact-settings', canView, handleAsync(async (req, res) => {
   res.json(await require('../services/website/contactSettings').readContactSettings());
 }));
-router.put('/contact-settings', canEdit, handleAsync(async (req, res) => {
+// Where visitors' messages go is a studio setting: settings.edit as well.
+router.put('/contact-settings', canEdit, requirePermission('settings.edit'), handleAsync(async (req, res) => {
   res.json(await require('../services/website/contactSettings').writeContactSettings(req.body));
 }));
 

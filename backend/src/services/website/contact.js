@@ -5,8 +5,9 @@
  * account 'customers'), so the studio answers it like any other mail. It is
  * stored as plain text only — body_html stays NULL and the admin shows
  * body_text in a <pre> — so nothing a visitor types is ever rendered as
- * markup. Nothing is sent: no confirmation mail, no forward, so the form can
- * never be used to mail a third party.
+ * markup. The studio is told by mail (sendMails); the visitor gets a
+ * confirmation only when the studio chose one and a spam check is on, and it
+ * never repeats the message, so the form cannot carry text to a third party.
  *
  * Abuse guards: the route's per-IP limit, a honeypot field, a cap on all
  * submissions per day, and the form must exist on the published site.
@@ -129,4 +130,53 @@ async function storeSubmission(values, page) {
   return 'stored';
 }
 
-module.exports = { validateSubmission, findForm, storeSubmission, DAILY_CAP, MESSAGE_MAX, _internal: { formatBody, overDailyCap } };
+// At most one confirmation a day to an address, whatever the senders do.
+const CONFIRMATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+async function confirmedRecently(email) {
+  const since = new Date(Date.now() - CONFIRMATION_WINDOW_MS).toISOString();
+  const row = await db('email_queue').where({ email_type: 'website_contact_confirmation', recipient_email: email })
+    .where('created_at', '>=', since).first('id');
+  return Boolean(row);
+}
+
+/**
+ * The mails of a stored message (contact settings): a notification to the
+ * studio's recipients, with the message; and, when chosen and the spam check
+ * is on, a confirmation to the visitor with their name and the studio's
+ * fixed text, never the message. Best effort: the message is in the inbox
+ * whatever happens here.
+ */
+async function sendMails(values, page, { captchaOn }) {
+  const emailProcessor = require('../emailProcessor');
+  const { mailSettings } = require('./contactSettings');
+  const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
+  const { getAppSetting } = require('../../utils/appSettings');
+  const settings = await mailSettings();
+  const base = (await getFrontendBaseUrl().catch(() => '')) || '';
+  const language = (await getAppSetting('general_default_language', 'en')) === 'de' ? 'de' : 'en';
+  const path = page.isHome ? '/' : `/${page.slug}`;
+  const studio = {
+    sender_name: values.name,
+    sender_email: values.email,
+    sender_phone: values.phone,
+    event_date: values.date,
+    page_title: page.title,
+    page_url: `${base}${path}`,
+    message: values.message,
+    inbox_link: `${base}/admin/messages`,
+    __language: language,
+  };
+  for (const to of settings.recipients) {
+    // eslint-disable-next-line no-await-in-loop -- a handful of recipients
+    await emailProcessor.queueEmail(null, to, 'website_contact_admin', { ...studio });
+  }
+  if (settings.confirmation && captchaOn && !(await confirmedRecently(values.email))) {
+    const name = (await getAppSetting('branding_company_name', '')) || '';
+    await emailProcessor.queueEmail(null, values.email, 'website_contact_confirmation', {
+      sender_name: values.name.slice(0, 60), business_name: typeof name === 'string' ? name : '', __language: language,
+    });
+  }
+}
+
+module.exports = { validateSubmission, findForm, storeSubmission, sendMails, EMAIL_PATTERN, DAILY_CAP, MESSAGE_MAX, _internal: { formatBody, overDailyCap } };

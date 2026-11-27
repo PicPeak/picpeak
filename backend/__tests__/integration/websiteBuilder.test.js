@@ -1995,3 +1995,68 @@ describe('spam check on the contact form', () => {
     expect(spy.mock.calls[0][1]).toContain('secret=recaptcha-secret');
   });
 });
+
+describe('mails of the contact form', () => {
+  const axios = require('axios');
+  let ip = 150;
+  const post = (fields) => {
+    ip += 1;
+    const req = request(app).post('/api/public/website/contact').set('X-Forwarded-For', `198.51.100.${ip}`).set('Sec-Fetch-Site', 'same-origin');
+    Object.entries(fields).forEach(([k, v]) => req.field(k, v));
+    return req;
+  };
+  const valid = { page: 'home', block: 'c1', name: 'Linus', email: 'linus@example.com', message: 'Secret plans\nfor June' };
+  const settings = (body, as = adminId) => request(app).put('/api/admin/website/contact-settings').set(auth(as)).send(body);
+  const queued = (type) => db('email_queue').where({ email_type: type }).orderBy('id');
+
+  beforeAll(async () => {
+    await db('email_queue').del();
+    await setSetting('branding_support_email', 'support@studio.example', 'branding');
+    await settings({ captcha: { provider: 'none' }, contact: { recipients: [], confirmation: false } });
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  test('the studio hears of a new message at the support address by default; the visitor gets nothing', async () => {
+    const res = await post(valid);
+    expect(res.headers.location).toBe('/#contact-sent-c1');
+    const rows = await queued('website_contact_admin');
+    expect(rows.map((r) => r.recipient_email)).toEqual(['support@studio.example']);
+    const data = JSON.parse(rows[0].email_data);
+    expect(data).toMatchObject({ sender_name: 'Linus', sender_email: 'linus@example.com', message: 'Secret plans\nfor June', page_title: 'Home' });
+    expect(await queued('website_contact_confirmation')).toEqual([]);
+    // Still in the inbox, as before.
+    expect(await db('received_emails').where({ from_address: 'linus@example.com' }).first()).toBeTruthy();
+  });
+
+  test('recipients of their own; checked shapes and count', async () => {
+    expect((await settings({ contact: { recipients: ['not-an-address'] } })).body.code).toBe('CONTACT_RECIPIENT');
+    expect((await settings({ contact: { recipients: ['a@x.example', 'b@x.example', 'c@x.example', 'd@x.example', 'e@x.example', 'f@x.example'] } })).body.code).toBe('CONTACT_RECIPIENT');
+    const saved = await settings({ contact: { recipients: ['owner@studio.example', 'assistant@studio.example'] } });
+    expect(saved.body.contact).toMatchObject({ recipients: ['owner@studio.example', 'assistant@studio.example'], defaultRecipient: 'support@studio.example', confirmation: false });
+    await db('email_queue').del();
+    await post({ ...valid, email: 'second@example.com' });
+    expect((await queued('website_contact_admin')).map((r) => r.recipient_email)).toEqual(['owner@studio.example', 'assistant@studio.example']);
+  });
+
+  test('a confirmation to the visitor only with a spam check on, without the message, once a day per address', async () => {
+    expect((await settings({ contact: { confirmation: true } })).body.code).toBe('CONFIRMATION_NEEDS_CAPTCHA');
+    await settings({ captcha: { provider: 'friendly', friendly: { siteKey: 'FCMTEST0123', apiKey: 'A1-secret-key' } }, contact: { confirmation: true } }).expect(200);
+    await db('email_queue').del();
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { success: true } });
+    await post({ ...valid, email: 'third@example.com', 'frc-captcha-response': 'ok' });
+    await post({ ...valid, email: 'third@example.com', 'frc-captcha-response': 'ok' });
+    const confirmations = await queued('website_contact_confirmation');
+    expect(confirmations.map((r) => r.recipient_email)).toEqual(['third@example.com']);
+    const data = JSON.parse(confirmations[0].email_data);
+    expect(data.sender_name).toBe('Linus');
+    expect(JSON.stringify(data)).not.toContain('Secret plans');
+    expect(await queued('website_contact_admin')).toHaveLength(4);
+    // Turning the spam check off turns the confirmation off with it.
+    const off = await settings({ captcha: { provider: 'none' } });
+    expect(off.body.contact.confirmation).toBe(false);
+  });
+
+  test('changing where messages go takes the settings permission', async () => {
+    expect((await settings({ contact: { recipients: ['x@evil.example'] } }, viewerId)).status).toBe(403);
+  });
+});

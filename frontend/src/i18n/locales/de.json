@@ -6939,7 +6939,8 @@
       "calendar": "Kalender",
       "quotes": "Angebote",
       "contracts": "Verträge",
-      "billing": "Rechnungen"
+      "billing": "Rechnungen",
+      "website": "Website"
     },
     "featureOff": "Funktion aus",
     "featureOffTooltip": "Die zugehörige Funktion ist derzeit deaktiviert. Sie können die Vorlage trotzdem bearbeiten — sie wird verwendet, sobald die Funktion wieder aktiviert ist.",
@@ -13158,7 +13159,7 @@
       "divider": "Linie anzeigen",
       "customHtmlNotice": "Für Fortgeschrittene. Skripte, Frames, Formulare und Event-Handler werden beim Anzeigen entfernt; gestalten Sie den Block mit dem eigenen CSS der Website.",
       "html": "HTML",
-      "contactNotice": "Nachrichten kommen unter Nachrichten › Kunden an. An die Besucherin oder den Besucher wird nichts gemailt.",
+      "contactNotice": "Nachrichten landen unter Nachrichten › Kunden und werden dem Studio gemailt. Empfänger, Bestätigung an den Besucher und Spam-Prüfung: Design › Kontaktformular.",
       "contactNoticeOff": "Nachrichten werden unter Nachrichten › Kunden gespeichert, das ausgeschaltet ist. Schalten Sie Nachrichten unter Einstellungen › Funktionen ein, um sie zu lesen.",
       "bookingOff": "Die Online-Buchung ist ausgeschaltet, deshalb ist dieser Block auf der Website ausgeblendet. Schalten Sie sie unter Einstellungen › Funktionen ein.",
       "galleries": "Galerien",
@@ -13626,7 +13627,14 @@
       "recaptchaReady": "Verwendet die reCAPTCHA-Schlüssel aus ",
       "recaptchaMissing": "Geben Sie zuerst den reCAPTCHA-Site-Key und das Secret ein, unter ",
       "securityLink": "Einstellungen › Sicherheit",
-      "save": "Einstellungen des Kontaktformulars speichern"
+      "save": "Einstellungen des Kontaktformulars speichern",
+      "recipients": "Neue Nachrichten senden an",
+      "recipientsHint": "Bis zu fünf Adressen, durch Kommas getrennt. Leer: die Geschäftsadresse, sonst die Support-Adresse. Jede Nachricht steht ausserdem unter Nachrichten › Kunden.",
+      "editAdminMail": "Benachrichtigungs-Mail bearbeiten",
+      "confirmation": "Dem Besucher eine Bestätigung senden",
+      "confirmationNeedsCaptcha": "Nur mit Spam-Prüfung: ohne sie könnte jeder sie an beliebige Adressen senden lassen.",
+      "confirmationHint": "Ihr Name und Ihr fester Text, nie die Nachricht; höchstens eine pro Tag an eine Adresse.",
+      "editConfirmationMail": "Bestätigungs-Mail bearbeiten"
     }
   },
   "websiteNotice": {

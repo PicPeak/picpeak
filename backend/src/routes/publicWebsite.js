@@ -82,6 +82,10 @@ router.post('/contact', daily, hourly, (req, res, next) => {
       return back(res, form.page, form.block.id, 'captcha');
     }
     const outcome = await contact.storeSubmission(checked.values, form.page);
+    if (outcome === 'stored') {
+      await contact.sendMails(checked.values, form.page, { captchaOn: Boolean(captcha) })
+        .catch((error) => logger.error('Website contact form: the mails were not queued', { error: error.message }));
+    }
     return back(res, form.page, form.block.id, outcome === 'stored' ? 'sent' : 'error');
   } catch (error) {
     logger.error('Website contact form failed', { error: error.message });
