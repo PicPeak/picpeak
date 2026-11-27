@@ -7420,7 +7420,8 @@
       "limitReached": "A drawing can have up to {{max}} strokes.",
       "overlayLabel": "Drawing on the photo",
       "outsideCrop": "Part of the drawing is outside the current crop.",
-      "imageChanged": "The photo has changed since you drew on it. Reload the gallery and draw again."
+      "imageChanged": "The photo has changed since you drew on it. Reload the gallery and draw again.",
+      "photoUpdated": "The photo was updated. Please draw again."
     }
   },
   "filter": {

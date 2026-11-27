@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'react-toastify';
 import {
   ANNOTATION_MAX_STROKES,
   type AnnotationStroke,
@@ -28,13 +30,15 @@ interface Options {
  * only has the integration points.
  */
 export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, onShow, editRevision = 0 }: Options) {
+  const { t } = useTranslation();
   const onShowRef = useRef(onShow);
   onShowRef.current = onShow;
   const [drawing, setDrawing] = useState(false);
   const [strokes, setStrokes] = useState<AnnotationStroke[]>([]);
   const [draft, setDraft] = useState<PhotoAnnotation | null>(null);
-  // The edit revision of the picture the draft was drawn on (issue 2619).
-  const [draftRevision, setDraftRevision] = useState(0);
+  // The picture the drawing was started on (issue 2619): its photo and edit
+  // revision, captured when drawing starts, not when it is finished.
+  const [drawnOn, setDrawnOn] = useState<{ photoId: number | undefined; revision: number } | null>(null);
   const [shown, setShown] = useState<{ commentId: number; annotation: PhotoAnnotation } | null>(null);
   const [tool, setTool] = useState<AnnotationTool>('free');
   const [color, setColor] = useState(0);
@@ -64,16 +68,18 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     if (!canDraw || sending) return;
     setShown(null);
     setStrokes(draft?.strokes ?? []);
+    // A draft still here was drawn on this very picture (a newer revision
+    // drops it, below), so the revision now on screen is the draft's too.
+    setDrawnOn({ photoId, revision: editRevision });
     setDrawing(true);
     onStart();
-  }, [canDraw, sending, draft, onStart]);
+  }, [canDraw, sending, draft, onStart, photoId, editRevision]);
 
   /** Leave the mode, keeping whatever was attached before it was entered. */
   const cancel = useCallback(() => setDrawing(false), []);
 
   const done = () => {
     setDraft(strokes.length > 0 ? { v: 1, strokes } : null);
-    setDraftRevision(editRevision);
     setDrawing(false);
   };
 
@@ -82,6 +88,20 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     setStrokes([]);
     setDraft(null);
   }, []);
+
+  // The photo on screen was updated to a new edit revision while a drawing
+  // was in progress or waiting on the comment form: its strokes belong to the
+  // old picture, so they go, with a notice. Another photo is handled above.
+  const staleDrawing = (drawing || draft !== null)
+    && drawnOn !== null && drawnOn.photoId === photoId && drawnOn.revision !== editRevision;
+  useEffect(() => {
+    if (!staleDrawing) return;
+    setDrawing(false);
+    setStrokes([]);
+    setDraft(null);
+    setDrawnOn(null);
+    toast.info(t('feedback.annotation.photoUpdated', 'The photo was updated. Please draw again.'));
+  }, [staleDrawing, t]);
 
   // Called from a request's success handler, which can arrive late: after
   // the panel was closed and reopened, or on another photo. Only the very
@@ -110,14 +130,14 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     canDraw,
     drawing,
     draft,
-    draftRevision,
+    draftRevision: drawnOn?.revision ?? 0,
     discard,
     discardSent,
     setSending,
     shownCommentId: shown?.commentId ?? null,
     toggleShown,
     hideShown,
-  }), [canDraw, drawing, draft, draftRevision, discard, discardSent, shown, toggleShown, hideShown]);
+  }), [canDraw, drawing, draft, drawnOn, discard, discardSent, shown, toggleShown, hideShown]);
 
   // What lies on the photo: the strokes in progress, else the drawing picked
   // from the comment list, else the one waiting on the comment form.
