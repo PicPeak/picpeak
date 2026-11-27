@@ -293,7 +293,19 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     });
     const eventId = await seedArchivedEvent(archiveRelPath, 'edit-restore-event');
 
-    await restore(eventId);
+    // The background pass is woken once the gallery is active again: it
+    // skips the photos of an archived gallery, and would otherwise sleep.
+    const photoEdits = require('../../src/services/photoEdits');
+    const wokenWhileArchived = [];
+    const wake = jest.spyOn(photoEdits, 'requestPass').mockImplementation(async () => {
+      wokenWhileArchived.push((await db('events').where({ id: eventId }).first('is_archived')).is_archived);
+    });
+    try {
+      await restore(eventId);
+    } finally {
+      wake.mockRestore();
+    }
+    expect(wokenWhileArchived.map(Boolean)).toEqual([false]);
 
     const params = await columnByFilename(eventId, 'edit_params');
     expect(JSON.parse(params['edited.jpg'])).toMatchObject({ exposure: 0.5, bw: true });

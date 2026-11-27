@@ -311,6 +311,8 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
     // its way back into storage. Never the whole extracted event.
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-restore-'));
     let zip = null;
+    // Restored photo edits to render (issue 2619): the pass is woken below.
+    let restoredEdits = false;
     try {
       // node-stream-zip reads by path. Local storage hands over its own file;
       // anything else is fetched to tmp first.
@@ -818,8 +820,9 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // Insert new photos if any
       if (extractedPhotos.length > 0) {
         await db('photos').insert(extractedPhotos);
-        // Restored edits (issue 2619) are rendered by the background pass.
-        if (extractedPhotos.some((p) => p.edit_params)) require('../services/photoEdits').requestPass();
+        // Restored edits (issue 2619) are rendered by the background pass,
+        // woken once the gallery is active again (it skips archived ones).
+        restoredEdits = extractedPhotos.some((p) => p.edit_params);
         // A guest erased while this restore ran was not in the rows the
         // erasure cleared; now that they are in, clear them (#1561).
         const restoredGuestIds = [...new Set(extractedPhotos
@@ -867,6 +870,7 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         });
       await recordSupersededArchive(lease, archive.archive_path, trx);
     });
+    if (restoredEdits) require('../services/photoEdits').requestPass();
 
     // Rebuilt rows carry the source path they were archived with, and the
     // selection may have changed since (issue 2356). The gallery is restored
