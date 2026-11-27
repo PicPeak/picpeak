@@ -22,14 +22,10 @@ const MAX_CUSTOM_CSS = 100 * 1024;
 
 // Single-segment paths the SPA, nginx or the backend already own. A website
 // page under one of these would either never be reached or shadow a real
-// route (frontend/src/App.tsx, frontend/nginx.conf, backend/server.js).
-const RESERVED_SLUGS = new Set([
-  'admin', 'agb', 'api', 'app', 'assets', 'book', 'code', 'contract', 'customer',
-  'datenschutz', 'favicon', 'fonts', 'gallery', 'health', 'impressum', 'index',
-  'invite', 'login', 'logout', 'not-found', 'og', 'payment-check', 'photo-checkout',
-  'photos', 'purchased-downloads', 'quote', 'robots', 's', 'setup', 'site-media',
-  'sitemap', 'static', 'thumbnails', 'transfer', 'transfer-upload', 'uploads',
-]);
+// route (frontend/src/App.tsx, frontend/nginx.conf, backend/server.js). The
+// list is shared: nginx.conf and the frontend page editor keep copies that
+// __tests__/services/websiteReservedSlugs.test.js holds to this file.
+const RESERVED_SLUGS = new Set(require('./reservedSlugs.json'));
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_SLUG_LENGTH = 60;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;

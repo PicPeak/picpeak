@@ -12,8 +12,9 @@ import { createPage, moveItem, slugWhileTyping } from './blocks';
 import { ImageField, TextArea, TextField } from './fields';
 import type { ValidationProblem, WebsiteDocument, WebsitePage } from './types';
 
-// Mirrors RESERVED_SLUGS in backend/src/services/website/document.js; the
-// server is the gate, this only answers early.
+// A copy of backend/src/services/website/reservedSlugs.json, held to it by
+// backend/__tests__/services/websiteReservedSlugs.test.js. The server is the
+// gate; this only answers early.
 export const RESERVED_SLUGS = new Set([
   'admin', 'agb', 'api', 'app', 'assets', 'book', 'code', 'contract', 'customer',
   'datenschutz', 'favicon', 'fonts', 'gallery', 'health', 'impressum', 'index',
