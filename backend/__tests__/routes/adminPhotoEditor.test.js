@@ -193,10 +193,21 @@ describe('an edit, saved and applied', () => {
     expect(await row()).toMatchObject({ edit_rev: 1, edit_applied_rev: 1, edit_width: 300, edit_height: 400 });
   });
 
-  it('serves the editor the unedited photo', async () => {
-    const res = await binary(auth(request(adminApp).get(editUrl(photoId, '/base')))).expect(200);
+  it('serves the editor the unedited photo, versioned by its source', async () => {
+    const state = await auth(request(adminApp).get(editUrl(photoId)));
+    expect(state.body.source_version).toMatch(/^[0-9a-f]{10}$/);
+    const res = await binary(auth(request(adminApp).get(editUrl(photoId, `/base?v=${state.body.source_version}`)))).expect(200);
     expect(res.headers['content-type']).toBe('image/jpeg');
+    expect(res.headers.etag).toBe(`"${state.body.source_version}"`);
     expect(await size(res.body)).toEqual([800, 600]);
+    const again = await auth(request(adminApp).get(editUrl(photoId, '/base')).set('If-None-Match', res.headers.etag));
+    expect(again.status).toBe(304);
+    // Another source (a replaced or rewritten original): another version.
+    await db('photos').where({ id: photoId }).update({ size_bytes: originalBytes.length + 1 });
+    const moved = await auth(request(adminApp).get(editUrl(photoId)));
+    expect(moved.body.source_version).not.toBe(state.body.source_version);
+    expect((await auth(request(adminApp).get(editUrl(photoId, '/base')).set('If-None-Match', res.headers.etag))).status).toBe(200);
+    await db('photos').where({ id: photoId }).update({ size_bytes: originalBytes.length });
   });
 
   it('lists the edited size and names the revision in every image URL', async () => {

@@ -6,6 +6,8 @@ export interface PhotoEditState {
   photo_id: number;
   /** A camera RAW the server develops: the editor works on its 16-bit develop. */
   raw: boolean;
+  /** Names the original's bytes; the base and develop URLs carry it. */
+  source_version: string;
   params: EditParams | null;
   edit_rev: number;
   edit_applied_rev: number;
@@ -38,7 +40,7 @@ export const photoEditorService = {
     return (await api.get<PhotoEditState>(`${base(eventId)}/${photoId}/edit`)).data;
   },
 
-  /** The unedited photo at 1920 px, the editor's canvas. `version` names the source file, for the cache. */
+  /** The unedited photo at 1920 px, the editor's canvas. `version` is the state's source_version, for the cache. */
   async baseImage(eventId: number, photoId: number, version: string, signal?: AbortSignal): Promise<Blob> {
     const response = await api.get(`${base(eventId)}/${photoId}/edit/base`, {
       params: { v: version },
@@ -52,8 +54,8 @@ export const photoEditorService = {
    * A RAW photo's develop preview: 16-bit linear RGB at about 2048 px with
    * the server's header ("PPDV", a length, JSON, then the samples).
    */
-  async developPreview(eventId: number, photoId: number, signal?: AbortSignal): Promise<{ width: number; height: number; data: Uint16Array; exposureBias: number }> {
-    const response = await api.get(`${base(eventId)}/${photoId}/edit/develop`, { responseType: 'arraybuffer', signal });
+  async developPreview(eventId: number, photoId: number, version: string, signal?: AbortSignal): Promise<{ width: number; height: number; data: Uint16Array; exposureBias: number }> {
+    const response = await api.get(`${base(eventId)}/${photoId}/edit/develop`, { params: { v: version }, responseType: 'arraybuffer', signal });
     const buffer = response.data as ArrayBuffer;
     const view = new DataView(buffer);
     const magic = String.fromCharCode(...new Uint8Array(buffer, 0, 4));

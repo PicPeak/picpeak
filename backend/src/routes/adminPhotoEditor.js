@@ -67,6 +67,18 @@ async function loadPhoto(req, res) {
   return { photo, event };
 }
 
+/**
+ * Cache headers for the editor's base images, revalidated by the original's
+ * source tag. True when the browser's copy is current and 304 went out.
+ */
+function answeredFromCache(req, res, photo) {
+  const etag = `"${photoEdits.sourceTag(photo)}"`;
+  res.set({ ETag: etag, 'Cache-Control': 'private, no-cache', 'X-Content-Type-Options': 'nosniff' });
+  if (req.headers['if-none-match'] !== etag) return false;
+  res.status(304).end();
+  return true;
+}
+
 /** What the editor needs to open a photo. */
 async function editPayload(photo) {
   const rawDevelop = require('../services/rawDevelop');
@@ -74,6 +86,9 @@ async function editPayload(photo) {
     // A RAW the server can develop: the editor works on its 16-bit develop
     // preview with the RAW look, and noise reduction applies.
     raw: rawDevelop.isRawPhoto(photo) && await rawDevelop.isAvailable() && await rawDevelop.isRawSource(photo),
+    // Names the original's bytes: the base and develop URLs carry it, so a
+    // replaced or rewritten original is never shown from the browser cache.
+    source_version: photoEdits.sourceTag(photo),
     photo_id: photo.id,
     params: photoEdits.paramsOf(photo),
     edit_rev: Number(photo.edit_rev) || 0,
@@ -185,14 +200,9 @@ router.get('/:eventId/photos/:photoId/edit/base', ...gate, async (req, res) => {
     const loaded = await loadPhoto(req, res);
     if (!loaded) return;
     if (isVideoRow(loaded.photo)) return res.status(400).json({ error: 'Videos cannot be edited' });
+    if (answeredFromCache(req, res, loaded.photo)) return;
     const jpeg = await photoEdits.originalPreviewJpeg(loaded.photo, { interactive: true });
-    res.set({
-      'Content-Type': 'image/jpeg',
-      'Content-Length': jpeg.length,
-      // The URL names the source file (photos.service), which a replacement changes.
-      'Cache-Control': 'private, max-age=3600',
-      'X-Content-Type-Options': 'nosniff',
-    });
+    res.set({ 'Content-Type': 'image/jpeg', 'Content-Length': jpeg.length });
     res.end(jpeg);
   } catch (error) {
     if (answerVanished(res, error, 'Photo file not found')) return;
@@ -209,13 +219,9 @@ router.get('/:eventId/photos/:photoId/edit/develop', ...gate, async (req, res) =
     if (!rawDevelop.isRawPhoto(loaded.photo) || !(await rawDevelop.isAvailable()) || !(await rawDevelop.isRawSource(loaded.photo))) {
       return res.status(404).json({ error: 'This photo has no RAW develop' });
     }
+    if (answeredFromCache(req, res, loaded.photo)) return;
     const body = await rawDevelop.developPreview(loaded.photo, photoEdits.withOriginal);
-    res.set({
-      'Content-Type': 'application/octet-stream',
-      'Content-Length': body.length,
-      'Cache-Control': 'private, max-age=3600',
-      'X-Content-Type-Options': 'nosniff',
-    });
+    res.set({ 'Content-Type': 'application/octet-stream', 'Content-Length': body.length });
     res.end(body);
   } catch (error) {
     if (answerVanished(res, error, 'Photo file not found')) return;

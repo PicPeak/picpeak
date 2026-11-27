@@ -141,7 +141,7 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
         // A RAW the server develops: its 16-bit linear develop, on WebGL2.
         // Without WebGL2 it falls back to the 8-bit base (the camera's preview).
         if (state.raw) {
-          const develop = await photoEditorService.developPreview(eventId, photo.id, abort.signal);
+          const develop = await photoEditorService.developPreview(eventId, photo.id, state.source_version, abort.signal);
           if (abort.signal.aborted || !canvasRef.current) return;
           try {
             renderer = new EditRenderer(canvasRef.current, develop);
@@ -150,7 +150,7 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
           }
         }
         if (!renderer) {
-          const blob = await photoEditorService.baseImage(eventId, photo.id, photo.filename, abort.signal);
+          const blob = await photoEditorService.baseImage(eventId, photo.id, state.source_version, abort.signal);
           const bitmap = await createImageBitmap(blob);
           if (abort.signal.aborted || !canvasRef.current) return;
           renderer = new EditRenderer(canvasRef.current, bitmap);
