@@ -286,7 +286,7 @@ router.post('/:slug/guest/recover', verifyGalleryAccess, async (req, res) => {
     if (guest) {
       try {
         const code = await guestRecovery.createCode(event.id, email);
-        await guestRecovery.sendRecoveryEmail(email, code, event.event_name || 'your gallery');
+        await guestRecovery.sendRecoveryEmail(email, code, event.event_name, { eventId: event.id });
       } catch (sendError) {
         logger.error('Failed to send recovery email', { error: sendError.message });
         // Still return 200 so clients can't distinguish failures.
