@@ -97,7 +97,11 @@ const derivativeCacheId = photo => crypto.createHash('sha256')
 // or mtime would derive other keys and skip them in its guard, so they are
 // read here once rather than trusting every select to carry them.
 async function withSourceVersion(photo) {
-  // The edit columns too (issue 2619): they name and guard the renditions.
+  // A row as guests receive it (photoEdits.deliveredPhoto, issue 2619) names
+  // the edited file in place of the original; renditions are built from the
+  // row itself, which the source guard compares against.
+  if (photo && photo.edit_delivery_key !== undefined) photo = (await db('photos').where({ id: photo.id }).first()) || photo;
+  // The edit columns too: they name and guard the renditions.
   photo = await require('./photoEdits').withEditColumns(photo);
   if (!photo || !isExternalSource(photo) || photo.id == null
       || (photo.size_bytes !== undefined && photo.source_mtime_ms !== undefined)) return photo;

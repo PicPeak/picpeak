@@ -1157,6 +1157,29 @@
         "GET /refresh-renditions/status"
       ]
     },
+    "adminPhotoEditor.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Excluded: the photo editor (issue 2619) is not reported as its own capability; no edit settings, counts or photo identifiers.",
+      "route_signatures": [
+        "GET /:eventId/photos/edit/status",
+        "POST /:eventId/photos/edit/batch",
+        "GET /:eventId/photos/:photoId/edit",
+        "GET /:eventId/photos/:photoId/edit/base",
+        "PUT /:eventId/photos/:photoId/edit"
+      ]
+    },
+    "adminPhotoEditPresets.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Excluded: photo editor presets (issue 2619) are studio configuration, not reported; no preset names, settings or counts.",
+      "route_signatures": [
+        "GET /",
+        "POST /",
+        "PUT /:id",
+        "DELETE /:id"
+      ]
+    },
     "adminPhotoExport.js": {
       "decision": "partial",
       "signals": [
@@ -2459,6 +2482,10 @@
     "embed": {
       "signals": [],
       "reason": "Excluded: the website embed is not reported as its own capability; no flag value, embedding websites or view counts."
+    },
+    "photoEditor": {
+      "signals": [],
+      "reason": "Excluded: the photo editor is not reported as its own capability; no flag value, edit settings or counts."
     }
   },
   "excluded_runtime": [

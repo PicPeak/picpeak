@@ -42,6 +42,7 @@ function focalVersionStale(photo, asked) {
   if (isVideo(photo)) return false;
   return `fp=${typeof asked === 'string' ? asked : ''}` !== (focalQuery(photo) || 'fp=');
 }
+const photoEdits = require('../../services/photoEdits');
 const secureImageService = require('../../services/secureImageService');
 const logger = require('../../utils/logger');
 const { pipeStreamToResponse, answerVanished } = require('../../utils/streamResponse');
@@ -279,7 +280,7 @@ router.get('/:slug/photo/:photoId',
       const { photoId } = req.params;
 
       // Block guest access to hidden photos
-      const photo = await loadGalleryPhoto(req, res);
+      let photo = await loadGalleryPhoto(req, res);
       if (!photo) return;
 
       // Check if this is a video
@@ -337,6 +338,10 @@ router.get('/:slug/photo/:photoId',
           return res.redirect(`/api/gallery/${req.params.slug}/preview/${photoId}${query}`);
         }
       }
+
+      // An edited photo (issue 2619) is its edited render from here on: the
+      // bytes, the type, the stored watermark copy of its revision.
+      if (!video) photo = await photoEdits.deliveredPhoto(photo, { interactive: true });
 
       // Resolve where to read the photo bytes from. For external/reference
       // photos the source is always a local mount path. For managed photos
@@ -923,7 +928,10 @@ router.get('/:slug/thumbnail/:photoId',
         // naming another pick than the row's (an older photo list) gets the
         // current poster uncached, or that URL would show the wrong frame
         // once the pick came back to it.
+        // An edit the same (issue 2619): `e` names the revision, and while its
+        // renditions are still rebuilt the old crop is not cached under it.
         'Cache-Control': posterVersionStale(photo, req.query.poster) || focalVersionStale(photo, req.query.fp)
+          || photoEdits.editVersionStale(photo, req.query.e)
           ? 'no-store' : 'private, max-age=1800', // Reduced cache time
         'Cross-Origin-Resource-Policy': 'cross-origin',
         'X-Content-Type-Options': 'nosniff',
@@ -1026,7 +1034,9 @@ router.get('/:slug/hero/:photoId',
 
       res.set({
         'Content-Type': 'image/jpeg',
-        'Cache-Control': 'private, max-age=3600', // Cache for 1 hour
+        // Not under a URL naming another edit revision (issue 2619), or while
+        // this one's renditions are rebuilt.
+        'Cache-Control': photoEdits.editVersionStale(photo, req.query.e) ? 'no-store' : 'private, max-age=3600', // Cache for 1 hour
         'Cross-Origin-Resource-Policy': 'cross-origin',
         'X-Content-Type-Options': 'nosniff',
         'X-Hero-Image': 'true',
@@ -1192,8 +1202,9 @@ router.get('/:slug/preview/:photoId',
         'Content-Type': previewPath.endsWith('.webp') ? 'image/webp' : 'image/jpeg',
         // Cache aggressively — preview only changes on photo
         // re-upload (which generates a new preview key) or settings
-        // regenerate (which writes a new mtime + ETag).
-        'Cache-Control': 'private, max-age=3600',
+        // regenerate (which writes a new mtime + ETag). An edit (issue 2619)
+        // is a new `e` in the URL; not cached while its renditions are rebuilt.
+        'Cache-Control': photoEdits.editVersionStale(photo, req.query.e) ? 'no-store' : 'private, max-age=3600',
         'Cross-Origin-Resource-Policy': 'cross-origin',
         'X-Content-Type-Options': 'nosniff',
         'X-Preview-Image': 'true',

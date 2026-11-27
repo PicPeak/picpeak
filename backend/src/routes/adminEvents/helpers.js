@@ -78,7 +78,9 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
     // row, whose tier keys are scoped by them (derivativeCacheId).
     .select('id', 'event_id', 'path', 'filename', 'source_origin', 'external_relpath', 'size_bytes', 'source_mtime_ms',
       'processing_attempt_id',
-      'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path', 'web_path', 'hls_path', 'hls_status');
+      'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path', 'web_path', 'hls_path', 'hls_status',
+      // An edit's tag is in the tier keys too (issue 2619), and its render goes.
+      'edit_params', 'edit_rev', 'edit_applied_rev', 'edit_render_path', 'edit_width', 'edit_height');
 
   // A Set because a photo can carry the same key in two columns (an unresized
   // gallery's hero and preview can resolve to one object) and deleting it
@@ -109,6 +111,8 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
           derivedKeys.add(derived);
         }
       }
+      // The edited render (issue 2619) is this photo's alone (its key names it).
+      if (require('../../services/photoEdits').isRenderKeyOf(photo, photo.edit_render_path)) storageKeys.add(photo.edit_render_path);
     }
   } catch (collectErr) {
     logger.warn('Could not enumerate stored objects before cascade delete', {

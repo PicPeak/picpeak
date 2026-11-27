@@ -363,9 +363,14 @@ function detailWeights(params) {
   return { clarity: params.clarity / 100 * 0.8, sharpen: params.sharpen / 100 * 1.5 };
 }
 
-/** Blur radii in output pixels for an image whose long edge is `longEdge`. */
-function detailSigmas(longEdge) {
-  return { clarity: Math.max(1, 0.012 * longEdge), sharpen: 1 };
+/**
+ * Blur radii in output pixels. Clarity's is a share of the upright source's
+ * long edge, so a crop does not change its look and the browser can blur its
+ * preview once per photo; sharpening works at the pixel. `outPerSource` is
+ * output pixels per source pixel (below 1 when the render is scaled down).
+ */
+function detailSigmas(sourceLongEdge, outPerSource = 1) {
+  return { clarity: Math.max(1, 0.012 * sourceLongEdge * outPerSource), sharpen: 1 };
 }
 
 /**
@@ -508,12 +513,12 @@ function renderEdit(src, width, height, channels, params, { maxPixels = Infinity
       data[o] = Math.round(px[0]); data[o + 1] = Math.round(px[1]); data[o + 2] = Math.round(px[2]);
     }
   }
-  applyColour(data, out.width, out.height, params);
+  applyColour(data, out.width, out.height, params, detailSigmas(Math.max(width, height), out.width / out.crop.width));
   return { data, width: out.width, height: out.height };
 }
 
 /** Steps 2 and 3 in place on interleaved 8-bit RGB (the geometry output). */
-function applyColour(data, width, height, params) {
+function applyColour(data, width, height, params, sigmas = detailSigmas(Math.max(width, height))) {
   const weights = detailWeights(params);
   let detail = null;
   if (weights.clarity || weights.sharpen) {
@@ -522,7 +527,6 @@ function applyColour(data, width, height, params) {
     for (let i = 0, o = 0; i < n; i++, o += 3) {
       luma[i] = Math.round((LUMA[0] * data[o] + LUMA[1] * data[o + 1] + LUMA[2] * data[o + 2]) * 257);
     }
-    const sigmas = detailSigmas(Math.max(width, height));
     detail = new Int16Array(n);
     const blurred = new Uint16Array(n);
     const scratch = new Uint16Array(n);

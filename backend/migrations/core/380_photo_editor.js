@@ -28,8 +28,9 @@ exports.up = async function up(knex) {
     ['edit_width', (t) => t.integer('edit_width').nullable()],
     ['edit_height', (t) => t.integer('edit_height').nullable()],
   ];
+  const hasPhotos = await knex.schema.hasTable('photos');
   for (const [name, add] of columns) {
-    if (!(await knex.schema.hasColumn('photos', name))) {
+    if (hasPhotos && !(await knex.schema.hasColumn('photos', name))) {
       await knex.schema.alterTable('photos', add);
     }
   }
@@ -54,8 +55,9 @@ exports.down = async function down(knex) {
     await knex('feature_flags').where({ key: 'photoEditor' }).del();
   }
   await knex.schema.dropTableIfExists('photo_edit_presets');
+  const hasPhotos = await knex.schema.hasTable('photos');
   for (const name of ['edit_height', 'edit_width', 'edit_render_path', 'edit_applied_rev', 'edit_rev', 'edit_params']) {
-    if (await knex.schema.hasColumn('photos', name)) {
+    if (hasPhotos && await knex.schema.hasColumn('photos', name)) {
       await knex.schema.alterTable('photos', (t) => t.dropColumn(name));
     }
   }

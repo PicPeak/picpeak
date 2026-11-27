@@ -922,6 +922,10 @@ app.use('/api/admin/thumbnails', require('./src/routes/adminThumbnails'));
 // neither is removed. adminPhotoDimensions shares the prefix for the same
 // reason.
 app.use('/api/admin/photos', require('./src/routes/adminPhotoDimensions'));
+// The photo editor (issue 2619), ahead of adminPhotos so /:eventId/photos/edit/*
+// is not taken for a photo id.
+app.use('/api/admin/photos', require('./src/routes/adminPhotoEditor'));
+app.use('/api/admin/photo-edit-presets', require('./src/routes/adminPhotoEditPresets'));
 app.use('/api/admin/photos', require('./src/routes/adminPhotos'));
 app.use('/api/admin/photo-export', require('./src/routes/adminPhotoExport'));
 app.use('/api/admin/css-templates', require('./src/routes/adminCssTemplates'));
@@ -1609,6 +1613,12 @@ async function startServerInternal() {
     // detected one, once, in the background. One replica runs it; it resumes
     // after a restart.
     require('./src/services/focalPointBackfill').start();
+
+    // Saved photo edits (issue 2619) are rendered and their renditions
+    // rebuilt in the background. One replica runs it; it resumes after a
+    // restart (the queue is the photo rows). Edits keep applying while the
+    // photoEditor flag is off.
+    require('./src/services/photoEdits').start();
 
     // Started last, so the first probes see the services above already running.
     require('./src/services/dependencyHealth').start();

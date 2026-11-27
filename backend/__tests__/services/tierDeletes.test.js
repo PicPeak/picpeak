@@ -28,6 +28,8 @@ const RAW_ROW = {
   // A thumbnail tier key names the focal point (issue 2377); a row without
   // the columns is read for them.
   focal_x: null, focal_y: null, focal_source: null,
+  // And the edit revision (issue 2619): none.
+  edit_params: null, edit_rev: 0, edit_applied_rev: 0, edit_render_path: null, edit_width: null, edit_height: null,
 };
 
 describe('tier deletes (issue 2113)', () => {
@@ -87,7 +89,7 @@ describe('tier deletes (issue 2113)', () => {
   // The other sweeps that hand the helpers a partial row. Both run against
   // mocked or joined selects elsewhere, so the column list is pinned here.
   it.each([
-    ['event delete cascade', '../../src/routes/adminEvents/helpers.js', /const tieredPhotos = await db\('photos'\)([\s\S]*?)'hls_status'\);/, ['event_id', 'processing_attempt_id']],
+    ['event delete cascade', '../../src/routes/adminEvents/helpers.js', /const tieredPhotos = await db\('photos'\)([\s\S]*?)'edit_height'\);/, ['event_id', 'processing_attempt_id', 'edit_params', 'edit_rev']],
     ['orientation repair', '../../src/routes/adminPhotoDimensions.js', /'photos\.event_id',\s*'photos\.width', 'photos\.height', 'photos\.face_status',([\s\S]*?)'events\.slug'/, ['photos.processing_attempt_id']],
   ])('the %s selects what a RAW row\'s tier keys need', async (_name, file, pattern, columns) => {
     const source = await fs.readFile(path.join(__dirname, file), 'utf8');

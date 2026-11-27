@@ -67,7 +67,10 @@ class WatermarkGeneratorService {
       // with sharp, which can't decode RAW — proceeding would fall back to the
       // original bytes and falsely record the copy as watermarked. Skipping keeps
       // the watermark state honest until RAW watermarking is properly supported.
-      if (isRawFilename(photo.filename)) {
+      // An edited photo (issue 2619) is marked from its edited render, a
+      // JPEG whatever the original was, under a key naming the revision.
+      const source = await require('./photoEdits').deliveredPhoto(photo);
+      if (isRawFilename(source.filename)) {
         return { success: false, error: 'RAW/DNG files are not watermarked yet' };
       }
 
@@ -80,7 +83,7 @@ class WatermarkGeneratorService {
       // Resolve the source via the storage backend (managed) or local disk
       // (external reference mode). watermarkService needs a local file path.
       const event = { slug: photo.slug, source_mode: photo.source_mode, external_path: photo.external_path };
-      const storageKey = resolvePhotoStorageKey(event, photo);
+      const storageKey = resolvePhotoStorageKey(event, source);
       const result = await this.limit(async () => {
         // Revalidate inside the limited slot: a long queue (bulk upload)
         // can hold this job for minutes, during which an admin may disable
@@ -96,9 +99,9 @@ class WatermarkGeneratorService {
         const forGallery = watermarkService.forEvent(fresh, gallery);
         return storageKey
           ? withLocalCopy(storageKey, (lp) =>
-            watermarkService.generateAndSaveWatermark(photo, lp, forGallery)
+            watermarkService.generateAndSaveWatermark(source, lp, forGallery)
           )
-          : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), forGallery);
+          : watermarkService.generateAndSaveWatermark(source, resolvePhotoFilePath(event, source), forGallery);
       });
 
       if (result.success) {
@@ -135,6 +138,8 @@ class WatermarkGeneratorService {
     // An external file edited in place keeps its name: its version is what
     // tells the old picture's watermark from the new one's.
     const fence = { id: photo.id, filename: photo.filename };
+    // Nor one of an earlier edit revision (issue 2619).
+    if (photo.edit_rev !== undefined) fence.edit_rev = photo.edit_rev;
     if (photo.source_origin === 'external' || photo.source_origin === 'reference') {
       for (const column of ['size_bytes', 'source_mtime_ms']) {
         if (photo[column] !== undefined) fence[column] = photo[column];

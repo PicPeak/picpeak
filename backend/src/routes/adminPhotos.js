@@ -41,6 +41,7 @@ const { captureDateOrderSql } = require('../utils/captureDateSql');
 const { toIso, toServerWallClock, cameraWallClock } = require('../utils/dateNormalize');
 const { parseStoredExif } = require('../services/photoExif');
 const { originalNeedsPreview } = require('../utils/rawFormats');
+const photoEdits = require('../services/photoEdits');
 const { processUploadedPhotos } = require('../services/photoProcessor');
 const chunkedUpload = require('../services/chunkedUploadService');
 const { requireCapability } = require('../middleware/requireCapability');
@@ -1860,13 +1861,15 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
   try {
     const { eventId, photoId } = req.params;
     
-    const photo = await livePhotos(db)
+    const row = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .first();
     
-    if (!photo) {
+    if (!row) {
       return res.status(404).json({ error: 'Photo not found' });
     }
+    // The original, always, unless the edit (issue 2619) is asked for.
+    const photo = req.query.edited === '1' ? await photoEdits.deliveredPhoto(row, { interactive: true }) : row;
     
     const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../services/photoResolver');
     const event = await db('events').where('id', eventId).first();
@@ -2145,9 +2148,11 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // this URL is only ever an <img>/<video> src admin-side (downloads use
         // the /download route), and a browser cannot decode the original, so
         // the admin viewer showed nothing but a broken frame for those.
-        url: originalNeedsPreview(photo)
+        // An edited photo (issue 2619) is shown as its edit, a JPEG, under a
+        // URL naming its revision.
+        url: originalNeedsPreview(photo) && !photoEdits.isEdited(photo)
           ? `/admin/photos/${eventId}/preview/${photo.id}`
-          : `/admin/photos/${eventId}/photo/${photo.id}`,
+          : `/admin/photos/${eventId}/photo/${photo.id}${photoEdits.isEdited(photo) ? `?e=${photo.edit_rev}` : ''}`,
         // Always expose a thumbnail URL; backend will generate on demand if
         // missing. Versioned by adminThumbnailUrl, see there.
         thumbnail_url: adminThumbnailUrl(eventId, photo),
@@ -2191,8 +2196,13 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // keeps playing (or not) as before.
         web_status: photo.web_status || null,
         web_error: photo.web_error || null,
-        width: photo.width || null,
-        height: photo.height || null,
+        // The edited size for an edited photo (issue 2619), as guests see it.
+        ...photoEdits.deliveredDimensions(photo),
+        // The photo editor (issue 2619): whether the photo has an edit, and
+        // whether its renditions are rebuilt for the latest save.
+        edited: photoEdits.isEdited(photo),
+        edit_rev: Number(photo.edit_rev) || 0,
+        edit_applied_rev: Number(photo.edit_applied_rev) || 0,
         // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
         thumb_hash: photo.thumb_hash || null,
         // Where crops keep the subject (issue 2377), and whether an admin
@@ -2260,13 +2270,16 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
   try {
     const { eventId, photoId } = req.params;
 
-    const photo = await livePhotos(db)
+    const row = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .first();
 
-    if (!photo) {
+    if (!row) {
       return res.status(404).json({ error: 'Photo not found' });
     }
+    // An edited photo (issue 2619) shows its edit, as guests see it, unless
+    // the original is asked for.
+    const photo = req.query.original === '1' ? row : await photoEdits.deliveredPhoto(row, { interactive: true });
 
     // Photos still in async processing don't have all metadata in the DB
     // yet; serving the original is fine, but downstream consumers (admin

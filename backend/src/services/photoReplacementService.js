@@ -182,8 +182,10 @@ async function removeReplacedAssets(oldPhoto, { event, finalKey, thumbnailPath, 
         .where((q) => q.where('preview_path', key).orWhere('hero_path', key)).first('id');
       if (!shared) await storage.delete(key).catch(() => {});
     }
-    // The browser-playable copy (issue 1430) describes the old bytes.
+    // The browser-playable copy (issue 1430) describes the old bytes, as
+    // does an edited render (issue 2619).
     await videoRendition.deleteWebCopy(oldPhoto);
+    await require('./photoEdits').deleteEditedRender(oldPhoto);
     // Responsive tiers, keyed off the OLD row (#1095 / #492). Their key embeds
     // the basename the update replaced, so the old row is the only thing they
     // can still be derived from.
@@ -392,6 +394,16 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       ...focalColumns(thumbMeta.focal, 'auto'),
       watermark_path: null,
       watermark_generated_at: null,
+      // A photo edit (issue 2619) was made on the old picture: the new one
+      // starts unedited, under a new revision so guests refetch it.
+      ...(Number(existingPhoto.edit_rev) > 0 ? {
+        edit_params: null,
+        edit_rev: Number(existingPhoto.edit_rev) + 1,
+        edit_applied_rev: Number(existingPhoto.edit_rev) + 1,
+        edit_render_path: null,
+        edit_width: null,
+        edit_height: null,
+      } : {}),
       size_bytes: stats.size,
       content_sha256: contentSha256,
       width,

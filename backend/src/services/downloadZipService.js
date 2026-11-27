@@ -309,11 +309,16 @@ class DownloadZipService {
       // PIN-clients bypass this cache and stream a full archive instead.
       // Photos still processing (or failed) are not in the gallery list either.
       // The selection only (issue 2356), as an ordinary guest sees it.
-      const photos = await applyPhotoVisibilityFilter(wherePhotoProcessed(livePhotos(db))
+      // Edited photos (issue 2619) as their edited render; saving an edit
+      // invalidates this archive (photoEdits.applyPhoto).
+      const photos = [];
+      for (const row of await applyPhotoVisibilityFilter(wherePhotoProcessed(livePhotos(db))
         .where({ event_id: eventId }), 'guest')
         .select('*')
         .orderBy('type', 'asc')
-        .orderBy('uploaded_at', 'desc');
+        .orderBy('uploaded_at', 'desc')) {
+        photos.push(await require('./photoEdits').deliveredPhoto(row));
+      }
 
       if (photos.length === 0) return { success: false, error: 'No photos' };
 

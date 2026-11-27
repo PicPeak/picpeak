@@ -289,22 +289,25 @@ function deliveredDimensions(photo) {
   return { width: photo.width || null, height: photo.height || null };
 }
 
-/** The `e=` part of a guest image URL: empty for a photo never edited, so its URLs stay as they were. */
+/**
+ * The `e=` part of a guest image URL: the revision whose renditions are in
+ * place, so the URL changes when the rebuilt ones land and not before. Empty
+ * for a photo never edited, so its URLs stay as they were.
+ */
 function editQuery(photo) {
-  const rev = Number(photo?.edit_rev) || 0;
-  return rev > 0 && !isVideoRow(photo) ? `e=${rev}` : '';
+  const applied = Number(photo?.edit_applied_rev) || 0;
+  return applied > 0 && !isVideoRow(photo) ? `e=${applied}` : '';
 }
 
 /**
- * Whether an image request names another edit revision than the row has, or
- * the row's renditions are not rebuilt for it yet: the answer must not be
- * cached under that URL (as a stale focal point, routes/gallery/media.js).
+ * Whether an image request names another revision than the one whose
+ * renditions are in place: the answer must not be cached under that URL
+ * (as a stale focal point, routes/gallery/media.js).
  */
 function editVersionStale(photo, asked) {
   if (isVideoRow(photo)) return false;
-  const rev = Number(photo.edit_rev) || 0;
-  if ((Number(photo.edit_applied_rev) || 0) !== rev) return true;
-  return String(typeof asked === 'string' ? asked : '') !== (rev > 0 ? String(rev) : '');
+  const applied = Number(photo.edit_applied_rev) || 0;
+  return String(typeof asked === 'string' ? asked : '') !== (applied > 0 ? String(applied) : '');
 }
 
 // -------------------------------------------------------------------- save

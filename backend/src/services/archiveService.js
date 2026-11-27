@@ -758,6 +758,12 @@ async function buildArchive(event, lease) {
       if (photo.watermark_path) {
         await storage.delete(photo.watermark_path).catch(() => {});
       }
+      // The edited render (issue 2619) is derived as well: the edit stays on
+      // the row and is rendered again from the restored original.
+      if (photo.edit_render_path) {
+        await db('photos').where({ id: photo.id, edit_render_path: photo.edit_render_path }).update({ edit_render_path: null });
+        await require('./photoEdits').deleteEditedRender(photo);
+      }
     }
 
     // Purge face data (#1074). photo_faces cascades off photos, but archiving

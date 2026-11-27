@@ -45,14 +45,32 @@ function placeOn(length, side, from, to) {
   return clamp(lowest <= highest ? Math.min(highest, Math.max(lowest, centred)) : centred);
 }
 
+/** Face boxes of the upright original, in the pixels of its edit; those the crop left out are dropped. */
+function facesInEdit(edit, width, height, faces) {
+  const math = require('../utils/photoEditMath');
+  const size = math.outputSize(edit, width, height);
+  const moved = [];
+  for (const face of faces) {
+    const corners = [[face.x, face.y], [face.x + face.w, face.y], [face.x, face.y + face.h], [face.x + face.w, face.y + face.h]]
+      .map(([x, y]) => math.mapPointToEdited(edit, width, height, { x: x / width, y: y / height }));
+    const left = clamp(Math.min(...corners.map((p) => p.x)));
+    const right = clamp(Math.max(...corners.map((p) => p.x)));
+    const top = clamp(Math.min(...corners.map((p) => p.y)));
+    const bottom = clamp(Math.max(...corners.map((p) => p.y)));
+    if (right <= left || bottom <= top) continue;
+    moved.push({ x: left * size.width, y: top * size.height, w: (right - left) * size.width, h: (bottom - top) * size.height });
+  }
+  return { faces: moved, width: size.width, height: size.height };
+}
+
 /** `{ x, y }` fractions from a photo's faces, or null without any. Never throws. */
 async function faceFocalPoint(photoId) {
   try {
-    const photo = await db('photos').where({ id: photoId }).first('width', 'height');
-    const width = Number(photo?.width);
-    const height = Number(photo?.height);
+    const photo = await db('photos').where({ id: photoId }).first('width', 'height', 'edit_params', 'media_type', 'mime_type');
+    let width = Number(photo?.width);
+    let height = Number(photo?.height);
     if (!(width > 0) || !(height > 0)) return null;
-    const faces = (await db('photo_faces').where({ photo_id: photoId })
+    let faces = (await db('photo_faces').where({ photo_id: photoId })
       .select('bbox_x', 'bbox_y', 'bbox_w', 'bbox_h'))
       .map((face) => ({ x: Number(face.bbox_x), y: Number(face.bbox_y), w: Number(face.bbox_w), h: Number(face.bbox_h) }))
       .filter((face) => [face.x, face.y].every(Number.isFinite) && face.w > 0 && face.h > 0);
@@ -62,6 +80,14 @@ async function faceFocalPoint(photoId) {
     // the orientation repair fixes them and scans its faces again) has boxes
     // that do not fit it; sharp's guess stands in for those.
     if (faces.some((face) => face.x + face.w > width + 1 || face.y + face.h > height + 1)) return null;
+    // An edited photo's thumbnail is cut from the edit (issue 2619): the
+    // boxes move with its crop, turn and flip, and a face cropped away
+    // does not count.
+    const edit = require('./photoEdits').paramsOf(photo);
+    if (edit) {
+      ({ faces, width, height } = facesInEdit(edit, width, height, faces));
+      if (!faces.length) return null;
+    }
     const largest = Math.max(...faces.map((face) => face.w * face.h));
     const kept = faces.filter((face) => face.w * face.h >= largest * MIN_AREA_SHARE);
     const left = Math.min(...kept.map((face) => face.x));

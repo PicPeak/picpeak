@@ -1,6 +1,7 @@
 const express = require('express');
 const { db, logActivity } = require('../../database/db');
 const { originalAssetDenial } = require('../../services/galleryAssetPolicy');
+const photoEdits = require('../../services/photoEdits');
 const archiver = require('archiver');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
 const { parsePositiveInt32 } = require('../../utils/parsers');
@@ -189,6 +190,14 @@ function notifySinglePhotoDownload(event, req) {
   logActivity('gallery_downloaded', { scope: 'single' }, event.id, galleryActor(req));
 }
 
+// Edited photos (issue 2619) go into an archive as their edited render, named
+// and typed as the JPEG it is. One at a time: a missing render is drawn here.
+async function deliveredPhotos(rows) {
+  const delivered = [];
+  for (const row of rows) delivered.push(await photoEdits.deliveredPhoto(row));
+  return delivered;
+}
+
 router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, guestDownloadGate, async (req, res) => {
   try {
     const { photoId } = req.params;
@@ -198,7 +207,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     if (denial) return res.status(403).json(denial);
 
     // Not one the gallery does not show yet (still processing, or failed).
-    const photo = await wherePhotoProcessed(livePhotos(db))
+    let photo = await wherePhotoProcessed(livePhotos(db))
       .where({ id: photoId, event_id: req.event.id })
       .first();
 
@@ -262,6 +271,9 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       });
       return res.send(preview.buffer);
     }
+
+    // An edited photo (issue 2619) downloads as its edited render.
+    photo = await photoEdits.deliveredPhoto(photo, { interactive: true });
 
     // A HEAD is a metadata probe, not a download. Answering it below the
     // counters recorded every probe as a real download, and answering it below
@@ -821,11 +833,11 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // Only what the gallery list shows: no photo still processing (or failed).
     // The same set a download job of this viewer would package.
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
-    const photos = await downloadJobService
+    const photos = await deliveredPhotos(await downloadJobService
       .photoQuery(req.event.id, null, viewerOf(req), blockedFolders)
       .select('photos.*')
       .orderBy('photos.type', 'asc')
-      .orderBy('photos.uploaded_at', 'desc');
+      .orderBy('photos.uploaded_at', 'desc'));
 
     if (photos.length === 0) {
       return res.status(404).json({ error: 'No photos found' });
@@ -1079,10 +1091,10 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // Fetch photos — exclude photos in categories that disabled downloads (#640).
     // The same set as the download-all endpoint, narrowed to the selection.
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
-    const photos = await downloadJobService
+    const photos = await deliveredPhotos(await downloadJobService
       .photoQuery(req.event.id, photoIds, viewerOf(req), blockedFolders)
       .select('photos.*')
-      .orderBy('photos.uploaded_at', 'desc');
+      .orderBy('photos.uploaded_at', 'desc'));
 
     if (photos.length === 0) {
       return res.status(404).json({ error: 'No photos found for selected IDs' });

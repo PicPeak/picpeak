@@ -77,6 +77,8 @@ const PHOTO_COLUMNS = [
   'rendition_version',
   // A thumbnail tier's key names the focal point (issue 2377).
   'focal_x', 'focal_y', 'focal_source',
+  // And the edit revision (issue 2619).
+  'edit_params', 'edit_rev', 'edit_applied_rev', 'edit_render_path', 'edit_width', 'edit_height',
 ];
 
 const needsRefresh = (photo) => photo != null && photo.rendition_version != null

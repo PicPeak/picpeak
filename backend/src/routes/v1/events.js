@@ -79,7 +79,8 @@ const { Readable } = require('stream');
 const { getStorage } = require('../../services/storage');
 const { isStorageNotFoundError } = require('../../services/storage/storageErrors');
 const { requireCapability } = require('../../middleware/requireCapability');
-const { resolvePhotoStorageKey, resolvePhotoFilePath, isManagedOriginalKey } = require('../../services/photoResolver');
+const { resolvePhotoStorageKey, resolvePhotoFilePath, isManagedOriginalKey, deliveredKey } = require('../../services/photoResolver');
+const photoEdits = require('../../services/photoEdits');
 const { pickRawDownloadName } = require('../../services/downloadFilenameService');
 const { buildContentDisposition, sanitizeForZipEntry } = require('../../utils/filenameSanitizer');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
@@ -1316,7 +1317,8 @@ function locateOriginal(event, photo) {
   try {
     const key = resolvePhotoStorageKey(event, photo);
     if (key) {
-      return isManagedOriginalKey(key) ? { key } : null;
+      // An edited photo's render (issue 2619) lives under edits/.
+      return isManagedOriginalKey(key) || deliveredKey(photo) ? { key } : null;
     }
     return { filePath: resolvePhotoFilePath(event, photo) };
   } catch {
@@ -1733,7 +1735,11 @@ router.get(
         else zipsInFlight.delete(tokenId);
       });
 
-      const photos = await selection().applySorting('filename', 'asc').getQuery().select('photos.*');
+      // Edited photos go out as their edit (issue 2619), like a gallery download.
+      const photos = [];
+      for (const row of await selection().applySorting('filename', 'asc').getQuery().select('photos.*')) {
+        photos.push(await photoEdits.deliveredPhoto(row));
+      }
       if (!photos.length) {
         return res.status(404).json({ error: 'No photos found', code: 'NO_PHOTOS' });
       }
@@ -1996,9 +2002,10 @@ router.get(
       const event = await loadDownloadableEvent(req, res);
       if (!event) return;
 
-      // One answer for unknown, malformed and other-event ids.
+      // One answer for unknown, malformed and other-event ids. An edited
+      // photo goes out as its edit (issue 2619), like a gallery download.
       const photo = isRowId(req.params.photoId)
-        ? await livePhotos(db).where({ id: Number(req.params.photoId), event_id: event.id }).first()
+        ? await photoEdits.deliveredPhoto(await livePhotos(db).where({ id: Number(req.params.photoId), event_id: event.id }).first())
         : null;
       if (!photo) return res.status(404).json({ error: 'Photo not found' });
 

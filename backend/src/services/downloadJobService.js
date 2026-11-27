@@ -29,6 +29,7 @@ const { Transform } = require('stream');
 const archiver = require('archiver');
 const { db } = require('../database/db');
 const { getStorage } = require('./storage');
+const photoEdits = require('./photoEdits');
 const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
 const { renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, renderedDownloadType, resolveWatermarkSettings, isVideo } = require('./downloadRendition');
@@ -120,7 +121,7 @@ class DownloadJobService {
    * id. Hashing the resolved id set also stops a stale archive being reused
    * after photos are added, removed or hidden.
    */
-  dedupKey(eventId, resolution, resolvedPhotoIds, watermark, visibilityScope, priced = false, { version = 1, previewOnly = false } = {}) {
+  dedupKey(eventId, resolution, resolvedPhotoIds, watermark, visibilityScope, priced = false, { version = 1, previewOnly = false, edits = 0 } = {}) {
     const ids = [...resolvedPhotoIds].map(Number).sort((a, b) => a - b).join(',');
     // The full watermark SETTINGS, not just the on/off flag: an admin who
     // edits the watermark text or logo while it stays enabled would otherwise
@@ -133,10 +134,29 @@ class DownloadJobService {
     // stay byte-identical to upstream.
     const mode = version >= 2 ? `|v${version}|${previewOnly ? 'preview' : 'download'}` : '';
     const sales = priced ? '|priced' : '';
+    // Photo edits (issue 2619): an archive holds the edits of its time. Absent
+    // while nothing in it was ever edited, so those keys stay as they were.
+    const edited = edits > 0 ? `|e${edits}` : '';
     return crypto.createHash('sha256')
-      .update(`${eventId}|${resolution}|${visibilityScope}|${ids}|${wm}${sales}${mode}`)
+      .update(`${eventId}|${resolution}|${visibilityScope}|${ids}|${wm}${sales}${mode}${edited}`)
       .digest('hex')
       .slice(0, 64);
+  }
+
+  /**
+   * The edit revisions of these photos added up (issue 2619). A revision only
+   * ever grows, so any edit saved since a job was built changes the sum and
+   * with it the job's identity: the ready archive is no longer reused or
+   * delivered.
+   */
+  async editStamp(photoIds) {
+    let sum = 0;
+    const ids = [...photoIds].map(Number);
+    for (let i = 0; i < ids.length; i += 500) {
+      const row = await db('photos').whereIn('id', ids.slice(i, i + 500)).sum({ total: 'edit_rev' }).first();
+      sum += Number(row?.total) || 0;
+    }
+    return sum;
   }
 
   /**
@@ -210,7 +230,8 @@ class DownloadJobService {
     const identityWatermark = isGalleryPriced(event)
       ? { download: watermark, sales: await resolveForcedWatermarkSettingsForPhoto(event) } : watermark;
     // v3 retires archives whose v2 boundaries came from archive.pointer().
-    const dedupKey = this.dedupKey(event.id, resolution, resolvedIds, identityWatermark, scope, isGalleryPriced(event), { version: 3, previewOnly });
+    const dedupKey = this.dedupKey(event.id, resolution, resolvedIds, identityWatermark, scope, isGalleryPriced(event),
+      { version: 3, previewOnly, edits: await this.editStamp(resolvedIds) });
 
     const existing = await this.findReusable(event.id, dedupKey);
     if (existing) return existing;
@@ -400,7 +421,7 @@ class DownloadJobService {
       ? { download: watermark, sales: await resolveForcedWatermarkSettingsForPhoto(event) } : watermark;
     const expected = this.dedupKey(
       job.event_id, job.resolution, ids, identityWatermark, visibilityScope(accessLevel), isGalleryPriced(event),
-      { version: job.policy_version || 1, previewOnly: !!job.preview_only }
+      { version: job.policy_version || 1, previewOnly: !!job.preview_only, edits: await this.editStamp(ids) }
     );
     return expected === job.dedup_key ? visible : null;
   }
@@ -460,8 +481,12 @@ class DownloadJobService {
       if (!started) return;
       progress = createBuildProgress(this.stallTimeoutMs);
       const folders = await progress.wait(blockedFoldersOf(event.id));
-      const photos = await progress.wait(this.photoQuery(event.id, photoIds, accessLevel, folders)
-        .select('photos.*').orderBy('photos.uploaded_at', 'desc'));
+      const photos = [];
+      for (const row of await progress.wait(this.photoQuery(event.id, photoIds, accessLevel, folders)
+        .select('photos.*').orderBy('photos.uploaded_at', 'desc'))) {
+        // Edited photos (issue 2619) as their edited render.
+        photos.push(await progress.wait(photoEdits.deliveredPhoto(row)));
+      }
       if (!photos.length) throw new Error('No photos available for this selection');
 
       const box = parseResolution(resolution);

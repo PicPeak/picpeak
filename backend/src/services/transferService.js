@@ -32,6 +32,7 @@ const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminTh
 const { formatBoolean } = require('../utils/dbCompat');
 const { getAppSetting } = require('../utils/appSettings');
 const { getStorage } = require('./storage');
+const photoEdits = require('./photoEdits');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
 const { sanitizeForZipEntry, buildContentDisposition } = require('../utils/filenameSanitizer');
@@ -815,7 +816,9 @@ async function loadTransferPhotos(transferId) {
  * Returns the number of files successfully appended.
  */
 async function streamTransferArchive(transfer, res) {
-  const photos = await loadTransferPhotos(transfer.id);
+  // Edited photos (issue 2619) go out as their edited render.
+  const photos = [];
+  for (const row of await loadTransferPhotos(transfer.id)) photos.push(await photoEdits.deliveredPhoto(row));
 
   // Left while the rows were being read: 'close' has fired already and will
   // not fire again for the listener below (issue 2130).
@@ -1153,7 +1156,9 @@ async function streamTransferFile(transfer, rawFileId, res, { beforeStream = nul
       'events.source_mode as event_source_mode',
       'events.external_path as event_external_path',
     )
-    .first();
+    .first()
+    // An edited photo (issue 2619) goes out as its edited render.
+    .then((found) => photoEdits.deliveredPhoto(found));
   if (!row) return false;
 
   const event = {
