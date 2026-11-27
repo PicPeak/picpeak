@@ -45,19 +45,34 @@ function placeOn(length, side, from, to) {
   return clamp(lowest <= highest ? Math.min(highest, Math.max(lowest, centred)) : centred);
 }
 
-/** Face boxes of the upright original, in the pixels of its edit; those the crop left out are dropped. */
-function facesInEdit(edit, width, height, faces) {
+/**
+ * The share of a face's box an edit's crop has to leave for guests to see the
+ * person in the photo (issue 2619): in its people membership, counts and
+ * cover. Less is an edge of a head, not a picture of the person.
+ */
+const FACE_VISIBLE_SHARE = 0.5;
+
+/**
+ * Face boxes of the upright original, in the pixels of its edit; those the
+ * crop left out are dropped, and with `minShare` those of which less than
+ * that share of the box is left.
+ */
+function facesInEdit(edit, width, height, faces, { minShare = 0 } = {}) {
   const math = require('../utils/photoEditMath');
   const size = math.outputSize(edit, width, height);
   const moved = [];
   for (const face of faces) {
     const corners = [[face.x, face.y], [face.x + face.w, face.y], [face.x, face.y + face.h], [face.x + face.w, face.y + face.h]]
       .map(([x, y]) => math.mapPointToEdited(edit, width, height, { x: x / width, y: y / height }));
-    const left = clamp(Math.min(...corners.map((p) => p.x)));
-    const right = clamp(Math.max(...corners.map((p) => p.x)));
-    const top = clamp(Math.min(...corners.map((p) => p.y)));
-    const bottom = clamp(Math.max(...corners.map((p) => p.y)));
+    const xs = corners.map((p) => p.x);
+    const ys = corners.map((p) => p.y);
+    const left = clamp(Math.min(...xs));
+    const right = clamp(Math.max(...xs));
+    const top = clamp(Math.min(...ys));
+    const bottom = clamp(Math.max(...ys));
     if (right <= left || bottom <= top) continue;
+    const whole = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+    if (minShare > 0 && (right - left) * (bottom - top) < minShare * whole) continue;
     moved.push({ x: left * size.width, y: top * size.height, w: (right - left) * size.width, h: (bottom - top) * size.height });
   }
   return { faces: moved, width: size.width, height: size.height };
@@ -147,7 +162,7 @@ async function refocusFromFaces(photo) {
  * Null when the edit cropped the face away. Unedited photos are returned
  * as they are.
  */
-function faceBoxForGuests(row) {
+function faceBoxForGuests(row, { minShare = 0 } = {}) {
   // The applied revision names the preview the box is to be cut from (the
   // admin preview URL's `e=`), so no older cached preview meets new boxes.
   const version = { edit_applied_rev: Number(row.edit_applied_rev) || 0 };
@@ -156,7 +171,7 @@ function faceBoxForGuests(row) {
   const width = Number(row.photo_width);
   const height = Number(row.photo_height);
   if (!edit || !(width > 0) || !(height > 0)) return box;
-  const moved = facesInEdit(edit, width, height, [{ x: Number(row.bbox_x), y: Number(row.bbox_y), w: Number(row.bbox_w), h: Number(row.bbox_h) }]);
+  const moved = facesInEdit(edit, width, height, [{ x: Number(row.bbox_x), y: Number(row.bbox_y), w: Number(row.bbox_w), h: Number(row.bbox_h) }], { minShare });
   if (!moved.faces.length) return null;
   const round = (v) => Math.round(v * 100) / 100;
   const [face] = moved.faces;
@@ -172,4 +187,13 @@ function faceBoxForGuests(row) {
   };
 }
 
-module.exports = { faceFocalPoint, refocusFromFaces, faceBoxForGuests };
+/**
+ * Whether guests see the person of this face in its photo (issue 2619): no
+ * applied edit, or one whose crop leaves FACE_VISIBLE_SHARE of the box.
+ * `row` as faceBoxForGuests takes it.
+ */
+function faceShownToGuests(row) {
+  return faceBoxForGuests(row, { minShare: FACE_VISIBLE_SHARE }) !== null;
+}
+
+module.exports = { faceFocalPoint, refocusFromFaces, faceBoxForGuests, faceShownToGuests, FACE_VISIBLE_SHARE };

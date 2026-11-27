@@ -121,6 +121,7 @@ async function findPhotosBySelfie({ event, accessLevel, imageBuffer }) {
 
   const rows = await db('photo_faces')
     .leftJoin('event_people', 'event_people.id', 'photo_faces.person_id')
+    .modify(require('../utils/photoVisibility').joinLivePhotos, 'photos.id', 'photo_faces.photo_id')
     .where('photo_faces.event_id', event.id)
     .whereIn('photo_faces.photo_id', visiblePhotoIds)
     .whereNotNull('photo_faces.embedding')
@@ -136,10 +137,15 @@ async function findPhotosBySelfie({ event, accessLevel, imageBuffer }) {
       }
     })
     .select('photo_faces.photo_id', 'photo_faces.embedding', 'photo_faces.person_id',
-      'photo_faces.det_score', 'photo_faces.bbox_w', 'photo_faces.bbox_h');
+      'photo_faces.det_score', 'photo_faces.bbox_x', 'photo_faces.bbox_y', 'photo_faces.bbox_w', 'photo_faces.bbox_h',
+      'photos.width as photo_width', 'photos.height as photo_height', 'photos.edit_applied_params');
 
+  const { faceShownToGuests } = require('./faceFocalPoint');
   const bestByPhoto = new Map();
   for (const row of rows) {
+    // A face an applied edit's crop (nearly) removed is not in the picture
+    // the guest sees (issue 2619), as in the people strip.
+    if (!faceShownToGuests(row)) continue;
     // An unassigned face below the clustering quality floor is one no person
     // holds, so a person's hidden or ignored flag cannot reach it: raising the
     // floor and reclustering drops a suppressed person's small faces out of

@@ -110,12 +110,23 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, fullVie
       'photos.edit_applied_params', 'photos.edit_applied_width', 'photos.edit_applied_height', 'photos.edit_applied_rev'
     );
   // Boxes in the image the avatar is cut from; a face an edit cropped away
-  // is no cover (the next best one is).
-  const { faceBoxForGuests } = require('./faceFocalPoint');
+  // is no cover (the next best one is). For guests, nor is a face of which
+  // less than FACE_VISIBLE_SHARE is left, and such a face does not count
+  // its photo either (issue 2619): the person is not in the picture they
+  // see. The admin keeps counting every face.
+  const { faceBoxForGuests, FACE_VISIBLE_SHARE } = require('./faceFocalPoint');
   const covers = [];
+  const shownPhotos = new Map();
   for (const row of rawCovers) {
-    const box = faceBoxForGuests(row);
-    if (box) covers.push({ ...row, box });
+    const box = faceBoxForGuests(row, { minShare: forAdmin ? 0 : FACE_VISIBLE_SHARE });
+    if (!box) continue;
+    covers.push({ ...row, box });
+    if (!shownPhotos.has(row.person_id)) shownPhotos.set(row.person_id, new Set());
+    shownPhotos.get(row.person_id).add(row.photo_id);
+  }
+  if (!forAdmin) {
+    countByPerson.clear();
+    for (const [personId, photoIds] of shownPhotos) countByPerson.set(personId, photoIds.size);
   }
 
   // The photographer's explicit pick wins whenever this audience can see it
@@ -188,6 +199,7 @@ async function getPersonIdsByPhoto(eventId, photoIds, { forAdmin = false } = {})
 
   const rows = await db('photo_faces')
     .join('event_people', 'event_people.id', 'photo_faces.person_id')
+    .modify(joinLivePhotos, 'photos.id', 'photo_faces.photo_id')
     .where('photo_faces.event_id', eventId)
     .whereIn('photo_faces.photo_id', photoIds)
     .whereNotNull('photo_faces.person_id')
@@ -196,10 +208,16 @@ async function getPersonIdsByPhoto(eventId, photoIds, { forAdmin = false } = {})
         q.where('event_people.is_hidden', false).where('event_people.is_ignored', false);
       }
     })
-    .select('photo_faces.photo_id', 'photo_faces.person_id');
+    .select('photo_faces.photo_id', 'photo_faces.person_id',
+      'photo_faces.bbox_x', 'photo_faces.bbox_y', 'photo_faces.bbox_w', 'photo_faces.bbox_h',
+      'photos.width as photo_width', 'photos.height as photo_height', 'photos.edit_applied_params');
 
+  // A face an applied edit's crop (nearly) removed does not put its person
+  // in the photo the gallery shows (issue 2619; faceShownToGuests).
+  const { faceShownToGuests } = require('./faceFocalPoint');
   const map = new Map();
   for (const row of rows) {
+    if (!faceShownToGuests(row)) continue;
     if (!map.has(row.photo_id)) map.set(row.photo_id, []);
     const list = map.get(row.photo_id);
     if (!list.includes(row.person_id)) list.push(row.person_id);

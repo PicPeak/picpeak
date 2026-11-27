@@ -58,7 +58,7 @@ const ALL_ROWS = {
   'services/photoCredit.js': [7, 'guest erasure and merge treat trashed photos like any other'],
   'services/photoEdits.js': [21, 'edits of a photo a route or the pass found live, by id: its edit columns, the applied revision\'s columns for a rendition view and whether a superseded render is still the applied one (or becomes it), the row re-read when a guest request raced the apply, its failed revision, whether a failing geometry edit withholds it from guests, whether another row names a staged rendition before it is dropped, the render recorded and fenced on its revision, a superseded render, the save itself, a reset, a failed apply recorded on its revision, and a watermark copy another row (trashed or not) may still name (issue 2619)'],
   'services/photoProcessor.js': [8, 'filename counters, inserts and the run in flight; a failed upload keeps any file a row still names, trashed or not'],
-  'services/photoReplacementService.js': [6, 'writes to the replacement target found live just before; a preview or hero a trashed photo shares is kept too; a lost commit acknowledgement is detected on the row itself'],
+  'services/photoReplacementService.js': [7, 'writes to the replacement target found live just before; a preview or hero a trashed photo shares is kept too; a lost commit acknowledgement is detected on the row itself; the edit files the live target names just before the swap (issue 2619)'],
   'services/picpeakImportService.js': [1, 'portable import: the flag travels with the row'],
   'services/portableImportMaintenance.js': [1, 'portable import: re-queues every imported row'],
   'services/publicUploadQuota.js': [2, 'guest upload quota is storage; the pending-hold reconcile names the flag on its next line'],

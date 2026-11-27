@@ -1033,6 +1033,50 @@ describe('face covers of an edited photo', () => {
   });
 });
 
+describe('people of a cropped photo, as guests see them', () => {
+  it('count a face only when at least half of its box is left in the crop; the admin still sees every face', async () => {
+    const eventId = (await row()).event_id;
+    const crop = validated({ crop: { x: 0.5, y: 0, w: 0.5, h: 1 } });
+    const insertPhoto = async (name) => unwrap(await db('photos').insert({
+      event_id: eventId, filename: name, path: `edit-card/${name}`, type: 'individual', media_type: 'image', mime_type: 'image/jpeg',
+      width: 600, height: 400, size_bytes: 1, processing_status: 'complete', uploaded_at: new Date().toISOString(), visibility: 'visible',
+      edit_params: math.canonicalJson(crop), edit_rev: 1, edit_applied_rev: 1, edit_applied_params: math.canonicalJson(crop),
+    }).returning('id'));
+    // The crop keeps x 300..600 of the 600 x 400 photo.
+    const gone = await insertPhoto('people-gone.jpg');
+    const kept = await insertPhoto('people-kept.jpg');
+    const mostlyOut = await insertPhoto('people-mostly-out.jpg');
+    const mostlyIn = await insertPhoto('people-mostly-in.jpg');
+    const person = async (label) => unwrap(await db('event_people').insert({ event_id: eventId, label, face_count_total: 2 }).returning('id'));
+    const whole = await person('Whole faces');
+    const edge = await person('Edge faces');
+    const face = (photoId, personId, x, score) => db('photo_faces').insert({
+      photo_id: photoId, event_id: eventId, person_id: personId, bbox_x: x, bbox_y: 100, bbox_w: 60, bbox_h: 80, det_score: score,
+    });
+    await face(gone, whole, 50, 0.99); // cropped away
+    await face(kept, whole, 400, 0.5); // inside
+    await face(mostlyOut, edge, 258, 0.99); // 30% of the box left
+    await face(mostlyIn, edge, 282, 0.5); // 70% left
+    const service = require('../../src/services/facePeopleService');
+    const byLabel = (list) => Object.fromEntries(list.map((p) => [p.label, p]));
+
+    const guests = byLabel(await service.listPeople(eventId, { isClient: false, fullView: true, minClusterSize: 1 }));
+    expect(guests['Whole faces']).toMatchObject({ face_count: 1, cover: { photo_id: kept } });
+    expect(guests['Edge faces']).toMatchObject({ face_count: 1, cover: { photo_id: mostlyIn } });
+    const members = await service.getPersonIdsByPhoto(eventId, [gone, kept, mostlyOut, mostlyIn]);
+    expect(members.get(gone)).toBeUndefined();
+    expect(members.get(kept)).toEqual([whole]);
+    expect(members.get(mostlyOut)).toBeUndefined();
+    expect(members.get(mostlyIn)).toEqual([edge]);
+
+    const admin = byLabel(await service.listPeople(eventId, { isClient: true, forAdmin: true }));
+    expect(admin['Whole faces'].face_count).toBe(2);
+    expect(admin['Edge faces'].face_count).toBe(2);
+    // The admin's covers still take a face partly left in the crop.
+    expect(admin['Edge faces'].cover.photo_id).toBe(mostlyOut);
+  });
+});
+
 describe('face covers of an edited photo delivered smaller', () => {
   it('are boxes in the delivered image, the size the listing reports', async () => {
     const eventId = (await row()).event_id;
