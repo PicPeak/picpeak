@@ -21,6 +21,7 @@ const { getStoragePath } = require('../config/storage');
 const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
 const { AppError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
+const { parseBooleanInput } = require('../utils/parsers');
 const websiteService = require('../services/website/service');
 const assets = require('../services/website/assets');
 const media = require('../services/website/media');
@@ -128,8 +129,10 @@ router.put('/galleries/:id', canEdit, requirePermission('events.edit'), [
   validateRequest(req);
   const event = await db('events').where({ id: Number(req.params.id) }).first();
   if (!event || !canAccessEvent(req.admin, event)) throw new AppError('Gallery not found', 404, 'EVENT_NOT_FOUND');
-  await websiteService.setGalleryOnWebsite(event.id, req.body.showOnWebsite);
-  res.json({ id: event.id, showOnWebsite: Boolean(req.body.showOnWebsite) });
+  // isBoolean() lets "false" and "0" through; Boolean() would make them true.
+  const showOnWebsite = parseBooleanInput(req.body.showOnWebsite, false);
+  await websiteService.setGalleryOnWebsite(event.id, showOnWebsite);
+  res.json({ id: event.id, showOnWebsite });
 }));
 
 // Photos of an eligible gallery, for the image picker. Admin thumbnails for

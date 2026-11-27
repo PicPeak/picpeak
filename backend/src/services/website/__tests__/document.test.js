@@ -182,3 +182,21 @@ describe('limits are refused, not cut', () => {
     expect(codes({ pages: [page()], customCss: 'x'.repeat(100 * 1024 + 1) })).toEqual(['TEXT_TOO_LONG']);
   });
 });
+
+test('booleans sent as strings mean what they say', () => {
+  const { document } = normalizeDocument({
+    pages: [
+      page({ isHome: 'true' }),
+      page({ id: 'p2', slug: 'b', hidden: 'true', inNav: 'false', blocks: [
+        { type: 'pricing', showPrices: 'false' },
+        { type: 'contact', showPhone: 'false', showDate: '1' },
+        { type: 'spacer', divider: '0' },
+      ] }),
+    ],
+  });
+  expect(document.pages[1]).toMatchObject({ hidden: true, inNav: false, isHome: false });
+  const [pricing, contact, spacer] = document.pages[1].blocks;
+  expect(pricing.showPrices).toBe(false);
+  expect(contact).toMatchObject({ showPhone: false, showDate: true });
+  expect(spacer.divider).toBe(false);
+});

@@ -411,6 +411,19 @@ describe('gallery photos on the website', () => {
     expect(photos.body.photos.map((p) => p.id)).toEqual([lockedPhoto, lockedOther]);
   });
 
+  test('the opt-in reads "false" and "0" as off, not as a truthy string', async () => {
+    const put = (value) => request(app).put(`/api/admin/website/galleries/${lockedEvent}`).set(auth(adminId)).send({ showOnWebsite: value });
+    const stored = async () => Boolean((await db('events').where({ id: lockedEvent }).first()).show_on_website);
+    for (const [value, expected] of [['false', false], ['true', true], ['0', false], ['1', true], [false, false], [true, true]]) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await put(value);
+      expect(res.status).toBe(200);
+      expect(res.body.showOnWebsite).toBe(expected);
+      // eslint-disable-next-line no-await-in-loop
+      expect(await stored()).toBe(expected);
+    }
+  });
+
   test('a viewer cannot opt a gallery in', async () => {
     const res = await request(app).put(`/api/admin/website/galleries/${lockedEvent}`).set(auth(viewerId)).send({ showOnWebsite: true });
     expect(res.status).toBe(403);
@@ -638,6 +651,12 @@ describe('the opt-in in the gallery settings', () => {
     expect((await put({ show_on_website: false })).status).toBe(200);
     expect(await stored()).toBe(false);
     expect((await service.resolvePublicPage('')).html).not.toContain(`/site-media/p${photo}.`);
+  });
+
+  test('reads "false" as off in the gallery update too', async () => {
+    expect((await put({ show_on_website: true })).status).toBe(200);
+    expect((await put({ show_on_website: 'false' })).status).toBe(200);
+    expect(await stored()).toBe(false);
   });
 
   test('takes a boolean only', async () => {

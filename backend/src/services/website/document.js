@@ -10,6 +10,7 @@
  */
 const crypto = require('crypto');
 const { sanitizeCssColor } = require('../../utils/cssSanitizer');
+const { parseBooleanInput } = require('../../utils/parsers');
 
 const DOCUMENT_VERSION = 1;
 const MAX_PAGES = 30;
@@ -80,8 +81,10 @@ function capped(list, max, field) {
   return list.slice(0, max);
 }
 
-function bool(value) {
-  return value === true;
+// A flag as the editor sends it, or as a string someone else sent: "false"
+// and "0" are off, never a truthy string.
+function bool(value, fallback = false) {
+  return parseBooleanInput(value, fallback);
 }
 
 function pick(value, allowed, fallback) {
@@ -213,7 +216,7 @@ const BLOCK_FIELDS = {
     heading: str(b.heading, 200, 'heading'),
     intro: str(b.intro, 1000, 'intro'),
     packageIds: idList(b.packageIds, 12, 'packageIds'),
-    showPrices: b.showPrices !== false,
+    showPrices: bool(b.showPrices, true),
     buttonLabel: str(b.buttonLabel, 60, 'buttonLabel'),
     buttonUrl: safeUrl(b.buttonUrl),
   }),
@@ -347,7 +350,7 @@ function normalizeInto(raw, reservedSlugs, errors) {
       title,
       navLabel: str(p.navLabel, 60, 'navLabel'),
       hidden: bool(p.hidden),
-      inNav: p.inNav !== false,
+      inNav: bool(p.inNav, true),
       isHome: bool(p.isHome),
       seo: {
         title: str(seo.title, 120, 'title'),
