@@ -13153,7 +13153,8 @@
       "submit_one": "Copy to {{count}} photo",
       "submit_other": "Copy to {{count}} photos",
       "queued_one": "Settings copied to {{count}} photo",
-      "queued_other": "Settings copied to {{count}} photos"
+      "queued_other": "Settings copied to {{count}} photos",
+      "progress": "Copying… {{done}} of {{total}}"
     },
     "canvas": {
       "before": "Original",

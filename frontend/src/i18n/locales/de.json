@@ -13118,7 +13118,8 @@
       "submit_one": "Auf {{count}} Foto übertragen",
       "submit_other": "Auf {{count}} Fotos übertragen",
       "queued_one": "Einstellungen auf {{count}} Foto übertragen",
-      "queued_other": "Einstellungen auf {{count}} Fotos übertragen"
+      "queued_other": "Einstellungen auf {{count}} Fotos übertragen",
+      "progress": "Wird übertragen … {{done}} von {{total}}"
     },
     "canvas": {
       "before": "Original",

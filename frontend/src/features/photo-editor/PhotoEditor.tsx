@@ -222,46 +222,80 @@ const PhotoEditor: React.FC<PhotoEditorProps> = ({ eventId, photos, initialPhoto
     return () => window.clearInterval(timer);
   }, [pending, eventId, onChanged]);
 
-  const save = useCallback(async () => {
-    if (!photo || !dirty || saving) return true;
-    setSaving(true);
-    try {
-      // A RAW with any change is developed from its sensor data.
-      const toSave = isIdentity(params) ? null : { ...params, develop: raw ? true : params.develop };
-      const state = await photoEditorService.save(eventId, photo.id, toSave);
-      const next = state.params ? { ...DEFAULT_PARAMS, ...state.params } : { ...DEFAULT_PARAMS };
-      setSaved(next);
-      setPending((prev) => [...new Set([...prev, photo.id])]);
-      toast.success(isIdentity(next) ? t('photoEditor.toast.reset', 'Original restored') : t('photoEditor.toast.saved', 'Edit saved'));
-      onChanged();
-      return true;
-    } catch (error: any) {
-      toast.error(error?.response?.data?.error || t('photoEditor.toast.saveFailed', 'The edit could not be saved'));
-      return false;
-    } finally {
-      setSaving(false);
+  // A save on its way, and what the editor shows now: a save that lands
+  // after the editor moved on only updates the photo it was for.
+  const saveFlight = useRef<Promise<boolean> | null>(null);
+  const shown = useRef({ photoId: photo?.id, params, saved });
+  shown.current = { photoId: photo?.id, params, saved };
+  const save = useCallback((): Promise<boolean> => {
+    if (saveFlight.current) return saveFlight.current;
+    if (!photo || sameParams(shown.current.params, shown.current.saved)) return Promise.resolve(true);
+    const photoId = photo.id;
+    const sent = shown.current.params;
+    const flight = (async () => {
+      setSaving(true);
+      try {
+        // A RAW with any change is developed from its sensor data.
+        const toSave = isIdentity(sent) ? null : { ...sent, develop: raw ? true : sent.develop };
+        const state = await photoEditorService.save(eventId, photoId, toSave);
+        const next = state.params ? { ...DEFAULT_PARAMS, ...state.params } : { ...DEFAULT_PARAMS };
+        setPending((prev) => [...new Set([...prev, photoId])]);
+        onChanged();
+        if (shown.current.photoId === photoId) {
+          // What the server stored is the saved state (a RAW's develop flag
+          // included); the working edit takes it too unless it moved on
+          // while the save was out.
+          shown.current.saved = next;
+          setSaved(next);
+          if (shown.current.params === sent) {
+            shown.current.params = next;
+            dispatch({ type: 'apply', params: next });
+          }
+          toast.success(isIdentity(next) ? t('photoEditor.toast.reset', 'Original restored') : t('photoEditor.toast.saved', 'Edit saved'));
+        }
+        return true;
+      } catch (error: any) {
+        toast.error(error?.response?.data?.error || t('photoEditor.toast.saveFailed', 'The edit could not be saved'));
+        return false;
+      } finally {
+        saveFlight.current = null;
+        setSaving(false);
+      }
+    })();
+    saveFlight.current = flight;
+    return flight;
+  }, [photo, eventId, raw, t, onChanged]);
+
+  /** Save until nothing is left unsaved (a save on its way first). False when one failed. */
+  const settle = useCallback(async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (!(await save())) return false;
+      if (sameParams(shown.current.params, shown.current.saved)) return true;
     }
-  }, [photo, dirty, saving, eventId, params, raw, t, onChanged]);
+    return false;
+  }, [save]);
 
   // Moving on keeps the work, as Lightroom does.
   const go = useCallback(async (step: 1 | -1) => {
     if (editable.length < 2) return;
-    if (dirty && !(await save())) return;
+    if (!(await settle())) return;
     setIndex((i) => (i + step + editable.length) % editable.length);
-  }, [dirty, save, editable.length]);
+  }, [settle, editable.length]);
 
   const close = useCallback(async () => {
-    if (dirty) {
+    // A save on its way lands before the editor goes.
+    if (saveFlight.current && !(await saveFlight.current)) return;
+    if (!sameParams(shown.current.params, shown.current.saved)) {
       const keep = await confirm({
         title: t('photoEditor.close.title', 'Save the edit?'),
         message: t('photoEditor.close.message', 'This photo has changes that are not saved yet.'),
         confirmLabel: t('photoEditor.close.save', 'Save'),
         cancelLabel: t('photoEditor.close.discard', 'Discard'),
       });
-      if (keep && !(await save())) return;
+      if (keep && !(await settle())) return;
     }
     onClose();
-  }, [dirty, confirm, save, onClose, t]);
+  }, [confirm, settle, onClose, t]);
 
   const copySettings = useCallback(() => {
     setClipboard(params);

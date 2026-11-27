@@ -39,17 +39,32 @@ export const BatchCopyDialog: React.FC<BatchCopyDialogProps> = ({ open, onClose,
   });
   const chosenParts = (Object.keys(parts) as EditPart[]).filter((part) => parts[part]);
 
+  // The server takes this many photos a request; more go in parts.
+  const PART = 1000;
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const submit = async () => {
     setBusy(true);
+    const ids = [...selected];
+    let queued = 0;
+    const skipped: number[] = [];
+    const sent: number[] = [];
     try {
-      const ids = [...selected];
-      const result = await photoEditorService.copyTo(eventId, ids, params, chosenParts);
-      toast.success(t('photoEditor.batch.queued', { count: result.queued, defaultValue: 'Settings copied to {{count}} photos' }));
-      onQueued(ids.filter((id) => !result.skipped.includes(id)));
+      for (let start = 0; start < ids.length; start += PART) {
+        const part = ids.slice(start, start + PART);
+        setProgress({ done: start, total: ids.length });
+        const result = await photoEditorService.copyTo(eventId, part, params, chosenParts);
+        queued += result.queued;
+        skipped.push(...result.skipped);
+        sent.push(...part);
+      }
+      toast.success(t('photoEditor.batch.queued', { count: queued, defaultValue: 'Settings copied to {{count}} photos' }));
       onClose();
     } catch (error: any) {
       toast.error(error?.response?.data?.error || t('common.error'));
     } finally {
+      // The parts that went out are queued, also when a later one failed.
+      if (sent.length) onQueued(sent.filter((id) => !skipped.includes(id)));
+      setProgress(null);
       setBusy(false);
     }
   };
@@ -103,6 +118,11 @@ export const BatchCopyDialog: React.FC<BatchCopyDialogProps> = ({ open, onClose,
           <span className="text-sm text-muted">
             {t('photoEditor.batch.selected', { count: selected.size, defaultValue: '{{count}} selected' })}
           </span>
+          {progress && (
+            <span className="text-sm text-muted" role="status">
+              {t('photoEditor.batch.progress', { done: progress.done, total: progress.total, defaultValue: 'Copying… {{done}} of {{total}}' })}
+            </span>
+          )}
         </div>
         <ul className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2" aria-label={t('photoEditor.batch.photos', 'Photos')}>
           {targets.map((photo) => {
