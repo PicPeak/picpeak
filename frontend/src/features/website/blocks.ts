@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import {
   Image as ImageIcon, Type, Columns2, LayoutGrid, FolderHeart, Quote, BadgeDollarSign, Mail, CalendarCheck,
-  Instagram, MoveVertical, Code, type LucideIcon,
+  Instagram, MoveVertical, Minus, Code, type LucideIcon,
 } from 'lucide-react';
 import type { Block, BlockType, ImageRef, WebsiteDocument, WebsitePage } from './types';
 
@@ -13,7 +13,7 @@ export function newId(): string {
 
 export const BLOCK_TYPES: BlockType[] = [
   'hero', 'text', 'imageText', 'gallery', 'featuredGalleries', 'testimonials',
-  'pricing', 'contact', 'booking', 'instagram', 'spacer', 'customHtml',
+  'pricing', 'contact', 'booking', 'instagram', 'spacer', 'divider', 'customHtml',
 ];
 
 export const BLOCK_ICONS: Record<BlockType, LucideIcon> = {
@@ -28,6 +28,7 @@ export const BLOCK_ICONS: Record<BlockType, LucideIcon> = {
   booking: CalendarCheck,
   instagram: Instagram,
   spacer: MoveVertical,
+  divider: Minus,
   customHtml: Code,
 };
 
@@ -44,6 +45,7 @@ export const BLOCK_VARIANTS: Record<BlockType, string[]> = {
   booking: ['button', 'banner'],
   instagram: ['strip', 'grid'],
   spacer: ['small', 'medium', 'large'],
+  divider: ['thin', 'medium'],
   customHtml: ['default'],
 };
 
@@ -51,7 +53,7 @@ export function blockLabel(t: TFunction, type: BlockType): string {
   const fallback: Record<BlockType, string> = {
     hero: 'Hero', text: 'Text', imageText: 'Image and text', gallery: 'Image grid',
     featuredGalleries: 'Featured galleries', testimonials: 'Testimonials', pricing: 'Pricing',
-    contact: 'Contact form', booking: 'Booking button', instagram: 'Photo strip', spacer: 'Spacer',
+    contact: 'Contact form', booking: 'Booking button', instagram: 'Photo strip', spacer: 'Spacer', divider: 'Divider',
     customHtml: 'Custom HTML',
   };
   return t(`website.blocks.${type}.name`, fallback[type]);
@@ -63,7 +65,7 @@ export function variantLabel(t: TFunction, variant: string): string {
     columns: 'Two columns', 'image-left': 'Image left', 'image-right': 'Image right', grid: 'Grid',
     masonry: 'Masonry', cards: 'Cards', list: 'List', quote: 'Large quote', simple: 'Simple',
     button: 'Button', banner: 'Banner', strip: 'Strip', small: 'Small', medium: 'Medium', large: 'Large',
-    default: 'Default',
+    default: 'Default', thin: 'Thin line',
   };
   return t(`website.variants.${variant}`, fallback[variant] || variant);
 }
@@ -94,6 +96,8 @@ export function createBlock(type: BlockType, t: TFunction): Block {
     return { ...base, type, heading: '', handle: '', profileUrl: '', images: [] };
   case 'spacer':
     return { ...base, type, variant: 'medium', divider: false };
+  case 'divider':
+    return { ...base, type, width: 'full', spacing: 'medium' };
   case 'customHtml':
     return { ...base, type, html: '' };
   default:

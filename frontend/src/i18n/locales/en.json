@@ -13139,7 +13139,13 @@
     "background": {
       "default": "Page",
       "light": "Light",
-      "dark": "Dark"
+      "dark": "Dark",
+      "custom": "Custom",
+      "useColour": "Use colour {{colour}}",
+      "colour": "Background colour",
+      "textColour": "Text colour",
+      "textAutomatic": "Automatic, for contrast",
+      "textReset": "Pick the text colour automatically"
     },
     "fields": {
       "badLink": "Use https://, mailto:, tel:, a page like /about or an anchor like #contact.",
@@ -13208,7 +13214,12 @@
       "packageNotShown": "Cannot be quoted, not shown",
       "packagesNeedQuotes": "The packages come from the quote catalogue: choosing them needs the permission to view quotes.",
       "galleryOpen": "{{name}} has no password: its card links to it, so every visitor of the website can open the whole gallery.",
-      "minimalNoImage": "The “Text only” style shows no picture or video. Choose another style to add one."
+      "minimalNoImage": "The “Text only” style shows no picture or video. Choose another style to add one.",
+      "lineWidth": "Width",
+      "widthFull": "Full",
+      "widthShort": "Short",
+      "spacing": "Space around it",
+      "spacingNone": "None"
     },
     "defaults": {
       "heroHeading": "Your headline",
@@ -13385,7 +13396,10 @@
       "anchor": "Link to this block",
       "copyAnchor": "Copy the link to this block",
       "anchorCopied": "Link copied. Paste it as a button or text link.",
-      "anchorCopyFailed": "Could not copy the link."
+      "anchorCopyFailed": "Could not copy the link.",
+      "divider": {
+        "name": "Divider"
+      }
     },
     "saved": "Draft saved",
     "publishTitle": "Publish the website?",
@@ -13436,7 +13450,8 @@
       "small": "Small",
       "medium": "Medium",
       "large": "Large",
-      "default": "Default"
+      "default": "Default",
+      "thin": "Thin line"
     },
     "conflictReload": "Load the latest version",
     "conflict": "Someone else saved the website since you opened it, so your changes were not saved. Load the latest version to continue from theirs; your unsaved changes here are then dropped.",

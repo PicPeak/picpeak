@@ -242,3 +242,43 @@ describe('hero video in the editor preview', () => {
     expect(html).toContain('<video');
   });
 });
+
+describe('custom block background', () => {
+  const textBlock = (over) => ({ type: 'text', id: 't1', heading: 'Hi', body: 'There', ...over });
+
+  test('keeps only an opaque hex colour, and drops it for the other backgrounds', () => {
+    const blocks = (over) => normalizeDocument({ pages: [home([textBlock(over)])] }).document.pages[0].blocks[0];
+    expect(blocks({ background: 'custom', backgroundColor: '#1E3A2F' })).toMatchObject({ background: 'custom', backgroundColor: '#1e3a2f', textColor: null });
+    expect(blocks({ background: 'custom', backgroundColor: '#1e3a2f', textColor: '#FFEEDD' }).textColor).toBe('#ffeedd');
+    // Not a colour (or a value that could carry CSS): the page background.
+    expect(blocks({ background: 'custom', backgroundColor: 'red;background:url(x)' })).toMatchObject({ background: 'default' });
+    expect(blocks({ background: 'custom', backgroundColor: 'rgba(0,0,0,.2)' })).toMatchObject({ background: 'default' });
+    expect(blocks({ background: 'light', backgroundColor: '#123456' })).not.toHaveProperty('backgroundColor');
+  });
+
+  test('paints the colour and picks readable text for it, unless the text colour is set', () => {
+    const dark = render([home([textBlock({ background: 'custom', backgroundColor: '#1e3a2f' })])]);
+    expect(dark).toMatch(/<section id="b-t1" class="[^"]*pp-custom-bg[^"]*" style="--bg:#1e3a2f;--text:#f5f5f5;/);
+    const light = render([home([textBlock({ background: 'custom', backgroundColor: '#fdf6e3' })])]);
+    expect(light).toMatch(/style="--bg:#fdf6e3;--text:#111111;/);
+    const chosen = render([home([textBlock({ background: 'custom', backgroundColor: '#1e3a2f', textColor: '#ffcc00' })])]);
+    expect(chosen).toMatch(/style="--bg:#1e3a2f;--text:#ffcc00;/);
+  });
+});
+
+describe('divider block', () => {
+  test('draws a thin or medium line, short or full, with its spacing', () => {
+    const html = render([home([
+      { type: 'divider', id: 'd1', variant: 'medium', width: 'short', spacing: 'large' },
+      { type: 'divider', id: 'd2' },
+    ])]);
+    expect(html).toMatch(/<section id="b-d1" class="pp-block pp-divider pp-v-medium[^"]*pp-divider--short[^"]*pp-space-large[^"]*"><div class="pp-wrap"><hr class="pp-line"><\/div><\/section>/);
+    // Defaults: thin, full width, medium spacing.
+    expect(html).toMatch(/<section id="b-d2" class="pp-block pp-divider pp-v-thin[^"]*pp-divider--full[^"]*pp-space-medium/);
+  });
+
+  test('unknown options fall back to the defaults', () => {
+    const block = normalizeDocument({ pages: [home([{ type: 'divider', variant: 'bold', width: '200%', spacing: 'huge' }])] }).document.pages[0].blocks[0];
+    expect(block).toMatchObject({ type: 'divider', variant: 'thin', width: 'full', spacing: 'medium' });
+  });
+});

@@ -155,6 +155,15 @@ async function ensureDraft(adminId = null) {
   return readRow('draft');
 }
 
+/** The branding's colours, as swatches for a custom block background. */
+async function brandColors() {
+  const c = (await publicSite.fetchBrandingContext()).colors || {};
+  const colours = [c.primary, c.accent, c.accentDark, c.background, c.surface, c.text]
+    .filter((value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value))
+    .map((value) => value.toLowerCase());
+  return [...new Set(colours)];
+}
+
 /**
  * The editor's state for a given draft row. A save or publish passes the
  * row it wrote, so its answer is exactly that, never a draft another editor
@@ -173,6 +182,7 @@ async function editorState(draft, published) {
     // The public origin the sitemap and the canonical links use, for the
     // editor's "Open site"; '' when none is configured.
     publicUrl: await getFrontendBaseUrl().catch(() => ''),
+    brandColors: await brandColors(),
   };
 }
 

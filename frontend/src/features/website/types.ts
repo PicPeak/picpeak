@@ -8,12 +8,15 @@ export type ImageRef =
   | { source: 'photo'; id: number; alt?: string }
   | { source: 'asset'; id: string; alt?: string };
 
-export type Background = 'default' | 'light' | 'dark';
+export type Background = 'default' | 'light' | 'dark' | 'custom';
 
 interface BlockBase {
   id: string;
   variant: string;
   background: Background;
+  /** With background 'custom': an opaque hex colour, and the text colour (null: automatic). */
+  backgroundColor?: string;
+  textColor?: string | null;
 }
 
 export interface HeroBlock extends BlockBase {
@@ -70,12 +73,13 @@ export interface InstagramBlock extends BlockBase {
   images: ImageRef[];
 }
 export interface SpacerBlock extends BlockBase { type: 'spacer'; divider: boolean }
+export interface DividerBlock extends BlockBase { type: 'divider'; width: 'full' | 'short'; spacing: 'none' | 'small' | 'medium' | 'large' }
 // `legacy`: the imported single-page site, rendered in its old containers.
 export interface CustomHtmlBlock extends BlockBase { type: 'customHtml'; html: string; legacy?: boolean }
 
 export type Block =
   | HeroBlock | TextBlock | ImageTextBlock | GalleryBlock | FeaturedGalleriesBlock | TestimonialsBlock
-  | PricingBlock | ContactBlock | BookingBlock | InstagramBlock | SpacerBlock | CustomHtmlBlock;
+  | PricingBlock | ContactBlock | BookingBlock | InstagramBlock | SpacerBlock | DividerBlock | CustomHtmlBlock;
 
 export type BlockType = Block['type'];
 
@@ -119,6 +123,8 @@ export interface EditorState {
   published: RevisionInfo | null;
   hasUnpublishedChanges: boolean;
   publicSiteEnabled: boolean;
+  /** The branding's colours, offered as swatches for a custom block background. */
+  brandColors?: string[];
   /** The configured public origin (sitemap, canonical links); '' when none. */
   publicUrl?: string;
   /** The landing page was too long to import; it stays live until a publish. */

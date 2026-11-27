@@ -262,6 +262,7 @@ export const WebsiteBuilderPage: React.FC = () => {
       <fieldset disabled={!canEdit}>
         <BlockEditor
           block={block}
+          brandColors={server.brandColors}
           onChange={(next, field) => setPageBlocks((blocks) => blocks.map((b) => (b.id === next.id ? next : b)), field ? `${next.id}.${field}` : undefined)}
         />
       </fieldset>

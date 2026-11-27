@@ -37,7 +37,10 @@ const MAX_SLUG_LENGTH = 60;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
 const ASSET_ID_PATTERN = /^[a-f0-9]{24}$/;
 
-const BACKGROUNDS = ['default', 'light', 'dark'];
+const BACKGROUNDS = ['default', 'light', 'dark', 'custom'];
+// A custom block background: an opaque hex colour, the only shape that is
+// both safe in a style attribute and has a contrast to compute.
+const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 const BUTTON_STYLES = ['solid', 'outline', 'pill'];
 const FONT_NAME_PATTERN = /^[A-Za-z0-9 ]{1,60}$/;
 
@@ -53,6 +56,7 @@ const BLOCK_VARIANTS = {
   booking: ['button', 'banner'],
   instagram: ['strip', 'grid'],
   spacer: ['small', 'medium', 'large'],
+  divider: ['thin', 'medium'],
   customHtml: ['default'],
 };
 const BLOCK_TYPES = Object.keys(BLOCK_VARIANTS);
@@ -247,12 +251,26 @@ const BLOCK_FIELDS = {
   spacer: (b) => ({
     divider: bool(b.divider),
   }),
+  divider: (b) => ({
+    width: pick(b.width, ['full', 'short'], 'full'),
+    spacing: pick(b.spacing, ['none', 'small', 'medium', 'large'], 'medium'),
+  }),
   customHtml: (b) => ({
     html: typeof b.html === 'string' ? capText(b.html, MAX_CUSTOM_HTML, 'html') : '',
     // The imported single-page site: rendered in its old containers.
     ...(bool(b.legacy) ? { legacy: true } : {}),
   }),
 };
+
+const hex = (value) => (typeof value === 'string' && HEX_COLOR.test(value.trim()) ? value.trim().toLowerCase() : null);
+
+/** page / light / dark, or a custom colour (text colour automatic unless set). */
+function normalizeBackground(raw) {
+  const background = pick(raw.background, BACKGROUNDS, 'default');
+  if (background !== 'custom') return { background };
+  const backgroundColor = hex(raw.backgroundColor);
+  return backgroundColor ? { background, backgroundColor, textColor: hex(raw.textColor) } : { background: 'default' };
+}
 
 function normalizeBlock(raw) {
   if (!raw || typeof raw !== 'object' || !BLOCK_TYPES.includes(raw.type)) return null;
@@ -261,7 +279,7 @@ function normalizeBlock(raw) {
     id: blockId(raw.id),
     type: raw.type,
     variant: pick(raw.variant, variants, variants[0]),
-    background: pick(raw.background, BACKGROUNDS, 'default'),
+    ...normalizeBackground(raw),
     ...BLOCK_FIELDS[raw.type](raw),
   };
 }

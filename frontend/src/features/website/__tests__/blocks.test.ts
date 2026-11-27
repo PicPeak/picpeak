@@ -21,6 +21,11 @@ describe('website builder blocks', () => {
     expect(ids.size).toBe(BLOCK_TYPES.length);
   });
 
+  it('offers a divider: thin or medium, full width, medium spacing by default', () => {
+    expect(BLOCK_TYPES).toContain('divider');
+    expect(createBlock('divider', t)).toMatchObject({ type: 'divider', variant: 'thin', width: 'full', spacing: 'medium', background: 'default' });
+  });
+
   it('moves an item and ignores moves out of range', () => {
     expect(moveItem(['a', 'b', 'c'], 0, 2)).toEqual(['b', 'c', 'a']);
     expect(moveItem(['a', 'b', 'c'], 2, 0)).toEqual(['c', 'a', 'b']);

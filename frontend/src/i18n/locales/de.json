@@ -13104,7 +13104,13 @@
     "background": {
       "default": "Seite",
       "light": "Hell",
-      "dark": "Dunkel"
+      "dark": "Dunkel",
+      "custom": "Eigene Farbe",
+      "useColour": "Farbe {{colour}} verwenden",
+      "colour": "Hintergrundfarbe",
+      "textColour": "Textfarbe",
+      "textAutomatic": "Automatisch, für guten Kontrast",
+      "textReset": "Textfarbe automatisch wählen"
     },
     "fields": {
       "badLink": "Verwenden Sie https://, mailto:, tel:, eine Seite wie /ueber-uns oder einen Anker wie #kontakt.",
@@ -13173,7 +13179,12 @@
       "packageNotShown": "Nicht offerierbar, wird nicht gezeigt",
       "packagesNeedQuotes": "Die Pakete stammen aus dem Angebotskatalog: Um sie auszuwählen, braucht es die Berechtigung, Angebote anzusehen.",
       "galleryOpen": "{{name}} hat kein Passwort: Die Karte verlinkt die Galerie, also kann jede Besucherin und jeder Besucher der Website die ganze Galerie öffnen.",
-      "minimalNoImage": "Der Stil «Nur Text» zeigt kein Bild und kein Video. Wählen Sie einen anderen Stil, um eines hinzuzufügen."
+      "minimalNoImage": "Der Stil «Nur Text» zeigt kein Bild und kein Video. Wählen Sie einen anderen Stil, um eines hinzuzufügen.",
+      "lineWidth": "Breite",
+      "widthFull": "Ganze Breite",
+      "widthShort": "Kurz",
+      "spacing": "Abstand",
+      "spacingNone": "Keiner"
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",
@@ -13350,7 +13361,10 @@
       "anchor": "Link zu diesem Block",
       "copyAnchor": "Link zu diesem Block kopieren",
       "anchorCopied": "Link kopiert. Fügen Sie ihn als Link einer Schaltfläche oder im Text ein.",
-      "anchorCopyFailed": "Der Link konnte nicht kopiert werden."
+      "anchorCopyFailed": "Der Link konnte nicht kopiert werden.",
+      "divider": {
+        "name": "Trennlinie"
+      }
     },
     "saved": "Entwurf gespeichert",
     "publishTitle": "Website veröffentlichen?",
@@ -13401,7 +13415,8 @@
       "small": "Klein",
       "medium": "Mittel",
       "large": "Gross",
-      "default": "Standard"
+      "default": "Standard",
+      "thin": "Dünne Linie"
     },
     "conflictReload": "Neueste Version laden",
     "conflict": "Jemand anderes hat die Website gespeichert, seit Sie sie geöffnet haben, deshalb wurden Ihre Änderungen nicht gespeichert. Laden Sie die neueste Version, um dort weiterzuarbeiten; Ihre ungespeicherten Änderungen hier gehen dabei verloren.",

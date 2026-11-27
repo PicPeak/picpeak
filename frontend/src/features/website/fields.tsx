@@ -3,12 +3,12 @@
  */
 import React, { createContext, useContext, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ImageOff, ImagePlus, Plus, X } from 'lucide-react';
+import { ImageOff, ImagePlus, Plus, RotateCcw, X } from 'lucide-react';
 import { Button, Input } from '../../components/common';
 import { mediaKey } from '../../services/website.service';
 import { buildResourceUrl } from '../../utils/url';
 import { ImagePicker } from './ImagePicker';
-import type { Background, ImageRef } from './types';
+import type { Background, Block, ImageRef } from './types';
 
 /** Thumbnail URLs of the document's images; null = not shown on the site. */
 export const MediaUrlsContext = createContext<Record<string, string | null>>({});
@@ -93,14 +93,84 @@ export const ChoiceField: React.FC<{
   </fieldset>
 );
 
-export function useBackgroundOptions(): { value: Background; label: string }[] {
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/**
+ * A colour picker with a reset: `value` null means "not set here" (the
+ * branding's colour, or automatic), which `emptyLabel` says.
+ */
+export const ColorField: React.FC<{
+  label: string;
+  value: string | null;
+  onChange: (value: string | null) => void;
+  emptyLabel?: string;
+  resetLabel?: string;
+}> = ({ label, value, onChange, emptyLabel, resetLabel }) => {
   const { t } = useTranslation();
-  return [
+  const id = useId();
+  return (
+    <div className="flex items-center gap-3">
+      <input id={id} type="color" aria-label={label} className="h-9 w-12 rounded-md border border-line-strong bg-panel p-1"
+        value={value && HEX.test(value) ? value : '#000000'} onChange={(e) => onChange(e.target.value)} />
+      <div className="flex-1 min-w-0">
+        <span className="block text-sm font-medium text-body">{label}</span>
+        <span className="block text-xs text-muted">{value || emptyLabel || t('website.site.fromBranding', 'From branding')}</span>
+      </div>
+      {value && (
+        <Button size="icon-sm" variant="ghost" onClick={() => onChange(null)}
+          aria-label={resetLabel || t('website.site.resetColor', 'Use the branding colour for {{name}}', { name: label }) as string}>
+          <RotateCcw className="w-4 h-4" />
+        </Button>
+      )}
+    </div>
+  );
+};
+
+// Neutrals offered next to the branding's colours for a custom background.
+const NEUTRALS = ['#ffffff', '#f5f5f4', '#e7e5e4', '#57534e', '#1c1917'];
+
+/**
+ * A block's background: page, light, dark, or a custom colour from the
+ * branding swatches, a few neutrals or the picker. The text colour follows
+ * for contrast unless one is set (backend renderer customBackgroundStyle).
+ */
+export const BackgroundField: React.FC<{ block: Block; brandColors?: string[]; onChange: (next: Block) => void }> = ({ block, brandColors = [], onChange }) => {
+  const { t } = useTranslation();
+  const swatches = [...new Set([...brandColors, ...NEUTRALS])];
+  const options: { value: Background; label: string }[] = [
     { value: 'default', label: t('website.background.default', 'Page') },
     { value: 'light', label: t('website.background.light', 'Light') },
     { value: 'dark', label: t('website.background.dark', 'Dark') },
+    { value: 'custom', label: t('website.background.custom', 'Custom') },
   ];
-}
+  const choose = (background: string) => onChange(background === 'custom'
+    ? { ...block, background: 'custom', backgroundColor: block.backgroundColor || swatches[0], textColor: block.textColor ?? null }
+    : { ...block, background: background as Background, backgroundColor: undefined, textColor: undefined });
+  return (
+    <div className="space-y-3">
+      <ChoiceField label={t('website.fields.background', 'Background')} value={block.background} options={options} onChange={choose} />
+      {block.background === 'custom' && (
+        <div className="space-y-3 rounded-lg border border-line p-3">
+          <div className="flex flex-wrap gap-1.5">
+            {swatches.map((colour) => (
+              <button key={colour} type="button" onClick={() => onChange({ ...block, backgroundColor: colour })}
+                aria-label={t('website.background.useColour', 'Use colour {{colour}}', { colour }) as string}
+                aria-pressed={block.backgroundColor === colour}
+                className={`h-7 w-7 rounded-md border ${block.backgroundColor === colour ? 'ring-2 ring-accent ring-offset-1' : 'border-line-strong'}`}
+                style={{ backgroundColor: colour }} />
+            ))}
+          </div>
+          <ColorField label={t('website.background.colour', 'Background colour')} value={block.backgroundColor || null}
+            onChange={(backgroundColor) => onChange({ ...block, backgroundColor: backgroundColor || swatches[0] })} />
+          <ColorField label={t('website.background.textColour', 'Text colour')} value={block.textColor || null}
+            emptyLabel={t('website.background.textAutomatic', 'Automatic, for contrast')}
+            resetLabel={t('website.background.textReset', 'Pick the text colour automatically') as string}
+            onChange={(textColor) => onChange({ ...block, textColor })} />
+        </div>
+      )}
+    </div>
+  );
+};
 
 /**
  * Same rule as the backend's safeUrl: http(s), mailto, tel, a path on this

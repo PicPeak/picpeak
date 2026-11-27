@@ -11,7 +11,7 @@ import { usePermission } from '../../hooks/usePermission';
 import { websiteService } from '../../services/website.service';
 import { BLOCK_VARIANTS, variantLabel } from './blocks';
 import {
-  ChoiceField, ImageField, ImageListField, LinkField, TextArea, TextField, VideoField, useBackgroundOptions,
+  BackgroundField, ChoiceField, ImageField, ImageListField, LinkField, TextArea, TextField, VideoField,
 } from './fields';
 import { SearchField, useDebounced } from './search';
 import { loadFailure } from './loadFailure';
@@ -20,13 +20,14 @@ import type { Block, Testimonial, WebsiteGallery } from './types';
 interface BlockEditorProps {
   block: Block;
   onChange: (next: Block, field?: string) => void;
+  /** The branding's colours, offered for a custom background. */
+  brandColors?: string[];
 }
 
 const FORMAT_HINT = 'Blank line = new paragraph. **bold**, *italic*, [link text](https://…)';
 
-export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange }) => {
+export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange, brandColors }) => {
   const { t } = useTranslation();
-  const backgrounds = useBackgroundOptions();
   // Every field edit goes through here, typed per block so a field name is checked.
   const set = <B extends Block>(b: B, patch: Partial<B>, field?: string) => onChange({ ...b, ...patch }, field);
   const formatHint = t('website.fields.formatHint', FORMAT_HINT);
@@ -41,14 +42,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange }) => 
           onChange={(variant) => onChange({ ...block, variant })}
         />
       )}
-      {block.type !== 'customHtml' && (
-        <ChoiceField
-          label={t('website.fields.background', 'Background')}
-          value={block.background}
-          options={backgrounds}
-          onChange={(background) => onChange({ ...block, background: background as Block['background'] })}
-        />
-      )}
+      {block.type !== 'customHtml' && <BackgroundField block={block} brandColors={brandColors} onChange={(next) => onChange(next)} />}
     </>
   );
 
@@ -171,6 +165,18 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({ block, onChange }) => 
     break;
   case 'spacer':
     fields = <Switch checked={block.divider} onChange={(divider) => set(block, { divider })} label={t('website.fields.divider', 'Show a line')} />;
+    break;
+  case 'divider':
+    fields = (
+      <>
+        <ChoiceField label={t('website.fields.lineWidth', 'Width')} value={block.width}
+          options={[{ value: 'full', label: t('website.fields.widthFull', 'Full') }, { value: 'short', label: t('website.fields.widthShort', 'Short') }]}
+          onChange={(width) => set(block, { width: width as typeof block.width })} />
+        <ChoiceField label={t('website.fields.spacing', 'Space around it')} value={block.spacing}
+          options={(['none', 'small', 'medium', 'large'] as const).map((v) => ({ value: v, label: v === 'none' ? t('website.fields.spacingNone', 'None') : variantLabel(t, v) }))}
+          onChange={(spacing) => set(block, { spacing: spacing as typeof block.spacing })} />
+      </>
+    );
     break;
   case 'customHtml':
     fields = (

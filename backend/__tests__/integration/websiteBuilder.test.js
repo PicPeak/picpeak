@@ -200,6 +200,14 @@ describe('admin API', () => {
     expect(again.body.document.pages[0].blocks[0].html).toContain('Old site');
   });
 
+  test('the editor gets the branding colours as swatches for a custom background', async () => {
+    const state = (await request(app).get('/api/admin/website').set(auth(adminId))).body;
+    expect(Array.isArray(state.brandColors)).toBe(true);
+    expect(state.brandColors.length).toBeGreaterThan(0);
+    state.brandColors.forEach((c) => expect(c).toMatch(/^#[0-9a-f]{6}$/));
+    expect(new Set(state.brandColors).size).toBe(state.brandColors.length);
+  });
+
   test('a viewer may read but not change the site', async () => {
     expect((await request(app).get('/api/admin/website').set(auth(viewerId))).status).toBe(200);
     const res = await request(app).put('/api/admin/website/draft').set(auth(viewerId)).send({ document: { pages: [] } });

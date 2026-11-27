@@ -209,10 +209,29 @@ function heading(text, level = 2) {
   return text ? `<h${level} class="pp-h">${esc(text)}</h${level}>` : '';
 }
 
+/**
+ * A custom background's colours as section variables: the text colour set
+ * for the block, or the page's text colour when it reads on the background,
+ * else a neutral that does (the same rule as the dark sections).
+ */
+function customBackgroundStyle(block, ctx) {
+  const p = palette(ctx.theme);
+  const bg = block.backgroundColor;
+  const text = block.textColor || readableTextOn(bg, p.text);
+  return [
+    `--bg:${bg}`, `--text:${text}`, `--muted:${readableTextOn(bg, p.muted, 3)}`, `--link:${readableTextOn(bg, p.accent, 3)}`,
+    `--border:color-mix(in srgb,${text} 18%,transparent)`, `--surface:color-mix(in srgb,${text} 6%,${bg})`,
+  ].join(';');
+}
+
 function section(block, inner, ctx, extraClass = '') {
-  const bg = block.background === 'default' ? '' : ` pp-${block.background}`;
+  const custom = block.background === 'custom' && block.backgroundColor;
+  let bg = block.background === 'default' ? '' : ` pp-${block.background}`;
+  if (custom) bg = ' pp-custom-bg';
+  // Hex colours only (document.js): safe inside the attribute.
+  const style = custom ? ` style="${customBackgroundStyle(block, ctx)}"` : '';
   const previewAttr = ctx.preview ? ` data-block-id="${esc(block.id)}"` : '';
-  return `<section id="b-${esc(block.id)}" class="pp-block pp-${esc(block.type)} pp-v-${esc(block.variant)}${bg}${extraClass ? ` ${extraClass}` : ''}"${previewAttr}>${inner}</section>`;
+  return `<section id="b-${esc(block.id)}" class="pp-block pp-${esc(block.type)} pp-v-${esc(block.variant)}${bg}${extraClass ? ` ${extraClass}` : ''}"${style}${previewAttr}>${inner}</section>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +415,10 @@ function renderInstagram(block, ctx) {
   return section(block, `<div class="pp-wrap"><div class="pp-insta-head">${heading(title)}${profile}</div><div class="${block.variant === 'grid' ? 'pp-grid pp-cols-3' : 'pp-strip'}">${tiles}</div></div>`, ctx);
 }
 
+function renderDivider(block, ctx) {
+  return section(block, '<div class="pp-wrap"><hr class="pp-line"></div>', ctx, `pp-divider--${block.width} pp-space-${block.spacing}`);
+}
+
 function renderSpacer(block, ctx) {
   return section(block, block.divider ? '<div class="pp-wrap"><hr class="pp-rule"></div>' : '', ctx);
 }
@@ -423,6 +446,7 @@ const RENDERERS = {
   booking: renderBooking,
   instagram: renderInstagram,
   spacer: renderSpacer,
+  divider: renderDivider,
   customHtml: renderCustomHtml,
 };
 
@@ -588,6 +612,9 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-strip .pp-tile{scroll-snap-align:start}
 @media (min-width:900px){.pp-strip{grid-auto-columns:1fr;overflow:visible}}
 .pp-spacer{padding:0}
+.pp-divider.pp-space-none{padding:0}.pp-divider.pp-space-small{padding:1.5rem 0}.pp-divider.pp-space-medium{padding:3rem 0}.pp-divider.pp-space-large{padding:6rem 0}
+.pp-line{border:0;border-top:1px solid var(--border);margin:0}.pp-v-medium .pp-line{border-top-width:3px}
+.pp-divider--short .pp-line{width:min(160px,40%);margin:0 auto}
 .pp-spacer.pp-v-small{padding:1.5rem 0}.pp-spacer.pp-v-medium{padding:3rem 0}.pp-spacer.pp-v-large{padding:6rem 0}
 .pp-rule{border:0;border-top:1px solid var(--border);margin:0}
 .pp-customHtml{padding:0}

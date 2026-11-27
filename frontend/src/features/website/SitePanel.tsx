@@ -3,15 +3,14 @@
  * gallery branding (logo, palette, fonts, button style); a value set here
  * overrides it for the website only.
  */
-import React, { useId } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { ExternalLink, RotateCcw } from 'lucide-react';
-import { Button } from '../../components/common';
+import { ExternalLink } from 'lucide-react';
 import { fontsService } from '../../services/fonts.service';
 import { settingsTabHref } from '../settings/settingsNav';
-import { ChoiceField, SelectField, TextArea, labelClass } from './fields';
+import { ChoiceField, ColorField, SelectField, TextArea, labelClass } from './fields';
 import type { WebsiteDocument, WebsiteTheme } from './types';
 
 interface SitePanelProps {
@@ -19,28 +18,6 @@ interface SitePanelProps {
   update: (fn: (doc: WebsiteDocument) => WebsiteDocument, field?: string) => void;
   readOnly: boolean;
 }
-
-const HEX = /^#[0-9a-f]{6}$/i;
-
-const ColorField: React.FC<{ label: string; value: string | null; onChange: (value: string | null) => void }> = ({ label, value, onChange }) => {
-  const { t } = useTranslation();
-  const id = useId();
-  return (
-    <div className="flex items-center gap-3">
-      <input id={id} type="color" className="h-9 w-12 rounded-md border border-line-strong bg-panel p-1"
-        value={value && HEX.test(value) ? value : '#000000'} onChange={(e) => onChange(e.target.value)} />
-      <label htmlFor={id} className="flex-1 min-w-0">
-        <span className="block text-sm font-medium text-body">{label}</span>
-        <span className="block text-xs text-muted">{value || t('website.site.fromBranding', 'From branding')}</span>
-      </label>
-      {value && (
-        <Button size="icon-sm" variant="ghost" onClick={() => onChange(null)} aria-label={t('website.site.resetColor', 'Use the branding colour for {{name}}', { name: label }) as string}>
-          <RotateCcw className="w-4 h-4" />
-        </Button>
-      )}
-    </div>
-  );
-};
 
 export const SitePanel: React.FC<SitePanelProps> = ({ doc, update, readOnly }) => {
   const { t } = useTranslation();

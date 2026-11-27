@@ -170,5 +170,36 @@ describe('chosen entries that are gone', () => {
     fireEvent.click(box);
     await waitFor(() => expect(screen.getAllByLabelText('Only one').every((el) => !(el as HTMLInputElement).checked)).toBe(true));
   });
+
+  it('a custom background offers the branding colours and a picker; the text colour is automatic until set', () => {
+    const onChange = vi.fn();
+    const text = { id: 't', type: 'text' as const, variant: 'left', background: 'custom' as const, backgroundColor: '#1e3a2f', textColor: null, heading: '', body: '' };
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={text} onChange={onChange} brandColors={['#6f8466', '#f7f4ef']} /></QueryClientProvider>);
+    // The swatches: the branding's colours first (this t() does not interpolate).
+    fireEvent.click(screen.getAllByRole('button', { name: /^Use colour/ })[0]);
+    expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({ background: 'custom', backgroundColor: '#6f8466' });
+    expect(screen.getByLabelText('Background colour')).toHaveValue('#1e3a2f');
+    expect(screen.getByText('Automatic, for contrast')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Text colour'), { target: { value: '#ffcc00' } });
+    expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({ textColor: '#ffcc00' });
+  });
+
+  it('switching to a custom background starts from a colour', () => {
+    const onChange = vi.fn();
+    const text = { id: 't', type: 'text' as const, variant: 'left', background: 'default' as const, heading: '', body: '' };
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={text} onChange={onChange} brandColors={['#6f8466']} /></QueryClientProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Custom' }));
+    expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({ background: 'custom', backgroundColor: '#6f8466', textColor: null });
+  });
+
+  it('a divider sets its width and spacing', () => {
+    const onChange = vi.fn();
+    const divider = { id: 'd', type: 'divider' as const, variant: 'thin', background: 'default' as const, width: 'full' as const, spacing: 'medium' as const };
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={divider} onChange={onChange} /></QueryClientProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Short' }));
+    expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({ width: 'short' });
+    fireEvent.click(screen.getByRole('button', { name: 'None' }));
+    expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({ spacing: 'none' });
+  });
 });
 
