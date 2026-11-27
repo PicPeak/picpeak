@@ -3615,7 +3615,8 @@
       "openBuilder": "Website-Baukasten öffnen",
       "watermarkNote": "Fotos aus dieser Galerie erscheinen mit ihrem Wasserzeichen; laden Sie Bilder direkt hoch, um ein Portfolio ohne Wasserzeichen zu zeigen.",
       "ownerOnly": "Nur die Eigentümerin oder der Eigentümer der Galerie kann sie auf die Website stellen.",
-      "needsCmsEdit": "Um die Website zu ändern, braucht es die Berechtigung, sie zu bearbeiten."
+      "needsCmsEdit": "Um die Website zu ändern, braucht es die Berechtigung, sie zu bearbeiten.",
+      "openNotice": "Diese Galerie hat kein Passwort: Als Galerie auf der Website verlinkt ihre Karte sie, also kann jede Besucherin und jeder Besucher der Website die ganze Galerie öffnen."
     }
   },
   "settings": {
@@ -13170,7 +13171,8 @@
       "testimonialIncomplete": "Unvollständig: Ohne Zitat wird diese Kundenstimme auf der Seite nicht gezeigt.",
       "packageArchivedItems": "Enthält archivierte Positionen, wird nicht gezeigt",
       "packageNotShown": "Nicht offerierbar, wird nicht gezeigt",
-      "packagesNeedQuotes": "Die Pakete stammen aus dem Angebotskatalog: Um sie auszuwählen, braucht es die Berechtigung, Angebote anzusehen."
+      "packagesNeedQuotes": "Die Pakete stammen aus dem Angebotskatalog: Um sie auszuwählen, braucht es die Berechtigung, Angebote anzusehen.",
+      "galleryOpen": "{{name}} hat kein Passwort: Die Karte verlinkt die Galerie, also kann jede Besucherin und jeder Besucher der Website die ganze Galerie öffnen."
     },
     "defaults": {
       "heroHeading": "Ihre Überschrift",

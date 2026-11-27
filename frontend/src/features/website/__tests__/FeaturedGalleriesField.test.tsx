@@ -132,5 +132,17 @@ describe('chosen entries that are gone', () => {
     expect(websiteService.listPackages).not.toHaveBeenCalled();
     vi.mocked(usePermission).mockImplementation(() => true);
   });
+
+  it('warns that featuring a gallery without a password opens all of it', async () => {
+    vi.mocked(websiteService.listGalleries).mockReset();
+    vi.mocked(websiteService.listGalleries).mockImplementation(async (params = {}) => (params.ids
+      ? { galleries: [{ ...g(5, 'Open party'), hasPassword: false }, { ...g(6, 'Private wedding'), hasPassword: true }], hasMore: false }
+      : { galleries: [], hasMore: false }));
+    const block: FeaturedGalleriesBlock = { id: 'f', type: 'featuredGalleries', variant: 'cards', background: 'default', heading: '', intro: '', galleries: [{ id: 5, text: '' }, { id: 6, text: '' }] };
+    render(<QueryClientProvider client={new QueryClient()}><BlockEditor block={block} onChange={vi.fn()} /></QueryClientProvider>);
+    await screen.findByLabelText('Open party');
+    // One note, for the gallery without a password (the test's t() does not interpolate).
+    expect(screen.getAllByText(/has no password: its card links to it/)).toHaveLength(1);
+  });
 });
 

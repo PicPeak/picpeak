@@ -272,6 +272,11 @@ const FeaturedGalleriesField: React.FC<{
           {t('website.picker.more', 'Show more')}
         </Button>
       )}
+      {chosenRows.filter((r) => !r.hasPassword).map((r) => (
+        <p key={`open-${r.id}`} className="text-xs text-warning-text">
+          {t('website.fields.galleryOpen', '{{name}} has no password: its card links to it, so every visitor of the website can open the whole gallery.', { name: r.name })}
+        </p>
+      ))}
       {missing.length > 0 && (
         <p className="text-xs text-warning-text">
           {t('website.fields.galleriesMissing', '{{count}} chosen galleries are no longer on the website and are not shown.', { count: missing.length })}

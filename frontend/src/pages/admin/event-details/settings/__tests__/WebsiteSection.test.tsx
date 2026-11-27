@@ -59,4 +59,12 @@ describe('website opt-in in the gallery settings', () => {
     expect(screen.getByText('Changing the website needs the permission to edit it.')).toBeInTheDocument();
     vi.mocked(usePermission).mockImplementation(() => true);
   });
+
+  it('says that a gallery without a password is open to every visitor once it is featured', () => {
+    const open = { ...EVENT, require_password: false } as unknown as Event;
+    const f = eventFieldsFromEvent(open, null);
+    render(<MemoryRouter><WebsiteSection f={{ ...f, show_on_website: true }} set={vi.fn()} event={open} readOnly={false} /></MemoryRouter>);
+    expect(screen.getByText(/has no password: featured on the website, its card links to it/)).toBeInTheDocument();
+  });
 });
+

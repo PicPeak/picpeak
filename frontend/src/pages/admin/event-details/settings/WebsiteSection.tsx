@@ -44,6 +44,11 @@ export const WebsiteSection: React.FC<{
       {f.show_on_website && (
         <p className="text-xs text-muted">{t('events.website.watermarkNote', 'Photos from this gallery appear with its watermark; upload images directly for a clean portfolio.')}</p>
       )}
+      {f.show_on_website && !hasPassword && (
+        <Notice tone="warning" size="sm">
+          {t('events.website.openNotice', 'This gallery has no password: featured on the website, its card links to it, so every visitor of the website can open the whole gallery.')}
+        </Notice>
+      )}
       {f.show_on_website && hasPassword && (
         <Notice tone="warning" size="sm">
           {t('events.website.passwordNotice', 'This gallery has a password. While this is on, the photos you pick for the website are public, although this gallery has a password; the rest of the gallery keeps its password.')}
