@@ -24,6 +24,7 @@ const os = require('os');
 process.env.NODE_ENV = 'test';
 process.env.TEST_DATABASE_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-edits-')), 'db.sqlite');
 process.env.STORAGE_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-edits-storage-'));
+process.env.EXTERNAL_MEDIA_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-edits-external-'));
 
 const sharp = require('sharp');
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
@@ -316,6 +317,46 @@ describe('deleting photos leaves no edit files behind', () => {
     const gallery = await db('events').where({ id: event }).first();
     for (const id of [rawId, jpegId]) await trash.deletePhotoForGood(gallery, await db('photos').where({ id }).first());
     for (const key of files) expect(fs.existsSync(storagePath(key))).toBe(false);
+  });
+});
+
+describe('a reference photo rewritten on its share', () => {
+  it('keeps its edit: the thumbnail is cut from the edit again and the revision moves on', async () => {
+    const adminId = (await db('admin_users').first('id')).id;
+    await require('../integration/helpers/crmDb').assignAdminRole(db, adminId, 'super_admin');
+    const actor = { type: 'admin', id: adminId };
+    const event = unwrap(await db('events').insert({
+      slug: 'edit-reference', event_type: 'wedding', event_name: 'Reference', event_date: '2026-08-01', host_email: 'h@example.com',
+      admin_email: 'a@example.com', password_hash: 'x', share_token: 'tok-ref', share_link: '/gallery/edit-reference/tok',
+      created_by: adminId, expires_at: new Date(Date.now() + 864e5).toISOString(), is_active: 1, is_archived: 0, is_draft: 0,
+      source_mode: 'reference', external_path: 'shoot', created_at: new Date().toISOString(),
+    }).returning('id'));
+    const file = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'shoot', 'red.jpg');
+    const write = async (colour, size) => {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, await sharp({ create: { width: size, height: 300, channels: 3, background: colour } }).jpeg().toBuffer());
+      const old = new Date(Date.now() - 120000);
+      fs.utimesSync(file, old, old);
+    };
+    const { importExternalFolder } = require('../../src/services/externalImportService');
+    await write({ r: 220, g: 30, b: 30 }, 400);
+    await importExternalFolder({ eventId: event, externalPath: 'shoot', actor });
+    const photo = await db('photos').where({ event_id: event }).first();
+    await photoEdits().saveEdits([{ photo, params: validated({ bw: true }) }]);
+    await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+    const before = await db('photos').where({ id: photo.id }).first();
+
+    await write({ r: 30, g: 30, b: 220 }, 420);
+    await importExternalFolder({ eventId: event, externalPath: 'shoot', actor });
+    const after = await db('photos').where({ id: photo.id }).first();
+    expect(after.size_bytes).not.toBe(before.size_bytes);
+    expect(after.edit_rev).toBe(before.edit_rev + 1);
+    expect(after.thumbnail_path).toBeTruthy();
+    const { channels } = await sharp(storagePath(after.thumbnail_path)).stats();
+    // Black and white still: the new blue file, edited.
+    expect(Math.abs(channels[0].mean - channels[2].mean)).toBeLessThan(3);
+    await photoEdits().runPass({ active: () => true, sleep: async () => {} });
+    expect(await db('photos').where({ id: photo.id }).first()).toMatchObject({ edit_applied_rev: after.edit_rev });
   });
 });
 

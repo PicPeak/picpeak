@@ -486,9 +486,16 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     source_origin: row.source_origin, external_relpath: row.external_relpath,
   };
   const m = video?.probed || {};
+  // A photo edit (issue 2619) stays on the new bytes: a new revision, so its
+  // render, renditions and image URLs are made again from the edited file.
+  const photoEdits = require('./photoEdits');
+  const editState = isVideo ? row : await photoEdits.withEditColumns(row);
+  const edited = !isVideo && photoEdits.isEdited(editState);
   const updates = {
     size_bytes: stats.size,
     source_mtime_ms: Math.floor(stats.mtimeMs),
+    // An increment, so a save landing meanwhile is not taken back.
+    ...(edited ? { edit_rev: db.raw('edit_rev + 1') } : {}),
     ...(isVideo ? {
       duration: m.duration ?? null,
       video_codec: m.videoCodec || null,
@@ -581,7 +588,7 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   // that checked between the sweep above and the commit kept its file, under
   // an old-version key nothing derives any more. Only keys the new version
   // does not also list, so nothing it still reads goes.
-  const current = { ...row, ...updates };
+  const current = { ...editState, ...updates, ...(edited ? { edit_rev: Number(editState.edit_rev) + 1 } : {}) };
   const currentKeys = new Set([...previewTierKeys(current), ...thumbnailTierKeys(current)]);
   await Promise.all([...previewTierKeys(row), ...thumbnailTierKeys(row)]
     .filter((k) => !currentKeys.has(k))
@@ -618,6 +625,15 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
       // ensureThumbnail makes it on first view instead.
       logger.warn(`Poster regeneration failed for changed external video ${row.id} (${f.rel}): ${videoErr.message}`);
       await db('photos').where(thisVersion).update({ processing_error: posterFrameError(videoErr.message) }).catch(() => {});
+    }
+  } else if (edited) {
+    try {
+      // Through the edited source: the thumbnail shows the edit, as before.
+      const fresh = await db('photos').where(thisVersion).first();
+      if (fresh && !fresh.thumbnail_path) await require('./imageProcessor').ensureThumbnail(fresh);
+      photoEdits.requestPass();
+    } catch (thumbErr) {
+      logger.warn(`Thumbnail regeneration failed for changed external photo ${row.id} (${f.rel}): ${thumbErr.message}`);
     }
   } else {
     try {
