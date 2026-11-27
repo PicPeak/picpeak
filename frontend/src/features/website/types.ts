@@ -106,7 +106,6 @@ export interface WebsitePage {
   title: string;
   navLabel: string;
   hidden: boolean;
-  inNav: boolean;
   isHome: boolean;
   seo: { title: string; description: string; image: ImageRef | null };
   blocks: Block[];
@@ -121,9 +120,24 @@ export interface WebsiteTheme {
   text: string | null;
 }
 
+/** One menu entry: its own label ('' = the page's), shown or hidden, and where it leads. */
+export interface MenuItem { id: string; label: string; hidden: boolean; target: LinkTarget }
+export interface WebsiteMenu {
+  layout: 'left' | 'center';
+  style: 'plain' | 'underline' | 'pill';
+  sticky: boolean;
+  /** Over the picture of a page that starts with a full-picture hero. */
+  transparent: boolean;
+  mobile: 'dropdown' | 'panel';
+  background: string | null;
+  text: string | null;
+  items: MenuItem[];
+}
+
 export interface WebsiteDocument {
   version: number;
   pages: WebsitePage[];
+  menu: WebsiteMenu;
   theme: WebsiteTheme;
   customCss: string;
 }

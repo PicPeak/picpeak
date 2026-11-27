@@ -206,7 +206,9 @@ test('booleans sent as strings mean what they say', () => {
       ] }),
     ],
   });
-  expect(document.pages[1]).toMatchObject({ hidden: true, inNav: false, isHome: false });
+  expect(document.pages[1]).toMatchObject({ hidden: true, isHome: false });
+  // "Show in the menu" off: the menu made from the pages leaves it out.
+  expect(document.menu.items.map((item) => item.id)).toEqual(['p1']);
   const [pricing, contact, spacer] = document.pages[1].blocks;
   expect(pricing.showPrices).toBe(false);
   expect(contact).toMatchObject({ showPhone: false, showDate: true });

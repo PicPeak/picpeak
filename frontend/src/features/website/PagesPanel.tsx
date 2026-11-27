@@ -11,6 +11,7 @@ import { SortableList } from './SortableList';
 import { createPage, moveItem, slugWhileTyping } from './blocks';
 import { ImageField, TextArea, TextField } from './fields';
 import { CmsPagesSection } from './CmsPagesSection';
+import { menuWithoutPage, pageInMenu, setPageInMenu } from './menu';
 import type { ValidationProblem, WebsiteDocument, WebsitePage } from './types';
 
 // A copy of backend/src/services/website/reservedSlugs.json, held to it by
@@ -52,7 +53,7 @@ export const PagesPanel: React.FC<PagesPanelProps> = ({ doc, pageId, onSelectPag
 
   const addPage = () => {
     const created = createPage(t, doc.pages);
-    update((d) => ({ ...d, pages: [...d.pages, created] }));
+    update((d) => setPageInMenu({ ...d, pages: [...d.pages, created] }, created.id, true));
     onSelectPage(created.id);
   };
 
@@ -66,7 +67,7 @@ export const PagesPanel: React.FC<PagesPanelProps> = ({ doc, pageId, onSelectPag
       variant: 'danger',
     });
     if (!ok) return;
-    update((d) => ({ ...d, pages: d.pages.filter((p) => p.id !== page.id) }));
+    update((d) => ({ ...d, pages: d.pages.filter((p) => p.id !== page.id), menu: menuWithoutPage(d, page.id) }));
     onSelectPage(doc.pages.find((p) => p.id !== page.id)?.id || '');
   };
 
@@ -87,7 +88,7 @@ export const PagesPanel: React.FC<PagesPanelProps> = ({ doc, pageId, onSelectPag
           <h3 className="text-sm font-semibold text-heading">{t('website.pages.title', 'Pages')}</h3>
           {!readOnly && <Button size="sm" variant="secondary" leftIcon={<Plus className="w-4 h-4" />} onClick={addPage} disabled={doc.pages.length >= 30}>{t('website.pages.add', 'Add page')}</Button>}
         </div>
-        <p className="text-xs text-muted">{t('website.pages.orderHint', 'The order here is the order of the menu. Legal pages are added to the footer on their own.')}</p>
+        <p className="text-xs text-muted">{t('website.pages.orderHint', 'The menu has its own order, under Design › Menu. Legal pages are added to the footer on their own.')}</p>
         <SortableList
           items={doc.pages}
           getId={(p) => p.id}
@@ -128,7 +129,7 @@ export const PagesPanel: React.FC<PagesPanelProps> = ({ doc, pageId, onSelectPag
               ? t('website.pages.slugHintHome', 'The home page is at the site root; yoursite.com/{{slug}} leads there too.', { slug: page.slug })
               : t('website.pages.slugHint', 'Shown as yoursite.com/{{slug}}', { slug: page.slug })}
           />
-          <Switch checked={page.inNav} onChange={(inNav) => patchPage({ inNav })} label={t('website.pages.inNav', 'Show in the menu')} />
+          <Switch checked={pageInMenu(doc, page.id)} onChange={(shown) => update((d) => setPageInMenu(d, page.id, shown))} label={t('website.pages.inNav', 'Show in the menu')} />
           {!page.isHome && (
             <Switch checked={!page.hidden} onChange={(visible) => patchPage({ hidden: !visible })}
               label={t('website.pages.visible', 'Published on the site')}

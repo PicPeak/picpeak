@@ -11,6 +11,7 @@ import { ExternalLink } from 'lucide-react';
 import { fontsService } from '../../services/fonts.service';
 import { settingsTabHref } from '../settings/settingsNav';
 import { ChoiceField, ColorField, SelectField, TextArea, labelClass } from './fields';
+import { MenuSection } from './MenuSection';
 import type { WebsiteDocument, WebsiteTheme } from './types';
 
 interface SitePanelProps {
@@ -70,6 +71,8 @@ export const SitePanel: React.FC<SitePanelProps> = ({ doc, update, readOnly }) =
         <ColorField label={t('website.site.background', 'Page background')} value={doc.theme.background} onChange={(background) => setTheme({ background }, 'background')} />
         <ColorField label={t('website.site.text', 'Text')} value={doc.theme.text} onChange={(text) => setTheme({ text }, 'text')} />
       </section>
+
+      <MenuSection doc={doc} update={update} readOnly={readOnly} />
 
       <section>
         <TextArea

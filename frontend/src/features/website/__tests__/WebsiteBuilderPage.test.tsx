@@ -71,17 +71,18 @@ const STATE: EditorState = {
     version: 1,
     pages: [
       {
-        id: 'home', slug: 'home', title: 'Home', navLabel: '', hidden: false, inNav: true, isHome: true,
+        id: 'home', slug: 'home', title: 'Home', navLabel: '', hidden: false, isHome: true,
         seo: { title: '', description: '', image: null },
         blocks: [
           { id: 'h1', type: 'hero', variant: 'minimal', background: 'default', heading: 'Hello there', subheading: '', buttonLabel: '', buttonUrl: '', image: null, video: null },
           { id: 't1', type: 'text', variant: 'left', background: 'default', heading: 'About', body: 'We take photos.' },
         ],
       },
-      { id: 'about', slug: 'about', title: 'About', navLabel: '', hidden: false, inNav: true, isHome: false, seo: { title: '', description: '', image: null }, blocks: [] },
+      { id: 'about', slug: 'about', title: 'About', navLabel: '', hidden: false, isHome: false, seo: { title: '', description: '', image: null }, blocks: [] },
     ],
     theme: { headingFont: null, bodyFont: null, buttonStyle: null, accent: null, background: null, text: null },
     customCss: '',
+    menu: { layout: 'left', style: 'plain', sticky: true, transparent: false, mobile: 'dropdown', background: null, text: null, items: [{ id: 'mh', label: '', hidden: false, target: { kind: 'page', pageId: 'home' } }, { id: 'ma', label: '', hidden: false, target: { kind: 'page', pageId: 'about' } }] },
   },
   draft: { revision: 3, updatedAt: '', publishedAt: null },
   published: { revision: 3, updatedAt: '', publishedAt: '2026-11-27T10:00:00Z' },

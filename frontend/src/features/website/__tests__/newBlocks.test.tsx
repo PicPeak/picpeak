@@ -29,8 +29,8 @@ import { WebsiteDocContext } from '../LinkTargetField';
 const DOC = {
   version: 1, customCss: '', theme: {},
   pages: [
-    { id: 'home', slug: 'home', title: 'Home', navLabel: '', hidden: false, inNav: true, isHome: true, seo: { title: '', description: '', image: null }, blocks: [] },
-    { id: 'about', slug: 'about', title: 'About us', navLabel: '', hidden: false, inNav: true, isHome: false, seo: { title: '', description: '', image: null },
+    { id: 'home', slug: 'home', title: 'Home', navLabel: '', hidden: false, isHome: true, seo: { title: '', description: '', image: null }, blocks: [] },
+    { id: 'about', slug: 'about', title: 'About us', navLabel: '', hidden: false, isHome: false, seo: { title: '', description: '', image: null },
       blocks: [{ id: 'form', type: 'contact', variant: 'simple', background: 'default', heading: 'Write to us', intro: '', showPhone: false, showDate: false, submitLabel: '', successMessage: '' }] },
   ],
 } as unknown as WebsiteDocument;

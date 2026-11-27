@@ -617,6 +617,13 @@ h3.pp-h{font-size:1.2rem;margin-bottom:.35em}
 .pp-menu ul{position:absolute;right:0;top:calc(100% + .5rem);min-width:12rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.5rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}
 .pp-menu li a{display:block;padding:.65rem .8rem;border-radius:8px}
 @media (max-width:760px){.pp-nav{display:none}.pp-menu{display:block}}
+.pp-header--static{position:relative}
+.pp-header.pp-header--over{position:absolute;left:0;right:0;background:transparent;backdrop-filter:none;border-bottom-color:transparent;--text:#fff}
+.pp-header--over .pp-menu summary{border-color:rgba(255,255,255,.5)}.pp-header--over .pp-menu ul{--text:var(--page-text)}
+@media (min-width:761px){.pp-header--center .pp-header__in{flex-direction:column;justify-content:center;gap:.6rem;padding:1rem 0}}
+.pp-nav--underline .pp-nav a{padding:.3rem 0;border-bottom:2px solid transparent}.pp-nav--underline .pp-nav a:hover,.pp-nav--underline .pp-nav a[aria-current]{border-bottom-color:currentColor}
+.pp-nav--pill .pp-nav ul{gap:.4rem}.pp-nav--pill .pp-nav a{padding:.45rem .95rem;border-radius:999px}.pp-nav--pill .pp-nav a:hover{background:color-mix(in srgb,var(--text) 8%,transparent)}.pp-nav--pill .pp-nav a[aria-current]{background:var(--accent);color:var(--accent-fg)}
+.pp-menu--panel{position:static}.pp-menu--panel ul{left:0;right:0;top:100%;min-width:0;border-radius:0;border-width:1px 0;box-shadow:none;padding:.5rem 1.25rem 1rem}
 .pp-hero{position:relative;overflow:hidden}
 .pp-hero.pp-v-overlay{padding:0;min-height:min(88vh,860px);display:grid;align-items:end;color:#fff}
 .pp-hero.pp-v-overlay .pp-hero__media{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
@@ -745,31 +752,58 @@ function themeCss(ctx) {
   const p = palette(ctx.theme);
   const radius = RADII[ctx.theme.radius] || RADII.md;
   const btnRadius = ctx.theme.buttonStyle === 'pill' ? '999px' : radius;
-  return `:root{--bg:${p.bg};--text:${p.text};--muted:${p.muted};--surface:${p.surface};--border:${p.border};--accent:${p.accent};--accent-fg:${p.accentFg};--link:${p.link};--dark-bg:${p.darkBg};--dark-text:${p.darkText};--dark-muted:${p.darkMuted};--dark-link:${p.darkLink};--radius:${radius};--btn-radius:${btnRadius};--font-body:${fontStack(ctx.fonts.body)};--font-heading:${fontStack(ctx.fonts.heading || ctx.fonts.body)}}`;
+  return `:root{--bg:${p.bg};--text:${p.text};--page-text:${p.text};--muted:${p.muted};--surface:${p.surface};--border:${p.border};--accent:${p.accent};--accent-fg:${p.accentFg};--link:${p.link};--dark-bg:${p.darkBg};--dark-text:${p.darkText};--dark-muted:${p.darkMuted};--dark-link:${p.darkLink};--radius:${radius};--btn-radius:${btnRadius};--font-body:${fontStack(ctx.fonts.body)};--font-heading:${fontStack(ctx.fonts.heading || ctx.fonts.body)}}`;
 }
 
 function pageHref(page) {
   return page.isHome ? '/' : `/${page.slug}`;
 }
 
-function navLinks(ctx) {
+// A menu item's label: its own, else its page's menu label or title, else
+// the legal page's name; an item to an address or a block needs its own.
+function menuLabel(item, ctx) {
+  if (item.label) return item.label;
   const s = strings(ctx.locale);
-  return ctx.document.pages.filter((p) => !p.hidden && p.inNav).map((p) => {
-    const current = p.id === ctx.page.id ? ' aria-current="page"' : '';
-    return `<li><a href="${esc(pageHref(p))}"${current}>${esc(p.navLabel || p.title || s.home)}</a></li>`;
+  if (item.target.kind === 'page') {
+    const page = ctx.document.pages.find((p) => p.id === item.target.pageId);
+    return page ? (page.navLabel || page.title || s.home) : '';
+  }
+  if (item.target.kind === 'legal') return (ctx.legalLinks || []).find((l) => l.href === `/${item.target.slug}`)?.label || '';
+  if (item.target.kind === 'booking') return s.book;
+  return '';
+}
+
+function navLinks(ctx) {
+  return ctx.document.menu.items.filter((item) => !item.hidden).map((item) => {
+    const href = targetHref(item.target, ctx);
+    const label = href && menuLabel(item, ctx);
+    if (!label) return '';
+    const current = item.target.kind === 'page' && item.target.pageId === ctx.page.id ? ' aria-current="page"' : '';
+    return `<li><a href="${esc(href)}"${linkAttrs(href)}${current}>${esc(label)}</a></li>`;
   }).join('');
 }
 
 function renderHeader(ctx) {
   const { branding } = ctx;
+  const { menu } = ctx.document;
   const s = strings(ctx.locale);
   const name = branding.companyName || 'PicPeak';
   const logo = branding.logoUrl ? `<img src="${esc(branding.logoUrl)}" alt="" height="40">` : '';
   const links = navLinks(ctx);
   const nav = links
-    ? `<nav class="pp-nav" aria-label="Main"><ul>${links}</ul></nav><details class="pp-menu"><summary>${esc(s.menu)}</summary><nav aria-label="Main"><ul>${links}</ul></nav></details>`
+    ? `<nav class="pp-nav" aria-label="Main"><ul>${links}</ul></nav><details class="pp-menu${menu.mobile === 'panel' ? ' pp-menu--panel' : ''}"><summary>${esc(s.menu)}</summary><nav aria-label="Main"><ul>${links}</ul></nav></details>`
     : '';
-  return `<header class="pp-header"><div class="pp-wrap pp-header__in"><a class="pp-brand" href="/">${logo}<span>${esc(name)}</span></a>${nav}</div></header>`;
+  // Over the picture only on a page that starts with a full-picture hero.
+  const first = ctx.page.blocks[0];
+  const over = menu.transparent && first && first.type === 'hero' && first.variant === 'overlay';
+  const classes = ['pp-header'];
+  if (menu.layout === 'center') classes.push('pp-header--center');
+  if (over) classes.push('pp-header--over');
+  else if (!menu.sticky) classes.push('pp-header--static');
+  if (menu.style !== 'plain') classes.push(`pp-nav--${menu.style}`);
+  // Hex colours only (document.js): safe inside the attribute.
+  const vars = [menu.background && `--bg:${menu.background}`, menu.text && `--text:${menu.text}`].filter(Boolean).join(';');
+  return `<header class="${classes.join(' ')}"${vars ? ` style="${vars}"` : ''}><div class="pp-wrap pp-header__in"><a class="pp-brand" href="/">${logo}<span>${esc(name)}</span></a>${nav}</div></header>`;
 }
 
 function renderFooter(ctx) {

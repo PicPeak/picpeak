@@ -139,7 +139,7 @@ export function createPage(t: TFunction, existing: WebsitePage[]): WebsitePage {
   let slug = 'new-page';
   for (let n = 2; existing.some((p) => p.slug === slug); n += 1) slug = `new-page-${n}`;
   return {
-    id: newId(), slug, title, navLabel: '', hidden: false, inNav: true, isHome: false,
+    id: newId(), slug, title, navLabel: '', hidden: false, isHome: false,
     seo: { title: '', description: '', image: null }, blocks: [],
   };
 }

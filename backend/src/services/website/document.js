@@ -70,6 +70,10 @@ const BLOCK_VARIANTS = {
   social: ['icons', 'buttons'],
   customHtml: ['default'],
 };
+const MAX_MENU_ITEMS = 12;
+const MENU_LAYOUTS = ['left', 'center'];
+const MENU_STYLES = ['plain', 'underline', 'pill'];
+const MENU_MOBILE = ['dropdown', 'panel'];
 const MAX_STEPS = 8;
 const MAX_CTA_BUTTONS = 2;
 const MAX_SOCIAL_LINKS = 8;
@@ -416,6 +420,32 @@ function normalizeTheme(raw) {
 }
 
 /**
+ * The menu: its design and its items, in their own order. A document from
+ * before the menu had settings has none; its menu is then the one it always
+ * showed, the pages in page order that were "shown in the menu" (`inNav`),
+ * each labelled by its page, so it renders unchanged.
+ */
+function normalizeMenu(raw, pages, inNavById) {
+  const menu = raw && typeof raw === 'object' ? raw : {};
+  const items = Array.isArray(menu.items)
+    ? objects(menu.items, MAX_MENU_ITEMS, 'menu').map((item) => {
+      const target = linkTarget(item.target);
+      return target ? { id: blockId(item.id), label: str(item.label, 60, 'menuLabel'), hidden: bool(item.hidden), target } : null;
+    }).filter(Boolean)
+    : pages.filter((p) => inNavById.get(p.id)).map((p) => ({ id: p.id, label: '', hidden: false, target: { kind: 'page', pageId: p.id } }));
+  return {
+    layout: pick(menu.layout, MENU_LAYOUTS, 'left'),
+    style: pick(menu.style, MENU_STYLES, 'plain'),
+    sticky: bool(menu.sticky, true),
+    transparent: bool(menu.transparent),
+    mobile: pick(menu.mobile, MENU_MOBILE, 'dropdown'),
+    background: hex(menu.background),
+    text: hex(menu.text),
+    items,
+  };
+}
+
+/**
  * Normalise a document. Returns { document, errors }: errors are the problems
  * an admin has to fix (duplicate or reserved slugs, no pages); everything
  * else is repaired silently (unknown fields dropped, strings capped).
@@ -441,6 +471,7 @@ function normalizeInto(raw, reservedSlugs, errors) {
   const extraReserved = new Set(reservedSlugs.map((s) => String(s).toLowerCase()));
   const seenSlugs = new Set();
   const seenIds = new Set();
+  const inNavById = new Map();
 
   const pages = capPages(Array.isArray(input.pages) ? input.pages : []).map((page, index) => {
     const p = page && typeof page === 'object' ? page : {};
@@ -472,13 +503,13 @@ function normalizeInto(raw, reservedSlugs, errors) {
       });
     where = { pageId: id };
     const seo = p.seo && typeof p.seo === 'object' ? p.seo : {};
+    inNavById.set(id, bool(p.inNav, true));
     return {
       id,
       slug,
       title,
       navLabel: str(p.navLabel, 60, 'navLabel'),
       hidden: bool(p.hidden),
-      inNav: bool(p.inNav, true),
       isHome: bool(p.isHome),
       seo: {
         title: str(seo.title, 120, 'title'),
@@ -500,6 +531,7 @@ function normalizeInto(raw, reservedSlugs, errors) {
   const document = {
     version: DOCUMENT_VERSION,
     pages,
+    menu: normalizeMenu(input.menu, pages, inNavById),
     theme: normalizeTheme(input.theme),
     customCss: typeof input.customCss === 'string' ? capText(input.customCss, MAX_CUSTOM_CSS, 'customCss') : '',
   };
